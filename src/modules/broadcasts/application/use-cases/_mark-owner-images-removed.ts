@@ -35,9 +35,10 @@ import type { BroadcastImageOwnerKind, BroadcastImagesRepo, BroadcastImagesTx } 
 /**
  * Why the reference went away. Kept as a bounded literal set so the audit
  * trail can tell a member's own discard from a retention prune from an
- * erasure — three very different compliance stories.
+ * erasure — three very different compliance stories — and, since F119 T081,
+ * a withdrawn (member withdrawal or staff cancel) or rejected E-Blast.
  */
-export type ImageRemovalReason = 'draft_discarded' | 'draft_pruned' | 'member_erased';
+export type ImageRemovalReason = 'draft_discarded' | 'draft_pruned' | 'member_erased' | 'withdrawn' | 'rejected';
 
 export interface MarkOwnerImagesRemovedDeps {
   readonly imagesRepo: Pick<BroadcastImagesRepo, 'markDeletedByOwner'>;

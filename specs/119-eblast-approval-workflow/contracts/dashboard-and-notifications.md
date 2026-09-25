@@ -21,8 +21,8 @@ FR-030 says so in as many words. What changes:
 | Chip label | a **count** per stage (FR-025); selecting a chip filters the list. Count changes are announced through the list's **single existing `role="status"` region** (`queue-table-client.tsx:439-447`) — **never** a second live region. The stage label must fit its chip in EN, TH **and SV**, where strings run up to **+28 %**: the SV lengths of the five new labels are a live-look item (research V2) and the chip truncates with a `title`/tooltip rather than reflowing the strip | new |
 | Chip visibility when the flag is off | n/a | a new-stage chip is offered only when the tenant has ≥ 1 row in it (research R18 — never offer a filter that can only return zero rows) |
 | Member | existing `memberId` dropdown | unchanged (FR-030) |
-| Date range | existing `fromDate` / `toDate` | unchanged |
-| **Upcoming sends** | — | a preset: `?status=approved&sort=scheduled_for&from=now` — scheduled E-Blasts in send-time order, so same-day clashes are obvious (FR-028) |
+| Date range | existing `fromDate` / `toDate` — rendered and written to the URL, but never passed to the list query (every range returned every row) | wired (FR-030): bounds **`submitted_at`**, as whole calendar days in the tenant's timezone — `[00:00 of fromDate, 00:00 of the day after toDate)` (`tenantDayRangeUtc`, half-open so no sub-millisecond gap at the end of the `to` day). A never-submitted row (a draft) is outside any range. It combines by AND with every other filter, the Upcoming preset's `from=now` bound on `scheduled_for` included ("sends scheduled from now on that were submitted in this range"). The list API refuses a day that is not a real calendar day (400); the page ignores it. The stage chip counts stay per stage for the whole tenant — they do **not** honour the range, the member filter or the Upcoming bound (FR-025's backlog; R18 offers a chip by them) — so with any of those on, the view's announced total falls back to the page's own rows (`queueViewNarrowed`) and the Stage group shows a note, which is also its accessible description, that its counts cover every E-Blast in each stage (`chipCountsScope`) |
+| **Upcoming sends** | — | a preset: `?status=approved&sort=scheduled_for&from=now` — scheduled E-Blasts in send-time order, so same-day clashes are obvious (FR-028). `sort=scheduled_for` exists **only** with `from=now` (round-4 B7): the list pages by keyset on (`scheduled_for`, id), and unbounded the view holds rows with no send time, whose NULL cursor key dropped every unscheduled row after page 1. The list API refuses `sort=scheduled_for` without `from=now` with **400 `invalid_body`** (`fieldErrors.sort`); the page ignores it and uses the view's own order (`isUpcomingPreset`) |
 
 URL remains the source of truth (every view is a link); `status_all=1` sentinel semantics unchanged.
 
@@ -38,6 +38,15 @@ URL remains the source of truth (every view is a link); `status_all=1` sentinel 
 | **Proposed** / **Confirmed** send time | `proposed_send_at` / `scheduled_for`, tenant time zone | FR-026 |
 | **Last activity** | `stage_entered_at` | FR-026 |
 | Delivery results | `recipients / delivered / bounced / complained` from the existing `broadcast_deliveries` aggregate, on `sent` rows | FR-029 |
+
+**Layout as built (amended after the 2026-09-24 dashboard UX review).** The fields above are all
+kept, but twelve separate columns pushed the Actions column off screen at 1280 px, so the table
+groups them into eight: Member · Subject · **Stage** (badge, "Round N" and, on `sent` rows, the
+delivery line) · Whose turn · **Time in stage** (with "since {date}", which is Last activity) ·
+**Send time** (the confirmed time; the proposal shown beneath it when it differs, or marked
+"Proposed" before confirmation) · **Audience** (segment and recipient count) · Actions. Submitted
+moves to the detail page. The sorted column carries `aria-sort` and a visible hint; a view whose
+every stage is someone's turn sorts longest-in-stage first, any other view most recent first.
 
 **At phone width** (`QueueCardList`, < md) the card shows **member, subject, stage, whose turn and
 time in stage** only; **round, proposed and confirmed send times move to the detail page** (FR-026).
@@ -70,7 +79,11 @@ The staff nav item for E-Blasts carries a badge counting the **marketing-turn** 
 same Domain predicate as the gauge, as a live indexed `count(*)` at render — not a cron snapshot,
 so it is correct immediately (the F114 `NeedsAttentionList` precedent). Hidden while the flag is off
 **and** no row is in a new stage. Visible to every role holding `broadcasts.read`, including
-`manager` (spec: "Admins and super-admins still see the waiting count").
+`manager` (spec: "Admins and super-admins still see the waiting count"). The F9 home "needs
+attention" item shows the same count, labelled "E-Blasts waiting on marketing", and links to the queue
+filtered to exactly those four stages (`MARKETING_TURN_QUEUE_HREF`) — the queue's default view is
+`submitted` only (whole-branch review MEDIUM-4). The nav item itself keeps `/admin/broadcasts`: it is
+the section's entry, and the default view is what the overdue banner renders on.
 
 ### 1.4 Performance (SC-008)
 
@@ -201,7 +214,7 @@ T149/T150.
 |---|---|---|---|---|
 | `eblast_submitted_marketing` | marketing recipients (§ 3.1) | recipient | `{ tenantId, broadcastId, recipientUserId }` | **subject + member company + stage ("Awaiting marketing review") + link** to `/admin/broadcasts/<id>` — nothing more (FR-021b). US5 AS1: staff are **not** notified on submit today, and with the flag off they still are not: the row is enqueued and the drainer skips it until the flip (round 4 H2) |
 | `eblast_version_sent_member` | the member's contact | broadcast | `{ tenantId, broadcastId, versionId, round }` | what changed ("Round N is ready for your approval"), who acted ("the chamber"), marketing's note, the proposed send time, **and the full timeline: a reminder on day 3, a final reminder on day 7, a warning on day 23 and automatic closure on day 30** (FR-021b) — the member is told the clock at the moment it starts. Link to `/portal/broadcasts/<id>` |
-| `eblast_member_decided_marketing` | marketing recipients | recipient | `{ tenantId, broadcastId, versionId: string \| null, round: number \| null, decision }` — **`versionId` and `round` are nullable**: the same type carries a whole-E-Blast withdrawal raised from `submitted` or `draft`, where no version and no round exist. The arm MUST render from the broadcast alone in that case and MUST NOT throw; an arm that throws is indistinguishable from the missing-arm `default: null` below and retries silently for ~16 h (`/speckit.analyze` M7) | **subject + member company + the new stage + link**. The `decision` discriminator selects the stage wording (`approved` → "Member approved — awaiting schedule"; `changes_requested` / `approval_withdrawn` → "Changes requested by member"; `withdrawn` → "Withdrawn"). **The member's reason is NOT in the email** (FR-021b) — it is on the detail page |
+| `eblast_member_decided_marketing` | marketing recipients | recipient | `{ tenantId, broadcastId, versionId: string \| null, round: number \| null, decision }` — **`versionId` and `round` are nullable**: the same type carries a whole-E-Blast withdrawal raised from `submitted` or `draft`, where no version and no round exist. The arm MUST render from the broadcast alone in that case and MUST NOT throw; an arm that throws is indistinguishable from the missing-arm `default: null` below and retries silently for ~16 h (`/speckit.analyze` M7) | **subject + member company + the new stage + link**. The `decision` discriminator selects the stage wording (`approved` → "Member approved — awaiting schedule"; `changes_requested` / `approval_withdrawn` → "Changes requested by member"; `withdrawn` → "Cancelled", the staff queue's label for the row — whole-branch review LOW-6). **The member's reason is NOT in the email** (FR-021b) — it is on the detail page |
 | `eblast_schedule_confirmed_member` | the member's contact | broadcast | `{ tenantId, broadcastId, versionId }` | what changed, who acted, the confirmed time in the tenant time zone **and the proposed time beside it with an explicit "this is not the time you proposed" line whenever they differ** (FR-018, FR-021b), and a link back |
 | `eblast_approval_lifecycle` | member **and** marketing | recipient | `{ tenantId, broadcastId, versionId, round, kind, audience }` | `kind ∈ reminder_day3 \| reminder_day7 \| expiry_warning_day23 \| expired_day30`; day-23 and day-30 go to **both** sides (FR-022a). The **staff** rendering of each kind obeys the four-field rule above; the member rendering restates the remaining timeline |
 
@@ -265,6 +278,7 @@ an alert nobody re-tuned.
 | `broadcasts_preview_rendered_total` | counter | `tenant, surface` (`inline`\|`dialog`\|`compare`) |
 | `broadcasts_no_marketing_recipient_total` | counter | `tenant` |
 | `broadcasts_version_saved_total` | counter | `tenant` |
+| `broadcasts_approval_lifecycle_row_failed_total` | counter | `tenant` |
 | `broadcasts_member_decide_ms` | histogram | `tenant` |
 | `broadcasts_preview_render_ms` | histogram | `tenant` |
 
@@ -276,17 +290,21 @@ field does not typecheck, so a registration a PR behind its emitter is not a doc
 a broken build (`/speckit.analyze` round 3 C1). `broadcasts_version_saved_total` is emitted by
 `PATCH /api/admin/broadcasts/[id]/version` (a save is not a hand-off, so it is counted rather than
 audited) and was previously named only in `admin-eblast-formatting-api.md`, i.e. absent from this
-inventory, from `src/lib/metrics.ts` and from `docs/observability.md` § 28 — it would have shipped
-unregistered (`/speckit.analyze` M2). This table is the registration list; a metric not on it does
-not exist.
+inventory, from `src/lib/metrics.ts` and from `docs/observability.md` § 29 — it would have shipped
+unregistered (`/speckit.analyze` M2). `broadcasts_approval_lifecycle_row_failed_total` (round-4 B8,
+the seventh counter) is emitted by `expireStaleMemberApprovals` once per awaiting row whose per-row
+transaction threw — the lifecycle twin of `broadcasts_image_sweep_row_failed_total`, since the tick
+still answers 200 and a persistent fault was otherwise a `warn` line only. This table is the
+registration list; a metric not on it does not exist.
 
-### 4.3 Alerts (`docs/observability.md` § 28 — the file ends at § 27, line 2205)
+### 4.3 Alerts (`docs/observability.md` § 29 — F119's section, after `main`'s § 28 on the `0306` membership-coverage end)
 
 | condition | severity | why |
 |---|---|---|
 | `broadcasts_awaiting_member_oldest_age_seconds > 7 d` | warning | the second reminder has been sent and nothing moved |
 | `broadcasts_awaiting_member_oldest_age_seconds > 14 d` | page | well inside the 30-day expiry clock and **nine days ahead of the day-23 warning**, so a human sees it before either automatic step fires (the earlier note said "halfway to the 30-day expiry" — 14 is not half of 30, and the warning falls after it, not before) |
 | `broadcasts_no_marketing_recipient_total > 0` | page | a hand-off notified nobody |
+| `broadcasts_approval_lifecycle_row_failed_total` increments on two consecutive daily ticks for one tenant | warning | a lifecycle fault that is not clearing: those rows' reminders, warnings and expiries are not happening (round-4 B8) |
 
 ### 4.4 Logs and traces
 

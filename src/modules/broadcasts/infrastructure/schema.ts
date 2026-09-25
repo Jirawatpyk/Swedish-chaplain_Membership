@@ -29,6 +29,7 @@ import { sql } from 'drizzle-orm';
 import {
   boolean,
   check,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -77,6 +78,17 @@ export const broadcastStatusEnum = pgEnum('broadcast_status', [
   // sets broadcasts.partial_delivery_accepted_at + _by_user_id.
   'partially_sent',
   'partial_delivery_accepted',
+  // F119 PR-2 (migration 0308, data-model § 7.1 + § 8.2) — the two-sided
+  // approval round. `in_design`, `changes_requested` and `member_approved`
+  // are marketing's turn, `awaiting_member_approval` the member's;
+  // `expired_no_member_response` is TERMINAL and reachable only from
+  // `awaiting_member_approval` (the day-30 tick). `approved` stays the only
+  // dispatchable status. Same order as the migration's ADD VALUE lines.
+  'in_design',
+  'awaiting_member_approval',
+  'changes_requested',
+  'member_approved',
+  'expired_no_member_response',
 ]);
 
 /**
@@ -261,6 +273,26 @@ export const broadcasts = pgTable(
       withTimezone: true,
     }),
 
+    // F119 PR-2 (migration 0308, data-model § 3) — the approval round.
+    // `proposedSendAt` is the member's proposal, written at submit and FROZEN
+    // after draft by `broadcasts_immutable_after_submit_fn` (F1). The other
+    // five are workflow bookkeeping, freely writable by the workflow and
+    // forbidden under the erasure GUC. `currentRound` counts versions SENT to
+    // the member (moves only on → awaiting_member_approval);
+    // `approvedVersionId` is SC-002's proof, set on member approval and
+    // cleared when that approval is voided or withdrawn;
+    // `memberReminderStage` 0 none · 1 day-3 · 2 day-7 · 3 day-23 warning.
+    proposedSendAt: timestamp('proposed_send_at', { withTimezone: true }),
+    stageEnteredAt: timestamp('stage_entered_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    currentRound: smallint('current_round').notNull().default(0),
+    approvedVersionId: uuid('approved_version_id'),
+    memberReminderStage: smallint('member_reminder_stage').notNull().default(0),
+    memberExpiryNotifiedAt: timestamp('member_expiry_notified_at', {
+      withTimezone: true,
+    }),
+
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -398,6 +430,32 @@ export const broadcasts = pgTable(
       .where(
         sql`audience_import_id IS NOT NULL AND audience_import_completed_at IS NULL`,
       ),
+
+    // F119 PR-2 (migration 0308, data-model § 3).
+    check(
+      'broadcasts_member_reminder_stage_check',
+      sql`${table.memberReminderStage} BETWEEN 0 AND 3`,
+    ),
+    // `broadcasts_approved_version_fk` — (tenant_id, approved_version_id) →
+    // broadcast_versions(tenant_id, id) — exists in migration 0308 but is NOT
+    // declared here: broadcast_versions already references broadcasts, and a
+    // back-reference makes the two table types circular (TS7022, both infer
+    // `any`). `db:generate` is abandoned, so the migration is the source.
+    // The dashboard's per-stage list + the stalled comparison (SC-008).
+    index('broadcasts_stage_queue_idx').on(
+      table.tenantId,
+      table.status,
+      table.stageEnteredAt.desc(),
+    ),
+    // The daily reminder / expiry scan and the oldest-age gauge.
+    index('broadcasts_awaiting_member_idx')
+      .on(table.tenantId, table.stageEnteredAt)
+      .where(sql`status = 'awaiting_member_approval'`),
+    // FK-column index (the 0302 lesson).
+    index('broadcasts_approved_version_idx').on(
+      table.tenantId,
+      table.approvedVersionId,
+    ),
   ],
 );
 
@@ -1012,3 +1070,169 @@ export const broadcastImages = pgTable(
 
 export type BroadcastImageRow = typeof broadcastImages.$inferSelect;
 export type NewBroadcastImageRow = typeof broadcastImages.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// F119 PR-2 — broadcast_versions (migration 0308, data-model § 1)
+// ---------------------------------------------------------------------------
+
+/**
+ * One row per version of an E-Blast's content. `version_no = 0` is the
+ * member's original, materialised lazily when marketing first starts
+ * formatting; `1..n` are marketing's formatted versions. `sent_to_member_at`
+ * NULL = the working copy (at most one per E-Blast — partial unique index);
+ * once set the row is read-only (FR-003), enforced by the
+ * `broadcast_versions_immutable_after_send_fn` trigger, which only the
+ * erasure GUC (`app.allow_broadcast_redaction`) relaxes, and then only for
+ * the four content columns. `updated_at` is the optimistic-concurrency token.
+ *
+ * No brand snapshot, by decision (FR-041c): brand chrome is applied live at
+ * render time, so a brand change never alters a version or voids an approval.
+ * RLS ENABLE + FORCE + the 0064 policy live in the migration.
+ */
+export const broadcastVersions = pgTable(
+  'broadcast_versions',
+  {
+    tenantId: text('tenant_id').notNull(),
+    id: uuid('id').defaultRandom().notNull(),
+    broadcastId: uuid('broadcast_id').notNull(),
+    versionNo: smallint('version_no').notNull(),
+    subject: text('subject').notNull(),
+    bodyHtml: text('body_html').notNull(),
+    bodySource: text('body_source').notNull(),
+    noteToMember: text('note_to_member'),
+    authoredByUserId: uuid('authored_by_user_id').notNull(),
+    authoredByRole: broadcastActorRoleEnum('authored_by_role').notNull(),
+    sentToMemberAt: timestamp('sent_to_member_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({
+      name: 'broadcast_versions_pkey',
+      columns: [table.tenantId, table.id],
+    }),
+    foreignKey({
+      name: 'broadcast_versions_broadcast_fk',
+      columns: [table.tenantId, table.broadcastId],
+      foreignColumns: [broadcasts.tenantId, broadcasts.broadcastId],
+    }).onDelete('cascade'),
+    check('broadcast_versions_version_no_check', sql`${table.versionNo} >= 0`),
+    check(
+      'broadcast_versions_subject_length',
+      sql`char_length(${table.subject}) BETWEEN 1 AND 200`,
+    ),
+    check(
+      'broadcast_versions_body_html_size',
+      sql`octet_length(${table.bodyHtml}) BETWEEN 1 AND 200 * 1024`,
+    ),
+    check(
+      'broadcast_versions_note_to_member_length',
+      sql`${table.noteToMember} IS NULL OR char_length(${table.noteToMember}) <= 1000`,
+    ),
+    uniqueIndex('broadcast_versions_broadcast_version_no_uniq').on(
+      table.tenantId,
+      table.broadcastId,
+      table.versionNo,
+    ),
+    uniqueIndex('broadcast_versions_one_unsent_idx')
+      .on(table.tenantId, table.broadcastId)
+      .where(sql`sent_to_member_at IS NULL`),
+    index('broadcast_versions_history_idx').on(
+      table.tenantId,
+      table.broadcastId,
+      table.versionNo.desc(),
+    ),
+    index('broadcast_versions_tenant_broadcast_idx').on(
+      table.tenantId,
+      table.broadcastId,
+    ),
+  ],
+);
+
+export type BroadcastVersionRow = typeof broadcastVersions.$inferSelect;
+export type NewBroadcastVersionRow = typeof broadcastVersions.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// F119 PR-2 — broadcast_member_decisions (migration 0308, data-model § 2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Append-only: one row per member action on one version (FR-009, FR-010,
+ * FR-015a). `reason` is the optional ≤ 500-char note on `approved` and the
+ * required 1–2,000-char reason otherwise — one CHECK carries both bounds.
+ * `broadcast_member_decisions_append_only_fn` refuses every UPDATE except a
+ * `reason`-only change under the erasure GUC, and every DELETE.
+ *
+ * Neither actor column carries an FK, by decision: `users` is cross-tenant
+ * (a composite key from a tenant-scoped table cannot reach it) and the
+ * contact is left unconstrained so SC-002's proof of who approved survives
+ * the contact's removal. RLS ENABLE + FORCE + the 0064 policy live in the
+ * migration.
+ */
+export const broadcastMemberDecisions = pgTable(
+  'broadcast_member_decisions',
+  {
+    tenantId: text('tenant_id').notNull(),
+    id: uuid('id').defaultRandom().notNull(),
+    broadcastId: uuid('broadcast_id').notNull(),
+    versionId: uuid('version_id').notNull(),
+    round: smallint('round').notNull(),
+    decision: text('decision', {
+      enum: ['approved', 'changes_requested', 'approval_withdrawn'],
+    }).notNull(),
+    reason: text('reason'),
+    decidedByUserId: uuid('decided_by_user_id').notNull(),
+    decidedByContactId: uuid('decided_by_contact_id').notNull(),
+    decidedAt: timestamp('decided_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({
+      name: 'broadcast_member_decisions_pkey',
+      columns: [table.tenantId, table.id],
+    }),
+    foreignKey({
+      name: 'broadcast_member_decisions_broadcast_fk',
+      columns: [table.tenantId, table.broadcastId],
+      foreignColumns: [broadcasts.tenantId, broadcasts.broadcastId],
+    }).onDelete('cascade'),
+    foreignKey({
+      name: 'broadcast_member_decisions_version_fk',
+      columns: [table.tenantId, table.versionId],
+      foreignColumns: [broadcastVersions.tenantId, broadcastVersions.id],
+    }).onDelete('cascade'),
+    check('broadcast_member_decisions_round_check', sql`${table.round} >= 1`),
+    check(
+      'broadcast_member_decisions_decision_check',
+      sql`${table.decision} IN ('approved', 'changes_requested', 'approval_withdrawn')`,
+    ),
+    check(
+      'broadcast_member_decisions_reason_check',
+      sql`(decision = 'approved' AND (reason IS NULL OR char_length(reason) BETWEEN 1 AND 500))
+       OR (decision <> 'approved' AND reason IS NOT NULL AND char_length(reason) BETWEEN 1 AND 2000)`,
+    ),
+    index('broadcast_member_decisions_thread_idx').on(
+      table.tenantId,
+      table.broadcastId,
+      table.decidedAt.desc(),
+    ),
+    index('broadcast_member_decisions_version_idx').on(
+      table.tenantId,
+      table.versionId,
+    ),
+    index('broadcast_member_decisions_contact_idx').on(
+      table.tenantId,
+      table.decidedByContactId,
+    ),
+  ],
+);
+
+export type BroadcastMemberDecisionRow =
+  typeof broadcastMemberDecisions.$inferSelect;
+export type NewBroadcastMemberDecisionRow =
+  typeof broadcastMemberDecisions.$inferInsert;

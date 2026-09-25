@@ -19,6 +19,9 @@ import { err, ok } from '@/lib/result';
 
 const pruneMock = vi.fn();
 const reclaimMock = vi.fn();
+// T130 — the route's third block (the approval lifecycle); its own wire is
+// pinned in `eblast-approval-lifecycle-cron.test.ts`. Here it just succeeds.
+const lifecycleMock = vi.fn();
 
 vi.mock('@/lib/tenant-context', () => ({
   resolveTenantFromRequest: () => ({ slug: 'test-tenant', __brand: true }),
@@ -34,7 +37,9 @@ vi.mock('@/modules/broadcasts', () => ({
   makePruneExpiredDraftsDeps: () => ({}),
   reclaimOrphanedImages: (...args: unknown[]) => reclaimMock(...args),
   makeReclaimOrphanedImagesDeps: () => ({}),
+  expireStaleMemberApprovals: (...args: unknown[]) => lifecycleMock(...args),
 }));
+vi.mock('@/lib/broadcast-approval-deps', () => ({ makeExpireStaleMemberApprovalsDeps: () => ({}) }));
 
 function req(method: 'GET' | 'POST', auth = 'Bearer cron-secret-for-test'): NextRequest {
   return new NextRequest('http://localhost/api/cron/broadcasts/prune-expired-drafts', {
@@ -49,6 +54,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   pruneMock.mockResolvedValue(ok({ prunedCount: 2, cutoff: '2026-08-19T00:00:00.000Z' }));
   reclaimMock.mockResolvedValue(ok({ scanned: 3, blobsDeleted: 1, rowsRemoved: 3 }));
+  lifecycleMock.mockResolvedValue(ok({ scanned: 0, remindersSent: 0, warningsSent: 0, expired: 0, rowsFailed: 0 }));
 });
 afterEach(() => vi.clearAllMocks());
 
@@ -120,5 +126,6 @@ describe('prune-expired-drafts — image sweep block (T035)', () => {
     expect(res.status).toBe(401);
     expect(pruneMock).not.toHaveBeenCalled();
     expect(reclaimMock).not.toHaveBeenCalled();
+    expect(lifecycleMock).not.toHaveBeenCalled();
   });
 });

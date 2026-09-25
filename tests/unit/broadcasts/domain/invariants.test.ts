@@ -65,6 +65,12 @@ const baseBroadcast: Broadcast = {
   partialDeliveryAcceptedAt: null,
   partialDeliveryAcceptedByUserId: null,
   templateProvenance: null,
+  proposedSendAt: null,
+  stageEnteredAt: new Date('2026-01-01T00:00:00Z'),
+  currentRound: 0,
+  approvedVersionId: null,
+  memberReminderStage: 0,
+  memberExpiryNotifiedAt: null,
   createdAt: new Date('2026-01-01'),
   updatedAt: new Date('2026-01-01'),
 };
@@ -210,6 +216,49 @@ describe('enforceOneActiveBroadcastState', () => {
       cancelledByUserId: 'member-user',
     });
     expect(result.ok).toBe(true);
+  });
+
+  // F119 T051 — the five 0308 statuses: submitted, never sending/sent/closed,
+  // no quota consumed. `approvedAt` is deliberately unconstrained — the
+  // `approved → in_design | changes_requested` edges keep it.
+  const approvalRoundStatuses = [
+    'in_design',
+    'awaiting_member_approval',
+    'changes_requested',
+    'member_approved',
+    'expired_no_member_response',
+  ] as const;
+
+  it.each(approvalRoundStatuses)('ok on %s with only submittedAt (and a surviving approvedAt)', (status) => {
+    const now = new Date();
+    expect(enforceOneActiveBroadcastState({ ...baseBroadcast, status, submittedAt: now }).ok).toBe(true);
+    expect(
+      enforceOneActiveBroadcastState({
+        ...baseBroadcast,
+        status,
+        submittedAt: now,
+        approvedAt: now,
+        approvedByUserId: 'admin-1',
+      }).ok,
+    ).toBe(true);
+  });
+
+  it.each(approvalRoundStatuses)('rejects %s without submittedAt or with a send-stage timestamp', (status) => {
+    const now = new Date();
+    const unsubmitted = enforceOneActiveBroadcastState({ ...baseBroadcast, status });
+    expect(unsubmitted.ok).toBe(false);
+    if (!unsubmitted.ok) {
+      expect(unsubmitted.error.violations).toEqual([
+        `submittedAt expected non-NULL in status='${status}' but was NULL`,
+      ]);
+    }
+    const sending = enforceOneActiveBroadcastState({
+      ...baseBroadcast,
+      status,
+      submittedAt: now,
+      sendingStartedAt: now,
+    });
+    expect(sending.ok).toBe(false);
   });
 });
 

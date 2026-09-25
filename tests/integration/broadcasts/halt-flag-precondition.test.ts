@@ -10,6 +10,7 @@
  * Live-DB cross-tenant + RLS coverage lives in `tenant-isolation.test.ts`.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { makeFakeEblastOutbox, makeFakeMarketingDirectory } from '../../helpers/eblast-approval-fakes';
 import { ok, err } from '@/lib/result';
 import { submitBroadcast } from '@/modules/broadcasts';
 import { clearHalt } from '@/modules/broadcasts/application/use-cases/clear-halt';
@@ -305,6 +306,9 @@ describe('halt-flag precondition (T051)', () => {
         rateLimiter,
         audit: auditPort,
         clock: { now: () => FROZEN_NOW },
+        // F119 T129 — the submit's marketing hand-off (no roster here).
+        marketingDirectory: makeFakeMarketingDirectory([]),
+        eblastOutbox: makeFakeEblastOutbox(),
       },
       baseInput,
     );
@@ -332,6 +336,9 @@ describe('halt-flag precondition (T051)', () => {
         rateLimiter,
         audit: auditPort,
         clock: { now: () => FROZEN_NOW },
+        // F119 T129 — the submit's marketing hand-off (no roster here).
+        marketingDirectory: makeFakeMarketingDirectory([]),
+        eblastOutbox: makeFakeEblastOutbox(),
       },
       baseInput,
     );
@@ -356,6 +363,9 @@ describe('halt-flag precondition (T051)', () => {
         rateLimiter,
         audit: auditPort,
         clock: { now: () => FROZEN_NOW },
+        // F119 T129 — the submit's marketing hand-off (no roster here).
+        marketingDirectory: makeFakeMarketingDirectory([]),
+        eblastOutbox: makeFakeEblastOutbox(),
       },
       baseInput,
     );
@@ -400,6 +410,9 @@ describe('halt-flag precondition (T051)', () => {
         rateLimiter,
         audit: auditPort,
         clock: { now: () => FROZEN_NOW },
+        // F119 T129 — the submit's marketing hand-off (no roster here).
+        marketingDirectory: makeFakeMarketingDirectory([]),
+        eblastOutbox: makeFakeEblastOutbox(),
       },
       baseInput,
     );
@@ -455,6 +468,9 @@ describe('halt-flag precondition (T051)', () => {
         rateLimiter,
         audit: auditPort,
         clock: { now: () => FROZEN_NOW },
+        // F119 T129 — the submit's marketing hand-off (no roster here).
+        marketingDirectory: makeFakeMarketingDirectory([]),
+        eblastOutbox: makeFakeEblastOutbox(),
       },
       baseInput,
     );

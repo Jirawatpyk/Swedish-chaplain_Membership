@@ -1,7 +1,7 @@
 /**
  * T028 — `AuditPort` Application port (F7 MVP) + T031 F7.1a extension.
  *
- * 59 live audit event types (55 before F119) as a const tuple + discriminated union for
+ * 69 live audit event types (55 before F119) as a const tuple + discriminated union for
  * compile-time safety on emit sites. Mirror of F4 audit-port pattern,
  * but ALL F7 events default to **5-year retention** (no tax-document
  * overlap; F7 is operational + marketing-consent + privacy events).
@@ -40,17 +40,21 @@
  *   - 059-membership-suspension Task 8: 1 event
  *     (`broadcast_membership_suspended_blocked`, migration 0246)
  *   - F119 PR-1 (migration 0304): 4 events — test copy, brand settings
- *     changed, image uploaded, image removed. The ten PR-2 workflow events
- *     ship with 0305.
- *   = 65 declared, minus the 6 RETIRED batch events kept only in
- *   `RETIRED_F7_AUDIT_EVENT_TYPES` = **59 live** (this tuple). Static-assert
- *   below (`extends 59`) is the source of truth; the header summary is
+ *     changed, image uploaded, image removed.
+ *   - F119 PR-2 (migration 0308): 10 events — the two-sided approval round
+ *     (version started / sent to member, member approved / changes requested
+ *     / approval withdrawn, approval voided, schedule confirmed, reminder
+ *     sent, expiry warned, expired).
+ *   = 75 declared, minus the 6 RETIRED batch events kept only in
+ *   `RETIRED_F7_AUDIT_EVENT_TYPES` = **69 live** (this tuple). Static-assert
+ *   below (`extends 69`) is the source of truth; the header summary is
  *   informational only and should be re-derived when the assert changes. R4.3 M-8 fixed
  *   the "10" → "11" double-count drift that R3.5 M-8 missed.
  *
  * Pure interface — no framework imports (Constitution Principle III).
  */
 import type { BroadcastImageOwnerKind } from './broadcast-images-repo';
+import type { BroadcastStatus } from '../../domain/value-objects/broadcast-status';
 
 export const F7_AUDIT_EVENT_TYPES = [
   // --- Draft / submission (US1) — 16 events (R7 LOW-S1: was 15 pre-R6) -
@@ -192,15 +196,34 @@ export const F7_AUDIT_EVENT_TYPES = [
   'broadcast_brand_settings_changed',
   'broadcast_image_uploaded',
   'broadcast_image_removed',
+
+  // --- F119 PR-2 (migration 0308) — the two-sided approval round — 10 events
+  // Actor, member key and payload per event are fixed by the table in
+  // specs/119-eblast-approval-workflow/contracts/dashboard-and-notifications.md
+  // (its single source of truth): the member's own three decisions carry
+  // snake_case `member_id` (the 0009 `last_activity_at` trigger key —
+  // #336/#337 rule), staff and daily-tick acts `related_member_id`. Payloads
+  // carry ids, rounds and lengths — never the subject, the body or a
+  // reason's text. Emitters: T056–T060, T078, T130.
+  'broadcast_version_started',
+  'broadcast_version_sent_to_member',
+  'broadcast_member_approved',
+  'broadcast_member_changes_requested',
+  'broadcast_member_approval_withdrawn',
+  'broadcast_member_approval_voided',
+  'broadcast_schedule_confirmed',
+  'broadcast_approval_reminder_sent',
+  'broadcast_approval_expiry_warned',
+  'broadcast_approval_expired',
 ] as const;
 
 /**
- * Static assertion: the tuple length is 59. The authoritative per-category
- * breakdown is the file-header taxonomy above (it nets to 59 live); this
+ * Static assertion: the tuple length is 69. The authoritative per-category
+ * breakdown is the file-header taxonomy above (it nets to 69 live); this
  * assert is the enforced source of truth. If a spec amendment adds/removes
  * an event, update the tuple, this literal, and the header taxonomy —
- * TypeScript errors here ("Type '60' is not assignable to type '59'") if
- * the count drifts. (F119 T022: 55 → 59; T050 takes it 59 → 69.)
+ * TypeScript errors here ("Type '70' is not assignable to type '69'") if
+ * the count drifts. (F119 T022: 55 → 59; T050: 59 → 69.)
  *
  * (The previous inline arithmetic here was dropped — it double-counted
  * `broadcast_image_unsafe`, which is already inside the "11 F7.1a
@@ -248,7 +271,7 @@ export const RETIRED_F7_AUDIT_EVENT_TYPES = [
 export type RetiredF7AuditEventType =
   (typeof RETIRED_F7_AUDIT_EVENT_TYPES)[number];
 
-type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 59
+type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 69
   ? true
   : never;
 const _assertF7AuditEventCount: _AssertF7AuditEventCount = true;
@@ -371,7 +394,7 @@ export interface F7AuditPayloadShapes {
      * groups on it. The comment is now the type. A new surface adds its member
      * here.
      */
-    readonly operation?: 'image_upload' | 'snapshot_template';
+    readonly operation?: 'image_upload' | 'snapshot_template' | 'member_decision' | 'version_thread';
   };
   readonly broadcast_webhook_batch_missing: {
     readonly broadcastId: string;
@@ -446,6 +469,15 @@ export interface F7AuditPayloadShapes {
      * count out of it made that axis invisible in the evidence.
      */
     readonly images_marked: number;
+    /**
+     * F119 T082 — the approval round's reach (research R17): versions whose
+     * content / note was redacted, decisions whose reason was redacted (rows
+     * kept — SC-002's proof), and pending `eblast_*` hand-offs removed. Counts
+     * only; never a subject, a note or a reason.
+     */
+    readonly versions_redacted: number;
+    readonly decision_reasons_redacted: number;
+    readonly notifications_cancelled: number;
     readonly reason:
       | 'originator_member_deleted'
       | 'gdpr_erasure_request'
@@ -495,7 +527,9 @@ export interface F7AuditPayloadShapes {
   readonly broadcast_image_removed: F119ImageRemovedCommon &
     (
       | {
-          readonly reason: 'draft_discarded' | 'draft_pruned' | 'member_erased';
+          // F119 T081 — `withdrawn` (member withdrawal / staff cancel) and
+          // `rejected` (staff rejection) stamp in the same tx as the state change.
+          readonly reason: 'draft_discarded' | 'draft_pruned' | 'member_erased' | 'withdrawn' | 'rejected';
           readonly blob_deleted: false;
           readonly blob_disposition?: never;
           readonly actor_role: string | null;
@@ -507,6 +541,127 @@ export interface F7AuditPayloadShapes {
           readonly actor_role: 'system';
         }
     );
+  // ── F119 PR-2 — the approval round (contracts/dashboard-and-notifications.md
+  // § 2, the single source of truth for these field lists). Staff actions, so
+  // the member key is `related_member_id` — a staff edit is not member
+  // activity and must not fire the 0009 `last_activity_at` trigger. Ids,
+  // rounds and stages only: never the subject, body, note or reason text.
+  //
+  // T056 — marketing opened a working copy. `round` is the round the new
+  // working copy becomes when it is sent (its `version_no`); `from_stage` is
+  // the status the row left.
+  readonly broadcast_version_started: {
+    readonly related_member_id: string;
+    readonly broadcast_id: string;
+    readonly version_id: string;
+    readonly round: number;
+    readonly from_stage: BroadcastStatus;
+    readonly actor_role: string | null;
+  };
+  // T057 — opening a new working copy after the member approved voids that
+  // approval (FR-012): `approved_version_id` and `scheduled_for` are cleared
+  // in the same transaction. `round` is the round that was approved;
+  // `cancelled_schedule_at` the send time that no longer stands (ISO), if any.
+  readonly broadcast_member_approval_voided: {
+    readonly related_member_id: string;
+    readonly broadcast_id: string;
+    readonly voided_version_id: string | null;
+    readonly round: number;
+    readonly cancelled_schedule_at: string | null;
+    readonly actor_role: string | null;
+  };
+  // T059 — marketing sent a version to the member; a round starts. `round` is
+  // the new `current_round` (= the version's `version_no`); `note_length`
+  // is the covering note's length, never its text; `notified` says whether
+  // the member's outbox row was enqueued in the same transaction.
+  readonly broadcast_version_sent_to_member: {
+    readonly related_member_id: string;
+    readonly broadcast_id: string;
+    readonly version_id: string;
+    readonly round: number;
+    readonly note_length: number;
+    readonly notified: boolean;
+    readonly actor_role: string | null;
+  };
+  // T078 — the member's decision on the version they were shown. A MEMBER
+  // action, so the key is snake_case `member_id`: the 0009 `last_activity_at`
+  // trigger reads that key and no other (#336/#337). An approval carries its
+  // optional note's LENGTH (`note_length`, 0 when none); a change request and
+  // a withdrawn approval carry their mandatory reason's LENGTH — never the
+  // text. `actor_role` is the session role (`?? null`), never a literal.
+  readonly broadcast_member_approved: {
+    readonly member_id: string;
+    readonly broadcast_id: string;
+    readonly version_id: string;
+    readonly round: number;
+    readonly note_length: number;
+    readonly actor_role: string | null;
+  };
+  readonly broadcast_member_changes_requested: {
+    readonly member_id: string;
+    readonly broadcast_id: string;
+    readonly version_id: string;
+    readonly round: number;
+    readonly reason_length: number;
+    readonly actor_role: string | null;
+  };
+  // `cancelled_schedule_at` — the send time the withdrawal cleared (ISO), if
+  // any (FR-015a: "a confirmed schedule is cancelled").
+  readonly broadcast_member_approval_withdrawn: {
+    readonly member_id: string;
+    readonly broadcast_id: string;
+    readonly version_id: string;
+    readonly round: number;
+    readonly reason_length: number;
+    readonly cancelled_schedule_at: string | null;
+    readonly actor_role: string | null;
+  };
+  // T060 — marketing confirmed, changed or cancelled the send time.
+  // `version_id` is the approved version (the promoted one on the
+  // `member_approved → approved` edge — the SC-002 link). The member's
+  // proposal is quoted as it stands (frozen, FR-016); a `cancel` confirms no
+  // time, so it carries `confirmed_send_at: null` and `differs: false`.
+  readonly broadcast_schedule_confirmed: {
+    readonly related_member_id: string;
+    readonly broadcast_id: string;
+    readonly version_id: string;
+    readonly proposed_send_at: string | null;
+    readonly actor_role: string | null;
+  } & (
+    | {
+        readonly mode: 'keep_proposal' | 'schedule' | 'send_now';
+        readonly confirmed_send_at: string;
+        readonly differs: boolean;
+      }
+    | { readonly mode: 'cancel'; readonly confirmed_send_at: null; readonly differs: false }
+  );
+  // T130 — the daily approval-lifecycle tick (contracts § 2, § 5). SYSTEM
+  // rows: `actor_role` is the literal `'system'` (the cron holds no session
+  // role — the image sweep's precedent), and the member key is
+  // `related_member_id`, because a cron step is not member activity and must
+  // not refresh the 0009 `last_activity_at` clock. `version_id` / `round` name
+  // the version whose clock ran; `days_waiting` is whole days since it was
+  // sent. Emitted once per E-Blast per step, on the row's own transaction.
+  readonly broadcast_approval_reminder_sent: F119LifecycleCommon & {
+    readonly reminder: 'day3' | 'day7';
+  };
+  readonly broadcast_approval_expiry_warned: F119LifecycleCommon & {
+    readonly days_waiting: number;
+  };
+  readonly broadcast_approval_expired: F119LifecycleCommon & {
+    readonly days_waiting: number;
+    /** Always true: `expired_no_member_response` is in neither the reserved nor the consumed set. */
+    readonly allowance_released: true;
+  };
+}
+
+/** The fields the three approval-lifecycle rows share (T130). */
+export interface F119LifecycleCommon {
+  readonly related_member_id: string;
+  readonly broadcast_id: string;
+  readonly version_id: string;
+  readonly round: number;
+  readonly actor_role: 'system';
 }
 
 /** `broadcast_brand_settings_changed` — the two fields a brand save can change. */
@@ -636,7 +791,7 @@ export interface AuditPort {
    * same `vi.fn()` so behaviour mirrors).
    *
    * R6.7 M12 — generic constraint tightened from `F7AuditEventType`
-   * (all 59 events) to `keyof F7AuditPayloadShapes` (17 typed events since F119).
+   * (all 69 events) to `keyof F7AuditPayloadShapes` (27 typed events since F119 PR-2).
    * Pre-R6.7 a call site could pass `emitTyped(tx, { eventType:
    * 'broadcast_drafted', payload: { whatever } })` and the payload
    * silently fell back to `Record<string, unknown>` via a now-retired

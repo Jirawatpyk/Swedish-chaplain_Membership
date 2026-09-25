@@ -18,9 +18,8 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import {
-  asHostname,
+  evaluateImageSources,
   extractImgSources,
-  validateHostname,
 } from '../../domain/value-objects/image-source-allowlist';
 import type { ImageAllowlistPort } from '../ports/image-allowlist-port';
 import type { AuditPort } from '../ports/audit-port';
@@ -52,37 +51,39 @@ export async function validateImageSourceAllowlist(
   if (sources.length === 0) return ok(undefined);
 
   const allowlist = await deps.allowlistPort.findByTenantId(input.tenantId);
-  const unsafe: string[] = [];
-
-  for (const { src } of sources) {
-    let hostname: string;
-    try {
-      hostname = new URL(src).hostname.toLowerCase();
-    } catch {
-      unsafe.push(src);
-      continue;
-    }
-    const hRes = asHostname(hostname);
-    if (!hRes.ok) {
-      unsafe.push(src);
-      continue;
-    }
-    const vRes = validateHostname(hRes.value, allowlist);
-    if (!vRes.ok) unsafe.push(src);
-  }
+  // F119 — the rule itself is the Domain's (`evaluateImageSources`), shared
+  // with the approval round's send and promotion re-checks.
+  const unsafe = evaluateImageSources(input.bodyHtml, allowlist).map((image) => image.src);
 
   if (unsafe.length === 0) return ok(undefined);
 
+  await emitUnsafeImageSourcesAudit(deps.audit, { ...input, unsafeImageSources: unsafe });
+
+  return err({ kind: 'unsafe_image_sources', unsafeImageSources: unsafe });
+}
+
+/**
+ * The refusal audit, shared with the F119 approval round (save / send /
+ * promotion), which evaluate the body against a pre-read allow-list instead
+ * of calling the validator above. Offending srcs only — never the body.
+ */
+export async function emitUnsafeImageSourcesAudit(
+  audit: AuditPort,
+  input: {
+    readonly tenantId: TenantSlug;
+    readonly actorUserId: string;
+    readonly requestId: string;
+    readonly unsafeImageSources: readonly string[];
+  },
+): Promise<void> {
   // PR-review fix 2026-05-20 SF-H4: safeAuditEmit preserves the
   // submit-rejection effect even when audit storage hiccups.
-  await safeAuditEmit(deps.audit, null, {
+  await safeAuditEmit(audit, null, {
     eventType: 'broadcast_body_image_source_unsafe',
     actorUserId: input.actorUserId,
     tenantId: input.tenantId,
-    summary: `Broadcast body has ${unsafe.length} non-allowlisted image source(s)`,
-    payload: { unsafeImageSources: unsafe },
+    summary: `Broadcast body has ${input.unsafeImageSources.length} non-allowlisted image source(s)`,
+    payload: { unsafeImageSources: [...input.unsafeImageSources] },
     requestId: input.requestId,
   });
-
-  return err({ kind: 'unsafe_image_sources', unsafeImageSources: unsafe });
 }

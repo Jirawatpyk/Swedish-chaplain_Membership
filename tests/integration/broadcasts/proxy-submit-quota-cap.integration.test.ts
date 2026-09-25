@@ -28,6 +28,7 @@
  *   - `runInTenant(ctx, tx => ...)` for every RLS-scoped seed write
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { makeFakeMarketingDirectory } from '../../helpers/eblast-approval-fakes';
 import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { runInTenant } from '@/lib/db';
@@ -157,7 +158,7 @@ describe('DV-4 / T-10 — admin_proxy honours member quota cap (live Neon)', () 
   });
 
   it('admin_proxy at the member cap is blocked (no free broadcast)', async () => {
-    const deps = makeProxySubmitBroadcastDeps(tenant.ctx.slug);
+    const deps = makeProxySubmitBroadcastDeps(tenant.ctx.slug, makeFakeMarketingDirectory([]));
 
     const result = await proxySubmitBroadcast(deps, {
       proxiedMemberId: memberId,
@@ -304,7 +305,7 @@ describe('DV-4 / T-10 — admin_proxy honours member quota cap (live Neon)', () 
       } satisfies NewBroadcastRow),
     );
 
-    const deps = makeProxySubmitBroadcastDeps(tenant.ctx.slug);
+    const deps = makeProxySubmitBroadcastDeps(tenant.ctx.slug, makeFakeMarketingDirectory([]));
     const result = await proxySubmitBroadcast(deps, {
       proxiedMemberId: partialMemberId,
       adminUserId: admin.userId,

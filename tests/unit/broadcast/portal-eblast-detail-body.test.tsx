@@ -20,7 +20,7 @@
  *
  * PR-1 scope (plan Amendment 5): the body is the broadcast RECORD's own
  * content. "the latest sent version while awaiting the member" needs
- * `broadcast_versions` (migration 0305) and is asserted by T141a in PR-2.
+ * `broadcast_versions` (migration 0308) and is asserted by T141a in PR-2.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -55,6 +55,21 @@ vi.mock('@/lib/logger', () => ({
 vi.mock('@/components/broadcast/cancel-broadcast-action', () => ({
   CancelBroadcastAction: () => null,
 }));
+// F119 T086 — the sign-off islands and the thread are pinned by
+// `portal-eblast-sign-off-page.test.tsx`; here they are inert.
+vi.mock('@/components/broadcast/approval/member-sign-off-actions', () => ({
+  MemberSignOffActions: () => null,
+}));
+vi.mock('@/components/broadcast/approval/version-thread', () => ({
+  VersionThread: () => null,
+  memberThreadModel: () => ({ original: null, rounds: [], approvedAsSubmitted: null }),
+  hasThreadHistory: () => false,
+}));
+vi.mock('@/lib/broadcast-approval-deps', () => ({ makeGetMemberVersionThreadDeps: () => ({}) }));
+// UX review M5 — the Back link's access read (pinned by the sign-off page test).
+vi.mock('@/lib/load-membership-access', () => ({
+  loadMembershipAccess: async () => ({ access: 'full', reason: 'in_good_standing' }),
+}));
 
 const findByLinkedUserId = vi.fn();
 vi.mock('@/modules/members/members-deps', () => ({
@@ -63,8 +78,35 @@ vi.mock('@/modules/members/members-deps', () => ({
 
 const getMemberBroadcastMock = vi.fn();
 const renderBroadcastPreviewMock = vi.fn();
-vi.mock('@/modules/broadcasts', () => ({
+// F119 T051 — the page gates Cancel on the Domain `canCancel`; the real
+// policy, not a copy of its rule.
+vi.mock('@/modules/broadcasts', async () => ({
+  canCancel: (
+    await vi.importActual<typeof import('@/modules/broadcasts/domain/policies/cancel-cutoff-policy')>(
+      '@/modules/broadcasts/domain/policies/cancel-cutoff-policy',
+    )
+  ).canCancel,
   getMemberBroadcast: (...args: unknown[]) => getMemberBroadcastMock(...args),
+  // F119 T086 — a `sent` E-Blast approved as submitted: no version rows, so
+  // the page shows the record's own content (no compare view).
+  getMemberVersionThread: async () => ({
+    ok: true as const,
+    value: {
+      summary: {
+        stage: 'sent',
+        whoseTurn: null,
+        round: 0,
+        proposedSendAt: null,
+        confirmedSendAt: null,
+        approvedVersionId: null,
+        stageEnteredAt: new Date('2026-09-02T03:00:00.000Z'),
+        expiresAt: null,
+      },
+      versions: [],
+      decisions: [],
+      approvedAsSubmitted: null,
+    },
+  }),
   makeGetMemberBroadcastDeps: () => ({}),
   parseBroadcastId: (id: string) => ({ ok: true as const, value: id }),
   renderBroadcastPreview: (...args: unknown[]) =>

@@ -9,7 +9,7 @@
  * resend-verification-button.test.tsx).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, cleanup, fireEvent, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
@@ -177,11 +177,13 @@ describe('CancelBroadcastDialog (admin, reasonRequired=true)', () => {
     expect(refreshSpy).toHaveBeenCalled();
   });
 
-  it('409 broadcast_cancel_too_late → toasts cancelTooLate', async () => {
+  // Whole-branch review HIGH-2 — T081 answers `sending_started` for a row
+  // already sending; the legacy code still answers for a closed E-Blast.
+  it.each(['broadcast_cancel_too_late', 'sending_started'])('409 %s → toasts cancelTooLate', async (code) => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: false,
       status: 409,
-      json: async () => ({ error: { code: 'broadcast_cancel_too_late' } }),
+      json: async () => ({ error: { code } }),
     } as unknown as Response);
     renderAdmin();
     fireEvent.change(
@@ -227,7 +229,10 @@ describe('CancelBroadcastDialog (admin, reasonRequired=true)', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it('non-409 server error → toasts cancelError', async () => {
+  // F119 UX review H1 — a refusal that keeps the dialog open is said INSIDE
+  // it (ux-standards § 6.4): a toast renders outside the modal, which hides
+  // everything outside itself from AT.
+  it('non-409 server error → cancelError inline in the open dialog, not a toast', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: false,
       status: 500,
@@ -244,11 +249,24 @@ describe('CancelBroadcastDialog (admin, reasonRequired=true)', () => {
     fireEvent.click(
       screen.getByRole('button', { name: en.admin.broadcasts.cancelDialog.confirm }),
     );
-    await waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith(
-        en.admin.broadcasts.toast.cancelError,
-      ),
+    const alert = await within(screen.getByRole('alertdialog')).findByText(en.admin.broadcasts.toast.cancelError);
+    expect(alert.closest('[role="alert"]')).not.toBeNull();
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('network throw → cancelError inline, dialog kept open for retry', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('Failed to fetch'));
+    const onOpenChange = vi.fn();
+    renderMember({ onOpenChange });
+    typePhrase(MEMBER);
+    fireEvent.click(screen.getByRole('button', { name: MEMBER.confirm }));
+    const alert = await within(screen.getByRole('alertdialog')).findByText(
+      en.portal.broadcasts.detail.toast.cancelError,
     );
+    expect(alert.closest('[role="alert"]')).not.toBeNull();
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+    expect(refreshSpy).not.toHaveBeenCalled();
   });
 
   it('trims the reason before sending (whitespace not persisted to the audit)', async () => {
@@ -299,7 +317,7 @@ describe('CancelBroadcastDialog (admin, reasonRequired=true)', () => {
     expect(refreshSpy).toHaveBeenCalled();
   });
 
-  it('5xx transient → toasts cancelError but KEEPS the dialog open (no close/refresh)', async () => {
+  it('5xx transient → cancelError inline and KEEPS the dialog open (no close/refresh)', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: false,
       status: 500,
@@ -317,9 +335,8 @@ describe('CancelBroadcastDialog (admin, reasonRequired=true)', () => {
     fireEvent.click(
       screen.getByRole('button', { name: en.admin.broadcasts.cancelDialog.confirm }),
     );
-    await waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith(en.admin.broadcasts.toast.cancelError),
-    );
+    await within(screen.getByRole('alertdialog')).findByText(en.admin.broadcasts.toast.cancelError);
+    expect(toast.error).not.toHaveBeenCalled();
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
     expect(refreshSpy).not.toHaveBeenCalled();
   });
@@ -421,11 +438,11 @@ describe('CancelBroadcastDialog (member, reasonRequired=false)', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it('member 409 too_late → toasts cancelTooLate', async () => {
+  it.each(['broadcast_cancel_too_late', 'sending_started'])('member 409 %s → toasts cancelTooLate', async (code) => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: false,
       status: 409,
-      json: async () => ({ error: { code: 'broadcast_cancel_too_late' } }),
+      json: async () => ({ error: { code } }),
     } as unknown as Response);
     renderMember();
     typePhrase(MEMBER);

@@ -36,15 +36,45 @@
  * cascade already ran), returns ok({cancelledCount: 0}). Safe to call
  * multiple times.
  *
- * Concurrency: each broadcast row is transitioned independently. If a
- * dispatch worker races us to flip an `approved` → `sending` between
- * the `listInFlightOwnedByMember` snapshot and our `applyTransition`,
- * `applyTransition` THROWS `BroadcastConcurrentMutationError` (the
- * repo guards on observed-status mismatch via `WHERE status = $prev`
- * + `RETURNING`) and the broadcast is skipped — it will deliver
- * normally because the member archive happened after the dispatch
- * decision. The skip is audited as `broadcast_concurrent_action_blocked`
- * for forensic trail. Any other exception is treated as
+ * Concurrency: each broadcast row is transitioned independently. If
+ * another writer moves the row between the `listInFlightOwnedByMember`
+ * snapshot and our `applyTransition`, `applyTransition` THROWS
+ * `BroadcastConcurrentMutationError` (the repo guards on observed-status
+ * mismatch via `WHERE status = $prev` + `RETURNING`). The error's
+ * `observedStatus` is NOT evidence of where the row went (`applyTransition`
+ * passes its own expected status through), so the row is RE-READ
+ * (F119 T166 R-M3):
+ *   - it left the in-progress set (a dispatch worker flipped it to
+ *     `sending`, an admin closed it, it is gone) → skipped, audited as
+ *     `broadcast_concurrent_action_blocked` — it delivers or closes on its
+ *     own;
+ *   - it is STILL in progress — F119 added winners that leave it there (a
+ *     new working copy, a send to the member, a confirmation, the expiry) →
+ *     cancelled again from the status just read, up to `CASCADE_CAS_RETRIES`
+ *     more times. Still in progress after that, or a re-read that fails, is
+ *     counted as an unexpected error: the adapter reports
+ *     `cascade_partial_failure`, `erase-member` does not mark the erasure
+ *     complete, and the US2 reconciler re-drives it. Skipping it would leave
+ *     an erased member's E-Blast in the round, or dispatched with
+ *     `[redacted]` content after the scrub.
+ *
+ * Each attempt LOCKS the row and reads it inside its tx before the CAS (PR
+ * #392 review D1, the pattern `cancel-broadcast.ts` took in round-4 B4). The
+ * dispatch leg commits its own lock, then attaches the Resend id in a later
+ * tx and calls `sendBroadcast` with no lock held — possibly not until the
+ * next tick after a retryable failure. A status-only CAS on `approved`
+ * matched such a row, so it read `cancelled` and freed the allowance while
+ * the email went out. Under the lock the read sees the attach, and an
+ * `approved` row that already has a Resend broadcast (`resend_broadcast_id`)
+ * is left to deliver: skipped and audited `broadcast_concurrent_action_blocked`
+ * (`dispatchBegun: true`), exactly like a row that moved on to `sending`.
+ *
+ * Narrower than `hasDispatchBegun` on purpose: an import-leg row with ONLY
+ * `audience_import_id` has no email minted yet, and every audience tick
+ * re-checks `approved` under its own lock before `createBroadcast`. Cancelling
+ * it is safe, and skipping it would let that tick mint the email from the
+ * row the erasure scrub has just redacted (`[redacted]` content).
+ * Any other exception is treated as
  * unexpected-error: the broadcast remains in flight, the cascade
  * continues to the next broadcast (best-effort), and the
  * `broadcasts.cascade.outcome{outcome=unexpected_error}` counter is
@@ -54,9 +84,12 @@
 import { err, ok, type Result } from '@/lib/result';
 import { broadcastsMetrics } from '@/lib/metrics';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import type { MemberId } from '@/modules/members';
 import type { Broadcast } from '../../domain/broadcast';
+import { isInProgress } from '../../domain/stage/in-progress-statuses';
+import type { BroadcastStatus } from '../../domain/value-objects/broadcast-status';
 import type { AuditPort } from '../ports/audit-port';
 import {
   BroadcastConcurrentMutationError,
@@ -121,6 +154,13 @@ export interface CancelInFlightForMemberDeps {
 }
 
 const SYSTEM_ACTOR_USER_ID = 'system';
+
+/**
+ * T166 R-M3 — how many times a lost CAS on a row that is STILL in progress is
+ * re-read and retried before the row is counted as an unexpected error (and
+ * so re-driven by the US2 reconciler). Each retry is a fresh short tx.
+ */
+export const CASCADE_CAS_RETRIES = 3;
 const DEFAULT_REASON = 'originator_member_deleted';
 
 function cascadeReasonSummary(reason: CascadeCancellationReason): string {
@@ -163,12 +203,31 @@ export async function cancelInFlightBroadcastsForMember(
 
     let unexpectedErrorCount = 0;
 
-    for (const broadcast of inFlight) {
-      // Each broadcast cancelled in its own short tx so a single race
-      // does not roll back the whole cascade. F3 archival audit on
-      // the member row is independent.
-      await deps.broadcastsRepo.withTx(async (tx) => {
-        try {
+    /**
+     * One cancel attempt in its own tx. `lost` = the CAS matched nothing, or
+     * the row is gone (the caller re-reads); `dispatch_begun` = the locked row
+     * is `approved` and already handed over (D1 — the caller skips it); every
+     * other outcome is final and already counted.
+     *
+     * F119 round-4 B6 — every throw LEAVES the tx, so the tx rolls back. The
+     * attempt used to catch inside `withTx` and return normally, which
+     * COMMITTED a cancel whose `broadcast_cancelled` audit emit had thrown: a
+     * cancel with no audit row. The counters move only once the tx committed.
+     */
+    const cancelOnce = async (
+      broadcast: Broadcast,
+      fromStatus: BroadcastStatus,
+    ): Promise<{ readonly kind: 'cancelled' | 'lost' | 'dispatch_begun' | 'unexpected' }> => {
+      try {
+        const handedOver = await deps.broadcastsRepo.withTx(async (tx) => {
+          // D1 — lock, THEN read: an in-flight attach commits before this read
+          // returns, so its id is seen. Nothing is written on the skip, so the
+          // tx ends clean. The CAS below stays on `fromStatus`; a locked row
+          // at any other status fails it and takes the caller's re-read.
+          await deps.broadcastsRepo.lockForUpdate(tx, input.tenant.slug, broadcast.broadcastId);
+          const locked = await deps.broadcastsRepo.findByIdInTx(tx, input.tenant.slug, broadcast.broadcastId);
+          if (locked === null) throw new BroadcastConcurrentMutationError(input.tenant.slug, broadcast.broadcastId, fromStatus);
+          if (locked.status === 'approved' && locked.resendBroadcastId !== null) return true;
           const cancelled = await deps.broadcastsRepo.applyTransition(
             tx,
             input.tenant.slug,
@@ -179,7 +238,7 @@ export async function cancelInFlightBroadcastsForMember(
               cancelledByUserId: null,
               cancellationReason: reason,
             },
-            broadcast.status,
+            fromStatus,
           );
 
           await deps.audit.emit(tx, {
@@ -200,98 +259,166 @@ export async function cancelInFlightBroadcastsForMember(
               cancelledAt: now.toISOString(),
               memberId: input.memberId as string,
               initiatedByUserId: input.initiatedByUserId ?? null,
-              previousStatus: broadcast.status,
+              previousStatus: fromStatus,
               cascade: 'f3_member_archival_or_erasure',
               cancelledBroadcastId: cancelled.broadcastId as string,
             },
             requestId: input.requestId,
           });
-          broadcastsMetrics.auditEmitCount(
-            input.tenant.slug,
-            'broadcast_cancelled',
-          );
-          broadcastsMetrics.cascadeOutcome(input.tenant.slug, 'cancelled');
-          cancelledCount += 1;
-        } catch (e) {
-          if (e instanceof BroadcastConcurrentMutationError) {
-            // Expected race: dispatch worker flipped status between our
-            // snapshot and applyTransition. Skip + audit + continue.
-            skippedConcurrentCount += 1;
-            broadcastsMetrics.cascadeOutcome(
-              input.tenant.slug,
-              'concurrent_skip',
-            );
-            logger.warn(
-              {
-                err: e.message,
-                tenantId: input.tenant.slug,
-                broadcastId: broadcast.broadcastId as string,
-                memberId: input.memberId as string,
-                previousStatus: broadcast.status,
-                observedStatus: e.observedStatus,
-                useCase: 'cancel-in-flight-broadcasts-for-member',
-              },
-              'broadcasts.cascade.concurrent_skip',
-            );
-            try {
-              await deps.audit.emit(null, {
-                tenantId: input.tenant.slug,
-                eventType: 'broadcast_concurrent_action_blocked',
-                actorUserId:
-                  input.initiatedByUserId ?? SYSTEM_ACTOR_USER_ID,
-                summary: `Cancel cascade skipped broadcast ${broadcast.broadcastId} — concurrent transition`,
-                payload: {
-                  broadcastId: broadcast.broadcastId,
-                  memberId: input.memberId as string,
-                  cascade: 'f3_member_archival_or_erasure',
-                  snapshotStatus: broadcast.status,
-                  observedStatus: e.observedStatus,
-                },
-                requestId: input.requestId,
-              });
-            } catch (auditErr) {
-              broadcastsMetrics.auditEmitFailed(
-                'broadcast_concurrent_action_blocked',
-                input.tenant.slug,
-              );
-              logger.error(
-                {
-                  err:
-                    auditErr instanceof Error
-                      ? auditErr.message
-                      : String(auditErr),
-                  tenantId: input.tenant.slug,
-                  broadcastId: broadcast.broadcastId as string,
-                },
-                'broadcasts.cascade.audit_emit_failed',
-              );
-            }
-            return;
-          }
-          // Unexpected: tx error, audit emit error, or any non-concurrent
-          // throw. Broadcast remains in flight. Stop-the-line metric +
-          // structured error log; cascade continues to next broadcast
-          // (best-effort) so a single bad row does not block the rest
-          // of the member's archival.
+          return false;
+        });
+        if (handedOver) return { kind: 'dispatch_begun' as const };
+      } catch (e) {
+        // The CAS matched nothing: another writer moved the row. Where to
+        // is the caller's re-read, not this error's `observedStatus`.
+        if (e instanceof BroadcastConcurrentMutationError) return { kind: 'lost' as const };
+        // Unexpected: tx error, audit emit error, or any non-concurrent
+        // throw — rolled back, so the broadcast remains in flight.
+        // Stop-the-line metric + structured error log (the error CLASS
+        // only, never its message); cascade continues to next broadcast
+        // (best-effort) so a single bad row does not block the rest of the
+        // member's archival.
+        unexpectedErrorCount += 1;
+        broadcastsMetrics.cascadeOutcome(
+          input.tenant.slug,
+          'unexpected_error',
+        );
+        logger.error(
+          {
+            err: errKind(e),
+            tenantId: input.tenant.slug,
+            broadcastId: broadcast.broadcastId as string,
+            memberId: input.memberId as string,
+            previousStatus: fromStatus,
+            useCase: 'cancel-in-flight-broadcasts-for-member',
+          },
+          'broadcasts.cascade.tx_or_audit_failed',
+        );
+        return { kind: 'unexpected' as const };
+      }
+      broadcastsMetrics.auditEmitCount(
+        input.tenant.slug,
+        'broadcast_cancelled',
+      );
+      broadcastsMetrics.cascadeOutcome(input.tenant.slug, 'cancelled');
+      cancelledCount += 1;
+      return { kind: 'cancelled' as const };
+    };
+
+    /**
+     * The row left the in-progress set under us (or is gone): it delivers or
+     * closes on its own. Skip + audit (best-effort) + continue.
+     */
+    const skipConcurrent = async (
+      broadcast: Broadcast,
+      observedStatus: BroadcastStatus | null,
+      dispatchBegun = false,
+    ): Promise<void> => {
+      skippedConcurrentCount += 1;
+      broadcastsMetrics.cascadeOutcome(
+        input.tenant.slug,
+        'concurrent_skip',
+      );
+      logger.warn(
+        {
+          tenantId: input.tenant.slug,
+          broadcastId: broadcast.broadcastId as string,
+          memberId: input.memberId as string,
+          previousStatus: broadcast.status,
+          observedStatus,
+          dispatchBegun,
+          useCase: 'cancel-in-flight-broadcasts-for-member',
+        },
+        'broadcasts.cascade.concurrent_skip',
+      );
+      try {
+        await deps.audit.emit(null, {
+          tenantId: input.tenant.slug,
+          eventType: 'broadcast_concurrent_action_blocked',
+          actorUserId:
+            input.initiatedByUserId ?? SYSTEM_ACTOR_USER_ID,
+          summary: dispatchBegun
+            ? `Cancel cascade skipped broadcast ${broadcast.broadcastId} — the send was already handed over`
+            : `Cancel cascade skipped broadcast ${broadcast.broadcastId} — concurrent transition`,
+          payload: {
+            broadcastId: broadcast.broadcastId,
+            memberId: input.memberId as string,
+            cascade: 'f3_member_archival_or_erasure',
+            snapshotStatus: broadcast.status,
+            observedStatus,
+            dispatchBegun,
+          },
+          requestId: input.requestId,
+        });
+      } catch (auditErr) {
+        broadcastsMetrics.auditEmitFailed(
+          'broadcast_concurrent_action_blocked',
+          input.tenant.slug,
+        );
+        logger.error(
+          {
+            err: errKind(auditErr),
+            tenantId: input.tenant.slug,
+            broadcastId: broadcast.broadcastId as string,
+          },
+          'broadcasts.cascade.audit_emit_failed',
+        );
+      }
+    };
+
+    for (const broadcast of inFlight) {
+      // Each broadcast cancelled in its own short tx so a single race
+      // does not roll back the whole cascade. F3 archival audit on
+      // the member row is independent. A lost CAS re-reads and retries in a
+      // FRESH tx (T166 R-M3, docblock above).
+      let fromStatus: BroadcastStatus = broadcast.status;
+      for (let retries = 0; ; retries += 1) {
+        const attempt = await cancelOnce(broadcast, fromStatus);
+        if (attempt.kind === 'dispatch_begun') {
+          await skipConcurrent(broadcast, 'approved', true);
+          break;
+        }
+        if (attempt.kind !== 'lost') break;
+        let current: Broadcast | null;
+        try {
+          current = await deps.broadcastsRepo.findById(input.tenant.slug, broadcast.broadcastId);
+        } catch (readErr) {
           unexpectedErrorCount += 1;
-          broadcastsMetrics.cascadeOutcome(
-            input.tenant.slug,
-            'unexpected_error',
-          );
+          broadcastsMetrics.cascadeOutcome(input.tenant.slug, 'unexpected_error');
           logger.error(
             {
-              err: e instanceof Error ? e.message : String(e),
-              errName: e instanceof Error ? e.name : undefined,
+              err: errKind(readErr),
               tenantId: input.tenant.slug,
               broadcastId: broadcast.broadcastId as string,
               memberId: input.memberId as string,
-              previousStatus: broadcast.status,
               useCase: 'cancel-in-flight-broadcasts-for-member',
             },
-            'broadcasts.cascade.tx_or_audit_failed',
+            'broadcasts.cascade.reread_failed',
           );
+          break;
         }
-      });
+        if (current === null || !isInProgress(current.status)) {
+          await skipConcurrent(broadcast, current?.status ?? null);
+          break;
+        }
+        if (retries >= CASCADE_CAS_RETRIES) {
+          unexpectedErrorCount += 1;
+          broadcastsMetrics.cascadeOutcome(input.tenant.slug, 'unexpected_error');
+          logger.error(
+            {
+              tenantId: input.tenant.slug,
+              broadcastId: broadcast.broadcastId as string,
+              memberId: input.memberId as string,
+              observedStatus: current.status,
+              attempts: retries + 1,
+              useCase: 'cancel-in-flight-broadcasts-for-member',
+            },
+            'broadcasts.cascade.still_in_flight',
+          );
+          break;
+        }
+        fromStatus = current.status;
+      }
     }
 
     logger.info(

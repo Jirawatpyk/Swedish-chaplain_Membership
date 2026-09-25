@@ -16,7 +16,7 @@
  * literal response.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import { toast } from 'sonner';
 import en from '@/i18n/messages/en.json';
@@ -24,6 +24,7 @@ import { AcknowledgementBannerClient } from '@/app/(member)/portal/_components/m
 import { ResendInvoiceButton } from '@/app/(member)/portal/invoices/_components/resend-invoice-button';
 import { RenewalRemindersToggle } from '@/app/(member)/portal/preferences/renewals/_components/renewal-reminders-toggle';
 import { CancelBroadcastDialog } from '@/components/broadcast/cancel-broadcast-dialog';
+import { MemberSignOffActions } from '@/components/broadcast/approval/member-sign-off-actions';
 import { DataExportPanel, type DataExportLabels } from '@/components/data-export/data-export-panel';
 import { DirectoryLogoControl } from '@/components/directory/directory-logo-control';
 import { DirectoryVisibilityForm } from '@/components/directory/directory-visibility-form';
@@ -88,6 +89,12 @@ interface Surface {
   readonly name: string;
   readonly ui: () => React.ReactElement;
   readonly act: (root: HTMLElement) => Promise<void> | void;
+  /**
+   * PR #392 review D5 — `dialog`: a dialog stays open over the refusal and is
+   * the ONE channel (a toast would sit behind the modal, hidden from AT), so
+   * the whole warning is asserted inside it instead. Default: the toast.
+   */
+  readonly channel?: 'dialog';
 }
 
 const SURFACES: readonly Surface[] = [
@@ -133,6 +140,27 @@ const SURFACES: readonly Surface[] = [
       });
       fireEvent.click(byName(en.portal.broadcasts.detail.cancelDialog.confirm));
     },
+  },
+  // F119 (PR #392 review C1) — the member's E-Blast decision: approve,
+  // request changes and withdraw approval share one POST, so one row covers
+  // the mapping all three go through.
+  {
+    name: 'E-Blast sign-off decision',
+    ui: () => (
+      <MemberSignOffActions
+        broadcastId="b1"
+        subject="Spring mixer"
+        version={{ id: 'v1', versionNo: 1 }}
+        canDecide
+        canWithdrawApproval={false}
+        canWithdrawEblast={false}
+      />
+    ),
+    act: async () => {
+      fireEvent.click(screen.getByTestId('eblast-approve'));
+      fireEvent.click(await screen.findByTestId('eblast-approve-confirm'));
+    },
+    channel: 'dialog',
   },
   {
     name: 'data export panel',
@@ -237,11 +265,19 @@ describe('a member mutation refused by the read-only proxy', () => {
     );
     await s.act(container);
 
-    await waitFor(() =>
-      expect(toast.warning).toHaveBeenCalledWith(en.errors.readOnlyMode, {
-        description: en.errors.readOnlyNothingChanged,
-      }),
-    );
+    if (s.channel === 'dialog') {
+      const alert = await within(screen.getByRole('alertdialog')).findByRole('alert');
+      expect(alert).toHaveTextContent(en.errors.readOnlyMode);
+      expect(alert).toHaveTextContent(en.errors.readOnlyNothingChanged);
+      expect(alert).toHaveAttribute('data-tone', 'warning');
+      expect(toast.warning).not.toHaveBeenCalled();
+    } else {
+      await waitFor(() =>
+        expect(toast.warning).toHaveBeenCalledWith(en.errors.readOnlyMode, {
+          description: en.errors.readOnlyNothingChanged,
+        }),
+      );
+    }
     expect(toast.error, 'a freeze is not a failure the member can fix').not.toHaveBeenCalled();
   });
 });

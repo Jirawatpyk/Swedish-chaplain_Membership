@@ -5,8 +5,19 @@
  *   - VERBATIM to member email (notification context_data)
  *   - sha256 hash to audit log (NOT raw)
  *
- * State-check: status must be `submitted` (rejected from any other
- * state with `broadcast_invalid_state_transition`).
+ * State-check (widened by F119 T081, FR-015): marketing may reject at any
+ * in-progress stage the state machine gives a `rejected` exit
+ * (`canTransition(status, 'rejected')` — the Domain map the DB trigger mirrors,
+ * so `approved` is NOT one: a scheduled E-Blast is cancelled, not rejected,
+ * data-model § 8.2). From `sending` onward → `sending_started` (409): the send
+ * completes. Anything else → `broadcast_invalid_state_transition`.
+ *
+ * F119 T081, in the same tx: every live `broadcast_images` row of the E-Blast
+ * is stamped and audited `broadcast_image_removed { reason: 'rejected' }`; the
+ * bytes go on the sweep's next tick, under the last-reference rule. The
+ * `broadcast_rejected` audit gains the stage it was rejected from
+ * (`previousStatus`); the member notification does not — no template reads it
+ * (whole-branch review LOW-5).
  *
  * Atomic: applyTransition('rejected') + audit emit + member-notification
  * outbox enqueue inside single tx; failure rolls all back.
@@ -14,8 +25,13 @@
 import { createHash } from 'node:crypto';
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
+import { canTransition } from '../../domain/policies/broadcast-status-transitions';
+import { hasSendingStarted } from '../../domain/stage/in-progress-statuses';
+import type { BroadcastImagesRepo } from '../ports/broadcast-images-repo';
+import { markOwnerImagesRemoved } from './_mark-owner-images-removed';
 import type { AuditPort } from '../ports/audit-port';
 import {
   BroadcastConcurrentMutationError,
@@ -41,16 +57,26 @@ export type RejectBroadcastError =
       readonly kind: 'broadcast_concurrent_action_blocked';
       readonly observedStatus: string;
     }
+  /** F119 T081 — from `sending` onward: the send completes (FR-015). */
+  | { readonly kind: 'sending_started'; readonly observedStatus: string }
   | { readonly kind: 'broadcast_rejection_reason_required' }
   | {
       readonly kind: 'broadcast_rejection_reason_too_long';
       readonly length: number;
     }
-  | { readonly kind: 'reject.server_error'; readonly message: string };
+  /**
+   * An infrastructure fault. `errKind` is the error CLASS only (T166 R-M4):
+   * the raw message can carry a Neon error's bound parameters, and the route
+   * logs what it is handed.
+   */
+  | { readonly kind: 'reject.server_error'; readonly errKind: string };
 
 export interface RejectBroadcastDeps {
   readonly tenant: TenantContext;
-  readonly broadcastsRepo: BroadcastsRepo;
+  /** `findById` (PR #392 review C7) — the non-locking pre-read the locale read keys on. */
+  readonly broadcastsRepo: Pick<BroadcastsRepo, 'withTx' | 'findById' | 'lockForUpdate' | 'findByIdInTx' | 'applyTransition'>;
+  /** F119 T081 — the E-Blast's image rows, stamped in the rejection's tx. */
+  readonly imagesRepo: Pick<BroadcastImagesRepo, 'markDeletedByOwner'>;
   readonly audit: AuditPort;
   readonly clock: { now(): Date };
   /** G2 closure (verify-fix 2026-05-02) — best-effort post-rejection email. */
@@ -62,6 +88,11 @@ export interface RejectBroadcastDeps {
 export interface RejectBroadcastInput {
   readonly broadcastId: BroadcastId;
   readonly actorUserId: string;
+  /**
+   * F119 T081 — the SESSION role, recorded as-is on the image-removal audit
+   * rows (`check:actor-role-truth`: never a literal stand-in).
+   */
+  readonly actorRole: string | null;
   readonly rejectionReason: string;
   readonly requestId: string | null;
   /** E1 closure (verify-fix 2026-05-02) — locale for notification email. */
@@ -96,6 +127,11 @@ export async function rejectBroadcast(
   const reasonHash = sha256Hex(input.rejectionReason);
 
   try {
+    // PR #392 review C7 — the member's preferred locale (for the rejection
+    // email) is a members-bridge read on its own pool connection, so it is
+    // made here, before the lock — never while this tx holds the row (the
+    // approve / cancel fix, round-4 B5).
+    const memberPreferred = await readPreferredLocaleBeforeTx(deps, input);
     return await deps.broadcastsRepo.withTx(async (tx) => {
       const lockedStatus = await deps.broadcastsRepo.lockForUpdate(
         tx,
@@ -108,7 +144,11 @@ export async function rejectBroadcast(
           broadcastId: input.broadcastId as string,
         });
       }
-      if (lockedStatus !== 'submitted') {
+      // F119 T081 — checked before any write, so these returns commit nothing.
+      if (hasSendingStarted(lockedStatus)) {
+        return err({ kind: 'sending_started', observedStatus: lockedStatus });
+      }
+      if (!canTransition(lockedStatus, 'rejected')) {
         return err({
           kind: 'broadcast_invalid_state_transition',
           observedStatus: lockedStatus,
@@ -127,7 +167,7 @@ export async function rejectBroadcast(
             rejectedByUserId: input.actorUserId,
             rejectionReason: input.rejectionReason,
           },
-          'submitted', // R4 Types-#5 — race-guard against concurrent action
+          lockedStatus, // R4 Types-#5 — race-guard against concurrent action
         );
       } catch (e) {
         // S1-P1-21: narrow to the concurrency sentinel only (mirrors
@@ -160,35 +200,35 @@ export async function rejectBroadcast(
           rejectionReasonHash: reasonHash,
           rejectionReasonLength: input.rejectionReason.length,
           rejectedAt: now.toISOString(),
+          // F119 T081 — the stage it was rejected from.
+          previousStatus: lockedStatus,
         },
         requestId: input.requestId,
       });
+
+      // F119 T081 — the images stop being reachable in the same tx.
+      await markOwnerImagesRemoved(
+        { imagesRepo: deps.imagesRepo, audit: deps.audit },
+        {
+          tenantId: deps.tenant.slug,
+          owner: { kind: 'broadcast', id: input.broadcastId as string },
+          reason: 'rejected',
+          at: now,
+          requestId: input.requestId ?? `reject-${input.broadcastId as string}`,
+          actorUserId: input.actorUserId,
+          actorRole: input.actorRole,
+          relatedMemberId: rejected.requestedByMemberId,
+        },
+        tx,
+      );
 
       // G2 closure (verify-fix 2026-05-02) — VERBATIM rejection reason
       // travels in the email payload (FR-012). Audit retains hash only.
       // Recipient = `replyToEmail` (immutable submit-time snapshot).
       // Verify-fix R4 (Simplify-#2 + Types-#6): shared helper +
-      // member-preferred-locale chain.
+      // member-preferred-locale chain (the locale was read before the tx —
+      // PR #392 review C7).
       if (deps.emailTransactional) {
-        let memberPreferred: 'en' | 'th' | 'sv' | null = null;
-        if (deps.membersBridge) {
-          try {
-            memberPreferred = await deps.membersBridge.getMemberPreferredLocale(
-              deps.tenant,
-              rejected.requestedByMemberId,
-            );
-          } catch (e) {
-            logger.warn(
-              {
-                err: e instanceof Error ? e.message : String(e),
-                tenantId: deps.tenant.slug,
-                memberId: rejected.requestedByMemberId,
-                useCase: 'reject-broadcast',
-              },
-              'broadcasts.locale_resolve_failed',
-            );
-          }
-        }
         await enqueueBroadcastMemberNotification({
           tenant: deps.tenant,
           emailTransactional: deps.emailTransactional,
@@ -208,10 +248,38 @@ export async function rejectBroadcast(
       });
     });
   } catch (e) {
-    return err({
-      kind: 'reject.server_error',
-      message: e instanceof Error ? e.message : 'unknown error',
-    });
+    return err({ kind: 'reject.server_error', errKind: errKind(e) });
+  }
+}
+
+/**
+ * PR #392 review C7 — the owning member's preferred locale, read before the tx
+ * and best-effort: a bridge throw is logged (R5 verify-fix Errors-H3, the error
+ * CLASS only) and answers null, so the chain falls through. Nothing is read
+ * when no email will be sent or for a row that is gone. `requested_by_member_id`
+ * is immutable after submit, so the non-locking pre-read names the member the
+ * locked row will.
+ */
+async function readPreferredLocaleBeforeTx(
+  deps: RejectBroadcastDeps,
+  input: RejectBroadcastInput,
+): Promise<'en' | 'th' | 'sv' | null> {
+  if (!deps.emailTransactional || !deps.membersBridge) return null;
+  const preRead = await deps.broadcastsRepo.findById(deps.tenant.slug, input.broadcastId);
+  if (preRead === null) return null;
+  try {
+    return await deps.membersBridge.getMemberPreferredLocale(deps.tenant, preRead.requestedByMemberId);
+  } catch (e) {
+    logger.warn(
+      {
+        err: errKind(e),
+        tenantId: deps.tenant.slug,
+        memberId: preRead.requestedByMemberId,
+        useCase: 'reject-broadcast',
+      },
+      'broadcasts.locale_resolve_failed',
+    );
+    return null;
   }
 }
 

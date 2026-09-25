@@ -26,11 +26,13 @@ const toast = (
 
 // Keys read by the admin moderation dialogs:
 //   approve-dialog.tsx   → approved (success) · concurrentRace (409) · error
-//   reject-dialog.tsx    → rejected (success) · concurrentRace (409) · error
+//   reject-dialog.tsx    → rejected (success) · rejectTooLate (409 sending_started)
+//                          · concurrentRace (other 409) · error
 //   clear-halt-dialog.tsx→ clearHalted (success) · error
 const REQUIRED_TOAST_KEYS = [
   'approved',
   'rejected',
+  'rejectTooLate',
   'concurrentRace',
   'clearHalted',
   'error',

@@ -24,7 +24,7 @@ import {
 } from '@/modules/broadcasts';
 
 describe('BROADCAST_STATUSES', () => {
-  it('contains all 10 lifecycle states (8 F7 MVP + 2 F71A US1)', () => {
+  it('contains all 15 lifecycle states (8 F7 MVP + 2 F71A US1 + 5 F119)', () => {
     // Phase 3F.11.19 — F71A US1 added `partially_sent` +
     // `partial_delivery_accepted` (migration 0169 + 0173). The
     // BROADCAST_STATUSES tuple in `domain/value-objects/broadcast-status.ts`
@@ -42,11 +42,17 @@ describe('BROADCAST_STATUSES', () => {
       'failed_to_dispatch',
       'partially_sent',
       'partial_delivery_accepted',
+      // F119 (migration 0308) — the approval round, in pgEnum order.
+      'in_design',
+      'awaiting_member_approval',
+      'changes_requested',
+      'member_approved',
+      'expired_no_member_response',
     ]);
   });
 
-  it('count matches data-model + DB enum (10 values after F71A US1)', () => {
-    expect(BROADCAST_STATUSES).toHaveLength(10);
+  it('count matches data-model + DB enum (15 values after F119 0308)', () => {
+    expect(BROADCAST_STATUSES).toHaveLength(15);
   });
 });
 
@@ -56,10 +62,15 @@ describe('isTerminalStatus', () => {
     ['rejected', true],
     ['cancelled', true],
     ['failed_to_dispatch', true],
+    ['expired_no_member_response', true],
     ['draft', false],
     ['submitted', false],
     ['approved', false],
     ['sending', false],
+    ['in_design', false],
+    ['awaiting_member_approval', false],
+    ['changes_requested', false],
+    ['member_approved', false],
   ] as const)('isTerminalStatus(%s) === %s', (status, expected) => {
     expect(isTerminalStatus(status)).toBe(expected);
   });
@@ -87,6 +98,10 @@ describe('TERMINAL_BROADCAST_STATUSES (Finding G — single source of truth)', (
   it('includes `partial_delivery_accepted` (the terminal accept state)', () => {
     expect(TERMINAL_BROADCAST_STATUSES).toContain('partial_delivery_accepted');
   });
+
+  it('includes F119 `expired_no_member_response` (the day-30 close, FR-022a)', () => {
+    expect(TERMINAL_BROADCAST_STATUSES).toContain('expired_no_member_response');
+  });
 });
 
 describe('canTransition', () => {
@@ -107,6 +122,27 @@ describe('canTransition', () => {
     ['approved', 'cancelled'],
     ['sending', 'sent'],
     ['sending', 'failed_to_dispatch'],
+    // F119 — data-model § 8.2 (the T037 integration suite probes the same
+    // pairs against the DB trigger).
+    ['submitted', 'in_design'],
+    ['approved', 'changes_requested'],
+    ['approved', 'in_design'],
+    ['in_design', 'awaiting_member_approval'],
+    ['in_design', 'rejected'],
+    ['in_design', 'cancelled'],
+    ['awaiting_member_approval', 'member_approved'],
+    ['awaiting_member_approval', 'changes_requested'],
+    ['awaiting_member_approval', 'rejected'],
+    ['awaiting_member_approval', 'cancelled'],
+    ['awaiting_member_approval', 'expired_no_member_response'],
+    ['changes_requested', 'in_design'],
+    ['changes_requested', 'rejected'],
+    ['changes_requested', 'cancelled'],
+    ['member_approved', 'approved'],
+    ['member_approved', 'changes_requested'],
+    ['member_approved', 'in_design'],
+    ['member_approved', 'rejected'],
+    ['member_approved', 'cancelled'],
   ];
 
   it.each(legalTransitions)('canTransition(%s, %s) is true', (from, to) => {
@@ -124,6 +160,14 @@ describe('canTransition', () => {
     ['rejected', 'approved'], // terminal state
     ['cancelled', 'sending'], // terminal state
     ['failed_to_dispatch', 'sending'], // terminal state
+    // F119 — the round cannot be skipped, and expiry is only from the member's turn
+    ['in_design', 'approved'], // skip the member's approval
+    ['in_design', 'member_approved'], // marketing cannot approve for the member
+    ['changes_requested', 'awaiting_member_approval'], // needs a new version first
+    ['member_approved', 'sending'], // needs a confirmed schedule
+    ['member_approved', 'expired_no_member_response'], // no expiry once approved
+    ['approved', 'expired_no_member_response'], // no expiry once scheduled
+    ['expired_no_member_response', 'in_design'], // terminal state
   ];
 
   it.each(illegalTransitions)(
@@ -133,11 +177,16 @@ describe('canTransition', () => {
     },
   );
 
+  it('a `from` outside the status union (a widened DB enum, a parsed string) is refused, not a throw', () => {
+    expect(canTransition('not_a_status' as BroadcastStatus, 'sent')).toBe(false);
+  });
+
   it('terminal states have empty outbound adjacency', () => {
     expect(BROADCAST_TRANSITIONS.sent).toEqual([]);
     expect(BROADCAST_TRANSITIONS.rejected).toEqual([]);
     expect(BROADCAST_TRANSITIONS.cancelled).toEqual([]);
     expect(BROADCAST_TRANSITIONS.failed_to_dispatch).toEqual([]);
+    expect(BROADCAST_TRANSITIONS.expired_no_member_response).toEqual([]);
   });
 });
 
@@ -176,8 +225,14 @@ describe('transition', () => {
     }
   });
 
-  it('handles all 4 terminal states uniformly', () => {
-    for (const terminal of ['sent', 'rejected', 'cancelled', 'failed_to_dispatch'] as const) {
+  it('handles all 5 terminal states uniformly', () => {
+    for (const terminal of [
+      'sent',
+      'rejected',
+      'cancelled',
+      'failed_to_dispatch',
+      'expired_no_member_response',
+    ] as const) {
       const result = transition(terminal, 'submitted');
       expect(result.ok).toBe(false);
       if (!result.ok) {

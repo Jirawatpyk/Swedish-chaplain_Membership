@@ -42,12 +42,43 @@ export interface NewBroadcastDraftInput {
   readonly scheduledFor: Date | null;
 }
 
+/**
+ * F119 T117 / T119 — two orders join the list:
+ *   - `stage_entered_at_asc` — the staff dashboard's order: longest in the
+ *     current stage first, served by `broadcasts_stage_queue_idx`. On the
+ *     default Awaiting-marketing-review view it is the old submitted-first
+ *     order (submit stamps `stage_entered_at`).
+ *   - `stage_entered_at_desc` — the same column, most recent first: the order
+ *     of every view that is not only waiting stages (Sent, Closed, show-all —
+ *     UX review H1), so its first page is the latest, not the oldest.
+ *   - `scheduled_for_asc` — the Upcoming sends preset: send-time order,
+ *     served by `broadcasts_tenant_scheduled_idx`.
+ * The keyset cursor carries the value of whichever column the sort orders by.
+ */
+export type ListByTenantStatusSort =
+  | 'submitted_at_asc'
+  | 'submitted_at_desc'
+  | 'created_at_desc'
+  | 'stage_entered_at_asc'
+  | 'stage_entered_at_desc'
+  | 'scheduled_for_asc';
+
 export interface ListByTenantStatusOpts {
   readonly cursor?: string;
   readonly pageSize: number;
   readonly statusFilter?: ReadonlyArray<BroadcastStatus>;
   readonly memberIdFilter?: string;
-  readonly sort?: 'submitted_at_asc' | 'submitted_at_desc' | 'created_at_desc';
+  readonly sort?: ListByTenantStatusSort;
+  /** F119 T119 — only rows whose `scheduled_for` is at or after this instant (the Upcoming sends preset). */
+  readonly scheduledFrom?: Date;
+  /**
+   * F119 FR-030 — the dashboard's date range, on `submitted_at`: only rows
+   * submitted at or after `submittedFrom` and strictly before
+   * `submittedBefore` (half-open, so a whole `to` day is one bound with no
+   * sub-millisecond gap). A never-submitted row is outside any range.
+   */
+  readonly submittedFrom?: Date;
+  readonly submittedBefore?: Date;
 }
 
 export interface ListByTenantStatusResult {
@@ -233,6 +264,12 @@ export interface BroadcastsRepo {
    * gateway call, so two overlapping ticks both saw NULL and both created an
    * audience — leaking one against a 3-audience Free-plan allowance. The
    * precondition now rides on the write itself (108 Phase 9 review S13).
+   *
+   * **And only while the row is `approved`** (F119 T166 R-H1): a row that
+   * left `approved` since the dispatcher's lock committed — withdrawn,
+   * cancelled, re-opened for a new version — throws
+   * `BroadcastConcurrentMutationError` naming its real status. The same holds
+   * for `attachBroadcastId` and `attachAudienceImport`.
    */
   attachAudienceId(
     tx: unknown,
@@ -261,8 +298,8 @@ export interface BroadcastsRepo {
    * rollback or the webhook cannot correlate the mail that already went out.
    *
    * Same CAS contract as `attachAudienceId`: idempotent on the SAME value,
-   * `BroadcastConcurrentMutationError` on a different one,
-   * `BroadcastNotFoundError` if the row is gone.
+   * `BroadcastConcurrentMutationError` on a different one or on a row no
+   * longer `approved`, `BroadcastNotFoundError` if the row is gone.
    */
   attachBroadcastId(
     tx: unknown,
@@ -287,6 +324,7 @@ export interface BroadcastsRepo {
    * one broadcast would let `(resend_audience_id, audience_import_id)` come from
    * different ticks, validating counts for one audience while sending to the
    * other. Overwrite was the documented behaviour until 108 Phase 9 review S13.
+   * A row no longer `approved` refuses it the same way (F119 T166 R-H1).
    *
    * Does NOT change status. The broadcast stays `approved` for the whole
    * build, which is what keeps it cancellable (`cancelBroadcast` accepts only

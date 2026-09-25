@@ -56,7 +56,7 @@ describe('<QueueFilters> — status chip grouping + Reset placement', () => {
   it('splits the status chips into an in-review group and a terminal group', () => {
     render(
       <Provider>
-        <QueueFilters memberOptions={[]} />
+        <QueueFilters memberOptions={[]} stageCounts={null} approvalRoundEnabled />
       </Provider>,
     );
 
@@ -90,7 +90,7 @@ describe('<QueueFilters> — status chip grouping + Reset placement', () => {
   it('renders one checkbox per non-retired status across the two groups', () => {
     render(
       <Provider>
-        <QueueFilters memberOptions={[]} />
+        <QueueFilters memberOptions={[]} stageCounts={null} approvalRoundEnabled />
       </Provider>,
     );
 
@@ -103,7 +103,14 @@ describe('<QueueFilters> — status chip grouping + Reset placement', () => {
 
     // Positive controls: the count alone passes if the strip renders the wrong
     // eight, and it also passes if a live status were retired by mistake.
-    expect(offered).toHaveLength(8);
+    // F119 (0308): 8 → 13 — the five approval-round statuses are live, so
+    // each is offered (here with the round switched on; the flag-off rule is
+    // `queue-filters-flag-visibility.test.tsx`). T116: the four in-progress
+    // ones sit under "In review", `expired_no_member_response` under "Closed"
+    // — pinned in `tests/contract/broadcasts/eblast-dashboard-rows.test.ts`.
+    expect(offered).toHaveLength(13);
+    expect(offered).toContain('awaiting_member_approval');
+    expect(offered).toContain('expired_no_member_response');
     expect(offered).toContain('sent');
     expect(offered).toContain('failed_to_dispatch');
     expect(offered).not.toContain('partially_sent');
@@ -116,10 +123,12 @@ describe('<QueueFilters> — status chip grouping + Reset placement', () => {
    * reserved 10 for a row of 8. A count is only as good as the two things it
    * keeps equal.
    */
-  it('renders exactly OFFERED_BROADCAST_STATUSES.length chips — the number the loading skeleton reserves', () => {
+  // UX review M2 — with the approval round on; with it off the skeleton
+  // reserves 8 (`queue-loading-skeleton.test.tsx`).
+  it('renders exactly OFFERED_BROADCAST_STATUSES.length chips with the round on — the number the loading skeleton reserves then', () => {
     render(
       <Provider>
-        <QueueFilters memberOptions={[]} />
+        <QueueFilters memberOptions={[]} stageCounts={null} approvalRoundEnabled />
       </Provider>,
     );
 
@@ -135,7 +144,7 @@ describe('<QueueFilters> — status chip grouping + Reset placement', () => {
   it('keeps the Reset button adjacent to the chip strip, not pushed to the row edge', () => {
     render(
       <Provider>
-        <QueueFilters memberOptions={[]} />
+        <QueueFilters memberOptions={[]} stageCounts={null} approvalRoundEnabled />
       </Provider>,
     );
 

@@ -39,6 +39,8 @@ import { QueueTable, type QueueRow } from '@/components/broadcast/admin/queue-ta
 const row: QueueRow = {
   broadcastId: 'b1',
   status: 'submitted',
+  stage: 'awaiting_marketing_review',
+  whoseTurn: 'marketing',
   subject: 'Hello',
   requestedByMemberId: 'm1',
   requestedByMemberDisplayName: 'Acme Co',
@@ -47,6 +49,11 @@ const row: QueueRow = {
   estimatedRecipientCount: 12,
   submittedAt: '2026-08-01T00:00:00.000Z',
   createdAt: '2026-08-01T00:00:00.000Z',
+  stageEnteredAt: '2026-08-01T00:00:00.000Z',
+  currentRound: 0,
+  proposedSendAt: null,
+  confirmedSendAt: null,
+  delivery: null,
 };
 
 afterEach(cleanup);

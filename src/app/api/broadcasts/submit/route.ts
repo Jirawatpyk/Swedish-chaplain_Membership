@@ -29,6 +29,7 @@ import {
   resolveTenantDisplayName,
   baseHeaders,
 } from '@/lib/broadcasts-route-helpers';
+import { makeMarketingDirectory } from '@/lib/broadcast-marketing-deps';
 import { requireMemberContext } from '@/lib/member-context';
 import { logger } from '@/lib/logger';
 import { broadcastsMetrics } from '@/lib/metrics';
@@ -83,7 +84,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     });
   }
 
-  const deps = makeSubmitBroadcastDeps(ctx.tenant.slug);
+  // F119 T129 — the submit hands off to marketing (the roster crosses into auth).
+  const deps = makeSubmitBroadcastDeps(ctx.tenant.slug, makeMarketingDirectory(ctx.tenant.slug));
   const tenantDisplayName = await resolveTenantDisplayName(ctx.tenant.slug);
   const input: SubmitBroadcastInput = {
     memberId: ctx.member.memberId,

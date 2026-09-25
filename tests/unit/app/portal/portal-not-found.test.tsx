@@ -78,7 +78,14 @@ describe('broadcast detail not-found', () => {
     );
     render(await BroadcastNotFound());
 
-    expect(screen.getAllByText(enMessages.errors.notFound)).toHaveLength(1);
-    expect(screen.getByText('The link may be old, or the page was moved.')).toBeInTheDocument();
+    // F119 T086a V6 fixed the same duplicate on the F119 branch with the
+    // E-Blast's own keys (#388 used `errors.notFoundHint`); the merge kept
+    // those, so this pins the heading once and a distinct body under it.
+    const detail = enMessages.portal.broadcasts.detail.notFound;
+    expect(detail.title).not.toBe(detail.body);
+    expect(screen.getAllByText(detail.title)).toHaveLength(1);
+    expect(screen.getByRole('heading', { name: detail.title })).toBeInTheDocument();
+    expect(screen.getByText(detail.body)).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('MISSING_KEY');
   });
 });

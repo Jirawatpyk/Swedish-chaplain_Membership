@@ -265,6 +265,7 @@ describe('F9 GDPR archive — integration (T086)', () => {
         'README.txt',
         'audit-events.json',
         'broadcast-images.json', // F119 R17 — every archive carries it
+        'broadcast-versions.json', // F119 T083 — every archive carries it (empty when the member has no approval round)
         'broadcasts.json',
         'change-requests.json', // F114 T079 — every archive carries it (empty when the member has no requests)
         'contacts.json',

@@ -5,13 +5,15 @@
  * `requireApiPermission(request, 'broadcasts.write')` (marketing / admin /
  * super_admin; a manager is read-only), the F7.1a US2 image kill-switch,
  * then the shared handler: 30 / 60 s staff write bucket, the ownership check
- * (stage in the PR-1 set `('draft','submitted')` — the compose-on-behalf
- * draft and a member's submission the proxy author may still illustrate;
- * `in_design` arrives with migration 0305), the identical 5 MB / MIME /
+ * (stage in `('draft','submitted','in_design')` — the compose-on-behalf
+ * draft, a member's submission the proxy author may still illustrate, and
+ * the version marketing is formatting (T106a, `authorizeImageOwner`'s
+ * `IMAGE_UPLOAD_STAFF_STAGES`); a sent version is read-only → 409
+ * `stage_changed`), the identical 5 MB / MIME /
  * ClamAV / source-allowlist rules as a member's image, and ONE
  * `broadcast_images` row (`owner_kind='broadcast'`) audited with
  * `related_member_id` (a staff upload must not move the member's recency).
- * 404 + probe on another tenant's id, 409 on a closed E-Blast, 201 on success.
+ * 404 + probe on another tenant's id, 409 outside the stage set, 201 on success.
  */
 import { randomUUID } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';

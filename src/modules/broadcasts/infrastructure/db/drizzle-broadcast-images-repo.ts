@@ -16,7 +16,17 @@ import type {
   NewBroadcastImage,
 } from '../../application/ports/broadcast-images-repo';
 import type { ImageMimeType } from '../../application/ports/image-storage-port';
+import { CLOSED_NEVER_SENT_BROADCAST_STATUSES } from '../../domain/stage/in-progress-statuses';
 import { broadcastImages, type BroadcastImageRow } from '../schema';
+
+/**
+ * The SQL twin of Domain `holdsImageReferences`, over a `broadcasts` row
+ * aliased `b`. The literals come from the Domain constant (compile-time
+ * values, never input), so the SQL cannot drift from the rule.
+ */
+const OWNER_HOLDS_IMAGES = sql`NOT (b.status IN (${sql.raw(
+  CLOSED_NEVER_SENT_BROADCAST_STATUSES.map((s) => `'${s}'`).join(', '),
+)}) AND b.sending_started_at IS NULL AND b.resend_broadcast_id IS NULL AND b.audience_import_id IS NULL)`;
 
 function toRecord(row: BroadcastImageRow): BroadcastImageRecord {
   return {
@@ -302,6 +312,15 @@ export const drizzleBroadcastImagesRepo: BroadcastImagesRepo = {
    *     template body), which `position` can use the same way `LIKE` could;
    *     at SweCham's row counts with a 200-row batch bound it is not yet
    *     worth the write amplification.
+   *
+   * T081 follow-up — an owner that is closed and never sent (Domain
+   * `holdsImageReferences`: `CLOSED_NEVER_SENT_BROADCAST_STATUSES` with no
+   * hand-over evidence) no longer counts: its body is immutable, so counting it
+   * restored every image a rejection / withdrawal / expiry stamped. Version
+   * bodies (`broadcast_versions`, 0308) are scanned through their owner under
+   * the same rule — a rejected E-Blast's sent version must not re-retain the
+   * image either. Templates stay an unconditional reference. Blobs are deduped
+   * by content hash, so ONE holding owner anywhere in the tenant keeps them.
    */
   async isBlobReferencedByContent(tenantId, blobUrl, tx) {
     const rows = (await (tx as TenantTx).execute(sql`
@@ -311,6 +330,16 @@ export const drizzleBroadcastImagesRepo: BroadcastImagesRepo = {
                 WHERE b.tenant_id = ${tenantId as string}
                   AND (position(${blobUrl} in b.body_html) > 0
                        OR position(${blobUrl} in b.body_source) > 0)
+                  AND ${OWNER_HOLDS_IMAGES}
+             )
+          OR EXISTS (
+               SELECT 1 FROM broadcast_versions v
+                 JOIN broadcasts b
+                   ON b.tenant_id = v.tenant_id AND b.broadcast_id = v.broadcast_id
+                WHERE v.tenant_id = ${tenantId as string}
+                  AND (position(${blobUrl} in v.body_html) > 0
+                       OR position(${blobUrl} in v.body_source) > 0)
+                  AND ${OWNER_HOLDS_IMAGES}
              )
           OR EXISTS (
                SELECT 1 FROM broadcast_templates t

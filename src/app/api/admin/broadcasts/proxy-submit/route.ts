@@ -29,6 +29,7 @@ import {
   resolveTenantDisplayName,
   baseHeaders,
 } from '@/lib/broadcasts-route-helpers';
+import { makeMarketingDirectory } from '@/lib/broadcast-marketing-deps';
 import { requireApiPermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
@@ -79,7 +80,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   const tenantCtx = resolveTenantFromRequest(request);
-  const deps = makeProxySubmitBroadcastDeps(tenantCtx.slug);
+  // F119 T129 — a proxy submit hands off to marketing exactly as a member's does.
+  const deps = makeProxySubmitBroadcastDeps(tenantCtx.slug, makeMarketingDirectory(tenantCtx.slug));
   const tenantDisplayName = await resolveTenantDisplayName(tenantCtx.slug);
 
   try {

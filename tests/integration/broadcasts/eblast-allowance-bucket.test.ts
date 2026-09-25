@@ -1,0 +1,255 @@
+/**
+ * F119 T075 — the allowance bucket after the change (US2-AS5, FR-020, SC-007;
+ * data-model § 9), against LIVE Postgres (Neon `dev`).
+ *
+ * `IN_PROGRESS_BROADCAST_STATUSES` is the reserved set — ONE Domain constant
+ * driving both the quota count (`countMemberQuotaBucketsOnTx`, read by the
+ * pre-tx `countForMemberQuota` AND by the under-lock
+ * `recheckMemberQuotaUnderLock`) and the erasure / cancel cascade
+ * (`listInFlightOwnedByMember`). Before T080 both read the literal
+ * `('submitted','approved')`, so an E-Blast being formatted, awaiting the
+ * member, sent back or member-approved held NO place and a member could
+ * over-subscribe their plan by starting rounds.
+ *
+ * The quota counter is the REAL `computeQuotaCounter` over the REAL Drizzle
+ * repo; only the plan lookup is stubbed (the cap is the variable under test).
+ */
+import { eq } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { makeFakeMarketingDirectory } from '../../helpers/eblast-approval-fakes';
+import { ok } from '@/lib/result';
+import { runInTenant } from '@/lib/db';
+import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
+import { IN_PROGRESS_BROADCAST_STATUSES } from '@/modules/broadcasts/domain/stage/in-progress-statuses';
+import { cancelBroadcast } from '@/modules/broadcasts/application/use-cases/cancel-broadcast';
+import { computeQuotaCounter, currentQuotaYear } from '@/modules/broadcasts/application/use-cases/compute-quota-counter';
+import { rejectBroadcast } from '@/modules/broadcasts/application/use-cases/reject-broadcast';
+import { submitBroadcast } from '@/modules/broadcasts/application/use-cases/submit-broadcast';
+import { expireStaleMemberApprovals } from '@/modules/broadcasts/application/use-cases/approval/expire-stale-member-approvals';
+import { makeExpireStaleMemberApprovalsDeps } from '@/lib/broadcast-approval-deps';
+import type { PlansBridgePort } from '@/modules/broadcasts/application/ports/plans-bridge-port';
+import {
+  makeCancelBroadcastDeps,
+  makeRejectBroadcastDeps,
+  makeSubmitBroadcastDeps,
+} from '@/modules/broadcasts/infrastructure/broadcasts-deps';
+import { makeDrizzleBroadcastsRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
+import { broadcasts, broadcastVersions, type NewBroadcastRow } from '@/modules/broadcasts/infrastructure/schema';
+import { asMemberId } from '@/modules/members';
+import { env } from '@/lib/env';
+import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
+
+const CAP = IN_PROGRESS_BROADCAST_STATUSES.length; // 6 — one broadcast per in-progress stage
+const MARKETER = randomUUID();
+
+describe('F119 T075 — one allowance place per in-progress E-Blast, whatever the stage and however many rounds (live Neon)', () => {
+  let tenant: TestTenant;
+  const memberId = randomUUID();
+  const ids = new Map<string, string>();
+
+  const plans: PlansBridgePort = {
+    getPlanForMember: async () => ok({ planCode: 'test', planId: 'plan-t075', eblastPerYear: CAP }),
+  };
+  const repo = () => makeDrizzleBroadcastsRepo(tenant.ctx.slug);
+  const counter = async () => {
+    const r = await computeQuotaCounter(
+      { tenant: tenant.ctx, plansBridge: plans, broadcastsRepo: repo(), clock: { now: () => new Date() } },
+      { memberId: asMemberId(memberId) },
+    );
+    if (!r.ok) throw new Error(`quota counter failed: ${r.error.kind}`);
+    return r.value.counter;
+  };
+  const underLock = () =>
+    repo().withTx((tx) =>
+      repo().recheckMemberQuotaUnderLock!(tx, tenant.ctx.slug, asMemberId(memberId), currentQuotaYear(new Date(), env.tenant.timezone)),
+    );
+  const readRow = (id: string) =>
+    runInTenant(tenant.ctx, async (tx) => (await tx.select().from(broadcasts).where(eq(broadcasts.broadcastId, id)))[0]!);
+
+  beforeAll(async () => {
+    tenant = await createTestTenant('test-swecham');
+    const rows: NewBroadcastRow[] = IN_PROGRESS_BROADCAST_STATUSES.map((status) => {
+      const broadcastId = randomUUID();
+      ids.set(status, broadcastId);
+      return {
+        tenantId: tenant.ctx.slug,
+        broadcastId,
+        requestedByMemberId: memberId,
+        requestedByMemberPlanIdSnapshot: 'plan-t075',
+        submittedByUserId: randomUUID(),
+        actorRole: 'member_self_service',
+        subject: `In ${status}`,
+        bodyHtml: '<p>b</p>',
+        bodySource: 'b',
+        fromName: 'Chamber',
+        replyToEmail: 'reply@example.com',
+        segmentType: 'all_members',
+        estimatedRecipientCount: 10,
+        status,
+        submittedAt: new Date('2026-09-20T08:00:00.000Z'),
+        proposedSendAt: new Date(Date.now() + 7 * 86_400_000),
+        // Several rounds on the rows inside the round — rounds do not multiply the cost.
+        currentRound: status === 'submitted' ? 0 : 3,
+      };
+    });
+    await runInTenant(tenant.ctx, (tx) => tx.insert(broadcasts).values(rows));
+  }, 120_000);
+
+  afterAll(async () => {
+    await tenant?.cleanup().catch(() => {});
+  });
+
+  it('a broadcast in EACH in-progress stage holds exactly one place: reserved = 6 at a plan limit of 6, so the next submit is refused', async () => {
+    const c = await counter();
+    expect(c).toMatchObject({ reserved: CAP, used: 0, cap: CAP, remaining: 0 });
+    // The under-lock recheck the submit tx runs reads the SAME set (bug #4).
+    expect((await underLock()).submittedOrApproved).toBe(CAP);
+
+    // …and the next submit IS refused: the REAL `submitBroadcast` over the real
+    // repo and the real halt read. Three deps are stubbed, all BEFORE the quota
+    // gate and none of them the variable under test: membership access (the
+    // member id is a phantom with no renewal cycle — it would be refused as
+    // not-in-good-standing first), the Redis rate limiter, and the plan cap.
+    const submitAt = (cap: number) =>
+      submitBroadcast(
+        {
+          ...makeSubmitBroadcastDeps(tenant.ctx.slug, makeFakeMarketingDirectory([])),
+          membershipAccess: { getMembershipAccess: async () => ok({ access: 'full' as const, reason: 'in_good_standing' as const }) },
+          rateLimiter: { checkLimit: async () => ok(true as const) },
+          plansBridge: { getPlanForMember: async () => ok({ planCode: 'test', planId: 'plan-t075', eblastPerYear: cap }) },
+        },
+        {
+          memberId,
+          submittedByUserId: randomUUID(),
+          actorRole: 'member_self_service',
+          tenantDisplayName: 'Test Chamber',
+          memberDisplayName: 'Allowance Co',
+          subject: 'One more',
+          bodySource: 'plain',
+          bodyHtml: '<p>One more.</p>',
+          segment: { kind: 'all_members' },
+          scheduledFor: null,
+          requestId: null,
+        },
+      );
+    const refused = await submitAt(CAP);
+    expect(refused.ok ? 'accepted' : refused.error).toEqual({ kind: 'broadcast_quota_blocked', used: 0, reserved: CAP, cap: CAP });
+    // Positive control: one more place and the quota gate lets it past (it stops
+    // later — the phantom member has no primary contact — but NOT on quota).
+    const roomier = await submitAt(CAP + 1);
+    expect(roomier.ok ? 'accepted' : roomier.error.kind).not.toBe('broadcast_quota_blocked');
+    expect(await counter()).toMatchObject({ reserved: CAP });
+  });
+
+  it('the erasure / cancel cascade sees the same set — every in-progress row, and nothing else', async () => {
+    const inFlight = await repo().listInFlightOwnedByMember(tenant.ctx.slug, asMemberId(memberId));
+    expect(new Set(inFlight.map((b) => b.status))).toEqual(new Set(IN_PROGRESS_BROADCAST_STATUSES));
+  });
+
+  it('a rejection frees its place, with quota_year_consumed still NULL', async () => {
+    const id = ids.get('awaiting_member_approval')!;
+    const r = await rejectBroadcast(makeRejectBroadcastDeps(tenant.ctx.slug), {
+      broadcastId: asBroadcastId(id),
+      actorUserId: MARKETER,
+      actorRole: 'marketing',
+      rejectionReason: 'Not this time',
+      requestId: null,
+    });
+    expect(r.ok ? r.value.broadcast.status : r.error).toBe('rejected');
+    expect(await readRow(id)).toMatchObject({ status: 'rejected', quotaYearConsumed: null });
+    expect(await counter()).toMatchObject({ reserved: CAP - 1, remaining: 1 });
+  });
+
+  it('a withdrawal (cancel) frees its place, with quota_year_consumed still NULL', async () => {
+    const id = ids.get('member_approved')!;
+    const r = await cancelBroadcast(makeCancelBroadcastDeps(tenant.ctx.slug, makeFakeMarketingDirectory([])), {
+      broadcastId: asBroadcastId(id),
+      actor: { kind: 'member', memberId, userId: randomUUID() },
+      actorRole: 'member',
+      cancellationReason: null,
+      requestId: null,
+    });
+    expect(r.ok ? r.value.broadcast.status : r.error).toBe('cancelled');
+    expect(await readRow(id)).toMatchObject({ status: 'cancelled', quotaYearConsumed: null });
+    expect(await counter()).toMatchObject({ reserved: CAP - 2, remaining: 2 });
+  });
+
+  /**
+   * F119 T126 (FR-022a, SC-007) — the REAL day-30 tick (`expireStaleMemberApprovals`
+   * over the REAL composition, its REAL scan SQL) closes a row that has
+   * awaited the member 31 days: the place is freed with `quota_year_consumed`
+   * still NULL, so the member may submit again. The same tick leaves a
+   * `member_approved` row that is 400 days old alone — the scan's predicate is
+   * `awaiting_member_approval` and nothing else (FR-022a). The empty marketing
+   * roster is disclosed: `users` is cross-tenant on the shared dev branch.
+   * "No outgoing edge" from the closed status is pinned, per target, in
+   * `eblast-state-machine-edges.test.ts`.
+   */
+  it('expiry (`expired_no_member_response`) frees its place with quota_year_consumed still NULL, and the member may submit again (T126)', async () => {
+    const day = 86_400_000;
+    const staleId = randomUUID();
+    const parkedId = randomUUID();
+    const base = (broadcastId: string, status: NewBroadcastRow['status'], stageEnteredAt: Date): NewBroadcastRow => ({
+      tenantId: tenant.ctx.slug,
+      broadcastId,
+      requestedByMemberId: memberId,
+      requestedByMemberPlanIdSnapshot: 'plan-t075',
+      submittedByUserId: randomUUID(),
+      actorRole: 'member_self_service',
+      subject: `T126 ${status}`,
+      bodyHtml: '<p>b</p>',
+      bodySource: 'b',
+      fromName: 'Chamber',
+      replyToEmail: 'reply@example.com',
+      segmentType: 'all_members',
+      estimatedRecipientCount: 10,
+      status,
+      submittedAt: new Date(stageEnteredAt.getTime() - day),
+      stageEnteredAt,
+      currentRound: 1,
+    });
+    const staleAt = new Date(Date.now() - 31 * day);
+    const parkedAt = new Date(Date.now() - 400 * day);
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(broadcasts).values([base(staleId, 'awaiting_member_approval', staleAt), base(parkedId, 'member_approved', parkedAt)]);
+      await tx.insert(broadcastVersions).values(
+        [staleId, parkedId].map((broadcastId) => ({
+          tenantId: tenant.ctx.slug,
+          broadcastId,
+          versionNo: 1,
+          subject: 'Formatted',
+          bodyHtml: '<p>f</p>',
+          bodySource: 'f',
+          authoredByUserId: MARKETER,
+          authoredByRole: 'admin_proxy' as const,
+          sentToMemberAt: broadcastId === staleId ? staleAt : parkedAt,
+        })),
+      );
+    });
+    const held = await counter();
+
+    const r = await expireStaleMemberApprovals(
+      { ...makeExpireStaleMemberApprovalsDeps(tenant.ctx.slug), marketingDirectory: makeFakeMarketingDirectory([]) },
+      { requestId: 't126' },
+    );
+    expect(r.ok ? r.value : r.error).toMatchObject({ scanned: 1, expired: 1, rowsFailed: 0 });
+
+    const stale = await readRow(staleId);
+    expect(stale).toMatchObject({ status: 'expired_no_member_response', quotaYearConsumed: null });
+    expect(stale.memberExpiryNotifiedAt).not.toBeNull();
+    expect(await readRow(parkedId)).toMatchObject({ status: 'member_approved', stageEnteredAt: parkedAt });
+    // The expired row released its place; the member can submit again.
+    const freed = await counter();
+    expect(freed.reserved).toBe(held.reserved - 1);
+    expect(freed.remaining).toBe(held.remaining + 1);
+    expect(freed.remaining).toBeGreaterThan(0);
+
+    // A second tick the same day is a no-op.
+    const again = await expireStaleMemberApprovals(
+      { ...makeExpireStaleMemberApprovalsDeps(tenant.ctx.slug), marketingDirectory: makeFakeMarketingDirectory([]) },
+      { requestId: 't126-again' },
+    );
+    expect(again.ok ? again.value : again.error).toMatchObject({ scanned: 0, expired: 0 });
+  });
+});

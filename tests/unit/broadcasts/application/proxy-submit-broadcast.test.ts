@@ -18,6 +18,7 @@
  *   - SubmitBroadcastError pass-through
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { makeFakeEblastOutbox, makeFakeMarketingDirectory } from '../../../helpers/eblast-approval-fakes';
 import { access } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { proxySubmitBroadcast } from '@/modules/broadcasts/application/use-cases/proxy-submit-broadcast';
@@ -147,10 +148,14 @@ function makePlansBridge(opts: FixtureOpts): PlansBridgePort {
 function makeRepo(opts: FixtureOpts): {
   port: BroadcastsRepo;
   inserted: Array<NewBroadcastDraftInput>;
+  /** The `fields` each `applyTransition` carried, in call order. */
+  transitionFields: Array<Partial<Broadcast>>;
 } {
   const inserted: Array<NewBroadcastDraftInput> = [];
+  const transitionFields: Array<Partial<Broadcast>> = [];
   return {
     inserted,
+    transitionFields,
     port: {
       async withTx(fn) {
         return fn(null);
@@ -174,7 +179,8 @@ function makeRepo(opts: FixtureOpts): {
       async lockForUpdate() {
         return null;
       },
-      async applyTransition(_tx, _t, _b, status, _f) {
+      async applyTransition(_tx, _t, _b, status, fields) {
+        transitionFields.push(fields);
         const last = inserted[inserted.length - 1];
         if (!last) throw new Error('no insert');
         return { ...makeBroadcast(last), status };
@@ -268,6 +274,12 @@ function makeBroadcast(input: NewBroadcastDraftInput): Broadcast {
     partialDeliveryAcceptedAt: null,
     partialDeliveryAcceptedByUserId: null,
     templateProvenance: null,
+    proposedSendAt: null,
+    stageEnteredAt: new Date('2026-01-01T00:00:00Z'),
+    currentRound: 0,
+    approvedVersionId: null,
+    memberReminderStage: 0,
+    memberExpiryNotifiedAt: null,
     createdAt: FROZEN_NOW,
     updatedAt: FROZEN_NOW,
   };
@@ -342,6 +354,9 @@ function makeDeps(opts: FixtureOpts) {
       rateLimiter: makeRateLimiter(opts.rateLimitAllow ?? true),
       audit: audit.port,
       clock: { now: () => FROZEN_NOW },
+      // F119 T129 — the submit's marketing hand-off (no roster here).
+      marketingDirectory: makeFakeMarketingDirectory([]),
+      eblastOutbox: makeFakeEblastOutbox(),
     },
   };
 }
@@ -615,6 +630,18 @@ describe('proxy-submit-broadcast โ€” Wave 6 GREEN (T102 / Q12)', () => {
     );
     expect(insertWasInsideTx).toBe(true);
     expect(auditWasInsideTx).toBe(true);
+  });
+
+  it('F119 FR-016: the proxied submit writes the requested time as proposedSendAt on draft → submitted', async () => {
+    const requested = new Date('2026-10-01T03:00:00.000Z');
+    const { deps, repo } = makeDeps({
+      primaryContact: 'm-target@example.com',
+      recipients: [{ memberId: 'm-other', primaryContactEmail: 'other@example.com' }],
+    });
+    const result = await proxySubmitBroadcast(deps, { ...baseInput, scheduledFor: requested });
+    expect(result.ok).toBe(true);
+    expect(repo.transitionFields).toHaveLength(1);
+    expect(repo.transitionFields[0]?.proposedSendAt).toEqual(requested);
   });
 
   it('rejection (subject too long) does NOT insert row (no reservation leak)', async () => {

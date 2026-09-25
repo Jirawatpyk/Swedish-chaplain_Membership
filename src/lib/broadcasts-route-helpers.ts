@@ -22,7 +22,7 @@
 import { NextResponse } from 'next/server';
 import { drizzleTenantSettingsRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-tenant-settings-repo';
 import { logger } from '@/lib/logger';
-import type { BlockViolations } from '@/modules/broadcasts';
+import type { BlockViolations, BroadcastVersion } from '@/modules/broadcasts';
 
 /**
  * Closed union of every F7 route error code. Mirrors the union of
@@ -115,6 +115,44 @@ export type F7RouteErrorCode =
   // and only then violated the CHECK — a 500 for the member plus an orphan
   // blob with no row that the sweep could never reach.
   | 'broadcast_image_empty'
+  // F119 PR-2 — the staff formatting routes (`…/[id]/version`,
+  // contracts/admin-eblast-formatting-api.md). `stage_changed` (409): the
+  // re-read row is not in a stage the action accepts; `round_zero` (409): an
+  // approve-as-submitted E-Blast was never in a design round; `version_changed`
+  // (409): another save moved the working copy on (optimistic concurrency,
+  // carries `currentUpdatedAt` + the current content); `no_working_copy` (409);
+  // `unsafe_content` (422): the sanitiser left nothing of the body;
+  // `image_source_not_allowlisted` (422): names every image whose host is off
+  // the tenant allow-list.
+  | 'stage_changed'
+  | 'round_zero'
+  | 'version_changed'
+  | 'no_working_copy'
+  | 'unsafe_content'
+  | 'image_source_not_allowlisted'
+  // F119 PR-2 — `…/[id]/version/send` and `…/[id]/schedule`. `no_portal_user`
+  // (409): nobody at the member company can sign in to approve;
+  // `no_proposal` (409): `keep_proposal` on a row with no recorded proposal;
+  // `mode_not_allowed` (409): the schedule mode is not one the row's stage
+  // accepts (`keep_proposal` once scheduled, `cancel` before).
+  | 'no_portal_user'
+  | 'no_proposal'
+  | 'mode_not_allowed'
+  // F119 PR-2 — the member decision (`POST /api/broadcasts/[id]/decision`)
+  // and the widened withdraw / reject / cancel. `reason_required` (422): a
+  // change request or a withdrawn approval without a reason (FR-010);
+  // `stale_version` (409): the member decided on an older round than the one
+  // now awaiting them (carries the current version); `sending_started` (409):
+  // the E-Blast has been handed to the delivery provider — the send
+  // completes (FR-015).
+  | 'reason_required'
+  | 'stale_version'
+  | 'sending_started'
+  // F119 T166 S-H1 — the send-time standing rules, re-read at approve-as-
+  // submitted and at the approval-round promotion (409 — the E-Blast is not
+  // approved; submit keeps its own 422 codes above).
+  | 'member_halted'
+  | 'member_not_in_good_standing'
   | 'internal_error';
 
 interface BilingualMessage {
@@ -334,6 +372,68 @@ const F7_ERROR_MESSAGES: Record<F7RouteErrorCode, BilingualMessage> = {
     messageThai:
       'ผู้ให้บริการอีเมลปฏิเสธการส่งสำเนาทดสอบนี้ (อาจเกิดจากอีเมลที่คุณใช้เข้าสู่ระบบ หรือการตั้งค่าการส่งอีเมลของหอการค้า) การลองส่งใหม่จะไม่ช่วยแก้ปัญหา กรุณาติดต่อผู้ดูแลระบบของหอการค้า',
   },
+  stage_changed: {
+    message: 'This E-Blast has moved to another stage. Reload to see where it is now.',
+    messageThai: 'E-Blast นี้เปลี่ยนไปอยู่ขั้นตอนอื่นแล้ว กรุณาโหลดหน้าใหม่เพื่อดูสถานะปัจจุบัน',
+  },
+  round_zero: {
+    message: 'This E-Blast was approved as submitted, without a formatting round, so there is no approved version to reopen.',
+    messageThai: 'E-Blast นี้ได้รับอนุมัติตามที่ส่งมาโดยไม่มีรอบจัดรูปแบบ จึงไม่มีฉบับที่อนุมัติให้เปิดแก้ไขใหม่',
+  },
+  version_changed: {
+    message: 'Someone else saved this version after you opened it. Review their changes before saving again.',
+    messageThai: 'มีผู้อื่นบันทึกฉบับนี้หลังจากที่คุณเปิด กรุณาตรวจสอบการเปลี่ยนแปลงก่อนบันทึกอีกครั้ง',
+  },
+  no_working_copy: {
+    message: 'There is no working copy to change. Start a formatted version first.',
+    messageThai: 'ไม่มีฉบับร่างสำหรับแก้ไข กรุณาเริ่มฉบับจัดรูปแบบก่อน',
+  },
+  unsafe_content: {
+    message: 'The message content was refused by the content-safety rules. Remove the unsupported content and try again.',
+    messageThai: 'เนื้อหาข้อความไม่ผ่านกฎความปลอดภัยของเนื้อหา กรุณาลบเนื้อหาที่ไม่รองรับแล้วลองใหม่',
+  },
+  image_source_not_allowlisted: {
+    message: 'One or more images are hosted on a site that is not on the allowed list. Replace those images and try again.',
+    messageThai: 'มีรูปภาพที่โฮสต์บนเว็บไซต์ที่ไม่อยู่ในรายการที่อนุญาต กรุณาเปลี่ยนรูปภาพเหล่านั้นแล้วลองใหม่',
+  },
+  no_portal_user: {
+    message:
+      'Nobody at this member company can sign in to the portal to approve it. Approve it as submitted, or invite a portal user first.',
+    messageThai:
+      'ไม่มีผู้ใช้ของบริษัทสมาชิกนี้ที่เข้าสู่ระบบพอร์ทัลเพื่ออนุมัติได้ กรุณาอนุมัติตามที่ส่งมา หรือเชิญผู้ใช้พอร์ทัลก่อน',
+  },
+  no_proposal: {
+    message: 'The member did not propose a send time. Choose a time instead.',
+    messageThai: 'สมาชิกไม่ได้เสนอเวลาส่ง กรุณาเลือกเวลาแทน',
+  },
+  mode_not_allowed: {
+    message: 'That scheduling option is not available at this stage. Reload to see what can be done now.',
+    messageThai: 'ตัวเลือกการตั้งเวลานี้ใช้ไม่ได้ในขั้นตอนนี้ กรุณาโหลดหน้าใหม่เพื่อดูสิ่งที่ทำได้ในตอนนี้',
+  },
+  reason_required: {
+    message: 'Please tell the chamber what should change.',
+    messageThai: 'กรุณาระบุสิ่งที่ต้องการให้หอการค้าแก้ไข',
+  },
+  stale_version: {
+    message: 'A newer version of this E-Blast is waiting for you. Review it before deciding.',
+    messageThai: 'มีฉบับใหม่กว่าของ E-Blast นี้รอคุณอยู่ กรุณาตรวจสอบก่อนตัดสินใจ',
+  },
+  sending_started: {
+    message: 'This E-Blast is already being sent and can no longer be withdrawn or stopped.',
+    messageThai: 'E-Blast นี้กำลังถูกส่งแล้ว จึงไม่สามารถถอนหรือหยุดได้อีก',
+  },
+  member_halted: {
+    message:
+      "This member's E-Blasts are paused pending admin review, so it cannot be sent. Clear the pause first, or leave it unsent.",
+    messageThai:
+      'E-Blast ของสมาชิกรายนี้ถูกพักไว้รอผู้ดูแลตรวจสอบ จึงยังส่งไม่ได้ กรุณายกเลิกการพักก่อน หรือปล่อยไว้โดยไม่ส่ง',
+  },
+  member_not_in_good_standing: {
+    message:
+      "This member's membership is suspended or has ended, so this E-Blast cannot be sent. It can be sent once the membership is in good standing again.",
+    messageThai:
+      'สมาชิกภาพของสมาชิกรายนี้ถูกระงับหรือสิ้นสุดแล้ว จึงส่ง E-Blast นี้ไม่ได้ จะส่งได้เมื่อสมาชิกภาพกลับมาอยู่ในสถานะปกติ',
+  },
   broadcast_image_empty: {
     message: 'That file is empty. Please choose an image file with content.',
     messageThai: 'ไฟล์นี้ว่างเปล่า กรุณาเลือกไฟล์รูปภาพที่มีข้อมูล',
@@ -442,6 +542,27 @@ export function designBlockErrorResponse(
 }
 
 /**
+ * F119 FR-033 — the 409 `version_changed` body: the working copy's current
+ * concurrency token and content, so the client can say "someone else changed
+ * this" instead of overwriting. ONE shape for the save (`PATCH …/version`) and
+ * the send (`POST …/version/send`, round-4 B1), so the workspace reads both
+ * refusals the same way.
+ */
+export function versionChangedResponse(current: BroadcastVersion, correlationId: string): NextResponse {
+  return errorResponse(409, 'version_changed', correlationId, {
+    details: {
+      currentUpdatedAt: current.updatedAt.toISOString(),
+      current: {
+        subject: current.subject,
+        bodyHtml: current.bodyHtml,
+        bodySource: current.bodySource,
+        noteToMember: current.noteToMember,
+      },
+    },
+  });
+}
+
+/**
  * Resolve the tenant's display name for the broadcast `from_name` field.
  *
  * F4 tenant_invoice_settings carries the canonical legal name per tenant
@@ -537,6 +658,20 @@ const F7_ERROR_STATUS: Record<F7RouteErrorCode, number> = {
   test_copy_invalid_recipient: 422,
   // F2-6 — the member can fix this one; 400, not a 413 and not a 500.
   broadcast_image_empty: 400,
+  stage_changed: 409,
+  round_zero: 409,
+  version_changed: 409,
+  no_working_copy: 409,
+  unsafe_content: 422,
+  image_source_not_allowlisted: 422,
+  no_portal_user: 409,
+  no_proposal: 409,
+  mode_not_allowed: 409,
+  reason_required: 422,
+  stale_version: 409,
+  sending_started: 409,
+  member_halted: 409,
+  member_not_in_good_standing: 409,
   internal_error: 500,
 };
 

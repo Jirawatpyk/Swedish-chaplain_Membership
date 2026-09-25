@@ -61,21 +61,28 @@ const base: EnrichedQueueRow = {
   actorRoleLabel: null,
   segmentLabel: 'All members',
   recipientCount: 5,
-  submittedAtFormatted: '1 Aug 2026, 07:00',
   ageBadge: null,
   statusBadgeVariant: 'secondary',
   statusBadgeLabel: 'Submitted',
   actionable: true,
+  whoseTurnLabel: 'Marketing',
+  timeInStageLabel: '3 h',
+  round: 0,
+  proposedSendAtFormatted: null,
+  confirmedSendAtFormatted: null,
+  lastActivityFormatted: '1 Aug 2026, 07:00',
+  deliverySummary: null,
 };
 const rows = [base, { ...base, broadcastId: 'b2', subject: 'Hi2' }];
 // columnLabels now omits the bulk.* strings (client translates them):
 const columnLabels = {
-  submittedAt: 'Submitted',
   member: 'Member',
   subject: 'Subject',
-  segment: 'Audience',
-  recipientCount: 'Recipients',
-  status: 'Status',
+  audience: 'Audience',
+  sendTime: 'Send time',
+  status: 'Stage',
+  whoseTurn: 'Whose turn',
+  timeInStage: 'Time in stage',
   actions: 'Actions',
   select: 'Select broadcast',
   tableAria: 'Broadcast review queue',
@@ -230,9 +237,10 @@ describe('QueueTableClient a11y + ICU', () => {
     expect(subjectCell).not.toBeNull();
     expect(subjectCell).toHaveClass('whitespace-normal');
     expect(subjectCell).toHaveClass('break-words');
-    // Other columns are unaffected — recipientCount stays nowrap (inherited
-    // from the shared primitive's default) and right-aligned.
-    const recipientCell = within(desktopTable!).getByText('5').closest('[data-slot="table-cell"]');
-    expect(recipientCell).not.toHaveClass('whitespace-normal');
+    // Not every column wraps — Whose turn stays nowrap (the shared
+    // primitive's default). (F119 UX review M1 moved the recipient count this
+    // used to check into the Audience cell, which now wraps, capped.)
+    const whoseTurnCell = within(desktopTable!).getByText('Marketing').closest('[data-slot="table-cell"]');
+    expect(whoseTurnCell).not.toHaveClass('whitespace-normal');
   });
 });

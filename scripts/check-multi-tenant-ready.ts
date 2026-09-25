@@ -82,9 +82,12 @@ const SCOPED_TABLES = [
   // ENABLE + FORCE + the 0064 policy; and the pre-existing-but-unlisted
   // tenant_broadcast_settings (RLS since 0166), which 0304 turns into a
   // tenant-authored WRITE surface (brand colour + postal address).
-  // `broadcast_versions` + `broadcast_member_decisions` join with 0305 (PR-2).
   'broadcast_images',
   'tenant_broadcast_settings',
+  // F119 PR-2 (migration 0308) — the approval round's version history and
+  // the append-only member decisions; RLS ENABLE + FORCE + the 0064 policy.
+  'broadcast_versions',
+  'broadcast_member_decisions',
   // F8 renewals (Wave C)
   'scheduled_plan_changes',
   'renewal_cycles',

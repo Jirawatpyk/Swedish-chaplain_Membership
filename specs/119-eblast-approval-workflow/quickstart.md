@@ -19,7 +19,7 @@ Implementation detail lives in `tasks.md`; shapes in `data-model.md` and `contra
 
 ```bash
 # apply BOTH migrations to the dev branch
-pnpm db:migrate                 # 0304 then 0305
+pnpm db:migrate                 # 0304 then 0308
 
 # a duplicate `when` makes db:migrate a SILENT no-op that still prints "✓ applied" —
 # verify the DDL actually landed, do not trust the migrator's output
@@ -29,7 +29,7 @@ psql "$DATABASE_URL" -c "SELECT column_name FROM information_schema.columns WHER
 psql "$DATABASE_URL" -c "SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE relname IN ('broadcast_versions','broadcast_member_decisions','broadcast_images');"   # expect t,t ×3
 psql "$DATABASE_URL" -c "SELECT count(*) FROM pg_enum e JOIN pg_type t ON t.oid=e.enumtypid WHERE t.typname='audit_event_type' AND e.enumlabel IN ('broadcast_test_copy_sent','broadcast_brand_settings_changed','broadcast_image_uploaded','broadcast_image_removed','broadcast_version_started','broadcast_version_sent_to_member','broadcast_member_approved','broadcast_member_changes_requested','broadcast_member_approval_withdrawn','broadcast_member_approval_voided','broadcast_schedule_confirmed','broadcast_approval_reminder_sent','broadcast_approval_expiry_warned','broadcast_approval_expired');"   # expect 14
 
-# the 0305 backfills ran: every row that was 'submitted' with a time carries a proposal, and no
+# the 0308 backfills ran: every row that was 'submitted' with a time carries a proposal, and no
 # waiting row was left with a fresh stage clock. If the file put CREATE OR REPLACE of the
 # immutability fn BEFORE the backfills, db:migrate aborted with broadcast_immutable_after_submit
 # (round 3 H5) — and if stage_entered_at is uniformly "now", backfill 2 is missing (round 3 M3).
@@ -47,7 +47,7 @@ pnpm check:audit-events && pnpm check:audit-counts && pnpm check:i18n
 
 **Why one file can both add an enum value and use it**: `scripts/run-migrations.ts` extracts every
 `ALTER TYPE … ADD VALUE` and replays it in AUTOCOMMIT **before** the transactional pass (the 0301
-precedent), which is what lets `0305` add `'awaiting_member_approval'` and create a partial index on
+precedent), which is what lets `0308` add `'awaiting_member_approval'` and create a partial index on
 it. Keep one `ADD VALUE` per line, or the extraction misses them.
 
 ---
@@ -204,9 +204,12 @@ it. Keep one `ADD VALUE` per line, or the extraction misses them.
    approval** (FR-022a).
 5. **SC-004 measurement**: "notified within 5 minutes" means the notification email has been
    **handed to the delivery service**, measured from the hand-off event — not delivered, not opened.
-   Measure `enqueued_at` on the outbox row against the `sent_at` the dispatcher stamps when Resend
-   accepts it; the 1-minute outbox tick plus the provider call is the whole budget. A provider
-   failure is an `email_dispatch_failed` row, not an SC-004 breach.
+   Measure `created_at` on the outbox row against its `updated_at` once `status = 'sent'` —
+   `notifications_outbox` has no `enqueued_at` or `sent_at` column; the dispatcher's flip to `sent`
+   when Resend accepts the message is the row's last write. The 1-minute outbox tick plus the
+   provider call is the whole budget. A provider failure is an `email_dispatch_failed` row, not an
+   SC-004 breach, and a row enqueued while the flag was off measures the dark period, not the
+   dispatcher (`docs/observability.md` § 29.6).
 6. The nav badge counts the E-Blasts waiting on marketing, from anywhere in the staff portal.
 
 ### US6 — the screens
@@ -680,7 +683,8 @@ design-block keys added to `admin.broadcasts.templates.errors` in EN + TH + SV.
 **STILL OPEN**, unchanged and deliberately not touched: **U9** (queue pagination) · **U12**
 (skeleton drift on the six files outside this record's PR-1 screens) · **U13** (no template
 delete UI) · **U14** (chip focus ring) · **U15** (toolbar Arrow Up/Down + `aria-orientation`) ·
-**U20**–**U26**.
+**U20**–**U26**. (2026-09-24: U14 and U12's `/admin/broadcasts/loading.tsx` part were closed by
+T086a V4 / V3 — see the T086a record; U12's other five files are still open.)
 
 Two measurement debts remain from the record above and are NOT discharged by this round: the three
 member-portal surfaces were walked from code only (the `E2E_MEMBER_EMAIL_EMPTY` persona does not
@@ -1012,6 +1016,172 @@ So "29 passed" is only 29 surfaces actually scanned **if both variables were set
 Before quoting a run as coverage, confirm the variables were present and read the skip count —
 a missing variable is not a pass, it is a scan that never happened (`feedback: skip is not pass`).
 
+#### T086a record (PR-2) — 2026-09-24
+
+The PR-2 half of the FR-051 pass, beside PR-1's T155 / T156 record above, on the three screens PR-2
+builds or rebuilds: **SD** staff detail/format `/admin/broadcasts/[id]` (T063) · **MS** member
+sign-off view of `/portal/broadcasts/[id]` (T086) · **SQ** the rebuilt staff queue
+`/admin/broadcasts` (T116–T120). SD and MS were taken on `4f71ff7f4` + this task's spec change.
+**SQ was taken against the working tree while the dashboard date-filter change was still being
+edited** (`page.tsx`, `_lib/*`, the API route and `admin-broadcast-queue.ts` uncommitted), so re-run
+screen 3 / U2 / B1 / H4 on the committed tree before quoting the SQ rows. All runs were against the
+maintainer's dev server on :3100 with `FEATURE_EBLAST_MEMBER_APPROVAL=true`.
+**2026-09-24 (later the same day): V1–V10 are FIXED** (commit to follow) — each item below says
+how and names the test that went RED first; the § 15 cells they graded are re-graded in place.
+
+##### axe at 320 px — the run
+
+```bash
+pnpm test:e2e tests/e2e/broadcasts/eblast-a11y.spec.ts --workers=1 --project=chromium --grep "T086a|screen 3|U2|B1|H4"
+```
+
+| date | screen | case | result |
+| --- | --- | --- | --- |
+| 2026-09-24 | SD | `T086a — staff format surface … in in_design` — stage driven through the UI (Start + confirm), anchor = the open workspace, whose-turn "Marketing", editor present | **passed** — 0 serious/critical, **0 moderate**, no horizontal scroll at 320 px, every sandboxed frame titled |
+| 2026-09-24 | MS | `T086a — portal sign-off view … in awaiting_member_approval` — marketing formatted + sent in its own context, member scanned on the fixture page, anchor = the formatted-version card, Approve present | **passed** — 0 serious/critical, **0 moderate**, no horizontal scroll at 320 px, exactly 2 frames (formatted + original), both titled + `sandbox=""` |
+| 2026-09-24 | SQ | screen 3 (axe) · T155 U2 (EN, 320 px no scroll) · H4 (chip announces, keeps focus) | **passed** — 0 serious/critical, 0 moderate |
+| 2026-09-24 | SQ | **B1 SV** and **B1 TH** — the chip strip at 320 px with the `member_approved` chip on screen | **passed** — no document scroll, Stage fieldset does not overflow, longest chip ends inside 320 px |
+
+**7 passed / 0 skipped / 0 failed** (chromium; both personas set; moderate counts read from the JSON
+reporter's `axe-moderate-violations.json` attachments — none were attached). The two T086a cases
+were also green on a first run the same day (2 passed). As in T139, axe does **not** enter the
+`sandbox=""` preview frames; the frames' names are asserted by hand. The staff half of the MS case
+runs in a second browser context without the fixture's `pageerror` net.
+
+##### § 15 walk — PASS / FAIL / N/A per screen
+
+`L` = live-verified by the e2e above, `c` = code-only (the walk read the three route trees and
+`src/components/broadcast/{approval,admin}/**`).
+
+| § 15 item | SD | MS | SQ |
+|---|---|---|---|
+| 320 × 568, no horizontal scroll | L PASS | L PASS | L PASS (EN, SV, TH) |
+| 1920 × 1080, no ugly stretch | c PASS | c PASS | c PASS |
+| axe WCAG 2.1 AA | L PASS | L PASS | L PASS |
+| EN + TH + SV on every string | c PASS | c PASS | c PASS |
+| Shimmer skeleton matches the page | c PASS (V7 fixed) | c PASS (V5 fixed) | c PASS (V3 fixed — U12's queue file) |
+| Empty state designed | N/A | N/A (not-found: V6 fixed) | c PASS (shared `EmptyState`) |
+| Error states (field / form / page) | c PASS | c PASS | c PASS |
+| Toast on success | c PASS | waived — the stage banner's live region replaces it | c PASS |
+| Confirmation dialog on destructive | c PASS (V9 fixed) | c PASS | c PASS |
+| Auto-focus on the primary input | N/A (mid-page editor; see V1) | N/A | N/A |
+| Enter submits the form | c PASS (V8 fixed) | N/A (textareas) | N/A (filters apply on change) |
+| Escape closes modal / popover | c PASS | c PASS | c PASS |
+| Focus-visible ring on every control | c PASS | c PASS | c PASS (V4 fixed — U14 closed) |
+| Dark mode renders correctly | c PASS¹ | c PASS¹ | c PASS |
+| SR: landmarks, errors, navigable | c PASS | c PASS | c PASS (V10 fixed) |
+| `prefers-reduced-motion` honoured | c PASS | c PASS | c PASS |
+| Session user menu on the shell | c PASS | c PASS | c PASS |
+| Idle-warning modal | c PASS | N/A | c PASS |
+
+¹ the only hard-coded colour in the three trees is the preview frame's `bg-white`, now documented
+as an exception at `use-preview-html.tsx:250-259` — PR-1's "write it down" condition is met.
+No raw palette classes, hex, `order-*`, `*-reverse` or `tabIndex > 0` anywhere in the three trees.
+
+**`finalFocus` roll-call — every dialog passes.** SD: start-version confirm
+(`start-formatted-version-action.tsx:76,148`, `useDialogFinalFocus`), send-to-member
+(`formatted-version-workspace.tsx:172-195,509` — on a refused send it lands on the refused field,
+Reload or the error line), schedule (`schedule-confirm-dialog.tsx:119,249`), plus PR-1's approve /
+reject / cancel. MS: approve (`member-sign-off-actions.tsx:250,293`), request changes and withdraw
+approval (`ReasonAction`, `:383,423`), withdraw E-Blast (`cancel-broadcast-dialog.tsx:92`). SQ:
+row approve/reject, `bulk-approve-confirm-dialog.tsx:183,208`, and `ClearHaltDialog`
+(`clear-halt-dialog.tsx:67,110`) — **PR-1's U3 is fixed**. The member `Select` omits it
+legitimately (its trigger survives). Focus was also lost OUTSIDE a dialog in two places — V1, V2,
+both fixed below.
+
+##### Defects found — V1–V10, all FIXED 2026-09-24 (commit to follow)
+
+Each fix went RED first (a captured failing run; nothing here is committed red) and GREEN after;
+where a test was a guard that could not go red before the fix, a mutation proved it.
+
+1. **V1 [SD] Focus dropped to `<body>` on the no-dialog Start path — FIXED.**
+   `start-formatted-version-action.tsx`: from `changes_requested` the Start button needs no confirm,
+   and on success (or a 409/404 stage move) `router.refresh()` takes the button away with nothing to
+   hand focus to. Now the no-confirm path moves focus to `#main-content` itself before the refresh
+   (the confirm paths already land there through `finalFocus`). `#eblast-format-subject` was the
+   first choice but does not exist at that moment — the writing tool mounts only when the refreshed
+   page lands. Test: `start-formatted-version-action.test.tsx` "V1" ×2 (201 and 409).
+2. **V2 [SQ] Clear dropped focus to `<body>` — FIXED.** `queue-bulk-action-bar.tsx` Clear now
+   focuses the table's select-all checkbox (`data-testid="queue-select-all"`) BEFORE clearing, while
+   both are mounted; below `md` that table is `display: none`, `.focus()` does nothing, and it falls
+   back to `#main-content`. A bulk-approve success also clears, but its focus stays the confirm
+   dialog's `finalFocus`. Tests: `queue-with-bulk.test.tsx` "V2" (went RED), and the fallback in
+   `queue-bulk-action-bar.test.tsx` "T086a V2" ×2 — jsdom has no CSS, so the phone's two shapes are
+   modelled directly (no select-all; one that refuses focus); mutation-proved. The members bulk bar's Clear (`admin/members/_components/bulk-action-bar.tsx`) has the same
+   shape and is out of this PR's scope.
+3. **V3 [SQ] The queue skeleton did not match the rebuilt table (U12's queue file) — FIXED.**
+   `(staff)/admin/broadcasts/loading.tsx` now reserves the header actions (Templates only while its
+   flag is on, New E-Blast always — a manager, who sees no New E-Blast, is the rarer reader), the
+   order hint, the eight-column table from `md` (an h-10 header row and two-line rows), the card list
+   below `md`, and `aria-busy` — U12's other five files are untouched. The stalled line is still
+   not reserved (it renders only when a shown row stalled). Test: `queue-loading-skeleton.test.tsx`
+   "T086a V3" ×3. Side effect: the skeleton now renders the page's own action row, so
+   `eblast-a11y.spec.ts` U2 resolved `[data-slot="page-header-actions"]` to the SKELETON's row,
+   which detached mid-swap (`boundingBox()` null — failed once). U2 now anchors on the filter bar's
+   `role="search"` (the skeleton's bar is an `aria-hidden` box) and scopes the row to `:visible`.
+   Screen 3 gets the same anchor as hardening — it could already scan the skeleton, whose h1
+   predates this change; its one failure in the same run was a `page.goto` load timeout (4.3 min, a
+   dev-server compile stall after the edits), not the anchor. Re-run: 16 passed.
+4. **V4 [SQ] The chip focus ring was on the 16 px checkbox, not the 44 px pill (U14) — FIXED.**
+   `queue-filters.tsx`: the chip `<label>` wears the Button's ring tokens under
+   `has-[:focus-visible]:` (`border-ring`, `ring-3`, `ring-ring/50`) and the checkbox drops its own
+   outline (`focus-visible:outline-none`) so there is one ring, not two. The checkbox stays the
+   focusable control — Tab, Space and its name are unchanged. Test: `queue-filters-ux-review.test.tsx`
+   "T086a V4" (class pins; jsdom has no CSS).
+5. **V5 [MS] The sign-off skeleton reserved the wrong card — FIXED.**
+   `(member)/portal/broadcasts/[id]/loading.tsx` no longer reserves the delivery card (the page
+   renders it only once sending has begun; the sign-off stages put the decision controls and history
+   there, below the fold), and the fields card has the page's `CardHeader` (overline + subject
+   heading). Test: `portal-eblast-detail-skeleton.test.tsx` (3 cards, not 4) + "T086a V5" (header;
+   mutation-proved — moving the bars back into `CardContent` turns it red).
+6. **V6 [MS] `not-found.tsx` printed the same string twice — FIXED.** New keys
+   `portal.broadcasts.detail.notFound.{title,body}` in EN + TH + SV; the body names no reason, so
+   "absent" and "someone else's" still read alike. Test: `portal-eblast-not-found.test.tsx` (new).
+7. **V7 [SD] The staff detail skeleton reserved only the round-0 shape — FIXED.** `[id]/loading.tsx`
+   reserves the `lg` two-column content grid (first card at every width, the second `hidden lg:flex`,
+   each with the page's `DETAIL_PREVIEW_FRAME_HEIGHT` frame), as MS's skeleton does. The choice,
+   recorded in the docblock: every stage after a version exists renders two columns; only
+   `submitted` renders one card. The read-only comparison's `lg:grid-cols-2` was chosen over the
+   writing tool's `[1fr_600px]` because every reader sees the comparison, a manager included; the
+   writer's taller first column differs below the fold. Test: `admin-eblast-detail-skeleton.test.tsx`
+   "T086a V7" ×2.
+8. **V8 [SD] Enter did nothing in the workspace — FIXED.** `formatted-version-workspace.tsx`: the
+   fields are one `<form onSubmit>`; Save is its `type="submit"` (its `onClick` removed, so a click
+   and Enter both reach `onSave` once). Enter in the subject saves; with nothing changed Save is
+   `aria-disabled`, which cancels the implicit click. Enter in the note (`<textarea>`) and the body
+   (contenteditable) is a new line; the editor's dialogs are portaled out of the form. Tests:
+   `formatted-version-workspace.test.tsx` "V8" ×3 — the subject case went RED; the two guards were
+   mutation-proved (an Enter-submits `onKeyDown` on the form; dropping both `!dirty` gates).
+9. **V9 [SD] LOW — send-now confirmed with the generic "Confirm" — FIXED.** `schedule-confirm-dialog.tsx`:
+   new key `admin.broadcasts.approval.schedule.confirmSendNow` ("Send now" / "ส่งทันที" /
+   "Skicka nu"). Test: `schedule-confirm-dialog.test.tsx` "V9".
+10. **V10 [SQ] LOW — Tab order — FIXED.** The page's pagination `<nav>` is now handed to `QueueTable`
+    (`pagination` prop → `QueueWithBulk`), which renders it between the list and the bulk toolbar.
+    Decision: the toolbar is `position: fixed` at the bottom of the viewport, so it is visually LAST,
+    and the pagination sits in the flow above it — DOM order now matches (list → pagination →
+    toolbar), and the toolbar's spacer moves below the pagination, which is where it belongs. Test:
+    `queue-with-bulk.test.tsx` "V10".
+
+**Follow-on, same day.**
+
+- **The `chipCountsScope` note** (`text-xs text-muted-foreground` on the `bg-muted/20` filter panel,
+  `aria-describedby` on the Stage fieldset — kept): contrast computed from `globals.css`, compositing
+  `--muted` at 20 % over `SidebarInset`'s `bg-background` — **light 5.53:1** (`#676767` on `#fdfdfd`),
+  **dark 7.36:1** (`#a1a1a1` on `#101010`). Both clear 4.5:1; no change.
+- **From / To relabelled** "Submitted from" / "Submitted to" (TH "ส่งเมื่อ ตั้งแต่" / "ส่งเมื่อ ถึง",
+  SV "Inskickad från" / "Inskickad till" — the queue's own term for the submit date), so the date the
+  range filters on is visible. Test: `queue-filters-ux-review.test.tsx` "date range labels".
+
+**Verification (2026-09-24, working tree on `56591c6c4`).** Unit + contract + architecture
+(`tests/unit/broadcast tests/unit/broadcasts tests/contract/broadcasts tests/unit/architecture`):
+276 files / 3,210 tests passed. `eblast-a11y.spec.ts` chromium: **16 passed / 0 skipped / 0 failed**
+(both personas set); `eblast-approval.spec.ts` chromium: **3 passed**. `check:i18n`, `check:layout`,
+`check:staff-page-guard`, `check:portal-guard`, `check:strict-aria`, `check:fixme`, `typecheck` and
+full `lint` all exit 0.
+
+**Verdict**: the automated bar (zero serious/critical at 320 px, no horizontal scroll, SV/TH chip
+strip) is **met on all three screens**, and the § 15 hand-walk is now **clean**: V1–V10 are fixed.
+
 ### 3.2 PR-2 — the approval round, the dashboard and the trial (ships DARK)
 
 **There is no PR-3.** The maintainer merged the former PR-3 (US4 dashboard + US7 trial) into PR-2 on
@@ -1019,8 +1189,8 @@ a missing variable is not a pass, it is a scan that never happened (`feedback: s
 reports them, the runbook and the EN + TH UAT walkthrough all land in one PR — which is what makes
 step 5's flip safe to take immediately after this merge.
 
-1. Merge → prod auto-migrates **`0305`** on deploy (`vercel-build`); `0304` already applied with
-   PR-1, so this deploy adds only the `0305` DDL. Run
+1. Merge → prod auto-migrates **`0308`** on deploy (`vercel-build`); `0304` already applied with
+   PR-1, so this deploy adds only the `0308` DDL. Run
    `pnpm db:verify:prod` and the `pg_proc` checks from § 0 against prod, read-only.
 2. **Do not set `FEATURE_EBLAST_MEMBER_APPROVAL` yet.** Setting the env var is the deploy and the
    flip in one action.
@@ -1031,21 +1201,157 @@ step 5's flip safe to take immediately after this merge.
      `0304` in PR-1, ten land here) and the five
      `notification_type` values (`ADD VALUE` is irreversible — not even a revert undoes these);
    - the two amended trigger functions (a reversal is a new migration);
-   - `proposed_send_at` now recorded at submit for **every** E-Blast, and the backfill of rows
-     currently in `submitted`;
+   - the `0308` backfill of `proposed_send_at` for rows in `submitted` at the deploy, and the
+     submit writing it from then on (the `draft → submitted` transition copies the requested time
+     into it; the immutability trigger freezes it after — FR-016);
    - the widened allowance bucket and cancel cascade — they read the same set, which currently
      contains no rows in the new stages, so behaviour is unchanged until the flag is on;
    - `stage_entered_at` stamped on every status change;
    - **T120's stage-vocabulary relabel**: `approved` reads **"Scheduled"** in **both** live
      namespaces — `admin.broadcasts.queue.status` and `portal.broadcasts.list.status` — so every
      staff and member reader sees the new word on merge, before any flag. Code-revert-only;
-   - **T117's seven new queue columns** (Stage, Whose turn, Time in stage, Round, Proposed,
-     Confirmed, Last activity) and the `ageBadge` re-based on `stage_entered_at` — the live queue
-     changes shape for every staff user on merge. Code-revert-only;
+   - **T117's queue rebuild** — eight columns after the dashboard UX review (Member · Subject ·
+     Stage with Round and the delivery line · Whose turn · Time in stage with "since" · Send time
+     · Audience · Actions; Submitted moved to the detail page), the `ageBadge` re-based on
+     `stage_entered_at`, per-chip counts, Next/First page links, and non-waiting views sorted most
+     recent first — the live queue changes shape for every staff user on merge. Code-revert-only;
    - **T141a's portal detail fields** (`stage`, `whoseTurn`, `round`, `proposedSendAt`,
      `confirmedSendAt`, `expiresAt`, and the "latest **sent** version while awaiting" body rule) on
      `GET /api/broadcasts/[id]` and `/portal/broadcasts/[id]` — members see the widened detail on
      merge. Code-revert-only.
+
+   Added by the T154 walk (2026-09-24, against `1b06c1cd1` — each read from the code or a commit
+   body, all code-revert-only):
+   - **the portal detail page redesign** (T086, `dffa9af63`, `1b06c1cd1`): a stage banner (the
+     page's one live region), the proposed and confirmed send times, the **compare view only
+     once a version has been sent** (otherwise the single preview), the History list when there
+     is history, and the **Delivery card only once sending has begun** (`sending`, `sent`,
+     `partially_sent`, `partial_delivery_accepted`, `failed_to_dispatch`) — before PR-2 it
+     rendered on every E-Blast. `tests/e2e/member-quota-history.spec.ts` AS3 now picks a Sent row
+     for that reason;
+   - **the portal's member-held stage labels** (`1b06c1cd1` M4) in `portal.broadcasts.list.status`
+     — "Awaiting your approval", "Changes requested", "Approved — awaiting schedule";
+   - **the staff detail page rebuilt as the formatting surface** (T063): the approval-round card,
+     the version history, the test-copy button and the standing warnings render for every row;
+     only "Start formatted version" on a `submitted` row is hidden while the flag is off. Approve
+     stays `submitted`-only; Reject now follows `canTransition(status, 'rejected')` (identical for
+     today's rows);
+   - **the widened reject and cancel stage set** (T081) — reachable only with new-stage rows — and
+     a new refusal code: a cancel (staff or member) from `sending` onward now answers 409
+     **`sending_started`** where it answered `broadcast_cancel_too_late`, for today's rows too. The
+     cancel dialog (staff and portal) and the send-now Undo read **both** codes as "too late"
+     (whole-branch review HIGH-2 — before the fix an Undo that lost the race to the cron said
+     "Couldn't undo — still approved", and the dialog said "Please try again");
+   - **the staff reject route consumes the 30 / 60 s staff write bucket** (T081), a new limit on an
+     existing action. **The staff cancel route does NOT** (whole-branch review HIGH-3): the bulk
+     send-now Undo fans out one cancel per approved row (`BULK_CAP` = 100) from one actor, so a
+     30 / 60 s bucket made rows 31 and up answer 429, read "still approved", and **dispatch although
+     the admin clicked Undo** — a regression of what works on `main`. The contract records the
+     deviation (`admin-eblast-formatting-api.md` § Rate limits). The Undo now also reports a 429 on its
+     own ("Too many requests — … will still send unless you cancel it from the queue") instead of
+     "still approved". The cancel route's permission is **unchanged** — `broadcasts.write` was
+     already the gate on `main`; PR-2 only names it in the route header and records the session role
+     on the cancel. The portal cancel consumes the member bucket (60 / min, T081a);
+   - **reject / cancel stamp the E-Blast's images** in the same transaction
+     (`broadcast_image_removed { reason: 'rejected' | 'withdrawn' }` — a staff cancel uses
+     `withdrawn`), so the next daily sweep deletes the bytes of a rejected or cancelled E-Blast in
+     **today's** flow as well;
+   - **a closed-never-sent E-Blast's own content no longer holds its images** (T081 follow-up):
+     the sweep's last-reference rule skips the body and the version bodies of a `rejected`,
+     `cancelled` or `expired_no_member_response` E-Blast that never entered sending, so its images
+     are deleted on the next sweep and its detail pages show broken images. Any other E-Blast,
+     sent or in progress (versions included), and any template still holds a shared image;
+   - **the lapsed-member exemption** (`7c7973c52`): five exact, uuid-anchored paths —
+     `GET /api/broadcasts/<id>`, `GET …/versions`, `POST …/decision`, `POST …/cancel` and the page
+     `/portal/broadcasts/<id>` — are no longer refused for a lapsed member, so a lapsed member can
+     open and cancel their own E-Blast today; submit, drafts, image upload, preview, test copy and
+     quota stay refused;
+   - **the F9 needs-attention count is the marketing-turn set** (T132): the approval counter counts
+     `submitted`, `in_design`, `changes_requested`, `member_approved` — identical to before while
+     no row is in a new stage; the staff nav badge reads the same set and stays hidden while the
+     flag is off unless a row is in an approval-round stage. The home item is relabelled **"E-Blasts
+     waiting on marketing"** (was "Broadcasts awaiting approval") and links to the queue filtered to
+     those four stages (was the bare `/admin/broadcasts`, whose default view is `submitted` only —
+     whole-branch review MEDIUM-4). The nav item still opens `/admin/broadcasts`: it is the section's
+     entry and the default view is where the overdue banner renders;
+   - **every `/admin/**` page runs one extra indexed `count(*)`** in the staff layout — the nav
+     badge read (T132), bounded at 1,500 ms — **even with the flag off**: the flag decides whether
+     the badge SHOWS, after the count (an in-flight approval-round row keeps it visible). Only
+     `FEATURE_F7_BROADCASTS` off or a role without `broadcasts.read` skips the query;
+   - **the staff queue's `submitted` label reads "Awaiting marketing review"** (was "Awaiting
+     review"), the FR-019 / contract / staff-email wording, and the staff emails' stage words are the
+     queue's labels — a member's whole-E-Blast withdrawal reads **"Cancelled"** in the email (was
+     "Withdrawn") because that is what the queue row says (whole-branch review LOW-6). The portal
+     list is member-facing and keeps "Awaiting review";
+   - **every submit enqueues `eblast_submitted_marketing`** (member and proxy, one row per roster
+     recipient, T129), and a member's whole-E-Blast withdrawal enqueues
+     `eblast_member_decided_marketing { decision: 'withdrawn' }`. Held by the drainer (see below);
+     the rows accumulate from the merge and, on the flip, only rows whose E-Blast is still
+     `submitted` are delivered — the rest close silently as `request_superseded`. An empty roster
+     counts `broadcasts_no_marketing_recipient_total` on submit whatever the flag says;
+   - **the staff image route's stage refusal is 409 `stage_changed`** (was
+     `broadcast_invalid_state_transition`; T106a) and it also accepts `in_design`; the member route
+     keeps its code;
+   - **the shared `TypedPhraseField` renders its error ABOVE its help text** for every caller
+     (ux-standards § 4.1 — the error sits directly under its input), and gains a `readOnly` prop;
+   - **`Button` gains the `data-disabled:` look app-wide** (`data-disabled:cursor-not-allowed
+     data-disabled:opacity-50`): a Base UI `focusableWhenDisabled` control now looks disabled while
+     it keeps focus. A natively disabled button also carries `data-disabled`, so its look is
+     unchanged — but every button that sets `data-disabled` any other way now dims;
+   - **the shared `ReasonConfirmationDialog`** (`1b06c1cd1` H2): every caller now keeps focus on the
+     confirm while pending (`focusableWhenDisabled`, `aria-busy`, spinner, read-only fields),
+     refuses to close while pending, focuses the refusal or the reason field, and skips the
+     blank-reason error when focus leaves for Cancel; the opt-in props `announceBlankReason`,
+     `refusal`, `confirmTone` and a read-only `TypedPhraseField` are new. The portal cancel dialog
+     renders a 5xx / network refusal inside the open dialog;
+   - **the member erasure's reach and the DSAR archive** (T082, T083): the erasure scrub redacts
+     versions and decision reasons and deletes the member's pending `eblast_*` outbox rows (which
+     exist from the merge — the submit enqueue above), `broadcast_content_redacted` gains three
+     counts, and every member archive carries `broadcast-versions.json` (empty until a round
+     exists);
+   - **the four stage gauges** (T121) — `broadcasts_marketing_turn_count` is non-zero on merge
+     because it counts `submitted` rows — and Block 3 of the daily prune tick (runs, and finds
+     nothing, until a row awaits the member). **A Block 3 failure makes the prune-drafts cron tick
+     answer 500** (`approvalLifecycleOk`), where on `main` that route failed only on the draft
+     prune — a lifecycle fault now reads as a failed cron run on the dashboards, even with the flag
+     off.
+
+   Added by T166 (2026-09-24 — the reliability and security follow-ups; each code-revert-only):
+   - **the dispatcher's attach CAS checks `status = 'approved'`** (R-H1), so an admin cancel, a
+     member withdrawal or a schedule cancel that lands during dispatch wins the race — the
+     dispatcher reclaims the row and sends nothing;
+   - **`outbox_stuck_rows_total` no longer counts the flag-skipped types** (R-H2), so the held
+     `eblast_*` rows cannot fire the "cron is down" alert. The exclusion is the candidate pick's one
+     list (`flagSkippedTypeFilters`), so the count **also** stops counting rows held back by the
+     F4, F114 and F5 notification flags — a stuck row of one of those types while its flag is off
+     no longer pages;
+   - **cancel / reject 500s are logged with an `errorId`** (`M119.admin.cancel.*`,
+     `M119.admin.reject.*`, R-M4) — the error class, never the message; the approve route now
+     does the same (`M119.admin.approve.unexpected` / `M119.admin.approve.server_error`);
+   - **the erasure cascade retries a lost CAS three times**, then reports
+     `cascade_partial_failure` (R-M3);
+   - **submit and the member cancel read the marketing roster before their transaction** (R-L3);
+     the daily approval-lifecycle tick reads it once per tick, before any row lock. Both member
+     actions now **depend on that `users` read**: a throw there answers 500 and nothing is
+     submitted or withdrawn, a failure mode today's submit and cancel do not have;
+   - **approve-as-submitted refuses a halted, suspended or terminated member with 409
+     `member_halted` / `member_not_in_good_standing`** (S-H1) — the live, unflagged approve path,
+     a deliberate behaviour change. The approve dialog names that reason **inside the open
+     dialog** (every 409 used to read "already actioned by another administrator"), and a bulk
+     approve names each standing reason in its summary toast. "Not in good standing" is F8
+     access other than `full` — **lapsed**, suspended or terminated. **Consequence on deploy: any
+     E-Blast sitting in `submitted` whose member is halted or not in good standing becomes
+     unapprovable** — it can still be rejected or cancelled, and becomes approvable again once the
+     member's standing returns. Count those rows before the merge (each `submitted` row against its
+     member's F8 access) so marketing is not surprised. The e2e review-queue fixture moved to the
+     in-good-standing persona (`E2E_MEMBER_EMAIL_EMPTY`) for this reason: its old owner is the
+     lapsed persona, and AS2 correctly started refusing it;
+   - **each standing refusal writes an audit row** under the types submit already writes —
+     `broadcast_member_halted_pending_review` / `broadcast_membership_suspended_blocked` — with
+     `related_member_id`, `broadcast_id`, `surface` (`approve_as_submitted` | `schedule_confirm`)
+     and the session `actor_role`. A query on either type now returns staff refusals as well as
+     member submits; submit's own rows keep their `memberId` payload;
+   - **`PATCH …/version` spends the staff write bucket before parsing its body** (S-INFO).
 
    **Not on this list, deliberately: the staff "new submission" email.** `eblast_submitted_marketing`
    is enqueued from the moment PR-2 merges, but the outbox drainer **skips the five new
@@ -1142,53 +1448,72 @@ every preview, so changing it never voids a pending or given approval (FR-041c).
 
 | Layer | Action | In-flight rows | Time |
 |---|---|---|---|
-| 1 — platform flag off | remove `FEATURE_EBLAST_MEMBER_APPROVAL` in Vercel + redeploy | kept; no **new** E-Blast can enter the round; rows already in a new stage stay completable and cancellable, and the reminder/expiry clock keeps running so nothing sits forever. **Hand-off emails stop being delivered** — the drainer skips the five types again and the rows queue up, so a re-flip resumes them rather than losing them (round 4 H2) | one deploy |
-| 2 — code revert of PR-2 | revert the PR | rows in a new stage become unreachable by the application until the code returns — **cancel them first** (`/admin/broadcasts` → Cancel), because the enum values and the triggers stay | one deploy |
+| 1 — platform flag off | remove `FEATURE_EBLAST_MEMBER_APPROVAL` in Vercel + redeploy | kept; no **new** E-Blast can enter the round — **only the `submitted → in_design` edge is gated** (`POST …/version` on a `submitted` row → 404, nothing written, no probe audit; "Start formatted version" hidden on submitted rows). Rows already in a new stage stay completable and cancellable: save and send a working copy, re-entry from Changes requested / Member approved / Scheduled at round ≥ 1, the member's decisions, confirm schedule, reject and cancel. The reminder/expiry clock keeps running, so nothing sits forever. **The five `eblast_*` emails are held at the drainer** — still enqueued, not selected: `pending`, `attempts = 0`, no `last_error`, never the `no_template_handler` ladder; they drain on the first tick after the flip (round 4 H2). **Consequence**: a version sent, and its reminders, while the flag is off do **not** email the member, yet the 30-day clock runs — tell the member by hand or cancel. On the re-flip each arm re-reads the E-Blast and closes a stale row silently as `request_superseded`, including `eblast_member_decided_marketing` once the member has decided again or the E-Blast has closed (a row recording a member withdrawal is exempt from that re-check — it is the closing event — but a withdrawal whose E-Blast was cancelled (`broadcasts.cancelled_at`) more than **7 days** before the tick is closed as `request_superseded` too, so a flip does not send marketing a backlog of old "member withdrew" emails; runbook § After a re-flip). **If the flag-off is a retirement rather than a pause, purge the held rows**: while the flag is off every pending `eblast_*` row keeps a staff (or member contact) address in `to_email` indefinitely, and every submit keeps enqueuing more, so repeat this while the flag stays off (e.g. with the monthly outbox review) and once more before any layer-2 revert: `DELETE FROM notifications_outbox WHERE status = 'pending' AND notification_type::text LIKE 'eblast\_%';` — `notifications_outbox` is RLS + FORCE, so run it as the migration-owner role (which bypasses RLS) or inside a transaction after `SET LOCAL app.current_tenant = '<tenant>'`, once per tenant; as the application role without the GUC it deletes zero rows and reports success (the same note as the layer-2 SQL in `docs/runbooks/eblast-approval.md` § Layer 2). Do **not** run it before a planned re-flip: the rows are the hand-off emails the flip delivers. **Evidence** (no env can be flipped on prod from here): `tests/contract/broadcasts/eblast-flag-matrix.test.ts` — the entry edge in both flag states, the in-flight arms (save/send from `in_design`, decide from `awaiting_member_approval`, schedule from `member_approved`, re-entry from `changes_requested`), the drainer's rendered SQL excluding all five types off and none on (with a positive control), and a flag-off submit writing its outbox row; `tests/integration/broadcasts/eblast-send-and-promote.test.ts` "flag off: the rows are enqueued and NOT delivered — pending, attempts 0, no last_error; after the flip the version-ready row is sent …" on live Neon | one deploy |
+| 2 — code revert of PR-2 | revert the PR | rows in a new stage become unreachable by the application until the code returns — **cancel them first** (`/admin/broadcasts/<id>` → Cancel, typed phrase + reason), because the enum values and the triggers stay and the pre-PR-2 code has no label, action or transition for them. **Also close the pending `eblast_*` outbox rows first**: the pre-PR-2 drainer has neither the skip nor an arm for them, so each would walk the `no_template_handler` ladder (5 attempts, ~3.6 h) into `permanently_failed` with an `email_dispatch_failed` row, paging `outbox_permanent_failures_total` (SQL in `docs/runbooks/eblast-approval.md` § Layer 2). Scheduled rows that went through a round already hold the promoted content and are sent normally by the old dispatcher; the member loses the ability to withdraw them. `stage_entered_at` stops being stamped, so a later re-merge reads stale "time in stage" on rows that moved in between. PR-2's unflagged changes (§ 3.2 step 3) are undone by this layer only | one deploy |
 | 3 — code revert of PR-1 | revert the PR | the wrapper returns to today's and the staff detail page returns to the raw-body view; brand columns and `broadcast_images` rows are orphaned but harmless. **What does NOT come back**: the pre-`sharp` upload path (already-uploaded images stay re-encoded — the originals were never stored), the image sweep (stamped rows stop being reclaimed and their bytes stay in Blob until the code returns), the erasure cascade's image reach (an erasure run after the revert will NOT stamp images again) and the four enum values. The full inventory is § 3.1's "Unflagged and live" list; every line of it is undone by this layer and by nothing else | one deploy |
 
-Migrations `0304` and `0305` are **not** undone by any layer; reversing them is a new migration, and
-`ALTER TYPE … ADD VALUE` cannot be reversed at all.
+Migrations `0304` and `0308` are **not** undone by any layer; reversing them is a new migration, and
+`ALTER TYPE … ADD VALUE` cannot be reversed at all (5 `broadcast_status`, 14 `audit_event_type` —
+four in `0304`, ten in `0308` — and 5 `notification_type` values). Layer 3 needs layer 2 first:
+PR-2 builds on PR-1.
+
+### 3.6 Known follow-ups
+
+- **The member-standing gate does not run at dispatch** (whole-branch review round 2). The halt
+  flag and F8 membership access (`readMemberSendStanding`) are read at submit, approve-as-submitted
+  and confirm-schedule's promotion — the edges that make a row dispatchable — and nowhere later:
+  neither `dispatchScheduledBroadcast` nor `buildAudienceTick` reads them, which is also true on
+  `main`. Since `main`'s migration `0306` (#383) a refund or a full credit note ends coverage
+  immediately, so an E-Blast **already `approved` and scheduled days ahead is still sent** after the
+  member is refunded, suspended or halted. Spec § Edge Cases ("the existing rules that block
+  sending still apply at send time") is therefore met at the approval edges only. Until the fix
+  lands, cancel the member's `approved` rows by hand when their coverage ends. Proposed fix: each
+  dispatch path reads standing before any Resend call; a refusal moves the row to
+  `failed_to_dispatch` with its own reason, audits, and notifies; a failed read leaves the row
+  `approved` for the next tick.
+- **Type seams and smaller follow-ups from the PR #392 review round 3** are tracked in issue #400:
+  the `applyTransition` field allowlist as a type, branded ids across the F119 ports, a typed
+  `contextData` per `eblast_*` type, a distinct `read_failed` outbox failure reason, the `stage`
+  key on the decision and send 200 responses, and read-only handling in the older F7 staff
+  approve/reject dialogs. None is a live defect.
 
 ---
 
 ## 4. SweCham UAT (FR-035, US7, SC-005)
 
-The walkthrough is delivered as a written EN + TH document; this section is its precondition list.
+The walkthrough is delivered as a written EN + TH document —
+`uat-walkthrough-en.md` and `uat-walkthrough-th.md` (T153) — and this section is its precondition
+list. **The two walkthroughs repeat P1–P10 verbatim in meaning; change them together.**
 
-**Precondition — the staff-only recipient list must actually resolve.**
-`validateCustomRecipients` accepts any **contact email in the tenant graph**, so a "staff only"
-custom recipient list works **only if each staff address exists as a contact of the designated test
-member**. Before the trial:
+**The staff-only recipient list must actually resolve.** `validateCustomRecipients` accepts any
+**contact email in the tenant graph**, so a "staff only" custom recipient list works **only if each
+staff address exists as a contact of the designated test member**. Without P2 the recipient
+validation refuses the list and the trial stalls at submit — the single most likely way the UAT
+fails on day one.
 
-1. Create (or designate) a test member company in prod, e.g. "SweCham Internal Test".
-2. Add each participating SweCham staff address as a **contact of that member**, marketing-opted-in.
-3. Give that member a plan with at least 3 E-Blasts of allowance so the walkthrough's rounds and
-   rejections do not exhaust it.
-4. Use the **custom recipient list** audience on every trial E-Blast and name only those addresses.
-
-Without step 2 the recipient validation refuses the list and the trial stalls at submit — this is
-the single most likely way the UAT fails on day one.
-
-**Other preconditions**
-
-- The Resend account is on the **Free** plan (1,000 contacts, 3 segments), so at most **two**
-  broadcasts can be in flight at once; the audience ceiling is 500 recipients per tick. Sequence the
-  walkthrough accordingly.
-- The approval round itself makes **no** Resend Broadcasts call until the schedule is confirmed, so a
-  long design round consumes no Resend capacity.
-- Brand settings (§ 3.3) set, so the trial exercises the logo header, the brand-coloured button and
-  the real footer address.
-- `FEATURE_EBLAST_MEMBER_APPROVAL` on, and the RoPA updated (§ 3.2 step 4).
+| # | Precondition | Why — what fails without it |
+|---|---|---|
+| P1 | A designated **test member company** in prod (e.g. "SweCham Internal Test"), **in good standing** | A lapsed member can open and decide on its own E-Blast but **cannot submit** one |
+| P2 | Each participating SweCham staff address added as a **contact of that member**, marketing-opted-in | `validateCustomRecipients` refuses the list; the trial stalls at submit |
+| P3 | An **ACTIVE member-role portal login** for the test member, on an address that is **not already a Chamber-OS staff sign-in** (one address holds one account — `users_email_lower_unique`), e.g. a mailbox alias a participant reads. That address is also a contact of the member (P2) and is on the recipient list (P5) | "Send to member" is refused 409 `no_portal_user`. The member-side emails (version ready, reminders, the confirmed time) go to the **approval contact** — the contact linked to the login that submitted, else the primary contact, else the lowest-id active portal contact — so that contact must be this address, or a member email leaves the list |
+| P4 | A plan with **≥ 3 E-Blasts of allowance** for that member | Each trial E-Blast holds a place from submit until it is sent, rejected, withdrawn or expired; a second trial run needs a free place |
+| P5 | The **custom recipient list** audience on **every** trial E-Blast, naming only P2/P3 addresses | Any other audience reaches real members |
+| P6 | The participants include **every ACTIVE `marketing`-role user** of the tenant (or, if there is none, every active admin / super-admin) | Every hand-off email goes to that whole roster, not only to the person running the trial |
+| P7 | **Brand settings** (§ 3.3) set — colour and postal address | The trial should exercise the logo header, the brand-coloured button and the real footer address |
+| P8 | The **RoPA updated** (§ 3.2 step 4, T162) | It is the precondition of P9 |
+| P9 | `FEATURE_EBLAST_MEMBER_APPROVAL=true` in Vercel, with `FEATURE_F7_BROADCASTS` on | Setting it **is a production deploy** — only the maintainer does it. From then on every real submission emails the marketing roster, and "Start formatted version" is offered on every submitted E-Blast, not only the trial's |
+| P10 | **Resend Free plan**: at most **two** broadcasts in flight, 1,000 contacts, 3 segments; the audience ceiling is 500 recipients per tick | Run the trial E-Blasts one at a time. The approval round makes **no** Resend Broadcasts call until the send, so a long design round costs nothing |
 
 **Walkthrough** (the SC-005 path): submit → format → request changes → re-format → approve → confirm
-schedule → sent, with **zero** emails delivered outside the staff-only list. Verify after each send
-that the delivery report names only those addresses.
+schedule → sent, with **zero** emails delivered outside the staff-only list. Verify after the send
+that the delivery report names only those addresses, and after each hand-off that the email
+arrived in the expected inbox and nowhere else.
 
 ---
 
 ## 5. Watch after cutover
 
-**Three configured alerts** (`docs/observability.md` § 28, task T160) — these page or warn on their
+**Three configured alerts** (`docs/observability.md` § 29, task T160) — these page or warn on their
 own:
 
 - `broadcasts_awaiting_member_oldest_age_seconds` — **warning at 7 days**, **page at 14**. Both sit
@@ -1201,8 +1526,10 @@ own:
 nobody):
 
 - `email_dispatch_failed` audit rows whose `notification_type` starts `eblast_` — in particular
-  `no_template_handler`, which would mean a notification type shipped without its dispatcher arm and
-  has been retrying silently for up to 16 hours.
+  `no_template_handler`, which means the payload builder returned null: a transient read (logged
+  `M119.outbox_dispatch.eblast.read_failed`), malformed `context_data`, or a type with no arm. The
+  row retries after 60 s, 5 min, 30 min and 3 h and the fifth failure is terminal — about 3.6 hours,
+  not the "up to 16 hours" this line used to say (the 12 h step is never waited).
 - `broadcasts_marketing_turn_count` versus the nav badge — a divergence means the gauge and the live
   count are reading different predicates.
 - The first week's `broadcast_schedule_confirmed` rows with `differs: true` — if marketing is

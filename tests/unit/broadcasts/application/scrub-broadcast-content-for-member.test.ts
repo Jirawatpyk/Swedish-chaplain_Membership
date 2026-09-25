@@ -43,6 +43,7 @@ import { scrubBroadcastContentForMember } from '@/modules/broadcasts/application
 import type { AuditEmitInput } from '@/modules/broadcasts/application/ports/audit-port';
 import { asTenantContext } from '@/modules/tenants';
 import { asMemberId } from '@/modules/members';
+import { makeFakeBroadcastApprovalScrub } from '../../../helpers/eblast-approval-fakes';
 
 const tenant = asTenantContext('test-tenant');
 const memberId = asMemberId('11111111-1111-4111-8111-111111111111');
@@ -60,6 +61,8 @@ interface MakeDepsOverrides {
   imageRows?: ReadonlyArray<Record<string, unknown>>;
   /** ROUND-2 R-M6 — omit `emitManyTyped` to exercise the per-row fallback. */
   noEmitManyTyped?: boolean;
+  /** F119 T082 — what the approval-round scrub reports changing (default: nothing). */
+  approvalCounts?: { versions: number; reasons: number; notifications: number };
 }
 
 function makeDeps(overrides: MakeDepsOverrides = {}) {
@@ -111,10 +114,78 @@ function makeDeps(overrides: MakeDepsOverrides = {}) {
       async (_t: unknown, _m: unknown, _at: unknown, _tx: unknown) => overrides.imageRows ?? [],
     ),
   };
-  return { broadcastsRepo, audit, marketingUnsubscribes, imagesRepo, fakeTx };
+  // F119 T082 — the approval round's versions, reasons and pending hand-offs.
+  const approvalScrub = makeFakeBroadcastApprovalScrub();
+  if (overrides.approvalCounts !== undefined) {
+    const c = overrides.approvalCounts;
+    approvalScrub.redactVersionsForMemberInTx.mockResolvedValue({ redactedCount: c.versions });
+    approvalScrub.redactDecisionReasonsForMemberInTx.mockResolvedValue({ redactedCount: c.reasons });
+    approvalScrub.cancelPendingNotificationsForMemberInTx.mockResolvedValue({ cancelledCount: c.notifications });
+  }
+  return { broadcastsRepo, audit, marketingUnsubscribes, imagesRepo, approvalScrub, fakeTx };
 }
 
+describe('scrubBroadcastContentForMember — F119 T082: erasure reaches the approval round', () => {
+  beforeEach(() => {
+    auditEmitCountSpy.mockReset();
+  });
+
+  it('redacts the versions and the reasons and removes the pending hand-offs IN THE SCRUB TX, and attests all three', async () => {
+    const deps = makeDeps({ approvalCounts: { versions: 3, reasons: 1, notifications: 2 } });
+    const result = await scrubBroadcastContentForMember(deps as never, {
+      tenant,
+      memberId,
+      tombstonedCount: 0,
+      reason: 'gdpr_erasure_request',
+      initiatedByUserId: 'admin-1',
+      requestId: 'req-erase',
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value).toMatchObject({ versionsRedacted: 3, decisionReasonsRedacted: 1, notificationsCancelled: 2 });
+    }
+    for (const method of [
+      deps.approvalScrub.redactVersionsForMemberInTx,
+      deps.approvalScrub.redactDecisionReasonsForMemberInTx,
+      deps.approvalScrub.cancelPendingNotificationsForMemberInTx,
+    ]) {
+      expect(method).toHaveBeenCalledTimes(1);
+      // The same transaction as the parent redaction and the attestation.
+      expect(method).toHaveBeenCalledWith(deps.fakeTx, 'test-tenant', memberId);
+    }
+    const attestation = deps.audit.emitTyped.mock.calls.find(
+      (c) => (c[1] as { eventType: string }).eventType === 'broadcast_content_redacted',
+    );
+    expect(attestation![0]).toBe(deps.fakeTx);
+    expect((attestation![1] as { payload: Record<string, unknown> }).payload).toMatchObject({
+      versions_redacted: 3,
+      decision_reasons_redacted: 1,
+      notifications_cancelled: 2,
+    });
+  });
+
+  it.each([
+    ['versions', { versions: 1, reasons: 0, notifications: 0 }],
+    ['reasons', { versions: 0, reasons: 1, notifications: 0 }],
+    ['notifications', { versions: 0, reasons: 0, notifications: 1 }],
+  ] as const)('approval-round work on the %s axis alone still attests (the zero-work guard counts it)', async (_axis, counts) => {
+    const deps = makeDeps({ scrubImpl: async () => ({ scrubbedCount: 0 }), approvalCounts: counts });
+    const result = await scrubBroadcastContentForMember(deps as never, {
+      tenant,
+      memberId,
+      tombstonedCount: 0,
+      initiatedByUserId: null,
+      requestId: null,
+    });
+    expect(result.ok).toBe(true);
+    expect(deps.audit.emitTyped).toHaveBeenCalledTimes(1);
+    expect(auditEmitCountSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('scrubBroadcastContentForMember — F2-2: erasure reaches the images', () => {
+
   it('stamps every inline image of the erased member IN THE SCRUB TX and audits each', async () => {
     const deps = makeDeps({
       imageRows: [

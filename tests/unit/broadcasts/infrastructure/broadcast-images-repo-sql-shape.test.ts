@@ -24,16 +24,17 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { drizzleBroadcastImagesRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcast-images-repo';
+import { CLOSED_NEVER_SENT_BROADCAST_STATUSES } from '@/modules/broadcasts/domain/stage/in-progress-statuses';
 
-/** The text of a drizzle sql template — enough to assert WHICH operator ran. */
+/** The text of a drizzle sql template (nested fragments included) — enough to assert WHICH operator ran. */
 function sqlText(q: unknown): string {
   const chunks = (q as { queryChunks?: readonly unknown[] }).queryChunks ?? [];
   return chunks
-    .map((c) =>
-      typeof c === 'object' && c !== null && 'value' in c
-        ? (c as { value: readonly string[] }).value.join('')
-        : ' ? ',
-    )
+    .map((c) => {
+      if (typeof c === 'object' && c !== null && 'value' in c) return (c as { value: readonly string[] }).value.join('');
+      if (typeof c === 'object' && c !== null && 'queryChunks' in c) return sqlText(c);
+      return ' ? ';
+    })
     .join('');
 }
 
@@ -70,6 +71,27 @@ describe('drizzleBroadcastImagesRepo.isBlobReferencedByContent — SQL shape', (
     expect(text).toContain('body_html');
     expect(text).toContain('body_source');
     expect(text).toContain('broadcast_templates');
+  });
+
+  /**
+   * T081 follow-up — a rejected / withdrawn / expired E-Blast keeps its body
+   * (immutable after submit), so if its OWN content counted, the sweep would
+   * restore every image T081 stamped. The exclusion is the Domain constant's
+   * statuses plus "never handed over"; versions are scanned through their
+   * owner with the same exclusion, or a rejected E-Blast's sent version would
+   * re-retain the image.
+   */
+  it('excludes closed-never-sent owners, and scans version bodies through their owner with the same rule', async () => {
+    const { tx, statements } = recordingTx();
+
+    await drizzleBroadcastImagesRepo.isBlobReferencedByContent(TENANT, URL_WITH_METACHARS, tx);
+
+    const text = sqlText(statements[0]);
+    expect(text).toContain('broadcast_versions');
+    for (const status of CLOSED_NEVER_SENT_BROADCAST_STATUSES) expect(text).toContain(`'${status}'`);
+    expect(text).toContain('sending_started_at IS NULL');
+    expect(text).toContain('resend_broadcast_id IS NULL');
+    expect(text).toContain('audience_import_id IS NULL');
   });
 
   it('binds the URL as a PARAMETER, never concatenated into the statement text', async () => {

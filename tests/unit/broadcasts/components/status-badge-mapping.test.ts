@@ -39,6 +39,13 @@ describe('getBroadcastStatusBadgeProps', () => {
     ['rejected', 'destructive'],
     ['cancelled', 'outline'],
     ['failed_to_dispatch', 'destructive'],
+    // F119 (0308) — marketing's turn reads like `submitted`; the member's turn
+    // is distinct and non-destructive; expiry is muted like `cancelled`.
+    ['in_design', 'secondary'],
+    ['awaiting_member_approval', 'outline'],
+    ['changes_requested', 'secondary'],
+    ['member_approved', 'secondary'],
+    ['expired_no_member_response', 'outline'],
   ])('maps %s to variant=%s', (status, expectedVariant) => {
     const { variant } = getBroadcastStatusBadgeProps(status);
     expect(variant).toBe(expectedVariant);
@@ -56,6 +63,15 @@ describe('getBroadcastStatusBadgeProps', () => {
     expect(getBroadcastStatusBadgeProps('cancelled').className).toContain(
       'text-muted-foreground',
     );
+    expect(
+      getBroadcastStatusBadgeProps('expired_no_member_response').className,
+    ).toContain('text-muted-foreground');
+  });
+
+  it('does not mute the member’s turn — it is live work, unlike draft/cancelled', () => {
+    expect(
+      getBroadcastStatusBadgeProps('awaiting_member_approval').className,
+    ).toBeUndefined();
   });
 
   it('returns no className for variants that need no overrides', () => {

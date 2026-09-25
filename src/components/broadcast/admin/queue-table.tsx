@@ -15,9 +15,11 @@
  */
 import { Inbox } from 'lucide-react';
 import { getLocale, getTranslations } from 'next-intl/server';
-import type { EnrichedQueueRow } from './queue-table-client';
+import { EmptyState } from '@/components/shell/empty-state';
+import type { EnrichedQueueRow, QueueOrder } from './queue-table-client';
 import { QueueWithBulk } from './queue-with-bulk';
-import type { BroadcastStatus } from '@/modules/broadcasts';
+import { SLA_RED_HOURS, stageAgeOf } from '@/modules/broadcasts';
+import type { AdminQueueItem } from '@/lib/admin-broadcast-queue';
 import { getBroadcastStatusBadgeProps } from '@/components/broadcast/status-badge-mapping';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
 import { env } from '@/lib/env';
@@ -27,18 +29,11 @@ import { env } from '@/lib/env';
 // so admin queue, admin detail, and member portal surfaces share one
 // source of truth.
 
-export interface QueueRow {
-  readonly broadcastId: string;
-  readonly status: BroadcastStatus;
-  readonly subject: string;
-  readonly requestedByMemberId: string;
-  readonly requestedByMemberDisplayName: string;
-  readonly actorRole: string;
-  readonly segmentType: string;
-  readonly estimatedRecipientCount: number;
-  readonly submittedAt: string | null;
-  readonly createdAt: string;
-}
+/**
+ * F119 T117 — one dashboard row, exactly as `loadAdminBroadcastQueue` builds
+ * it for the page AND the list API (one projection, FR-030).
+ */
+export type QueueRow = AdminQueueItem;
 
 export interface QueueTableProps {
   readonly rows: ReadonlyArray<QueueRow>;
@@ -49,12 +44,24 @@ export interface QueueTableProps {
    * dialog, which repeats the warning at the decision point.
    */
   readonly haltUnknown?: boolean;
+  /** UX review H1 / M1 — the order the list was read in (`aria-sort` + the visible hint). */
+  readonly order?: QueueOrder;
+  /** UX review H3 — the whole view's count when known; see `QueueTableClientProps.viewTotal`. */
+  readonly viewTotal?: number | null;
+  /** UX review H4 — the view's identity (its URL query). */
+  readonly viewKey?: string;
+  /** T086a V10 — see `QueueWithBulkProps.pagination`. */
+  readonly pagination?: React.ReactNode;
 }
 
 export async function QueueTable({
   rows,
   readOnly = false,
   haltUnknown = false,
+  order = 'longest_in_stage',
+  viewTotal = null,
+  viewKey = '',
+  pagination,
 }: QueueTableProps): Promise<React.ReactElement> {
   const t = await getTranslations('admin.broadcasts.queue');
   const tActor = await getTranslations('admin.broadcasts.queue.actorRole');
@@ -69,56 +76,38 @@ export async function QueueTable({
     { dateStyle: 'medium', timeStyle: 'short', timeZone: env.tenant.timezone },
   );
 
-  if (rows.length === 0) {
-    // UX-C5: empty state with title + body + visual anchor (no CTA —
-    // admin can't manufacture submissions; queue empties when members
-    // submit).
-    return (
-      <div className="flex flex-col items-center gap-3 rounded-md border bg-muted/20 px-4 py-12 text-center">
-        <div className="rounded-full bg-background p-3">
-          <Inbox
-            className="h-6 w-6 text-muted-foreground"
-            aria-hidden="true"
-          />
-        </div>
-        <p className="text-sm font-medium">{t('emptyTitle')}</p>
-        <p className="max-w-md text-xs text-muted-foreground">{t('empty')}</p>
-      </div>
-    );
-  }
-
-  // Smart-3 — SLA age badge thresholds. 48h review SLA target per spec
-  // FR-013 (Clarifications session Q2).
-  // Server component runs once per request — `Date.now()` is the
-  // intended request-boundary value. ESLint react-hooks/purity is
-  // designed for client render purity; safe here.
+  // Smart-3 → F119 T117 / T118 — time in stage, re-based on
+  // `stage_entered_at` and measured on EVERY waiting stage by the Domain's one
+  // comparison (`stageAgeOf`): stalled at 48 h marketing-held / 3 days
+  // member-held (red, "Stalled — N days"), the 24 h amber pre-warning on
+  // marketing-held stages only. Server component runs once per request —
+  // `Date.now()` is the intended request-boundary value. ESLint
+  // react-hooks/purity is designed for client render purity; safe here.
   // eslint-disable-next-line react-hooks/purity
-  const nowMs = Date.now();
-  const SLA_AMBER_HOURS = 24;
-  const SLA_RED_HOURS = 48;
+  const now = new Date(Date.now());
+  const HOURS_PER_DAY = 24;
+  const formatInstant = (iso: string | null): string | null =>
+    iso === null ? null : dateFormatter.format(new Date(iso));
 
   const enrichedRows: ReadonlyArray<EnrichedQueueRow> = rows.map((row) => {
-    const submittedAtIso = row.submittedAt ?? row.createdAt;
-    const submittedDate = new Date(submittedAtIso);
-    const submittedAt = dateFormatter.format(submittedDate);
-    const hoursWaiting =
-      row.status === 'submitted'
-        ? Math.floor((nowMs - submittedDate.getTime()) / (60 * 60 * 1000))
-        : null;
+    const age = stageAgeOf(row.status, new Date(row.stageEnteredAt), now);
+    const days = age === null ? 0 : Math.floor(age.hours / HOURS_PER_DAY);
 
     // Type-3 (round-3) — single nullable struct so label+variant cannot drift.
+    // `red` is the stalled flag, and ONLY `stalled` produces it.
     let ageBadge: { label: string; variant: 'amber' | 'red' } | null = null;
-    if (hoursWaiting !== null && hoursWaiting >= SLA_RED_HOURS) {
-      ageBadge = {
-        label: t('ageBadge.overdue', { hours: hoursWaiting }),
-        variant: 'red',
-      };
-    } else if (hoursWaiting !== null && hoursWaiting >= SLA_AMBER_HOURS) {
-      ageBadge = {
-        label: t('ageBadge.aging', { hours: hoursWaiting }),
-        variant: 'amber',
-      };
+    if (age?.level === 'stalled') {
+      ageBadge = { label: t('ageBadge.stalled', { days }), variant: 'red' };
+    } else if (age?.level === 'aging') {
+      ageBadge = { label: t('ageBadge.aging', { hours: age.hours }), variant: 'amber' };
     }
+    // A fresh wait reads in hours up to the review target, then in days.
+    const timeInStageLabel =
+      age === null
+        ? null
+        : age.hours < SLA_RED_HOURS
+          ? t('timeInStage.hours', { hours: age.hours })
+          : t('timeInStage.days', { days });
 
     const style = getBroadcastStatusBadgeProps(row.status);
     const enriched: EnrichedQueueRow = {
@@ -131,11 +120,30 @@ export async function QueueTable({
           : null,
       segmentLabel: tSegment(row.segmentType as Parameters<typeof tSegment>[0]),
       recipientCount: row.estimatedRecipientCount,
-      submittedAtFormatted: submittedAt,
       ageBadge,
       statusBadgeVariant: style.variant,
       statusBadgeLabel: tStatus(row.status),
       actionable: row.status === 'submitted',
+      whoseTurnLabel:
+        row.whoseTurn === null
+          ? null
+          : row.whoseTurn === 'member'
+            ? t('whoseTurn.member')
+            : t('whoseTurn.marketing'),
+      timeInStageLabel,
+      round: row.currentRound,
+      proposedSendAtFormatted: formatInstant(row.proposedSendAt),
+      confirmedSendAtFormatted: formatInstant(row.confirmedSendAt),
+      lastActivityFormatted: dateFormatter.format(new Date(row.stageEnteredAt)),
+      deliverySummary:
+        row.delivery === null
+          ? null
+          : t('delivery.summary', {
+              recipients: row.delivery.recipients,
+              delivered: row.delivery.delivered,
+              bounced: row.delivery.bounced,
+              complained: row.delivery.complained,
+            }),
     };
     if (style.className !== undefined) {
       return { ...enriched, statusBadgeClassName: style.className };
@@ -148,13 +156,33 @@ export async function QueueTable({
       rows={enrichedRows}
       readOnly={readOnly}
       haltUnknown={haltUnknown}
+      order={order}
+      viewTotal={viewTotal}
+      viewKey={viewKey}
+      pagination={pagination}
+      emptyState={
+        // UX-C5: empty state with title + body + visual anchor (no CTA —
+        // admin can't manufacture submissions; queue empties when members
+        // submit). F119 T109 — rendered INSIDE the client component, so the
+        // list's one live region survives a stage change to an empty view.
+        // UX review LOW — the shared `EmptyState`, with its own `role="status"`
+        // switched off: the queue's announcer already says "No E-Blasts in
+        // this view", and FR-025 allows the list ONE live region.
+        <EmptyState
+          icon={Inbox}
+          title={t('emptyTitle')}
+          description={t('empty')}
+          announce={false}
+        />
+      }
       columnLabels={{
-        submittedAt: t('columns.submittedAt'),
         member: t('columns.member'),
         subject: t('columns.subject'),
-        segment: t('columns.segment'),
-        recipientCount: t('columns.recipientCount'),
         status: t('columns.status'),
+        whoseTurn: t('columns.whoseTurn'),
+        timeInStage: t('columns.timeInStage'),
+        sendTime: t('columns.sendTime'),
+        audience: t('columns.segment'),
         actions: t('columns.actions'),
         select: t('bulk.selectAria'),
         tableAria: t('tableAria'),

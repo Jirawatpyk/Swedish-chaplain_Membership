@@ -2301,3 +2301,220 @@ ended and orphans pending requests. Fix forward; if a code rollback is
 unavoidable, follow the remediation in `docs/runbooks/cron-jobs.md`
 (reconcile-coverage-ends).
 
+## 29. F119 E-Blast approval workflow (PR-2) — observability (T160 / T160a)
+
+Feature shape: a member submits an E-Blast; marketing formats it as a numbered **version**
+(`in_design`), sends that version to the member (`awaiting_member_approval`, round N), the member
+approves (`member_approved`), asks for changes (`changes_requested`) or withdraws an approval, and
+marketing confirms the send time (`approved`, labelled **Scheduled**), after which F7's dispatcher
+sends the approved version. A member who never answers is reminded on day 3 and day 7, both sides
+are warned on day 23, and on day 30 the E-Blast closes as `expired_no_member_response`. The flag
+`FEATURE_EBLAST_MEMBER_APPROVAL` (default OFF) gates exactly one edge — `submitted → in_design` —
+and, at the outbox drainer, the delivery of the five `eblast_*` emails. Everything else in this
+section is **live on the PR-2 merge whatever the flag says** (see § 29.1 for what that means for
+each series).
+
+PR-1's instruments (brand chrome, the image sweep) are in § 22.11 / § 22.12; the two preview
+instruments PR-1 registered are restated in § 29.2 because the PR-2 budgets read them.
+
+Owner: Broadcasts (broadcasts module). Tracer: `swecham.broadcasts` (`broadcastsTracer()` in
+`src/lib/otel-tracer.ts`). Runbook: `docs/runbooks/eblast-approval.md`. Contract:
+`specs/119-eblast-approval-workflow/contracts/dashboard-and-notifications.md` § 4 — where the
+built code differs from the contract, this section follows the code and says so.
+
+### 29.1 Gauges
+
+Emitted by the **existing** broadcasts half of `/api/internal/metrics/broadcasts-gauges` (native
+Vercel Cron, `*/5 * * * *`, UTC), in the same transaction as the F7 gauges, from one grouped query
+(`status::text`, like its siblings), **zero-filled** over the tick's observed tenant set — a count
+reads 0, never its last value. No new cron job. Registered on `broadcastsMetrics` in
+`src/lib/metrics.ts` (T121).
+
+| Metric | Type | Labels | Source | Notes |
+|---|---|---|---|---|
+| `broadcasts_awaiting_member_approval_count` | gauge | `tenant` | `count(*) WHERE status = 'awaiting_member_approval'` | E-Blasts waiting on the member. 0 until a round is started, so 0 on every tenant while the flag has never been on. |
+| `broadcasts_awaiting_member_oldest_age_seconds` | gauge | `tenant` | `EXTRACT(EPOCH FROM now() - MIN(stage_entered_at))` over the same rows, clamped at 0 | **0 when nothing is waiting** (a level, like § 27's age gauge). The clock is `stage_entered_at`, which every entry into `awaiting_member_approval` re-stamps, so a new version restarts it — the same clock the day-3/7/23/30 tick uses. The two age alerts in § 29.4 bind here. |
+| `broadcasts_changes_requested_count` | gauge | `tenant` | `count(*) WHERE status = 'changes_requested'` | Sent back by the member (a change request or a withdrawn approval) and waiting on marketing. |
+| `broadcasts_marketing_turn_count` | gauge | `tenant` | `count(*) WHERE status IN ('submitted','in_design','changes_requested','member_approved')` | The **marketing-turn set**, imported from the Domain (`MARKETING_TURN_STATUSES`, derived from `turnOf`) — the same set the staff nav badge counts live at render and the F9 needs-attention count now follows. **Non-zero before the flip**: it counts `submitted` rows, which exist today. |
+
+`broadcasts_queue_pending` (§ 22.1) is **unchanged** on `('submitted','approved')` — its § 22.3
+threshold is calibrated to that set.
+
+**None of the four is flag-gated.** Unlike F114's gauges (§ 27.1), which go ABSENT while their
+flag is off, these report real counts in both states: with the flag off no row can *enter* a new
+stage, but a row already inside one stays completable (FR-034) and must stay visible to the
+alerts.
+
+**A failed broadcasts half freezes all four.** When the tick's broadcasts query throws it sets
+`broadcastsGaugesOk: false`, logs `cron.broadcasts_gauges.query_failed`, answers 500 at the end —
+and observes nothing for that half. `observeGauge` re-reports the last value at every scrape, so
+the age gauge reads a **frozen level** for the length of the outage and can sit below the 14-day
+page threshold while the real age crosses it. The § 27.3 warning on `broadcastsGaugesOk = false`
+(three consecutive ticks) is the signal that the § 29.4 age alerts are blind.
+
+### 29.2 Counters and histograms
+
+**Seven counters and two histograms** — the contract § 4.2 list plus round-4 B8's
+`broadcasts_approval_lifecycle_row_failed_total` — all `safeMetric`-wrapped on
+`broadcastsMetrics` (`src/lib/metrics.ts`). Labels are `tenant` plus one bounded discriminator —
+never an id, an address, a subject, a note or a reason.
+
+| Metric | Type | Labels | Emitted by | Notes |
+|---|---|---|---|---|
+| `broadcasts_version_sent_total` | counter | `tenant`, `round` | `sendVersionToMember` (T059), after the commit | One per version sent to the member. `round` is the approval round (1, 2, …) — bounded in practice by how many revise cycles one E-Blast takes. |
+| `broadcasts_member_decision_total` | counter | `tenant`, `decision` | `recordMemberDecision` (T078), after the commit | `decision ∈ {approved, changes_requested, approval_withdrawn}`. A withdrawal of the **whole E-Blast** (the portal cancel) is not a decision and is not counted here. |
+| `broadcasts_approval_expired_total` | counter | `tenant` | `expireStaleMemberApprovals` (T130), per expired row | One per E-Blast closed as `expired_no_member_response` on day 30. |
+| `broadcasts_approval_lifecycle_row_failed_total` | counter | `tenant` | `expireStaleMemberApprovals` (round-4 B8), per failed row | The lifecycle twin of `broadcasts_image_sweep_row_failed_total`: one per awaiting row whose per-row transaction **threw** (a marketing roster that could not be read for the day-23 / day-30 notice, an audit or outbox insert that failed, the row's statement timeout). The row rolls back and is retried on the next tick, and the tick still answers **200**; the `M119.cron.approval_lifecycle.row_failed` line carries `err` — for a dependency, `ApprovalDependencyError:<dependency>:<cause>`. Before this counter a persistent fault left reminders and expiries undone behind a `warn` line only. |
+| `broadcasts_preview_rendered_total` | counter | `tenant`, `surface` | `renderBroadcastPreview` (PR-1, T122a) | **Code differs from the contract**: `surface ∈ {member, staff, detail}` (`PreviewMetricSurface`), not the contract's `inline \| dialog \| compare`. `detail` is the two E-Blast detail pages reading a stored broadcast back through the renderer (ROUND-3 #11). |
+| `broadcasts_no_marketing_recipient_total` | counter | `tenant` | `makeMarketingDirectory(…).reportEmptyRoster()` (T066, T166 R-L3) | One per hand-off whose roster resolved to nobody: no ACTIVE `marketing`-role user **and** no ACTIVE `broadcasts.write` holder of the admin tiers to fall back to. The roster is read **before** the state-changing transaction (R-L3) and the count is taken by `reportEmptyRoster()` only **after that transaction commits**, so it moves on submit (every submit enqueues `eblast_submitted_marketing`), on a member decision or whole-E-Blast withdrawal, and on the day-23 warning and day-30 closure — **with the flag off as well**, because the enqueue is unconditional. A refused or rolled-back hand-off is **not** counted. |
+| `broadcasts_version_saved_total` | counter | `tenant` | `saveFormattedVersion` (T058) | One per successful working-copy save (`PATCH …/[id]/version`). A save is not a hand-off: counted, not audited. |
+| `broadcasts_member_decide_ms` | histogram | `tenant` | `POST /api/broadcasts/[id]/decision` (the **route**, not the use case) | Wall time from just before the span opens to its end, recorded for **every** outcome that reached the use case — refusals (`stale_version`, `stage_changed`, `reason_required`, …) included. A 400 body-parse refusal and a 429 bucket refusal return before the timer starts. |
+| `broadcasts_preview_render_ms` | histogram | `tenant`, `surface` | `renderBroadcastPreview` (PR-1) | Sanitise + brand read + wrapper. Same `surface` label as the counter. Budget in § 29.6. |
+
+No counter is added for the schedule confirmation or the version start: both are audited
+(`broadcast_schedule_confirmed`, `broadcast_version_started`), and the audit row is the durable
+record.
+
+### 29.3 Traces
+
+`F119_BROADCASTS_SPANS` in `src/lib/otel-tracer.ts` names **four** spans; **three are emitted**.
+Each emitted span wraps its route's use-case call through `inApprovalSpan`
+(`src/lib/broadcasts-approval-span.ts`).
+
+| Span | Key | Emitted by | State |
+|---|---|---|---|
+| `broadcasts.version.send` | `versionSend` | `POST /api/admin/broadcasts/[id]/version/send` | emitted |
+| `broadcasts.member.decide` | `memberDecide` | `POST /api/broadcasts/[id]/decision` | emitted |
+| `broadcasts.schedule.confirm` | `scheduleConfirm` | `POST /api/admin/broadcasts/[id]/schedule` | emitted |
+| `broadcasts.preview.render` | `previewRender` | — | **registered, not emitted.** T032 (PR-1) shipped the preview without opening it, and PR-2 registered the name without adding an emitter. The preview is timed by `broadcasts_preview_render_ms` only. |
+
+Attributes are limited to `tenant.slug` and `broadcast.id` (set when the span opens) and
+`broadcast.stage` / `broadcast.round` (set on success) — never a value. A stated refusal leaves
+the status UNSET; only a `server_error` result or a throw marks the span `ERROR` (message
+`server_error` / `threw`, never an error's `.message`). No database instrumentation is registered
+(§ 27.5), so no statement span carries SQL text or a bind parameter under these.
+
+### 29.4 Alerts
+
+| Severity | Metric | Threshold | Action |
+|---|---|---|---|
+| **Page** | `broadcasts_awaiting_member_oldest_age_seconds` | > 14 d (1,209,600 s), any tenant | An E-Blast has waited on the member for two weeks: both reminders went out and nothing moved. This is well inside the 30-day expiry and **nine days ahead of the day-23 warning**, so a human sees it before either automatic step fires. Runbook § Stuck stage — `awaiting_member_approval`. |
+| Warning | `broadcasts_awaiting_member_oldest_age_seconds` | > 7 d (604,800 s), any tenant | The second reminder has been sent and nothing moved. Check the member was actually emailed (the flag is on; the `eblast_version_sent_member` / `eblast_approval_lifecycle` outbox rows are `sent`), then contact the member. |
+| Warning | `broadcasts_approval_lifecycle_row_failed_total` | increments on **two consecutive daily ticks** for the same `tenant` | One tick's failure is usually transient and the next tick retries it; the same tenant failing again the next day is a fault that is not clearing, and the reminders, warnings and expiries of those rows are not happening. Read the `M119.cron.approval_lifecycle.row_failed` lines for `err` first. |
+| **Page** | `broadcasts_no_marketing_recipient_total` | `increase > 0` | A hand-off notified nobody: the tenant has no active `marketing` user and no active admin to fall back to, so the E-Blast will sit unseen. Re-enable a staff user; the waiting rows are not re-sent (the enqueue already happened with an empty roster). Runbook § No marketing recipient. |
+
+Routing per § 22.8 — **page** → PagerDuty; **warning** routes as § 22.8's alarm tier
+(`#oncall-platform`). The age gauges read **0**, not "no data", while nothing is waiting, so the
+age alerts are quiet rather than blind while the feature is dark; § 29.1's frozen-level case is
+the one way they go blind.
+
+**Watched by hand, not alerted** (first week after the flip — `quickstart.md` § 5):
+`email_dispatch_failed` rows whose `notification_type` starts `eblast_` (in particular
+`reason: no_template_handler`); `broadcasts_marketing_turn_count` against the nav badge (a
+divergence means the two are reading different predicates); and the share of
+`broadcast_schedule_confirmed` rows with `differs: true`.
+
+### 29.5 Logs and the `M119.*` errorId taxonomy
+
+pino, with `correlationId` / `requestId`, `tenantId`, `broadcastId`, and where they exist
+`versionId`, `round`, `stage`; faults carry `err: errKind(e)` — or `approvalErrKind(e)` for a
+failed approval dependency, which reads `ApprovalDependencyError:<dependency>:<cause>` (round-4 B3:
+which read failed and its class or repo code, never data). **Never** a subject, a body, a
+note, a reason or an address. Deterministic 4xx refusals are audited or counted by the use case,
+not logged as faults.
+
+Every fault arm names itself `M119.<surface>.<route>.<arm>`. Most carry it in the `errorId`
+field; the four marked *(msg)* below carry it as the log **message** instead, so a query must
+match both the field and the message. Alert rules on the 500 class key on the prefix
+(`M119.admin.*`, `M119.portal.*`).
+
+| errorId | Where | Meaning |
+|---|---|---|
+| `M119.admin.version.post.server_error` · `.patch.server_error` · `.get.server_error` | `…/[id]/version` | start / save / read of the working copy failed |
+| `M119.admin.version_send.server_error` | `…/[id]/version/send` | sending a version to the member failed |
+| `M119.admin.schedule.server_error` | `…/[id]/schedule` | confirming, changing or cancelling the send time failed |
+| `M119.portal.decision.server_error` | `POST /api/broadcasts/[id]/decision` | a member decision failed |
+| `M119.portal.versions.server_error` | `GET /api/broadcasts/[id]/versions` | the member's version thread could not be read |
+| `M119.admin.approve.server_error` · `M119.admin.approve.unexpected` | `POST /api/admin/broadcasts/[id]/approve` | approve-as-submitted failed (incl. the fail-closed standing read, T166 S-H1) / an unmapped refusal reached the route |
+| `M119.admin.reject.server_error` · `M119.admin.reject.unexpected` | `POST /api/admin/broadcasts/[id]/reject` | the widened reject (T081) failed / an unmapped refusal reached the route |
+| `M119.admin.cancel.server_error` · `M119.admin.cancel.unexpected` | `POST /api/admin/broadcasts/[id]/cancel` | the widened staff cancel (T081) failed / an unmapped refusal reached the route |
+| `M119.portal.cancel.server_error` · `M119.portal.cancel.unexpected` | `POST /api/broadcasts/[id]/cancel` | the member withdrawal (T081) failed / an unmapped refusal reached the route |
+| `M119.admin.broadcasts.stage_counts_failed` · `M119.api.admin_broadcasts.stage_counts_failed` | `/admin/broadcasts` page · `GET /api/admin/broadcasts` (`readEblastStageChips`) | the stage-chip counts could not be read; the queue renders without counts |
+| `M119.admin.detail.thread` · `M119.admin.detail.warnings` | `/admin/broadcasts/[id]` page | the thread / the standing warnings could not be read; the page renders without them |
+| `M119.portal.detail.thread` | `/portal/broadcasts/[id]` page | the thread could not be read; approve / request changes are withheld until it loads |
+| `M119.portal.detail.missing_sent_version` | `GET /api/broadcasts/[id]` (`readMemberEblastView`); also the `/portal/broadcasts/[id]` page (`broadcasts.detail_page.missing_sent_version`, which shows the history alert instead of content — review D3) | an E-Blast awaiting the member has no version sent to them — an invariant breach (the send stamps the version and moves the stage in one tx). Logged at `error` with ids and the round only; the route answers 500 and shows no content, never the member's original as the thing to sign off (round-4 B9) |
+| `M119.cron.approval_lifecycle` · `.uncaught` · `.rows_failed` | `prune-expired-drafts` Block 3 | the scan failed / threw (the tick answers 500 at the end) / one or more rows failed (the tick stays 200) |
+| `M119.cron.approval_lifecycle.row_failed` *(msg)* | `expireStaleMemberApprovals` | one row's transaction threw; retried tomorrow; counted `broadcasts_approval_lifecycle_row_failed_total` (round-4 B8) |
+| `M119.cron.approval_lifecycle.no_member_recipient` *(msg)* | `expireStaleMemberApprovals` | a notice reached nobody — a day-3/7 reminder with no active member portal contact, or a day-23 warning / day-30 closure with no member contact **and** an empty roster (the closure since round-4 B8); the counter / the closure still moved, and no "reminder sent" / "expiry warned" audit row is written for a notice that reached nobody |
+| `M119.outbox_dispatch.eblast.read_failed` *(msg)* | `buildEblastNotificationPayload` | a transient read failed; the row stays on the retry ladder — this is what distinguishes it from a missing arm, which ends under the same `no_template_handler` label |
+| `M119.outbox_dispatch.eblast.malformed_context` *(msg)* | `buildEblastNotificationPayload` | a row's ids-only `context_data` is missing a field |
+| `M119.nav.eblast_badge_failed` · `M119.nav.eblast_badge_timed_out` | `src/lib/eblast-waiting-count.ts` | the staff nav badge read failed or exceeded its deadline; the badge is omitted |
+| `M119.{member,staff}.preview.render` · `.preview.sanitizer` | the two preview routes (PR-1) | preview render / sanitiser fault |
+| `M119.{member,staff}.test_copy` · `.test_copy.mailer` · `.test_copy.sanitizer` | the two test-copy routes (PR-1) | test copy fault |
+| `M119.{member,staff,template}.image_upload` | the three image routes (PR-1) | upload fault |
+| `M119.cron.image_sweep` · `.uncaught` · `.rows_failed` | `prune-expired-drafts` Block 2 (PR-1) | § 22.12 |
+| `M119.admin.brand.*` · `M119.admin.draft.*` · `M119.admin.quota.*` | brand, staff draft and quota routes (PR-1) | PR-1's staff routes |
+
+### 29.6 Performance budgets (T160a)
+
+**Measured once by T160a on 2026-09-24 — on the DEV server, so the four route budgets stay
+UNVERIFIED.** The numbers below come from the maintainer's running `next dev` (Turbopack, no
+production build, :3100 — never started or stopped by an agent), measured **alone** (no vitest,
+integration or e2e job running) and never inside a folder run (a folder run puts 100+ files on one
+Neon compute and can quadruple a p95; the pre-push hook exports `INTEGRATION_FOLDER_RUN=1`). A
+budget that is not met is recorded here as UNVERIFIED **with the measured number and the date** —
+never dropped, never re-stated as passed.
+
+**How the routes were timed.** A one-off Playwright script (kept outside the repo) signed in
+through the e2e fixtures (`e2e-admin`; `e2e-member-empty` in its own context) and called each route
+with `fetch` from the signed-in page, timing `performance.now()` around the request and the body
+read. That is the **client-observed round trip on localhost**, an upper bound on the server's own
+time: the `broadcasts_preview_render_ms` / `broadcasts_member_decide_ms` histograms are not
+readable from a workstation. One E-Blast owned by `e2e-member-empty` was cycled 11 times through
+start → save ×2 → preview ×2 → send → approve → schedule (the promotion) → reschedule → withdraw;
+cycle 0 was the warm-up and is discarded, so N counts cycles 1–10. Requests were spaced 2.6 s apart
+to stay under the 30 / 60 s staff-write bucket. Schedule dates were in 2027 (never `send_now`), and
+every row the persona owned was deleted afterwards. p95 is nearest-rank (with N = 20, the 19th of 20).
+"Alone" means no test job was running. Another agent was saving files under `src/` during the run,
+and Turbopack recompiles on save, so the run was not isolated from hot reloads. The outliers below
+are left in with no cause assigned.
+
+**Why the dev numbers are high.** Every request on this workstation crosses the internet to Neon
+`ap-southeast-1` for each SQL round trip (the session lookup, the RLS `SET LOCAL`, the lock, the
+reads and writes), and `next dev` runs unminified with dev-only checks. In production, Vercel `sin1`
+sits in the same region as Neon, so a round trip is ~1–2 ms instead of tens. That is a reason to
+**re-measure on a preview deployment or in production**, not a reason to call these rows met.
+
+| Budget | Target | Read from | Measured (dev server) | Date | Status |
+|---|---|---|---|---|---|
+| `POST /api/admin/broadcasts/preview` server p95 | < 400 ms | client round trip on localhost (upper bound; `broadcasts_preview_render_ms{surface="staff"}` not readable locally) | N = 20 · median **662 ms** · p95 **722 ms** · max 5,688 ms (one outlier) | 2026-09-24 | **UNVERIFIED — measured 722 ms p95 on the dev server, 2026-09-24** |
+| `PATCH /api/admin/broadcasts/[id]/version` server p95 | < 400 ms | client round trip on localhost (no histogram — `broadcasts_version_saved_total` counts, it does not time) | N = 20 · median **921 ms** · p95 **1,172 ms** | 2026-09-24 | **UNVERIFIED — measured 1,172 ms p95 on the dev server, 2026-09-24** |
+| `POST /api/broadcasts/[id]/decision` server p95 | < 400 ms | client round trip on localhost (`broadcasts_member_decide_ms` not readable locally) | N = 20 (10 `approved` + 10 `approval_withdrawn`) · median **1,851 ms** · p95 **1,981 ms**. Split: approved median 1,882 / max 1,977; withdrawn median 1,826 / max 2,046 | 2026-09-24 | **UNVERIFIED — measured 1,981 ms p95 on the dev server, 2026-09-24** |
+| `POST /api/admin/broadcasts/[id]/schedule` server p95 | < 400 ms | client round trip on localhost (the `broadcasts.schedule.confirm` span; no histogram) | N = 20 (10 promotions `member_approved → approved` + 10 reschedules on `approved`) · median **1,172 ms** · p95 **1,412 ms**. Split: promotion median 1,345 / max 1,575; reschedule median 1,078 / max 1,140 | 2026-09-24 | **UNVERIFIED — measured 1,412 ms p95 on the dev server, 2026-09-24** |
+| Test copy (`POST /api/admin/broadcasts/test-copy`) end to end | < 3 s | client round trip on localhost, to the `202` with the Resend message id | N = 1 · **1,227 ms**. Two real test copies went to the e2e admin's own address; the first was not timed (the script expected 200, the route answers 202) | 2026-09-24 | **Met on N = 1 on the dev server** — a single sample is not a p95; re-measure before quoting it. The member route `/api/broadcasts/test-copy` was not timed |
+| Compose LCP — `/portal/broadcasts/new` | < 2.5 s | browser, `PerformanceObserver('largest-contentful-paint')`, headless Chromium, Desktop Chrome profile (1280 × 720), no CPU or network throttling | 5 warm loads (a cold compile load was discarded at 8,164 ms): 3,008 · 2,708 · 2,524 · 2,648 · 2,172 ms. Median **2,648 ms**, worst 3,008 ms. The LCP element is a muted helper `<p>` | 2026-09-24 | **UNVERIFIED — measured 2,648 ms median (worst 3,008 ms) on the dev server, 2026-09-24** |
+| Compose INP — `/portal/broadcasts/new` | < 200 ms | browser, Event Timing (`durationThreshold: 16`), worst interaction per load across 36 real interactions (typing into the subject and the editor, one toolbar click) | worst per load: 112 · 88 · 88 · 64 · 64 ms. Worst overall **112 ms** | 2026-09-24 | **Met on the dev server** (unthrottled desktop — not a claim about a mid-range phone) |
+| Compose CLS — `/portal/broadcasts/new` | < 0.1 | browser, `layout-shift` entries without `hadRecentInput`, summed over load + interactions | 0.012 · 0.001 · 0 · 0 · 0.012. Worst **0.012** | 2026-09-24 | **Met on the dev server** |
+
+SC-008 (dashboard counts + first page < 2 s at 1,000 E-Blasts) is not a T160a row: it is asserted
+by `tests/integration/broadcasts/eblast-dashboard-pagination.test.ts` (T114), in a single-file
+run.
+
+**SC-004 — "the next party is notified within 5 minutes of every hand-off."** "Notified" means the
+email has been handed to the delivery service, measured from the hand-off. Every `eblast_*`
+outbox row is enqueued **inside** the state-changing transaction (proven with a failing commit on
+the fake store and with a real rollback on live Neon), so the enqueue costs nothing against the
+budget: what remains is the **1-minute** outbox-dispatch tick (`/api/cron/outbox-dispatch`,
+`* * * * *`) plus the provider call. Measure it on the outbox row as `updated_at − created_at`
+where `status = 'sent'` — `notifications_outbox` has no `sent_at` column; the dispatcher's flip to
+`sent` is the last write to `updated_at`. Two
+things are **not** SC-004 breaches: a provider failure (an `email_dispatch_failed` row), and any
+row enqueued **while the flag is off** — the drainer does not select the five types until the
+flip, so their age measures the dark period, not the dispatcher.
+
+### 29.7 Forbidden log fields
+
+No extension beyond § 3 and § 22.4: version subjects and bodies, marketing's note, the member's
+reason or note, and member / contact / staff addresses never reach a log line, a metric label or
+a span attribute. The audit payloads carry `note_length` / `reason_length`, never the text; the
+outbox rows carry ids and discriminators only and are rendered at send time.

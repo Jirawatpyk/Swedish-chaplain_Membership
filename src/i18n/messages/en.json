@@ -499,7 +499,7 @@
         "empty": "All clear — nothing needs attention right now.",
         "overdueInvoices": "Overdue invoices",
         "atRisk": "At-risk members",
-        "broadcasts": "Broadcasts awaiting approval",
+        "broadcasts": "E-Blasts waiting on marketing",
         "changeRequests": "Change requests waiting (oldest {days, plural, =0 {today} one {# day} other {# days}})",
         "changeRequestsNoAge": "Change requests waiting",
         "changeRequestsUnavailable": "Change requests waiting could not be counted. Reload the page to try again, or open the queue."
@@ -3290,15 +3290,45 @@
     "broadcasts": {
       "queue": {
         "title": "E-Blast review queue",
-        "subtitle": "Review and approve broadcasts submitted by members.",
+        "subtitle": "Review and approve E-Blasts submitted by members.",
         "templatesEntryButton": "Templates",
-        "empty": "When members submit broadcasts, they appear here for your review.",
+        "empty": "When members submit E-Blasts, they appear here for your review.",
         "emptyTitle": "Queue is clear",
         "totalPending": "{count} pending",
         "tableAria": "Broadcast review queue",
+        "whoseTurn": {
+          "marketing": "Marketing",
+          "member": "Member"
+        },
+        "timeInStage": {
+          "hours": "{hours} h",
+          "days": "{days, plural, one {# day} other {# days}}"
+        },
+        "delivery": {
+          "summary": "{recipients, plural, one {# recipient} other {# recipients}} · {delivered} delivered · {bounced} bounced · {complained} complained"
+        },
+        "resultsAnnouncement": "{count, plural, =0 {No E-Blasts in this view} one {# E-Blast in this view} other {# E-Blasts in this view}}{stalled, plural, =0 {} other {, # stalled shown}}",
+        "resultsAnnouncementShown": "{count, plural, =0 {No E-Blasts shown} one {# E-Blast shown} other {# E-Blasts shown}}{stalled, plural, =0 {} other {, # stalled shown}}",
+        "stalledSummary": "{count, plural, one {# stalled shown} other {# stalled shown}}",
+        "row": {
+          "round": "Round {round}",
+          "since": "since {date}",
+          "proposed": "Proposed"
+        },
+        "order": {
+          "longestInStage": "Sorted by longest in stage",
+          "mostRecent": "Sorted by most recent first",
+          "sendTime": "Sorted by send time"
+        },
+        "pagination": {
+          "label": "Queue pages",
+          "summary": "Showing {shown} of {total}",
+          "next": "Next page",
+          "first": "First page"
+        },
         "ageBadge": {
-          "aging": "{hours}h waiting",
-          "overdue": "{hours}h — overdue"
+          "aging": "{hours} h waiting",
+          "stalled": "Stalled — {days, plural, one {# day} other {# days}}"
         },
         "bulk": {
           "selectAria": "Select broadcast",
@@ -3334,7 +3364,8 @@
             "reason": "Undone by admin from the review queue",
             "success": "Cancelled {count, plural, one {# broadcast} other {# broadcasts}}.",
             "tooLate": "Already sending — too late to undo {count, plural, one {# broadcast} other {# broadcasts}}.",
-            "failed": "Couldn't undo {count, plural, one {# broadcast} other {# broadcasts}} — still approved."
+            "failed": "Couldn't undo {count, plural, one {# broadcast} other {# broadcasts}} — still approved.",
+            "rateLimited": "Too many requests — couldn't undo {count, plural, one {# broadcast} other {# broadcasts}}. {count, plural, one {It} other {They}} will still send unless you cancel {count, plural, one {it} other {them}} from the queue."
           },
           "progress": {
             "label": "Approving…"
@@ -3342,39 +3373,47 @@
         },
         "card": {
           "actionsLabel": "Actions",
-          "audienceLabel": "Audience",
-          "recipientsLabel": "Recipients",
-          "submittedLabel": "Submitted",
-          "statusLabel": "Status"
+          "statusLabel": "Stage",
+          "whoseTurnLabel": "Whose turn",
+          "timeInStageLabel": "Time in stage"
         },
         "filters": {
           "formAriaLabel": "Broadcast queue filters",
-          "statusLabel": "Status",
+          "statusLabel": "Stage",
           "memberLabel": "Member",
           "memberAll": "All members",
-          "fromDate": "From",
-          "toDate": "To",
-          "reset": "Reset filters"
+          "fromDate": "Submitted from",
+          "toDate": "Submitted to",
+          "reset": "Reset filters",
+          "upcomingSends": "Upcoming sends",
+          "chipCount": "{count, plural, one {# E-Blast} other {# E-Blasts}}",
+          "chipCountsScope": "Counts are for every E-Blast in each stage — the member, date and Upcoming sends filters do not change them."
         },
         "columns": {
-          "submittedAt": "Submitted",
           "member": "Member",
           "subject": "Subject",
           "segment": "Audience",
-          "recipientCount": "Recipients",
-          "status": "Status",
+          "status": "Stage",
+          "whoseTurn": "Whose turn",
+          "timeInStage": "Time in stage",
+          "sendTime": "Send time",
           "actions": "Actions"
         },
         "status": {
           "draft": "Draft",
-          "submitted": "Awaiting review",
-          "approved": "Approved",
+          "submitted": "Awaiting marketing review",
+          "approved": "Scheduled",
           "sending": "Sending",
           "sent": "Sent",
           "rejected": "Rejected",
           "cancelled": "Cancelled",
           "failed_to_dispatch": "Failed",
           "partially_sent": "Partially sent",
+          "in_design": "In design",
+          "awaiting_member_approval": "Awaiting member approval",
+          "changes_requested": "Changes requested by member",
+          "member_approved": "Member approved — awaiting schedule",
+          "expired_no_member_response": "Expired — no member response",
           "partial_delivery_accepted": "Partial delivery accepted"
         },
         "statusGroup": {
@@ -3394,7 +3433,6 @@
           "breachWarning": "Reviews are running slow"
         },
         "overdueBanner": "{count, plural, one {# broadcast has} other {# broadcasts have}} been waiting over 48 hours — review now.",
-        "truncationNote": "Showing the first 50 — refine the filters to see more.",
         "haltStateUnavailableTitle": "Halt state could not be read",
         "haltStateUnavailable": "Halt state could not be read — this queue may be hiding halted members. Refresh before approving anything."
       },
@@ -3434,6 +3472,163 @@
           "actorBy": "by {actor}",
           "actorSystem": "system",
           "actorUnknown": "unknown user"
+        }
+      },
+      "approval": {
+        "header": {
+          "title": "Approval round",
+          "detailsTitle": "Submission",
+          "turn": "Whose turn",
+          "turnValue": {
+            "marketing": "Marketing",
+            "member": "Member",
+            "none": "Nobody"
+          },
+          "timeInStage": "Time in stage",
+          "round": "Round",
+          "roundNone": "Not sent to the member yet",
+          "roundNoRound": "No approval round",
+          "notSet": "Not set",
+          "proposedSendAt": "Member's proposed time"
+        },
+        "warnings": {
+          "noPortalUserTitle": "The member company has no portal user",
+          "noPortalUserBody": "Nobody at {company} can sign in to the portal, so a formatted version cannot be sent to them for approval. Invite a portal user first — or, while it still awaits review, approve it as submitted.",
+          "unsafeImagesTitle": "An image is no longer allowed",
+          "unsafeImagesBody": "These images point to a host that is not on the image allow-list. Replace them before the version is sent to the member or scheduled.",
+          "reason": {
+            "not_allowlisted": "host not on the allow-list",
+            "invalid_url": "not a valid web address",
+            "invalid_hostname": "not a valid host name"
+          }
+        },
+        "content": {
+          "originalTitle": "Member's original",
+          "originalHint": "Read-only — kept exactly as the member submitted it.",
+          "workingCopyTitle": "Formatted version {version} (working copy)",
+          "sentVersionTitle": "Version {version} sent to the member",
+          "noteLabel": "Note to the member",
+          "threadUnavailableTitle": "The version history could not be loaded",
+          "threadUnavailableBody": "The working copy and the member's original are not shown, and no formatting action is available until the page loads them. Refresh the page in a moment.",
+          "threadUnavailableHistoryBody": "The rest of this page is not affected. Try again in a moment."
+        },
+        "feedback": {
+          "changesRequestedTitle": "The member asked for changes to version {version}",
+          "withdrawnTitle": "The member withdrew their approval of version {version}",
+          "approvedTitle": "The member approved version {version}"
+        },
+        "thread": {
+          "title": "Version history",
+          "original": "Member's original",
+          "round": "Round {round}",
+          "submittedByMember": "Submitted by the member",
+          "submittedOnBehalf": "Submitted on the member's behalf",
+          "submittedOnBehalfBy": "Submitted on the member's behalf by {name}",
+          "versionSent": "Version {version} — sent to the member",
+          "versionSentBy": "Version {version} — sent to the member by {name}",
+          "noteLabel": "Note to the member",
+          "reasonLabel": "Reason",
+          "approvalNoteLabel": "Member's note",
+          "approvedAsSubmitted": "Approved as submitted",
+          "approvedAsSubmittedBy": "Approved as submitted by {name}",
+          "approvedBy": "{name} (member) approved version {version}",
+          "changesRequestedBy": "{name} (member) asked for changes to version {version}",
+          "withdrawnBy": "{name} (member) withdrew the approval of version {version}"
+        },
+        "workspace": {
+          "title": "Formatted version {version}",
+          "description": "Edit the subject and the message. The audience stays the one the member chose.",
+          "subjectLabel": "Subject",
+          "bodyLabel": "Message",
+          "noteLabel": "Note to the member (optional)",
+          "noteHelp": "Shown to the member beside this version. {count} / {max} characters.",
+          "save": "Save",
+          "saved": "Version saved.",
+          "savedAt": "Saved at {time}",
+          "conflictTitle": "Someone else changed this version",
+          "conflictBody": "Another staff user saved this version after you opened it. Your edits were not saved. Reload to see the current version.",
+          "reload": "Reload (discards your edits)"
+        },
+        "send": {
+          "button": "Send to member",
+          "title": "Send this version to the member?",
+          "body": "The member will be notified by email and asked to approve it. Once sent, this version can no longer be edited.",
+          "savesFirst": "Your unsaved changes are saved first.",
+          "cancel": "Keep editing",
+          "confirm": "Send to member",
+          "sent": "Version sent to the member for approval."
+        },
+        "testCopy": {
+          "button": "Send me a test copy",
+          "sent": "Test copy sent to your email address."
+        },
+        "start": {
+          "button": "Start formatted version",
+          "voidTitle": "Start a new formatted version?",
+          "voidBody": "The member approved round {round}. Starting a new version withdraws that approval and clears any confirmed send time. The member will have to approve again.",
+          "voidCancel": "Keep the approval",
+          "voidConfirm": "Start new version",
+          "submittedTitle": "Start a formatted version?",
+          "submittedBody": "You will no longer be able to approve it as submitted; the member must approve the formatted version.",
+          "submittedCancel": "Keep as submitted",
+          "submittedConfirm": "Start formatted version",
+          "started": "Formatted version started."
+        },
+        "schedule": {
+          "button": "Confirm schedule",
+          "buttonChange": "Change schedule",
+          "title": "Confirm the send time",
+          "titleChange": "Change the send time",
+          "description": "The member approved this E-Blast. Choose when it is sent; the member is told the final time.",
+          "descriptionChange": "This E-Blast is scheduled. Change the time, send it now, or cancel the confirmed time.",
+          "proposal": "Member's proposed time: {time}",
+          "proposalNone": "The member did not propose a time.",
+          "proposalPassed": "The member's proposed time ({time}) is too soon or has passed — choose a new time.",
+          "modeLegend": "When to send",
+          "mode": {
+            "keep_proposal": "Keep the member's proposed time",
+            "schedule": "Choose another time",
+            "send_now": "Send now",
+            "cancel": "Cancel the confirmed time"
+          },
+          "whenLabel": "Send at (Bangkok time)",
+          "whenHelp": "At least 5 minutes from now. Times are in Bangkok time (UTC+7).",
+          "cancelHint": "The E-Blast will not be sent. It returns to marketing as “{stage}” until a new version is approved.",
+          "tooSoon": "Choose a time at least 5 minutes from now.",
+          "differs": "This is not the member's proposed time ({time}). The member will be told about the change.",
+          "close": "Close",
+          "confirm": "Confirm",
+          "confirmCancel": "Cancel the time",
+          "confirmSendNow": "Send now",
+          "confirmed": "Send time confirmed. The member will be notified.",
+          "cancelled": "Confirmed send time cancelled."
+        },
+        "errors": {
+          "generic": "Something went wrong. Please try again.",
+          "stage_changed": "This E-Blast moved to another stage in the meantime. The page has been refreshed.",
+          "version_changed": "Someone else changed this version. Reload to see the current version.",
+          "no_working_copy": "There is no working copy to send. Start a formatted version first.",
+          "no_portal_user": "The member company has no portal user, so the version cannot be sent for approval.",
+          "round_zero": "This E-Blast was approved as submitted, so there is no member approval to reopen.",
+          "mode_not_allowed": "That option is not available at this stage.",
+          "no_proposal": "The member did not propose a send time. Choose a time instead.",
+          "broadcast_schedule_too_soon": "Choose a time at least 5 minutes from now.",
+          "image_source_not_allowlisted": "An image points to a host that is not on the image allow-list. Replace it and try again.",
+          "unsafe_content": "The message contains content that is not allowed. Remove it and try again.",
+          "validation_error": "Check the subject (up to 200 characters), the message (up to 200 KB) and the note (up to 1,000 characters).",
+          "cta_text_length": "Button text must be between 1 and 60 characters.",
+          "too_many_cta": "A message can carry at most 3 buttons.",
+          "cta_link_scheme": "A button or link must start with http, https or mailto.",
+          "banner_alt_required": "Every banner and image needs a description of 1–125 characters.",
+          "broadcast_rate_limit_exceeded": "Too many requests in a short time. Wait a moment and try again.",
+          "broadcast_not_found": "This E-Blast could not be found.",
+          "permission_denied": "You do not have permission to do this.",
+          "test_copy_invalid_recipient": "The test copy could not be delivered to your email address.",
+          "test_copy_unavailable": "The email service is unavailable. Try the test copy again in a moment.",
+          "internal_error": "Something went wrong on our side. Please try again.",
+          "sending_started": "Sending has already started for this E-Blast, so its send time can no longer be changed.",
+          "member_halted": "The send time was not confirmed: this member's E-Blasts are halted pending admin review.",
+          "member_not_in_good_standing": "The send time was not confirmed: this member's membership is suspended or terminated, so the E-Blast cannot be sent."
         }
       },
       "approveDialog": {
@@ -3539,7 +3734,10 @@
         "cancelled": "Broadcast cancelled. The member has been notified.",
         "cancelError": "Could not cancel the broadcast. Please try again.",
         "cancelTooLate": "This broadcast can no longer be cancelled — it is past the point where it can be stopped.",
+        "rejectTooLate": "This broadcast can no longer be rejected — it has already started sending.",
         "concurrentRace": "This broadcast was already actioned by another administrator. The view has been refreshed.",
+        "member_halted": "Not approved: this member's E-Blasts are halted pending admin review.",
+        "member_not_in_good_standing": "Not approved: this member's membership is suspended or terminated, so their E-Blasts cannot be sent.",
         "clearHalted": "Broadcast halt cleared for this member.",
         "error": "Something went wrong. Please try again."
       },
@@ -5648,6 +5846,7 @@
       "dashboard": "Dashboard",
       "changeRequests": "Change requests",
       "changeRequestsBadge": "pending",
+      "broadcastsBadge": "waiting",
       "badgeTooltip": "{title} ({count})",
       "plans": "Plans",
       "users": "Users",
@@ -6292,13 +6491,18 @@
         "status": {
           "draft": "Draft",
           "submitted": "Awaiting review",
-          "approved": "Approved",
+          "approved": "Scheduled",
           "sending": "Sending",
           "sent": "Sent",
           "rejected": "Rejected",
           "cancelled": "Cancelled",
           "failed_to_dispatch": "Failed",
           "partially_sent": "Partially sent",
+          "in_design": "In design",
+          "awaiting_member_approval": "Awaiting your approval",
+          "changes_requested": "Changes requested",
+          "member_approved": "Approved — awaiting schedule",
+          "expired_no_member_response": "Expired — no member response",
           "partial_delivery_accepted": "Partial delivery accepted"
         },
         "pagination": {
@@ -6338,14 +6542,19 @@
           "total": "Total"
         },
         "back": "Back to broadcasts",
-        "cancelButton": "Cancel broadcast",
+        "backToDashboard": "Back to dashboard",
+        "notFound": {
+          "title": "We couldn't find this E-Blast",
+          "body": "The link may be out of date, or the E-Blast is not on your account. Your E-Blasts are listed under Benefits."
+        },
+        "cancelButton": "Cancel E-Blast",
         "cancelDialog": {
           "title": "Cancel this broadcast?",
           "description": "Once cancelled it cannot be re-sent. You can still view it in your history.",
           "reasonLabel": "Reason (optional)",
           "reasonPlaceholder": "Optional — why are you cancelling…",
           "reasonHelp": "Up to 500 characters.",
-          "confirm": "Cancel broadcast",
+          "confirm": "Cancel E-Blast",
           "cancel": "Keep it",
           "phrase": "CANCEL",
           "phraseLabel": "Type {phrase} to confirm",
@@ -6364,6 +6573,105 @@
           "cancelError": "Could not cancel the broadcast. Please try again.",
           "cancelTooLate": "This broadcast can no longer be cancelled — it is past the point where it can be stopped.",
           "concurrentRace": "This broadcast was already actioned. The view has been refreshed."
+        }
+      },
+      "approval": {
+        "banner": {
+          "turn": {
+            "member": "It's your turn: review version {version} below, then approve it or request changes.",
+            "marketing": "It's the chamber's turn — nothing is needed from you right now."
+          },
+          "expires": "Please respond by {date}. If there is no response by then, this broadcast expires and is not sent."
+        },
+        "fields": {
+          "proposedSendAt": "Your proposed send time",
+          "confirmedSendAt": "Confirmed send time",
+          "notSet": "Not set"
+        },
+        "compare": {
+          "formattedTitle": "Version {version} from the chamber",
+          "formattedHint": "Shown as recipients will receive it.",
+          "originalTitle": "Your original",
+          "originalHint": "What you submitted, kept exactly as you wrote it.",
+          "noteLabel": "Note from the chamber"
+        },
+        "threadUnavailable": {
+          "title": "The version history could not be loaded",
+          "body": "Approving and requesting changes are unavailable until it loads. Refresh the page in a moment.",
+          "refresh": "Refresh"
+        },
+        "actions": {
+          "title": "Your decision",
+          "decideDescription": "Approve version {version}, or tell the chamber what should change.",
+          "withdrawDescription": "Version {version} is approved. You can withdraw the approval until sending begins.",
+          "approve": "Approve",
+          "requestChanges": "Request changes",
+          "withdrawApproval": "Withdraw approval"
+        },
+        "approveDialog": {
+          "title": "Approve version {version}?",
+          "description": "The chamber's marketing team will now confirm the send time. Once you approve, the content cannot change without a new approval from you.",
+          "noteLabel": "Note to the chamber (optional)",
+          "notePlaceholder": "Anything the chamber should know before sending",
+          "noteHelp": "Up to 500 characters. Kept with this E-Blast's history; visible to your company and the chamber.",
+          "noteTooLong": "The note is longer than 500 characters.",
+          "confirm": "Approve",
+          "cancel": "Not yet"
+        },
+        "requestChanges": {
+          "title": "Request changes?",
+          "description": "This broadcast goes back to the chamber with your reason, and they will send you a new version to approve.",
+          "reasonLabel": "What should change?",
+          "reasonPlaceholder": "For example: the date in the heading is wrong.",
+          "reasonHelp": "Required — up to 2,000 characters. Kept with this E-Blast's history; visible to your company and the chamber.",
+          "confirm": "Request changes",
+          "cancel": "Keep reviewing",
+          "errors": {
+            "reasonRequired": "Tell the chamber what should change.",
+            "reasonTooLong": "The reason is longer than 2,000 characters."
+          }
+        },
+        "withdrawApproval": {
+          "title": "Withdraw the approval?",
+          "description": "This broadcast goes back to the chamber and any confirmed send time is cancelled. It is not sent until you approve a version again.",
+          "reasonLabel": "Why are you withdrawing the approval?",
+          "reasonPlaceholder": "For example: the price in the offer has changed.",
+          "reasonHelp": "Required — up to 2,000 characters. Kept with this E-Blast's history; visible to your company and the chamber.",
+          "confirm": "Withdraw approval",
+          "cancel": "Keep the approval",
+          "errors": {
+            "reasonRequired": "Give a reason for withdrawing the approval.",
+            "reasonTooLong": "The reason is longer than 2,000 characters."
+          }
+        },
+        "errors": {
+          "reason_required": "Give a reason — it cannot be empty.",
+          "validation_error": "The text is too long. Shorten it and try again.",
+          "stale_version": "The chamber has sent a newer version. The page has been refreshed — review the latest one.",
+          "stage_changed": "This broadcast has already moved on. The page has been refreshed.",
+          "sending_started": "Sending has already begun, so this can no longer be changed.",
+          "broadcast_not_found": "This broadcast is no longer available.",
+          "broadcast_rate_limit_exceeded": "Too many attempts in a short time. Wait a minute and try again.",
+          "generic": "Something went wrong. Please try again."
+        },
+        "thread": {
+          "title": "History",
+          "description": "Every version the chamber sent you and every decision, oldest first.",
+          "original": "Your original",
+          "round": "Round {round}",
+          "submittedByYourCompany": "Submitted by your company",
+          "submittedByChamber": "Submitted by the chamber on your behalf",
+          "versionSent": "Version {version} — sent to you by the chamber",
+          "noteLabel": "Note from the chamber",
+          "reasonLabel": "Reason",
+          "approvalNoteLabel": "Note",
+          "approvedByYou": "You approved this version",
+          "approvedByColleague": "A colleague at your company approved this version",
+          "changesRequestedByYou": "You asked for changes",
+          "changesRequestedByColleague": "A colleague at your company asked for changes",
+          "withdrawnByYou": "You withdrew your approval",
+          "withdrawnByColleague": "A colleague at your company withdrew the approval",
+          "approvedAsSubmitted": "The chamber approved your broadcast as you submitted it"
         }
       }
     },
@@ -7133,6 +7441,16 @@
       "broadcast_image_removed": "E-Blast image removed",
       "broadcast_image_uploaded": "E-Blast image uploaded",
       "broadcast_test_copy_sent": "E-Blast test copy sent",
+      "broadcast_version_started": "E-Blast version started",
+      "broadcast_version_sent_to_member": "E-Blast version sent to member for approval",
+      "broadcast_member_approved": "Member approved E-Blast version",
+      "broadcast_member_changes_requested": "Member requested E-Blast changes",
+      "broadcast_member_approval_withdrawn": "Member withdrew E-Blast approval",
+      "broadcast_member_approval_voided": "Member approval of E-Blast voided by an edit",
+      "broadcast_schedule_confirmed": "E-Blast send time confirmed",
+      "broadcast_approval_reminder_sent": "E-Blast approval reminder sent",
+      "broadcast_approval_expiry_warned": "E-Blast approval expiry warning sent",
+      "broadcast_approval_expired": "E-Blast approval expired — no member response",
       "broadcast_immutable_after_submit": "Broadcast edit blocked after submit",
       "broadcast_member_dispatch_resumed": "Member dispatch resumed",
       "broadcast_member_halted_pending_review": "Member dispatch halted pending review",
@@ -7370,6 +7688,97 @@
       "unsubscribeCta": "Unsubscribe",
       "unsubscribeSuffix": "from these broadcasts at any time.",
       "physicalAddress": "Sent by {tenantDisplayName}."
+    },
+    "eblastApproval": {
+      "common": {
+        "footer": "This is an automated message from the chamber's membership portal.",
+        "subjectLabel": "E-Blast",
+        "companyLabel": "Member",
+        "stageLabel": "Stage",
+        "staffCta": "Open the E-Blast",
+        "staffDetailsNote": "The content and any comments are on the E-Blast page."
+      },
+      "stage": {
+        "awaitingMarketingReview": "Awaiting marketing review",
+        "memberApproved": "Member approved — awaiting schedule",
+        "changesRequested": "Changes requested by member",
+        "withdrawn": "Cancelled",
+        "awaitingMemberApproval": "Awaiting member approval",
+        "expired": "Expired — no member response"
+      },
+      "submittedMarketing": {
+        "subject": "New E-Blast to review: {subject}",
+        "heading": "A member submitted an E-Blast for review"
+      },
+      "memberDecidedMarketing": {
+        "subject": "E-Blast update: {subject}",
+        "heading": "A member responded to an E-Blast"
+      },
+      "versionSentMember": {
+        "subject": "Your E-Blast is ready for your approval",
+        "heading": "Round {round} is ready for your approval",
+        "intro": "The chamber has prepared a version of your E-Blast \"{subject}\" and asks you to review it.",
+        "noteHeading": "Note from the chamber",
+        "proposedSendAt": "Your proposed send time: {when}",
+        "noProposedSendAt": "You have not proposed a send time.",
+        "cta": "Review the E-Blast"
+      },
+      "scheduleConfirmedMember": {
+        "subject": "Your E-Blast is scheduled",
+        "heading": "Your E-Blast is scheduled",
+        "intro": "The chamber has confirmed the send time for your E-Blast \"{subject}\".",
+        "confirmedSendAt": "Confirmed send time: {when}",
+        "proposedSendAt": "Your proposed send time: {when}",
+        "notProposedTime": "This is not the time you proposed.",
+        "cta": "View your E-Blast"
+      },
+      "timeline": {
+        "heading": "What happens next",
+        "day3": "Day 3 ({date}): a reminder, if you have not responded",
+        "day7": "Day 7 ({date}): a final reminder",
+        "day23": "Day 23 ({date}): a warning that the request is about to close",
+        "day30": "Day 30 ({date}): the request closes automatically, and you would need to submit a new E-Blast"
+      },
+      "lifecycle": {
+        "member": {
+          "reminderDay3": {
+            "subject": "Reminder: your E-Blast is waiting for your approval",
+            "body": "The chamber sent you a version of your E-Blast \"{subject}\" on {sentDate}. It is still waiting for your approval."
+          },
+          "reminderDay7": {
+            "subject": "Final reminder: your E-Blast is waiting for your approval",
+            "body": "The chamber sent you a version of your E-Blast \"{subject}\" on {sentDate}. This is the final reminder."
+          },
+          "expiryWarningDay23": {
+            "subject": "Your E-Blast request closes in 7 days",
+            "body": "Your E-Blast \"{subject}\" has been waiting for your approval since {sentDate}. If you do not respond, the request closes automatically on {expiresDate}."
+          },
+          "expiredDay30": {
+            "subject": "Your E-Blast request has closed",
+            "body": "The chamber did not receive your response to your E-Blast \"{subject}\" within 30 days, so the request closed automatically on {expiresDate}. Your allowance place is free again — submit a new E-Blast whenever you are ready."
+          },
+          "ctaReview": "Review the E-Blast",
+          "ctaList": "Open your E-Blasts"
+        },
+        "staff": {
+          "reminderDay3": {
+            "subject": "E-Blast awaiting member approval (day 3): {subject}",
+            "heading": "The member has not yet responded to an E-Blast"
+          },
+          "reminderDay7": {
+            "subject": "E-Blast awaiting member approval (day 7): {subject}",
+            "heading": "The member has still not responded to an E-Blast"
+          },
+          "expiryWarningDay23": {
+            "subject": "E-Blast closes in 7 days: {subject}",
+            "heading": "An E-Blast will close in 7 days without a member response"
+          },
+          "expiredDay30": {
+            "subject": "E-Blast expired: {subject}",
+            "heading": "An E-Blast closed without a member response"
+          }
+        }
+      }
     }
   },
   "public": {
@@ -7525,6 +7934,7 @@
         "events": "events.json — events you attended.",
         "broadcasts": "broadcasts.json — E-Blast / broadcast records relevant to you.",
         "broadcastImages": "broadcast-images.json — every image uploaded for your E-Blasts, including images already marked for deletion. A marked image is listed without its web address: it is marked for deletion, and the file may be kept if an identical image is still used elsewhere. Images of a discarded or expired draft are not listed; their removal appears in audit-events.json, and the file is deleted in the next daily clean-up.",
+        "broadcastVersions": "broadcast-versions.json — for each of your E-Blasts, the versions you were shown (your original and each version the chamber sent you, with its covering note) and your decisions on them (approved, changes requested, approval withdrawn — with your note or reason). The chamber's versions in progress that were never sent to you are not included, and the author is shown as you or as the organisation. After an erasure, the text reads [redacted] and only the dates and decisions remain.",
         "auditEvents": "audit-events.json — the activity-log events relating to you. Information about other people has been removed.",
         "changeRequests": "change-requests.json — the changes you proposed to your member record and the chamber's decision on each (with the reason given). Requests submitted by a colleague appear with their company-level fields only and without the reason. The reviewer is shown as the organisation. An archive produced by chamber staff on your behalf, or requested by a colleague, holds the company-level requests only, without the reviewer's reason; ask the chamber for your personal request history if you need it.",
         "manifest": "manifest.json — a machine-readable list of every file with its SHA-256 checksum so you can verify integrity."

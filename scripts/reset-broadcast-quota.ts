@@ -16,19 +16,28 @@
  * `broadcast_quota_blocked`.
  *
  * WHAT IT DELETES (and what it deliberately does NOT):
- *   It removes ONLY broadcasts whose status carries NO `broadcast_deliveries`
- *   — i.e. the reserved-holding + harmless pre-send rows
- *   (`draft`/`submitted`/`approved`/`rejected`/`cancelled`/`failed_to_dispatch`)
- *   — AND that do NOT still hold a live Resend audience. A row whose
- *   `resend_audience_id IS NOT NULL AND audience_deleted_at IS NULL` (e.g. a
- *   `failed_to_dispatch` broadcast that created its audience before failing) is
- *   LEFT INTACT so the `cleanup-audiences` cron can still GC its Resend
- *   audience — deleting the broadcast row first would orphan that audience
- *   permanently (the cron lists eligible audiences by broadcast row).
- *   Send-stage / consumed broadcasts
- *   (`sending`/`sent`/`partially_sent`/`partial_delivery_accepted`) and their
- *   append-only `broadcast_deliveries` rows are INTENTIONALLY LEFT INTACT.
- *   `broadcast_deliveries` is append-only (trigger `broadcast_deliveries_no_delete`
+ *   It removes ONLY broadcasts in an ALLOW-LISTED pre-send status
+ *   (`draft`/`submitted`/`approved` — DELETABLE_STATUSES) that carry NO F119
+ *   approval-round history (no `broadcast_versions` row, hence no
+ *   `broadcast_member_decisions` row) AND do NOT still hold a live Resend
+ *   audience. Every other status is kept: the send stages (append-only
+ *   deliveries), the terminal ones (`rejected`/`cancelled`/`failed_to_dispatch`
+ *   /`expired_no_member_response` — they reserve nothing, so deleting them
+ *   never freed quota), the four approval-round stages, and any status a later
+ *   migration adds (an allow-list fails closed; the old deny-list did not).
+ *   WHY the history rule (T166 security LOW): deleting a broadcast CASCADEs to
+ *   its versions and decisions, and 0308's append-only trigger lets that
+ *   cascade through (`pg_trigger_depth() > 1`), so the old `status NOT IN
+ *   send-stages` filter silently destroyed the SC-002 proof — which version the
+ *   member was shown and who approved it. A round-stage row still holds quota:
+ *   cancel it from /admin/broadcasts/<id> (cancel releases the allowance and
+ *   keeps the history). A kept row is reported, never silently skipped.
+ *   Live audience (Finding E): a row whose `resend_audience_id IS NOT NULL AND
+ *   audience_deleted_at IS NULL` is LEFT INTACT so the `cleanup-audiences` cron
+ *   can still GC its Resend audience — deleting the broadcast row first would
+ *   orphan that audience permanently (the cron lists eligible audiences by
+ *   broadcast row).
+ *   Deliveries: `broadcast_deliveries` is append-only (trigger `broadcast_deliveries_no_delete`
  *   + no DELETE grant for chamber_app, migrations 0065/0225) AND a logical FK only
  *   (no real FK on `broadcast_id`, 0065:32) — so this script NEVER deletes
  *   deliveries; it just never touches a broadcast that has any.
@@ -44,33 +53,66 @@
  *     (Constitution Principle I); only reserved/pre-send broadcasts (and their
  *     cascading batch manifests) are removed. The compliance trail of past
  *     sends — broadcasts that reached a send stage and their deliveries —
- *     survives untouched.
+ *     survives untouched, and so does every F119 version / member decision.
+ *   - PRODUCTION GUARD (fail-closed): refuses when the resolved DATABASE_URL
+ *     host matches `TEST_DB_HOST_BLOCKLIST`, AND when that blocklist is unset
+ *     or still the `.env.example` placeholder (prod cannot be ruled out), unless
+ *     `--confirm-prod` is passed. Same rule as
+ *     scripts/backfill-membership-coverage.ts; the placeholders come from the
+ *     shared tests/helpers/db-host-guard.ts so the two cannot drift.
  *
  * Usage:
- *   pnpm tsx scripts/reset-broadcast-quota.ts [memberEmail] [--dry-run] [--force]
+ *   pnpm tsx scripts/reset-broadcast-quota.ts [memberEmail] [--dry-run] [--force] [--confirm-prod]
  *   # defaults memberEmail to $E2E_MEMBER_EMAIL or e2e-member@swecham.test
  *
- * Reads DATABASE_URL from .env.local (falls back to process.env.DATABASE_URL).
+ * Reads DATABASE_URL and TEST_DB_HOST_BLOCKLIST from .env.local (the process
+ * env wins when already set). Imports nothing from `src/`.
  */
 import { readFileSync } from 'node:fs';
 import postgres from 'postgres';
+import { DB_HOST_BLOCKLIST_PLACEHOLDERS } from '../tests/helpers/db-host-guard';
+
+// Load `.env.local` into process.env so the prod guard sees
+// TEST_DB_HOST_BLOCKLIST (the old loader regex-read DATABASE_URL only, so the
+// blocklist was always unset here). Missing file is not an error — the ambient
+// env is used. Same idiom as scripts/run-migrations.ts.
+try {
+  process.loadEnvFile?.('.env.local');
+} catch {
+  // .env.local absent — use the ambient process.env.
+}
 
 const TENANT = process.env.RESET_TENANT ?? 'swecham';
 
 /**
- * Statuses whose broadcasts have reached a send stage and therefore CARRY
- * append-only `broadcast_deliveries` rows. These broadcasts (and their
- * deliveries) are NEVER deleted by this script — deleting their deliveries
- * would trip the `broadcast_deliveries_no_delete` append-only trigger (and
- * is blocked by the absent DELETE grant for chamber_app, migrations
- * 0065/0225). The DELETE below removes only broadcasts NOT in this set.
+ * The ONLY statuses this script may delete — an allow-list, so a status added
+ * by a later migration is kept by default. Send stages carry append-only
+ * `broadcast_deliveries` (trigger `broadcast_deliveries_no_delete`, no DELETE
+ * grant for chamber_app — migrations 0065/0225); terminal statuses reserve
+ * nothing and may carry F119 decisions; the approval-round stages always carry
+ * versions. A row in one of these three statuses is still kept when it carries
+ * approval-round history (see the DELETE).
  */
-const SEND_STAGE_STATUSES = [
-  'sending',
-  'sent',
-  'partially_sent',
-  'partial_delivery_accepted',
-] as const;
+const DELETABLE_STATUSES = ['draft', 'submitted', 'approved'] as const;
+
+/**
+ * F119 T051 — the statuses that RESERVE a quota slot: data-model § 9's
+ * `IN_PROGRESS_BROADCAST_STATUSES` (hand-mirrored — this script imports nothing
+ * from `src/` and runs on bare `postgres`). The four approval-round stages hold
+ * the allowance exactly like `submitted` / `approved`, so a report that left
+ * them out would print "reserved=0" for a member who cannot submit. They are
+ * NOT deleted here (T166 security LOW — their versions and decisions are the
+ * SC-002 proof, and the CASCADE would take them); the report counts them as
+ * still reserved and says how to release them.
+ */
+const RESERVING_STATUSES: ReadonlyArray<string> = [
+  'submitted',
+  'approved',
+  'in_design',
+  'awaiting_member_approval',
+  'changes_requested',
+  'member_approved',
+];
 
 function loadDatabaseUrl(): string {
   if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
@@ -82,6 +124,20 @@ function loadDatabaseUrl(): string {
     /* fall through */
   }
   throw new Error('DATABASE_URL not found (env or .env.local)');
+}
+
+/**
+ * True unless the target is positively known NOT to be production: a blocklist
+ * fragment in the URL means prod, and an unset or placeholder blocklist means
+ * prod cannot be ruled out — both fail closed.
+ */
+function targetMayBeProd(dbUrl: string): boolean {
+  const usable = (process.env.TEST_DB_HOST_BLOCKLIST ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .filter((v) => !DB_HOST_BLOCKLIST_PLACEHOLDERS.includes(v));
+  return usable.length === 0 || usable.some((needle) => dbUrl.includes(needle));
 }
 
 function isTestMember(companyName: string | null, email: string): boolean {
@@ -104,7 +160,20 @@ async function main(): Promise<void> {
     process.env.E2E_MEMBER_EMAIL ??
     'e2e-member@swecham.test';
 
-  const sql = postgres(loadDatabaseUrl(), { max: 1 });
+  const dbUrl = loadDatabaseUrl();
+  // Fail closed BEFORE connecting — dry-run included (it reads member PII).
+  if (targetMayBeProd(dbUrl) && !args.includes('--confirm-prod')) {
+    console.error(
+      'REFUSING: the target may be PRODUCTION (DATABASE_URL host matched ' +
+        'TEST_DB_HOST_BLOCKLIST, or the blocklist is unset / still the ' +
+        '.env.example placeholder, so prod cannot be ruled out). This is a ' +
+        'dev/test utility — re-run with --confirm-prod only once you have ' +
+        'verified the target.',
+    );
+    process.exit(3);
+  }
+
+  const sql = postgres(dbUrl, { max: 1 });
   try {
     // Resolve every member this user is linked to (a user can be a contact of
     // more than one member; broadcasts are scoped by requested_by_member_id).
@@ -141,7 +210,7 @@ async function main(): Promise<void> {
       GROUP BY status ORDER BY n DESC
     `;
     const reserved = before
-      .filter((r) => ['submitted', 'approved'].includes(r.status))
+      .filter((r) => RESERVING_STATUSES.includes(r.status))
       .reduce((s, r) => s + r.n, 0);
     const used = before
       .filter((r) => ['sent', 'partial_delivery_accepted'].includes(r.status))
@@ -154,78 +223,121 @@ async function main(): Promise<void> {
     for (const r of before) console.log(`  ${r.n}\t${r.status}`);
     console.log(`Quota now → reserved=${reserved} used=${used}`);
 
-    // Only reserved/pre-send broadcasts are deletable — send-stage rows carry
-    // append-only deliveries and are left intact. Count just the deletable rows
-    // so the dry-run prediction matches what the DELETE actually removes.
-    const deletable = before
-      .filter((r) => !SEND_STAGE_STATUSES.includes(r.status as never))
-      .reduce((s, r) => s + r.n, 0);
+    // One query evaluates the EXACT predicate the DELETE uses, so the dry-run
+    // prediction and the DELETE can never disagree (Finding E's rule):
+    //   - status in DELETABLE_STATUSES (allow-list);
+    //   - no approval-round history — a broadcast with a `broadcast_versions`
+    //     row is kept, because the CASCADE would take its versions AND its
+    //     `broadcast_member_decisions` (0308's append-only trigger lets the
+    //     cascade through at pg_trigger_depth() > 1), i.e. the SC-002 proof;
+    //     a decision always references a version, so "no version" implies "no
+    //     decision" (T166 security LOW);
+    //   - Finding E (PR-2 #5 fix-wave): no LIVE Resend audience
+    //     (resend_audience_id set, audience_deleted_at NULL) — deleting that row
+    //     would orphan the audience at Resend, because the cleanup-audiences
+    //     cron lists eligible audiences by broadcast row.
+    const [plan] = await sql<
+      Array<{
+        deletable: number;
+        kept_history: number;
+        kept_audience: number;
+        reserved_after: number;
+      }>
+    >`
+      WITH scoped AS (
+        SELECT
+          b.status::text AS status,
+          EXISTS (
+            SELECT 1 FROM broadcast_versions v
+            WHERE v.tenant_id = b.tenant_id AND v.broadcast_id = b.broadcast_id
+          ) AS has_history,
+          (b.resend_audience_id IS NULL OR b.audience_deleted_at IS NOT NULL) AS audience_free
+        FROM broadcasts b
+        WHERE b.tenant_id = ${TENANT} AND b.requested_by_member_id IN ${sql(memberIds)}
+      ), judged AS (
+        SELECT
+          status,
+          has_history,
+          audience_free,
+          (status IN ${sql(DELETABLE_STATUSES)} AND NOT has_history AND audience_free) AS goes
+        FROM scoped
+      )
+      SELECT
+        COUNT(*) FILTER (WHERE goes)::int AS deletable,
+        COUNT(*) FILTER (WHERE has_history)::int AS kept_history,
+        COUNT(*) FILTER (
+          WHERE status IN ${sql(DELETABLE_STATUSES)} AND NOT has_history AND NOT audience_free
+        )::int AS kept_audience,
+        COUNT(*) FILTER (WHERE status IN ${sql(RESERVING_STATUSES)} AND NOT goes)::int
+          AS reserved_after
+      FROM judged
+    `;
+    const deletable = plan?.deletable ?? 0;
+    const keptHistory = plan?.kept_history ?? 0;
+    const keptAudience = plan?.kept_audience ?? 0;
+    const reservedAfter = plan?.reserved_after ?? reserved;
 
-    // Finding E (PR-2 #5 fix-wave): a deletable-by-status row can still hold a
-    // LIVE Resend audience (resend_audience_id set, audience_deleted_at NULL) —
-    // e.g. a failed_to_dispatch broadcast that created its audience before
-    // failing. Deleting that row would orphan the audience at Resend because the
-    // cleanup-audiences cron lists eligible audiences by broadcast row. Leave
-    // such rows for the cron; count them so the prediction matches the DELETE.
-    const liveAudienceSkipped =
-      (
-        await sql<Array<{ n: number }>>`
-          SELECT COUNT(*)::int AS n
-          FROM broadcasts
-          WHERE tenant_id = ${TENANT}
-            AND requested_by_member_id IN ${sql(memberIds)}
-            AND status NOT IN ${sql(SEND_STAGE_STATUSES)}
-            AND resend_audience_id IS NOT NULL
-            AND audience_deleted_at IS NULL
-        `
-      )[0]?.n ?? 0;
-    const actuallyDeletable = deletable - liveAudienceSkipped;
-    if (liveAudienceSkipped > 0) {
+    if (keptHistory > 0) {
       console.log(
-        `Note: ${liveAudienceSkipped} broadcast(s) hold a live Resend audience ` +
+        `Note: ${keptHistory} broadcast(s) carry F119 approval-round history ` +
+          `(versions / member decisions — the SC-002 proof) and are kept. A kept ` +
+          `row that still reserves the allowance is released by cancelling it ` +
+          `from /admin/broadcasts/<id>; the history stays.`,
+      );
+    }
+    if (keptAudience > 0) {
+      console.log(
+        `Note: ${keptAudience} broadcast(s) hold a live Resend audience ` +
           `and are left for the cleanup-audiences cron (not deleted here).`,
       );
     }
-    if (actuallyDeletable === 0) {
-      console.log('Nothing to reset (no reserved/pre-send broadcasts).');
+    if (deletable === 0) {
+      console.log(
+        `Nothing to delete. Quota stays → reserved=${reservedAfter} used=${used}`,
+      );
       return;
     }
     if (dryRun) {
       console.log(
-        `[dry-run] would delete ${actuallyDeletable} reserved/pre-send broadcast(s) ` +
-          `(send-stage broadcasts + their append-only deliveries left intact).`,
+        `[dry-run] would delete ${deletable} draft/submitted/approved broadcast(s) ` +
+          `(send-stage, terminal and approval-round rows left intact).`,
       );
       // `used` counts send-stage broadcasts, which are NOT deleted, so it is
-      // unchanged; reserved goes to 0 because every in-flight reserved row
-      // (submitted/approved) is a pre-send status deleted by this script.
-      console.log(`[dry-run] quota after → reserved=0 used=${used}`);
+      // unchanged; `reserved_after` counts the reserving rows the DELETE keeps.
+      console.log(`[dry-run] quota after → reserved=${reservedAfter} used=${used}`);
       return;
     }
 
-    // Delete only reserved/pre-send broadcasts (zero deliveries). The
-    // `broadcast_deliveries` rows of send-stage broadcasts are append-only and
-    // are never touched; `broadcast_batch_manifests` cascades ON DELETE with
-    // the broadcast row (migration 0218), so manifests are handled too.
+    // `broadcast_batch_manifests` cascades ON DELETE with the broadcast row
+    // (migration 0218), so manifests are handled too. The WHERE is the `goes`
+    // predicate above, verbatim.
     const deleted = await sql.begin(async (tx) => {
       const del = await tx`
-        DELETE FROM broadcasts
-        WHERE tenant_id = ${TENANT}
-          AND requested_by_member_id IN ${tx(memberIds)}
-          AND status NOT IN ${tx(SEND_STAGE_STATUSES)}
+        DELETE FROM broadcasts b
+        WHERE b.tenant_id = ${TENANT}
+          AND b.requested_by_member_id IN ${tx(memberIds)}
+          AND b.status IN ${tx(DELETABLE_STATUSES)}
+          -- T166 security LOW: never cascade away approval-round history.
+          AND NOT EXISTS (
+            SELECT 1 FROM broadcast_versions v
+            WHERE v.tenant_id = b.tenant_id AND v.broadcast_id = b.broadcast_id
+          )
           -- Finding E: never delete a row that still holds a live Resend
-          -- audience — leave it for the cleanup-audiences cron to GC first,
-          -- else the audience is orphaned (the cron lists by broadcast row).
-          AND (resend_audience_id IS NULL OR audience_deleted_at IS NOT NULL)
+          -- audience — leave it for the cleanup-audiences cron to GC first.
+          AND (b.resend_audience_id IS NULL OR b.audience_deleted_at IS NOT NULL)
       `;
       return del.count;
     });
 
     console.log(
-      `Deleted ${deleted} reserved/pre-send broadcast(s). ` +
-        `Quota reset → reserved=0 used=${used} ` +
-        `(send-stage broadcasts + deliveries retained).`,
+      `Deleted ${deleted} draft/submitted/approved broadcast(s). ` +
+        `Quota after → reserved=${reservedAfter} used=${used} ` +
+        `(send-stage broadcasts + deliveries, terminal rows and approval-round ` +
+        `history retained).`,
     );
-    console.log('(Audit-log entries + send-stage deliveries retained — append-only.)');
+    console.log(
+      '(Audit-log entries, send-stage deliveries and F119 versions / decisions retained.)',
+    );
   } finally {
     await sql.end();
   }

@@ -548,6 +548,52 @@ means those rows are eating into the bounded 200-per-arm batch and can starve
 genuine orphans — find out why the referencing content is not going away. A
 small steady rate usually means pre-0304 images, which have no row at all.
 
+### Block 3: the E-Blast approval lifecycle (F119 T130)
+
+The same tick runs `expireStaleMemberApprovals` for every E-Blast in
+`awaiting_member_approval` — and in no other status (FR-022a: once the member
+approved, or a schedule was confirmed, nothing here touches the row). The
+Domain policy `nextReminder` decides one step per row: day 3 and day 7 a
+reminder to the member, day 23 a warning to the member AND the marketing
+roster, day 30 the transition `→ expired_no_member_response` (stamping
+`member_expiry_notified_at`) and the closure notice to both sides. Nothing
+here can approve anything (FR-014).
+
+Exactly one notice per threshold: `member_reminder_stage` records the highest
+threshold served, and every entry into `awaiting_member_approval` resets it,
+so a new version restarts the clock. A tick that finds several thresholds due
+(the cron missed days) serves only the latest; the day-30 closure is date-only
+and fires whatever the counter says. A second run the same day is a no-op.
+
+One scan transaction (its own `SET LOCAL statement_timeout`, two lists of at
+most 200 rows each, oldest first: waited 3–30 days, and 30+ days), then ONE
+`runInTenant` per row with its own timeout: the row is re-read under the lock,
+and the state write, the audit row and the outbox rows share that
+transaction. It runs whatever `FEATURE_EBLAST_MEMBER_APPROVAL` says — the flag
+gates entry into the round, and a row already awaiting the member must still
+be reminded and closed; with the flag off the emails wait in the outbox (the
+drainer skips the five `eblast_*` types) and go out on the first tick after
+the flip.
+
+**Reading the outcome.** The tick body carries `approvalLifecycleOk`,
+`remindersSent`, `warningsSent`, `expired` and `approvalLifecycleRowsFailed`.
+A failed scan answers `approvalLifecycleOk: false` and the tick 500s at the
+end, after the other two blocks ran. A row whose transaction threw is left for
+tomorrow and logged at `error` (`errorId: 'M119.cron.approval_lifecycle.rows_failed'`;
+the per-row cause is on `M119.cron.approval_lifecycle.row_failed`), but the
+tick stays 200. Audit rows (system actor, `related_member_id`):
+`broadcast_approval_reminder_sent { reminder }` — written only when the
+reminder was actually enqueued (a member with no active portal contact still
+has the counter moved, logged as `M119.cron.approval_lifecycle.no_member_recipient`) —
+`broadcast_approval_expiry_warned { days_waiting }` and
+`broadcast_approval_expired { days_waiting, allowance_released: true }`. Each
+expiry increments `broadcasts_approval_expired_total{tenant}`.
+
+**Stuck rows, the flag rollback and the held emails** are in
+`docs/runbooks/eblast-approval.md` (§ The expiry clock, § Stuck stage, § Flag
+rollback); the metrics, alerts and `M119.*` errorIds in `docs/observability.md`
+§ 29.
+
 Members are NOT notified of impending draft expiry in MVP — a "your
 draft will expire in N days" toast remains in scope for a future
 polish iteration but is intentionally not part of F7 MVP.

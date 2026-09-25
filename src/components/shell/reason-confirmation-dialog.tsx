@@ -12,8 +12,9 @@
  *
  * Design seam (see DV-12 understand-phase reject behavior contract):
  *   - `onConfirm(reason)` is called inside this component's `useTransition`, so
- *     the caller does NOT manage `pending`; this component disables the
- *     textarea + buttons while the caller's promise is in flight.
+ *     the caller does NOT manage `pending`; while the caller's promise is in
+ *     flight the fields are read-only, Cancel is disabled, Confirm is busy
+ *     (focusable, spinning) and Escape / backdrop cannot close the dialog.
  *   - The RAW (untrimmed) reason is passed to `onConfirm` so callers preserve
  *     their verbatim-reason wire contract (reject sends the reason verbatim).
  *   - Response parsing / status→toast mapping stays in each caller (reject reads
@@ -38,6 +39,7 @@ import {
   useTransition,
 } from 'react';
 import { useTranslations } from 'next-intl';
+import { Loader2Icon } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -57,6 +59,8 @@ import {
   typedPhraseMatches,
 } from '@/components/shell/typed-phrase-field';
 import { resolveDialogFinalFocus } from '@/components/broadcast/resolve-dialog-final-focus';
+import { InlineError } from '@/components/broadcast/approval/inline-error';
+import { InlineWarning } from '@/components/broadcast/approval/inline-warning';
 
 /** What the typed-phrase gate asks for, resolved from the caller's text. */
 interface PhraseGate {
@@ -169,6 +173,45 @@ export interface ReasonConfirmationDialogProps {
    * dialog are not irreversible and stay one step.
    */
   readonly typedPhrase?: string;
+  /**
+   * F119 T067 (FR-010) — with a REQUIRED reason, a reason field left blank
+   * (on blur) is an announced field error: `aria-invalid`, described by the
+   * error, `role="alert"` (ux-standards § 4.1), read from
+   * `namespace.errors.reasonRequired`. Confirm stays disabled either way; this
+   * is what tells a screen-reader user WHY. Off by default, so the existing
+   * callers keep their behaviour.
+   */
+  readonly announceBlankReason?: boolean;
+  /**
+   * F119 T084 — a server refusal said INSIDE the open dialog (ux-standards
+   * § 6.4: inline, `role="alert"`, focused — a toast renders outside the
+   * modal, which hides everything outside itself from AT). `field: 'reason'`
+   * marks the reason field invalid, describes it and focuses it; `null` is a
+   * form-level line above the buttons, focused itself.
+   *
+   * `seq` — the caller bumps it on every refusal. `onConfirm` runs inside this
+   * component's transition, so a caller's "clear at the start" never commits
+   * before the next refusal lands; the error node is keyed on `seq`, so an
+   * identical refusal repeated is a NEW node and is announced again.
+   *
+   * `tone: 'warning'` (PR #392 review D4) — a form-level refusal that is
+   * nobody's error (the read-only write freeze): `message` is the title and
+   * `description` the line under it, in the warning tone. Default: the red
+   * `InlineError`, as before.
+   */
+  readonly refusal?: {
+    readonly message: string;
+    readonly field: 'reason' | null;
+    readonly seq?: number;
+    readonly tone?: 'warning' | undefined;
+    readonly description?: string | undefined;
+  } | null;
+  /**
+   * ux-standards § 6.2 — the Confirm tier. `destructive` (the default: red)
+   * for an irreversible or destructive action; `primary` for a normal,
+   * reversible step (F119 "Request changes").
+   */
+  readonly confirmTone?: 'destructive' | 'primary';
 }
 
 export function ReasonConfirmationDialog({
@@ -182,12 +225,16 @@ export function ReasonConfirmationDialog({
   onConfirm,
   finalFocus,
   typedPhrase,
+  announceBlankReason = false,
+  refusal = null,
+  confirmTone = 'destructive',
 }: ReasonConfirmationDialogProps): React.ReactElement {
   const t = useTranslations(namespace);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
   const [reason, setReason] = useState('');
   const [phraseInput, setPhraseInput] = useState('');
+  const [reasonBlurred, setReasonBlurred] = useState(false);
   const [pending, startTransition] = useTransition();
 
   // Reset on OPEN so every re-open starts fresh — covers the programmatic close
@@ -201,6 +248,7 @@ export function ReasonConfirmationDialog({
     if (open) {
       setReason('');
       setPhraseInput('');
+      setReasonBlurred(false);
     }
   }
 
@@ -263,9 +311,50 @@ export function ReasonConfirmationDialog({
 
   const helpId = `${fieldIdPrefix}-help`;
   const counterId = `${fieldIdPrefix}-counter`;
+  const fieldErrorId = `${fieldIdPrefix}-error`;
+  const tooLongId = `${fieldIdPrefix}-too-long`;
+  const formErrorId = `${fieldIdPrefix}-form-error`;
+  // The field's own error: a required reason left blank (opt-in), else a
+  // server refusal naming the reason field. Over-cap keeps its own line.
+  const blankReason = announceBlankReason && reasonRequired && reasonBlurred && reason.trim().length === 0;
+  const fieldError = blankReason
+    ? t('errors.reasonRequired')
+    : refusal !== null && refusal.field === 'reason'
+      ? refusal.message
+      : null;
+  const formError = refusal !== null && refusal.field === null ? refusal.message : null;
+  // M1 — a refusal's node is keyed on its `seq`, so a repeat is a new node.
+  const refusalKey = `refusal-${refusal?.seq ?? 0}`;
+  const describedBy = [
+    fieldError !== null ? fieldErrorId : null,
+    overCap ? tooLongId : null,
+    helpId,
+    counterId,
+  ]
+    .filter((id) => id !== null)
+    .join(' ');
+
+  // ux-standards § 6.4 — a refusal is surfaced inline AND focused: the reason
+  // field when the refusal names it, else the form-level line (focusable via
+  // its `tabIndex={-1}`). Keyed on the refusal itself, never on `fieldError`:
+  // the blank-on-blur check must not pull focus back into the field.
+  useEffect(() => {
+    if (refusal === null) return;
+    if (refusal.field === 'reason') textareaRef.current?.focus();
+    else document.getElementById(formErrorId)?.focus();
+  }, [refusal, formErrorId]);
 
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
+    <AlertDialog
+      open={open}
+      onOpenChange={(next) => {
+        // L5 — Escape / backdrop cannot close the dialog while the request
+        // runs: the result would land on a closed dialog. Callers' own
+        // programmatic closes call their `onOpenChange` directly, not this.
+        if (!next && pending) return;
+        onOpenChange(next);
+      }}
+    >
       <AlertDialogContent
         className="max-w-lg"
         finalFocus={finalFocus}
@@ -278,17 +367,29 @@ export function ReasonConfirmationDialog({
 
         <div className="space-y-2">
           <Label htmlFor={fieldIdPrefix}>{t('reasonLabel')}</Label>
+          {/* H2 — read-only (never `disabled`) while the request runs: a
+              disabled control that holds focus drops it to <body>. */}
           <Textarea
             id={fieldIdPrefix}
             ref={textareaRef}
             value={reason}
             onChange={(e) => setReason(e.target.value)}
+            onBlur={(e) => {
+              // L3 — heading for Cancel is leaving, not a blank answer.
+              if (e.relatedTarget !== null && e.relatedTarget === cancelRef.current) return;
+              setReasonBlurred(true);
+            }}
             placeholder={t('reasonPlaceholder')}
             rows={textareaRows}
-            disabled={pending}
-            aria-describedby={`${helpId} ${counterId}`}
-            aria-invalid={overCap}
+            readOnly={pending}
+            aria-describedby={describedBy}
+            aria-invalid={overCap || fieldError !== null}
           />
+          {/* L4 — every error sits immediately under the field it describes. */}
+          {fieldError !== null ? (
+            <InlineError key={blankReason ? 'blank' : refusalKey} id={fieldErrorId} message={fieldError} />
+          ) : null}
+          {overCap ? <InlineError id={tooLongId} message={t('errors.reasonTooLong')} /> : null}
           <p id={helpId} className="text-xs text-muted-foreground">
             {t('reasonHelp')}
           </p>
@@ -302,11 +403,6 @@ export function ReasonConfirmationDialog({
           >
             {reason.length} / {maxLength}
           </p>
-          {overCap ? (
-            <p className="text-xs text-destructive" role="alert">
-              {t('errors.reasonTooLong')}
-            </p>
-          ) : null}
         </div>
 
         {gate !== null ? (
@@ -320,30 +416,44 @@ export function ReasonConfirmationDialog({
             helpText={t('phraseHelp')}
             {...(gate.copy !== null ? { copy: gate.copy } : {})}
             onSubmit={handleConfirm}
-            disabled={pending}
+            readOnly={pending}
           />
         ) : null}
+
+        {formError === null ? null : refusal?.tone === 'warning' ? (
+          <InlineWarning key={refusalKey} id={formErrorId} title={formError} description={refusal.description} />
+        ) : (
+          <InlineError key={refusalKey} id={formErrorId} message={formError} />
+        )}
 
         <AlertDialogFooter>
           <AlertDialogCancel ref={cancelRef} disabled={pending}>
             {t('cancel')}
           </AlertDialogCancel>
-          {/* Destructive confirm — paint red per ux-standards § 6.2.
+          {/* ux-standards § 6.2 — red for a destructive action, primary for a
+              reversible one (`confirmTone`). While the request runs Confirm
+              stays focusable (`focusableWhenDisabled`), says it is busy and
+              spins; idle and invalid it is natively disabled.
               preventDefault stops AlertDialogAction's default auto-close so the
               dialog only closes via the caller's onOpenChange after the fetch
               settles (stays open on a transient error for retry). */}
           <AlertDialogAction
             disabled={!valid || pending}
+            focusableWhenDisabled={pending}
+            aria-busy={pending || undefined}
             className={cn(
-              'bg-destructive text-destructive-foreground',
-              'hover:bg-destructive/90',
-              'focus-visible:ring-destructive',
+              confirmTone === 'destructive' && [
+                'bg-destructive text-destructive-foreground',
+                'hover:bg-destructive/90',
+                'focus-visible:ring-destructive',
+              ],
             )}
             onClick={(e) => {
               e.preventDefault();
               handleConfirm();
             }}
           >
+            {pending ? <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" /> : null}
             {t('confirm')}
           </AlertDialogAction>
         </AlertDialogFooter>

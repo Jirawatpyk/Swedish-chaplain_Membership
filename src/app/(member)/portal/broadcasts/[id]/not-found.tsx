@@ -14,6 +14,10 @@
  * on the page) restores the spec-mandated 404 status in production.
  * See `tests/e2e/member-quota-history.spec.ts` AS5 for the dev-vs-prod
  * status nuance.
+ *
+ * F119 T086a V6 — the heading and the paragraph were the same string
+ * (`errors.notFound` twice). Each now has its own key; the body names no
+ * reason, so "absent" and "someone else's" still read alike.
  */
 import Link from 'next/link';
 import { ArrowLeft, FileQuestion } from 'lucide-react';
@@ -24,7 +28,6 @@ import { buttonVariants } from '@/components/ui/button';
 
 export default async function BroadcastNotFound(): Promise<React.ReactElement> {
   const t = await getTranslations('portal.broadcasts.detail');
-  const tErrors = await getTranslations('errors');
 
   return (
     // F2 UX hardening — full empty-state anatomy per ux-standards § 3.1:
@@ -41,9 +44,9 @@ export default async function BroadcastNotFound(): Promise<React.ReactElement> {
           className="h-12 w-12 text-muted-foreground"
           aria-hidden="true"
         />
-        <h2 className="text-lg font-semibold">{tErrors('notFound')}</h2>
+        <h2 className="text-lg font-semibold">{t('notFound.title')}</h2>
         <p className="max-w-md text-sm text-muted-foreground">
-          {tErrors('notFoundHint')}
+          {t('notFound.body')}
         </p>
         <Link
           href="/portal/benefits?tab=broadcasts"

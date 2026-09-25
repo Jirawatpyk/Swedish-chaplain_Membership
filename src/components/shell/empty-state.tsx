@@ -33,6 +33,13 @@ export interface EmptyStateProps {
   readonly iconClassName?: string;
   /** Optional test hook (e.g. list-empty E2E assertions). */
   readonly 'data-testid'?: string;
+  /**
+   * When false, the placeholder is NOT a `role="status"` live region. For a
+   * list that already owns one announcer and must not gain a second (the E-Blast
+   * queue, FR-025): it announces the empty view itself. Defaults to true
+   * (unchanged for every existing consumer).
+   */
+  readonly announce?: boolean;
 }
 
 export function EmptyState({
@@ -44,6 +51,7 @@ export function EmptyState({
   bordered = true,
   iconClassName,
   'data-testid': dataTestId,
+  announce = true,
 }: EmptyStateProps) {
   return (
     <div
@@ -53,7 +61,7 @@ export function EmptyState({
         bordered ? 'rounded-lg border border-dashed border-border p-12' : 'py-12',
         className,
       )}
-      role="status"
+      role={announce ? 'status' : undefined}
     >
       {Icon ? (
         <Icon className={cn('size-10 text-muted-foreground', iconClassName)} aria-hidden />

@@ -14,7 +14,7 @@ import { eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 
 import { db, runInTenant } from '@/lib/db';
-import { broadcastBatchManifests } from '@/modules/broadcasts/infrastructure/schema';
+import { broadcastBatchManifests, broadcasts } from '@/modules/broadcasts/infrastructure/schema';
 import { makeDrizzleBroadcastsRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
@@ -60,8 +60,11 @@ describe('referencedAudienceIdsForBroadcasts — bug #16 (row + batch-manifest a
         scheduledFor: null,
       }),
     );
-    await repo.withTx((tx) =>
-      repo.attachAudienceId(tx, tenant.ctx.slug, bid, 'aud-main'),
+    // The column is written directly: `attachAudienceId` now refuses any row
+    // that is not `approved` (F119 T166 R-H1), and this query reads the column
+    // whatever status the row is in.
+    await runInTenant(tenant.ctx, (tx) =>
+      tx.update(broadcasts).set({ resendAudienceId: 'aud-main' }).where(eq(broadcasts.broadcastId, bid as string)),
     );
 
     // Two per-batch audiences live ONLY in the manifests.

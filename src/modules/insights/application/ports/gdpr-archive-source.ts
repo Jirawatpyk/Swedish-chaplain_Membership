@@ -41,6 +41,7 @@ export type GdprTruncatableCategory =
   | 'events'
   | 'broadcasts'
   | 'broadcastImages'
+  | 'broadcastVersions'
   | 'auditEvents'
   | 'changeRequests';
 
@@ -102,6 +103,13 @@ export interface GdprMemberData {
    * names a user).
    */
   readonly broadcastImages: readonly Record<string, unknown>[];
+  /**
+   * F119 T083 (research R17) — the approval round of each of the member's
+   * E-Blasts: the versions they were shown and their decisions, newest E-Blast
+   * first. No unsent working copy, no staff identity (`authoredBy` is
+   * `member` | `organisation`); after an erasure, the `[redacted]` sentinels.
+   */
+  readonly broadcastVersions: readonly Record<string, unknown>[];
   readonly auditEvents: readonly GdprAuditEntry[];
   /** F114 — the requester's change-request history (FR-029-scoped when the requester is a linked contact). */
   readonly changeRequests: readonly GdprChangeRequestEntry[];

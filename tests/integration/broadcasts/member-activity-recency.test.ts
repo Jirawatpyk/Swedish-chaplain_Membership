@@ -17,6 +17,7 @@
  * cannot catch it.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { makeFakeMarketingDirectory } from '../../helpers/eblast-approval-fakes';
 import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
@@ -226,7 +227,7 @@ describe('F7 admin_proxy submit does NOT bump the proxied member recency', () =>
   });
 
   it('a SUCCESSFUL admin proxy-submit leaves the member last_activity_at untouched', async () => {
-    const deps = makeProxySubmitBroadcastDeps(tenant.ctx.slug);
+    const deps = makeProxySubmitBroadcastDeps(tenant.ctx.slug, makeFakeMarketingDirectory([]));
     const result = await proxySubmitBroadcast(deps, {
       proxiedMemberId: memberId,
       adminUserId: admin.userId,

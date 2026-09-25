@@ -13,8 +13,13 @@
  * Classification (mirrors `cancel-broadcast-dialog.tsx`'s 409 code split,
  * simplified to 3 buckets since there's no dialog UI to keep open here):
  *   - `res.ok` (200)                                    → cancelled
- *   - 409 with `error.code === 'broadcast_cancel_too_late'` → tooLate
+ *   - 409 with `error.code === 'sending_started'` (F119 T081 — the code
+ *     for a row the cron already picked up) or the legacy
+ *     `'broadcast_cancel_too_late'`                       → tooLate
  *     (the cron already dispatched — a race, not a hard error)
+ *   - 429 (any body — a limiter in front may answer without one)
+ *                                                        → rateLimited
+ *     (the row is STILL APPROVED and will send; it is not "too late")
  *   - anything else (other 409 codes, 404/403/400/5xx, a rejected
  *     `res.json()`, or a rejected `fetch()` itself)      → failed
  *
@@ -56,7 +61,7 @@ describe('cancelApprovedBroadcasts', () => {
 
     const r = await cancelApprovedBroadcasts(['a', 'b', 'c'], 'reason');
 
-    expect(r).toEqual({ cancelled: 1, tooLate: 1, failed: 1 });
+    expect(r).toEqual({ cancelled: 1, tooLate: 1, failed: 1, rateLimited: 0 });
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('/api/admin/broadcasts/a/cancel');
     expect(init).toMatchObject({
@@ -67,6 +72,47 @@ describe('cancelApprovedBroadcasts', () => {
     expect(JSON.parse(init.body as string)).toEqual({
       cancellationReason: 'reason',
     }); // non-empty reason REQUIRED — the endpoint 400s on an empty string
+    vi.unstubAllGlobals();
+  });
+
+  /**
+   * Whole-branch review HIGH-2 — T081 renamed the refusal for a row the cron
+   * already picked up (`sending` onward) to `sending_started`. Matching only
+   * the old code reported it as "Couldn't undo — still approved".
+   */
+  it('classifies 409 sending_started as tooLate (the renamed code for a row already sending)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ error: { code: 'sending_started' } }), { status: 409 }),
+      ),
+    );
+
+    const r = await cancelApprovedBroadcasts(['a'], 'reason');
+
+    expect(r).toEqual({ cancelled: 0, tooLate: 1, failed: 0, rateLimited: 0 });
+    vi.unstubAllGlobals();
+  });
+
+  /**
+   * Whole-branch review HIGH-3 (defence) — a 429 is neither "too late" nor a
+   * generic failure: the row stays approved and will dispatch unless someone
+   * cancels it, so the caller must say so. Keyed on the STATUS, not the body.
+   */
+  it('classifies a 429 as rateLimited — with the JSON code and with no body at all', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ error: { code: 'broadcast_rate_limit_exceeded' } }), { status: 429 }),
+        )
+        .mockResolvedValueOnce(new Response(null, { status: 429 })),
+    );
+
+    const r = await cancelApprovedBroadcasts(['a', 'b'], 'reason');
+
+    expect(r).toEqual({ cancelled: 0, tooLate: 0, failed: 0, rateLimited: 2 });
     vi.unstubAllGlobals();
   });
 
@@ -85,7 +131,7 @@ describe('cancelApprovedBroadcasts', () => {
 
     const r = await cancelApprovedBroadcasts(['a'], 'reason');
 
-    expect(r).toEqual({ cancelled: 0, tooLate: 0, failed: 1 });
+    expect(r).toEqual({ cancelled: 0, tooLate: 0, failed: 1, rateLimited: 0 });
     vi.unstubAllGlobals();
   });
 
@@ -102,7 +148,7 @@ describe('cancelApprovedBroadcasts', () => {
 
     const r = await cancelApprovedBroadcasts(['a', 'b'], 'reason');
 
-    expect(r).toEqual({ cancelled: 0, tooLate: 0, failed: 2 });
+    expect(r).toEqual({ cancelled: 0, tooLate: 0, failed: 2, rateLimited: 0 });
     vi.unstubAllGlobals();
   });
 
@@ -125,7 +171,7 @@ describe('cancelApprovedBroadcasts', () => {
     const ids = Array.from({ length: 12 }, (_, i) => `id${i}`);
     const r = await cancelApprovedBroadcasts(ids, 'reason');
 
-    expect(r).toEqual({ cancelled: 12, tooLate: 0, failed: 0 });
+    expect(r).toEqual({ cancelled: 12, tooLate: 0, failed: 0, rateLimited: 0 });
     expect(maxInFlight).toBeLessThanOrEqual(5);
     vi.unstubAllGlobals();
   });
@@ -136,7 +182,7 @@ describe('cancelApprovedBroadcasts', () => {
 
     const r = await cancelApprovedBroadcasts([], 'reason');
 
-    expect(r).toEqual({ cancelled: 0, tooLate: 0, failed: 0 });
+    expect(r).toEqual({ cancelled: 0, tooLate: 0, failed: 0, rateLimited: 0 });
     expect(fetchMock).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
   });

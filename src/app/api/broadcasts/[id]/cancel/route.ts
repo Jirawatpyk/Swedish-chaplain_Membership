@@ -7,6 +7,13 @@
  * Cross-member probe rejection: the use-case surfaces
  * `broadcast_not_found` shape when caller is not the originating member,
  * preventing existence leak across members.
+ *
+ * F119 T081 / T081a — withdrawable at every in-progress stage (409
+ * `sending_started` from `sending` onward); the E-Blast's images are stamped
+ * and marketing is told (`eblast_member_decided_marketing`, `withdrawn`) in
+ * the same tx; and the 60 / minute per-(tenant, user) member write bucket —
+ * the decision route's — is consumed after the id parse and BEFORE the body
+ * is read or anything is written.
  */
 import { randomUUID } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';
@@ -23,8 +30,11 @@ import {
   httpStatusForBroadcastError,
   baseHeaders,
 } from '@/lib/broadcasts-route-helpers';
+import { makeMarketingDirectory } from '@/lib/broadcast-marketing-deps';
+import { consumeMemberWriteBucket } from '@/lib/broadcasts-member-write-bucket';
 import { requireMemberContext } from '@/lib/member-context';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 
 const MemberCancelBodySchema = z
   .object({
@@ -48,6 +58,9 @@ export async function POST(
     return errorResponse(404, 'broadcast_not_found', correlationId);
   }
 
+  const limited = await consumeMemberWriteBucket(ctx.tenant.slug, ctx.current.user.id, correlationId);
+  if (limited !== null) return limited;
+
   let raw: unknown = {};
   try {
     raw = await request.json();
@@ -62,7 +75,7 @@ export async function POST(
   }
 
   const reason = parsed.data?.cancellationReason ?? null;
-  const deps = makeCancelBroadcastDeps(ctx.tenant.slug);
+  const deps = makeCancelBroadcastDeps(ctx.tenant.slug, makeMarketingDirectory(ctx.tenant.slug));
 
   try {
     const result = await cancelBroadcast(deps, {
@@ -72,6 +85,7 @@ export async function POST(
         memberId: ctx.member.memberId,
         userId: ctx.current.user.id,
       },
+      actorRole: ctx.current.user.role ?? null,
       cancellationReason: reason,
       requestId: ctx.requestId,
       // E1 closure (verify-fix 2026-05-02) — member self-cancel now
@@ -96,7 +110,8 @@ export async function POST(
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
+        errorId: 'M119.portal.cancel.unexpected',
         correlationId,
         tenantId: ctx.tenant.slug,
         memberId: ctx.member.memberId,
@@ -113,11 +128,16 @@ function mapCancelError(
   correlationId: string,
 ): NextResponse {
   if (error.kind === 'cancel.server_error') {
+    // T166 R-M4 — this 500 used to leave no trace at all.
+    logger.error(
+      { err: error.errKind, correlationId, errorId: 'M119.portal.cancel.server_error' },
+      'broadcasts.portal.cancel.server_error',
+    );
     return errorResponse(500, 'internal_error', correlationId);
   }
   const { status, code } = httpStatusForBroadcastError(error.kind);
   const details: Record<string, unknown> = {};
-  if (error.kind === 'broadcast_cancel_too_late') {
+  if (error.kind === 'broadcast_cancel_too_late' || error.kind === 'sending_started') {
     details['observedStatus'] = error.observedStatus;
   } else if (error.kind === 'broadcast_concurrent_action_blocked') {
     details['observedStatus'] = error.observedStatus;

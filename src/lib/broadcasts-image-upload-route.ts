@@ -175,9 +175,15 @@ export async function handleImageUpload(
         case 'not_found':
           return errorResponse(404, 'broadcast_not_found', correlationId);
         case 'closed':
-          return errorResponse(409, 'broadcast_invalid_state_transition', correlationId, {
-            details: { status: authorized.error.status },
-          });
+          // Staff: the contract's `stage_changed` (the E-Blast moved past the
+          // stages an image may join — T106a). The member route keeps its
+          // shipped code.
+          return errorResponse(
+            409,
+            input.surface === 'member' ? 'broadcast_invalid_state_transition' : 'stage_changed',
+            correlationId,
+            { details: { status: authorized.error.status } },
+          );
         default:
           return assertNever(authorized.error);
       }

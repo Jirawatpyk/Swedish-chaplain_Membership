@@ -31,4 +31,10 @@ describe('isDefaultBroadcastView', () => {
   it('is false when a toDate filter is set', () => {
     expect(isDefaultBroadcastView({ toDate: '2026-06-30' })).toBe(false);
   });
+  // F119 T119 — the Upcoming sends preset's own params count as a filter,
+  // exactly as `queue-filters.tsx`'s `hasAnyFilter` does.
+  it('is false when the Upcoming sends preset params are set', () => {
+    expect(isDefaultBroadcastView({ sort: 'scheduled_for' })).toBe(false);
+    expect(isDefaultBroadcastView({ from: 'now' })).toBe(false);
+  });
 });

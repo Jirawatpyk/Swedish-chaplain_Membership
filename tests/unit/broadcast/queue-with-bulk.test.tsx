@@ -70,22 +70,29 @@ function makeRow(overrides: Partial<EnrichedQueueRow> = {}): EnrichedQueueRow {
     actorRoleLabel: null,
     segmentLabel: 'All members',
     recipientCount: 42,
-    submittedAtFormatted: '1 Aug 2026, 07:00',
     ageBadge: null,
     statusBadgeVariant: 'secondary',
     statusBadgeLabel: 'Awaiting review',
     actionable: true,
+    whoseTurnLabel: 'Marketing',
+    timeInStageLabel: '3 h',
+    round: 0,
+    proposedSendAtFormatted: null,
+    confirmedSendAtFormatted: null,
+    lastActivityFormatted: '1 Aug 2026, 07:00',
+    deliverySummary: null,
     ...overrides,
   };
 }
 
 const LABELS = {
-  submittedAt: 'Submitted',
   member: 'Member',
   subject: 'Subject',
-  segment: 'Audience',
-  recipientCount: 'Recipients',
-  status: 'Status',
+  audience: 'Audience',
+  sendTime: 'Send time',
+  status: 'Stage',
+  whoseTurn: 'Whose turn',
+  timeInStage: 'Time in stage',
   actions: 'Actions',
   select: 'Select broadcast',
   tableAria: 'Broadcast review queue',
@@ -144,6 +151,60 @@ describe('<QueueWithBulk>', () => {
     // No select column at all when read-only — nothing to click.
     expect(screen.queryByRole('checkbox')).toBeNull();
     expect(screen.queryByRole('toolbar')).toBeNull();
+  });
+
+  // T086a V2 — Clear empties the selection, the bar returns null and the
+  // focused Clear button goes with it. Focus is handed to the select-all
+  // checkbox, which survives the clear. (Below `md` that checkbox is in a
+  // `display: none` table and cannot take focus, so the bar falls back to
+  // `#main-content` — a branch jsdom, which has no CSS, cannot exercise.)
+  it('V2: Clear hands focus to the select-all checkbox instead of dropping it to <body>', async () => {
+    const user = userEvent.setup();
+    render(
+      <Provider>
+        <main id="main-content" tabIndex={-1}>
+          <QueueWithBulk
+            rows={[makeRow({ broadcastId: 'b1' }), makeRow({ broadcastId: 'b2' })]}
+            readOnly={false}
+            columnLabels={LABELS}
+          />
+        </main>
+      </Provider>,
+    );
+    const table = screen.getByRole('table');
+    await user.click(within(table.querySelector('tbody')!).getAllByRole('checkbox')[0]!);
+    const bar = await screen.findByRole('toolbar');
+
+    await user.click(within(bar).getByRole('button', { name: /clear/i }));
+
+    expect(screen.queryByRole('toolbar')).toBeNull();
+    expect(document.activeElement).toBe(within(table.querySelector('thead')!).getByRole('checkbox'));
+  });
+
+  // T086a V10 — the bulk toolbar is `position: fixed` at the bottom of the
+  // viewport, so it is the LAST thing on screen; the pagination sits in the
+  // flow above it. Tab order has to follow: pagination first, then the bar.
+  it('V10: the pagination precedes the bulk toolbar in the DOM, so Tab follows the visual order', async () => {
+    const user = userEvent.setup();
+    render(
+      <Provider>
+        <QueueWithBulk
+          rows={[makeRow({ broadcastId: 'b1' })]}
+          readOnly={false}
+          columnLabels={LABELS}
+          pagination={
+            <nav aria-label="Queue pages">
+              <a href="?cursor=x">Next page</a>
+            </nav>
+          }
+        />
+      </Provider>,
+    );
+    await user.click(within(screen.getByRole('table').querySelector('tbody')!).getAllByRole('checkbox')[0]!);
+    const bar = await screen.findByRole('toolbar');
+    const pages = screen.getByRole('navigation', { name: 'Queue pages' });
+
+    expect(pages.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
 

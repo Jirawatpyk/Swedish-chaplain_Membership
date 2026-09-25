@@ -37,6 +37,7 @@
  * tenant A.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { makeFakeMarketingDirectory } from '../../helpers/eblast-approval-fakes';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { runInTenant } from '@/lib/db';
@@ -143,7 +144,7 @@ describe('DV-4 / Principle I — proxy-submit cross-tenant isolation (live Neon)
     }
 
     // Deps scoped to tenant A; target member id lives in tenant B.
-    const depsTenantA = makeProxySubmitBroadcastDeps(tenantA.ctx.slug);
+    const depsTenantA = makeProxySubmitBroadcastDeps(tenantA.ctx.slug, makeFakeMarketingDirectory([]));
 
     const result = await proxySubmitBroadcast(depsTenantA, {
       proxiedMemberId: bMemberId,

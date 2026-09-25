@@ -31,7 +31,9 @@ import {
 import {
   listMemberBroadcasts,
   listMemberBroadcastImages,
+  listMemberBroadcastVersions,
   makeListMemberBroadcastImagesDeps,
+  makeListMemberBroadcastVersionsDeps,
   makeListMemberBroadcastsDeps,
 } from '@/modules/broadcasts';
 import { gdprAuditSubsetReadAdapter } from '@/modules/auth';
@@ -59,6 +61,7 @@ const MAX_EVENTS = 1000;
 const BROADCAST_PAGE = 100;
 const MAX_BROADCASTS = 1000;
 const MAX_BROADCAST_IMAGES = 1000;
+const MAX_BROADCAST_VERSION_ROWS = 1000;
 const MAX_AUDIT_ROWS = 5000;
 const CHANGE_REQUEST_PAGE = 50;
 const MAX_CHANGE_REQUESTS = 1000;
@@ -311,6 +314,36 @@ export const gdprArchiveSourceAdapter: GdprArchiveSource = {
       ...(img.blobUrl === undefined ? {} : { blobUrl: img.blobUrl }),
     }));
 
+    // 5a') F119 T083 (R17) — the approval round of each of those E-Blasts: the
+    //      versions the member was shown and their decisions, through the
+    //      broadcasts module's member projection (no working copy, no staff
+    //      identity). The cap applies to each list; the newest rows are kept.
+    const versionRounds = await listMemberBroadcastVersions(makeListMemberBroadcastVersionsDeps(ctx.slug), {
+      memberId,
+      limit: MAX_BROADCAST_VERSION_ROWS,
+    });
+    const broadcastVersions = versionRounds.threads.map((t) => ({
+      broadcastId: t.broadcastId,
+      versions: t.versions.map((v) => ({
+        versionId: v.id,
+        versionNo: v.versionNo,
+        authoredBy: v.authoredBy,
+        subject: v.subject,
+        bodyHtml: v.bodyHtml,
+        noteToMember: v.noteToMember,
+        sentToMemberAt: isoOrNull(v.sentToMemberAt),
+        createdAt: v.createdAt.toISOString(),
+      })),
+      decisions: t.decisions.map((d) => ({
+        decisionId: d.id,
+        versionId: d.versionId,
+        round: d.round,
+        decision: d.decision,
+        reason: d.reason,
+        decidedAt: d.decidedAt.toISOString(),
+      })),
+    }));
+
     // 5b) F114 — change requests (FR-030). Scoped as FR-029 when the requester
     //     is one of the member's linked contacts (their own in full + the
     //     company-level ones as a non-submitter sees them). An ON-BEHALF
@@ -388,6 +421,7 @@ export const gdprArchiveSourceAdapter: GdprArchiveSource = {
     if (eventsTruncated) truncatedCategories.push('events');
     if (broadcastsTruncated) truncatedCategories.push('broadcasts');
     if (broadcastImagesTruncated) truncatedCategories.push('broadcastImages');
+    if (versionRounds.truncated) truncatedCategories.push('broadcastVersions');
     if (auditTruncated) truncatedCategories.push('auditEvents');
     if (changeRequestsTruncated) truncatedCategories.push('changeRequests');
 
@@ -460,6 +494,7 @@ export const gdprArchiveSourceAdapter: GdprArchiveSource = {
       events,
       broadcasts,
       broadcastImages,
+      broadcastVersions,
       auditEvents,
       changeRequests,
     };

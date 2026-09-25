@@ -8,7 +8,9 @@
  *   2. Sign in as e2e-admin, approve + dispatch via cron so the row
  *      reaches `status='sending'`.
  *   3. Member attempts to cancel via `/api/broadcasts/[id]/cancel`
- *      → assert HTTP 409 with `broadcast_cancel_too_late` error code.
+ *      → assert HTTP 409 with `sending_started` (F119 T081 — the code from
+ *      `sending` onward; `broadcast_cancel_too_late` now answers only for a
+ *      closed E-Blast that never started sending).
  *   4. Admin attempts to cancel via `/api/admin/broadcasts/[id]/cancel`
  *      → assert HTTP 409 with the same error code.
  *
@@ -60,8 +62,11 @@ async function forceBroadcastToSending(broadcastId: string): Promise<boolean> {
   }
 }
 
-const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL;
-const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD;
+// The in-good-standing persona: the primary `e2e-member` is LAPSED by the F8
+// fixture, so its submit is refused and this spec skipped at step 1 (and
+// approve-as-submitted now refuses it too — F119 T166 S-H1).
+const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL_EMPTY;
+const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD_EMPTY;
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
 const CRON_SECRET = process.env.CRON_SECRET;
@@ -71,12 +76,18 @@ test.describe.configure({ mode: 'serial' });
 test.describe('F7 US6 — cancel-too-late (T167)', () => {
   test.skip(
     !MEMBER_EMAIL || !MEMBER_PASSWORD || !ADMIN_EMAIL || !ADMIN_PASSWORD || !CRON_SECRET,
-    'Set E2E_MEMBER_EMAIL, E2E_MEMBER_PASSWORD, E2E_ADMIN_EMAIL, E2E_ADMIN_PASSWORD, CRON_SECRET',
+    'Set E2E_MEMBER_EMAIL_EMPTY, E2E_MEMBER_PASSWORD_EMPTY, E2E_ADMIN_EMAIL, E2E_ADMIN_PASSWORD, CRON_SECRET',
   );
 
   test.beforeAll(async () => {
     await clearE2ERateLimits();
-    await wipeE2EMemberBroadcasts();
+    await wipeE2EMemberBroadcasts(MEMBER_EMAIL);
+  });
+
+  // The `sending` row would otherwise hold the persona's allowance place
+  // until the next run (the `f89b7ebab` precedent).
+  test.afterAll(async () => {
+    await wipeE2EMemberBroadcasts(MEMBER_EMAIL);
   });
 
   async function signIn(page: Page, role: 'member' | 'admin'): Promise<void> {
@@ -108,12 +119,12 @@ test.describe('F7 US6 — cancel-too-late (T167)', () => {
     );
   }
 
-  test('AS6: cancel after sending is rejected with 409 broadcast_cancel_too_late (member + admin)', async ({
+  test('AS6: cancel after sending is rejected with 409 sending_started (member + admin)', async ({
     page,
   }) => {
     test.setTimeout(180_000);
 
-    // beforeAll wiped e2e-member's broadcast history → quota = 1/1
+    // beforeAll wiped the persona's broadcast history → quota = 1/1
 
     // Step 1 — member submits send-now-eligible broadcast
     await signIn(page, 'member');
@@ -190,7 +201,7 @@ test.describe('F7 US6 — cancel-too-late (T167)', () => {
         broadcastId,
       );
       expect(adminCancelResult.status).toBe(409);
-      expect(adminCancelResult.body?.error?.code).toBe('broadcast_cancel_too_late');
+      expect(adminCancelResult.body?.error?.code).toBe('sending_started');
     } finally {
       await adminCtx.close();
     }
@@ -209,6 +220,6 @@ test.describe('F7 US6 — cancel-too-late (T167)', () => {
       broadcastId,
     );
     expect(memberCancelResult.status).toBe(409);
-    expect(memberCancelResult.body?.error?.code).toBe('broadcast_cancel_too_late');
+    expect(memberCancelResult.body?.error?.code).toBe('sending_started');
   });
 });

@@ -7,7 +7,7 @@
  * payload silently fell back to `Record<string, unknown>` for events
  * not in `F7AuditPayloadShapes`. Now the constraint forces a
  * deliberate choice: untyped events MUST go through `emit`; only the
- * events with declared payload shapes (17 since F119) are eligible for `emitTyped`.
+ * events with declared payload shapes (19 since F119 PR-2) are eligible for `emitTyped`.
  *
  * This file does not run any runtime assertions — the `@ts-expect-error`
  * markers + the structural assignment tests are the lock. If a future
@@ -98,7 +98,7 @@ describe('AuditPort.emitTyped<E> generic constraint — R6.7 M-12', () => {
     expect(true).toBe(true);
   });
 
-  it('F7AuditPayloadShapes covers exactly the 17 declared events', () => {
+  it('F7AuditPayloadShapes covers exactly the 27 declared events', () => {
     // Lock the documented count so a future addition surfaces here for
     // review. The list used to be typed `ReadonlyArray<keyof …>`, which a
     // SUBSET satisfies — it read 12 while the map held 13. `_allDeclared`
@@ -122,9 +122,23 @@ describe('AuditPort.emitTyped<E> generic constraint — R6.7 M-12', () => {
       'broadcast_brand_settings_changed',
       'broadcast_image_uploaded',
       'broadcast_image_removed',
+      // F119 PR-2 (T056 / T057)
+      'broadcast_version_started',
+      'broadcast_member_approval_voided',
+      // F119 PR-2 (T059 / T060)
+      'broadcast_version_sent_to_member',
+      'broadcast_schedule_confirmed',
+      // F119 PR-2 (T078)
+      'broadcast_member_approved',
+      'broadcast_member_changes_requested',
+      'broadcast_member_approval_withdrawn',
+      // F119 PR-2 (T130) — the daily approval-lifecycle tick (system rows)
+      'broadcast_approval_reminder_sent',
+      'broadcast_approval_expiry_warned',
+      'broadcast_approval_expired',
     ] as const satisfies ReadonlyArray<_Keys>;
     const _allDeclared: [Exclude<_Keys, (typeof declared)[number]>] extends [never] ? true : never = true;
     void _allDeclared;
-    expect(declared.length).toBe(17);
+    expect(declared.length).toBe(27);
   });
 });
