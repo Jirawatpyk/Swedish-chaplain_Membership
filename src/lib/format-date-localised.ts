@@ -9,6 +9,8 @@
  * `'th-TH-u-ca-buddhist'` calendar variant.
  */
 
+import { buildFormats, type DateTimePresetKey } from '@/i18n/formats';
+
 /**
  * Map a next-intl locale to the appropriate `Intl.DateTimeFormat`
  * locale string.
@@ -82,7 +84,7 @@ function getFormatter(
  * differed; the day differed for instants ≥ 17:00 UTC).
  */
 export function formatLocalisedDate(
-  iso: string,
+  iso: string | Date,
   locale: string,
   options: Intl.DateTimeFormatOptions = { dateStyle: 'medium' },
 ): string {
@@ -120,3 +122,37 @@ export function formatCalendarYear(year: number, locale: string): string {
   const parts = getFormatter(locale, { year: 'numeric' }).formatToParts(midYear);
   return parts.find((p) => p.type === 'year')?.value ?? String(year);
 }
+
+/**
+ * Render one of the named next-intl dateTime presets (`src/i18n/formats.ts`)
+ * through this helper instead of next-intl's `format.dateTime(d, preset)`.
+ *
+ * next-intl formats with the raw request locale, so English came out en-US
+ * ("Sep 23, 2026, 02:10 PM") next to this helper's en-GB ("23 Sept 2026") on
+ * the same screen. A preset cannot change the locale, so the presets are
+ * rendered here: `getDateFormatLocale` (en → en-GB, th → Buddhist calendar),
+ * Bangkok wall time, and a 24-hour clock whenever the preset shows a time
+ * (docs/ux-standards.md § 12.3). `scripts/check-dates.ts` bans `.dateTime(`.
+ *
+ * Returns `'—'` for an invalid date, like {@link formatLocalisedDate}.
+ */
+export function formatDatePreset(
+  value: string | Date,
+  locale: string,
+  preset: DateTimePresetKey,
+): string {
+  const presetLocale = locale.startsWith('th') ? 'th' : locale.startsWith('sv') ? 'sv' : 'en';
+  const options: Intl.DateTimeFormatOptions = { ...buildFormats(presetLocale).dateTime[preset] };
+  if ('hour' in options || 'timeStyle' in options) options.hourCycle = 'h23';
+  return formatLocalisedDate(value, locale, options);
+}
+
+/**
+ * Hours + minutes on a 24-hour clock — the "Saved at 14:10" labels. Pass to
+ * {@link formatLocalisedDate}.
+ */
+export const TIME_HH_MM: Intl.DateTimeFormatOptions = {
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+};

@@ -12,7 +12,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { headers } from 'next/headers';
-import { getFormatter, getTranslations } from 'next-intl/server';
+import { getLocale, getTranslations } from 'next-intl/server';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card, CardContent } from '@/components/ui/card';
@@ -33,6 +33,7 @@ import {
   PortalInvoiceDownloadButton,
   PortalReceiptDownloadButton,
 } from '@/app/(member)/portal/invoices/_components/portal-pdf-download-button';
+import { formatDatePreset } from '@/lib/format-date-localised';
 
 export default async function RenewalSuccessPage({
   params,
@@ -54,7 +55,7 @@ export default async function RenewalSuccessPage({
   // I16 review-fix: use next-intl formatter for locale-aware date
   // display (TH applies Buddhist Era; SV/EN use Gregorian) instead of
   // raw `.slice(0, 10)` ISO truncation.
-  const formatter = await getFormatter();
+  const locale = await getLocale();
 
   const membersDeps = buildMembersDeps(tenant);
   const memberLookup = await membersDeps.memberRepo.findByLinkedUserId(tenant, user.id);
@@ -154,7 +155,7 @@ export default async function RenewalSuccessPage({
               <dt className="text-muted-foreground">{t('newExpiry')}</dt>
               <dd>
                 <time dateTime={activeCycle.expiresAt}>
-                  {formatter.dateTime(new Date(activeCycle.expiresAt), 'dateLong')}
+                  {formatDatePreset(activeCycle.expiresAt, locale, 'dateLong')}
                 </time>
               </dd>
               {/* UX R5 / S3: only show cycle status when it's actually

@@ -24,7 +24,7 @@
  *   - `member`  — never reaches this surface (admin route).
  */
 import Link from 'next/link';
-import { getTranslations, getFormatter } from 'next-intl/server';
+import { getTranslations, getFormatter, getLocale } from 'next-intl/server';
 import { canPerform } from '@/lib/rbac';
 import type { Role } from '@/modules/auth/domain/role';
 import { FileTextIcon, PlusIcon, ReceiptIcon } from 'lucide-react';
@@ -59,6 +59,7 @@ import {
 import { cn } from '@/lib/utils';
 import { MemberInvoicesFilters } from './member-invoices-filters';
 import { resolveMemberInvoiceDisplayNumber } from './resolve-invoice-display-number';
+import { formatDatePreset } from '@/lib/format-date-localised';
 
 interface MemberInvoicesSectionProps {
   readonly tenant: TenantContext;
@@ -151,6 +152,7 @@ export async function MemberInvoicesSection({
 }: MemberInvoicesSectionProps): Promise<React.ReactElement> {
   const t = await getTranslations('admin.members.invoices');
   const format = await getFormatter();
+  const locale = await getLocale();
 
   // G-U7F — fetch the unfiltered count once so we know whether to
   // show the filter bar at all (member with zero invoices gets the
@@ -220,7 +222,7 @@ export async function MemberInvoicesSection({
         });
 
   const formatDate = (iso: string | null): string =>
-    iso === null ? '—' : format.dateTime(new Date(iso), 'dateMedium2Digit');
+    iso === null ? '—' : formatDatePreset(iso, locale, 'dateMedium2Digit');
 
   return (
     <section aria-labelledby="member-invoices-heading">

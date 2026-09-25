@@ -13,7 +13,7 @@
  *   - Overdue >3d highlighting + queue-top banner
  *   - Action dialogs (Done / Skip / Reassign) → POST → router.refresh()
  *   - Mobile (<md): action buttons collapse to DropdownMenu (I-15)
- *   - Locale-aware date formatting via next-intl `useFormatter` (I-16)
+ *   - Locale-aware date formatting via `formatDatePreset` (I-16; en-GB for English)
  *   - Localised toast error descriptions per error-code map (I-5)
  *
  * Action dialogs live in sibling files:
@@ -26,7 +26,7 @@
 import Link from 'next/link';
 import { useCallback, useId, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useFormatter, useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import {
   AlertTriangle,
@@ -66,6 +66,7 @@ import { StatusTablist, STATUS_TABS, type StatusTab } from './status-tablist';
 import { selectActionErrorKey } from './describe-error';
 import { resolveTaskTypeLabel } from './resolve-task-type-label';
 import { YearInCyclePill } from '../../_components/year-in-cycle-pill';
+import { formatDatePreset } from '@/lib/format-date-localised';
 
 export interface EscalationTaskQueueItem {
   readonly taskId: string;
@@ -209,7 +210,7 @@ export function EscalationTaskQueue({
   items,
 }: EscalationTaskQueueProps) {
   const t = useTranslations('admin.renewals.tasks');
-  const format = useFormatter();
+  const locale = useLocale();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [, startTransition] = useTransition();
@@ -506,7 +507,7 @@ export function EscalationTaskQueue({
     if (!Number.isFinite(ms)) {
       return <span className="text-xs text-muted-foreground">—</span>;
     }
-    return format.dateTime(new Date(ms), 'dateMedium');
+    return formatDatePreset(new Date(ms), locale, 'dateMedium');
   }
 
   return (

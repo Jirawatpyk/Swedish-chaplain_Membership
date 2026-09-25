@@ -175,6 +175,16 @@ const BANNED: ReadonlyArray<BannedPattern> = [
     description:
       'new Intl.DateTimeFormat(locale) with bare locale variable — use new Intl.DateTimeFormat(getDateFormatLocale(locale)) instead',
   },
+  {
+    id: 'next-intl-dateTime',
+    // next-intl's `format.dateTime(d, …)` formats with the raw request
+    // locale, so English renders en-US ("Sep 23, 2026, 02:10 PM") beside the
+    // helper's en-GB (docs/ux-standards.md § 12.3). `.dateTime(` never
+    // matches the JSX `dateTime=` attribute.
+    reLine: /\.dateTime\(/,
+    description:
+      "next-intl format.dateTime(…) — use formatDatePreset(date, locale, 'preset') or formatLocalisedDate from @/lib/format-date-localised",
+  },
 ];
 
 // ---------------------------------------------------------------------------

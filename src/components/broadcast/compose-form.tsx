@@ -22,7 +22,7 @@
  */
 import { useDeferredValue, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useFormatter, useLocale, useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { Loader2Icon } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -64,6 +64,7 @@ import {
 } from './compose/template-picker-field';
 import { useComposeDirtyGuard } from './compose/use-compose-dirty-guard';
 import { saveComposeDraft } from './compose/save-compose-draft';
+import { formatLocalisedDate, TIME_HH_MM } from '@/lib/format-date-localised';
 
 const TiptapEditor = loadTiptapEditor<{
   initialHtml: string;
@@ -201,7 +202,6 @@ export function ComposeForm({
   const router = useRouter();
   const t = useTranslations('portal.broadcasts.compose');
   const tErr = useTranslations('portal.broadcasts.compose.errors');
-  const format = useFormatter();
   // The preview is rendered server-side in the member's own UI language.
   const locale = useLocale();
 
@@ -799,10 +799,7 @@ export function ComposeForm({
                   aria-live="polite"
                 >
                   {t('savedAt', {
-                    time: format.dateTime(dirtyGuard.savedAt, {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    }),
+                    time: formatLocalisedDate(dirtyGuard.savedAt, locale, TIME_HH_MM),
                   })}
                 </p>
               ) : null}

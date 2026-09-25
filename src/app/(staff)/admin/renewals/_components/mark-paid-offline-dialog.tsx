@@ -33,7 +33,7 @@
 
 import { useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { useFormatter, useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { Loader2Icon } from 'lucide-react';
 import {
@@ -60,6 +60,7 @@ import {
   resolveExistingBillHref,
   resolveOrphanInvoiceHref,
 } from '../[cycleId]/_components/cycle-admin-error-codes';
+import { formatDatePreset } from '@/lib/format-date-localised';
 
 const PAYMENT_METHODS = ['bank_transfer', 'cash', 'cheque'] as const;
 type PaymentMethod = (typeof PAYMENT_METHODS)[number];
@@ -133,7 +134,7 @@ export function MarkPaidOfflineDialog({
   companyName,
 }: MarkPaidOfflineDialogProps) {
   const t = useTranslations('admin.renewals.cycleDetail');
-  const format = useFormatter();
+  const locale = useLocale();
   const router = useRouter();
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('bank_transfer');
   const [paymentReference, setPaymentReference] = useState('');
@@ -273,10 +274,7 @@ export function MarkPaidOfflineDialog({
           if (dataObj?.outcome === 'reanchored' && dataObj.new_period_from) {
             toast.success(
               t('markPaidOffline.successReanchored', {
-                date: format.dateTime(
-                  new Date(dataObj.new_period_from),
-                  'dateMedium',
-                ),
+                date: formatDatePreset(dataObj.new_period_from, locale, 'dateMedium'),
               }),
               noEmailWarning ? { description: noEmailWarning } : undefined,
             );

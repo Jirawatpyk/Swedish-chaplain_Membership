@@ -33,7 +33,8 @@ vi.mock('next/headers', () => ({
 }));
 vi.mock('next-intl/server', () => ({
   getTranslations: vi.fn().mockResolvedValue((key: string) => key),
-  getFormatter: vi.fn().mockResolvedValue({ dateTime: (d: Date) => d.toISOString() }),
+  // The expiry date renders through formatDatePreset (real helper) with this locale.
+  getLocale: vi.fn().mockResolvedValue('en'),
 }));
 vi.mock('@/lib/auth-session', () => ({
   requireSession: vi.fn().mockResolvedValue({ user: { id: 'u1' } }),

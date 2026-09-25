@@ -12,7 +12,7 @@
  * sees exactly when the old secret stops verifying.
  */
 import { useState } from 'react';
-import { useFormatter, useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
 import { WebhookSecretReveal } from './webhook-secret-reveal';
@@ -46,7 +46,7 @@ export function RotateSecretDialog({
   // + locale-correct date/time format. Previously the raw ISO leaked
   // through to the TH/SV post-rotation dialog body via the i18n
   // interpolation.
-  const format = useFormatter();
+  const locale = useLocale();
   const [rotationResult, setRotationResult] = useState<RotationResult | null>(
     null,
   );
@@ -119,7 +119,7 @@ export function RotateSecretDialog({
   if (rotationResult) {
     // Post-rotation view: render the new secret one-time + grace info.
     const graceActiveUntilDisplay = formatGraceTimestamp(
-      format,
+      locale,
       rotationResult.graceActiveUntil,
     );
     return (
