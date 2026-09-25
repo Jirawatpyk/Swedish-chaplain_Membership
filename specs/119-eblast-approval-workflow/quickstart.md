@@ -1459,7 +1459,7 @@ PR-2 builds on PR-1.
 
 ### 3.6 Known follow-ups
 
-- ~~**The member-standing gate does not run at dispatch**~~ — **FIXED** (F119 PR-A, PR #TBD;
+- ~~**The member-standing gate does not run at dispatch**~~ — **FIXED** (F119 PR-A, PR #403;
   unflagged, live for every F7 send on merge). Both dispatch legs (`dispatchScheduledBroadcast`
   and `buildAudienceTick`, the latter before its submit/confirm branch so it covers both ticks)
   now decide the member's standing (`decideDispatchStanding`) before any Resend call, outside
