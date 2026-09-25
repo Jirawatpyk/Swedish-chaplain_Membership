@@ -1496,7 +1496,7 @@ PR-2 builds on PR-1.
   without recording the hold on the row. Runbook: `docs/runbooks/eblast-approval.md` § Dispatch
   standing refusal.
 - ~~**Type seams and smaller follow-ups from the PR #392 review round 3** (issue #400)~~ —
-  **CLOSED** (#400 PR-B, PR #TBD): the `applyTransition` field allowlist as a type (a
+  **CLOSED** (#400 PR-B, PR #404): the `applyTransition` field allowlist as a type (a
   `Partial<Broadcast>` variable is refused too, not only a literal), branded ids across the F119
   ports, a typed `contextData` per `eblast_*` type (the dispatcher's kind tuples derived from the
   port / Domain ones), a distinct `read_failed` outbox failure reason (the F114 change-request arms
