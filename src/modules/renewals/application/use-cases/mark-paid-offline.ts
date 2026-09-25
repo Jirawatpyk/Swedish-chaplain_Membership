@@ -2,11 +2,15 @@
  * F8 Phase 3 Wave H2 · T059 — `mark-paid-offline` use-case.
  *
  * Admin records an out-of-band payment for a renewal cycle. F4 invoice
- * is created, issued, and immediately marked paid in **one outer
- * runInTenant tx** — the F4 `recordPayment` reuses our outer tx via
- * `externalTx` threading + `onPaidCallback` flips the cycle to
- * `completed` inside the same atomic boundary (Constitution Principle
- * VIII / research.md R12 Option A).
+ * is created, issued, and immediately marked paid. The payment half is
+ * atomic with the cycle: F4 `recordPayment` reuses our outer runInTenant tx
+ * via `externalTx` threading + `onPaidCallback` flips the cycle to
+ * `completed` inside that same boundary (Constitution Principle VIII /
+ * research.md R12 Option A). The MINT half is NOT: the bridge's
+ * `createInvoiceDraft` + `issueInvoice` (§87 number allocation) commit in
+ * their own txs, so anything that makes `onPaid` throw leaves an issued
+ * §86/4 behind — every refusal must therefore happen BEFORE the bridge call
+ * (see the duplicate-bill guard + stale-link hygiene below).
  *
  * Concurrency guard:
  *   `pg_advisory_xact_lock(hashtextextended('renewals:'||tenantId||':'||cycleId, 0))`
@@ -41,6 +45,7 @@
 import { z } from 'zod';
 import { omitUndefined } from '@/lib/object-helpers';
 import { loadClassificationCounts } from './_lib/classification-input';
+import { LIVE_MEMBERSHIP_BILL_STATUSES } from './_lib/live-membership-bill';
 import { deriveFiscalYear } from '@/lib/fiscal-year';
 import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
@@ -472,6 +477,87 @@ export async function markPaidOffline(
         });
       }
 
+      // Stale-link hygiene (orphan-§86/4 guard) — mirrors confirm-renewal's
+      // pre-mint clear. The F4 bridge mints + issues the new §86/4 in its OWN
+      // committed txs (only `recordPayment` rides this tx), and `onPaid`'s
+      // `transitionStatus` link CAS (`linked_invoice_id IS NULL OR = new`)
+      // rejects a cycle still pointing at another invoice. Reaching the mint
+      // with such a link therefore throws AFTER the §86/4 is issued: an orphan
+      // tax document, a burned §87 number, and a bare `server_error`. An open
+      // cycle can hold such a link — the void-on-reissue supersede path voids
+      // without the cycle-unlink seam, and pre-seam voids never unlinked.
+      //   - Link to a NON-live invoice (void / not a membership invoice we can
+      //     see) → CAS-clear it here, BEFORE the mint.
+      //   - Link to a LIVE invoice the plan-year guard above did not match
+      //     (its plan_year differs from the locked cycle's) → refuse exactly
+      //     like the guard does: settle that invoice, never mint beside it.
+      // Placement: below the duplicate guard so its refusal still commits
+      // nothing. `err()` inside `runInTenant` COMMITS, so a later `err` path
+      // keeps the clear — benign, because it is audit-free (logger.info only)
+      // and idempotent (a CAS on the observed id; a no-op if a concurrent
+      // writer re-linked). A throw rolls it back. Same argument as
+      // confirm-renewal. `cycleForSettlement` is the locked cycle as the
+      // settlement sees it: the re-anchor helper reads its IN-MEMORY
+      // `linkedInvoiceId` (and would otherwise raise a false "orphaned
+      // invoice — staff must void" alarm for the already-void bill).
+      let cycleForSettlement: RenewalCycle = lockedCycle;
+      if (lockedCycle.linkedInvoiceId !== null) {
+        const linkedInvoice = await deps.cyclesRepo.findMembershipInvoiceInTx(
+          tx,
+          input.tenantId,
+          lockedCycle.linkedInvoiceId,
+        );
+        if (
+          linkedInvoice !== null &&
+          LIVE_MEMBERSHIP_BILL_STATUSES.has(linkedInvoice.status)
+        ) {
+          logger.warn(
+            {
+              cycleId,
+              memberId: lockedCycle.memberId,
+              tenantId: input.tenantId,
+              planYear,
+              linkedInvoiceId: linkedInvoice.invoiceId,
+              linkedInvoicePlanYear: linkedInvoice.planYear,
+              linkedInvoiceStatus: linkedInvoice.status,
+            },
+            'markPaidOffline: the cycle is linked to a live membership bill from another plan year — refusing to mint a second §86/4; settle the linked invoice instead',
+          );
+          return err({
+            kind: 'membership_bill_already_exists' as const,
+            existingInvoiceId: linkedInvoice.invoiceId,
+            existingStatus: linkedInvoice.status,
+          });
+        }
+        const staleId = lockedCycle.linkedInvoiceId;
+        const cleared = await deps.cyclesRepo.clearStaleLinkedInvoiceInTx(
+          tx,
+          input.tenantId,
+          cycleId,
+          staleId,
+        );
+        logger.info(
+          {
+            cycleId,
+            memberId: lockedCycle.memberId,
+            tenantId: input.tenantId,
+            staleInvoiceId: staleId,
+            staleInvoiceStatus: linkedInvoice?.status ?? 'not_found',
+            cleared,
+          },
+          '[mark-paid-offline] cleared a stale linked_invoice_id (target is not a live bill) before minting',
+        );
+        // The status narrowing only re-proves PAYABLE_STATUSES (checked above
+        // under the lock) for the compiler — `completed` requires a link.
+        if (
+          cleared &&
+          (lockedCycle.status === 'upcoming' ||
+            lockedCycle.status === 'awaiting_payment')
+        ) {
+          cycleForSettlement = { ...lockedCycle, linkedInvoiceId: null };
+        }
+      }
+
       // Rolling-anchor refactor (design 2026-07-08 rev 3, migration 0238),
       // Task 7 (spec §1 consuming-site 3) — classify the payment for the
       // LOCKED cycle's member using the SAME shared classifier every
@@ -620,7 +706,7 @@ export async function markPaidOffline(
             },
             evt,
             tx,
-            lockedCycle,
+            cycleForSettlement,
           );
           if (!reanchored) {
             // Should be unreachable: this closure runs inside the SAME tx

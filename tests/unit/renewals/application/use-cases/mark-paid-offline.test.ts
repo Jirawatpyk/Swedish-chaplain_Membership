@@ -109,6 +109,9 @@ interface FakeDepsResult {
   countSettledCyclesForMemberInTxMock: ReturnType<typeof vi.fn>;
   readReactivationGuardsInTxMock: ReturnType<typeof vi.fn>;
   reanchorPeriodInTxMock: ReturnType<typeof vi.fn>;
+  // Stale-link hygiene — the linked-invoice read + the CAS clear.
+  findMembershipInvoiceInTxMock: ReturnType<typeof vi.fn>;
+  clearStaleLinkedInvoiceInTxMock: ReturnType<typeof vi.fn>;
 }
 
 function fakeDeps(
@@ -280,6 +283,20 @@ function fakeDeps(
       reminderEventsReset: 0,
     }),
   );
+  // Stale-link hygiene — only reached when the locked cycle carries a
+  // `linkedInvoiceId` (buildCycle defaults it to null, so untouched tests
+  // never call either). Default: the linked invoice is not found.
+  const findMembershipInvoiceInTxMock = vi.fn(
+    async (): Promise<{
+      invoiceId: string;
+      memberId: string;
+      planYear: number;
+      planId: string;
+      status: string;
+      origin: string;
+    } | null> => null,
+  );
+  const clearStaleLinkedInvoiceInTxMock = vi.fn(async () => true);
   const deps: RenewalsDeps = {
     tenant: { slug: TENANT_ID } as RenewalsDeps['tenant'],
     clock: { now: () => new Date('2026-05-15T10:00:00.000Z') },
@@ -300,6 +317,8 @@ function fakeDeps(
       countCyclesForMemberInTx: countCyclesForMemberInTxMock,
       countSettledCyclesForMemberInTx: countSettledCyclesForMemberInTxMock,
       reanchorPeriodInTx: reanchorPeriodInTxMock,
+      findMembershipInvoiceInTx: findMembershipInvoiceInTxMock,
+      clearStaleLinkedInvoiceInTx: clearStaleLinkedInvoiceInTxMock,
     } as unknown as RenewalsDeps['cyclesRepo'],
     f4InvoiceBridge: {
       issueAndMarkPaid: bridgeMock,
@@ -376,6 +395,8 @@ function fakeDeps(
     countSettledCyclesForMemberInTxMock,
     readReactivationGuardsInTxMock,
     reanchorPeriodInTxMock,
+    findMembershipInvoiceInTxMock,
+    clearStaleLinkedInvoiceInTxMock,
   };
 }
 
@@ -1235,3 +1256,144 @@ describe('markPaidOffline — error paths', () => {
     }
   });
 });
+
+// A payable cycle can still be LINKED to an invoice that is no longer a live
+// bill — the void-on-reissue supersede path voids without the cycle-unlink
+// seam, and voids that predate the seam never unlinked. The F4 bridge mints +
+// issues the new §86/4 in its OWN committed txs, and `onPaid`'s
+// `transitionStatus` link CAS (`linked_invoice_id IS NULL OR = new`) then
+// fails — an orphan issued tax document + a burned §87 number. The stale link
+// must be cleared under the cycle lock BEFORE the mint; a still-LIVE link
+// (another plan year, so the duplicate guard let it through) must refuse
+// without minting.
+describe('markPaidOffline — stale linked invoice (orphan-§86/4 guard)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const linkedTo = (invoiceId: string) =>
+    buildCycle({ status: 'awaiting_payment', linkedInvoiceId: invoiceId });
+
+  it('clears a link to a VOID invoice under the lock, BEFORE minting, then settles', async () => {
+    const f = fakeDeps(linkedTo('inv-void'));
+    f.findMembershipInvoiceInTxMock.mockResolvedValueOnce({
+      invoiceId: 'inv-void',
+      memberId: 'mem-1',
+      planYear: 2026,
+      planId: 'plan-x',
+      status: 'void',
+      origin: 'renewal',
+    });
+
+    const r = await markPaidOffline(f.deps, baseInput);
+
+    expect(r.ok).toBe(true);
+    expect(f.clearStaleLinkedInvoiceInTxMock).toHaveBeenCalledTimes(1);
+    expect(f.clearStaleLinkedInvoiceInTxMock).toHaveBeenCalledWith(
+      expect.anything(),
+      TENANT_ID,
+      VALID_UUID,
+      'inv-void',
+    );
+    expect(
+      f.clearStaleLinkedInvoiceInTxMock.mock.invocationCallOrder[0]!,
+    ).toBeLessThan(f.bridgeMock.mock.invocationCallOrder[0]!);
+  });
+
+  it('clears a link whose invoice is not found (not a live membership bill)', async () => {
+    const f = fakeDeps(linkedTo('inv-gone'));
+
+    const r = await markPaidOffline(f.deps, baseInput);
+
+    expect(r.ok).toBe(true);
+    expect(f.clearStaleLinkedInvoiceInTxMock).toHaveBeenCalledWith(
+      expect.anything(),
+      TENANT_ID,
+      VALID_UUID,
+      'inv-gone',
+    );
+  });
+
+  it('refuses a still-LIVE linked bill the plan-year guard missed → membership_bill_already_exists, no mint, no clear', async () => {
+    const f = fakeDeps(linkedTo('inv-live'));
+    f.findMembershipInvoiceInTxMock.mockResolvedValueOnce({
+      invoiceId: 'inv-live',
+      memberId: 'mem-1',
+      planYear: 2025,
+      planId: 'plan-x',
+      status: 'issued',
+      origin: 'renewal',
+    });
+
+    const r = await markPaidOffline(f.deps, baseInput);
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toMatchObject({
+        kind: 'membership_bill_already_exists',
+        existingInvoiceId: 'inv-live',
+        existingStatus: 'issued',
+      });
+    }
+    expect(f.bridgeMock).not.toHaveBeenCalled();
+    expect(f.clearStaleLinkedInvoiceInTxMock).not.toHaveBeenCalled();
+  });
+
+  it('an unlinked cycle never reads or clears a link (byte-identical to before)', async () => {
+    const f = fakeDeps(buildCycle({ status: 'awaiting_payment' }));
+
+    const r = await markPaidOffline(f.deps, baseInput);
+
+    expect(r.ok).toBe(true);
+    expect(f.findMembershipInvoiceInTxMock).not.toHaveBeenCalled();
+    expect(f.clearStaleLinkedInvoiceInTxMock).not.toHaveBeenCalled();
+  });
+
+  it('a duplicate-guard refusal clears nothing (the refusal tx commits no write)', async () => {
+    const f = fakeDeps(linkedTo('inv-void'));
+    (
+      f.deps.invoiceDueBridge.findLiveMembershipBillInTx as ReturnType<typeof vi.fn>
+    ).mockResolvedValueOnce({ invoiceId: 'inv-other', status: 'issued' });
+
+    const r = await markPaidOffline(f.deps, baseInput);
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe('membership_bill_already_exists');
+    expect(f.clearStaleLinkedInvoiceInTxMock).not.toHaveBeenCalled();
+    expect(f.bridgeMock).not.toHaveBeenCalled();
+  });
+
+  // Review M1 — the re-anchor helper reads the IN-MEMORY cycle's
+  // `linkedInvoiceId`. After the stale link is cleared in the DB, a stale
+  // in-memory copy made it log a false "orphaned invoice — staff must void"
+  // alarm for an invoice that is already void.
+  it('first-payment cycle linked to a VOID invoice re-anchors without a false orphan-invoice alarm', async () => {
+    const f = fakeDeps(
+      buildCycle({
+        status: 'awaiting_payment',
+        anchoredAt: null,
+        linkedInvoiceId: 'inv-void',
+      }),
+    );
+    f.countCyclesForMemberInTxMock.mockResolvedValue(1);
+    f.countSettledCyclesForMemberInTxMock.mockResolvedValue(0);
+    f.findMembershipInvoiceInTxMock.mockResolvedValueOnce({
+      invoiceId: 'inv-void',
+      memberId: 'mem-1',
+      planYear: 2026,
+      planId: 'plan-x',
+      status: 'void',
+      origin: 'renewal',
+    });
+
+    const r = await markPaidOffline(f.deps, baseInput);
+
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.outcome).toBe('reanchored');
+    const orphanAlarms = loggerErrorMock.mock.calls.filter((c) =>
+      String(c[1]).includes('orphaned invoice'),
+    );
+    expect(orphanAlarms).toHaveLength(0);
+  });
+});
+
