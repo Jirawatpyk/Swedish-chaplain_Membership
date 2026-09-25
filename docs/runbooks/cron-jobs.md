@@ -815,10 +815,13 @@ phases, so no network call ever runs inside a transaction that holds locks
    and any `broadcast_batch_manifests.provider_broadcast_id`).
 2. **Delete the Resend copies** outside any transaction, 5 in flight
    (`deleteBroadcast`). Resolved — deleted, or 404 / 410 (already gone) → the
-   row may go. `retryable` (5xx / 429 / network) → the row is **kept with its
-   key** and retried by a later run. Anything else (a 4xx) → the row is **kept
-   and counted as refused** (see "Resend copies" below). A row with no Resend id
-   skips this phase. A kept row is not read again in the same run.
+   row may go. A 4xx refusal (`permanent` — Resend: a queued or sent broadcast
+   cannot be deleted) → the row **goes anyway**; the copy stays under Resend's
+   own retention and is counted `provider_copy_retained_at_processor` (see
+   "Resend copies" below). `retryable` (5xx / 429 / network), or a throw that
+   is not a classified gateway error → the row is **kept with its key** and
+   retried by a later run. A row with no Resend id skips this phase. A kept row
+   is not read again in the same run.
 3. **Delete the confirmed rows** in one `runInTenant` transaction whose first
    statement is `SET LOCAL lock_timeout = '5s'`, re-checking eligibility under
    `FOR UPDATE SKIP LOCKED`; the images are stamped in the same transaction.
@@ -847,7 +850,7 @@ i.e. from the cascade. The batch's `broadcast_images` rows are stamped
 rule), each audited `broadcast_image_removed { reason: 'retention_expired' }`.
 One counts-only `broadcast_retention_swept` audit row per tenant per run
 (`swept_count`, `images_marked`, `batches`, `budget_exhausted`, `completed`,
-`provider_copy_kept_transient`, `provider_copy_kept_refused`, and
+`provider_copy_kept_transient`, `provider_copy_retained_at_processor`, and
 `oldest_anchor` / `newest_anchor` — the ISO anchor range of the rows deleted,
 `null` when none, so an auditor can check nothing younger than the period went;
 no ids) — written even when nothing expired; it is the evidence the retention is
@@ -861,30 +864,38 @@ Nothing is expected to be swept before ~2031 (the first prod E-Blast plus
 calls GET, which the proxy's write-freeze does not cover, so the check is in the
 route.)
 
-### Resend copies — TO MEASURE BEFORE 2031
+### Resend copies — NOT MEASURED, to measure before 2031
+
+**Policy (maintainer decision, 2026-09-25): our row is deleted even when
+Resend refuses to delete its copy.** Resend's documentation says a broadcast
+that has been **queued or sent cannot be deleted**, so every expired `sent` /
+`partial_delivery_accepted` row carrying a `resend_broadcast_id` is expected to
+take that arm: the row and its children go on schedule, and the Resend
+broadcast object (the HTML body, and a name naming the member and the tenant)
+**persists under Resend's own retention**, unreachable from our side, covered by
+the Resend DPA / sub-processor terms. The RoPA discloses it as a residual
+(F7 retention row).
 
 `DELETE /broadcasts/{id}` has been measured against the live account **on a
-draft only** (2026-09-10). Resend's documentation says a broadcast that has been
-**queued or sent cannot be deleted**. If that holds, every expired `sent` /
-`partial_delivery_accepted` row carrying a `resend_broadcast_id` is refused and
-KEPT — the sweep then removes only rows that never reached Resend (`rejected`,
-`cancelled`, `expired_no_member_response`, most `failed_to_dispatch`), and the
-retention the RoPA declares is not enforced for sent E-Blasts.
+draft only** (2026-09-10). The policy rests on the gateway classifying the
+sent-broadcast answer as `permanent` (a 4xx); if Resend answered 5xx / 429
+instead, the row would be kept and retried daily for ever. Before the first prod
+E-Blast crosses its retention (~2031), the maintainer:
 
-Before the first prod E-Blast crosses its retention (~2031), the maintainer:
-
-1. Measures it: send a throwaway broadcast to a test audience on the Resend
+1. **Measures it:** send a throwaway broadcast to a test audience on the Resend
    account, then `DELETE /broadcasts/{id}` it; record the status and the
-   provider `name` (the sweep logs that `name` as `code`).
-2. Decides, with the DPO, what a refused sent copy means — e.g. delete our row
-   anyway and record Resend's copy as the sub-processor's own retention in the
-   RoPA, or keep the row as today. This is a code change either way; the sweep
-   does not guess.
+   provider `name` (the sweep logs that `name` as `code`). Expected: a 4xx.
+2. **Confirms Resend's retention for broadcast objects** (how long a sent
+   broadcast and its body are kept, and whether support can delete one on
+   request) and records the answer in the RoPA residual.
 
-Signal while it is open: `broadcasts_retention_provider_copy_kept_total{reason="refused"}`
-and `provider_copy_kept_refused` in the run row, plus the log line
-`broadcasts.retention_sweep.provider_copy_kept` (`outcome`, `errorKind`, `code`;
-no ids). To list the kept rows (read-only):
+Signals: `broadcasts_retention_provider_copy_kept_total{reason="retained_at_processor"}`
+and `provider_copy_retained_at_processor` in the run row count copies left at
+Resend (their rows are gone — expected from ~2031, not an incident);
+`{reason="transient"}` and `provider_copy_kept_transient` count rows KEPT for a
+retry. The log line `broadcasts.retention_sweep.provider_copy_kept` carries
+`outcome` (`retained_at_processor` | `transient`), `errorKind`, `subKind` /
+`code` — no ids. To list the rows still held back for a retry (read-only):
 
 ```sql
 SELECT broadcast_id, status, resend_broadcast_id
@@ -1042,7 +1053,8 @@ leftovers; it does not need validating.
 | 200 + every `perTenant[].outcome: 'success'` | Ran for every tenant; `sweptCount` is the rows deleted | None |
 | 200 + `budgetExhausted: true` | Stopped on the 60 s budget with expired rows left | None if it clears within a few days; two weeks running means the backlog outgrows 200-row batches — look at the batch plan |
 | 200 + a tenant with `outcome: 'error'` | That tenant's run failed (`sweptCount`, when present, is what DID commit — it stays deleted). Other tenants ran | Vercel logs `cron.broadcasts.retention_sweep.server_error` (fields `err` = the error class, `code` = the SQLSTATE; never the message — a Drizzle message quotes the query's params) / `.uncaught_error` (errorId `F7.cron.retention_sweep.*`); the next daily tick retries. `broadcasts_retention_sweep_failed_total{tenant}` increments. `code: '55P03'` = a batch waited more than 5 s for a lock (the cascade into a row another transaction held) — that batch rolled back; nothing to do unless it repeats |
-| 200 + `providerCopyKeptRefused > 0` | Rows kept because Resend refused to delete their copy | § "Resend copies" above |
+| 200 + `providerCopyRetainedAtProcessor > 0` | Rows deleted although Resend refused to delete their copy; the copy stays under Resend's retention | None — expected for sent E-Blasts (§ "Resend copies" above) |
+| 200 + `providerCopyKeptTransient > 0` | Rows kept with their key because a Resend delete failed transiently | None unless it persists — § "Resend copies" above |
 | 200 + `{ skipped: true, reason: 'read_only_mode' }` | `READ_ONLY_MODE` is on; nothing ran | None — it resumes the day after the freeze lifts |
 | 401 | Bearer mismatch | Rotate / fix `CRON_SECRET` |
 
@@ -1052,9 +1064,10 @@ leftovers; it does not need validating.
   the retention the RoPA says is enforced is not being enforced. Page.
 - No `broadcast_retention_swept` audit row for a tenant in 48 h — the cron did
   not run (it writes one row per run even when it deletes nothing).
-- `broadcasts_retention_provider_copy_kept_total{reason="refused"}` above 0 —
-  warn, not page: see § "Resend copies". `reason="transient"` on three
-  consecutive days — warn.
+- `broadcasts_retention_provider_copy_kept_total{reason="transient"}` on three
+  consecutive days — warn (a copy Resend keeps failing to delete; its row is
+  held). `reason="retained_at_processor"` is expected for sent E-Blasts and
+  needs no alert.
 
 ### Handler module
 

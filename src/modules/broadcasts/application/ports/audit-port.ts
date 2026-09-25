@@ -678,9 +678,11 @@ export interface F7AuditPayloadShapes {
   // `broadcast_image_removed { reason: 'retention_expired' }` rows, if it had
   // images). `completed: false` = a batch threw after `swept_count` rows had
   // already committed; the rest go on the next daily tick.
-  // `provider_copy_kept_*` = expired rows KEPT because their Resend copy could
-  // not be deleted first (transient: retried next run; refused: see the cron
-  // runbook). `oldest_anchor` / `newest_anchor` = the retention-anchor range
+  // `provider_copy_kept_transient` = expired rows KEPT (with their key) because
+  // deleting a Resend copy failed transiently — retried next run.
+  // `provider_copy_retained_at_processor` = rows DELETED although Resend refused
+  // to delete their copy (a sent broadcast cannot be deleted); the copy stays
+  // under Resend's own retention (RoPA residual). `oldest_anchor` / `newest_anchor` = the retention-anchor range
   // (ISO timestamps, no ids) of the rows deleted, `null` when none — so an
   // auditor can check nothing younger than the period was removed.
   readonly broadcast_retention_swept: {
@@ -690,7 +692,7 @@ export interface F7AuditPayloadShapes {
     readonly budget_exhausted: boolean;
     readonly completed: boolean;
     readonly provider_copy_kept_transient: number;
-    readonly provider_copy_kept_refused: number;
+    readonly provider_copy_retained_at_processor: number;
     readonly oldest_anchor: string | null;
     readonly newest_anchor: string | null;
     readonly actor_role: 'system';

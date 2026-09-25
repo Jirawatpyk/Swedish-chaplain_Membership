@@ -25,8 +25,10 @@
  *   - another tenant's expired row is untouched (Principle I);
  *   - M1: a row that owns Resend copies (its own `resend_broadcast_id` and a
  *     batch manifest's `provider_broadcast_id`) is deleted only AFTER the
- *     gateway confirmed each copy gone, and a transient or refused copy keeps
- *     its row. The gateway is a FAKE: no test here reaches Resend.
+ *     gateway answered for each copy; a transient failure keeps the row and
+ *     its key, while a permanent refusal (Resend: a sent broadcast cannot be
+ *     deleted) deletes the row anyway and counts the copy as retained at the
+ *     processor. The gateway is a FAKE: no test here reaches Resend.
  *
  * Needs migration 0310 applied to the target branch.
  */
@@ -300,7 +302,7 @@ describe('F7 retention sweep (0310) — live Neon', () => {
           batches: 1,
           budgetExhausted: false,
           providerCopyKeptTransient: 0,
-          providerCopyKeptRefused: 0,
+          providerCopyRetainedAtProcessor: 0,
           oldestAnchor: SIX_YEARS_AGO,
           newestAnchor: SIX_YEARS_AGO,
         },
@@ -353,7 +355,7 @@ describe('F7 retention sweep (0310) — live Neon', () => {
           budget_exhausted: false,
           completed: true,
           provider_copy_kept_transient: 0,
-          provider_copy_kept_refused: 0,
+          provider_copy_retained_at_processor: 0,
           oldest_anchor: SIX_YEARS_AGO.toISOString(),
           newest_anchor: SIX_YEARS_AGO.toISOString(),
           actor_role: 'system',
@@ -415,7 +417,7 @@ describe('F7 retention sweep (0310) — live Neon', () => {
         batches: 1,
         budgetExhausted: false,
         providerCopyKeptTransient: 0,
-        providerCopyKeptRefused: 0,
+        providerCopyRetainedAtProcessor: 0,
         oldestAnchor: null,
         newestAnchor: null,
       },
@@ -429,7 +431,7 @@ describe('F7 retention sweep (0310) — live Neon', () => {
     expect(runRows[0]!.payload).toMatchObject({ swept_count: 0, completed: true });
   });
   it(
-    'M1: a row with Resend copies goes only after the fake gateway confirmed each; a transient or refused copy keeps its row',
+    'M1: a row with Resend copies goes only after the fake gateway answered for each; a transient copy keeps its row and key, a refused copy is left at Resend and the row goes',
     async () => {
       const SEVEN_YEARS_AGO = yearsAgo(7);
       const tag = randomUUID().slice(0, 8);
@@ -493,14 +495,14 @@ describe('F7 retention sweep (0310) — live Neon', () => {
       expect(result).toEqual({
         ok: true,
         value: {
-          sweptCount: 1,
+          sweptCount: 2,
           imagesMarked: 0,
           batches: 4,
           budgetExhausted: false,
           providerCopyKeptTransient: 1,
-          providerCopyKeptRefused: 1,
+          providerCopyRetainedAtProcessor: 1,
           oldestAnchor: SEVEN_YEARS_AGO,
-          newestAnchor: SEVEN_YEARS_AGO,
+          newestAnchor: SIX_YEARS_AGO,
         },
       });
       // Both copies of the confirmed row were deleted while the row still existed.
@@ -515,17 +517,15 @@ describe('F7 retention sweep (0310) — live Neon', () => {
 
       expect(await surviving(tenantA, [confirmed])).toEqual([]);
       expect(await childCounts(tenantA, confirmed)).toMatchObject({ deliveries: 0, manifests: 0 });
-      // Never drop the key: both kept rows still carry their Resend id for the next run.
+      // Refused (maintainer decision): our row is deleted anyway; the copy stays at Resend.
+      expect(calls).toContainEqual({ id: refusedOwn, rowExisted: true });
+      expect(await surviving(tenantA, [refused])).toEqual([]);
+      // Never drop the key on a transient failure: the kept row still carries its Resend id for the next run.
       const kept = await db
         .select({ id: broadcasts.broadcastId, resendBroadcastId: broadcasts.resendBroadcastId })
         .from(broadcasts)
         .where(and(eq(broadcasts.tenantId, tenantA.ctx.slug), inArray(broadcasts.broadcastId, [transient, refused])));
-      expect(new Map(kept.map((k) => [k.id, k.resendBroadcastId]))).toEqual(
-        new Map([
-          [transient, transientOwn],
-          [refused, refusedOwn],
-        ]),
-      );
+      expect(kept).toEqual([{ id: transient, resendBroadcastId: transientOwn }]);
 
       const runRows = (await db.execute(sql`
         SELECT payload FROM audit_log
@@ -534,15 +534,15 @@ describe('F7 retention sweep (0310) — live Neon', () => {
       `)) as unknown as Array<{ payload: Record<string, unknown> }>;
       expect(runRows.map((r) => r.payload)).toEqual([
         {
-          swept_count: 1,
+          swept_count: 2,
           images_marked: 0,
           batches: 4,
           budget_exhausted: false,
           completed: true,
           provider_copy_kept_transient: 1,
-          provider_copy_kept_refused: 1,
+          provider_copy_retained_at_processor: 1,
           oldest_anchor: SEVEN_YEARS_AGO.toISOString(),
-          newest_anchor: SEVEN_YEARS_AGO.toISOString(),
+          newest_anchor: SIX_YEARS_AGO.toISOString(),
           actor_role: 'system',
         },
       ]);

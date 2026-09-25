@@ -66,8 +66,9 @@ describe('resendBroadcastsGateway.deleteBroadcast', () => {
 
   /**
    * The F7 retention sweep (0310) reads this classification: a 4xx that is not
-   * 404 / 410 is `permanent`, thrown at once with no retry, and the sweep KEEPS
-   * the row. Resend documents that a sent broadcast cannot be deleted; the
+   * 404 / 410 is `permanent`, thrown at once with no retry, and the sweep
+   * deletes the row anyway, leaving the copy under Resend's retention (a 5xx /
+   * 429 would instead keep the row for a retry). Resend documents that a sent broadcast cannot be deleted; the
    * status it answers with has not been measured, so this pins the class for
    * the shape a validation refusal takes, not a recorded response.
    */

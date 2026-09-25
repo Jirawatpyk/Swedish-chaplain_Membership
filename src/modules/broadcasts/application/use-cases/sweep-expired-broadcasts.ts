@@ -15,16 +15,22 @@
  *      — its own `resend_broadcast_id` and any per-batch manifest copy.
  *   2. DELETE THE RESEND COPIES, outside any transaction. The Resend object
  *      holds the E-Blast's HTML body and a name that identifies the member and
- *      the tenant; dropping our row first would leave it unreachable for ever.
+ *      the tenant; dropping our row first would leave it unreachable from our
+ *      side for ever, so the delete is attempted first. Per copy:
  *        - resolved (deleted, or 404 / 410 — the adapter resolves "already
- *          gone") → the row may go;
- *        - `retryable` (5xx, 429, network) → the row is KEPT, the key with it;
- *          a later run retries;
- *        - anything else (a 4xx `permanent`, or a throw that is not a
- *          classified gateway error) → the row is KEPT and counted as refused.
- *          Logged with the error class and provider code only — never an id or
- *          the provider's free text. See the runbook (§ F7 retention-sweep).
- *      A row with no Resend id skips this phase.
+ *          gone") → gone;
+ *        - `permanent` (a 4xx refusal — Resend documents that a queued or sent
+ *          broadcast cannot be deleted) → the copy is RETAINED AT THE
+ *          PROCESSOR, under Resend's own retention and the Resend DPA; our row
+ *          is DELETED ANYWAY (maintainer decision, 2026-09-25) and the copy is
+ *          counted `provider_copy_retained_at_processor`;
+ *        - `retryable` (5xx, 429, network) — or a throw that is not a
+ *          classified gateway error at all (a fault, not an answer from
+ *          Resend) → the row is KEPT, the key with it, and a later run retries;
+ *          counted `provider_copy_kept_transient`.
+ *      A row goes when none of its copies was kept. Every copy left at Resend
+ *      is logged with the error class and provider code only — never an id or
+ *      the provider's free text. A row with no Resend id skips this phase.
  *   3. DELETE THE CONFIRMED ROWS in one transaction
  *      (`deleteExpiredForRetention`), which re-checks eligibility under
  *      `FOR UPDATE SKIP LOCKED` and starts with `SET LOCAL lock_timeout`, and
@@ -33,11 +39,13 @@
  *
  * NOT MEASURED: Resend's `DELETE /broadcasts/{id}` has been exercised only on a
  * DRAFT (2026-09-10). Resend's documentation says a broadcast that has been
- * queued or sent cannot be deleted. If that holds, every expired `sent` /
- * `partial_delivery_accepted` row that carries a Resend id lands in the
- * "refused" arm and is kept — so the sweep does not remove it. To be measured
- * against a sent broadcast before the first E-Blast crosses its retention
- * (2031); the runbook carries the item.
+ * queued or sent cannot be deleted, so an expired `sent` /
+ * `partial_delivery_accepted` row is expected to take the `permanent` arm: our
+ * row goes, Resend's copy stays under Resend's retention (a disclosed RoPA
+ * residual). What status Resend actually answers — and so whether it lands in
+ * `permanent` rather than `retryable` — is to be measured with a throwaway send
+ * before the first E-Blast crosses its retention (2031); the cron runbook
+ * (§ F7 retention-sweep, "Resend copies") carries the item.
  *
  * The loop runs until a short read or `timeBudgetMs`, checked between batches
  * and before every chunk of Resend calls (a Resend outage can hold one call
@@ -64,7 +72,7 @@ import type { BroadcastsGatewayPort } from '../ports/broadcasts-gateway-port';
 import type { BroadcastsRepo, RetentionCandidate, RetentionCursor } from '../ports/broadcasts-repo';
 import type { ClockPort } from '../ports/clock-port';
 import { markBroadcastBatchImagesRemoved } from './_mark-owner-images-removed';
-import { classifyThrown, isRetryableThrow } from './_classify-thrown';
+import { classifyThrown } from './_classify-thrown';
 
 export interface SweepExpiredBroadcastsDeps {
   readonly tenant: TenantContext;
@@ -92,10 +100,13 @@ export interface SweepExpiredBroadcastsOutput {
   readonly batches: number;
   /** True when the run stopped on the time budget, i.e. expired rows may remain for tomorrow. */
   readonly budgetExhausted: boolean;
-  /** Rows kept because deleting their Resend copy failed transiently (retried next run). */
+  /** Rows KEPT because deleting a Resend copy failed transiently (retried next run). */
   readonly providerCopyKeptTransient: number;
-  /** Rows kept because Resend refused to delete their copy (see the runbook). */
-  readonly providerCopyKeptRefused: number;
+  /**
+   * Rows DELETED although Resend refused to delete a copy (`permanent` — a sent
+   * broadcast cannot be deleted): the copy stays under Resend's own retention.
+   */
+  readonly providerCopyRetainedAtProcessor: number;
   /** The oldest / newest retention anchor among the rows deleted; `null` when none. */
   readonly oldestAnchor: Date | null;
   readonly newestAnchor: Date | null;
@@ -113,7 +124,7 @@ export interface SweepExpiredBroadcastsError {
   readonly sweptCount: number;
 }
 
-type ProviderOutcome = 'gone' | 'transient' | 'refused';
+type ProviderOutcome = 'gone' | 'retained_at_processor' | 'transient';
 
 const DEFAULT_BATCH_SIZE = 200;
 const DEFAULT_TIME_BUDGET_MS = 60_000;
@@ -139,19 +150,23 @@ export async function sweepExpiredBroadcasts(
   let batches = 0;
   let budgetExhausted = false;
   let keptTransient = 0;
-  let keptRefused = 0;
+  let retainedAtProcessor = 0;
   let oldestAnchor: Date | null = null;
   let newestAnchor: Date | null = null;
   let after: RetentionCursor | null = null;
   let failure: { readonly cause: unknown } | null = null;
 
   async function deleteProviderCopies(candidate: RetentionCandidate): Promise<ProviderOutcome> {
+    let retained = false;
     for (const resendId of candidate.resendBroadcastIds) {
       try {
         await deps.broadcastsGateway.deleteBroadcast(resendId);
       } catch (e) {
         const shape = classifyThrown(e);
-        const outcome: ProviderOutcome = isRetryableThrow(shape.kind) ? 'transient' : 'refused';
+        // Only Resend's own refusal lets the row go without its copy; a
+        // retryable error or an unclassified throw keeps the row and its key.
+        const outcome: ProviderOutcome =
+          shape.kind === 'permanent' ? 'retained_at_processor' : 'transient';
         logger.warn(
           {
             tenantId: slug,
@@ -162,10 +177,12 @@ export async function sweepExpiredBroadcasts(
           },
           'broadcasts.retention_sweep.provider_copy_kept',
         );
-        return outcome;
+        if (outcome === 'transient') return 'transient';
+        // Keep going: the row's other copies can still be deleted.
+        retained = true;
       }
     }
-    return 'gone';
+    return retained ? 'retained_at_processor' : 'gone';
   }
 
   try {
@@ -187,9 +204,12 @@ export async function sweepExpiredBroadcasts(
         const chunk = withCopies.slice(i, i + PROVIDER_CONCURRENCY);
         const outcomes = await Promise.all(chunk.map(deleteProviderCopies));
         outcomes.forEach((outcome, n) => {
-          if (outcome === 'gone') gone.add(chunk[n]!.broadcastId);
-          else if (outcome === 'transient') keptTransient += 1;
-          else keptRefused += 1;
+          if (outcome === 'transient') {
+            keptTransient += 1;
+            return;
+          }
+          if (outcome === 'retained_at_processor') retainedAtProcessor += 1;
+          gone.add(chunk[n]!.broadcastId);
         });
       }
       // In read order (oldest anchor first), so the delete is deterministic.
@@ -241,7 +261,7 @@ export async function sweepExpiredBroadcasts(
           budget_exhausted: budgetExhausted,
           completed: failure === null,
           provider_copy_kept_transient: keptTransient,
-          provider_copy_kept_refused: keptRefused,
+          provider_copy_retained_at_processor: retainedAtProcessor,
           oldest_anchor: oldest === null ? null : oldest.toISOString(),
           newest_anchor: newest === null ? null : newest.toISOString(),
           actor_role: 'system',
@@ -261,7 +281,7 @@ export async function sweepExpiredBroadcasts(
     batches,
     budgetExhausted,
     providerCopyKeptTransient: keptTransient,
-    providerCopyKeptRefused: keptRefused,
+    providerCopyRetainedAtProcessor: retainedAtProcessor,
     oldestAnchor: oldest,
     newestAnchor: newest,
   });

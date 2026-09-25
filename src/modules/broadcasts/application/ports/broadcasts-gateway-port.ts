@@ -391,8 +391,12 @@ export interface BroadcastsGatewayPort {
    * Resend copy (HTML body, a name naming the member and tenant) before the row
    * is the point. NOT MEASURED there: the happy path above was measured on a
    * DRAFT only, and Resend's documentation says a queued or sent broadcast
-   * cannot be deleted — the sweep treats that refusal as "keep the row" (see
-   * `docs/runbooks/cron-jobs.md` § F7 retention-sweep, to measure before 2031).
+   * cannot be deleted. The sweep treats that refusal (`permanent`) as
+   * "retained at the processor": our row is deleted anyway and the Resend copy
+   * stays under Resend's own retention, a disclosed RoPA residual (maintainer
+   * decision, 2026-09-25). A `retryable` failure keeps the row and its key.
+   * The status Resend answers for a sent broadcast is to be measured before
+   * 2031 (`docs/runbooks/cron-jobs.md` § F7 retention-sweep, "Resend copies").
    */
   deleteBroadcast(broadcastId: string): Promise<void>;
 

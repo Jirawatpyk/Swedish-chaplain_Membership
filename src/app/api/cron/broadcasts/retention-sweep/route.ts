@@ -73,7 +73,7 @@ type TenantOutcome =
       readonly batches: number;
       readonly budgetExhausted: boolean;
       readonly providerCopyKeptTransient: number;
-      readonly providerCopyKeptRefused: number;
+      readonly providerCopyRetainedAtProcessor: number;
       readonly oldestAnchor: Date | null;
       readonly newestAnchor: Date | null;
     }
@@ -108,8 +108,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         if (result.value.providerCopyKeptTransient > 0) {
           broadcastsMetrics.retentionProviderCopyKept(tenantId, 'transient', result.value.providerCopyKeptTransient);
         }
-        if (result.value.providerCopyKeptRefused > 0) {
-          broadcastsMetrics.retentionProviderCopyKept(tenantId, 'refused', result.value.providerCopyKeptRefused);
+        if (result.value.providerCopyRetainedAtProcessor > 0) {
+          broadcastsMetrics.retentionProviderCopyKept(
+            tenantId,
+            'retained_at_processor',
+            result.value.providerCopyRetainedAtProcessor,
+          );
         }
         logger.info(
           { tenantId, ...result.value },

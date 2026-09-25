@@ -201,7 +201,7 @@ const ZERO_OUTPUT = {
   batches: 1,
   budgetExhausted: false,
   providerCopyKeptTransient: 0,
-  providerCopyKeptRefused: 0,
+  providerCopyRetainedAtProcessor: 0,
   oldestAnchor: null,
   newestAnchor: null,
 };
@@ -232,7 +232,7 @@ describe('sweepExpiredBroadcasts — the batch loop', () => {
       budget_exhausted: false,
       completed: true,
       provider_copy_kept_transient: 0,
-      provider_copy_kept_refused: 0,
+      provider_copy_retained_at_processor: 0,
       oldest_anchor: null,
       newest_anchor: null,
       actor_role: 'system',
@@ -315,7 +315,7 @@ describe('sweepExpiredBroadcasts — the batch loop', () => {
         'images_marked',
         'newest_anchor',
         'oldest_anchor',
-        'provider_copy_kept_refused',
+        'provider_copy_retained_at_processor',
         'provider_copy_kept_transient',
         'swept_count',
       ].sort(),
@@ -355,7 +355,7 @@ describe('sweepExpiredBroadcasts — the Resend copy (M1)', () => {
     const { deps, events, gatewayCalls, deleteCalls, table } = withResend({});
     const result = await sweepExpiredBroadcasts(deps);
 
-    expect(result.ok && result.value).toMatchObject({ sweptCount: 3, providerCopyKeptTransient: 0, providerCopyKeptRefused: 0 });
+    expect(result.ok && result.value).toMatchObject({ sweptCount: 3, providerCopyKeptTransient: 0, providerCopyRetainedAtProcessor: 0 });
     expect([...gatewayCalls].sort()).toEqual(['re_a', 're_b', 're_b_batch0']);
     expect(deleteCalls[0]?.ids).toEqual(['bc-a', 'bc-b', 'bc-c']);
     // Every Resend call happened before the batch transaction opened.
@@ -378,26 +378,45 @@ describe('sweepExpiredBroadcasts — the Resend copy (M1)', () => {
     const { deps, deleteCalls, table, emitTyped } = withResend({ re_a: 'transient' });
     const result = await sweepExpiredBroadcasts(deps);
 
-    expect(result.ok && result.value).toMatchObject({ sweptCount: 2, providerCopyKeptTransient: 1, providerCopyKeptRefused: 0 });
+    expect(result.ok && result.value).toMatchObject({ sweptCount: 2, providerCopyKeptTransient: 1, providerCopyRetainedAtProcessor: 0 });
     expect(deleteCalls[0]?.ids).toEqual(['bc-b', 'bc-c']);
     expect([...table.keys()]).toEqual(['bc-a']);
     expect(runAudits(emitTyped)[0]?.payload).toMatchObject({ provider_copy_kept_transient: 1, completed: true });
   });
 
-  it('a PERMANENT refusal keeps the row and counts it apart from the transient ones', async () => {
+  it('a PERMANENT refusal (Resend: a sent broadcast cannot be deleted) DELETES our row anyway and counts the copy as retained at the processor', async () => {
     const { deps, deleteCalls, table, emitTyped } = withResend({ re_a: 'refused' });
     const result = await sweepExpiredBroadcasts(deps);
 
-    expect(result.ok && result.value).toMatchObject({ sweptCount: 2, providerCopyKeptTransient: 0, providerCopyKeptRefused: 1 });
-    expect(deleteCalls[0]?.ids).not.toContain('bc-a');
-    expect(table.has('bc-a')).toBe(true);
-    expect(runAudits(emitTyped)[0]?.payload).toMatchObject({ provider_copy_kept_refused: 1 });
+    expect(result.ok && result.value).toMatchObject({
+      sweptCount: 3,
+      providerCopyKeptTransient: 0,
+      providerCopyRetainedAtProcessor: 1,
+    });
+    expect(deleteCalls[0]?.ids).toEqual(['bc-a', 'bc-b', 'bc-c']);
+    expect(table.has('bc-a')).toBe(false);
+    expect(runAudits(emitTyped)[0]?.payload).toMatchObject({
+      provider_copy_retained_at_processor: 1,
+      provider_copy_kept_transient: 0,
+    });
   });
 
-  it('a throw that is not a classified gateway error is a refusal too — the row is kept', async () => {
+  it('a refused batch copy does not stop the row\'s own copy from being deleted; the row goes', async () => {
+    const { deps, gatewayCalls, table } = withResend({ re_b_batch0: 'refused' });
+    const result = await sweepExpiredBroadcasts(deps);
+    expect(result.ok && result.value).toMatchObject({ sweptCount: 3, providerCopyRetainedAtProcessor: 1 });
+    expect(gatewayCalls).toEqual(expect.arrayContaining(['re_b_batch0', 're_b']));
+    expect(table.has('bc-b')).toBe(false);
+  });
+
+  it('a throw that is NOT a classified gateway error is no refusal: the row and its key are kept for the next run', async () => {
     const { deps, table } = withResend({ re_a: 'not_a_gateway_error' });
     const result = await sweepExpiredBroadcasts(deps);
-    expect(result.ok && result.value).toMatchObject({ sweptCount: 2, providerCopyKeptRefused: 1 });
+    expect(result.ok && result.value).toMatchObject({
+      sweptCount: 2,
+      providerCopyKeptTransient: 1,
+      providerCopyRetainedAtProcessor: 0,
+    });
     expect(table.has('bc-a')).toBe(true);
   });
 
@@ -414,11 +433,11 @@ describe('sweepExpiredBroadcasts — the Resend copy (M1)', () => {
     const { deps, listCalls, gatewayCalls } = makeDeps({
       rows,
       batchSize: 1,
-      provider: { 're_bc-1': 'refused', 're_bc-2': 'transient' },
+      provider: { 're_bc-1': 'transient', 're_bc-2': 'transient' },
     });
     const result = await sweepExpiredBroadcasts(deps);
 
-    expect(result.ok && result.value).toMatchObject({ sweptCount: 1, providerCopyKeptTransient: 1, providerCopyKeptRefused: 1 });
+    expect(result.ok && result.value).toMatchObject({ sweptCount: 1, providerCopyKeptTransient: 2, providerCopyRetainedAtProcessor: 0 });
     expect(gatewayCalls).toEqual(['re_bc-1', 're_bc-2', 're_bc-3']);
     expect(listCalls.map((c) => c.after?.broadcastId ?? null)).toEqual([null, 'bc-1', 'bc-2', 'bc-3']);
   });
@@ -426,7 +445,7 @@ describe('sweepExpiredBroadcasts — the Resend copy (M1)', () => {
   it('a batch whose every row was kept opens no delete transaction', async () => {
     const { deps, deleteCalls, txOpened } = makeDeps({
       rows: [{ broadcastId: 'bc-a', requestedByMemberId: null, anchor: NOW, resendBroadcastIds: ['re_a'] }],
-      provider: { re_a: 'refused' },
+      provider: { re_a: 'transient' },
     });
     const result = await sweepExpiredBroadcasts(deps);
     expect(result.ok && result.value.sweptCount).toBe(0);
@@ -434,7 +453,7 @@ describe('sweepExpiredBroadcasts — the Resend copy (M1)', () => {
     expect(txOpened).toHaveLength(1); // the run row
   });
 
-  it('logs a kept copy with the error class and provider code only — never a broadcast id, Resend id or the provider text', async () => {
+  it('logs a copy left at Resend with the error class and provider code only — never a broadcast id, Resend id or the provider text', async () => {
     const { deps } = makeDeps({
       rows: [{ broadcastId: 'bc-secret', requestedByMemberId: 'm-secret', anchor: NOW, resendBroadcastIds: ['re_secret'] }],
       provider: { re_secret: 'refused' },
@@ -446,7 +465,7 @@ describe('sweepExpiredBroadcasts — the Resend copy (M1)', () => {
     expect(msg).toBe('broadcasts.retention_sweep.provider_copy_kept');
     expect(fields).toEqual({
       tenantId: 'test-tenant',
-      outcome: 'refused',
+      outcome: 'retained_at_processor',
       errorKind: 'permanent',
       code: 'validation_error',
     });
@@ -466,7 +485,7 @@ describe('sweepExpiredBroadcasts — the Resend copy (M1)', () => {
       batches: 1,
       budgetExhausted: true,
       providerCopyKeptTransient: 0,
-      providerCopyKeptRefused: 0,
+      providerCopyRetainedAtProcessor: 0,
     });
     expect(gatewayCalls).toHaveLength(5);
     expect(deleteCalls[0]?.ids).toEqual(['bc-1', 'bc-2', 'bc-3', 'bc-4', 'bc-5']);

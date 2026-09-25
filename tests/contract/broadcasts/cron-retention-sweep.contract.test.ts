@@ -55,7 +55,7 @@ const SUCCESS = {
   batches: 1,
   budgetExhausted: false,
   providerCopyKeptTransient: 0,
-  providerCopyKeptRefused: 0,
+  providerCopyRetainedAtProcessor: 0,
   oldestAnchor: new Date('2026-01-01T00:00:00.000Z'),
   newestAnchor: new Date('2026-01-03T00:00:00.000Z'),
 };
@@ -128,12 +128,12 @@ describe('/api/cron/broadcasts/retention-sweep', () => {
     expect(res.status).toBe(401);
   });
 
-  it('meters the rows kept because their Resend copy could not be deleted, per reason', async () => {
-    sweepMock.mockResolvedValueOnce(ok({ ...SUCCESS, providerCopyKeptTransient: 2, providerCopyKeptRefused: 5 }));
+  it('meters the Resend copies left behind, per reason: kept for a retry vs retained at the processor', async () => {
+    sweepMock.mockResolvedValueOnce(ok({ ...SUCCESS, providerCopyKeptTransient: 2, providerCopyRetainedAtProcessor: 5 }));
     const { POST } = await importRoute();
     await POST(req('POST'));
     expect(keptMetric).toHaveBeenCalledWith('test-tenant', 'transient', 2);
-    expect(keptMetric).toHaveBeenCalledWith('test-tenant', 'refused', 5);
+    expect(keptMetric).toHaveBeenCalledWith('test-tenant', 'retained_at_processor', 5);
   });
 
   it('a tenant whose sweep returns an error logs the error CLASS and SQLSTATE only — no query text, no params, no ids', async () => {
