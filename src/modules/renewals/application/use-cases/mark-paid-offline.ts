@@ -236,6 +236,22 @@ function isPermanentF4Reason(
 // same `awaiting_payment` codepath; the urgency derivation is read-only.
 const PAYABLE_STATUSES = new Set(['awaiting_payment', 'upcoming']);
 
+/**
+ * Thrown inside the outer `runInTenant` callback on the bridge's
+ * `record_payment_failed` so the tx ROLLS BACK (a returned `err` would
+ * commit); caught at the use-case boundary and mapped to
+ * `f4_orphan_invoice`. Module-private — never escapes `markPaidOffline`.
+ */
+class OrphanInvoiceRollback extends Error {
+  constructor(
+    readonly orphanInvoiceId: string,
+    readonly reason: string,
+  ) {
+    super('mark-paid-offline: record_payment_failed — rolling back the outer tx');
+    this.name = 'OrphanInvoiceRollback';
+  }
+}
+
 export async function markPaidOffline(
   deps: RenewalsDeps,
   rawInput: MarkPaidOfflineInput,
@@ -370,6 +386,10 @@ export async function markPaidOffline(
   // outer `runInTenant` tx commits. Set inside the in-tx `onPaid` closure
   // below; remains null on any path that never reaches the cycle flip.
   let paidEventForFinalise: F4InvoicePaidEvent | null = null;
+  // The stale link cleared inside the outer tx (null when none was). If that
+  // tx later rolls back on `record_payment_failed`, the clear is re-applied
+  // in its own committed tx — see the `OrphanInvoiceRollback` catch.
+  let clearedStaleLinkId: string | null = null;
 
   // Outer atomic boundary — F4 chain step 3 (recordPayment) reuses
   // this tx; cycle flip + audit emit ride along.
@@ -549,6 +569,7 @@ export async function markPaidOffline(
         );
         // The status narrowing only re-proves PAYABLE_STATUSES (checked above
         // under the lock) for the compiler — `completed` requires a link.
+        if (cleared) clearedStaleLinkId = staleId;
         if (
           cleared &&
           (lockedCycle.status === 'upcoming' ||
@@ -889,12 +910,23 @@ export async function markPaidOffline(
       if (!bridgeResult.ok) {
         // Distinct error code on the orphan-invoice path so the route
         // handler can surface "DO NOT retry — resume from F4 list".
+        //
+        // THROW, never `return err(...)`: recordPayment ran on THIS tx
+        // (`externalTx`, no savepoint) and, with FEATURE_088_TAX_AT_PAYMENT,
+        // had already allocated the §87 RECEIPT number before the sync PDF
+        // render / upload that failed — and it reports that failure by
+        // RETURNING err. A returned err inside `runInTenant` COMMITS, which
+        // would burn the receipt number with no document behind it (the
+        // mechanism confirm-payment.ts documents as F-1). Throwing rolls the
+        // whole outer tx back (counter + the benign stale-link clear); the
+        // catch below turns it back into the same `f4_orphan_invoice`. The
+        // draft+issued bill from steps 1–2 committed in its own txs and stays
+        // — that is the orphan this code tells the operator about.
         if (bridgeResult.error.kind === 'record_payment_failed') {
-          return err({
-            kind: 'f4_orphan_invoice' as const,
-            orphanInvoiceId: bridgeResult.error.orphanInvoiceId,
-            reason: bridgeResult.error.reason,
-          });
+          throw new OrphanInvoiceRollback(
+            bridgeResult.error.orphanInvoiceId,
+            bridgeResult.error.reason,
+          );
         }
         // Cluster 5 (Finding 2) — the failure is at step 1 (create draft) or
         // step 2 (issue), BEFORE any §87 number was burned, so there is no
@@ -1016,6 +1048,49 @@ export async function markPaidOffline(
 
     return result;
   } catch (e) {
+    // The rollback sentinel thrown on `record_payment_failed` (see above) —
+    // the tx is rolled back; surface the same orphan code as before.
+    if (e instanceof OrphanInvoiceRollback) {
+      // A thrown sentinel rather than a rollback-carrying value (cf.
+      // payments' tx-decision.ts): that primitive lives in another module's
+      // application layer, and this path only has to reach this one catch.
+      //
+      // The rollback also undid the stale-link clear. Left pointing at the
+      // void bill, the cycle could not complete when the operator records the
+      // payment on the orphan invoice (the F8 on-paid resolver's link CAS
+      // rejects it and only warns) — a paying member's cycle would stay open.
+      // Re-apply it: idempotent, CAS on the observed void id, audit-free.
+      // Best effort — a failure here only restores the pre-fix state.
+      const staleId = clearedStaleLinkId;
+      if (staleId !== null) {
+        try {
+          await runInTenant(deps.tenant, (tx) =>
+            deps.cyclesRepo.clearStaleLinkedInvoiceInTx(
+              tx,
+              input.tenantId,
+              cycleId,
+              staleId,
+            ),
+          );
+        } catch (clearErr) {
+          logger.warn(
+            {
+              err: clearErr instanceof Error ? clearErr : new Error(String(clearErr)),
+              cycleId,
+              tenantId: input.tenantId,
+              staleInvoiceId: staleId,
+              orphanInvoiceId: e.orphanInvoiceId,
+            },
+            'markPaidOffline: could not re-apply the stale-link clear after the orphan rollback — the cycle still points at a void invoice',
+          );
+        }
+      }
+      return err({
+        kind: 'f4_orphan_invoice' as const,
+        orphanInvoiceId: e.orphanInvoiceId,
+        reason: e.reason,
+      });
+    }
     logger.error(
       {
         err: e instanceof Error ? e : new Error(String(e)),

@@ -48,6 +48,9 @@ import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-cycles';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { markPaidOffline, makeRenewalsDeps } from '@/modules/renewals';
+import { tenantDocumentSequences } from '@/modules/invoicing/infrastructure/db/schema-tenant-document-sequences';
+import { postgresSequenceAllocator } from '@/modules/invoicing/infrastructure/adapters/postgres-sequence-allocator';
+import { asFiscalYearUnsafe } from '@/modules/invoicing/domain/value-objects/fiscal-year';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
 import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
@@ -551,6 +554,82 @@ describe('F8 markPaidOffline — duplicate membership-bill guard', () => {
     );
     expect(cycleRows[0]?.status).toBe('awaiting_payment');
     expect(cycleRows[0]?.linkedInvoiceId).toBe(otherYearInvoiceId);
+
+    bridgeSpy.mockRestore();
+  }, 60_000);
+
+  it('record_payment_failed rolls the outer tx back — the §87 receipt number recordPayment allocated is NOT burned', async () => {
+    const { cycleId } = await seedMemberWithPayableCycle('Receipt Gap Co');
+    const receiptFy = asFiscalYearUnsafe(2026);
+    const readReceiptNext = async (): Promise<number> => {
+      const rows = await runInTenant(tenant.ctx, (tx) =>
+        tx
+          .select({ next: tenantDocumentSequences.nextSequenceNumber })
+          .from(tenantDocumentSequences)
+          .where(
+            and(
+              eq(tenantDocumentSequences.tenantId, tenant.ctx.slug),
+              eq(tenantDocumentSequences.documentType, 'receipt'),
+              eq(tenantDocumentSequences.fiscalYear, receiptFy),
+            ),
+          ),
+      );
+      return rows[0]?.next ?? 1;
+    };
+    const before = await readReceiptNext();
+
+    const deps = makeRenewalsDeps(tenant.ctx.slug);
+    const orphanInvoiceId = randomUUID();
+    // What the real bridge does with FEATURE_088_TAX_AT_PAYMENT on: steps 1–2
+    // (draft + issue) commit in their OWN txs, then recordPayment allocates
+    // the §87 RECEIPT number on the caller's tx (externalTx, no savepoint),
+    // then the sync PDF render fails and it RETURNS err.
+    const bridgeSpy = vi
+      .spyOn(deps.f4InvoiceBridge, 'issueAndMarkPaid')
+      .mockImplementation(async (input) => {
+        await seedInvoice({
+          invoiceId: orphanInvoiceId,
+          memberId: input.memberId,
+          planYear: input.planYear,
+          status: 'issued',
+        });
+        await postgresSequenceAllocator.allocateNext(input.externalTx, {
+          tenantId: input.tenantId,
+          documentType: 'receipt',
+          fiscalYear: receiptFy,
+        });
+        return {
+          ok: false as const,
+          error: {
+            kind: 'record_payment_failed' as const,
+            reason: 'pdf_render_failed',
+            orphanInvoiceId,
+          },
+        };
+      });
+
+    const r = await markPaidOffline(deps, {
+      tenantId: tenant.ctx.slug,
+      cycleId,
+      paymentMethod: 'bank_transfer',
+      paymentReference: 'BT-RCPT-GAP-0001',
+      paymentDate: '2026-05-15',
+      actorUserId: user.userId,
+      actorRole: 'admin',
+      correlationId: randomUUID(),
+    });
+
+    expect(bridgeSpy).toHaveBeenCalledTimes(1);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.kind).toBe('f4_orphan_invoice');
+      if (r.error.kind === 'f4_orphan_invoice') {
+        expect(r.error.orphanInvoiceId).toBe(orphanInvoiceId);
+      }
+    }
+    // The receipt counter increment rode the outer tx, which rolled back.
+    // (Pre-fix, the returned err committed it: `next` moved past `before`.)
+    expect(await readReceiptNext()).toBe(before);
 
     bridgeSpy.mockRestore();
   }, 60_000);
