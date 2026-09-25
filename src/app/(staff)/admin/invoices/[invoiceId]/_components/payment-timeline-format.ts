@@ -53,9 +53,8 @@ export function latestSucceededPayment(
  */
 export function formatTimestamp(date: Date, locale: string): string {
   // docs/ux-standards.md § 12.3 — English reads en-GB (day-first, 24-hour:
-  // "23 Sept 2026, 14:10"), not the en-US "Sep 23, 2026, 02:10 PM".
-  const formatLocale = locale === 'en' ? 'en-GB' : getDateFormatLocale(locale);
-  return date.toLocaleString(formatLocale, {
+  // "23 Sept 2026, 14:10"); `getDateFormatLocale` maps en → en-GB.
+  return date.toLocaleString(getDateFormatLocale(locale), {
     year: 'numeric',
     month: 'short',
     day: 'numeric',

@@ -15,6 +15,9 @@
  *
  * - `'th'` / `'th-TH'` → `'th-TH-u-ca-buddhist'` (Buddhist Era calendar, +543)
  * - `'sv'` / `'sv-SE'` → `'sv-SE'` (ensures canonical BCP-47 region tag)
+ * - `'en'` / `'en-US'` → `'en-GB'` (docs/ux-standards.md § 12.3 — English
+ *   dates read day-first, 24-hour: "23 Sept 2026, 14:10", not the en-US
+ *   "Sep 23, 2026, 02:10 PM")
  * - All other locales pass through unchanged.
  */
 export function getDateFormatLocale(locale: string): string {
@@ -23,6 +26,9 @@ export function getDateFormatLocale(locale: string): string {
   }
   if (locale === 'sv' || locale === 'sv-SE') {
     return 'sv-SE';
+  }
+  if (locale === 'en' || locale === 'en-US') {
+    return 'en-GB';
   }
   return locale;
 }
