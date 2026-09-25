@@ -94,9 +94,9 @@ describe('<RelativeTime>', () => {
         <RelativeTime iso={iso} />
       </NextIntlClientProvider>,
     );
-    expect(html).toContain('Jul 31'); // Bangkok calendar day…
+    expect(html).toContain('31 Jul'); // Bangkok calendar day, en-GB day-first…
     expect(html).toContain('01:30'); // …and Bangkok wall clock
-    expect(html).not.toContain('Jul 30'); // never the UTC-runtime rendering
+    expect(html).not.toContain('30 Jul'); // never the UTC-runtime rendering
   });
 
   it('flips to relative-time after useEffect runs (post-hydration)', async () => {

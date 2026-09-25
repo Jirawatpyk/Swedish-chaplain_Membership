@@ -46,9 +46,10 @@ describe('formatPaymentDateTime', () => {
     expect(result).not.toContain('2569');
   });
 
-  it('default locale (en-US): output contains the Gregorian year "2026"', () => {
-    // No locale arg — falls through to the default parameter 'en-US'.
+  it('default locale (en): day-first en-GB with the Gregorian year "2026"', () => {
+    // No locale arg — falls through to the default parameter 'en' → en-GB.
     const result = formatPaymentDateTime(FIXED_DATE);
     expect(result).toContain('2026');
+    expect(result).toBe(formatPaymentDateTime(FIXED_DATE, 'en-GB'));
   });
 });

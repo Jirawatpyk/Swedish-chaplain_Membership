@@ -10,8 +10,13 @@ describe('getDateFormatLocale', () => {
     expect(getDateFormatLocale('sv')).toBe('sv-SE');
     expect(getDateFormatLocale('sv-SE')).toBe('sv-SE');
   });
-  it('passes en through unchanged', () => {
-    expect(getDateFormatLocale('en')).toBe('en');
+  it('maps en → en-GB (ux-standards § 12.3: day-first English dates)', () => {
+    expect(getDateFormatLocale('en')).toBe('en-GB');
+    expect(getDateFormatLocale('en-US')).toBe('en-GB');
+    expect(getDateFormatLocale('en-GB')).toBe('en-GB');
+  });
+  it('passes other locales through unchanged', () => {
+    expect(getDateFormatLocale('de')).toBe('de');
   });
 });
 
@@ -22,9 +27,10 @@ describe('formatLocalisedDate', () => {
     expect(out).toContain('2569');
     expect(out).not.toContain('๒๕๖๙');
   });
-  it('renders Gregorian for en', () => {
+  it('renders Gregorian, day-first for en', () => {
     const out = formatLocalisedDate(iso, 'en', { year: 'numeric', month: 'short', day: 'numeric' });
     expect(out).toContain('2026');
+    expect(out).toMatch(/^29 May 2026$/);
   });
   it('sv output is identical to bare-sv (no regression from sv→sv-SE)', () => {
     const opts: Intl.DateTimeFormatOptions = { dateStyle: 'medium' };
