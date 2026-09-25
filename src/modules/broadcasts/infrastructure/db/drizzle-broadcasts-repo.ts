@@ -1175,6 +1175,12 @@ export function makeDrizzleBroadcastsRepo(
      * 0-row match answers `null` (nothing was minted, so there is nothing to
      * reclaim — unlike the `attach*` CAS writes above). `RETURNING` hands back
      * the stamp the row actually carries, which is the budget's epoch.
+     *
+     * The COALESCE keeps the first VALUE, but the UPDATE itself runs on EVERY
+     * retryable failure and so bumps `updated_at` every time. Migration 0311's
+     * header still says the stamp is written "only while it is NULL" (once per
+     * attempt); that predates the RETURNING change (review L3) and the applied
+     * migration is not edited — this docblock is the current contract.
      */
     async markDispatchRetryStarted(
       txUnknown,

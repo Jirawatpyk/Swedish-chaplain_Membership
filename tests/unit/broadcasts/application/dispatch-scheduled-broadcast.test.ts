@@ -342,7 +342,7 @@ function makeRepo(opts: RepoOpts): {
 }
 
 type ThrowSpec =
-  | { kind: 'retryable' | 'permanent'; reason: string }
+  | { kind: 'retryable' | 'permanent'; reason: string; subKind?: string }
   | {
       kind: 'resource_missing';
       reason: string;
@@ -5391,5 +5391,61 @@ describe('dispatch-scheduled-broadcast — FR-021 budget anchors on the first fa
     expect(audit.emits).toEqual([]);
     expect(email.memberCalls).toEqual([]);
     expect(budgetSpy).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Round 4 F8 parity with `build-audience-tick.ts` — a retryable throw whose
+   * `subKind` is missing or not one of the four transport classes is labelled
+   * `unclassified`, never `api`. `dispatch_budget_exhausted` pages on-call, and
+   * a fault nobody classified must not arrive dressed as a real transport class.
+   */
+  it('F8 — a retryable send throw with NO subKind is labelled unclassified, not api', async () => {
+    const { deps } = retryDeps(lateRow(null));
+    const noSubKind = {
+      ...deps,
+      broadcastsGateway: makeGateway({ throwOnSend: { kind: 'retryable', reason: 'resend 503' } }).port,
+    };
+
+    const result = await dispatchScheduledBroadcast(noSubKind, baseInput);
+
+    expect(result.ok).toBe(false);
+    if (result.ok || result.error.kind !== 'gateway_retryable') throw new Error('expected gateway_retryable');
+    expect(result.error.subKind).toBe('unclassified');
+  });
+
+  it('F8 — past the budget, an UNKNOWN subKind reaches the page-on-call metric as unclassified', async () => {
+    const { broadcastsMetrics } = await import('@/lib/metrics');
+    const budgetSpy = vi.spyOn(broadcastsMetrics, 'dispatchBudgetExhausted');
+    const { deps } = retryDeps(lateRow(minutesAgo(61)));
+    const unknownSubKind = {
+      ...deps,
+      broadcastsGateway: makeGateway({
+        throwOnSend: { kind: 'retryable', reason: 'resend 503', subKind: 'a_fifth_class' },
+      }).port,
+    };
+
+    const result = await dispatchScheduledBroadcast(unknownSubKind, baseInput);
+
+    expect(result.ok ? null : result.error.kind).toBe('broadcast_failed_to_dispatch');
+    expect(budgetSpy).toHaveBeenCalledWith(tenant.slug, 'unclassified');
+  });
+
+  it('F8 — a retryable inherited-id probe throw with NO subKind is labelled unclassified, not api', async () => {
+    const row: Broadcast = {
+      ...lateRow(null),
+      resendAudienceId: 'aud-existing',
+      resendBroadcastId: 'rb-from-previous-tick',
+    };
+    const { deps } = retryDeps(row);
+    const probeBlip = {
+      ...deps,
+      broadcastsGateway: makeGateway({ throwOnRetrieveBroadcast: { kind: 'retryable', reason: 'resend 503' } }).port,
+    };
+
+    const result = await dispatchScheduledBroadcast(probeBlip, baseInput);
+
+    expect(result.ok).toBe(false);
+    if (result.ok || result.error.kind !== 'gateway_retryable') throw new Error('expected gateway_retryable');
+    expect(result.error.subKind).toBe('unclassified');
   });
 });

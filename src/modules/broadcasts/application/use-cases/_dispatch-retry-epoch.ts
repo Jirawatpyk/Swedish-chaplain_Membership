@@ -32,8 +32,13 @@
  * the lift is terminal, and the member email's "unreachable for over an hour"
  * then describes the freeze, not the provider. The claim is true by
  * construction everywhere else. Mitigation (runbook `cron-jobs.md` § Read-only
- * mode): after lifting a long freeze, re-time the affected `approved` rows —
- * a re-time clears the clock.
+ * mode): after lifting a long freeze, clear the clock with SQL on the stamped
+ * `approved` rows (`dispatch_first_failed_at = NULL`, as the migration owner or
+ * per tenant under `SET LOCAL app.current_tenant` — the PR-E rollback
+ * statement). A staff re-time is not the general fix: confirm-schedule refuses
+ * `round_zero` (every legacy-approved row) and `sending_started` (a row already
+ * handed to Resend), so it clears the clock only on a round ≥ 1 row with no
+ * Resend id.
  */
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';

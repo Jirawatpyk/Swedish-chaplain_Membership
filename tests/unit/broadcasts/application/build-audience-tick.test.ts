@@ -137,7 +137,11 @@ function makeDeps(opts: {
     audienceImportId: opts.audienceImportId ?? null,
     audienceImportSubmittedAt: opts.audienceImportSubmittedAt ?? null,
     audienceImportCompletedAt: null,
+    // F119 PR-E (0311) — no retryable failure yet.
+    dispatchFirstFailedAt: null as Date | null,
   };
+  // The row's FR-021 clock, as the two retry-clock stubs below move it.
+  let dispatchFirstFailedAt = broadcast.dispatchFirstFailedAt;
 
   return {
     rec,
@@ -190,6 +194,17 @@ function makeDeps(opts: {
         },
         async markAudienceImportCompleted() {
           rec.completions.push(1);
+        },
+        // F119 PR-E — both were missing, so every call threw a TypeError that
+        // `_dispatch-retry-epoch.ts` swallows: the clock was never exercised
+        // here. The adapter's COALESCE + RETURNING (the row is always
+        // `approved` in this harness), and its reset.
+        async markDispatchRetryStarted(_tx: unknown, _t: unknown, _b: unknown, at: Date) {
+          dispatchFirstFailedAt = dispatchFirstFailedAt ?? at;
+          return dispatchFirstFailedAt;
+        },
+        async clearDispatchRetryClock() {
+          dispatchFirstFailedAt = null;
         },
         async attachResendIds() {
           /* no-op */

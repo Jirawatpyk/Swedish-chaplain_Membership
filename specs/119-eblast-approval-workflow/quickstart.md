@@ -1495,8 +1495,12 @@ PR-2 builds on PR-1.
   rows by hand" step is retired. The FR-021 retry budget counts from the first retryable failure
   of the attempt (`dispatch_first_failed_at`, migration `0311`, F119 PR-E), and every held tick
   resets it, so a held row that resumes late gets its full hour even if it had failed before the
-  hold. A `READ_ONLY_MODE` freeze does not reset it (residual + re-time mitigation, and the PR-E
-  rollback note: runbook § Dispatch standing refusal). **Known limitation:** a held row sits in
+  hold. A `READ_ONLY_MODE` freeze does not reset it (residual; the mitigation after a long freeze
+  is the SQL clear from the PR-E rollback note — `UPDATE broadcasts SET dispatch_first_failed_at =
+  NULL WHERE status = 'approved' AND dispatch_first_failed_at IS NOT NULL`, as the migration owner
+  or per tenant under `SET LOCAL app.current_tenant`; a staff re-time is refused for a
+  legacy-approved row (`round_zero`) and for one already handed to Resend (`sending_started`), so
+  it helps only a round ≥ 1 row with no Resend id: runbook § Dispatch standing refusal). **Known limitation:** a held row sits in
   `broadcasts_approved_overdue_count` (its alarm stays on for the hold); that cannot be fixed
   without recording the hold on the row. Runbook: `docs/runbooks/eblast-approval.md` § Dispatch
   standing refusal.

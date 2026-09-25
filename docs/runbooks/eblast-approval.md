@@ -262,8 +262,14 @@ cancel it (an `approved` row is cancellable).
   "unreachable for over an hour" then describes the freeze. **Mitigation:** after lifting a long
   freeze, list the `approved` rows carrying a stamp
   (`SELECT broadcast_id, dispatch_first_failed_at FROM broadcasts WHERE status = 'approved' AND
-  dispatch_first_failed_at IS NOT NULL`, per tenant) and re-time each one from the staff page — a
-  re-time clears the clock (`cron-jobs.md` § Read-only mode).
+  dispatch_first_failed_at IS NOT NULL`, per tenant) and clear them with the same SQL as the
+  rollback bullet below: `UPDATE broadcasts SET dispatch_first_failed_at = NULL WHERE status =
+  'approved' AND dispatch_first_failed_at IS NOT NULL` (as the migration owner, or after
+  `SET LOCAL app.current_tenant = '<tenant>'` once per tenant). A staff-page re-time is NOT the
+  general fix: confirm-schedule refuses a legacy-approved row (`current_round = 0` →
+  `round_zero`) and a row a tick already handed to Resend (`resend_broadcast_id` or
+  `audience_import_id` set → `sending_started`). A re-time clears the clock only on a round ≥ 1
+  row with neither id (`cron-jobs.md` § Read-only mode).
 - **A retryable failure of the inherited-id probe is never budgeted** (legacy leg; review M1). The
   probe runs only when an earlier tick minted the Resend broadcast, and an unanswered probe cannot
   say whether that mail already went out — so it retries every tick

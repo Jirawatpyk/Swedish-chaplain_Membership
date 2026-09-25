@@ -56,6 +56,7 @@ import {
 import type {
   BroadcastsGatewayPort,
   AudienceContact,
+  GatewayRetryableSubKind,
   RetrievedBroadcastResource,
   RetrieveBroadcastOutcome,
 } from '../ports/broadcasts-gateway-port';
@@ -90,6 +91,23 @@ import { resendDashboardName } from '../format/resend-dashboard-name';
 // never spends it, because nothing failed.
 import { dispatchRetryEpoch, resetDispatchRetryClock, RETRY_BUDGET_MS } from './_dispatch-retry-epoch';
 
+/**
+ * The transport class a retryable gateway throw carried, or `unclassified`
+ * when it carried none this build knows. Round 4 F8 removed the `?? 'api'`
+ * default from `build-audience-tick.ts`; this leg kept it until F119 PR-E's
+ * whole-branch review. `dispatch_budget_exhausted` pages on-call, so a fault
+ * nobody classified must not arrive labelled as a real transport class — and
+ * the old `as … ?? 'api'` cast also let a FIFTH string through to the metric
+ * raw. Narrowed against the same four literals as `viaGateway` there.
+ */
+type RetryableSubKind = GatewayRetryableSubKind | 'unclassified';
+
+function retryableSubKind(sub: string | undefined): RetryableSubKind {
+  return sub === 'network' || sub === 'timeout' || sub === 'server_5xx' || sub === 'api'
+    ? sub
+    : 'unclassified';
+}
+
 export type DispatchScheduledBroadcastError =
   | { readonly kind: 'broadcast_not_found'; readonly broadcastId: string }
   | {
@@ -99,7 +117,7 @@ export type DispatchScheduledBroadcastError =
   | { readonly kind: 'broadcast_audience_post_suppression_empty' }
   | {
       readonly kind: 'gateway_retryable';
-      readonly subKind: 'network' | 'timeout' | 'server_5xx' | 'api';
+      readonly subKind: RetryableSubKind;
       readonly reason: string;
     }
   | {
@@ -572,7 +590,7 @@ export async function dispatchScheduledBroadcast(
       // The operator signal for a probe that never answers is the same as the
       // `unknown` arm's: `broadcasts_approved_overdue_count`.
       if (shape.kind === 'retryable') {
-        const subKind = (shape.subKind as 'network' | 'timeout' | 'server_5xx' | 'api') ?? 'api';
+        const subKind = retryableSubKind(shape.subKind);
         logger.warn(
           {
             tenantId: deps.tenant.slug,
@@ -1792,7 +1810,7 @@ async function applyRetryBudget(
   input: DispatchScheduledBroadcastInput,
   broadcast: Broadcast,
   now: Date,
-  subKind: 'network' | 'timeout' | 'server_5xx' | 'api',
+  subKind: RetryableSubKind,
   reason: string,
 ): Promise<
   Result<DispatchScheduledBroadcastOutput, DispatchScheduledBroadcastError>
@@ -1929,7 +1947,7 @@ async function settleGatewayThrow(
       input,
       broadcast,
       now,
-      (shape.subKind as 'network' | 'timeout' | 'server_5xx' | 'api') ?? 'api',
+      retryableSubKind(shape.subKind),
       shape.reason ?? 'retryable',
     );
   }

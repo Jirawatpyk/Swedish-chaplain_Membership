@@ -411,7 +411,7 @@ Operator actions specific to the refund-lifecycle bugfix batch (migration 0241/0
   | `broadcasts.dispatch_resolve_failed.total` | **yes, immediately** — 15-minute alarm, and since round 4 L4 both legs also write `cron.broadcasts.dispatch.server_error` with a bounded `errClass`, so it says WHICH side failed; since 2026-09-10 the counter itself carries a `phase` label (lock / resolve / inherited_status / persist_broadcast_id / gateway / terminal_write), so the alarm says which subsystem to open before a log is read |
   | cron span `cron.import_submitted` / `cron.import_pending` (R2-15) | yes |
   | `broadcasts.failed_to_dispatch.count{failure_reason}` | **no** — emitted only from terminal paths, and a first-send failure that is retrying is not terminal |
-  | `broadcasts_dispatch_budget_exhausted_total` | **no** — needs `elapsedMs > 1 h` off `scheduledFor ?? approvedAt ?? createdAt`, so it lands on the first tick past ~65 min, i.e. after the window closes |
+  | `broadcasts_dispatch_budget_exhausted_total` | **no** — needs `elapsedMs > 1 h` measured from the FIRST retryable failure of the attempt (`dispatch_first_failed_at`, mig `0311`, F119 PR-E), so it lands on the first tick past ~65 min after that failure, i.e. after the window closes |
   | `broadcasts_audience_import_stuck_count` | **no on its own** — it only fires if the dispatch cron ALSO stops turning stuck rows terminal, so a zero is not evidence of health (round 2 R2-16) |
 
   Watch the first two. Reading the others as "quiet, therefore healthy" is the
