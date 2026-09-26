@@ -178,6 +178,8 @@ describe('DirectoryVisibilityForm on AURA (spec 122 US3)', () => {
     const save = screen.getByRole('button', { name: en.directorySettings.save });
     fireEvent.click(save);
     await screen.findByRole('alert', { name: /fix 1 field/i });
+    // AURA's Button ignores clicks while `loading`: wait for the first save to settle
+    await vi.waitFor(() => expect(save).not.toHaveAttribute('aria-busy'));
     save.focus();
     fireEvent.click(save);
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
