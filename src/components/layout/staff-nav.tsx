@@ -22,6 +22,7 @@ import {
 } from '@/config/nav';
 import { AURA_FOCUS_RING } from '@/components/shell/aura-classes';
 import { BrandMark } from '@/components/shell/brand-mark';
+import { SIDEBAR_COOKIE, SIDEBAR_COOKIE_MAX_AGE } from '@/components/layout/sidebar-cookie';
 import { cn } from '@/lib/utils';
 
 /**
@@ -34,9 +35,6 @@ import { cn } from '@/lib/utils';
  * maps the filtered config onto AURA's `NavItem`s.
  */
 
-/** The `sidebar_state` cookie keeps the rail choice across pages (`true` = expanded). */
-export const SIDEBAR_COOKIE = 'sidebar_state';
-const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
 
 /**
  * Sections shown as ONE collapsible group rather than a titled list — the

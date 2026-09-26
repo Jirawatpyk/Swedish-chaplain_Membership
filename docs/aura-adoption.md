@@ -90,7 +90,7 @@ The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requ
 | 57 | `DropdownMenu` has no header slot for "who is signed in" | `UserMenu` lists name (with role) and email as inert items |
 | 58 | `Breadcrumb` turns an item without `href` into a button | `BreadcrumbNav` draws AURA's `aura-crumbs` markup itself, with organisational segments as text |
 | 59 | `AppShell`'s `<main>` takes no `tabIndex` | `StaffShell` sets `tabindex="-1"` on `#main-content` after mount, so focus fallbacks still land |
-| 60 | `Dialog` closes on a scrim click whenever it closes on Escape | Known gap: a stray click can close a confirmation that holds typed input; no local bridge |
+| 60 | `Dialog` closes on a scrim click whenever it closes on Escape | `ConfirmationDialog dismissible={false}` for one-time views (the rotated webhook secret: only its buttons close it). Elsewhere a known gap: a stray click can close a confirmation that holds typed input |
 | 61 | `BottomNav` items take no accessible name apart from the visible label | Known gap: phone tabs read the short label (TH "สิทธิ์", SV "Konto") |
 | 62 | `SideNav` rows are 36px on touch screens | `.staff-nav .aura-nav__item { min-height: 44px }` under `pointer: coarse` |
 | 63 | `SideNav` labels are one line, cut with an ellipsis | Known gap: long TH/SV labels ("Godkännande av medlemsändringar") are cut in the nav and drawer; the accessible name stays complete |

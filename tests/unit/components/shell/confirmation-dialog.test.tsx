@@ -167,4 +167,11 @@ describe('ConfirmationDialog', () => {
     fireEvent.click(confirmBtn);
     expect(onConfirm).not.toHaveBeenCalled();
   });
+
+  it('dismissible={false}: only its buttons close it — no Escape, no close button (a one-time view)', () => {
+    const { onOpenChange } = renderDialog({ dismissible: false });
+    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['Cancel', 'Revoke invitation']);
+    fireEvent.keyDown(screen.getByRole('alertdialog'), { key: 'Escape' });
+    expect(onOpenChange).not.toHaveBeenCalled();
+  });
 });

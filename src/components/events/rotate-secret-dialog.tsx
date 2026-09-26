@@ -133,6 +133,9 @@ export function RotateSecretDialog({
         confirmLabel={t('acknowledge')}
         cancelLabel={t('close')}
         confirmDisabled={!secretAcknowledged}
+        // The secret is shown once: a stray scrim click, Escape or the × must
+        // not throw it away — only Close / Acknowledge end this view.
+        dismissible={false}
         onConfirm={() => {
           onRotationAcknowledged();
           handleOpenChange(false, true);

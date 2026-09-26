@@ -59,10 +59,10 @@ test.describe('staff sidebar — US1/US2/US3', () => {
     await page.goto('/admin/plans');
     await page.locator('h1').first().waitFor({ timeout: 10_000 });
 
-    // Plans link should have data-active attribute
+    // The current page's link carries aria-current (AURA SideNav).
     const sidebar = staffNav(page);
     const plansLink = sidebar.getByRole('link', { name: /^plans$/i });
-    await expect(plansLink).toHaveAttribute('data-active', /.*/);
+    await expect(plansLink).toHaveAttribute('aria-current', 'page');
   });
 
   test('active state highlights Users on /admin/users', async ({ page }) => {
@@ -72,7 +72,7 @@ test.describe('staff sidebar — US1/US2/US3', () => {
 
     const sidebar = staffNav(page);
     const usersLink = sidebar.getByRole('link', { name: /users/i });
-    await expect(usersLink).toHaveAttribute('data-active', /.*/);
+    await expect(usersLink).toHaveAttribute('aria-current', 'page');
   });
 
   test('nav links route correctly', async ({ page }) => {

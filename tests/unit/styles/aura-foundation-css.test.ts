@@ -150,6 +150,8 @@ describe('globals.css — AURA foundation (spec 122)', () => {
     // AppShell pads <main> itself; the containers already pad, so one of the two must go.
     expect(layer).toMatch(/\.chamber-shell \.aura-shell__content\s*\{\s*padding:\s*0;/);
     expect(layer).toMatch(/\.chamber-shell\s*\{[^}]*--page-padding-x:\s*1rem;/);
+    // Sticky page parts stop below the sticky bar (whole-branch review M2).
+    expect(layer).toMatch(/\.chamber-shell\s*\{[^}]*--shell-bar-height:\s*56px;/);
     expect(layer).toMatch(/min-width:\s*768px\)\s*\{\s*\.chamber-shell\s*\{\s*--page-padding-x:\s*1\.5rem;/);
     expect(layer).toMatch(/min-width:\s*1024px\)\s*\{\s*\.chamber-shell\s*\{\s*--page-padding-x:\s*2rem;/);
   });

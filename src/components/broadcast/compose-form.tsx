@@ -829,7 +829,7 @@ export function ComposeForm({
           </CardContent>
         </Card>
 
-        <div className="min-w-0 lg:sticky lg:top-4">
+        <div className="min-w-0 lg:sticky lg:top-[calc(var(--shell-bar-height,0px)+1rem)]">
           <PreviewPane
             subject={subject}
             bodyHtml={deferredBody}

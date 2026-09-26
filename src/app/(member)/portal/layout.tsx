@@ -62,7 +62,7 @@ export default async function MemberLayout({ children }: { children: ReactNode }
     // targets). Locale, calendar, time zone and link come from the root
     // AuraBridge.
     <AuraDensity density="comfortable">
-      <div className="chamber-shell flex min-h-screen flex-col">
+      <div className="chamber-shell flex min-h-screen flex-col lg:[--shell-bar-height:72px]">
         {/* Spec 122 — the header of the portal boards: AURA surface, a hairline
             under it, sticky like AppShell's bar. The Swedish-flag navy chrome
             was dropped on 2026-09-26 in favour of the AURA design. */}

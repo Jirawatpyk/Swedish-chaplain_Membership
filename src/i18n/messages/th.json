@@ -5901,7 +5901,6 @@
       "changeRequests": "คำขอแก้ไขข้อมูล",
       "changeRequestsBadge": "รายการรอการพิจารณา",
       "broadcastsBadge": "รายการรอดำเนินการ",
-      "badgeTooltip": "{title} ({count})",
       "plans": "แพ็กเกจสมาชิก",
       "users": "ผู้ใช้งาน",
       "settings": "ตั้งค่า",

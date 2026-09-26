@@ -73,6 +73,13 @@ export interface ConfirmationDialogProps {
    * one thing that unblocks Confirm instead of Shift+Tabbing back to it.
    */
   readonly initialFocusRef?: RefObject<HTMLElement | null>;
+  /**
+   * Spec 122 — `false`: only the dialog's own buttons close it; Escape, the
+   * scrim and AURA's × do nothing. For a view whose content cannot be shown
+   * again (a one-time secret), where one stray click would lose it for good.
+   * Default true.
+   */
+  readonly dismissible?: boolean;
 }
 
 export function ConfirmationDialog({
@@ -89,6 +96,7 @@ export function ConfirmationDialog({
   closeOnConfirm = true,
   finalFocus,
   initialFocusRef,
+  dismissible = true,
 }: ConfirmationDialogProps) {
   const [submitting, setSubmitting] = useState(false);
 
@@ -150,7 +158,7 @@ export function ConfirmationDialog({
       open={open}
       onClose={close}
       // No Escape / scrim close while the action runs (Cancel is disabled too).
-      dismissible={!submitting}
+      dismissible={dismissible && !submitting}
       title={title}
       description={description}
       footer={

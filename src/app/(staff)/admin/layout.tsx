@@ -7,7 +7,7 @@ import { AuraDensity } from '@/components/providers/aura-bridge';
 import { CommandPaletteRoot } from '@/components/shell/command-palette-root';
 import { OutboxHealthBadge } from '@/components/shell/outbox-health-badge';
 import { StaffShell } from '@/components/layout/staff-shell';
-import { SIDEBAR_COOKIE } from '@/components/layout/staff-nav';
+import { SIDEBAR_COOKIE } from '@/components/layout/sidebar-cookie';
 import { requireSession } from '@/lib/auth-session';
 import { env } from '@/lib/env';
 import { staffNavAllowedHrefs } from '@/lib/nav-permissions';
