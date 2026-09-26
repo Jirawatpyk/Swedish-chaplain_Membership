@@ -2835,8 +2835,8 @@
           }
         },
         "vatPreview": {
-          "label": "ราคารวม VAT แล้ว / VAT-inclusive",
-          "total": "ยอดรวม (รวม VAT)",
+          "label": "ราคารวมภาษีมูลค่าเพิ่มแล้ว / VAT-inclusive",
+          "total": "ยอดรวม (รวมภาษีมูลค่าเพิ่ม)",
           "subtotal": "ยอดก่อนภาษี",
           "vat": "ภาษีมูลค่าเพิ่ม 7%"
         },
@@ -6550,7 +6550,7 @@
           "subject": "หัวข้อ",
           "status": "สถานะ",
           "submittedAt": "ส่งตรวจสอบเมื่อ",
-          "sentAt": "ส่งสำเร็จ",
+          "sentAt": "ส่งสำเร็จเมื่อ",
           "audience": "กลุ่มผู้รับ"
         },
         "status": {
@@ -7784,7 +7784,7 @@
         "awaitingMarketingReview": "รอฝ่ายการตลาดตรวจสอบ",
         "memberApproved": "สมาชิกอนุมัติแล้ว — รอกำหนดส่ง",
         "changesRequested": "สมาชิกขอแก้ไข",
-        "withdrawn": "ยกเลิก",
+        "withdrawn": "ยกเลิกแล้ว",
         "awaitingMemberApproval": "รอสมาชิกอนุมัติ",
         "expired": "หมดอายุ — สมาชิกไม่ตอบกลับ"
       },

@@ -1236,7 +1236,7 @@
       },
       "bundleChangeWarning": {
         "title": "Ändring av paketets corporate-nivå",
-        "description": "Att byta paket ändrar den paketerade corporate-nivån för {affectedCount, plural, =0 {inga} one {# medlem} other {# medlemmar}} på det gamla partnerskapet.",
+        "description": "Att byta paket ändrar den ingående corporate-nivån för {affectedCount, plural, =0 {inga} one {# medlem} other {# medlemmar}} på det gamla partnerskapet.",
         "oldBundle": "Gammalt paket",
         "newBundle": "Nytt paket",
         "affectedCount": "{count, plural, =0 {Inga medlemmar påverkas} one {# medlem påverkas} other {# medlemmar påverkas}}",
@@ -3502,11 +3502,11 @@
           "title": "Livscykelstidslinje",
           "drafted": "Utkast skapat",
           "submitted": "Inskickat",
-          "approved": "Godkänd",
-          "rejected": "Avvisad",
-          "cancelled": "Avbruten",
+          "approved": "Godkänt",
+          "rejected": "Avvisat",
+          "cancelled": "Avbrutet",
           "sendStarted": "Sändning startad",
-          "sent": "Skickad",
+          "sent": "Skickat",
           "failedToDispatch": "Sändning misslyckades",
           "actorBy": "av {actor}",
           "actorSystem": "system",
@@ -3727,7 +3727,7 @@
         "selfExclusionNoticeIncluded": "{company}:s egna adresser på den här listan TAR EMOT utskicket – den anpassade listan och deltagarsegmentet undantar inte avsändaren.",
         "memberNotFoundError": "Medlemmen finns inte längre. Välj en annan medlem.",
         "quotaBlockedError": "{company} har använt alla sina utskick för den här perioden.",
-        "notInPlanError": "{company}:s paket inkluderar inte utskick.",
+        "notInPlanError": "Utskick ingår inte i {company}:s paket.",
         "submitErrorToast": "Det gick inte att skicka utskicket. Försök igen.",
         "memberRequiredHint": "Välj vilken medlem utskicket gäller innan du skickar för granskning.",
         "subjectEmptyError": "Ämne krävs.",
@@ -6451,7 +6451,7 @@
         },
         "errors": {
           "broadcast_quota_blocked": "Du har använt hela din utskickskvot för i år.",
-          "broadcast_not_in_plan": "Ditt medlemspaket inkluderar inte förmånen utskick.",
+          "broadcast_not_in_plan": "Utskick ingår inte i ditt medlemspaket.",
           "broadcast_subject_too_long": "Ämnet får vara högst 200 tecken.",
           "broadcast_subject_empty": "Ämne krävs.",
           "broadcast_body_too_large": "Meddelandet överskrider gränsen på 200 KB.",
@@ -6525,7 +6525,7 @@
       "banner": {
         "acknowledgement": {
           "title": "Samtycke till marknadskommunikation",
-          "body": "Att skicka in ett utskick bekräftar att mottagarna har samtyckt till att ta emot din kammares kommunikation. Du kan återkalla samtycke per mottagare när som helst.",
+          "body": "Att skicka in ett utskick bekräftar att mottagarna har samtyckt till att ta emot din handelskammares kommunikation. Du kan återkalla samtycke per mottagare när som helst.",
           "privacyPolicyLink": "Läs sekretesspolicyn",
           "acknowledge": "Jag bekräftar",
           "remindLater": "Påminn mig senare",
@@ -7151,7 +7151,7 @@
       "page": {
         "title": "Förnyelse online",
         "subtitle": "Granska ditt medlemskap och bekräfta för att få en faktura.",
-        "membershipPlanHeading": "Medlemskapspaket"
+        "membershipPlanHeading": "Medlemspaket"
       },
       "notYetOpenTitle": "Förnyelsefönstret är inte öppet ännu",
       "notYetOpenBody": "Din förnyelse förfaller inte ännu. Vi mejlar dig när det är dags att förnya — det finns inget att göra här just nu.",
@@ -7782,11 +7782,11 @@
       },
       "stage": {
         "awaitingMarketingReview": "Väntar på granskning av marknadsföring",
-        "memberApproved": "Godkänd av medlem — inväntar schemaläggning",
+        "memberApproved": "Godkänt av medlem — inväntar schemaläggning",
         "changesRequested": "Medlemmen begär ändringar",
-        "withdrawn": "Avbruten",
+        "withdrawn": "Avbrutet",
         "awaitingMemberApproval": "Inväntar medlemmens godkännande",
-        "expired": "Utgången — inget svar från medlem"
+        "expired": "Utgånget — inget svar från medlem"
       },
       "submittedMarketing": {
         "subject": "Nytt utskick att granska: {subject}",
