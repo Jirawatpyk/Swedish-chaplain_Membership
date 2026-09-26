@@ -34,6 +34,7 @@ const unsubscribePageTtfbMsMock = vi.fn();
 // `.env.example`) — the page must never render it. Recipients are pointed
 // at the monitored privacy inbox instead.
 const envMock = {
+  tenant: { slug: 'test-tenant' },
   broadcasts: {
     fromEmail: 'Chamber <broadcasts@swecham.example>',
     privacyContactEmail: 'privacy@swecham.example',
@@ -595,7 +596,9 @@ describe('GET /unsubscribe/[token] (T136 contract)', () => {
     expect(tree).toContain('rateLimited.body');
     expect(tree).not.toContain('invalid.heading');
     expect(tree).not.toContain('success.heading');
-    expect(tree).not.toContain('Test Chamber');
+    // Decided before the token is even parsed.
+    expect(peekTokenTenantIdMock).not.toHaveBeenCalled();
+    expect(verifyMock).not.toHaveBeenCalled();
   });
 
   it('error state offers a "Try again" link to the same URL', async () => {

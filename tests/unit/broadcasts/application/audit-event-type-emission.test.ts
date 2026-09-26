@@ -28,6 +28,9 @@ const ROOTS_TO_GREP = [
   'src/app/api/cron/broadcasts',
   'src/app/api/webhooks/resend-broadcasts',
   'src/app/unsubscribe',
+  // Public-unsubscribe pipeline shared by the page and the one-click POST
+  // (emits broadcast_unsubscribe_token_invalid).
+  'src/lib/broadcasts-public-unsubscribe.ts',
   // F3 boundary that emits broadcast_cancelled (cascade adapter):
   'src/modules/members/infrastructure/adapters',
 ];
@@ -87,6 +90,10 @@ function listTsFiles(root: string): string[] {
     const dir = stack.pop()!;
     let entries: string[];
     try {
+      if (statSync(dir).isFile()) {
+        out.push(dir);
+        continue;
+      }
       entries = readdirSync(dir);
     } catch {
       // Root may not exist on a partial checkout — skip silently.

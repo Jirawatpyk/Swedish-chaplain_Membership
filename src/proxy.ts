@@ -34,6 +34,22 @@ export const NONCE_HEADER = 'x-nonce';
 export const TENANT_SLUG_HEADER = 'x-tenant-slug';
 
 /**
+ * RFC 8058 one-click unsubscribe: a mail client POSTs to the SAME URL as the
+ * `List-Unsubscribe` header — `/unsubscribe/<token>`, which is a page. Next.js
+ * cannot host a page and a route handler in one segment, so that POST is
+ * rewritten to `/api/unsubscribe/<token>`. GET keeps rendering the page.
+ * Returns the rewrite target, or null when the request is not a one-click POST.
+ */
+export function oneClickUnsubscribeRewriteTarget(
+  method: string,
+  pathname: string,
+): string | null {
+  if (method.toUpperCase() !== 'POST') return null;
+  const m = /^\/unsubscribe\/([^/]+)$/.exec(pathname);
+  return m ? `/api/unsubscribe/${m[1]}` : null;
+}
+
+/**
  * True when `pathname` is an F7 (E-Blast) surface that the
  * `FEATURE_F7_BROADCASTS` kill-switch must cover. Extracted as a pure,
  * exported predicate so the exact path set is unit-testable (bug #15) — a
@@ -61,6 +77,8 @@ export function matchesF7KillSwitchPath(pathname: string): boolean {
       pathname,
     ) ||
     /^\/unsubscribe(?:\/|$)/.test(pathname) ||
+    // RFC 8058 one-click POST target (rewritten from /unsubscribe/<token>).
+    /^\/api\/unsubscribe(?:\/|$)/.test(pathname) ||
     /^\/portal\/broadcasts(?:\/|$)/.test(pathname) ||
     /^\/admin\/broadcasts(?:\/|$)/.test(pathname) ||
     /^\/portal\/benefits\/e-blasts(?:\/|$)/.test(pathname)
@@ -522,11 +540,20 @@ export function proxy(request: NextRequest): NextResponse {
     );
   }
 
-  const response = NextResponse.next({
-    request: {
-      headers: forwardedHeaders,
-    },
-  });
+  // RFC 8058 one-click unsubscribe. Runs AFTER the F7 kill switch, the
+  // read-only freeze and the CSRF check — all of which already saw the
+  // public `/unsubscribe/<token>` path (not under /api, so no Origin is
+  // required; mail providers send none).
+  const oneClickTarget = oneClickUnsubscribeRewriteTarget(method, nextUrl.pathname);
+  const response = oneClickTarget
+    ? NextResponse.rewrite(new URL(oneClickTarget, request.url), {
+        request: { headers: forwardedHeaders },
+      })
+    : NextResponse.next({
+        request: {
+          headers: forwardedHeaders,
+        },
+      });
   response.headers.set(REQUEST_ID_HEADER, requestId);
   return applySecurityHeaders(response, nonce);
 }

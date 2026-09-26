@@ -7860,26 +7860,33 @@
       "metaTitle": "Avregistrering",
       "fallbackChamberName": "kammaren",
       "chamberWebsiteLink": "Besök kammarens webbplats",
+      "opensInNewTab": "(öppnas i en ny flik)",
+      "privacyLine": "Så använder {tenantDisplayName} dina uppgifter: <link>Integritetsmeddelande</link>",
       "success": {
         "heading": "Avregistrerad",
-        "body": "Du har avregistrerats från {tenantDisplayName} marknadsutskick. Du kommer inte längre att få marknadsutskick.",
-        "transactional": "Du fortsätter att ta emot transaktionsmejl (lösenordsåterställning, fakturakvitton, förnyelsepåminnelser) kopplade till ditt konto, om sådana finns.",
+        "body": "{tenantDisplayName} kommer inte längre att skicka E-Blasts med marknadsföring till den här e-postadressen. Det gäller alla E-Blasts från {tenantDisplayName}, även de som skickas för andra medlemmars räkning.",
+        "transactional": "Du får fortfarande servicemejl om din organisations medlemskap, till exempel fakturor, kvitton, förnyelsepåminnelser och lösenordsåterställningar.",
         "contact": "Om du avregistrerade av misstag, kontakta <email></email>."
       },
       "already": {
         "heading": "Redan avregistrerad",
-        "body": "Din e-postadress finns redan på spärrlistan för {tenantDisplayName}. Ingen ytterligare åtgärd krävs.",
-        "contact": "Om du vill börja ta emot utskick igen, kontakta <email></email>."
+        "body": "Den här adressen är redan avregistrerad från E-Blasts från {tenantDisplayName}. Ingen ytterligare åtgärd behövs.",
+        "contact": "Om du vill få E-Blasts igen, kontakta <email></email>."
       },
       "invalid": {
         "heading": "Länken är ogiltig",
-        "body": "Denna avregistreringslänk är ogiltig eller har gått ut. Det kan bero på att länken kopierats felaktigt, eller på att du klickar på ett äldre mejl.",
-        "contact": "Kontakta <email></email> så tar vi bort din e-post manuellt."
+        "body": "Denna avregistreringslänk är ogiltig. Det kan bero på att länken kopierats felaktigt, eller på att du klickar i ett äldre mejl.",
+        "contact": "Mejla oss på <email></email> så tar vi bort adressen från alla E-Blasts från {tenantDisplayName} inom 2 arbetsdagar. Det är kostnadsfritt."
       },
       "error": {
         "heading": "Tillfälligt fel",
         "body": "Vi kunde inte registrera din avregistrering just nu på grund av ett tillfälligt systemfel. Din avregistrering har INTE registrerats — försök länken igen om några minuter.",
-        "contact": "Om problemet kvarstår, kontakta <email></email> så tar vi bort din e-post manuellt."
+        "contact": "Om problemet kvarstår, mejla oss på <email></email> så tar vi bort adressen från alla E-Blasts från {tenantDisplayName} inom 2 arbetsdagar. Det är kostnadsfritt.",
+        "tryAgain": "Försök igen"
+      },
+      "rateLimited": {
+        "heading": "Försök igen om en stund",
+        "body": "För många förfrågningar från ditt nätverk. Försök med länken igen om några minuter."
       }
     }
   },

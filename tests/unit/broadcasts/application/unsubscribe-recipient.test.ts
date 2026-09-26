@@ -387,6 +387,7 @@ describe('unsubscribe-recipient — 108 PR-C contact attribution (T078)', () => 
     broadcastId,
     emailLower: recipient,
     tokenPlaintext: 'v1.fake.fakemac',
+    channel: 'page_get' as const,
     requestId: 'req-108',
     reasonText: null,
   };
