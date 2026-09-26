@@ -2232,7 +2232,7 @@ no attribute).
 ### 27.3 Alerting thresholds
 
 Both age thresholds are bound to the one-month data-subject-request clock (GDPR Art. 12(3) /
-PDPA § 30, FR-037): the operational alarm doubles as the statutory backstop, so a proposal is
+PDPA § 36 — which sets no deadline, so § 30's 30 days apply by analogy; FR-037): the operational alarm doubles as the statutory backstop, so a proposal is
 decided well before the month a data subject may hold the chamber to.
 
 | Severity | Metric | Threshold | Action |
