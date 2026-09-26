@@ -266,7 +266,11 @@ describe('PR #392 review C1 — a decision refused by the read-only proxy', () =
       'Request changes',
       async () => {
         const { dialog, reason } = await openRequestChanges();
-        await openFocusSettled(dialog);
+        // The reason dialog then moves focus to its textarea itself (chained
+        // double-rAF in ReasonConfirmationDialog); that is the settled state —
+        // "somewhere inside the dialog" was not enough under the slower
+        // coverage run, where the rAF landed after the refusal's focus.
+        await waitFor(() => expect(reason).toHaveFocus());
         fireEvent.change(reason, { target: { value: 'The date is wrong.' } });
         fireEvent.click(within(dialog).getByRole('button', { name: t.requestChanges.confirm }));
         return dialog;
