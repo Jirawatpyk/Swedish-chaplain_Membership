@@ -5,6 +5,8 @@ import { NextIntlClientProvider } from 'next-intl';
 import { getLocale, getMessages, getNow, getTimeZone } from 'next-intl/server';
 import { ThemeProvider } from 'next-themes';
 import { Toaster } from '@/components/ui/sonner';
+import { AuraBridge } from '@/components/providers/aura-bridge';
+import { defaultLocale, isLocale } from '@/i18n/config';
 import { SkipToContent } from '@/components/shell/skip-to-content';
 import './globals.css';
 
@@ -15,6 +17,7 @@ import './globals.css';
  *   - Geist sans + mono fonts (next/font CSS variables)
  *   - next-intl provider (per-request locale + messages)
  *   - next-themes ThemeProvider (light / dark / system, no SSR flash)
+ *   - AuraBridge — AURA's locale, calendar, time zone and router link (spec 122)
  *   - SkipToContent — first focusable element for keyboard users
  *   - Sonner Toaster — single global toast root
  */
@@ -116,11 +119,15 @@ export default async function RootLayout({
             disableTransitionOnChange
             {...(nonce !== undefined && { nonce })}
           >
-            <SkipToContent />
-            <div className="min-h-full">
-              {children}
-            </div>
-            <Toaster position="top-right" richColors />
+            {/* The same time zone next-intl formats with, so an AURA picker's
+                "today" and a formatted date never disagree. */}
+            <AuraBridge locale={isLocale(locale) ? locale : defaultLocale} timeZone={timeZone}>
+              <SkipToContent />
+              <div className="min-h-full">
+                {children}
+              </div>
+              <Toaster position="top-right" richColors />
+            </AuraBridge>
           </ThemeProvider>
         </NextIntlClientProvider>
       </body>

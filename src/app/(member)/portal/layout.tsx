@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import type { Viewport } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { AuraProvider } from '@jirawatpyk/aura-react';
 import { getTranslations } from 'next-intl/server';
 import { IdleWarningDialog } from '@/components/auth/idle-warning-dialog';
 import { MemberNav } from '@/components/layout/member-nav';
@@ -64,94 +65,99 @@ export default async function MemberLayout({ children }: { children: ReactNode }
   const tPortal = await getTranslations('shell.portalLabel');
 
   return (
-    <div className="flex min-h-screen flex-col">
-      {/* 063 UX — navy brand chrome matching the admin sidebar's Swedish-flag
-          field. `bg-sidebar` (navy #10487A) + `text-sidebar-foreground` (white
-          9:1) cascades white to every currentColor child (BrandMark, ghost
-          control buttons, tenant wordmark); the 4px `--sidebar-flag` (#FECC02)
-          bottom edge is the flag stripe (decorative — no text sits on it, so
-          flag yellow never enters a contrast pairing). MemberNav carries its
-          own sidebar-token variants for the same reason.
-          `[--ring:var(--sidebar-ring)]` locally re-points the focus-ring token
-          to the gold sidebar ring: the default `--ring` is navy (identical to
-          `--sidebar`), so the shared ghost control buttons (ThemeToggle /
-          LocaleSwitcher / UserMenu) would otherwise draw a navy-on-navy —
-          invisible — focus indicator here (WCAG 2.4.7 / 1.4.11). Scoped to the
-          header so the rest of the portal keeps its normal ring. */}
-      <header className="flex h-[var(--top-bar-height)] items-center border-b-4 border-b-[color:var(--sidebar-flag)] bg-sidebar text-sidebar-foreground [--ring:var(--sidebar-ring)] px-[var(--page-padding-x)] gap-2">
-        {/*
-         * Mobile-first header layout (WCAG 2.1 1.4.4 reflow fix).
-         *
-         * Grid: left column takes whatever space is available after
-         * the fixed-width right column. `min-w-0` on the left cell AND
-         * on the brand Link lets the wordmark shrink/truncate so long
-         * tenant names never force horizontal scroll at 320 px while
-         * still showing IN FULL whenever there is room.
-         *
-         * The right column (LocaleSwitcher + ThemeToggle + UserMenu) is
-         * always-visible at every width — 063 made ThemeToggle the sole
-         * theme control (removed from the UserMenu dropdown), so it can
-         * no longer be hidden on mobile the way it used to be.
-         */}
-        <div className="mx-auto grid w-full max-w-[var(--layout-max-width-detail)] grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
-          <div className="flex min-w-0 items-center gap-2 sm:gap-4">
-            <Link
-              href="/portal"
-              className="flex min-w-0 items-center gap-2"
-            >
-              {/* Brand: TSCC crown mark + tenant wordmark. The mark is
-                  decorative — the adjacent text names the portal. The Link is
-                  `min-w-0` (shrinkable) + the wordmark `truncate`s, so the name
-                  shows in FULL whenever there is room and only ellipsises on
-                  the narrowest phones — no fixed `max-w` cap that clipped it
-                  prematurely (063 fix). */}
-              <BrandMark variant="mark" className="size-6 shrink-0" />
-              <span className="text-body font-semibold tracking-tight truncate">
-                {process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham'} · {tPortal('member')}
-              </span>
-            </Link>
-            <MemberNav />
+    // Spec 122 — member screens use comfortable density (larger touch
+    // targets). Locale, calendar, time zone and link come from the root
+    // AuraBridge.
+    <AuraProvider density="comfortable">
+      <div className="flex min-h-screen flex-col">
+        {/* 063 UX — navy brand chrome matching the admin sidebar's Swedish-flag
+            field. `bg-sidebar` (navy #10487A) + `text-sidebar-foreground` (white
+            9:1) cascades white to every currentColor child (BrandMark, ghost
+            control buttons, tenant wordmark); the 4px `--sidebar-flag` (#FECC02)
+            bottom edge is the flag stripe (decorative — no text sits on it, so
+            flag yellow never enters a contrast pairing). MemberNav carries its
+            own sidebar-token variants for the same reason.
+            `[--ring:var(--sidebar-ring)]` locally re-points the focus-ring token
+            to the gold sidebar ring: the default `--ring` is navy (identical to
+            `--sidebar`), so the shared ghost control buttons (ThemeToggle /
+            LocaleSwitcher / UserMenu) would otherwise draw a navy-on-navy —
+            invisible — focus indicator here (WCAG 2.4.7 / 1.4.11). Scoped to the
+            header so the rest of the portal keeps its normal ring. */}
+        <header className="flex h-[var(--top-bar-height)] items-center border-b-4 border-b-[color:var(--sidebar-flag)] bg-sidebar text-sidebar-foreground [--ring:var(--sidebar-ring)] px-[var(--page-padding-x)] gap-2">
+          {/*
+           * Mobile-first header layout (WCAG 2.1 1.4.4 reflow fix).
+           *
+           * Grid: left column takes whatever space is available after
+           * the fixed-width right column. `min-w-0` on the left cell AND
+           * on the brand Link lets the wordmark shrink/truncate so long
+           * tenant names never force horizontal scroll at 320 px while
+           * still showing IN FULL whenever there is room.
+           *
+           * The right column (LocaleSwitcher + ThemeToggle + UserMenu) is
+           * always-visible at every width — 063 made ThemeToggle the sole
+           * theme control (removed from the UserMenu dropdown), so it can
+           * no longer be hidden on mobile the way it used to be.
+           */}
+          <div className="mx-auto grid w-full max-w-[var(--layout-max-width-detail)] grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+            <div className="flex min-w-0 items-center gap-2 sm:gap-4">
+              <Link
+                href="/portal"
+                className="flex min-w-0 items-center gap-2"
+              >
+                {/* Brand: TSCC crown mark + tenant wordmark. The mark is
+                    decorative — the adjacent text names the portal. The Link is
+                    `min-w-0` (shrinkable) + the wordmark `truncate`s, so the name
+                    shows in FULL whenever there is room and only ellipsises on
+                    the narrowest phones — no fixed `max-w` cap that clipped it
+                    prematurely (063 fix). */}
+                <BrandMark variant="mark" className="size-6 shrink-0" />
+                <span className="text-body font-semibold tracking-tight truncate">
+                  {process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham'} · {tPortal('member')}
+                </span>
+              </Link>
+              <MemberNav />
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              {/* LocaleSwitcher + ThemeToggle are BOTH always-visible at every
+                  width. 063 removed the Light/Dark/System items from the
+                  UserMenu dropdown (they duplicated this toggle), so this toggle
+                  is now the ONLY theme control — hiding it on mobile (the old
+                  `hidden sm:contents`) would leave a member with NO way to
+                  switch theme. */}
+              <LocaleSwitcher persistToAccount />
+              <ThemeToggle />
+              <UserMenu
+                displayName={user.displayName}
+                email={user.email}
+                role={user.role}
+              />
+            </div>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            {/* LocaleSwitcher + ThemeToggle are BOTH always-visible at every
-                width. 063 removed the Light/Dark/System items from the
-                UserMenu dropdown (they duplicated this toggle), so this toggle
-                is now the ONLY theme control — hiding it on mobile (the old
-                `hidden sm:contents`) would leave a member with NO way to
-                switch theme. */}
-            <LocaleSwitcher persistToAccount />
-            <ThemeToggle />
-            <UserMenu
-              displayName={user.displayName}
-              email={user.email}
-              role={user.role}
-            />
-          </div>
-        </div>
-      </header>
-      {/* F7 Q15 — GDPR Art. 7 demonstrable consent banner.
-          Server component returns null when ineligible (member already
-          acknowledged, plan has no eblast quota, or feature flag off).
-          U36 — mounted BETWEEN the header and <main>, not inside it, so
-          "Skip to main content" bypasses its three controls (SC 2.4.1). It is
-          its own named `role="region"` landmark, and its wrapper carries the
-          same max-width + page padding it had inside <main> (which has no top
-          padding of its own), so the layout does not move. */}
-      <MarketingAcknowledgementBanner />
-      <main
-        className="flex-1 pb-[calc(var(--bottom-tab-height)+env(safe-area-inset-bottom))] lg:pb-0"
-        id="main-content"
-        tabIndex={-1}
-      >
-        {children}
-      </main>
-      {/* 057 — mobile bottom tab bar (hidden ≥ lg). Fixed; <main> reserves
-          equivalent padding-bottom above so it never obscures content. */}
-      <MemberBottomTabs />
-      {/* T165 — Idle warning modal fires at 29 min of inactivity. */}
-      <IdleWarningDialog portal="member" />
-      {/* T086 — ⌘K member command palette (Pay-invoice shortcut). */}
-      <MemberCommandPaletteRoot />
-    </div>
+        </header>
+        {/* F7 Q15 — GDPR Art. 7 demonstrable consent banner.
+            Server component returns null when ineligible (member already
+            acknowledged, plan has no eblast quota, or feature flag off).
+            U36 — mounted BETWEEN the header and <main>, not inside it, so
+            "Skip to main content" bypasses its three controls (SC 2.4.1). It is
+            its own named `role="region"` landmark, and its wrapper carries the
+            same max-width + page padding it had inside <main> (which has no top
+            padding of its own), so the layout does not move. */}
+        <MarketingAcknowledgementBanner />
+        <main
+          className="flex-1 pb-[calc(var(--bottom-tab-height)+env(safe-area-inset-bottom))] lg:pb-0"
+          id="main-content"
+          tabIndex={-1}
+        >
+          {children}
+        </main>
+        {/* 057 — mobile bottom tab bar (hidden ≥ lg). Fixed; <main> reserves
+            equivalent padding-bottom above so it never obscures content. */}
+        <MemberBottomTabs />
+        {/* T165 — Idle warning modal fires at 29 min of inactivity. */}
+        <IdleWarningDialog portal="member" />
+        {/* T086 — ⌘K member command palette (Pay-invoice shortcut). */}
+        <MemberCommandPaletteRoot />
+      </div>
+    </AuraProvider>
   );
 }
