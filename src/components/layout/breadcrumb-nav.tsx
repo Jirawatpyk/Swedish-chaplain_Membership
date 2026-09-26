@@ -54,10 +54,10 @@ export function BreadcrumbNav({ placement = 'page' }: { readonly placement?: 'ba
 
   const mobile = truncateForMobile(segments);
 
-  // Spec 122 US1 — AURA's breadcrumb (its `aura-crumbs` look), drawn here
-  // because AURA's component turns an item without a link into a button, and
-  // the organisational segments below are plain text (AURA handoff #58).
-  // The data-slots stay: the e2e breadcrumb spec selects on them.
+  // Spec 122 US1 — AURA's breadcrumb markup (`aura-crumbs`), drawn here
+  // rather than with AURA `Breadcrumb` for the phone trail (parent + current
+  // behind a leading ellipsis) and the data-slots the e2e breadcrumb spec
+  // selects on.
   return (
     <nav
       aria-label={tLayout('breadcrumbAriaLabel')}
@@ -106,7 +106,7 @@ function Crumb({ segment, isLast }: { segment: BreadcrumbSegment; isLast: boolea
       ) : (
         // An organisational segment (NON_ROUTE_BY_PARENT): its href was
         // rewritten to the parent's, so a link would duplicate that one.
-        <span>{segment.label}</span>
+        <span className="aura-crumbs__text">{segment.label}</span>
       )}
       {isLast ? null : <ChevronRightIcon className="aura-crumbs__sep size-3" aria-hidden />}
     </li>

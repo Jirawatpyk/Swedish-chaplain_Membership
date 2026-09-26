@@ -168,6 +168,15 @@ describe('ConfirmationDialog', () => {
     expect(onConfirm).not.toHaveBeenCalled();
   });
 
+  it('stays open on a stray click outside it; Escape still cancels (AURA 5.7 alertdialog)', () => {
+    const { onOpenChange } = renderDialog();
+    fireEvent.click(document.querySelector('.aura-scrim')!);
+    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole('alertdialog'), { key: 'Escape' });
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
   it('dismissible={false}: only its buttons close it — no Escape, no close button (a one-time view)', () => {
     const { onOpenChange } = renderDialog({ dismissible: false });
     expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['Cancel', 'Revoke invitation']);

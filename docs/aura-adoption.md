@@ -83,17 +83,22 @@ Phases 2–12 each depend on 1 and can land in any order.
 
 ## AURA gaps (the handoff doc)
 
-The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, and items 52–56 (Addendum 4) in **5.6.0**, the current pin. US1 found seven more (bridged locally where a bridge is safe):
+The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, items 52–56 (Addendum 4) in 5.6.0, and items 57–62 (Addendum 5, found in US1) in **5.7.0**, the current pin. One is open:
 
 | # | Gap | Local bridge (removed when AURA ships it) |
 |---|---|---|
-| 57 | `DropdownMenu` has no header slot for "who is signed in" | `UserMenu` lists name (with role) and email as inert items |
-| 58 | `Breadcrumb` turns an item without `href` into a button | `BreadcrumbNav` draws AURA's `aura-crumbs` markup itself, with organisational segments as text |
-| 59 | `AppShell`'s `<main>` takes no `tabIndex` | `StaffShell` sets `tabindex="-1"` on `#main-content` after mount, so focus fallbacks still land |
-| 60 | `Dialog` closes on a scrim click whenever it closes on Escape | `ConfirmationDialog dismissible={false}` for one-time views (the rotated webhook secret: only its buttons close it). Elsewhere a known gap: a stray click can close a confirmation that holds typed input |
-| 61 | `BottomNav` items take no accessible name apart from the visible label | Known gap: phone tabs read the short label (TH "สิทธิ์", SV "Konto") |
-| 62 | `SideNav` rows are 36px on touch screens | `.staff-nav .aura-nav__item { min-height: 44px }` under `pointer: coarse` |
 | 63 | `SideNav` labels are one line, cut with an ellipsis | Known gap: long TH/SV labels ("Godkännande av medlemsändringar") are cut in the nav and drawer; the accessible name stays complete |
+
+How Chamber-OS uses the 5.7.0 items (US1 dropped its bridge for each):
+
+| # | Shipped in 5.7.0 | Used by |
+|---|---|---|
+| 57 | `DropdownMenu` `header` (outside the items, the menu's description) | `UserMenu`: name, role and email |
+| 58 | `Breadcrumb` item without `href` / `onClick` renders as text (`.aura-crumbs__text`) | `BreadcrumbNav` keeps its own `aura-crumbs` markup (phone ellipsis trail, e2e data-slots) and uses the class for organisational segments |
+| 59 | `AppShell` `<main tabIndex={-1}>` | `StaffShell`: focus fallbacks to `#main-content` land with no local effect |
+| 60 | `Dialog` `dismissOnScrim`, default off for `role="alertdialog"` | `ConfirmationDialog`: a stray click outside keeps the typed reason; Escape and Cancel still close it. `dismissible={false}` still makes the rotated webhook secret close only from its buttons |
+| 61 | `BottomNav` item `ariaLabel` | `MemberBottomTabs`: the full name where it contains the short label (SV "Konto" → "Mitt konto", TH "บัญชี" → "บัญชีของฉัน"); otherwise the short label, so the name always holds the visible text |
+| 62 | `SideNav` rows 44px on coarse pointers | AURA's own CSS; the local rule is gone |
 
 How Chamber-OS uses the 5.6.0 items:
 
@@ -108,6 +113,6 @@ How Chamber-OS uses the 5.6.0 items:
 AURA also returns focus when a toast that held it closes, so the facade no longer does.
 
 When AURA ships an item:
-1. Bump the pin in a dedicated PR.
+1. Bump the pin in a dedicated PR, or in the open phase PR that added the bridges it removes (5.7.0 rode in US1 for that reason).
 2. Delete the `// AURA-handoff #NN` wrapper.
 3. Update this table.

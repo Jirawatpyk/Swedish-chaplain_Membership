@@ -5,9 +5,9 @@
  *
  * Always-visible header element on every authenticated page. Spec 122 draws
  * it as the `topbar()` boards do — avatar + name (name hidden below 1024px) +
- * chevron — opening an AURA `DropdownMenu`: who is signed in (name, email and
- * role, as inert items: AURA's menu has no header slot yet — AURA handoff
- * #57), then the account links and sign-out.
+ * chevron — opening an AURA `DropdownMenu`: who is signed in (name, role and
+ * email in the menu's `header`, outside the items and read as the menu's
+ * description), then the account links and sign-out.
  * Sign-out is a client-side `fetch('/api/auth/sign-out', { method: 'POST' })`
  * (this is a `'use client'` component); on success it routes to the
  * role-appropriate sign-in page via `router.push` + `router.refresh`, and on
@@ -74,11 +74,14 @@ export function UserMenu({ displayName, email, role, themeChoicesOnPhone = false
   };
 
   const name = displayName?.trim() || email;
-  const identity: MenuItem[] = [
-    { label: name, hint: tBadge(role), disabled: true },
-    ...(name === email ? [] : [{ label: email, disabled: true }]),
-    { separator: true },
-  ];
+  const header = (
+    <>
+      <p>
+        <strong>{name}</strong> · {tBadge(role)}
+      </p>
+      {name === email ? null : <p>{email}</p>}
+    </>
+  );
   const links: MenuItem[] = isMember
     ? [
         { label: t('account'), icon: <UserIcon aria-hidden />, href: '/portal/account' },
@@ -122,8 +125,8 @@ export function UserMenu({ displayName, email, role, themeChoicesOnPhone = false
           <ChevronDownIcon className="size-4 max-sm:hidden" aria-hidden />
         </button>
       }
+      header={header}
       items={[
-        ...identity,
         ...links,
         ...themeChoices,
         { separator: true },

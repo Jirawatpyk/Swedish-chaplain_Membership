@@ -705,11 +705,10 @@ export const memberNavConfig: NavConfig = {
 /**
  * Mobile bottom tab bar (< lg). Five tabs = the four desktop destinations +
  * Account (which is the avatar dropdown on desktop). `shortTitleKey` supplies
- * a compact label so TH strings don't overflow a 320px tab. Since spec 122
- * the bar is AURA `BottomNav`, whose visible label is also the accessible
- * name, so the SHORT label is what is read ("สิทธิ์", "Konto") — the full
- * `titleKey` name (review SG-5) returns when AURA takes a per-item name
- * (AURA handoff #61).
+ * a compact label so TH strings don't overflow a 320px tab. The bar reads
+ * the full `titleKey` name (review SG-5) where it contains the short label
+ * ("Konto" → "Mitt konto"), and the short label otherwise ("สิทธิ์"), so the
+ * name always includes the visible text (WCAG 2.5.3).
  */
 export const memberBottomTabItems: readonly NavItem[] = [
   {

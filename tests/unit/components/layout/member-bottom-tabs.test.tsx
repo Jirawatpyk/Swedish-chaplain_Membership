@@ -9,6 +9,8 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
+import svMessages from '@/i18n/messages/sv.json';
+import thMessages from '@/i18n/messages/th.json';
 import { MemberBottomTabs } from '@/components/layout/member-bottom-tabs';
 
 const mockPathname = vi.fn<() => string>(() => '/portal');
@@ -16,9 +18,10 @@ vi.mock('next/navigation', () => ({
   usePathname: () => mockPathname(),
 }));
 
-function renderTabs() {
+function renderTabs(locale: 'en' | 'sv' | 'th' = 'en') {
+  const messages = { en: enMessages, sv: svMessages, th: thMessages }[locale];
   return render(
-    <NextIntlClientProvider locale="en" messages={enMessages}>
+    <NextIntlClientProvider locale={locale} messages={messages}>
       <MemberBottomTabs />
     </NextIntlClientProvider>,
   );
@@ -41,6 +44,19 @@ describe('<MemberBottomTabs> (057 mobile tab bar)', () => {
     expect(screen.getByRole('link', { name: 'Invoices' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Benefits' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Account' })).toBeInTheDocument();
+  });
+
+  it('names a shortened tab in full when the full name contains the short one (WCAG 2.5.3)', () => {
+    mockPathname.mockReturnValue('/portal');
+    const { unmount } = renderTabs('sv');
+    // "Konto" is shown; "Mitt konto" is read. "Översikt" is not part of
+    // "Instrumentpanel", so that tab keeps its visible text as its name.
+    expect(screen.getByRole('link', { name: 'Mitt konto' })).toHaveTextContent('Konto');
+    expect(screen.getByRole('link', { name: 'Översikt' })).toBeInTheDocument();
+    unmount();
+    renderTabs('th');
+    expect(screen.getByRole('link', { name: 'บัญชีของฉัน' })).toHaveTextContent('บัญชี');
+    expect(screen.getByRole('link', { name: 'สิทธิ์' })).toBeInTheDocument();
   });
 
   it('shows the compact short label text for overflow-prone tabs', () => {

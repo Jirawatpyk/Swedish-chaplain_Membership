@@ -1,6 +1,6 @@
 'use client';
 
-import { useLayoutEffect, useRef, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { useTranslations } from 'next-intl';
 import { AppShell } from '@jirawatpyk/aura-react';
 
@@ -17,7 +17,9 @@ import { StaffTopBar, type StaffTopBarProps } from '@/components/layout/staff-to
  * icon functions that cannot cross the RSC boundary.
  *
  * `<main id="main-content">` is AppShell's own, so the root skip link still
- * lands on the page content.
+ * lands on the page content. It takes focus (`tabIndex={-1}`, AURA 5.7): the
+ * page code focuses it when the row it acted on leaves the list (the user
+ * list, the change-request banner, the E-Blast bulk bar…).
  */
 export interface StaffShellProps {
   readonly nav: Omit<StaffNavProps, 'onChange' | 'className' | 'collapsed' | 'collapsible'>;
@@ -28,21 +30,10 @@ export interface StaffShellProps {
 
 export function StaffShell({ nav, user, topBarExtras, children }: StaffShellProps) {
   const t = useTranslations('nav.staff');
-  const shellRef = useRef<HTMLDivElement>(null);
-
-  // AppShell's <main> takes no tabIndex (AURA handoff #59), and the page
-  // code focuses #main-content when the row it acted on leaves the list
-  // (the user list, the change-request banner, the E-Blast bulk bar…).
-  // `.focus()` is a no-op on a plain <main>, so give it the -1 the legacy
-  // layout had.
-  useLayoutEffect(() => {
-    shellRef.current?.querySelector('main#main-content')?.setAttribute('tabindex', '-1');
-  }, []);
 
   return (
     <BreadcrumbProvider>
       <AppShell
-        ref={shellRef}
         className="chamber-shell"
         mainId="main-content"
         navLabel={t('ariaLabel')}

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { BottomNav } from '@jirawatpyk/aura-react';
 
 import { findActivePattern, memberBottomTabItems } from '@/config/nav';
@@ -17,14 +17,16 @@ import { findActivePattern, memberBottomTabItems } from '@/config/nav';
  * (FR-011: the same entries). AURA gives each tab an icon + visible label,
  * `aria-current="page"`, a 44px target, the home-indicator inset, and a spacer
  * so the page never sits under the bar. The label is the compact
- * `shortTitleKey` where one exists (TH strings in a 320px tab) and is also the
- * accessible name.
+ * `shortTitleKey` where one exists (TH strings in a 320px tab); the full
+ * `titleKey` name is read instead when it contains the short one ("Konto" →
+ * "Mitt konto"), so what is heard still includes what is seen (WCAG 2.5.3).
  */
 export function MemberBottomTabs({ currentPath }: { readonly currentPath?: string } = {}) {
   // `currentPath` is for the preview harness; pages use the router's pathname.
   const routerPath = usePathname();
   const pathname = currentPath ?? routerPath;
   const t = useTranslations();
+  const locale = useLocale();
   const active = findActivePattern(
     pathname,
     memberBottomTabItems.map((item) => item.activePattern),
@@ -35,12 +37,19 @@ export function MemberBottomTabs({ currentPath }: { readonly currentPath?: strin
       label={t('nav.member.bottomTabsAriaLabel')}
       linkComponent={Link}
       value={memberBottomTabItems.find((item) => item.activePattern === active)?.href}
-      items={memberBottomTabItems.map((item) => ({
-        id: item.href,
-        label: t(item.shortTitleKey ?? item.titleKey),
-        icon: <item.icon aria-hidden />,
-        href: item.href,
-      }))}
+      items={memberBottomTabItems.map((item) => {
+        const label = t(item.shortTitleKey ?? item.titleKey);
+        const full = t(item.titleKey);
+        const namesMore =
+          full !== label && full.toLocaleLowerCase(locale).includes(label.toLocaleLowerCase(locale));
+        return {
+          id: item.href,
+          label,
+          ...(namesMore ? { ariaLabel: full } : {}),
+          icon: <item.icon aria-hidden />,
+          href: item.href,
+        };
+      })}
     />
   );
 }
