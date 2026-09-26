@@ -2,7 +2,7 @@
  * POST `/api/admin/events/erasure`
  *
  * F6 remediation PR 2.2 / P4 — by-email cross-event attendee PII erasure
- * (FR-032a / GDPR Article 17 / PDPA Section 30). Fans a data-subject-request
+ * (FR-032a / GDPR Article 17 / PDPA Section 33). Fans a data-subject-request
  * out across EVERY event registration sharing the subject's attendee email in
  * the caller's tenant. Best-effort bulk erasure: each registration is erased in
  * its OWN transaction (own-tx-per-row) so one poisoned row never rolls back the

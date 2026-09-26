@@ -202,7 +202,7 @@ describe('MemberRepo.scrubPiiInTx', () => {
   it('keeps erased_at STICKY across a reconciler re-drive — first instant wins', async () => {
     // COMP-1 review FIX #2 — a US2d reconciler re-drive calls scrubPiiInTx again
     // with a FRESH clock instant. `erased_at` must NOT drift forward: the
-    // Art.12/§30 date-of-erasure is the FIRST instant, and
+    // Art.12/§33 date-of-erasure is the FIRST instant, and
     // member-erasure-evidence-reads.ts paginates keyset on this column (a
     // drifting erased_at silently skips/duplicates a re-driven member between
     // "load more" fetches) and findStuckErasuresInTx ORDER BYs it (a drift

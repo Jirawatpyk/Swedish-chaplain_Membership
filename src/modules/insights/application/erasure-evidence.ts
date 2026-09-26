@@ -34,7 +34,8 @@
  *   - `halfRun` — `member_erasure_requested` present AND `member_erased`
  *     absent (the erasure started but never reported complete);
  *   - `isOverdue` — `halfRun && requestedAt + THIRTY_DAYS_MS < now` (the
- *     tighter PDPA §30 30-day window for dual EU/TH subjects). A COMPLETED
+ *     30-day erasure window: GDPR Art. 12(3) one month; PDPA §33 sets no
+ *     deadline, so §30's 30-day limit is applied by analogy). A COMPLETED
  *     erasure is NEVER overdue. `now` is INJECTED so the comparison is
  *     deterministic in tests AND the use-case's `isOverdue` agrees with the
  *     page's per-card `elapsed()` render on a single clock instant.
@@ -57,7 +58,7 @@ import type {
 } from '@/modules/members';
 import { parseMemberNumberQuery } from '@/modules/members';
 
-/** 30-day PDPA §30 statutory window (ms). The tighter of Art.12 (1 month) / §30. */
+/** 30-day erasure response window (ms): GDPR Art. 12(3) one month; PDPA §33 has no statutory deadline, so §30's 30-day access limit is applied by analogy. */
 export const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
 /** The member's `user_erased` credential-erasure proof — occurredAt + marker ONLY.

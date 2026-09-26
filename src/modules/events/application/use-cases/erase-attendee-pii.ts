@@ -386,7 +386,7 @@ export async function eraseAttendeePii(
   // R6.W / Round 5 staff-review R005 closure — capture REAL Date.now()
   // at completion instead of re-reading `input.occurredAt` (the same
   // source as `requestStartedAt`). Without this, `completedWithinSeconds-
-  // OfRequest` was always 0, breaking the PDPA §30 / GDPR Art. 17
+  // OfRequest` was always 0, breaking the PDPA §33 / GDPR Art. 17
   // latency-of-erasure metric (SC-012).
   const completedSeconds = Math.max(
     0,

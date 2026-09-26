@@ -317,7 +317,7 @@
 
 ---
 
-## TC-EVT-26 — Erase PII (PDPA §30 / GDPR Art. 17)
+## TC-EVT-26 — Erase PII (PDPA §33 / GDPR Art. 17)
 **อ้างอิง:** FR-032a, SC-012 · **บทบาท:** admin
 
 | # | ขั้นตอน | ผลที่คาดหวัง |

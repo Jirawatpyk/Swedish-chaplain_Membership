@@ -1211,7 +1211,7 @@ export const drizzleMemberRepo: MemberRepo = {
           autoInvoiceEnrolledAt: null,
           // `erased_at` is STICKY — COALESCE preserves the ORIGINAL erasure
           // instant on a US2d reconciler re-drive (erase-member.ts always passes
-          // a FRESH `{ erasedAt: now }`). The Art.12/§30 date-of-erasure must not
+          // a FRESH `{ erasedAt: now }`). The Art.12/§33 date-of-erasure must not
           // drift forward: member-erasure-evidence-reads.ts paginates keyset on
           // this column (a drifting value silently skips/duplicates a re-driven
           // member between "load more" fetches) and findStuckErasuresInTx
