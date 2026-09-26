@@ -15,7 +15,9 @@
  *                   member whose renewal bill was issued early while the current
  *                   period was still paid — refusing there killed E-Blasts of
  *                   members in good faith. Held:
- *                   nothing is sent or written, the row stays `approved`, and
+ *                   nothing is sent and the only write is the FR-021 retry-clock
+ *                   reset (F119 PR-E) — no audit, no email; the row stays
+ *                   `approved`, and
  *                   every tick asks again — it sends once the cycle completes
  *                   (possibly after `scheduled_for`), and is refused once the
  *                   cycle lapses (`terminated`).

@@ -476,6 +476,7 @@ export function makeApprovalBroadcast(overrides: Partial<Broadcast> = {}): Broad
     approvedVersionId: null,
     memberReminderStage: 0,
     memberExpiryNotifiedAt: null,
+    dispatchFirstFailedAt: null,
     createdAt: new Date('2026-09-20T07:00:00.000Z'),
     updatedAt: new Date('2026-09-20T08:00:00.000Z'),
     ...overrides,
@@ -534,7 +535,8 @@ export interface ApprovalStoreState {
 }
 
 /** Every method is a `vi.fn` (so a test can override one arm), plus the live rows. */
-export type FakeApprovalBroadcastsRepo = Mocked<ApprovalBroadcastsRepo> & Mocked<Pick<BroadcastsRepo, 'findById'>> & {
+export type FakeApprovalBroadcastsRepo = Mocked<ApprovalBroadcastsRepo> &
+  Mocked<Pick<BroadcastsRepo, 'findById' | 'markDispatchRetryStarted' | 'clearDispatchRetryClock'>> & {
   readonly rows: Map<string, Broadcast>;
 };
 
@@ -669,16 +671,44 @@ export function makeFakeApprovalStore(
         // Mirrors the Drizzle adapter: a real status change stamps the stage
         // clock unless the caller passed one; a same-status write does not.
         const stamp = target !== expectedFromStatus && fields.stageEnteredAt === undefined ? { stageEnteredAt: store.now } : {};
-        const next: Broadcast = { ...row, ...stamp, ...defined, status: target, updatedAt: store.now };
+        // F119 PR-E (0311) — mirrors the adapter: a status change or a re-time
+        // ends the dispatch attempt, so the FR-021 retry clock resets. Off
+        // `TRANSITION_FIELDS` (no caller sets it), so it is applied AFTER the
+        // whitelisted spread.
+        const clock =
+          target !== expectedFromStatus || fields.scheduledFor !== undefined ? { dispatchFirstFailedAt: null } : {};
+        const next: Broadcast = { ...row, ...stamp, ...defined, ...clock, status: target, updatedAt: store.now };
         state.broadcasts.set(key, next);
         return next;
       },
     ),
+    // F119 PR-E (0311) — the adapter's `COALESCE(dispatch_first_failed_at, at)`
+    // on an `approved` row, answering what `RETURNING` would: the effective
+    // stamp, or `null` when no `approved` row matched. Without these two the
+    // dispatch legs' calls threw a TypeError that `_dispatch-retry-epoch.ts`
+    // swallows, so a suite on this store never exercised the clock.
+    markDispatchRetryStarted: vi.fn(
+      async (_tx: unknown, tenantId: TenantSlug, broadcastId: BroadcastId, at: Date): Promise<Date | null> => {
+        const key = keyOf(tenantId as string, broadcastId);
+        const row = state.broadcasts.get(key);
+        if (row === undefined || row.status !== 'approved') return null;
+        const effective = row.dispatchFirstFailedAt ?? at;
+        state.broadcasts.set(key, { ...row, dispatchFirstFailedAt: effective, updatedAt: store.now });
+        return effective;
+      },
+    ),
+    // Only a STAMPED `approved` row matches, as in the adapter; 0 rows is not an error.
+    clearDispatchRetryClock: vi.fn(async (_tx: unknown, tenantId: TenantSlug, broadcastId: BroadcastId): Promise<void> => {
+      const key = keyOf(tenantId as string, broadcastId);
+      const row = state.broadcasts.get(key);
+      if (row === undefined || row.status !== 'approved' || row.dispatchFirstFailedAt === null) return;
+      state.broadcasts.set(key, { ...row, dispatchFirstFailedAt: null, updatedAt: store.now });
+    }),
     // `withTx` is generic on the port and a `vi.fn` cannot carry the type
     // parameter, so it is checked by presence; every other method is checked
     // against the port's signature.
   } satisfies Omit<ApprovalBroadcastsRepo, 'withTx'> &
-    Pick<BroadcastsRepo, 'findById'> &
+    Pick<BroadcastsRepo, 'findById' | 'markDispatchRetryStarted' | 'clearDispatchRetryClock'> &
     Record<'withTx', unknown> & { rows: Map<string, Broadcast> };
 
   // T083 — the member's own E-Blasts, for the two DSAR reads.

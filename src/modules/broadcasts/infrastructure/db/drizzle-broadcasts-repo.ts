@@ -15,7 +15,7 @@
  * because the route handler does not yet know which tenant owns the
  * incoming `resend_broadcast_id`.
  */
-import { and, asc, desc, eq, gte, inArray, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { db, runInTenant, withTenantTxOrOpen, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
@@ -294,6 +294,10 @@ export function rowToBroadcast(row: BroadcastRow): Broadcast {
     approvedVersionId: row.approvedVersionId,
     memberReminderStage: toMemberReminderStage(row.memberReminderStage),
     memberExpiryNotifiedAt: row.memberExpiryNotifiedAt,
+
+    // F119 PR-E (0311) — the FR-021 retry-budget anchor; NULL on every row
+    // that has not failed in its current dispatch attempt.
+    dispatchFirstFailedAt: row.dispatchFirstFailedAt,
 
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -909,6 +913,15 @@ export function makeDrizzleBroadcastsRepo(
       if (target !== expectedFromStatus && fields.stageEnteredAt === undefined) {
         setClause['stageEnteredAt'] = setClause['updatedAt'];
       }
+      // F119 PR-E (0311) — the FR-021 retry clock belongs to ONE dispatch
+      // attempt. A status change ends it (sent, failed, cancelled, withdrawn,
+      // re-opened), and so does a re-time (`approved → approved` with a new
+      // `scheduledFor`): the next failure is the first of a new attempt. Kept
+      // off `TRANSITION_FIELDS` on purpose — no caller sets it; only
+      // `markDispatchRetryStarted` stamps it.
+      if (target !== expectedFromStatus || fields.scheduledFor !== undefined) {
+        setClause['dispatchFirstFailedAt'] = null;
+      }
 
       // Verify-fix R4 (Types-#5, 2026-05-02): expectedFromStatus is
       // now REQUIRED. UPDATE adds `AND status = $expected` to its
@@ -1154,6 +1167,71 @@ export function makeDrizzleBroadcastsRepo(
       if (updated.length !== 1) {
         await throwConcurrentMutation(tx, tenantIdArg, broadcastId);
       }
+    },
+
+    /**
+     * F119 PR-E (0311) — see the port docblock. COALESCE keeps the first stamp,
+     * the status predicate keeps it off a row that left `approved`, and a
+     * 0-row match answers `null` (nothing was minted, so there is nothing to
+     * reclaim — unlike the `attach*` CAS writes above). `RETURNING` hands back
+     * the stamp the row actually carries, which is the budget's epoch.
+     *
+     * The COALESCE keeps the first VALUE, but the UPDATE itself runs on EVERY
+     * retryable failure and so bumps `updated_at` every time. Migration 0311's
+     * header still says the stamp is written "only while it is NULL" (once per
+     * attempt); that predates the RETURNING change (review L3) and the applied
+     * migration is not edited — this docblock is the current contract.
+     */
+    async markDispatchRetryStarted(
+      txUnknown,
+      tenantIdArg: TenantSlug,
+      broadcastId: BroadcastId,
+      at: Date,
+    ): Promise<Date | null> {
+      const tx = txUnknown as TenantTx;
+      await assertTenantBoundTx(tx, ctx.slug, 'markDispatchRetryStarted');
+      const rows = await tx
+        .update(broadcasts)
+        .set({
+          // ISO text + explicit cast: a raw `Date` inside a `sql` template is
+          // serialised by the driver, not by the column's mapper.
+          dispatchFirstFailedAt: sql`COALESCE(${broadcasts.dispatchFirstFailedAt}, ${at.toISOString()}::timestamptz)`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(broadcasts.tenantId, tenantIdArg),
+            eq(broadcasts.broadcastId, broadcastId),
+            eq(broadcasts.status, 'approved'),
+          ),
+        )
+        .returning({ dispatchFirstFailedAt: broadcasts.dispatchFirstFailedAt });
+      return rows[0]?.dispatchFirstFailedAt ?? null;
+    },
+
+    /**
+     * F119 PR-E (0311) — see the port docblock. Only a STAMPED row still
+     * `approved` matches, so a hold on a clean row is a 0-row UPDATE (no
+     * `broadcasts_set_updated_at` bump); 0 rows is not an error.
+     */
+    async clearDispatchRetryClock(
+      txUnknown,
+      tenantIdArg: TenantSlug,
+      broadcastId: BroadcastId,
+    ): Promise<void> {
+      const tx = txUnknown as TenantTx;
+      await assertTenantBoundTx(tx, ctx.slug, 'clearDispatchRetryClock');
+      await tx
+        .update(broadcasts)
+        .set({ dispatchFirstFailedAt: null, updatedAt: new Date() })
+        .where(
+          and(
+            eq(broadcasts.tenantId, tenantIdArg),
+            eq(broadcasts.broadcastId, broadcastId),
+            eq(broadcasts.status, 'approved'),
+            isNotNull(broadcasts.dispatchFirstFailedAt),
+          ),
+        );
     },
 
     async markAudienceImportCompleted(

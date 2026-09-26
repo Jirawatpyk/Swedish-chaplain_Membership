@@ -179,6 +179,16 @@ async function main(): Promise<void> {
         name: "broadcast_deliveries_broadcast_fk (ON DELETE CASCADE) + broadcast_deliveries_append_only_fn cascade arm + audit_event_type 'broadcast_retention_swept' (mig 0310)",
         query: `SELECT 1 AS hit WHERE EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'broadcast_deliveries_broadcast_fk' AND conrelid = 'public.broadcast_deliveries'::regclass AND confrelid = 'public.broadcasts'::regclass AND contype = 'f' AND confdeltype = 'c' AND array_length(conkey, 1) = 2) AND EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'broadcast_deliveries_append_only_fn' AND prosrc LIKE '%pg_trigger_depth()%') AND EXISTS (SELECT 1 FROM pg_enum WHERE enumtypid = 'audit_event_type'::regtype AND enumlabel = 'broadcast_retention_swept')`,
       },
+      {
+        // F119 PR-E (mig 0311) — the FR-021 retry-budget anchor. Both halves:
+        // the column (the mapper selects it, so a schema without it 500s every
+        // broadcasts read) and the immutability function's GUC-arm entry for
+        // it (without that, the erasure scrub could rewrite a row's retry
+        // clock). The function is asserted by its SOURCE — its name and
+        // signature are unchanged since 0064, so existence proves nothing.
+        name: 'broadcasts.dispatch_first_failed_at column + broadcasts_immutable_after_submit_fn GUC-arm entry for it (mig 0311)',
+        query: `SELECT 1 AS hit WHERE EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'broadcasts' AND column_name = 'dispatch_first_failed_at' AND data_type = 'timestamp with time zone' AND is_nullable = 'YES') AND EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'broadcasts_immutable_after_submit_fn' AND prosrc LIKE '%NEW.dispatch_first_failed_at%')`,
+      },
     ];
     let failures = 0;
     for (const canary of canaries) {

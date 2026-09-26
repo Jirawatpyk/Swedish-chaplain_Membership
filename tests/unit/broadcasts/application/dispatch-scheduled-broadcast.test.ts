@@ -132,6 +132,7 @@ function makeBroadcast(status: BroadcastStatus = 'approved'): Broadcast {
     approvedVersionId: null,
     memberReminderStage: 0,
     memberExpiryNotifiedAt: null,
+    dispatchFirstFailedAt: null,
     createdAt: FROZEN_NOW,
     updatedAt: FROZEN_NOW,
   };
@@ -173,6 +174,16 @@ interface RepoOpts {
    * checkable instead of asserted.
    */
   readonly attachResendIdsRowVanished?: boolean;
+  /** F119 PR-E — the retry-clock stamp itself fails (a Neon blip). */
+  readonly markDispatchRetryStartedThrows?: Error;
+  /**
+   * F119 PR-E (L3) — what the stamp's `RETURNING` answers, overriding the
+   * default COALESCE over the snapshot. `null` = the row left `approved`; a
+   * date different from the snapshot = another writer (a re-time) moved it.
+   */
+  readonly markDispatchRetryStartedReturns?: Date | null;
+  /** F119 PR-E (H1 / M1) — the retry-clock reset itself fails. */
+  readonly clearDispatchRetryClockThrows?: Error;
 }
 
 function makeRepo(opts: RepoOpts): {
@@ -182,8 +193,14 @@ function makeRepo(opts: RepoOpts): {
   attachAudienceCalls: Array<{ audienceId: string }>;
   /** F4 — proves the broadcast id is persisted BEFORE the send, not with the flip. */
   attachBroadcastIdCalls: Array<{ broadcastId: string }>;
+  /** F119 PR-E — every `markDispatchRetryStarted` call (the FR-021 clock). */
+  retryStampCalls: Array<{ at: Date }>;
+  /** F119 PR-E (H1 / M1) — every `clearDispatchRetryClock` call. */
+  retryClearCalls: number;
 } {
   const transitions: Array<{ status: string; fields: unknown }> = [];
+  const retryStampCalls: Array<{ at: Date }> = [];
+  const clears = { count: 0 };
   const attachCalls: Array<{ audienceId: string; broadcastId: string }> = [];
   const attachAudienceCalls: Array<{ audienceId: string }> = [];
   const attachBroadcastIdCalls: Array<{ broadcastId: string }> = [];
@@ -193,6 +210,10 @@ function makeRepo(opts: RepoOpts): {
     attachCalls,
     attachAudienceCalls,
     attachBroadcastIdCalls,
+    retryStampCalls,
+    get retryClearCalls() {
+      return clears.count;
+    },
     port: {
       async withTx(fn) {
         return fn(null);
@@ -268,6 +289,23 @@ function makeRepo(opts: RepoOpts): {
       // T086 — unused here; present so the stub still satisfies BroadcastsRepo.
       async attachAudienceImport() {},
       async markAudienceImportCompleted() {},
+      async markDispatchRetryStarted(_tx, _t, _b, at) {
+        retryStampCalls.push({ at });
+        if (opts.markDispatchRetryStartedThrows !== undefined) {
+          throw opts.markDispatchRetryStartedThrows;
+        }
+        if (opts.markDispatchRetryStartedReturns !== undefined) {
+          return opts.markDispatchRetryStartedReturns;
+        }
+        // The adapter's COALESCE, over the row this fixture serves.
+        return opts.broadcast?.dispatchFirstFailedAt ?? at;
+      },
+      async clearDispatchRetryClock() {
+        clears.count += 1;
+        if (opts.clearDispatchRetryClockThrows !== undefined) {
+          throw opts.clearDispatchRetryClockThrows;
+        }
+      },
       async listByTenantStatus() {
         return { rows: [], nextCursor: null };
       },
@@ -304,7 +342,7 @@ function makeRepo(opts: RepoOpts): {
 }
 
 type ThrowSpec =
-  | { kind: 'retryable' | 'permanent'; reason: string }
+  | { kind: 'retryable' | 'permanent'; reason: string; subKind?: string }
   | {
       kind: 'resource_missing';
       reason: string;
@@ -3048,19 +3086,32 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
   });
 
   /**
-   * (4) The FR-021 budget must bound the probe's throws exactly as it bounds
-   * every other gateway throw — the probe is a gateway call, and it moved out
-   * of the try whose catch owned the budget. Past the hour, a retryable probe
-   * failure is terminal, with the member told, not an unbounded retry.
+   * (4), REFUTED by the F119 PR-E reliability review (M1). This case pinned the
+   * opposite: "the FR-021 budget must bound the probe's throws exactly as it
+   * bounds every other gateway throw … past the hour, a retryable probe failure
+   * is terminal, with the member told". But the probe only runs on an INHERITED
+   * id, and a probe that cannot be answered says nothing about whether that
+   * resource was already handed to `/send` — the reason the `unknown`-status arm
+   * refuses without a budget. M1 is the sequence that made it concrete: first
+   * blip stamped at T0 → at T0+5 the send SUCCEEDS but the `sending` flip hits a
+   * DB fault → the fault lasts an hour → the next tick's probe throws one blip →
+   * the budget counted from T0 → `failed_to_dispatch`, a false member email, the
+   * quota slot released, for mail that went out. The post-send clock reset
+   * cannot prevent that alone: it is a DB write inside the same fault window.
+   *
+   * So a RETRYABLE probe throw is retried and never budgeted (nor stamped). The
+   * budget still bounds the send itself once the probe answers `draft`.
    */
-  it('FOLLOWUP (4) — a retryable probe throw PAST the FR-021 budget goes terminal through the same helper', async () => {
+  it('FOLLOWUP (4) / M1 — a retryable probe throw on an inherited id is NEVER budgeted: past the hour it stays retryable, nobody told', async () => {
     const audit = makeAudit();
     const email = makeEmailTransactional();
     const repo = makeRepo({
       lockedStatus: 'approved',
       broadcast: {
         ...makeBroadcast('approved'),
-        scheduledFor: new Date(FROZEN_NOW.getTime() - 2 * 60 * 60 * 1000),
+        // F119 PR-E — the budget counts from the attempt's FIRST failure, two
+        // hours back; the schedule alone no longer spends it.
+        dispatchFirstFailedAt: new Date(FROZEN_NOW.getTime() - 2 * 60 * 60 * 1000),
         resendAudienceId: 'aud-existing',
         resendBroadcastId: 'rb-from-previous-tick',
       },
@@ -3097,11 +3148,11 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error.kind).toBe('broadcast_failed_to_dispatch');
-    if (result.error.kind !== 'broadcast_failed_to_dispatch') return;
-    expect(result.error.reason).toMatch(/^retry_budget_exhausted_after_1h:/);
-    expect(repo.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
-    expect(email.memberCalls).toHaveLength(1);
+    expect(result.error.kind).toBe('gateway_retryable');
+    expect(repo.transitions).toEqual([]);
+    expect(repo.retryStampCalls).toEqual([]);
+    expect(audit.emits).toEqual([]);
+    expect(email.memberCalls).toEqual([]);
   });
 
   /**
@@ -4054,12 +4105,13 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
     ).toBeUndefined();
   });
 
-  it('Phase 8 / Slice D โ€” retryable past budget (scheduled_for + 65min) โ’ terminal failed_to_dispatch + member email enqueued', async () => {
+  it('Phase 8 / Slice D โ€” retryable past budget (first failure + 65min) โ’ terminal failed_to_dispatch + member email enqueued', async () => {
     const audit = makeAudit();
-    // Set scheduled_for 65 min BEFORE FROZEN_NOW so elapsed > 1h budget
+    // F119 PR-E — the attempt first failed 65 min before FROZEN_NOW, so
+    // elapsed > 1h budget (the budget no longer counts from scheduled_for).
     const broadcastRow = {
       ...makeBroadcast('approved'),
-      scheduledFor: new Date(FROZEN_NOW.getTime() - 65 * 60 * 1000),
+      dispatchFirstFailedAt: new Date(FROZEN_NOW.getTime() - 65 * 60 * 1000),
     };
     const repo = makeRepo({
       lockedStatus: 'approved',
@@ -4377,7 +4429,8 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
     const audit = makeAudit();
     const broadcastRow = {
       ...makeBroadcast('approved'),
-      scheduledFor: new Date(FROZEN_NOW.getTime() - 65 * 60 * 1000),
+      // F119 PR-E — past the budget = first failure more than an hour ago.
+      dispatchFirstFailedAt: new Date(FROZEN_NOW.getTime() - 65 * 60 * 1000),
     };
     const repo = makeRepo({ lockedStatus: 'approved', broadcast: broadcastRow });
     const gw = makeGateway({
@@ -4937,6 +4990,8 @@ describe('dispatch-scheduled-broadcast — member standing at dispatch (F119 PR-
     expect(result).toEqual({ ok: true, value: { kind: 'dispatch_held_member_suspended' } });
     expect(repo.transitions).toEqual([]);
     expect(repo.attachBroadcastIdCalls).toEqual([]);
+    // F119 PR-E — a hold is not a failure: the FR-021 clock is not started.
+    expect(repo.retryStampCalls).toEqual([]);
     expect(audit.emits).toEqual([]);
     expect(email.memberCalls).toEqual([]);
     expect(gw.audienceCalls).toHaveLength(0);
@@ -5059,5 +5114,338 @@ describe('dispatch-scheduled-broadcast — member standing at dispatch (F119 PR-
     expect(result.ok ? null : result.error).toMatchObject({ kind: 'dispatch.server_error', phase: 'terminal_write' });
     expect(failedSpy).not.toHaveBeenCalled();
     expect(emitSpy).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * F119 PR-E (migration 0311) — the FR-021 one-hour budget counts from the FIRST
+ * retryable failure of the current dispatch attempt (`dispatchFirstFailedAt`),
+ * not from `scheduledFor`.
+ *
+ * Since #403 (a suspended member's E-Blast is HELD) and #410 (every cron pauses
+ * under READ_ONLY_MODE), a row resuming days after its schedule is routine. Each
+ * case below sets `scheduledFor` THREE DAYS back, so the old epoch
+ * (`scheduledFor ?? approvedAt ?? createdAt`) would put every one of them past
+ * the budget on its first failure — that is what makes them discriminate.
+ */
+describe('dispatch-scheduled-broadcast — FR-021 budget anchors on the first failure (F119 PR-E)', () => {
+  const THREE_DAYS_AGO = new Date(FROZEN_NOW.getTime() - 3 * 24 * 60 * 60 * 1000);
+  const minutesAgo = (m: number): Date => new Date(FROZEN_NOW.getTime() - m * 60 * 1000);
+
+  function lateRow(dispatchFirstFailedAt: Date | null): Broadcast {
+    return { ...makeBroadcast('approved'), scheduledFor: THREE_DAYS_AGO, dispatchFirstFailedAt };
+  }
+
+  function retryDeps(broadcast: Broadcast, repoOpts: Partial<RepoOpts> = {}) {
+    const audit = makeAudit();
+    const repo = makeRepo({ lockedStatus: 'approved', broadcast, ...repoOpts });
+    const gw = makeGateway({ throwOnSend: { kind: 'retryable', reason: 'Resend 503 — service unavailable' } });
+    const email = makeEmailTransactional();
+    return {
+      audit,
+      repo,
+      email,
+      deps: {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-r1', 'one@example.com')],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: email.port,
+        sendStanding: OK_STANDING,
+        brandChrome: NO_BRAND_CHROME,
+      },
+    };
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('a row resumed three days late + ONE retryable error stays approved and starts the clock', async () => {
+    const { broadcastsMetrics } = await import('@/lib/metrics');
+    const budgetSpy = vi.spyOn(broadcastsMetrics, 'dispatchBudgetExhausted');
+    const { audit, repo, email, deps } = retryDeps(lateRow(null));
+
+    const result = await dispatchScheduledBroadcast(deps, baseInput);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('gateway_retryable');
+    expect(repo.retryStampCalls).toEqual([{ at: FROZEN_NOW }]);
+    expect(repo.transitions).toEqual([]);
+    expect(audit.emits).toEqual([]);
+    expect(email.memberCalls).toEqual([]);
+    expect(budgetSpy).not.toHaveBeenCalled();
+  });
+
+  it('a failure 61 minutes after the first → retry_budget_exhausted, measured from the first failure', async () => {
+    const { audit, repo, email, deps } = retryDeps(lateRow(minutesAgo(61)));
+
+    const result = await dispatchScheduledBroadcast(deps, baseInput);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('broadcast_failed_to_dispatch');
+    expect(repo.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+    const row = audit.emits.find((e) => e.eventType === 'broadcast_failed_to_dispatch');
+    // The elapsed time on the record is the outage, not the three-day delay.
+    expect((row?.payload as Record<string, unknown>)['elapsedMs']).toBe(61 * 60 * 1000);
+    // The stamp write runs on every failure (L3) and COALESCE keeps the first:
+    // the budget counted from the returned 61-minute stamp, not from now.
+    expect(repo.retryStampCalls).toEqual([{ at: FROZEN_NOW }]);
+    expect(email.memberCalls).toHaveLength(1);
+  });
+
+  it('a failure 59 minutes after the first is still inside the budget', async () => {
+    const { repo, deps } = retryDeps(lateRow(minutesAgo(59)));
+
+    const result = await dispatchScheduledBroadcast(deps, baseInput);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('gateway_retryable');
+    expect(repo.transitions).toEqual([]);
+  });
+
+  it('the stamp write failing is logged and the tick stays retryable — a failed write never becomes a permanent failure', async () => {
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const { repo, email, deps } = retryDeps(lateRow(null), {
+      markDispatchRetryStartedThrows: new Error('57P01 terminating connection due to administrator command'),
+    });
+
+    const result = await dispatchScheduledBroadcast(deps, baseInput);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('gateway_retryable');
+    expect(repo.transitions).toEqual([]);
+    expect(email.memberCalls).toEqual([]);
+    const stampLog = warnSpy.mock.calls.find((c) => c[1] === 'broadcasts.dispatch.retry_epoch_stamp_failed');
+    expect(stampLog).toBeDefined();
+    // `errKind`, never the raw error: a Neon error carries bound parameters.
+    expect(stampLog?.[0]).toMatchObject({ err: 'Error', broadcastId });
+    expect(JSON.stringify(stampLog?.[0])).not.toContain('administrator command');
+  });
+
+  it('L1 — a failed stamp write is COUNTED, not only logged (a stamp that always fails means endless retries)', async () => {
+    const { broadcastsMetrics } = await import('@/lib/metrics');
+    const counter = vi.spyOn(broadcastsMetrics, 'dispatchRetryStampFailed');
+    const { deps } = retryDeps(lateRow(null), { markDispatchRetryStartedThrows: new Error('57P01') });
+
+    await dispatchScheduledBroadcast(deps, baseInput);
+
+    expect(counter).toHaveBeenCalledWith('test-tenant');
+  });
+
+  it('a failed stamp write on an ALREADY-stamped row still measures from the stamp — a storage fault cannot extend a spent budget', async () => {
+    const { repo, deps } = retryDeps(lateRow(minutesAgo(61)), { markDispatchRetryStartedThrows: new Error('57P01') });
+
+    const result = await dispatchScheduledBroadcast(deps, baseInput);
+
+    expect(result.ok ? null : result.error.kind).toBe('broadcast_failed_to_dispatch');
+    expect(repo.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+  });
+
+  /**
+   * L3 — the Step-1 snapshot can be stale. An admin re-times the row after the
+   * read (which clears the clock; the row stays `approved`), then this tick
+   * fails: budgeting from the snapshot's 61-minute stamp would kill the freshly
+   * re-timed row. The epoch is what the stamp's RETURNING says the row carries.
+   */
+  it('L3 — a re-time between the read and the failure: the budget uses the RETURNED stamp, not the stale snapshot', async () => {
+    const { audit, repo, email, deps } = retryDeps(lateRow(minutesAgo(61)), {
+      markDispatchRetryStartedReturns: FROZEN_NOW,
+    });
+
+    const result = await dispatchScheduledBroadcast(deps, baseInput);
+
+    expect(result.ok ? null : result.error.kind).toBe('gateway_retryable');
+    expect(repo.retryStampCalls).toEqual([{ at: FROZEN_NOW }]);
+    expect(repo.transitions).toEqual([]);
+    expect(audit.emits).toEqual([]);
+    expect(email.memberCalls).toEqual([]);
+  });
+
+  it('L3 — the stamp matches no row (another writer moved it out of approved) → stop, no terminal write, nobody told', async () => {
+    const { broadcastsMetrics } = await import('@/lib/metrics');
+    const budgetSpy = vi.spyOn(broadcastsMetrics, 'dispatchBudgetExhausted');
+    const { audit, repo, email, deps } = retryDeps(lateRow(minutesAgo(61)), {
+      markDispatchRetryStartedReturns: null,
+    });
+
+    const result = await dispatchScheduledBroadcast(deps, baseInput);
+
+    expect(result).toEqual({
+      ok: false,
+      error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' },
+    });
+    expect(repo.transitions).toEqual([]);
+    expect(audit.emits).toEqual([]);
+    expect(email.memberCalls).toEqual([]);
+    expect(budgetSpy).not.toHaveBeenCalled();
+  });
+
+  /**
+   * H1 — a HOLD resets the clock. It used to write nothing, so a failure → a
+   * two-day hold → the member pays → ONE blip ended in retry_budget_exhausted.
+   * The reset is the one write a hold makes; still no audit row, no email.
+   */
+  it('H1 — a hold on a STAMPED row resets the clock and still writes no audit, sends no email', async () => {
+    const { audit, repo, email, deps } = retryDeps(lateRow(minutesAgo(30)));
+    const held = { ...deps, sendStanding: makeFakeSendStanding({ access: 'suspended' }) };
+
+    const result = await dispatchScheduledBroadcast(held, baseInput);
+
+    expect(result).toEqual({ ok: true, value: { kind: 'dispatch_held_member_suspended' } });
+    expect(repo.retryClearCalls).toBe(1);
+    expect(repo.retryStampCalls).toEqual([]);
+    expect(repo.transitions).toEqual([]);
+    expect(audit.emits).toEqual([]);
+    expect(email.memberCalls).toEqual([]);
+  });
+
+  it('H1 — the reset failing is logged (class only) and the tick is still HELD, never an error', async () => {
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const { repo, deps } = retryDeps(lateRow(minutesAgo(30)), {
+      clearDispatchRetryClockThrows: new Error('57P01 terminating connection due to administrator command'),
+    });
+    const held = { ...deps, sendStanding: makeFakeSendStanding({ access: 'suspended' }) };
+
+    const result = await dispatchScheduledBroadcast(held, baseInput);
+
+    expect(result).toEqual({ ok: true, value: { kind: 'dispatch_held_member_suspended' } });
+    expect(repo.transitions).toEqual([]);
+    const clearLog = warnSpy.mock.calls.find((c) => c[1] === 'broadcasts.dispatch.retry_clock_clear_failed');
+    expect(clearLog?.[0]).toMatchObject({ err: 'Error', broadcastId });
+    expect(JSON.stringify(clearLog?.[0])).not.toContain('administrator command');
+  });
+
+  /**
+   * M1, tick 1 — the send succeeds on a row whose clock is running, and the
+   * `sending` flip then hits a DB fault. The provider has the mail, so the clock
+   * is reset right after the send (best-effort); the tick still reports the
+   * post-send DB fault as before.
+   */
+  it('M1 — a successful send resets the stamped clock even when the sending flip then fails', async () => {
+    const { repo, deps } = retryDeps(lateRow(minutesAgo(5)), { applyTransitionThrowsOnFinal: true });
+    const sendOk = { ...deps, broadcastsGateway: makeGateway().port };
+
+    const result = await dispatchScheduledBroadcast(sendOk, baseInput);
+
+    expect(result.ok ? null : result.error.kind).toBe('gateway_retryable');
+    expect(repo.retryClearCalls).toBe(1);
+    expect(repo.retryStampCalls).toEqual([]);
+  });
+
+  it('M1 — the post-send reset failing is logged and does not change the tick\'s outcome', async () => {
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const { repo, deps } = retryDeps(lateRow(minutesAgo(5)), {
+      clearDispatchRetryClockThrows: new Error('57P01'),
+    });
+    const sendOk = { ...deps, broadcastsGateway: makeGateway().port };
+
+    const result = await dispatchScheduledBroadcast(sendOk, baseInput);
+
+    expect(result.ok ? result.value.kind : result.error.kind).toBe('sent');
+    expect(repo.transitions.map((t) => t.status)).toEqual(['sending']);
+    expect(warnSpy.mock.calls.some((c) => c[1] === 'broadcasts.dispatch.retry_clock_clear_failed')).toBe(true);
+  });
+
+  /**
+   * M1, tick 2 — the whole sequence. The DB fault outlasted the hour and the
+   * post-send reset failed with it, so the row still carries the T0 stamp and
+   * the inherited id; the probe then throws one blip at T0+65. That must not be
+   * `failed_to_dispatch` for mail the provider already took.
+   */
+  it('M1 — T0 stamp survives, the probe blips at T0+65 → retryable, not failed_to_dispatch', async () => {
+    const { broadcastsMetrics } = await import('@/lib/metrics');
+    const budgetSpy = vi.spyOn(broadcastsMetrics, 'dispatchBudgetExhausted');
+    const row: Broadcast = {
+      ...lateRow(minutesAgo(65)),
+      resendAudienceId: 'aud-existing',
+      resendBroadcastId: 'rb-from-previous-tick',
+    };
+    const { audit, repo, email, deps } = retryDeps(row);
+    const probeBlip = {
+      ...deps,
+      broadcastsGateway: makeGateway({ throwOnRetrieveBroadcast: { kind: 'retryable', reason: 'resend 503' } }).port,
+    };
+
+    const result = await dispatchScheduledBroadcast(probeBlip, baseInput);
+
+    expect(result.ok ? null : result.error.kind).toBe('gateway_retryable');
+    expect(repo.transitions).toEqual([]);
+    expect(audit.emits).toEqual([]);
+    expect(email.memberCalls).toEqual([]);
+    expect(budgetSpy).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Round 4 F8 parity with `build-audience-tick.ts` — a retryable throw whose
+   * `subKind` is missing or not one of the four transport classes is labelled
+   * `unclassified`, never `api`. `dispatch_budget_exhausted` pages on-call, and
+   * a fault nobody classified must not arrive dressed as a real transport class.
+   */
+  it('F8 — a retryable send throw with NO subKind is labelled unclassified, not api', async () => {
+    const { deps } = retryDeps(lateRow(null));
+    const noSubKind = {
+      ...deps,
+      broadcastsGateway: makeGateway({ throwOnSend: { kind: 'retryable', reason: 'resend 503' } }).port,
+    };
+
+    const result = await dispatchScheduledBroadcast(noSubKind, baseInput);
+
+    expect(result.ok).toBe(false);
+    if (result.ok || result.error.kind !== 'gateway_retryable') throw new Error('expected gateway_retryable');
+    expect(result.error.subKind).toBe('unclassified');
+  });
+
+  it('F8 — past the budget, an UNKNOWN subKind reaches the page-on-call metric as unclassified', async () => {
+    const { broadcastsMetrics } = await import('@/lib/metrics');
+    const budgetSpy = vi.spyOn(broadcastsMetrics, 'dispatchBudgetExhausted');
+    const { deps } = retryDeps(lateRow(minutesAgo(61)));
+    const unknownSubKind = {
+      ...deps,
+      broadcastsGateway: makeGateway({
+        throwOnSend: { kind: 'retryable', reason: 'resend 503', subKind: 'a_fifth_class' },
+      }).port,
+    };
+
+    const result = await dispatchScheduledBroadcast(unknownSubKind, baseInput);
+
+    expect(result.ok ? null : result.error.kind).toBe('broadcast_failed_to_dispatch');
+    expect(budgetSpy).toHaveBeenCalledWith(tenant.slug, 'unclassified');
+  });
+
+  it('F8 — a retryable inherited-id probe throw with NO subKind is labelled unclassified, not api', async () => {
+    const row: Broadcast = {
+      ...lateRow(null),
+      resendAudienceId: 'aud-existing',
+      resendBroadcastId: 'rb-from-previous-tick',
+    };
+    const { deps } = retryDeps(row);
+    const probeBlip = {
+      ...deps,
+      broadcastsGateway: makeGateway({ throwOnRetrieveBroadcast: { kind: 'retryable', reason: 'resend 503' } }).port,
+    };
+
+    const result = await dispatchScheduledBroadcast(probeBlip, baseInput);
+
+    expect(result.ok).toBe(false);
+    if (result.ok || result.error.kind !== 'gateway_retryable') throw new Error('expected gateway_retryable');
+    expect(result.error.subKind).toBe('unclassified');
   });
 });

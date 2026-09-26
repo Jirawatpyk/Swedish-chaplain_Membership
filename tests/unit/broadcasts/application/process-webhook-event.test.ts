@@ -90,6 +90,7 @@ function baseBroadcast(overrides: Partial<Broadcast> = {}): Broadcast {
     approvedVersionId: null,
     memberReminderStage: 0,
     memberExpiryNotifiedAt: null,
+    dispatchFirstFailedAt: null,
     createdAt: FROZEN_NOW,
     updatedAt: FROZEN_NOW,
     ...overrides,
@@ -139,6 +140,8 @@ function makeBroadcastsRepo(args: {
     // T086 — unused here; present so the stub still satisfies BroadcastsRepo.
     async attachAudienceImport() {},
     async markAudienceImportCompleted() {},
+    async markDispatchRetryStarted() { return null; },
+    async clearDispatchRetryClock() {},
     async listByTenantStatus() {
       return { rows: [], nextCursor: null };
     },

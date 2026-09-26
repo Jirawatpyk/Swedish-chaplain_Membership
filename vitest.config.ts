@@ -711,6 +711,17 @@ export default defineConfig({
           functions: 100,
           statements: 100,
         },
+        // F119 PR-E (0311) — the FR-021 retry clock both dispatch legs read.
+        // Its stamp-failed fallback (`snapshot ?? now`) is the arm that decides
+        // whether a storage fault can extend a spent budget, so both halves are
+        // pinned. Measured 100/100/100/100 on 2026-09-26 (dispatch-scheduled-
+        // broadcast + both build-audience-tick suites).
+        'src/modules/broadcasts/application/use-cases/_dispatch-retry-epoch.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
         // The broadcasts Domain never had the 100% line pin every other
         // module's Domain carries (Constitution II). `audience-ceiling.ts` is
         // the first file under it with a function; widen to `**` once the

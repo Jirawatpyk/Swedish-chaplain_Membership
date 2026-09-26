@@ -233,6 +233,16 @@ export interface Broadcast {
   readonly memberReminderStage: MemberReminderStage;
   readonly memberExpiryNotifiedAt: Date | null;
 
+  /**
+   * F119 PR-E (migration 0311) — when the CURRENT dispatch attempt first hit a
+   * retryable gateway failure; `null` = no failure yet. The FR-021 one-hour
+   * retry budget counts from here, not from `scheduledFor`: a row HELD for a
+   * suspended member or paused by READ_ONLY_MODE can resume days late, and
+   * measuring from the schedule killed it on its first blip. Any status change
+   * (and a re-time) resets it, so a re-approved row starts clean.
+   */
+  readonly dispatchFirstFailedAt: Date | null;
+
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }

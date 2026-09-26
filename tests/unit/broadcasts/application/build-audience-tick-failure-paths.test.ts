@@ -119,6 +119,10 @@ interface Recorder {
   readonly completionStamps: boolean[];
   /** F119 PR-A — every Resend call the tick made, in order (a standing refusal makes none). */
   readonly gatewayCalls: GatewayMethod[];
+  /** F119 PR-E — every `markDispatchRetryStarted` stamp (the FR-021 clock). */
+  readonly retryStamps: Date[];
+  /** F119 PR-E (H1 / M1) — every `clearDispatchRetryClock` call, in gateway-call order. */
+  readonly retryClears: number[];
 }
 
 /**
@@ -197,13 +201,16 @@ function makeDeps(opts: {
   readonly auditThrowsAlways?: boolean;
   readonly nullScheduledFor?: boolean;
   /**
-   * Round 4 T4/M11 — overridable so a SEND-NOW row can be aged past the budget
-   * through the `approvedAt` fallback. It was pinned to `NOW`, so with
-   * `nullScheduledFor` the epoch was always "just now" and the budget branch was
-   * unreachable — which is why the mutant that deletes the fallbacks survived.
+   * Round 4 T4/M11 — overridable. It aged a SEND-NOW row past the budget through
+   * the old `approvedAt` fallback; since F119 PR-E the budget counts from
+   * `dispatchFirstFailedAt`, and the M11 case keeps this RECENT so a revert to
+   * the fallback would fail it.
    */
   readonly approvedAt?: Date;
-  /** Round 3 finding 3-7 — move the row's budget epoch to exercise FR-021. */
+  /**
+   * Round 3 finding 3-7 — the row's schedule. Since F119 PR-E it no longer
+   * spends the FR-021 budget; the PR-E cases set it days back to prove that.
+   */
   readonly scheduledFor?: Date;
   /** Round 3 finding 3-8 — make the audit INSERT itself fail. */
   readonly auditThrowsOn?:
@@ -237,6 +244,20 @@ function makeDeps(opts: {
   readonly standing?: FakeSendStandingOpts;
   /** F119 PR-A — an earlier tick's send was handed to Resend (the id is attached only after it). */
   readonly resendBroadcastId?: string | null;
+  /**
+   * F119 PR-E — when the current attempt first failed (the FR-021 anchor).
+   * Default `null`: no failure yet, so the budget cannot be spent.
+   */
+  readonly dispatchFirstFailedAt?: Date | null;
+  /** F119 PR-E — the stamp write itself fails. */
+  readonly retryStampThrows?: boolean;
+  /**
+   * F119 PR-E (L3) — what the stamp's `RETURNING` answers, overriding the
+   * default COALESCE over the snapshot. `null` = the row left `approved`.
+   */
+  readonly retryStampReturns?: Date | null;
+  /** F119 PR-E (H1 / M1) — the clock reset itself fails. */
+  readonly retryClearThrows?: boolean;
 }): { deps: DepsWithEveryPort & { sendStanding: ReturnType<typeof makeFakeSendStanding> }; rec: Recorder } {
   let txSeq = 0;
   const rec: Recorder = {
@@ -249,6 +270,8 @@ function makeDeps(opts: {
     resendIdWrites: [],
     completionStamps: [],
     gatewayCalls: [],
+    retryStamps: [],
+    retryClears: [],
   };
 
   const broadcast = {
@@ -262,10 +285,9 @@ function makeDeps(opts: {
     requestedByMemberId: 'm-1',
     requestedByMemberPlanIdSnapshot: 'plan-old',
     scheduledFor: opts.nullScheduledFor === true ? null : (opts.scheduledFor ?? NOW),
-    // The legacy budget epoch order is `scheduledFor ?? approvedAt ?? createdAt`,
-    // so the fixture carries all three — omitting the fallbacks would make a
-    // send-now row (scheduledFor null) fall through to `undefined` and exempt
-    // itself from the budget, which is the defect one row narrower.
+    // Carried for the rest of the use case (the FR-021 email reads
+    // `scheduledFor`); since F119 PR-E none of the three is the budget epoch —
+    // `dispatchFirstFailedAt` below is.
     approvedAt: opts.approvedAt ?? NOW,
     createdAt: NOW,
     segmentType: 'all_members' as const,
@@ -277,6 +299,7 @@ function makeDeps(opts: {
     audienceImportId: opts.audienceImportId ?? null,
     audienceImportSubmittedAt: opts.audienceImportSubmittedAt ?? null,
     audienceImportCompletedAt: null,
+    dispatchFirstFailedAt: opts.dispatchFirstFailedAt ?? null,
   };
 
   function maybeThrow(m: GatewayMethod): void {
@@ -432,6 +455,23 @@ function makeDeps(opts: {
             throw new Error('25P02 current transaction is aborted');
           }
           rec.completionStamps.push(true);
+        },
+        async markDispatchRetryStarted(_tx: unknown, _t: unknown, _b: unknown, at: Date) {
+          rec.retryStamps.push(at);
+          if (opts.retryStampThrows === true) {
+            throw new Error('57P01 terminating connection due to administrator command');
+          }
+          if (opts.retryStampReturns !== undefined) return opts.retryStampReturns;
+          // The adapter's COALESCE, over the row this harness serves.
+          return broadcast.dispatchFirstFailedAt ?? at;
+        },
+        async clearDispatchRetryClock() {
+          // Recorded as "how many gateway calls had been made", so a test can
+          // say the reset came AFTER the send.
+          rec.retryClears.push(rec.gatewayCalls.length);
+          if (opts.retryClearThrows === true) {
+            throw new Error('57P01 terminating connection due to administrator command');
+          }
         },
         async attachResendIds(tx: unknown, _t: unknown, _b: unknown, _a: string, rbId: string) {
           rec.resendIdWrites.push({ resendBroadcastId: rbId, txId: (tx as { txId?: number } | null)?.txId });
@@ -950,8 +990,9 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
     const { deps, rec } = makeDeps({
       resendAudienceId: null,
       throwOn: { method: 'createAudience', kind: 'retryable' },
-      // Scheduled just over two hours before the clock — past the 1-hour budget.
-      scheduledFor: new Date(NOW.getTime() - 2 * 60 * 60 * 1000),
+      // F119 PR-E — the attempt first failed two hours before the clock: past
+      // the 1-hour budget, which counts from that failure, not the schedule.
+      dispatchFirstFailedAt: new Date(NOW.getTime() - 2 * 60 * 60 * 1000),
     });
 
     const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
@@ -991,6 +1032,9 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
       // Two hours past the epoch: under the old code this alone was enough to
       // make the very first failure terminal.
       scheduledFor: new Date(NOW.getTime() - 2 * 60 * 60 * 1000),
+      // F119 PR-E — and the gateway clock spent too: a resolver fault is still
+      // not budgeted, whatever the first-failure stamp says.
+      dispatchFirstFailedAt: new Date(NOW.getTime() - 2 * 60 * 60 * 1000),
     });
 
     const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
@@ -1009,7 +1053,7 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
     const { deps, rec } = makeDeps({
       resendAudienceId: null,
       throwOn: { method: 'createAudience', kind: 'retryable' },
-      scheduledFor: new Date(NOW.getTime() - 2 * 60 * 60 * 1000),
+      dispatchFirstFailedAt: new Date(NOW.getTime() - 2 * 60 * 60 * 1000),
     });
 
     await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
@@ -1037,7 +1081,7 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
     const { deps } = makeDeps({
       resendAudienceId: null,
       throwOn: { method: 'createAudience', kind: 'retryable', subKind: 'server_5xx' },
-      scheduledFor: new Date(NOW.getTime() - 2 * 60 * 60 * 1000),
+      dispatchFirstFailedAt: new Date(NOW.getTime() - 2 * 60 * 60 * 1000),
     });
 
     await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
@@ -1054,7 +1098,7 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
     const { deps } = makeDeps({
       resendAudienceId: null,
       throwOn: { method: 'createAudience', kind: 'retryable', subKind: 'network' },
-      scheduledFor: new Date(NOW.getTime() - 2 * 60 * 60 * 1000),
+      dispatchFirstFailedAt: new Date(NOW.getTime() - 2 * 60 * 60 * 1000),
     });
 
     await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
@@ -1189,28 +1233,30 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
   });
 
   /**
-   * Round 4 T4 / mutant M11 — `budgetEpoch` losing its fallbacks.
+   * Round 4 T4 / mutant M11 — a SEND-NOW row must not be exempt from the budget.
    *
-   * `scheduledFor ?? approvedAt ?? createdAt`. A send-now broadcast has
-   * `scheduledFor === null`, so with the fallbacks gone the epoch is `undefined`,
-   * `new Date(undefined).getTime()` is NaN, every comparison against NaN is false
-   * — and the row is EXEMPT FROM THE BUDGET FOR EVER. The code's own comment
-   * calls that "the same 'no bound at all' defect one row narrower".
+   * The mutant then was `budgetEpoch` losing its `?? approvedAt ?? createdAt`
+   * fallbacks: a send-now row has `scheduledFor === null`, the epoch became
+   * `undefined`, every comparison against NaN was false — and the row was EXEMPT
+   * FROM THE BUDGET FOR EVER. It survived 71/71 because no case drove a null
+   * `scheduledFor` this far.
    *
-   * The mutant survived 71/71 because no case drove a null `scheduledFor` this
-   * far; the `nullScheduledFor` option existed and was used once, on a path that
-   * never reaches the budget. Round 4's other half of this: the sibling harness's
-   * fixture omitted all THREE fields, so the epoch was NaN there for every case.
+   * F119 PR-E removed that epoch: the budget counts from the attempt's first
+   * failure (`dispatchFirstFailedAt`), which a send-now row carries like any
+   * other. The property is unchanged and still pinned here — a send-now row whose
+   * first failure is two hours old goes terminal — while `approvedAt` is left
+   * RECENT, so a revert to the old fallback would keep the row retrying and fail
+   * this case.
    */
-  it('T4/M11 — a SEND-NOW broadcast still honours the budget, via the approvedAt fallback', async () => {
+  it('T4/M11 — a SEND-NOW broadcast still honours the budget, counted from its first failure', async () => {
     const spy = vi.spyOn(broadcastsMetrics, 'dispatchBudgetExhausted');
     const { deps, rec } = makeDeps({
       resendAudienceId: null,
       throwOn: { method: 'createAudience', kind: 'retryable', subKind: 'server_5xx' },
-      // The admin hit "approve & send now", so there is no schedule to measure
-      // from — `approvedAt` is the eligibility moment and must be used.
+      // The admin hit "approve & send now": no schedule, approved just now.
       nullScheduledFor: true,
-      approvedAt: new Date(NOW.getTime() - 2 * 60 * 60 * 1000),
+      approvedAt: NOW,
+      dispatchFirstFailedAt: new Date(NOW.getTime() - 2 * 60 * 60 * 1000),
     });
 
     await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
@@ -2202,6 +2248,8 @@ describe('buildAudienceTick — member standing at send time (F119 PR-A)', () =>
     expect(rec.memberEmails).toEqual([]);
     expect(rec.gatewayCalls).toEqual([]);
     expect(rec.importsSubmitted).toEqual([]);
+    // F119 PR-E — a hold is not a failure: the FR-021 clock is not started.
+    expect(rec.retryStamps).toEqual([]);
     expect(heldSpy).toHaveBeenCalledWith('test-tenant');
     expect(failedSpy).not.toHaveBeenCalled();
   });
@@ -2334,5 +2382,236 @@ describe('buildAudienceTick — member standing at send time (F119 PR-A)', () =>
     const res = await buildAudienceTick(tick2.deps as never, { broadcastId: BROADCAST_ID });
     expect(res.ok).toBe(true);
     expect(tick2.rec.sends).toEqual(['rb-1']);
+  });
+});
+
+/**
+ * F119 PR-E (migration 0311) — the import leg's FR-021 budget counts from the
+ * FIRST retryable gateway failure of the current attempt, as the legacy leg's.
+ * Every case sets `scheduledFor` three days back: under the old epoch
+ * (`scheduledFor ?? approvedAt ?? createdAt`) each would go terminal on its
+ * first failure, which is what makes them discriminate.
+ */
+describe('buildAudienceTick — FR-021 budget anchors on the first failure (F119 PR-E)', () => {
+  const THREE_DAYS_AGO = new Date(NOW.getTime() - 3 * 24 * 60 * 60 * 1000);
+  const minutesAgo = (m: number): Date => new Date(NOW.getTime() - m * 60 * 1000);
+  const RETRYABLE = { method: 'createAudience', kind: 'retryable', subKind: 'server_5xx' } as const;
+
+  it('a row resumed three days late + ONE retryable error stays approved and starts the clock', async () => {
+    const spy = vi.spyOn(broadcastsMetrics, 'dispatchBudgetExhausted');
+    const { deps, rec } = makeDeps({ resendAudienceId: null, throwOn: RETRYABLE, scheduledFor: THREE_DAYS_AGO });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error.kind).toBe('dispatch.server_error');
+    expect(rec.retryStamps).toEqual([NOW]);
+    expect(rec.transitions).toHaveLength(0);
+    expect(rec.memberEmails).toHaveLength(0);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('a failure 61 minutes after the first → retry_budget_exhausted, measured from the first failure', async () => {
+    const { deps, rec } = makeDeps({
+      resendAudienceId: null,
+      throwOn: RETRYABLE,
+      scheduledFor: THREE_DAYS_AGO,
+      dispatchFirstFailedAt: minutesAgo(61),
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    // The elapsed time reported is the outage, not the three-day delay.
+    expect(res.error).toMatchObject({
+      kind: 'audience_import_failed',
+      reason: 'retry_budget_exhausted',
+      observed: 61 * 60 * 1000,
+    });
+    expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+    expect(rec.transitions[0]?.failureReason).toBe('retry_budget_exhausted');
+    // The stamp write runs on every failure (L3) and COALESCE keeps the first:
+    // the budget counted from the returned 61-minute stamp, not from now.
+    expect(rec.retryStamps).toEqual([NOW]);
+    expect(rec.memberEmails).toHaveLength(1);
+  });
+
+  it('a failure 59 minutes after the first is still inside the budget', async () => {
+    const { deps, rec } = makeDeps({
+      resendAudienceId: null,
+      throwOn: RETRYABLE,
+      scheduledFor: THREE_DAYS_AGO,
+      dispatchFirstFailedAt: minutesAgo(59),
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error.kind).toBe('dispatch.server_error');
+    expect(rec.transitions).toHaveLength(0);
+  });
+
+  it('the stamp write failing is logged and the tick stays retryable — a failed write never becomes a permanent failure', async () => {
+    const { logger } = await import('@/lib/logger');
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const { deps, rec } = makeDeps({
+      resendAudienceId: null,
+      throwOn: RETRYABLE,
+      scheduledFor: THREE_DAYS_AGO,
+      retryStampThrows: true,
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error.kind).toBe('dispatch.server_error');
+    expect(rec.transitions).toHaveLength(0);
+    expect(rec.memberEmails).toHaveLength(0);
+    const stampLog = warnSpy.mock.calls.find((c) => c[1] === 'broadcasts.audience_import.retry_epoch_stamp_failed');
+    expect(stampLog).toBeDefined();
+    // `errKind`, never the raw error: a Neon error carries bound parameters.
+    expect(stampLog?.[0]).toMatchObject({ err: 'Error', broadcastId: BROADCAST_ID });
+    expect(JSON.stringify(stampLog?.[0])).not.toContain('administrator command');
+  });
+
+  it('L1 — a failed stamp write is COUNTED, not only logged (a stamp that always fails means endless retries)', async () => {
+    const counter = vi.spyOn(broadcastsMetrics, 'dispatchRetryStampFailed');
+    const { deps } = makeDeps({ resendAudienceId: null, throwOn: RETRYABLE, retryStampThrows: true });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(counter).toHaveBeenCalledWith('test-tenant');
+  });
+
+  it('a failed stamp write on an ALREADY-stamped row still measures from the stamp — a storage fault cannot extend a spent budget', async () => {
+    const { deps, rec } = makeDeps({
+      resendAudienceId: null,
+      throwOn: RETRYABLE,
+      dispatchFirstFailedAt: minutesAgo(61),
+      retryStampThrows: true,
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error).toMatchObject({ kind: 'audience_import_failed', reason: 'retry_budget_exhausted' });
+    expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+  });
+
+  /**
+   * L3 — the Step-1 snapshot can be stale. An admin re-times the row after the
+   * read (which clears the clock; the row stays `approved`), then this tick
+   * fails: budgeting from the snapshot's 61-minute stamp would kill the freshly
+   * re-timed row. The epoch is what the stamp's RETURNING says the row carries.
+   */
+  it('L3 — a re-time between the read and the failure: the budget uses the RETURNED stamp, not the stale snapshot', async () => {
+    const { deps, rec } = makeDeps({
+      resendAudienceId: null,
+      throwOn: RETRYABLE,
+      dispatchFirstFailedAt: minutesAgo(61),
+      retryStampReturns: NOW,
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error.kind).toBe('dispatch.server_error');
+    expect(rec.retryStamps).toEqual([NOW]);
+    expect(rec.transitions).toHaveLength(0);
+    expect(rec.memberEmails).toHaveLength(0);
+  });
+
+  it('L3 — the stamp matches no row (another writer moved it out of approved) → stop, no terminal write, nobody told', async () => {
+    const spy = vi.spyOn(broadcastsMetrics, 'dispatchBudgetExhausted');
+    const { deps, rec } = makeDeps({
+      resendAudienceId: null,
+      throwOn: RETRYABLE,
+      dispatchFirstFailedAt: minutesAgo(61),
+      retryStampReturns: null,
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res).toEqual({
+      ok: false,
+      error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' },
+    });
+    expect(rec.transitions).toHaveLength(0);
+    expect(rec.audits).toHaveLength(0);
+    expect(rec.memberEmails).toHaveLength(0);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  /**
+   * H1 — a HOLD resets the clock. It used to write nothing, so a failure → a
+   * two-day hold → the member pays → ONE blip ended in retry_budget_exhausted.
+   * The reset is the one write a hold makes; still no audit row, no email.
+   */
+  it.each([
+    ['tick 1 (no import yet)', {}],
+    ['tick 2 (import already submitted)', { ...POLLING, audienceImportSubmittedAt: NOW }],
+  ] as const)('H1 — %s, a hold on a STAMPED row resets the clock and still writes no audit, sends no email', async (_label, row) => {
+    const { deps, rec } = makeDeps({ ...row, dispatchFirstFailedAt: minutesAgo(30), standing: { access: 'suspended' } });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res).toEqual({ ok: true, value: { kind: 'dispatch_held_member_suspended' } });
+    expect(rec.retryClears).toEqual([0]);
+    expect(rec.retryStamps).toEqual([]);
+    expect(rec.transitions).toEqual([]);
+    expect(rec.audits).toEqual([]);
+    expect(rec.memberEmails).toEqual([]);
+    expect(rec.gatewayCalls).toEqual([]);
+  });
+
+  it('H1 — the reset failing is logged (class only) and the tick is still HELD, never an error', async () => {
+    const { logger } = await import('@/lib/logger');
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const { deps, rec } = makeDeps({
+      dispatchFirstFailedAt: minutesAgo(30),
+      standing: { access: 'suspended' },
+      retryClearThrows: true,
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res).toEqual({ ok: true, value: { kind: 'dispatch_held_member_suspended' } });
+    expect(rec.transitions).toEqual([]);
+    const clearLog = warnSpy.mock.calls.find((c) => c[1] === 'broadcasts.audience_import.retry_clock_clear_failed');
+    expect(clearLog?.[0]).toMatchObject({ err: 'Error', broadcastId: BROADCAST_ID });
+    expect(JSON.stringify(clearLog?.[0])).not.toContain('administrator command');
+  });
+
+  /**
+   * M1 — once the provider has taken the send there is nothing left to budget:
+   * the clock is reset right after `sendBroadcast` succeeds. This leg has no
+   * probe, so a stamp surviving a delivered send would be inherited by any later
+   * budgeted failure on the row.
+   */
+  it('M1 — a successful send resets a stamped clock, AFTER the send', async () => {
+    const { deps, rec } = makeDeps({ ...POLLING, dispatchFirstFailedAt: minutesAgo(5) });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(true);
+    expect(rec.retryClears).toEqual([rec.gatewayCalls.indexOf('sendBroadcast') + 1]);
+  });
+
+  it('M1 — the post-send reset failing is logged and the send still completes', async () => {
+    const { logger } = await import('@/lib/logger');
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const { deps, rec } = makeDeps({ ...POLLING, dispatchFirstFailedAt: minutesAgo(5), retryClearThrows: true });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res).toEqual({ ok: true, value: { kind: 'sent', resendBroadcastId: 'rb-1', recipientCount: RECIPIENTS.length } });
+    expect(rec.transitions.map((t) => t.status)).toEqual(['sending']);
+    expect(warnSpy.mock.calls.some((c) => c[1] === 'broadcasts.audience_import.retry_clock_clear_failed')).toBe(true);
   });
 });

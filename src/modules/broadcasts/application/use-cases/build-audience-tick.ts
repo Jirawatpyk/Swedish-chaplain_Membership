@@ -54,6 +54,7 @@ import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { broadcastsMetrics } from '@/lib/metrics';
 import { classifyThrown, isRetryableThrow } from './_classify-thrown';
+import { dispatchRetryEpoch, resetDispatchRetryClock, RETRY_BUDGET_MS } from './_dispatch-retry-epoch';
 import { enqueueDispatchFailureNotification } from './_enqueue-dispatch-failure-notification';
 import { emitExpiredPlanAuditIfApplicable } from './_expired-plan-audit';
 import type { TenantContext } from '@/modules/tenants';
@@ -453,7 +454,10 @@ export async function buildAudienceTick(
  * anything else is the tick's answer.
  *
  * - `hold` (R1, a `suspended` membership) — `dispatch_held_member_suspended`:
- *   nothing sent, nothing written, nobody told; the next tick asks again.
+ *   nothing sent, nobody told, no audit; the ONE write is the FR-021 retry-clock
+ *   reset (F119 PR-E, review H1 — best-effort, own tx, a stamped row only), so a
+ *   failure before a days-long hold cannot make the first blip after it
+ *   terminal. The next tick asks again.
  * - `refuse` (halted, or the membership ENDED) — PERMANENT, and writes BOTH
  *   audit rows in the terminal transaction: the `broadcast_failed_to_dispatch`
  *   row every terminal failure writes, and the standing refusal under submit's
@@ -476,6 +480,8 @@ async function applySendStanding(
   if (standing.kind === 'send') return null;
   if (standing.kind === 'hold') {
     recordDispatchHold(deps.tenant.slug, input.broadcastId as unknown as string, 'import');
+    // Outside every tx: the Step-1 lock tx has committed.
+    await resetDispatchRetryClock(deps, input.broadcastId, 'broadcasts.audience_import.retry_clock_clear_failed');
     return ok({ kind: 'dispatch_held_member_suspended' });
   }
   if (standing.kind === 'refuse') {
@@ -716,20 +722,13 @@ function importReasonToFailureMetric(
  * non-zero rate pages on-call (`docs/observability.md` § F7 alerts). With the
  * flag on it could never fire.
  *
- * Epoch order copied from the legacy path rather than simplified:
- * `scheduledFor ?? approvedAt ?? createdAt`. A send-now row has no
- * `scheduledFor`, and anchoring such a row on nothing would exempt it from the
- * budget entirely — which is the same "no bound at all" defect one row narrower.
+ * F119 PR-E (migration 0311) — the epoch is the FIRST retryable gateway failure
+ * of the current attempt (`dispatchRetryEpoch`, shared with the legacy leg), not
+ * `scheduledFor ?? approvedAt ?? createdAt`. That epoch killed a row resumed an
+ * hour late (a hold, the read-only freeze) on its first blip; the send-now
+ * fallback it needed is gone with it, because every row's clock now starts at
+ * its failure — a send-now row is bounded like any other.
  */
-const RETRY_BUDGET_MS = 60 * 60 * 1000;
-
-function budgetEpoch(broadcast: Broadcast): Date {
-  // No cast. `Broadcast` declares all three (`broadcast.ts:105,110,195`), and the
-  // `as unknown as {...}` this replaced was the cast-suppresses-tsc shape that
-  // round-3 finding 3-1 turned on — a cast is how a wrong assumption about a
-  // type survives the compiler.
-  return broadcast.scheduledFor ?? broadcast.approvedAt ?? broadcast.createdAt;
-}
 
 /**
  * A retryable failure, decided: retry on the next tick, or stop because the
@@ -757,7 +756,19 @@ async function onRetryable(
   subKind: 'network' | 'timeout' | 'server_5xx' | 'api' | 'unclassified',
 ): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError>> {
   const now = deps.clock.now();
-  const epoch = budgetEpoch(broadcast);
+  const epoch = await dispatchRetryEpoch(
+    deps,
+    input.broadcastId,
+    broadcast,
+    now,
+    'broadcasts.audience_import.retry_epoch_stamp_failed',
+  );
+  if (epoch === null) {
+    // Review L3 — the stamp matched no `approved` row: another writer moved it
+    // since Step 1. No attempt is left to fail, so no terminal write, nobody
+    // told; the cron buckets this as a concurrent skip.
+    return err({ kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' });
+  }
   const elapsedMs = now.getTime() - epoch.getTime();
   if (elapsedMs <= RETRY_BUDGET_MS) {
     return err({ kind: 'dispatch.server_error', message, phase: 'gateway' });
@@ -1316,6 +1327,12 @@ async function confirmImport(
       'broadcasts.audience_import.send_idempotency_replay',
     );
   }
+  // F119 PR-E (review M1) — the provider has the mail: nothing is left to
+  // budget, so reset the FR-021 clock before the writes below that may fail.
+  // This leg has no inherited-id probe, so a stamp surviving a delivered send
+  // would be inherited by any later budgeted failure on the row. Own tx,
+  // best-effort (never throws).
+  await resetDispatchRetryClock(deps, input.broadcastId, 'broadcasts.audience_import.retry_clock_clear_failed');
 
   // ## Round 3 finding 3-6 — the cancel window, and why the ids go FIRST
   //
@@ -1876,9 +1893,10 @@ async function onResolveFailure(
   // closed by this. It is answered the way the live leg answers it:
   // `broadcasts.dispatch_resolve_failed.total` alarms at >0 sustained 15 min,
   // and since round 4 L4 both legs also log `cron.broadcasts.dispatch
-  // .server_error` with a bounded `errClass`. A wall-clock bound anchored on
-  // FIRST FAILURE rather than on the epoch would be the real fix; it needs a
-  // column and is not this branch's work. Reopened in the round-4 ledger.
+  // .server_error` with a bounded `errClass`. F119 PR-E (0311) added the
+  // first-failure anchor that reason 1 asked for, but only the GATEWAY budget
+  // reads it: reasons 2 and 3 still hold for a resolver fault (the legs would
+  // fork, and the member email names the provider), so this stays unbudgeted.
   return err(mapped);
 }
 

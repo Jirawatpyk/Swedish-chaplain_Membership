@@ -98,6 +98,7 @@ function makeBroadcast(
     approvedVersionId: null,
     memberReminderStage: 0,
     memberExpiryNotifiedAt: null,
+    dispatchFirstFailedAt: null,
     createdAt: NOW,
     updatedAt: NOW,
   };

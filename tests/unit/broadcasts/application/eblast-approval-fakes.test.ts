@@ -169,3 +169,29 @@ describe('eblast-approval-fakes — isBlobReferencedByContent searches the conte
     expect(await makeFakeBroadcastImagesRepo().isBlobReferencedByContent('test-tenant' as never, URL, FAKE_TX)).toBe(false);
   });
 });
+
+describe('eblast-approval-fakes — the FR-021 retry clock mirrors the adapter (F119 PR-E)', () => {
+  it('COALESCE keeps the first stamp; a clear, a re-time and a status change each reset it; a non-approved row answers null', async () => {
+    const row = makeApprovalBroadcast({ status: 'approved', scheduledFor: NOW });
+    const store = makeFakeApprovalStore({ broadcasts: [row] });
+    const repo = store.broadcastsRepo;
+    const tenantId = row.tenantId as never;
+    const at = (m: number) => new Date(NOW.getTime() + m * 60_000);
+    const read = () => repo.rows.get([...repo.rows.keys()][0] as string)?.dispatchFirstFailedAt;
+    const stamp = (m: number) => repo.markDispatchRetryStarted(FAKE_TX, tenantId, row.broadcastId, at(m));
+
+    expect(await stamp(1)).toEqual(at(1));
+    expect(await stamp(5)).toEqual(at(1));
+    await repo.clearDispatchRetryClock(FAKE_TX, tenantId, row.broadcastId);
+    expect(read()).toBeNull();
+
+    await stamp(7);
+    await repo.applyTransition(FAKE_TX, tenantId, row.broadcastId, 'approved', { scheduledFor: at(60) }, 'approved');
+    expect(read()).toBeNull();
+
+    await stamp(9);
+    await repo.applyTransition(FAKE_TX, tenantId, row.broadcastId, 'cancelled', {}, 'approved');
+    expect(read()).toBeNull();
+    expect(await stamp(11)).toBeNull();
+  });
+});

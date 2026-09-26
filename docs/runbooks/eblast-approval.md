@@ -214,7 +214,7 @@ The answer is one of three (the maintainer's decision, R1):
 
 | Signal | Held (awaiting payment) | Refusal (halted / membership ended) | Read failure |
 |---|---|---|---|
-| Row | stays `approved`, untouched — every tick (5 min) re-checks it | `failed_to_dispatch`, `failure_reason` = `member_halted` or `member_not_in_good_standing` | stays `approved` — the next tick asks again |
+| Row | stays `approved` — every tick (5 min) re-checks it; the only write is the FR-021 retry-clock reset (`dispatch_first_failed_at = NULL`, only if it was set) | `failed_to_dispatch`, `failure_reason` = `member_halted` or `member_not_in_good_standing` | stays `approved` — the next tick asks again |
 | Staff detail page | once `scheduled_for` has passed: an info note "Held — the member's membership is awaiting payment; the E-Blast will send automatically once it is settled, or fail if the membership ends" | a "Why this E-Blast was not sent" note under the status, naming the cause | nothing new |
 | Audit | **none** (a row every 5 min would bury the log) | `broadcast_failed_to_dispatch` **and** `broadcast_member_halted_pending_review` / `broadcast_membership_suspended_blocked` with `surface: 'dispatch'`, actor `system:cron`, `actor_role: null` (one tx). The membership row also carries `access` — always `terminated` here (a suspended member is held); at submit / approve / schedule confirm it is `suspended` or `terminated` | none |
 | Member | nothing | the FR-021 "did not go out" email: a factual reason, "contact the chamber", and that they can submit the content as a new E-Blast once the chamber has resolved it | nothing |
@@ -248,10 +248,41 @@ cancel it (an `approved` row is cancellable).
   `FEATURE_F7_IMPORT_AUDIENCE` is turned on** (dormant while it is off, as it is in prod). Until
   then: a stuck count on one tenant with `broadcasts_dispatch_standing_held_total` climbing for the
   same tenant is a hold.
-- **Both legs:** the FR-021 retry budget is measured from `scheduled_for`. A row resuming more than
-  an hour late that then hits ONE retryable Resend failure goes straight to
-  `retry_budget_exhausted` (the member told "unreachable for over an hour"). Nothing on the row
-  records the hold, so the budget cannot tell a hold from a slow provider — a known limitation.
+- **Both legs:** a hold does not spend the FR-021 retry budget. Since migration `0311` (F119
+  PR-E) the hour counts from the FIRST retryable Resend failure of the dispatch attempt
+  (`broadcasts.dispatch_first_failed_at`), not from `scheduled_for`, so a row resuming days late
+  gets its full hour. The column is reset on every status change, on a re-time, on every held tick
+  (the one write a hold makes — no audit row, no email; a failed reset logs
+  `broadcasts.{dispatch,audience_import}.retry_clock_clear_failed` and the tick is still held)
+  and right after a successful `sendBroadcast`. So a failure → a two-day hold → payment → one blip
+  is a fresh hour, not `retry_budget_exhausted`.
+- **Residual — a read-only freeze does NOT reset the clock.** A paused cron cannot write, so a row
+  that failed before a `READ_ONLY_MODE` freeze keeps its stamp; if the freeze outlasts the rest
+  of the hour, the first retryable failure after the lift is terminal and the member email's
+  "unreachable for over an hour" then describes the freeze. **Mitigation:** after lifting a long
+  freeze, list the `approved` rows carrying a stamp
+  (`SELECT broadcast_id, dispatch_first_failed_at FROM broadcasts WHERE status = 'approved' AND
+  dispatch_first_failed_at IS NOT NULL`, per tenant) and clear them with the same SQL as the
+  rollback bullet below: `UPDATE broadcasts SET dispatch_first_failed_at = NULL WHERE status =
+  'approved' AND dispatch_first_failed_at IS NOT NULL` (as the migration owner, or after
+  `SET LOCAL app.current_tenant = '<tenant>'` once per tenant). A staff-page re-time is NOT the
+  general fix: confirm-schedule refuses a legacy-approved row (`current_round = 0` →
+  `round_zero`) and a row a tick already handed to Resend (`resend_broadcast_id` or
+  `audience_import_id` set → `sending_started`). A re-time clears the clock only on a round ≥ 1
+  row with neither id (`cron-jobs.md` § Read-only mode).
+- **A retryable failure of the inherited-id probe is never budgeted** (legacy leg; review M1). The
+  probe runs only when an earlier tick minted the Resend broadcast, and an unanswered probe cannot
+  say whether that mail already went out — so it retries every tick
+  (`broadcasts.dispatch.inherited_probe_retryable`, warn) instead of going terminal and telling the
+  member a delivered E-Blast failed. The operator signal for a probe that never answers is
+  `broadcasts_approved_overdue_count`, as for the `inherited_status` refusal.
+- **Rolling PR-E back:** `vercel promote` leaves the `dispatch_first_failed_at` column in place and
+  the old code never clears it, so a row stamped by the new code and then re-approved under the
+  old code keeps a stale stamp after the redeploy — after such a rollback-and-redeploy, run
+  `UPDATE broadcasts SET dispatch_first_failed_at = NULL WHERE status = 'approved' AND
+  dispatch_first_failed_at IS NOT NULL` (`broadcasts` is RLS + FORCE: as the migration owner, or
+  after `SET LOCAL app.current_tenant = '<tenant>'` once per tenant). Never edit or revert
+  migration `0311` itself.
 
 A refusal is **permanent by the maintainer's rule, halted members included**: there is no edge out
 of `failed_to_dispatch`, and clearing a halt does not revive the row. A halt is re-read UNCACHED
