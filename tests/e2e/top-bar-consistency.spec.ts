@@ -5,6 +5,8 @@
  * `Home-mobile`). Both keep a stable height, so neither shifts the page.
  */
 import { expect, test } from './fixtures';
+import { signInAsAdmin } from './helpers/admin-session';
+import { signInAsMember } from './helpers/member-sign-in';
 import { clearE2ERateLimits } from './helpers/rate-limit';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
@@ -23,26 +25,19 @@ test.describe('F4 SC-009 — top bar consistency @layout', () => {
   });
 
   test('the staff bar is 56px and the portal header 72 / 64px, as on the boards', async ({ browser }) => {
-    // Two full sign-ins (staff + member) in one test: a single WebKit staff
-    // sign-in took 8–11 s on the dev server, so the default 30 s ran out
-    // before anything was measured (R4 WebKit run).
-    test.setTimeout(90_000);
+    // Two full sign-ins (staff + member) in one test, each allowed 60 s for a
+    // cold-compiled landing route by the shared helpers.
+    test.setTimeout(150_000);
     const adminCtx = await browser.newContext();
     const memberCtx = await browser.newContext();
     const adminPage = await adminCtx.newPage();
     const memberPage = await memberCtx.newPage();
 
-    await adminPage.goto('/admin/sign-in');
-    await adminPage.getByLabel(/email/i).fill(ADMIN_EMAIL!);
-    await adminPage.getByRole('textbox', { name: /^password$/i }).fill(ADMIN_PASSWORD!);
-    await adminPage.getByRole('button', { name: /sign in/i }).click();
-    await adminPage.waitForURL((u) => { const p = new URL(u).pathname; return /^\/admin(\/|$)/.test(p) && !p.startsWith("/admin/sign-in"); });
-
-    await memberPage.goto('/portal/sign-in');
-    await memberPage.getByLabel(/email/i).fill(MEMBER_EMAIL!);
-    await memberPage.getByRole('textbox', { name: /^password$/i }).fill(MEMBER_PASSWORD!);
-    await memberPage.getByRole('button', { name: /sign in/i }).click();
-    await memberPage.waitForURL((u) => { const p = new URL(u).pathname; return /^\/portal(\/|$)/.test(p) && !p.startsWith("/portal/sign-in"); });
+    // The shared helpers, not an inline `.fill()`: on WebKit a plain fill
+    // left the email empty while the password filled (R6), so the form never
+    // submitted. They also wait for the landing fetches (sign-in-landing.ts).
+    await signInAsAdmin(adminPage);
+    await signInAsMember(memberPage);
 
     const adminHeader = await adminPage.locator('header').first().evaluate((el) => {
       const cs = getComputedStyle(el);
