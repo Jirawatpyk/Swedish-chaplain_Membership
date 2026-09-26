@@ -10,13 +10,9 @@
  * ("At 62% of the year you've used 33% of your benefits").
  */
 import Link from 'next/link';
-import { TriangleAlert, ArrowRight } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import {
-  InlineAlert,
-  InlineAlertTitle,
-  InlineAlertDescription,
-} from '@/components/ui/inline-alert';
+import { Alert } from '@jirawatpyk/aura-react';
 
 export interface UnderUseWarningProps {
   /** Fraction of the membership year elapsed, 0–100. */
@@ -45,28 +41,24 @@ export function UnderUseWarning({
   // "62% / 38%" (24) under a warning (R#8).
   const elapsed = Math.ceil(elapsedYearPct);
   const consumed = Math.floor(consumedPct);
+  // AURA warning Alert (spec 122 US3): icon + title carry the meaning, and it
+  // keeps role="alert" as the legacy inline alert had.
   return (
-    <InlineAlert tone="warning">
-      <TriangleAlert aria-hidden="true" />
-      <InlineAlertTitle>
-        {subjectName === undefined ? t('title') : t('staffTitle')}
-      </InlineAlertTitle>
-      <InlineAlertDescription>
-        <p>
-          {subjectName === undefined
-            ? t('body', { elapsed, consumed })
-            : t('staffBody', { elapsed, consumed, company: subjectName })}
-        </p>
-        {actionHref !== undefined && (
-          <Link
-            href={actionHref}
-            className="inline-flex items-center gap-1 rounded-sm font-medium underline underline-offset-4 hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          >
-            {t('action')}
-            <ArrowRight aria-hidden="true" className="size-3.5" />
-          </Link>
-        )}
-      </InlineAlertDescription>
-    </InlineAlert>
+    <Alert tone="warning" title={subjectName === undefined ? t('title') : t('staffTitle')}>
+      <p>
+        {subjectName === undefined
+          ? t('body', { elapsed, consumed })
+          : t('staffBody', { elapsed, consumed, company: subjectName })}
+      </p>
+      {actionHref !== undefined && (
+        <Link
+          href={actionHref}
+          className="inline-flex min-h-11 items-center gap-1 font-medium text-[var(--aura-fg-accent)] no-underline hover:text-[var(--aura-fg-primary)] hover:underline"
+        >
+          {t('action')}
+          <ArrowRight aria-hidden="true" size={14} className="aura-icon" />
+        </Link>
+      )}
+    </Alert>
   );
 }

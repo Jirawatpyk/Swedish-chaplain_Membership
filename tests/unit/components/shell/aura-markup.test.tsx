@@ -8,8 +8,9 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { Badge, Button, Card, StatusPill } from '@jirawatpyk/aura-react';
-import { AuraBadge, AuraCard, AuraStatusPill, auraButtonClass } from '@/components/shell/aura-markup';
+import { Alert, Badge, Button, Card, StatusPill } from '@jirawatpyk/aura-react';
+import { PauseCircle } from 'lucide-react';
+import { AuraAlert, AuraBadge, AuraCard, AuraStatusPill, auraButtonClass } from '@/components/shell/aura-markup';
 
 const html = (node: React.ReactElement) => renderToStaticMarkup(node);
 
@@ -61,6 +62,36 @@ describe('server-safe AURA markup (spec 122 US3)', () => {
     const el = document.createElement('div');
     el.innerHTML = html(<Button {...props}>Go</Button>);
     expect(auraButtonClass(opts)).toBe(el.firstElementChild!.className);
+  });
+
+  it.each(['info', 'success', 'warning', 'danger'] as const)(
+    'draws a %s alert with AURA Alert markup and its default role',
+    (tone) => {
+      const ours = document.createElement('div');
+      ours.innerHTML = html(<AuraAlert tone={tone} title="Heads up" action={<b>act</b>}>Body</AuraAlert>);
+      const theirs = document.createElement('div');
+      theirs.innerHTML = html(<Alert tone={tone} title="Heads up" action={<b>act</b>}>Body</Alert>);
+      const a = ours.firstElementChild!;
+      const b = theirs.firstElementChild!;
+      expect(a.className).toBe(b.className);
+      expect(a.getAttribute('role')).toBe(b.getAttribute('role'));
+      expect(a.querySelector('svg')?.getAttribute('class')).toContain('aura-alert__icon');
+      // Same body structure: title, text, action.
+      const shape = (el: Element) =>
+        [...el.querySelector('.aura-alert__body')!.children].map((c) => `${c.tagName}.${c.className}`);
+      expect(shape(a)).toEqual(shape(b));
+    },
+  );
+
+  it('lets a server page override the alert role and icon (a standing notice is a status, not an alert)', () => {
+    const el = document.createElement('div');
+    el.innerHTML = html(
+      <AuraAlert tone="warning" role="status" icon={PauseCircle} title="Paused">
+        Body
+      </AuraAlert>,
+    );
+    expect(el.firstElementChild).toHaveAttribute('role', 'status');
+    expect(el.querySelector('svg')?.getAttribute('class')).toContain('lucide-circle-pause');
   });
 
   it('never imports AURA, so server components can use it', () => {

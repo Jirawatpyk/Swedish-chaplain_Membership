@@ -21,12 +21,8 @@ import Link from 'next/link';
 import { ArrowRight, PackageOpen, PauseCircle } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { formatCalendarYear, getDateFormatLocale } from '@/lib/format-date-localised';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { buttonVariants } from '@/components/ui/button';
-import { ProgressBar } from '@/components/ui/progress-bar';
-import { Separator } from '@/components/ui/separator';
-import { cn } from '@/lib/utils';
+import { Badge, Progress, Separator } from '@jirawatpyk/aura-react';
+import { AuraCard } from '@/components/shell/aura-markup';
 import { UnderUseWarning } from './under-use-warning';
 
 export interface BenefitUsageItem {
@@ -130,62 +126,54 @@ export function BenefitUsageCard({
   const formatDate = useFormatDate(locale);
   const hasContent = quantifiable.length > 0 || active.length > 0;
 
+  const title = (
+    <span className="flex min-w-0 flex-wrap items-center gap-2">
+      <span>{t('card.title', { year: formatCalendarYear(membershipYear, locale) })}</span>
+      {suspended && (
+        // Non-colour-alone encoding, mirrors Task 16's directory badge:
+        // distinct icon + distinct visible label + distinct sr-only phrase.
+        <Badge tone="warning" icon={<PauseCircle aria-hidden="true" />}>
+          <span aria-hidden="true">{t('card.suspendedBadge')}</span>
+          <span className="sr-only">{t('card.suspendedBadgeSr')}</span>
+        </Badge>
+      )}
+    </span>
+  );
+
   return (
     // Stable settle hook for the a11y e2e scan: the Suspense skeleton has no such
     // testid, so a scan can wait for the LOADED card before running axe (F9-QA-03).
-    <Card data-testid="benefit-usage-card" className={className}>
-      {/* Heading + action share one centred row (heading level with the
-          button, matching the Recent activity card); the live-figures note
-          sits on its own line below (full view only). */}
-      <CardHeader>
-        <div className="flex flex-row items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-2">
-            {/* 056 fix #1 — real <h2> in place of the CardTitle <div> so the
-                card lands in the SR heading tree under the page <h1>. */}
-            <h2
-              {...(headingId ? { id: headingId } : {})}
-              className="font-heading text-base font-medium leading-snug"
-            >
-              {t('card.title', { year: formatCalendarYear(membershipYear, locale) })}
-            </h2>
-            {suspended && (
-              <Badge
-                variant="outline"
-                className="shrink-0 gap-1 border-warning/40 text-warning"
-              >
-                <PauseCircle aria-hidden="true" className="size-3" />
-                {/* Non-colour-alone encoding, mirrors Task 16's directory
-                    badge: distinct icon + distinct visible label + distinct
-                    sr-only phrase on top of the amber colour token. */}
-                <span aria-hidden="true">{t('card.suspendedBadge')}</span>
-                <span className="sr-only">{t('card.suspendedBadgeSr')}</span>
-              </Badge>
-            )}
-          </div>
-          {compact && previewHref !== undefined ? (
-            <Link
-              href={previewHref}
-              className={cn(buttonVariants({ variant: 'outline' }), 'shrink-0')}
-            >
-              {t('card.fullBenefits')}
-              <ArrowRight aria-hidden="true" className="size-4" />
-            </Link>
-          ) : (
-            staffActions !== undefined && (
-              <div className="flex shrink-0 items-center gap-2">{staffActions}</div>
-            )
-          )}
-        </div>
-        {/* Figures are computed live per request (no cache) — surface the
-            freshness so a viewer knows they are current (spec edge case).
-            Omitted in the compact preview to keep the summary tight. */}
-        {!compact && (
-          <p className="text-caption text-muted-foreground">
-            {t('card.liveNote')}
-          </p>
-        )}
-      </CardHeader>
-      <CardContent className="flex flex-col gap-5">
+    // Spec 122 US3: AURA card (`Main` / `Benefits` boards). The title is a real
+    // <h2> (056 fix #1) and, with `headingId`, labels the card.
+    <AuraCard
+      data-testid="benefit-usage-card"
+      className={className}
+      title={title}
+      headingLevel={2}
+      {...(headingId ? { titleId: headingId } : {})}
+      // Figures are computed live per request (no cache) — surface the
+      // freshness so a viewer knows they are current (spec edge case).
+      // Omitted in the compact preview to keep the summary tight.
+      description={compact ? undefined : t('card.liveNote')}
+      actions={
+        !compact && staffActions !== undefined ? (
+          <div className="flex shrink-0 items-center gap-2">{staffActions}</div>
+        ) : undefined
+      }
+      footer={
+        compact && previewHref !== undefined ? (
+          // As on the Main board: a footer text link with a 44px target.
+          <Link
+            href={previewHref}
+            className="inline-flex min-h-11 items-center gap-1.5 text-sm font-medium text-[var(--aura-fg-accent)] no-underline hover:text-[var(--aura-fg-primary)] hover:underline"
+          >
+            {t('card.fullBenefits')}
+            <ArrowRight aria-hidden="true" size={16} className="aura-icon" />
+          </Link>
+        ) : undefined
+      }
+    >
+      <div className="flex flex-col gap-5">
         {/* The warning only fires when there's a real aggregate (a member with
             no quantifiable benefits never warns), so aggregateConsumedPct is
             non-null here — assert it rather than masking with `?? 0`, which
@@ -200,10 +188,12 @@ export function BenefitUsageCard({
         )}
 
         {!hasContent && (
-          <div className="flex flex-col items-center gap-2 py-8 text-center">
-            <PackageOpen aria-hidden="true" className="size-10 text-muted-foreground/60" />
-            <p className="font-medium">{t('card.emptyTitle')}</p>
-            <p className="text-sm text-muted-foreground">{t('card.empty')}</p>
+          <div className="aura-empty">
+            <span className="aura-empty__icon" aria-hidden>
+              <PackageOpen className="size-6" />
+            </span>
+            <p className="aura-empty__title">{t('card.emptyTitle')}</p>
+            <p className="aura-empty__text">{t('card.empty')}</p>
           </div>
         )}
 
@@ -211,15 +201,14 @@ export function BenefitUsageCard({
           <ul className="flex flex-col gap-4">
             {quantifiable.map((b) => (
               <li key={b.key} className="flex flex-col gap-1.5">
-                <ProgressBar
+                <Progress
                   label={t(`benefit.${b.key}`)}
                   value={b.used}
                   max={b.entitlement}
-                  formatValue={(_pct, value, max) =>
-                    t('card.usedOf', { used: value, total: max })
-                  }
+                  showValue
+                  valueLabel={t('card.usedOf', { used: b.used, total: b.entitlement })}
                 />
-                <div className="flex items-center justify-between gap-2 text-caption text-muted-foreground">
+                <div className="flex items-center justify-between gap-2 text-[13px] text-[var(--aura-fg-secondary)]">
                   <span>
                     {b.lastUsedAt === null
                       ? t('card.neverUsed')
@@ -228,13 +217,13 @@ export function BenefitUsageCard({
                   {!compact && b.actionHref !== undefined && (
                     <Link
                       href={b.actionHref}
-                      className="inline-flex items-center gap-1 rounded-sm font-medium text-foreground underline underline-offset-4 hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                      className="inline-flex min-h-11 items-center gap-1 font-medium text-[var(--aura-fg-accent)] no-underline hover:text-[var(--aura-fg-primary)] hover:underline"
                     >
                       {t(`benefit.action.${b.key}`)}
                       {/* SR context: "Compose" alone is ambiguous when tabbing
                           through links — name the benefit (R I-8). */}
                       <span className="sr-only">{t(`benefit.${b.key}`)}</span>
-                      <ArrowRight aria-hidden="true" className="size-3.5" />
+                      <ArrowRight aria-hidden="true" size={14} className="aura-icon" />
                     </Link>
                   )}
                 </div>
@@ -246,19 +235,19 @@ export function BenefitUsageCard({
         {!compact && active.length > 0 && (
           <div className="flex flex-col gap-2">
             <Separator />
-            <p className="text-caption font-medium text-muted-foreground">
+            <p className="text-[13px] font-medium text-[var(--aura-fg-secondary)]">
               {t('card.activeHeading')}
             </p>
             <ul className="flex flex-wrap gap-2">
               {active.map((a) => (
                 <li key={a.key}>
-                  <Badge variant="secondary">{t(`active.${a.key}`)}</Badge>
+                  <Badge>{t(`active.${a.key}`)}</Badge>
                 </li>
               ))}
             </ul>
           </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </AuraCard>
   );
 }

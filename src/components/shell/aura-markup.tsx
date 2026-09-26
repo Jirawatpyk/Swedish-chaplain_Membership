@@ -3,7 +3,7 @@
  *
  * Server files never import `@jirawatpyk/aura-react` (docs/aura-adoption.md:
  * the whole barrel would ship on every route). These helpers write the same
- * markup AURA's Card, Badge and StatusPill render, with its class names, so a
+ * markup AURA's Card, Badge, StatusPill and Alert render, with its class names, so a
  * server page gets the AURA look without the client bundle.
  * `tests/unit/components/shell/aura-markup.test.tsx` renders each one next to
  * AURA's own component and compares the HTML, so they cannot drift apart.
@@ -12,25 +12,34 @@
  * component inside a `'use client'` file.
  */
 import * as React from 'react';
-import { Ban, Circle, CircleCheck, CircleDotDashed, TriangleAlert, type LucideIcon } from 'lucide-react';
+import {
+  Ban,
+  Circle,
+  CircleAlert,
+  CircleCheck,
+  CircleDotDashed,
+  Info,
+  TriangleAlert,
+  type LucideIcon,
+} from 'lucide-react';
 
 function cx(...parts: ReadonlyArray<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(' ');
 }
 
-export interface AuraCardProps {
-  readonly title?: React.ReactNode;
-  readonly description?: React.ReactNode;
+export interface AuraCardProps extends Omit<React.HTMLAttributes<HTMLElement>, 'title'> {
+  readonly title?: React.ReactNode | undefined;
+  readonly description?: React.ReactNode | undefined;
   /** Top-right, e.g. a link button. */
-  readonly actions?: React.ReactNode;
-  readonly footer?: React.ReactNode;
-  readonly children?: React.ReactNode;
+  readonly actions?: React.ReactNode | undefined;
+  readonly footer?: React.ReactNode | undefined;
+  readonly children?: React.ReactNode | undefined;
   /** Default 3, as AURA's; 2 when the card sits directly under the page h1. */
-  readonly headingLevel?: 2 | 3 | 4 | 5 | 6;
+  readonly headingLevel?: 2 | 3 | 4 | 5 | 6 | undefined;
   /** Labels the card by its title (aria-labelledby). */
-  readonly titleId?: string;
-  readonly as?: 'section' | 'div' | 'article' | 'aside';
-  readonly className?: string;
+  readonly titleId?: string | undefined;
+  readonly as?: 'section' | 'div' | 'article' | 'aside' | undefined;
+  readonly className?: string | undefined;
 }
 
 /** AURA `Card`: a bordered container for one topic. */
@@ -44,10 +53,11 @@ export function AuraCard({
   titleId,
   as: Tag = 'section',
   className,
+  ...rest
 }: AuraCardProps) {
   const Heading = `h${headingLevel}` as const;
   return (
-    <Tag className={cx('aura-card', className)} aria-labelledby={title && titleId ? titleId : undefined}>
+    <Tag {...rest} className={cx('aura-card', className)} aria-labelledby={title && titleId ? titleId : undefined}>
       {title || actions ? (
         <div className="aura-card__head">
           <div className="aura-card__heading">
@@ -70,8 +80,8 @@ export function AuraCard({
 export type AuraTone = 'neutral' | 'accent' | 'success' | 'warning' | 'danger';
 
 export interface AuraBadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
-  readonly tone?: AuraTone;
-  readonly variant?: 'soft' | 'solid' | 'outline';
+  readonly tone?: AuraTone | undefined;
+  readonly variant?: 'soft' | 'solid' | 'outline' | undefined;
 }
 
 /** AURA `Badge`: a small static label ("Primary", "Portal linked", a count). */
@@ -108,7 +118,7 @@ export interface AuraStatusPillProps {
   /** Pass it: AURA guesses the tone from English words, and ours are translated. */
   readonly tone: AuraStatusTone;
   readonly children: React.ReactNode;
-  readonly className?: string;
+  readonly className?: string | undefined;
 }
 
 /** AURA `StatusPill`: a record's state as a tone fill, an icon and the status word. */
@@ -122,10 +132,54 @@ export function AuraStatusPill({ tone, children, className }: AuraStatusPillProp
   );
 }
 
+export type AuraFeedbackTone = 'info' | 'success' | 'warning' | 'danger';
+
+// AURA Alert's icon per tone (info, circle-check, triangle-alert, circle-alert).
+const ALERT_ICON: Record<AuraFeedbackTone, LucideIcon> = {
+  info: Info,
+  success: CircleCheck,
+  warning: TriangleAlert,
+  danger: CircleAlert,
+};
+
+export interface AuraAlertProps {
+  readonly tone?: AuraFeedbackTone | undefined;
+  readonly title?: React.ReactNode | undefined;
+  readonly children?: React.ReactNode | undefined;
+  /** Usually a secondary link button. */
+  readonly action?: React.ReactNode | undefined;
+  /**
+   * AURA's default: `alert` for warning / danger, `status` otherwise. Override
+   * for a standing notice that should not interrupt (e.g. "benefits paused").
+   */
+  readonly role?: 'alert' | 'status' | undefined;
+  /** Replaces the tone's icon when a distinct shape carries meaning. */
+  readonly icon?: LucideIcon | undefined;
+  readonly className?: string | undefined;
+}
+
+/** AURA `Alert`: an inline message that stays until the situation changes. */
+export function AuraAlert({ tone = 'info', title, children, action, role, icon, className }: AuraAlertProps) {
+  const Icon = icon ?? ALERT_ICON[tone];
+  return (
+    <div
+      className={cx('aura-alert', `aura-alert--${tone}`, className)}
+      role={role ?? (tone === 'danger' || tone === 'warning' ? 'alert' : 'status')}
+    >
+      <Icon size={16} className="aura-icon aura-alert__icon" aria-hidden="true" focusable="false" />
+      <div className="aura-alert__body">
+        {title ? <p className="aura-alert__title">{title}</p> : null}
+        {children ? <div className="aura-alert__text">{children}</div> : null}
+        {action ? <div className="aura-alert__action">{action}</div> : null}
+      </div>
+    </div>
+  );
+}
+
 export interface AuraButtonClassOptions {
-  readonly variant?: 'primary' | 'secondary' | 'ghost' | 'creative' | 'danger' | 'danger-secondary';
-  readonly size?: 'sm' | 'md';
-  readonly fullWidth?: boolean;
+  readonly variant?: 'primary' | 'secondary' | 'ghost' | 'creative' | 'danger' | 'danger-secondary' | undefined;
+  readonly size?: 'sm' | 'md' | undefined;
+  readonly fullWidth?: boolean | undefined;
 }
 
 /** The classes AURA `Button` gives itself, for a server-rendered link that looks like one. */
