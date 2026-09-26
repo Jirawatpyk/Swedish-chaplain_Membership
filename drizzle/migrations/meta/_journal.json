@@ -2136,6 +2136,13 @@
       "when": 1798544600000,
       "tag": "0313_directory_contact_visibility_owner",
       "breakpoints": true
+    },
+    {
+      "idx": 315,
+      "version": "7",
+      "when": 1798544700000,
+      "tag": "0314_export_job_subject_contact",
+      "breakpoints": true
     }
   ]
 }

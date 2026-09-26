@@ -138,6 +138,8 @@ export type ExportJobIdempotencyParts =
       readonly subjectMemberId: string;
       readonly requestedForPeriod: string;
       readonly requestedBy: string;
+      /** The named contact a staff export is built for — its content differs from the company archive. */
+      readonly subjectContactId?: string | null;
     }
   | {
       readonly tenantId: string;
@@ -145,6 +147,7 @@ export type ExportJobIdempotencyParts =
       readonly subjectMemberId: string | null;
       readonly requestedForPeriod: string | null;
       readonly requestedBy?: never;
+      readonly subjectContactId?: never;
     };
 
 /**
@@ -163,5 +166,7 @@ export function exportJobIdempotencyInput(
     parts.subjectMemberId ?? '',
     parts.requestedForPeriod ?? '',
     ...(parts.requestedBy !== undefined ? [parts.requestedBy] : []),
+    // Appended only when set, so every existing key is unchanged.
+    ...(parts.subjectContactId ? [`contact:${parts.subjectContactId}`] : []),
   ].join('|');
 }

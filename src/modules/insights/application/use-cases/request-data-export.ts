@@ -42,6 +42,14 @@ export type RequestDataExportActorRole = Role;
 export interface RequestDataExportInput {
   /** The data subject whose archive is requested. */
   readonly subjectMemberId: string;
+  /**
+   * PDPA §30 / GDPR Art. 15 — staff answering ONE contact's access request:
+   * the archive is built for that contact (their own record in full,
+   * colleagues by name and role). Staff only; the caller has already checked
+   * it is a contact of `subjectMemberId` (the worker re-checks and fails the
+   * job otherwise). Omitted/null = the company-level archive.
+   */
+  readonly subjectContactId?: string | null;
 }
 
 export interface RequestDataExportMeta {
@@ -85,6 +93,10 @@ export async function requestDataExport(
   if (meta.actorRole === 'member' && meta.actorMemberId !== input.subjectMemberId) {
     return err('forbidden');
   }
+  // A member's own export is scoped to them by their session — they never name
+  // another person's record.
+  const subjectContactId = input.subjectContactId ?? null;
+  if (meta.actorRole === 'member' && subjectContactId !== null) return err('forbidden');
 
   // An admin acting for any member is on-behalf; a member acting on their own
   // record is not (FR-031 attribution).
@@ -99,6 +111,7 @@ export async function requestDataExport(
     subjectMemberId: input.subjectMemberId,
     requestedForPeriod: period,
     requestedBy: meta.actorUserId,
+    subjectContactId,
   });
 
   const { job, created } = await runInTenant(ctx, async (tx) => {
@@ -108,6 +121,7 @@ export async function requestDataExport(
       requestedBy: meta.actorUserId,
       requestedForPeriod: period,
       requesterLocale: meta.requesterLocale,
+      subjectContactId,
       idempotencyKey,
     });
     // Emit only on a fresh job (no duplicate trail for a deduped re-submit),
@@ -120,12 +134,13 @@ export async function requestDataExport(
         actorUserId: meta.actorUserId,
         retentionYears: f9RetentionFor('data_export_requested'),
         summary: `GDPR data export requested for member ${input.subjectMemberId}${
-          onBehalf ? ` on behalf by ${meta.actorRole}` : ''
-        }`,
+          subjectContactId !== null ? ` for contact ${subjectContactId}` : ''
+        }${onBehalf ? ` on behalf by ${meta.actorRole}` : ''}`,
         payload: {
           job_id: res.job.id,
           subject_member_id: input.subjectMemberId,
           on_behalf: onBehalf,
+          ...(subjectContactId !== null ? { subject_contact_id: subjectContactId } : {}),
         },
       });
     }

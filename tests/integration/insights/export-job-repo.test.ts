@@ -93,6 +93,33 @@ describe('F9 ExportJobRepo — integration (T070-infra)', () => {
     expect(someoneElse).toHaveLength(0);
   });
 
+  it('round-trips subject_contact_id (migration 0314): a named-contact archive vs the company archive', async () => {
+    const subject = randomUUID();
+    const contact = randomUUID();
+    const period = `2026-06-01T10:${String(Math.floor(Math.random() * 60)).padStart(2, '0')}`;
+    const base = { kind: 'gdpr_member_archive' as const, subjectMemberId: subject, requestedBy: requester, requestedForPeriod: period, requesterLocale: 'en' as const };
+    const forContact = await runInTenant(tenant.ctx, (tx) =>
+      repo().createOrGetInTx(tx, {
+        ...base,
+        subjectContactId: contact,
+        idempotencyKey: exportJobIdempotencyInput({ tenantId: tenant.ctx.slug, ...base, subjectContactId: contact }),
+      }),
+    );
+    const forCompany = await runInTenant(tenant.ctx, (tx) =>
+      repo().createOrGetInTx(tx, {
+        ...base,
+        idempotencyKey: exportJobIdempotencyInput({ tenantId: tenant.ctx.slug, ...base }),
+      }),
+    );
+    // Same requester, same minute, same member: two jobs, never one another's file.
+    expect(forContact.created).toBe(true);
+    expect(forCompany.created).toBe(true);
+    expect(forContact.job.subjectContactId).toBe(contact);
+    expect(forCompany.job.subjectContactId).toBeNull();
+    const reread = await repo().findById(tenant.ctx, forContact.job.id);
+    expect(reread?.subjectContactId).toBe(contact);
+  });
+
   it('createOrGet is idempotent on (tenant, idempotency_key)', async () => {
     const input = {
       kind: 'directory_ebook' as const,

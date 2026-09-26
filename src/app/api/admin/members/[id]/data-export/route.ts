@@ -6,8 +6,15 @@
  * read-only manager — mirroring `requestDataExport`'s manager-forbidden rule);
  * the `data_export_requested` audit is attributed to the admin with
  * `on_behalf=true`. The artefact is built later by the async worker.
+ *
+ * PDPA §30 / GDPR Art. 15 — an optional `{ subjectContactId }` body answers ONE
+ * contact's access request: the archive is built for that contact (their own
+ * record in full, colleagues by name and role). The contact must belong to the
+ * member (a former contact counts — the right of access outlives the
+ * membership); an empty body keeps the company-level archive.
  */
 import { NextResponse, type NextRequest } from 'next/server';
+import { z } from 'zod';
 import { getLocale } from 'next-intl/server';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
@@ -18,9 +25,12 @@ import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { isLocale } from '@/i18n/config';
 import { tryMemberId } from '@/modules/members';
+import { buildMembersDeps } from '@/modules/members/members-deps';
 import { requestDataExport, makeRequestDataExportDeps } from '@/modules/insights';
 
 export const runtime = 'nodejs';
+
+const BodySchema = z.object({ subjectContactId: z.string().uuid().optional() });
 
 export async function POST(
   request: NextRequest,
@@ -37,6 +47,18 @@ export async function POST(
   if (!memberIdResult.ok) {
     return NextResponse.json({ error: { code: 'member_not_found' } }, { status: 404 });
   }
+
+  let raw: unknown;
+  try {
+    raw = await request.json();
+  } catch {
+    raw = {};
+  }
+  const parsed = BodySchema.safeParse(raw ?? {});
+  if (!parsed.success) {
+    return NextResponse.json({ error: { code: 'invalid_body' } }, { status: 400 });
+  }
+  const subjectContactId = parsed.data.subjectContactId ?? null;
 
   const tenant = resolveTenantFromRequest(request);
 
@@ -58,12 +80,30 @@ export async function POST(
     );
   }
 
+  if (subjectContactId !== null) {
+    const contactsResult = await buildMembersDeps(tenant).contactRepo.listByMember(
+      tenant,
+      memberIdResult.value,
+      { includeRemoved: true },
+    );
+    if (!contactsResult.ok) {
+      logger.error(
+        { tenantId: tenant.slug, memberId: id, errCode: contactsResult.error.code },
+        'admin.members.data_export.contact_lookup_failed',
+      );
+      return NextResponse.json({ error: { code: 'server_error' } }, { status: 500 });
+    }
+    if (!contactsResult.value.some((c) => String(c.contactId) === subjectContactId)) {
+      return NextResponse.json({ error: { code: 'contact_not_found' } }, { status: 404 });
+    }
+  }
+
   const activeLocale = await getLocale();
   const requesterLocale = isLocale(activeLocale) ? activeLocale : 'en';
 
   try {
     const result = await requestDataExport(
-      { subjectMemberId: memberIdResult.value },
+      { subjectMemberId: memberIdResult.value, subjectContactId },
       {
         actorUserId: ctx.current.user.id as string,
         actorRole: ctx.current.user.role,

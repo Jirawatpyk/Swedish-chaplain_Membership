@@ -1,0 +1,22 @@
+-- ---------------------------------------------------------------------------
+-- Migration 0314 — export_jobs: a GDPR archive for ONE named contact.
+--
+-- Since #432 the member archive carries only the requester's own contact
+-- record in full; colleagues appear by name and role (GDPR Art. 15(4) /
+-- PDPA §30). A staff on-behalf export has no linked requester, so it carried
+-- names and roles only — a contact without a portal account (or a former
+-- contact) could not obtain their own data from the system. Staff now name
+-- the contact whose access request they are answering; the worker builds the
+-- archive for that person. NULL keeps the company-level archive.
+--
+-- No FK: the worker re-validates the contact against the job's member and
+-- fails the job when it is not one of the member's contacts.
+--
+-- Numbered 0314, journal idx 315, `when` 1798544700000 — strictly after
+-- 0313's 1798544600000 (a duplicate `when` makes db:migrate a silent no-op).
+--
+-- Rollback:
+--   ALTER TABLE "export_jobs" DROP COLUMN "subject_contact_id";
+-- ---------------------------------------------------------------------------
+
+ALTER TABLE "export_jobs" ADD COLUMN IF NOT EXISTS "subject_contact_id" uuid;
