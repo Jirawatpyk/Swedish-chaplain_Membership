@@ -14,8 +14,8 @@
 
 ## Phase 1: Setup
 
-- [ ] T001 [US0] Add `@jirawatpyk/aura-react@5.5.0` and `@jirawatpyk/aura-tokens@5.5.0` as exact pins in `package.json` and `pnpm-lock.yaml`. Remove `react-day-picker`, delete `src/components/ui/calendar.tsx` and `src/components/ui/scroll-area.tsx` (0 importers), and confirm `pnpm typecheck` and `pnpm test` are green.
-- [ ] T002 [US0] Generate the brand theme with `npx aura-theme --brand "#10487A" --out src/styles/aura-theme.css`. The CLI must exit 0 (all contrast checks pass). Commit the output, with a header comment naming the regenerate command.
+- [x] T001 [US0] Add `@jirawatpyk/aura-react@5.5.0` and `@jirawatpyk/aura-tokens@5.5.0` as exact pins in `package.json` and `pnpm-lock.yaml`. Remove `react-day-picker`, delete `src/components/ui/calendar.tsx` and `src/components/ui/scroll-area.tsx` (0 importers), and confirm `pnpm typecheck` and `pnpm test` are green.
+- [x] T002 [US0] Generate the brand theme with `npx aura-theme --brand "#10487A" --out src/styles/aura-theme.css`. The CLI must exit 0 (all contrast checks pass). Commit the output, with a header comment naming the regenerate command.
 
 ---
 
@@ -30,27 +30,27 @@
 
 ### Toasts — behaviour: one facade; every existing toast keeps title, description, tone, action (FR-007)
 
-- [ ] T003 [US0] RED: write `tests/unit/lib/toast-facade.test.ts` per `contracts/toast-facade.md`, covering forwarding, id return, `error` as the danger tone, `closeButton` dropped, `dismiss`, and in-place `id` reuse. It fails because `src/lib/toast.ts` does not exist.
-- [ ] T004 [US0] Add `src/lib/toast.ts` (the contract type), backed by `sonner` in commit A. T003 goes GREEN, except the AURA-specific tone assertion, which stays pending until T007.
-- [ ] T005 [US0] Codemod the 115 `src/` files from `import { toast } from 'sonner'` to `from '@/lib/toast'`, and the 111 tests from `vi.mock('sonner', …)` to `vi.mock('@/lib/toast', …)`. Fix the compile errors the narrower type exposes.
+- [x] T003 [US0] RED: write `tests/unit/lib/toast-facade.test.ts` per `contracts/toast-facade.md`, covering forwarding, id return, `error` as the danger tone, `closeButton` dropped, `dismiss`, and in-place `id` reuse. It fails because `src/lib/toast.ts` does not exist.
+- [x] T004 [US0] Add `src/lib/toast.ts` (the contract type), backed by `sonner` in commit A. T003 goes GREEN, except the AURA-specific tone assertion, which stays pending until T007.
+- [x] T005 [US0] Codemod the 115 `src/` files from `import { toast } from 'sonner'` to `from '@/lib/toast'`, and the 111 tests from `vi.mock('sonner', …)` to `vi.mock('@/lib/toast', …)`. Fix the compile errors the narrower type exposes.
   - The only rich description is in `src/components/invoices/use-supersede-warning-toast.tsx`. It becomes text plus one action (research R4): one failed bill → "Open SC-…" via the router; several → "Open invoices", filtered to them. Its test is updated first (RED), then the hook.
   - `pnpm test` is green. This is commit A: a pure rename plus the one hook.
-- [ ] T006 [P] [US0] Add `tests/helpers/aura.ts` (`expectToast`, `pickSelect`, `checkBox`, `openMenu`). Make Vitest setup fail on `[aura]` dev warnings (`tests/setup*.ts`).
-- [ ] T007 [US0] Commit B: re-implement `src/lib/toast.ts` on AURA `toast`. Mount AURA `<Toaster position="top" />` inside AuraBridge (T010), remove `<Toaster>` from `src/app/layout.tsx:123`, delete `src/components/ui/sonner.tsx`, and uninstall `sonner`. T003 is fully GREEN and `pnpm test` is green.
+- [x] T006 [P] [US0] Add `tests/helpers/aura.ts` (`expectToast`, `pickSelect`, `checkBox`, `openMenu`). Make Vitest setup fail on `[aura]` dev warnings (`tests/setup*.ts`).
+- [x] T007 [US0] Commit B: re-implement `src/lib/toast.ts` on AURA `toast`. Mount AURA `<Toaster position="top" />` inside AuraBridge (T010), remove `<Toaster>` from `src/app/layout.tsx:123`, delete `src/components/ui/sonner.tsx`, and uninstall `sonner`. T003 is fully GREEN and `pnpm test` is green.
 
-### Provider — behaviour: AURA gets locale, calendar (BE for th only), time zone, router link, strings and density (FR-005)
+### Provider — behaviour: AURA gets locale, calendar (BE for th only), time zone, router link and density (FR-005)
 
-- [ ] T008 [US0] RED: write `tests/unit/providers/aura-bridge.test.tsx` per `contracts/aura-bridge.md`:
+- [x] T008 [US0] RED: write `tests/unit/providers/aura-bridge.test.tsx` per `contracts/aura-bridge.md`:
   - `th` gives `buddhist`; `en` and `sv` give `gregory`.
-  - `Button href` renders through `next/link`.
-  - The Toaster renders once.
-  - The `strings` keys resolve in EN, TH and SV.
-- [ ] T009 [US0] Add the `aura.*` namespace to `src/i18n/messages/{en,th,sv}.json` (AURA's built-in labels). `pnpm check:i18n` is green.
-- [ ] T010 [US0] Add `src/components/providers/aura-bridge.tsx` and mount it in `src/app/layout.tsx` inside `ThemeProvider`, passing `locale` and the tenant `timeZone`. Add the nested density providers in `src/app/(staff)/admin/layout.tsx` (compact) and `src/app/(member)/portal/layout.tsx` (comfortable). T008 is GREEN.
+  - The tenant time zone and the `next/link` component reach AURA.
+  - The Toaster renders once (added with commit B, T007).
+  - A nested density provider keeps the language, calendar, time zone and link.
+- [x] ~~T009~~ Dropped: AURA 5.5 ships its built-in labels in EN/TH/SV and picks them by `locale`, so no `aura.*` namespace is needed (research R5).
+- [x] T010 [US0] Add `src/components/providers/aura-bridge.tsx` and mount it in `src/app/layout.tsx` inside `ThemeProvider`, passing `locale` and the tenant `timeZone`. Add the nested density providers in `src/app/(staff)/admin/layout.tsx` (compact) and `src/app/(member)/portal/layout.tsx` (comfortable). T008 is GREEN.
 
 ### Tokens and fonts — behaviour: every page uses AURA's fonts and colour and radius tokens, in light and dark, with the layout unchanged and no new origin (FR-002, FR-003)
 
-- [ ] T011 [US0] RED: write `tests/unit/styles/aura-foundation-css.test.ts`, which parses `src/app/globals.css` and asserts:
+- [x] T011 [US0] RED: write `tests/unit/styles/aura-foundation-css.test.ts`, which parses `src/app/globals.css` and asserts:
   - the layer-order statement is first
   - the AURA imports are present, in the order in `contracts/css-layers.md`
   - every token-bridge variable in the contract table is assigned a `var(--aura-…)`
@@ -58,7 +58,7 @@
   - no `fonts.googleapis`/`gstatic` URL appears anywhere in `src/`
 
   It fails today.
-- [ ] T012 [US0] Edit `src/app/globals.css`:
+- [x] T012 [US0] Edit `src/app/globals.css`:
   - the layer order and imports (`contracts/css-layers.md`)
   - font stacks in `@theme inline`
   - the token bridge in `:root` and `.dark`
@@ -66,7 +66,7 @@
   Layout, type and table vars stay. The shimmer CSS stays until US1.
 
   Then edit `src/app/layout.tsx`: remove Geist `next/font` and the font classes. T011 is GREEN.
-- [ ] T013 [US0] Map kit overlay z-index to AURA tokens in the kit wrappers:
+- [x] T013 [US0] Map kit overlay z-index to AURA tokens in the kit wrappers:
   - popovers, selects, dropdowns and tooltips → `var(--aura-z-menu)`
   - dialogs and sheets → `var(--aura-z-dialog)`
 
@@ -75,16 +75,16 @@
 
 ### Lint ratchet — behaviour: banned imports fail the lint gate; migrated paths cannot import the old kit (FR-008)
 
-- [ ] T015 [US0] RED: write `tests/unit/architecture/ui-import-ratchet.test.ts` per `contracts/lint-ratchet.md`. It uses ESLint `lintText` on fixtures:
+- [x] T015 [US0] RED: write `tests/unit/architecture/ui-import-ratchet.test.ts` per `contracts/lint-ratchet.md`. It uses ESLint `lintText` on fixtures:
   - `sonner` fails
   - AURA root `formatDate`/`useFormatDate` fail
   - `@/components/ui/button` inside a `MIGRATED_PATHS` fixture fails
   - the same import outside the list passes (control)
-- [ ] T016 [US0] Append the `@typescript-eslint/no-restricted-imports` block and the exported `MIGRATED_PATHS = []` to `eslint.config.mjs`, with `cmdk` at `warn` until US1. T015 is GREEN and `pnpm lint` is clean.
+- [x] T016 [US0] Add `eslint.ui-ratchet.mjs` (`uiRatchet(paths)`) and spread `uiRatchet(MIGRATED_PATHS)` with `MIGRATED_PATHS = []` at the end of `eslint.config.mjs`; `cmdk` is an error everywhere but its host `ui/command.tsx` until US1. T015 is GREEN and `pnpm lint` is clean.
 
 ### Docs — behaviour: the playbook names AURA as the component library and pulse as the skeleton standard (FR-009)
 
-- [ ] T017 [P] [US0] Update `docs/ux-standards.md`:
+- [x] T017 [P] [US0] Update `docs/ux-standards.md`:
   - §1.1: component library → AURA. Note the old kit is Base UI, not Radix, until US13.
   - §1.2/§1.3: tokens and type → AURA.
   - §1.7: theming via next-themes `.dark`, which AURA reads.
@@ -92,8 +92,8 @@
   - §12.3: date display stays on `format-date-localised`.
   - §16: AURA component checklist.
   - §17: review gate adds canvas parity plus the lint ratchet.
-- [ ] T018 [P] [US0] Add `docs/aura-adoption.md`: layer order, token bridge, brand-theme regeneration, toast facade, ratchet workflow (how a phase adds to `MIGRATED_PATHS`), per-module definition of done (FR-010), and the handoff-doc process with open items 52 and 53. Add a banner to `docs/design-system-audit.md` pointing to it.
-- [ ] T019 [P] [US0] Update `CLAUDE.md`:
+- [x] T018 [P] [US0] Add `docs/aura-adoption.md`: layer order, token bridge, brand-theme regeneration, toast facade, ratchet workflow (how a phase adds to `MIGRATED_PATHS`), per-module definition of done (FR-010), and the handoff-doc process with open items 52 and 53. Add a banner to `docs/design-system-audit.md` pointing to it.
+- [x] T019 [P] [US0] Update `CLAUDE.md`:
   - The UI stack line becomes "AURA (`@jirawatpyk/aura-react` 5.5.0) replacing shadcn/Base UI module by module — spec 122; sonner removed".
   - Fix "Radix primitives" to Base UI.
   - Fix "`pnpm typecheck` is in NO gate" to "typecheck runs in CI quality-gates; run it locally before committing".

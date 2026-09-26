@@ -1,5 +1,7 @@
 # Chamber-OS Design System Audit
 
+> **Superseded for the component library (2026-09-26):** Chamber-OS is moving to the AURA design system (spec 122). Current guidance: `docs/aura-adoption.md` and `docs/ux-standards.md` § 1. This audit describes the legacy shadcn/Base UI kit.
+
 **Last updated**: 2026-04-24
 **Auditor**: ui-design-specialist agent (deep pass)
 **Verdict**: ⚠️ **อัพเกรดย่อย** (ไม่ต้องยกเครื่อง) — ระบบแข็งแรงกว่าค่าเฉลี่ย SaaS แต่มี gap เชิงโครงสร้างที่ต้องปิดก่อน F5 ship และก่อนเปิด tenant ที่ 2

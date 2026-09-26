@@ -263,7 +263,7 @@ The old component kit folder, its primitives library, the old toast/palette/date
 
 - **Roles & permissions**: no change. Every role sees exactly the actions and navigation it sees today; the shell phase re-implements the navigation from the same permission evaluator (never from role bundles). No new permission keys.
 - **Tenant scope**: N/A because no data, query or repository changes; presentation only. Tenant branding stays in the E-Blast brand settings; the product UI brand colour (#10487A) is a single committed theme.
-- **Locales**: all user-facing text stays in EN (canonical) + TH + SV with parity; AURA's built-in strings are supplied from the product's message files so TH/SV never fall back to English; Buddhist Era is display-only for Thai (FR-005/FR-006).
+- **Locales**: all user-facing text stays in EN (canonical) + TH + SV with parity; AURA's built-in labels come in EN/TH/SV and follow the active locale, so TH/SV never fall back to English; Buddhist Era is display-only for Thai (FR-005/FR-006).
 - **Personal data**: N/A because no field is collected, stored, displayed differently or sent anywhere new; fonts and styles stay on the product's origin (FR-003), so no new third party receives visitor data.
 - **Audit trail**: N/A because no state change is added or altered; UI swaps must not add, drop or rename audit events (FR-011).
 - **Money & tax**: not touched in logic; money screens (US4, US8) must show identical figures, statuses and document wording, verified by a financial-integrity review (FR-010f).

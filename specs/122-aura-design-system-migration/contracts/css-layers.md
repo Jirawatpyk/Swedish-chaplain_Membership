@@ -36,11 +36,10 @@
 | `--secondary` / `--secondary-foreground` | `var(--aura-bg-surface-hover)` / `var(--aura-fg-primary)` |
 | `--muted` / `--muted-foreground` | `var(--aura-bg-surface-hover)` / `var(--aura-fg-secondary)` |
 | `--accent` / `--accent-foreground` | `var(--aura-bg-selected)` / `var(--aura-fg-primary)` |
-| `--destructive` | `var(--aura-fg-danger)` |
-| `--destructive-surface` | `var(--aura-alert-danger-bg)` |
-| `--success` / `-foreground` / `-surface` | `var(--aura-fg-positive)` / `var(--aura-alert-success-fg)` / `var(--aura-alert-success-bg)` |
-| `--warning` / `-foreground` / `-surface` | `var(--aura-status-warning-fg)` / `var(--aura-alert-warning-fg)` / `var(--aura-alert-warning-bg)` |
-| `--info` / `-foreground` / `-surface` | `var(--aura-fg-accent)` / `var(--aura-alert-info-fg)` / `var(--aura-alert-info-bg)` |
+| `--destructive` / `-foreground` / `-surface` | `var(--aura-fg-danger)` / `var(--aura-fg-inverted)` / `var(--aura-alert-danger-bg)` |
+| `--success` / `-foreground` / `-surface` | `var(--aura-fg-positive)` / `var(--aura-fg-inverted)` / `var(--aura-alert-success-bg)` |
+| `--warning` / `-foreground` / `-surface` | `var(--aura-alert-warning-fg)` / `var(--aura-fg-inverted)` / `var(--aura-alert-warning-bg)` |
+| `--info` / `-foreground` / `-surface` | `var(--aura-fg-accent)` / `var(--aura-fg-inverted)` / `var(--aura-alert-info-bg)` |
 | `--border` | `var(--aura-border-default)` |
 | `--input` | `var(--aura-border-control)` |
 | `--ring` | `var(--aura-focus-ring)` |
@@ -53,7 +52,10 @@
 | `--brand-accent` / `-foreground` | `var(--aura-fg-accent)` / `var(--aura-fg-inverted)` |
 | `--nav-indicator` | `var(--aura-fg-accent)` |
 
-- **Unchanged:** layout, type-scale, table, card, modal and sizing variables.
+- **`-foreground` is text on the solid colour** (`bg-success text-success-foreground`), so it maps to `--aura-fg-inverted` (white in light, near-black in dark), never to an alert text colour. Each status colour is a *text* token in AURA (dark in light, light in dark), so the inverted foreground contrasts with it in both themes.
+- **`--warning` is `--aura-alert-warning-fg`** (amber), not `--aura-status-warning-fg`, which is ink and would drop the warning hue.
+- **`.dark` holds no bridged name.** The bridge is declared once on `:root`; `.dark` on `<html>` flips the `--aura-*` values on that same element, so the aliases follow. A bridged name left in `.dark` would pin the old dark value.
+- **Unchanged:** layout, type-scale, table, card, modal and sizing variables, `--sidebar-flag`, and `--card-shadow`.
 - **Adjustments:** any foreground/background pair that fails axe on an un-migrated page is fixed in this table, never per page.
 
 ## Z-index

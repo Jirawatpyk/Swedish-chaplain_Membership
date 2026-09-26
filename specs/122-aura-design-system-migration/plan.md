@@ -9,7 +9,7 @@ Replace the local shadcn/Base-UI component kit, `sonner`, `cmdk`, `react-day-pic
 
 - **CSS:** AURA's tokens and component CSS enter through the CSS cascade-layer order AURA documents for coexisting with Tailwind + shadcn. A **token bridge** feeds the legacy shadcn variables from `--aura-*`, so every page takes AURA's look at once.
 - **Fonts:** AURA's self-hosted fonts replace Geist.
-- **Provider:** an `AuraBridge` client provider passes locale, calendar, time zone, router link, strings and density to AURA.
+- **Provider:** an `AuraBridge` client provider passes locale, calendar, time zone, router link and density to AURA; AURA's own EN/TH/SV labels are used.
 - **Toasts:** a `src/lib/toast.ts` facade first re-points all 115 call sites and 111 test mocks, then swaps the implementation to AURA's toast. `sonner` is removed and the Toaster sits top-centre.
 - **Lint ratchet:** a separate rule (`@typescript-eslint/no-restricted-imports`) stops regressions without touching the architecture import rules.
 
@@ -56,7 +56,7 @@ US1–US13 are specified here at phase level. Each gets its own detailed plan se
 **Core principle gates**
 
 - [x] **V. i18n**
-  - No new user-facing strings in US0 beyond AURA's built-in labels, which are supplied from next-intl through `strings`.
+  - No new user-facing strings in US0. AURA 5.5 carries its built-in labels in EN/TH/SV and picks them by `locale`.
   - EN/TH/SV parity is kept (`pnpm check:i18n`).
   - Calendar is `buddhist` for `th`, `gregory` otherwise; storage is unchanged.
 - [ ] **VI. Inclusive UX**: FAIL (justified). Two libraries coexist until US13, against "UI MUST be built from a single shared component library" (`constitution.md:496–497`). See Complexity Tracking. WCAG 2.1 AA and 320 px stay gates per phase (FR-013).

@@ -75,23 +75,23 @@ Sources:
   - `calendar`: `buddhist` for `th`, `gregory` otherwise (AURA's own default for these locales, stated explicitly)
   - `timeZone="Asia/Bangkok"` (5.5 has it since 4.19; the tenant TZ, `env.tenant.timezone`, is passed down from the server layout)
   - `linkComponent={Link}` from `next/link`
-  - `strings`: a small map from a `aura.*` next-intl namespace, EN/TH/SV, so AURA labels ("Close", "Clear", pagination…) never fall back to English
+  - `strings`: not passed. AURA 5.5 ships EN/TH/SV built-in labels ("Close", "Clear", pagination…) selected by `locale`, so none falls back to English. (The earlier plan of an `aura.*` next-intl namespace was dropped once 5.5 was verified.)
   - `<Toaster position="top" />`
 
   It mounts inside `ThemeProvider` in `src/app/layout.tsx`. Density comes from a nested `<AuraProvider density>` in the staff layout (`compact`) and the member layout (`comfortable`); AURA adds a `display: contents` wrapper for it.
 - **Dates**: AURA's root `formatDate` / `useFormatDate` are banned by the lint ratchet (R6). The product keeps `src/lib/format-date-localised.ts`, and `scripts/check-dates.ts` keeps guarding bare-locale `Intl` calls.
-- **Alternatives**: calling `AuraProvider` in each layout without a shared bridge: rejected, because it would duplicate strings and link setup.
+- **Alternatives**: calling `AuraProvider` in each layout without a shared bridge: rejected, because it would duplicate the locale, time-zone and link setup.
 
 ## R6 — Lint ratchet without breaking the architecture rules (FR-008)
 
 - **Facts**: `eslint.config.mjs` uses `no-restricted-imports` only for architecture boundaries, in many per-path blocks. Flat config **replaces** the rule per matching block, and the last `src/**` block (:824–853) wins.
-- **Decision**: append one block using **`@typescript-eslint/no-restricted-imports`**, a distinct rule id with the same semantics, so it composes with every existing block. It bans:
+- **Decision**: append blocks built by `uiRatchet(MIGRATED_PATHS)` (`eslint.ui-ratchet.mjs`) using **`@typescript-eslint/no-restricted-imports`**, a distinct rule id with the same semantics, so they compose with every existing block. The same last-block-wins rule applies within this rule id, so each block restates the global bans. It bans:
   - `sonner` (from US0)
-  - `cmdk` (listed but `warn` until US1, then `error`)
+  - `cmdk` at `error`, except in its one host `src/components/ui/command.tsx`, which leaves in US1 (a single rule id cannot mix `warn` and `error`, and an exemption for one file is stricter than a global warning)
   - `@jirawatpyk/aura-react` `importNames: ['formatDate', 'useFormatDate']`
-  - `@/components/ui/*` for files in `MIGRATED_PATHS` (an exported array, empty in US0, grown by each phase)
+  - `@/components/ui/*` for files in `MIGRATED_PATHS` (an array in `eslint.config.mjs`, empty in US0, grown by each phase)
 
-  `tests/unit/architecture/ui-import-ratchet.test.ts` runs ESLint on fixture snippets and asserts each ban fires. That test is the positive control: it goes RED first, before the block exists.
+  `tests/unit/architecture/ui-import-ratchet.test.ts` lints snippets through the real config and asserts each ban fires; the migrated-path ban is exercised by appending `uiRatchet([fixtureGlob])` through `overrideConfig`, so the real list never carries a test entry. That test is the positive control: it goes RED first, before the block exists.
 - **Alternatives**:
   - Adding paths to every existing block: rejected, because it is fragile across nine blocks.
   - `no-restricted-syntax`: rejected, because its messages are worse and it cannot scope by import name.

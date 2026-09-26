@@ -17,7 +17,7 @@ interface AuraBridgeProps {
   - `calendar`: `'buddhist'` if `locale === 'th'`, else `'gregory'`
   - `timeZone`
   - `linkComponent={Link}`, where `Link` comes from `next/link`
-  - `strings`, built from the next-intl namespace `aura.*` via `useTranslations('aura')`: AURA's built-in labels such as Close, Clear, Previous/Next page, Loading, "N selected", and Show/Hide password
+  - no `strings`: AURA 5.5 ships its built-in labels (Close, Clear, Previous/Next page, Loading, "N selected", Show/Hide password, …) in EN, TH and SV and picks them by `locale`. A product-specific override, if one is ever needed, goes through `strings` from next-intl.
 - `children`
 - `<Toaster position="top" />`, rendered once
 
@@ -32,12 +32,12 @@ Density is scoped by a nested provider:
 - `src/app/(staff)/admin/layout.tsx` sets `<AuraProvider density="compact">`.
 - `src/app/(member)/portal/layout.tsx` sets `<AuraProvider density="comfortable">`.
 
-The nested provider inherits `locale`, `calendar`, `timeZone`, `linkComponent` and `strings` from the root bridge. Verify this in 5.5 during implementation; if it does not inherit, the bridge exposes `density` as a prop instead.
+The nested provider inherits `locale`, `calendar`, `timeZone` and `linkComponent` from the root bridge (verified against 5.5 by the test below).
 
 ## Tests (RED first)
 
 `tests/unit/providers/aura-bridge.test.tsx`:
-- In `th`, AURA's DatePicker (or `useAuraLocale`) reports calendar `buddhist`; in `en` and `sv` it reports `gregory`.
-- An AURA `Button href` renders through the provided link component.
-- The Toaster is present once.
-- The `strings` keys resolve in all three locales. `check:i18n` covers the `aura.*` namespace.
+- In `th`, `useAuraLocale` reports calendar `buddhist`; in `en` and `sv` it reports `gregory`.
+- The tenant time zone and the router link reach AURA.
+- A nested `<AuraProvider density>` keeps the language, calendar, time zone and link.
+- The Toaster is present once, at the top (commit B).
