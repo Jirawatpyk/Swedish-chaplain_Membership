@@ -288,5 +288,7 @@ The old component kit folder, its primitives library, the old toast/palette/date
 - The ~300 canvas boards are the visual reference; where a board is marked "Proposed", the phase may either implement the proposal or keep the current behaviour, and says which in its PR.
 - End-to-end tests have no CI job and run locally; each phase links its run log.
 - The dashboard's charting library stays; only its colours move to AURA's chart palette.
+- The product UI has one brand theme (SweCham #10487A) for now. Per-tenant UI colours belong to the future white-label feature (F12, `docs/saas-architecture.md` § 8); the brand theme is kept in one place so F12 can later supply it per tenant at runtime without touching screens.
+- Visual parity (SC-006) is judged by a reviewer comparing screenshots of the running page against its canvas board at 390 and 1280 px, light and dark, attached to the phase's PR; there is no pixel-diff gate, because the boards use sample data.
 - Queued logic-bug tasks (void/auto-refund rules; TH/SV wording and bill labels; colleague contact data; E-Blast PDPA) land as their own PRs and are not part of this feature.
 - Out of scope: backend, database, API behaviour, permissions, and copy changes beyond what a component swap forces.
