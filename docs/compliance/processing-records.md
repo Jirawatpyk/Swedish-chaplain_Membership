@@ -294,8 +294,10 @@ business categorisation, not special-category PII.
 
 ### DPO contact
 
-- **Chamber DPO email**: `dpo@<chamber-domain>` (placeholder — to be
-  confirmed per tenant; chamber bylaws designate DPO).
+- **Data-protection contact (data-subject requests)**: `contact@swecham.com` — SweCham's
+  public contact address, set by the maintainer on 2026-09-26 (replaces the
+  `dpo@<chamber-domain>` placeholder). No DPO and no named individual is designated;
+  SweCham, as controller, receives and answers requests through this inbox.
 - **Regulatory contact**:
   - Thailand: PDPC (Office of the Personal Data Protection Committee) —
     `https://pdpc.or.th`
