@@ -65,6 +65,18 @@ export async function runAxeScan(
   const tags = options.tags ?? DEFAULT_TAGS;
   const failOnSeriousOrCritical = options.failOnSeriousOrCritical ?? true;
 
+  // Let finite animations (page fade-ins, dialog enter) finish first: a scan
+  // mid-fade measures text at partial opacity and reports contrast the
+  // settled page does not have. Infinite ones (skeleton pulse) are skipped.
+  await page.evaluate(() =>
+    Promise.all(
+      document
+        .getAnimations()
+        .filter((a) => a.effect?.getComputedTiming().endTime !== Infinity)
+        .map((a) => a.finished.catch(() => undefined)),
+    ),
+  );
+
   let builder = new AxeBuilder({ page }).withTags([...tags]);
   if (options.include) builder = builder.include(options.include);
   if (options.exclude) builder = builder.exclude(options.exclude);
