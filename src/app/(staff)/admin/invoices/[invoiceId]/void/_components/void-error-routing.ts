@@ -55,6 +55,10 @@ export function routeVoidError(
   if (code === 'paid_membership_requires_credit_note') {
     return { kind: 'failure', messageKey: 'errors.paidMembershipRequiresCreditNote' };
   }
+  // H1 — a paid event / non-member invoice is reversed with a refund, not voided.
+  if (code === 'paid_invoice_requires_refund') {
+    return { kind: 'failure', messageKey: 'errors.paidInvoiceRequiresRefund' };
+  }
   if (code) return { kind: 'failure', messageKey: 'errors.codeFallback', codeArg: code };
   return { kind: 'failure', messageKey: 'errors.unknown' };
 }

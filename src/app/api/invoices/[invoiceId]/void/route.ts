@@ -53,6 +53,7 @@ const ERROR_STATUS: Record<VoidInvoiceError['code'], number> = {
   // voided (a void strands the settled payment). 409 Conflict: the operator
   // switches to the credit-note workflow.
   paid_membership_requires_credit_note: 409,
+  paid_invoice_requires_refund: 409,
 };
 
 export async function POST(

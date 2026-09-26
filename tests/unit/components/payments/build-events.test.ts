@@ -305,6 +305,35 @@ describe('buildEvents', () => {
     expect(events.find((e) => e.type === 'invoice_paid')).toBeUndefined();
   });
 
+  // A failed auto-refund leaves the payment `auto_refunded` (the failure lives
+  // only in the auto_refund_failed_needs_manual_reconcile forensic), so the page
+  // passes the forensic's verdict in. The terminal row must then say the refund
+  // FAILED — never the benign "auto-refunded" — and still not read as a success.
+  it('emits auto_refund_failed (not auto_refunded) when the auto-refund failed, and no success rows', () => {
+    const events = buildEvents(
+      [
+        makeCardPayment({
+          status: 'auto_refunded',
+          completedAt: T1,
+          processorChargeId: 'ch_test_dup',
+        }),
+      ],
+      [],
+      T2.toISOString(),
+      null,
+      true,
+    );
+    const types = events.map((e) => e.type as string);
+    expect(types).toContain('payment_initiated');
+    expect(types).toContain('auto_refund_failed');
+    expect(types).not.toContain('auto_refunded');
+    expect(types).not.toContain('payment_succeeded');
+    expect(types).not.toContain('invoice_paid');
+    const terminal = events.find((e) => (e.type as string) === 'auto_refund_failed');
+    expect(terminal?.actorUserId).toBe(SYSTEM_ACTOR_STRIPE_WEBHOOK_LEGACY);
+    expect(terminal?.timestamp).toBe(T1);
+  });
+
   // -------------------------------------------------------------------------
   // Gap B (2026-07-12) — pending async refund settling affordance.
   //
