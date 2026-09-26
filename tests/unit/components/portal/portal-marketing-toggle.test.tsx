@@ -65,6 +65,15 @@ afterEach(() => {
 });
 
 describe('PortalMarketingToggle — rendering per state', () => {
+  it('is an AURA switch whose visible label names it and whose state sentence describes it (spec 122 US3)', () => {
+    renderToggle('on');
+    const sw = screen.getByRole('switch', { name: t.switchLabel });
+    expect(sw).toHaveClass('aura-switch');
+    expect(sw.closest('.aura-switch-row')).not.toBeNull();
+    const desc = document.getElementById(sw.getAttribute('aria-describedby') ?? '');
+    expect(desc).toHaveTextContent(t.state.on);
+  });
+
   it('on → checked switch labelled "Marketing" with the state text', () => {
     renderToggle('on');
     const sw = screen.getByRole('switch', { name: t.switchLabel });
@@ -172,9 +181,12 @@ describe('PortalMarketingToggle — switching', () => {
 describe('PortalMarketingToggle — cycle 11 (UX M7, a11y 11)', () => {
   it('the state text is a real state, not a muted empty-sentinel', () => {
     renderToggle('on');
+    // Spec 122 US3: the state sentence is AURA Switch's description, drawn in
+    // AURA's secondary text colour (an AA-contrast token), not the legacy
+    // muted placeholder grey this test was written against.
     const stateText = screen.getByText(t.state.on);
     expect(stateText.className).not.toContain('text-muted-foreground');
-    expect(stateText.className).toContain('text-foreground');
+    expect(stateText).toHaveClass('aura-choice__desc');
   });
 
   it('the switch is described by its state text', () => {

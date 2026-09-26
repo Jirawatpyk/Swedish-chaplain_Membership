@@ -243,3 +243,14 @@ describe('PendingRequestBanner — a 404 the banner cannot explain is an error (
     consoleError.mockRestore();
   });
 });
+
+describe('PendingRequestBanner on AURA (spec 122 US3)', () => {
+  it('is an AURA info alert with its title, and withdraws through an AURA secondary button', () => {
+    renderBanner();
+    const banner = screen.getByTestId('pending-request-banner');
+    expect(banner).toHaveClass('aura-alert', 'aura-alert--info');
+    expect(banner).toHaveAttribute('role', 'status');
+    expect(banner.querySelector('.aura-alert__title')?.textContent).toBe(copy.pending.title);
+    expect(screen.getByTestId('withdraw-request')).toHaveClass('aura-btn', 'aura-btn--secondary');
+  });
+});

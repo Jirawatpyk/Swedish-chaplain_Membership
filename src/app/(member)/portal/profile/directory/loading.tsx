@@ -1,14 +1,25 @@
 /**
- * Route-level loading UI for /portal/profile/directory — shimmer skeleton in the
- * final shape (ux-standards § 2.1): header, logo block, and the listing settings
- * form (listed toggle + field-visibility checkboxes + metadata inputs).
+ * Route-level loading UI for /portal/profile/directory — AURA card skeletons
+ * in the final shape (spec 122 US3): the logo card, then the listing form's
+ * cards (listed switch, field-visibility checkboxes, details fields).
  */
 import { getTranslations } from 'next-intl/server';
-import { Skeleton } from '@/components/ui/skeleton';
+import { SkeletonBlock } from '@/components/shell/page-skeletons';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 
 const FIELD_ROWS = Array.from({ length: 9 }, (_, i) => i);
+
+function CardSkeleton({ children }: { readonly children: React.ReactNode }) {
+  return (
+    <div className="aura-card" aria-hidden>
+      <div className="aura-card__head">
+        <SkeletonBlock className="h-5 w-40" />
+      </div>
+      <div className="aura-card__body flex flex-col gap-3">{children}</div>
+    </div>
+  );
+}
 
 export default async function Loading(): Promise<React.JSX.Element> {
   const t = await getTranslations('directorySettings');
@@ -16,26 +27,27 @@ export default async function Loading(): Promise<React.JSX.Element> {
     <DetailContainer>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
 
-      <div className="space-y-3" aria-hidden>
-        <Skeleton className="h-5 w-24" />
-        <Skeleton className="h-20 w-32 rounded border" />
-        <Skeleton className="h-9 w-40" />
-      </div>
+      <CardSkeleton>
+        <SkeletonBlock className="h-20 w-32" />
+        <SkeletonBlock className="h-4 w-64" />
+        <SkeletonBlock className="h-11 w-40" />
+      </CardSkeleton>
 
-      <div className="space-y-6" aria-hidden>
-        <Skeleton className="h-6 w-64" />
-        <div className="space-y-2">
-          {FIELD_ROWS.map((i) => (
-            <Skeleton key={i} className="h-5 w-full max-w-xs" />
-          ))}
-        </div>
-        <div className="space-y-3">
-          <Skeleton className="h-9 w-full" />
-          <Skeleton className="h-20 w-full" />
-          <Skeleton className="h-9 w-full" />
-        </div>
-        <Skeleton className="h-9 w-24" />
-      </div>
+      <CardSkeleton>
+        <SkeletonBlock className="h-6 w-full max-w-sm" />
+      </CardSkeleton>
+
+      <CardSkeleton>
+        {FIELD_ROWS.map((i) => (
+          <SkeletonBlock key={i} className="h-5 w-full max-w-xs" />
+        ))}
+      </CardSkeleton>
+
+      <CardSkeleton>
+        <SkeletonBlock className="h-11 w-full" />
+        <SkeletonBlock className="h-20 w-full" />
+        <SkeletonBlock className="h-11 w-full" />
+      </CardSkeleton>
     </DetailContainer>
   );
 }

@@ -9,9 +9,8 @@
  */
 
 import { useTranslations } from 'next-intl';
-import { CopyIcon } from 'lucide-react';
 import { toast } from '@/lib/toast';
-import { Button } from '@/components/ui/button';
+import { IconButton } from '@jirawatpyk/aura-react';
 
 export function CopyButton({ value, label }: { value: string; label: string }) {
   const t = useTranslations('admin.members.detail.copy');
@@ -36,22 +35,7 @@ export function CopyButton({ value, label }: { value: string; label: string }) {
       }
     }
   };
-  // P6 round-10 ui-design-specialist — bumped from h-7 (28px) to h-9
-  // (36px) to match the F4-era button standard documented in
-  // docs/ux-standards.md § 5. CopyButton sits inline next to copy-
-  // anchor text (member_id, email, tax_id) and was the only sub-36px
-  // affordance in the F3 detail header. The icon stays 14px (size-3.5)
-  // so the visual weight remains modest; the touch target grows.
-  return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="sm"
-      onClick={onCopy}
-      aria-label={label}
-      className="h-9 px-2"
-    >
-      <CopyIcon className="size-3.5" aria-hidden />
-    </Button>
-  );
+  // Spec 122 US3: AURA IconButton — a 32px round button whose hit area is
+  // 44px on touch screens, with the label as its accessible name and tooltip.
+  return <IconButton icon="copy" label={label} onClick={onCopy} />;
 }

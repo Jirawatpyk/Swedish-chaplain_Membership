@@ -15,11 +15,10 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
-import { CheckCircle2Icon, ListChecksIcon, XCircleIcon, XIcon } from 'lucide-react';
-import { Button, buttonVariants } from '@/components/ui/button';
-import { InlineAlert } from '@/components/ui/inline-alert';
+import { CheckCircle2Icon, ListChecksIcon, XCircleIcon } from 'lucide-react';
+import { Button } from '@jirawatpyk/aura-react';
+import { AuraAlert, auraButtonClass } from '@/components/shell/aura-markup';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
-import { cn } from '@/lib/utils';
 import type { ChangeRequestView } from '@/lib/change-request-portal-view';
 import { ChangeRequestDiffTable } from './change-request-diff-table';
 
@@ -27,7 +26,7 @@ export interface DecisionOutcomeBannerProps {
   readonly request: ChangeRequestView;
 }
 
-const TONE = { approved: 'success', partially_approved: 'warning', rejected: 'destructive' } as const;
+const TONE = { approved: 'success', partially_approved: 'warning', rejected: 'danger' } as const;
 
 export function DecisionOutcomeBanner({ request }: DecisionOutcomeBannerProps) {
   const t = useTranslations('portal.changeRequests.outcome');
@@ -71,33 +70,51 @@ export function DecisionOutcomeBanner({ request }: DecisionOutcomeBannerProps) {
 
   const Icon = outcome === 'approved' ? CheckCircle2Icon : outcome === 'rejected' ? XCircleIcon : ListChecksIcon;
 
+  // AURA Alert markup (spec 122 US3). The helper, not AURA's `Alert`: the
+  // banner stays `role="status"` whatever the tone (a decision is news, not an
+  // interruption), and carries its outcome icon and test hooks.
   return (
-    <InlineAlert tone={TONE[outcome]} role="status" className="space-y-3" data-testid="decision-outcome-banner" data-outcome={outcome}>
-      <div className="flex items-start gap-2">
-        <Icon className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-        <div className="space-y-1">
-          <p className="font-medium">{t(`title.${outcome}`)}</p>
-          <p className="text-sm">{t(`body.${outcome}`, { decidedAt })}</p>
+    <AuraAlert
+      tone={TONE[outcome]}
+      role="status"
+      icon={Icon}
+      title={t(`title.${outcome}`)}
+      data-testid="decision-outcome-banner"
+      data-outcome={outcome}
+      action={
+        <div className="flex flex-wrap items-center gap-2">
+          {anyRejected ? (
+            <Link
+              href={`/portal/edit?resubmit=${encodeURIComponent(request.id)}`}
+              className={auraButtonClass()}
+              data-testid="resubmit-link"
+            >
+              {t('resubmit')}
+            </Link>
+          ) : null}
+          <Button type="button" variant="secondary" icon="x" onClick={dismiss} disabled={pending} data-testid="dismiss-decision">
+            {t('dismiss')}
+          </Button>
         </div>
-      </div>
-      <ChangeRequestDiffTable fields={request.fields} showOutcome className="bg-background text-foreground" />
-      {request.decisionReason ? (
-        <div className="rounded-md bg-background p-3 text-sm text-foreground" data-testid="decision-reason">
-          <p className="font-medium">{t('reasonLabel')}</p>
-          <p className="whitespace-pre-wrap break-words">{request.decisionReason}</p>
-        </div>
-      ) : null}
-      <div className="flex flex-wrap items-center gap-2">
-        {anyRejected ? (
-          <Link href={`/portal/edit?resubmit=${encodeURIComponent(request.id)}`} className={cn(buttonVariants({ size: 'sm' }), 'h-9')} data-testid="resubmit-link">
-            {t('resubmit')}
-          </Link>
+      }
+    >
+      <div className="space-y-3">
+        <p>{t(`body.${outcome}`, { decidedAt })}</p>
+        <ChangeRequestDiffTable
+          fields={request.fields}
+          showOutcome
+          className="bg-[var(--aura-bg-surface)] text-[var(--aura-fg-primary)]"
+        />
+        {request.decisionReason ? (
+          <div
+            className="rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface)] p-3 text-[var(--aura-fg-primary)]"
+            data-testid="decision-reason"
+          >
+            <p className="font-medium">{t('reasonLabel')}</p>
+            <p className="whitespace-pre-wrap break-words">{request.decisionReason}</p>
+          </div>
         ) : null}
-        <Button type="button" variant="outline" size="sm" className="h-9" onClick={dismiss} disabled={pending} data-testid="dismiss-decision">
-          <XIcon className="mr-1 h-4 w-4" aria-hidden="true" />
-          {t('dismiss')}
-        </Button>
       </div>
-    </InlineAlert>
+    </AuraAlert>
   );
 }

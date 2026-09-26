@@ -220,6 +220,7 @@
       "confirmLabel": "Leave the page",
       "cancelLabel": "Stay on this page"
     },
+    "unsavedStatus": "Unsaved changes",
     "yes": "Yes",
     "no": "No",
     "languageOptions": {

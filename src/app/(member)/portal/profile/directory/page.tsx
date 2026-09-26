@@ -20,7 +20,8 @@ import { getDirectoryListing, makeUpdateDirectoryListingDeps } from '@/modules/i
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { Card, CardContent } from '@/components/ui/card';
+import { EmptyState } from '@/components/shell/empty-state';
+import { AuraCard } from '@/components/shell/aura-markup';
 import { DirectoryVisibilityForm } from '@/components/directory/directory-visibility-form';
 import { DirectoryLogoControl } from '@/components/directory/directory-logo-control';
 
@@ -51,13 +52,7 @@ export default async function PortalDirectorySettingsPage(): Promise<React.JSX.E
     return (
       <DetailContainer>
         <PageHeader title={t('title')} subtitle={t('subtitle')} />
-        <Card>
-          <CardContent className="flex flex-col items-center gap-2 py-12 text-center">
-            <UserX aria-hidden="true" className="size-10 text-muted-foreground/60" />
-            <p className="text-lg font-semibold">{t('emptyTitle')}</p>
-            <p className="text-sm text-muted-foreground">{t('empty')}</p>
-          </CardContent>
-        </Card>
+        <EmptyState icon={UserX} title={t('emptyTitle')} description={t('empty')} />
       </DetailContainer>
     );
   }
@@ -96,12 +91,9 @@ export default async function PortalDirectorySettingsPage(): Promise<React.JSX.E
     <DetailContainer>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
 
-      <section aria-labelledby="dir-logo-heading" className="space-y-3">
-        <h2 id="dir-logo-heading" className="text-h4">
-          {t('logoHeading')}
-        </h2>
+      <AuraCard title={t('logoHeading')} titleId="dir-logo-heading" headingLevel={2}>
         <DirectoryLogoControl currentLogoUrl={listing?.logoUrl ?? null} />
-      </section>
+      </AuraCard>
 
       <DirectoryVisibilityForm
         // Remount after a save (router.refresh) so the "unsaved changes"

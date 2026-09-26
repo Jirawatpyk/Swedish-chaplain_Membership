@@ -220,6 +220,7 @@
       "confirmLabel": "ออกจากหน้านี้",
       "cancelLabel": "อยู่ในหน้านี้ต่อ"
     },
+    "unsavedStatus": "มีการเปลี่ยนแปลงที่ยังไม่บันทึก",
     "yes": "ใช่",
     "no": "ไม่ใช่",
     "languageOptions": {

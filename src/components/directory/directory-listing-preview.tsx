@@ -15,6 +15,7 @@
  * entry — never the server-only barrel.
  */
 import { useTranslations } from 'next-intl';
+import { AuraCard } from '@/components/shell/aura-markup';
 import {
   projectPublishedListing,
   type FieldVisibility,
@@ -78,22 +79,20 @@ export function DirectoryListingPreview({
     : null;
 
   return (
-    <section
-      aria-labelledby="dir-preview-heading"
-      className="space-y-2"
-      data-testid="directory-listing-preview"
-    >
+    // An AURA card; the heading stays in its own live region (it flips to
+    // "Preview of unsaved changes"), so it is drawn here, not as the card title.
+    <AuraCard aria-labelledby="dir-preview-heading" data-testid="directory-listing-preview">
       <div aria-live="polite">
-        <h2 id="dir-preview-heading" className="text-h4">
+        <h2 id="dir-preview-heading" className="aura-card__title">
           {dirty ? t('previewUnsaved') : t('previewHeading')}
         </h2>
       </div>
-      <p className="text-sm text-muted-foreground">{t('previewHint')}</p>
-      <div className="rounded-md border p-4">
+      <p className="mb-3 text-sm text-[var(--aura-fg-secondary)]">{t('previewHint')}</p>
+      <div className="rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)] p-4">
         {!state.listed ? (
-          <p className="text-sm text-muted-foreground">{t('previewNotListed')}</p>
+          <p className="text-sm text-[var(--aura-fg-secondary)]">{t('previewNotListed')}</p>
         ) : published === null ? (
-          <p className="text-sm text-muted-foreground">{t('previewEmpty')}</p>
+          <p className="text-sm text-[var(--aura-fg-secondary)]">{t('previewEmpty')}</p>
         ) : (
           <div className="flex gap-4">
             {published.logoUrl ? (
@@ -106,7 +105,7 @@ export function DirectoryListingPreview({
             ) : null}
             <div className="min-w-0 space-y-1 text-sm">
               {published.name ? <p className="font-semibold">{published.name}</p> : null}
-              {published.tier ? <p className="text-muted-foreground">{published.tier}</p> : null}
+              {published.tier ? <p className="text-[var(--aura-fg-secondary)]">{published.tier}</p> : null}
               {published.industry ? <p>{published.industry}</p> : null}
               {published.description ? <p>{published.description}</p> : null}
               {published.website ? <p className="break-all">{published.website}</p> : null}
@@ -126,6 +125,6 @@ export function DirectoryListingPreview({
           </div>
         )}
       </div>
-    </section>
+    </AuraCard>
   );
 }

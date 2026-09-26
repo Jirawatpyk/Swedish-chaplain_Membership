@@ -24,12 +24,12 @@
  * another contact's state in (FR-032).
  */
 import { useId, useState, useTransition } from 'react';
+import { Switch } from '@jirawatpyk/aura-react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
 import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
 import { isReadOnlyRefusal } from '@/lib/http/read-only-refusal';
-import { Switch } from '@/components/ui/switch';
 import type { MarketingState } from '@/modules/members';
 
 type ResponseBody = { readonly outcome?: string; readonly error?: { readonly code?: string } };
@@ -70,12 +70,11 @@ export function PortalMarketingToggle({
   // vouch for.
   const controllable = state !== 'unsubscribed' && state !== 'unavailable';
   // a11y review 11 asked that a screen-reader user hear the state and, when it
-  // cannot be changed, WHY. That was met with `aria-describedby` on a disabled
-  // switch; with no switch rendered for `unavailable` (finding 3) the two
-  // strings sit in the flow right after the label, where browse mode reads them
-  // in order. So `describedBy` is now just the state sentence — the switch only
-  // exists in states that have nothing extra to explain.
-  const describedBy = stateId;
+  // cannot be changed, WHY. With no switch rendered for `unavailable`
+  // (finding 3) the two strings sit in the flow right after the label, where
+  // browse mode reads them in order. The switch only exists in states that
+  // have nothing extra to explain, so it is described by the state sentence
+  // alone — AURA Switch's `description` (spec 122 US3, `Portal-profile`).
 
   async function send(optOut: boolean): Promise<void> {
     if (busy) return;
@@ -130,41 +129,42 @@ export function PortalMarketingToggle({
   }
 
   return (
+    // Spec 122 US3 — the `Portal-profile` board: a tinted panel holding the
+    // AURA switch, its label and the state sentence, then the notes.
     <div
-      className="flex flex-col gap-1"
+      className="flex flex-col gap-1 rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface-hover)] p-3"
       data-testid="portal-marketing"
       data-marketing-state={state}
     >
-      <div className="flex flex-wrap items-center gap-3">
-        <span className="text-sm font-medium">{t('label')}</span>
-        {controllable && (
-          <span className="inline-flex min-h-6 min-w-6 items-center">
-            <Switch
-              checked={checked}
-              disabled={busy || isRefreshing}
-              aria-label={t('switchLabel')}
-              aria-describedby={describedBy}
-              onCheckedChange={(next) => {
-                void send(!next);
-              }}
-            />
+      {controllable ? (
+        <Switch
+          label={t('switchLabel')}
+          description={t(`state.${state}`)}
+          checked={checked}
+          disabled={busy || isRefreshing}
+          onChange={(next) => {
+            void send(!next);
+          }}
+        />
+      ) : (
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-sm font-medium">{t('label')}</span>
+          {/* A STATE, not an empty sentinel — muted is reserved for the hints
+              below (spec Assumptions; review M7). */}
+          <span id={stateId} className="text-sm text-[var(--aura-fg-primary)]">
+            {t(`state.${state}`)}
           </span>
-        )}
-        {/* A STATE, not an empty sentinel — muted is reserved for the hints
-            below (spec Assumptions; review M7). */}
-        <span id={stateId} className="text-sm text-foreground">
-          {t(`state.${state}`)}
-        </span>
-      </div>
+        </div>
+      )}
       {state === 'unsubscribed' && (
-        <p className="text-xs text-muted-foreground">{t('unsubscribedHint')}</p>
+        <p className="text-xs text-[var(--aura-fg-secondary)]">{t('unsubscribedHint')}</p>
       )}
       {state === 'unavailable' && (
-        <p id={hintId} className="text-xs text-muted-foreground">
+        <p id={hintId} className="text-xs text-[var(--aura-fg-secondary)]">
           {t('unavailableHint')}
         </p>
       )}
-      {isPrimary && <p className="text-xs text-muted-foreground">{t('primaryNote')}</p>}
+      {isPrimary && <p className="text-xs text-[var(--aura-fg-secondary)]">{t('primaryNote')}</p>}
     </div>
   );
 }

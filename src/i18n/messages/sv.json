@@ -220,6 +220,7 @@
       "confirmLabel": "Lämna sidan",
       "cancelLabel": "Stanna kvar på sidan"
     },
+    "unsavedStatus": "Osparade ändringar",
     "yes": "Ja",
     "no": "Nej",
     "languageOptions": {

@@ -1,9 +1,4 @@
 import { getTranslations } from 'next-intl/server';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-} from '@/components/ui/card';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import {
@@ -39,11 +34,11 @@ export default async function Loading() {
           actions={<SkeletonBlock className="h-9 w-28" />}
         />
         {/* Organisation */}
-        <Card>
-          <CardHeader>
+        <div className="aura-card">
+          <div className="aura-card__head">
             <SectionHeading>{t('organisationSection')}</SectionHeading>
-          </CardHeader>
-          <CardContent>
+          </div>
+          <div className="aura-card__body">
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {Array.from({ length: 4 }).map((_, i) => (
                 <div key={i} className="flex flex-col gap-1.5">
@@ -52,15 +47,15 @@ export default async function Loading() {
                 </div>
               ))}
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
         {/* Membership */}
-        <Card>
-          <CardHeader>
+        <div className="aura-card">
+          <div className="aura-card__head">
             <SectionHeading>{t('membershipSection')}</SectionHeading>
-          </CardHeader>
-          <CardContent>
+          </div>
+          <div className="aura-card__body">
             <div className="grid gap-3 sm:grid-cols-2">
               {Array.from({ length: 3 }).map((_, i) => (
                 <div key={i} className="flex flex-col gap-1.5">
@@ -69,18 +64,18 @@ export default async function Loading() {
                 </div>
               ))}
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
         {/* Contacts */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
+        <div className="aura-card">
+          <div className="aura-card__head">
             <SectionHeading>{t('contactsSection')}</SectionHeading>
             {/* Invite Colleague button (visible only when caller is primary —
                 optimistic render of the skeleton so layout stays stable). */}
             <SkeletonBlock className="h-9 w-36" />
-          </CardHeader>
-          <CardContent>
+          </div>
+          <div className="aura-card__body">
             <div className="space-y-4">
               {Array.from({ length: 2 }).map((_, i) => (
                 <div
@@ -95,8 +90,8 @@ export default async function Loading() {
                 </div>
               ))}
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </DetailContainer>
     </PageSkeletonShell>
   );

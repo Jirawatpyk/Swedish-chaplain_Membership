@@ -57,7 +57,7 @@ export function AuraCard({
 }: AuraCardProps) {
   const Heading = `h${headingLevel}` as const;
   return (
-    <Tag {...rest} className={cx('aura-card', className)} aria-labelledby={title && titleId ? titleId : undefined}>
+    <Tag {...rest} className={cx('aura-card', className)} aria-labelledby={title && titleId ? titleId : rest['aria-labelledby']}>
       {title || actions ? (
         <div className="aura-card__head">
           <div className="aura-card__heading">
@@ -142,7 +142,7 @@ const ALERT_ICON: Record<AuraFeedbackTone, LucideIcon> = {
   danger: CircleAlert,
 };
 
-export interface AuraAlertProps {
+export interface AuraAlertProps extends Omit<React.HTMLAttributes<HTMLDivElement>, 'title' | 'role'> {
   readonly tone?: AuraFeedbackTone | undefined;
   readonly title?: React.ReactNode | undefined;
   readonly children?: React.ReactNode | undefined;
@@ -159,10 +159,11 @@ export interface AuraAlertProps {
 }
 
 /** AURA `Alert`: an inline message that stays until the situation changes. */
-export function AuraAlert({ tone = 'info', title, children, action, role, icon, className }: AuraAlertProps) {
+export function AuraAlert({ tone = 'info', title, children, action, role, icon, className, ...rest }: AuraAlertProps) {
   const Icon = icon ?? ALERT_ICON[tone];
   return (
     <div
+      {...rest}
       className={cx('aura-alert', `aura-alert--${tone}`, className)}
       role={role ?? (tone === 'danger' || tone === 'warning' ? 'alert' : 'status')}
     >

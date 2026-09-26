@@ -11,21 +11,20 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { Loader2Icon } from 'lucide-react';
+import {
+  ActionBar,
+  Button,
+  Checkbox,
+  FormErrorSummary,
+  Switch,
+  TextField,
+  Textarea,
+  type FormErrorItem,
+} from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
 import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
 import { isReadOnlyResponse } from '@/lib/http/read-only-refusal';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Switch } from '@/components/ui/switch';
-import { Label } from '@/components/ui/label';
-import {
-  InlineAlert,
-  InlineAlertDescription,
-  InlineAlertTitle,
-} from '@/components/ui/inline-alert';
+import { AuraAlert, AuraCard } from '@/components/shell/aura-markup';
 // Pure directory constants come from the insights CLIENT-SAFE sub-entry
 // (`@/modules/insights/constants`), never the index barrel. Importing these
 // runtime values from `@/modules/insights` would drag the barrel's server-only
@@ -93,6 +92,7 @@ export function DirectoryVisibilityForm({
   readonly identity: DirectoryPreviewIdentity;
 }): React.JSX.Element {
   const t = useTranslations('directorySettings');
+  const tc = useTranslations('common');
   const readOnlyToast = useReadOnlyToast();
   const tf = useTranslations('directorySettings.fields');
   const router = useRouter();
@@ -147,9 +147,17 @@ export function DirectoryVisibilityForm({
     country !== (initial.locationCountry ?? '');
   const [websiteError, setWebsiteError] = useState<string | null>(null);
   const [descriptionError, setDescriptionError] = useState<string | null>(null);
+  // Bumped on every save so the error summary takes focus after a refused
+  // save, never while the person types (AURA 5.7.3 `focusKey`).
+  const [submitCount, setSubmitCount] = useState(0);
+  const errors: FormErrorItem[] = [
+    ...(descriptionError !== null ? [{ field: 'dir-description', message: descriptionError }] : []),
+    ...(websiteError !== null ? [{ field: 'dir-website', message: websiteError }] : []),
+  ];
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setSubmitCount((n) => n + 1);
     startTransition(async () => {
       try {
         setWebsiteError(null);
@@ -187,151 +195,138 @@ export function DirectoryVisibilityForm({
     });
   }
 
+  // Spec 122 US3 (`Portal-directory`): one AURA card per group, each
+  // fieldset named by its card title; Save sits in an ActionBar that says
+  // "Unsaved changes" while the form differs from what is saved, so it stays
+  // in reach while scrolling on a phone.
   return (
     <form onSubmit={onSubmit} className="space-y-6">
-      <div className="space-y-1">
-        <div className="flex items-center gap-3">
-          {/* aria-label in addition to the <Label>: the base-ui Switch renders
-              its own internal id, so htmlFor="dir-listed" doesn't reliably
-              associate → no accessible name (axe aria-toggle-field-name, WCAG
-              4.1.2). The explicit aria-label guarantees the SR name regardless,
-              matching the field-checkbox pattern below. */}
-          <Switch
-            id="dir-listed"
-            checked={listed}
-            onCheckedChange={setListed}
-            aria-label={t('listed')}
-          />
-          <Label htmlFor="dir-listed">{t('listed')}</Label>
-        </div>
-        <p className="text-sm text-muted-foreground">{t('listedHint')}</p>
-      </div>
+      <FormErrorSummary errors={errors} focusKey={submitCount} />
 
-      <fieldset className="space-y-2">
-        <legend className="mb-1 text-sm font-semibold">{t('fieldsHeading')}</legend>
-        {COMPANY_FIELDS.map((f) => (
-          <label key={f} className="flex items-center gap-2 text-sm">
+      <AuraCard title={t('listed')} titleId="dir-listed-heading" headingLevel={2}>
+        <Switch
+          id="dir-listed"
+          label={t('listed')}
+          description={t('listedHint')}
+          checked={listed}
+          onChange={setListed}
+        />
+      </AuraCard>
+
+      <AuraCard title={t('fieldsHeading')} titleId="dir-fields-heading" headingLevel={2}>
+        <fieldset aria-labelledby="dir-fields-heading" className="flex flex-col gap-3">
+          {COMPANY_FIELDS.map((f) => (
             <Checkbox
-              checked={vis[f]}
-              onCheckedChange={(c) => setVis((prev) => ({ ...prev, [f]: c === true }))}
-              aria-label={tf(f)}
-            />
-            {tf(f)}
-          </label>
-        ))}
-      </fieldset>
-
-      <fieldset className="space-y-2" aria-describedby="dir-contact-hint">
-        <legend className="mb-1 text-sm font-semibold">{t('contactHeading')}</legend>
-        {contact.viewerIsPrimary && !contact.chosenByPrimary && contact.hasListing ? (
-          <InlineAlert tone="info" role="status" data-testid="directory-contact-confirm">
-            <InlineAlertTitle>{t('contactConfirmTitle')}</InlineAlertTitle>
-            <InlineAlertDescription>{t('contactConfirmBody')}</InlineAlertDescription>
-          </InlineAlert>
-        ) : null}
-        {CONTACT_FIELDS.map((f) => {
-          // Say exactly whose data the toggle publishes.
-          const label =
-            identity.primaryContact === null
-              ? tf(f)
-              : f === 'contact_name'
-                ? t('contactNameLabel', { name: identity.primaryContact.name })
-                : t('contactEmailLabel', { email: identity.primaryContact.email });
-          return (
-            <label
               key={f}
-              className={`flex items-center gap-2 text-sm${canChooseContact ? '' : ' text-muted-foreground'}`}
+              checked={vis[f]}
+              onChange={(c) => setVis((prev) => ({ ...prev, [f]: c }))}
             >
+              {tf(f)}
+            </Checkbox>
+          ))}
+        </fieldset>
+      </AuraCard>
+
+      <AuraCard title={t('contactHeading')} titleId="dir-contact-heading" headingLevel={2}>
+        <fieldset
+          aria-labelledby="dir-contact-heading"
+          aria-describedby="dir-contact-hint"
+          className="flex flex-col gap-3"
+        >
+          {contact.viewerIsPrimary && !contact.chosenByPrimary && contact.hasListing ? (
+            <AuraAlert
+              tone="info"
+              role="status"
+              title={t('contactConfirmTitle')}
+              data-testid="directory-contact-confirm"
+            >
+              {t('contactConfirmBody')}
+            </AuraAlert>
+          ) : null}
+          {CONTACT_FIELDS.map((f) => {
+            // Say exactly whose data the toggle publishes.
+            const label =
+              identity.primaryContact === null
+                ? tf(f)
+                : f === 'contact_name'
+                  ? t('contactNameLabel', { name: identity.primaryContact.name })
+                  : t('contactEmailLabel', { email: identity.primaryContact.email });
+            return (
               <Checkbox
+                key={f}
                 checked={vis[f]}
                 disabled={!canChooseContact}
-                onCheckedChange={(c) => setVis((prev) => ({ ...prev, [f]: c === true }))}
-                aria-label={label}
-              />
-              {label}
-            </label>
-          );
-        })}
-        <p id="dir-contact-hint" className="text-sm text-muted-foreground">
-          {identity.primaryContact === null
-            ? t('contactHintNoPrimary')
-            : contact.viewerIsPrimary
-              ? t('contactHintPrimary')
-              : t('contactHintColleague', { name: identity.primaryContact.name })}
-        </p>
-      </fieldset>
+                onChange={(c) => setVis((prev) => ({ ...prev, [f]: c }))}
+              >
+                {label}
+              </Checkbox>
+            );
+          })}
+          <p id="dir-contact-hint" className="text-sm text-[var(--aura-fg-secondary)]">
+            {identity.primaryContact === null
+              ? t('contactHintNoPrimary')
+              : contact.viewerIsPrimary
+                ? t('contactHintPrimary')
+                : t('contactHintColleague', { name: identity.primaryContact.name })}
+          </p>
+        </fieldset>
+      </AuraCard>
 
-      <fieldset className="space-y-3">
-        <legend className="mb-1 text-sm font-semibold">{t('detailsHeading')}</legend>
-        <div className="space-y-1">
-          <Label htmlFor="dir-industry">{t('industry')}</Label>
-          <Input id="dir-industry" value={industry} onChange={(e) => setIndustry(e.target.value)} />
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor="dir-description">{t('description')}</Label>
-          <Textarea
-            id="dir-description"
-            value={description}
-            maxLength={MAX_DIRECTORY_DESCRIPTION_LENGTH}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={3}
-            aria-invalid={descriptionError !== null}
-            aria-describedby={
-              descriptionError !== null
-                ? 'dir-description-count dir-description-error'
-                : 'dir-description-count'
-            }
+      <AuraCard title={t('detailsHeading')} titleId="dir-details-heading" headingLevel={2}>
+        <fieldset aria-labelledby="dir-details-heading" className="flex flex-col gap-4">
+          <TextField
+            id="dir-industry"
+            label={t('industry')}
+            value={industry}
+            onChange={(e) => setIndustry(e.target.value)}
           />
-          <div className="flex items-center justify-between gap-2">
-            {descriptionError !== null ? (
-              <p id="dir-description-error" role="alert" className="text-sm text-destructive">
-                {descriptionError}
-              </p>
-            ) : (
-              <span />
-            )}
+          <div>
+            <Textarea
+              id="dir-description"
+              label={t('description')}
+              value={description}
+              maxLength={MAX_DIRECTORY_DESCRIPTION_LENGTH}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+              error={descriptionError ?? undefined}
+              aria-describedby="dir-description-count"
+            />
             <p
               id="dir-description-count"
               aria-live="polite"
-              className="text-sm text-muted-foreground"
+              className="mt-1 text-right text-xs text-[var(--aura-fg-secondary)]"
             >
               {description.length}/{MAX_DIRECTORY_DESCRIPTION_LENGTH}
             </p>
           </div>
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor="dir-website">{t('website')}</Label>
-          <Input
+          <TextField
             id="dir-website"
             type="url"
+            label={t('website')}
             value={website}
             onChange={(e) => setWebsite(e.target.value)}
             placeholder="https://"
-            aria-invalid={websiteError !== null}
-            aria-describedby={websiteError !== null ? 'dir-website-error' : undefined}
+            error={websiteError ?? undefined}
           />
-          {websiteError !== null ? (
-            <p id="dir-website-error" role="alert" className="text-sm text-destructive">
-              {websiteError}
-            </p>
-          ) : null}
-        </div>
-        <div className="flex flex-col gap-3 sm:flex-row">
-          <div className="flex-1 space-y-1">
-            <Label htmlFor="dir-city">{t('city')}</Label>
-            <Input id="dir-city" value={city} onChange={(e) => setCity(e.target.value)} />
-          </div>
-          <div className="flex-1 space-y-1">
-            <Label htmlFor="dir-country">{t('country')}</Label>
-            <Input
+          <div className="flex flex-col gap-4 sm:flex-row">
+            <TextField
+              id="dir-city"
+              className="flex-1"
+              label={t('city')}
+              value={city}
+              onChange={(e) => setCity(e.target.value)}
+            />
+            <TextField
               id="dir-country"
+              className="flex-1"
+              label={t('country')}
               value={country}
               maxLength={2}
               onChange={(e) => setCountry(e.target.value.toUpperCase())}
             />
           </div>
-        </div>
-      </fieldset>
+        </fieldset>
+      </AuraCard>
 
       <DirectoryListingPreview
         dirty={dirty}
@@ -347,10 +342,11 @@ export function DirectoryVisibilityForm({
         }}
       />
 
-      <Button type="submit" disabled={pending}>
-        {pending && <Loader2Icon className="mr-2 h-4 w-4 motion-safe:animate-spin" aria-hidden />}
-        {t('save')}
-      </Button>
+      <ActionBar status={dirty ? tc('unsavedStatus') : null}>
+        <Button type="submit" loading={pending}>
+          {t('save')}
+        </Button>
+      </ActionBar>
     </form>
   );
 }
