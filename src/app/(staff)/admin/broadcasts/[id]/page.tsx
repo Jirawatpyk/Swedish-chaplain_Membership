@@ -6,7 +6,7 @@ import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
 import { InlineAlert, InlineAlertDescription, InlineAlertTitle } from '@/components/ui/inline-alert';
-import { RelativeTime } from '@/components/ui/relative-time';
+import { RelativeTime } from '@/components/shell/relative-time';
 import { RefreshPageButton } from '@/components/shell/refresh-page-button';
 import { StatusBadge } from '@/components/broadcast/admin/status-badge';
 import { failureReasonToken } from '@/components/broadcast/admin/failure-reason';

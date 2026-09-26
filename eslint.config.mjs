@@ -248,6 +248,41 @@ const MIGRATED_PATHS = [
   'src/components/auth/auth-link-invalid.tsx',
   'src/components/auth/password-strength.tsx',
   'src/components/auth/security-update-banner.tsx',
+  // US3 — the member portal's home, benefits, profile, change requests,
+  // account, invite and timeline, with the components they render (several
+  // shared with staff screens: the change-request pill and diff, the data
+  // export panel, the timeline pieces).
+  'src/app/(member)/portal/(home)/**',
+  'src/app/(member)/portal/_components/**',
+  'src/app/(member)/portal/benefits/**',
+  'src/app/(member)/portal/profile/**',
+  'src/app/(member)/portal/edit/**',
+  'src/app/(member)/portal/change-requests/**',
+  'src/app/(member)/portal/account/**',
+  'src/app/(member)/portal/contacts/**',
+  'src/app/(member)/portal/timeline/**',
+  'src/app/(member)/portal/preferences/**',
+  'src/app/(member)/portal/not-found.tsx',
+  'src/app/(member)/portal/[...unknown]/**',
+  'src/components/portal/dashboard/**',
+  'src/components/portal/invoices-summary-card.tsx',
+  'src/components/portal/preferred-locale-form.tsx',
+  'src/components/portal/contact-language-form.tsx',
+  'src/components/benefits/**',
+  'src/components/data-export/**',
+  'src/components/directory/directory-visibility-form.tsx',
+  'src/components/directory/directory-logo-control.tsx',
+  'src/components/directory/directory-listing-preview.tsx',
+  'src/components/members/change-requests/pending-request-banner.tsx',
+  'src/components/members/change-requests/decision-outcome-banner.tsx',
+  'src/components/members/change-requests/portal-change-request-form.tsx',
+  'src/components/members/change-requests/change-request-diff-table.tsx',
+  'src/components/members/change-requests/change-request-status-badge.tsx',
+  'src/components/members/change-requests/proposed-value-display.tsx',
+  'src/components/members/timeline-*.tsx',
+  'src/components/members/portal-*.tsx',
+  'src/components/members/copy-button.tsx',
+  'src/components/members/invite-colleague-form.tsx',
 ];
 
 /**
@@ -259,6 +294,9 @@ const NOT_YET_ON_AURA = [
   // (US12) and the change-request decision (US5); it moves with the first.
   'src/components/shell/reason-confirmation-dialog.tsx',
   'src/components/shell/typed-phrase-field.tsx',
+  // The benefits page's E-Blast tab: the broadcast list moves with US12.
+  'src/app/(member)/portal/benefits/_components/broadcasts-panel.tsx',
+  'src/app/(member)/portal/benefits/_components/broadcast-history-card-list.tsx',
 ];
 
 const eslintConfig = defineConfig([

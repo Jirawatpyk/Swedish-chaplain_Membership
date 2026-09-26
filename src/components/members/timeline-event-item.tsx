@@ -25,7 +25,7 @@ import {
   UserCogIcon,
   type LucideIcon,
 } from 'lucide-react';
-import { RelativeTime } from '@/components/ui/relative-time';
+import { RelativeTime } from '@/components/shell/relative-time';
 import { AuraBadge } from '@/components/shell/aura-markup';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
 import type { TimelineSource, TimelineActorKind } from '@/lib/timeline-shared';

@@ -69,6 +69,14 @@ describe('an unknown /portal/* route', () => {
     );
     expect(document.body.textContent).not.toContain('MISSING_KEY');
   });
+
+  it('is an AURA empty state whose way back is an AURA button link (spec 122 US3)', async () => {
+    const { default: PortalNotFound } = await import('@/app/(member)/portal/not-found');
+    render(await PortalNotFound());
+
+    expect(screen.getByTestId('portal-not-found')).toHaveClass('aura-empty');
+    expect(screen.getByRole('link', { name: 'Back to dashboard' })).toHaveClass('aura-btn', 'aura-btn--primary');
+  });
 });
 
 describe('broadcast detail not-found', () => {

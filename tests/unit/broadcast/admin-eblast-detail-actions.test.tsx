@@ -67,7 +67,7 @@ vi.mock('@/lib/broadcast-approval-deps', () => ({
   makeReadFormattingWarningsDeps: () => ({}),
   makeReadDispatchHoldDeps: () => ({}),
 }));
-vi.mock('@/components/ui/relative-time', () => ({ RelativeTime: () => <time /> }));
+vi.mock('@/components/shell/relative-time', () => ({ RelativeTime: () => <time /> }));
 vi.mock('@/components/broadcast/cancel-broadcast-action', () => ({
   CancelBroadcastAction: () => <div data-testid="cancel-action" />,
 }));

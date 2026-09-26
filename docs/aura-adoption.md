@@ -34,7 +34,7 @@ The migration was decided on 2026-09-26, with these settled points:
 
 AURA's root entry is `'use client'`. When a **server** file imports from `@jirawatpyk/aura-react`, the whole barrel becomes a client reference and every AURA component ships on every route: this measured **+138 KB** first-load JS on every page during US0. Import AURA only from client files (`'use client'`), and let server layouts render a small client wrapper (as `AuraDensity` does). With that rule, US0 is 2–8 KB *smaller* per route than before, because sonner is gone.
 
-A server component that needs an AURA look without its behaviour uses AURA's classes instead (`aura-card`, `aura-empty`): `EmptyState` and `LoadErrorCard` do this.
+A server component that needs an AURA look without its behaviour uses AURA's classes instead (`aura-card`, `aura-empty`): `EmptyState` and `LoadErrorCard` do this. Since US3, `src/components/shell/aura-markup.tsx` has the common ones as server-safe components: `AuraCard`, `AuraBadge`, `AuraStatusPill`, `AuraAlert` and `auraButtonClass()` for a link that looks like a button. `tests/unit/components/shell/aura-markup.test.tsx` renders each one next to AURA's own component and compares the markup, and it fails if the file ever imports AURA. Client files still import AURA directly. (Handoff #68 asks AURA to ship these from `/server`.)
 
 ## The ratchet
 
@@ -83,7 +83,16 @@ Phases 2–12 each depend on 1 and can land in any order.
 
 ## AURA gaps (the handoff doc)
 
-The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, items 52–56 (Addendum 4) in 5.6.0, items 57–62 (Addendum 5, found in US1) in 5.7.0, item 63 in 5.7.1, item 64 (Addendum 6) in 5.7.2 and item 65 (Addendum 7, found in US2) in **5.7.3**, the current pin. None is open.
+The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, items 52–56 (Addendum 4) in 5.6.0, items 57–62 (Addendum 5, found in US1) in 5.7.0, item 63 in 5.7.1, item 64 (Addendum 6) in 5.7.2 and item 65 (Addendum 7, found in US2) in **5.7.3**, the current pin.
+
+Open: items 66–69 (Addendum 8, found in US3). None blocks; each has a local stand-in:
+
+| # | Asks AURA for | Chamber-OS meanwhile |
+|---|---|---|
+| 66 | `Alert`: `role` override, a custom `icon`, pass-through attributes | `AuraAlert` (standing warning/danger notices stay `role="status"`; clock / pause icons; test ids) |
+| 67 | `Table`: `stackBelow`, each row a card on narrow screens | `change-request-diff-table.tsx`: `aura-tbl` classes that drop to blocks below `sm`, with inline column labels |
+| 68 | `Card`, `Badge`, `StatusPill`, `Alert`, `EmptyState` and a button-link class from `/server` | The `aura-markup.tsx` helpers (see "Server components never import AURA directly") |
+| 69 | `Card` and `StatusPill`: pass-through attributes (`id`, `data-*`) | `AuraCard` / `AuraStatusPill` spread them (scroll anchors, `data-state`) |
 
 How Chamber-OS uses the Addendum 5 – 7 items (US1 and US2 dropped their bridge for each):
 
