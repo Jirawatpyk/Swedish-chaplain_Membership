@@ -233,3 +233,82 @@ describe('resendBroadcastsWebhookVerifier', () => {
     }
   });
 });
+
+// Resend's hosted unsubscribe page, and the List-Unsubscribe header Resend
+// adds to every broadcast, flip the Resend CONTACT to unsubscribed — which
+// Resend reports as `contact.updated` (there is no `email.unsubscribed`).
+// The verifier must authenticate and parse that event so the route can
+// mirror it into `marketing_unsubscribes` (tenant + email).
+describe('resendBroadcastsWebhookVerifier.constructContactEvent', () => {
+  const now = Math.floor(FROZEN_NOW.getTime() / 1000);
+  function contactBody(data: Record<string, unknown>, type = 'contact.updated'): string {
+    return JSON.stringify({ type, created_at: FROZEN_NOW.toISOString(), data });
+  }
+
+  it('parses a signed contact.updated into the fields the mirror needs', () => {
+    const body = contactBody({
+      id: 'c-1',
+      audience_id: 'aud-1',
+      segment_ids: ['seg-1'],
+      email: 'Alice@Example.com',
+      unsubscribed: true,
+    });
+    const event = resendBroadcastsWebhookVerifier.constructContactEvent(
+      body,
+      signPayload(body, 'msg_c1', now, SECRET),
+      'msg_c1',
+      String(now),
+      SECRET,
+    );
+    expect(event).toEqual({
+      id: 'msg_c1',
+      type: 'contact.updated',
+      createdAtUnixSeconds: now,
+      data: {
+        email: 'Alice@Example.com',
+        audienceIds: ['aud-1', 'seg-1'],
+        unsubscribed: true,
+      },
+    });
+  });
+
+  it('rejects a tampered contact.updated as bad_signature', () => {
+    const body = contactBody({ audience_id: 'aud-1', email: 'a@example.com', unsubscribed: true });
+    const sig = signPayload(body, 'msg_c2', now, SECRET);
+    const tampered = body.replace('a@example.com', 'b@example.com');
+    expect(() =>
+      resendBroadcastsWebhookVerifier.constructContactEvent(tampered, sig, 'msg_c2', String(now), SECRET),
+    ).toThrow(expect.objectContaining({ kind: 'bad_signature' }));
+  });
+
+  it('is only for contact.updated — any other type is unknown_event_type', () => {
+    const body = buildBody('email.delivered');
+    expect(() =>
+      resendBroadcastsWebhookVerifier.constructContactEvent(
+        body,
+        signPayload(body, 'msg_c3', now, SECRET),
+        'msg_c3',
+        String(now),
+        SECRET,
+      ),
+    ).toThrow(expect.objectContaining({ kind: 'unknown_event_type' }));
+  });
+
+  it('a contact.updated without an email or audience is malformed', () => {
+    for (const data of [
+      { audience_id: 'aud-1', unsubscribed: true },
+      { email: 'a@example.com', unsubscribed: true },
+    ]) {
+      const body = contactBody(data);
+      expect(() =>
+        resendBroadcastsWebhookVerifier.constructContactEvent(
+          body,
+          signPayload(body, 'msg_c4', now, SECRET),
+          'msg_c4',
+          String(now),
+          SECRET,
+        ),
+      ).toThrow(expect.objectContaining({ kind: 'malformed' }));
+    }
+  });
+});

@@ -26,6 +26,8 @@ import { broadcastsMetrics } from '@/lib/metrics';
 const processWebhookEventMock = vi.fn();
 const resolveTenantByResendBroadcastIdMock = vi.fn();
 const constructEventMock = vi.fn();
+const constructContactEventMock = vi.fn();
+const applyResendHostedUnsubscribeMock = vi.fn();
 const dbExecuteMock = vi.fn();
 // F7.1a Phase 3 T057 — batch routing fallback
 const resolveTenantByBatchProviderBroadcastIdMock = vi.fn();
@@ -67,7 +69,10 @@ vi.mock('@/modules/broadcasts', () => ({
     resolveTenantByResendBroadcastIdMock(...args),
   resendBroadcastsWebhookVerifier: {
     constructEvent: (...args: unknown[]) => constructEventMock(...args),
+    constructContactEvent: (...args: unknown[]) => constructContactEventMock(...args),
   },
+  applyResendHostedUnsubscribe: (...args: unknown[]) =>
+    applyResendHostedUnsubscribeMock(...args),
   WebhookSignatureError: WebhookSignatureErrorStub,
   f7AuditAdapter: {
     emit: (...args: unknown[]) => f7AuditEmitMock(...args),
@@ -345,3 +350,80 @@ describe('POST /api/webhooks/resend-broadcasts (T149 contract)', () => {
   // and routes successfully to `applyBatchWebhookEvent` for per-batch
   // counter increment.
 });
+
+// Resend's hosted unsubscribe page and Resend's own List-Unsubscribe header
+// flip the Resend contact, reported as `contact.updated`. Before this, the
+// route acked and dropped it, so the opt-out never reached
+// `marketing_unsubscribes` and the next broadcast (a fresh audience) could
+// email the person again. It must now be mirrored tenant-wide.
+describe('POST /api/webhooks/resend-broadcasts — contact.updated mirror', () => {
+  function contactEvent(unsubscribed: boolean) {
+    return {
+      id: 'msg_contact',
+      type: 'contact.updated',
+      createdAtUnixSeconds: 1700000000,
+      data: { email: 'Alice@Example.com', audienceIds: ['aud-1', 'seg-1'], unsubscribed },
+    };
+  }
+  beforeEach(() => {
+    constructEventMock.mockImplementation(() => {
+      throw new WebhookSignatureErrorStub('unknown_event_type', 'contact.updated');
+    });
+    constructContactEventMock.mockReset();
+    applyResendHostedUnsubscribeMock.mockReset();
+    applyResendHostedUnsubscribeMock.mockResolvedValue({ kind: 'applied', tenantId: 'test-tenant' });
+  });
+
+  it('unsubscribed=true → mirrored through the shared use-case (channel resend_hosted) → 200', async () => {
+    constructContactEventMock.mockReturnValue(contactEvent(true));
+    const route = await importRoute();
+    const res = await route.POST(makeRequest({ body: '{"type":"contact.updated"}' }));
+    expect(res.status).toBe(200);
+    expect(applyResendHostedUnsubscribeMock).toHaveBeenCalledTimes(1);
+    expect(applyResendHostedUnsubscribeMock.mock.calls[0]![0]).toMatchObject({
+      email: 'Alice@Example.com',
+      audienceIds: ['aud-1', 'seg-1'],
+    });
+    expect(processWebhookEventMock).not.toHaveBeenCalled();
+  });
+
+  it('unsubscribed=false (our own import, a resubscribe) → acked, nothing written', async () => {
+    constructContactEventMock.mockReturnValue(contactEvent(false));
+    const route = await importRoute();
+    const res = await route.POST(makeRequest({ body: '{}' }));
+    expect(res.status).toBe(200);
+    expect(applyResendHostedUnsubscribeMock).not.toHaveBeenCalled();
+  });
+
+  it('an audience we cannot attribute → 200 (no retry storm) + a NULL-tenant audit row to act on', async () => {
+    constructContactEventMock.mockReturnValue(contactEvent(true));
+    applyResendHostedUnsubscribeMock.mockResolvedValue({ kind: 'unknown_audience' });
+    const route = await importRoute();
+    const res = await route.POST(makeRequest({ body: '{}' }));
+    expect(res.status).toBe(200);
+    expect(f7AuditEmitMock).toHaveBeenCalledTimes(1);
+    const audit = f7AuditEmitMock.mock.calls[0]![1] as { payload: Record<string, unknown> };
+    expect(audit.payload['reason']).toBe('unknown_resend_audience_id');
+    expect(JSON.stringify(audit.payload)).not.toMatch(/alice@example\.com/i);
+  });
+
+  it('a failed write → 500 so Resend retries (the objection must not be lost)', async () => {
+    constructContactEventMock.mockReturnValue(contactEvent(true));
+    applyResendHostedUnsubscribeMock.mockResolvedValue({ kind: 'failed' });
+    const route = await importRoute();
+    const res = await route.POST(makeRequest({ body: '{}' }));
+    expect(res.status).toBe(500);
+  });
+
+  it('any other unknown type is still acked and ignored', async () => {
+    constructContactEventMock.mockImplementation(() => {
+      throw new WebhookSignatureErrorStub('unknown_event_type', 'email.opened');
+    });
+    const route = await importRoute();
+    const res = await route.POST(makeRequest({ body: '{}' }));
+    expect(res.status).toBe(200);
+    expect(applyResendHostedUnsubscribeMock).not.toHaveBeenCalled();
+    expect(f7AuditEmitMock).not.toHaveBeenCalled();
+  });
+});
+
