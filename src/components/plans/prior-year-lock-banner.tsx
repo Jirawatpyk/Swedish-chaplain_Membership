@@ -17,7 +17,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
+import { formatCalendarYear } from '@/lib/format-date-localised';
 import {
   InlineAlert,
   InlineAlertDescription,
@@ -46,28 +47,35 @@ export function PriorYearLockBanner({
   currentYearStatus,
 }: PriorYearLockBannerProps) {
   const t = useTranslations('admin.plans.priorYearLock');
+  const locale = useLocale();
+  // Visible years follow the locale (TH 2569); the hrefs below stay CE.
+  const shownYear = formatCalendarYear(planYear, locale);
+  const shownCurrentYear = formatCalendarYear(currentYear, locale);
 
   const cta = {
     has_plan: {
       href: `/admin/plans/${currentYear}/${planId}/edit`,
-      explanation: t('explanation', { currentYear }),
-      label: t('openCurrentCta', { currentYear }),
+      explanation: t('explanation', { currentYear: shownCurrentYear }),
+      label: t('openCurrentCta', { currentYear: shownCurrentYear }),
     },
     empty: {
       href: `/admin/plans/clone?from=${planYear}&to=${currentYear}`,
-      explanation: t('explanationNoCurrentVersion', { year: planYear, currentYear }),
-      label: t('cloneCta', { year: planYear, currentYear }),
+      explanation: t('explanationNoCurrentVersion', {
+        year: shownYear,
+        currentYear: shownCurrentYear,
+      }),
+      label: t('cloneCta', { year: shownYear, currentYear: shownCurrentYear }),
     },
     other_plans: {
       href: '/admin/plans/new',
-      explanation: t('explanationCreateInCurrentYear', { currentYear }),
-      label: t('createCta', { currentYear }),
+      explanation: t('explanationCreateInCurrentYear', { currentYear: shownCurrentYear }),
+      label: t('createCta', { currentYear: shownCurrentYear }),
     },
   }[currentYearStatus];
 
   return (
     <InlineAlert tone="warning">
-      <InlineAlertTitle>{t('banner', { year: planYear })}</InlineAlertTitle>
+      <InlineAlertTitle>{t('banner', { year: shownYear })}</InlineAlertTitle>
       <InlineAlertDescription className="mt-2 space-y-2">
         <p>{cta.explanation}</p>
         <Link

@@ -20,7 +20,7 @@
 import { useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { CopyIcon, MoreHorizontal, PlusIcon, SearchIcon } from 'lucide-react';
 // Deep PURE-Domain imports (never the auth barrel — this is a client bundle).
 import type { Role } from '@/modules/auth/domain/role';
@@ -59,6 +59,7 @@ import { MoneyDisplay } from './money-display';
 import { LocaleTextDisplay } from './locale-text-display';
 import { usePlanActions } from './use-plan-actions';
 import type { PlanListItem } from '@/modules/plans';
+import { formatCalendarYear } from '@/lib/format-date-localised';
 
 export interface PlansTableProps {
   readonly plans: ReadonlyArray<PlanListItem>;
@@ -85,6 +86,9 @@ export function PlansTable({
   const router = useRouter();
   const searchParams = useSearchParams();
   const t = useTranslations('admin.plans');
+  // Plan years are stored CE; every visible year goes through the locale
+  // (TH reads 2569). Select values, hrefs and keys stay CE.
+  const locale = useLocale();
   const tActions = useTranslations('admin.plans.actions');
   const tOptions = useTranslations('admin.plans.create.options');
   const [isPending, startTransition] = useTransition();
@@ -226,13 +230,13 @@ export function PlansTable({
           <SelectTrigger id="plans-year" className="sm:w-[120px]">
             <TranslatedSelectValue
               placeholder={t('filters.year')}
-              translate={(v) => v}
+              translate={(v) => formatCalendarYear(Number(v), locale)}
             />
           </SelectTrigger>
           <SelectContent>
             {yearOptions.map((y) => (
               <SelectItem key={y} value={String(y)}>
-                {y}
+                {formatCalendarYear(y, locale)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -333,8 +337,8 @@ export function PlansTable({
                         >
                           <CopyIcon className="h-3.5 w-3.5" />
                           {t('empty.cloneCta', {
-                            sourceYear: year - 1,
-                            targetYear: year,
+                            sourceYear: formatCalendarYear(year - 1, locale),
+                            targetYear: formatCalendarYear(year, locale),
                           })}
                         </Link>
                       </div>
@@ -381,7 +385,7 @@ export function PlansTable({
                   <TableCell>
                     {tOptions(`memberTypeScope.${plan.member_type_scope}`)}
                   </TableCell>
-                  <TableCell>{plan.plan_year}</TableCell>
+                  <TableCell>{formatCalendarYear(plan.plan_year, locale)}</TableCell>
                   <TableCell>
                     {isDeleted ? (
                       <Badge variant="outline">{t('badges.deleted')}</Badge>
@@ -459,7 +463,7 @@ export function PlansTable({
       </Table>
 
       <p className="text-xs text-muted-foreground">
-        {t('subtitle', { total: sorted.length, year })}
+        {t('subtitle', { total: sorted.length, year: formatCalendarYear(year, locale) })}
       </p>
 
       {/* Confirmation dialog for destructive + state-changing US4 actions */}

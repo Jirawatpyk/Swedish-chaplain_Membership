@@ -3,6 +3,7 @@ import {
   getDateFormatLocale,
   formatLocalisedDate,
   formatDatePreset,
+  formatCalendarYear,
 } from '@/lib/format-date-localised';
 
 describe('getDateFormatLocale', () => {
@@ -166,5 +167,22 @@ describe('formatLocalisedDate — Date input', () => {
       hourCycle: 'h23',
     });
     expect(out).toBe('14:10');
+  });
+});
+
+describe('formatCalendarYear', () => {
+  it('renders the year in Buddhist Era on th, CE on en/sv', () => {
+    expect(formatCalendarYear(2026, 'th')).toBe('2569');
+    expect(formatCalendarYear(2026, 'en')).toBe('2026');
+    expect(formatCalendarYear(2026, 'sv')).toBe('2026');
+  });
+
+  it('leaves a partial or implausible year as typed (no 19xx / BE shift)', () => {
+    // A half-typed form value ("2", "20", "202") must echo back verbatim —
+    // Date.UTC maps 0–99 to 1900+, and BE-shifting "202" to "745" misleads.
+    expect(formatCalendarYear(2, 'en')).toBe('2');
+    expect(formatCalendarYear(20, 'th')).toBe('20');
+    expect(formatCalendarYear(202, 'th')).toBe('202');
+    expect(formatCalendarYear(Number.NaN, 'th')).toBe('NaN');
   });
 });
