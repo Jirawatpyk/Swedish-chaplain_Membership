@@ -1,0 +1,66 @@
+/* AURA brand theme for the product UI — brand #10487A (SweCham). GENERATED — do not edit by hand.
+ * Regenerate: npx aura-theme --brand "#10487A" --out src/styles/aura-theme.css  (must report all contrast checks passing)
+ * Imported after aura.css in src/app/globals.css (spec 122, research R3). */
+:root, [data-theme="light"] {
+  --aura-fg-accent: #2e6397;
+  --aura-accent-violet: #2e6397;
+  --aura-focus-ring: #2e6397;
+  --aura-bg-selected: #f1f8ff;
+  --aura-status-progress-bg: #e0efff;
+  --aura-status-progress-fg: #24527f;
+  --aura-alert-info-bg: #f1f8ff;
+  --aura-alert-info-fg: #24527f;
+  --aura-alert-info-border: #c3e0ff;
+  --aura-mesh-from: #74a7dd;
+  --aura-chart-1: #194f82;
+  --aura-chart-seq-1: #5a90c7;
+  --aura-chart-seq-2: #4075aa;
+  --aura-chart-seq-3: #265c8f;
+  --aura-chart-seq-4: #0a4476;
+  --aura-chart-seq-5: #002f58;
+  --aura-shadow-creative: 4px 4px 0px #18181b;
+  --aura-shadow-creative-hover: 6px 6px 0px #18181b;
+  --aura-card-shadow-creative: 8px 8px 0px #18181b;
+}
+.dark, [data-theme="dark"] {
+  --aura-chart-1: #83baf3;
+  --aura-chart-seq-1: #376ca0;
+  --aura-chart-seq-2: #4f85bb;
+  --aura-chart-seq-3: #6ba2da;
+  --aura-chart-seq-4: #89c0fb;
+  --aura-chart-seq-5: #bedeff;
+  --aura-fg-accent: #9cc5f1;
+  --aura-accent-violet: #74a7dd;
+  --aura-focus-ring: #74a7dd;
+  --aura-bg-selected: #222b37;
+  --aura-alert-info-bg: #222b37;
+  --aura-alert-info-fg: #9cc5f1;
+  --aura-alert-info-border: #3d5169;
+  --aura-status-progress-bg: #24303e;
+  --aura-status-progress-fg: #9cc5f1;
+  --aura-shadow-creative: 4px 4px 0px #74a7dd;
+  --aura-shadow-creative-hover: 6px 6px 0px #74a7dd;
+  --aura-card-shadow-creative: 8px 8px 0px #74a7dd;
+}
+@media (prefers-color-scheme: dark) {
+[data-theme="system"] {
+  --aura-chart-1: #83baf3;
+  --aura-chart-seq-1: #376ca0;
+  --aura-chart-seq-2: #4f85bb;
+  --aura-chart-seq-3: #6ba2da;
+  --aura-chart-seq-4: #89c0fb;
+  --aura-chart-seq-5: #bedeff;
+  --aura-fg-accent: #9cc5f1;
+  --aura-accent-violet: #74a7dd;
+  --aura-focus-ring: #74a7dd;
+  --aura-bg-selected: #222b37;
+  --aura-alert-info-bg: #222b37;
+  --aura-alert-info-fg: #9cc5f1;
+  --aura-alert-info-border: #3d5169;
+  --aura-status-progress-bg: #24303e;
+  --aura-status-progress-fg: #9cc5f1;
+  --aura-shadow-creative: 4px 4px 0px #74a7dd;
+  --aura-shadow-creative-hover: 6px 6px 0px #74a7dd;
+  --aura-card-shadow-creative: 8px 8px 0px #74a7dd;
+}
+}
