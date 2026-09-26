@@ -179,10 +179,14 @@ export function PortalInvoiceCardList({
                   />
                 </div>
 
-                {/* Dates — reuse the existing column labels as inline labels. */}
+                {/* Dates — reuse the existing column labels as inline labels.
+                    Each date stays on one line ("15 ต.ค. 2569"); the row may
+                    still wrap between the two. */}
                 <p className="text-sm text-muted-foreground">
-                  {t('columns.issueDate')} {formatDate(vm.issueDate, locale)} ·{' '}
-                  {t('columns.dueDate')} {formatDate(vm.dueDate, locale)}
+                  {t('columns.issueDate')}{' '}
+                  <span className="whitespace-nowrap">{formatDate(vm.issueDate, locale)}</span> ·{' '}
+                  {t('columns.dueDate')}{' '}
+                  <span className="whitespace-nowrap">{formatDate(vm.dueDate, locale)}</span>
                 </p>
 
                 {/* Receipt number — separate-mode only. Combined-mode (em-dash

@@ -497,7 +497,7 @@
         "empty": "Allt klart – inget behöver åtgärdas just nu.",
         "overdueInvoices": "Förfallna fakturor",
         "atRisk": "Medlemmar i riskzonen",
-        "broadcasts": "E-Blasts som väntar på marknadsföring",
+        "broadcasts": "Utskick som väntar på marknadsföring",
         "changeRequests": "Ändringsbegäranden som väntar (äldsta {days, plural, =0 {inkom idag} one {inkom för # dag sedan} other {inkom för # dagar sedan}})",
         "changeRequestsNoAge": "Ändringsbegäranden som väntar",
         "changeRequestsUnavailable": "Ändringsbegäranden som väntar kunde inte räknas. Ladda om sidan för att försöka igen, eller öppna kön."
@@ -534,7 +534,7 @@
         "countColumnHeader": "Medlemmar",
         "pctColumnHeader": "% av totalt",
         "totalRowLabel": "Totalt",
-        "unassignedTier": "Ingen plan tilldelad",
+        "unassignedTier": "Inget paket tilldelat",
         "activeMembersLabel": "Aktiva medlemmar",
         "topTier": "Topp: {tier} · {pct}"
       },
@@ -559,7 +559,7 @@
       "insights": {
         "title": "Smarta insikter",
         "empty": "Inga insikter just nu – allt är i ordning.",
-        "unused_eblast_quota": "{count} medlemmar har oanvänd E-Blast-kvot",
+        "unused_eblast_quota": "{count} medlemmar har oanvänd utskickskvot",
         "underused_event_tickets": "{count} medlemmar har underutnyttjade evenemangsbiljetter",
         "at_risk_followup": "{count} medlemmar i riskzonen behöver följas upp",
         "dismiss": "Avfärda insikt",
@@ -577,7 +577,7 @@
           "member_archived": "Medlem arkiverad",
           "member_undeleted": "Medlem återställd",
           "member_status_changed": "Medlemsstatus ändrad",
-          "member_plan_changed": "Medlemsplan ändrad",
+          "member_plan_changed": "Medlemspaket ändrat",
           "plan_created": "Paket skapat",
           "plan_updated": "Paket uppdaterat",
           "plan_activated": "Paket aktiverat",
@@ -838,7 +838,7 @@
             "additionalBenefits": "Övriga förmåner",
             "partnershipBenefits": "Partnerskapsförmåner"
           },
-          "eblastPerYear": "E-utskick per år",
+          "eblastPerYear": "Utskick per år",
           "websitePageType": "Webbsidetyp",
           "homepageLogoCategory": "Logokategori på startsida",
           "homepageLogo": "Logo på startsida",
@@ -1211,12 +1211,12 @@
       "title": "Medlemmar",
       "overrideReason": {
         "warnings": {
-          "turnoverOutOfBand": "Omsättning {turnover} THB ligger utanför planens intervall ({min}–{max} THB).",
-          "turnoverBelow": "Omsättning {turnover} THB är under planens minimum på {min} THB.",
-          "turnoverAbove": "Omsättning {turnover} THB överstiger planens maximum på {max} THB.",
-          "startupTooOld": "Grundningsår {year} överskrider planens gräns på {maxYears} år.",
-          "ageNotEligible": "Ålder {age} överstiger planens maximum på {maxAge}.",
-          "generic": "Värdet ligger utanför planens gränser. Ange en anledning för att fortsätta."
+          "turnoverOutOfBand": "Omsättning {turnover} THB ligger utanför paketets intervall ({min}–{max} THB).",
+          "turnoverBelow": "Omsättning {turnover} THB är under paketets minimum på {min} THB.",
+          "turnoverAbove": "Omsättning {turnover} THB överstiger paketets maximum på {max} THB.",
+          "startupTooOld": "Grundningsår {year} överskrider paketets gräns på {maxYears} år.",
+          "ageNotEligible": "Ålder {age} överstiger paketets maximum på {maxAge}.",
+          "generic": "Värdet ligger utanför paketets gränser. Ange en anledning för att fortsätta."
         },
         "title": "Anledning till att kringgå validering",
         "description": "Registrera varför du fortsätter trots varningen. Anledningen sparas i revisionsloggen.",
@@ -1235,8 +1235,8 @@
         }
       },
       "bundleChangeWarning": {
-        "title": "Planpaket-ändring",
-        "description": "Att byta plan ändrar det paketerade corporate-nivån för {affectedCount, plural, =0 {inga} one {# medlem} other {# medlemmar}} på det gamla partnerskapet.",
+        "title": "Ändring av paketets corporate-nivå",
+        "description": "Att byta paket ändrar den paketerade corporate-nivån för {affectedCount, plural, =0 {inga} one {# medlem} other {# medlemmar}} på det gamla partnerskapet.",
         "oldBundle": "Gammalt paket",
         "newBundle": "Nytt paket",
         "affectedCount": "{count, plural, =0 {Inga medlemmar påverkas} one {# medlem påverkas} other {# medlemmar påverkas}}",
@@ -1246,27 +1246,27 @@
         "noBundle": "Inget"
       },
       "planChangeConfirm": {
-        "title": "Bekräfta byte av medlemsplan",
-        "description": "Du håller på att ändra medlemmens plan. Granska ändringen innan du sparar.",
-        "currentPlan": "Nuvarande plan",
-        "newPlan": "Ny plan",
+        "title": "Bekräfta byte av medlemspaket",
+        "description": "Du håller på att ändra medlemmens paket. Granska ändringen innan du sparar.",
+        "currentPlan": "Nuvarande paket",
+        "newPlan": "Nytt paket",
         "feeLabel": "Årsavgift (exkl. moms)",
         "feeUnknown": "Ej tillgänglig",
-        "yearOnlyNotice": "Endast planåret ändras. Själva planen är oförändrad.",
+        "yearOnlyNotice": "Endast paketåret ändras. Själva paketet är oförändrat.",
         "billingNoteHeading": "Vad som ändras och inte ändras",
-        "billingNoteRecord": "Medlemmens registrerade plan ändras omedelbart.",
+        "billingNoteRecord": "Medlemmens registrerade paket ändras omedelbart.",
         "billingNoteCurrentInvoice": "Redan utfärdade fakturor ändras inte. Om beloppet nu är fel, utfärda på nytt eller kreditera separat.",
-        "billingNoteFutureCycles": "Förnyelsedebiteringen uppdateras inte automatiskt. Nästa förnyelsefaktura använder fortfarande den tidigare registrerade planen tills förnyelsecykeln ändras separat.",
-        "billingNoteFutureCyclesAutomatic": "Framtida förnyelsecykler debiteras automatiskt enligt den nya planen. Den nuvarande förnyelseperioden behåller sitt registrerade pris tills den förnyas.",
-        "confirm": "Byt plan",
+        "billingNoteFutureCycles": "Förnyelsedebiteringen uppdateras inte automatiskt. Nästa förnyelsefaktura använder fortfarande det tidigare registrerade paketet tills förnyelsecykeln ändras separat.",
+        "billingNoteFutureCyclesAutomatic": "Framtida förnyelsecykler debiteras automatiskt enligt det nya paketet. Den nuvarande förnyelseperioden behåller sitt registrerade pris tills den förnyas.",
+        "confirm": "Byt paket",
         "cancel": "Avbryt"
       },
       "planChangeResult": {
-        "applied_to_open_cycle": "Den nuvarande förnyelseperioden debiteras nu enligt den nya planen.",
-        "deferred_invoice_already_issued": "Fakturan för den nuvarande förnyelsen är redan utfärdad, så den nya planen gäller från nästa förnyelse. För att tillämpa den nu, makulera och utfärda fakturan på nytt.",
-        "deferred_term_length_change": "Planerna har olika löptider, så den nya planen gäller från nästa förnyelse.",
-        "deferred_immediate_not_enabled": "Den nya planen gäller från nästa förnyelse.",
-        "no_open_cycle": "Det finns ingen aktiv förnyelsecykel, så den nya planen gäller vid nästa förnyelse."
+        "applied_to_open_cycle": "Den nuvarande förnyelseperioden debiteras nu enligt det nya paketet.",
+        "deferred_invoice_already_issued": "Fakturan för den nuvarande förnyelsen är redan utfärdad, så det nya paketet gäller från nästa förnyelse. För att tillämpa det nu, makulera och utfärda fakturan på nytt.",
+        "deferred_term_length_change": "Paketen har olika löptider, så det nya paketet gäller från nästa förnyelse.",
+        "deferred_immediate_not_enabled": "Det nya paketet gäller från nästa förnyelse.",
+        "no_open_cycle": "Det finns ingen aktiv förnyelsecykel, så det nya paketet gäller vid nästa förnyelse."
       },
       "subtitle": "Medlemsföretag + primära kontakter",
       "directory": {
@@ -1421,7 +1421,7 @@
         "renewLapsed": {
           "trigger": "Förnya medlem",
           "title": "Förnya denna medlem?",
-          "description": "Detta startar ett nytt medlemsår och skapar en förnyelsefaktura till medlemmens nuvarande planpris (låst för detta år). Fakturan skickas automatiskt till medlemmen via e-post, och medlemskapet blir aktivt igen när den har betalats.",
+          "description": "Detta startar ett nytt medlemsår och skapar en förnyelsefaktura till medlemmens nuvarande paketpris (låst för detta år). Fakturan skickas automatiskt till medlemmen via e-post, och medlemskapet blir aktivt igen när den har betalats.",
           "cancel": "Avbryt",
           "confirm": "Skapa förnyelsefaktura",
           "submitting": "Skapar…",
@@ -1432,7 +1432,7 @@
               "member_not_found": "Medlemmen hittades inte.",
               "member_archived": "Denna medlem är arkiverad. Återställ medlemmen innan du förnyar.",
               "member_has_active_cycle": "Denna medlem har redan en aktiv förnyelsecykel.",
-              "plan_not_found": "Medlemmens plan kunde inte hittas.",
+              "plan_not_found": "Medlemmens paket kunde inte hittas.",
               "invoice_already_exists": "En medlemsfaktura finns redan för detta år. Reglera eller makulera den innan du förnyar igen.",
               "invoice_issue_failed": "Förnyelsefakturan kunde inte utfärdas. Förnyelsen slutfördes inte – försök igen.",
               "rate_limited": "För många förnyelseförsök. Vänta en stund och försök igen.",
@@ -1767,7 +1767,7 @@
           "description": "Beskrivning",
           "foundedYear": "Grundat år",
           "turnoverThb": "Årsomsättning (THB)",
-          "turnoverHint": "Används för att placera medlemmen i planens omsättningsintervall.",
+          "turnoverHint": "Används för att placera medlemmen i paketets omsättningsintervall.",
           "registeredCapitalThb": "Registrerat kapital (THB)",
           "plan": "Paket",
           "planAnnualFee": "Årsavgift",
@@ -1789,7 +1789,7 @@
           "roleTitle": "Roll / titel",
           "preferredLanguage": "Föredraget språk",
           "dateOfBirth": "Födelsedatum",
-          "dateOfBirthHint": "Krävs för Thai Alumni-planen",
+          "dateOfBirthHint": "Krävs för paketet Thai Alumni",
           "phoneError": "Använd internationellt format, t.ex. +66812345678",
           "errors": {
             "required": "Detta fält är obligatoriskt.",
@@ -1798,7 +1798,7 @@
             "planYear": "Ange ett år mellan 2020 och 2100.",
             "emailFormat": "Ange en giltig e-postadress, t.ex. namn@example.com.",
             "taxIdChecksum": "Detta skatte-ID är ogiltigt. Kontrollera det 13-siffriga numret och checksiffran.",
-            "dobRequired": "Födelsedatum krävs för denna plan.",
+            "dobRequired": "Födelsedatum krävs för detta paket.",
             "foundedYear": "Ange ett år mellan 1800 och i år.",
             "turnover": "Ange ett icke-negativt belopp.",
             "registeredCapital": "Ange ett icke-negativt belopp.",
@@ -1818,11 +1818,11 @@
           "generic": "Något gick fel. Försök igen.",
           "validation": "Rätta markerade fält.",
           "forbidden": "Endast administratörer kan lägga till medlemmar.",
-          "planMissing": "Inga aktiva planer hittades — skapa en plan först.",
+          "planMissing": "Inga aktiva paket hittades — skapa ett paket först.",
           "emailInUse": "Denna e-postadress används redan av en annan medlem i handelskammaren.",
           "secondaryEmailInUse": "Den sekundära kontaktens e-postadress används redan av en annan medlem i handelskammaren.",
           "taxIdInvalid": "Detta skatte-ID är ogiltigt. Kontrollera det 13-siffriga numret och checksiffran.",
-          "planUnavailable": "Denna plan är inte längre tillgänglig. Uppdatera sidan och välj en annan.",
+          "planUnavailable": "Detta paket är inte längre tillgängligt. Uppdatera sidan och välj ett annat.",
           "serverBusy": "Servern är upptagen. Försök igen om en stund."
         },
         "success": "Medlem skapad."
@@ -1838,7 +1838,7 @@
       "edit": {
         "pageTitle": "Redigera {companyName} · SweCham",
         "title": "Redigera medlem",
-        "subtitle": "Uppdatera medlemsdetaljer, plan eller primär kontakt.",
+        "subtitle": "Uppdatera medlemsdetaljer, paket eller primär kontakt.",
         "submit": "Spara ändringar",
         "submitting": "Sparar…",
         "cancel": "Avbryt",
@@ -1904,7 +1904,7 @@
         "overCapHelper": "{count} av {total} valda — endast {max} kan behandlas åt gången. Avmarkera rader efter rad {max}, eller använd filter för att smalna av listan innan du markerar om.",
         "actions": {
           "archive": "Arkivera",
-          "change_plan": "Byt plan",
+          "change_plan": "Byt paket",
           "send_portal_invite": "Skicka inbjudan",
           "enrol_auto_invoice": "Anmäl till autofakturering",
           "unenrol_auto_invoice": "Stoppa autofakturering",
@@ -1952,7 +1952,7 @@
           "state_error": "En eller flera valda medlemmar är i ett läge som inte tillåter den här åtgärden. Uppdatera och försök igen.",
           "no_primary_contact": "En vald medlem saknar primär kontakt och kan inte återställas i grupp. Öppna den medlemmens sida och återställ där för att välja en.",
           "not_found": "En eller flera valda medlemmar finns inte längre. Uppdatera och försök igen.",
-          "plan_not_found": "Målplanen finns inte längre. Uppdatera och försök igen.",
+          "plan_not_found": "Målpaketet finns inte längre. Uppdatera och försök igen.",
           "bulk_cap_exceeded": "För många medlemmar valda för en omgång. Minska urvalet och försök igen.",
           "invalid_body": "Begäran var ogiltig. Uppdatera och försök igen."
         },
@@ -2517,8 +2517,8 @@
           },
           "issueCaution": {
             "unresolved": "Vi kunde inte läsa in hela raden — pris- och avvikelsekontrollerna kan vara ofullständiga. Kontrollera beloppet innan du utfärdar detta skattedokument.",
-            "priceUnverifiable": "Radens pris kunde inte bekräftas mot plankatalogen. Kontrollera beloppet innan du utfärdar.",
-            "priceChanged": "Planpriset ändrades efter att utkastet skapades. Kontrollera beloppet innan du utfärdar."
+            "priceUnverifiable": "Radens pris kunde inte bekräftas mot paketkatalogen. Kontrollera beloppet innan du utfärdar.",
+            "priceChanged": "Paketpriset ändrades efter att utkastet skapades. Kontrollera beloppet innan du utfärdar."
           },
           "toast": {
             "issuedAndSent": "Faktura {number} utfärdad och skickad.",
@@ -2658,7 +2658,7 @@
           "wouldBeRefusedAria": "Skulle nekas — kan inte utfärdas i nuvarande skick",
           "refusalReason": {
             "planYearDrift": "Förnyelseperioden ändrades efter att det här utkastet skapades.",
-            "planDrift": "Medlemmens plan ändrades efter att det här utkastet skapades.",
+            "planDrift": "Medlemmens paket ändrades efter att det här utkastet skapades.",
             "memberTerminated": "Den här medlemmens medlemskap har upphört.",
             "memberErased": "Den här medlemmens personuppgifter har raderats på medlemmens begäran. Ingen ny faktura kan utfärdas — ta bort det här utkastet.",
             "duplicateLiveBill": "En faktura för den här medlemmen och det här verksamhetsåret finns redan."
@@ -2668,7 +2668,7 @@
           "unresolvedAria": "Kan inte verifiera pris, täckning eller om utkastet skulle nekas",
           "unresolvedTooltip": "Vi kunde inte bekräfta det här utkastets pris, täckning, eller om det skulle nekas. Granska manuellt innan du utfärdar.",
           "priceUnverifiable": "Priset kunde inte bekräftas",
-          "priceUnverifiableAria": "Priset kunde inte bekräftas mot en aktiv planpost i katalogen",
+          "priceUnverifiableAria": "Priset kunde inte bekräftas mot en aktiv paketpost i katalogen",
           "priceFrozenOnly": "Låst till {frozen}",
           "priceChanged": "Priset har ändrats",
           "priceChangedAria": "Priset har ändrats — låst till {frozen}, nuvarande katalogpris är {current}",
@@ -2767,7 +2767,7 @@
       },
       "new": {
         "title": "Nytt fakturautkast",
-        "description": "Välj medlem och plan. Förhandsgranska före utfärdande.",
+        "description": "Välj medlem och paket. Förhandsgranska före utfärdande.",
         "cancel": "Tillbaka",
         "type": {
           "legend": "Vad avser denna faktura?",
@@ -2912,7 +2912,7 @@
         },
         "errors": {
           "create_failed": "Kunde inte skapa utkast",
-          "plan_not_found": "Den här medlemmens plan för det året finns inte i avgiftskatalogen ännu — lägg till planåret under Paket innan du skapar fakturan.",
+          "plan_not_found": "Den här medlemmens paket för det året finns inte i avgiftskatalogen ännu — lägg till paketåret under Paket innan du skapar fakturan.",
           "settings_missing": "Fakturainställningar har inte konfigurerats för den här organisationen ännu — konfigurera dem först.",
           "member_archived": "Denna medlem har arkiverats och kan inte faktureras. Återställ medlemmen först.",
           "member_not_found": "Den här medlemmen kunde inte hittas — den kan ha tagits bort.",
@@ -2933,7 +2933,7 @@
         },
         "planInfo": {
           "annualFee": "Årsavgift: {amount} THB (före moms)",
-          "changePlan": "Ändra medlemmens plan →"
+          "changePlan": "Ändra medlemmens paket →"
         },
         "duplicateConfirm": {
           "title": "Medlemmen har redan en faktura för {year}",
@@ -3304,7 +3304,7 @@
     },
     "broadcasts": {
       "queue": {
-        "title": "Granskningskö för E-Blast",
+        "title": "Granskningskö för utskick",
         "subtitle": "Granska och godkänn utskick som medlemmar har skickat in.",
         "templatesEntryButton": "Mallar",
         "empty": "När medlemmar skickar in utskick visas de här för granskning.",
@@ -3418,18 +3418,18 @@
         "status": {
           "draft": "Utkast",
           "submitted": "Väntar på granskning av marknadsföring",
-          "approved": "Schemalagd",
+          "approved": "Schemalagt",
           "sending": "Skickar",
-          "sent": "Skickad",
-          "rejected": "Avvisad",
-          "cancelled": "Avbruten",
+          "sent": "Skickat",
+          "rejected": "Avvisat",
+          "cancelled": "Avbrutet",
           "failed_to_dispatch": "Misslyckades",
-          "partially_sent": "Delvis skickad",
+          "partially_sent": "Delvis skickat",
           "in_design": "Under utformning",
           "awaiting_member_approval": "Inväntar medlemmens godkännande",
           "changes_requested": "Medlemmen begär ändringar",
-          "member_approved": "Godkänd av medlem — inväntar schemaläggning",
-          "expired_no_member_response": "Utgången — inget svar från medlem",
+          "member_approved": "Godkänt av medlem — inväntar schemaläggning",
+          "expired_no_member_response": "Utgånget — inget svar från medlem",
           "partial_delivery_accepted": "Godkänd partiell leverans"
         },
         "statusGroup": {
@@ -3476,27 +3476,27 @@
           "custom": "Anpassad mottagarlista"
         },
         "dispatchHeldTitle": "Pausad",
-        "dispatchHeldBody": "Medlemmens medlemskap väntar på betalning. E-Blasten skickas automatiskt när betalningen är klar, eller misslyckas om medlemskapet upphör.",
-        "failureReasonTitle": "Varför E-Blasten inte skickades",
+        "dispatchHeldBody": "Medlemmens medlemskap väntar på betalning. Utskicket skickas automatiskt när betalningen är klar, eller misslyckas om medlemskapet upphör.",
+        "failureReasonTitle": "Varför utskicket inte skickades",
         "failureReason": {
-          "member_halted": "Medlemmens E-Blasts var spärrade (automatisk spärr på grund av klagomålsfrekvens) när denna skulle skickas. Granska och häv vid behov spärren i E-Blast-listan; medlemmen kan därefter skicka in en ny E-Blast.",
-          "member_not_in_good_standing": "Medlemskapet hade upphört när denna skulle skickas. Medlemmen kan skicka in en ny E-Blast när medlemskapet är aktivt igen.",
+          "member_halted": "Medlemmens utskick var spärrade (automatisk spärr på grund av klagomålsfrekvens) när detta skulle skickas. Granska och häv vid behov spärren i utskickslistan; medlemmen kan därefter skicka in ett nytt utskick.",
+          "member_not_in_good_standing": "Medlemskapet hade upphört när detta skulle skickas. Medlemmen kan skicka in ett nytt utskick när medlemskapet är aktivt igen.",
           "failed_rows": "Resend avvisade några mottagaradresser i kontaktimporten.",
           "counts_incoherent": "Kontaktimportens antal gick inte ihop, så utskicket stoppades.",
           "count_mismatch": "Antalet importerade mottagare stämde inte med målgruppen vid utskickstillfället.",
           "provider_failed": "Resend rapporterade att kontaktimporten misslyckades.",
           "gateway_permanent": "Resend avvisade begäran (ett permanent fel). Kontrollera Resend-kontot och planens gränser.",
-          "gateway_unknown": "Ett oväntat fel uppstod när utskicket förbereddes. Se Livscykelstidslinje nedan; om orsaken fortfarande är oklar, kontakta systemadministratören och ange denna E-Blasts ID.",
-          "malformed_segment": "Den sparade målgruppen för denna E-Blast är ofullständig (en nivåmålgrupp utan nivåer).",
+          "gateway_unknown": "Ett oväntat fel uppstod när utskicket förbereddes. Se Livscykelstidslinje nedan; om orsaken fortfarande är oklar, kontakta systemadministratören och ange detta utskicks ID.",
+          "malformed_segment": "Den sparade målgruppen för detta utskick är ofullständig (en nivåmålgrupp utan nivåer).",
           "audience_too_large": "Målgruppen växte förbi den tillåtna storleken mellan godkännande och utskick.",
           "retry_budget_exhausted": "Resend gick inte att nå på över en timme, så utskicket slutade försöka.",
           "audience_post_suppression_empty": "Inga mottagare återstod när avregistreringar och avanmälningar hade tillämpats.",
           "audience_membership_drift": "Resend-målgruppen innehöll fler kontakter än som beräknats, så utskicket stoppades.",
           "audience_import_stuck": "Kontaktimporten blev inte klar inom 30 minuter.",
-          "resend_resource_missing": "En Resend-resurs för denna E-Blast finns inte längre. Kontrollera Resend-kontot.",
+          "resend_resource_missing": "En Resend-resurs för detta utskick finns inte längre. Kontrollera Resend-kontot.",
           "resend_resource_404": "Resend har inte längre detta utskick (upptäckt vid 24-timmarsavstämningen).",
-          "no_resend_resource_attached": "Inget Resend-utskick kopplades någonsin till denna E-Blast (upptäckt vid 24-timmarsavstämningen).",
-          "generic": "Utskicket misslyckades. Se Livscykelstidslinje nedan; om orsaken fortfarande är oklar, kontakta systemadministratören och ange denna E-Blasts ID."
+          "no_resend_resource_attached": "Inget Resend-utskick kopplades någonsin till detta utskick (upptäckt vid 24-timmarsavstämningen).",
+          "generic": "Utskicket misslyckades. Se Livscykelstidslinje nedan; om orsaken fortfarande är oklar, kontakta systemadministratören och ange detta utskicks ID."
         },
         "audit": {
           "title": "Livscykelstidslinje",
@@ -3618,8 +3618,8 @@
           "buttonChange": "Ändra sändningstid",
           "title": "Bekräfta sändningstiden",
           "titleChange": "Ändra sändningstiden",
-          "description": "Medlemmen har godkänt det här E-Blast-utskicket. Välj när det skickas; medlemmen får veta den slutliga tiden.",
-          "descriptionChange": "Det här E-Blast-utskicket är schemalagt. Ändra tiden, skicka nu eller avbryt den bekräftade tiden.",
+          "description": "Medlemmen har godkänt det här utskicket. Välj när det skickas; medlemmen får veta den slutliga tiden.",
+          "descriptionChange": "Det här utskicket är schemalagt. Ändra tiden, skicka nu eller avbryt den bekräftade tiden.",
           "proposal": "Medlemmens föreslagna tid: {time}",
           "proposalNone": "Medlemmen föreslog ingen tid.",
           "proposalPassed": "Medlemmens föreslagna tid ({time}) är för nära eller har passerat — välj en ny tid.",
@@ -3644,7 +3644,7 @@
         },
         "errors": {
           "generic": "Något gick fel. Försök igen.",
-          "stage_changed": "Det här E-Blast-utskicket har flyttats till ett annat steg under tiden. Sidan har uppdaterats.",
+          "stage_changed": "Det här utskicket har flyttats till ett annat steg under tiden. Sidan har uppdaterats.",
           "version_changed": "Någon annan har ändrat den här versionen. Ladda om för att se den aktuella versionen.",
           "no_working_copy": "Det finns ingen arbetskopia att skicka. Börja formatera en version först.",
           "no_portal_user": "Medlemsföretaget har ingen portalanvändare, så versionen kan inte skickas för godkännande.",
@@ -3660,14 +3660,14 @@
           "cta_link_scheme": "En knapp eller länk måste börja med http, https eller mailto.",
           "banner_alt_required": "Varje banner och bild behöver en beskrivning på 1–125 tecken.",
           "broadcast_rate_limit_exceeded": "För många förfrågningar på kort tid. Vänta en stund och försök igen.",
-          "broadcast_not_found": "Det här E-Blast-utskicket hittades inte.",
+          "broadcast_not_found": "Det här utskicket hittades inte.",
           "permission_denied": "Du har inte behörighet att göra detta.",
           "test_copy_invalid_recipient": "Testexemplaret kunde inte levereras till din e-postadress.",
           "test_copy_unavailable": "E-posttjänsten är inte tillgänglig. Försök skicka testexemplaret igen om en stund.",
           "internal_error": "Något gick fel hos oss. Försök igen.",
-          "sending_started": "Utskicket av detta E-Blast har redan startat, så sändningstiden kan inte längre ändras.",
-          "member_halted": "Sändningstiden bekräftades inte: medlemmens E-Blast-utskick är spärrade i väntan på administratörsgranskning.",
-          "member_not_in_good_standing": "Sändningstiden bekräftades inte: medlemmens medlemskap är avstängt eller avslutat, så E-Blast-utskicket kan inte skickas."
+          "sending_started": "Det här utskicket har redan börjat skickas, så sändningstiden kan inte längre ändras.",
+          "member_halted": "Sändningstiden bekräftades inte: medlemmens utskick är spärrade i väntan på administratörsgranskning.",
+          "member_not_in_good_standing": "Sändningstiden bekräftades inte: medlemmens medlemskap är avstängt eller avslutat, så utskicket kan inte skickas."
         }
       },
       "approveDialog": {
@@ -3722,12 +3722,12 @@
         "memberPlaceholder": "Sök efter företagsnamn…",
         "subjectLabel": "Ämne",
         "bodyLabel": "Meddelande",
-        "pageSubtitle": "Skapa och kölägg ett utskick för granskning med den här medlemmens e-utskickskvot.",
+        "pageSubtitle": "Skapa och kölägg ett utskick för granskning med den här medlemmens utskickskvot.",
         "selfExclusionNotice": "{company} tar inte emot detta utskick – en medlems kontakter exkluderas från medlemmens egna utskick.",
         "selfExclusionNoticeIncluded": "{company}:s egna adresser på den här listan TAR EMOT utskicket – den anpassade listan och deltagarsegmentet undantar inte avsändaren.",
         "memberNotFoundError": "Medlemmen finns inte längre. Välj en annan medlem.",
         "quotaBlockedError": "{company} har använt alla sina utskick för den här perioden.",
-        "notInPlanError": "{company}:s paket inkluderar inte e-utskick.",
+        "notInPlanError": "{company}:s paket inkluderar inte utskick.",
         "submitErrorToast": "Det gick inte att skicka utskicket. Försök igen.",
         "memberRequiredHint": "Välj vilken medlem utskicket gäller innan du skickar för granskning.",
         "subjectEmptyError": "Ämne krävs.",
@@ -3775,17 +3775,17 @@
         "cancelTooLate": "Detta utskick kan inte längre avbrytas — det har passerat punkten där det kan stoppas.",
         "rejectTooLate": "Detta utskick kan inte längre avvisas — det har redan börjat skickas.",
         "concurrentRace": "Detta utskick har redan hanterats av en annan administratör. Vyn har uppdaterats.",
-        "member_halted": "Inte godkänt: medlemmens E-Blast-utskick är spärrade i väntan på administratörsgranskning.",
-        "member_not_in_good_standing": "Inte godkänt: medlemmens medlemskap är avstängt eller avslutat, så E-Blast-utskicket kan inte skickas.",
+        "member_halted": "Inte godkänt: medlemmens utskick är spärrade i väntan på administratörsgranskning.",
+        "member_not_in_good_standing": "Inte godkänt: medlemmens medlemskap är avstängt eller avslutat, så utskicket kan inte skickas.",
         "clearHalted": "Utskicksspärren har hävts för medlemmen.",
         "error": "Något gick fel. Försök igen."
       },
       "templates": {
         "pageTitle": "Utskicksmallar",
-        "pageDescription": "Återanvändbara utgångspunkter för medlemmarnas E-utskick. Startmallar levereras färdiga; admin-författade mallar ligger sida vid sida.",
+        "pageDescription": "Återanvändbara utgångspunkter för medlemmarnas utskick. Startmallar levereras färdiga; admin-författade mallar ligger sida vid sida.",
         "newTemplateButton": "Ny mall",
         "newPageTitle": "Ny utskicksmall",
-        "newPageDescription": "Lägg till en återanvändbar mall som medlemmar kan välja när de skriver ett E-utskick.",
+        "newPageDescription": "Lägg till en återanvändbar mall som medlemmar kan välja när de skriver ett utskick.",
         "editPageTitle": "Redigera utskicksmall",
         "editPageDescription": "Uppdatera namn, ämne eller innehåll. Utkast som redan startats från denna mall påverkas INTE (snapshot-semantik).",
         "starterBadge": "Start",
@@ -3852,7 +3852,7 @@
       },
       "settings": {
         "pageTitle": "Inställningar för utskick",
-        "pageDescription": "Konfigurera hur kammarens E-utskick fungerar, inklusive vilka bildkällor som tillåts i meddelandekroppen.",
+        "pageDescription": "Konfigurera hur kammarens utskick fungerar, inklusive vilka bildkällor som tillåts i meddelandekroppen.",
         "allowlist": {
           "heading": "Tillåtna bildkällor",
           "description": "Endast bilder som ligger på dessa värdnamn får visas i utskickets innehåll. Standardposter kan inte tas bort.",
@@ -4453,12 +4453,12 @@
         "errorDescription": "Försök igen. Kontakta support om problemet kvarstår.",
         "loading": "Laddar cykelinformation…",
         "backToPipeline": "Tillbaka till pipeline",
-        "sectionMemberPlan": "Medlem & plan",
+        "sectionMemberPlan": "Medlem & paket",
         "sectionInvoice": "Länkad faktura",
         "sectionPeriod": "Period & tidslinje",
         "sectionActivity": "Aktivitet",
         "subsectionMember": "Medlem",
-        "subsectionPlan": "Plan",
+        "subsectionPlan": "Paket",
         "noLinkedInvoice": "Ingen faktura är länkad till denna cykel än.",
         "noInvoiceYetUpcoming": "En faktura skapas när förnyelsepåminnelsen skickas.",
         "pendingNoticeTitle": "Väntar på ditt beslut",
@@ -4556,7 +4556,7 @@
             "f4_orphan_invoice": "En faktura utfärdades men cykeln kunde inte slutföras. Försök INTE igen — öppna fakturan och fortsätt från fakturalistan.",
             "membership_bill_already_exists": "Medlemmen har redan en faktura för detta medlemsår, så ingen ny skapades. Öppna den fakturan och registrera betalningen där — det slutför den här cykeln.",
             "f4_failure": "Fakturan kunde inte skapas. Cykeln lämnades oförändrad — försök igen.",
-            "plan_not_found": "Den här medlemmens plan för det året finns inte i avgiftskatalogen ännu — lägg till planåret innan du markerar som betald.",
+            "plan_not_found": "Den här medlemmens paket för det året finns inte i avgiftskatalogen ännu — lägg till paketåret innan du markerar som betald.",
             "settings_missing": "Fakturainställningar har inte konfigurerats för den här organisationen ännu — konfigurera dem innan du markerar som betald.",
             "member_archived": "Den här medlemmen är arkiverad — återställ medlemmen innan du markerar som betald.",
             "member_not_found": "Den här medlemmen kunde inte hittas — den kan ha tagits bort.",
@@ -4568,9 +4568,9 @@
           }
         },
         "lookupFailedTitle": "Viss kopplad data kunde inte läsas in",
-        "lookupFailedBoth": "Vi kunde inte läsa in den kopplade medlems- eller planuppgiften. Uppgifterna för cykeln som visas är fortfarande korrekta. Ange {requestId} när du kontaktar supporten.",
+        "lookupFailedBoth": "Vi kunde inte läsa in den kopplade medlems- eller paketuppgiften. Uppgifterna för cykeln som visas är fortfarande korrekta. Ange {requestId} när du kontaktar supporten.",
         "lookupFailedMember": "Vi kunde inte läsa in den kopplade medlemsuppgiften. Uppgifterna för cykeln som visas är fortfarande korrekta. Ange {requestId} när du kontaktar supporten.",
-        "lookupFailedPlan": "Vi kunde inte läsa in den kopplade planuppgiften. Uppgifterna för cykeln som visas är fortfarande korrekta. Ange {requestId} när du kontaktar supporten.",
+        "lookupFailedPlan": "Vi kunde inte läsa in den kopplade paketuppgiften. Uppgifterna för cykeln som visas är fortfarande korrekta. Ange {requestId} när du kontaktar supporten.",
         "noActivityTitle": "Ingen aktivitet än",
         "noActivityDescription": "Skickade påminnelsemail och uppföljningsärenden visas här när förnyelsepåminnelserna börjar för denna cykel.",
         "reminders": {
@@ -4590,7 +4590,7 @@
           "memberId": "Medlems-ID",
           "status": "Status",
           "tier": "Nivå",
-          "planId": "Plan-ID",
+          "planId": "Paket-ID",
           "frozenPrice": "Låst pris",
           "frozenTerm": "Löptid (månader)",
           "frozenCurrency": "Valuta",
@@ -4611,11 +4611,11 @@
           "companyName": "Företag",
           "primaryContact": "Primär kontakt",
           "primaryContactNone": "Ingen primär kontakt angiven",
-          "planName": "Plannamn",
+          "planName": "Paketnamn",
           "showTechnicalIds": "Visa tekniska ID:n",
           "showAuditTimestamps": "Visa systemtidsstämplar",
           "memberLookupFailed": "Kunde inte ladda medlemsdetaljer",
-          "planLookupFailed": "Kunde inte ladda plandetaljer"
+          "planLookupFailed": "Kunde inte ladda paketdetaljer"
         },
         "cycleStatus": {
           "upcoming": "Kommande",
@@ -4641,8 +4641,8 @@
         },
         "columns": {
           "member": "Medlem",
-          "from_plan": "Nuvarande plan",
-          "to_plan": "Föreslagen plan",
+          "from_plan": "Nuvarande paket",
+          "to_plan": "Föreslaget paket",
           "reason": "Anledning",
           "status": "Status",
           "actions": "Åtgärder"
@@ -4722,7 +4722,7 @@
           "suggestion_not_found": "Det här förslaget finns inte längre. Uppdatera kön för att se aktuell lista.",
           "suggestion_not_open": "Någon har redan hanterat det här förslaget. Uppdatera kön för att se aktuell lista.",
           "no_active_cycle": "Den här medlemmen har ingen aktiv förnyelsecykel, så uppgraderingen kan inte schemaläggas än.",
-          "plan_change_failed": "Planändringen kunde inte tillämpas. Försök igen, eller kontakta supporten om det kvarstår."
+          "plan_change_failed": "Paketbytet kunde inte tillämpas. Försök igen, eller kontakta supporten om det kvarstår."
         }
       },
       "tasks": {
@@ -5759,7 +5759,7 @@
     "marketing": {
       "audience": {
         "title": "Marknadsföringsmålgrupp",
-        "subtitle": "Varje kontakt som kan ta emot E-Blasts, med vem som stängde av och när. Filtrera för att kontrollera en målgrupp före ett utskick.",
+        "subtitle": "Varje kontakt som kan ta emot utskick, med vem som stängde av och när. Filtrera för att kontrollera en målgrupp före ett utskick.",
         "preflightPreset": "Förhandskontroll: sekundära som är på",
         "readOnly": "Skrivskyddat — du ser marknadsföringsstatus här men kan inte ändra den.",
         "count": "{count, plural, =0 {Inga kontakter matchar de aktuella filtren} one {# kontakt matchar de aktuella filtren} other {# kontakter matchar de aktuella filtren}}",
@@ -5838,7 +5838,7 @@
   "palette": {
     "title": "Kommandopalett",
     "description": "Sök efter ett paket, en åtgärd eller en sida",
-    "placeholder": "Sök planer, medlemmar, åtgärder och sidor…",
+    "placeholder": "Sök paket, medlemmar, åtgärder och sidor…",
     "empty": "Inga resultat.",
     "groups": {
       "plans": "Paket",
@@ -5856,7 +5856,7 @@
       "issueRefund": "Utfärda återbetalning — hitta betald faktura",
       "reviewBroadcasts": "Granska utskickskön",
       "broadcastsHalted": "Spärrade medlemmar — utskicksgranskning",
-      "newBroadcastTemplate": "Skapa ny E-Blast-mall",
+      "newBroadcastTemplate": "Skapa ny utskicksmall",
       "recordPayment": "Registrera betalning för en faktura",
       "rerenderTaxReceipt": "Återskapa skattekvitto"
     },
@@ -5870,9 +5870,9 @@
       "invoicesList": "Fakturalista",
       "invoicesPaidOnline": "Fakturor: betalda online (avstämning)",
       "creditNotesList": "Kreditnotalista",
-      "broadcastsQueue": "Granskningskö för E-Blast",
-      "broadcastTemplates": "Mallbibliotek för E-Blast",
-      "broadcastImageSettings": "Bildkällsinställningar för E-Blast",
+      "broadcastsQueue": "Granskningskö för utskick",
+      "broadcastTemplates": "Mallbibliotek för utskick",
+      "broadcastImageSettings": "Bildkällsinställningar för utskick",
       "renewalsList": "Förnyelsepipeline",
       "renewalSchedules": "Förnyelseschemaprinciper",
       "escalationTasks": "Uppföljningsuppgifter",
@@ -6112,7 +6112,7 @@
           "pendingReviewSub": "Vi verifierar din betalning — ingen åtgärd krävs just nu.",
           "payCta": "Betala för att återställa förmåner",
           "benefitsPausedTitle": "Förmånerna är pausade",
-          "benefitsPausedBody": "Dina kvoter är oförändrade — e-utskick, evenemangsbiljetter, bannerplacering och andra ingående förmåner låses upp så snart din betalning har mottagits."
+          "benefitsPausedBody": "Dina kvoter är oförändrade — utskick, evenemangsbiljetter, bannerplacering och andra ingående förmåner låses upp så snart din betalning har mottagits."
         },
         "errorValue": "Status ej tillgänglig",
         "errorSub": "Vi kunde inte läsa in din medlemskapsstatus. Försök igen.",
@@ -6137,11 +6137,11 @@
         "label": "Förmåner",
         "underUseValue": "{count, plural, one {# förmån underutnyttjad} other {# förmåner underutnyttjade}}",
         "underUseValueNamed": "{benefit} underutnyttjad",
-        "underUseSub": "Få ut det mesta av det din plan inkluderar.",
+        "underUseSub": "Få ut det mesta av det ditt paket inkluderar.",
         "onTrackValue": "Alla förmåner på rätt spår",
         "onTrackSub": "Du håller jämna steg med året.",
         "emptyValue": "Inga förmåner ännu",
-        "emptySub": "Din plans förmåner visas här.",
+        "emptySub": "Ditt pakets förmåner visas här.",
         "errorValue": "Förmåner ej tillgängliga",
         "errorSub": "Vi kunde inte läsa in dina förmåner. Försök igen."
       },
@@ -6349,7 +6349,7 @@
     },
     "broadcasts": {
       "compose": {
-        "title": "Skapa E-Blast",
+        "title": "Skapa utskick",
         "subtitle": "Skicka ett meddelande till din handelskammares medlemmar.",
         "templatePicker": {
           "triggerLabel": "Börja från en mall",
@@ -6450,8 +6450,8 @@
           "retry": "Försök igen"
         },
         "errors": {
-          "broadcast_quota_blocked": "Du har använt hela din E-Blast-kvot för i år.",
-          "broadcast_not_in_plan": "Din medlemsplan inkluderar inte E-Blast-förmånen.",
+          "broadcast_quota_blocked": "Du har använt hela din utskickskvot för i år.",
+          "broadcast_not_in_plan": "Ditt medlemspaket inkluderar inte förmånen utskick.",
           "broadcast_subject_too_long": "Ämnet får vara högst 200 tecken.",
           "broadcast_subject_empty": "Ämne krävs.",
           "broadcast_body_too_large": "Meddelandet överskrider gränsen på 200 KB.",
@@ -6501,31 +6501,31 @@
         },
         "readOnly": {
           "title": "Inte skickat — systemet är i skrivskyddat läge för underhåll.",
-          "body": "Ingenting skickades och ingen E-Blast-plats användes. Ditt meddelande finns kvar på sidan — låt den vara öppen och försök igen om ungefär {minutes, plural, one {# minut} other {# minuter}}.",
-          "bodyShortly": "Ingenting skickades och ingen E-Blast-plats användes. Ditt meddelande finns kvar på sidan — låt den vara öppen och försök igen om en stund.",
+          "body": "Ingenting skickades och ingen utskicksplats användes. Ditt meddelande finns kvar på sidan — låt den vara öppen och försök igen om ungefär {minutes, plural, one {# minut} other {# minuter}}.",
+          "bodyShortly": "Ingenting skickades och ingen utskicksplats användes. Ditt meddelande finns kvar på sidan — låt den vara öppen och försök igen om en stund.",
           "draftTitle": "Utkastet sparades inte — systemet är i skrivskyddat läge för underhåll.",
           "draftBody": "Ditt meddelande finns kvar på sidan — låt den vara öppen och försök igen om ungefär {minutes, plural, one {# minut} other {# minuter}}.",
           "draftBodyShortly": "Ditt meddelande finns kvar på sidan — låt den vara öppen och försök igen om en stund."
         }
       },
       "quota": {
-        "headerLabel": "E-Blast-kvot ({year})",
-        "planLabel": "Plan: {plan}",
+        "headerLabel": "Utskickskvot ({year})",
+        "planLabel": "Paket: {plan}",
         "used": "Använt",
         "reserved": "Reserverat",
         "remaining": "Återstår",
-        "cap": "Plangräns",
-        "exhausted": "Hela E-Blast-kvoten för {year} har använts.",
-        "progressLabel": "E-Blast-kvot använd",
+        "cap": "Paketgräns",
+        "exhausted": "Hela utskickskvoten för {year} har använts.",
+        "progressLabel": "Använd utskickskvot",
         "fetchError": "Kunde inte ladda kvot.",
         "retry": "Försök igen",
         "nextReset": "Återställs {date}",
-        "planChangedExplainer": "Plan ändrades {date} — årets kvot speglar den nya planen."
+        "planChangedExplainer": "Paketet ändrades {date} — årets kvot speglar det nya paketet."
       },
       "banner": {
         "acknowledgement": {
           "title": "Samtycke till marknadskommunikation",
-          "body": "Att skicka in ett E-Blast bekräftar att mottagarna har samtyckt till att ta emot din kammares kommunikation. Du kan återkalla samtycke per mottagare när som helst.",
+          "body": "Att skicka in ett utskick bekräftar att mottagarna har samtyckt till att ta emot din kammares kommunikation. Du kan återkalla samtycke per mottagare när som helst.",
           "privacyPolicyLink": "Läs sekretesspolicyn",
           "acknowledge": "Jag bekräftar",
           "remindLater": "Påminn mig senare",
@@ -6537,37 +6537,37 @@
       },
       "list": {
         "title": "Mina utskick",
-        "subtitle": "Följ status och leveransresultat för varje E-Blast du har skickat.",
+        "subtitle": "Följ status och leveransresultat för varje utskick du har skickat.",
         "empty": "Skicka ditt första kammaromfattande utskick — dina mottagare är bara ett klick bort.",
         "emptyTitle": "Inga utskick ännu",
-        "emptyCta": "Skapa ditt första E-Blast",
+        "emptyCta": "Skapa ditt första utskick",
         "loadError": {
-          "title": "Dina E-Blasts kunde inte laddas.",
+          "title": "Dina utskick kunde inte laddas.",
           "body": "Det här är ett problem hos oss, inte med dina utskick. Försök igen om en stund."
         },
-        "quotaExhaustedTooltip": "Din E-Blast-kvot för {year} är förbrukad. Förnyas den 1 januari nästa år.",
+        "quotaExhaustedTooltip": "Din utskickskvot för {year} är förbrukad. Förnyas den 1 januari nästa år.",
         "columns": {
           "subject": "Ämne",
           "status": "Status",
           "submittedAt": "Inskickat",
-          "sentAt": "Skickad",
+          "sentAt": "Skickat",
           "audience": "Målgrupp"
         },
         "status": {
           "draft": "Utkast",
           "submitted": "Inväntar granskning",
-          "approved": "Schemalagd",
+          "approved": "Schemalagt",
           "sending": "Skickar",
-          "sent": "Skickad",
-          "rejected": "Avvisad",
-          "cancelled": "Avbruten",
+          "sent": "Skickat",
+          "rejected": "Avvisat",
+          "cancelled": "Avbrutet",
           "failed_to_dispatch": "Misslyckades",
-          "partially_sent": "Delvis skickad",
+          "partially_sent": "Delvis skickat",
           "in_design": "Under utformning",
           "awaiting_member_approval": "Inväntar ditt godkännande",
           "changes_requested": "Ändringar begärda",
-          "member_approved": "Godkänd — inväntar schemaläggning",
-          "expired_no_member_response": "Utgången — inget svar från medlem",
+          "member_approved": "Godkänt — inväntar schemaläggning",
+          "expired_no_member_response": "Utgånget — inget svar från medlem",
           "partial_delivery_accepted": "Godkänd partiell leverans"
         },
         "pagination": {
@@ -6580,10 +6580,10 @@
       "cmdk": {
         "group": "Utskick",
         "compose": {
-          "title": "Skapa E-Blast"
+          "title": "Skapa utskick"
         },
         "benefits": {
-          "title": "Visa E-Blast-användning"
+          "title": "Visa användning av utskick"
         }
       },
       "detail": {
@@ -6592,7 +6592,7 @@
         "fields": {
           "subject": "Ämne",
           "submittedAt": "Inskickat",
-          "sentAt": "Skickad",
+          "sentAt": "Skickat",
           "status": "Status",
           "recipients": "Mottagare",
           "content": "Innehåll"
@@ -6806,8 +6806,8 @@
         "turnoverThb": "Årsomsättning",
         "address": "Adress",
         "billingAddress": "Faktureringsadress (skattedokument)",
-        "planName": "Plannamn",
-        "planYear": "Planår",
+        "planName": "Paketnamn",
+        "planYear": "Paketår",
         "registrationDate": "Registreringsdatum",
         "lastActivityAt": "Senaste aktivitet",
         "status": "Status"
@@ -7151,7 +7151,7 @@
       "page": {
         "title": "Förnyelse online",
         "subtitle": "Granska ditt medlemskap och bekräfta för att få en faktura.",
-        "membershipPlanHeading": "Medlemskapsplan"
+        "membershipPlanHeading": "Medlemskapspaket"
       },
       "notYetOpenTitle": "Förnyelsefönstret är inte öppet ännu",
       "notYetOpenBody": "Din förnyelse förfaller inte ännu. Vi mejlar dig när det är dags att förnya — det finns inget att göra här just nu.",
@@ -7160,7 +7160,7 @@
       "rejectedRefundTitle": "Återaktivering ej godkänd",
       "rejectedRefundBody": "Din begäran om återaktivering godkändes inte. En återbetalning behandlas till din ursprungliga betalningsmetod. Ingen ytterligare åtgärd krävs.",
       "fields": {
-        "plan": "Plan",
+        "plan": "Paket",
         "tier": "Nivå",
         "frozenPrice": "Låst pris",
         "term": "Period",
@@ -7176,7 +7176,7 @@
         "percentUsed": "{percent}% använt",
         "ariaProgress": "{label}: {used} av {quota} använt",
         "name": {
-          "eblast": "E-Blast",
+          "eblast": "Utskick",
           "cultural_ticket": "Kulturbiljetter",
           "event_attendance": "Deltagna evenemang"
         }
@@ -7187,21 +7187,21 @@
         "errorGeneric": "Vi kunde inte behandla din förnyelse. Försök igen eller kontakta support.",
         "errorCycleNotFound": "Din förnyelselänk har gått ut. Återgå till portalen och försök igen.",
         "errorCycleNotPayable": "Den här förnyelsecykeln har redan behandlats.",
-        "errorPlanUnavailable": "Den valda planen är inte längre tillgänglig.",
+        "errorPlanUnavailable": "Det valda paketet är inte längre tillgängligt.",
         "errorInvoiceFailed": "Vi kunde inte skapa din faktura. Försök igen eller kontakta support.",
         "errorReadOnly": "Förnyelsen är pausad medan systemet är i skrivskyddat läge för underhåll. Ingenting debiterades eller ändrades — försök igen om några minuter.",
         "errorRateLimited": "För många förnyelseförsök. Vänta en stund och försök igen.",
         "errorNetwork": "Anslutningsproblem. Kontrollera din internetanslutning och försök igen.",
-        "errorDowngradeNotAcknowledged": "Bekräfta bytet till en plan med lägre pris innan du fortsätter."
+        "errorDowngradeNotAcknowledged": "Bekräfta bytet till ett paket med lägre pris innan du fortsätter."
       },
       "planChange": {
-        "label": "Välj en plan",
+        "label": "Välj ett paket",
         "placeholder": "{defaultLabel}",
         "currentSuffix": "nuvarande",
-        "changeNotice": "Att byta till en annan plan låser det nya priset på din förnyelsefaktura.",
-        "groupUpgrade": "Planer med högre pris",
-        "groupCurrent": "Din nuvarande plan",
-        "groupDowngrade": "Planer med lägre pris",
+        "changeNotice": "Att byta till ett annat paket låser det nya priset på din förnyelsefaktura.",
+        "groupUpgrade": "Paket med högre pris",
+        "groupCurrent": "Ditt nuvarande paket",
+        "groupDowngrade": "Paket med lägre pris",
         "optionWithPrice": "{label} — {price}",
         "priceHeading": "Prisändring",
         "priceCurrent": "Nuvarande låst pris",
@@ -7209,18 +7209,18 @@
         "priceDelta": "Skillnad"
       },
       "downgrade": {
-        "title": "Bekräfta en plan med lägre pris",
+        "title": "Bekräfta ett paket med lägre pris",
         "description": "Du byter från {currentLabel} till {newLabel}. Det sänker ditt förnyelsepris och minskar vissa medlemsförmåner.",
         "losesHeading": "Detta ändras",
-        "quotaEblast": "E-Blast per år: {from} → {to}",
+        "quotaEblast": "Utskick per år: {from} → {to}",
         "quotaCulturalTickets": "Kulturbiljetter per år: {from} → {to}",
-        "overQuotaWarning": "Du har redan använt {used} av {benefitName} denna period — mer än de {quota} som ingår i den nya planen.",
-        "confirmCta": "Ja, byt till denna plan",
-        "cancelCta": "Behåll min nuvarande plan"
+        "overQuotaWarning": "Du har redan använt {used} av {benefitName} denna period — mer än de {quota} som ingår i det nya paketet.",
+        "confirmCta": "Ja, byt till detta paket",
+        "cancelCta": "Behåll mitt nuvarande paket"
       },
       "onboarding": {
         "heading": "Välkommen till din första förnyelse",
-        "body": "Ditt förnyelsepris är låst till den taxa som gällde när din påminnelse skickades — även om planen ändras därefter. Bekräfta nedan så utfärdar vi en faktura som du kan betala online."
+        "body": "Ditt förnyelsepris är låst till den taxa som gällde när din påminnelse skickades — även om paketet ändras därefter. Bekräfta nedan så utfärdar vi en faktura som du kan betala online."
       },
       "success": {
         "title": "Förnyelsen är klar",
@@ -7406,7 +7406,7 @@
       "plan_cross_tenant_probe": "Obehörigt åtkomstförsök från annan organisation (paket)",
       "fee_config_updated": "Avgiftskonfiguration uppdaterad",
       "member_plan_manually_changed": "Paket ändrat manuellt",
-      "member_plan_change_billing_effect": "Faktureringseffekt av planändring",
+      "member_plan_change_billing_effect": "Faktureringseffekt av paketbyte",
       "plan_change_scheduled": "Paketbyte schemalagt",
       "plan_change_superseded": "Paketbyte ersatt",
       "plan_change_cancelled": "Paketbyte avbrutet",
@@ -7504,21 +7504,21 @@
       "broadcast_image_allowlist_updated": "Tillåtna bildkällor för utskick uppdaterade",
       "broadcast_image_too_large": "Bild i utskick för stor",
       "broadcast_image_unsafe": "Osäker bild i utskick",
-      "broadcast_brand_settings_changed": "E-Blast-varumärkesinställningar ändrade",
-      "broadcast_image_removed": "E-Blast-bild borttagen",
-      "broadcast_retention_swept": "E-Blasts raderade efter lagringstiden",
-      "broadcast_image_uploaded": "E-Blast-bild uppladdad",
-      "broadcast_test_copy_sent": "Testkopia av E-Blast skickad",
-      "broadcast_version_started": "E-Blast-version påbörjad",
-      "broadcast_version_sent_to_member": "E-Blast-version skickad till medlem för godkännande",
-      "broadcast_member_approved": "Medlem godkände E-Blast-version",
-      "broadcast_member_changes_requested": "Medlem begärde ändringar i E-Blast",
-      "broadcast_member_approval_withdrawn": "Medlem drog tillbaka godkännandet av E-Blast",
-      "broadcast_member_approval_voided": "Medlemmens godkännande av E-Blast upphävt genom redigering",
-      "broadcast_schedule_confirmed": "Sändningstid för E-Blast bekräftad",
-      "broadcast_approval_reminder_sent": "Påminnelse om godkännande av E-Blast skickad",
-      "broadcast_approval_expiry_warned": "Varning om att godkännandet av E-Blast snart löper ut skickad",
-      "broadcast_approval_expired": "Godkännandet av E-Blast har löpt ut — inget svar från medlemmen",
+      "broadcast_brand_settings_changed": "Varumärkesinställningar för utskick ändrade",
+      "broadcast_image_removed": "Utskicksbild borttagen",
+      "broadcast_retention_swept": "Utskick raderade efter lagringstiden",
+      "broadcast_image_uploaded": "Utskicksbild uppladdad",
+      "broadcast_test_copy_sent": "Testkopia av utskick skickad",
+      "broadcast_version_started": "Utskicksversion påbörjad",
+      "broadcast_version_sent_to_member": "Utskicksversion skickad till medlem för godkännande",
+      "broadcast_member_approved": "Medlem godkände utskicksversion",
+      "broadcast_member_changes_requested": "Medlem begärde ändringar i utskick",
+      "broadcast_member_approval_withdrawn": "Medlem drog tillbaka godkännandet av utskick",
+      "broadcast_member_approval_voided": "Medlemmens godkännande av utskick upphävt genom redigering",
+      "broadcast_schedule_confirmed": "Sändningstid för utskick bekräftad",
+      "broadcast_approval_reminder_sent": "Påminnelse om godkännande av utskick skickad",
+      "broadcast_approval_expiry_warned": "Varning om att godkännandet av utskick snart löper ut skickad",
+      "broadcast_approval_expired": "Godkännandet av utskick har löpt ut — inget svar från medlemmen",
       "broadcast_immutable_after_submit": "Utskick låst efter inlämning",
       "broadcast_member_dispatch_resumed": "Utskick till medlem återupptaget",
       "broadcast_member_halted_pending_review": "Utskick till medlem pausat i väntan på granskning",
@@ -7774,11 +7774,11 @@
     "eblastApproval": {
       "common": {
         "footer": "Detta är ett automatiskt meddelande från handelskammarens medlemsportal.",
-        "subjectLabel": "E-Blast",
+        "subjectLabel": "Utskick",
         "companyLabel": "Medlem",
         "stageLabel": "Steg",
-        "staffCta": "Öppna E-Blasten",
-        "staffDetailsNote": "Innehållet och eventuella kommentarer finns på E-Blast-sidan."
+        "staffCta": "Öppna utskicket",
+        "staffDetailsNote": "Innehållet och eventuella kommentarer finns på utskickssidan."
       },
       "stage": {
         "awaitingMarketingReview": "Väntar på granskning av marknadsföring",
@@ -7789,75 +7789,75 @@
         "expired": "Utgången — inget svar från medlem"
       },
       "submittedMarketing": {
-        "subject": "Ny E-Blast att granska: {subject}",
-        "heading": "En medlem har skickat in en E-Blast för granskning"
+        "subject": "Nytt utskick att granska: {subject}",
+        "heading": "En medlem har skickat in ett utskick för granskning"
       },
       "memberDecidedMarketing": {
-        "subject": "Uppdatering om E-Blast: {subject}",
-        "heading": "En medlem har svarat på en E-Blast"
+        "subject": "Uppdatering om utskick: {subject}",
+        "heading": "En medlem har svarat på ett utskick"
       },
       "versionSentMember": {
-        "subject": "Din E-Blast är redo för ditt godkännande",
+        "subject": "Ditt utskick är redo för ditt godkännande",
         "heading": "Omgång {round} är redo för ditt godkännande",
-        "intro": "Handelskammaren har förberett en version av din E-Blast \"{subject}\" och ber dig granska den.",
+        "intro": "Handelskammaren har förberett en version av ditt utskick \"{subject}\" och ber dig granska den.",
         "noteHeading": "Meddelande från handelskammaren",
         "proposedSendAt": "Din föreslagna sändningstid: {when}",
         "noProposedSendAt": "Du har inte föreslagit någon sändningstid.",
-        "cta": "Granska E-Blasten"
+        "cta": "Granska utskicket"
       },
       "scheduleConfirmedMember": {
-        "subject": "Din E-Blast är schemalagd",
-        "heading": "Din E-Blast är schemalagd",
-        "intro": "Handelskammaren har bekräftat sändningstiden för din E-Blast \"{subject}\".",
+        "subject": "Ditt utskick är schemalagt",
+        "heading": "Ditt utskick är schemalagt",
+        "intro": "Handelskammaren har bekräftat sändningstiden för ditt utskick \"{subject}\".",
         "confirmedSendAt": "Bekräftad sändningstid: {when}",
         "proposedSendAt": "Din föreslagna sändningstid: {when}",
         "notProposedTime": "Detta är inte den tid du föreslog.",
-        "cta": "Visa din E-Blast"
+        "cta": "Visa ditt utskick"
       },
       "timeline": {
         "heading": "Vad händer härnäst",
         "day3": "Dag 3 ({date}): en påminnelse om du inte har svarat",
         "day7": "Dag 7 ({date}): en sista påminnelse",
         "day23": "Dag 23 ({date}): en varning om att begäran snart stängs",
-        "day30": "Dag 30 ({date}): begäran stängs automatiskt och du behöver skicka in en ny E-Blast"
+        "day30": "Dag 30 ({date}): begäran stängs automatiskt och du behöver skicka in ett nytt utskick"
       },
       "lifecycle": {
         "member": {
           "reminderDay3": {
-            "subject": "Påminnelse: din E-Blast väntar på ditt godkännande",
-            "body": "Handelskammaren skickade en version av din E-Blast \"{subject}\" till dig den {sentDate}. Den väntar fortfarande på ditt godkännande."
+            "subject": "Påminnelse: ditt utskick väntar på ditt godkännande",
+            "body": "Handelskammaren skickade en version av ditt utskick \"{subject}\" till dig den {sentDate}. Den väntar fortfarande på ditt godkännande."
           },
           "reminderDay7": {
-            "subject": "Sista påminnelse: din E-Blast väntar på ditt godkännande",
-            "body": "Handelskammaren skickade en version av din E-Blast \"{subject}\" till dig den {sentDate}. Detta är den sista påminnelsen."
+            "subject": "Sista påminnelse: ditt utskick väntar på ditt godkännande",
+            "body": "Handelskammaren skickade en version av ditt utskick \"{subject}\" till dig den {sentDate}. Detta är den sista påminnelsen."
           },
           "expiryWarningDay23": {
-            "subject": "Din E-Blast-begäran stängs om 7 dagar",
-            "body": "Din E-Blast \"{subject}\" har väntat på ditt godkännande sedan {sentDate}. Om du inte svarar stängs begäran automatiskt den {expiresDate}."
+            "subject": "Din utskicksbegäran stängs om 7 dagar",
+            "body": "Ditt utskick \"{subject}\" har väntat på ditt godkännande sedan {sentDate}. Om du inte svarar stängs begäran automatiskt den {expiresDate}."
           },
           "expiredDay30": {
-            "subject": "Din E-Blast-begäran har stängts",
-            "body": "Handelskammaren fick inget svar på din E-Blast \"{subject}\" inom 30 dagar, så begäran stängdes automatiskt den {expiresDate}. Din kvotplats är ledig igen — skicka in en ny E-Blast när du är redo."
+            "subject": "Din utskicksbegäran har stängts",
+            "body": "Handelskammaren fick inget svar på ditt utskick \"{subject}\" inom 30 dagar, så begäran stängdes automatiskt den {expiresDate}. Din kvotplats är ledig igen — skicka in ett nytt utskick när du är redo."
           },
-          "ctaReview": "Granska E-Blasten",
-          "ctaList": "Öppna dina E-Blasts"
+          "ctaReview": "Granska utskicket",
+          "ctaList": "Öppna dina utskick"
         },
         "staff": {
           "reminderDay3": {
-            "subject": "E-Blast väntar på medlemmens godkännande (dag 3): {subject}",
-            "heading": "Medlemmen har ännu inte svarat på en E-Blast"
+            "subject": "Utskick väntar på medlemmens godkännande (dag 3): {subject}",
+            "heading": "Medlemmen har ännu inte svarat på ett utskick"
           },
           "reminderDay7": {
-            "subject": "E-Blast väntar på medlemmens godkännande (dag 7): {subject}",
-            "heading": "Medlemmen har fortfarande inte svarat på en E-Blast"
+            "subject": "Utskick väntar på medlemmens godkännande (dag 7): {subject}",
+            "heading": "Medlemmen har fortfarande inte svarat på ett utskick"
           },
           "expiryWarningDay23": {
-            "subject": "E-Blast stängs om 7 dagar: {subject}",
-            "heading": "En E-Blast stängs om 7 dagar om medlemmen inte svarar"
+            "subject": "Utskick stängs om 7 dagar: {subject}",
+            "heading": "Ett utskick stängs om 7 dagar om medlemmen inte svarar"
           },
           "expiredDay30": {
-            "subject": "E-Blast har gått ut: {subject}",
-            "heading": "En E-Blast stängdes utan svar från medlemmen"
+            "subject": "Utskick har gått ut: {subject}",
+            "heading": "Ett utskick stängdes utan svar från medlemmen"
           }
         }
       }
@@ -7917,7 +7917,7 @@
       "invoice": "Faktura",
       "payment": "Betalning",
       "event": "Evenemang",
-      "broadcast": "E-utskick",
+      "broadcast": "Utskick",
       "renewal": "Förnyelse"
     },
     "actorKind": {
@@ -7946,7 +7946,7 @@
       "attended": "Deltog i ett evenemang"
     },
     "broadcast": {
-      "sent": "E-utskick skickat"
+      "sent": "Utskick skickat"
     },
     "renewal": {
       "upcoming": "Förnyelse kommande",
@@ -7965,12 +7965,12 @@
       "title": "Förmåner",
       "subtitleMember": "Dina medlemsförmåner för i år",
       "empty": "Vi hittade ingen medlemsprofil för ditt konto ännu.",
-      "emptyFromBroadcasts": "Du kom hit via en E-Blast-länk – för att skriva ett utskick behöver kontot vara kopplat till en medlemsprofil. Be din kammare koppla ditt konto.",
+      "emptyFromBroadcasts": "Du kom hit via en länk för utskick – för att skriva ett utskick behöver kontot vara kopplat till en medlemsprofil. Be din kammare koppla ditt konto.",
       "emptyTitle": "Ingen medlemsprofil ännu"
     },
     "card": {
       "title": "Förmånsanvändning · {year}",
-      "empty": "Inga kvantifierbara förmåner i din nuvarande plan.",
+      "empty": "Inga kvantifierbara förmåner i ditt nuvarande paket.",
       "usedOf": "{used} av {total} använda",
       "neverUsed": "Inte använd i år ännu",
       "lastUsed": "Senast använd {date}",
@@ -7982,7 +7982,7 @@
       "suspendedBadgeSr": "Medlemskap pausat — förmåner tillfälligt stoppade"
     },
     "benefit": {
-      "eblast": "E-utskick",
+      "eblast": "Utskick",
       "cultural_tickets": "Biljetter till kulturevenemang",
       "action": {
         "eblast": "Skriv",
@@ -8016,9 +8016,9 @@
         "contacts": "contacts.json — kontaktpersonerna kopplade till ditt medlemskap.",
         "invoices": "invoices.json — dina fakturor (nummer, datum, belopp, status). PDF-dokumenten finns i mappen invoices/.",
         "events": "events.json — evenemang du har deltagit i.",
-        "broadcasts": "broadcasts.json — E-Blast-/utskicksposter som rör dig.",
-        "broadcastImages": "broadcast-images.json — alla bilder som laddats upp för dina E-Blast-utskick, även bilder som redan markerats för radering. En markerad bild visas utan webbadress: den är markerad för radering, och filen kan behållas om en identisk bild fortfarande används någon annanstans. Bilder från ett kasserat eller utgånget utkast listas inte; att de tagits bort syns i audit-events.json, och filen raderas vid nästa dagliga rensning.",
-        "broadcastVersions": "broadcast-versions.json — för vart och ett av dina E-Blast-utskick: de versioner du fått att granska (ditt original och varje version som handelskammaren skickat till dig, med följebrev) och dina beslut om dem (godkänt, ändringar begärda, godkännande återkallat – med din kommentar eller ditt skäl). Versioner som handelskammaren arbetar med och aldrig skickat till dig ingår inte, och upphovet anges som du eller organisationen. Efter en radering står texten som [redacted] och endast datum och beslut finns kvar.",
+        "broadcasts": "broadcasts.json — utskicksposter som rör dig.",
+        "broadcastImages": "broadcast-images.json — alla bilder som laddats upp för dina utskick, även bilder som redan markerats för radering. En markerad bild visas utan webbadress: den är markerad för radering, och filen kan behållas om en identisk bild fortfarande används någon annanstans. Bilder från ett kasserat eller utgånget utkast listas inte; att de tagits bort syns i audit-events.json, och filen raderas vid nästa dagliga rensning.",
+        "broadcastVersions": "broadcast-versions.json — för vart och ett av dina utskick: de versioner du fått att granska (ditt original och varje version som handelskammaren skickat till dig, med följebrev) och dina beslut om dem (godkänt, ändringar begärda, godkännande återkallat – med din kommentar eller ditt skäl). Versioner som handelskammaren arbetar med och aldrig skickat till dig ingår inte, och upphovet anges som du eller organisationen. Efter en radering står texten som [redacted] och endast datum och beslut finns kvar.",
         "auditEvents": "audit-events.json — händelser i aktivitetsloggen som rör dig. Uppgifter om andra personer har tagits bort.",
         "changeRequests": "change-requests.json — de ändringar du föreslagit i din medlemspost och kammarens beslut om var och en (med angiven anledning). Granskaren visas som organisationen. Begäranden som en kollega skickat visas endast med sina företagsfält och utan motivering. Ett arkiv som kammarens personal tagit fram för din räkning, eller som en kollega begärt, innehåller endast begäranden på företagsnivå och utan granskarens motivering. Kontakta kammaren om du behöver din personliga historik.",
         "manifest": "manifest.json — en maskinläsbar lista över varje fil med dess SHA-256-kontrollsumma så att du kan verifiera integriteten."
