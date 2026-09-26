@@ -94,3 +94,30 @@ describe('InviteColleagueForm', () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe('InviteColleagueForm on AURA (spec 122 US3)', () => {
+  it('uses AURA fields (an email keyboard for the address) and an AURA select, with Send in an ActionBar that says when changes are unsaved', () => {
+    const { container } = renderForm();
+    for (const id of ['first_name', 'last_name', 'email', 'role_title']) {
+      expect(container.querySelector(`#${id}`)?.closest('.aura-field')).not.toBeNull();
+    }
+    const email = container.querySelector('#email')!;
+    expect(email).toHaveAttribute('type', 'email');
+    expect(email).toHaveAttribute('inputmode', 'email');
+    expect(email).toHaveAttribute('autocomplete', 'email');
+    expect(container.querySelector('select[name="preferred_language"]')?.closest('.aura-field')).not.toBeNull();
+    const bar = screen.getByRole('region', { name: 'Actions' });
+    expect(bar).toContainElement(screen.getByRole('button', { name: enMessages.portal.invite.sendButton }));
+    const status = bar.querySelector('[role="status"]')!;
+    expect(status.textContent).toBe('');
+    fireEvent.change(container.querySelector('#first_name')!, { target: { value: 'Jane' } });
+    expect(status.textContent).toBe(enMessages.common.unsavedStatus);
+  });
+
+  it('lists a failed submit in a focused error summary', async () => {
+    const { container } = renderForm();
+    fireEvent.submit(container.querySelector('form')!);
+    const summary = await screen.findByRole('alert', { name: /fix 3 fields/i });
+    await waitFor(() => expect(summary).toHaveFocus());
+  });
+});

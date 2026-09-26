@@ -32,7 +32,7 @@ export default async function PortalInvitePage() {
       <FormContainer>
         <PageHeader title={t('pageTitle')} />
         <div className="py-12 text-center">
-          <p className="text-body text-muted-foreground">{t('notLinked')}</p>
+          <p className="text-body text-[var(--aura-fg-secondary)]">{t('notLinked')}</p>
         </div>
       </FormContainer>
     );
@@ -47,7 +47,7 @@ export default async function PortalInvitePage() {
       <FormContainer>
         <PageHeader title={t('pageTitle')} />
         <div className="py-12 text-center">
-          <p className="text-body text-muted-foreground">{t('loadError')}</p>
+          <p className="text-body text-[var(--aura-fg-secondary)]">{t('loadError')}</p>
         </div>
       </FormContainer>
     );
@@ -61,7 +61,7 @@ export default async function PortalInvitePage() {
       <FormContainer>
         <PageHeader title={t('pageTitle')} />
         <div className="py-12 text-center">
-          <p className="text-body text-muted-foreground">{t('notPrimary')}</p>
+          <p className="text-body text-[var(--aura-fg-secondary)]">{t('notPrimary')}</p>
         </div>
       </FormContainer>
     );
