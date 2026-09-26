@@ -35,7 +35,7 @@ export function AuthFrame({ title, description, portalLabel, tenantName, childre
       <div className="aura-surface aura-mesh aura-grain auth-mesh flex flex-col justify-between rounded-none p-12 text-[var(--aura-on-texture)] max-lg:hidden">
         <BrandRow tenantName={tenantName} size="panel" />
         <div className="flex flex-col gap-3">
-          <p className="max-w-[14ch] font-[family-name:var(--font-display)] text-5xl leading-[1.1] font-semibold tracking-[-0.02em] text-balance">
+          <p className="font-[family-name:var(--font-display)] text-5xl leading-[1.1] font-semibold tracking-[-0.02em] text-balance">
             {CHAMBER_FULL_NAME}
           </p>
           <p className="text-base">{portalLabel}</p>
