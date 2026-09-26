@@ -13,6 +13,13 @@
  * never regenerated. A wrapper change that alters this case must be a
  * deliberate, reviewed decision that rewrites the fixture by hand.
  *
+ * Deliberate rewrite, 2026-09-26 (E-Blast PDPA/GDPR follow-up, after #418):
+ * the footer's "why you receive this" line no longer claims every recipient
+ * is a member's contact (the attendee segment is not), and a new line states
+ * the opt-out covers every E-Blast from the chamber and links the privacy
+ * inbox. The diff was checked to be exactly those two footer paragraphs;
+ * header, body cell and every other byte are unchanged.
+ *
  * The positive control proves the comparison bites: a one-character change
  * to the rendered output must fail the byte comparison.
  */

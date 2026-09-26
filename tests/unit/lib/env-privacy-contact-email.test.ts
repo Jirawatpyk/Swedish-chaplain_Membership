@@ -70,8 +70,39 @@ describe('env.ts — TENANT_PRIVACY_CONTACT_EMAIL', () => {
   });
 
   it('production with F7 on refuses to boot without it', async () => {
-    stubEnv({ NODE_ENV: 'production', FEATURE_F7_BROADCASTS: 'true', FEATURE_F6_EVENTCREATE: 'false' });
+    stubEnv({ NODE_ENV: 'production', FEATURE_F7_BROADCASTS: 'true', FEATURE_F6_EVENTCREATE: 'false',
+      // Other production guards must not fire first (a dev shell may export it).
+      E2E_X_TENANT_HEADER_ENABLED: 'false' });
     vi.stubEnv('TENANT_PRIVACY_CONTACT_EMAIL', undefined);
     await expect(import('@/lib/env')).rejects.toThrow(/TENANT_PRIVACY_CONTACT_EMAIL must be set/);
   });
+
+  // Every unsubscribe state and the E-Blast banner link the privacy notice
+  // (GDPR Art. 13/14). In production with F7 on it must exist, over https.
+  it('production with F7 on refuses to boot without TENANT_PRIVACY_POLICY_URL', async () => {
+    stubEnv({
+      NODE_ENV: 'production',
+      FEATURE_F7_BROADCASTS: 'true',
+      FEATURE_F6_EVENTCREATE: 'false',
+      // Other production guards must not fire first (a dev shell may export it).
+      E2E_X_TENANT_HEADER_ENABLED: 'false',
+      TENANT_PRIVACY_CONTACT_EMAIL: 'privacy@swecham.com',
+    });
+    vi.stubEnv('TENANT_PRIVACY_POLICY_URL', undefined);
+    await expect(import('@/lib/env')).rejects.toThrow(/TENANT_PRIVACY_POLICY_URL must be set/);
+  });
+
+  it('production with F7 on refuses a non-https privacy policy URL', async () => {
+    stubEnv({
+      NODE_ENV: 'production',
+      FEATURE_F7_BROADCASTS: 'true',
+      FEATURE_F6_EVENTCREATE: 'false',
+      // Other production guards must not fire first (a dev shell may export it).
+      E2E_X_TENANT_HEADER_ENABLED: 'false',
+      TENANT_PRIVACY_CONTACT_EMAIL: 'privacy@swecham.com',
+      TENANT_PRIVACY_POLICY_URL: 'http://swecham.com/privacy',
+    });
+    await expect(import('@/lib/env')).rejects.toThrow(/TENANT_PRIVACY_POLICY_URL must be set to an https:\/\/ URL/);
+  });
 });
+

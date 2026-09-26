@@ -45,6 +45,7 @@
 import enMessages from '@/i18n/messages/en.json' with { type: 'json' };
 import thMessages from '@/i18n/messages/th.json' with { type: 'json' };
 import svMessages from '@/i18n/messages/sv.json' with { type: 'json' };
+import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import type { TenantSlug } from '@/modules/tenants';
 import type { BroadcastId } from '../../domain/broadcast';
@@ -59,6 +60,8 @@ interface FooterStrings {
   readonly receivedBecause: string;
   readonly unsubscribeCta: string;
   readonly unsubscribeSuffix: string;
+  /** "Unsubscribing stops all E-Blasts from {tenantDisplayName}. You can also email {privacyEmail} …" */
+  readonly objectionContact: string;
   readonly physicalAddress: string;
 }
 
@@ -175,6 +178,20 @@ export function renderBroadcastHtml(input: RenderBroadcastHtmlInput): string {
   const physicalLine = fillTemplate(f.physicalAddress, {
     tenantDisplayName: input.tenantDisplayName,
   });
+  // Recipients unsubscribe on Resend's hosted page, which cannot explain the
+  // scope, so the email says it: the opt-out covers every E-Blast from the
+  // chamber, and the monitored privacy inbox is a free alternative
+  // (GDPR Art. 21(4)). Read from env here (no signature churn across the
+  // send, preview and test-copy paths); optional chaining keeps callers that
+  // mock `@/lib/env` without `broadcasts` rendering — the line is then left out.
+  const privacyEmail = env.broadcasts?.privacyContactEmail ?? null;
+  const objectionLine =
+    privacyEmail === null
+      ? null
+      : fillTemplate(f.objectionContact, { tenantDisplayName: input.tenantDisplayName }).replace(
+          '{privacyEmail}',
+          `<a href="mailto:${escapeHtml(privacyEmail)}" style="color:#666;text-decoration:underline">${escapeHtml(privacyEmail)}</a>`,
+        );
   const brand = input.brand;
   // Design blocks are rendered AFTER sanitisation (the caller sanitised
   // `bodyHtml`) and the result is never fed back through DOMPurify. A body
@@ -199,6 +216,7 @@ export function renderBroadcastHtml(input: RenderBroadcastHtmlInput): string {
     '<tr><td style="padding:16px 32px 24px 32px;border-top:1px solid #eee;font-size:11px;line-height:1.5;color:#888">',
     `<p style="margin:0 0 8px 0">${receivedLine}</p>`,
     `<p style="margin:0 0 8px 0"><a href="${RESEND_UNSUBSCRIBE_MERGE_TAG}" style="color:#666;text-decoration:underline">${escapeHtml(f.unsubscribeCta)}</a> ${escapeHtml(f.unsubscribeSuffix)}</p>`,
+    objectionLine === null ? '' : `<p style="margin:0 0 8px 0">${objectionLine}</p>`,
     `<p style="margin:0">${renderPostalLine(physicalLine, brand?.postalAddress ?? null)}</p>`,
     '</td></tr>',
     '</table>',

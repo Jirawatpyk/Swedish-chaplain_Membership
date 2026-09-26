@@ -3,7 +3,7 @@
 **Owner**: Chamber office / DPO inbox (manual removals) · Platform on-call (mirror + header checks)
 **Lawful basis**: E-Blasts rely on **legitimate interest** (GDPR Art. 6(1)(f) / PDPA §24(5)), not consent. Objections must be honoured, **free** and **easy** (GDPR Art. 21(2)-(3), Art. 12(2)-(3); PDPA §32).
 **Scope of an opt-out**: **tenant + email** — one row in `marketing_unsubscribes` stops every E-Blast from that tenant to that address, including E-Blasts sent on behalf of other members.
-**Audit events**: `broadcast_unsubscribed` + `broadcast_suppression_applied` (both carry `payload.channel`) · `broadcast_unsubscribe_token_invalid` · `broadcast_webhook_signature_rejected` with `reason: 'unknown_resend_audience_id'`
+**Audit events**: `broadcast_unsubscribed` + `broadcast_suppression_applied` (both carry `payload.channel`) · `broadcast_unsubscribe_token_invalid` · `broadcast_unsubscribe_unattributed` (a Resend-side opt-out that could not be recorded, migration 0312)
 **Last reviewed**: 2026-09-26
 
 ---
@@ -65,7 +65,7 @@ Opt-outs on Resend's hosted page and via Resend's List-Unsubscribe header only f
 
 ### Opt-outs Resend cannot attribute to a broadcast
 
-`cleanup-audiences` deletes each broadcast's Resend audience about an hour after send, so a later click can arrive with an audience/segment id no broadcast owns — or with none. Those opt-outs are still recorded, under this deployment's tenant with no source broadcast (log `broadcasts.webhook.resend_hosted_unsubscribe_mirrored` with `attributed: false`). Only an unusable address is not recorded: it leaves a NULL-tenant audit row `broadcast_webhook_signature_rejected` / `reason: 'contact_updated_invalid_email'` (address stored only as a tenant-scoped hash) — find the contact in the Resend dashboard and apply it with **§ 1** (`--ticket=resend-invalid-<date>`).
+`cleanup-audiences` deletes each broadcast's Resend audience about an hour after send, so a later click can arrive with an audience/segment id no broadcast owns — or with none. Those opt-outs are still recorded, under this deployment's tenant with no source broadcast (log `broadcasts.webhook.resend_hosted_unsubscribe_mirrored` with `attributed: false`). Only an unusable address is not recorded: it leaves a NULL-tenant audit row `broadcast_unsubscribe_unattributed` / `reason: 'contact_updated_invalid_email'` (address stored only as a tenant-scoped hash) — find the contact in the Resend dashboard and apply it with **§ 1** (`--ticket=resend-invalid-<date>`).
 
 **Verify once** (and after Resend API changes): click the unsubscribe link in an E-Blast **older than one hour** (its audience already reaped), then check § 2's SQL shows the row, and note the `contact.updated` payload Resend actually sent (Resend dashboard → Webhooks → event) in this runbook.
 
@@ -74,6 +74,15 @@ Opt-outs on Resend's hosted page and via Resend's List-Unsubscribe header only f
 1. Send a test E-Blast to an internal Gmail address.
 2. Gmail → ⋮ → *Show original*: confirm `List-Unsubscribe:` and `List-Unsubscribe-Post: List-Unsubscribe=One-Click` are present (Resend-generated) and that Gmail shows the *Unsubscribe* affordance next to the sender.
 3. Click it and confirm § 2's SQL shows the row (`channel: resend_hosted`).
+
+### Finding opt-outs that need manual follow-up
+
+```sql
+SELECT timestamp, payload->>'reason' AS reason, payload->'audienceIds' AS audience_ids
+  FROM audit_log
+ WHERE event_type = 'broadcast_unsubscribe_unattributed'
+ ORDER BY timestamp DESC;
+```
 
 ## 4. Rate-limit behaviour (for support questions)
 

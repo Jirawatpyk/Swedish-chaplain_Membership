@@ -7512,6 +7512,7 @@
       "broadcast_brand_settings_changed": "Varumärkesinställningar för utskick ändrade",
       "broadcast_image_removed": "Utskicksbild borttagen",
       "broadcast_retention_swept": "Utskick raderade efter lagringstiden",
+      "broadcast_unsubscribe_unattributed": "Avregistrering från utskick kunde inte registreras",
       "broadcast_image_uploaded": "Utskicksbild uppladdad",
       "broadcast_test_copy_sent": "Testkopia av utskick skickad",
       "broadcast_version_started": "Utskicksversion påbörjad",
@@ -7771,9 +7772,10 @@
       "footerSignOff": "Om du behöver hjälp, vänligen kontakta din kammaradministratör."
     },
     "broadcastFooter": {
-      "receivedBecause": "Du tar emot detta mejl eftersom du är kontakt hos en medlem i {tenantDisplayName}.",
+      "receivedBecause": "Du får det här mejlet på grund av din koppling till {tenantDisplayName}.",
       "unsubscribeCta": "Avregistrera",
       "unsubscribeSuffix": "från dessa utskick när som helst.",
+      "objectionContact": "Avregistreringen stoppar alla utskick från {tenantDisplayName}. Du kan också mejla {privacyEmail} för att bli borttagen.",
       "physicalAddress": "Skickat av {tenantDisplayName}."
     },
     "eblastApproval": {

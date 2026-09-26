@@ -37,6 +37,30 @@ export function getClientIp(request: NextRequest): string {
 }
 
 /**
+ * Key for a per-IP rate-limit bucket. IPv4 is used as is. An IPv6 client
+ * usually controls a whole /64 (one customer prefix), so keying on the full
+ * address would let it rotate through 2^64 buckets — every address in the
+ * same /64 maps to one key (`xxxx:xxxx:xxxx:xxxx::/64`). IPv4-mapped IPv6
+ * (`::ffff:a.b.c.d`) is treated as the IPv4 address. Anything that does not
+ * parse is returned unchanged; this never throws.
+ */
+export function rateLimitIpKey(ip: string): string {
+  const raw = ip.trim();
+  if (!raw.includes(':')) return raw;
+  const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(raw);
+  if (mapped) return mapped[1]!;
+  const halves = raw.toLowerCase().split('::');
+  if (halves.length > 2) return raw;
+  const head = halves[0] ? halves[0].split(':') : [];
+  const tail = halves.length === 2 && halves[1] ? halves[1].split(':') : [];
+  const missing = 8 - head.length - tail.length;
+  if (halves.length === 1 ? missing !== 0 : missing < 1) return raw;
+  const groups = [...head, ...Array<string>(halves.length === 2 ? missing : 0).fill('0'), ...tail];
+  if (groups.length !== 8 || !groups.every((g) => /^[0-9a-f]{1,4}$/.test(g))) return raw;
+  return `${groups.slice(0, 4).map((g) => g.padStart(4, '0')).join(':')}::/64`;
+}
+
+/**
  * Boot-time diagnostic: warn loudly when deployed in production
  * without a trusted XFF source. Called from `instrumentation.ts` (or
  * equivalent boot path) so the message lands in Vercel logs / log

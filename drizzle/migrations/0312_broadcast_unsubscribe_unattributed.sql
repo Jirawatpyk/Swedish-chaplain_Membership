@@ -1,0 +1,26 @@
+-- ---------------------------------------------------------------------------
+-- Migration 0312 — F7: a dedicated audit event for an E-Blast opt-out we
+-- could not record.
+--
+-- A recipient who unsubscribes on Resend's hosted page (or through the
+-- List-Unsubscribe header Resend adds to every broadcast) reaches us as a
+-- signed `contact.updated {unsubscribed: true}`. When its address is
+-- unusable the opt-out cannot be written to `marketing_unsubscribes`, and the
+-- route leaves a NULL-tenant forensic row so staff can apply it by hand
+-- (docs/runbooks/broadcast-manual-unsubscribe.md). That row used to reuse
+-- `broadcast_webhook_signature_rejected`, which counted a data subject's
+-- objection as a signature failure: it fed the security alerts and was
+-- missing from any objection query. It now has its own type.
+--
+-- Numbered 0312, journal idx 313, `when` 1798544500000 — strictly after
+-- 0311's 1798544400000 (a duplicate `when` makes db:migrate a silent no-op).
+--
+-- Hoisted to AUTOCOMMIT by the runner (scripts/lib/enum-migration-guard.ts);
+-- the transactional copy is an `IF NOT EXISTS` no-op. 5y retention (the F7
+-- default — no trigger change).
+--
+-- Rollback: the enum value is irreversible (and harmless). Point the route
+-- back at `broadcast_webhook_signature_rejected` if needed.
+-- ---------------------------------------------------------------------------
+
+ALTER TYPE "audit_event_type" ADD VALUE IF NOT EXISTS 'broadcast_unsubscribe_unattributed';

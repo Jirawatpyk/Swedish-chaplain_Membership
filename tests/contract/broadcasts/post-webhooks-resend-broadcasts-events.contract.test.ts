@@ -435,7 +435,13 @@ describe('POST /api/webhooks/resend-broadcasts — contact.updated mirror', () =
     const res = await route.POST(makeRequest({ body: '{}' }));
     expect(res.status).toBe(200);
     expect(f7AuditEmitMock).toHaveBeenCalledTimes(1);
-    const audit = f7AuditEmitMock.mock.calls[0]![1] as { payload: Record<string, unknown> };
+    const audit = f7AuditEmitMock.mock.calls[0]![1] as {
+      eventType: string;
+      payload: Record<string, unknown>;
+    };
+    // Its own event type: an objection we could not record is not a
+    // signature failure, and must not feed the signature-rejection alerts.
+    expect(audit.eventType).toBe('broadcast_unsubscribe_unattributed');
     expect(audit.payload['reason']).toBe('contact_updated_invalid_email');
     expect(JSON.stringify(audit.payload)).not.toMatch(/alice@example\.com/i);
     const { createHash } = await import('node:crypto');
