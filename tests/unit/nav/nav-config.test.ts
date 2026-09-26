@@ -158,8 +158,8 @@ describe('staffNavConfig', () => {
     );
     expect(broadcastsByHref?.titleKey).toBe('nav.staff.settingsBroadcasts');
     // …and EXACT, not the prefix form: `/admin/settings/broadcasts/brand` is a
-    // sibling entry, and `nav-item.tsx` evaluates each item independently, so a
-    // prefix pattern here would light both rows on the brand URL.
+    // sibling entry, and `isNavItemActive` evaluates each item independently, so
+    // a prefix pattern here would match both rows on the brand URL.
     expect(broadcastsByHref?.activePattern).toBe('exact:/admin/settings/broadcasts');
 
     // F119 T029 — the chamber brand page, same key + flag as its sibling.
@@ -592,8 +592,8 @@ describe('isNavGroup type guard', () => {
 // The previous "single-child NavGroup flatten" describe block exercised
 // the 1-child Settings NavGroup. After R7-B2 the Settings section was
 // flattened to 2 direct items (no NavGroup wrapper), so the flatten
-// path in nav-item.tsx is no longer triggered by the staff config.
-// The flatten logic still exists in `components/layout/nav-item.tsx`
+// path in the staff nav is no longer triggered by the staff config.
+// The flatten logic still exists in `components/layout/staff-nav.tsx`
 // for any future 1-child group; its unit coverage can be added back
 // against a synthetic config when such a group re-emerges.
 

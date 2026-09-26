@@ -554,6 +554,29 @@ summary,
   top: 0;
 }
 
+/* --- Spec 122 US1 — the AURA shell (staff + member frames) -----------------
+   AppShell pads <main>; the layout containers pad too. The containers keep the
+   job (their API and data-slot are the layout contract, FR-012), on AURA's
+   own steps — 16 / 24 / 32 px at base / md / lg, as on the boards. */
+@layer components {
+  .chamber-shell .aura-shell__content {
+    padding: 0;
+  }
+  .chamber-shell {
+    --page-padding-x: 1rem;
+  }
+  @media (min-width: 768px) {
+    .chamber-shell {
+      --page-padding-x: 1.5rem;
+    }
+  }
+  @media (min-width: 1024px) {
+    .chamber-shell {
+      --page-padding-x: 2rem;
+    }
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;}

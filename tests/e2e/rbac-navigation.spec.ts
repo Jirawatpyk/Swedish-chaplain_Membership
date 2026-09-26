@@ -90,7 +90,7 @@ const MUST_NOT_SEE: Readonly<Record<string, readonly string[]>> = {
 async function sidebarHrefs(page: Page): Promise<readonly string[]> {
   // By NAME, not `.first()`: the staff layout also renders <BreadcrumbNav />,
   // so positional selection is a bet on DOM order. `nav.staff.ariaLabel` is the
-  // sidebar's own accessible name (staff-sidebar.tsx).
+  // nav's own accessible name (staff-nav.tsx).
   const nav = page.getByRole('navigation', { name: en.nav.staff.ariaLabel });
   await expect(nav).toBeVisible();
   const hrefs = await nav

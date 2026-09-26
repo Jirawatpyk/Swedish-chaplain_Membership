@@ -126,8 +126,8 @@ describe('staff nav declares a permission for every entry (T061)', () => {
   });
 
   it('staff titleKeys are unique', () => {
-    // `titleKey` is the React key for section items (staff-sidebar.tsx), and
-    // `href` for group children (nav-item.tsx). A duplicate is a reconciliation
+    // `titleKey` names group ids in the staff nav (staff-nav.tsx), and
+    // `href` is every link's id. A duplicate is a reconciliation
     // bug rather than a permission one, but it costs one line beside the href
     // uniqueness assertion that already exists.
     const keys = staffNavConfig.sections.flatMap((s) => s.items.map((i) => i.titleKey));

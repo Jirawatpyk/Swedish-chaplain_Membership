@@ -11,26 +11,22 @@
  * best-effort persists the choice to `members.preferred_locale` (email
  * language) via `runPreferredLocalePersist`. Staff/auth stay cookie-only.
  *
- * The trigger shows the current-language endonym so it is legible to someone
- * who cannot read the current UI language (an icon-only tooltip would be in
- * that same unreadable language). An `sr-only` label makes the accessible name
- * "<action> <endonym>" — conveying purpose AND satisfying WCAG 2.5.3 (the
- * visible endonym is contained in the accessible name). The menu is a radio
- * group so the active locale is announced (`aria-checked`) to screen readers.
+ * The trigger shows the current language's code (EN / TH / SV, spec 122 —
+ * the `topbar()` boards) so it is legible to someone who cannot read the
+ * current UI language (an icon-only tooltip would be in that same unreadable
+ * language). An `sr-only` label makes the accessible name "<action>
+ * (<endonym>) <CODE>" — conveying purpose AND satisfying WCAG 2.5.3 (the
+ * visible code is contained in the accessible name). The menu (AURA
+ * `DropdownMenu`) lists the endonyms as radio items, so the active locale is
+ * announced (`aria-checked`) to screen readers.
  */
-import { LanguagesIcon } from 'lucide-react';
+import { ChevronDownIcon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { useRef, useTransition } from 'react';
-import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+import { DropdownMenu } from '@jirawatpyk/aura-react';
 import { cn } from '@/lib/utils';
+import { AURA_FOCUS_RING } from '@/components/shell/aura-classes';
 import { runAbortablePersist } from '@/components/shell/locale-persist';
 import {
   LOCALE_COOKIE_NAME,
@@ -40,7 +36,10 @@ import {
   type Locale,
 } from '@/i18n/config';
 
-/** Abort a stuck preferred-locale sync after this long (captive-portal guard). */
+function writeLocaleCookie(value: Locale): void {
+  document.cookie = `${LOCALE_COOKIE_NAME}=${value}; path=/; max-age=31536000; samesite=lax`;
+}
+
 const PERSIST_TIMEOUT_MS = 8000;
 
 export function LocaleSwitcher({
@@ -75,44 +74,43 @@ export function LocaleSwitcher({
     // 1-year, path=/ so it applies to every route; SameSite=Lax is fine for a
     // non-sensitive UI-preference cookie. Synchronous — written before the
     // refresh request is sent, so the RSC pass reads the new value.
-    document.cookie = `${LOCALE_COOKIE_NAME}=${value}; path=/; max-age=31536000; samesite=lax`;
+    writeLocaleCookie(value);
     if (persistToAccount) persistPreferredLocale(value); // value is Locale (isLocale guard above)
     startTransition(() => router.refresh());
   };
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-busy={isPending}
-            // h-8 (32px) height-matches the neighbouring ThemeToggle/UserMenu
-            // icon buttons (size="icon" = size-8); cn'd last so it wins over
-            // the `sm` variant's h-7 via tailwind-merge.
-            className={cn('h-8 gap-1.5', className)}
-          />
-        }
-      >
-        <LanguagesIcon className="size-4" aria-hidden />
-        {/* sr-only action phrase + visible endonym → accessible name is
-            "Change language English", which contains the visible label. */}
-        <span className="sr-only">{t('label')}</span>
-        <span className="text-sm font-medium">{localeLabels[activeLocale]}</span>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuRadioGroup value={activeLocale} onValueChange={handleValueChange}>
-          {locales.map((locale) => (
-            // closeOnClick: Base UI RadioItem defaults to false (menu stays
-            // open). Closing on select matches the expected switcher UX and
-            // keeps the E2E round-trip robust (a re-open is a fresh open).
-            <DropdownMenuRadioItem key={locale} value={locale} closeOnClick>
-              {localeLabels[locale]}
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <DropdownMenu
+      label={t('label')}
+      trigger={
+        <button
+          type="button"
+          aria-busy={isPending}
+          className={cn(
+            // Spec 122 — the pill on the `topbar()` boards: the language CODE
+            // (EN / TH / SV) is legible whatever the current UI language.
+            'inline-flex h-9 items-center gap-1.5 rounded-full border border-[var(--aura-border-control)] bg-[var(--aura-bg-surface)] pr-2.5 pl-3.5 text-[13px] font-medium text-[var(--aura-fg-primary)] hover:bg-[var(--aura-bg-surface-hover)] pointer-coarse:h-11',
+            AURA_FOCUS_RING,
+            className,
+          )}
+        >
+          {/* sr-only action phrase + endonym, then the visible code → the
+              accessible name "Change language (English) EN" contains the
+              visible label (WCAG 2.5.3). */}
+          <span className="sr-only">
+            {t('label')} ({localeLabels[activeLocale]})
+          </span>
+          <span>{activeLocale.toUpperCase()}</span>
+          <ChevronDownIcon className="size-4" aria-hidden />
+        </button>
+      }
+      items={locales.map((locale) => ({
+        type: 'radio' as const,
+        group: t('label'),
+        label: localeLabels[locale],
+        checked: locale === activeLocale,
+        onSelect: () => handleValueChange(locale),
+      }))}
+    />
   );
 }

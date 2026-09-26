@@ -35,7 +35,11 @@ import { useBreadcrumbLabelMap } from '@/components/layout/breadcrumb-provider';
  */
 const MIN_DEPTH = 2;
 
-export function BreadcrumbNav() {
+/**
+ * Spec 122 US1 — `bar` sits in the AURA top bar (from 1024px, no padding);
+ * `page` is the old in-page row, kept below 1024px where the bar has no room.
+ */
+export function BreadcrumbNav({ placement = 'page' }: { readonly placement?: 'bar' | 'page' } = {}) {
   const pathname = usePathname() ?? '/';
   const dynamicLabels = useBreadcrumbLabelMap();
   const tBreadcrumb = useTranslations('breadcrumb');
@@ -61,7 +65,9 @@ export function BreadcrumbNav() {
   return (
     <Breadcrumb
       aria-label={tLayout('breadcrumbAriaLabel')}
-      className="px-[var(--page-padding-x)] [padding-block-start:var(--page-padding-y)]"
+      className={
+        placement === 'bar' ? undefined : 'px-[var(--page-padding-x)] [padding-block-start:var(--page-padding-y)]'
+      }
     >
       {/* Desktop: full trail */}
       {/* Key composes `href` + `idx` because non-route segments

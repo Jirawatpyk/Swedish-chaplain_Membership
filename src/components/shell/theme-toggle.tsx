@@ -3,65 +3,43 @@
 /**
  * ThemeToggle — light/dark/system mode switcher (T047, ux-standards § 1.7).
  *
- * Wraps next-themes with a shadcn DropdownMenu so the user can pick
- * Light, Dark, or System. Theme defaults to `system` so the OS
- * preference is honoured on first visit.
- *
- * `size` defaults to `icon` (32px) for the compact header/auth-page usage
- * (app-shell icon-trigger convention, ux-standards § 19). The Account-hub
- * Appearance row passes `className="size-11"` to force a 44×44 tap target —
- * member-portal CTAs are ≥44px (ux-standards § 9.1, WCAG 2.5.5 AAA on
- * mobile). `className` is cn'd LAST so a `size-*` override wins over the
- * `size` variant via tailwind-merge.
+ * next-themes stays the source of truth (the `.dark` class, which AURA's
+ * tokens also follow); spec 122 draws it as the `topbar()` boards do: an AURA
+ * `IconButton` opening an AURA `DropdownMenu` of Light, Dark and System.
+ * Theme defaults to `system` so the OS preference is honoured on first visit.
  */
 import { MoonIcon, SunIcon, MonitorIcon } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useTranslations } from 'next-intl';
-import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+import { DropdownMenu, IconButton } from '@jirawatpyk/aura-react';
 
-export function ThemeToggle({
-  size = 'icon',
-  className,
-}: {
-  readonly size?: 'icon' | 'icon-lg';
-  readonly className?: string;
-} = {}) {
+export function ThemeToggle({ className }: { readonly className?: string } = {}) {
   const { setTheme } = useTheme();
   const t = useTranslations('shell.theme');
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <Button
-            variant="ghost"
-            size={size}
-            aria-label={t('label')}
-            className={cn(className)}
-          />
-        }
-      >
-        <SunIcon className="size-4 dark:hidden" aria-hidden />
-        <MoonIcon className="hidden size-4 dark:block" aria-hidden />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={() => setTheme('light')}>
-          <SunIcon className="size-4" aria-hidden /> {t('light')}
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setTheme('dark')}>
-          <MoonIcon className="size-4" aria-hidden /> {t('dark')}
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setTheme('system')}>
-          <MonitorIcon className="size-4" aria-hidden /> {t('system')}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <DropdownMenu
+      label={t('label')}
+      trigger={
+        <IconButton
+          label={t('label')}
+          size="md"
+          {...(className ? { className } : {})}
+          // Sun in light, moon in dark — by CSS, so the server's HTML is right
+          // before next-themes knows the resolved theme (no hydration flip).
+          icon={
+            <>
+              <SunIcon className="size-full dark:hidden" aria-hidden />
+              <MoonIcon className="hidden size-full dark:block" aria-hidden />
+            </>
+          }
+        />
+      }
+      items={[
+        { label: t('light'), icon: <SunIcon aria-hidden />, onSelect: () => setTheme('light') },
+        { label: t('dark'), icon: <MoonIcon aria-hidden />, onSelect: () => setTheme('dark') },
+        { label: t('system'), icon: <MonitorIcon aria-hidden />, onSelect: () => setTheme('system') },
+      ]}
+    />
   );
 }

@@ -2,7 +2,7 @@
  * 016 T063 — server-side resolution of which staff nav entries a viewer may see.
  *
  * Lives here rather than in `src/config/nav.ts` because it needs `canPerform`,
- * which reads the feature flag off `env` — server-only. `staff-sidebar.tsx` is a
+ * which reads the feature flag off `env` — server-only. `staff-nav.tsx` is a
  * client component, so the DECISION is made here and only its result (a list of
  * plain strings) crosses the RSC boundary. The config itself cannot cross it at
  * all: every NavItem carries a `LucideIcon`, i.e. a function.

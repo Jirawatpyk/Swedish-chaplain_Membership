@@ -176,6 +176,10 @@
       "manager": "Manager",
       "marketing": "Marketing",
       "member": "Member"
+    },
+    "search": {
+      "open": "Open command palette",
+      "placeholder": "Search members, plans, pages…"
     }
   },
   "errors": {

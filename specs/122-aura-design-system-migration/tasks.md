@@ -113,9 +113,23 @@
 
 ---
 
+## Phase 3: User Story 1 — Shell (Priority: P1) — PR 2
+
+Goal: every page sits in the AURA frame of the canvas boards (`Admin-members`, `Admin-members-tablet`, `Admin-members-mobile`, `Admin-command`, the portal `Main` boards). Logic is unchanged (FR-011): the same nav entries per permission, the same badges, the same palette results.
+
+- [x] T101 [US1] Page titles (`.text-h1`) use AURA's display face (Fraunces), as on every board; h2–h4 stay on the text face. RED: `aura-foundation-css.test.ts` › page titles.
+- [ ] T102 [US1] Preview harness `src/app/test-fixtures/aura-shell/page.tsx` (behind `ALLOW_TEST_ROUTES`, like `button-matrix`): the staff and member shells with fixture data, no session or DB, so they can be screenshot at 390/1280, light/dark, and compared with the boards. RED: none (a fixture page); verified by the screenshots in the PR.
+- [ ] T103 [US1] Staff navigation is AURA `SideNav` inside `AppShell`: the same permission-filtered entries and badges (a badge stays part of the link's name: "Change requests 3 pending"), the active entry carries `aria-current="page"`, Settings is one collapsible group that opens on a settings route (board proposal, implemented), the rail state persists in the `sidebar_state` cookie, and below 1024px the nav opens in AURA's drawer. RED: `tests/unit/components/layout/staff-nav.test.tsx`.
+- [ ] T104 [US1] Staff top bar: breadcrumb, a search button that opens the palette (⌘K still works), language, colour scheme and account menu, per `topbar()` on the boards. RED: `tests/unit/components/layout/staff-top-bar.test.tsx`.
+- [ ] T105 [US1] Member frame: header with brand, pill nav (desktop), language, colour scheme, account; AURA `BottomNav` below 1024px with the same five tabs; the E-Blast acknowledgement banner stays outside the skip target. RED: `tests/unit/app/portal-layout-shell.test.tsx` (updated) + `tests/unit/components/layout/member-nav.test.tsx`.
+- [ ] T106 [US1] Both ⌘K palettes use AURA `Command` (server-searched results, `filter={false}`, `loading`), with the same groups, results and destinations. `cmdk` stays installed for the pickers and `ui/combobox` until their modules migrate, and is removed with the last of them (at the latest US13). RED: `tests/unit/components/command-palette/*.test.tsx`.
+- [ ] T107 [US1] Confirmation, reason-confirmation and idle-warning dialogs use AURA `Dialog role="alertdialog"` with the same props and focus behaviour. RED: their existing tests, updated to AURA's DOM.
+- [ ] T108 [US1] EmptyState, the page skeletons, Breadcrumb and TablePagination render AURA components behind their current props and `data-slot`s; `.skeleton-shimmer` becomes AURA's pulse (FR-009). RED: `tests/unit/layout/page-skeletons.test.tsx`, `empty-state.test.tsx`, `aura-foundation-css.test.ts`.
+- [ ] T109 [US1] `src/components/layout`, `src/components/shell`, `src/components/command-palette` and `src/components/auth/idle-warning-dialog.tsx` join `MIGRATED_PATHS`; e2e selectors that named old-kit internals (`data-slot="sidebar*"`, `breadcrumb*`) move to roles and names. RED: `ui-import-ratchet.test.ts`.
+- [ ] T110 [US1] Exit: gates, board screenshots in the PR, enterprise-ux-designer review, then the **e2e checkpoint** on the maintainer's machine (full suite).
+
 ## Later phases (one PR each; tasks written when the phase starts)
 
-- [ ] T100 [US1] Shell: AppShell/SideNav/BottomNav, header, menus, Breadcrumb, Pagination, Command (remove `cmdk`, ratchet to `error`), idle/confirm dialogs, EmptyState, Skeleton pulse (remove shimmer CSS). Layout containers keep API + `data-slot`.
 - [ ] T200 [US2] Auth pages: TextField, PasswordField, Checkbox (`hideLabel`), FormErrorSummary.
 - [ ] T300 [US3] Portal home, profile, account: Card, Stat, StatusPill, link Tabs, ActionBar.
 - [ ] T400 [US4] Portal invoicing + pay sheet: DataTable totals, Stepper, Drawer ≤ 92 dvh around the unchanged Stripe Elements. Financial-integrity review.

@@ -176,6 +176,10 @@
       "manager": "Manager",
       "marketing": "Marketing",
       "member": "Medlem"
+    },
+    "search": {
+      "open": "Öppna kommandopaletten",
+      "placeholder": "Sök medlemmar, planer, sidor…"
     }
   },
   "errors": {

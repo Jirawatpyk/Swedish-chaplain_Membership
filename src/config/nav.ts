@@ -112,7 +112,7 @@ export interface NavItem {
    * href in its map, which rendered a bare number announced as "Plans 3". The
    * COUNT itself is never authored here: it is server-resolved per request
    * and applied by {@link applyNavBadges}, which stamps it only on items
-   * carrying this declaration. See `components/layout/nav-item.tsx` for the
+   * carrying this declaration. See `components/layout/staff-nav.tsx` for the
    * rendered shape.
    */
   readonly badge?: { readonly labelKey: string };
@@ -590,9 +590,9 @@ export const staffNavConfig: NavConfig = {
           href: '/admin/settings/broadcasts',
           // F119 T029: EXACT, not the prefix form. `/admin/settings/
           // broadcasts/brand` is now a sibling entry of its own, and a prefix
-          // pattern here would light BOTH rows on that URL (`nav-item.tsx`
-          // evaluates each item independently — there is no deepest-wins
-          // arbitration in the sidebar).
+          // pattern here would match BOTH rows on that URL. The staff nav
+          // (`staff-nav.tsx`) marks only the deepest match since spec 122, but
+          // `isNavItemActive` alone would still say both.
           activePattern: 'exact:/admin/settings/broadcasts',
           guard: defineGuard('settings.broadcasts'),
           visibilityFlag: 'broadcastsEnabled',

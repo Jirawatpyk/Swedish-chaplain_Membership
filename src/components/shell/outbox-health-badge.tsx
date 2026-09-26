@@ -14,18 +14,13 @@
  */
 import { unstable_noStore as noStore } from 'next/cache';
 import { getTranslations } from 'next-intl/server';
-import { AlertTriangle } from 'lucide-react';
 import { and, count, eq, gte, lt } from 'drizzle-orm';
  
 import { db } from '@/lib/db';
 import { notificationsOutbox } from '@/modules/auth/infrastructure/db/schema';
  
 import { logger } from '@/lib/logger';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+import { OutboxHealthTooltip } from '@/components/shell/outbox-health-tooltip';
 
 export async function OutboxHealthBadge() {
   noStore();
@@ -73,31 +68,9 @@ export async function OutboxHealthBadge() {
 
   const t = await getTranslations('admin.outboxHealth');
 
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        aria-label={t('label')}
-        className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-amber-500 hover:bg-amber-50 hover:text-amber-600 dark:hover:bg-amber-950/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        <AlertTriangle className="size-4" aria-hidden />
-      </TooltipTrigger>
-      <TooltipContent
-        side="bottom"
-        align="end"
-        className="max-w-xs space-y-1 text-sm"
-      >
-        <p className="font-medium">{t('label')}</p>
-        {permanentFailed > 0 && (
-          <p className="text-muted-foreground">
-            {t('permanentFailed', { count: permanentFailed })}
-          </p>
-        )}
-        {stuckPending > 0 && (
-          <p className="text-muted-foreground">
-            {t('stuckPending', { count: stuckPending })}
-          </p>
-        )}
-      </TooltipContent>
-    </Tooltip>
-  );
+  const lines = [
+    ...(permanentFailed > 0 ? [t('permanentFailed', { count: permanentFailed })] : []),
+    ...(stuckPending > 0 ? [t('stuckPending', { count: stuckPending })] : []),
+  ];
+  return <OutboxHealthTooltip label={t('label')} lines={lines} />;
 }

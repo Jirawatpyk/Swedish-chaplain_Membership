@@ -3,8 +3,11 @@
 /**
  * UserMenu — avatar / name / role badge / sign-out (T074, ux-standards § 8.1).
  *
- * Always-visible header element on every authenticated page. Clicking
- * opens a shadcn dropdown with account settings + sign-out actions.
+ * Always-visible header element on every authenticated page. Spec 122 draws
+ * it as the `topbar()` boards do — avatar + name (name hidden below 1024px) +
+ * chevron — opening an AURA `DropdownMenu`: who is signed in (name, email and
+ * role, as inert items: AURA's menu has no header slot yet — AURA handoff
+ * #57), then the account links and sign-out.
  * Sign-out is a client-side `fetch('/api/auth/sign-out', { method: 'POST' })`
  * (this is a `'use client'` component); on success it routes to the
  * role-appropriate sign-in page via `router.push` + `router.refresh`, and on
@@ -20,31 +23,14 @@
  * the matching anchors, so renewal-reminder email CTAs keep resolving.
  * Staff (admin/manager) keep the original single account item.
  */
-import {
-  LogOutIcon,
-  UserIcon,
-  CalendarClockIcon,
-  ShieldCheckIcon,
-  ShieldIcon,
-} from 'lucide-react';
-import Link from 'next/link';
+import { ChevronDownIcon, LogOutIcon, UserIcon, CalendarClockIcon, ShieldIcon } from 'lucide-react';
+import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { Avatar, DropdownMenu, useBreakpoint, type MenuItem } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-// Client component — same rationale as `idle-warning-dialog.tsx`.
-// Type-only import of a Domain type is pure and safe.
+import { AURA_FOCUS_RING } from '@/components/shell/aura-classes';
+import { cn } from '@/lib/utils';
 
 import type { Role } from '@/modules/auth/domain/role';
 
@@ -52,26 +38,15 @@ export interface UserMenuProps {
   readonly displayName: string | null;
   readonly email: string;
   readonly role: Role;
+  /**
+   * Spec 122 — on a phone the staff top bar has no room for the colour-scheme
+   * button (the `Admin-members-mobile` board drops it), so the choice moves
+   * into this menu below 640px. The member portal keeps its own button.
+   */
+  readonly themeChoicesOnPhone?: boolean;
 }
 
-const roleBadgeVariant: Record<Role, 'default' | 'secondary' | 'outline'> = {
-  super_admin: 'default',
-  admin: 'default',
-  manager: 'secondary',
-  marketing: 'secondary',
-  member: 'outline',
-};
-
-function initials(displayName: string | null, email: string): string {
-  const source = displayName?.trim() || email;
-  return source
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part.charAt(0).toUpperCase())
-    .join('') || '?';
-}
-
-export function UserMenu({ displayName, email, role }: UserMenuProps) {
+export function UserMenu({ displayName, email, role, themeChoicesOnPhone = false }: UserMenuProps) {
   const t = useTranslations('shell.userMenu');
   const tBadge = useTranslations('shell.roleBadge');
   const tHub = useTranslations('portal.account.menu');
@@ -79,6 +54,9 @@ export function UserMenu({ displayName, email, role }: UserMenuProps) {
   // staff ones; grants nothing either way.
   const isMember = role === 'member';
   const router = useRouter();
+  const tTheme = useTranslations('shell.theme');
+  const { theme, setTheme } = useTheme();
+  const onPhone = useBreakpoint() === 'base';
 
   const handleSignOut = async () => {
     try {
@@ -95,72 +73,58 @@ export function UserMenu({ displayName, email, role }: UserMenuProps) {
     }
   };
 
+  const name = displayName?.trim() || email;
+  const identity: MenuItem[] = [
+    { label: name, hint: tBadge(role), disabled: true },
+    ...(name === email ? [] : [{ label: email, disabled: true }]),
+    { separator: true },
+  ];
+  const links: MenuItem[] = isMember
+    ? [
+        { label: t('account'), icon: <UserIcon aria-hidden />, href: '/portal/account' },
+        { label: tHub('renewalPrefs'), icon: <CalendarClockIcon aria-hidden />, href: '/portal/account#renewal-prefs' },
+        { label: tHub('dataPrivacy'), icon: <ShieldIcon aria-hidden />, href: '/portal/account#data-privacy' },
+      ]
+    : [{ label: t('account'), icon: <UserIcon aria-hidden />, onSelect: () => router.push('/admin/account') }];
+
+  const themeChoices: MenuItem[] =
+    themeChoicesOnPhone && onPhone
+      ? [
+          { separator: true },
+          ...(['light', 'dark', 'system'] as const).map((value) => ({
+            type: 'radio' as const,
+            group: tTheme('label'),
+            label: tTheme(value),
+            checked: theme === value,
+            onSelect: () => setTheme(value),
+          })),
+        ]
+      : [];
+
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger render={<Button variant="ghost" size="icon" aria-label={t('label')} />}>
-        <Avatar className="size-8">
-          <AvatarFallback>{initials(displayName, email)}</AvatarFallback>
-        </Avatar>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-64">
-        {/* Base UI requires <DropdownMenuLabel> to live inside a
-            <DropdownMenuGroup>, so we wrap each section in its own
-            group. */}
-        <DropdownMenuGroup>
-          <DropdownMenuLabel>
-            <div className="flex flex-col gap-1">
-              <span className="text-sm font-medium">{displayName ?? email}</span>
-              <span className="text-xs text-muted-foreground">{email}</span>
-              <Badge variant={roleBadgeVariant[role]} className="mt-1 w-fit">
-                {/* Matches the users-table badge: `default` is shared with
-                    plain admin, so shape carries the distinction. */}
-                {/* rbac-presentation-only-ok: picks a badge icon */}
-                {role === 'super_admin' ? (
-                  <ShieldCheckIcon className="size-3" aria-hidden />
-                ) : null}
-                {tBadge(role)}
-              </Badge>
-            </div>
-          </DropdownMenuLabel>
-        </DropdownMenuGroup>
-        <DropdownMenuSeparator />
-        {isMember ? (
-          <>
-            <DropdownMenuGroup>
-              <DropdownMenuItem render={<Link href="/portal/account" />}>
-                <UserIcon className="size-4" aria-hidden />
-                {t('account')}
-              </DropdownMenuItem>
-              <DropdownMenuItem render={<Link href="/portal/account#renewal-prefs" />}>
-                <CalendarClockIcon className="size-4" aria-hidden />
-                {tHub('renewalPrefs')}
-              </DropdownMenuItem>
-              <DropdownMenuItem render={<Link href="/portal/account#data-privacy" />}>
-                <ShieldIcon className="size-4" aria-hidden />
-                {tHub('dataPrivacy')}
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
-            {/* Theme controls intentionally NOT here — the portal top bar
-                already carries a persistent <ThemeToggle> (portal/layout.tsx),
-                so a second set in this dropdown was redundant. Staff keep
-                their own top-bar toggle too. */}
-          </>
-        ) : (
-          <DropdownMenuGroup>
-            <DropdownMenuItem onClick={() => router.push('/admin/account')}>
-              <UserIcon className="size-4" aria-hidden />
-              {t('account')}
-            </DropdownMenuItem>
-          </DropdownMenuGroup>
-        )}
-        <DropdownMenuSeparator />
-        <DropdownMenuGroup>
-          <DropdownMenuItem onClick={handleSignOut}>
-            <LogOutIcon className="size-4" aria-hidden />
-            {t('signOut')}
-          </DropdownMenuItem>
-        </DropdownMenuGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <DropdownMenu
+      label={t('label')}
+      trigger={
+        <button
+          type="button"
+          aria-label={t('label')}
+          className={cn(
+            'inline-flex h-10 items-center gap-2 rounded-full py-0 pr-2.5 pl-1 text-[13px] font-medium text-[var(--aura-fg-primary)] hover:bg-[var(--aura-bg-surface-hover)] pointer-coarse:h-11',
+            AURA_FOCUS_RING,
+          )}
+        >
+          <Avatar name={name} size="sm" />
+          <span className="hidden max-w-40 truncate lg:inline">{name}</span>
+          <ChevronDownIcon className="size-4 max-sm:hidden" aria-hidden />
+        </button>
+      }
+      items={[
+        ...identity,
+        ...links,
+        ...themeChoices,
+        { separator: true },
+        { label: t('signOut'), icon: <LogOutIcon aria-hidden />, onSelect: () => void handleSignOut() },
+      ]}
+    />
   );
 }
