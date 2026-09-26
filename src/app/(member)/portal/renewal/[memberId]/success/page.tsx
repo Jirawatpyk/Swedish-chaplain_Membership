@@ -33,6 +33,7 @@ import {
   PortalInvoiceDownloadButton,
   PortalReceiptDownloadButton,
 } from '@/app/(member)/portal/invoices/_components/portal-pdf-download-button';
+import { resolveMainPdfKind } from '@/app/(member)/portal/invoices/_utils/invoice-row-view-model';
 import { formatDatePreset } from '@/lib/format-date-localised';
 
 export default async function RenewalSuccessPage({
@@ -275,15 +276,19 @@ export default async function RenewalSuccessPage({
             // fall back to it before the UUID so the invoice download filename
             // reads `SC-2026-…` (never the raw UUID) in the new flow.
             const docNum = billFirstDocumentNumber(invoice) ?? invoiceId;
+            // An 088 bill is a ใบแจ้งหนี้, not a tax invoice — the §86/4 tax
+            // invoice/receipt is the RC issued at payment (see resolveMainPdfKind).
+            const isBill = resolveMainPdfKind(invoice) === 'bill';
             return (
               <>
                 <PortalInvoiceDownloadButton
                   invoiceId={invoiceId}
                   documentNumber={docNum}
-                  label={t('downloadInvoice')}
-                  ariaLabel={tInvoiceActions('downloadInvoiceAria', {
-                    number: docNum,
-                  })}
+                  label={t(isBill ? 'downloadBill' : 'downloadInvoice')}
+                  ariaLabel={tInvoiceActions(
+                    isBill ? 'downloadBillAria' : 'downloadInvoiceAria',
+                    { number: docNum },
+                  )}
                   data-testid="invoice-download-link"
                   className={sharedClassName}
                 />
@@ -308,14 +313,16 @@ export default async function RenewalSuccessPage({
             // 088 T069 — bill number lives in `billDocumentNumberRaw` (the
             // ใบแจ้งหนี้ has NULL `documentNumber` in the new flow).
             const docNum = billFirstDocumentNumber(invoice) ?? invoiceId;
+            const isBill = resolveMainPdfKind(invoice) === 'bill';
             return (
               <PortalInvoiceDownloadButton
                 invoiceId={invoiceId}
                 documentNumber={docNum}
-                label={t('downloadInvoice')}
-                ariaLabel={tInvoiceActions('downloadInvoiceAria', {
-                  number: docNum,
-                })}
+                label={t(isBill ? 'downloadBill' : 'downloadInvoice')}
+                ariaLabel={tInvoiceActions(
+                  isBill ? 'downloadBillAria' : 'downloadInvoiceAria',
+                  { number: docNum },
+                )}
                 data-testid="invoice-download-link"
                 className={sharedClassName}
               />

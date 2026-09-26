@@ -6,6 +6,7 @@ import {
   truncateForMobile,
 } from '@/components/layout/breadcrumb-path';
 import enMessages from '@/i18n/messages/en.json';
+import { formatCalendarYear } from '@/lib/format-date-localised';
 
 describe('parseBreadcrumbPath', () => {
   const staticLabels = {
@@ -68,6 +69,19 @@ describe('parseBreadcrumbPath', () => {
       'Corporate Gold',
     ]);
     expect(result.at(-1)?.isCurrent).toBe(true);
+  });
+
+  it('renders the plan-year crumb through formatYear (TH BE) while its href stays CE', () => {
+    const result = parseBreadcrumbPath({
+      pathname: '/admin/plans/2026/abc123/edit',
+      staticLabels,
+      // A stale CE label registered by the detail page must not win.
+      dynamicLabels: new Map([['2026', '2026']]),
+      formatYear: (year) => formatCalendarYear(year, 'th'),
+    });
+    const yearCrumb = result.find((s) => s.segment === '2026');
+    expect(yearCrumb?.label).toBe('2569');
+    expect(yearCrumb?.href).toBe('/admin/plans?year=2026');
   });
 
   it('falls back to raw slug when label missing', () => {

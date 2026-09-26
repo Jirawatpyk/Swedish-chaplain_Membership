@@ -26,6 +26,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2Icon } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { formatSatangThb } from '@/lib/format-thb';
+import { formatCalendarYear } from '@/lib/format-date-localised';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -545,7 +546,7 @@ export function PlanFormWizard({
               </div>
               <div>
                 <dt className="text-muted-foreground">{tLabels('planYear')}</dt>
-                <dd>{draft.plan_year}</dd>
+                <dd>{formatCalendarYear(draft.plan_year, locale)}</dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">{tLabels('planName')}</dt>

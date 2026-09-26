@@ -135,10 +135,15 @@ export interface InvoiceRowViewModel {
    *     event row / legacy issued no-TIN row): the main pdf IS the §105
    *     receipt, so the label/aria flip to the receipt wording
    *     (`actions.downloadReceipt[Aria]`).
+   *   - `'bill'` — `pdfDocKind 'invoice'` WITH a bill number (088 SC-…):
+   *     the main pdf is a non-tax ใบแจ้งหนี้, paid or unpaid — the §86/4
+   *     tax invoice/receipt is a separate RC document issued at payment —
+   *     so it gets the bill wording (`actions.downloadBill[Aria]`), never
+   *     "tax invoice". Same rule as `build-void-render-targets`' `mainIsBill`.
    *   - `'invoice'` — everything else (incl. NULL pdfDocKind legacy rows):
-   *     the plain invoice label.
+   *     the plain invoice label (a legacy INV- document IS a tax invoice).
    */
-  readonly mainPdfKind: 'invoice' | 'combined' | 'receipt';
+  readonly mainPdfKind: MainPdfKind;
   /** Show the invoice-PDF download (PDF exists and it is not combined-paid). */
   readonly showInvoice: boolean;
   /**
@@ -223,6 +228,23 @@ export const rowHasAnyAction = (vm: InvoiceRowViewModel): boolean =>
   vm.receiptFailed ||
   vm.resendable;
 
+export type MainPdfKind = 'invoice' | 'bill' | 'combined' | 'receipt';
+
+/**
+ * What the MAIN pdf blob is — see {@link InvoiceRowViewModel.mainPdfKind}.
+ * Shared by the view-model and the detail page so the two can never drift.
+ */
+export function resolveMainPdfKind(
+  row: Pick<Invoice, 'pdfDocKind' | 'billDocumentNumberRaw'>,
+): MainPdfKind {
+  if (row.pdfDocKind === 'receipt_combined') return 'combined';
+  if (row.pdfDocKind === 'receipt_separate') return 'receipt';
+  if (row.pdfDocKind === 'invoice' && row.billDocumentNumberRaw !== null) {
+    return 'bill';
+  }
+  return 'invoice';
+}
+
 /**
  * Wave-4 S17 — i18n key pair (in the `portal.invoices` list namespace) for
  * the MAIN pdf download button, keyed by what the main pdf actually IS.
@@ -231,7 +253,8 @@ export const rowHasAnyAction = (vm: InvoiceRowViewModel): boolean =>
  *
  *   'combined' → dual-role ใบกำกับภาษี/ใบเสร็จรับเงิน wording (as-paid TIN);
  *   'receipt'  → §105 receipt wording (β as-paid no-TIN / legacy rows);
- *   'invoice'  → the plain invoice label.
+ *   'bill'     → 088 SC- bill wording (TH ใบแจ้งหนี้ — not a tax invoice);
+ *   'invoice'  → the plain invoice label (legacy INV- tax invoice).
  *
  * The VOID overlay stays per-surface on purpose: the list surfaces use
  * `actions.downloadVoided[Aria]` while the detail page deliberately uses its
@@ -242,10 +265,12 @@ export function downloadLabelKeys(mainPdfKind: InvoiceRowViewModel['mainPdfKind'
   readonly labelKey:
     | 'actions.downloadCombined'
     | 'actions.downloadReceipt'
+    | 'actions.downloadBill'
     | 'actions.download';
   readonly ariaKey:
     | 'actions.downloadCombinedAria'
     | 'actions.downloadReceiptAria'
+    | 'actions.downloadBillAria'
     | 'actions.downloadInvoiceAria';
 } {
   switch (mainPdfKind) {
@@ -253,6 +278,8 @@ export function downloadLabelKeys(mainPdfKind: InvoiceRowViewModel['mainPdfKind'
       return { labelKey: 'actions.downloadCombined', ariaKey: 'actions.downloadCombinedAria' };
     case 'receipt':
       return { labelKey: 'actions.downloadReceipt', ariaKey: 'actions.downloadReceiptAria' };
+    case 'bill':
+      return { labelKey: 'actions.downloadBill', ariaKey: 'actions.downloadBillAria' };
     case 'invoice':
       return { labelKey: 'actions.download', ariaKey: 'actions.downloadInvoiceAria' };
   }
@@ -296,12 +323,7 @@ export function toInvoiceRowViewModel(
   // Pre-064-fix the combined rows matched `isCombinedPaid` (hiding the main
   // download) while `showReceipt` pointed at the NULL receipt blob (502
   // blob_missing) — the member's only affordance was a broken button.
-  const mainPdfKind: 'invoice' | 'combined' | 'receipt' =
-    row.pdfDocKind === 'receipt_combined'
-      ? 'combined'
-      : row.pdfDocKind === 'receipt_separate'
-        ? 'receipt'
-        : 'invoice';
+  const mainPdfKind = resolveMainPdfKind(row);
 
   // Combined-mode paid (bill-first): receipt reuses the invoice number (no
   // separate receipt number) AND the receipt PDF has finished rendering.

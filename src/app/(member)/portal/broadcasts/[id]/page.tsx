@@ -44,6 +44,7 @@ import { getLocale, getTranslations } from 'next-intl/server';
 import { ArrowLeft } from 'lucide-react';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
+import { keepTermTogether } from '@/components/broadcast/keep-term-together';
 import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
@@ -291,7 +292,7 @@ export default async function BroadcastDetailPage(props: {
 
   return (
     <DetailContainer>
-      <PageHeader title={t('title')} subtitle={t('subtitle')} />
+      <PageHeader title={keepTermTogether(t('title'))} subtitle={t('subtitle')} />
 
       <Link
         href={backToList ? `${BENEFITS_PATH}?tab=broadcasts` : '/portal'}

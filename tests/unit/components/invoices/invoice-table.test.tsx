@@ -98,6 +98,8 @@ const messages = {
           downloadReceipt: 'Receipt',
           downloadInvoiceAria: 'Download invoice {number}',
           downloadReceiptAria: 'Download receipt {number}',
+          downloadBill: 'Bill label',
+          downloadBillAria: 'Download bill {number}',
           receiptPreparing: 'Receipt preparing…',
           receiptGenerating: 'Receipt generating…',
           receiptRenderFailed: 'Receipt render failed',
@@ -603,6 +605,15 @@ describe('<InvoicesTable> β as-paid main download (064 remediation S7)', () => 
     // (receiptPdfStatus is 'rendered').
     expect(screen.queryByTestId('row-download-receipt')).toBeNull();
     expect(screen.queryByTestId('row-receipt-pending')).toBeNull();
+  });
+
+  it('088 SC- bill rows wear the bill label + aria, never the tax-invoice one', () => {
+    renderTable([
+      baseRow({ documentNumber: 'SC-2026-000045', mainDownloadIsBill: true }),
+    ]);
+    const btn = screen.getByTestId('row-download-invoice');
+    expect(btn).toHaveTextContent('Bill label');
+    expect(btn).toHaveAttribute('aria-label', 'Download bill SC-2026-000045');
   });
 
   it('default rows keep the plain Invoice label + invoice aria (byte-identical pre-064 behaviour)', () => {

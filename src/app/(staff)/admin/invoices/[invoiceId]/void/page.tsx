@@ -1,7 +1,8 @@
 /**
  * T102 — /admin/invoices/[invoiceId]/void (F4 / US5 Phase 9).
  *
- * Admin-only confirm surface for voiding an issued-unpaid invoice.
+ * Admin-only confirm surface for voiding an issued-unpaid invoice (a paid
+ * one is refused server-side: `paid_*` 409s).
  * Refuses if the invoice is in any other status — the server-side
  * use-case guards the same transition; this page fails fast so admins
  * never see a form that would always 409.
@@ -13,12 +14,14 @@ import { headers } from 'next/headers';
 import { getTranslations } from 'next-intl/server';
 import { ArrowLeftIcon } from 'lucide-react';
 import { requirePagePermission } from '@/lib/rbac';
+import { env } from '@/lib/env';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { getInvoice, makeGetInvoiceDeps, issuedInvoiceIdentity } from '@/modules/invoicing';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card, CardContent } from '@/components/ui/card';
 import { VoidConfirmDialog } from './_components/void-confirm-dialog';
+import { voidedBillNumber } from '../../_lib/void-bill-number';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.invoices.void');
@@ -57,6 +60,12 @@ export default async function VoidInvoicePage({
   // `documentNumber`.
   const confirmNumber = issuedInvoiceIdentity(invoice);
   if (!confirmNumber) notFound();
+  // An 088 SC bill never had a §87 tax-document number — say so rather than
+  // claiming one is retired.
+  const billNumber = voidedBillNumber(invoice, env.features.f088TaxAtPayment);
+  const description = billNumber
+    ? t('descriptionBill', { number: billNumber })
+    : t('description');
 
   return (
     <FormContainer>
@@ -69,7 +78,7 @@ export default async function VoidInvoicePage({
         <ArrowLeftIcon className="size-4" aria-hidden="true" />
         {t('backToInvoice')}
       </Link>
-      <PageHeader title={t('title')} subtitle={t('description')} />
+      <PageHeader title={t('title')} subtitle={description} />
       <Card>
         <CardContent>
           <VoidConfirmDialog

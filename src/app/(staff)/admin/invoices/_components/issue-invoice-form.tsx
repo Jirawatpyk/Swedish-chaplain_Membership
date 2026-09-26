@@ -36,6 +36,7 @@ import {
 } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
+import { formatCalendarYear } from '@/lib/format-date-localised';
 import { toast } from 'sonner';
 import { InfoIcon, Loader2Icon, TriangleAlertIcon } from 'lucide-react';
 import {
@@ -315,7 +316,7 @@ export function IssueInvoiceForm({
           <dd className="font-medium">
             {summary.planDisplayName}
             <span className="ml-1 text-xs text-muted-foreground">
-              / {summary.planYear}
+              / {formatCalendarYear(summary.planYear, locale)}
             </span>
           </dd>
         </div>

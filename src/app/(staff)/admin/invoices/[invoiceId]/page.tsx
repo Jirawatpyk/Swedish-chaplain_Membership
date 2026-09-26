@@ -27,7 +27,7 @@ import { canPerform, requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { env } from '@/lib/env';
-import { formatLocalisedDate } from '@/lib/format-date-localised';
+import { formatCalendarYear, formatLocalisedDate } from '@/lib/format-date-localised';
 import { formatTaxDocDate } from '@/lib/format-tax-doc-date';
 import { bangkokLocalDate } from '@/lib/fiscal-year';
 import {
@@ -115,6 +115,7 @@ import { getInvoicePaymentActivity } from './_lib/cached-payment-activity';
 import { describePaymentDetails } from './_lib/payment-details';
 import { isSystemActor } from './_lib/system-actor';
 import { latestSucceededPayment } from './_components/payment-timeline-format';
+import { voidedBillNumber } from '../_lib/void-bill-number';
 
 // F5 UX D2 — the out-of-band-refund reconciliation runbook (repo-relative doc
 // path, same literal the `auto_refund_failed_needs_manual_reconcile` forensic
@@ -491,6 +492,9 @@ export default async function InvoiceDetailPage({
   );
   const headerNumber =
     taxDocKind !== 'none' ? invoice.billDocumentNumberRaw : displayNumber;
+  // A voided unpaid 088 bill never had a §87 tax-document number, so the void
+  // panel says its SC bill number is kept rather than "retired".
+  const voidedBill = voidedBillNumber(invoice, env.features.f088TaxAtPayment);
   const breadcrumbLabel = headerNumber ?? displayNumber ?? t('draftTitle');
 
   // Load payment activity at page level so the Refund action button
@@ -755,13 +759,17 @@ export default async function InvoiceDetailPage({
                 showDownloadReceipt={hasReceiptPdf}
                 // 064 remediation A4 — what the main pdf IS: combined for
                 // as-paid TIN rows, receipt for β/legacy §105 rows whose
-                // main pdf is itself the receipt; plain invoice otherwise.
+                // main pdf is itself the receipt; bill for 088 SC- bills
+                // (ใบแจ้งหนี้, not a tax invoice); plain invoice otherwise.
                 mainDownloadKind={
                   invoice.pdfDocKind === 'receipt_combined'
                     ? 'combined'
                     : invoice.pdfDocKind === 'receipt_separate'
                       ? 'receipt'
-                      : undefined
+                      : invoice.pdfDocKind === 'invoice' &&
+                          invoice.billDocumentNumberRaw !== null
+                        ? 'bill'
+                        : undefined
                 }
                 // combinedModeReceipt is derived inside the menu component
                 // from (showDownloadReceipt && !showDownload).
@@ -830,7 +838,9 @@ export default async function InvoiceDetailPage({
                 <dt className="text-muted-foreground">{t('fields.plan')}</dt>
                 <dd>
                   {planDisplayName}{' '}
-                  <span className="text-muted-foreground">/ {invoice.planYear}</span>
+                  <span className="text-muted-foreground">
+                    / {invoice.planYear !== null ? formatCalendarYear(invoice.planYear, userLocale) : null}
+                  </span>
                 </dd>
               </div>
             )}
@@ -1050,7 +1060,9 @@ export default async function InvoiceDetailPage({
                   until then we surface the intent as a disabled CTA
                   with tooltip so admins know where it's coming. */}
               <p className="mt-3 text-xs text-muted-foreground">
-                {t('voidDetails.creditNoteHint')}
+                {voidedBill
+                  ? t('voidDetails.creditNoteHintBill', { number: voidedBill })
+                  : t('voidDetails.creditNoteHint')}
               </p>
             </section>
           )}
@@ -1250,6 +1262,7 @@ export default async function InvoiceDetailPage({
               }}
               tenantId={tenantCtx.slug}
               isAdmin={isAdmin}
+              autoRefundFailed={autoRefundFailed}
             />
           </Suspense>
         </div>

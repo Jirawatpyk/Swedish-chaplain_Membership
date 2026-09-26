@@ -312,6 +312,8 @@ anchor.
    - A `paid` membership invoice answers
      `paid_membership_requires_credit_note` (409): it is reversed with a
      §86/10 credit note and a real refund, not a void.
+   - A `paid` event invoice answers `paid_invoice_requires_refund` (409): it
+     is reversed with a refund, not a void.
    - A credit note has no void flow at all.
 
    `docs/runbooks/void-on-reissue.md` is the feature-flag runbook for the

@@ -36,6 +36,7 @@ import {
   Loader2Icon,
   RefreshCcwIcon,
   RotateCcwIcon,
+  TriangleAlertIcon,
   XCircleIcon,
   XOctagonIcon,
 } from 'lucide-react';
@@ -74,6 +75,11 @@ type SyntheticEventType =
   // state reached only from `pending`; writes NO `refunds` row, so the
   // timeline must surface it from the payment itself (Gap C).
   | 'auto_refunded'
+  // The same auto-refund, when the `auto_refund_failed_needs_manual_reconcile`
+  // forensic says it FAILED (money not returned) and it is not yet reconciled.
+  // The payment row still reads `auto_refunded`, so the verdict comes from the
+  // page (`findStaleInvoiceAutoRefund`).
+  | 'auto_refund_failed'
   | 'invoice_paid'
   | 'refund_initiated'
   // Async refund still settling at the processor (completedAt === null /
@@ -121,6 +127,9 @@ const EVENT_VISUAL: Record<
   // Auto-refund: benign auto-resolution (money returned) — neutral tone,
   // reverse-arrow icon, visually distinct from the amber pending row.
   auto_refunded: { icon: RotateCcwIcon, cls: 'text-muted-foreground' },
+  // Failed auto-refund: money NOT returned — destructive, matching the
+  // AutoRefundFailedAlert shown above the timeline.
+  auto_refund_failed: { icon: TriangleAlertIcon, cls: 'text-destructive' },
   invoice_paid: {
     icon: CheckCircle2Icon,
     cls: 'text-success',
@@ -164,6 +173,12 @@ export function buildEvents(
   refunds: readonly RefundActivityDto[],
   invoicePaidAtIso: string | null,
   invoicePaymentRecordedByUserId: string | null,
+  /**
+   * True when this invoice's auto-refund failed and is not yet reconciled
+   * (`findStaleInvoiceAutoRefund().failed`). There is at most one auto-refund
+   * per invoice, so it applies to the `auto_refunded` payment.
+   */
+  autoRefundFailed = false,
 ): TimelineEvent[] {
   const events: TimelineEvent[] = [];
 
@@ -191,7 +206,9 @@ export function buildEvents(
       // flips `pending → auto_refunded` and writes NO refunds row, so its
       // terminal event has to come from the payment. Excluded from the
       // succeeded lineage below (`hasSucceeded`), so no invoice_paid row.
-      else if (p.status === 'auto_refunded') terminalType = 'auto_refunded';
+      else if (p.status === 'auto_refunded') {
+        terminalType = autoRefundFailed ? 'auto_refund_failed' : 'auto_refunded';
+      }
       // 'pending' has no completedAt.
       if (terminalType !== null) {
         events.push({
@@ -283,6 +300,7 @@ export async function PaymentTimeline({
   invoice,
   tenantId,
   isAdmin = false,
+  autoRefundFailed = false,
 }: {
   readonly invoice: InvoiceForTimeline;
   readonly tenantId: string;
@@ -291,6 +309,13 @@ export async function PaymentTimeline({
    * state when invoice is `issued`. Defaults to false (manager view).
    */
   readonly isAdmin?: boolean;
+  /**
+   * The failed-auto-refund verdict the page already reads for the
+   * AutoRefundFailedAlert (failed AND not yet reconciled). Once an admin marks
+   * it reconciled the money has been returned, so the row reverts to the
+   * (then-true) "auto-refunded".
+   */
+  readonly autoRefundFailed?: boolean;
 }) {
   const { invoiceId, paidAt: invoicePaidAt, paymentRecordedByUserId: invoicePaymentRecordedByUserId, status: invoiceStatus } = invoice;
   const t = await getTranslations('admin.paymentReconciliation.timeline');
@@ -353,6 +378,7 @@ export async function PaymentTimeline({
     activity.refunds,
     invoicePaidAt,
     invoicePaymentRecordedByUserId,
+    autoRefundFailed,
   );
 
   // Gap B — drive the polite live-region announcer off refund status.

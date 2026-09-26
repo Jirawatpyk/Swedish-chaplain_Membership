@@ -117,7 +117,10 @@ export function formatLocalisedDate(
  * inside the same calendar year, so this never depends on the runtime zone.
  */
 export function formatCalendarYear(year: number, locale: string): string {
-  if (!Number.isFinite(year)) return String(year);
+  // Only a plausible four-digit CE year is converted. A partial value typed
+  // into a year input ("2", "20", "202") echoes back verbatim: `Date.UTC`
+  // maps 0–99 to 1900+, and BE-shifting "202" to "745" would mislead.
+  if (!Number.isInteger(year) || year < 1000 || year > 9999) return String(year);
   const midYear = new Date(Date.UTC(year, 6, 1));
   const parts = getFormatter(locale, { year: 'numeric' }).formatToParts(midYear);
   return parts.find((p) => p.type === 'year')?.value ?? String(year);

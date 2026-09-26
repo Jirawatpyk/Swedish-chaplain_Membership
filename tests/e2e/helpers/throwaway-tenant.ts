@@ -156,7 +156,10 @@ export async function createThrowawayTenant(
         registrationFeeSatang: 0n,
         legalNameTh: 'ทดสอบ',
         legalNameEn: 'Test',
-        taxId: '0000000000000',
+        // Checksum-valid (RD mod-11): the settings form refuses a seller TIN
+        // that fails the check digit, so a placeholder like 0000000000000
+        // would block every save in the invoice-settings specs.
+        taxId: '0994000187203',
         registeredAddressTh: 'Bangkok',
         registeredAddressEn: 'Bangkok',
         invoiceNumberPrefix: 'E2E',

@@ -19,6 +19,12 @@ export type ParseBreadcrumbOptions = {
   pathname: string;
   staticLabels: Readonly<Record<string, string>>;
   dynamicLabels: ReadonlyMap<string, string>;
+  /**
+   * Renders a plan-year segment (`/admin/plans/<year>/…`) for display, e.g.
+   * the Buddhist-Era year on Thai. The segment's `href` stays CE. Omitted →
+   * the year shows as it appears in the URL.
+   */
+  formatYear?: (year: number) => string;
 };
 
 function safeDecode(segment: string): string {
@@ -34,6 +40,7 @@ export function parseBreadcrumbPath({
   pathname,
   staticLabels,
   dynamicLabels,
+  formatYear,
 }: ParseBreadcrumbOptions): BreadcrumbSegment[] {
   // Defensive strip: Next.js's `usePathname()` never includes the query
   // string, but a caller passing `window.location.pathname` directly
@@ -199,7 +206,10 @@ export function parseBreadcrumbPath({
       return {
         href,
         segment: decoded,
-        label: dynamicLabels.get(decoded) ?? staticLabels[decoded] ?? decoded,
+        label:
+          formatYear && isPlansYear(index)
+            ? formatYear(Number(decoded))
+            : (dynamicLabels.get(decoded) ?? staticLabels[decoded] ?? decoded),
         isCurrent: index === lastIndex,
         isLinkable,
       };

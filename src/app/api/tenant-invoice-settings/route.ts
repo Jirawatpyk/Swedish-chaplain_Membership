@@ -46,6 +46,7 @@ import { drizzleTenantSettingsRepo } from '@/modules/invoicing/infrastructure/re
 import { logger } from '@/lib/logger';
 import { rateLimitedJson } from '@/lib/rate-limit-helpers';
 import { env } from '@/lib/env';
+import { isThaiTaxId } from '@/lib/thai-tax-id';
 import { buildLogoBlobPrefix } from '@/lib/logo-blob-key';
 import { makeF4AuditPort } from '@/modules/invoicing';
 
@@ -90,9 +91,12 @@ const bodySchema = z.object({
   legal_name_en: z.string().min(1).max(300).optional(),
   // 064 — tenant short/brand name for the membership line prefix (null clears).
   brand_name: nullableText(100),
+  // Mirrors the use-case schema: the seller TIN must pass the RD mod-11
+  // check digit, not just the 13-digit shape.
   tax_id: z
     .string()
     .regex(/^\d{13}$/, 'tax_id must be 13 digits (Thai RD format)')
+    .refine(isThaiTaxId, 'tax_id check digit is invalid (Thai RD mod-11)')
     .optional(),
   registered_address_th: z.string().min(1).max(1000).optional(),
   registered_address_en: z.string().min(1).max(1000).optional(),
