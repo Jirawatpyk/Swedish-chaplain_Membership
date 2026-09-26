@@ -16,9 +16,12 @@
  *     their zod path; the message shown is LOCALISED, never the raw token.
  *   - Carries the GDPR Art. 13 / PDPA § 23 notice with the privacy-notice link
  *     (FR-010).
- *   - 320 px: single column; sections are Cards with a real `<h2>` heading
- *     (`CardTitle` renders a div — see ui/card.tsx; no radio / checkbox groups
- *     here, so no fieldset is needed).
+ *   - 320 px: single column; sections are AURA cards with a real `<h2>`
+ *     title (no radio / checkbox groups here, so no fieldset is needed).
+ *   - Spec 122 US3: AURA fields; `FormErrorSummary` after a failed submit
+ *     (client or server field errors — it takes focus and links to each
+ *     field, so the form no longer calls `setFocus`); Cancel + Submit in an
+ *     `ActionBar` that reads "Unsaved changes" while the form is dirty.
  */
 import { useId, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -27,14 +30,8 @@ import { Controller, useForm, type Path } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from '@/lib/toast';
-import { Loader2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { InlineAlert } from '@/components/ui/inline-alert';
-import { Label } from '@/components/ui/label';
-import { RequiredMark } from '@/components/ui/required-mark';
-import { Textarea } from '@/components/ui/textarea';
+import { ActionBar, Button, FormErrorSummary, TextField, Textarea } from '@jirawatpyk/aura-react';
+import { AuraAlert, AuraCard } from '@/components/shell/aura-markup';
 import { boundedText, requiredText, type Translator } from '@/lib/zod-i18n';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 import { isReadOnlyRefusal } from '@/lib/http/read-only-refusal';
@@ -234,6 +231,7 @@ export function PortalChangeRequestForm({
   const tReplaced = useTranslations('portal.changeRequests.replaced');
   const tErrors = useTranslations('portal.changeRequests.errors');
   const tv = useTranslations('shared.validation');
+  const tc = useTranslations('common');
   const locale = useLocale();
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
@@ -247,8 +245,10 @@ export function PortalChangeRequestForm({
   const form = useForm<ChangeRequestFormValues>({
     resolver: zodResolver(schema),
     defaultValues: initialValues,
+    // the error summary takes focus after a failed submit, not the field
+    shouldFocusError: false,
   });
-  const { errors } = form.formState;
+  const { errors, submitCount, isDirty } = form.formState;
 
   /**
    * PER RULE (PR-1 review, UX M12): the server refuses what the client schema
@@ -355,7 +355,8 @@ export function PortalChangeRequestForm({
         return;
       }
       if (res.status === 422 && data?.error === 'validation_error' && Array.isArray(data.issues)) {
-        let focused = false;
+        // The error summary lists every mapped field and takes focus.
+        let mapped = false;
         for (const issue of data.issues) {
           const path = Array.isArray(issue.path) ? issue.path.join('.') : '';
           const field = PATH_TO_FIELD[path];
@@ -367,13 +368,10 @@ export function PortalChangeRequestForm({
               maximum: (issue as { maximum?: unknown }).maximum,
             });
             form.setError(field, { type: 'server', message });
-            if (!focused) {
-              form.setFocus(field);
-              focused = true;
-            }
+            mapped = true;
           }
         }
-        if (!focused) toast.error(tErrors('validation'));
+        if (!mapped) toast.error(tErrors('validation'));
         return;
       }
       if (res.status === 429) {
@@ -408,28 +406,16 @@ export function PortalChangeRequestForm({
   };
 
   function field(name: Path<ChangeRequestFormValues>, label: string, opts: { required?: boolean; type?: string; autoComplete?: string } = {}) {
-    const error = errors[name];
-    const errorId = `${name}-error`;
     return (
-      <div>
-        <Label htmlFor={name}>
-          {label} {opts.required ? <RequiredMark /> : null}
-        </Label>
-        <Input
-          id={name}
-          type={opts.type ?? 'text'}
-          autoComplete={opts.autoComplete}
-          aria-required={opts.required ? 'true' : undefined}
-          aria-invalid={Boolean(error)}
-          aria-describedby={error ? errorId : undefined}
-          {...form.register(name)}
-        />
-        {error ? (
-          <p id={errorId} role="alert" className="mt-1 text-caption text-destructive">
-            {error.message}
-          </p>
-        ) : null}
-      </div>
+      <TextField
+        id={name}
+        label={label}
+        type={opts.type ?? 'text'}
+        autoComplete={opts.autoComplete}
+        required={opts.required}
+        error={errors[name]?.message}
+        {...form.register(name)}
+      />
     );
   }
 
@@ -465,90 +451,77 @@ export function PortalChangeRequestForm({
   return (
     <form onSubmit={form.handleSubmit(onSubmit)} method="post" noValidate aria-describedby="cr-required-fields-note" data-testid="change-request-form">
       <div className="space-y-6">
-        <p className="text-sm text-muted-foreground" id="cr-required-fields-note">
+        <p className="text-sm text-[var(--aura-fg-secondary)]" id="cr-required-fields-note">
           {t('requiredNote')}
         </p>
+        <FormErrorSummary errors={errors} focusKey={submitCount} />
         {resubmitOf && resubmitOf.decisionReason ? (
-          <InlineAlert tone="warning" role="status" data-testid="resubmit-reason">
-            <p className="font-medium">{t('resubmitTitle')}</p>
-            <p className="whitespace-pre-wrap break-words text-sm">{resubmitOf.decisionReason}</p>
-          </InlineAlert>
+          <AuraAlert tone="warning" role="status" title={t('resubmitTitle')} data-testid="resubmit-reason">
+            <p className="whitespace-pre-wrap break-words">{resubmitOf.decisionReason}</p>
+          </AuraAlert>
         ) : null}
 
         {pending ? (
-          <InlineAlert tone="warning" role="none" data-testid="pending-hint">
+          <AuraAlert tone="warning" role="none" data-testid="pending-hint">
             {t('pendingHint')}
-          </InlineAlert>
+          </AuraAlert>
         ) : null}
 
-        <Card>
-          <CardHeader>
-            <h2 className="font-heading text-base font-medium leading-snug">{t('contactSection')}</h2>
-          </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-2">
+        <AuraCard title={t('contactSection')} titleId="cr-contact-heading" headingLevel={2}>
+          <div className="grid gap-4 sm:grid-cols-2">
             {field('firstName', t('fields.firstName'), { required: true, autoComplete: 'given-name' })}
             {field('lastName', t('fields.lastName'), { required: true, autoComplete: 'family-name' })}
             {field('phone', t('fields.phone'), { type: 'tel', autoComplete: 'tel' })}
             {field('roleTitle', t('fields.roleTitle'), { autoComplete: 'organization-title' })}
-          </CardContent>
-        </Card>
+          </div>
+        </AuraCard>
 
         {canProposeCompanyFields ? (
           <>
-            <Card>
-              <CardHeader>
-                <h2 className="font-heading text-base font-medium leading-snug">{t('companySection')}</h2>
-              </CardHeader>
-              <CardContent className="grid gap-4">
+            <AuraCard title={t('companySection')} titleId="cr-company-heading" headingLevel={2}>
+              <div className="grid gap-4">
                 {field('companyName', t('fields.companyName'), { required: true, autoComplete: 'organization' })}
                 {field('website', t('fields.website'), { type: 'url', autoComplete: 'url' })}
                 <div>
-                  <Label htmlFor="description">{t('fields.description')}</Label>
                   <Controller
                     control={form.control}
                     name="description"
                     render={({ field: f }) => (
                       <Textarea
                         id="description"
+                        label={t('fields.description')}
                         rows={4}
-                        aria-invalid={Boolean(errors.description)}
-                        aria-describedby={errors.description ? 'description-error description-count' : 'description-count'}
+                        error={errors.description?.message}
+                        aria-describedby="description-count"
                         {...f}
                       />
                     )}
                   />
-                  {errors.description ? (
-                    <p id="description-error" role="alert" className="mt-1 text-caption text-destructive">
-                      {errors.description.message}
-                    </p>
-                  ) : null}
-                  <p id="description-count" className="mt-1 text-caption text-muted-foreground">
+                  <p id="description-count" className="mt-1 text-right text-xs text-[var(--aura-fg-secondary)]">
                     {form.watch('description')?.length ?? 0}/2000
                   </p>
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </AuraCard>
 
-            <Card>
-              <CardHeader>
-                <h2 className="font-heading text-base font-medium leading-snug">{t('registeredAddressSection')}</h2>
-              </CardHeader>
-              <CardContent className="grid gap-4 sm:grid-cols-2">
+            <AuraCard title={t('registeredAddressSection')} titleId="cr-registered-heading" headingLevel={2}>
+              <div className="grid gap-4 sm:grid-cols-2">
                 {field('regLine1', t('fields.line1'), { autoComplete: 'address-line1' })}
                 {field('regLine2', t('fields.line2'), { autoComplete: 'address-line2' })}
                 {field('regSubDistrict', t('fields.subDistrict'))}
                 {field('regCity', t('fields.city'), { autoComplete: 'address-level2' })}
                 {field('regProvince', t('fields.province'), { autoComplete: 'address-level1' })}
                 {field('regPostalCode', t('fields.postalCode'), { autoComplete: 'postal-code' })}
-              </CardContent>
-            </Card>
+              </div>
+            </AuraCard>
 
-            <Card>
-              <CardHeader>
-                <h2 className="font-heading text-base font-medium leading-snug">{t('billingAddressSection')}</h2>
-                <p className="text-caption text-muted-foreground">{t('billingAddressHint')}</p>
-              </CardHeader>
-              <CardContent className="grid gap-4 sm:grid-cols-2">
+            <AuraCard
+              title={t('billingAddressSection')}
+              titleId="cr-billing-heading"
+              description={t('billingAddressHint')}
+              headingLevel={2}
+            >
+              <div className="grid gap-4 sm:grid-cols-2">
                 {field('billLine1', t('fields.line1'), { required: billTouched })}
                 {field('billLine2', t('fields.line2'))}
                 {field('billSubDistrict', t('fields.subDistrict'))}
@@ -556,22 +529,27 @@ export function PortalChangeRequestForm({
                 {field('billProvince', t('fields.province'))}
                 {field('billPostalCode', t('fields.postalCode'), { required: billTouched })}
                 {field('billCountry', t('fields.country'), { autoComplete: 'country', required: billTouched })}
-              </CardContent>
-            </Card>
+              </div>
+            </AuraCard>
           </>
         ) : (
-          <InlineAlert tone="neutral" role="note" data-testid="secondary-note">
+          <AuraAlert tone="info" role="note" data-testid="secondary-note">
             {t('secondaryNote')}
-          </InlineAlert>
+          </AuraAlert>
         )}
 
         {/* FR-010 — GDPR Art. 13 / PDPA § 23 notice */}
-        <p className="text-caption text-muted-foreground" data-testid="review-notice">
+        <p className="text-xs text-[var(--aura-fg-secondary)]" data-testid="review-notice">
           {t('notice')}
           {privacyNoticeHref ? (
             <>
               {' '}
-              <a href={privacyNoticeHref} className="text-primary underline underline-offset-4 hover:no-underline" target="_blank" rel="noreferrer">
+              <a
+                href={privacyNoticeHref}
+                className="text-[var(--aura-fg-accent)] underline underline-offset-4 hover:text-[var(--aura-fg-primary)]"
+                target="_blank"
+                rel="noreferrer"
+              >
                 {t('privacyLink')}
               </a>
             </>
@@ -580,24 +558,22 @@ export function PortalChangeRequestForm({
 
         {/* FR-034 — outcome messages announced through a live region, not a toast */}
         <div id={statusId} role="status" aria-live="polite" className={statusMessage ? 'text-sm' : 'sr-only'} data-testid="submit-status">
-          {statusMessage ? <InlineAlert tone={status.kind === 'rate_limited' || status.kind === 'read_only' ? 'warning' : 'info'} role="none">{statusMessage}</InlineAlert> : null}
+          {statusMessage ? (
+            <AuraAlert tone={status.kind === 'rate_limited' || status.kind === 'read_only' ? 'warning' : 'info'} role="none">
+              {statusMessage}
+            </AuraAlert>
+          ) : null}
         </div>
 
-        <div className="flex items-center justify-end gap-3">
-          <Button type="button" variant="outline" onClick={() => router.push('/portal/profile')}>
+        {/* Cancel before Submit (ux-standards § 11.1), in the ActionBar. */}
+        <ActionBar status={isDirty ? tc('unsavedStatus') : null}>
+          <Button type="button" variant="secondary" onClick={() => router.push('/portal/profile')}>
             {t('cancel')}
           </Button>
-          <Button type="submit" disabled={submitting}>
-            {submitting ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 motion-safe:animate-spin" aria-hidden="true" />
-                {t('submitting')}
-              </>
-            ) : (
-              t('submit')
-            )}
+          <Button type="submit" loading={submitting}>
+            {submitting ? t('submitting') : t('submit')}
           </Button>
-        </div>
+        </ActionBar>
       </div>
     </form>
   );

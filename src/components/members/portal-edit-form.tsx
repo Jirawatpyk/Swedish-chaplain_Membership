@@ -9,13 +9,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from '@/lib/toast';
 import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
 import { isReadOnlyRefusal } from '@/lib/http/read-only-refusal';
-import { Loader2 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { RequiredMark } from '@/components/ui/required-mark';
-import { Textarea } from '@/components/ui/textarea';
+import { ActionBar, Button, FormErrorSummary, TextField, Textarea } from '@jirawatpyk/aura-react';
+import { AuraCard } from '@/components/shell/aura-markup';
 import {
   boundedText,
   requiredText,
@@ -33,6 +28,12 @@ import {
  * member-record fact, and lives on /portal/account beside the display
  * language. The immediate save semantics of the remaining fields are
  * unchanged (flag-OFF path, SC-011).
+ *
+ * Spec 122 US3 (`Portal-edit`): AURA cards and fields; `FormErrorSummary`
+ * after a failed submit (client or server field errors — it takes focus, so
+ * the form no longer calls `setFocus`); Cancel + Save in an `ActionBar` that
+ * reads "Unsaved changes" while the form is dirty, so Save stays in reach
+ * while scrolling on a phone.
  */
 
 function buildEditSchema(tv: Translator) {
@@ -53,6 +54,7 @@ type PortalEditFormProps = {
 
 export function PortalEditForm({ initialValues }: PortalEditFormProps) {
   const t = useTranslations('portal.edit');
+  const tc = useTranslations('common');
   const readOnlyToast = useReadOnlyToast();
   const tv = useTranslations('shared.validation');
   const router = useRouter();
@@ -63,9 +65,12 @@ export function PortalEditForm({ initialValues }: PortalEditFormProps) {
   const form = useForm<EditFormValues>({
     resolver: zodResolver(editSchema),
     defaultValues: initialValues,
+    // the error summary takes focus after a failed submit, not the field
+    shouldFocusError: false,
   });
 
-  const { errors } = form.formState;
+  const { errors, submitCount, isDirty } = form.formState;
+  const descriptionLength = form.watch('description')?.length ?? 0;
 
   const onSubmit = async (values: EditFormValues) => {
     setSubmitting(true);
@@ -125,10 +130,10 @@ export function PortalEditForm({ initialValues }: PortalEditFormProps) {
             if (field) {
               // Use a LOCALISED message, never the server's raw `issue.message`
               // (e.g. "invalid phone: <code>") — rendering the dev token inline
-              // is the same leak XF-02 fixed for refund. The inline highlight +
-              // focus tells the user which field; the message stays localised.
+              // is the same leak XF-02 fixed for refund.
+              // The inline highlight + the error summary (which takes focus and
+              // links to the field) tell the user which field.
               form.setError(field, { type: 'server', message: t('saveError') });
-              form.setFocus(field);
               return;
             }
           }
@@ -158,145 +163,81 @@ export function PortalEditForm({ initialValues }: PortalEditFormProps) {
   };
 
   return (
-    <form onSubmit={form.handleSubmit(onSubmit)} method="post" noValidate>
-      <div className="space-y-6">
-        {/* Contact fields */}
-        <Card>
-          <CardHeader>
-            <CardTitle>{t('contactSection')}</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <Label htmlFor="firstName">
-                {t('fields.firstName')} <RequiredMark />
-              </Label>
-              <Input
-                id="firstName"
-                autoFocus
-                autoComplete="given-name"
-                aria-required="true"
-                aria-invalid={Boolean(errors.firstName)}
-                aria-describedby={errors.firstName ? 'firstName-error' : undefined}
-                {...form.register('firstName')}
-              />
-              {errors.firstName && (
-                <p id="firstName-error" role="alert" className="mt-1 text-caption text-destructive">
-                  {errors.firstName.message}
-                </p>
-              )}
-            </div>
-            <div>
-              <Label htmlFor="lastName">
-                {t('fields.lastName')} <RequiredMark />
-              </Label>
-              <Input
-                id="lastName"
-                autoComplete="family-name"
-                aria-required="true"
-                aria-invalid={Boolean(errors.lastName)}
-                aria-describedby={errors.lastName ? 'lastName-error' : undefined}
-                {...form.register('lastName')}
-              />
-              {errors.lastName && (
-                <p id="lastName-error" role="alert" className="mt-1 text-caption text-destructive">
-                  {errors.lastName.message}
-                </p>
-              )}
-            </div>
-            <div>
-              <Label htmlFor="phone">{t('fields.phone')}</Label>
-              <Input
-                id="phone"
-                type="tel"
-                autoComplete="tel"
-                aria-invalid={Boolean(errors.phone)}
-                aria-describedby={errors.phone ? 'phone-error' : undefined}
-                {...form.register('phone')}
-              />
-              {errors.phone && (
-                <p id="phone-error" role="alert" className="mt-1 text-caption text-destructive">
-                  {errors.phone.message}
-                </p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+    <form onSubmit={form.handleSubmit(onSubmit)} method="post" noValidate className="space-y-6">
+      <FormErrorSummary errors={errors} focusKey={submitCount} />
 
-        {/* Member fields */}
-        <Card>
-          <CardHeader>
-            <CardTitle>{t('companySection')}</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4">
-            <div>
-              <Label htmlFor="website">{t('fields.website')}</Label>
-              <Input
-                id="website"
-                type="url"
-                autoComplete="url"
-                placeholder="https://"
-                aria-invalid={Boolean(errors.website)}
-                aria-describedby={errors.website ? 'website-error' : undefined}
-                {...form.register('website')}
-              />
-              {errors.website && (
-                <p id="website-error" role="alert" className="mt-1 text-caption text-destructive">
-                  {errors.website.message}
-                </p>
-              )}
-            </div>
-            <div>
-              <Label htmlFor="description">{t('fields.description')}</Label>
-              <Textarea
-                id="description"
-                rows={4}
-                aria-invalid={Boolean(errors.description)}
-                aria-describedby={
-                  errors.description
-                    ? 'description-error description-count'
-                    : 'description-count'
-                }
-                {...form.register('description')}
-              />
-              {errors.description && (
-                <p
-                  id="description-error"
-                  role="alert"
-                  className="mt-1 text-caption text-destructive"
-                >
-                  {errors.description.message}
-                </p>
-              )}
-              {/* Associated via aria-describedby so a SR reads the count on
-                * focus — but NOT a live region: a per-keystroke aria-live
-                * would announce "1/2000, 2/2000, …" on every character. */}
-              <p
-                id="description-count"
-                className="mt-1 text-caption text-muted-foreground"
-              >
-                {form.watch('description')?.length ?? 0}/2000
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Actions — H5: justify-end + Cancel before Submit (ux-standards § 11.1). */}
-        <div className="flex items-center justify-end gap-3">
-          <Button type="button" variant="outline" onClick={() => router.push('/portal/profile')}>
-            {t('cancelButton')}
-          </Button>
-          <Button type="submit" disabled={submitting}>
-            {submitting ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 motion-safe:animate-spin" aria-hidden="true" />
-                {t('saving')}
-              </>
-            ) : (
-              t('saveButton')
-            )}
-          </Button>
+      <AuraCard title={t('contactSection')} titleId="portal-edit-contact-heading" headingLevel={2}>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <TextField
+            id="firstName"
+            label={t('fields.firstName')}
+            required
+            autoFocus
+            autoComplete="given-name"
+            error={errors.firstName?.message}
+            {...form.register('firstName')}
+          />
+          <TextField
+            id="lastName"
+            label={t('fields.lastName')}
+            required
+            autoComplete="family-name"
+            error={errors.lastName?.message}
+            {...form.register('lastName')}
+          />
+          <TextField
+            id="phone"
+            type="tel"
+            label={t('fields.phone')}
+            autoComplete="tel"
+            error={errors.phone?.message}
+            {...form.register('phone')}
+          />
         </div>
-      </div>
+      </AuraCard>
+
+      <AuraCard title={t('companySection')} titleId="portal-edit-company-heading" headingLevel={2}>
+        <div className="grid gap-4">
+          <TextField
+            id="website"
+            type="url"
+            label={t('fields.website')}
+            autoComplete="url"
+            placeholder="https://"
+            error={errors.website?.message}
+            {...form.register('website')}
+          />
+          <div>
+            <Textarea
+              id="description"
+              label={t('fields.description')}
+              rows={4}
+              error={errors.description?.message}
+              aria-describedby="description-count"
+              {...form.register('description')}
+            />
+            {/* Associated via aria-describedby so a SR reads the count on
+              * focus — but NOT a live region: a per-keystroke aria-live
+              * would announce "1/2000, 2/2000, …" on every character. */}
+            <p
+              id="description-count"
+              className="mt-1 text-right text-xs text-[var(--aura-fg-secondary)]"
+            >
+              {descriptionLength}/2000
+            </p>
+          </div>
+        </div>
+      </AuraCard>
+
+      {/* Cancel before Save (ux-standards § 11.1), in the ActionBar. */}
+      <ActionBar status={isDirty ? tc('unsavedStatus') : null}>
+        <Button type="button" variant="secondary" onClick={() => router.push('/portal/profile')}>
+          {t('cancelButton')}
+        </Button>
+        <Button type="submit" loading={submitting}>
+          {submitting ? t('saving') : t('saveButton')}
+        </Button>
+      </ActionBar>
     </form>
   );
 }

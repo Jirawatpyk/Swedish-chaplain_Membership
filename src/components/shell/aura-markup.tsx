@@ -150,9 +150,10 @@ export interface AuraAlertProps extends Omit<React.HTMLAttributes<HTMLDivElement
   readonly action?: React.ReactNode | undefined;
   /**
    * AURA's default: `alert` for warning / danger, `status` otherwise. Override
-   * for a standing notice that should not interrupt (e.g. "benefits paused").
+   * for a standing notice that should not interrupt (e.g. "benefits paused"),
+   * `note` for static advice, `none` when a surrounding live region announces it.
    */
-  readonly role?: 'alert' | 'status' | undefined;
+  readonly role?: 'alert' | 'status' | 'note' | 'none' | undefined;
   /** Replaces the tone's icon when a distinct shape carries meaning. */
   readonly icon?: LucideIcon | undefined;
   readonly className?: string | undefined;
