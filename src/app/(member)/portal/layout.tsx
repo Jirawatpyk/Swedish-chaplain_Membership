@@ -72,13 +72,12 @@ export default async function MemberLayout({ children }: { children: ReactNode }
       <div className="flex min-h-screen flex-col">
         {/* 063 UX — the portal top bar shares the admin sidebar's tokens
             (`bg-sidebar` + `text-sidebar-foreground`, cascading to every
-            currentColor child), with the 4px `--sidebar-flag` bottom edge as
-            the flag stripe (decorative — no text sits on it). Since spec 122
-            those tokens are AURA's via the bridge (it was navy); US1 replaces
-            this chrome. `[--ring:var(--sidebar-ring)]` keeps the header's
-            ghost controls on the sidebar ring token, so the focus indicator
-            stays right if the bar goes dark again (WCAG 2.4.7 / 1.4.11). */}
-        <header className="flex h-[var(--top-bar-height)] items-center border-b-4 border-b-[color:var(--sidebar-flag)] bg-sidebar text-sidebar-foreground [--ring:var(--sidebar-ring)] px-[var(--page-padding-x)] gap-2">
+            currentColor child). Since spec 122 those are AURA's via the bridge;
+            the Swedish-flag navy chrome and its yellow stripe were dropped on
+            2026-09-26 in favour of the AURA design (US1 swaps in AppShell).
+            `[--ring:var(--sidebar-ring)]` keeps the header's ghost controls on
+            the sidebar ring token (WCAG 2.4.7 / 1.4.11). */}
+        <header className="flex h-[var(--top-bar-height)] items-center border-b border-border bg-sidebar text-sidebar-foreground [--ring:var(--sidebar-ring)] px-[var(--page-padding-x)] gap-2">
           {/*
            * Mobile-first header layout (WCAG 2.1 1.4.4 reflow fix).
            *

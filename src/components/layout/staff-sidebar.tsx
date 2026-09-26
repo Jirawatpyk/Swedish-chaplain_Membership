@@ -64,13 +64,6 @@ export function StaffSidebar({
       collapsible="icon"
       role="navigation"
       aria-label={t('nav.staff.ariaLabel')}
-      // Flag stripe: a 4px yellow edge. Decorative only — no text ever sits on
-      // it, which keeps flag yellow out of every contrast pairing. Since spec
-      // 122 the rail itself takes AURA's surface through the token bridge (it
-      // was navy); US1 replaces this sidebar with AURA SideNav. Overrides the primitive's
-      // 1px `border-r`; both carry the same variant prefix so tailwind-merge
-      // dedupes width instead of stacking specificity.
-      className="group-data-[side=left]:border-r-4 group-data-[side=left]:border-r-[color:var(--sidebar-flag)]"
     >
       <SidebarHeader className="border-b border-sidebar-border py-3 px-2">
         <div className="flex items-center gap-2">

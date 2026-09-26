@@ -54,7 +54,7 @@
 - **`-foreground` is text on the solid colour** (`bg-success text-success-foreground`), so it maps to `--aura-fg-inverted` (white in light, near-black in dark), never to an alert text colour. Each status colour is a *text* token in AURA (dark in light, light in dark), so the inverted foreground contrasts with it in both themes.
 - **`--warning` is `--aura-alert-warning-fg`** (amber), not `--aura-status-warning-fg`, which is ink and would drop the warning hue.
 - **`.dark` holds no bridged name.** The bridge is declared once on `:root`; `.dark` on `<html>` flips the `--aura-*` values on that same element, so the aliases follow. A bridged name left in `.dark` would pin the old dark value.
-- **Unchanged:** layout, type-scale, table, card, modal and sizing variables, `--sidebar-flag`, `--card-shadow`, and the TSCC gold `--brand-accent` / `-foreground` (decorative; AURA has no gold).
+- **Unchanged:** layout, type-scale, table, card, modal and sizing variables, `--card-shadow`, and the TSCC gold `--brand-accent` / `-foreground` (decorative; AURA has no gold).
 - **Kit fills:** skeletons use `--aura-bg-skeleton`; dark-mode control fills use `--aura-bg-input` (not a tint of `--input`, which is AURA's control border).
 - **Guard:** `tests/unit/styles/token-bridge-contrast.test.ts` resolves the bridge through AURA's values and asserts the AA pairs in light and dark.
 - **Adjustments:** any foreground/background pair that fails axe on an un-migrated page is fixed in this table, never per page.

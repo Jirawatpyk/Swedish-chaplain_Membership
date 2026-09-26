@@ -27,6 +27,11 @@ The migration runs **module by module**, one pull request per phase, in the orde
 - Q: One PR for spec + foundation, or two? → A: **One PR** — spec commits first, then foundation commits.
 - Q: Is the system live? → A: **Not yet** (under improvement), which lowers the regression cost; the quality gates still apply in full.
 
+### Session 2026-09-26 (maintainer, after the US0 review)
+
+- Q: During the dual-library window, what colour are legacy primary buttons, and what is the end state? → A: Legacy kit primary buttons and `text-primary` links take the **brand accent** (#2E6397 in light) through the token bridge until their module migrates. The end state follows the AURA design: primary buttons in **AURA ink** (#18181B with white text in light; white with ink text in dark), and the brand blue for links, focus rings, selection and info.
+- Q: Does the Swedish-flag navy chrome (navy rail and header, yellow stripe) survive on AURA SideNav / AppShell? → A: **No — dropped**; the shell follows the AURA design. The yellow stripe is removed in US0; US1 replaces the staff sidebar and portal header with AppShell / SideNav as designed.
+
 ## User Scenarios & Testing *(mandatory)*
 
 Every story below is one phase and one pull request. A story is done when its screens use only AURA components, match their canvas boards, and pass the per-module definition of done (FR-010).

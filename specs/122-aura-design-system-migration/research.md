@@ -30,7 +30,7 @@ Sources:
 
 - **Decision**: in `:root` and `.dark`, the shadcn variables that `@theme inline` maps to `--color-*` take AURA tokens: `--background`, `--foreground`, `--card*`, `--popover*`, `--primary*`, `--secondary*`, `--muted*`, `--accent*`, `--destructive`, `--success|warning|info` (+ `-foreground`, `-surface`), `--border`, `--input`, `--ring`, `--chart-1..5`, `--sidebar-*` and `--radius`. The mapping lives in `contracts/css-layers.md`.
   - Layout, type, table, card and modal sizing variables stay as they are, so page geometry does not move.
-  - Chamber-only variables (`--brand-accent`, `--nav-indicator`, `--sidebar-flag`) map to the closest AURA brand/signal tokens.
+  - Chamber-only variables: `--nav-indicator` maps to the AURA accent; `--brand-accent` (TSCC gold) stays a literal because AURA has no gold; `--sidebar-flag` is removed with the flag chrome (maintainer decision, 2026-09-26).
 - **Rationale**:
   - Un-migrated pages get AURA's palette and radius on day one, with no per-file edits.
   - Contrast is guaranteed by AURA's own pairs. The generated brand theme exits non-zero on any failed contrast check (R3).

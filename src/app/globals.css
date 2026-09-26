@@ -73,7 +73,6 @@
 
   --color-sidebar-foreground: var(--sidebar-foreground);
 
-  --color-sidebar-flag: var(--sidebar-flag);
 
   --color-sidebar: var(--sidebar);
 
@@ -202,10 +201,6 @@
   --sidebar-ring: var(--aura-focus-ring);
   --nav-indicator: var(--aura-fg-accent);
 
-  /* Exact Swedish flag yellow. Decorative edge stripe ONLY — never a text
-   * background. Hex (not oklch) so the brand value stays literal. */
-  --sidebar-flag: #FECC02;
-
   /* TSCC gold (BrandMark rule, badges on navy). Kept literal, not bridged:
    * AURA has no gold, and its accent is blue. Pair ONLY with dark text or a
    * dark surface (gold-on-white = 2.4:1). */
@@ -278,10 +273,8 @@
 .dark {
   /* The legacy kit colours follow AURA's dark values through the token
    * bridge on :root (spec 122) — no bridged name belongs here. Only the
-   * values AURA has no token for stay. */
-  --sidebar-flag: #FECC02;
-
-  /* Heavier card shadow so elevation stays visible on dark surfaces. */
+   * values AURA has no token for stay.
+   * Heavier card shadow so elevation stays visible on dark surfaces. */
   --card-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.3);
 }
 
