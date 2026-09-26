@@ -247,7 +247,7 @@ The chosen locale is exposed to next-intl via the route's server-component `loca
 
 ## 9. Rate limit + bot protection
 
-Per plan.md § Storage: `GET /unsubscribe/[token]` is rate-limited to **20 hits / 5 min per source IP** to prevent token-brute-force enumeration. Legitimate clicks rarely hit the limit. A limited GET renders its own "Please try again shortly" state, which says nothing about whether the token is valid.
+Per plan.md § Storage: `GET /unsubscribe/[token]` is rate-limited to **20 hits / 5 min per source IP** to prevent token-brute-force enumeration. Legitimate clicks rarely hit the limit. A limited GET renders its own "Please try again shortly" state, which says nothing about whether the token is valid. Only the first limited request per IP per window writes an audit row. IPv6 clients are bucketed per /64.
 
 `POST` (one-click) counts only **failed** verifications against the per-IP limit (bucket `unsubscribe-post-fail:<ip>`, 20 / 5 min): mail providers POST from a few shared IPs, so an up-front limit would drop genuine objections. Past the limit, failures answer `429` and skip their audit row (flood guard). Valid tokens are HMAC-SHA256 under a ≥32-byte secret and are never throttled.
 

@@ -31,7 +31,9 @@
  * RATE LIMIT (per contracts/unsubscribe-public.md § 9):
  *   - `page_get`: 20 hits / 5 min per source IP, checked BEFORE the token
  *     is parsed. Exceeded → `rate_limited` outcome, which reveals nothing
- *     about the token.
+ *     about the token. Only the first rate-limited request per IP per
+ *     window is audited (bucket `unsubscribe-rl-audit:`); the metric
+ *     counts all of them.
  *   - `one_click_post`: mail providers POST from a handful of shared IPs,
  *     so an up-front per-IP limit would drop genuine objections (GDPR
  *     Art. 21(3)). Only FAILED verifications are counted (20 / 5 min per
@@ -39,6 +41,7 @@
  *     audit row is skipped so a forged-token flood cannot fill the audit
  *     log. Valid tokens are HMAC-SHA256 under a ≥32-byte secret — not
  *     enumerable — so they always go through.
+ *   "Per IP" means per IPv4 address, or per IPv6 /64 (`rateLimitIpKey`).
  *   Both fail open on a limiter outage (GDPR Art. 21 overrides signal loss).
  */
 import { getTranslations } from 'next-intl/server';
@@ -61,6 +64,7 @@ import { resolveTenantDisplayName } from '@/lib/broadcasts-route-helpers';
 import { env } from '@/lib/env';
 import { broadcastsMetrics } from '@/lib/metrics';
 import { sha256Hex } from '@/lib/crypto';
+import { rateLimitIpKey } from '@/lib/client-ip';
 
 /**
  * E1 — anti-enumeration rate limit per plan.md § Storage L67:
@@ -147,11 +151,12 @@ async function emitInvalidTokenAudit(
 async function rateLimitRetryAfter(
   key: string,
   requestId: string,
+  max: number = UNSUBSCRIBE_RATE_LIMIT_MAX,
 ): Promise<number | null> {
   try {
     const rl = await broadcastsRateLimiter.checkLimit(
       key,
-      UNSUBSCRIBE_RATE_LIMIT_MAX,
+      max,
       UNSUBSCRIBE_RATE_LIMIT_WINDOW_S,
     );
     return rl.ok ? null : rl.error.retryAfterSeconds;
@@ -180,6 +185,8 @@ export async function processUnsubscribe(
   channel: PublicUnsubscribeChannel = 'page_get',
 ): Promise<{ readonly outcome: UnsubscribeOutcome; readonly locale: Locale }> {
   const startedAt = Date.now();
+  // Bucket key: IPv6 collapses to its /64 (see `rateLimitIpKey`).
+  const ipKey = rateLimitIpKey(sourceIp);
   const recordTtfb = (tenantIdLabel: string | null): void => {
     broadcastsMetrics.unsubscribePageTtfbMs(
       tenantIdLabel,
@@ -213,7 +220,7 @@ export async function processUnsubscribe(
   ): Promise<{ readonly outcome: UnsubscribeOutcome; readonly locale: Locale }> => {
     if (channel === 'one_click_post') {
       const retryAfter = await rateLimitRetryAfter(
-        `unsubscribe-post-fail:${sourceIp}`,
+        `unsubscribe-post-fail:${ipKey}`,
         requestId,
       );
       if (retryAfter !== null) return rateLimited(retryAfter, tokenLang, false);
@@ -244,8 +251,15 @@ export async function processUnsubscribe(
   }
 
   if (channel === 'page_get') {
-    const retryAfter = await rateLimitRetryAfter(`unsubscribe:${sourceIp}`, requestId);
-    if (retryAfter !== null) return rateLimited(retryAfter, undefined, true);
+    const retryAfter = await rateLimitRetryAfter(`unsubscribe:${ipKey}`, requestId);
+    if (retryAfter !== null) {
+      // One audit row per IP per window, not one per request: a client
+      // hammering past the limit must not be able to fill the audit log.
+      // The metric still counts every rate-limited request.
+      const auditSpent =
+        (await rateLimitRetryAfter(`unsubscribe-rl-audit:${ipKey}`, requestId, 1)) !== null;
+      return rateLimited(retryAfter, undefined, !auditSpent);
+    }
   }
 
   const tenantId = peekTokenTenantId(tokenPlain);
