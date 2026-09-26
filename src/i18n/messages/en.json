@@ -2303,7 +2303,7 @@
         "sellerBranch": "A branch requires a 5-digit branch code; a head office must leave it blank.",
         "bankSwift": "SWIFT/BIC must be 8 or 11 characters (letters and digits).",
         "bankAccountNo": "Account number must be digits (dashes or spaces allowed).",
-        "taxIdChecksum": "This tax ID is invalid. Check the 13-digit number and its check digit.",
+        "taxIdChecksum": "This tax ID is invalid. Check the 13-digit number and its check digit (the last digit).",
         "receiptPrefixReserved": "\"RE\" is reserved for §105 event receipts. Use a different receipt number prefix such as RC.",
         "requiredFields": "Fill in the highlighted required fields.",
         "readOnly": "The system is temporarily read-only for maintenance. Try again shortly."
@@ -3041,7 +3041,7 @@
           "voidedBy": "Voided by",
           "reason": "Reason",
           "creditNoteHint": "This invoice is permanently voided. Its sequential tax-document number is retired and will not be reused. The VOID-stamped PDF above is the authoritative record; no further action is required.",
-          "creditNoteHintBill": "This bill is permanently voided. Bill number {number} stays on record, stamped VOID, and is never reused; no §86/4 tax-receipt number is involved. The VOID-stamped PDF above is the authoritative record; no further action is required.",
+          "creditNoteHintBill": "This bill is permanently voided. Bill number {number} stays on record, stamped VOID, and is never reused; no §86/4 tax-receipt number is involved (a bill is not a tax document). The VOID-stamped PDF above is the authoritative record; no further action is required.",
           "replacedBy": "Replaced by <link>{number}</link>",
           "replacedByIssued": "issued {date}"
         },
@@ -3277,9 +3277,9 @@
       "void": {
         "title": "Void invoice",
         "description": "Void this issued-unpaid invoice: the sequential tax-document number is retired and cannot be reused, the PDF is re-stamped VOID, and, if automatic emails are enabled, a cancellation notice is sent to the member.",
-        "descriptionBill": "Void this issued-unpaid bill (ใบแจ้งหนี้): bill number {number} stays on record, stamped VOID, and is never reused; no §86/4 tax-receipt number is involved. If automatic emails are enabled, a cancellation notice is sent to the member.",
+        "descriptionBill": "Void this issued-unpaid bill (ใบแจ้งหนี้): bill number {number} stays on record, stamped VOID, and is never reused; no §86/4 tax-receipt number is involved (a bill is not a tax document). If automatic emails are enabled, a cancellation notice is sent to the member.",
         "voiding": "Voiding invoice",
-        "terminalNotice": "Void is terminal — no pay, credit, or edit afterwards. A paid invoice can't be voided: reverse it with a credit note or a refund instead.",
+        "terminalNotice": "Void is terminal — no pay, credit, or edit afterwards. A paid invoice can't be voided: reverse it with a refund and/or a credit note instead (credit notes apply to tax invoices only).",
         "reasonLabel": "Reason",
         "reasonHelp": "Shown on the voided PDF and in the audit trail. Required, up to 500 characters.",
         "confirmCopy": "Type the invoice number {phrase} to confirm",
@@ -3299,7 +3299,7 @@
           "codeFallback": "Error code: {code}",
           "refundInProgress": "A refund is currently being processed on this invoice's payment. Voiding now could conflict with it — wait until the refund settles, then try again.",
           "paidMembershipRequiresCreditNote": "This paid membership invoice can't be voided. To reverse it, issue a credit note instead.",
-          "paidEventInvoiceRequiresReversal": "This paid event invoice can't be voided: a void would not return the payment and would drop its output VAT from the ภ.พ.30 return. Reverse it with a refund instead (with a credit note if the document is a tax invoice)."
+          "paidEventInvoiceRequiresReversal": "This paid event invoice can't be voided: a void would not return the payment and would drop its output VAT from the ภ.พ.30 return. Reverse it with a refund instead (with a credit note only if the document is a tax invoice; a §105 receipt cannot be credited)."
         }
       }
     },

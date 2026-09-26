@@ -3041,7 +3041,7 @@
           "voidedBy": "Annullerad av",
           "reason": "Orsak",
           "creditNoteHint": "Denna faktura är permanent annullerad. Dess sekventiella skattedokumentnummer är pensionerat och kommer inte att återanvändas. Den VOID-stämplade PDF:en ovan är det officiella dokumentet; inga fler åtgärder krävs.",
-          "creditNoteHintBill": "Denna faktura är permanent annullerad. Fakturanummer {number} finns kvar i registret, stämplas VOID och återanvänds aldrig; inget §86/4-skattekvittonummer berörs. Den VOID-stämplade PDF:en ovan är det officiella dokumentet; inga fler åtgärder krävs.",
+          "creditNoteHintBill": "Denna faktura är permanent annullerad. Fakturanummer {number} finns kvar i registret, stämplas VOID och återanvänds aldrig; inget §86/4-skattekvittonummer berörs (fakturan är inget skattedokument). Den VOID-stämplade PDF:en ovan är det officiella dokumentet; inga fler åtgärder krävs.",
           "replacedBy": "Ersatt av <link>{number}</link>",
           "replacedByIssued": "utfärdad {date}"
         },
@@ -3277,9 +3277,9 @@
       "void": {
         "title": "Annullera faktura",
         "description": "Annullera denna utfärdade obetalda faktura. Det sekventiella skattedokumentnumret pensioneras och kan inte återanvändas; PDF:en stämplas VOID; ett annulleringsmeddelande e-postas till medlemmen om automatisk e-post är aktiverad.",
-        "descriptionBill": "Annullera denna utfärdade obetalda faktura (ใบแจ้งหนี้): fakturanummer {number} finns kvar i registret, stämplas VOID och återanvänds aldrig; inget §86/4-skattekvittonummer berörs. Om automatisk e-post är aktiverad e-postas ett annulleringsmeddelande till medlemmen.",
+        "descriptionBill": "Annullera denna utfärdade obetalda faktura (ใบแจ้งหนี้): fakturanummer {number} finns kvar i registret, stämplas VOID och återanvänds aldrig; inget §86/4-skattekvittonummer berörs (fakturan är inget skattedokument). Om automatisk e-post är aktiverad e-postas ett annulleringsmeddelande till medlemmen.",
         "voiding": "Annullerar faktura",
-        "terminalNotice": "Annullering är slutgiltig — inga fler åtgärder (betala, kreditera, redigera) är tillåtna. En betald faktura kan inte annulleras: återför den i stället med en kreditnota eller en återbetalning.",
+        "terminalNotice": "Annullering är slutgiltig — inga fler åtgärder (betala, kreditera, redigera) är tillåtna. En betald faktura kan inte annulleras: återför den i stället med en återbetalning och/eller en kreditnota (kreditnota endast för skattefakturor).",
         "reasonLabel": "Orsak",
         "reasonHelp": "Visas på den annullerade PDF:en och i granskningsloggen. Obligatorisk, upp till 500 tecken.",
         "confirmCopy": "Skriv fakturanumret {phrase} för att bekräfta",
@@ -3299,7 +3299,7 @@
           "codeFallback": "Felkod: {code}",
           "refundInProgress": "En återbetalning behandlas för denna fakturas betalning. Att makulera nu kan skapa en konflikt – vänta tills återbetalningen är klar och försök igen.",
           "paidMembershipRequiresCreditNote": "Den här betalda medlemsfakturan kan inte makuleras. För att återföra den, utfärda en kreditnota i stället.",
-          "paidEventInvoiceRequiresReversal": "Den här betalda evenemangsfakturan kan inte makuleras: en makulering återbetalar inte betalningen och tar bort dess utgående moms från ภ.พ.30-deklarationen. Återför den i stället med en återbetalning (och en kreditnota om dokumentet är en skattefaktura)."
+          "paidEventInvoiceRequiresReversal": "Den här betalda evenemangsfakturan kan inte makuleras: en makulering betalar inte tillbaka beloppet och tar bort dess utgående moms från ภ.พ.30-deklarationen. Återför den i stället med en återbetalning (med en kreditnota endast om dokumentet är en skattefaktura; ett §105-kvitto kan inte krediteras)."
         }
       }
     },
