@@ -83,7 +83,7 @@ Phases 2–12 each depend on 1 and can land in any order.
 
 ## AURA gaps (the handoff doc)
 
-The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, and items 52–56 (Addendum 4) in **5.6.0**, the current pin. US1 found six more (bridged locally where a bridge is safe):
+The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, and items 52–56 (Addendum 4) in **5.6.0**, the current pin. US1 found seven more (bridged locally where a bridge is safe):
 
 | # | Gap | Local bridge (removed when AURA ships it) |
 |---|---|---|
@@ -93,6 +93,7 @@ The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requ
 | 60 | `Dialog` closes on a scrim click whenever it closes on Escape | Known gap: a stray click can close a confirmation that holds typed input; no local bridge |
 | 61 | `BottomNav` items take no accessible name apart from the visible label | Known gap: phone tabs read the short label (TH "สิทธิ์", SV "Konto") |
 | 62 | `SideNav` rows are 36px on touch screens | `.staff-nav .aura-nav__item { min-height: 44px }` under `pointer: coarse` |
+| 63 | `SideNav` labels are one line, cut with an ellipsis | Known gap: long TH/SV labels ("Godkännande av medlemsändringar") are cut in the nav and drawer; the accessible name stays complete |
 
 How Chamber-OS uses the 5.6.0 items:
 
