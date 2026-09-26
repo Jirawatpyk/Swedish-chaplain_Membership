@@ -3676,7 +3676,7 @@
       },
       "approveDialog": {
         "title": "Godkänna detta utskick?",
-        "description": "Välj att skicka omedelbart eller schemalägga. Mottagarna ser din kammares varumärke som avsändare.",
+        "description": "Välj att skicka omedelbart eller schemalägga. Mottagarna ser din handelskammares varumärke som avsändare.",
         "decision": {
           "sendNow": "Godkänn och skicka nu",
           "schedule": "Godkänn och schemalägg"
@@ -5325,7 +5325,7 @@
         "unmatched": "Behöver granskning"
       },
       "matchTypeTooltip": {
-        "member_contact": "E-postadressen matchar en aktiv medlemskontakt i din kammare.",
+        "member_contact": "E-postadressen matchar en aktiv medlemskontakt i din handelskammare.",
         "member_domain": "E-postdomänen tillhör ett medlemsföretag.",
         "member_fuzzy": "Nära en medlemskontakt men inte exakt matchning — granska gärna.",
         "non_member": "E-post och domän är inte registrerade hos någon medlem.",
@@ -6380,7 +6380,7 @@
           "bodyLabel": "Meddelande",
           "segmentLabel": "Mottagare",
           "customListLabel": "Anpassad e-postlista",
-          "customListHelp": "En e-postadress per rad, upp till 100 poster. Varje adress måste redan finnas i din kammares katalog.",
+          "customListHelp": "En e-postadress per rad, upp till 100 poster. Varje adress måste redan finnas i din handelskammares katalog.",
           "schedulePicker": "Schemalägg utskick",
           "scheduleHelp": "Lämna tomt för omedelbar granskning.",
           "previewLabel": "Förhandsgranskning",
@@ -6442,7 +6442,7 @@
           "tier": "Mottagare: primärkontakten hos varje aktiv medlem på valda nivåer (högst {ceiling, number}).",
           "allMembersAllContacts": "Mottagare: varje kontakt hos varje aktiv medlem – primär och sekundär – som inte har avregistrerat sig (högst {ceiling, number} per utskick).",
           "tierAllContacts": "Mottagare: varje kontakt hos varje aktiv medlem på valda nivåer som inte har avregistrerat sig (högst {ceiling, number}).",
-          "custom": "Mottagare: en e-post per rad nedan. Max 100 rader. Varje måste matcha en medlem eller kontakt i din kammare.",
+          "custom": "Mottagare: en e-post per rad nedan. Max 100 rader. Varje adress måste matcha en medlem eller kontakt i din handelskammare.",
           "attendees": "Mottagare: alla som deltagit i ett kammarevenemang under de senaste 90 dagarna (högst {ceiling, number}).",
           "customCount": "{count} e-post angiven."
         },
@@ -6461,7 +6461,7 @@
           "broadcast_subject_empty": "Ämne krävs.",
           "broadcast_body_too_large": "Meddelandet överskrider gränsen på 200 KB.",
           "broadcast_body_unsafe_html": "Meddelandet innehåller formatering som inte stöds — förenkla det.",
-          "broadcast_body_image_source_unsafe": "Ditt meddelande innehåller bildkällor som inte är tillåtna i din kammares register. Se listan under redigeraren för att åtgärda eller ta bort dem.",
+          "broadcast_body_image_source_unsafe": "Ditt meddelande innehåller bildkällor som inte finns på din handelskammares tillåtna lista. Se listan under redigeraren för att åtgärda eller ta bort dem.",
           "broadcast_empty_segment_blocked": "Inga matchande mottagare hittades.",
           "broadcast_audience_too_large": "Mottagarlistan överstiger gränsen på {ceiling, number}.",
           "broadcast_custom_recipient_unknown": "Vissa anpassade mottagare finns inte i din katalog.",
@@ -7978,7 +7978,7 @@
       "title": "Förmåner",
       "subtitleMember": "Dina medlemsförmåner för i år",
       "empty": "Vi hittade ingen medlemsprofil för ditt konto ännu.",
-      "emptyFromBroadcasts": "Du kom hit via en länk för utskick – för att skriva ett utskick behöver kontot vara kopplat till en medlemsprofil. Be din kammare koppla ditt konto.",
+      "emptyFromBroadcasts": "Du kom hit via en länk för utskick – för att skriva ett utskick behöver kontot vara kopplat till en medlemsprofil. Be din handelskammare koppla ditt konto.",
       "emptyTitle": "Ingen medlemsprofil ännu"
     },
     "card": {
