@@ -3041,6 +3041,7 @@
           "voidedBy": "Voided by",
           "reason": "Reason",
           "creditNoteHint": "This invoice is permanently voided. Its sequential tax-document number is retired and will not be reused. The VOID-stamped PDF above is the authoritative record; no further action is required.",
+          "creditNoteHintBill": "This bill is permanently voided. Bill number {number} stays on record, stamped VOID, and will not be reused; no §86/4 tax-receipt number was involved. The VOID-stamped PDF above is the authoritative record; no further action is required.",
           "replacedBy": "Replaced by <link>{number}</link>",
           "replacedByIssued": "issued {date}"
         },
@@ -3275,8 +3276,9 @@
       "void": {
         "title": "Void invoice",
         "description": "Void this issued-unpaid invoice: the sequential tax-document number is retired and cannot be reused, the PDF is re-stamped VOID, and, if automatic emails are enabled, a cancellation notice is sent to the member.",
+        "descriptionBill": "Void this unpaid bill: bill number {number} stays on record, stamped VOID, and is never reused; no §86/4 tax-receipt number is involved. If automatic emails are enabled, a cancellation notice is sent to the member.",
         "voiding": "Voiding invoice",
-        "terminalNotice": "Void is terminal — no pay, credit, or edit afterwards. To reverse a PAID invoice, use the credit-note workflow instead.",
+        "terminalNotice": "Void is terminal — no payment, credit, or edit afterwards. A paid invoice can't be voided; reverse it with a refund or a credit note instead.",
         "reasonLabel": "Reason",
         "reasonHelp": "Shown on the voided PDF and in the audit trail. Required, up to 500 characters.",
         "confirmCopy": "Type the invoice number {phrase} to confirm",

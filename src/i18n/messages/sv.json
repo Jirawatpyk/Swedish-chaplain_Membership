@@ -3041,6 +3041,7 @@
           "voidedBy": "Annullerad av",
           "reason": "Orsak",
           "creditNoteHint": "Denna faktura är permanent annullerad. Dess sekventiella skattedokumentnummer är pensionerat och kommer inte att återanvändas. Den VOID-stämplade PDF:en ovan är det officiella dokumentet; inga fler åtgärder krävs.",
+          "creditNoteHintBill": "Denna räkning är permanent annullerad. Räkningsnummer {number} finns kvar i registret, stämplat VOID, och kommer inte att återanvändas; inget §86/4-skattekvittonummer berördes. Den VOID-stämplade PDF:en ovan är det officiella dokumentet; inga fler åtgärder krävs.",
           "replacedBy": "Ersatt av <link>{number}</link>",
           "replacedByIssued": "utfärdad {date}"
         },
@@ -3275,8 +3276,9 @@
       "void": {
         "title": "Annullera faktura",
         "description": "Annullera denna utfärdade obetalda faktura. Det sekventiella skattedokumentnumret pensioneras och kan inte återanvändas; PDF:en stämplas VOID; ett annulleringsmeddelande e-postas till medlemmen om automatisk e-post är aktiverad.",
+        "descriptionBill": "Annullera denna obetalda räkning: räkningsnummer {number} finns kvar i registret, stämplas VOID och återanvänds aldrig; inget §86/4-skattekvittonummer berörs. Ett annulleringsmeddelande e-postas till medlemmen om automatisk e-post är aktiverad.",
         "voiding": "Annullerar faktura",
-        "terminalNotice": "Annullering är slutgiltig — inga fler åtgärder (betala, kreditera, redigera) är tillåtna. För att återföra en BETALD faktura, använd kreditnota-flödet i stället.",
+        "terminalNotice": "Annullering är slutgiltig — inga fler åtgärder (betala, kreditera, redigera) är tillåtna. En betald faktura kan inte annulleras; återför den i stället med en återbetalning eller en kreditnota.",
         "reasonLabel": "Orsak",
         "reasonHelp": "Visas på den annullerade PDF:en och i granskningsloggen. Obligatorisk, upp till 500 tecken.",
         "confirmCopy": "Skriv fakturanumret {phrase} för att bekräfta",

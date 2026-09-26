@@ -115,6 +115,7 @@ import { getInvoicePaymentActivity } from './_lib/cached-payment-activity';
 import { describePaymentDetails } from './_lib/payment-details';
 import { isSystemActor } from './_lib/system-actor';
 import { latestSucceededPayment } from './_components/payment-timeline-format';
+import { voidedBillNumber } from '../_lib/void-bill-number';
 
 // F5 UX D2 — the out-of-band-refund reconciliation runbook (repo-relative doc
 // path, same literal the `auto_refund_failed_needs_manual_reconcile` forensic
@@ -491,6 +492,9 @@ export default async function InvoiceDetailPage({
   );
   const headerNumber =
     taxDocKind !== 'none' ? invoice.billDocumentNumberRaw : displayNumber;
+  // A voided unpaid 088 bill never had a §87 tax-document number, so the void
+  // panel says its SC bill number is kept rather than "retired".
+  const voidedBill = voidedBillNumber(invoice, env.features.f088TaxAtPayment);
   const breadcrumbLabel = headerNumber ?? displayNumber ?? t('draftTitle');
 
   // Load payment activity at page level so the Refund action button
@@ -1050,7 +1054,9 @@ export default async function InvoiceDetailPage({
                   until then we surface the intent as a disabled CTA
                   with tooltip so admins know where it's coming. */}
               <p className="mt-3 text-xs text-muted-foreground">
-                {t('voidDetails.creditNoteHint')}
+                {voidedBill
+                  ? t('voidDetails.creditNoteHintBill', { number: voidedBill })
+                  : t('voidDetails.creditNoteHint')}
               </p>
             </section>
           )}
