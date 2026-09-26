@@ -10,6 +10,9 @@
  * field being typed in (WCAG 3.2.2). A snapshot only changes on submit; like
  * GOV.UK's summary it stays until the next one, and the per-field messages
  * stay live on the fields.
+ *
+ * AURA-handoff #65: goes once FormErrorSummary focuses only on `focusKey`
+ * changes (docs/aura-adoption.md § AURA gaps).
  */
 import { useCallback, useState } from 'react';
 import type { FieldErrors, FieldValues, Path } from 'react-hook-form';

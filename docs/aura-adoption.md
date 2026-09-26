@@ -83,7 +83,13 @@ Phases 2–12 each depend on 1 and can land in any order.
 
 ## AURA gaps (the handoff doc)
 
-The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, items 52–56 (Addendum 4) in 5.6.0, items 57–62 (Addendum 5, found in US1) in 5.7.0, item 63 in 5.7.1 and item 64 (Addendum 6) in **5.7.2**, the current pin. None is open.
+The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, items 52–56 (Addendum 4) in 5.6.0, items 57–62 (Addendum 5, found in US1) in 5.7.0, item 63 in 5.7.1 and item 64 (Addendum 6) in **5.7.2**, the current pin.
+
+Open:
+
+| # | Gap | Local bridge |
+|---|---|---|
+| 65 | `FormErrorSummary` takes focus whenever its list goes from empty to non-empty, so fed live react-hook-form errors it pulls focus out of the field being typed in (WCAG 3.2.2). Proposed: with `focusKey`, focus only when the key changes (Addendum 7, found in US2) | `useSubmittedErrors` (`src/components/auth/use-submitted-errors.ts`): the auth forms hand the summary a snapshot taken at submit, plus server field errors |
 
 How Chamber-OS uses the Addendum 5 and 6 items (US1 dropped its bridge for each):
 
