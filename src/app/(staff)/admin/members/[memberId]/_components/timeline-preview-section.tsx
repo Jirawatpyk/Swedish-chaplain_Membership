@@ -29,13 +29,8 @@ import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import { headers } from 'next/headers';
 import { ClockIcon } from 'lucide-react';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-} from '@/components/ui/card';
-import { buttonVariants } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
+import { AuraCard, auraButtonClass } from '@/components/shell/aura-markup';
+import { SkeletonBlock as Skeleton } from '@/components/shell/page-skeletons';
 import { logger } from '@/lib/logger';
 import { canPerform } from '@/lib/rbac';
 import { errKind, rootCause } from '@/lib/log-id';
@@ -118,54 +113,38 @@ export async function TimelinePreviewSection({
     );
   }
 
+  // Spec 122 US3: an AURA card — its h2 title (056 fix #1: reachable via SR
+  // heading navigation under the page h1) and the "view all" link as its action.
   return (
-    <section aria-labelledby="member-timeline-preview-heading">
-      <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
-        {/* 056 fix #1 — real <h2> so the timeline section is reachable via
-            SR heading navigation under the page <h1>. */}
-        <h2
-          id="member-timeline-preview-heading"
-          className="font-heading text-base font-medium leading-snug"
-        >
-          {t('sections.audit')}
-        </h2>
-        <Link
-          href={`/admin/members/${memberId}/timeline`}
-          className={buttonVariants({ variant: 'outline' })}
-        >
-          <ClockIcon className="size-4" />
+    <AuraCard
+      title={t('sections.audit')}
+      titleId="member-timeline-preview-heading"
+      headingLevel={2}
+      actions={
+        <Link href={`/admin/members/${memberId}/timeline`} className={auraButtonClass({ variant: 'secondary' })}>
+          <ClockIcon className="aura-icon size-4" aria-hidden="true" />
           {t('timelinePreview.viewAll')}
         </Link>
-      </CardHeader>
-      <CardContent>
-        {loadFailed ? (
-          <div className="py-6 text-center">
-            <p className="text-sm text-muted-foreground">
-              {t('timelinePreview.loadFailed')}
-            </p>
-          </div>
-        ) : events.length === 0 ? (
-          <div className="py-6 text-center">
-            <p className="text-sm text-muted-foreground">
-              {t('timelinePreview.empty')}
-            </p>
-          </div>
-        ) : (
-          <ul
-            className="flex flex-col gap-1"
-            aria-label={tTimeline('subtitle')}
-          >
-            {events.map((ev) => (
-              <li key={ev.id}>
-                <TimelineEventItem {...ev} />
-              </li>
-            ))}
-          </ul>
-        )}
-      </CardContent>
-      </Card>
-    </section>
+      }
+    >
+      {loadFailed ? (
+        <div className="py-6 text-center">
+          <p className="text-sm text-[var(--aura-fg-secondary)]">{t('timelinePreview.loadFailed')}</p>
+        </div>
+      ) : events.length === 0 ? (
+        <div className="py-6 text-center">
+          <p className="text-sm text-[var(--aura-fg-secondary)]">{t('timelinePreview.empty')}</p>
+        </div>
+      ) : (
+        <ul className="flex flex-col gap-1" aria-label={tTimeline('subtitle')}>
+          {events.map((ev) => (
+            <li key={ev.id}>
+              <TimelineEventItem {...ev} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </AuraCard>
   );
 }
 
@@ -173,27 +152,26 @@ export async function TimelinePreviewSection({
  * Skeleton matching the 3-row timeline shape — used as the Suspense
  * fallback at the call site for CLS-stable layout.
  *
- * H4: replaced raw `animate-pulse` divs with the canonical <Skeleton>
- * component which has shimmer + reduced-motion support built in via
- * `skeleton-shimmer` CSS class (defined in globals.css).
+ * AURA card markup + the shell's SkeletonBlock (spec 122 US3; reduced-motion
+ * handled by the shared skeleton class).
  */
 export function TimelinePreviewSkeleton() {
   return (
-    <Card aria-busy="true" aria-hidden="true">
-      <CardHeader className="flex flex-row items-center justify-between">
+    <div className="aura-card" aria-busy="true" aria-hidden="true">
+      <div className="aura-card__head">
         <Skeleton className="h-5 w-32" />
-        <Skeleton className="h-9 w-28" />
-      </CardHeader>
-      <CardContent>
+        <Skeleton className="h-11 w-28" />
+      </div>
+      <div className="aura-card__body">
         <ul className="flex flex-col gap-3">
           {Array.from({ length: PREVIEW_LIMIT }).map((_, i) => (
             <li
               key={i}
-              className="relative border-l-2 border-muted pl-6 py-3"
+              className="relative border-l-2 border-[var(--aura-border-default)] pl-6 py-3"
             >
               {/* Matches the real TimelineEventItem marker (24px circle at
                   -left-[13px]) so the skeleton→content swap is CLS-free. */}
-              <span className="absolute -left-[13px] top-4 size-6 rounded-full border bg-background" />
+              <span className="absolute -left-[13px] top-4 size-6 rounded-full border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)]" />
               <div className="flex flex-col gap-1.5">
                 <Skeleton className="h-4 w-2/3" />
                 <Skeleton className="h-3 w-1/3" />
@@ -201,7 +179,7 @@ export function TimelinePreviewSkeleton() {
             </li>
           ))}
         </ul>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

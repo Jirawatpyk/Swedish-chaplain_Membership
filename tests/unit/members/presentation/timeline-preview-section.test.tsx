@@ -133,3 +133,20 @@ describe('<TimelinePreviewSection> — failure path (G19, mirrors portal B2)', (
     expect(errorSpy).not.toHaveBeenCalled();
   });
 });
+
+describe('<TimelinePreviewSection> on AURA (spec 122 US3)', () => {
+  beforeEach(() => {
+    timelineListMock.mockReset();
+  });
+
+  it('is an AURA card with its h2 title and an AURA secondary "view all" link', async () => {
+    timelineListMock.mockResolvedValue({ ok: true, value: { events: [], nextCursor: null } });
+    const el = document.createElement('div');
+    el.innerHTML = await renderSection();
+    const card = el.querySelector('section.aura-card')!;
+    expect(card).toHaveAttribute('aria-labelledby', 'member-timeline-preview-heading');
+    expect(card.querySelector('h2.aura-card__title')?.id).toBe('member-timeline-preview-heading');
+    const link = card.querySelector('a[href="/admin/members/m1/timeline"]')!;
+    expect(link).toHaveClass('aura-btn', 'aura-btn--secondary');
+  });
+});
