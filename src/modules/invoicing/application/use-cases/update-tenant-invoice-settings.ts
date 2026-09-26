@@ -16,6 +16,7 @@
 import { err, ok, type Result } from '@/lib/result';
 import { asSatang } from '@/lib/money';
 import { z } from 'zod';
+import { isThaiTaxId } from '@/lib/thai-tax-id';
 import type {
   TenantSettingsRepo,
   TenantInvoiceSettingsPatch,
@@ -57,9 +58,13 @@ export const updateTenantInvoiceSettingsSchema = z.object({
   // 064 — tenant SHORT / brand name (e.g. "SweCham") for the membership line
   // prefix. Nullable (null/empty clears it → the prefix is omitted).
   brandName: nullableText(100),
+  // The seller TIN printed on every §86/4 tax invoice / §86/10 credit note:
+  // 13 digits AND the Thai RD mod-11 check digit (a one-digit typo passes a
+  // format-only check).
   taxId: z
     .string()
     .regex(/^\d{13}$/, 'taxId must be 13 digits (Thai RD format)')
+    .refine(isThaiTaxId, 'taxId fails the Thai RD check digit')
     .optional(),
   registeredAddressTh: z.string().min(1).max(1000).optional(),
   registeredAddressEn: z.string().min(1).max(1000).optional(),

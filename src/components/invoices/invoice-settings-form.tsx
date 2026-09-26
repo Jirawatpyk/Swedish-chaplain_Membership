@@ -43,6 +43,7 @@ import { Loader2Icon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
+import { isThaiTaxId } from '@/lib/thai-tax-id';
 import { isReadOnlyCode, problemCode } from '@/lib/http/read-only-refusal';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -446,6 +447,14 @@ export function InvoiceSettingsForm({
         failGuard(fieldIdFor(schemaFieldName), t('errors.requiredFields'));
         return;
       }
+    }
+
+    // Seller TIN — printed on every §86/4 tax invoice / §86/10 credit note.
+    // 13 digits AND the Thai RD check digit (mirrors the route zod), so a
+    // one-digit typo is caught here rather than on the server's 400.
+    if (!isThaiTaxId(taxId)) {
+      failGuard(fieldIdFor('tax_id'), t('errors.taxIdChecksum'));
+      return;
     }
 
     // Percent → 4-dp decimal string. Guard against Number.parseFloat

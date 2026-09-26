@@ -280,3 +280,20 @@ describe('InvoiceSettingsForm — code-review follow-up (finding 3): aria-invali
     expect(container.querySelector('#legal_name_en')).not.toHaveAttribute('aria-invalid');
   });
 });
+
+describe('InvoiceSettingsForm — seller tax ID Thai RD checksum blocks submit client-side', () => {
+  it('blocks submit with no fetch call when the 13-digit tax ID has a bad check digit', () => {
+    const fetchSpy = vi.spyOn(global, 'fetch');
+    const { container } = renderSettings({ tax_id: '0994000187204' });
+    const form = container.querySelector('form')!;
+
+    fireEvent.submit(form);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(document.activeElement?.id).toBe('tax_id');
+    expect(container.querySelector('#tax_id')).toHaveAttribute('aria-invalid', 'true');
+    expect(container.querySelector('[role="alert"]')).toHaveTextContent(
+      enMessages.admin.invoiceSettings.errors.taxIdChecksum,
+    );
+  });
+});

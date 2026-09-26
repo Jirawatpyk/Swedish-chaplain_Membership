@@ -30,6 +30,7 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
+import { isThaiTaxId } from '@/lib/thai-tax-id';
 import { requireApiPermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
@@ -90,9 +91,12 @@ const bodySchema = z.object({
   legal_name_en: z.string().min(1).max(300).optional(),
   // 064 — tenant short/brand name for the membership line prefix (null clears).
   brand_name: nullableText(100),
+  // 13 digits AND the Thai RD mod-11 check digit — this is the runtime
+  // boundary (the use-case schema mirrors it but is not parsed at runtime).
   tax_id: z
     .string()
     .regex(/^\d{13}$/, 'tax_id must be 13 digits (Thai RD format)')
+    .refine(isThaiTaxId, 'tax_id fails the Thai RD check digit')
     .optional(),
   registered_address_th: z.string().min(1).max(1000).optional(),
   registered_address_en: z.string().min(1).max(1000).optional(),
