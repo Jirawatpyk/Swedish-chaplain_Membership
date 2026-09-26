@@ -111,4 +111,18 @@ describe('ForgotPasswordForm', () => {
     expect(screen.queryByRole('status')).toBeNull();
     vi.unstubAllGlobals();
   });
+
+  it('is built on AURA: the email field, a success alert for the status, an outline resend button (spec 122 US2)', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200 }));
+    const { container } = renderForm();
+    expect(container.querySelector('#email')).toHaveClass('aura-input__control');
+    fireEvent.change(container.querySelector('#email')!, {
+      target: { value: 'user@example.com' },
+    });
+    fireEvent.submit(container.querySelector('form')!);
+
+    expect(await screen.findByRole('status')).toHaveClass('aura-alert', 'aura-alert--success');
+    expect(screen.getByRole('button', { name: /resend/i })).toHaveClass('aura-btn', 'aura-btn--secondary');
+    vi.unstubAllGlobals();
+  });
 });
