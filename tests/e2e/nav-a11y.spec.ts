@@ -31,10 +31,9 @@ test.describe('nav a11y — US5 @a11y', () => {
     await signInAsAdmin(page);
     await page.goto('/admin');
 
-    // Ensure expanded
-    const wrapper = page.locator('[data-slot="sidebar-wrapper"]');
-    const state = await wrapper.getAttribute('data-state');
-    if (state === 'collapsed') {
+    // Ensure expanded (spec 122 — AURA SideNav marks the rail with data-collapsed)
+    const nav = page.getByRole('navigation', { name: 'Staff navigation' });
+    if ((await nav.getAttribute('data-collapsed')) !== null) {
       await page.getByRole('button', { name: /expand sidebar/i }).click();
       await page.waitForTimeout(300);
     }
@@ -60,9 +59,8 @@ test.describe('nav a11y — US5 @a11y', () => {
     await page.goto('/admin');
 
     // Collapse
-    const wrapper = page.locator('[data-slot="sidebar-wrapper"]');
-    const state = await wrapper.getAttribute('data-state');
-    if (state === 'expanded') {
+    const nav = page.getByRole('navigation', { name: 'Staff navigation' });
+    if ((await nav.getAttribute('data-collapsed')) === null) {
       await page.getByRole('button', { name: /collapse sidebar/i }).click();
       await page.waitForTimeout(300);
     }
@@ -112,9 +110,8 @@ test.describe('nav a11y — US5 @a11y', () => {
 
     await signInAsAdmin(page);
 
-    // The sidebar container should have role and aria-label
-    const sidebarContainer = page.locator('[data-slot="sidebar"] [aria-label]');
-    await expect(sidebarContainer.first()).toBeAttached();
+    // The staff nav is a named navigation landmark (AURA SideNav).
+    await expect(page.getByRole('navigation', { name: 'Staff navigation' })).toBeAttached();
   });
 
   test('skip-link is first Tab stop (WCAG 2.4.1)', async ({ page, browserName, isMobile }) => {
@@ -135,11 +132,10 @@ test.describe('nav a11y — US5 @a11y', () => {
 
   test('keyboard Tab reaches sidebar links', async ({ page, isMobile }) => {
     test.skip(!ADMIN_EMAIL || !ADMIN_PASSWORD, 'Set E2E_ADMIN_*');
-    // The persistent rail is `hidden md:block`; below md the nav lives in a
-    // Sheet that only mounts once opened, so there is no [data-slot="sidebar"]
-    // to Tab into and this asserts an element that cannot exist. Keyboard
-    // access to the mobile nav is a different journey (open the Sheet first).
-    test.skip(isMobile === true, 'Desktop rail only — mobile renders the nav in a Sheet');
+    // The persistent nav shows from 1024px; below that it lives in AURA's
+    // drawer, which only mounts once opened, so there is nothing to Tab into.
+    // Keyboard access to the mobile nav is a different journey (open it first).
+    test.skip(isMobile === true, 'Desktop nav only — mobile renders the nav in a drawer');
 
     await signInAsAdmin(page);
     await page.goto('/admin');
@@ -150,7 +146,7 @@ test.describe('nav a11y — US5 @a11y', () => {
     }
 
     // At least one sidebar link should be focusable
-    const sidebar = page.locator('[data-slot="sidebar"]');
+    const sidebar = page.getByRole('navigation', { name: 'Staff navigation' });
     const links = sidebar.getByRole('link');
     const count = await links.count();
     expect(count).toBeGreaterThan(0);

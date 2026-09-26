@@ -88,6 +88,18 @@ describe('StaffNav (spec 122 US1)', () => {
     expect(document.cookie).toContain('sidebar_state=false');
   });
 
+  it('toggles the rail on Ctrl+B, but not while typing (Bold)', () => {
+    renderNav();
+    fireEvent.keyDown(window, { key: 'b', ctrlKey: true });
+    expect(screen.getByRole('button', { name: 'Expand sidebar' })).toBeInTheDocument();
+    expect(document.cookie).toContain('sidebar_state=false');
+    const field = document.createElement('textarea');
+    document.body.append(field);
+    fireEvent.keyDown(field, { key: 'b', ctrlKey: true });
+    expect(screen.getByRole('button', { name: 'Expand sidebar' })).toBeInTheDocument();
+    field.remove();
+  });
+
   it('never offers the rail toggle inside the phone drawer (AppShell passes collapsible=false)', () => {
     renderNav({ collapsed: false, collapsible: false });
     expect(screen.queryByRole('button', { name: /collapse sidebar|expand sidebar/i })).toBeNull();

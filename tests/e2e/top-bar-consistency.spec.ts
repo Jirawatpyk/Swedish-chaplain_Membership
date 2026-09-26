@@ -1,5 +1,8 @@
 /**
- * T061 — E2E: F4 US4/SC-009 admin + portal top bar identical 56px.
+ * T061 — E2E: F4 US4/SC-009 top bars. Spec 122 US1 moved both to the AURA
+ * boards, which size them differently on purpose: the staff bar is AppShell's
+ * 56px; the portal header is 72px from 1024px and 64px below (portal `Main` /
+ * `Home-mobile`). Both keep a stable height, so neither shifts the page.
  */
 import { expect, test } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
@@ -19,7 +22,7 @@ test.describe('F4 SC-009 — top bar consistency @layout', () => {
     await clearE2ERateLimits();
   });
 
-  test('admin and portal headers compute identical 56px height + padding', async ({ browser }) => {
+  test('the staff bar is 56px and the portal header 72 / 64px, as on the boards', async ({ browser }) => {
     const adminCtx = await browser.newContext();
     const memberCtx = await browser.newContext();
     const adminPage = await adminCtx.newPage();
@@ -56,10 +59,10 @@ test.describe('F4 SC-009 — top bar consistency @layout', () => {
       };
     });
 
+    const wide = (memberPage.viewportSize()?.width ?? 1280) >= 1024;
     expect(adminHeader.height).toBe(56);
-    expect(portalHeader.height).toBe(56);
-    expect(adminHeader.paddingInlineStart).toBe(portalHeader.paddingInlineStart);
-    expect(adminHeader.paddingInlineEnd).toBe(portalHeader.paddingInlineEnd);
+    // +1px: the portal header's bottom hairline sits outside its content row.
+    expect(portalHeader.height).toBe(wide ? 73 : 65);
 
     await adminCtx.close();
     await memberCtx.close();

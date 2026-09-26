@@ -17,6 +17,7 @@
 //
 // Real timers required (global setup enables fake timers — see
 // tests/unit/broadcasts/components/cancel-broadcast-dialog.test.tsx).
+import { useRef, type ComponentProps } from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/react';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
@@ -45,7 +46,7 @@ function deferred<T>(): {
 }
 
 function renderDialog(
-  extra: Partial<React.ComponentProps<typeof ConfirmationDialog>> = {},
+  extra: Partial<ComponentProps<typeof ConfirmationDialog>> = {},
 ) {
   const onOpenChange = extra.onOpenChange ?? vi.fn();
   const onConfirm = extra.onConfirm ?? vi.fn().mockResolvedValue(undefined);
@@ -66,6 +67,36 @@ function renderDialog(
 }
 
 describe('ConfirmationDialog', () => {
+  it('is an alertdialog named by its title that starts on Cancel, the safest default (spec 122 US1)', () => {
+    renderDialog();
+    const dialog = screen.getByRole('alertdialog', { name: 'Revoke this invitation?' });
+    expect(dialog).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus();
+  });
+
+  it('starts on the caller\'s required field when it names one', () => {
+    function WithField() {
+      const ref = useRef<HTMLTextAreaElement>(null);
+      return (
+        <ConfirmationDialog
+          open
+          onOpenChange={vi.fn()}
+          title="Reject?"
+          description="Give a reason."
+          confirmLabel="Reject"
+          cancelLabel="Cancel"
+          onConfirm={vi.fn()}
+          initialFocusRef={ref}
+        >
+          <button type="button">Reason guide</button>
+          <textarea ref={ref} aria-label="Reason" />
+        </ConfirmationDialog>
+      );
+    }
+    render(<WithField />);
+    expect(screen.getByRole('textbox', { name: 'Reason' })).toHaveFocus();
+  });
+
   it('renders title, description, and button labels', () => {
     renderDialog();
     expect(screen.getByText('Revoke this invitation?')).toBeInTheDocument();

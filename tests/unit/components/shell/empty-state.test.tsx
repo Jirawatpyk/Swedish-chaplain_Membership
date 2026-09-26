@@ -17,16 +17,16 @@ import { ShieldCheck } from 'lucide-react';
 import { EmptyState } from '@/components/shell/empty-state';
 
 describe('<EmptyState> icon colour', () => {
-  it('defaults the icon to text-muted-foreground when iconClassName is omitted', () => {
+  it('draws the icon in AURA\'s empty-state tile when iconClassName is omitted (spec 122 US1)', () => {
     const { container } = render(
       <EmptyState icon={ShieldCheck} title="Nothing here" />,
     );
     const icon = container.querySelector('svg[aria-hidden="true"]');
-    expect(icon).toHaveClass('text-muted-foreground');
+    expect(icon?.parentElement).toHaveClass('aura-empty__icon');
     expect(icon).not.toHaveClass('text-success');
   });
 
-  it('overrides the icon colour via iconClassName without losing size-10', () => {
+  it('overrides the icon colour via iconClassName without losing its size', () => {
     const { container } = render(
       <EmptyState
         icon={ShieldCheck}
@@ -36,7 +36,6 @@ describe('<EmptyState> icon colour', () => {
     );
     const icon = container.querySelector('svg[aria-hidden="true"]');
     expect(icon).toHaveClass('text-success');
-    expect(icon).toHaveClass('size-10');
-    expect(icon).not.toHaveClass('text-muted-foreground');
+    expect(icon).toHaveClass('size-6');
   });
 });

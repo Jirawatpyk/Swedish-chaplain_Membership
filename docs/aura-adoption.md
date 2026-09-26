@@ -13,7 +13,7 @@ The migration was decided on 2026-09-26, with these settled points:
 - Skeletons use AURA's pulse.
 - Both libraries coexist for **at most 10 weeks** after the foundation (US0) merges. This is recorded as an exception to Constitution Principle VI in `plan.md` Complexity Tracking.
 
-**US0 merged:** _(date recorded here when the foundation PR merges — the 10-week clock starts then)_
+**US0 merged:** 2026-09-26 (PR #419). The 10-week window closes on 2026-12-05.
 
 ## How AURA is wired
 
@@ -31,7 +31,10 @@ The migration was decided on 2026-09-26, with these settled points:
 
 ## Server components never import AURA directly
 
+
 AURA's root entry is `'use client'`. When a **server** file imports from `@jirawatpyk/aura-react`, the whole barrel becomes a client reference and every AURA component ships on every route: this measured **+138 KB** first-load JS on every page during US0. Import AURA only from client files (`'use client'`), and let server layouts render a small client wrapper (as `AuraDensity` does). With that rule, US0 is 2–8 KB *smaller* per route than before, because sonner is gone.
+
+A server component that needs an AURA look without its behaviour uses AURA's classes instead (`aura-card`, `aura-empty`): `EmptyState` and `LoadErrorCard` do this.
 
 ## The ratchet
 
@@ -39,8 +42,8 @@ AURA's root entry is `'use client'`. When a **server** file imports from `@jiraw
 - It bans everywhere:
   - `sonner` (use `@/lib/toast`)
   - AURA's root `formatDate` / `useFormatDate`
-  - `cmdk`, except in its one host `src/components/ui/command.tsx`, which leaves in US1
-- **`MIGRATED_PATHS`** lists the directories that are on AURA. Any `@/components/ui/*` import there fails lint.
+  - `cmdk`, except in its one host `src/components/ui/command.tsx`. US1 moved both command palettes to AURA `Command`; the host stays for the pickers and `ui/combobox` until the last of their modules migrates (at the latest US13)
+- **`MIGRATED_PATHS`** lists the directories that are on AURA. Any `@/components/ui/*` import there fails lint. **`NOT_YET_ON_AURA`** names the few files inside them that still wait for a later phase, each with that phase; it only shrinks.
 - A phase PR adds its directories to this list in the same PR that removes their last legacy import.
 - The list only grows. At US13 the ban becomes global and the list is deleted.
 - `tests/unit/architecture/ui-import-ratchet.test.ts` proves each ban fires (the positive control).
@@ -80,7 +83,14 @@ Phases 2–12 each depend on 1 and can land in any order.
 
 ## AURA gaps (the handoff doc)
 
-The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, and items 52–56 (Addendum 4) in **5.6.0**, the current pin. **No item is open.** How Chamber-OS uses the 5.6.0 items:
+The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, and items 52–56 (Addendum 4) in **5.6.0**, the current pin. US1 found two more, both bridged locally:
+
+| # | Gap | Local bridge (removed when AURA ships it) |
+|---|---|---|
+| 57 | `DropdownMenu` has no header slot for "who is signed in" | `UserMenu` lists name (with role) and email as inert items |
+| 58 | `Breadcrumb` turns an item without `href` into a button | `BreadcrumbNav` draws AURA's `aura-crumbs` markup itself, with organisational segments as text |
+
+How Chamber-OS uses the 5.6.0 items:
 
 | # | Shipped in 5.6.0 | Used by |
 |---|---|---|

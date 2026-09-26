@@ -31,6 +31,7 @@ The migration runs **module by module**, one pull request per phase, in the orde
 
 - Q: During the dual-library window, what colour are legacy primary buttons, and what is the end state? → A: Legacy kit primary buttons and `text-primary` links take the **brand accent** (#2E6397 in light) through the token bridge until their module migrates. The end state follows the AURA design: primary buttons in **AURA ink** (#18181B with white text in light; white with ink text in dark), and the brand blue for links, focus rings, selection and info.
 - Q: Must every phase run the local end-to-end suites before merge? → A: **No — at checkpoints only**: after US1 (the shared shell), after the money phases (US4, US8), and before US13. e2e has no CI job and a full local run takes over an hour, so per-phase runs would stall a 13-phase migration; each phase relies on its unit/component tests, the required CI checks (integration smoke, coverage) and the canvas comparison instead. A checkpoint failure caused by an earlier phase is fixed in its own PR before the next phase merges.
+- Q: Can US1 remove the old command-palette library? → A: **Not yet** (found at US1, 2026-09-26): besides the two ⌘K palettes it backs the pickers and the kit's combobox (member, event, template and task pickers; the invoice and plan forms). US1 moves both palettes to AURA `Command`; the library leaves with the last of those modules, at the latest US13, and the lint ban goes global then.
 - Q: Does the Swedish-flag navy chrome (navy rail and header, yellow stripe) survive on AURA SideNav / AppShell? → A: **No — dropped**; the shell follows the AURA design. The yellow stripe is removed in US0; US1 replaces the staff sidebar and portal header with AppShell / SideNav as designed.
 
 ## User Scenarios & Testing *(mandatory)*
@@ -66,7 +67,7 @@ Staff get AURA's sidebar navigation, header, user menu, breadcrumb, pagination a
 **Acceptance Scenarios**:
 
 1. **Given** each role, **When** it opens the portal, **Then** it sees exactly the navigation entries its permissions allow (unchanged), in AURA's side or bottom navigation.
-2. **Given** the command palette shortcut, **When** pressed, **Then** the AURA palette opens with the same actions and keyboard behaviour as before; the old palette library is removed.
+2. **Given** the command palette shortcut, **When** pressed, **Then** the AURA palette opens with the same actions and keyboard behaviour as before; the palettes no longer use the old palette library.
 3. **Given** the existing page-layout checks and end-to-end selectors, **When** the shell is swapped, **Then** they pass unchanged.
 
 ---
@@ -241,7 +242,7 @@ The old component kit folder, its primitives library, the old toast/palette/date
 - **FR-005**: AURA components MUST receive the user's language (EN/TH/SV), use the Buddhist calendar for Thai and the Gregorian calendar otherwise, render internal links through the app's router, and use a compact density on staff pages and a comfortable density on member pages.
 - **FR-006**: All dates the product formats itself MUST keep going through the existing localised formatter; AURA's generic date formatter MUST NOT be used directly.
 - **FR-007**: All toasts MUST come from one AURA toast surface at the top centre; every existing toast keeps its title, description, tone and action; at most three are visible; the old toast library is removed in the foundation.
-- **FR-008**: A lint gate MUST reject imports of the old toast library and of AURA's generic date formatter everywhere, of the old command-palette library once US1 merges, and of the old component kit inside every path already migrated (a list that grows with each phase); a test MUST prove the gate catches each banned import.
+- **FR-008**: A lint gate MUST reject imports of the old toast library and of AURA's generic date formatter everywhere, of the old command-palette library once its last consumer migrates (US1 moves both command palettes; the pickers that also use it move with their modules, at the latest US13), and of the old component kit inside every path already migrated (a list that grows with each phase); a test MUST prove the gate catches each banned import.
 - **FR-009**: Loading skeletons MUST use AURA's pulse style from US1 onward; the UX playbook MUST describe AURA as the component library and the pulse as the skeleton standard.
 
 **Every module phase (US1–US12)**

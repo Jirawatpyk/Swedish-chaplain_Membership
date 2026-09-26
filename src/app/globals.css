@@ -43,20 +43,8 @@
   --font-sans: "Inter", "Noto Sans Thai", sans-serif;
   --font-mono: "JetBrains Mono", monospace;
 
-  /* Shimmer keyframes — see ux-standards § 2.1 */
-  --animate-shimmer: shimmer 1.8s linear infinite;
-
-  @keyframes shimmer {
-    0% {
-      background-position: -200% 0;
-    }
-    100% {
-      background-position: 200% 0;
-    }
-  }
-
   /* Kit titles (card, dialog, sheet) are h2/h3-level, which AURA sets in sans;
-     Fraunces is AURA's display face only (and mixes badly with Thai). */
+     Fraunces, AURA's display face, is for page titles (`.text-h1`) only. */
   --font-heading: "Inter", "Noto Sans Thai", sans-serif;
 
   --color-sidebar-ring: var(--sidebar-ring);
@@ -414,40 +402,22 @@ body {
   }
 }
 
-/* --- Skeleton shimmer base + reduced-motion fallback --- */
+/* --- Skeletons: AURA's pulse (ux-standards § 2.1; spec 122 FR-009) ---
+   The class keeps its old name until US13 (≈70 files draw it through
+   `ui/skeleton` and `page-skeletons`); it now looks exactly like AURA's
+   `.aura-skel`: its tone, its keyframes and duration, still under reduced
+   motion. */
 .skeleton-shimmer {
-  /* AURA's skeleton tone (zinc-200 / zinc-700), so a skeleton stays visible
-     on the page background too — also static under reduced motion. */
-  background: linear-gradient(
-    90deg,
-    var(--aura-bg-skeleton) 0%,
-    color-mix(in srgb, var(--aura-bg-skeleton) 60%, var(--foreground) 10%) 50%,
-    var(--aura-bg-skeleton) 100%
-  );
-  background-size: 200% 100%;
+  background: var(--aura-bg-skeleton);
 }
 
 @media (prefers-reduced-motion: no-preference) {
   .skeleton-shimmer {
-    animation: var(--animate-shimmer);
+    animation: aura-pulse var(--aura-duration-pulse) var(--aura-ease) infinite;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .skeleton-shimmer {
-    animation: pulse 2s ease-in-out infinite;
-  }
-
-  @keyframes pulse {
-    0%,
-    100% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.55;
-    }
-  }
-
   /* Sidebar uses a scoped CSS custom property for its animation;
      `!important` on duration is the only way to override it from a
      media query without editing the component stylesheet. */

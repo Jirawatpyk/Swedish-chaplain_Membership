@@ -230,7 +230,25 @@ const PAGE_ROOT_MESSAGE =
  * here in the same PR that removes their last legacy import; the list only
  * grows, and is deleted at US13 when the ban goes global.
  */
-const MIGRATED_PATHS = [];
+const MIGRATED_PATHS = [
+  // US1 — the shell.
+  'src/components/layout/**',
+  'src/components/shell/**',
+  'src/components/command-palette/**',
+  'src/components/auth/idle-warning-dialog.tsx',
+  'src/app/test-fixtures/aura-shell/**',
+];
+
+/**
+ * Files inside MIGRATED_PATHS that still use the legacy kit, each with the
+ * phase that moves it. The list only shrinks.
+ */
+const NOT_YET_ON_AURA = [
+  // The reason + typed-phrase dialog: its callers are the E-Blast review
+  // (US12) and the change-request decision (US5); it moves with the first.
+  'src/components/shell/reason-confirmation-dialog.tsx',
+  'src/components/shell/typed-phrase-field.tsx',
+];
 
 const eslintConfig = defineConfig([
   ...nextVitals,
@@ -1015,7 +1033,7 @@ const eslintConfig = defineConfig([
   },
   // Spec 122 — the AURA import ratchet. Its own rule id, so it composes with
   // (never replaces) the architecture `no-restricted-imports` blocks above.
-  ...uiRatchet(MIGRATED_PATHS),
+  ...uiRatchet(MIGRATED_PATHS, NOT_YET_ON_AURA),
   globalIgnores([
     ".next/**",
     "out/**",

@@ -1,7 +1,7 @@
 'use client';
 
 import type { ReactElement, ReactNode } from 'react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -116,6 +116,13 @@ export function toStaffNavSections(config: RenderedNavConfig, pathname: string, 
   return { sections, value: active === null ? undefined : patterns.get(active) };
 }
 
+function isEditable(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLElement &&
+    (target.isContentEditable || target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')
+  );
+}
+
 function writeSidebarCookie(expanded: boolean) {
   document.cookie = `${SIDEBAR_COOKIE}=${expanded}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}; samesite=lax`;
 }
@@ -210,6 +217,23 @@ export function StaffNav({
     setRailCollapsed(next);
     writeSidebarCookie(!next);
   };
+
+  // ⌘B / Ctrl+B toggles the rail, as the legacy sidebar did — except while
+  // typing, where it is the editor's Bold.
+  useEffect(() => {
+    if (!collapsible) return undefined;
+    const onKey = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.key.toLowerCase() !== 'b') return;
+      if (isEditable(event.target)) return;
+      event.preventDefault();
+      setRailCollapsed((prev) => {
+        writeSidebarCookie(prev);
+        return !prev;
+      });
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [collapsible]);
 
   return (
     <SideNav

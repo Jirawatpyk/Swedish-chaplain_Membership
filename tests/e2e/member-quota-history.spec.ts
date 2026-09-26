@@ -393,11 +393,10 @@ test.describe('US3 — Member quota + history (T129 RED)', () => {
     const isMac = process.platform === 'darwin';
     await page.keyboard.press(isMac ? 'Meta+k' : 'Control+k');
 
-    const composeEntry = page.getByTestId('cmdk-broadcasts-compose');
-    const benefitsEntry = page.getByTestId('cmdk-broadcasts-benefits');
+    const composeEntry = page.getByRole('option', { name: 'Compose E-Blast' });
+    const benefitsEntry = page.getByRole('option', { name: 'View E-Blast usage' });
     // 10s timeout — bumped from 5s to absorb cold-start chunk loads
-    // (palette + cmdk + lucide icons are split into separate chunks
-    // per Next.js 16 default; first invocation pays the network cost).
+    // (the palette's chunks load on first invocation).
     await expect(composeEntry).toBeVisible({ timeout: 10_000 });
     await expect(benefitsEntry).toBeVisible();
 

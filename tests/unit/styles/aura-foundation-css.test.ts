@@ -132,6 +132,13 @@ describe('globals.css — AURA foundation (spec 122)', () => {
     expect(rule).toContain('var(--aura-bg-skeleton)');
   });
 
+  it('pulses skeletons with AURA\'s own animation, and only without reduced motion (FR-009, spec 122 US1)', () => {
+    // The shimmer sweep is gone: the pulse is AURA's keyframes and duration.
+    expect(css).not.toMatch(/--animate-shimmer|@keyframes shimmer/);
+    const motion = css.match(/@media \(prefers-reduced-motion: no-preference\)\s*\{\s*\.skeleton-shimmer\s*\{[^}]*\}/)?.[0] ?? '';
+    expect(motion).toMatch(/animation:\s*aura-pulse var\(--aura-duration-pulse\)/);
+  });
+
   it('sets page titles in AURA\'s display face, as the canvas boards do (Fraunces, Thai falls back to Noto Sans Thai)', () => {
     expect(declared(block('.text-h1'), 'font-family')).toBe('var(--font-display)');
     // Section headings stay in the text face (the boards use Inter for h2/h3).

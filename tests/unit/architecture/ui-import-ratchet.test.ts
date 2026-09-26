@@ -6,8 +6,8 @@
  * reading the config text: a lint rule that is shadowed by a later flat-config
  * block is silent, and silence reads like approval (see auth-barrel.test.ts).
  * The migrated-paths ban is exercised with a fixture glob appended through
- * `overrideConfig`, because `MIGRATED_PATHS` starts empty and must not carry a
- * test-only entry.
+ * `overrideConfig` (`MIGRATED_PATHS` must not carry a test-only entry), and
+ * through the real list for the US1 shell.
  */
 import { describe, expect, it } from 'vitest';
 import { ESLint } from 'eslint';
@@ -48,7 +48,7 @@ describe('UI import ratchet (spec 122)', () => {
     expect(await ratchetHits(code, 'src/components/some-view.tsx')).toEqual([]);
   });
 
-  it('bans cmdk everywhere except the legacy kit host it leaves with in US1', async () => {
+  it('bans cmdk everywhere except the legacy kit host (kept for the pickers until their modules migrate)', async () => {
     const code = "import { Command } from 'cmdk';\nexport const C = Command;\n";
     expect(await ratchetHits(code, 'src/components/shell/palette.tsx')).toHaveLength(1);
     expect(await ratchetHits(code, 'src/components/ui/command.tsx')).toEqual([]);
@@ -76,6 +76,29 @@ describe('UI import ratchet (spec 122)', () => {
     it('the migrated block restates the global bans (flat config replaces, never merges)', async () => {
       const code = "import { toast } from 'sonner';\nexport const t = toast;\n";
       expect(await ratchetHits(code, file, [FIXTURE_GLOB])).toHaveLength(1);
+    });
+
+    it('a file named as not-yet-migrated keeps the legacy kit until its phase', async () => {
+      const eslint = new ESLint({ cwd: process.cwd(), overrideConfig: uiRatchet([FIXTURE_GLOB], [file]) });
+      const [result] = await eslint.lintText(legacy, { filePath: file });
+      expect((result?.messages ?? []).filter((m) => m.ruleId === RULE)).toEqual([]);
+    });
+  });
+
+  describe('the US1 shell is on AURA (the real MIGRATED_PATHS)', () => {
+    const legacy = "import { Button } from '@/components/ui/button';\nexport const B = Button;\n";
+
+    it.each([
+      'src/components/layout/staff-shell.tsx',
+      'src/components/shell/user-menu.tsx',
+      'src/components/command-palette/command-palette.tsx',
+      'src/components/auth/idle-warning-dialog.tsx',
+    ])('%s cannot import the legacy kit', async (path) => {
+      expect(await ratchetHits(legacy, path)).toHaveLength(1);
+    });
+
+    it('except the reason dialog, which moves with its callers (US5 / US12)', async () => {
+      expect(await ratchetHits(legacy, 'src/components/shell/reason-confirmation-dialog.tsx')).toEqual([]);
     });
   });
 });

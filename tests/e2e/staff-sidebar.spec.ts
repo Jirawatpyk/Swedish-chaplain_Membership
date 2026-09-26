@@ -13,6 +13,15 @@ const ADMIN_PASSWORD = process.env.E2E_SUPER_ADMIN_PASSWORD;
 
 test.describe.configure({ mode: 'serial' });
 
+/** Spec 122 — the staff nav is AURA SideNav, found by its landmark name. */
+function staffNav(page: Page) {
+  return page.getByRole('navigation', { name: 'Staff navigation' });
+}
+
+async function railState(nav: ReturnType<typeof staffNav>): Promise<'collapsed' | 'expanded'> {
+  return (await nav.getAttribute('data-collapsed')) === null ? 'expanded' : 'collapsed';
+}
+
 test.describe('staff sidebar — US1/US2/US3', () => {
   test.skip(
     !ADMIN_EMAIL || !ADMIN_PASSWORD,
@@ -36,7 +45,7 @@ test.describe('staff sidebar — US1/US2/US3', () => {
     await page.goto('/admin');
 
     // Wait for sidebar content to render
-    const sidebar = page.locator('[data-slot="sidebar"]');
+    const sidebar = staffNav(page);
     await expect(sidebar.first()).toBeAttached({ timeout: 10_000 });
 
     // Check nav links exist anywhere on page (sidebar renders them)
@@ -51,7 +60,7 @@ test.describe('staff sidebar — US1/US2/US3', () => {
     await page.locator('h1').first().waitFor({ timeout: 10_000 });
 
     // Plans link should have data-active attribute
-    const sidebar = page.locator('[data-slot="sidebar"]');
+    const sidebar = staffNav(page);
     const plansLink = sidebar.getByRole('link', { name: /^plans$/i });
     await expect(plansLink).toHaveAttribute('data-active', /.*/);
   });
@@ -61,7 +70,7 @@ test.describe('staff sidebar — US1/US2/US3', () => {
     await page.goto('/admin/users');
     await page.locator('h1').first().waitFor({ timeout: 10_000 });
 
-    const sidebar = page.locator('[data-slot="sidebar"]');
+    const sidebar = staffNav(page);
     const usersLink = sidebar.getByRole('link', { name: /users/i });
     await expect(usersLink).toHaveAttribute('data-active', /.*/);
   });
@@ -71,7 +80,7 @@ test.describe('staff sidebar — US1/US2/US3', () => {
     await page.goto('/admin');
 
     // Click Plans link
-    const sidebar = page.locator('[data-slot="sidebar"]');
+    const sidebar = staffNav(page);
     await sidebar.getByRole('link', { name: /plans/i }).click();
     await page.waitForURL(/\/admin\/plans/);
     await expect(page).toHaveURL(/\/admin\/plans/);
@@ -86,28 +95,17 @@ test.describe('staff sidebar — US1/US2/US3', () => {
     await signIn(page);
     await page.goto('/admin');
 
-    // data-state lives on [data-slot="sidebar"] (the inner sidebar
-     // element), not on sidebar-wrapper. There are usually two sidebar
-     // elements (desktop + mobile) — take the desktop one.
-    const wrapper = page.locator('[data-slot="sidebar"]').first();
+    // Spec 122 — AURA SideNav marks the rail with `data-collapsed`.
+    const wrapper = staffNav(page);
 
-    // Find toggle button — desktop sidebar (mobile sheet renders its own).
-    // Use locator() with strict: false to avoid click-blocking from the
-    // tooltip wrapper that shadcn SidebarMenuButton mounts when `tooltip`
-    // is set. force: true bypasses Playwright's stability check that the
-    // tooltip may keep alive on hover-pre-click.
     const toggle = page.getByRole('button', { name: /collapse sidebar|expand sidebar/i }).first();
     await expect(toggle).toBeVisible();
 
     // Get initial state
-    const initialState = await wrapper.getAttribute('data-state');
-    expect(initialState).not.toBeNull();
+    const initialState = await railState(wrapper);
 
-    // Toggle via direct cookie write — most robust because the sidebar
-    // state is cookie-persisted and SidebarProvider reads it on mount.
-    // Both the button click and Cmd/Ctrl+B keyboard shortcut depend on
-    // a tooltip wrapper + window keydown listener that Playwright's
-    // synthetic events handle inconsistently.
+    // Toggle via direct cookie write: the rail state is cookie-persisted and
+    // the server layout reads it before render.
     await page.context().addCookies([
       {
         name: 'sidebar_state',
@@ -117,7 +115,7 @@ test.describe('staff sidebar — US1/US2/US3', () => {
     ]);
     await page.reload();
     await page.waitForTimeout(300);
-    const newState = await wrapper.getAttribute('data-state');
+    const newState = await railState(wrapper);
     expect(newState).not.toBe(initialState);
 
     // Toggle back via cookie
@@ -130,7 +128,7 @@ test.describe('staff sidebar — US1/US2/US3', () => {
     ]);
     await page.reload();
     await page.waitForTimeout(300);
-    const restoredState = await wrapper.getAttribute('data-state');
+    const restoredState = await railState(wrapper);
     expect(restoredState).toBe(initialState);
   });
 
@@ -138,7 +136,7 @@ test.describe('staff sidebar — US1/US2/US3', () => {
     await signIn(page);
     await page.goto('/admin');
 
-    const wrapper = page.locator('[data-slot="sidebar"]').first();
+    const wrapper = staffNav(page);
     const toggle = page.getByRole('button', { name: /collapse sidebar|expand sidebar/i });
 
     for (let i = 0; i < 5; i++) {
@@ -148,33 +146,33 @@ test.describe('staff sidebar — US1/US2/US3', () => {
     await page.waitForTimeout(500);
 
     // Should be in a valid state
-    const state = await wrapper.getAttribute('data-state');
+    const state = await railState(wrapper);
     expect(['expanded', 'collapsed']).toContain(state);
   });
 
   test('collapse state persists across navigation', async ({ page }) => {
     await signIn(page);
 
-    // Seed sidebar_state cookie = collapsed so SidebarProvider mounts collapsed
+    // Seed sidebar_state cookie = collapsed so the nav renders as the rail
     await page.context().addCookies([
       { name: 'sidebar_state', value: 'false', url: 'http://localhost:3100' },
     ]);
 
     await page.goto('/admin');
-    const wrapper = page.locator('[data-slot="sidebar"]').first();
-    await expect(wrapper).toHaveAttribute('data-state', 'collapsed');
+    const wrapper = staffNav(page);
+    await expect(wrapper).toHaveAttribute('data-collapsed', '');
 
     // Navigate — cookie persists so state stays collapsed
     await page.goto('/admin/plans');
     await page.locator('h1').first().waitFor({ timeout: 10_000 });
-    await expect(wrapper).toHaveAttribute('data-state', 'collapsed');
+    await expect(wrapper).toHaveAttribute('data-collapsed', '');
   });
 
   test('tenant name visible in sidebar', async ({ page }) => {
     await signIn(page);
     await page.goto('/admin');
 
-    const sidebar = page.locator('[data-slot="sidebar"]');
+    const sidebar = staffNav(page);
     await expect(sidebar.getByText('S').first()).toBeAttached();
   });
 });

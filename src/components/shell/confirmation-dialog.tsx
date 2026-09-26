@@ -1,8 +1,8 @@
 'use client';
 
 /**
- * ConfirmationDialog wrapper around shadcn/Base-UI `alert-dialog`
- * (T134, ux-standards § 6).
+ * ConfirmationDialog on AURA `Dialog role="alertdialog"` (T134,
+ * ux-standards § 6; spec 122 US1 — the props are unchanged).
  *
  * Keyboard:
  *   - Escape closes (Cancel)
@@ -14,19 +14,8 @@
  * The title, description, and button labels are passed as props so
  * callers can localise them via `useTranslations` at the call site.
  */
-import { Children, useRef, useState, type RefObject, type MouseEvent, type ReactNode } from 'react';
-import { Loader2Icon } from 'lucide-react';
-import { buttonVariants } from '@/components/ui/button';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import { Children, useEffect, useRef, useState, type RefObject, type ReactNode } from 'react';
+import { Button, Dialog } from '@jirawatpyk/aura-react';
 
 export interface ConfirmationDialogProps {
   readonly open: boolean;
@@ -68,12 +57,13 @@ export interface ConfirmationDialogProps {
    * trigger element; if that element has since unmounted, focus silently
    * drops to `<body>` — a keyboard/SR user must re-Tab from the top of the
    * page after every single action, which is unacceptable in a row-by-row
-   * batch workflow. Build via `useDialogFinalFocus`
+   * batch workflow (AURA returns focus to the trigger the same way). Build
+   * via `useDialogFinalFocus`
    * (`@/components/broadcast/reason-confirmation-dialog` — reused
    * verbatim, not reimplemented; the hook + its resolver are dialog-
    * agnostic despite living in the broadcast feature folder). Omit for the
    * common case where the trigger reliably survives every close path
-   * (Base UI's own default — return the trigger — applies).
+   * (AURA's own default — return the trigger — applies).
    */
   readonly finalFocus?: () => HTMLElement | false | null;
   /**
@@ -100,27 +90,31 @@ export function ConfirmationDialog({
   finalFocus,
   initialFocusRef,
 }: ConfirmationDialogProps) {
-  const cancelRef = useRef<HTMLButtonElement>(null);
-  // UX-2 fix (double-fire guard): without this, a fast double-click on
-  // Confirm re-enters `onConfirm` before the first call settles — for an
-  // irreversible action (e.g. revoke) that fires the mutation twice and
-  // surfaces contradictory success + error toasts. `submitting` disables
-  // BOTH buttons for the duration of the in-flight `onConfirm` call.
   const [submitting, setSubmitting] = useState(false);
+  const wasOpen = useRef(open);
 
-  async function handleConfirmClick(
-    event: MouseEvent<HTMLButtonElement>,
-  ): Promise<void> {
-    event.preventDefault();
+  // AURA's modal focuses `[data-autofocus]` (Cancel — ux-standards § 6
+  // "safest default") on open and returns focus to the trigger on close.
+  // These run after it (a parent's effects follow its child's): a caller's
+  // required field takes the first focus instead, and a caller whose trigger
+  // may have unmounted names where focus goes back to.
+  useEffect(() => {
+    if (open && initialFocusRef?.current) initialFocusRef.current.focus();
+    if (!open && wasOpen.current && finalFocus) {
+      requestAnimationFrame(() => {
+        const target = finalFocus();
+        if (target) target.focus();
+      });
+    }
+    wasOpen.current = open;
+  }, [open, initialFocusRef, finalFocus]);
+
+  async function handleConfirmClick(): Promise<void> {
     if (confirmDisabled || submitting) return;
     setSubmitting(true);
     try {
       await onConfirm();
     } catch (err: unknown) {
-      // F6 Phase 8 silent-failure C-1 fix (2026-05-16), preserved: surface
-      // rejections to the console + global error boundary via
-      // `queueMicrotask(throw)` rather than dropping them silently — a
-      // shared-primitive bug every ConfirmationDialog consumer inherited.
       console.error('[ConfirmationDialog] onConfirm rejected', err);
       queueMicrotask(() => {
         throw err;
@@ -132,43 +126,36 @@ export function ConfirmationDialog({
   }
 
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
-      {/* Explicit initialFocus — the caller's `initialFocusRef` when given
-          (a body with a required field, F114 decision reason), else Cancel
-          (ux-standards § 6 "safest default"); don't rely on DOM order,
-          which a CSS reorder could silently break.
-          `finalFocus` is optional — omitted, Base UI returns focus to the
-          trigger (its own default), which is correct whenever the trigger
-          survives the close. */}
-      <AlertDialogContent initialFocus={initialFocusRef ?? cancelRef} finalFocus={finalFocus}>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{title}</AlertDialogTitle>
-          <AlertDialogDescription>{description}</AlertDialogDescription>
-        </AlertDialogHeader>
-        {/* F114 review (UX I2) — the popup has no max-height; a tall body
-            (two textareas + help + counters) on a short viewport pushed the
-            footer off-screen with no way to scroll to it. Bound the BODY, not
-            the popup, so Cancel / Confirm stay reachable. */}
-        {Children.toArray(children).length > 0 ? <div className="max-h-[50vh] space-y-4 overflow-y-auto">{children}</div> : null}
-        <AlertDialogFooter>
-          <AlertDialogCancel ref={cancelRef} disabled={submitting}>
+    <Dialog
+      role="alertdialog"
+      open={open}
+      onClose={() => onOpenChange(false)}
+      // No Escape / scrim close while the action runs (Cancel is disabled too).
+      dismissible={!submitting}
+      title={title}
+      description={description}
+      footer={
+        <>
+          <Button variant="secondary" data-autofocus disabled={submitting} onClick={() => onOpenChange(false)}>
             {cancelLabel}
-          </AlertDialogCancel>
-          <AlertDialogAction
+          </Button>
+          <Button
+            variant={destructive ? 'danger' : 'primary'}
+            loading={submitting}
             disabled={confirmDisabled || submitting}
             aria-disabled={confirmDisabled || submitting || undefined}
-            onClick={(event) => {
-              void handleConfirmClick(event);
+            onClick={() => {
+              void handleConfirmClick();
             }}
-            className={destructive ? buttonVariants({ variant: 'destructive' }) : undefined}
           >
-            {submitting ? (
-              <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden />
-            ) : null}
             {confirmLabel}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+          </Button>
+        </>
+      }
+    >
+      {/* F114 review (UX I2) — bound the BODY, not the dialog, so a tall body
+          on a short viewport never pushes Cancel / Confirm off-screen. */}
+      {Children.toArray(children).length > 0 ? <div className="max-h-[50vh] space-y-4 overflow-y-auto">{children}</div> : null}
+    </Dialog>
   );
 }

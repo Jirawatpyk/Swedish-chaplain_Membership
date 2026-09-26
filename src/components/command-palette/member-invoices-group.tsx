@@ -94,6 +94,7 @@ export function MemberCommandPalette({
   // ⌘K is AURA's hotkey (off for a non-member, below); this is the header's
   // search button, should the portal add one (spec 122 US1).
   useEffect(() => {
+    // rbac-portal-identity-ok: the MEMBER portal palette; the staff palette is a different component entirely.
     if (currentUserRole !== 'member') return;
     const openPalette = () => setOpen(true);
     window.addEventListener(OPEN_COMMAND_PALETTE_EVENT, openPalette);

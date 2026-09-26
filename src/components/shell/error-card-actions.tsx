@@ -28,14 +28,13 @@
  * of `next-intl` imports — small enough to be parameter-driven).
  *
  * `prefers-reduced-motion` — pending uses opacity + cursor only (no
- * spin animation). shadcn/ui's `<Button>` disabled style is the visual
+ * spin animation). AURA `<Button>`'s disabled style is the visual
  * channel; the label text change is the textual channel.
  */
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useId, useTransition } from 'react';
 import { toast } from '@/lib/toast';
-import { Button, buttonVariants } from '@/components/ui/button';
+import { Button } from '@jirawatpyk/aura-react';
 
 const RETRY_SESSION_KEY = 'load-error:retry-correlation';
 
@@ -131,7 +130,7 @@ export function ErrorCardActions({
       <div className="flex flex-col gap-2 sm:flex-row">
         <Button
           type="button"
-          variant="default"
+          variant="primary"
           size="sm"
           onClick={handleRetry}
           disabled={isPending}
@@ -139,9 +138,9 @@ export function ErrorCardActions({
         >
           {isPending ? (pendingLabel ?? retryLabel) : retryLabel}
         </Button>
-        <Link href={goBackHref} className={buttonVariants({ variant: 'outline', size: 'sm' })}>
+        <Button href={goBackHref} variant="secondary" size="sm">
           {goBackLabel}
-        </Link>
+        </Button>
       </div>
       <div className="flex flex-col items-center gap-1">
         <span id={referenceId} className="sr-only">

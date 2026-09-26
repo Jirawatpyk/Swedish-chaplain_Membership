@@ -40,7 +40,7 @@ test.describe('F4 SC-006 — sidebar-toggle CLS @layout', () => {
         }).observe({ type: 'layout-shift', buffered: true });
       });
 
-      // Toggle sidebar — rely on Ctrl+B keyboard shortcut from F3 or click trigger.
+      // Toggle the rail with Ctrl+B (the staff nav keeps the legacy shortcut).
       await page.keyboard.press('ControlOrMeta+b');
       await page.waitForTimeout(400);
       await page.keyboard.press('ControlOrMeta+b');

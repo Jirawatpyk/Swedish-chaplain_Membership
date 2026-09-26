@@ -54,6 +54,7 @@ export function StaffTopBar({ tenantName, user, extras }: StaffTopBarProps) {
         type="button"
         onClick={openCommandPalette}
         aria-label={t('open')}
+        // strict-aria-ignore-next-line — key names, not text (ARIA spec syntax)
         aria-keyshortcuts="Meta+K Control+K"
         className={cn(
           'hidden h-9 w-[360px] min-w-0 shrink items-center gap-2 rounded-[var(--aura-radius-md)] border border-[var(--aura-border-control)] bg-[var(--aura-bg-input)] pr-2 pl-3 text-left text-[13px] text-[var(--aura-fg-tertiary)] xl:flex',
