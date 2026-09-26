@@ -1,5 +1,8 @@
 {
   "auth": {
+    "frame": {
+      "everyone": "Members & staff"
+    },
     "signIn": {
       "title": "Sign in",
       "cardDescription": "Staff portal",

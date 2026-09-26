@@ -14,15 +14,7 @@
 
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import { AuthPageControls } from '@/components/shell/auth-page-controls';
-import { BrandMark } from '@/components/shell/brand-mark';
+import { AuthFrame } from '@/components/auth/auth-frame';
 import { EmailVerificationForm } from '@/components/auth/email-verification-form';
 import { getCurrentSession } from '@/lib/auth-session';
 import { portalHomePath } from '@/lib/portal-paths';
@@ -51,25 +43,15 @@ export default async function EmailVerificationPage({
     ? portalHomePath(PORTAL_FOR_ROLE[current.user.role])
     : '/admin';
 
+  const tFrame = await getTranslations('auth.frame');
   return (
-    <main id="main-content" className="relative flex min-h-screen flex-col bg-muted/20">
-      <AuthPageControls />
-      <div className="flex flex-1 flex-col items-center justify-center gap-6 p-4">
-        <BrandMark
-          variant="vertical"
-          title={process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham'}
-          className="w-44"
-        />
-        <Card className="w-full max-w-md">
-          <CardHeader className="space-y-2">
-            <CardTitle className="text-2xl">{t('title')}</CardTitle>
-            <CardDescription>{t('cardDescription')}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <EmailVerificationForm token={token} redirectTo={redirectTo} />
-          </CardContent>
-        </Card>
-      </div>
-    </main>
+    <AuthFrame
+      title={t('title')}
+      description={t('cardDescription')}
+      portalLabel={tFrame('everyone')}
+      tenantName={process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham'}
+    >
+      <EmailVerificationForm token={token} redirectTo={redirectTo} />
+    </AuthFrame>
   );
 }

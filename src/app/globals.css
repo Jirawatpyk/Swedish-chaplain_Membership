@@ -546,6 +546,12 @@ summary,
       --page-padding-x: 2rem;
     }
   }
+  /* Spec 122 US2 — the auth brand panel's mesh runs from the brand blue
+     (the generated theme's --aura-mesh-from) to the soft yellow the
+     `Sign-in` / `Auth-*` boards use, instead of AURA's lime. */
+  .auth-mesh {
+    --aura-mesh-to: #ffe27a;
+  }
 }
 
 @layer base {
