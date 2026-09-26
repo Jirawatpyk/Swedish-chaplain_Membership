@@ -28,3 +28,24 @@ export const STATUS_VARIANT = {
 export function exportStatusVariant(status: ExportStatus): BadgeVariant {
   return STATUS_VARIANT[status];
 }
+
+/**
+ * Spec 122 US3 — the same statuses as AURA Badge tones, for the AURA panels:
+ * ready/delivered = done (success), failed/expired = attention (danger),
+ * in-flight = neutral. Same `satisfies` guard as the map above.
+ */
+export type ExportStatusTone = 'neutral' | 'success' | 'danger';
+
+export const STATUS_TONE = {
+  requested: 'neutral',
+  processing: 'neutral',
+  ready: 'success',
+  delivered: 'success',
+  expired: 'danger',
+  failed: 'danger',
+} as const satisfies Record<ExportStatus, ExportStatusTone>;
+
+/** Maps an export status to its AURA Badge tone. */
+export function exportStatusTone(status: ExportStatus): ExportStatusTone {
+  return STATUS_TONE[status];
+}

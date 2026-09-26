@@ -12,6 +12,9 @@
  *    success/error in addition to toasts
  *  - Error (load-time): explicit error block with role="alert" and i18n copy;
  *    does NOT silently fall through to a half-broken form
+ *  - Spec 122 US3: AURA RadioGroup (legend = the title, for screen readers;
+ *    the section shows it above) and Save in an ActionBar pinned to the card
+ *    that reads "Unsaved changes" while the choice differs from the saved one
  */
 'use client';
 
@@ -21,11 +24,8 @@ import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
 import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
 import { isReadOnlyResponse } from '@/lib/http/read-only-refusal';
-import { Loader2Icon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Skeleton } from '@/components/ui/skeleton';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { ActionBar, Button, RadioGroup } from '@jirawatpyk/aura-react';
+import { SkeletonBlock } from '@/components/shell/page-skeletons';
 import { useAriaAnnounce } from '@/hooks/use-aria-announce';
 import {
   updatePreferredLocale,
@@ -54,6 +54,8 @@ export function PreferredLocaleForm({
   const seeded = initialValue !== undefined;
   const [state, setState] = useState<LoadState>(seeded ? 'ready' : 'loading');
   const [value, setValue] = useState<PreferredLocale>(seeded ? initialValue : null);
+  // the last value the server holds — drives the "Unsaved changes" status
+  const [saved, setSaved] = useState<PreferredLocale>(seeded ? initialValue : null);
   const [saving, setSaving] = useState(false);
   const { announcement, announce } = useAriaAnnounce();
 
@@ -72,6 +74,7 @@ export function PreferredLocaleForm({
         const body = (await res.json()) as { preferredLocale: PreferredLocale };
         if (!cancelled) {
           setValue(body.preferredLocale);
+          setSaved(body.preferredLocale);
           setState('ready');
         }
       } catch {
@@ -89,6 +92,7 @@ export function PreferredLocaleForm({
     try {
       const res = await updatePreferredLocale(value);
       if (res.ok) {
+        setSaved(value);
         toast.success(t('savedToast'));
         announce(t('savedToast'));
       } else if (await isReadOnlyResponse(res)) {
@@ -114,18 +118,18 @@ export function PreferredLocaleForm({
       >
         {[0, 1, 2, 3].map((i) => (
           <div key={i} className="flex items-center gap-2">
-            <Skeleton className="h-4 w-4 rounded-full" />
-            <Skeleton className="h-4 w-32" />
+            <SkeletonBlock className="h-4 w-4 rounded-full" />
+            <SkeletonBlock className="h-4 w-32" />
           </div>
         ))}
-        <Skeleton className="mt-4 h-9 w-32" />
+        <SkeletonBlock className="mt-4 h-11 w-32" />
       </div>
     );
   }
 
   if (state === 'error') {
     return (
-      <p className="text-destructive text-sm" role="alert">
+      <p className="text-sm text-[var(--aura-fg-danger)]" role="alert">
         {t('loadError')}
       </p>
     );
@@ -133,40 +137,22 @@ export function PreferredLocaleForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <fieldset className="space-y-2">
-        <legend className="sr-only">{t('title')}</legend>
-        <RadioGroup
-          value={value === null ? '__null' : value}
-          onValueChange={(v) => setValue(v === '__null' ? null : (v as 'en' | 'th' | 'sv'))}
-          disabled={saving}
-          className="space-y-2"
-        >
-          {(['__null', 'en', 'th', 'sv'] as const).map((opt) => {
-            const id = `preferred-locale-${opt}`;
-            const label =
-              opt === '__null' ? t('useTenantDefault') : tLang(`languageOptions.${opt}`);
-            return (
-              <div key={opt} className="flex items-center gap-2">
-                <RadioGroupItem id={id} value={opt} aria-label={label} />
-                <Label htmlFor={id} className="mb-0 leading-4 cursor-pointer">
-                  {label}
-                </Label>
-              </div>
-            );
-          })}
-        </RadioGroup>
-      </fieldset>
-      <Button
-        type="submit"
+      <RadioGroup
+        label={t('title')}
+        className="[&>legend]:sr-only"
+        value={value === null ? '__null' : value}
+        onChange={(v) => setValue(v === '__null' ? null : (v as 'en' | 'th' | 'sv'))}
         disabled={saving}
-        className="w-full"
-        size="lg"
-      >
-        {saving && (
-          <Loader2Icon className="mr-2 h-4 w-4 motion-safe:animate-spin" />
-        )}
-        {t('save')}
-      </Button>
+        options={(['__null', 'en', 'th', 'sv'] as const).map((opt) => ({
+          value: opt,
+          label: opt === '__null' ? t('useTenantDefault') : tLang(`languageOptions.${opt}`),
+        }))}
+      />
+      <ActionBar position="container" status={value !== saved ? tLang('unsavedStatus') : null}>
+        <Button type="submit" loading={saving}>
+          {t('save')}
+        </Button>
+      </ActionBar>
       <span role="status" aria-live="polite" className="sr-only">
         {announcement}
       </span>

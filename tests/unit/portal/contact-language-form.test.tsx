@@ -22,10 +22,11 @@ function renderForm() {
 }
 
 function pick(value: string) {
-  // Base UI radio: click the LABEL (the memory rule)
-  // Base UI radio: click the LABEL (the radio span carries the same text as its aria-label)
-  fireEvent.click(screen.getByText(enMessages.common.languageOptions[value as 'th' | 'sv' | 'en'], { selector: 'label' }));
+  // AURA RadioGroup: native radios named by their label
+  fireEvent.click(screen.getByRole('radio', { name: enMessages.common.languageOptions[value as 'th' | 'sv' | 'en'] }));
 }
+
+const checked = (name: RegExp) => screen.getByRole('radio', { name }) as HTMLInputElement;
 
 describe('ContactLanguageForm', () => {
   it('a 503 (the write freeze) reverts the radio to the saved value and names the freeze', async () => {
@@ -34,10 +35,10 @@ describe('ContactLanguageForm', () => {
     try {
       renderForm();
       pick('th');
-      expect((screen.getByRole('radio', { name: /thai|ไทย/i }) as HTMLElement).getAttribute('aria-checked')).toBe('true');
+      expect(checked(/thai|ไทย/i)).toBeChecked();
       fireEvent.click(screen.getByRole('button', { name: enMessages.portal.account.contactLanguage.save }));
       await waitFor(() => expect(toastError).toHaveBeenCalledWith(enMessages.portal.account.contactLanguage.readOnlyToast));
-      await waitFor(() => expect((screen.getByRole('radio', { name: /english/i }) as HTMLElement).getAttribute('aria-checked')).toBe('true'));
+      await waitFor(() => expect(checked(/english/i)).toBeChecked());
     } finally {
       vi.unstubAllGlobals();
     }
@@ -56,9 +57,23 @@ describe('ContactLanguageForm', () => {
       pick('th');
       fireEvent.click(screen.getByRole('button', { name: enMessages.portal.account.contactLanguage.save }));
       await waitFor(() => expect(toastError).toHaveBeenCalledWith(enMessages.portal.account.contactLanguage.errorToast));
-      await waitFor(() => expect((screen.getByRole('radio', { name: /svenska|swedish/i }) as HTMLElement).getAttribute('aria-checked')).toBe('true'));
+      await waitFor(() => expect(checked(/svenska|swedish/i)).toBeChecked());
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe('ContactLanguageForm on AURA (spec 122 US3)', () => {
+  it('is an AURA radio group named by the form title, with Save in an ActionBar that says when the choice is unsaved', () => {
+    renderForm();
+    const group = screen.getByRole('group', { name: enMessages.portal.account.contactLanguage.title });
+    expect(group).toHaveClass('aura-radio-group');
+    const bar = screen.getByRole('region', { name: 'Actions' });
+    expect(bar).toContainElement(screen.getByRole('button', { name: enMessages.portal.account.contactLanguage.save }));
+    const status = bar.querySelector('[role="status"]')!;
+    expect(status.textContent).toBe('');
+    pick('th');
+    expect(status.textContent).toBe(enMessages.common.unsavedStatus);
   });
 });
