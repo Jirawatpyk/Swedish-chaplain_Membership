@@ -2,11 +2,9 @@ import { Suspense } from 'react';
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
 import { PackageOpen } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { buttonVariants } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
-import { cn } from '@/lib/utils';
+import { AuraBadge, AuraStatusPill, auraButtonClass } from '@/components/shell/aura-markup';
+import { EmptyState } from '@/components/shell/empty-state';
+import { SkeletonBlock } from '@/components/shell/page-skeletons';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { requireSession } from '@/lib/auth-session';
@@ -66,23 +64,19 @@ export default async function MemberPortalHomePage() {
           title={t('welcome', { name: user.displayName ?? user.email })}
           subtitle={t('intro')}
         />
-        <Card>
-          <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
-            <PackageOpen aria-hidden="true" className="size-10 text-muted-foreground/60" />
-            <p className="text-lg font-semibold">
-              {t('firstRun.title', {
-                tenant: process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham',
-              })}
-            </p>
-            <p className="max-w-prose text-sm text-muted-foreground">{t('firstRun.body')}</p>
-            <Link
-              href={PORTAL_BENEFITS_HREF}
-              className={cn(buttonVariants({ variant: 'default' }), 'min-h-11')}
-            >
+        <EmptyState
+          bordered
+          icon={PackageOpen}
+          title={t('firstRun.title', {
+            tenant: process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham',
+          })}
+          description={t('firstRun.body')}
+          action={
+            <Link href={PORTAL_BENEFITS_HREF} className={auraButtonClass()}>
               {t('firstRun.exploreBenefits')}
             </Link>
-          </CardContent>
-        </Card>
+          }
+        />
       </DetailContainer>
     );
   }
@@ -120,16 +114,18 @@ export default async function MemberPortalHomePage() {
         subtitle={t('intro')}
         badge={
           <span className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline" className="font-mono">
+            <AuraBadge variant="outline" className="font-mono">
               {memberNumberLabel}
-            </Badge>
-            {/* 063 UX — membership tier (e.g. "Diamond Partnership"). Filled
-                brand badge so the member's level reads as the headline of the
+            </AuraBadge>
+            {/* 063 UX — membership tier (e.g. "Diamond Partnership"). Solid
+                badge so the member's level reads as the headline of the
                 three chips. Omitted when the plan row can't be resolved. */}
             {planDisplayName !== null && (
-              <Badge variant="default">{planDisplayName}</Badge>
+              <AuraBadge variant="solid">{planDisplayName}</AuraBadge>
             )}
-            <Badge variant="secondary">{t(`statusChip.${statusChipKey}`)}</Badge>
+            <AuraStatusPill tone={statusChipKey === 'active' ? 'ready' : 'neutral'}>
+              {t(`statusChip.${statusChipKey}`)}
+            </AuraStatusPill>
           </span>
         }
       />
@@ -168,16 +164,16 @@ export default async function MemberPortalHomePage() {
   );
 }
 
-/** Shimmer placeholder for the 2-col benefits quota panel while it streams. */
+/** Placeholder for the 2-col benefits quota panel while it streams. */
 function BenefitsPanelSkeleton(): React.JSX.Element {
   return (
-    <Card aria-busy="true" aria-hidden="true">
-      <CardContent className="flex flex-col gap-4 py-5">
-        <Skeleton className="h-5 w-40" />
-        <Skeleton className="h-3 w-full" />
-        <Skeleton className="h-3 w-5/6" />
-        <Skeleton className="h-3 w-2/3" />
-      </CardContent>
-    </Card>
+    <div aria-busy="true" aria-hidden="true" className="aura-card">
+      <div className="aura-card__body flex flex-col gap-4">
+        <SkeletonBlock className="h-5 w-40" />
+        <SkeletonBlock className="h-3 w-full" />
+        <SkeletonBlock className="h-3 w-5/6" />
+        <SkeletonBlock className="h-3 w-2/3" />
+      </div>
+    </div>
   );
 }

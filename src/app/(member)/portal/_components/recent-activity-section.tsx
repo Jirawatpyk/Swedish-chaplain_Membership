@@ -9,11 +9,9 @@ import { errKind, rootCause } from '@/lib/log-id';
 import { toTimelineItemProps } from '@/lib/timeline-presenter';
 import { asMemberId, timelineList } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
-import { ClockIcon } from 'lucide-react';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
-import { buttonVariants } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import { ArrowRight } from 'lucide-react';
+import { AuraCard, auraButtonClass } from '@/components/shell/aura-markup';
+import { SkeletonBlock } from '@/components/shell/page-skeletons';
 import { RecentActivityList } from './recent-activity-list';
 
 /**
@@ -89,67 +87,59 @@ export async function RecentActivitySection({
     .map(toTimelineItemProps);
 
   return (
-    <Card>
-      {/* Header matches the admin timeline-preview pattern for app-wide
-          consistency: heading + an outline "view all" link at the project's
-          DEFAULT button size. (The earlier `ghost size=sm min-h-11` 44px link
-          was oversized for a one-line header — it inflated the header row and
-          pushed the content down; the admin convention is `variant:'outline'`
-          default size, ~h-9.) */}
-      <CardHeader className="flex flex-row items-center justify-between gap-2">
-        <h2 className="font-heading text-base font-medium leading-snug">{t('title')}</h2>
-        {events.length > 0 ? (
-          <Link href="/portal/timeline" className={buttonVariants({ variant: 'outline' })}>
-            <ClockIcon className="size-4" />
+    // AURA card (spec 122 US3, `Main` board): the "view all" link sits in the
+    // footer as a text link, as the board draws it.
+    <AuraCard
+      title={t('title')}
+      headingLevel={2}
+      footer={
+        events.length > 0 ? (
+          <Link href="/portal/timeline" className={VIEW_ALL_LINK}>
             {t('viewAll')}
+            <ArrowRight size={16} className="aura-icon" aria-hidden="true" />
           </Link>
-        ) : null}
-      </CardHeader>
-      <CardContent>
-        {events.length === 0 ? (
-          <div className="flex flex-col items-center gap-3 py-8 text-center">
-            {/* activity.empty.title = "No activity yet" (nested key, existing G2 key) */}
-            <p className="text-sm text-muted-foreground">{t('empty.title')}</p>
-            <Link
-              href="/portal/benefits"
-              className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'min-h-11 px-3')}
-            >
-              {t('emptyCta')}
-            </Link>
-          </div>
-        ) : (
-          <RecentActivityList events={events} />
-        )}
-      </CardContent>
-    </Card>
+        ) : undefined
+      }
+    >
+      {events.length === 0 ? (
+        <div className="flex flex-col items-center gap-3 py-8 text-center">
+          {/* activity.empty.title = "No activity yet" (nested key, existing G2 key) */}
+          <p className="text-sm text-[var(--aura-fg-secondary)]">{t('empty.title')}</p>
+          <Link href="/portal/benefits" className={auraButtonClass({ variant: 'secondary' })}>
+            {t('emptyCta')}
+          </Link>
+        </div>
+      ) : (
+        <RecentActivityList events={events} />
+      )}
+    </AuraCard>
   );
 }
 
+/** A footer text link with a 44px target, in AURA's link colour. */
+const VIEW_ALL_LINK =
+  'inline-flex min-h-11 items-center gap-1.5 text-sm font-medium text-[var(--aura-fg-accent)] no-underline hover:text-[var(--aura-fg-primary)] hover:underline';
+
 export function RecentActivitySkeleton(): React.JSX.Element {
   return (
-    <Card aria-busy="true" aria-hidden="true">
-      <CardHeader>
-        <Skeleton className="h-5 w-40" />
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3">
+    <div aria-busy="true" aria-hidden="true" className="aura-card">
+      <div className="aura-card__head">
+        <SkeletonBlock className="h-5 w-40" />
+      </div>
+      <div className="aura-card__body flex flex-col gap-3">
         {Array.from({ length: 3 }).map((_, i) => (
-          <Skeleton key={i} className="h-10 w-full" />
+          <SkeletonBlock key={i} className="h-10 w-full" />
         ))}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
 /** The B2 "unavailable" state — one card for a failed list read and for an unresolved viewer contact. */
 function unavailableCard(title: string, body: string) {
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between gap-2">
-        <h2 className="font-heading text-base font-medium leading-snug">{title}</h2>
-      </CardHeader>
-      <CardContent>
-        <p className="py-8 text-center text-sm text-muted-foreground">{body}</p>
-      </CardContent>
-    </Card>
+    <AuraCard title={title} headingLevel={2}>
+      <p className="py-8 text-center text-sm text-[var(--aura-fg-secondary)]">{body}</p>
+    </AuraCard>
   );
 }

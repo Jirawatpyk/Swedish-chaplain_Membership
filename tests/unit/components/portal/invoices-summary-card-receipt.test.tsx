@@ -282,15 +282,11 @@ describe('<InvoicesSummaryCard> — row layout + variant (090 UX findings #1/#3/
     expect(buttonRow.parentElement).toBe(li);
   });
 
-  it('finding #4 — download buttons use the `outline` variant (bg-background), not `ghost`', async () => {
+  it('finding #4 — download buttons are bordered (AURA secondary), not ghost', async () => {
     await renderCardDom([paidSeparateRow]);
-    // `outline` carries `bg-background` + a border; `ghost` carries neither.
-    expect(screen.getByTestId('invoice-download').className).toContain(
-      'bg-background',
-    );
-    expect(screen.getByTestId('receipt-download').className).toContain(
-      'bg-background',
-    );
+    // AURA `secondary` carries the edge; `ghost` has none until hover (spec 122 US3).
+    expect(screen.getByTestId('invoice-download')).toHaveClass('aura-btn', 'aura-btn--secondary');
+    expect(screen.getByTestId('receipt-download')).toHaveClass('aura-btn', 'aura-btn--secondary');
   });
 
   it('finding #3 — a combined-mode paid receipt button gets the wrap treatment so the long TH dual-role label does not clip', async () => {
