@@ -1,6 +1,17 @@
+/* Spec 122 — AURA coexists with the legacy kit (contracts/css-layers.md).
+   The layer order puts Tailwind utilities LAST, so a utility still beats an
+   AURA component class without `!important`; AURA's tokens sit first so the
+   brand theme and the token bridge below can read them. */
+@layer aura-tokens, theme, base, aura, components, utilities;
 @import 'tailwindcss';
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import '@jirawatpyk/aura-tokens/aura.css' layer(aura-tokens);
+/* Self-hosted woff2 (Inter, Noto Sans Thai, Fraunces, JetBrains Mono) — CSP font-src 'self' unchanged. */
+@import '@jirawatpyk/aura-tokens/aura-fonts.local.css';
+@import '@jirawatpyk/aura-tokens/tailwind.prefixed.css';
+@import '../styles/aura-theme.css' layer(aura-tokens);
+@import '@jirawatpyk/aura-react/styles.layer.css';
 
 /* Exclude non-source markdown docs from Tailwind v4 auto-detection so
    example class strings (e.g. `max-w-[var(--TOKEN)]`) inside specs/ or
@@ -28,8 +39,9 @@
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
 
-  --font-sans: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans Thai', sans-serif;
-  --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, monospace, ui-monospace, monospace;
+  /* AURA's type families (spec 122 FR-003), served from our origin by aura-fonts.local.css. */
+  --font-sans: "Inter", "Noto Sans Thai", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
 
   /* Shimmer keyframes — see ux-standards § 2.1 */
   --animate-shimmer: shimmer 1.8s linear infinite;
@@ -43,7 +55,9 @@
     }
   }
 
-  --font-heading: var(--font-sans);
+  /* Kit titles (card, dialog, sheet) are h2/h3-level, which AURA sets in sans;
+     Fraunces is AURA's display face only (and mixes badly with Thai). */
+  --font-heading: "Inter", "Noto Sans Thai", sans-serif;
 
   --color-sidebar-ring: var(--sidebar-ring);
 
@@ -59,7 +73,6 @@
 
   --color-sidebar-foreground: var(--sidebar-foreground);
 
-  --color-sidebar-flag: var(--sidebar-flag);
 
   --color-sidebar: var(--sidebar);
 
@@ -133,107 +146,65 @@
 
 /* --- Light / dark CSS variables --- */
 :root {
-  --border: oklch(0.922 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.515 0 0);
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  /* Deep Swedish navy (#10487A) — premium/enterprise tone. White-on-navy = 9.4:1 (WCAG AA). */
-  --primary: oklch(0.3947 0.1012 250.40);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  /* WCAG 2.1 AA fix (F1 ship-gate review): the shadcn default destructive
-   * (oklch(0.577 0.245 27.325) ≈ #e7000b) only reaches a 4.36:1 contrast
-   * ratio against bg-destructive/5 in alert cards — below the 4.5:1
-   * minimum. Darkening L from 0.577 → 0.49 maps roughly to #c8080f,
-   * which measures 5.9:1 against the same tinted background and passes
-   * axe color-contrast. Dark-theme destructive stays unchanged. */
-  --destructive: oklch(0.49 0.213 27.325);
-  --destructive-foreground: oklch(0.985 0 0);
-  /* Tinted surface for alert/badge backgrounds (≈5% destructive on white).
-   * Used by InlineAlert, StatusBadge destructive variant. */
-  --destructive-surface: oklch(0.97 0.02 27.325);
+  /* --- Token bridge (spec 122 FR-002, contracts/css-layers.md) ---
+   * Every legacy kit colour is an alias of an AURA token, so a page that has
+   * not been migrated yet already renders in AURA's palette, in both themes:
+   * `.dark` on <html> flips the --aura-* values on this same element and the
+   * aliases follow. That is why no bridged name may appear in `.dark` below.
+   * A contrast failure is fixed HERE, never per page. Removed at US13. */
+  --background: var(--aura-bg-canvas);
+  --foreground: var(--aura-fg-primary);
+  --card: var(--aura-bg-surface);
+  --card-foreground: var(--aura-fg-primary);
+  --popover: var(--aura-bg-surface);
+  --popover-foreground: var(--aura-fg-primary);
+  /* The brand accent, not AURA's ink button colour: ink equals body text, so
+   * every `text-primary` link would stop reading as a link (review B1). */
+  --primary: var(--aura-fg-accent);
+  --primary-foreground: var(--aura-fg-inverted);
+  /* Not bg-surface-hover: in light it equals the canvas (#fafafa), so muted
+   * fills — tabs, skeletons, secondary buttons — vanish on the page. */
+  --secondary: var(--aura-status-neutral-bg);
+  --secondary-foreground: var(--aura-fg-primary);
+  --muted: var(--aura-status-neutral-bg);
+  --muted-foreground: var(--aura-fg-secondary);
+  --accent: var(--aura-bg-selected);
+  --accent-foreground: var(--aura-fg-primary);
+  --destructive: var(--aura-fg-danger);
+  --destructive-foreground: var(--aura-fg-inverted);
+  --destructive-surface: var(--aura-alert-danger-bg);
+  --success: var(--aura-fg-positive);
+  --success-foreground: var(--aura-fg-inverted);
+  --success-surface: var(--aura-alert-success-bg);
+  --warning: var(--aura-alert-warning-fg);
+  --warning-foreground: var(--aura-fg-inverted);
+  --warning-surface: var(--aura-alert-warning-bg);
+  --info: var(--aura-fg-accent);
+  --info-foreground: var(--aura-fg-inverted);
+  --info-surface: var(--aura-alert-info-bg);
+  --border: var(--aura-border-default);
+  --input: var(--aura-border-control);
+  --ring: var(--aura-focus-ring);
+  --chart-1: var(--aura-chart-1);
+  --chart-2: var(--aura-chart-2);
+  --chart-3: var(--aura-chart-3);
+  --chart-4: var(--aura-chart-4);
+  --chart-5: var(--aura-chart-5);
+  --radius: var(--aura-radius-md);
+  --sidebar: var(--aura-bg-surface);
+  --sidebar-foreground: var(--aura-fg-primary);
+  --sidebar-primary: var(--aura-button-primary-bg);
+  --sidebar-primary-foreground: var(--aura-button-primary-fg);
+  --sidebar-accent: var(--aura-bg-selected);
+  --sidebar-accent-foreground: var(--aura-fg-accent);
+  --sidebar-border: var(--aura-border-default);
+  --sidebar-ring: var(--aura-focus-ring);
+  --nav-indicator: var(--aura-fg-accent);
 
-  /* Semantic status tokens — Chamber-OS design-system audit P0 (A1).
-   * OKLCH L-values picked so foreground-on-surface meets WCAG 2.1 AA
-   * 4.5:1 minimum against `*-surface` backgrounds. Hue references:
-   *   success ≈ 145deg (emerald) — avoid red/green-only cues, always
-   *   pair with an icon; see docs/ux-standards.md § A11y colour-blind.
-   *   warning ≈ 75deg (amber)
-   *   info    ≈ 230deg (sky blue, distinct from primary gray) */
-  --success: oklch(0.52 0.15 145);
-  --success-foreground: oklch(0.985 0 0);
-  --success-surface: oklch(0.965 0.03 145);
-
-  /* L lowered 0.55→0.48 so warning text on --warning-surface meets WCAG AA
-     (was 4.47:1, now ~6:1 — covers InlineAlert's opacity-90 description too).
-     Darkening only improves --warning-as-background (white-text) contrast, so
-     no warning-button/badge regression. Dark-mode --warning already passes. */
-  --warning: oklch(0.48 0.15 75);
-  --warning-foreground: oklch(0.985 0 0);
-  --warning-surface: oklch(0.97 0.04 75);
-
-  /* Hue shifted 230->205 (cyan-teal) so the info blue stays clearly distinct
-     from the new Sweden-blue --primary (hue ~244) in adjacent contexts
-     (e.g. an info banner next to a primary CTA). Still WCAG AA: text-info on
-     info-surface 5.1:1, white on info 5.6:1. */
-  --info: oklch(0.5 0.17 205);
-  --info-foreground: oklch(0.985 0 0);
-  --info-surface: oklch(0.965 0.03 205);
-
-  --input: oklch(0.922 0 0);
-  /* Focus-ring colour — deep Swedish navy (#10487A), navy-on-white 9.4:1.
-   * Standard form/interactive primitives (input, button, select, checkbox,
-   * tabs, badge, …) render a FULL-OPACITY `focus-visible:border-ring` as the
-   * WCAG 2.4.11 indicator, so their accompanying `ring-ring/50` glow is just
-   * decorative. Surfaces that have NO border-ring (password-input reveal
-   * toggle, scrollable table + scroll-area regions, settings cards, pay-sheet
-   * links) instead use full-opacity `focus-visible:ring-ring` (9.4:1) — a /50
-   * ring there is only 2.23:1 and fails. Do NOT reintroduce `ring-ring/50` as
-   * a SOLE focus indicator. */
-  --ring: oklch(0.3947 0.1012 250.40);
-  /* Navy+gold data-viz ramp (was grayscale). Series are always paired
-     with labels/legends so hue is never the sole differentiator. */
-  --chart-1: oklch(0.3947 0.1012 250.40); /* navy */
-  --chart-2: oklch(0.7635 0.0616 240.33); /* steel blue */
-  --chart-3: oklch(0.7280 0.1380 89.73);  /* gold */
-  --chart-4: oklch(0.3414 0.0937 248.81); /* navy */
-  --chart-5: oklch(0.70 0.15 70);         /* amber */
-  --radius: 0.625rem;
-  /* --- Swedish-flag staff sidebar ---
-   * Blue rail = the flag's field; the 4px --sidebar-flag edge (see below) is
-   * the vertical arm of the flag's cross. Measured on the rendered DOM:
-   * nav links 9.0:1, group labels (foreground/70) 5.3:1, white-on-hover
-   * (#2B5F92) 6.7:1 — all clear of the 4.5:1 AA floor.
-   * Flag YELLOW is deliberately absent from every text pairing here: white on
-   * it is 1.5:1 and Sweden-blue on it is 3.8:1, so it only ever appears as the
-   * decorative edge stripe (SC 1.4.11 exempts pure decoration). */
-  --sidebar: oklch(0.3947 0.1012 250.40);         /* navy #10487A */
-  --sidebar-foreground: oklch(0.985 0 0);         /* white on navy 9.0:1 */
-  --sidebar-primary: oklch(0.7280 0.1380 89.73);  /* gold badge */
-  --sidebar-primary-foreground: oklch(0.205 0 0); /* near-black on gold 6.3:1 */
-  --sidebar-accent: oklch(0.4750 0.1000 250.40);  /* hover/active #2B5F92 */
-  --sidebar-accent-foreground: oklch(0.985 0 0);  /* white on #2B5F92 6.7:1 */
-  --sidebar-border: oklch(1 0 0 / 22%);           /* white hairline on navy */
-  --sidebar-ring: oklch(0.7280 0.1380 89.73);     /* gold focus ring, 3.9:1 on navy */
-  /* Exact Swedish flag yellow. Decorative edge stripe ONLY — never a text
-   * background. Hex (not oklch) so the brand value stays literal. */
-  --sidebar-flag: #FECC02;
-
-  /* --- Brand accent tokens (premium navy + gold) --- */
-  /* Member bottom-tabs active border ONLY (the staff sidebar does NOT use this
-   * — its active state is --sidebar-accent). It renders on the WHITE member
-   * shell, so it must stay navy: gold here would be 2.4:1 and fail SC 1.4.11's
-   * 3:1 floor for a state indicator. Do NOT "flag-ify" this token. */
-  --nav-indicator: oklch(0.3947 0.1012 250.40); /* navy, 9.4:1 on white */
-  --brand-accent: oklch(0.7280 0.1380 89.73);   /* muted gold #C9A227 — pair ONLY with dark text or place on a navy/dark surface (gold-on-white = 2.4:1) */
+  /* TSCC gold (BrandMark rule, badges on navy). Kept literal, not bridged:
+   * AURA has no gold, and its accent is blue. Pair ONLY with dark text or a
+   * dark surface (gold-on-white = 2.4:1). */
+  --brand-accent: oklch(0.7280 0.1380 89.73);   /* #C9A227 */
   --brand-accent-foreground: oklch(0.205 0 0);  /* near-black on gold — 6.3:1 */
 
   /* --- Page layout tokens --- */
@@ -300,67 +271,10 @@
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --border: oklch(1 0 0 / 10%);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  /* Dark mode: light steel-blue so dark text reads on it (near-black on
-     #8FB8D6 = 7.3:1). Mirrors the light/dark inversion of the neutral theme. */
-  --primary: oklch(0.7635 0.0616 240.33);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.985 0 0);
-  --destructive-surface: oklch(0.27 0.08 27.325);
-
-  /* Dark-mode semantic tokens — brighter L for surface contrast on dark bg,
-   * foreground stays near-white. Audited to meet 4.5:1 on --*-surface. */
-  --success: oklch(0.68 0.16 145);
-  --success-foreground: oklch(0.145 0 0);
-  --success-surface: oklch(0.26 0.07 145);
-
-  --warning: oklch(0.72 0.16 75);
-  --warning-foreground: oklch(0.145 0 0);
-  --warning-surface: oklch(0.28 0.08 75);
-
-  --info: oklch(0.7 0.17 205);
-  --info-foreground: oklch(0.145 0 0);
-  --info-surface: oklch(0.26 0.08 205);
-
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.7635 0.0616 240.33); /* steel blue */
-  --chart-1: oklch(0.7635 0.0616 240.33); /* steel blue */
-  --chart-2: oklch(0.684 0.111 237.8);    /* blue */
-  --chart-3: oklch(0.7280 0.1380 89.73);  /* gold */
-  --chart-4: oklch(0.55 0.13 248);        /* deep blue */
-  --chart-5: oklch(0.78 0.15 70);         /* amber */
-  /* Swedish-flag sidebar, dark theme — the navy is darkened so it still reads
-   * as a rail against the near-black shell instead of glowing off it. Flag
-   * yellow is unchanged: the edge stripe is decorative in both themes. */
-  --sidebar: oklch(0.3000 0.0750 250.40);         /* deep navy */
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.7280 0.1380 89.73);  /* gold badge */
-  --sidebar-primary-foreground: oklch(0.205 0 0); /* near-black on gold 6.3:1 */
-  --sidebar-accent: oklch(0.3800 0.0800 250.40);  /* hover/active */
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 12%);
-  --sidebar-ring: oklch(0.7280 0.1380 89.73);     /* gold focus ring */
-  --sidebar-flag: #FECC02;
-
-  /* --- Brand accent tokens (dark) --- */
-  --nav-indicator: oklch(0.7280 0.1380 89.73); /* member bottom-tabs / sidebar active stripe — gold on dark, 5.2:1 */
-  --brand-accent: oklch(0.7280 0.1380 89.73);
-  --brand-accent-foreground: oklch(0.205 0 0);
-
-  /* Heavier card shadow so elevation stays visible on dark surfaces. */
+  /* The legacy kit colours follow AURA's dark values through the token
+   * bridge on :root (spec 122) — no bridged name belongs here. Only the
+   * values AURA has no token for stay.
+   * Heavier card shadow so elevation stays visible on dark surfaces. */
   --card-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.3);
 }
 
@@ -499,11 +413,13 @@ body {
 
 /* --- Skeleton shimmer base + reduced-motion fallback --- */
 .skeleton-shimmer {
+  /* AURA's skeleton tone (zinc-200 / zinc-700), so a skeleton stays visible
+     on the page background too — also static under reduced motion. */
   background: linear-gradient(
     90deg,
-    var(--muted) 0%,
-    color-mix(in srgb, var(--muted) 60%, var(--foreground) 10%) 50%,
-    var(--muted) 100%
+    var(--aura-bg-skeleton) 0%,
+    color-mix(in srgb, var(--aura-bg-skeleton) 60%, var(--foreground) 10%) 50%,
+    var(--aura-bg-skeleton) 100%
   );
   background-size: 200% 100%;
 }
@@ -554,16 +470,9 @@ body {
     animation-iteration-count: 1 !important;
   }
 
-  /* Sonner toast slide-in / swipe-out (verify-fix U-I8 2026-04-26) —
-     sonner uses CSS animations on its `[data-sonner-toast]` element
-     plus translate transitions for the slide effect. Neutralise both
-     so the toast appears instantly under reduced-motion preference,
-     matching the rest of the platform's WCAG 2.3.3 posture. */
-  [data-sonner-toast],
-  [data-sonner-toaster] {
-    animation-duration: 0.01ms !important;
-    transition-duration: 0.01ms !important;
-  }
+  /* Toasts: AURA's own stylesheet drops the toast animation under
+     reduced motion (`.aura-toast { animation: none }`), so the old
+     sonner override (verify-fix U-I8) went with sonner in spec 122. */
 }
 
 /* --- FilterBar responsive children ---

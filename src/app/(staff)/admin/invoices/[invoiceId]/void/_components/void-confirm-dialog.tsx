@@ -23,7 +23,7 @@
 import { useState, useTransition, useCallback, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { AlertTriangleIcon, Loader2Icon } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';

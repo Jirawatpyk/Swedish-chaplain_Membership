@@ -30,7 +30,7 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushMock, refresh: vi.fn() }),
 }));
 
-vi.mock('sonner', () => ({
+vi.mock('@/lib/toast', () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
 
@@ -348,7 +348,7 @@ describe('U28 / U29 — the staff form explains a dimmed Submit and a refused dr
     ['broadcast_custom_recipient_invalid_format', composeErrors.broadcast_custom_recipient_invalid_format],
     ['broadcast_custom_recipient_too_many', composeErrors.broadcast_custom_recipient_too_many],
   ])('U28 — a draft save refused %s says so in the member form\'s words', async (code, copy) => {
-    const { toast } = await import('sonner');
+    const { toast } = await import('@/lib/toast');
     refuseDraftWith(code);
     const user = userEvent.setup();
     renderForm();

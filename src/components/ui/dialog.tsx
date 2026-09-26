@@ -47,7 +47,7 @@ function DialogOverlay({
     <DialogPrimitive.Backdrop
       data-slot="dialog-overlay"
       className={cn(
-        "fixed inset-0 isolate z-50 duration-[var(--modal-duration)] motion-reduce:duration-0 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
+        "fixed inset-0 isolate z-[var(--aura-z-dialog)] duration-[var(--modal-duration)] motion-reduce:duration-0 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
         className
       )}
       {...props}
@@ -78,7 +78,7 @@ function DialogContent({
         style={{ animationTimingFunction: 'var(--modal-easing)' }}
         className={cn(
           // Default max-width sized for form dialogs; callers override via className for sm/lg use cases.
-          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-[var(--card-radius)] bg-popover p-[var(--card-padding)] text-sm text-popover-foreground shadow-[var(--card-shadow)] ring-1 ring-foreground/10 duration-[var(--modal-duration)] motion-reduce:duration-0 outline-none sm:max-w-[var(--modal-max-width-md)] data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          "fixed top-1/2 left-1/2 z-[var(--aura-z-dialog)] grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-[var(--card-radius)] bg-popover p-[var(--card-padding)] text-sm text-popover-foreground shadow-[var(--card-shadow)] ring-1 ring-foreground/10 duration-[var(--modal-duration)] motion-reduce:duration-0 outline-none sm:max-w-[var(--modal-max-width-md)] data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           className
         )}
         {...props}

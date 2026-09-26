@@ -13,7 +13,7 @@ import { CloneYearClient } from '@/app/(staff)/admin/plans/clone/clone-year-clie
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }));
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 const SEED = [
   { plan_id: 'diamond', plan_name: { en: 'Diamond' }, annual_fee_minor_units: 3_600_000, is_active: true },

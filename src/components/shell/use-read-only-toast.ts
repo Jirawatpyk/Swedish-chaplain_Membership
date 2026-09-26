@@ -13,7 +13,7 @@
  */
 import { useCallback } from 'react';
 import { useTranslations } from 'next-intl';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 export function useReadOnlyToast(): () => string {
   const t = useTranslations('errors');

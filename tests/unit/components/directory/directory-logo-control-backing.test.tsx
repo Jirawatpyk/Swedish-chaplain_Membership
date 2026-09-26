@@ -12,7 +12,7 @@ import en from '@/i18n/messages/en.json';
 import { DirectoryLogoControl } from '@/components/directory/directory-logo-control';
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 afterEach(() => {
   cleanup();

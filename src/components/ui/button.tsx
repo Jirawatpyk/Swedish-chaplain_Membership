@@ -21,7 +21,7 @@ const buttonVariants = cva(
         default:
           "border-transparent bg-primary text-primary-foreground [a]:hover:bg-primary/80",
         outline:
-          "border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
+          "border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-[var(--aura-bg-input)] dark:hover:bg-[var(--aura-bg-surface-hover)]",
         secondary:
           "border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80 aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
         ghost:
@@ -37,7 +37,7 @@ const buttonVariants = cva(
         // that sit next to a primary CTA — signals "this destroys state"
         // without outranking the primary action as `destructive` would.
         "destructive-outline":
-          "border-destructive/40 bg-background text-destructive hover:bg-destructive/10 hover:text-destructive focus-visible:ring-destructive dark:bg-input/30 dark:hover:bg-destructive/20",
+          "border-destructive/40 bg-background text-destructive hover:bg-destructive/10 hover:text-destructive focus-visible:ring-destructive dark:bg-[var(--aura-bg-input)] dark:hover:bg-destructive/20",
         link: "border-transparent text-primary underline-offset-4 hover:underline",
       },
       size: {

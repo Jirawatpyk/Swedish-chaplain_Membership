@@ -175,7 +175,7 @@ test.describe('064 event-fee as-paid form modes @f4', () => {
     // upload happen inside the second POST, so allow a generous budget).
     await page.getByRole('button', { name: 'Record payment & issue receipt' }).click();
     await expect(
-      page.locator('[data-sonner-toaster]').getByText('Payment recorded — receipt issued'),
+      page.locator('.aura-toaster').getByText('Payment recorded — receipt issued'),
     ).toBeVisible({ timeout: 45_000 });
 
     // Lands on the invoice detail: §87 document number in the h1 + Paid badge.
@@ -427,7 +427,7 @@ test.describe('064 event-fee as-paid form modes @f4', () => {
     // 064 remediation S6 — the copy now promises only what is true (the
     // draft exists and is visible in the list; there is no detail-page
     // retry button) and the toast itself carries an inline Retry action.
-    const toaster = page.locator('[data-sonner-toaster]');
+    const toaster = page.locator('.aura-toaster');
     await expect(
       toaster.getByText('The PDF could not be generated — nothing was issued. Try again.'),
     ).toBeVisible({ timeout: 30_000 });

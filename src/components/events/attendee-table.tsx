@@ -32,7 +32,7 @@ import {
 } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { Copy, Loader2 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import {
   Table,
   TableBody,

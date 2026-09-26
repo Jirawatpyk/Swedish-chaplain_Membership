@@ -44,7 +44,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { useSurvivingTargetFinalFocus } from '@/components/broadcast/unmounting-trigger-final-focus';
 
 /** The list container — the element that outlives a removed row. */

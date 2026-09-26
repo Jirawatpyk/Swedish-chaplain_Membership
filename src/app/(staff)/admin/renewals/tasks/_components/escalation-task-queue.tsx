@@ -27,7 +27,7 @@ import Link from 'next/link';
 import { useCallback, useId, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import {
   AlertTriangle,
   ClipboardCheck,

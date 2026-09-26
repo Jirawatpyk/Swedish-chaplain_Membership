@@ -18,25 +18,35 @@ document MUST be updated. If something here is silent, use shadcn/ui defaults.
 
 ### 1.1 Component library
 
-- **shadcn/ui** on **Radix UI** primitives for all interactive components.
-- **Tailwind CSS v4** with the default shadcn theme as the starting point;
-  brand colors applied via CSS custom properties in `src/app/globals.css`.
-- **lucide-react** for all icons — tree-shaken, SVG, a11y-compatible.
-- **No ad-hoc components.** Any new primitive requires a PR against the
-  `src/components/ui/` directory plus a reviewer sign-off.
+- **AURA** (`@jirawatpyk/aura-react` + `@jirawatpyk/aura-tokens`, pinned
+  exactly) is the component library and design-token source (spec 122). The
+  product is migrating to it module by module; until the Exit phase (US13,
+  at most 10 weeks after the foundation merge) some pages still use the legacy
+  kit in `src/components/ui/` — shadcn/ui on **Base UI** primitives (not Radix).
+- **New or migrated UI uses AURA components only.** The lint ratchet
+  (`@typescript-eslint/no-restricted-imports`, `MIGRATED_PATHS` in
+  `eslint.config.mjs`) fails a migrated path that imports the legacy kit.
+- A behaviour AURA lacks is logged in the AURA handoff doc and bridged by a
+  local wrapper marked `// AURA-handoff #NN`, removed when AURA ships it.
+- **Tailwind CSS v4** stays for layout utilities; AURA's utilities carry an
+  `aura-` prefix. Layer order and imports: `docs/aura-adoption.md`.
+- **lucide-react** for icons outside AURA components (AURA ships its own).
 
 ### 1.2 Colour tokens
 
-- Defined in `src/app/globals.css` using CSS custom properties (shadcn format).
+- **AURA tokens** (`--aura-*`, from `@jirawatpyk/aura-tokens/aura.css` plus the
+  generated brand theme `src/styles/aura-theme.css`) are the source. The legacy
+  shadcn variables in `src/app/globals.css` are aliases of AURA tokens (the
+  "token bridge", `docs/aura-adoption.md`) until the Exit phase.
 - **Light mode** and **dark mode** — both MUST be supported from day one.
-- Token names follow shadcn convention: `--background`, `--foreground`,
-  `--primary`, `--primary-foreground`, `--muted`, `--accent`, `--destructive`,
-  `--border`, `--ring`, etc.
+- Migrated code uses AURA tokens or `aura-*` utilities, never the legacy
+  names.
 - **Contrast**: all text/background combinations MUST meet **WCAG 2.1 AA**
   (4.5:1 for normal text, 3:1 for large text) in BOTH modes — verified by
   automated tests.
-- **Brand colours**: SweCham Swedish blue (#005293) and SweCham yellow
-  (#FFCD00) as `--accent` and `--accent-foreground` respectively.
+- **Brand colour**: `#10487A`, applied through the committed AURA brand theme
+  (`npx aura-theme --brand "#10487A"`; the CLI fails if any contrast check
+  fails). Per-tenant colours belong to the future white-label feature (F12).
 
 ### 1.3 Type scale
 
@@ -50,8 +60,10 @@ document MUST be updated. If something here is silent, use shadcn/ui defaults.
 | `text-2xl` | 24 px | 32 px | Page titles |
 | `text-3xl` | 30 px | 36 px | Dashboard hero numbers |
 
-- **Fonts**: `Inter` (variable) for Latin scripts, `IBM Plex Sans Thai`
-  (variable) for Thai. Loaded via `next/font` with `display: swap`.
+- **Fonts** (AURA): `Inter` + `Noto Sans Thai` for text, `Fraunces` for display
+  headings, `JetBrains Mono` for code and numbers in mono. Self-hosted from the
+  product's origin (`@jirawatpyk/aura-tokens/aura-fonts.local.css`) — no font
+  CDN.
 - **Minimum body size**: 16 px — never smaller for body text to preserve
   readability (16 px also prevents iOS Safari from zooming on input focus).
 
@@ -75,7 +87,8 @@ document MUST be updated. If something here is silent, use shadcn/ui defaults.
 
 ### 1.7 Theming switcher
 
-- **next-themes** for light/dark mode.
+- **next-themes** for light/dark mode; it sets `.dark` on `<html>`, which AURA
+  reads too — one theme switch drives both libraries.
 - Initial theme follows `prefers-color-scheme`; user preference overrides
   and persists in a cookie (not localStorage — cookie works with SSR).
 - Theme switcher lives in the user menu (top-right of every authenticated
@@ -89,7 +102,15 @@ Loading is a UX state, not an absence of UX. Every surface that waits on
 data MUST show a **skeleton shimmer** placeholder — never a blank screen,
 never just a spinner.
 
-### 2.1 Skeleton shimmer — the canonical pattern
+### 2.1 Skeleton — the canonical pattern
+
+> **Spec 122 (2026-09-26): AURA's pulse skeleton replaces the shimmer below.**
+> From the Shell phase (US1) every skeleton is AURA `<Skeleton>` (a pulse,
+> stopped under `prefers-reduced-motion`); the shimmer CSS is removed then.
+> The rules on shape still apply: a skeleton matches the real content layout
+> (same dimensions, corners and count; CLS = 0). The shimmer description below
+> is kept only until US1 lands.
+
 
 - Use `<Skeleton>` from `src/components/ui/skeleton.tsx` (shadcn-generated,
   extended with shimmer).
@@ -234,12 +255,14 @@ The member portal placeholder landing page IS an empty state:
 
 ### 4.2 Toast for global / async errors
 
-- **Sonner** component (shadcn) for non-blocking toasts.
-- Error toast: `sonner.error(message, { description, action })`
-- Position: `top-right` on desktop, `top-center` on mobile.
-- Auto-dismiss after 5 s by default; error toasts persist until dismissed
-  by user action.
-- Each toast has a "Dismiss" button for keyboard users.
+- AURA toasts, only through `@/lib/toast` (spec 122): `toast.error(title, { description, action })`.
+  The description is plain text and a toast carries at most one action.
+- Position: top-centre, below the top bar, on every width. At most 3 show; more queue.
+- Auto-dismiss after 5 s by default; `toast.error` persists until dismissed
+  unless the caller passes a `duration` (the facade enforces it).
+- Each toast has a close button, and **Alt+T** focuses the newest toast's
+  action (else its close button) for keyboard users. After an action runs,
+  focus returns to where it was.
 
 ### 4.3 Full-page error (500, network failure, unexpected)
 
@@ -283,7 +306,7 @@ flow ships with the resend pattern or the gate fails.
 
 ### 5.1 Toast for non-blocking success
 
-- **Sonner** `sonner.success(message)` — auto-dismiss after 3 s.
+- `toast.success(title)` (AURA via `@/lib/toast`) — auto-dismisses after 5 s.
 - Used for: form saved, user invited, password changed, session rotated.
 - NEVER used for critical security operations that need acknowledgement
   (use a modal confirmation screen instead).
@@ -575,7 +598,11 @@ auth domain layer, not the UI.
 - `en-GB` format in English: `9 April 2026, 14:23`
 - `sv-SE` format in Swedish: `9 april 2026 14:23`
 - `th-TH` format in Thai: `9 เมษายน 2569 14:23` (Buddhist Era, BE = CE + 543)
-- All formatted via `Intl.DateTimeFormat` with the correct locale.
+- All formatted via `Intl.DateTimeFormat` with the correct locale, through
+  `src/lib/format-date-localised.ts` (`getDateFormatLocale` /
+  `formatLocalisedDate`). AURA's own `formatDate` / `useFormatDate` are banned
+  by the lint ratchet; AURA date pickers get the calendar from `AuraBridge`
+  (Buddhist for `th`, Gregorian otherwise) and the tenant time zone.
 
 ### 12.4 Currency
 
@@ -635,7 +662,19 @@ auth domain layer, not the UI.
 
 ---
 
-## 16. Required shadcn/ui primitives (install checklist)
+## 16. Component inventory
+
+**AURA (spec 122 — the target).** Build with AURA components: AppShell,
+SideNav, Breadcrumb, Pagination, Command, Dialog, Drawer, Menu/DropdownMenu,
+Popover, Tooltip, Tabs, Card, Stat, StatusPill, Badge/Tag, Alert, EmptyState,
+Skeleton, Progress, Stepper, DataTable, FilterBar, TextField, Textarea,
+PasswordField, NumberField, Select, Combobox, RadioGroup, Checkbox, Switch,
+SegmentedControl, DatePicker/DateRangePicker/Calendar, TimePicker, FileUpload,
+FormErrorSummary, Toaster (via `@/lib/toast`). The migration phases and the
+per-module definition of done are in `docs/aura-adoption.md`.
+
+**Legacy (until US13).** The shadcn install list below describes the old kit
+for pages not yet migrated. Do not add to it.
 
 From the [shadcn CLI](https://ui.shadcn.com), the following primitives are
 installed for F1:
@@ -661,6 +700,14 @@ Plus custom extensions:
 Every PR touching UI MUST tick all applicable items from § 15 (auth screen
 checklist) or the equivalent checklist for non-auth screens. Reviewers:
 refuse to merge UI PRs that leave boxes unchecked.
+
+For an AURA migration phase (spec 122) the PR additionally shows:
+- zero `@/components/ui` imports in the phase's paths, and those paths added
+  to `MIGRATED_PATHS`;
+- screenshots against the phase's canvas boards at 390 and 1280 px, light and
+  dark (differences either listed as board proposals or fixed);
+- the local e2e run log (`@a11y`, `@i18n`, the module's specs);
+- re-baselined bundle budgets.
 
 ---
 

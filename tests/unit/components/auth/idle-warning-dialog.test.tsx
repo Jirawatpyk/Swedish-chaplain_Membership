@@ -30,14 +30,14 @@ vi.mock('next/navigation', () => ({
   }),
 }));
 
-vi.mock('sonner', () => ({
+vi.mock('@/lib/toast', () => ({
   toast: {
     info: vi.fn(),
     success: vi.fn(),
     error: vi.fn(),
   },
 }));
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 // Mock the auth domain module — importing the real one would drag in
 // Node-only infrastructure (argon2, postgres-js). We only need the

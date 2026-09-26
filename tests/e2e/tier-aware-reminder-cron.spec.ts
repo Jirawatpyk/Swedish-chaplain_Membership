@@ -66,12 +66,12 @@ test.describe('F8 — admin send-reminder UI (US2 AS6, T113)', () => {
     // seconds and be announced to assistive tech via role=status.
     await sendReminderItem.click();
 
-    // Sonner renders toasts in an `ol[role=region]` with each toast
-    // carrying role="status" or role="alert" depending on the variant.
+    // AURA renders toasts in a `.aura-toaster` region (spec 122), each toast
+    // carrying role="status", or role="alert" for the danger tone.
     // Wait for ANY toast to appear — the specific variant depends on
     // seed state (idempotency hit vs first send vs gate skip).
     const toast = page
-      .locator('[data-sonner-toast]')
+      .locator('.aura-toast')
       .first();
     await expect(toast).toBeVisible({ timeout: 10_000 });
 

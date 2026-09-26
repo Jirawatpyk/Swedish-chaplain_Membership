@@ -14,7 +14,7 @@
  * Fix 10: delegates fetch/toast/refresh to useContactResendAction.
  */
 import { useTranslations } from 'next-intl';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { MailCheckIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useContactResendAction } from './use-contact-resend-action';

@@ -23,7 +23,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { type SubmitHandler, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { passwordPairFields, refinePasswordPair } from '@/lib/zod-i18n';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Loader2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PasswordInput } from '@/components/ui/password-input';

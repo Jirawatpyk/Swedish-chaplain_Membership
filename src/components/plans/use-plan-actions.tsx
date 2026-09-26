@@ -5,7 +5,7 @@
  * Each destructive or state-changing action opens a `ConfirmationDialog` per
  * UX standards § 4.1 (Activate is non-destructive and fires immediately),
  * calls the matching API endpoint with a fresh `Idempotency-Key`, and on
- * success shows a sonner toast + `router.refresh()` to repull server state.
+ * success shows a toast + `router.refresh()` to repull server state.
  * Nothing is optimistically mutated — the server is the source of truth
  * (FR-018/LWW).
  */
@@ -14,7 +14,7 @@
 import { useRef, useState, useTransition, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
 import { isReadOnlyCode, problemCode } from '@/lib/http/read-only-refusal';
 

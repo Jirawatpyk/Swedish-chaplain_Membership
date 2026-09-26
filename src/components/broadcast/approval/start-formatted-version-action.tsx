@@ -43,7 +43,7 @@ import { useRef, useState, useTransition } from 'react';
 import { Loader2Icon, PenLine } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import {
   AlertDialog,
   AlertDialogAction,

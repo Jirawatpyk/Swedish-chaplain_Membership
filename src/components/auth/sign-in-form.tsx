@@ -15,7 +15,7 @@
  *   - Inline error messages localised via next-intl
  *   - On submission failure, focus moves to the first invalid field
  *     (or the email if the failure is "invalid-credentials")
- *   - All toasts are routed through `sonner` (see RootLayout)
+ *   - All toasts are routed through `@/lib/toast` (AURA; see AuraBridge)
  */
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -23,7 +23,7 @@ import { useTranslations } from 'next-intl';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { type SubmitHandler, useForm } from 'react-hook-form';
 import { z } from 'zod';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Loader2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { EmailInput } from '@/components/ui/email-input';

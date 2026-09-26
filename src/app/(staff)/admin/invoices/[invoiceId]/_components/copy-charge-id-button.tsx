@@ -7,7 +7,7 @@
  *     a localised "copy failed — copy manually" hint.
  *   - U-I1: success path now adds a `role="status" aria-live="polite"`
  *     `sr-only` region so screen-reader users get explicit feedback
- *     beyond the visual icon swap (sonner toast SR support depends on
+ *     beyond the visual icon swap (toast SR support depends on
  *     `<Toaster>` config which is owned upstream).
  *   - M-1: touch target raised to 44 px (WCAG 2.5.5) via `min-h-11
  *     min-w-11` while keeping the visual density at h-7.
@@ -23,7 +23,7 @@
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { CheckIcon, CopyIcon } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 
 export function CopyChargeIdButton({ chargeId }: { chargeId: string }) {

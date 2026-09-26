@@ -47,7 +47,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 import { PaymentFailurePanel } from './payment-failure-panel';
 import { useThreeDSecurePoll } from '@/hooks/use-three-d-secure-poll';

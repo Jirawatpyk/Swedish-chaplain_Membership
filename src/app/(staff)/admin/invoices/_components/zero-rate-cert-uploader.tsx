@@ -26,7 +26,7 @@ import { useTranslations } from 'next-intl';
 import { PaperclipIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 /** Mirrors the use-case cap (5 MB) + accepted MIME allowlist. */
 const MAX_BYTES = 5 * 1024 * 1024;

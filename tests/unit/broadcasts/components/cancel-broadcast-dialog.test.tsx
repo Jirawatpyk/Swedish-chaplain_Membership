@@ -13,10 +13,10 @@ import { render, screen, waitFor, cleanup, fireEvent, within } from '@testing-li
 import userEvent from '@testing-library/user-event';
 import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { CancelBroadcastDialog } from '@/components/broadcast/cancel-broadcast-dialog';
 
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 const refreshSpy = vi.fn();
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: refreshSpy }) }));

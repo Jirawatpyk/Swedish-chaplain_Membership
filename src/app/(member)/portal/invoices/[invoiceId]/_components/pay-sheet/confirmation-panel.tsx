@@ -20,13 +20,13 @@
  *   - Secondary "Close" button.
  *   - 5-second auto-close countdown using `autoCloseCountdown` key.
  *     Countdown interrupts the moment the user clicks either button.
- *   - Fires a `sonner.success` toast on mount using the success.toast key.
+ *   - Fires a `toast.success` on mount using the success.toast key.
  *
  * PCI: zero persistence. `clientSecret` does not enter this component.
  */
 import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import {
   CheckCircle2Icon,
   DownloadIcon,

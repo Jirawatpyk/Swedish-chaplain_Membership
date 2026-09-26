@@ -10,7 +10,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import { ReadOnlyBanner } from '@/components/shell/read-only-banner';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import {
   MembersTable,
   type MembersTableRow,

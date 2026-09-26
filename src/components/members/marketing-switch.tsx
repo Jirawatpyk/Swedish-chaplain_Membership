@@ -37,7 +37,7 @@
 import { useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { AUDIENCE_COUNT_ID } from '@/lib/marketing-audience-filter';
 import { Switch } from '@/components/ui/switch';
 import type { MarketingState } from '@/modules/members';
@@ -178,7 +178,7 @@ export function MarketingSwitch({
                 action: {
                   label: t('undo'),
                   onClick: () => {
-                    // sonner dismisses the toast after this handler — the Undo
+                    // AURA dismisses the toast after this handler — the Undo
                     // button unmounts under the user's focus. Catch it: back to
                     // this switch if it is still in the DOM, else the count
                     // line (the row left a filtered view) (review HIGH-2).

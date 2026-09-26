@@ -30,7 +30,7 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushMock, refresh: vi.fn() }),
 }));
 
-vi.mock('sonner', () => ({
+vi.mock('@/lib/toast', () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
 

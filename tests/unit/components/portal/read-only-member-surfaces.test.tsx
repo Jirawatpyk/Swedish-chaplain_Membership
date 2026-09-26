@@ -18,7 +18,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import en from '@/i18n/messages/en.json';
 import { AcknowledgementBannerClient } from '@/app/(member)/portal/_components/marketing-acknowledgement-banner-client';
 import { ResendInvoiceButton } from '@/app/(member)/portal/invoices/_components/resend-invoice-button';
@@ -34,7 +34,7 @@ import { PortalMarketingToggle } from '@/components/members/portal-marketing-tog
 import { PreferredLocaleForm } from '@/components/portal/preferred-locale-form';
 import { ChangePasswordForm } from '@/components/auth/change-password-form';
 
-vi.mock('sonner', () => ({
+vi.mock('@/lib/toast', () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
 }));
 vi.mock('next/navigation', () => ({

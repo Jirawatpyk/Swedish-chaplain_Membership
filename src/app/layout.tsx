@@ -1,10 +1,10 @@
 import type { Metadata } from 'next';
 import { headers } from 'next/headers';
-import { Geist, Geist_Mono } from 'next/font/google';
 import { NextIntlClientProvider } from 'next-intl';
 import { getLocale, getMessages, getNow, getTimeZone } from 'next-intl/server';
 import { ThemeProvider } from 'next-themes';
-import { Toaster } from '@/components/ui/sonner';
+import { AuraBridge } from '@/components/providers/aura-bridge';
+import { defaultLocale, isLocale } from '@/i18n/config';
 import { SkipToContent } from '@/components/shell/skip-to-content';
 import './globals.css';
 
@@ -12,22 +12,13 @@ import './globals.css';
  * Root layout (T050, ux-standards § 1.7 + § 7.1).
  *
  * Wires up:
- *   - Geist sans + mono fonts (next/font CSS variables)
+ *   - AURA fonts, self-hosted via globals.css (spec 122 — no next/font)
  *   - next-intl provider (per-request locale + messages)
  *   - next-themes ThemeProvider (light / dark / system, no SSR flash)
+ *   - AuraBridge — AURA's locale, calendar, time zone, router link and the
+ *     single Toaster (top-centre) behind `@/lib/toast` (spec 122)
  *   - SkipToContent — first focusable element for keyboard users
- *   - Sonner Toaster — single global toast root
  */
-
-const geistSans = Geist({
-  variable: '--font-geist-sans',
-  subsets: ['latin'],
-});
-
-const geistMono = Geist_Mono({
-  variable: '--font-geist-mono',
-  subsets: ['latin'],
-});
 
 export const metadata: Metadata = {
   title: {
@@ -100,7 +91,7 @@ export default async function RootLayout({
     <html
       lang={locale}
       suppressHydrationWarning
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className="h-full antialiased"
     >
       <body className="min-h-full">
         <NextIntlClientProvider
@@ -116,11 +107,14 @@ export default async function RootLayout({
             disableTransitionOnChange
             {...(nonce !== undefined && { nonce })}
           >
-            <SkipToContent />
-            <div className="min-h-full">
-              {children}
-            </div>
-            <Toaster position="top-right" richColors />
+            {/* The same time zone next-intl formats with, so an AURA picker's
+                "today" and a formatted date never disagree. */}
+            <AuraBridge locale={isLocale(locale) ? locale : defaultLocale} timeZone={timeZone}>
+              <SkipToContent />
+              <div className="min-h-full">
+                {children}
+              </div>
+            </AuraBridge>
           </ThemeProvider>
         </NextIntlClientProvider>
       </body>

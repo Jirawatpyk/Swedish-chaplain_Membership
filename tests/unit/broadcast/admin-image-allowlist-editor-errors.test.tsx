@@ -16,12 +16,12 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { errorResponse } from '@/lib/broadcasts-route-helpers';
 import { HOSTNAME_REGEX } from '@/modules/broadcasts/domain/value-objects/image-source-allowlist';
 import { AdminImageAllowlistEditor } from '@/components/broadcast/admin-image-allowlist-editor';
 
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 const tErrors = enMessages.admin.broadcasts.settings.allowlist.errors;
 

@@ -37,12 +37,12 @@ export function MemberNav() {
             aria-current={active ? 'page' : undefined}
             className={cn(
               'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-              // 063 UX — this nav sits on the navy top bar (bg-sidebar), so it
-              // uses the SAME sidebar tokens the admin sidebar nav does: white
-              // links, an accent pill (#2B5F92, white 6.7:1) on hover/active,
-              // and a gold focus ring visible on navy. Active also goes
-              // font-semibold + carries aria-current so it is non-colour-only
-              // (WCAG 1.4.1). Never navy-on-navy.
+              // 063 UX — this nav sits on the portal top bar (bg-sidebar), so it
+              // uses the SAME sidebar tokens the admin sidebar nav does. Since
+              // spec 122 those are AURA tokens via the bridge (surface, accent
+              // pill, focus ring — all AA, see token-bridge-contrast.test.ts).
+              // Active also goes font-semibold + carries aria-current so it is
+              // non-colour-only (WCAG 1.4.1).
               'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar',
               active && 'bg-sidebar-accent font-semibold text-sidebar-accent-foreground',

@@ -14,7 +14,7 @@
 import { useEffect, useRef } from 'react';
 import { Loader2Icon } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 
 const TIMEOUT_MS = 8000;

@@ -50,7 +50,7 @@ vi.mock('next-intl', () => ({ useTranslations: () => (k: string) => k }));
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: h.push, refresh: vi.fn() }),
 }));
-vi.mock('sonner', () => ({ toast: h.toast }));
+vi.mock('@/lib/toast', () => ({ toast: h.toast }));
 
 // Stub the form: a submit button that fires the wrapper's onSubmit, plus a live
 // readout of the serverFieldError prop so tests can assert field routing.

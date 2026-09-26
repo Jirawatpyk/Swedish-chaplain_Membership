@@ -8,7 +8,7 @@
  * fresh `awaiting_payment` renewal cycle + issues a §86/4 renewal invoice
  * the member then pays.
  *
- * Mirrors `outreach-dialog.tsx`'s fetch + sonner toast + `router.refresh()`
+ * Mirrors `outreach-dialog.tsx`'s fetch + toast + `router.refresh()`
  * pattern. Explicit copy ("this creates a renewal invoice for the member
  * to pay"). `role="alertdialog"` + focus-on-Cancel per ux-standards § 4
  * (a side-effecting confirmation).
@@ -22,7 +22,7 @@
 import { useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { RefreshCwIcon } from 'lucide-react';
 import {
   Dialog,

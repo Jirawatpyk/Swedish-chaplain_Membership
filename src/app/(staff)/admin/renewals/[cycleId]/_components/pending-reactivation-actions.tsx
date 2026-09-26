@@ -17,7 +17,7 @@
  * of `at-risk/_components/outreach-dialog.tsx`:
  *
  *   1. **Approve** — a non-destructive confirmation `Dialog` → POST
- *      `/api/admin/renewals/[cycleId]/reactivate` → sonner toast → refresh.
+ *      `/api/admin/renewals/[cycleId]/reactivate` → toast → refresh.
  *   2. **Reject & refund** — a DESTRUCTIVE `AlertDialog` with a required
  *      reason `<Textarea>` (client-validated 1..500) + irreversible-refund
  *      copy → POST `/api/admin/renewals/[cycleId]/reject` → toast that
@@ -33,7 +33,7 @@
 import { useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Loader2Icon } from 'lucide-react';
 import {
   Dialog,

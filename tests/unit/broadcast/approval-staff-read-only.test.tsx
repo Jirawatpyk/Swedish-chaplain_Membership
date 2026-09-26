@@ -23,13 +23,13 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import en from '@/i18n/messages/en.json';
 import { ScheduleConfirmAction } from '@/components/broadcast/approval/schedule-confirm-dialog';
 import { StartFormattedVersionAction } from '@/components/broadcast/approval/start-formatted-version-action';
 import { TestCopyButton } from '@/components/broadcast/approval/test-copy-button';
 
-vi.mock('sonner', () => ({
+vi.mock('@/lib/toast', () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
 }));
 vi.mock('next/navigation', () => ({

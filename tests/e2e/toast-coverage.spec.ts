@@ -2,7 +2,7 @@
  * T168 — User-feedback coverage E2E (spec SC-015, ux-standards § 5).
  *
  * Every success/error path on an auth screen MUST surface exactly
- * one piece of visible feedback — either a `sonner` toast OR a
+ * one piece of visible feedback — either a toast (AURA, via `@/lib/toast`) OR a
  * `role="status"` success card. The forgot-password form uses a
  * card (source: forgot-password-form.tsx `setSubmitted(true)` →
  * `<div role="status">{t('submitted')}</div>`); sign-in errors use

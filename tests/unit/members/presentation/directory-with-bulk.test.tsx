@@ -16,7 +16,7 @@ import { NextIntlClientProvider } from 'next-intl';
 import type { MembersTableRow } from '@/components/members/members-table';
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
-vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() } }));
+vi.mock('@/lib/toast', () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() } }));
 vi.mock('@/components/layout/table-pagination', () => ({ TablePagination: () => null }));
 
 vi.mock('@/components/members/members-table', () => ({

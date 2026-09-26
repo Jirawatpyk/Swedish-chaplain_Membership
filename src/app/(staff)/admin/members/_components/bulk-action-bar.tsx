@@ -53,7 +53,7 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { ArchiveIcon, BellIcon, FileTextIcon, FileMinusIcon, MailIcon, XIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { ArchiveConfirmDialog } from './archive-confirm-dialog';
 import { BulkProgressIndicator } from './bulk-progress-indicator';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';

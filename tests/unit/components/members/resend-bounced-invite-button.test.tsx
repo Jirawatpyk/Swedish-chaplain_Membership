@@ -9,10 +9,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { ResendBouncedInviteButton } from '@/components/members/resend-bounced-invite-button';
 
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 const refreshSpy = vi.fn();
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: refreshSpy }) }));

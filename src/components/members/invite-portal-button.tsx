@@ -6,7 +6,7 @@
  * Mounted on the member detail page next to a contact that has an
  * email address and is not yet linked to a portal user. POSTs to
  * `/api/members/[memberId]/contacts/[contactId]/invite-portal` and
- * surfaces the result via `sonner` toast. On success the page is
+ * surfaces the result via a toast. On success the page is
  * refreshed (Next.js router) so the button disappears (the contact
  * now has a `linkedUserId`).
  */
@@ -14,7 +14,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { MailPlusIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 

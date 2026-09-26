@@ -49,7 +49,7 @@ import { useId, useMemo, useState, useTransition } from 'react';
 import { UnsavedChangesGuard } from '@/components/shell/unsaved-changes-guard';
 import { useTranslations } from 'next-intl';
 import { InfoIcon } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 import {
   Card,

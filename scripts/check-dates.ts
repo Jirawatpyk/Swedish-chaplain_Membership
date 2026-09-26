@@ -82,14 +82,6 @@ const ALLOWLIST_REL: ReadonlyArray<string> = [
   // out of the BE-display convention; these use a custom BroadcastNotificationLocale
   // type with explicit tz mapping, not a bare next-intl locale variable.
   'src/modules/broadcasts/infrastructure/email/broadcast-notification-emails.ts',
-
-  // calendar.tsx: the `locale?.code` is a react-day-picker locale OBJECT
-  // property (e.g. `enUS.code`), not a next-intl locale string. The
-  // toLocaleDateString call here sets a DOM data-attribute for day-picker
-  // internal state, not a user-visible date string; BE conversion is
-  // irrelevant (month-only calendar header has no year context where BE
-  // matters, and the picker library owns its own locale formatting).
-  'src/components/ui/calendar.tsx',
 ];
 
 // ---------------------------------------------------------------------------

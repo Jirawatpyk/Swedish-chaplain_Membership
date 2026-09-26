@@ -65,7 +65,7 @@ import {
   PencilIcon,
   TriangleAlert,
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 // Type-only import (erased at compile time → no runtime/client-bundle coupling
 // to the insights server graph). The engagement value is projected server-side.
 import type { EngagementBand } from '@/modules/insights';

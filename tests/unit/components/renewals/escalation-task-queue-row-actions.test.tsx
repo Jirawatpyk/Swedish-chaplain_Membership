@@ -28,7 +28,7 @@ vi.mock('next/navigation', () => ({
 
 // postAction toasts on success/failure — stub sonner so the success path in the
 // close-time regression test below runs without a mounted <Toaster>.
-vi.mock('sonner', () => ({
+vi.mock('@/lib/toast', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }));
 

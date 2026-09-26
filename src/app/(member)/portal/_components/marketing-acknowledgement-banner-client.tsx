@@ -21,7 +21,7 @@
 import { useRef, useState, useTransition } from 'react';
 import { Loader2, ShieldCheck } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
 import { isReadOnlyResponse } from '@/lib/http/read-only-refusal';

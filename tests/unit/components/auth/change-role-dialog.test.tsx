@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { ChangeRoleDialog } from '@/components/auth/change-role-dialog';
 
 // Base UI's Radio pointer handling references the global `PointerEvent`, which
@@ -28,7 +28,7 @@ if (typeof globalThis.PointerEvent === 'undefined') {
   globalThis.PointerEvent = PointerEventPolyfill as unknown as typeof PointerEvent;
 }
 
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 const ADMIN_USER = { id: 'u-admin-1', email: 'admin@example.com', role: 'admin' } as const;
 const MANAGER_USER = { id: 'u-manager-1', email: 'manager@example.com', role: 'manager' } as const;

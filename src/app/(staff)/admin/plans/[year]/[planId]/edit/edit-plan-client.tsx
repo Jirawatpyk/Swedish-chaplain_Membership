@@ -9,7 +9,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { useTranslations } from 'next-intl';
 import { isReadOnlyCode, problemCode } from '@/lib/http/read-only-refusal';
 import { PlanEditForm } from '@/components/plans/plan-edit-form';

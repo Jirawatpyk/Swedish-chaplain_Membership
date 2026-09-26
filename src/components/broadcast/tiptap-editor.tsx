@@ -25,7 +25,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import { useTranslations } from 'next-intl';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Info } from 'lucide-react';
 import {
   IMAGE_DISABLED_HINT_ID,

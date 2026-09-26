@@ -24,12 +24,12 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import userEvent from '@testing-library/user-event';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { FormattedVersionWorkspace } from '@/components/broadcast/approval/formatted-version-workspace';
 
 const refresh = vi.fn();
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh, push: vi.fn() }) }));
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }));
+vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }));
 vi.mock('@/components/shell/unsaved-changes-guard', () => ({ UnsavedChangesGuard: () => null }));
 vi.mock('@/components/broadcast/preview-pane', () => ({ PreviewPane: () => null }));
 vi.mock('@/components/broadcast/use-preview-html', () => ({ PreviewSurface: () => <div data-testid="preview-surface" /> }));

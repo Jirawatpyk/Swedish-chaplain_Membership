@@ -16,7 +16,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import enMessages from '@/i18n/messages/en.json';
 import {
   StartFormattedVersionAction,
@@ -24,7 +24,7 @@ import {
 } from '@/components/broadcast/approval/start-formatted-version-action';
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 const ID = '11111111-1111-4111-8111-111111111111';
 const t = enMessages.admin.broadcasts.approval;

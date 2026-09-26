@@ -24,7 +24,7 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), replace: replaceMock }),
   useSearchParams: () => new URLSearchParams(currentSearch),
 }));
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 function renderDialog(opts: { search: string; pendingRefundExists?: boolean }) {
   currentSearch = opts.search;

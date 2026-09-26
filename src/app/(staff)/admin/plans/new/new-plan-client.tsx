@@ -9,7 +9,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { useLocale, useTranslations } from 'next-intl';
 import { formatCalendarYear } from '@/lib/format-date-localised';
 import { isReadOnlyCode, problemCode } from '@/lib/http/read-only-refusal';

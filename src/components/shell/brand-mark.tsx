@@ -9,10 +9,10 @@
  *
  * Colour rules:
  *   - The artwork's flag blue (#20419A) is near-invisible on dark surfaces
- *     (1.02:1 against the sidebar navy), so every variant paints a white
- *     tile behind the crowns in dark mode. Surfaces that are dark in BOTH
- *     themes (the navy staff sidebar) must add their own always-on white
- *     chip at the call site — the tile here is dark-theme-only.
+ *     (1.02:1 against navy), so every variant paints a white tile behind
+ *     the crowns in dark mode. A surface that is dark in both themes must
+ *     add its own always-on white chip at the call site — the tile here is
+ *     dark-theme-only.
  *     A reverse recolour for dark surfaces (blue stroke → white; in-house
  *     derivative, not TSCC-official) exists at
  *     public/brand/tscc-mark-reverse.svg — opt in per call site via the
@@ -46,7 +46,7 @@ interface BrandMarkProps {
 const MARK_SRC = '/brand/tscc-mark.svg';
 const MARK_REVERSE_SRC = '/brand/tscc-mark-reverse.svg';
 const GOLD = 'var(--brand-accent)';
-const WORDMARK_FONT = 'var(--font-geist-sans), "Segoe UI", system-ui, sans-serif';
+const WORDMARK_FONT = 'var(--font-sans), "Segoe UI", system-ui, sans-serif';
 
 /** White tile behind the crowns — visible only on the dark theme. */
 function DarkTile(props: {

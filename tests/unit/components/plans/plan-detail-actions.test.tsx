@@ -14,7 +14,7 @@ import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
 
 const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
-vi.mock('sonner', () => ({ toast }));
+vi.mock('@/lib/toast', () => ({ toast }));
 const refresh = vi.hoisted(() => vi.fn());
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh }),

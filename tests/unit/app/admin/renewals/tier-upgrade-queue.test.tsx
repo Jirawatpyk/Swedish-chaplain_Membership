@@ -21,7 +21,7 @@ const h = vi.hoisted(() => ({
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ refresh: h.refresh }),
 }));
-vi.mock('sonner', () => ({ toast: h.toast }));
+vi.mock('@/lib/toast', () => ({ toast: h.toast }));
 
 const MEMBER_UUID = '11111111-2222-4333-8444-555555555555';
 

@@ -20,7 +20,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { CopyIcon, CheckIcon, EyeIcon, EyeOffIcon } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';

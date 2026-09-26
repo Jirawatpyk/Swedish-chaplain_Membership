@@ -105,6 +105,16 @@ import { beforeAll, afterEach, afterAll, vi } from 'vitest';
 // pattern that passes for any non-null DOM reference.
 import '@testing-library/jest-dom/vitest';
 
+// Spec 122 T006 — an AURA development warning (`[AURA] …`: a Select with no
+// accessible name, …) is a misuse that would otherwise only reach the console.
+// Throw it instead, so the test that rendered it fails. Other warnings pass
+// through untouched. Control: tests/unit/setup/aura-dev-warnings.test.tsx.
+const consoleWarn = console.warn.bind(console);
+console.warn = (...args: unknown[]) => {
+  if (typeof args[0] === 'string' && args[0].startsWith('[AURA]')) throw new Error(args[0]);
+  consoleWarn(...args);
+};
+
 // Fixed clock for deterministic TTL tests. Individual tests can override
 // by calling `vi.setSystemTime(...)` themselves.
 const FIXED_NOW = new Date('2026-04-09T12:00:00.000Z');

@@ -16,7 +16,7 @@
  */
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { InsightDismissButton } from './insight-dismiss-button';
 

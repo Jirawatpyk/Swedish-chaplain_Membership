@@ -11,7 +11,7 @@
 
 import { useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
@@ -33,7 +33,7 @@ export function RenewalRemindersToggle({
     const prev = optedOut;
     setOptedOut(next);
     startTransition(async () => {
-      // I17 review-fix: surface failures via sonner toast (per
+      // I17 review-fix: surface failures via toast (per
       // docs/ux-standards.md async-feedback convention) instead of an
       // inline error. The toast title + description tell the member
       // both that the toggle reverted AND why — clearer than a

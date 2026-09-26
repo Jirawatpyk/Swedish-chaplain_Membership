@@ -21,9 +21,9 @@
  * Submit pipeline:
  *   1. RHF validation (zod) — invalid blocks Confirm.
  *   2. POST /api/refunds/initiate — bigint amount as JSON number.
- *   3. On 201: sonner.success with credit-note number; close dialog;
+ *   3. On 201: toast.success with credit-note number; close dialog;
  *      router.refresh() to update payment timeline + status badges.
- *   4. On 4xx/5xx: inline alert above buttons (FR-029(g)) + sonner.
+ *   4. On 4xx/5xx: inline alert above buttons (FR-029(g)) + a toast.
  *
  * Track B — a refund can legitimately carry NO §86/10 ใบลดหนี้ (the invoice was
  * voided, or the buyer holds a §105 receipt). Both success arms above therefore
@@ -36,7 +36,7 @@ import { useTranslations } from 'next-intl';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { type SubmitHandler, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Loader2Icon, TriangleAlertIcon } from 'lucide-react';
 // TYPE-ONLY, and it must stay that way. The invoicing barrel reaches
 // server-only modules; a value import here would drag them into a client

@@ -18,7 +18,7 @@ import { ChangePasswordForm } from '@/components/auth/change-password-form';
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }));
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 // tests/setup.ts installs global fake timers; RHF async validation + findBy
 // polling need real timers to settle.

@@ -27,11 +27,11 @@
  */
 import { useState } from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, cleanup, fireEvent, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
 import th from '@/i18n/messages/th.json';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 // Simulate Base UI's React-19 contract: the Menu.Trigger passes its OWN ref
 // inside the render callback's `props`. The component MUST forward it (merge,
@@ -39,7 +39,7 @@ import { toast } from 'sonner';
 // bug this file now guards against.
 const { baseUiTriggerRef } = vi.hoisted(() => ({ baseUiTriggerRef: vi.fn() }));
 
-vi.mock('sonner', () => ({
+vi.mock('@/lib/toast', () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), loading: vi.fn(), dismiss: vi.fn() },
 }));
 
@@ -344,23 +344,46 @@ describe('<AutoRenewalQueueActions> — Issue + Send / Issue silently', () => {
       w.title,
       expect.objectContaining({ duration: Infinity, closeButton: true }),
     );
+    // AURA 5.6 (handoff #53): each bill line carries its own link and the
+    // toast has no action, so opening one bill never hides the others.
     const opts = vi.mocked(toast.warning).mock.calls[0]![1] as {
       description: React.ReactNode;
+      action?: unknown;
     };
-    cleanup();
-    render(<>{opts.description}</>);
-
+    expect(opts.action).toBeUndefined();
+    const { container } = render(<>{opts.description}</>);
+    expect(container).toHaveTextContent(w.voidFailed.replace('{number}', 'SC-2026-000123'));
+    expect(container).toHaveTextContent(w.listFailed);
+    expect(container.textContent).not.toMatch(/supersede:|inv-old-1/);
     expect(
-      screen.getByText(w.voidFailed.replace('{number}', 'SC-2026-000123')),
-    ).toBeInTheDocument();
-    expect(screen.getByText(w.listFailed)).toBeInTheDocument();
-    expect(
-      screen.getByRole('link', {
-        name: w.openBill.replace('{number}', 'SC-2026-000123'),
-      }),
+      within(container).getByRole('link', { name: w.openBill.replace('{number}', 'SC-2026-000123') }),
     ).toHaveAttribute('href', '/admin/invoices/inv-old-1');
-    expect(document.body.textContent).not.toMatch(/supersede:/);
-    expect(document.body.textContent).not.toContain('inv-old-1');
+  });
+
+  it('two bills to void: one toast lists both, each with its own link', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        invoice_number: 'SC2026-00105',
+        supersede_issues: [
+          { kind: 'void_failed', invoice_id: 'inv-old-1', bill_document_number: 'SC-2026-000123' },
+          { kind: 'void_threw', invoice_id: 'inv-old-2', bill_document_number: 'SC-2026-000125' },
+        ],
+      }),
+    } as Response);
+    renderActions();
+    openMenuAndClick('queue-row-issue-send');
+    fireEvent.click(screen.getByRole('button', { name: t.issueAndSend }));
+
+    const w = en.admin.invoices.supersedeWarning;
+    await waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+    const opts = vi.mocked(toast.warning).mock.calls[0]![1] as { description: React.ReactNode };
+    const { container } = render(<>{opts.description}</>);
+    const links = within(container).getAllByRole('link');
+    expect(links.map((l) => [l.textContent, l.getAttribute('href')])).toEqual([
+      [w.openBill.replace('{number}', 'SC-2026-000123'), '/admin/invoices/inv-old-1'],
+      [w.openBill.replace('{number}', 'SC-2026-000125'), '/admin/invoices/inv-old-2'],
+    ]);
   });
 
   it('renders the supersede warning in Thai for a TH admin', async () => {
@@ -389,12 +412,12 @@ describe('<AutoRenewalQueueActions> — Issue + Send / Issue silently', () => {
     ];
     const w = th.admin.invoices.supersedeWarning;
     expect(title).toBe(w.title);
-    cleanup();
-    render(<>{opts.description}</>);
+    const { container } = render(<>{opts.description}</>);
+    expect(container).toHaveTextContent(w.voidFailed.replace('{number}', 'SC-2026-000124'));
+    expect(container.textContent).not.toMatch(/supersede:/);
     expect(
-      screen.getByText(w.voidFailed.replace('{number}', 'SC-2026-000124')),
-    ).toBeInTheDocument();
-    expect(document.body.textContent).not.toMatch(/supersede:/);
+      within(container).getByRole('link', { name: w.openBill.replace('{number}', 'SC-2026-000124') }),
+    ).toHaveAttribute('href', '/admin/invoices/inv-old-2');
   });
 
   it('a legacy-only string array (no structured issues) is ignored — no raw server string, no warning', async () => {

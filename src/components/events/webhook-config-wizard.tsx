@@ -24,7 +24,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { InfoIcon } from 'lucide-react';
 import { Stepper, type StepperStep } from '@/components/ui/stepper';
 import { Card, CardContent } from '@/components/ui/card';
@@ -92,10 +92,10 @@ export function WebhookConfigWizard({ view, walkthrough }: WebhookConfigWizardPr
   // last-4 hint is blank.
   useEffect(() => {
     if (phase === 'c-test' && !view.secretConfigured) {
-      toast.error(t('postRefreshResyncFailed'));
+      toast.error(t('postRefreshResyncFailed'), { id: 'webhook-resync-failed' });
     }
-    // Intentional: react to phase + view changes; toast is idempotent
-    // (sonner dedupes by message).
+    // Intentional: react to phase + view changes; the fixed id keeps the
+    // toast idempotent (a repeat replaces it in place instead of stacking).
   }, [phase, view.secretConfigured, t]);
 
   const steps: StepperStep[] = [

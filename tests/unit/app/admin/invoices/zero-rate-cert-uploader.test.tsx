@@ -13,7 +13,7 @@ import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { ZeroRateCertUploader } from '@/app/(staff)/admin/invoices/_components/zero-rate-cert-uploader';
 
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 beforeEach(() => {
   vi.useRealTimers();

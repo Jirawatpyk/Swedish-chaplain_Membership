@@ -11,7 +11,7 @@ import type { ChangeRequestView } from '@/lib/change-request-portal-view';
 import { DecisionOutcomeBanner } from '@/components/members/change-requests/decision-outcome-banner';
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
-vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() } }));
+vi.mock('@/lib/toast', () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() } }));
 
 const decided = {
   id: '00000000-0000-4000-8000-000000000001',

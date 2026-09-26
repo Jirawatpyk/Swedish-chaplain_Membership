@@ -16,7 +16,7 @@ vi.mock('next-intl/server', () => ({
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }));
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock('@/lib/rbac', async (importActual) => ({
   ...(await importActual<typeof import('@/lib/rbac')>()),
   requirePagePermission: vi.fn().mockResolvedValue({

@@ -23,7 +23,7 @@ import { NextIntlClientProvider } from 'next-intl';
 
 // The component imports `toast` from sonner (used only on completed /
 // timeout branches, but mocked so no real toast host is needed).
-vi.mock('sonner', () => ({
+vi.mock('@/lib/toast', () => ({
   toast: {
     success: vi.fn(),
     error: vi.fn(),

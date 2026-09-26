@@ -25,7 +25,7 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useTranslations } from 'next-intl';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Loader2Icon } from 'lucide-react';
 import { uuid } from '@/lib/uuid';
 import { Checkbox } from '@/components/ui/checkbox';

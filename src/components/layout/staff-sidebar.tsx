@@ -64,20 +64,13 @@ export function StaffSidebar({
       collapsible="icon"
       role="navigation"
       aria-label={t('nav.staff.ariaLabel')}
-      // Swedish flag: the navy rail is the field, this 4px edge is the
-      // vertical arm of the cross. Decorative only — no text ever sits on it,
-      // which is what keeps flag yellow (1.5:1 under white, 3.8:1 under
-      // Sweden-blue) out of every contrast pairing. Overrides the primitive's
-      // 1px `border-r`; both carry the same variant prefix so tailwind-merge
-      // dedupes width instead of stacking specificity.
-      className="group-data-[side=left]:border-r-4 group-data-[side=left]:border-r-[color:var(--sidebar-flag)]"
     >
       <SidebarHeader className="border-b border-sidebar-border py-3 px-2">
         <div className="flex items-center gap-2">
           {/* TSCC crown mark. Decorative — the adjacent wordmark names the
-              brand. The always-on white chip is load-bearing, not styling:
-              the artwork's flag blue (#20419A) is 1.02:1 against the navy
-              rail and vanishes without it. */}
+              brand. The always-on white chip keeps the artwork's flag blue
+              (#20419A) visible on a dark rail (dark theme; the rail was navy
+              before spec 122). */}
           <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-white p-0.5">
             <BrandMark variant="mark" className="size-7" />
           </span>

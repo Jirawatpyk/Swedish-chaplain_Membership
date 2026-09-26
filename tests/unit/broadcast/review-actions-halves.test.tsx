@@ -13,7 +13,7 @@ import en from '@/i18n/messages/en.json';
 import { ReviewActions } from '@/components/broadcast/admin/review-actions';
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }) }));
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 afterEach(cleanup);
 

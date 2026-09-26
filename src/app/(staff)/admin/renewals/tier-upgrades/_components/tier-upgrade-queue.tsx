@@ -31,7 +31,7 @@ import Link from 'next/link';
 import { useCallback, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useFormatter, useTranslations } from 'next-intl';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Loader2, MoreHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {

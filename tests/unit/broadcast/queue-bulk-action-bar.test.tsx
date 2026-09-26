@@ -52,7 +52,7 @@ const toastWarning = vi.fn();
 // `.success`/`.error`/`.warning` statics (the pre-existing outcome
 // toasts), mirroring real sonner's shape (a callable function with
 // methods attached), not just an object of methods.
-vi.mock('sonner', () => ({
+vi.mock('@/lib/toast', () => ({
   toast: Object.assign(
     (...a: unknown[]) => toastFn(...a),
     {
