@@ -97,6 +97,22 @@ describe('AutoRefundFailedAlert — CF-2 resolve/acknowledge action', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it('the confirm copy says to return the money outside Chamber-OS and NOT to issue a credit note', async () => {
+    // A failed auto-refund is a payment that arrived after the invoice was
+    // already paid (a duplicate), voided or credited — it is not a sale. A
+    // credit note would cut real output VAT and still return no money (a manual
+    // CN does not call Stripe), so the copy must steer away from it.
+    renderAlert();
+    fireEvent.click(screen.getByRole('button', { name: copy.resolve }));
+    const dialog = await screen.findByRole('alertdialog');
+    const text = dialog.textContent ?? '';
+    expect(text).toMatch(/outside Chamber-OS/i);
+    expect(text).toMatch(/Stripe Dashboard refund/i);
+    expect(text).toMatch(/bank transfer/i);
+    expect(text).toMatch(/do not issue a credit note/i);
+    expect(text).toMatch(/duplicate, not a sale/i);
+  });
+
   it('on confirm — POSTs the invoiceId to the resolve route, then refreshes + toasts success', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,
