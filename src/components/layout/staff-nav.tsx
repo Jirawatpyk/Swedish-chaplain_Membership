@@ -20,7 +20,9 @@ import {
   type RenderedNavGroup,
   type RenderedNavItem,
 } from '@/config/nav';
+import { AURA_FOCUS_RING } from '@/components/shell/aura-classes';
 import { BrandMark } from '@/components/shell/brand-mark';
+import { cn } from '@/lib/utils';
 
 /**
  * Spec 122 US1 (T103) — the staff navigation on AURA `SideNav`, laid out as
@@ -150,7 +152,13 @@ function StaffBrand({ tenantName, collapsed }: { readonly tenantName: string; re
   const t = useTranslations('shell.portalLabel');
   return (
     <div className="flex items-center justify-between gap-1.5">
-      <Link href="/admin" className="flex min-w-0 items-center gap-2 text-[var(--aura-fg-primary)] no-underline">
+      <Link
+        href="/admin"
+        className={cn(
+          'flex min-h-11 min-w-0 items-center gap-2 rounded-[var(--aura-radius-md)] text-[var(--aura-fg-primary)] no-underline',
+          AURA_FOCUS_RING,
+        )}
+      >
         {/* The mark sits on a white tile in both themes so the flag blue keeps its contrast. */}
         <span className="flex size-10 shrink-0 items-center justify-center rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)] bg-white p-[5px]">
           <BrandMark variant="mark" className="size-full" />

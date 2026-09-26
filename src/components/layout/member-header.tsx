@@ -4,7 +4,9 @@ import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 
 import { MemberNav } from '@/components/layout/member-nav';
+import { AURA_FOCUS_RING } from '@/components/shell/aura-classes';
 import { BrandMark } from '@/components/shell/brand-mark';
+import { cn } from '@/lib/utils';
 import { LocaleSwitcher } from '@/components/shell/locale-switcher';
 import { ThemeToggle } from '@/components/shell/theme-toggle';
 import { UserMenu, type UserMenuProps } from '@/components/shell/user-menu';
@@ -34,7 +36,13 @@ export function MemberHeader({
   return (
     <div className="flex h-16 items-center gap-2 px-4 sm:gap-3 md:px-6 lg:h-[72px] lg:px-10">
       <div className="flex min-w-0 flex-1 items-center gap-6">
-        <Link href="/portal" className="flex min-w-0 items-center gap-3 text-[var(--aura-fg-primary)] no-underline">
+        <Link
+          href="/portal"
+          className={cn(
+            'flex min-h-11 min-w-0 items-center gap-3 rounded-[var(--aura-radius-md)] text-[var(--aura-fg-primary)] no-underline',
+            AURA_FOCUS_RING,
+          )}
+        >
           {/* The mark sits on a white tile in both themes so the flag blue keeps its contrast. */}
           <span className="flex size-10 shrink-0 items-center justify-center rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)] bg-white p-[5px]">
             <BrandMark variant="mark" className="size-full" />

@@ -39,7 +39,7 @@ export function StaffTopBar({ tenantName, user, extras }: StaffTopBarProps) {
         </div>
         <Link
           href="/admin"
-          className="flex min-w-0 items-center gap-2 text-[var(--aura-fg-primary)] no-underline lg:hidden"
+          className={cn('flex min-h-11 min-w-0 items-center gap-2 rounded-[var(--aura-radius-sm)] text-[var(--aura-fg-primary)] no-underline lg:hidden', AURA_FOCUS_RING)}
         >
           <span className="flex size-8 shrink-0 items-center justify-center rounded-[var(--aura-radius-sm)] border border-[var(--aura-border-default)] bg-white p-1">
             <BrandMark variant="mark" className="size-full" />
@@ -56,7 +56,7 @@ export function StaffTopBar({ tenantName, user, extras }: StaffTopBarProps) {
         // strict-aria-ignore-next-line — key names, not text (ARIA spec syntax)
         aria-keyshortcuts="Meta+K Control+K"
         className={cn(
-          'hidden h-9 w-[360px] min-w-0 shrink items-center gap-2 rounded-[var(--aura-radius-md)] border border-[var(--aura-border-control)] bg-[var(--aura-bg-input)] pr-2 pl-3 text-left text-[13px] text-[var(--aura-fg-tertiary)] xl:flex',
+          'hidden h-9 pointer-coarse:h-11 w-[360px] min-w-0 shrink items-center gap-2 rounded-[var(--aura-radius-md)] border border-[var(--aura-border-control)] bg-[var(--aura-bg-input)] pr-2 pl-3 text-left text-[13px] text-[var(--aura-fg-tertiary)] xl:flex',
           AURA_FOCUS_RING,
         )}
       >
@@ -78,7 +78,10 @@ export function StaffTopBar({ tenantName, user, extras }: StaffTopBarProps) {
 
       {extras}
       <LocaleSwitcher />
-      <ThemeToggle className="max-sm:hidden" />
+      {/* The wrapper, not the button, so the menu's own box leaves the row too. */}
+      <span className="contents max-sm:hidden">
+        <ThemeToggle />
+      </span>
       <UserMenu {...user} themeChoicesOnPhone />
     </div>
   );

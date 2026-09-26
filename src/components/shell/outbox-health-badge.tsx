@@ -6,7 +6,7 @@
  * call-site so a slow DB never delays the layout paint.
  *
  * Shows nothing when healthy (zero noise for normal ops).
- * Shows an amber AlertTriangle + Tooltip when:
+ * Shows an amber AlertTriangle + Popover when:
  *   - permanentFailed > 0  — rows flipped to `permanently_failed` in last 24h
  *   - stuckPending   > 0  — `pending` rows whose next_retry_at is > 30 min past
  *
@@ -20,7 +20,7 @@ import { db } from '@/lib/db';
 import { notificationsOutbox } from '@/modules/auth/infrastructure/db/schema';
  
 import { logger } from '@/lib/logger';
-import { OutboxHealthTooltip } from '@/components/shell/outbox-health-tooltip';
+import { OutboxHealthPopover } from '@/components/shell/outbox-health-popover';
 
 export async function OutboxHealthBadge() {
   noStore();
@@ -72,5 +72,5 @@ export async function OutboxHealthBadge() {
     ...(permanentFailed > 0 ? [t('permanentFailed', { count: permanentFailed })] : []),
     ...(stuckPending > 0 ? [t('stuckPending', { count: stuckPending })] : []),
   ];
-  return <OutboxHealthTooltip label={t('label')} lines={lines} />;
+  return <OutboxHealthPopover label={t('label')} lines={lines} />;
 }

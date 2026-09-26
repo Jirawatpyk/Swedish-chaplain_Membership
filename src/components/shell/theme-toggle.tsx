@@ -14,7 +14,7 @@ import { useTranslations } from 'next-intl';
 import { DropdownMenu, IconButton } from '@jirawatpyk/aura-react';
 
 export function ThemeToggle({ className }: { readonly className?: string } = {}) {
-  const { setTheme } = useTheme();
+  const { theme, setTheme } = useTheme();
   const t = useTranslations('shell.theme');
 
   return (
@@ -35,11 +35,21 @@ export function ThemeToggle({ className }: { readonly className?: string } = {})
           }
         />
       }
-      items={[
-        { label: t('light'), icon: <SunIcon aria-hidden />, onSelect: () => setTheme('light') },
-        { label: t('dark'), icon: <MoonIcon aria-hidden />, onSelect: () => setTheme('dark') },
-        { label: t('system'), icon: <MonitorIcon aria-hidden />, onSelect: () => setTheme('system') },
-      ]}
+      // Radio items, so the current choice is announced (aria-checked).
+      items={(
+        [
+          ['light', <SunIcon key="light" aria-hidden />],
+          ['dark', <MoonIcon key="dark" aria-hidden />],
+          ['system', <MonitorIcon key="system" aria-hidden />],
+        ] as const
+      ).map(([value, icon]) => ({
+        type: 'radio' as const,
+        group: t('label'),
+        label: t(value),
+        icon,
+        checked: theme === value,
+        onSelect: () => setTheme(value),
+      }))}
     />
   );
 }

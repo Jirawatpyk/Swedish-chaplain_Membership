@@ -714,6 +714,7 @@ export const memberNavConfig: NavConfig = {
 export const memberBottomTabItems: readonly NavItem[] = [
   {
     titleKey: 'nav.member.dashboard',
+    shortTitleKey: 'nav.member.dashboardShort',
     icon: LayoutDashboardIcon,
     href: '/portal',
     activePattern: 'exact:/portal',

@@ -5944,6 +5944,7 @@
       "ariaLabel": "Member navigation",
       "benefits": "Benefits",
       "renewalPrefs": "Renewal reminders",
+      "dashboardShort": "Dashboard",
       "benefitsShort": "Benefits",
       "accountShort": "Account",
       "bottomTabsAriaLabel": "Member tab bar"

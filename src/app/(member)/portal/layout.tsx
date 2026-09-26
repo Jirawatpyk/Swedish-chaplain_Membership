@@ -66,7 +66,7 @@ export default async function MemberLayout({ children }: { children: ReactNode }
         {/* Spec 122 — the header of the portal boards: AURA surface, a hairline
             under it, sticky like AppShell's bar. The Swedish-flag navy chrome
             was dropped on 2026-09-26 in favour of the AURA design. */}
-        <header className="sticky top-0 z-10 border-b border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)]">
+        <header className="sticky top-0 z-10 border-b border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)]">
           <MemberHeader
             tenantName={process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham'}
             user={{ displayName: user.displayName, email: user.email, role: user.role }}

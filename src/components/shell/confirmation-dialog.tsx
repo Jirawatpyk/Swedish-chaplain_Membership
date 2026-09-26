@@ -104,7 +104,7 @@ export function ConfirmationDialog({
   // This runs in the cleanup of the render that was OPEN — so it fires on
   // every way out: this dialog's own close, the caller closing it
   // (`closeOnConfirm={false}`), and the caller unmounting it together with
-  // its row — a frame later, after AURA's own restore.
+  // its row.
   const finalFocusRef = useRef(finalFocus);
   useEffect(() => {
     finalFocusRef.current = finalFocus;
@@ -112,11 +112,14 @@ export function ConfirmationDialog({
   useEffect(() => {
     if (!open) return undefined;
     return () => {
-      const resolve = finalFocusRef.current;
-      if (!resolve) return;
-      requestAnimationFrame(() => {
-        const target = resolve();
-        if (target) target.focus();
+      // Resolved NOW, while the caller's refs still say whether the trigger
+      // survives; applied a microtask later, after AURA's own restore has
+      // run in this same commit. Never pulled out of a dialog that is open.
+      const target = finalFocusRef.current?.();
+      if (!target) return;
+      queueMicrotask(() => {
+        if (document.activeElement?.closest('[role="dialog"], [role="alertdialog"]')) return;
+        target.focus();
       });
     };
   }, [open]);

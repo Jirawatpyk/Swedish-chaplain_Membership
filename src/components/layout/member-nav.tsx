@@ -41,7 +41,7 @@ export function MemberNav({ currentPath }: { readonly currentPath?: string } = {
             href={item.href}
             aria-current={current ? 'page' : undefined}
             className={cn(
-              'flex h-10 items-center gap-2 rounded-full px-4 text-[13px] font-medium whitespace-nowrap no-underline transition-colors',
+              'flex h-10 items-center gap-2 rounded-full px-4 pointer-coarse:h-11 text-[13px] font-medium whitespace-nowrap no-underline transition-colors',
               current
                 ? 'bg-[var(--aura-bg-selected)] font-semibold text-[var(--aura-fg-accent)]'
                 : 'text-[var(--aura-fg-secondary)] hover:bg-[var(--aura-bg-surface-hover)] hover:text-[var(--aura-fg-primary)]',

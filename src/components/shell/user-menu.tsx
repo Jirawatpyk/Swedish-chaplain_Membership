@@ -108,7 +108,7 @@ export function UserMenu({ displayName, email, role, themeChoicesOnPhone = false
         <button
           type="button"
           className={cn(
-            'inline-flex h-10 items-center gap-2 rounded-full py-0 pr-2.5 pl-1 text-[13px] font-medium text-[var(--aura-fg-primary)] hover:bg-[var(--aura-bg-surface-hover)] pointer-coarse:h-11',
+            'inline-flex h-10 items-center justify-center gap-2 rounded-full py-0 pr-2.5 pl-1 text-[13px] font-medium text-[var(--aura-fg-primary)] hover:bg-[var(--aura-bg-surface-hover)] pointer-coarse:h-11 pointer-coarse:min-w-11',
             AURA_FOCUS_RING,
           )}
         >
