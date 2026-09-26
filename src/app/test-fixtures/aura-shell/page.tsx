@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation';
 
+import { CommandPalette } from '@/components/command-palette/command-palette';
 import { DetailContainer, TableContainer } from '@/components/layout';
 import { MemberBottomTabs } from '@/components/layout/member-bottom-tabs';
 import { MemberHeader } from '@/components/layout/member-header';
@@ -65,6 +66,8 @@ export default async function AuraShellPreviewPage({
         <PageHeader title="Members" subtitle="Member companies + primary contacts" />
         <p className="text-body text-muted-foreground">Page content.</p>
       </TableContainer>
+      {/* As the admin layout mounts it; search answers come from a mocked route in the preview scripts. */}
+      <CommandPalette />
     </StaffShell>
   );
 }
