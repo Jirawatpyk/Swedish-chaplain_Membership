@@ -1,6 +1,7 @@
 import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
+import { uiRatchet } from "./eslint.ui-ratchet.mjs";
 
 /**
  * Clean Architecture boundary rules (Constitution Principle III).
@@ -222,6 +223,14 @@ const PAGE_ROOT_CLASS_ATTR = `JSXAttribute[name.name='className'][value.type='Li
 const PAGE_ROOT_MESSAGE =
   "Page roots must compose via <ContentContainer> + <PageHeader>. " +
   "Remove ad-hoc max-w-*/mx-auto/container/p-*/px-*/py-*/space-y-*/heading text-* classes from the top-level element.";
+
+/**
+ * Spec 122 — directories already on AURA. Any `@/components/ui/*` import
+ * inside them fails lint (`eslint.ui-ratchet.mjs`). A phase PR adds its paths
+ * here in the same PR that removes their last legacy import; the list only
+ * grows, and is deleted at US13 when the ban goes global.
+ */
+const MIGRATED_PATHS = [];
 
 const eslintConfig = defineConfig([
   ...nextVitals,
@@ -1004,6 +1013,9 @@ const eslintConfig = defineConfig([
       ],
     },
   },
+  // Spec 122 — the AURA import ratchet. Its own rule id, so it composes with
+  // (never replaces) the architecture `no-restricted-imports` blocks above.
+  ...uiRatchet(MIGRATED_PATHS),
   globalIgnores([
     ".next/**",
     "out/**",
