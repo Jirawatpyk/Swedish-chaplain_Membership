@@ -960,29 +960,39 @@ export async function seedF6RelinkFixture(
     // collide with the contacts_one_primary_per_member partial unique
     // (tenant_id, member_id) WHERE is_primary AND removed_at IS NULL.
     // Demote any existing active primary first so exactly one remains.
-    await client.sql`
-      UPDATE contacts
-        SET is_primary = FALSE
-        WHERE tenant_id = ${tenantSlug}
-          AND member_id = ${relinkTargetMemberId}::uuid
-          AND is_primary = TRUE
-          AND removed_at IS NULL
-    `;
-    // Primary contact for the target member — required so the picker
-    // surfaces a "Relink Target E2E Co · primary contact" hit when
-    // the AS2 spec searches by company-name substring.
-    await client.sql`
-      INSERT INTO contacts (
-        contact_id, tenant_id, member_id, first_name, last_name, email, is_primary
-      ) VALUES (
-        gen_random_uuid(), ${tenantSlug}, ${relinkTargetMemberId}::uuid,
-        'Relink', 'Target', ${RELINK_TARGET_EMAIL}, TRUE
-      )
-      ON CONFLICT (tenant_id, lower(email)) WHERE removed_at IS NULL DO UPDATE
-        SET first_name = EXCLUDED.first_name,
-            last_name = EXCLUDED.last_name,
-            is_primary = TRUE
-    `;
+    //
+    // Demote + upsert run in ONE transaction. `contacts_one_primary_ct` (108)
+    // is a DEFERRABLE INITIALLY DEFERRED constraint trigger that requires
+    // exactly one live primary per member at COMMIT. As two autocommit
+    // statements, the demote committed alone with ZERO primaries and was
+    // rejected — so the seed passed only on the first run (no fixture member
+    // yet, the demote matched nothing) and failed on every run after it.
+    const targetMemberId = relinkTargetMemberId;
+    await client.sql.begin(async (tx) => {
+      await tx`
+        UPDATE contacts
+          SET is_primary = FALSE
+          WHERE tenant_id = ${tenantSlug}
+            AND member_id = ${targetMemberId}::uuid
+            AND is_primary = TRUE
+            AND removed_at IS NULL
+      `;
+      // Primary contact for the target member — required so the picker
+      // surfaces a "Relink Target E2E Co · primary contact" hit when
+      // the AS2 spec searches by company-name substring.
+      await tx`
+        INSERT INTO contacts (
+          contact_id, tenant_id, member_id, first_name, last_name, email, is_primary
+        ) VALUES (
+          gen_random_uuid(), ${tenantSlug}, ${targetMemberId}::uuid,
+          'Relink', 'Target', ${RELINK_TARGET_EMAIL}, TRUE
+        )
+        ON CONFLICT (tenant_id, lower(email)) WHERE removed_at IS NULL DO UPDATE
+          SET first_name = EXCLUDED.first_name,
+              last_name = EXCLUDED.last_name,
+              is_primary = TRUE
+      `;
+    });
 
     console.log(
       `[e2e seed F6 relink] OK — tenant=${tenantSlug} event=${eventId} ` +
