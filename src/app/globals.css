@@ -297,6 +297,9 @@ body {
 
 /* --- Typography scale utilities --- */
 .text-h1 {
+  /* Spec 122 — page titles use AURA's display face, as on the canvas boards
+     (Thai glyphs fall back to Noto Sans Thai inside the same stack). */
+  font-family: var(--font-display);
   font-size: var(--font-size-h1);
   font-weight: var(--font-weight-heading);
   line-height: var(--line-height-body);

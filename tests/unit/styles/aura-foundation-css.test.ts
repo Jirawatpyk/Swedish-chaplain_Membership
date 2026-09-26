@@ -132,6 +132,12 @@ describe('globals.css — AURA foundation (spec 122)', () => {
     expect(rule).toContain('var(--aura-bg-skeleton)');
   });
 
+  it('sets page titles in AURA\'s display face, as the canvas boards do (Fraunces, Thai falls back to Noto Sans Thai)', () => {
+    expect(declared(block('.text-h1'), 'font-family')).toBe('var(--font-display)');
+    // Section headings stay in the text face (the boards use Inter for h2/h3).
+    expect(declared(block('.text-h2'), 'font-family')).toBeUndefined();
+  });
+
   it('carries no local toaster override — AURA 5.6 centres and offsets it (handoff #54, #56)', () => {
     expect(css).not.toMatch(/\.aura-toaster|\.aura-toast__action/);
   });
