@@ -4,7 +4,7 @@
 **Severity**: HIGH (financial reconciliation drift)
 **Owner**: Chamber-OS maintainer + tenant admin (joint resolution)
 **Source spec**: F5 (`specs/009-online-payment/spec.md` Q2 / FR-011 / FR-011a)
-**Last updated**: 2026-09-26 (§ 1.5 — a failed auto-refund is returned by Stripe Dashboard refund or bank transfer, never a credit note); 2026-07-12 (F5 refund-lifecycle fix-wave — § 1.1 guard-miss sub-case (i) CLOSED (commit `5fe09559`, status-agnostic marker-attach), both-webhook marker check (Finding 2), § 1.4 redundant-audit / single-owner-metric design (Finding 4); § 1.5 CF-2 failed-auto-refund resolve/acknowledge action; § 1.6 `refund.updated` forward-path subscription — deprecated `charge.refund.updated`, PromptPay async settlement)
+**Last updated**: 2026-09-26 (§ 1.5 / § 2.1 / § 2.3 — a Stripe Dashboard refund of a failed auto-refund raises an expected OOB echo; an `auto_refunded` payment never takes § 2.3 Option A); 2026-09-26 (§ 1.5 — a failed auto-refund is returned by Stripe Dashboard refund or bank transfer, never a credit note); 2026-07-12 (F5 refund-lifecycle fix-wave — § 1.1 guard-miss sub-case (i) CLOSED (commit `5fe09559`, status-agnostic marker-attach), both-webhook marker check (Finding 2), § 1.4 redundant-audit / single-owner-metric design (Finding 4); § 1.5 CF-2 failed-auto-refund resolve/acknowledge action; § 1.6 `refund.updated` forward-path subscription — deprecated `charge.refund.updated`, PromptPay async settlement)
 
 ---
 
@@ -57,12 +57,14 @@ A genuine dashboard OOB refund on an **async** payment method (e.g. PromptPay) i
 When a stale-invoice auto-refund **fails** at Stripe (`charge.refund.updated(failed|canceled)` — the money did NOT reach the customer while the payment reads `auto_refunded`), `processRefundUpdated` emits the 10-year forensic `auto_refund_failed_needs_manual_reconcile` and pages ops. This is the genuine give-up/failed reconcile item referenced in § 1.1 (it is NOT a marker guard-miss). The admin invoice detail page shows a destructive `AutoRefundFailedAlert` and the member's void banner reads "being reconciled".
 
 - **Return the money out-of-band first** — refund the online payment from the Stripe Dashboard, or pay it back by bank transfer.
+- **Expect a follow-on OOB alert if you refund from the Stripe Dashboard.** The Dashboard refund gets a NEW `re_…` id, while the durable marker (`payments.auto_refund_processor_refund_id`) still holds the FAILED auto-refund's id — so `charge.refunded` matches neither a `refunds` row nor the marker and raises `out_of_band_refund_detected` for the new id (`process-charge-refunded.ts`; `process-refund-updated.ts` adds redundant rows for the same id via `charge.refund.updated` / `refund.updated`, which count as one incident — § 1.4). That alert is the expected echo of this step: handle it per § 2.1's auto-refunded rule (**no credit note**), not § 2.3 Option A. A bank-transfer return raises no alert.
 - **Do NOT issue a credit note** (§ 2.3 Option A does not apply here). The online payment was never booked against the invoice, whatever the auto-refund's `cause` (in the initiation event's payload):
   - `invoice_already_paid` — the invoice was already paid another way; the online payment is a duplicate.
   - `invoice_voided` / `invoice_credited` — the invoice was already cancelled or credited.
   - `payment_terminal_failed_late_charge` / `invoice_unknown_status` (e.g. an 088 bill reached while the tax-at-payment flow was off) — the invoice may still be **issued and payable**. Once the money is back, the member pays again through the normal flow; do not record the returned payment against the invoice.
 
   In every case a credit note would reduce the invoice's real output VAT on the ภ.พ.30 (or turn a correctly paid invoice `credited`) and still return nothing — F4's manual credit-note flow does not call Stripe.
+- **Confirm the money actually arrived.** A failed auto-refund often means the card can't take a refund (closed or expired). Before clicking "Mark as reconciled", check that the Dashboard refund shows **Succeeded**; if it failed too, return the money by bank transfer instead.
 - **Then close the loop** — on `/admin/invoices/<id>`, click **"Mark as reconciled"** on the failed-auto-refund alert (confirm dialog). This appends the append-only `auto_refund_reconciled` event (10y) via `POST /api/refunds/resolve-auto-refund-failure` (admin-only). It is **idempotent** (a second click is a benign no-op) and **refuses** when no failure forensic exists.
 - **Effect**: `findStaleInvoiceAutoRefund.failed` becomes failure-AND-NOT-reconciled, so the admin alert clears and the member banner reverts to the (now-true) "refunded" copy. The forensic + the reconcile event both remain in the append-only audit log for the 10-year trail — the acknowledgement does NOT erase the failure record.
 
@@ -106,12 +108,19 @@ SELECT
   p.id as payment_id,
   p.invoice_id,
   p.amount_satang as paid_amount,
+  p.status as payment_status,
+  p.auto_refund_processor_refund_id,
   i.status as invoice_status,
   i.tenant_id
 FROM payments p
-JOIN invoices i ON i.id = p.invoice_id
-WHERE p.processor_charge_id = '<charge_id_from_audit>';
+JOIN invoices i ON i.tenant_id = p.tenant_id AND i.invoice_id = p.invoice_id
+WHERE p.processor_charge_id = '<charge_id_from_audit>'
+   OR p.processor_payment_intent_id = '<pi_… shown on that charge in the Stripe Dashboard>';
 ```
+
+`processor_charge_id` is written only when a payment reaches `succeeded`; an auto-refunded payment (and a late-charge `failed` one) has it NULL, so also match on the charge's PaymentIntent. Treat "no row" as an unknown payment only after BOTH keys miss.
+
+**Auto-refunded payment → never a credit note.** If `payment_status = 'auto_refunded'`, or `auto_refund_processor_refund_id` is set and an `auto_refund_failed_needs_manual_reconcile` audit row exists for the invoice (a row that was already `failed` keeps its status when the marker is attached — § 1.1 sub-case (ii)), this OOB refund is the manual return of a failed stale-invoice auto-refund (§ 1.5). That online payment was never booked against the invoice — for cause `invoice_already_paid` it duplicated a payment already on it — so **skip § 2.3 Option A**: a credit note would cut the invoice's real output VAT on the ภ.พ.30 and return nothing. Close the failed-auto-refund alert with § 1.5's "Mark as reconciled"; the OOB audit row itself needs no further action.
 
 If no row is returned, the refund was for a payment we don't know about — escalate to maintainer (likely a bug or stale environment state).
 
@@ -141,7 +150,7 @@ Two options:
 **Option B — Mark refund externally + skip credit note** (rare, only when F4 manual CN is not appropriate):
 - The future post-MVP "Mark as refunded externally" escape hatch (out of scope for F5 MVP) would automate this; until then, document the divergence in the audit log + tenant accountant's books
 
-In 99% of cases, **Option A** is the correct response.
+In 99% of cases, **Option A** is the correct response. **Exception — a failed stale-invoice auto-refund (§ 1.5: `payment_status = 'auto_refunded'`, or `auto_refund_processor_refund_id` is set and an `auto_refund_failed_needs_manual_reconcile` row exists for the invoice): never Option A.** That payment was never booked against the invoice, so a credit note would reduce real output VAT; return the money out-of-band only.
 
 ---
 
