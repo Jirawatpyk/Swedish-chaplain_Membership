@@ -7772,9 +7772,10 @@
       "footerSignOff": "Om du behöver hjälp, vänligen kontakta din kammaradministratör."
     },
     "broadcastFooter": {
-      "receivedBecause": "Du tar emot detta mejl eftersom du är kontakt hos en medlem i {tenantDisplayName}.",
+      "receivedBecause": "Du får det här mejlet på grund av din koppling till {tenantDisplayName}.",
       "unsubscribeCta": "Avregistrera",
       "unsubscribeSuffix": "från dessa utskick när som helst.",
+      "objectionContact": "Avregistreringen stoppar alla utskick från {tenantDisplayName}. Du kan också mejla {privacyEmail} för att bli borttagen.",
       "physicalAddress": "Skickat av {tenantDisplayName}."
     },
     "eblastApproval": {

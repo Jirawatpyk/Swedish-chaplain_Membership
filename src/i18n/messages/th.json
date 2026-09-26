@@ -7772,9 +7772,10 @@
       "footerSignOff": "หากต้องการความช่วยเหลือ กรุณาติดต่อผู้ดูแลหอการค้าของคุณ"
     },
     "broadcastFooter": {
-      "receivedBecause": "คุณได้รับอีเมลฉบับนี้เพราะคุณเป็นผู้ติดต่อของสมาชิก {tenantDisplayName}",
+      "receivedBecause": "คุณได้รับอีเมลฉบับนี้เนื่องจากคุณมีความเกี่ยวข้องกับ {tenantDisplayName}",
       "unsubscribeCta": "ยกเลิกการรับข่าวสาร",
       "unsubscribeSuffix": "ได้ทุกเมื่อ",
+      "objectionContact": "การยกเลิกจะหยุด E-Blast ทั้งหมดจาก {tenantDisplayName} หรือส่งอีเมลถึง {privacyEmail} เพื่อขอให้นำที่อยู่อีเมลของคุณออก",
       "physicalAddress": "ส่งโดย {tenantDisplayName}"
     },
     "eblastApproval": {

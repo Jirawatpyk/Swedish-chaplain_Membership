@@ -7772,9 +7772,10 @@
       "footerSignOff": "If you need help, please contact your chamber administrator."
     },
     "broadcastFooter": {
-      "receivedBecause": "You are receiving this email because you are a contact at a member of {tenantDisplayName}.",
+      "receivedBecause": "You are receiving this email because of your connection with {tenantDisplayName}.",
       "unsubscribeCta": "Unsubscribe",
       "unsubscribeSuffix": "from these broadcasts at any time.",
+      "objectionContact": "Unsubscribing stops all E-Blasts from {tenantDisplayName}. You can also email {privacyEmail} to be removed.",
       "physicalAddress": "Sent by {tenantDisplayName}."
     },
     "eblastApproval": {
