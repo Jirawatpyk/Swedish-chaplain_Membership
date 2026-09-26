@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
+import { keepTermTogether } from '@/components/broadcast/keep-term-together';
 import { ComposeForm } from '@/components/broadcast/compose-form';
 import type { ComposeTemplateOption } from '@/components/broadcast/compose/template-picker-field';
 import { loadComposeTemplateOptions } from '@/lib/broadcast-template-options';
@@ -280,7 +281,7 @@ export default async function ComposeBroadcastPage({
     // 600 px email preview sit side by side from `lg` up. Recorded as an
     // exception in docs/ux-standards.md § 18.2.
     <DetailContainer>
-      <PageHeader title={t('title')} subtitle={t('subtitle')} />
+      <PageHeader title={keepTermTogether(t('title'))} subtitle={t('subtitle')} />
       {/*
         F119 T140 (FR-046, SC-012): the template picker moved INSIDE the form
         and the `key={selectedTemplateId ?? 'blank'}` remount is gone. The key

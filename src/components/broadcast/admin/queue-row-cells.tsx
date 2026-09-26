@@ -76,18 +76,18 @@ export function SendTime({
   if (confirmed === null) {
     return (
       <div className="flex flex-col gap-1">
-        <span className="tabular-nums">{proposed}</span>
+        <span className="whitespace-nowrap tabular-nums">{proposed}</span>
         <span className="text-xs text-muted-foreground">{proposedLabel}</span>
       </div>
     );
   }
   return (
     <div className="flex flex-col gap-1">
-      <span className="tabular-nums">{confirmed}</span>
+      <span className="whitespace-nowrap tabular-nums">{confirmed}</span>
       {proposed !== null && proposed !== confirmed ? (
         <span className="text-xs">
           <span className="text-muted-foreground">{proposedLabel}</span>{' '}
-          <span className="tabular-nums">{proposed}</span>
+          <span className="whitespace-nowrap tabular-nums">{proposed}</span>
         </span>
       ) : null}
     </div>

@@ -12,7 +12,8 @@
 
 import { useCallback, useRef, useState, useTransition } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
+import { formatCalendarYear } from '@/lib/format-date-localised';
 import { MailWarningIcon, SearchIcon, XIcon } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -62,6 +63,7 @@ type Props = {
 
 export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
   const t = useTranslations('admin.members.directory');
+  const locale = useLocale();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -207,7 +209,7 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
       label: currentPlanYear
         ? t('filterChip.planYear', {
             value: plan?.label ?? currentPlan,
-            year: currentPlanYear,
+            year: formatCalendarYear(Number(currentPlanYear), locale),
           })
         : t('filterChip.plan', { value: plan?.label ?? currentPlan }),
       onRemove: () => pushUrl({ plan_id: null, plan_year: null }),

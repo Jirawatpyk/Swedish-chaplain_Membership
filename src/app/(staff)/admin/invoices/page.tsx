@@ -13,7 +13,7 @@
 import type { Metadata } from 'next';
 import { randomUUID } from 'node:crypto';
 import Link from 'next/link';
-import { getTranslations } from 'next-intl/server';
+import { getLocale, getTranslations } from 'next-intl/server';
 import { headers } from 'next/headers';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
@@ -49,6 +49,7 @@ import {
 import { runListEventNamesByIds } from '@/lib/events-admin-deps';
 import { bangkokLocalDate } from '@/lib/fiscal-year';
 import { formatSatangThb } from '@/lib/format-thb';
+import { formatCalendarYear } from '@/lib/format-date-localised';
 import { parseThbDecimal, parseThbDecimalToSatang } from '@/lib/money';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
@@ -101,6 +102,7 @@ function buildBuyerSubtitle(
   },
   eventNameById: ReadonlyMap<string, { name: string; startDateIso: string }>,
   t: (key: string, values?: Record<string, string | number>) => string,
+  locale: string,
 ): string | null {
   if (row.invoiceSubject === 'event') {
     if (row.eventId === null) return null;
@@ -112,7 +114,10 @@ function buildBuyerSubtitle(
   }
   // Membership row.
   if (row.planYear === null) return null;
-  return t('list.buyerSubtitle.membership', { year: row.planYear });
+  // Plan year is stored CE; Thai reads it in BE (2026 → 2569).
+  return t('list.buyerSubtitle.membership', {
+    year: formatCalendarYear(row.planYear, locale),
+  });
 }
 
 /**
@@ -126,10 +131,10 @@ function buildBuyerSubtitle(
  * synchronous row-map, so a malformed value degrades to `null` (renders as
  * an em-dash downstream) rather than crashing the whole list page.
  */
-function formatQueuePrice(raw: string | null): string | null {
+function formatQueuePrice(raw: string | null, locale: string): string | null {
   if (raw === null) return null;
   try {
-    return formatSatangThb(parseThbDecimalToSatang(parseThbDecimal(raw)));
+    return formatSatangThb(parseThbDecimalToSatang(parseThbDecimal(raw)), locale);
   } catch {
     return null;
   }
@@ -210,6 +215,7 @@ export default async function AdminInvoicesPage({
 }) {
   const t = await getTranslations('admin.invoices');
   const tShared = await getTranslations('shared');
+  const locale = await getLocale();
   const query = await searchParams;
 
   const { user: currentUser } = await requirePagePermission('invoicing.read');
@@ -657,7 +663,7 @@ export default async function AdminInvoicesPage({
         // (lookup miss / archived → absent from the batch) the subtitle is
         // null (line hidden). Membership rows show the localised "Membership {year}"
         // from `planYear` (already on the invoice row — no lookup needed).
-        buyerSubtitle: buildBuyerSubtitle(r, eventNameById, t),
+        buyerSubtitle: buildBuyerSubtitle(r, eventNameById, t, locale),
         issueDate: r.issueDate,
         dueDate: r.dueDate,
         // A draft has no total yet (computed at issue) — null renders "—",
@@ -687,6 +693,11 @@ export default async function AdminInvoicesPage({
         // no-TIN / legacy issued no-TIN event rows): the table flips the
         // main download to the Receipt label + aria.
         mainDownloadIsReceipt: r.pdfDocKind === 'receipt_separate',
+        // 088 — the main pdf is an SC ใบแจ้งหนี้ bill (paid or unpaid), not a
+        // tax invoice: the table uses the bill label + aria. Same rule as the
+        // portal's `resolveMainPdfKind` / `build-void-render-targets`.
+        mainDownloadIsBill:
+          r.pdfDocKind === 'invoice' && r.billDocumentNumberRaw !== null,
         // 088 A-refined (FR-016) — two-document disambiguation. The SC bill
         // number IS the row identity in the Number column (paid AND unpaid); the
         // resolved document kind drives the ใบแจ้งหนี้/Invoice tag + the RC
@@ -718,9 +729,10 @@ export default async function AdminInvoicesPage({
                   ? {
                       unresolved: false as const,
                       stalenessDays,
-                      frozenPriceDisplay: formatQueuePrice(meta.frozenPriceThb),
+                      frozenPriceDisplay: formatQueuePrice(meta.frozenPriceThb, locale),
                       currentCataloguePriceDisplay: formatQueuePrice(
                         meta.currentCataloguePriceThb,
+                        locale,
                       ),
                       priceChanged: meta.priceChanged,
                       priceUnverifiable: meta.priceUnverifiable,

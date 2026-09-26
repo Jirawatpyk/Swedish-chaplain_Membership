@@ -17,7 +17,29 @@
  * pass through this single function.
  */
 
-const FORMATTERS = new Map<string, Intl.NumberFormat>();
+interface LocaleNumberParts {
+  readonly grouping: Intl.NumberFormat;
+  /** The locale's decimal mark — "," for sv, "." for en/th. */
+  readonly decimal: string;
+}
+
+const FORMATTERS = new Map<string, LocaleNumberParts>();
+
+function getLocaleNumberParts(locale: string): LocaleNumberParts {
+  let parts = FORMATTERS.get(locale);
+  if (!parts) {
+    const grouping = new Intl.NumberFormat(locale, { useGrouping: true });
+    // Read the decimal mark once from a probe value; the amount itself is
+    // never formatted as a float, so satang precision stays exact.
+    const decimal =
+      new Intl.NumberFormat(locale, { minimumFractionDigits: 1 })
+        .formatToParts(1.5)
+        .find((p) => p.type === 'decimal')?.value ?? '.';
+    parts = { grouping, decimal };
+    FORMATTERS.set(locale, parts);
+  }
+  return parts;
+}
 
 /**
  * Format a satang amount as a localised major-unit string with a
@@ -30,7 +52,7 @@ const FORMATTERS = new Map<string, Intl.NumberFormat>();
  * cleanly in table cells.
  *
  * @param satang   Amount in satang (1 THB = 100 satang). NULL → `'—'`.
- * @param locale   BCP-47 locale tag for thousands grouping (default `'en-US'`).
+ * @param locale   BCP-47 locale tag for thousands grouping and the decimal mark (default `'en-US'`).
  * @param currency ISO-4217 currency code, used as the suffix (default `'THB'`).
  */
 export function formatSatangThb(
@@ -43,10 +65,6 @@ export function formatSatangThb(
   const whole = abs / 100n;
   const rem = abs % 100n;
   const sign = satang < 0n ? '-' : '';
-  let fmt = FORMATTERS.get(locale);
-  if (!fmt) {
-    fmt = new Intl.NumberFormat(locale, { useGrouping: true });
-    FORMATTERS.set(locale, fmt);
-  }
-  return `${sign}${fmt.format(whole)}.${rem.toString().padStart(2, '0')} ${currency}`;
+  const { grouping, decimal } = getLocaleNumberParts(locale);
+  return `${sign}${grouping.format(whole)}${decimal}${rem.toString().padStart(2, '0')} ${currency}`;
 }

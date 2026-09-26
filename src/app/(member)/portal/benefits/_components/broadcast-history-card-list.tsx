@@ -81,9 +81,10 @@ export function BroadcastHistoryCardList({
                 <dt className="text-muted-foreground">{labels.audience}</dt>
                 <dd className="tabular-nums">{row.estimatedRecipientCount}</dd>
                 <dt className="text-muted-foreground">{labels.submittedAt}</dt>
-                <dd>{row.submitted}</dd>
+                {/* Dates never break mid-value ("15 ต.ค. 2569", "15 okt. 2026"). */}
+                <dd className="whitespace-nowrap">{row.submitted}</dd>
                 <dt className="text-muted-foreground">{labels.sentAt}</dt>
-                <dd>{row.sent}</dd>
+                <dd className="whitespace-nowrap">{row.sent}</dd>
               </dl>
             </CardContent>
           </Card>

@@ -2548,6 +2548,8 @@
           "download": "ใบกำกับภาษี",
           "downloadReceipt": "ใบเสร็จ",
           "downloadInvoiceAria": "ดาวน์โหลดไฟล์ PDF ใบกำกับภาษี {number}",
+          "downloadBill": "ใบแจ้งหนี้",
+          "downloadBillAria": "ดาวน์โหลดไฟล์ PDF ใบแจ้งหนี้ {number}",
           "downloadReceiptAria": "ดาวน์โหลดไฟล์ PDF ใบเสร็จรับเงิน {number}",
           "receiptPreparing": "กำลังเตรียมใบเสร็จ…",
           "receiptGenerating": "กำลังสร้างใบเสร็จ…",
@@ -2833,10 +2835,10 @@
           }
         },
         "vatPreview": {
-          "label": "ราคารวม VAT แล้ว / VAT-inclusive",
-          "total": "ยอดรวม (รวม VAT)",
+          "label": "ราคารวมภาษีมูลค่าเพิ่มแล้ว / VAT-inclusive",
+          "total": "ยอดรวม (รวมภาษีมูลค่าเพิ่ม)",
           "subtotal": "ยอดก่อนภาษี",
-          "vat": "VAT 7%"
+          "vat": "ภาษีมูลค่าเพิ่ม 7%"
         },
         "docType": {
           "taxInvoice": "ใบกำกับภาษี / Tax Invoice",
@@ -2972,6 +2974,8 @@
           "downloadCombined": "ดาวน์โหลดใบกำกับภาษี / ใบเสร็จรับเงิน",
           "downloadReceiptAria": "ดาวน์โหลดไฟล์ PDF ใบเสร็จรับเงินของใบแจ้งหนี้ {number}",
           "downloadInvoiceAria": "ดาวน์โหลดไฟล์ PDF ใบกำกับภาษีของใบแจ้งหนี้ {number}",
+          "downloadBill": "ดาวน์โหลดใบแจ้งหนี้",
+          "downloadBillAria": "ดาวน์โหลดไฟล์ PDF ใบแจ้งหนี้ {number}",
           "more": "เพิ่มเติม",
           "moreAria": "การดำเนินการเพิ่มเติมสำหรับ {number}"
         },
@@ -3416,9 +3420,9 @@
           "submitted": "รอฝ่ายการตลาดตรวจสอบ",
           "approved": "กำหนดส่งแล้ว",
           "sending": "กำลังส่ง",
-          "sent": "ส่งแล้ว",
+          "sent": "ส่งสำเร็จ",
           "rejected": "ปฏิเสธ",
-          "cancelled": "ยกเลิก",
+          "cancelled": "ยกเลิกแล้ว",
           "failed_to_dispatch": "ส่งไม่สำเร็จ",
           "partially_sent": "ส่งสำเร็จบางส่วน",
           "in_design": "กำลังออกแบบ",
@@ -3458,10 +3462,10 @@
         "fields": {
           "subject": "หัวข้อ",
           "body": "ข้อความ",
-          "segment": "ผู้รับ",
+          "segment": "กลุ่มผู้รับ",
           "recipientCount": "จำนวนผู้รับโดยประมาณ",
           "submittedBy": "ส่งโดย",
-          "submittedAt": "ส่งเมื่อ",
+          "submittedAt": "ส่งตรวจสอบเมื่อ",
           "scheduledFor": "นัดส่ง",
           "actorRole": "บทบาทผู้ส่ง"
         },
@@ -4061,7 +4065,7 @@
           "awaiting_payment": "รอชำระเงิน",
           "completed": "เสร็จสมบูรณ์",
           "lapsed": "หมดอายุ",
-          "cancelled": "ยกเลิก",
+          "cancelled": "ยกเลิกแล้ว",
           "pending_admin_reactivation": "รอผู้ดูแลอนุมัติ"
         },
         "viewInvoice": "ดูใบแจ้งหนี้",
@@ -4619,7 +4623,7 @@
           "awaiting_payment": "รอชำระเงิน",
           "completed": "เสร็จสมบูรณ์",
           "lapsed": "หมดอายุ",
-          "cancelled": "ยกเลิก",
+          "cancelled": "ยกเลิกแล้ว",
           "pending_admin_reactivation": "รอผู้ดูแลอนุมัติ"
         },
         "statusSeverity": {
@@ -6004,7 +6008,7 @@
     "editor": {
       "toolbar": {
         "label": "แถบเครื่องมือจัดรูปแบบ",
-        "heading2": "หัวข้อ",
+        "heading2": "หัวข้อใหญ่",
         "heading3": "หัวข้อย่อย",
         "quote": "ข้อความอ้างอิง",
         "divider": "เส้นคั่น",
@@ -6207,6 +6211,8 @@
       "actions": {
         "download": "ใบกำกับภาษี",
         "downloadInvoiceAria": "ดาวน์โหลดไฟล์ PDF ใบกำกับภาษีสำหรับ {number}",
+        "downloadBill": "ใบแจ้งหนี้",
+        "downloadBillAria": "ดาวน์โหลดไฟล์ PDF ใบแจ้งหนี้ {number}",
         "downloadVoided": "ใบแจ้งหนี้ที่ยกเลิก",
         "downloadVoidedAria": "ดาวน์โหลดไฟล์ PDF ใบแจ้งหนี้ที่ยกเลิก (ประทับ VOID) สำหรับ {number}",
         "downloadReceipt": "ใบเสร็จ",
@@ -6371,7 +6377,7 @@
           "customListLabel": "รายชื่ออีเมลกำหนดเอง",
           "customListHelp": "ใส่อีเมลหนึ่งรายการต่อหนึ่งบรรทัด สูงสุด 100 รายการ ทุกอีเมลต้องอยู่ในไดเรกทอรีของคุณ",
           "schedulePicker": "ตั้งเวลาส่ง",
-          "scheduleHelp": "เว้นว่างไว้เพื่อส่งทันทีหลังตรวจสอบ",
+          "scheduleHelp": "เว้นว่างไว้หากต้องการส่งตรวจสอบทันที",
           "previewLabel": "ตัวอย่าง",
           "previewLoading": "กำลังโหลดตัวอย่าง…",
           "previewUnavailable": "ดูตัวอย่างไม่ได้ชั่วคราว",
@@ -6421,7 +6427,7 @@
           "tierRequired": "เลือกระดับสมาชิกอย่างน้อยหนึ่งระดับก่อนส่งขออนุมัติ"
         },
         "submitNote": {
-          "cancellable": "คุณสามารถยกเลิกการส่งนี้ได้จนกว่าผู้ดูแลจะอนุมัติ"
+          "cancellable": "คุณสามารถยกเลิก E-Blast นี้ได้ทุกเมื่อจนกว่าผู้ดูแลระบบจะอนุมัติ"
         },
         "selfExclusionHint": "คุณและเพื่อนร่วมงานจะไม่ได้รับ E-Blast ของตัวเอง",
         "selfExclusionHintCustom": "ทุกอีเมลในรายการนี้จะได้รับ E-Blast — รวมถึงคุณ หากอีเมลของคุณอยู่ในรายการ",
@@ -6543,18 +6549,18 @@
         "columns": {
           "subject": "หัวข้อ",
           "status": "สถานะ",
-          "submittedAt": "ส่งเมื่อ",
-          "sentAt": "ส่งสำเร็จ",
-          "audience": "ผู้รับ"
+          "submittedAt": "ส่งตรวจสอบเมื่อ",
+          "sentAt": "ส่งสำเร็จเมื่อ",
+          "audience": "กลุ่มผู้รับ"
         },
         "status": {
           "draft": "ฉบับร่าง",
           "submitted": "รอตรวจสอบ",
           "approved": "กำหนดส่งแล้ว",
           "sending": "กำลังส่ง",
-          "sent": "ส่งแล้ว",
+          "sent": "ส่งสำเร็จ",
           "rejected": "ปฏิเสธ",
-          "cancelled": "ยกเลิก",
+          "cancelled": "ยกเลิกแล้ว",
           "failed_to_dispatch": "ส่งไม่สำเร็จ",
           "partially_sent": "ส่งสำเร็จบางส่วน",
           "in_design": "กำลังออกแบบ",
@@ -6585,7 +6591,7 @@
         "subtitle": "หัวข้อ ผู้รับ และสรุปผลการจัดส่งของ E-Blast นี้",
         "fields": {
           "subject": "หัวข้อ",
-          "submittedAt": "ส่งเมื่อ",
+          "submittedAt": "ส่งตรวจสอบเมื่อ",
           "sentAt": "ส่งสำเร็จเมื่อ",
           "status": "สถานะ",
           "recipients": "ผู้รับ",
@@ -7028,6 +7034,7 @@
         "heading": "สรุปการชำระเงิน",
         "invoiceLabel": "เลขที่ใบแจ้งหนี้",
         "amountLabel": "ยอดที่ต้องชำระ",
+        "billNote": "เอกสารนี้เป็นใบแจ้งหนี้ ไม่ใช่ใบกำกับภาษี ใบกำกับภาษี/ใบเสร็จรับเงินจะออกให้เมื่อชำระเงิน",
         "itemsLabel": "รายการ",
         "itemSingle": "1 รายการ",
         "itemPlural": "{count} รายการ"
@@ -7227,12 +7234,13 @@
           "awaiting_payment": "รอการชำระเงิน",
           "completed": "เสร็จสมบูรณ์",
           "lapsed": "หมดอายุ",
-          "cancelled": "ยกเลิก",
+          "cancelled": "ยกเลิกแล้ว",
           "pending_admin_reactivation": "รอเจ้าหน้าที่ตรวจสอบ"
         },
         "processing": "การต่ออายุของคุณกำลังถูกประมวลผล วันหมดอายุใหม่จะแสดงที่นี่เมื่อยืนยันการชำระเงินสำเร็จ",
         "downloadReceipt": "ดาวน์โหลดใบเสร็จรับเงิน (PDF)",
         "downloadInvoice": "ดาวน์โหลดใบกำกับภาษี (PDF)",
+        "downloadBill": "ดาวน์โหลดใบแจ้งหนี้ (PDF)",
         "receiptPreparing": "กำลังเตรียมใบเสร็จ…",
         "viewAllInvoices": "ดูใบแจ้งหนี้ทั้งหมด",
         "backToPortal": "กลับสู่หน้าหลักของพอร์ทัล"
@@ -7776,7 +7784,7 @@
         "awaitingMarketingReview": "รอฝ่ายการตลาดตรวจสอบ",
         "memberApproved": "สมาชิกอนุมัติแล้ว — รอกำหนดส่ง",
         "changesRequested": "สมาชิกขอแก้ไข",
-        "withdrawn": "ยกเลิก",
+        "withdrawn": "ยกเลิกแล้ว",
         "awaitingMemberApproval": "รอสมาชิกอนุมัติ",
         "expired": "หมดอายุ — สมาชิกไม่ตอบกลับ"
       },

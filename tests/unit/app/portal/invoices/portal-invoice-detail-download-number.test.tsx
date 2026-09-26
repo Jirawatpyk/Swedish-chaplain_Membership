@@ -167,6 +167,7 @@ vi.mock('@/app/(member)/portal/invoices/_utils/format', () => ({
 }));
 vi.mock('@/app/(member)/portal/invoices/_utils/invoice-row-view-model', () => ({
   downloadLabelKeys: () => ({ labelKey: 'actions.downloadInvoice', ariaKey: 'actions.downloadInvoiceAria' }),
+  resolveMainPdfKind: () => 'invoice',
 }));
 vi.mock('@/app/(member)/portal/invoices/_utils/legacy-no-tin', () => ({
   isLegacyNoTinEventInvoice: () => false,

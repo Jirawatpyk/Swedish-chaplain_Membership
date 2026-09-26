@@ -26,11 +26,18 @@ export interface OrderSummaryProps {
    *.
    */
   readonly currency?: string;
+  /**
+   * 088 — the invoice is an SC- bill (ใบแจ้งหนี้). Paying it issues the
+   * §86/4 tax invoice/receipt, so the summary says so plainly — the member
+   * must not mistake the bill for their tax document.
+   */
+  readonly isBill?: boolean;
 }
 
 export function OrderSummary({
   invoiceNumber,
   amountDue,
+  isBill = false,
 }: OrderSummaryProps) {
   const t = useTranslations('portal.payment.summary');
   const locale = useLocale();
@@ -80,6 +87,14 @@ export function OrderSummary({
           </p>
         </div>
       </div>
+      {isBill ? (
+        <p
+          className="mt-3 text-caption text-muted-foreground"
+          data-testid="pay-sheet-summary-bill-note"
+        >
+          {t('billNote')}
+        </p>
+      ) : null}
     </section>
   );
 }

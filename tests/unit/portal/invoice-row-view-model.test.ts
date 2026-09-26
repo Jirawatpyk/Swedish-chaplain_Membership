@@ -40,6 +40,8 @@ import { describe, expect, it } from 'vitest';
 import {
   toInvoiceRowViewModel,
   rowHasAnyAction,
+  downloadLabelKeys,
+  resolveMainPdfKind,
 } from '@/app/(member)/portal/invoices/_utils/invoice-row-view-model';
 import { asInvoiceId, type Invoice } from '@/modules/invoicing';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
@@ -802,5 +804,77 @@ describe('toInvoiceRowViewModel — 088 tax-at-payment disambiguation', () => {
     expect(vm.billDocumentNumber).toBeNull();
     // Legacy row keeps its §87 invoice number as the primary identity.
     expect(vm.primaryNumber).toBe('INV-2026-000001');
+  });
+});
+
+// ===========================================================================
+// 088 — the main pdf of an SC- bill is a ใบแจ้งหนี้, NOT a tax invoice. Its
+// download must never wear the "ใบกำกับภาษี" (tax invoice) label, paid or
+// unpaid; legacy pre-088 INV- documents ARE tax invoices and keep it.
+// ===========================================================================
+describe('mainPdfKind / downloadLabelKeys — 088 bill vs legacy tax invoice', () => {
+  it('unpaid 088 bill → "bill" (bill label + aria)', () => {
+    const vm = toInvoiceRowViewModel(
+      buildInvoice({
+        status: 'issued',
+        documentNumber: null,
+        billDocumentNumberRaw: 'SC-2026-000045',
+        pdfDocKind: 'invoice',
+      }),
+      NOW_PAST_DUE,
+      true,
+    );
+    expect(vm.mainPdfKind).toBe('bill');
+    expect(downloadLabelKeys(vm.mainPdfKind)).toEqual({
+      labelKey: 'actions.downloadBill',
+      ariaKey: 'actions.downloadBillAria',
+    });
+  });
+
+  it('paid 088 bill → still "bill" (the RC tax receipt is the separate download)', () => {
+    const vm = toInvoiceRowViewModel(
+      buildInvoice({
+        status: 'paid',
+        documentNumber: null,
+        billDocumentNumberRaw: 'SC-2026-000045',
+        receiptDocumentNumberRaw: 'RC-2026-000123',
+        receiptPdfStatus: 'rendered',
+        receiptPdf: { blobKey: 'rk', sha256: sha(), templateVersion: 1 },
+        pdfDocKind: 'invoice',
+      }),
+      NOW_PAST_DUE,
+      true,
+    );
+    expect(vm.mainPdfKind).toBe('bill');
+    expect(vm.showInvoice).toBe(true);
+  });
+
+  it('is decided by the document itself, not the display flag', () => {
+    // A bill stays a bill even on a flag-off surface (e.g. after a rollback).
+    expect(
+      resolveMainPdfKind({ pdfDocKind: 'invoice', billDocumentNumberRaw: 'SC-2026-000045' }),
+    ).toBe('bill');
+  });
+
+  it('legacy INV- tax invoice (no bill number) → "invoice" (tax-invoice label)', () => {
+    const vm = toInvoiceRowViewModel(buildInvoice({ pdfDocKind: 'invoice' }), NOW_PAST_DUE, true);
+    expect(vm.mainPdfKind).toBe('invoice');
+    expect(downloadLabelKeys(vm.mainPdfKind)).toEqual({
+      labelKey: 'actions.download',
+      ariaKey: 'actions.downloadInvoiceAria',
+    });
+    // NULL pdfDocKind legacy rows are tax invoices too.
+    expect(resolveMainPdfKind({ pdfDocKind: null, billDocumentNumberRaw: null })).toBe('invoice');
+  });
+
+  it('as-paid receipts keep their own wording even when a bill number is present', () => {
+    expect(
+      resolveMainPdfKind({ pdfDocKind: 'receipt_combined', billDocumentNumberRaw: 'SC-2026-1' }),
+    ).toBe('combined');
+    expect(
+      resolveMainPdfKind({ pdfDocKind: 'receipt_separate', billDocumentNumberRaw: 'SC-2026-1' }),
+    ).toBe('receipt');
+    expect(downloadLabelKeys('combined').labelKey).toBe('actions.downloadCombined');
+    expect(downloadLabelKeys('receipt').labelKey).toBe('actions.downloadReceipt');
   });
 });

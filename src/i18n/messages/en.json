@@ -2548,6 +2548,8 @@
           "download": "Invoice",
           "downloadReceipt": "Receipt",
           "downloadInvoiceAria": "Download tax invoice PDF for invoice {number}",
+          "downloadBill": "Invoice",
+          "downloadBillAria": "Download invoice PDF for {number}",
           "downloadReceiptAria": "Download tax receipt PDF for invoice {number}",
           "receiptPreparing": "Receipt preparing…",
           "receiptGenerating": "Receipt generating…",
@@ -2972,6 +2974,8 @@
           "downloadCombined": "Download invoice/receipt",
           "downloadReceiptAria": "Download the official tax receipt PDF for invoice {number}",
           "downloadInvoiceAria": "Download the tax invoice PDF for invoice {number}",
+          "downloadBill": "Download invoice PDF",
+          "downloadBillAria": "Download the invoice PDF for {number}",
           "more": "More",
           "moreAria": "More actions for {number}"
         },
@@ -6207,6 +6211,8 @@
       "actions": {
         "download": "Invoice",
         "downloadInvoiceAria": "Download tax invoice PDF for invoice {number}",
+        "downloadBill": "Invoice",
+        "downloadBillAria": "Download invoice PDF for {number}",
         "downloadVoided": "Voided invoice",
         "downloadVoidedAria": "Download voided invoice PDF (VOID-stamped) for {number}",
         "downloadReceipt": "Receipt",
@@ -7028,6 +7034,7 @@
         "heading": "Order summary",
         "invoiceLabel": "Invoice",
         "amountLabel": "Amount due",
+        "billNote": "This is an invoice (ใบแจ้งหนี้), not a tax invoice. Your tax invoice/receipt is issued when you pay.",
         "itemsLabel": "Items",
         "itemSingle": "1 item",
         "itemPlural": "{count} items"
@@ -7233,6 +7240,7 @@
         "processing": "Your renewal is being processed. The new expiry date will appear here once payment confirmation arrives.",
         "downloadReceipt": "Download receipt PDF",
         "downloadInvoice": "Download invoice PDF",
+        "downloadBill": "Download invoice PDF",
         "receiptPreparing": "Receipt preparing…",
         "viewAllInvoices": "View all invoices",
         "backToPortal": "Back to portal home"

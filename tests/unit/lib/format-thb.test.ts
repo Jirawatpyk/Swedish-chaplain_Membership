@@ -43,4 +43,26 @@ describe('formatSatangThb', () => {
     expect(en).toMatch(/THB$/);
     expect(en).toContain(',');
   });
+
+  // Portal callers pass the raw next-intl locale ('en' | 'th' | 'sv').
+  // Swedish writes the decimal mark as a comma ("36 000,00"), so the
+  // decimal separator must follow the locale, not a hardcoded ".".
+  it('uses the Swedish decimal comma on sv', () => {
+    expect(formatSatangThb(3_600_000n, 'sv')).toBe('36\u00a0000,00 THB');
+    expect(formatSatangThb(3_600_000n, 'sv-SE')).toBe('36\u00a0000,00 THB');
+  });
+
+  it('keeps the decimal point on th and en', () => {
+    expect(formatSatangThb(3_600_000n, 'th')).toBe('36,000.00 THB');
+    expect(formatSatangThb(3_600_000n, 'en')).toBe('36,000.00 THB');
+  });
+
+  it('keeps exact satang precision on sv (no float rounding)', () => {
+    expect(formatSatangThb(1n, 'sv')).toBe('0,01 THB');
+    expect(formatSatangThb(-3434n, 'sv')).toBe('-34,34 THB');
+    // Beyond Number.MAX_SAFE_INTEGER satang — must not lose digits.
+    expect(formatSatangThb(9_007_199_254_740_993n, 'en')).toBe(
+      '90,071,992,547,409.93 THB',
+    );
+  });
 });
