@@ -21,6 +21,11 @@ import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+import {
+  InlineAlert,
+  InlineAlertDescription,
+  InlineAlertTitle,
+} from '@/components/ui/inline-alert';
 // Pure directory constants come from the insights CLIENT-SAFE sub-entry
 // (`@/modules/insights/constants`), never the index barrel. Importing these
 // runtime values from `@/modules/insights` would drag the barrel's server-only
@@ -32,11 +37,24 @@ import {
   DEFAULT_FIELD_VISIBILITY,
   DIRECTORY_FIELDS,
   MAX_DIRECTORY_DESCRIPTION_LENGTH,
+  effectiveContactVisibility,
   type DirectoryField,
   type FieldVisibility,
 } from '@/modules/insights/constants';
 import type { UpdateDirectoryListingError } from '@/modules/insights';
 import { readErrorCode } from './read-error-code';
+import {
+  DirectoryListingPreview,
+  type DirectoryPreviewIdentity,
+} from './directory-listing-preview';
+
+/** The toggles that publish the member's primary contact's personal data. */
+const CONTACT_FIELDS = ['contact_name', 'contact_email'] as const;
+type ContactField = (typeof CONTACT_FIELDS)[number];
+const COMPANY_FIELDS = DIRECTORY_FIELDS.filter(
+  (f): f is Exclude<DirectoryField, ContactField> =>
+    !(CONTACT_FIELDS as readonly string[]).includes(f),
+);
 
 export interface DirectoryVisibilityFormInitial {
   readonly listed: boolean;
@@ -48,10 +66,31 @@ export interface DirectoryVisibilityFormInitial {
   readonly locationCountry: string | null;
 }
 
+/**
+ * Whose contact details the listing publishes, and whether this viewer may
+ * decide (GDPR Art. 6 / PDPA §19, §24 — only the live primary contact; the
+ * server enforces it, this only mirrors it).
+ */
+export interface DirectoryContactContext {
+  readonly viewerIsPrimary: boolean;
+  /**
+   * The stored contact toggles were chosen by today's primary contact. When
+   * false the published output uses the defaults (name shown, email hidden)
+   * until the primary saves (`effectiveContactVisibility`).
+   */
+  readonly chosenByPrimary: boolean;
+  /** A listing row exists (a new listing starts from the defaults). */
+  readonly hasListing: boolean;
+}
+
 export function DirectoryVisibilityForm({
   initial,
+  contact,
+  identity,
 }: {
   readonly initial: DirectoryVisibilityFormInitial;
+  readonly contact: DirectoryContactContext;
+  readonly identity: DirectoryPreviewIdentity;
 }): React.JSX.Element {
   const t = useTranslations('directorySettings');
   const readOnlyToast = useReadOnlyToast();
@@ -59,20 +98,53 @@ export function DirectoryVisibilityForm({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
-  const [listed, setListed] = useState(initial.listed);
-  const [vis, setVis] = useState<Record<DirectoryField, boolean>>(() => {
+  const canChooseContact = contact.viewerIsPrimary && identity.primaryContact !== null;
+  // What is STORED for the contact toggles (absent = hidden) — a colleague
+  // always resubmits these unchanged, so an unsaved default can never trip the
+  // server's primary-only gate.
+  const storedContact: Record<ContactField, boolean> = {
+    contact_name: initial.fieldVisibility.contact_name === true,
+    contact_email: initial.fieldVisibility.contact_email === true,
+  };
+
+  const [initialVis] = useState<Record<DirectoryField, boolean>>(() => {
     const base: Record<DirectoryField, boolean> = { ...DEFAULT_FIELD_VISIBILITY };
     for (const f of DIRECTORY_FIELDS) {
       const v = initial.fieldVisibility[f];
       if (v !== undefined) base[f] = v;
     }
+    // The contact toggles show what the directory actually publishes: the
+    // stored choice, or — when a previous primary made it — the defaults
+    // (`effectiveContactVisibility`). A new listing starts from the defaults
+    // only for the primary, who is the one choosing.
+    const start: FieldVisibility = contact.hasListing
+      ? storedContact
+      : canChooseContact
+        ? DEFAULT_FIELD_VISIBILITY
+        : {};
+    const shown =
+      contact.hasListing && !contact.chosenByPrimary
+        ? effectiveContactVisibility(start, null, null)
+        : start;
+    for (const f of CONTACT_FIELDS) base[f] = shown[f] === true;
     return base;
   });
+  const [listed, setListed] = useState(initial.listed);
+  const [vis, setVis] = useState<Record<DirectoryField, boolean>>(initialVis);
   const [industry, setIndustry] = useState(initial.industry ?? '');
   const [description, setDescription] = useState(initial.description ?? '');
   const [website, setWebsite] = useState(initial.website ?? '');
   const [city, setCity] = useState(initial.locationCity ?? '');
   const [country, setCountry] = useState(initial.locationCountry ?? '');
+
+  const dirty =
+    listed !== initial.listed ||
+    DIRECTORY_FIELDS.some((f) => vis[f] !== initialVis[f]) ||
+    industry !== (initial.industry ?? '') ||
+    description !== (initial.description ?? '') ||
+    website !== (initial.website ?? '') ||
+    city !== (initial.locationCity ?? '') ||
+    country !== (initial.locationCountry ?? '');
   const [websiteError, setWebsiteError] = useState<string | null>(null);
   const [descriptionError, setDescriptionError] = useState<string | null>(null);
 
@@ -87,7 +159,7 @@ export function DirectoryVisibilityForm({
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
             listed,
-            fieldVisibility: vis,
+            fieldVisibility: canChooseContact ? vis : { ...vis, ...storedContact },
             industry: industry.trim() || null,
             description: description.trim() || null,
             website: website.trim() || null,
@@ -103,6 +175,7 @@ export function DirectoryVisibilityForm({
           const code = await readErrorCode<UpdateDirectoryListingError>(res);
           if (code === 'invalid_website') setWebsiteError(t('invalidWebsite'));
           else if (code === 'description_too_long') setDescriptionError(t('descriptionTooLong'));
+          else if (code === 'not_primary_contact') toast.error(t('notPrimaryContact'));
           else toast.error(t('saveFailed'));
           return;
         }
@@ -136,7 +209,7 @@ export function DirectoryVisibilityForm({
 
       <fieldset className="space-y-2">
         <legend className="mb-1 text-sm font-semibold">{t('fieldsHeading')}</legend>
-        {DIRECTORY_FIELDS.map((f) => (
+        {COMPANY_FIELDS.map((f) => (
           <label key={f} className="flex items-center gap-2 text-sm">
             <Checkbox
               checked={vis[f]}
@@ -146,6 +219,46 @@ export function DirectoryVisibilityForm({
             {tf(f)}
           </label>
         ))}
+      </fieldset>
+
+      <fieldset className="space-y-2" aria-describedby="dir-contact-hint">
+        <legend className="mb-1 text-sm font-semibold">{t('contactHeading')}</legend>
+        {contact.viewerIsPrimary && !contact.chosenByPrimary && contact.hasListing ? (
+          <InlineAlert tone="info" role="status" data-testid="directory-contact-confirm">
+            <InlineAlertTitle>{t('contactConfirmTitle')}</InlineAlertTitle>
+            <InlineAlertDescription>{t('contactConfirmBody')}</InlineAlertDescription>
+          </InlineAlert>
+        ) : null}
+        {CONTACT_FIELDS.map((f) => {
+          // Say exactly whose data the toggle publishes.
+          const label =
+            identity.primaryContact === null
+              ? tf(f)
+              : f === 'contact_name'
+                ? t('contactNameLabel', { name: identity.primaryContact.name })
+                : t('contactEmailLabel', { email: identity.primaryContact.email });
+          return (
+            <label
+              key={f}
+              className={`flex items-center gap-2 text-sm${canChooseContact ? '' : ' text-muted-foreground'}`}
+            >
+              <Checkbox
+                checked={vis[f]}
+                disabled={!canChooseContact}
+                onCheckedChange={(c) => setVis((prev) => ({ ...prev, [f]: c === true }))}
+                aria-label={label}
+              />
+              {label}
+            </label>
+          );
+        })}
+        <p id="dir-contact-hint" className="text-sm text-muted-foreground">
+          {identity.primaryContact === null
+            ? t('contactHintNoPrimary')
+            : contact.viewerIsPrimary
+              ? t('contactHintPrimary')
+              : t('contactHintColleague', { name: identity.primaryContact.name })}
+        </p>
       </fieldset>
 
       <fieldset className="space-y-3">
@@ -219,6 +332,20 @@ export function DirectoryVisibilityForm({
           </div>
         </div>
       </fieldset>
+
+      <DirectoryListingPreview
+        dirty={dirty}
+        identity={identity}
+        state={{
+          listed,
+          fieldVisibility: vis,
+          industry,
+          description,
+          website,
+          locationCity: city,
+          locationCountry: country,
+        }}
+      />
 
       <Button type="submit" disabled={pending}>
         {pending && <Loader2Icon className="mr-2 h-4 w-4 motion-safe:animate-spin" aria-hidden />}

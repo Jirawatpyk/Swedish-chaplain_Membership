@@ -41,6 +41,7 @@ import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import { buildMemberAuditSubset } from '../../application/gdpr-audit-subset';
+import { projectContactsForRequester } from '../../application/gdpr-contact-scope';
 import type {
   GdprArchiveSource,
   GdprChangeRequestEntry,
@@ -85,8 +86,14 @@ function isoOrNull(d: Date | string | null): string | null {
  * company fields only, and a row that is not the requester's carries no
  * reason / note.
  */
-function serialiseChangeRequest(row: ChangeRequestListRow): GdprChangeRequestEntry {
+function serialiseChangeRequest(
+  row: ChangeRequestListRow,
+  viewerUserId: UserId | null,
+): GdprChangeRequestEntry {
   const r = row.request;
+  // Art. 15(4) — a colleague's submission is disclosed by name (the business
+  // identity the archive already carries), never by their internal contact id.
+  const ownSubmission = viewerUserId !== null && String(r.submittedByUserId) === String(viewerUserId);
   return {
     id: r.id,
     scope: r.scope,
@@ -99,7 +106,10 @@ function serialiseChangeRequest(row: ChangeRequestListRow): GdprChangeRequestEnt
     // ship `"submittedAt": ""` rather than fail (C3). It cannot; the JSON
     // is byte-identical either way.
     submittedAt: r.submittedAt.toISOString(),
-    submittedBy: { contactId: r.submittedByContactId, displayName: row.submitter.displayName },
+    submittedBy: {
+      contactId: ownSubmission ? r.submittedByContactId : null,
+      displayName: row.submitter.displayName,
+    },
     decidedAt: isoOrNull(r.decidedAt),
     decidedBy: 'organisation',
     decisionReason: r.decisionReason,
@@ -377,7 +387,7 @@ export const gdprArchiveSourceAdapter: GdprArchiveSource = {
       if (!page.ok) throw new Error(`GDPR gather: change-request list failed (${page.error.code})`);
       for (const row of page.value.items) {
         if (requesterUserId === null && row.request.scope === 'own_contact') continue; // a contact's own request is theirs alone
-        changeRequests.push(serialiseChangeRequest(projectChangeRequestForViewer(row, requesterUserId)));
+        changeRequests.push(serialiseChangeRequest(projectChangeRequestForViewer(row, requesterUserId), requesterUserId));
         if (changeRequests.length > MAX_CHANGE_REQUESTS) break; // one probe row past the cap
       }
       crCursor = page.value.nextCursor;
@@ -389,8 +399,13 @@ export const gdprArchiveSourceAdapter: GdprArchiveSource = {
     // 6) Audit subset (member-performed ∪ member-targeted) → redacted entries.
     //    Over-fetch by one so exactly-MAX_AUDIT_ROWS is not false-flagged
     //    truncated (Round 2 — #1); trim to MAX before building the subset.
+    //    GDPR Art. 15(4) · PDPA §30 — the actor/target arms match the
+    //    REQUESTER's own account only: a colleague's login / session / account
+    //    events are that colleague's personal data. Company rows still arrive
+    //    via the payload member-id arms; `viewerUserId` strips their free text.
+    const auditUserIds = requesterUserId !== null ? [String(requesterUserId)] : [];
     const auditRowsRaw = await gdprAuditSubsetReadAdapter.query(ctx, {
-      memberUserIds,
+      memberUserIds: auditUserIds,
       memberId: opts.subjectMemberId,
       limit: MAX_AUDIT_ROWS + 1,
     });
@@ -406,7 +421,11 @@ export const gdprArchiveSourceAdapter: GdprArchiveSource = {
         targetUserId: r.targetUserId,
         payload: r.payload,
       })),
-      { memberUserIds, memberId: opts.subjectMemberId },
+      {
+        memberUserIds: auditUserIds,
+        memberId: opts.subjectMemberId,
+        viewerUserId: requesterUserId === null ? null : String(requesterUserId),
+      },
     );
 
     // Completeness disclosure (FR-037 / F9 #5): a category that hit its cap kept
@@ -475,21 +494,23 @@ export const gdprArchiveSourceAdapter: GdprArchiveSource = {
         createdAt: isoOrNull(member.createdAt),
         updatedAt: isoOrNull(member.updatedAt),
       },
-      contacts: contacts.map((c) => ({
-        contactId: c.contactId,
-        firstName: c.firstName,
-        lastName: c.lastName,
-        email: String(c.email),
-        phone: c.phone === null ? null : String(c.phone),
-        // P2 Wave-0 — a contact's date of birth is material personal data
-        // (Art. 15/20); was omitted from the export.
-        dateOfBirth: isoOrNull(c.dateOfBirth),
-        roleTitle: c.roleTitle,
-        preferredLanguage: c.preferredLanguage,
-        isPrimary: c.isPrimary,
-        removedAt: isoOrNull(c.removedAt),
-        createdAt: isoOrNull(c.createdAt),
-      })),
+      contacts: projectContactsForRequester(
+        contacts.map((c) => ({
+          contactId: String(c.contactId),
+          linkedUserId: c.linkedUserId === null ? null : String(c.linkedUserId),
+          firstName: c.firstName,
+          lastName: c.lastName,
+          email: String(c.email),
+          phone: c.phone === null ? null : String(c.phone),
+          dateOfBirth: c.dateOfBirth,
+          roleTitle: c.roleTitle,
+          preferredLanguage: c.preferredLanguage,
+          isPrimary: c.isPrimary,
+          removedAt: c.removedAt,
+          createdAt: c.createdAt,
+        })),
+        requesterUserId,
+      ),
       invoices,
       events,
       broadcasts,

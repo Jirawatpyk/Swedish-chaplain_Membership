@@ -58,6 +58,15 @@ export interface UpdateDirectoryListingMeta {
   readonly actorRole: DirectoryActorRole;
   /** The acting member's own member_id (null for staff). Gates member self-edit. */
   readonly actorMemberId: string | null;
+  /**
+   * Whether the acting member user is the member's LIVE primary contact. The
+   * contact name + email the directory publishes are that person's (the
+   * published identity is the live primary — `listPublishedInTx`), so only
+   * they may switch `contact_name` / `contact_email` (GDPR Art. 6 / PDPA §19,
+   * §24 — the basis for publishing belongs to the data subject). Ignored for
+   * staff.
+   */
+  readonly actorIsPrimaryContact: boolean;
   readonly requestId: string;
 }
 
@@ -70,7 +79,15 @@ export type UpdateDirectoryListingError =
   | 'forbidden'
   | 'invalid_website'
   | 'description_too_long'
-  | 'member_not_found';
+  | 'member_not_found'
+  | 'not_primary_contact';
+
+/** The toggles that publish the primary contact's personal data. */
+const CONTACT_FIELDS = ['contact_name', 'contact_email'] as const;
+
+function contactTogglesDiffer(a: FieldVisibility, b: FieldVisibility): boolean {
+  return CONTACT_FIELDS.some((f) => isFieldVisible(a, f) !== isFieldVisible(b, f));
+}
 
 /** Trim then collapse empty strings to null (a cleared form field sends ''). */
 function normalize(value: string | null): string | null {
@@ -139,10 +156,11 @@ export async function updateDirectoryListing(
     return err('description_too_long');
   }
 
-  const patch: DirectoryListingPatch = {
+  const fieldVisibility = sanitizeFieldVisibility(input.fieldVisibility);
+  const base = {
     listed: input.listed,
     // Defence-in-depth: drop any key outside the fixed directory field set.
-    fieldVisibility: sanitizeFieldVisibility(input.fieldVisibility),
+    fieldVisibility,
     industry: normalize(input.industry),
     description,
     website,
@@ -155,6 +173,27 @@ export async function updateDirectoryListing(
       tx,
       input.memberId,
     );
+    // Compared against what is STORED (absent = hidden), never the form's
+    // defaults — a colleague may resubmit the stored values unchanged.
+    const contactTogglesChanged = contactTogglesDiffer(
+      existing?.fieldVisibility ?? {},
+      fieldVisibility,
+    );
+    if (
+      meta.actorRole === 'member' &&
+      !meta.actorIsPrimaryContact &&
+      contactTogglesChanged
+    ) {
+      return 'not_primary_contact' as const;
+    }
+    const patch: DirectoryListingPatch = {
+      ...base,
+      // A save by the primary confirms the toggles as submitted, including
+      // ones a predecessor chose (migration 0313 / `effectiveContactVisibility`).
+      recordContactChooser:
+        contactTogglesChanged ||
+        (meta.actorRole === 'member' && meta.actorIsPrimaryContact),
+    };
     const upserted = await deps.directoryRepo.upsertInTx(
       tx,
       input.memberId,
@@ -173,12 +212,14 @@ export async function updateDirectoryListing(
         subject_member_id: input.memberId,
         listed: patch.listed,
         changed_fields: computeChangedFields(existing, patch),
+        contact_visibility_changed: contactTogglesChanged,
       },
     });
     return 'ok' as const;
   });
 
   if (result === 'member_not_found') return err('member_not_found');
+  if (result === 'not_primary_contact') return err('not_primary_contact');
   insightsMetrics.directoryListingUpdated(ctx.slug);
   return ok(undefined);
 }

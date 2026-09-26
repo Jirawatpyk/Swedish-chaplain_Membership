@@ -58,7 +58,8 @@ export interface GdprChangeRequestEntry {
   readonly outcome: ChangeRequestOutcome | null;
   readonly withdrawnReason: WithdrawnReason | null;
   readonly submittedAt: string;
-  readonly submittedBy: { readonly contactId: string; readonly displayName: string };
+  /** `contactId` is null on a colleague's submission (Art. 15(4) — name only). */
+  readonly submittedBy: { readonly contactId: string | null; readonly displayName: string };
   readonly decidedAt: string | null;
   readonly decidedBy: 'organisation';
   readonly decisionReason: string | null;

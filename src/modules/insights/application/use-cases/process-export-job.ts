@@ -36,6 +36,7 @@ import {
   type ExportKind,
 } from '../../domain/export-job';
 import {
+  effectiveContactVisibility,
   projectPublishedListing,
   type DirectoryRecord,
   type PublishedListing,
@@ -72,7 +73,13 @@ export type ProcessExportJobError =
 function toPublished(row: PublishedSourceRow): PublishedListing | null {
   const record: DirectoryRecord = {
     listed: true,
-    fieldVisibility: row.listing.fieldVisibility,
+    // GDPR Art. 6 / PDPA §19, §24 — the contact toggles count only when the
+    // live primary (whose details are published) chose them.
+    fieldVisibility: effectiveContactVisibility(
+      row.listing.fieldVisibility,
+      row.listing.contactVisibilitySetByContactId,
+      row.primaryContactId,
+    ),
     identity: {
       memberName: row.companyName,
       tier: row.tier,

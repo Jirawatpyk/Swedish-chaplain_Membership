@@ -108,6 +108,7 @@ describe('F9 directory excludes GDPR-erased members (COMP-1 H4)', () => {
           actorUserId: admin.userId,
           actorRole: 'admin' as const,
           actorMemberId: null,
+          actorIsPrimaryContact: false,
           requestId: `dir-${randomUUID()}`,
         },
         tenant.ctx,

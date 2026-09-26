@@ -10,7 +10,7 @@ import { PreferredLocaleForm } from '@/components/portal/preferred-locale-form';
 // F114 FR-004 / R6 — the contact's OWN email language (Group A) lives here.
 import { ContactLanguageForm } from '@/components/portal/contact-language-form';
 import { DataExportPanel } from '@/components/data-export/data-export-panel';
-import { InlineAlert } from '@/components/ui/inline-alert';
+import { InlineAlert, InlineAlertDescription, InlineAlertTitle } from '@/components/ui/inline-alert';
 import {
   buildDataExportLabels,
   buildDataExportRows,
@@ -348,6 +348,13 @@ export default async function MemberAccountPage() {
           <p className="max-w-prose text-sm text-muted-foreground">
             {tExport('description')}
           </p>
+          {/* GDPR Art. 15(4) · PDPA §30 — any colleague may request the member
+              archive; it carries colleagues' names + roles (never their contact
+              details), so say so before request / download. */}
+          <InlineAlert tone="info" role="status" data-testid="portal-export-colleagues-notice">
+            <InlineAlertTitle>{tExport('colleaguesNoticeTitle')}</InlineAlertTitle>
+            <InlineAlertDescription>{tExport('colleaguesNoticeBody')}</InlineAlertDescription>
+          </InlineAlert>
           {exportsReadFailed ? (
             <InlineAlert tone="destructive" role="status" data-testid="portal-exports-unavailable">
               <p className="text-sm">{tExport('loadFailed')}</p>

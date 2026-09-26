@@ -314,13 +314,14 @@ describe('gdprArchiveSourceAdapter.gather — PDF-fetch resilience (W1)', () => 
     expect(data!.profile).toMatchObject({ member_number: 7 });
   });
 
-  it('contacts include dateOfBirth — material personal data (P2 Wave-0, GDPR Art.15/20)', async () => {
+  it("the requester's own contact includes dateOfBirth — material personal data (P2 Wave-0, GDPR Art.15/20)", async () => {
     listInvoicesByMemberMock.mockResolvedValue({ ok: true, value: { rows: [], total: 0 } });
     contactListByMemberMock.mockResolvedValue({
       ok: true,
       value: [
         {
           contactId: 'c-1',
+          linkedUserId: 'u-dao',
           firstName: 'Dao',
           lastName: 'Srisai',
           email: 'dao@example.com',
@@ -334,7 +335,8 @@ describe('gdprArchiveSourceAdapter.gather — PDF-fetch resilience (W1)', () => 
         },
       ],
     });
-    const data = await gdprArchiveSourceAdapter.gather(CTX, { subjectMemberId: MEMBER });
+    crListVisibleToUserMock.mockResolvedValue({ ok: true, value: { items: [], nextCursor: null } });
+    const data = await gdprArchiveSourceAdapter.gather(CTX, { subjectMemberId: MEMBER, requestedByUserId: 'u-dao' });
     expect(data).not.toBeNull();
     expect(data!.contacts[0]).toMatchObject({
       contactId: 'c-1',
@@ -496,6 +498,9 @@ describe('gdprArchiveSourceAdapter.gather — PDF-fetch resilience (W1)', () => 
       expect(theirs.fields.map((f) => f.key)).toEqual(['company_name']);
       expect(theirs.decisionReason).toBeNull();
       expect(theirs.decisionNote).toBeNull();
+      // Art. 15(4) — the colleague is named, never identified by contact id
+      expect(theirs.submittedBy).toEqual({ contactId: null, displayName: row.submitter.displayName });
+      expect(mine.submittedBy.contactId).toBe('c-1');
     });
 
     it('walks every page of the history (keyset cursor) so a long history is not silently cut', async () => {
@@ -549,6 +554,66 @@ describe('gdprArchiveSourceAdapter.gather — PDF-fetch resilience (W1)', () => 
       listInvoicesByMemberMock.mockResolvedValue({ ok: true, value: { rows: [], total: 0 } });
       crListByMemberMock.mockResolvedValue({ ok: false, error: { code: 'repo.unexpected' } });
       await expect(gdprArchiveSourceAdapter.gather(CTX, { subjectMemberId: MEMBER })).rejects.toThrow(/change-request list failed/);
+    });
+  });
+
+  // GDPR Art. 15(4) / 20(4) · PDPA §30 — any colleague may request the member
+  // archive; it must not hand them another colleague's personal data.
+  describe("colleagues' personal data (Art. 15(4))", () => {
+    const REQUESTER = 'u-requester';
+    const contact = (over: Record<string, unknown>) => ({
+      firstName: 'X',
+      lastName: 'Y',
+      phone: '+66800000000',
+      dateOfBirth: new Date('1990-07-15T00:00:00Z'),
+      roleTitle: 'Staff',
+      preferredLanguage: 'en',
+      isPrimary: false,
+      removedAt: null,
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      linkedUserId: null,
+      ...over,
+    });
+    const roster = [
+      contact({ contactId: 'c-me', linkedUserId: REQUESTER, firstName: 'Som', lastName: 'Chai', email: 'som@acme.example' }),
+      contact({ contactId: 'c-anna', linkedUserId: 'u-anna', firstName: 'Anna', lastName: 'Lindqvist', email: 'anna@acme.example', phone: '+66811111111', roleTitle: 'CEO', isPrimary: true }),
+      contact({ contactId: 'c-gone', linkedUserId: 'u-gone', firstName: 'Gone', lastName: 'Person', email: 'gone@acme.example', removedAt: new Date('2026-03-01T00:00:00Z') }),
+    ];
+
+    beforeEach(() => {
+      listInvoicesByMemberMock.mockResolvedValue({ ok: true, value: { rows: [], total: 0 } });
+      contactListByMemberMock.mockResolvedValue({ ok: true, value: roster });
+      crListVisibleToUserMock.mockResolvedValue({ ok: true, value: { items: [], nextCursor: null } });
+    });
+
+    it("the archive does not contain another contact's email, phone or date of birth", async () => {
+      const data = await gdprArchiveSourceAdapter.gather(CTX, { subjectMemberId: MEMBER, requestedByUserId: REQUESTER });
+      const json = JSON.stringify(data!.contacts);
+      expect(json).not.toContain('anna@acme.example');
+      expect(json).not.toContain('+66811111111');
+      const anna = data!.contacts.find((c) => c.firstName === 'Anna')!;
+      expect(anna).toEqual({ firstName: 'Anna', lastName: 'Lindqvist', roleTitle: 'CEO', isPrimary: true });
+    });
+
+    it("keeps the requester's own record in full and drops former colleagues", async () => {
+      const data = await gdprArchiveSourceAdapter.gather(CTX, { subjectMemberId: MEMBER, requestedByUserId: REQUESTER });
+      expect(data!.contacts.find((c) => c.contactId === 'c-me')).toMatchObject({ email: 'som@acme.example', phone: '+66800000000' });
+      expect(JSON.stringify(data!.contacts)).not.toContain('Gone');
+    });
+
+    it("scopes the audit read to the requester's own account, not every colleague's", async () => {
+      await gdprArchiveSourceAdapter.gather(CTX, { subjectMemberId: MEMBER, requestedByUserId: REQUESTER });
+      expect(auditQueryMock).toHaveBeenCalledWith(CTX, expect.objectContaining({ memberUserIds: [REQUESTER] }));
+    });
+
+    it('a staff on-behalf export carries every active contact by name and role only', async () => {
+      crListByMemberMock.mockResolvedValue({ ok: true, value: { items: [], nextCursor: null } });
+      const data = await gdprArchiveSourceAdapter.gather(CTX, { subjectMemberId: MEMBER });
+      expect(data!.contacts).toEqual([
+        { firstName: 'Som', lastName: 'Chai', roleTitle: 'Staff', isPrimary: false },
+        { firstName: 'Anna', lastName: 'Lindqvist', roleTitle: 'CEO', isPrimary: true },
+      ]);
+      expect(auditQueryMock).toHaveBeenCalledWith(CTX, expect.objectContaining({ memberUserIds: [] }));
     });
   });
 

@@ -281,8 +281,11 @@ describe('F9 GDPR archive — integration (T086)', () => {
     // Member's own data present.
     const profile = JSON.parse(strFromU8(files['profile.json']!));
     expect(profile.companyName).toBe('Acme Exports Co');
+    // Staff on-behalf export (no linked requester) — every contact is a
+    // colleague to the archive's reader: name + role only (Art. 15(4)).
     const contactsJson = JSON.parse(strFromU8(files['contacts.json']!));
-    expect(contactsJson[0].email).toBe('som.chai@acme.example');
+    expect(contactsJson[0]).toEqual({ firstName: 'Som', lastName: 'Chai', roleTitle: null, isPrimary: true });
+    expect(strFromU8(files['contacts.json']!)).not.toContain('som.chai@acme.example');
 
     // Manifest checksums validate over every non-manifest entry (SC-008).
     const manifest = JSON.parse(strFromU8(files['manifest.json']!));
@@ -365,5 +368,72 @@ describe('F9 GDPR archive — integration (T086)', () => {
     for (const image of images) expect(image).not.toHaveProperty('uploadedByUserId');
     for (const uploader of uploaderIds) expect(raw).not.toContain(uploader);
     expect(raw).not.toContain(peerHash);
+  }, 180_000);
+
+  it("GDPR Art. 15(4) / PDPA §30: a colleague's archive holds no other contact's email and no other colleague's own account activity", async () => {
+    const requester = await createActiveTestUser('member');
+    const colleague = await createActiveTestUser('member');
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(contacts).values([
+        {
+          tenantId: tenant.ctx.slug,
+          contactId: randomUUID(),
+          memberId: subject,
+          firstName: 'Req',
+          lastName: 'Uester',
+          email: `req-${randomUUID()}@acme.example`,
+          isPrimary: false,
+          linkedUserId: requester.userId,
+        },
+        {
+          tenantId: tenant.ctx.slug,
+          contactId: randomUUID(),
+          memberId: subject,
+          firstName: 'Anna',
+          lastName: 'Lindqvist',
+          email: 'anna.lindqvist@acme.example',
+          isPrimary: false,
+          linkedUserId: colleague.userId,
+        },
+      ]);
+      // The colleague's own sign-in — their personal data, not the requester's.
+      await tx.insert(auditLog).values({
+        tenantId: tenant.ctx.slug,
+        eventType: 'sign_in_success',
+        actorUserId: colleague.userId,
+        targetUserId: colleague.userId,
+        summary: 'colleague-login-marker',
+        requestId: randomUUID(),
+        payload: null,
+      });
+    });
+
+    const ref = await requestDataExport(
+      { subjectMemberId: subject },
+      {
+        actorUserId: requester.userId,
+        actorRole: 'member',
+        actorMemberId: subject,
+        requesterLocale: 'en',
+        requestId: `gdpr-colleague-${randomUUID()}`,
+      },
+      tenant.ctx,
+      makeRequestDataExportDeps(tenant.ctx.slug),
+    );
+    expect(ref.ok).toBe(true);
+    if (!ref.ok) return;
+    expect((await processExportJob(ref.value.jobId, tenant.ctx, workerDeps())).ok).toBe(true);
+    const job = await makeDrizzleExportJobRepo(tenant.ctx.slug).findById(tenant.ctx, ref.value.jobId);
+    const files = unzipSync(stubBlob.store.get(job!.blobKey!)!.body);
+
+    const contactsRaw = strFromU8(files['contacts.json']!);
+    expect(contactsRaw).not.toContain('anna.lindqvist@acme.example');
+    expect(contactsRaw).not.toContain('som.chai@acme.example');
+    const roster = JSON.parse(contactsRaw) as Array<Record<string, unknown>>;
+    expect(roster.find((c) => c.firstName === 'Anna')).toEqual({ firstName: 'Anna', lastName: 'Lindqvist', roleTitle: null, isPrimary: false });
+    expect(roster.find((c) => c.firstName === 'Req')).toHaveProperty('email');
+
+    const auditRaw = strFromU8(files['audit-events.json']!);
+    expect(auditRaw).not.toContain('colleague-login-marker');
   }, 180_000);
 });

@@ -4,7 +4,8 @@
  * Member self-service directory listing update (FR-025). The member is resolved
  * from the session (`findByLinkedUserId`), never the body — a member can only
  * edit their OWN listing. `updateDirectoryListing` enforces the same rule +
- * validates website/description + sanitises the visibility map. CSRF Origin +
+ * validates website/description + sanitises the visibility map, and lets only
+ * the live primary contact switch the contact name / email toggles. CSRF Origin +
  * session enforced by `middleware.ts` for state-changing `/api/**`.
  */
 import { NextResponse, type NextRequest } from 'next/server';
@@ -37,6 +38,7 @@ const ERROR_STATUS: Record<string, number> = {
   member_not_found: 404,
   invalid_website: 422,
   description_too_long: 422,
+  not_primary_contact: 403,
 };
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
@@ -66,7 +68,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   const tenant = resolveTenantFromRequest(request);
-  const memberResult = await buildMembersDeps(tenant).memberRepo.findByLinkedUserId(
+  const membersDeps = buildMembersDeps(tenant);
+  const memberResult = await membersDeps.memberRepo.findByLinkedUserId(
     tenant,
     current.user.id,
   );
@@ -116,6 +119,27 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
+  // GDPR Art. 6 / PDPA §19, §24 — the contact toggles publish the LIVE primary
+  // contact's name + email; the use case lets only that person change them.
+  // Resolve whether the caller IS the primary (same own-contact lookup as
+  // /portal/contacts/invite). A read failure is a 500, never "not primary".
+  const contactsResult = await membersDeps.contactRepo.listByMember(tenant, memberId);
+  if (!contactsResult.ok) {
+    logger.error(
+      {
+        correlationId,
+        tenantId: tenant.slug,
+        errCode: contactsResult.error.code,
+        errKind: errKind(rootCause(contactsResult.error)),
+      },
+      'portal.directory.contact_lookup_failed',
+    );
+    return NextResponse.json({ error: { code: 'server_error' }, correlationId }, { status: 500 });
+  }
+  const ownContact = contactsResult.value.find(
+    (c) => String(c.linkedUserId) === current.user.id && !c.removedAt,
+  );
+
   try {
     const result = await updateDirectoryListing(
       {
@@ -132,6 +156,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         actorUserId: current.user.id as string,
         actorRole: 'member',
         actorMemberId: memberId,
+        actorIsPrimaryContact: ownContact?.isPrimary === true,
         requestId: correlationId,
       },
       tenant,

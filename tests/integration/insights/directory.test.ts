@@ -17,6 +17,7 @@ import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
 import {
+  effectiveContactVisibility,
   projectPublishedListing,
   searchDirectory,
   updateDirectoryListing,
@@ -103,6 +104,8 @@ describe('F9 directory — integration (T074/T078)', () => {
       actorUserId: admin.userId,
       actorRole: 'member' as const,
       actorMemberId: memberId,
+      // The seeded member's single contact is its primary.
+      actorIsPrimaryContact: true,
       requestId,
     });
 
@@ -111,6 +114,7 @@ describe('F9 directory — integration (T074/T078)', () => {
       actorUserId: admin.userId,
       actorRole: 'admin' as const,
       actorMemberId: null,
+      actorIsPrimaryContact: false,
       requestId,
     });
 
@@ -488,6 +492,96 @@ describe('F9 directory — integration (T074/T078)', () => {
       // artefact is a point-in-time snapshot; the source query is not).
       const after = await runInTenant(tenant.ctx, (tx) => repo.listPublishedInTx(tx));
       expect(after.map((p) => p.memberId)).not.toContain(m1);
+    });
+  });
+
+  // GDPR Art. 6 / PDPA §19, §24 (migration 0313) — the contact toggles are the
+  // choice of the primary contact whose details they publish. After the
+  // primary changes, the published output falls back to the defaults (name
+  // shown, email hidden) until the new primary saves.
+  describe('contact toggles bound to the live primary contact', () => {
+    it("a new primary's email is not published under the previous primary's choice", async () => {
+      const deps = makeUpdateDirectoryListingDeps(tenant.ctx.slug);
+      const repo = makeSearchDirectoryDeps(tenant.ctx.slug).directoryRepo;
+      const listing = {
+        memberId: m2,
+        listed: true,
+        fieldVisibility: { name: true, contact_name: true, contact_email: true },
+        industry: null,
+        description: null,
+        website: null,
+        locationCity: null,
+        locationCountry: null,
+      };
+      const published = async () => {
+        const rows = await runInTenant(tenant.ctx, (tx) => repo.listPublishedInTx(tx));
+        const row = rows.find((p) => p.memberId === m2)!;
+        return projectPublishedListing({
+          listed: true,
+          fieldVisibility: effectiveContactVisibility(
+            row.listing.fieldVisibility,
+            row.listing.contactVisibilitySetByContactId,
+            row.primaryContactId,
+          ),
+          identity: {
+            memberName: row.companyName,
+            tier: row.tier,
+            contactName: row.contactName,
+            contactEmail: row.contactEmail,
+          },
+          metadata: {
+            industry: null,
+            description: null,
+            website: null,
+            logoUrl: null,
+            locationCity: null,
+            locationCountry: null,
+          },
+        })!;
+      };
+
+      // The primary (Beatrix) publishes her own email → recorded as her choice.
+      const r = await updateDirectoryListing(listing, memberMeta(m2, `dir-${randomUUID()}`), tenant.ctx, deps);
+      expect(r.ok).toBe(true);
+      expect((await published()).contact).toEqual({ name: 'Beatrix Lastname', email: 'bea@beta.example' });
+
+      // The primary contact changes (one live primary at COMMIT).
+      await runInTenant(tenant.ctx, async (tx) => {
+        await tx
+          .update(contacts)
+          .set({ isPrimary: false })
+          .where(and(eq(contacts.tenantId, tenant.ctx.slug), eq(contacts.memberId, m2)));
+        await tx.insert(contacts).values({
+          tenantId: tenant.ctx.slug,
+          contactId: randomUUID(),
+          memberId: m2,
+          firstName: 'Nils',
+          lastName: 'Successor',
+          email: 'nils@beta.example',
+          isPrimary: true,
+        });
+      });
+      const after = await published();
+      expect(after.contact).toEqual({ name: 'Nils Successor', contactForm: true });
+      expect(JSON.stringify(after)).not.toContain('nils@beta.example');
+
+      // Once the new primary saves, their own choice applies.
+      const confirmed = await updateDirectoryListing(listing, memberMeta(m2, `dir-${randomUUID()}`), tenant.ctx, deps);
+      expect(confirmed.ok).toBe(true);
+      expect((await published()).contact).toEqual({ name: 'Nils Successor', email: 'nils@beta.example' });
+
+      // A colleague cannot switch the new primary's email off or on.
+      const byColleague = await updateDirectoryListing(
+        { ...listing, fieldVisibility: { ...listing.fieldVisibility, contact_email: false } },
+        { ...memberMeta(m2, `dir-${randomUUID()}`), actorIsPrimaryContact: false },
+        tenant.ctx,
+        deps,
+      );
+      expect(byColleague.ok).toBe(false);
+      if (!byColleague.ok) expect(byColleague.error).toBe('not_primary_contact');
+
+      // Leave m2 opted-out as the rest of the file expects.
+      await updateDirectoryListing({ ...listing, listed: false }, memberMeta(m2, `dir-${randomUUID()}`), tenant.ctx, deps);
     });
   });
 });

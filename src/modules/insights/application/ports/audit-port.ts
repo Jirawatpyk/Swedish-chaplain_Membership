@@ -111,6 +111,8 @@ export interface F9AuditPayloadByType {
     readonly listed: boolean;
     readonly changed_fields: ReadonlyArray<string>;
     readonly logo_action?: 'set' | 'removed';
+    /** The primary contact's published name/email toggles changed (who chose them is on the listing row). */
+    readonly contact_visibility_changed?: boolean;
   };
   directory_ebook_generated: {
     readonly job_id: string;

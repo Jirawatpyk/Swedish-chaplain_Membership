@@ -106,6 +106,10 @@ export const directoryListings = pgTable(
     logoBlobKey: text('logo_blob_key'),
     locationCity: text('location_city'),
     locationCountry: text('location_country'),
+    // Migration 0313 — the contact who last chose `contact_name` /
+    // `contact_email` (always the then-live primary). A mismatch with today's
+    // primary publishes the defaults (`effectiveContactVisibility`).
+    contactVisibilitySetByContactId: uuid('contact_visibility_set_by_contact_id'),
     updatedAt: timestamp('updated_at', { withTimezone: true })
       .notNull()
       .defaultNow(),

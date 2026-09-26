@@ -92,6 +92,29 @@ export function isFieldVisible(
   return visibility[field] === true;
 }
 
+/**
+ * GDPR Art. 6 / PDPA §19, §24 — the `contact_name` / `contact_email` toggles
+ * publish the member's LIVE primary contact, so they count only when that
+ * person chose them. `setByContactId` is who last switched them (migration
+ * 0313); when it is not today's primary (the primary changed, or nobody is
+ * recorded) the defaults apply — name shown, email hidden (FR-025) — until the
+ * new primary confirms. Pure; every other field is returned unchanged.
+ */
+export function effectiveContactVisibility(
+  visibility: FieldVisibility,
+  setByContactId: string | null,
+  livePrimaryContactId: string | null,
+): FieldVisibility {
+  if (setByContactId !== null && setByContactId === livePrimaryContactId) {
+    return visibility;
+  }
+  return {
+    ...visibility,
+    contact_name: DEFAULT_FIELD_VISIBILITY.contact_name,
+    contact_email: DEFAULT_FIELD_VISIBILITY.contact_email,
+  };
+}
+
 /** Website scheme allow-list — http/https only (DB CHECK `^https?://`). */
 export function isValidDirectoryWebsite(url: string): boolean {
   return /^https?:\/\//i.test(url);

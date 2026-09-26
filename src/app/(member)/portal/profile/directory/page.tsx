@@ -62,6 +62,26 @@ export default async function PortalDirectorySettingsPage(): Promise<React.JSX.E
     );
   }
   const member = memberResult.value;
+  const membersDeps = buildMembersDeps(tenant);
+
+  // GDPR Art. 6 / PDPA §19, §24 — the directory publishes the member's LIVE
+  // primary contact's name + email, and only that person may decide to. Name
+  // the person on the toggles and gate them to the primary (the POST route
+  // enforces the same rule server-side).
+  const [contactsResult, planLookup] = await Promise.all([
+    membersDeps.contactRepo.listByMember(tenant, member.memberId),
+    membersDeps.plans.getPlan(tenant, member.planId, member.planYear),
+  ]);
+  if (!contactsResult.ok) {
+    logger.error(
+      { errKind: errKind(contactsResult.error) },
+      'portal.directory.contact_lookup_failed',
+    );
+    throw new Error('Failed to load contacts for directory settings');
+  }
+  const activeContacts = contactsResult.value.filter((c) => !c.removedAt);
+  const ownContact = activeContacts.find((c) => String(c.linkedUserId) === user.id);
+  const primary = activeContacts.find((c) => c.isPrimary) ?? null;
 
   const listingResult = await getDirectoryListing(
     { memberId: member.memberId },
@@ -84,6 +104,28 @@ export default async function PortalDirectorySettingsPage(): Promise<React.JSX.E
       </section>
 
       <DirectoryVisibilityForm
+        // Remount after a save (router.refresh) so the "unsaved changes"
+        // baseline is the freshly saved listing.
+        key={JSON.stringify(listing)}
+        contact={{
+          viewerIsPrimary: ownContact?.isPrimary === true,
+          chosenByPrimary:
+            primary !== null &&
+            listing?.contactVisibilitySetByContactId === String(primary.contactId),
+          hasListing: listing !== null,
+        }}
+        identity={{
+          companyName: member.companyName,
+          tier: planLookup.ok ? planLookup.value.planNameEn : null,
+          logoUrl: listing?.logoUrl ?? null,
+          primaryContact:
+            primary === null
+              ? null
+              : {
+                  name: `${primary.firstName} ${primary.lastName}`.trim(),
+                  email: String(primary.email),
+                },
+        }}
         initial={{
           listed: listing?.listed ?? false,
           fieldVisibility: listing?.fieldVisibility ?? {},

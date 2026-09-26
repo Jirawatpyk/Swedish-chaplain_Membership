@@ -71,6 +71,7 @@ export {
   isValidDirectoryWebsite,
   isDescriptionWithinCap,
   sanitizeFieldVisibility,
+  effectiveContactVisibility,
   projectPublishedListing,
   type DirectoryField,
   type FieldVisibility,
