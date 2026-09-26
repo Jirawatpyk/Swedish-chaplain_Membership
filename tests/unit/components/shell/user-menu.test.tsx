@@ -34,7 +34,7 @@ function renderMenu(role: 'member' | 'admin' = 'member') {
 }
 
 function openMenu() {
-  fireEvent.click(screen.getByRole('button', { name: 'Account menu' }));
+  fireEvent.click(screen.getByRole('button', { name: /^Account menu/ }));
 }
 
 describe('<UserMenu> member Account hub (057)', () => {

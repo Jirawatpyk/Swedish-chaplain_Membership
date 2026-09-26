@@ -247,7 +247,8 @@ export function StaffNav({
       // A group clicked in the rail asks to expand it (AURA calls this with `false`).
       onCollapsedChange={setCollapsed}
       {...(onChange ? { onChange } : {})}
-      {...(className ? { className } : {})}
+      // `staff-nav` reaches the drawer copy too, which AURA portals out of the shell.
+      className={className ? `staff-nav ${className}` : 'staff-nav'}
     />
   );
 }

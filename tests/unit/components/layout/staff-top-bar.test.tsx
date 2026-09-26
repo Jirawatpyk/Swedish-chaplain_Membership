@@ -41,8 +41,8 @@ describe('StaffTopBar (spec 122 US1)', () => {
     const opened = vi.fn();
     window.addEventListener(OPEN_COMMAND_PALETTE_EVENT, opened);
     renderBar();
-    const [wide] = screen.getAllByRole('button', { name: 'Open command palette' });
-    fireEvent.click(wide!);
+    // The wide control's name is its visible text + the action (WCAG 2.5.3).
+    fireEvent.click(screen.getByRole('button', { name: 'Search members, plans, pages… — Open command palette' }));
     expect(opened).toHaveBeenCalledTimes(1);
     window.removeEventListener(OPEN_COMMAND_PALETTE_EVENT, opened);
   });
@@ -51,7 +51,7 @@ describe('StaffTopBar (spec 122 US1)', () => {
     renderBar();
     expect(screen.getByRole('button', { name: /change language/i })).toHaveTextContent('EN');
     expect(screen.getByRole('button', { name: 'Toggle theme' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Account menu' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Account menu/ })).toBeInTheDocument();
   });
 
   it('on a phone, offers Light / Dark / System inside the account menu', async () => {
@@ -63,7 +63,7 @@ describe('StaffTopBar (spec 122 US1)', () => {
       act(() => {
         window.dispatchEvent(new Event('resize'));
       });
-      fireEvent.click(screen.getByRole('button', { name: 'Account menu' }));
+      fireEvent.click(screen.getByRole('button', { name: /^Account menu/ }));
       expect(await screen.findByRole('menuitemradio', { name: 'Dark' })).toBeInTheDocument();
     } finally {
       window.innerWidth = width;

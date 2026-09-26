@@ -28,7 +28,7 @@ export const toast: Toast;
 ## Behaviour
 
 - **Return value:** every call returns the toast id (the given `id`, or a generated one).
-- **Visibility and placement:** at most three toasts are visible; more queue. They sit top-centre below the 56px top bar: `<Toaster position="top-center" offset={64} />` (AURA 5.6, handoff #54). Announced politely; an error is announced assertively.
+- **Visibility and placement:** at most three toasts are visible; more queue. They sit top-centre below the tallest top bar (the 72px portal header since US1): `<Toaster position="top-center" offset={80} />` (AURA 5.6, handoff #54). Announced politely; an error is announced assertively.
 - **Errors persist:** `toast.error` defaults to `duration: Infinity` unless the caller passes one (ux-standards § 4.2).
 - **Keyboard:** AURA's Toaster hotkey (Alt+T, handoff #55) focuses the newest toast's action, else its close button. When a toast holding focus closes, AURA returns focus to where it was.
 - **Rich content (5.6, handoff #53):** `description` accepts JSX — lines with their own links — and an action may carry `href` (routed through `next/link`) and `dismiss: false`.

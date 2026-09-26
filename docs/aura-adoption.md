@@ -25,7 +25,7 @@ The migration was decided on 2026-09-26, with these settled points:
 | Fonts | `@jirawatpyk/aura-tokens/aura-fonts.local.css` | Inter + Noto Sans Thai (text and kit headings), Fraunces (AURA display only), JetBrains Mono (mono), served from our own origin. The CSP is unchanged. |
 | Provider | `src/components/providers/aura-bridge.tsx`, mounted in `src/app/layout.tsx` | `locale` (en/th/sv); `calendar` (Buddhist for `th`, else Gregorian — display only); the tenant `timeZone`; `linkComponent` = `next/link`. AURA's built-in labels come in EN/TH/SV. |
 | Density | `<AuraDensity>` (from the bridge file) in `src/app/(staff)/admin/layout.tsx` (compact) and `src/app/(member)/portal/layout.tsx` (comfortable) | Inherits everything else from the bridge. |
-| Toasts | `@/lib/toast` (facade) → AURA `toast`; `<Toaster position="top-center" offset={64}>` in the bridge | The only toast import. Options: `description` (text or JSX), `id`, one `action` (with `href` / `dismiss`), `duration`. At most 3 visible; errors persist by default; Alt+T reaches the newest toast (AURA). |
+| Toasts | `@/lib/toast` (facade) → AURA `toast`; `<Toaster position="top-center" offset={80}>` in the bridge (below the 72px portal header) | The only toast import. Options: `description` (text or JSX), `id`, one `action` (with `href` / `dismiss`), `duration`. At most 3 visible; errors persist by default; Alt+T reaches the newest toast (AURA). |
 | Dates | `src/lib/format-date-localised.ts` | Stays the only formatter. AURA's `formatDate` / `useFormatDate` are lint-banned. |
 | Overlay stacking | legacy kit wrappers use `var(--aura-z-menu)` / `var(--aura-z-dialog)` | AURA scale: dialog 900, menu 1000, toast 1200, tooltip 1300. Never open an overlay from one library inside an overlay from the other. |
 
@@ -83,12 +83,16 @@ Phases 2–12 each depend on 1 and can land in any order.
 
 ## AURA gaps (the handoff doc)
 
-The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, and items 52–56 (Addendum 4) in **5.6.0**, the current pin. US1 found two more, both bridged locally:
+The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, and items 52–56 (Addendum 4) in **5.6.0**, the current pin. US1 found six more (bridged locally where a bridge is safe):
 
 | # | Gap | Local bridge (removed when AURA ships it) |
 |---|---|---|
 | 57 | `DropdownMenu` has no header slot for "who is signed in" | `UserMenu` lists name (with role) and email as inert items |
 | 58 | `Breadcrumb` turns an item without `href` into a button | `BreadcrumbNav` draws AURA's `aura-crumbs` markup itself, with organisational segments as text |
+| 59 | `AppShell`'s `<main>` takes no `tabIndex` | `StaffShell` sets `tabindex="-1"` on `#main-content` after mount, so focus fallbacks still land |
+| 60 | `Dialog` closes on a scrim click whenever it closes on Escape | Known gap: a stray click can close a confirmation that holds typed input; no local bridge |
+| 61 | `BottomNav` items take no accessible name apart from the visible label | Known gap: phone tabs read the short label (TH "สิทธิ์", SV "Konto") |
+| 62 | `SideNav` rows are 36px on touch screens | `.staff-nav .aura-nav__item { min-height: 44px }` under `pointer: coarse` |
 
 How Chamber-OS uses the 5.6.0 items:
 
@@ -96,7 +100,7 @@ How Chamber-OS uses the 5.6.0 items:
 |---|---|---|
 | 52 | DataTable `isRowSelectable(row)` / `rowSelectDisabledLabel(row)` | US12: the E-Blast queue ticks only rows awaiting marketing review (no local selection column) |
 | 53 | Toast `description` takes JSX; `actions` with `href` / `dismiss` | The supersede warning: one line per bill, each with its own "Open bill" link (`use-supersede-warning-toast.tsx`) |
-| 54 | Toaster `position="top-center"` + `offset` | AuraBridge: `<Toaster position="top-center" offset={64} />`, below the 56px top bar |
+| 54 | Toaster `position="top-center"` + `offset` | AuraBridge: `<Toaster position="top-center" offset={80} />`, below the tallest top bar (the 72px portal header since US1) |
 | 55 | Toaster `hotkey` (default Alt+T) | AURA's default; the local listener is gone |
 | 56 | 44px toast actions on coarse pointers | AURA's own CSS; the local rule is gone |
 

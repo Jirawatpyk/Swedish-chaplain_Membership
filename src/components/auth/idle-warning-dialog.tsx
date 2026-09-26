@@ -333,7 +333,11 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
     <Dialog
       role="alertdialog"
       open={open}
-      onClose={() => setOpen(false)}
+      // Escape, the close button or the scrim mean "I'm here": the same
+      // heartbeat as "Stay signed in". Closing without one would let the
+      // server session keep ageing while the poll re-opens a fresh 60 s
+      // countdown the server no longer matches (ux-standards § 8.2).
+      onClose={() => void stayAction()}
       title={t('title')}
       description={<span aria-live="polite">{t('description', { seconds: remaining })}</span>}
       footer={

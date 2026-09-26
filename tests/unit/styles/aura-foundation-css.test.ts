@@ -154,6 +154,11 @@ describe('globals.css — AURA foundation (spec 122)', () => {
     expect(layer).toMatch(/min-width:\s*1024px\)\s*\{\s*\.chamber-shell\s*\{\s*--page-padding-x:\s*2rem;/);
   });
 
+  it('gives shell nav rows a 44px target on touch screens (FR-013; AURA handoff #62)', () => {
+    const layer = css.match(/@layer components\s*\{[\s\S]*?\n\}/)?.[0] ?? '';
+    expect(layer).toMatch(/@media \(pointer: coarse\)\s*\{\s*\.staff-nav \.aura-nav__item\s*\{\s*min-height:\s*44px;/);
+  });
+
   it('carries no local toaster override — AURA 5.6 centres and offsets it (handoff #54, #56)', () => {
     expect(css).not.toMatch(/\.aura-toaster|\.aura-toast__action/);
   });

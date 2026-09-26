@@ -15,8 +15,11 @@
 import Link from 'next/link';
 import { AuraProvider, Toaster } from '@jirawatpyk/aura-react';
 
-/** 56px top bar (`--top-bar-height`) + 8px: the toast stack starts just below it. */
-const TOASTER_OFFSET = 64;
+/**
+ * The toast stack starts below the tallest top bar: the member portal header
+ * is 72px from 1024px (the staff bar is 56px), + 8px.
+ */
+const TOASTER_OFFSET = 80;
 
 export interface AuraBridgeProps {
   readonly locale: 'en' | 'th' | 'sv';

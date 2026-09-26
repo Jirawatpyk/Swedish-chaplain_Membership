@@ -239,4 +239,12 @@ describe('<MemberCommandPalette>', () => {
     expect(row).toHaveAttribute('aria-disabled', 'true');
     expect(option('View E-Blast usage')).not.toBeNull();
   });
+
+  it('never says "all paid up" before the server has answered — it says it is searching (spec 122 UX review)', () => {
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})));
+    renderPalette('member');
+    triggerCtrlK();
+    expect(option("No pending invoices — you're all paid up ✨")).toBeNull();
+    expect(screen.getByRole('listbox')).toHaveAttribute('aria-busy', 'true');
+  });
 });

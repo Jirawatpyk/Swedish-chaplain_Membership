@@ -107,13 +107,17 @@ export function UserMenu({ displayName, email, role, themeChoicesOnPhone = false
       trigger={
         <button
           type="button"
-          aria-label={t('label')}
           className={cn(
             'inline-flex h-10 items-center gap-2 rounded-full py-0 pr-2.5 pl-1 text-[13px] font-medium text-[var(--aura-fg-primary)] hover:bg-[var(--aura-bg-surface-hover)] pointer-coarse:h-11',
             AURA_FOCUS_RING,
           )}
         >
-          <Avatar name={name} size="sm" />
+          {/* The name is "Account menu" + the visible name (WCAG 2.5.3). The
+              avatar's initials repeat the name, so it stays out of it. */}
+          <span className="sr-only">{t('label')}</span>
+          <span aria-hidden className="contents">
+            <Avatar name={name} size="sm" />
+          </span>
           <span className="hidden max-w-40 truncate lg:inline">{name}</span>
           <ChevronDownIcon className="size-4 max-sm:hidden" aria-hidden />
         </button>

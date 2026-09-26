@@ -172,7 +172,10 @@ const SURFACES: readonly Surface[] = [
     ui: () => <DirectoryLogoControl currentLogoUrl="https://blob.example/logo.png" />,
     act: async () => {
       fireEvent.click(byName(en.directorySettings.logoRemove));
-      fireEvent.click(await screen.findByRole('button', { name: en.directorySettings.logoRemoveConfirm }));
+      // The trigger and the confirm share a label; take the one in the dialog
+      // (AURA's modal is aria-modal, it does not aria-hide the page).
+      const dialog = await screen.findByRole('alertdialog');
+      fireEvent.click(within(dialog).getByRole('button', { name: en.directorySettings.logoRemoveConfirm }));
     },
   },
   {

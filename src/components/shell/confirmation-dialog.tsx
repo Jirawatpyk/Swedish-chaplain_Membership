@@ -91,23 +91,39 @@ export function ConfirmationDialog({
   initialFocusRef,
 }: ConfirmationDialogProps) {
   const [submitting, setSubmitting] = useState(false);
-  const wasOpen = useRef(open);
 
   // AURA's modal focuses `[data-autofocus]` (Cancel — ux-standards § 6
-  // "safest default") on open and returns focus to the trigger on close.
-  // These run after it (a parent's effects follow its child's): a caller's
-  // required field takes the first focus instead, and a caller whose trigger
-  // may have unmounted names where focus goes back to.
+  // "safest default") on open. This runs after it (a parent's effects follow
+  // its child's), so a caller's required field takes the first focus instead.
   useEffect(() => {
     if (open && initialFocusRef?.current) initialFocusRef.current.focus();
-    if (!open && wasOpen.current && finalFocus) {
+  }, [open, initialFocusRef]);
+
+  // AURA returns focus to the trigger on close. A caller whose trigger may
+  // be gone by then (its row left the list) names where focus goes instead.
+  // This runs in the cleanup of the render that was OPEN — so it fires on
+  // every way out: this dialog's own close, the caller closing it
+  // (`closeOnConfirm={false}`), and the caller unmounting it together with
+  // its row — a frame later, after AURA's own restore.
+  const finalFocusRef = useRef(finalFocus);
+  useEffect(() => {
+    finalFocusRef.current = finalFocus;
+  }, [finalFocus]);
+  useEffect(() => {
+    if (!open) return undefined;
+    return () => {
+      const resolve = finalFocusRef.current;
+      if (!resolve) return;
       requestAnimationFrame(() => {
-        const target = finalFocus();
+        const target = resolve();
         if (target) target.focus();
       });
-    }
-    wasOpen.current = open;
-  }, [open, initialFocusRef, finalFocus]);
+    };
+  }, [open]);
+
+  function close(): void {
+    onOpenChange(false);
+  }
 
   async function handleConfirmClick(): Promise<void> {
     if (confirmDisabled || submitting) return;
@@ -121,7 +137,7 @@ export function ConfirmationDialog({
       });
     } finally {
       setSubmitting(false);
-      if (closeOnConfirm) onOpenChange(false);
+      if (closeOnConfirm) close();
     }
   }
 
@@ -129,14 +145,14 @@ export function ConfirmationDialog({
     <Dialog
       role="alertdialog"
       open={open}
-      onClose={() => onOpenChange(false)}
+      onClose={close}
       // No Escape / scrim close while the action runs (Cancel is disabled too).
       dismissible={!submitting}
       title={title}
       description={description}
       footer={
         <>
-          <Button variant="secondary" data-autofocus disabled={submitting} onClick={() => onOpenChange(false)}>
+          <Button variant="secondary" data-autofocus disabled={submitting} onClick={close}>
             {cancelLabel}
           </Button>
           <Button

@@ -545,6 +545,14 @@ summary,
       --page-padding-x: 2rem;
     }
   }
+  /* AURA nav rows are 36px; on touch they need the 44px target (FR-013).
+     `.staff-nav` also covers the phone drawer, which AURA portals out of the
+     shell. Local until AURA ships it (handoff #62). */
+  @media (pointer: coarse) {
+    .staff-nav .aura-nav__item {
+      min-height: 44px;
+    }
+  }
 }
 
 @layer base {

@@ -84,6 +84,9 @@ export function MemberCommandPalette({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [rows, setRows] = useState<ReadonlyArray<MemberInvoiceSearchRow>>([]);
+  // The query the current `rows` answer (null = none yet). Until the server
+  // has answered what is typed, the list is loading — never "all paid up".
+  const [answeredQuery, setAnsweredQuery] = useState<string | null>(null);
   // F-07 fix: 200 ms trailing-edge debounce caps the fetch rate under
   // the 30 req/min server rate-limit. `useDeferredValue` is then
   // layered on top so React can interrupt the render if the member
@@ -119,10 +122,12 @@ export function MemberCommandPalette({
         const body = (await res.json()) as SearchResponse;
         if (cancelled) return;
         setRows(body.invoices);
+        setAnsweredQuery(q);
       })
       .catch(() => {
         if (cancelled) return;
         setRows([]);
+        setAnsweredQuery(q);
       });
     return () => {
       cancelled = true;
@@ -134,6 +139,7 @@ export function MemberCommandPalette({
     if (!next) {
       setQuery('');
       setRows([]);
+      setAnsweredQuery(null);
     }
   }, []);
 
@@ -150,7 +156,7 @@ export function MemberCommandPalette({
   // rbac-portal-identity-ok: as above — renders nothing outside the member portal.
   if (currentUserRole !== 'member') return null;
 
-  const hasQuery = deferredQuery.trim().length > 0;
+  const loading = answeredQuery !== query.trim();
 
   const go = (href: string) => {
     handleOpenChange(false);
@@ -162,7 +168,7 @@ export function MemberCommandPalette({
   const items: CommandItem[] = [
     // F-04 — nothing owed and nothing typed: say so at the top of Payments
     // (an inert row; the E-Blast shortcuts below keep the list non-empty).
-    ...(rows.length === 0 && !hasQuery
+    ...(rows.length === 0 && answeredQuery === '' && query.trim() === ''
       ? [{ id: 'invoice-none', group: t('group'), label: t('allPaidHint'), disabled: true }]
       : []),
     ...rows.map((row) => ({
@@ -211,6 +217,7 @@ export function MemberCommandPalette({
       filter={(item, q) => item.id.startsWith('invoice-') || !q.trim() || matches(item, q)}
       query={query}
       onQueryChange={setQuery}
+      loading={loading}
       empty={t('emptyHint')}
     />
   );

@@ -53,7 +53,6 @@ export function StaffTopBar({ tenantName, user, extras }: StaffTopBarProps) {
       <button
         type="button"
         onClick={openCommandPalette}
-        aria-label={t('open')}
         // strict-aria-ignore-next-line — key names, not text (ARIA spec syntax)
         aria-keyshortcuts="Meta+K Control+K"
         className={cn(
@@ -62,8 +61,10 @@ export function StaffTopBar({ tenantName, user, extras }: StaffTopBarProps) {
         )}
       >
         <SearchIcon className="size-4 shrink-0" aria-hidden />
+        {/* The name is the visible text + what the button does (WCAG 2.5.3). */}
         <span className="min-w-0 flex-1 truncate">{t('placeholder')}</span>
-        <kbd className="rounded-[var(--aura-radius-xs)] border border-[var(--aura-border-default)] px-1.5 font-mono text-[11px] leading-5 text-[var(--aura-fg-secondary)]">
+        <span className="sr-only"> — {t('open')}</span>
+        <kbd aria-hidden className="rounded-[var(--aura-radius-xs)] border border-[var(--aura-border-default)] px-1.5 font-mono text-[11px] leading-5 text-[var(--aura-fg-secondary)]">
           ⌘K
         </kbd>
       </button>

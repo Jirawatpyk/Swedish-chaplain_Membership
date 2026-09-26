@@ -187,6 +187,21 @@ describe('<IdleWarningDialog> — F5 pause/resume amendment', () => {
     vi.unstubAllGlobals();
   });
 
+  it('closing the warning (Escape, the close button) is "Stay signed in": it extends the session (spec 122 UX review)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal('fetch', fetchMock);
+    renderDialog();
+    act(() => {
+      window.dispatchEvent(new Event('swecham:open-idle-warning'));
+    });
+    await act(async () => {
+      fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+    });
+    expect(screen.queryByText('Are you still here?')).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+  });
+
   it('BUG-018: after "Stay signed in" succeeds, a still-pending countdown can NOT later force sign-out', async () => {
     // Regression guard for the stay-success path (previously uncovered). Open
     // the warning, click Stay (heartbeat ok), then advance well past the old

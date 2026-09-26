@@ -80,9 +80,9 @@ describe('<AuraBridge>', () => {
     );
     const regions = screen.getAllByRole('region', { name: /notifications/i });
     expect(regions).toHaveLength(1);
-    // Top-centre below the 56px top bar (AURA 5.6 position + offset, handoff #54).
+    // Top-centre below the tallest top bar — the portal header's 72px (AURA 5.6 position + offset, handoff #54).
     expect(regions[0]).toHaveClass('is-top', 'is-center');
-    expect(regions[0]!.style.getPropertyValue('--aura-toaster-offset')).toBe('64px');
+    expect(regions[0]!.style.getPropertyValue('--aura-toaster-offset')).toBe('80px');
 
     const ids: string[] = [];
     act(() => {
