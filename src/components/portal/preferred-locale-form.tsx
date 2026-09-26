@@ -148,7 +148,11 @@ export function PreferredLocaleForm({
           label: opt === '__null' ? t('useTenantDefault') : tLang(`languageOptions.${opt}`),
         }))}
       />
-      <ActionBar position="container" status={value !== saved ? tLang('unsavedStatus') : null}>
+      <ActionBar
+        position="container"
+        label={t('title')}
+        status={value !== saved ? tLang('unsavedStatus') : null}
+      >
         <Button type="submit" loading={saving}>
           {t('save')}
         </Button>

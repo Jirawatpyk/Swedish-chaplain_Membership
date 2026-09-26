@@ -157,11 +157,13 @@ export function DirectoryVisibilityForm({
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    // Cleared in the same batch as the counter bump, so the summary never
+    // re-focuses its stale errors and then unmounts under the focus.
+    setWebsiteError(null);
+    setDescriptionError(null);
     setSubmitCount((n) => n + 1);
     startTransition(async () => {
       try {
-        setWebsiteError(null);
-        setDescriptionError(null);
         const res = await fetch('/api/portal/directory', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -203,7 +205,7 @@ export function DirectoryVisibilityForm({
     <form onSubmit={onSubmit} className="space-y-6">
       <FormErrorSummary errors={errors} focusKey={submitCount} />
 
-      <AuraCard title={t('listed')} titleId="dir-listed-heading" headingLevel={2}>
+      <AuraCard>
         <Switch
           id="dir-listed"
           label={t('listed')}

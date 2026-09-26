@@ -24,6 +24,7 @@ import { isReadOnlyResponse } from '@/lib/http/read-only-refusal';
 import { Download } from 'lucide-react';
 import { Badge, Button, Table, TBody, THead, Td, Th, Tr } from '@jirawatpyk/aura-react';
 import { auraButtonClass } from '@/components/shell/aura-markup';
+import { cn } from '@/lib/utils';
 import type { ExportStatus } from '@/modules/insights';
 import { exportStatusTone } from '@/lib/export-status-variant';
 
@@ -109,7 +110,7 @@ export function DataExportPanel({
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <Button onClick={requestExport} disabled={disabled} loading={pending}>
+        <Button variant="secondary" onClick={requestExport} disabled={disabled} loading={pending}>
           {pending ? labels.requesting : labels.requestButton}
         </Button>
         {hasPending && !pending ? (
@@ -132,42 +133,46 @@ export function DataExportPanel({
           </p>
         ) : (
           <>
-            <div className="overflow-hidden rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)]">
-              <Table caption={labels.caption} captionHidden>
-                <THead>
-                  <Tr>
-                    <Th>{labels.colStatus}</Th>
-                    <Th>{labels.colRequested}</Th>
-                    <Th>
-                      <span className="sr-only">{labels.download}</span>
-                    </Th>
+            {/* below sm: 12px cell padding, so three columns fit a 390px phone */}
+            <Table
+              caption={labels.caption}
+              captionHidden
+              className="max-sm:[&_.aura-tbl\_\_td]:px-3 max-sm:[&_.aura-tbl\_\_th]:px-3"
+            >
+              <THead>
+                <Tr>
+                  <Th>{labels.colStatus}</Th>
+                  <Th>{labels.colRequested}</Th>
+                  <Th>
+                    <span className="sr-only">{labels.download}</span>
+                  </Th>
+                </Tr>
+              </THead>
+              <TBody>
+                {rows.map((row) => (
+                  <Tr key={row.jobId}>
+                    <Td>
+                      <Badge tone={exportStatusTone(row.status)}>{row.statusLabel}</Badge>
+                    </Td>
+                    <Td className="text-[var(--aura-fg-secondary)]">{row.requestedAt}</Td>
+                    <Td align="end">
+                      {row.downloadable ? (
+                        <a
+                          href={`${downloadUrlBase}/${row.jobId}/download`}
+                          aria-label={`${labels.download} — ${row.requestedAt}`}
+                          // AURA's md button is 44px: the touch target (ux-standards § 9.1 / S4);
+                          // below sm it is just the icon, so the row fits at 390px
+                          className={cn(auraButtonClass({ variant: 'secondary' }), 'max-sm:w-11 max-sm:px-0')}
+                        >
+                          <Download aria-hidden="true" className="aura-icon size-4" />
+                          <span className="max-sm:sr-only">{labels.download}</span>
+                        </a>
+                      ) : null}
+                    </Td>
                   </Tr>
-                </THead>
-                <TBody>
-                  {rows.map((row) => (
-                    <Tr key={row.jobId}>
-                      <Td>
-                        <Badge tone={exportStatusTone(row.status)}>{row.statusLabel}</Badge>
-                      </Td>
-                      <Td className="text-[var(--aura-fg-secondary)]">{row.requestedAt}</Td>
-                      <Td align="end">
-                        {row.downloadable ? (
-                          <a
-                            href={`${downloadUrlBase}/${row.jobId}/download`}
-                            aria-label={`${labels.download} — ${row.requestedAt}`}
-                            // AURA's md button is 44px: the touch target (ux-standards § 9.1 / S4)
-                            className={auraButtonClass({ variant: 'secondary' })}
-                          >
-                            <Download aria-hidden="true" className="aura-icon size-4" />
-                            {labels.download}
-                          </a>
-                        ) : null}
-                      </Td>
-                    </Tr>
-                  ))}
-                </TBody>
-              </Table>
-            </div>
+                ))}
+              </TBody>
+            </Table>
             <p className="text-xs text-[var(--aura-fg-secondary)]">{labels.expiresHint}</p>
           </>
         )}

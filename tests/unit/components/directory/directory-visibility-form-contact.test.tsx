@@ -169,4 +169,19 @@ describe('DirectoryVisibilityForm on AURA (spec 122 US3)', () => {
     expect(summary).toHaveTextContent(en.directorySettings.invalidWebsite);
     expect(document.getElementById('dir-website')).toHaveAttribute('aria-invalid', 'true');
   });
+
+  it('a successful re-save leaves focus on Save, not on the stale summary or <body>', async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: { code: 'invalid_website' } }), { status: 400 }),
+    );
+    renderForm({ viewerIsPrimary: true, chosenByPrimary: true, hasListing: true }, stored);
+    const save = screen.getByRole('button', { name: en.directorySettings.save });
+    fireEvent.click(save);
+    await screen.findByRole('alert', { name: /fix 1 field/i });
+    save.focus();
+    fireEvent.click(save);
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(screen.queryByRole('alert', { name: /fix 1 field/i })).toBeNull());
+    expect(document.activeElement).toBe(save);
+  });
 });

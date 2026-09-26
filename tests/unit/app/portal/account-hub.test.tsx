@@ -396,12 +396,17 @@ describe('Account hub on AURA (spec 122 US3)', () => {
     ]);
     const { container } = await renderHub();
     const privacy = container.querySelector('#data-privacy') as HTMLElement;
-    expect(within(privacy).getByRole('button', { name: enMessages.dataExport.requestButton })).toHaveClass('aura-btn');
-    expect(privacy.querySelector('table')).toHaveClass('aura-tbl');
-    expect(within(privacy).getByText(enMessages.dataExport.statusReady)).toHaveClass('aura-badge', 'aura-badge--success');
-    expect(within(privacy).getByRole('link', { name: new RegExp(enMessages.dataExport.download) })).toHaveClass(
+    expect(within(privacy).getByRole('button', { name: enMessages.dataExport.requestButton })).toHaveClass(
       'aura-btn',
       'aura-btn--secondary',
     );
+    expect(privacy.querySelector('table')).toHaveClass('aura-tbl');
+    // AURA's table wrap carries the one border; no second box around it
+    expect(privacy.querySelector('.aura-tbl-wrap')!.parentElement).not.toHaveClass('border');
+    expect(within(privacy).getByText(enMessages.dataExport.statusReady)).toHaveClass('aura-badge', 'aura-badge--success');
+    const download = within(privacy).getByRole('link', { name: new RegExp(enMessages.dataExport.download) });
+    expect(download).toHaveClass('aura-btn', 'aura-btn--secondary');
+    // below sm the link is its icon (still 44px); the aria-label keeps the name
+    expect(within(download).getByText(enMessages.dataExport.download)).toHaveClass('max-sm:sr-only');
   });
 });

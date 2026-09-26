@@ -69,7 +69,8 @@ describe('ContactLanguageForm on AURA (spec 122 US3)', () => {
     renderForm();
     const group = screen.getByRole('group', { name: enMessages.portal.account.contactLanguage.title });
     expect(group).toHaveClass('aura-radio-group');
-    const bar = screen.getByRole('region', { name: 'Actions' });
+    // named after its form, so the account page's two language bars are told apart
+    const bar = screen.getByRole('region', { name: enMessages.portal.account.contactLanguage.title });
     expect(bar).toContainElement(screen.getByRole('button', { name: enMessages.portal.account.contactLanguage.save }));
     const status = bar.querySelector('[role="status"]')!;
     expect(status.textContent).toBe('');

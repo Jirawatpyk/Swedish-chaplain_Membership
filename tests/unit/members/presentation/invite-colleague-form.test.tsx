@@ -114,6 +114,24 @@ describe('InviteColleagueForm on AURA (spec 122 US3)', () => {
     expect(status.textContent).toBe(enMessages.common.unsavedStatus);
   });
 
+  it('sends the language picked in the AURA select', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 201, json: async () => ({}) });
+    vi.stubGlobal('fetch', fetchMock);
+    const { container } = renderForm();
+    fireEvent.change(container.querySelector('#first_name')!, { target: { value: 'Jane' } });
+    fireEvent.change(container.querySelector('#last_name')!, { target: { value: 'Doe' } });
+    fireEvent.change(container.querySelector('#email')!, { target: { value: 'jane@acme.example' } });
+    // AURA's list sits over the real <select>, which `register` still drives
+    fireEvent.change(container.querySelector('select[name="preferred_language"]')!, {
+      target: { value: 'sv' },
+    });
+    fireEvent.submit(container.querySelector('form')!);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = JSON.parse(fetchMock.mock.calls[0]![1].body as string);
+    expect(body.preferred_language).toBe('sv');
+    vi.unstubAllGlobals();
+  });
+
   it('lists a failed submit in a focused error summary', async () => {
     const { container } = renderForm();
     fireEvent.submit(container.querySelector('form')!);

@@ -9,8 +9,8 @@
  * the newest page. Filters: source type, actor kind (staff/member/system),
  * and a from/to date range — individually and in combination.
  *
- * Spec 122 US3: AURA FilterBar (the named region), AURA Selects (named by
- * aria-label, as before) and labelled AURA date fields; Clear is an AURA
+ * Spec 122 US3: AURA FilterBar (the named region), AURA Selects with visible
+ * labels, and labelled AURA date fields; Clear is an AURA
  * ghost button. Shared with the staff member timeline.
  */
 import { useCallback, useTransition } from 'react';
@@ -68,7 +68,7 @@ export function TimelineFilters(): React.JSX.Element {
     <FilterBar label={t('title')}>
       <Select
         name="source"
-        aria-label={t('source')}
+        label={t('source')}
         className="sm:w-48"
         value={currentSource}
         onChange={(e) => pushUrl({ source: e.target.value === ALL ? null : e.target.value })}
@@ -79,7 +79,7 @@ export function TimelineFilters(): React.JSX.Element {
       />
       <Select
         name="actorKind"
-        aria-label={t('actor')}
+        label={t('actor')}
         className="sm:w-40"
         value={currentActor}
         onChange={(e) => pushUrl({ actorKind: e.target.value === ALL ? null : e.target.value })}

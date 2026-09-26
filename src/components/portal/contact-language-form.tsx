@@ -80,7 +80,11 @@ export function ContactLanguageForm({ initialValue }: ContactLanguageFormProps):
         disabled={saving}
         options={(['en', 'th', 'sv'] as const).map((opt) => ({ value: opt, label: tLang(`languageOptions.${opt}`) }))}
       />
-      <ActionBar position="container" status={value !== saved ? tLang('unsavedStatus') : null}>
+      <ActionBar
+        position="container"
+        label={t('title')}
+        status={value !== saved ? tLang('unsavedStatus') : null}
+      >
         <Button type="submit" loading={saving}>
           {t('save')}
         </Button>

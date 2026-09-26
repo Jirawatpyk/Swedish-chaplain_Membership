@@ -62,5 +62,12 @@ describe('the diff on AURA table markup (spec 122 US3)', () => {
       expect.stringContaining('+661'),
       expect.stringContaining('+662'),
     ]);
+    // the stacked (phone) layout's inline labels are display-only from sm up,
+    // where the column headers already name each cell — never read twice
+    for (const label of row.querySelectorAll('td > span:first-child')) {
+      expect(label).toHaveClass('sm:hidden');
+      expect(label).not.toHaveClass('sm:sr-only');
+    }
+    expect(row.querySelectorAll('td > span:first-child')).toHaveLength(2);
   });
 });

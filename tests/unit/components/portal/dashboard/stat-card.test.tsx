@@ -62,7 +62,7 @@ describe('<StatCard>', () => {
   it('renders its action as an AURA link button with a 44px target', () => {
     render(<StatCard label="Membership" value="Due" action={{ href: '/portal/renewal', label: 'Renew now' }} />);
     const link = screen.getByRole('link', { name: 'Renew now' });
-    expect(link).toHaveClass('aura-btn', 'aura-btn--secondary');
+    expect(link).toHaveClass('aura-btn', 'aura-btn--primary');
     expect(link).not.toHaveClass('aura-btn--sm');
   });
 });

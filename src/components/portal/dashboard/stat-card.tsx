@@ -123,14 +123,14 @@ export function StatCard({
       data-variant={variant}
       className={cn('aura-stat h-full', className)}
     >
-      <span className="aura-stat__head">
+      <div className="aura-stat__head">
         <h2 className="aura-stat__label">{label}</h2>
         {HeadIcon ? (
           <span className="aura-stat__icon">
             <HeadIcon size={16} className="aura-icon" aria-hidden="true" focusable="false" />
           </span>
         ) : null}
-      </span>
+      </div>
       <p className="aura-stat__value tabular-nums">{value}</p>
       {sub !== undefined || showStatus ? (
         <span className="aura-stat__foot flex-col items-start">
@@ -154,13 +154,14 @@ export function StatCard({
         </span>
       ) : null}
       {action ? (
-        // AURA's default (44px) button, not `sm` (32px): the WCAG 2.5.5 target.
+        // The card's one next step: AURA's primary default (44px) button, not
+        // `sm` (32px), for the WCAG 2.5.5 target.
         isExternalHref(action.href) ? (
-          <a href={action.href} className={cn(auraButtonClass({ variant: 'secondary' }), 'mt-3 w-fit')}>
+          <a href={action.href} className={cn(auraButtonClass(), 'mt-3 w-fit')}>
             {action.label}
           </a>
         ) : (
-          <Link href={action.href} className={cn(auraButtonClass({ variant: 'secondary' }), 'mt-3 w-fit')}>
+          <Link href={action.href} className={cn(auraButtonClass(), 'mt-3 w-fit')}>
             {action.label}
           </Link>
         )

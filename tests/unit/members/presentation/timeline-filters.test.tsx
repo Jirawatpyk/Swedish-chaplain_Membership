@@ -39,8 +39,11 @@ describe('TimelineFilters on AURA (spec 122 US3)', () => {
     const { container } = renderFilters();
     const bar = screen.getByRole('region', { name: copy.title });
     expect(bar).toHaveClass('aura-filterbar');
-    for (const name of ['source', 'actorKind']) {
-      expect(container.querySelector(`select[name="${name}"]`)?.closest('.aura-field')).not.toBeNull();
+    for (const [name, label] of [['source', copy.source], ['actorKind', copy.actor]] as const) {
+      const field = container.querySelector(`select[name="${name}"]`)?.closest('.aura-field');
+      expect(field).not.toBeNull();
+      // a visible label, like the date fields beside it (not an aria-label only)
+      expect(field!.querySelector('label')).toHaveTextContent(label);
     }
     expect(screen.getByLabelText(copy.from)).toHaveAttribute('type', 'date');
     expect(screen.getByLabelText(copy.to).closest('.aura-field')).not.toBeNull();
@@ -52,6 +55,13 @@ describe('TimelineFilters on AURA (spec 122 US3)', () => {
     renderFilters();
     fireEvent.change(screen.getByLabelText(copy.from), { target: { value: '2026-09-01' } });
     expect(replace).toHaveBeenCalledWith('/portal/timeline?from=2026-09-01');
+  });
+
+  it('writes a chosen source to the URL and drops the cursor', () => {
+    search = new URLSearchParams('cursor=abc');
+    const { container } = renderFilters();
+    fireEvent.change(container.querySelector('select[name="source"]')!, { target: { value: 'invoice' } });
+    expect(replace).toHaveBeenCalledWith('/portal/timeline?source=invoice');
   });
 
   it('offers an AURA Clear button once a filter is set, which clears them all', () => {

@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
-import { CircleCheck, FileText, PencilIcon, TrendingUp, UserPlusIcon } from 'lucide-react';
+import { CircleCheck, FileClockIcon, FileText, PencilIcon, TrendingUp, UserPlusIcon } from 'lucide-react';
 
 import { ChangePasswordForm } from '@/components/auth/change-password-form';
 import { BenefitUsageCard } from '@/components/benefits/benefit-usage-card';
@@ -177,7 +177,7 @@ export default async function AuraPortalPreviewPage({
                   { key: 'eblast', used: 1, entitlement: 4, lastUsedAt: '2026-05-10T00:00:00.000Z', actionHref: '/portal/broadcasts/new' },
                   { key: 'cultural_tickets', used: 2, entitlement: 6, lastUsedAt: '2026-06-02T00:00:00.000Z' },
                 ]}
-                active={[{ key: 'directory_listing' }, { key: 'newsletter_feature' }]}
+                active={[{ key: 'directory_listing' }, { key: 'm2m_benefits' }]}
                 aggregateConsumedPct={30}
                 underUseWarning
                 warningActionHref="/portal/broadcasts/new"
@@ -258,8 +258,18 @@ export default async function AuraPortalPreviewPage({
               </div>
             </div>
           </AuraCard>
-          <AuraCard title={tHistory('profileCard.title')} titleId="history-heading" headingLevel={2}>
-            <p className="text-sm text-[var(--aura-fg-secondary)]">{tHistory('subtitle')}</p>
+          <AuraCard
+            title={tHistory('profileCard.title')}
+            titleId="history-heading"
+            headingLevel={2}
+            actions={
+              <Link href="/portal/change-requests" className={auraButtonClass({ variant: 'secondary' })}>
+                <FileClockIcon className="aura-icon size-4" aria-hidden />
+                {tHistory('profileCard.link')}
+              </Link>
+            }
+          >
+            <p className="text-[var(--aura-fg-secondary)]">{tHistory('profileCard.subtitle')}</p>
           </AuraCard>
         </DetailContainer>
       </MemberFrame>
@@ -461,7 +471,7 @@ export default async function AuraPortalPreviewPage({
         <PageHeader title="Hi Anna" subtitle="Nordic Trading Co., Ltd." />
         <div className="grid gap-4 md:grid-cols-3">
           <StatCard label="Membership" value="Active" sub="Renews 31 Dec 2026" headIcon={CircleCheck} />
-          <StatCard label="Outstanding" value="฿ 21,400.00" sub="1 invoice · due 22 Oct 2026" variant="warning" headIcon={FileText} action={{ href: '/portal/invoices', label: 'Pay now' }} />
+          <StatCard label="Outstanding" value="฿ 21,400.00" sub="1 invoice · due 22 Oct 2026" variant="warning" variantLabel="Due soon" headIcon={FileText} />
           <StatCard label="Benefits used" value="30%" sub="3 of 10 this year" headIcon={TrendingUp} />
         </div>
         <AuraCard title={t('title')} titleId="recent-heading" headingLevel={2}>

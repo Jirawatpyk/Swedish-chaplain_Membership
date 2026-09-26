@@ -81,11 +81,11 @@ export function ChangeRequestDiffTable({ fields, showOutcome = false, className 
                 ) : null}
               </th>
               <td className={cn('aura-tbl__td', cell)}>
-                <span className="text-xs text-[var(--aura-fg-secondary)] sm:sr-only">{t('seen')}: </span>
+                <span className="text-xs text-[var(--aura-fg-secondary)] sm:hidden">{t('seen')}: </span>
                 <ProposedValueDisplay fieldKey={f.key} value={f.seen} />
               </td>
               <td className={cn('aura-tbl__td', cell)}>
-                <span className="text-xs text-[var(--aura-fg-secondary)] sm:sr-only">{t('proposed')}: </span>
+                <span className="text-xs text-[var(--aura-fg-secondary)] sm:hidden">{t('proposed')}: </span>
                 <ProposedValueDisplay fieldKey={f.key} value={f.proposed} />
               </td>
             </tr>

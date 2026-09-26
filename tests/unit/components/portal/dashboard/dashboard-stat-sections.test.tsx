@@ -262,7 +262,7 @@ describe('MembershipStatSection — renew-now CTA gating per stat.kind', () => {
       // Cluster 4 a11y review-fix — the internal renew-now <Link> CTA carries
       // the ≥44px (min-h-11) tap target (buttonVariants size:'sm' is h-7/28px).
       // ≥44px: AURA's default-size button (spec 122 US3), never `aura-btn--sm` (32px).
-    expect(html).toMatch(/class="aura-btn aura-btn--secondary(?! aura-btn--sm)/);
+      expect(html).toMatch(/class="aura-btn aura-btn--primary(?! aura-btn--sm)/);
     } else {
       expect(html).not.toContain(`href="${RENEW_HREF}"`);
       expect(html).not.toContain(RENEW_LABEL);
@@ -299,7 +299,7 @@ describe('MembershipStatSection — renew-now CTA gating per stat.kind', () => {
     expect(html).toContain(en.portal.dashboard.membership.suspended.payCta);
     expect(html).not.toContain(RENEW_LABEL);
     // ≥44px: AURA's default-size button (spec 122 US3), never `aura-btn--sm` (32px).
-    expect(html).toMatch(/class="aura-btn aura-btn--secondary(?! aura-btn--sm)/);
+    expect(html).toMatch(/class="aura-btn aura-btn--primary(?! aura-btn--sm)/);
   });
 
   it('suspended (unpaid, invoice on file) → smart CTA links to the specific invoice instead', async () => {
@@ -356,7 +356,7 @@ describe('MembershipStatSection — renew-now CTA gating per stat.kind', () => {
     // Cluster 4 a11y review-fix — the external mailto <a> CTA carries the
     // ≥44px (min-h-11) tap target on the same footing as the internal <Link>.
     // ≥44px: AURA's default-size button (spec 122 US3), never `aura-btn--sm` (32px).
-    expect(html).toMatch(/class="aura-btn aura-btn--secondary(?! aura-btn--sm)/);
+    expect(html).toMatch(/class="aura-btn aura-btn--primary(?! aura-btn--sm)/);
     // And NOT the self-serve renewal href (there is no member self-serve path).
     expect(html).not.toContain(`href="${RENEW_HREF}"`);
   });
