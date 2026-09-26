@@ -23,6 +23,10 @@ test.describe('F4 SC-009 — top bar consistency @layout', () => {
   });
 
   test('the staff bar is 56px and the portal header 72 / 64px, as on the boards', async ({ browser }) => {
+    // Two full sign-ins (staff + member) in one test: a single WebKit staff
+    // sign-in took 8–11 s on the dev server, so the default 30 s ran out
+    // before anything was measured (R4 WebKit run).
+    test.setTimeout(90_000);
     const adminCtx = await browser.newContext();
     const memberCtx = await browser.newContext();
     const adminPage = await adminCtx.newPage();
