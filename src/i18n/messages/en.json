@@ -3082,7 +3082,7 @@
           "resolve": "Mark as reconciled",
           "resolveConfirm": {
             "title": "Mark this auto-refund as reconciled?",
-            "body": "Do this only after you have returned the funds to the member out-of-band (e.g. a Stripe Dashboard refund or a bank transfer) — a credit note alone returns no money. It clears this alert, updates the member's invoice to show the payment as refunded, and is recorded in the audit log.",
+            "body": "Do this only after the online payment has been returned to the member outside Chamber-OS (a Stripe Dashboard refund or a bank transfer). Do not issue a credit note: when this payment arrived the invoice was already paid, voided or credited, so the payment is a duplicate, not a sale — a credit note would reduce real output VAT and still return no money. Marking it reconciled clears this alert, updates the member's invoice to show the payment as refunded, and is recorded in the audit log.",
             "cancel": "Cancel",
             "confirm": "Yes, mark as reconciled",
             "pending": "Recording…"

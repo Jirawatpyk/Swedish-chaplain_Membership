@@ -3082,7 +3082,7 @@
           "resolve": "Markera som avstämd",
           "resolveConfirm": {
             "title": "Markera denna automatiska återbetalning som avstämd?",
-            "body": "Gör detta först efter att du har återfört medlen till medlemmen på annat sätt (t.ex. en återbetalning via Stripe Dashboard eller en banköverföring) — en kreditnota i sig återbetalar inga pengar. Det rensar denna varning, uppdaterar medlemmens faktura till att visa betalningen som återbetald och registreras i granskningsloggen.",
+            "body": "Gör detta först efter att onlinebetalningen har återförts till medlemmen utanför Chamber-OS (en återbetalning via Stripe Dashboard eller en banköverföring). Utfärda ingen kreditnota: när betalningen kom in var fakturan redan betald, makulerad eller krediterad, så betalningen är en dubbelbetalning, inte en försäljning — en kreditnota skulle minska verklig utgående moms och ändå inte återbetala några pengar. Att markera den som avstämd rensar denna varning, uppdaterar medlemmens faktura till att visa betalningen som återbetald och registreras i granskningsloggen.",
             "cancel": "Avbryt",
             "confirm": "Ja, markera som avstämd",
             "pending": "Registrerar…"

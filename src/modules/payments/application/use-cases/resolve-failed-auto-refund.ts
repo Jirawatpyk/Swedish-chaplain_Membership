@@ -4,8 +4,9 @@
  * Admin-only "mark failed auto-refund as reconciled" action. When a stale-
  * invoice auto-refund permanently FAILS at Stripe, `processRefundUpdated` emits
  * the 10y forensic `auto_refund_failed_needs_manual_reconcile`. The admin then
- * reconciles out-of-band (manual credit note / Stripe Dashboard refund, per
- * `docs/runbooks/out-of-band-refund.md`) — but pre-CF-2 there was NO "resolved"
+ * returns the money out-of-band (Stripe Dashboard refund / bank transfer — never
+ * a credit note: the payment is a duplicate, not a sale; see
+ * `docs/runbooks/out-of-band-refund.md` § 1.5) — but pre-CF-2 there was NO "resolved"
  * event, so the admin `AutoRefundFailedAlert` + the member "being reconciled"
  * banner persisted forever (they key off `findStaleInvoiceAutoRefund.failed`, a
  * bare EXISTS over the failure forensic).
