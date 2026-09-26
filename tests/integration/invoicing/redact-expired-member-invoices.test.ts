@@ -737,6 +737,17 @@ describe('redact-expired-member-invoices — invoice arm (COMP-1 US3-B, live Neo
     expect(await auditPayloadsFor(invoiceId)).toHaveLength(0);
   }, 60_000);
 
+  // The only case here that drives the cron TWICE, so it is the only one whose
+  // wall clock scales with the number of tenants in the branch rather than with
+  // this fixture. The route sweeps every row of `tenant_invoice_settings` one
+  // tenant per round trip (a platform cron — SweCham is one tenant in
+  // production, 98 rows on the shared `dev` branch on 2026-09-27, 95 of them
+  // leaked `test-%` tenants and 92 older than two hours). At ~210 ms a tenant
+  // that is ~21 s per call, so two calls blew the 60 s ceiling and the whole
+  // file reported red — while all 14 of its single-call siblings passed. The
+  // ceiling is a runaway guard, not a budget: what this test asserts is that
+  // the SECOND run emits no second audit row, and the litter in a shared
+  // branch is not a fact about that.
   it('is idempotent — a 2nd run does not re-emit the audit', async () => {
     const planId = await seedPlan();
     const memberId = await seedErasedMember(planId);
@@ -746,7 +757,7 @@ describe('redact-expired-member-invoices — invoice arm (COMP-1 US3-B, live Neo
     await callCron();
 
     expect(await auditPayloadsFor(invoiceId)).toHaveLength(1);
-  }, 60_000);
+  }, 180_000);
 
   it('LEAVES an erased member >10y DRAFT invoice intact (eligible-query gates on status <> draft)', async () => {
     const planId = await seedPlan();
