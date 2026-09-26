@@ -1561,25 +1561,23 @@ export function makeDrizzleInvoiceRepo(
 
     async applyVoid(txUnknown, input): Promise<Invoice> {
       const tx = txUnknown as TenantTx;
-      // R-1 fix — atomic issued|paid → void. The immutability trigger
+      // R-1 fix — atomic issued → void. The immutability trigger
       // whitelists the void_* fields + pdf_sha256, but pdf_sha256 is
       // INTENTIONALLY NOT written here: the caller updates it via
       // `applyInvoicePdfRegeneration` in a second transaction AFTER
       // the blob upload succeeds, preventing DB/Blob desync on blob
       // failure.
       //
-      // 088 T068 — the WHERE CAS accepts BOTH `issued` AND `paid`. Voiding a
-      // PAID membership is the spec's edge path (§ F.3 / edge-case line 172):
-      // normally an issued §86/4 is cancelled via a §86/10 credit note, but a
-      // void must still stamp VOID on both the ใบแจ้งหนี้ bill AND the §86/4
-      // tax-receipt blobs. The CAS still rejects any concurrent transition to
-      // void / credited / partially_credited / draft (→ InvoiceApplyConflictError
-      // → typed `concurrent_state_change`) — the caller already holds the
-      // invoice-row FOR UPDATE lock, so this guard is defence-in-depth against a
-      // status flip between the lock read and this write. The DB immutability
-      // trigger + CHECKs permit paid→void (status is not locked; the
-      // receipt-status CHECK is vacuous for non-paid rows; the event-registration
-      // partial unique index explicitly frees voided rows).
+      // H1 — the WHERE CAS accepts `issued` ONLY. A PAID invoice is never
+      // voided (void-invoice refuses it with `paid_membership_requires_credit_note`
+      // / `paid_invoice_requires_refund`: the money would be stranded and the
+      // receipt's VAT pulled out of a filed ภ.พ.30 month); this CAS enforces the
+      // same rule for any future writer. It also rejects any concurrent
+      // transition to paid / void / credited / partially_credited / draft
+      // (→ InvoiceApplyConflictError → typed `concurrent_state_change`) — the
+      // caller already holds the invoice-row FOR UPDATE lock, so this guard is
+      // defence-in-depth against a status flip between the lock read and this
+      // write.
       const [updated] = await tx
         .update(invoices)
         .set({
@@ -1593,7 +1591,7 @@ export function makeDrizzleInvoiceRepo(
           and(
             eq(invoices.tenantId, input.tenantId),
             eq(invoices.invoiceId, input.invoiceId),
-            or(eq(invoices.status, 'issued'), eq(invoices.status, 'paid')),
+            eq(invoices.status, 'issued'),
           ),
         )
         .returning();

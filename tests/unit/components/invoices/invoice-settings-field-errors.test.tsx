@@ -244,6 +244,19 @@ describe('InvoiceSettingsForm — C1(c) empty required-text field blocks submit 
     );
   });
 
+  it('blocks submit with no fetch call when the seller tax ID fails the RD check digit', () => {
+    const fetchSpy = vi.spyOn(global, 'fetch');
+    const { container } = renderSettings({ tax_id: '0994000187204' });
+    const form = container.querySelector('form')!;
+
+    fireEvent.submit(form);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(document.activeElement?.id).toBe('tax_id');
+    expect(container.querySelector('#tax_id')).toHaveAttribute('aria-invalid', 'true');
+    expect(container.querySelector('[role="alert"]')).toHaveTextContent(/checksum/i);
+  });
+
   it('walks the required-text fields top-to-bottom — an earlier blank field wins over a later one', () => {
     const fetchSpy = vi.spyOn(global, 'fetch');
     // Both legal_name_th (Organization, earlier in DOM) and

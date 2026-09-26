@@ -45,6 +45,7 @@ import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
 import { isReadOnlyCode, problemCode } from '@/lib/http/read-only-refusal';
 import { cn } from '@/lib/utils';
+import { isThaiTaxId } from '@/lib/thai-tax-id';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
@@ -448,6 +449,13 @@ export function InvoiceSettingsForm({
       }
     }
 
+    // Mirror the route's RD mod-11 check-digit refine on the seller TIN so a
+    // mistyped number is caught inline with a message that names the problem.
+    if (!isThaiTaxId(taxId)) {
+      failGuard(fieldIdFor('tax_id'), t('errors.taxIdChecksum'));
+      return;
+    }
+
     // Percent → 4-dp decimal string. Guard against Number.parseFloat
     // returning NaN on empty input.
     const vatNum = Number.parseFloat(vatPercent);
@@ -626,7 +634,11 @@ export function InvoiceSettingsForm({
         // differ) and mark + focus the first one.
         const fieldNames = Object.keys(fieldErrors);
         fieldNames.forEach((name) => markInvalid(fieldIdFor(name)));
-        setError(t('errors.requiredFields'));
+        setError(
+          fieldNames.length === 1 && fieldNames[0] === 'tax_id'
+            ? t('errors.taxIdChecksum')
+            : t('errors.requiredFields'),
+        );
         // flushSync — this branch runs after `await fetch`, well after
         // React committed the EARLIER `setSubmitting(true)` (top of this
         // function), so every input is still rendered `disabled` right

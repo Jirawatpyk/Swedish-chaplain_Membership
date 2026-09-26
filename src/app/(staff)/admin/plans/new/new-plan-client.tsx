@@ -10,7 +10,8 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from '@/lib/toast';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
+import { formatCalendarYear } from '@/lib/format-date-localised';
 import { isReadOnlyCode, problemCode } from '@/lib/http/read-only-refusal';
 import { PlanFormWizard } from '@/components/plans/plan-form-wizard';
 import type { PlanSchemaInput } from '@/modules/plans';
@@ -39,6 +40,7 @@ export function NewPlanClient({
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   const t = useTranslations('admin.plans');
+  const locale = useLocale();
 
   async function handleSubmit(draft: PlanSchemaInput): Promise<void> {
     setSubmitting(true);
@@ -80,7 +82,9 @@ export function NewPlanClient({
           // or the toast renders the literal "{year}" (BUG-008 / BUG-021).
           // Passed as a number, matching the sibling clone flow; a bare ICU
           // argument is substituted verbatim (no thousands grouping).
-          message = t('errors.duplicateKey', { year: draft.plan_year });
+          message = t('errors.duplicateKey', {
+            year: formatCalendarYear(draft.plan_year, locale),
+          });
         } else if (messageKey in (t.raw('errors') as Record<string, string>)) {
           message = t(`errors.${messageKey}` as 'generic');
         } else {

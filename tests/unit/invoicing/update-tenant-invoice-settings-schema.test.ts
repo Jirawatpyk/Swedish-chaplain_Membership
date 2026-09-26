@@ -94,3 +94,21 @@ describe('updateTenantInvoiceSettingsSchema — statutory termination notice (06
     }
   });
 });
+
+describe('updateTenantInvoiceSettingsSchema — seller taxId checksum (§86/4 seller TIN)', () => {
+  // The seller TIN prints on every §86/4 document the tenant issues, so a
+  // 13-digit value that fails the Revenue Department mod-11 check digit must be
+  // refused at write time, not merely format-checked.
+  it('rejects a 13-digit taxId whose check digit is wrong', () => {
+    const r = updateTenantInvoiceSettingsSchema.safeParse({ ...BASE, taxId: '0105536000315' });
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      expect(r.error.issues.some((i) => i.path.includes('taxId'))).toBe(true);
+    }
+  });
+
+  it('accepts a 13-digit taxId with a valid check digit', () => {
+    const r = updateTenantInvoiceSettingsSchema.safeParse({ ...BASE, taxId: '0105536000313' });
+    expect(r.success, r.success ? 'ok' : JSON.stringify(r.error.issues)).toBe(true);
+  });
+});

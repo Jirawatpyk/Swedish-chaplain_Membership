@@ -2305,6 +2305,7 @@
         "bankAccountNo": "Account number must be digits (dashes or spaces allowed).",
         "receiptPrefixReserved": "\"RE\" is reserved for §105 event receipts. Use a different receipt number prefix such as RC.",
         "requiredFields": "Fill in the highlighted required fields.",
+        "taxIdChecksum": "This Tax ID is invalid. Check the 13-digit number and its checksum.",
         "readOnly": "The system is temporarily read-only for maintenance. Try again shortly."
       },
       "saving": "Saving…",
@@ -3044,6 +3045,7 @@
           "voidedBy": "Voided by",
           "reason": "Reason",
           "creditNoteHint": "This invoice is permanently voided. Its sequential tax-document number is retired and will not be reused. The VOID-stamped PDF above is the authoritative record; no further action is required.",
+          "creditNoteHintBill": "This bill is permanently voided. Bill number {number} stays on record, stamped VOID, and will not be reused; no §86/4 tax-receipt number was involved. The VOID-stamped PDF above is the authoritative record; no further action is required.",
           "replacedBy": "Replaced by <link>{number}</link>",
           "replacedByIssued": "issued {date}"
         },
@@ -3085,7 +3087,7 @@
           "resolve": "Mark as reconciled",
           "resolveConfirm": {
             "title": "Mark this auto-refund as reconciled?",
-            "body": "Do this only after you have returned the funds to the member out-of-band (e.g. a Stripe Dashboard refund or a bank transfer) — a credit note alone returns no money. It clears this alert, updates the member's invoice to show the payment as refunded, and is recorded in the audit log.",
+            "body": "Do this only after the online payment has been returned to the member outside Chamber-OS (a Stripe Dashboard refund or a bank transfer). Do not issue a credit note: this payment was never booked against the invoice (where the invoice was already paid another way, it is a duplicate), so a credit note would reduce the invoice's real output VAT and still return no money. Marking it reconciled clears this alert, updates the member's invoice to show the payment as refunded, and is recorded in the audit log.",
             "cancel": "Cancel",
             "confirm": "Yes, mark as reconciled",
             "pending": "Recording…"
@@ -3278,8 +3280,9 @@
       "void": {
         "title": "Void invoice",
         "description": "Void this issued-unpaid invoice: the sequential tax-document number is retired and cannot be reused, the PDF is re-stamped VOID, and, if automatic emails are enabled, a cancellation notice is sent to the member.",
+        "descriptionBill": "Void this unpaid bill: bill number {number} stays on record, stamped VOID, and is never reused; no §86/4 tax-receipt number is involved. If automatic emails are enabled, a cancellation notice is sent to the member.",
         "voiding": "Voiding invoice",
-        "terminalNotice": "Void is terminal — no pay, credit, or edit afterwards. To reverse a PAID invoice, use the credit-note workflow instead.",
+        "terminalNotice": "Void is terminal — no payment, credit, or edit afterwards. A paid invoice can't be voided; reverse it with a refund or a credit note instead.",
         "reasonLabel": "Reason",
         "reasonHelp": "Shown on the voided PDF and in the audit trail. Required, up to 500 characters.",
         "confirmCopy": "Type the invoice number {phrase} to confirm",
@@ -3298,7 +3301,8 @@
           "refreshAction": "Refresh",
           "codeFallback": "Error code: {code}",
           "refundInProgress": "A refund is currently being processed on this invoice's payment. Voiding now could conflict with it — wait until the refund settles, then try again.",
-          "paidMembershipRequiresCreditNote": "This paid membership invoice can't be voided. To reverse it, issue a credit note instead."
+          "paidMembershipRequiresCreditNote": "This paid membership invoice can't be voided. To reverse it, issue a credit note instead.",
+          "paidInvoiceRequiresRefund": "This paid invoice can't be voided. Reverse it with a refund instead; if it was paid outside Chamber-OS, return the money outside Chamber-OS and follow the correction runbook."
         }
       }
     },
@@ -5029,6 +5033,7 @@
           "payment_failed": "Payment failed",
           "payment_canceled": "Payment canceled",
           "auto_refunded": "Payment auto-refunded",
+          "auto_refund_failed": "Auto-refund failed",
           "invoice_paid": "Invoice marked paid",
           "refund_initiated": "Refund initiated",
           "refund_pending": "Refund settling — awaiting processor confirmation",

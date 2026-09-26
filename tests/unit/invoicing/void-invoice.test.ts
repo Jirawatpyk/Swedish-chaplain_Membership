@@ -624,9 +624,13 @@ describe('voidInvoice — 088 T068 new-flow bill + paid two-blob void', () => {
     expect(voidedCall).toBeUndefined();
   });
 
-  // ---- Gap 2: paid single-blob (event-no-TIN §105 as-paid) ----
-  it('d — paid ONE-blob §105 as-paid void: stamps only its blob (receiptPdf null → no Target B)', async () => {
-    const deps = makeDeps(makePaidAsPaidNoTinEvent());
+  // ---- Gap 2: single-blob §105 receipt (legacy ISSUED no-TIN event) ----
+  // A PAID §105 as-paid row can no longer be voided (paid_invoice_requires_refund,
+  // below); the single-blob stamp path is still reached by the legacy ISSUED
+  // no-TIN event row the remediation runbook (Step 2.1) voids.
+  it('d — ONE-blob §105 receipt void: stamps only its blob (receiptPdf null → no Target B)', async () => {
+    const invoice = makeLegacyNoTinEvent();
+    const deps = makeDeps(invoice);
     const r = await voidInvoice(deps, INPUT);
     expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
     if (!r.ok) return;
@@ -635,10 +639,10 @@ describe('voidInvoice — 088 T068 new-flow bill + paid two-blob void', () => {
     const renderCalls = (deps.pdfRender.render as ReturnType<typeof vi.fn>).mock.calls;
     expect(renderCalls).toHaveLength(1);
     const renderInput = renderCalls[0]![0] as PdfRenderInput;
-    // Single §105 receipt blob: RE number, receipt_separate underlying, no billMode.
+    // Single §105 receipt blob: its own number, receipt_separate underlying, no billMode.
     expect(renderInput.voidUnderlyingKind).toBe('receipt_separate');
     expect(renderInput.billMode).toBeUndefined();
-    expect(renderInput.documentNumber?.raw).toBe(RE_NO);
+    expect(renderInput.documentNumber?.raw).toBe(invoice.documentNumber?.raw);
 
     expect((deps.blob.uploadPdf as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1);
     expect(deps.invoiceRepo.applyInvoicePdfRegeneration).toHaveBeenCalledTimes(1);
@@ -654,11 +658,11 @@ describe('voidInvoice — 088 T068 new-flow bill + paid two-blob void', () => {
   });
 
   // ---- FIX 1 (H-1): Target A void render preserves vatInclusive ----
-  it('H-1 — event as-paid §105 void: Target A passes vatInclusive=true (VOID copy keeps the "VAT included" annotation)', async () => {
-    // makePaidAsPaidNoTinEvent carries vatInclusive=true (event Model B). Before
+  it('H-1 — event §105 void: Target A passes vatInclusive=true (VOID copy keeps the "VAT included" annotation)', async () => {
+    // makeLegacyNoTinEvent carries vatInclusive=true (event Model B). Before
     // FIX 1 Target A dropped it → the §87/3 retained VOID copy misstated a
     // VAT-inclusive doc as VAT-exclusive (SC-003 infidelity).
-    const deps = makeDeps(makePaidAsPaidNoTinEvent());
+    const deps = makeDeps(makeLegacyNoTinEvent());
     const r = await voidInvoice(deps, INPUT);
     expect(r.ok).toBe(true);
     const renderInput = (deps.pdfRender.render as ReturnType<typeof vi.fn>).mock
@@ -920,14 +924,18 @@ describe('void-on-reissue options', () => {
 });
 
 /**
- * H1 — a PAID membership §86/4 may NOT be voided (a void strands the settled
- * payment and, with the effective-paid retract (#24), double-charges the member
- * on restore). It must be reversed via a §86/10 CREDIT NOTE instead. The block
- * is MEMBERSHIP-ONLY: event / non-member rows drive no renewal cycle and the
- * legacy no-TIN remediation runbook (Step 2.1) must still be able to void them.
- * These three controls pin the exact boundary in one place.
+ * H1 — NO paid invoice may be voided. A void writes nothing to `payments`, so
+ * the settled money is stranded, and `sumPeriodOutputVat` drops a void row's
+ * VAT from the ภ.พ.30 month it was already declared in.
+ *  - A paid MEMBERSHIP §86/4 is reversed with a §86/10 CREDIT NOTE (and, with
+ *    the effective-paid retract (#24), a void would also double-charge on
+ *    restore) → `paid_membership_requires_credit_note`.
+ *  - A paid EVENT / non-member row is reversed with a refund (a §105 receipt is
+ *    not creditable) → `paid_invoice_requires_refund`.
+ * The legacy no-TIN remediation runbook (Step 2.1) voids ISSUED rows only, so
+ * it is unaffected. These controls pin the exact boundary in one place.
  */
-describe('H1 — paid membership void refusal boundary', () => {
+describe('H1 — paid invoice void refusal boundary', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('paid MEMBERSHIP → refused (paid_membership_requires_credit_note), no write', async () => {
@@ -948,8 +956,23 @@ describe('H1 — paid membership void refusal boundary', () => {
     expect(deps.invoiceRepo.applyVoid).toHaveBeenCalledTimes(1);
   });
 
-  it('paid EVENT (no-TIN §105 as-paid) → still voids (control — no-TIN runbook stays open)', async () => {
+  it('paid EVENT (no-TIN §105 as-paid) → refused (paid_invoice_requires_refund), no render, no write, no audit', async () => {
     const deps = makeDeps(makePaidAsPaidNoTinEvent()); // status: 'paid', subject: 'event'
+    const r = await voidInvoice(deps, INPUT);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe('paid_invoice_requires_refund');
+    expect(deps.pdfRender.render).not.toHaveBeenCalled();
+    expect(deps.invoiceRepo.applyVoid).not.toHaveBeenCalled();
+    expect(deps.outbox.enqueue).not.toHaveBeenCalled();
+    const voidedCall = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.find(
+      (c) => c[1].eventType === 'invoice_voided',
+    );
+    expect(voidedCall).toBeUndefined();
+  });
+
+  it('issued EVENT (legacy no-TIN) → still voids (control — no-TIN runbook Step 2.1 stays open)', async () => {
+    const deps = makeDeps(makeLegacyNoTinEvent()); // status: 'issued', subject: 'event'
     const r = await voidInvoice(deps, INPUT);
     expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
     if (!r.ok) return;

@@ -19,7 +19,10 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { eq, and, sql } from 'drizzle-orm';
 import { createHash, randomUUID } from 'node:crypto';
 import { runInTenant } from '@/lib/db';
-import { makeDrizzleInvoiceRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-invoice-repo';
+import {
+  makeDrizzleInvoiceRepo,
+  makeDrizzleTaxRegisterRepo,
+} from '@/modules/invoicing/infrastructure/repos/drizzle-invoice-repo';
 import { drizzleTenantSettingsRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-tenant-settings-repo';
 import { f4AuditAdapter } from '@/modules/invoicing/infrastructure/adapters/audit-adapter';
 import { voidInvoice } from '@/modules/invoicing/application/use-cases/void-invoice';
@@ -1102,6 +1105,143 @@ describe('F4 US5 — void-invoice (T098)', () => {
   // notice must reach whoever is primary NOW, and when nobody is, the void must
   // still complete (a §86/10 cancellation is a statutory act — it cannot wait
   // for someone to fix a contact row) while recording the skip.
+
+  it('H1 — REFUSES to void a PAID §105 event receipt: the row stays paid and its VAT stays in the ภ.พ.30 period', async () => {
+    // A void writes nothing to `payments` (the money would be stranded) and
+    // `sumPeriodOutputVat` excludes void rows — so a void of a paid event
+    // receipt would silently pull its VAT out of a month already declared on
+    // ภ.พ.30. The only month this tenant has a receipt in is November, so the
+    // RE-stream figure below is this row alone.
+    const eventId = randomUUID();
+    const regId = randomUUID();
+    const paidEventInvoiceId = randomUUID();
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(events).values({
+        tenantId: tenant.ctx.slug,
+        eventId,
+        source: 'eventcreate',
+        externalId: `evt-void-paid-${regId.slice(0, 8)}`,
+        name: 'Void Paid Gala',
+        startDate: new Date('2026-11-10T11:00:00Z'),
+      } satisfies NewEventRow);
+      await tx.insert(eventRegistrations).values({
+        tenantId: tenant.ctx.slug,
+        registrationId: regId,
+        eventId,
+        externalId: `att-void-paid-${regId.slice(0, 8)}`,
+        attendeeEmail: 'paid.walkin@void.test',
+        attendeeName: 'Paid Walk-in',
+        attendeeCompany: null,
+        matchType: 'non_member',
+        ticketType: 'Standard',
+        ticketPriceThb: 1070,
+        paymentStatus: 'paid',
+        registeredAt: new Date('2026-11-01T03:00:00Z'),
+      } satisfies NewEventRegistrationRow);
+      await tx.insert(invoices).values({
+        tenantId: tenant.ctx.slug,
+        invoiceId: paidEventInvoiceId,
+        invoiceSubject: 'event',
+        eventId,
+        eventRegistrationId: regId,
+        vatInclusive: true,
+        memberId: null,
+        planYear: null,
+        planId: null,
+        draftByUserId: user.userId,
+        status: 'paid',
+        // 064 as-paid shape: the ONE blob is the §105 ใบเสร็จรับเงิน (RE stream).
+        pdfDocKind: 'receipt_separate',
+        receiptDocumentNumberRaw: 'RE-2026-900001',
+        receiptPdfStatus: 'rendered',
+        paymentMethod: 'bank_transfer',
+        paymentReference: 'seed-ref',
+        paymentRecordedByUserId: user.userId,
+        paymentDate: '2026-11-12',
+        paidAt: new Date('2026-11-12T03:00:00Z'),
+        fiscalYear: 2026,
+        issueDate: '2026-11-12',
+        dueDate: '2026-11-12',
+        subtotalSatang: 100_000n,
+        vatRateSnapshot: '0.0700',
+        vatSatang: 7_000n,
+        totalSatang: 107_000n,
+        creditedTotalSatang: 0n,
+        proRatePolicySnapshot: null,
+        netDaysSnapshot: 30,
+        tenantIdentitySnapshot: SNAP_TENANT,
+        memberIdentitySnapshot: {
+          legal_name: 'Paid Walk-in',
+          tax_id: null,
+          address: '50 Simulated Road, Bangkok',
+          primary_contact_name: 'Paid Walk-in',
+          primary_contact_email: 'paid.walkin@void.test',
+        },
+        autoEmailOnIssue: true,
+        pdfBlobKey: `invoicing/${tenant.ctx.slug}/2026/${paidEventInvoiceId}_v8.pdf`,
+        pdfSha256: ORIGINAL_SHA,
+        pdfTemplateVersion: 8,
+      });
+      await tx.insert(invoiceLines).values({
+        tenantId: tenant.ctx.slug,
+        lineId: randomUUID(),
+        invoiceId: paidEventInvoiceId,
+        kind: 'event_fee',
+        descriptionTh: 'ค่าเข้าร่วมงาน Void Paid Gala (2026-11-10)',
+        descriptionEn: 'Event: Void Paid Gala (2026-11-10)',
+        unitPriceSatang: 107_000n,
+        totalSatang: 107_000n,
+        position: 1,
+      });
+    });
+
+    const register = makeDrizzleTaxRegisterRepo(tenant.ctx.slug);
+    const november = { from: '2026-11-01', to: '2026-11-30' } as const;
+    const before = await register.sumPeriodOutputVat(tenant.ctx.slug, november);
+    expect(before.reVatSatang).toBe('7000');
+
+    const deps = makeDeps(tenant.ctx.slug);
+    const r = await voidInvoice(deps, {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      invoiceId: paidEventInvoiceId,
+      voidReason: 'attempted void of a paid event receipt',
+    });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe('paid_invoice_requires_refund');
+    // Read-only refusal: nothing rendered, uploaded or enqueued.
+    expect(deps.renderCalls).toHaveLength(0);
+    expect(deps.uploadCalls).toHaveLength(0);
+    expect(deps.outboxCalls).toHaveLength(0);
+
+    const [row] = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({ status: invoices.status, voidedAt: invoices.voidedAt })
+        .from(invoices)
+        .where(eq(invoices.invoiceId, paidEventInvoiceId)),
+    );
+    expect(row?.status).toBe('paid');
+    expect(row?.voidedAt).toBeNull();
+
+    const after = await register.sumPeriodOutputVat(tenant.ctx.slug, november);
+    expect(after.reVatSatang).toBe('7000');
+    expect(after.rcVatSatang).toBe(before.rcVatSatang);
+
+    const voidedAudit = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({ id: auditLog.id })
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.tenantId, tenant.ctx.slug),
+            eq(auditLog.eventType, 'invoice_voided'),
+            sql`${auditLog.payload}->>'invoice_id' = ${paidEventInvoiceId}`,
+          ),
+        ),
+    );
+    expect(voidedAudit).toHaveLength(0);
+  }, 60_000);
 
   it('108 — the cancellation notice goes to the LIVE primary, not the snapshot address', async () => {
     const { invoiceId, memberId } = await seedInvoice(tenant, user, planId, 'issued');

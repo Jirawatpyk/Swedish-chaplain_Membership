@@ -693,15 +693,12 @@ export interface InvoiceRepo {
    * stale-but-consistent state (old sha, old bytes) that a sweeper can
    * re-render.
    *
-   * WHERE CAS accepts `status IN ('issued','paid')` — voiding a PAID
-   * membership is the 088 § F.3 edge path (VOID-stamp BOTH the ใบแจ้งหนี้
-   * bill and the §86/4 tax-receipt blobs). A concurrent transition to
-   * void / credited / partially_credited returns no rows and the repo throws
+   * WHERE CAS accepts `status = 'issued'` only — a PAID invoice is never
+   * voided (H1: the money would be stranded and the receipt's VAT pulled out
+   * of a filed ภ.พ.30 month). A concurrent transition to paid / void /
+   * credited / partially_credited returns no rows and the repo throws
    * `InvoiceApplyConflictError`, which the use case maps to typed
-   * `concurrent_state_change`. The DB immutability trigger + CHECKs permit
-   * paid→void (status is not a locked column; the paid-has-receipt-status
-   * CHECK is vacuous for a non-paid row; the event-registration partial unique
-   * index frees voided rows), so NO migration is required.
+   * `concurrent_state_change`.
    *
    * The invoices immutability trigger whitelists `void_reason`,
    * `voided_by_user_id`, `voided_at`, `status` — see

@@ -204,6 +204,16 @@ describe('contract: POST /api/invoices/[invoiceId]/void', () => {
     expect(body.error.code).toBe('paid_membership_requires_credit_note');
   });
 
+  it('H1 — maps paid_invoice_requires_refund to 409 (wiring pin)', async () => {
+    voidInvoiceMock.mockResolvedValueOnce(err({ code: 'paid_invoice_requires_refund' }));
+
+    const res = await callRoute(VALID_INVOICE_ID, { voidReason: 'legit reason' });
+
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('paid_invoice_requires_refund');
+  });
+
   it('returns the gate rejection untouched (key + shim row pinned)', async () => {
     // 016 review C1 — denial is decided BY THE GATE, not by a role literal in
     // the handler (that literal also 403'd super_admin, whom the frozen

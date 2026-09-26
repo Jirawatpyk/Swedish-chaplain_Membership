@@ -8,7 +8,8 @@
  * human must reconcile.
  *
  * CF-2 adds a "Mark as reconciled" action: after the admin returns the funds
- * out-of-band (manual credit note / Stripe Dashboard refund, per the runbook),
+ * out-of-band (Stripe Dashboard refund / bank transfer — never a credit note,
+ * the payment is a duplicate, not a sale; runbook § 1.5),
  * this confirms + POSTs to `/api/refunds/resolve-auto-refund-failure`, which
  * appends the append-only `auto_refund_reconciled` event so
  * `findStaleInvoiceAutoRefund.failed` flips false → THIS alert disappears on

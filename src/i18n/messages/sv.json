@@ -2305,6 +2305,7 @@
         "bankAccountNo": "Kontonumret måste bestå av siffror (bindestreck eller mellanslag tillåtna).",
         "receiptPrefixReserved": "\"RE\" är reserverat för §105-evenemangskvitton. Använd ett annat kvittonummerprefix, till exempel RC.",
         "requiredFields": "Fyll i de markerade obligatoriska fälten.",
+        "taxIdChecksum": "Detta skatte-ID är ogiltigt. Kontrollera det 13-siffriga numret och checksiffran.",
         "readOnly": "Systemet är tillfälligt skrivskyddat för underhåll. Försök igen snart."
       },
       "saving": "Sparar…",
@@ -3044,6 +3045,7 @@
           "voidedBy": "Annullerad av",
           "reason": "Orsak",
           "creditNoteHint": "Denna faktura är permanent annullerad. Dess sekventiella skattedokumentnummer är pensionerat och kommer inte att återanvändas. Den VOID-stämplade PDF:en ovan är det officiella dokumentet; inga fler åtgärder krävs.",
+          "creditNoteHintBill": "Denna räkning är permanent annullerad. Räkningsnummer {number} finns kvar i registret, stämplat VOID, och kommer inte att återanvändas; inget §86/4-skattekvittonummer berördes. Den VOID-stämplade PDF:en ovan är det officiella dokumentet; inga fler åtgärder krävs.",
           "replacedBy": "Ersatt av <link>{number}</link>",
           "replacedByIssued": "utfärdad {date}"
         },
@@ -3085,7 +3087,7 @@
           "resolve": "Markera som avstämd",
           "resolveConfirm": {
             "title": "Markera denna automatiska återbetalning som avstämd?",
-            "body": "Gör detta först efter att du har återfört medlen till medlemmen på annat sätt (t.ex. en återbetalning via Stripe Dashboard eller en banköverföring) — en kreditnota i sig återbetalar inga pengar. Det rensar denna varning, uppdaterar medlemmens faktura till att visa betalningen som återbetald och registreras i granskningsloggen.",
+            "body": "Gör detta först efter att onlinebetalningen har återförts till medlemmen utanför Chamber-OS (en återbetalning via Stripe Dashboard eller en banköverföring). Utfärda ingen kreditnota: betalningen bokfördes aldrig mot fakturan (om fakturan redan var betald på annat sätt är den en dubbelbetalning), så en kreditnota skulle minska fakturans verkliga utgående moms och ändå inte återbetala några pengar. Att markera den som avstämd rensar denna varning, uppdaterar medlemmens faktura till att visa betalningen som återbetald och registreras i granskningsloggen.",
             "cancel": "Avbryt",
             "confirm": "Ja, markera som avstämd",
             "pending": "Registrerar…"
@@ -3278,8 +3280,9 @@
       "void": {
         "title": "Annullera faktura",
         "description": "Annullera denna utfärdade obetalda faktura. Det sekventiella skattedokumentnumret pensioneras och kan inte återanvändas; PDF:en stämplas VOID; ett annulleringsmeddelande e-postas till medlemmen om automatisk e-post är aktiverad.",
+        "descriptionBill": "Annullera denna obetalda räkning: räkningsnummer {number} finns kvar i registret, stämplas VOID och återanvänds aldrig; inget §86/4-skattekvittonummer berörs. Ett annulleringsmeddelande e-postas till medlemmen om automatisk e-post är aktiverad.",
         "voiding": "Annullerar faktura",
-        "terminalNotice": "Annullering är slutgiltig — inga fler åtgärder (betala, kreditera, redigera) är tillåtna. För att återföra en BETALD faktura, använd kreditnota-flödet i stället.",
+        "terminalNotice": "Annullering är slutgiltig — inga fler åtgärder (betala, kreditera, redigera) är tillåtna. En betald faktura kan inte annulleras; återför den i stället med en återbetalning eller en kreditnota.",
         "reasonLabel": "Orsak",
         "reasonHelp": "Visas på den annullerade PDF:en och i granskningsloggen. Obligatorisk, upp till 500 tecken.",
         "confirmCopy": "Skriv fakturanumret {phrase} för att bekräfta",
@@ -3298,7 +3301,8 @@
           "refreshAction": "Uppdatera",
           "codeFallback": "Felkod: {code}",
           "refundInProgress": "En återbetalning behandlas för denna fakturas betalning. Att makulera nu kan skapa en konflikt – vänta tills återbetalningen är klar och försök igen.",
-          "paidMembershipRequiresCreditNote": "Den här betalda medlemsfakturan kan inte makuleras. För att återföra den, utfärda en kreditnota i stället."
+          "paidMembershipRequiresCreditNote": "Den här betalda medlemsfakturan kan inte makuleras. För att återföra den, utfärda en kreditnota i stället.",
+          "paidInvoiceRequiresRefund": "Den här betalda fakturan kan inte annulleras. Återför den i stället med en återbetalning; om den betaldes utanför Chamber-OS, återför pengarna utanför Chamber-OS och följ rättelserutinen."
         }
       }
     },
@@ -5029,6 +5033,7 @@
           "payment_failed": "Betalning misslyckades",
           "payment_canceled": "Betalning avbruten",
           "auto_refunded": "Betalning automatiskt återbetald",
+          "auto_refund_failed": "Automatisk återbetalning misslyckades",
           "invoice_paid": "Faktura markerad som betald",
           "refund_initiated": "Återbetalning påbörjad",
           "refund_pending": "Återbetalning behandlas — inväntar bekräftelse från betalningsleverantören",

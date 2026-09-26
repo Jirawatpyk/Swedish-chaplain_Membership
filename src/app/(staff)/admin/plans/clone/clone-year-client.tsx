@@ -10,6 +10,7 @@ import { useRouter } from 'next/navigation';
 import { toast } from '@/lib/toast';
 import { useLocale, useTranslations } from 'next-intl';
 import { formatSatangThb } from '@/lib/format-thb';
+import { formatCalendarYear } from '@/lib/format-date-localised';
 import { isReadOnlyCode, problemCode } from '@/lib/http/read-only-refusal';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -170,7 +171,10 @@ export function CloneYearClient({
 
       if (res.status === 201) {
         toast.success(
-          t('toast.cloned', { count: body.cloned_count ?? 0, targetYear }),
+          t('toast.cloned', {
+            count: body.cloned_count ?? 0,
+            targetYear: formatCalendarYear(targetYear, locale),
+          }),
         );
         setOpen(false);
         router.push(`/admin/plans?year=${targetYear}`);
@@ -184,9 +188,15 @@ export function CloneYearClient({
       if (isReadOnlyCode(errorCode)) {
         toast.error(t('errors.readOnlyMode'));
       } else if (errorCode === 'target_year_populated') {
-        toast.error(tClone('errors.targetYearPopulated', { year: targetYear }));
+        toast.error(
+          tClone('errors.targetYearPopulated', {
+            year: formatCalendarYear(targetYear, locale),
+          }),
+        );
       } else if (errorCode === 'source_year_empty') {
-        toast.error(tClone('errors.noPlans', { year: sourceYear }));
+        toast.error(
+          tClone('errors.noPlans', { year: formatCalendarYear(sourceYear, locale) }),
+        );
       } else {
         toast.error(t('errors.generic'));
       }
@@ -208,10 +218,12 @@ export function CloneYearClient({
   return (
     <div className="space-y-4">
       <p className="text-muted-foreground text-sm">
+        {/* Visible years follow the locale (TH 2569); a half-typed value
+            echoes back as typed. Inputs, the API body and URLs stay CE. */}
         {tClone('description', {
           count: countLabel,
-          sourceYear,
-          targetYear,
+          sourceYear: formatCalendarYear(sourceYear, locale),
+          targetYear: formatCalendarYear(targetYear, locale),
         })}
       </p>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -256,7 +268,7 @@ export function CloneYearClient({
       <section aria-labelledby="clone-preview-title" className="space-y-2">
         <h3 id="clone-preview-title" className="text-sm font-medium">
           {sourceYear >= 2000 && sourceYear <= 2100
-            ? tClone('preview.title', { sourceYear })
+            ? tClone('preview.title', { sourceYear: formatCalendarYear(sourceYear, locale) })
             : tClone('preview.titleNoYear')}
         </h3>
         {sourcePlans === null ? (
@@ -265,7 +277,7 @@ export function CloneYearClient({
           </p>
         ) : sourcePlans.length === 0 ? (
           <p className="text-muted-foreground text-sm">
-            {tClone('preview.empty', { sourceYear })}
+            {tClone('preview.empty', { sourceYear: formatCalendarYear(sourceYear, locale) })}
           </p>
         ) : (
           <ul

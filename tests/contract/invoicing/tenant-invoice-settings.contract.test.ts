@@ -192,6 +192,17 @@ describe('088 US5 T037 — PATCH /api/tenant-invoice-settings route contract', (
     expect(bad2.status).toBe(400);
   });
 
+  it('400 invalid_body — a 13-digit tax_id with a bad check digit (field error on tax_id)', async () => {
+    const res = await PATCH(patchRequest({ tax_id: '0105536000315' }));
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as {
+      error: { code: string; details: { fieldErrors: Record<string, string[] | undefined> } };
+    };
+    expect(body.error.code).toBe('invalid_body');
+    expect(body.error.details.fieldErrors.tax_id?.length ?? 0).toBeGreaterThan(0);
+    expect(updateTenantInvoiceSettingsMock).not.toHaveBeenCalled();
+  });
+
   it('403 — non-admin is rejected (requireApiPermission forwards the response)', async () => {
     const { NextResponse } = await import('next/server');
     requireApiPermissionMock.mockResolvedValueOnce({
