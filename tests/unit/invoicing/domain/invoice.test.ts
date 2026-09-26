@@ -563,9 +563,6 @@ describe('canTransition — invoice state-machine table (data-model.md § 3.1)',
     it('issued → void', () => ok('issued', 'void'));
     it('paid → partially_credited', () => ok('paid', 'partially_credited'));
     it('paid → credited', () => ok('paid', 'credited'));
-    // 088 (data-model.md § 3.1 — `paid --void--> void`): an admin may void a
-    // PAID invoice (the void use-case's own guard accepts `paid`).
-    it('paid → void (admin void of a paid invoice)', () => ok('paid', 'void'));
     it('partially_credited → partially_credited (sequential CN)', () =>
       ok('partially_credited', 'partially_credited'));
     it('partially_credited → credited', () =>
@@ -579,6 +576,15 @@ describe('canTransition — invoice state-machine table (data-model.md § 3.1)',
       err('issued', 'partially_credited', 'invalid_transition'));
     it('paid → issued (no rollback)', () =>
       err('paid', 'issued', 'invalid_transition'));
+    // H1 — a PAID invoice is never voided, whatever its subject: the void
+    // writes nothing to `payments` and drops the row's output VAT from ภ.พ.30.
+    // Reverse it via a §86/10 credit note / refund instead.
+    it('paid → void (H1 — reverse via credit note / refund)', () =>
+      err('paid', 'void', 'invalid_transition'));
+    it('paid → void is illegal for the event subject too', () => {
+      const r = canTransition('paid', 'void', 'event');
+      expect(r.ok).toBe(false);
+    });
   });
 
   describe('subject-aware draft → paid (064 as-paid issuance)', () => {

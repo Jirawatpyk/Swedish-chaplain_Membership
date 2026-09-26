@@ -29,6 +29,7 @@ import { voidInvoice } from '@/modules/invoicing/application/use-cases/void-invo
 import type { VoidInvoiceDeps } from '@/modules/invoicing/application/use-cases/void-invoice';
 import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import { asInvoiceId } from '@/modules/invoicing/domain/invoice';
+import { InvoiceApplyConflictError } from '@/modules/invoicing/application/lib/invoice-apply-conflict-error';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { invoiceLines } from '@/modules/invoicing/infrastructure/db/schema-invoice-lines';
 import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
@@ -737,6 +738,32 @@ describe('F4 US5 — void-invoice (T098)', () => {
         ),
     );
     expect(voidedAudits).toHaveLength(0);
+  }, 60_000);
+
+  it('H1 defence-in-depth — applyVoid CAS refuses a PAID row even when called directly (InvoiceApplyConflictError)', async () => {
+    // The use-case guard is the primary refusal; the repo write must not accept
+    // `paid` either, so a future caller that skips voidInvoice cannot strand a
+    // payment and drop its ภ.พ.30 VAT.
+    const { invoiceId } = await seedInvoice(tenant, user, planId, 'paid', 777);
+    const repo = makeDrizzleInvoiceRepo(tenant.ctx.slug);
+    await expect(
+      runInTenant(tenant.ctx, (tx) =>
+        repo.applyVoid(tx, {
+          tenantId: tenant.ctx.slug,
+          invoiceId: asInvoiceId(invoiceId),
+          voidReason: 'direct repo call',
+          voidedByUserId: user.userId,
+        }),
+      ),
+    ).rejects.toBeInstanceOf(InvoiceApplyConflictError);
+    const [row] = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({ status: invoices.status, voidedAt: invoices.voidedAt })
+        .from(invoices)
+        .where(eq(invoices.invoiceId, invoiceId)),
+    );
+    expect(row?.status).toBe('paid');
+    expect(row?.voidedAt).toBeNull();
   }, 60_000);
 
   it('088 T068 — voids an UNPAID new-flow ใบแจ้งหนี้ bill: documentNumber NULL → bill number + billMode, ONE blob', async () => {
