@@ -25,8 +25,11 @@ const rateLimitCheckMock = vi.fn<
   (key: string, limit: number, windowSeconds: number) => Promise<unknown>
 >(async () => ({ ok: true, value: true }));
 
+const flagsMock = { readOnlyMode: false };
 vi.mock('@/lib/env', () => ({
   env: {
+    features: { f7Broadcasts: true },
+    flags: flagsMock,
     broadcasts: {
       fromEmail: 'Chamber <broadcasts@swecham.example>',
       privacyContactEmail: 'privacy@swecham.example',
@@ -186,5 +189,17 @@ describe('POST /unsubscribe/[token] (RFC 8058 one-click)', () => {
     const res = await GET();
     expect(res.status).toBe(405);
     expect(res.headers.get('allow')).toBe('POST');
+  });
+
+  it('READ_ONLY_MODE → 503, nothing written (the proxy freeze has a twin in the pipeline)', async () => {
+    flagsMock.readOnlyMode = true;
+    try {
+      const { POST } = await importRoute();
+      const res = await POST(...oneClickPost());
+      expect(res.status).toBe(503);
+      expect(unsubscribeRecipientMock).not.toHaveBeenCalled();
+    } finally {
+      flagsMock.readOnlyMode = false;
+    }
   });
 });

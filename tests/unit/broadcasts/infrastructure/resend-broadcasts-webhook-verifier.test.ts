@@ -294,11 +294,23 @@ describe('resendBroadcastsWebhookVerifier.constructContactEvent', () => {
     ).toThrow(expect.objectContaining({ kind: 'unknown_event_type' }));
   });
 
-  it('a contact.updated without an email or audience is malformed', () => {
-    for (const data of [
-      { audience_id: 'aud-1', unsubscribed: true },
-      { email: 'a@example.com', unsubscribed: true },
-    ]) {
+  // An opt-out we cannot attribute must still reach the route (which audits
+  // it for manual follow-up) — only a missing address is unusable.
+  it('a contact.updated without an audience/segment id still parses, with no ids', () => {
+    const body = contactBody({ email: 'a@example.com', unsubscribed: true });
+    const event = resendBroadcastsWebhookVerifier.constructContactEvent(
+      body,
+      signPayload(body, 'msg_c5', now, SECRET),
+      'msg_c5',
+      String(now),
+      SECRET,
+    );
+    expect(event.data.audienceIds).toEqual([]);
+    expect(event.data.unsubscribed).toBe(true);
+  });
+
+  it('a contact.updated without an email is malformed', () => {
+    for (const data of [{ audience_id: 'aud-1', unsubscribed: true }]) {
       const body = contactBody(data);
       expect(() =>
         resendBroadcastsWebhookVerifier.constructContactEvent(

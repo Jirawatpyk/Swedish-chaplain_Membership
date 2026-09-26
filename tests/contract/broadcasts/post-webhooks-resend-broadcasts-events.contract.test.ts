@@ -34,6 +34,7 @@ const resolveTenantByBatchProviderBroadcastIdMock = vi.fn();
 const applyBatchWebhookEventMock = vi.fn();
 
 const envMock = {
+  tenant: { slug: 'test-tenant' },
   features: { f7Broadcasts: true },
   broadcasts: { webhookSecret: 'whsec_dGVzdHNlY3JldA==' },
 };
@@ -405,6 +406,27 @@ describe('POST /api/webhooks/resend-broadcasts — contact.updated mirror', () =
     const audit = f7AuditEmitMock.mock.calls[0]![1] as { payload: Record<string, unknown> };
     expect(audit.payload['reason']).toBe('unknown_resend_audience_id');
     expect(JSON.stringify(audit.payload)).not.toMatch(/alice@example\.com/i);
+    // Same tenant-scoped hash as the use-case's audits (sha256(tenant:email)),
+    // so tenant-scoped erasure finds it and it cannot be matched against an
+    // external list of plain email hashes.
+    const { createHash } = await import('node:crypto');
+    expect(audit.payload['emailHash']).toBe(
+      createHash('sha256').update('test-tenant:alice@example.com').digest('hex'),
+    );
+  });
+
+  it('an opt-out with no audience/segment id at all is audited for manual follow-up, never dropped', async () => {
+    constructContactEventMock.mockReturnValue({
+      ...contactEvent(true),
+      data: { email: 'Alice@Example.com', audienceIds: [], unsubscribed: true },
+    });
+    const route = await importRoute();
+    const res = await route.POST(makeRequest({ body: '{}' }));
+    expect(res.status).toBe(200);
+    expect(applyResendHostedUnsubscribeMock).not.toHaveBeenCalled();
+    expect(f7AuditEmitMock).toHaveBeenCalledTimes(1);
+    const audit = f7AuditEmitMock.mock.calls[0]![1] as { payload: Record<string, unknown> };
+    expect(audit.payload['reason']).toBe('contact_updated_no_audience');
   });
 
   it('a failed write → 500 so Resend retries (the objection must not be lost)', async () => {

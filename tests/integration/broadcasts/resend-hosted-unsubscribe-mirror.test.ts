@@ -182,4 +182,29 @@ describe('Resend hosted-page unsubscribe mirror (contact.updated)', () => {
     });
     expect(r).toEqual({ kind: 'unknown_audience' });
   });
+
+  // Security review T1: the opt-out lands ONLY in the tenant that owns the
+  // audience — never in another tenant's suppression list.
+  it('attributes to the audience-owning tenant only', async () => {
+    const other = await createTestTenant('test-swecham');
+    try {
+      const otherEmail = `mirror-x-${randomUUID().slice(0, 8)}@example.com`;
+      const r = await applyResendHostedUnsubscribe({
+        email: otherEmail,
+        audienceIds: [audienceId],
+        requestId: randomUUID(),
+      });
+      expect(r).toEqual({ kind: 'applied', tenantId: tenant.ctx.slug });
+      const inOther = await runInTenant(other.ctx, (tx) =>
+        tx
+          .select()
+          .from(marketingUnsubscribes)
+          .where(eq(marketingUnsubscribes.tenantId, other.ctx.slug)),
+      );
+      expect(inOther).toHaveLength(0);
+    } finally {
+      await other.cleanup();
+    }
+  });
 });
+

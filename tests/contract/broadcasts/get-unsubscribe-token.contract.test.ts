@@ -35,6 +35,8 @@ const unsubscribePageTtfbMsMock = vi.fn();
 // at the monitored privacy inbox instead.
 const envMock = {
   tenant: { slug: 'test-tenant' },
+  features: { f7Broadcasts: true },
+  flags: { readOnlyMode: false },
   broadcasts: {
     fromEmail: 'Chamber <broadcasts@swecham.example>',
     privacyContactEmail: 'privacy@swecham.example',
@@ -643,6 +645,28 @@ describe('GET /unsubscribe/[token] (T136 contract)', () => {
       expect(JSON.stringify(node)).not.toContain('privacyLine');
     } finally {
       envMock.broadcasts.privacyPolicyUrl = saved;
+    }
+  });
+
+  // Security review: GET can bypass the proxy (prefetch headers skip the
+  // matcher) and READ_ONLY_MODE never froze GET, yet this page WRITES. The
+  // pipeline therefore gates itself: no write while F7 is off or frozen.
+  it.each([
+    ['F7 kill switch off', () => { envMock.features.f7Broadcasts = false; }],
+    ['READ_ONLY_MODE on', () => { envMock.flags.readOnlyMode = true; }],
+  ])('%s → no write, "try again" error state', async (_label, flip) => {
+    flip();
+    try {
+      const { default: Page } = await importPage();
+      const node = await Page({
+        params: Promise.resolve({ token: VALID_TOKEN }),
+        searchParams: Promise.resolve({}),
+      });
+      expect(unsubscribeRecipientMock).not.toHaveBeenCalled();
+      expect(JSON.stringify(node)).toContain('error.heading');
+    } finally {
+      envMock.features.f7Broadcasts = true;
+      envMock.flags.readOnlyMode = false;
     }
   });
 });
