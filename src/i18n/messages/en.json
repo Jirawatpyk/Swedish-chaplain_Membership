@@ -7512,6 +7512,7 @@
       "broadcast_brand_settings_changed": "E-Blast brand settings changed",
       "broadcast_image_removed": "E-Blast image removed",
       "broadcast_retention_swept": "E-Blasts deleted after their retention period",
+      "broadcast_unsubscribe_unattributed": "E-Blast opt-out could not be recorded",
       "broadcast_image_uploaded": "E-Blast image uploaded",
       "broadcast_test_copy_sent": "E-Blast test copy sent",
       "broadcast_version_started": "E-Blast version started",

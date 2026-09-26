@@ -466,6 +466,10 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   //     per daily run of `sweepExpiredBroadcasts` (no ids, no content). 5y
   //     retention. Same lockstep + parity coverage as the blocks above. ---
   'broadcast_retention_swept',
+  // --- F7 unattributed opt-out (migration 0312) — a Resend-side unsubscribe
+  //     whose address is unusable, so it could not be recorded; NULL tenant,
+  //     tenant-scoped address hash only. 5y retention. ---
+  'broadcast_unsubscribe_unattributed',
   // --- 059-membership-suspension Task 13 (migration 0247) — F8 →F4
   //     `InvoiceDueBridge` credit-window guard. Emitted by
   //     `lapseCyclesOnGraceExpiry` when a member past the grace window

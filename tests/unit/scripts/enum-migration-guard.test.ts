@@ -171,6 +171,8 @@ describe('findMissingEnumValues', () => {
           'broadcast_approval_expired',
           // 0310 (F7 retention sweep):
           'broadcast_retention_swept',
+          // 0312 (F7 unattributed opt-out):
+          'broadcast_unsubscribe_unattributed',
         ]),
       ],
       // 0301 (F114): the two outbox row types the use cases INSERT.
@@ -259,6 +261,8 @@ describe('findMissingEnumValues', () => {
           'broadcast_approval_expired',
           // 0310 (F7 retention sweep):
           'broadcast_retention_swept',
+          // 0312 (F7 unattributed opt-out):
+          'broadcast_unsubscribe_unattributed',
         ]),
       ],
       // 0301 (F114): the two outbox row types the use cases INSERT.
@@ -374,6 +378,8 @@ describe('findMissingEnumValues', () => {
           'broadcast_approval_expired',
           // 0310 (F7 retention sweep):
           'broadcast_retention_swept',
+          // 0312 (F7 unattributed opt-out):
+          'broadcast_unsubscribe_unattributed',
         ],
       },
     ]);
@@ -415,6 +421,7 @@ describe('findMissingEnumValues', () => {
     // 0310 (F7 retention sweep): the daily cron INSERTs its run row; a
     // non-persisting ADD VALUE would fail every run in prod.
     expect(REQUIRED_ENUM_VALUES['audit_event_type']).toContain('broadcast_retention_swept');
+    expect(REQUIRED_ENUM_VALUES['audit_event_type']).toContain('broadcast_unsubscribe_unattributed');
   });
 });
 

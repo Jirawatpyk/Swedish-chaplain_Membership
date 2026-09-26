@@ -7512,6 +7512,7 @@
       "broadcast_brand_settings_changed": "Varumärkesinställningar för utskick ändrade",
       "broadcast_image_removed": "Utskicksbild borttagen",
       "broadcast_retention_swept": "Utskick raderade efter lagringstiden",
+      "broadcast_unsubscribe_unattributed": "Avregistrering från utskick kunde inte registreras",
       "broadcast_image_uploaded": "Utskicksbild uppladdad",
       "broadcast_test_copy_sent": "Testkopia av utskick skickad",
       "broadcast_version_started": "Utskicksversion påbörjad",

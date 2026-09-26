@@ -239,9 +239,9 @@ async function auditUnattributedOptOut(
   );
   try {
     await f7AuditAdapter.emit(null, {
-      eventType: 'broadcast_webhook_signature_rejected',
+      eventType: 'broadcast_unsubscribe_unattributed',
       actorUserId: 'system:webhook',
-      summary: 'Resend hosted-page unsubscribe could not be attributed to a broadcast',
+      summary: 'Resend-side unsubscribe could not be recorded (unusable address)',
       payload: {
         reason,
         audienceIds: [...audienceIds],

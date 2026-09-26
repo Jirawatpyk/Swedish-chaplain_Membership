@@ -7512,6 +7512,7 @@
       "broadcast_brand_settings_changed": "เปลี่ยนการตั้งค่าแบรนด์ E-Blast",
       "broadcast_image_removed": "ลบรูปภาพ E-Blast",
       "broadcast_retention_swept": "ลบ E-Blast ที่ครบระยะเวลาการเก็บรักษาแล้ว",
+      "broadcast_unsubscribe_unattributed": "บันทึกการยกเลิกรับ E-Blast ไม่ได้",
       "broadcast_image_uploaded": "อัปโหลดรูปภาพ E-Blast",
       "broadcast_test_copy_sent": "ส่งสำเนาทดสอบ E-Blast แล้ว",
       "broadcast_version_started": "เริ่มจัดทำฉบับ E-Blast",

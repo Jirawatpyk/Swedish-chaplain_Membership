@@ -99,6 +99,7 @@ export function extractAlterTypeAddValueStatements(sql: string): string[] {
  *                           0259 at rebase so it follows the task-7 stack's 0269)
  *                        += the ten F119 approval-round events (0308)
  *                        += 'broadcast_retention_swept' (0310, F7 retention sweep)
+ *                        += 'broadcast_unsubscribe_unattributed' (0312, F7 opt-out)
  *   - `notification_type` += the two F114 rows (0301), the five F119 eblast_* rows (0308)
  *   - `broadcast_status`  += the five F119 approval-round statuses (0308)
  */
@@ -182,6 +183,9 @@ export const REQUIRED_ENUM_VALUES: Readonly<Record<string, readonly string[]>> =
     // tenant; a non-persisting ADD VALUE would fail every run in prod (and
     // with it the retention the RoPA says is enforced).
     'broadcast_retention_swept',
+    // F7 (0312) — the broadcasts webhook INSERTs it for a Resend-side opt-out
+    // it cannot record; a non-persisting ADD VALUE would lose that evidence.
+    'broadcast_unsubscribe_unattributed',
   ],
   // F114 (0301) — the two outbox row types the same use cases INSERT.
   notification_type: [
