@@ -6519,8 +6519,8 @@
       "banner": {
         "acknowledgement": {
           "title": "Innan du skickar E-Blasts",
-          "body": "E-Blasts skickas till kontaktpersoner hos medlemsföretag som inte har avregistrerat sig från marknadsföringsmejl. Varje E-Blast innehåller en avregistreringslänk, och avregistreringar tillämpas automatiskt. Håll budskapet relevant för medlemmarna och ta inte med andra personers personuppgifter.",
-          "privacyPolicyLink": "Läs sekretesspolicyn",
+          "body": "E-Blasts skickas till kontaktpersoner hos medlemsföretag och till personer som nyligen deltagit i evenemang, utom dem som har avregistrerat sig från marknadsföringsmejl. Varje E-Blast innehåller en avregistreringslänk, och avregistreringar hanteras automatiskt. Håll budskapet relevant för medlemmarna och ta inte med andra personers personuppgifter.",
+          "privacyPolicyLink": "Läs integritetspolicyn",
           "acknowledge": "Jag bekräftar",
           "remindLater": "Påminn senare",
           "closeLabel": "Stäng banner",
@@ -7865,28 +7865,29 @@
       "success": {
         "heading": "Avregistrerad",
         "body": "{tenantDisplayName} kommer inte längre att skicka E-Blasts med marknadsföring till den här e-postadressen. Det gäller alla E-Blasts från {tenantDisplayName}, även de som skickas för andra medlemmars räkning.",
-        "transactional": "Du får fortfarande servicemejl om din organisations medlemskap, till exempel fakturor, kvitton, förnyelsepåminnelser och lösenordsåterställningar.",
-        "contact": "Om du avregistrerade av misstag, kontakta <email></email>."
+        "transactional": "Det här påverkar inte servicemejl. Om du får mejl om din organisations medlemskap, till exempel fakturor, kvitton, förnyelsepåminnelser eller lösenordsåterställningar, fortsätter de som vanligt.",
+        "contact": "Om du avregistrerade dig av misstag, kontakta <email></email>."
       },
       "already": {
         "heading": "Redan avregistrerad",
-        "body": "Den här adressen är redan avregistrerad från E-Blasts från {tenantDisplayName}. Ingen ytterligare åtgärd behövs.",
+        "body": "Den här adressen är redan avregistrerad och får inga E-Blasts från {tenantDisplayName}. Ingen ytterligare åtgärd behövs.",
         "contact": "Om du vill få E-Blasts igen, kontakta <email></email>."
       },
       "invalid": {
         "heading": "Länken är ogiltig",
-        "body": "Denna avregistreringslänk är ogiltig. Det kan bero på att länken kopierats felaktigt, eller på att du klickar i ett äldre mejl.",
-        "contact": "Mejla oss på <email></email> så tar vi bort adressen från alla E-Blasts från {tenantDisplayName} inom 2 arbetsdagar. Det är kostnadsfritt."
+        "body": "Denna avregistreringslänk är ogiltig. Det kan bero på att länken kopierats felaktigt, eller på att länken kommer från ett äldre mejl.",
+        "contact": "Mejla oss på <email></email> så tar vi bort din adress från alla E-Blast-utskick från {tenantDisplayName} inom två arbetsdagar. Det är kostnadsfritt."
       },
       "error": {
         "heading": "Tillfälligt fel",
         "body": "Vi kunde inte registrera din avregistrering just nu på grund av ett tillfälligt systemfel. Din avregistrering har INTE registrerats — försök länken igen om några minuter.",
-        "contact": "Om problemet kvarstår, mejla oss på <email></email> så tar vi bort adressen från alla E-Blasts från {tenantDisplayName} inom 2 arbetsdagar. Det är kostnadsfritt.",
+        "contact": "Om problemet kvarstår, mejla oss på <email></email> så tar vi bort din adress från alla E-Blast-utskick från {tenantDisplayName} inom två arbetsdagar. Det är kostnadsfritt.",
         "tryAgain": "Försök igen"
       },
       "rateLimited": {
         "heading": "Försök igen om en stund",
-        "body": "För många förfrågningar från ditt nätverk. Försök med länken igen om några minuter."
+        "body": "För många förfrågningar från ditt nätverk. Försök med länken igen om några minuter.",
+        "contact": "Om det fortsätter, mejla oss på <email></email> så tar vi bort din adress från alla E-Blast-utskick från {tenantDisplayName} inom två arbetsdagar. Det är kostnadsfritt."
       }
     }
   },

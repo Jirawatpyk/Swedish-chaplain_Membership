@@ -372,7 +372,7 @@ describe('POST /api/webhooks/resend-broadcasts — contact.updated mirror', () =
     });
     constructContactEventMock.mockReset();
     applyResendHostedUnsubscribeMock.mockReset();
-    applyResendHostedUnsubscribeMock.mockResolvedValue({ kind: 'applied', tenantId: 'test-tenant' });
+    applyResendHostedUnsubscribeMock.mockResolvedValue({ kind: 'applied', tenantId: 'test-tenant', attributed: true });
   });
 
   it('unsubscribed=true → mirrored through the shared use-case (channel resend_hosted) → 200', async () => {
@@ -396,37 +396,52 @@ describe('POST /api/webhooks/resend-broadcasts — contact.updated mirror', () =
     expect(applyResendHostedUnsubscribeMock).not.toHaveBeenCalled();
   });
 
-  it('an audience we cannot attribute → 200 (no retry storm) + a NULL-tenant audit row to act on', async () => {
+  it('an audience no broadcast owns (reaped after send) is still mirrored — to this deployment\'s tenant', async () => {
     constructContactEventMock.mockReturnValue(contactEvent(true));
-    applyResendHostedUnsubscribeMock.mockResolvedValue({ kind: 'unknown_audience' });
-    const route = await importRoute();
-    const res = await route.POST(makeRequest({ body: '{}' }));
-    expect(res.status).toBe(200);
-    expect(f7AuditEmitMock).toHaveBeenCalledTimes(1);
-    const audit = f7AuditEmitMock.mock.calls[0]![1] as { payload: Record<string, unknown> };
-    expect(audit.payload['reason']).toBe('unknown_resend_audience_id');
-    expect(JSON.stringify(audit.payload)).not.toMatch(/alice@example\.com/i);
-    // Same tenant-scoped hash as the use-case's audits (sha256(tenant:email)),
-    // so tenant-scoped erasure finds it and it cannot be matched against an
-    // external list of plain email hashes.
-    const { createHash } = await import('node:crypto');
-    expect(audit.payload['emailHash']).toBe(
-      createHash('sha256').update('test-tenant:alice@example.com').digest('hex'),
-    );
-  });
-
-  it('an opt-out with no audience/segment id at all is audited for manual follow-up, never dropped', async () => {
-    constructContactEventMock.mockReturnValue({
-      ...contactEvent(true),
-      data: { email: 'Alice@Example.com', audienceIds: [], unsubscribed: true },
+    applyResendHostedUnsubscribeMock.mockResolvedValue({
+      kind: 'applied',
+      tenantId: 'test-tenant',
+      attributed: false,
     });
     const route = await importRoute();
     const res = await route.POST(makeRequest({ body: '{}' }));
     expect(res.status).toBe(200);
-    expect(applyResendHostedUnsubscribeMock).not.toHaveBeenCalled();
+    // Written through the use-case (tenant-scoped audit pair), not a
+    // signature-rejected row.
+    expect(f7AuditEmitMock).not.toHaveBeenCalled();
+  });
+
+  it('an opt-out with no audience/segment id at all is still mirrored, never dropped', async () => {
+    constructContactEventMock.mockReturnValue({
+      ...contactEvent(true),
+      data: { email: 'Alice@Example.com', audienceIds: [], unsubscribed: true },
+    });
+    applyResendHostedUnsubscribeMock.mockResolvedValue({
+      kind: 'applied',
+      tenantId: 'test-tenant',
+      attributed: false,
+    });
+    const route = await importRoute();
+    const res = await route.POST(makeRequest({ body: '{}' }));
+    expect(res.status).toBe(200);
+    expect(applyResendHostedUnsubscribeMock).toHaveBeenCalledTimes(1);
+    expect(applyResendHostedUnsubscribeMock.mock.calls[0]![0]).toMatchObject({ audienceIds: [] });
+  });
+
+  it('an unusable address → 200 + a NULL-tenant audit row with the tenant-scoped hash only', async () => {
+    constructContactEventMock.mockReturnValue(contactEvent(true));
+    applyResendHostedUnsubscribeMock.mockResolvedValue({ kind: 'invalid_email' });
+    const route = await importRoute();
+    const res = await route.POST(makeRequest({ body: '{}' }));
+    expect(res.status).toBe(200);
     expect(f7AuditEmitMock).toHaveBeenCalledTimes(1);
     const audit = f7AuditEmitMock.mock.calls[0]![1] as { payload: Record<string, unknown> };
-    expect(audit.payload['reason']).toBe('contact_updated_no_audience');
+    expect(audit.payload['reason']).toBe('contact_updated_invalid_email');
+    expect(JSON.stringify(audit.payload)).not.toMatch(/alice@example\.com/i);
+    const { createHash } = await import('node:crypto');
+    expect(audit.payload['emailHash']).toBe(
+      createHash('sha256').update('test-tenant:alice@example.com').digest('hex'),
+    );
   });
 
   it('a failed write → 500 so Resend retries (the objection must not be lost)', async () => {

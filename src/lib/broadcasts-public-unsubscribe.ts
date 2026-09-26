@@ -227,6 +227,22 @@ export async function processUnsubscribe(
     };
   };
 
+  // The page can be reached WITHOUT the proxy (Next skips the matcher for
+  // prefetch requests) and READ_ONLY_MODE never froze GET, yet this
+  // pipeline writes. Gate it here too: no write while F7 is off or the
+  // deployment is frozen — the recipient sees "try again", nothing recorded.
+  if (!env.features.f7Broadcasts || env.flags.readOnlyMode) {
+    logger.warn(
+      { requestId, channel, f7: env.features.f7Broadcasts, readOnly: env.flags.readOnlyMode },
+      'unsubscribe_refused_feature_off_or_read_only',
+    );
+    recordTtfb(null);
+    return {
+      outcome: { state: 'error' },
+      locale: resolveLocale(undefined, queryLang, acceptLanguage, null),
+    };
+  }
+
   if (channel === 'page_get') {
     const retryAfter = await rateLimitRetryAfter(`unsubscribe:${sourceIp}`, requestId);
     if (retryAfter !== null) return rateLimited(retryAfter, undefined, true);

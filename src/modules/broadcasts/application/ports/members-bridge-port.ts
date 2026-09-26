@@ -83,7 +83,7 @@ export type MarkAckError =
   // Round 5 CRIT — surfaces F3 repo failures (RLS denial, Neon outage,
   // statement timeout) so the route can return 500 + logger.error
   // instead of silently 200-OK with `wasNew:false` (GDPR Art. 7 risk:
-  // banner dismisses but consent column never written).
+  // banner dismisses but acknowledgement column never written).
   | { readonly kind: 'mark_ack.repo_error'; readonly cause: unknown };
 
 /**
@@ -231,7 +231,7 @@ export interface MembersBridgePort {
    * Q15 — member CTA "Acknowledge" on the GDPR Art. 7 banner. Emits
    * `member_acknowledged_broadcasts_terms` audit at the use-case site.
    * `locale` is recorded for compliance audit ("which language was
-   * the consent shown in?").
+   * the terms shown in?").
    */
   markBroadcastsAcknowledged(
     tenantCtx: TenantContext,

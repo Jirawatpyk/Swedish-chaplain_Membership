@@ -6519,7 +6519,7 @@
       "banner": {
         "acknowledgement": {
           "title": "Before you send E-Blasts",
-          "body": "E-Blasts go to contacts of member companies who have not opted out of marketing emails. Every E-Blast includes an unsubscribe link, and opt-outs are applied automatically. Keep your message relevant to members and don't include other people's personal data.",
+          "body": "E-Blasts go to contacts at member companies and to recent event attendees, except anyone who has opted out of marketing emails. Every E-Blast includes an unsubscribe link, and opt-outs are applied automatically. Keep your message relevant to members and don't include other people's personal data.",
           "privacyPolicyLink": "Read the privacy policy",
           "acknowledge": "I acknowledge",
           "remindLater": "Remind me later",
@@ -7865,7 +7865,7 @@
       "success": {
         "heading": "Unsubscribed",
         "body": "{tenantDisplayName} will no longer send marketing E-Blasts to this email address. This applies to all E-Blasts from {tenantDisplayName}, including those sent on behalf of other members.",
-        "transactional": "You will still receive service emails about your organisation's membership, such as invoices, receipts, renewal reminders and password resets.",
+        "transactional": "This does not affect service emails. If you receive emails about your organisation's membership, such as invoices, receipts, renewal reminders or password resets, they will continue.",
         "contact": "If you unsubscribed by mistake, please contact <email></email>."
       },
       "already": {
@@ -7876,17 +7876,18 @@
       "invalid": {
         "heading": "Link is invalid",
         "body": "This unsubscribe link is invalid. This can happen if the link was copied incorrectly, or if you are clicking an older email.",
-        "contact": "Please email us at <email></email> and we will remove this address from all {tenantDisplayName} E-Blasts within 2 business days. This is free of charge."
+        "contact": "Please email us at <email></email> and we will remove your address from all {tenantDisplayName} E-Blasts within 2 business days. This is free of charge."
       },
       "error": {
         "heading": "Temporary error",
         "body": "We could not record your unsubscribe right now due to a temporary system error. Your unsubscribe was NOT recorded — please try the link again in a few minutes.",
-        "contact": "If the problem persists, email us at <email></email> and we will remove this address from all {tenantDisplayName} E-Blasts within 2 business days. This is free of charge.",
+        "contact": "If the problem persists, email us at <email></email> and we will remove your address from all {tenantDisplayName} E-Blasts within 2 business days. This is free of charge.",
         "tryAgain": "Try again"
       },
       "rateLimited": {
         "heading": "Please try again shortly",
-        "body": "Too many requests from your network. Please try the link again in a few minutes."
+        "body": "Too many requests from your network. Please try the link again in a few minutes.",
+        "contact": "If this keeps happening, email us at <email></email> and we will remove your address from all {tenantDisplayName} E-Blasts within 2 business days. This is free of charge."
       }
     }
   },

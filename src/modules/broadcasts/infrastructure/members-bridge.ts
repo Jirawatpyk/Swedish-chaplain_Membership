@@ -388,7 +388,7 @@ export const membersBridge: MembersBridgePort = {
     );
     if (result.ok) {
       // Round 5 code-review CRIT — forward `previouslyNull` so the F7
-      // use-case can distinguish first consent from re-ack and emit
+      // use-case can distinguish first acknowledgement from re-ack and emit
       // exactly one `member_acknowledged_broadcasts_terms` audit row
       // per member. Collapsing both paths to `ok(undefined)` made the
       // 'idempotent' branch in the use-case dead code.

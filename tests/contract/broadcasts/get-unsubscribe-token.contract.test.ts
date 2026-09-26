@@ -596,6 +596,9 @@ describe('GET /unsubscribe/[token] (T136 contract)', () => {
     const tree = JSON.stringify(node);
     expect(tree).toContain('rateLimited.heading');
     expect(tree).toContain('rateLimited.body');
+    // A recipient stuck behind a shared IP still has a free route to object.
+    expect(tree).toContain('rateLimited.contact');
+    expect(tree).toContain('"href":"mailto:privacy@swecham.example"');
     expect(tree).not.toContain('invalid.heading');
     expect(tree).not.toContain('success.heading');
     // Decided before the token is even parsed.

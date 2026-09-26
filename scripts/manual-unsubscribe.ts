@@ -61,6 +61,14 @@ function parseArgs(argv: readonly string[]): Flags {
   if (email === '') usage('--email is required');
   if (operator === '') usage('--operator is required (who is applying this removal)');
   if (ticket === '') usage('--ticket is required (the request reference, for the audit trail)');
+  // Both land in audit rows kept for years: a reference and a staff id only —
+  // never a pasted address or free text (data minimisation).
+  if (!/^[A-Za-z0-9._:-]{1,64}$/.test(ticket)) {
+    usage('--ticket must be a reference like PRIV-123 (letters, digits, . _ : -; max 64)');
+  }
+  if (!/^[A-Za-z0-9._%+-]{1,64}(@[A-Za-z0-9.-]{1,190})?$/.test(operator)) {
+    usage('--operator must be a staff email or staff id');
+  }
   return { email, operator, ticket, confirm };
 }
 
@@ -101,6 +109,13 @@ async function main(): Promise<number> {
     '@/modules/broadcasts/application/use-cases/unsubscribe-recipient'
   );
   const { env } = await import('@/lib/env');
+
+  // `marketing_unsubscribes.tenant_id` has no FK: a mistyped slug would file
+  // the opt-out under a tenant that does not exist while the real one keeps
+  // emailing the person. Only this deployment's tenant is accepted.
+  if (slug !== env.tenant.slug) {
+    usage(`TENANT_SLUG=${slug} does not match this deployment's tenant (${env.tenant.slug})`);
+  }
 
   const dbHost = (() => {
     try {

@@ -147,7 +147,7 @@ describe('Resend hosted-page unsubscribe mirror (contact.updated)', () => {
       audienceIds: ['seg-unrelated', audienceId],
       requestId: randomUUID(),
     });
-    expect(r).toEqual({ kind: 'applied', tenantId: tenant.ctx.slug });
+    expect(r).toEqual({ kind: 'applied', tenantId: tenant.ctx.slug, attributed: true });
 
     const stored = await rows();
     expect(stored).toHaveLength(1);
@@ -169,18 +169,35 @@ describe('Resend hosted-page unsubscribe mirror (contact.updated)', () => {
       audienceIds: [audienceId],
       requestId: randomUUID(),
     });
-    expect(r).toEqual({ kind: 'already', tenantId: tenant.ctx.slug });
+    expect(r).toEqual({ kind: 'already', tenantId: tenant.ctx.slug, attributed: true });
     expect(await rows()).toHaveLength(1);
     expect(await audits('broadcast_unsubscribed')).toHaveLength(1);
   });
 
-  it('an audience no broadcast owns is reported, not guessed', async () => {
-    const r = await applyResendHostedUnsubscribe({
-      email,
-      audienceIds: [`aud-${randomUUID()}`],
-      requestId: randomUUID(),
-    });
-    expect(r).toEqual({ kind: 'unknown_audience' });
+  // cleanup-audiences reaps each audience an hour after send, so a late click
+  // arrives with an id no broadcast owns. The objection must still land —
+  // under this (single-tenant) deployment's tenant, with no source broadcast.
+  it('an audience no broadcast owns is filed under the deployment tenant, not dropped', async () => {
+    const lateEmail = `mirror-late-${randomUUID().slice(0, 8)}@example.com`;
+    const { env } = await import('@/lib/env');
+    try {
+      const r = await applyResendHostedUnsubscribe({
+        email: lateEmail,
+        audienceIds: [`aud-${randomUUID()}`],
+        requestId: randomUUID(),
+      });
+      expect(r).toEqual({ kind: 'applied', tenantId: env.tenant.slug, attributed: false });
+      const [row] = (await db.execute(sql`
+        SELECT source_broadcast_id FROM marketing_unsubscribes
+         WHERE tenant_id = ${env.tenant.slug} AND email_lower = ${lateEmail}
+      `)) as unknown as Array<{ source_broadcast_id: string | null }>;
+      expect(row).toBeDefined();
+      expect(row!.source_broadcast_id).toBeNull();
+    } finally {
+      await db.execute(sql`
+        DELETE FROM marketing_unsubscribes WHERE email_lower = ${lateEmail}
+      `);
+    }
   });
 
   // Security review T1: the opt-out lands ONLY in the tenant that owns the
@@ -194,7 +211,7 @@ describe('Resend hosted-page unsubscribe mirror (contact.updated)', () => {
         audienceIds: [audienceId],
         requestId: randomUUID(),
       });
-      expect(r).toEqual({ kind: 'applied', tenantId: tenant.ctx.slug });
+      expect(r).toEqual({ kind: 'applied', tenantId: tenant.ctx.slug, attributed: true });
       const inOther = await runInTenant(other.ctx, (tx) =>
         tx
           .select()

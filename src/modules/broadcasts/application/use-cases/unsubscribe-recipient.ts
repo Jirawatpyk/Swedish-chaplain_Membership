@@ -31,7 +31,7 @@
  *                         one-click header, mirrored from `contact.updated`.
  *                         No token (Resend never sees ours).
  *   - `manual`          — staff removal after the recipient emailed the
- *                         privacy contact (`scripts/ops/manual-unsubscribe.ts`).
+ *                         privacy contact (`scripts/manual-unsubscribe.ts`).
  *                         No token, usually no broadcast.
  *
  * Pure Application — only Domain types + ports.

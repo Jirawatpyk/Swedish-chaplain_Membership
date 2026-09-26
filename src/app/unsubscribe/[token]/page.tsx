@@ -272,6 +272,9 @@ export default async function UnsubscribePage({
             <p className="mb-3 text-base text-foreground">
               {t('rateLimited.body')}
             </p>
+            <p className="text-sm text-muted-foreground">
+              {t.rich('rateLimited.contact', { email: mailtoLink, tenantDisplayName })}
+            </p>
           </>
         ) : (
           <>

@@ -44,7 +44,7 @@ export type AcknowledgeBroadcastsTermsError =
       readonly memberId: MemberId;
     }
   // Round 5 CRIT — F3 repo failure surfaces here so the route can
-  // 500 + logger.error instead of silently 200-OK with a lost consent.
+  // 500 + logger.error instead of silently 200-OK with a lost acknowledgement.
   | {
       readonly kind: 'ack.repo_error';
       readonly cause: unknown;
@@ -66,7 +66,7 @@ export interface AcknowledgeBroadcastsTermsInput {
 
 /**
  * Discriminated union — the `acknowledgedAt` on the `'fresh'` variant
- * is the truthful consent timestamp; the `'idempotent'` variant has no
+ * is the truthful acknowledgement timestamp; the `'idempotent'` variant has no
  * timestamp because the F3 bridge does not currently return the
  * persisted column on the already-acknowledged path. Callers that
  * need the original timestamp must read it separately from the F3
@@ -125,11 +125,11 @@ export async function acknowledgeBroadcastsTerms(
   // `previouslyNull` from the bridge so a re-ack does NOT write a
   // duplicate `member_acknowledged_broadcasts_terms` row with a
   // wrong `acknowledgedAt: clock.now()` payload (GDPR Art. 7 first-
-  // consent anchor must remain the legal record).
+  // acknowledgement anchor must remain the record).
   if (!result.value.previouslyNull) {
     // Idempotent re-ack — F3 column already set on a prior request.
     // No `acknowledgedAt` field because returning `clock.now()` would
-    // misrepresent the persisted consent timestamp; the discriminant
+    // misrepresent the persisted acknowledgement timestamp; the discriminant
     // tells the caller "this was a no-op; the original timestamp lives
     // on the F3 member record".
     return ok({ kind: 'idempotent' });
@@ -140,11 +140,11 @@ export async function acknowledgeBroadcastsTerms(
   // Q15 audit emit (the F3 column change is the legal source of truth;
   // see header doc for the atomicity tradeoff). tx=null → adapter writes
   // on auto-commit. Routed through `safeAuditEmit` (NOT a bespoke try/catch)
-  // so a lost GDPR-consent audit row increments
+  // so a lost acknowledgement audit row increments
   // `broadcasts_audit_emit_failed_total{event_type=member_acknowledged_broadcasts_terms}`
   // and logs the canonical `broadcasts.audit.emit_failed` key — this is what
   // fires Alert F7-A1 (observability.md) so on-call is paged to run the manual
-  // recovery in docs/runbooks/audit-emit-loss.md. The consent itself is
+  // recovery in docs/runbooks/audit-emit-loss.md. The acknowledgement itself is
   // already-and-permanently recorded in the F3 column. extraContext carries the
   // forensic fields needed to reconstruct the missing row.
   await safeAuditEmit(
@@ -159,7 +159,7 @@ export async function acknowledgeBroadcastsTerms(
       payload: {
         memberId: input.memberId,
         // Snake `member_id` → a member deliberately accepting the broadcasts
-        // consent banner is genuine engagement: bumps members.last_activity_at
+        // acknowledgement banner is genuine engagement: bumps members.last_activity_at
         // (F3 trigger, migration 0009) + lists in the member timeline. This is
         // a member-portal-only action (no admin_proxy path), so unconditional.
         // camelCase `memberId` kept for forensic/back-compat.

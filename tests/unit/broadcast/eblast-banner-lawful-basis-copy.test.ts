@@ -25,11 +25,13 @@ describe('E-Blast compose banner — lawful-basis copy', () => {
     });
   }
 
-  it('en: states the real rules — opt-outs honoured, unsubscribe link in every E-Blast', () => {
+  // Recipients include recent event attendees (`event_attendees_last_90d`),
+  // not only member-company contacts — the banner must say so.
+  it('en: states the real rules — who receives it, opt-outs honoured, unsubscribe link in every E-Blast', () => {
     const copy = en.portal.broadcasts.banner.acknowledgement;
     expect(copy.title).toBe('Before you send E-Blasts');
     expect(copy.body).toBe(
-      'E-Blasts go to contacts of member companies who have not opted out of marketing emails. ' +
+      'E-Blasts go to contacts at member companies and to recent event attendees, except anyone who has opted out of marketing emails. ' +
         'Every E-Blast includes an unsubscribe link, and opt-outs are applied automatically. ' +
         "Keep your message relevant to members and don't include other people's personal data.",
     );

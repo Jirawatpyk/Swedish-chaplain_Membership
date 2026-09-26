@@ -219,6 +219,48 @@ async function auditUnknownResendBroadcast(
 }
 
 /**
+ * A recipient objected on Resend's side but the address is unusable. The
+ * route answers 200 (a retry cannot fix it) and leaves a
+ * forensic row so ops can apply it by hand
+ * (docs/runbooks/broadcast-manual-unsubscribe.md). The address is stored
+ * only as the same tenant-scoped hash the use-case audits use
+ * (`sha256(tenant:email)`) — never raw, never an unsalted plain hash.
+ */
+async function auditUnattributedOptOut(
+  reason: 'contact_updated_invalid_email',
+  email: string,
+  audienceIds: ReadonlyArray<string>,
+  requestId: string,
+  correlationId: string,
+): Promise<void> {
+  logger.warn(
+    { reason, audienceIds, requestId, correlationId },
+    'broadcasts.webhook.resend_hosted_unsubscribe_unattributed',
+  );
+  try {
+    await f7AuditAdapter.emit(null, {
+      eventType: 'broadcast_webhook_signature_rejected',
+      actorUserId: 'system:webhook',
+      summary: 'Resend hosted-page unsubscribe could not be attributed to a broadcast',
+      payload: {
+        reason,
+        audienceIds: [...audienceIds],
+        emailHash: sha256Hex(`${env.tenant.slug}:${email.trim().toLowerCase()}`),
+        eventType: 'contact.updated',
+        correlationId,
+      },
+      tenantId: null,
+      requestId,
+    });
+  } catch (e) {
+    logger.error(
+      { err: e instanceof Error ? e.constructor.name : 'unknown', requestId, correlationId },
+      'broadcasts.webhook.audit_unattributed_unsubscribe_failed',
+    );
+  }
+}
+
+/**
  * Step 4b — Resend `contact.updated`. Returns `null` when the body is not a
  * `contact.updated` (the caller keeps its unknown-type ack). The Svix
  * signature is re-checked by `constructContactEvent` — cheap, and it keeps
@@ -264,47 +306,30 @@ async function handleContactUpdated(
   switch (outcome.kind) {
     case 'applied':
     case 'already':
-      logger.info(
-        { outcome: outcome.kind, tenantId: outcome.tenantId, requestId, correlationId },
+      // `attributed: false` → no broadcast owns the audience (reaped after
+      // send, or no id at all); filed under this deployment's tenant.
+      (outcome.attributed ? logger.info : logger.warn).call(
+        logger,
+        {
+          outcome: outcome.kind,
+          attributed: outcome.attributed,
+          audienceIds: event.data.audienceIds,
+          tenantId: outcome.tenantId,
+          requestId,
+          correlationId,
+        },
         'broadcasts.webhook.resend_hosted_unsubscribe_mirrored',
       );
       return jsonOk(correlationId);
-    case 'unknown_audience':
-    case 'invalid_email': {
-      // A recipient objected and we could not attribute it to a tenant.
-      // 200 (a retry cannot fix it) + a forensic row so ops can apply it by
-      // hand (docs/runbooks/broadcast-manual-unsubscribe.md). The address
-      // is hashed — never stored raw in a NULL-tenant row.
-      logger.warn(
-        { reason: outcome.kind, audienceIds: event.data.audienceIds, requestId, correlationId },
-        'broadcasts.webhook.resend_hosted_unsubscribe_unattributed',
+    case 'invalid_email':
+      await auditUnattributedOptOut(
+        'contact_updated_invalid_email',
+        event.data.email,
+        event.data.audienceIds,
+        requestId,
+        correlationId,
       );
-      try {
-        await f7AuditAdapter.emit(null, {
-          eventType: 'broadcast_webhook_signature_rejected',
-          actorUserId: 'system:webhook',
-          summary: 'Resend hosted-page unsubscribe could not be attributed to a broadcast',
-          payload: {
-            reason:
-              outcome.kind === 'unknown_audience'
-                ? 'unknown_resend_audience_id'
-                : 'contact_updated_invalid_email',
-            audienceIds: [...event.data.audienceIds],
-            emailHash: sha256Hex(event.data.email.trim().toLowerCase()),
-            eventType: 'contact.updated',
-            correlationId,
-          },
-          tenantId: null,
-          requestId,
-        });
-      } catch (e) {
-        logger.error(
-          { err: e instanceof Error ? e.constructor.name : 'unknown', requestId, correlationId },
-          'broadcasts.webhook.audit_unattributed_unsubscribe_failed',
-        );
-      }
       return jsonOk(correlationId);
-    }
     case 'failed':
       return jsonInternalError('dispatch_failed', correlationId);
   }

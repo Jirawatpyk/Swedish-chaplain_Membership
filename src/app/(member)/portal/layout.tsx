@@ -129,7 +129,7 @@ export default async function MemberLayout({ children }: { children: ReactNode }
           </div>
         </div>
       </header>
-      {/* F7 Q15 — GDPR Art. 7 demonstrable consent banner.
+      {/* F7 Q15 — E-Blast sending-terms acknowledgement banner (not consent).
           Server component returns null when ineligible (member already
           acknowledged, plan has no eblast quota, or feature flag off).
           U36 — mounted BETWEEN the header and <main>, not inside it, so

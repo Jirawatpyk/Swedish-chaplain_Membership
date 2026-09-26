@@ -369,10 +369,12 @@ export const resendBroadcastsWebhookVerifier: WebhookVerifierPort = {
         ? data.segment_ids.filter((v): v is string => typeof v === 'string')
         : []),
     ].filter((v) => v.length > 0);
-    if (email.length === 0 || audienceIds.length === 0) {
+    // No audience/segment id is still an objection — the route audits it
+    // for manual follow-up. Only a missing address is unusable.
+    if (email.length === 0) {
       throw new WebhookSignatureError(
         'malformed',
-        'contact.updated payload missing email or audience/segment id',
+        'contact.updated payload missing email',
       );
     }
     const createdAtUnixSeconds = parsed.created_at

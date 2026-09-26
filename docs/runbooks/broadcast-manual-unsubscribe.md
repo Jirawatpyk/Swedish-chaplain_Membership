@@ -27,6 +27,17 @@ Every path goes through the same `unsubscribeRecipient` use-case, so the row and
 
 The unsubscribe page promises: *"email us at <privacy inbox> and we will remove this address from all {tenant} E-Blasts within **2 business days**. This is free of charge."*
 
+**Who does what** — the script needs production database credentials, which the office does not hold:
+
+| Step | Owner | Deadline |
+|---|---|---|
+| Log the request, acknowledge receipt | Chamber office (backup: DPO) | Same business day |
+| Hand the ticket to platform on-call | Chamber office | By the next business day |
+| Apply the removal (steps 2–3) | Platform on-call (backup: second on-call) | Within 2 business days of receipt |
+| Confirm to the person, close the ticket | Chamber office | Within 2 business days of receipt |
+
+A weekly check of open privacy tickets (office + DPO) catches anything stuck. Keep privacy tickets for the same period as the objection evidence they support (at least as long as the ticket system's standard retention; the `marketing_unsubscribes` row and its audit events are the durable record).
+
 1. **Log the request** in the office ticket system on the day it arrives (ticket ref, date received, the address). Do not ask the person to justify the objection or to log in — an objection to marketing needs no reason (GDPR Art. 21(3)).
 2. **Dry run** against production (read-only; shows current status):
    ```bash
@@ -35,9 +46,9 @@ The unsubscribe page promises: *"email us at <privacy inbox> and we will remove 
      --operator=you@swecham.com --ticket=PRIV-123
    ```
    If it prints `ALREADY opted out`, skip to step 4.
-3. **Apply** — same command plus `--confirm`. This writes the `marketing_unsubscribes` row (reason `recipient_initiated`) and both audit events with `channel: 'manual'`, `operator`, and the ticket in `reason_text`. **Never** hand-INSERT the row: a raw INSERT writes no audit.
+3. **Apply** — same command plus `--confirm`. `--ticket` must be a reference (e.g. `PRIV-123`) and `--operator` a staff email or id — never paste the requester's message or address there; both are stored in audit rows. This writes the `marketing_unsubscribes` row (reason `recipient_initiated`) and both audit events with `channel: 'manual'`, `operator`, and the ticket in `reason_text`. **Never** hand-INSERT the row: a raw INSERT writes no audit.
 4. **Reply** to the person confirming removal (no charge, effective for all E-Blasts from the tenant; service emails such as invoices, receipts, renewal reminders and password resets continue). Close the ticket within **2 business days** of receipt.
-5. If the person asks to be **re-subscribed** later, that is a new, explicit request — raise it with the DPO; do not delete suppression rows ad hoc.
+5. If the person asks to be **re-subscribed** later, that is a new, explicit request — raise it with the DPO; do not delete suppression rows ad hoc. There is no audited re-subscribe tool yet (follow-up: a DPO-approved `--resubscribe` mode that writes its own audit event).
 
 ## 2. Resend `contact.updated` must be enabled (one-time, and after any webhook change)
 
@@ -52,9 +63,11 @@ Opt-outs on Resend's hosted page and via Resend's List-Unsubscribe header only f
    ```
    and check an audit row `broadcast_unsubscribed` with `payload->>'channel' = 'resend_hosted'`.
 
-### Unattributed Resend opt-outs
+### Opt-outs Resend cannot attribute to a broadcast
 
-A `contact.updated` whose audience matches no broadcast (e.g. an audience created outside the app) is acknowledged and logged as `broadcasts.webhook.resend_hosted_unsubscribe_unattributed`, with a NULL-tenant audit row `broadcast_webhook_signature_rejected` / `reason: 'unknown_resend_audience_id'` (address stored only as `emailHash`). The recipient still objected: find the address in the Resend dashboard (contact marked unsubscribed) and apply it with **§ 1** (`--ticket=resend-unattributed-<date>`).
+`cleanup-audiences` deletes each broadcast's Resend audience about an hour after send, so a later click can arrive with an audience/segment id no broadcast owns — or with none. Those opt-outs are still recorded, under this deployment's tenant with no source broadcast (log `broadcasts.webhook.resend_hosted_unsubscribe_mirrored` with `attributed: false`). Only an unusable address is not recorded: it leaves a NULL-tenant audit row `broadcast_webhook_signature_rejected` / `reason: 'contact_updated_invalid_email'` (address stored only as a tenant-scoped hash) — find the contact in the Resend dashboard and apply it with **§ 1** (`--ticket=resend-invalid-<date>`).
+
+**Verify once** (and after Resend API changes): click the unsubscribe link in an E-Blast **older than one hour** (its audience already reaped), then check § 2's SQL shows the row, and note the `contact.updated` payload Resend actually sent (Resend dashboard → Webhooks → event) in this runbook.
 
 ## 3. Verify List-Unsubscribe on a real broadcast (after any Resend/template change)
 

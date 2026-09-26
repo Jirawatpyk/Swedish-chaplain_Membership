@@ -26,7 +26,7 @@ Same verify → `unsubscribeRecipient` pipeline as GET (`src/lib/broadcasts-publ
 
 Today no E-Blast carries a header pointing here: the Resend Broadcasts API has no custom-headers field, so broadcasts carry Resend's own List-Unsubscribe headers, and those opt-outs arrive as `contact.updated` and are mirrored tenant-wide (channel `resend_hosted`). This POST is ready for a per-recipient send path.
 
-**Channels** (recorded as `payload.channel` on `broadcast_unsubscribed` + `broadcast_suppression_applied`): `page_get` · `one_click_post` · `resend_hosted` (Resend hosted page / Resend List-Unsubscribe, via `contact.updated`) · `manual` (staff, `scripts/ops/manual-unsubscribe.ts`). All four write the same tenant + email row.
+**Channels** (recorded as `payload.channel` on `broadcast_unsubscribed` + `broadcast_suppression_applied`): `page_get` · `one_click_post` · `resend_hosted` (Resend hosted page / Resend List-Unsubscribe, via `contact.updated`) · `manual` (staff, `scripts/manual-unsubscribe.ts`). All four write the same tenant + email row.
 
 ---
 

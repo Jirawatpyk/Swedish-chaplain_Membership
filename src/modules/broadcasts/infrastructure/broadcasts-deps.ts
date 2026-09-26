@@ -802,9 +802,12 @@ export function makeUnsubscribeRecipientDeps(
 export { unsubscribeTokenSigner };
 
 export type ResendHostedUnsubscribeOutcome =
-  | { readonly kind: 'applied'; readonly tenantId: string }
-  | { readonly kind: 'already'; readonly tenantId: string }
-  | { readonly kind: 'unknown_audience' }
+  | {
+      readonly kind: 'applied' | 'already';
+      readonly tenantId: string;
+      /** false → no broadcast owns the audience; filed under this deployment's tenant. */
+      readonly attributed: boolean;
+    }
   | { readonly kind: 'invalid_email' }
   | { readonly kind: 'failed' };
 
@@ -816,6 +819,15 @@ export type ResendHostedUnsubscribeOutcome =
  * `resend_hosted`). Without this the objection lived only on a
  * per-broadcast Resend audience and the next E-Blast could reach the
  * person again (GDPR Art. 21(3) / PDPA §32).
+ *
+ * Attribution: the contact's audience/segment id → `broadcasts.resend_audience_id`
+ * → broadcast + tenant. When nothing matches (the audience was reaped by
+ * `cleanup-audiences` an hour after send, or Resend sent segment ids we
+ * never created, or none at all) the opt-out is filed under THIS
+ * deployment's tenant with no source broadcast: the deployment is
+ * single-tenant and the Resend account + webhook secret belong to it, so
+ * the objection can only be about this tenant's E-Blasts. Over-suppressing
+ * protects the data subject; dropping it would not.
  *
  * `failed` → the route answers 5xx so Resend retries; never throws.
  */
@@ -837,19 +849,20 @@ export async function applyResendHostedUnsubscribe(input: {
     );
     return { kind: 'failed' };
   }
-  if (owner === null) return { kind: 'unknown_audience' };
+  const attributed = owner !== null;
+  const tenantId = owner?.tenantId ?? env.tenant.slug;
 
   try {
     // Display name is only echoed back for a confirmation page — none here.
     const deps = makeUnsubscribeRecipientDeps(
-      owner.tenantId,
-      owner.tenantId,
+      tenantId,
+      tenantId,
       env.broadcasts.privacyContactEmail,
     );
-    const result = await runInTenant(asTenantContext(owner.tenantId), async () =>
+    const result = await runInTenant(asTenantContext(tenantId), async () =>
       unsubscribeRecipient(deps, {
-        tenantId: owner.tenantId,
-        broadcastId: asBroadcastId(owner.broadcastId),
+        tenantId: asTenantContext(tenantId).slug,
+        broadcastId: owner === null ? null : asBroadcastId(owner.broadcastId),
         emailLower: email.value,
         tokenPlaintext: null,
         channel: 'resend_hosted',
@@ -866,7 +879,8 @@ export async function applyResendHostedUnsubscribe(input: {
     }
     return {
       kind: result.value.wasNew ? 'applied' : 'already',
-      tenantId: owner.tenantId,
+      tenantId,
+      attributed,
     };
   } catch (cause) {
     logger.error(
