@@ -13,8 +13,13 @@
  */
 import type { Page } from '@playwright/test';
 import { fillField } from '../fixtures';
+import { signInLandingSettled } from './sign-in-landing';
 
-async function signInStaff(page: Page, email: string, password: string): Promise<void> {
+/**
+ * The staff sign-in dance, shared by the admin / super-admin / manager /
+ * marketing helpers so a fix to it lands once.
+ */
+export async function signInStaff(page: Page, email: string, password: string): Promise<void> {
   await page.goto('/admin/sign-in');
   await fillField(page.getByLabel(/email/i), email);
   // R9.B1 / F1 PasswordInput regression — the older `getByLabel`
@@ -24,6 +29,8 @@ async function signInStaff(page: Page, email: string, password: string): Promise
   // strict mode rejected the ambiguous match. The role+name
   // selector below disambiguates to the textbox only.
   await fillField(page.getByRole('textbox', { name: /^password$/i }), password);
+  // See sign-in-landing.ts — WebKit fails the next goto without this.
+  const landingSettled = signInLandingSettled(page, '/admin/sign-in');
   await page.getByRole('button', { name: /sign in/i }).click();
   // R9.B1 follow-up — bumped 30s→60s to absorb Turbopack cold-compile
   // of `/admin` route on first test in a worker. Without the bump the
@@ -31,6 +38,7 @@ async function signInStaff(page: Page, email: string, password: string): Promise
   // takes >30s to compile + serve → waitForURL times out before the
   // navigation completes.
   await page.waitForURL('**/admin', { timeout: 60_000 });
+  await landingSettled;
 }
 
 export async function signInAsAdmin(page: Page): Promise<void> {

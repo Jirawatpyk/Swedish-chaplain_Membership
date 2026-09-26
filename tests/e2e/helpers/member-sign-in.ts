@@ -18,6 +18,7 @@
  */
 import type { Page } from '@playwright/test';
 import { expect } from '@playwright/test';
+import { signInLandingSettled } from './sign-in-landing';
 
 export async function signInAsMember(page: Page): Promise<void> {
   const email = process.env.E2E_MEMBER_EMAIL;
@@ -36,6 +37,8 @@ export async function signInAsMember(page: Page): Promise<void> {
   await passwordInput.click();
   await passwordInput.fill(password);
   await expect(passwordInput).toHaveValue(password);
+  // See sign-in-landing.ts — WebKit fails the next goto without this.
+  const landingSettled = signInLandingSettled(page, '/portal/sign-in');
   await page.getByRole('button', { name: /sign in/i }).click();
   await page.waitForURL(
     (u) => {
@@ -44,4 +47,5 @@ export async function signInAsMember(page: Page): Promise<void> {
     },
     { timeout: 15_000 },
   );
+  await landingSettled;
 }

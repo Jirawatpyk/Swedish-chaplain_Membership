@@ -12,7 +12,7 @@
  * `E2E_RBAC_V2_ON=true`.
  */
 import type { Page } from '@playwright/test';
-import { fillField } from '../fixtures';
+import { signInStaff } from './admin-session';
 
 export async function signInAsMarketing(page: Page): Promise<void> {
   const email = process.env.E2E_MARKETING_EMAIL;
@@ -24,13 +24,5 @@ export async function signInAsMarketing(page: Page): Promise<void> {
         'test with test.skip first.',
     );
   }
-  await page.goto('/admin/sign-in');
-  await fillField(page.getByLabel(/email/i), email);
-  // role+name selector, not getByLabel: the PasswordInput primitive renders a
-  // "Show password" toggle whose aria-label also matches /password/i, which
-  // makes a label lookup ambiguous under strict mode (see admin-session.ts).
-  await fillField(page.getByRole('textbox', { name: /^password$/i }), password);
-  await page.getByRole('button', { name: /sign in/i }).click();
-  // 60s: first hit in a worker pays the Turbopack cold compile of /admin.
-  await page.waitForURL('**/admin', { timeout: 60_000 });
+  await signInStaff(page, email, password);
 }

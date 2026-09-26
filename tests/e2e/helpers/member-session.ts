@@ -51,6 +51,7 @@
 import type { Page } from '@playwright/test';
 import { test as baseTest, expect } from '../fixtures';
 import { fillField } from '../fixtures';
+import { signInLandingSettled } from './sign-in-landing';
 
 // ---------------------------------------------------------------------------
 // Exports
@@ -83,8 +84,11 @@ export async function signInAsMember(page: Page): Promise<void> {
   // full rationale. The older `getByLabel` pattern resolved to BOTH
   // the password input AND the "Show password" toggle button.
   await fillField(page.getByRole('textbox', { name: /^password$/i }), password);
+  // See sign-in-landing.ts — WebKit fails the next goto without this.
+  const landingSettled = signInLandingSettled(page, '/portal/sign-in');
   await page.getByRole('button', { name: /sign in/i }).click();
   await page.waitForURL('**/portal', { timeout: 30_000 });
+  await landingSettled;
 }
 
 /**
