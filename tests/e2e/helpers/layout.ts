@@ -7,6 +7,7 @@
  */
 import { expect, type Page } from '@playwright/test';
 import { fillField } from '../fixtures';
+import { signInLandingSettled } from './sign-in-landing';
 
 /**
  * Sign in at the given form path using email + password, then wait
@@ -34,11 +35,14 @@ export async function signInViaForm(
   await fillField(page.getByLabel(/email/i), email);
   // R9.B1 / F1 PasswordInput regression — see admin-session.ts:27.
   await fillField(page.getByRole('textbox', { name: /^password$/i }), password);
+  // See sign-in-landing.ts — WebKit fails the next goto without this.
+  const landingSettled = signInLandingSettled(page, signInPath);
   await page.getByRole('button', { name: /sign in/i }).click();
   await page.waitForURL((u) => {
     const p = new URL(u).pathname;
     return landingPattern.test(p) && !p.startsWith(signInPath);
   });
+  await landingSettled;
 }
 
 /**

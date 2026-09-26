@@ -11,7 +11,7 @@
  * inlining the sign-in dance.
  */
 import type { Page } from '@playwright/test';
-import { fillField } from '../fixtures';
+import { signInStaff } from './admin-session';
 
 export async function signInAsManager(page: Page): Promise<void> {
   const email = process.env.E2E_MANAGER_EMAIL;
@@ -21,10 +21,5 @@ export async function signInAsManager(page: Page): Promise<void> {
       'signInAsManager: E2E_MANAGER_EMAIL or E2E_MANAGER_PASSWORD missing — gate the calling test with test.skip first.',
     );
   }
-  await page.goto('/admin/sign-in');
-  await fillField(page.getByLabel(/email/i), email);
-  // R9.B1 / F1 PasswordInput regression — see admin-session.ts:27.
-  await fillField(page.getByRole('textbox', { name: /^password$/i }), password);
-  await page.getByRole('button', { name: /sign in/i }).click();
-  await page.waitForURL('**/admin', { timeout: 30_000 });
+  await signInStaff(page, email, password);
 }
