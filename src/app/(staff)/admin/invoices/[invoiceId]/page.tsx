@@ -802,6 +802,7 @@ export default async function InvoiceDetailPage({
             <AutoRefundFailedAlert
               invoiceId={invoice.invoiceId}
               processorRefundId={autoRefundStatus?.processorRefundId ?? null}
+              cause={autoRefundStatus?.cause ?? null}
               runbookUrl={OOB_RUNBOOK_URL}
             />
           )}

@@ -13,6 +13,8 @@
  *     logs but never masks the primary operation error.
  */
 
+import type { StaleInvoiceAutoRefundCause } from './payments-repo';
+
 /**
  * The event types below are the authoritative F5 audit catalogue
  * (data-model.md § 7). Not all are wired to a use-case in Group D —
@@ -267,12 +269,7 @@ export interface F5AuditPayloadByType {
      * `cause` discriminator + the distinct `late-charge-refund-` idempotency
      * namespace keep the scenario unambiguous in audit-log queries.
      */
-    cause:
-      | 'invoice_already_paid'
-      | 'invoice_voided'
-      | 'invoice_credited'
-      | 'invoice_unknown_status'
-      | 'payment_terminal_failed_late_charge';
+    cause: StaleInvoiceAutoRefundCause;
     processor_refund_id: string;
     /**
      * F-2 (money-remediation Task 3) — set ONLY on the `null`-tx forensic

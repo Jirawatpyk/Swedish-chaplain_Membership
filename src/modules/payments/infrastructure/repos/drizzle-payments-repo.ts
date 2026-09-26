@@ -18,7 +18,12 @@
  */
 import { and, asc, eq, isNull, ne, sql } from 'drizzle-orm';
 import { asSatang, type Satang } from '@/lib/money';
-import type { PaymentsRepo, RefundActivityDto } from '../../application/ports/payments-repo';
+import {
+  STALE_INVOICE_AUTO_REFUND_CAUSES,
+  type PaymentsRepo,
+  type RefundActivityDto,
+  type StaleInvoiceAutoRefundCause,
+} from '../../application/ports/payments-repo';
 import {
   asPaymentId,
   PAYMENT_STATUSES,
@@ -576,10 +581,12 @@ export function makeDrizzlePaymentsRepo(tenantId: string): PaymentsRepo {
     ): Promise<{
       readonly processorRefundId: string | null;
       readonly failed: boolean;
+      readonly cause: StaleInvoiceAutoRefundCause | null;
     } | null> {
       return runInTenant(ctx, async (tx) => {
         const result = await tx.execute(sql`
           SELECT init.processor_refund_id AS processor_refund_id,
+                 init.cause AS cause,
                  (EXISTS (
                    SELECT 1
                      FROM audit_log fail
@@ -610,7 +617,17 @@ export function makeDrizzlePaymentsRepo(tenantId: string): PaymentsRepo {
               -- the initiation marker whose refund the admin alert + CF-2
               -- resolve action act on. Keying on only the first left a failed
               -- concurrent-manual-mark auto-refund off the admin alert.
-              SELECT payload->>'processor_refund_id' AS processor_refund_id
+              -- The refund-start cause: the payload's 'cause' key, falling
+              -- back to invoice_already_paid for a concurrent-manual-mark row
+              -- without one (that event type is emitted only for that cause).
+              -- invoice_already_paid = the online payment DUPLICATED a payment
+              -- already on the invoice → the admin alert says "no credit note".
+              SELECT payload->>'processor_refund_id' AS processor_refund_id,
+                     COALESCE(
+                       payload->>'cause',
+                       CASE WHEN event_type = 'payment_auto_refunded_concurrent_manual_mark'
+                            THEN 'invoice_already_paid' END
+                     ) AS cause
                 FROM audit_log
                WHERE tenant_id = ${tenantId}
                  AND event_type IN (
@@ -625,12 +642,21 @@ export function makeDrizzlePaymentsRepo(tenantId: string): PaymentsRepo {
         const rows = Array.from(
           result as unknown as Iterable<{
             processor_refund_id: string | null;
+            cause: string | null;
             failed: boolean;
           }>,
         );
         if (rows.length === 0) return null;
+        const rawCause = rows[0]!.cause;
         return {
           processorRefundId: rows[0]!.processor_refund_id,
+          // Narrow to the known union; an unrecognised value reads as unknown
+          // (null) so the UI never shows cause-specific guidance on a guess.
+          cause: (STALE_INVOICE_AUTO_REFUND_CAUSES as readonly string[]).includes(
+            rawCause ?? '',
+          )
+            ? (rawCause as StaleInvoiceAutoRefundCause)
+            : null,
           // postgres.js parses `bool` → JS boolean; `=== true` guards
           // against any driver-level surprise (fails toward "not failed"
           // only if the DB genuinely reports false).

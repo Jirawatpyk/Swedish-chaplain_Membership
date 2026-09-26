@@ -10,6 +10,20 @@ import type { PaymentMethod } from '../../domain/value-objects/payment-method';
 import type { RefundStatus } from '../../domain/refund';
 import type { Satang } from '@/lib/money';
 
+/**
+ * The refund-start `cause` of a stale-invoice auto-refund (mirrors the
+ * `payment_auto_refunded_*` audit payload's `cause` union in audit-port.ts).
+ */
+export const STALE_INVOICE_AUTO_REFUND_CAUSES = [
+  'invoice_already_paid',
+  'invoice_voided',
+  'invoice_credited',
+  'invoice_unknown_status',
+  'payment_terminal_failed_late_charge',
+] as const;
+export type StaleInvoiceAutoRefundCause =
+  (typeof STALE_INVOICE_AUTO_REFUND_CAUSES)[number];
+
 export interface PaymentsRepo {
   /**
    * Run `fn` inside a serializable transaction; rollback on throw.
@@ -344,6 +358,17 @@ export interface PaymentsRepo {
   ): Promise<{
     readonly processorRefundId: string | null;
     readonly failed: boolean;
+    /**
+     * Why the auto-refund was started — the refund-start event's `cause`
+     * payload key, falling back to `invoice_already_paid` for a
+     * `payment_auto_refunded_concurrent_manual_mark` row that lacks it (that
+     * event type is only emitted for that cause). `null` when the payload
+     * carries no recognised cause. `invoice_already_paid` means the online
+     * payment DUPLICATED a payment already recorded on the invoice: the admin
+     * alert then says NOT to issue a credit note (it would cut real output VAT
+     * and return no money).
+     */
+    readonly cause: StaleInvoiceAutoRefundCause | null;
   } | null>;
 
   /**

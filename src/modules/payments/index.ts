@@ -94,7 +94,10 @@ export {
   type LoadInvoicePaymentActivityError,
   type LoadInvoicePaymentActivityDeps,
 } from './application/use-cases/load-invoice-payment-activity';
-export type { RefundActivityDto } from './application/ports/payments-repo';
+export type {
+  RefundActivityDto,
+  StaleInvoiceAutoRefundCause,
+} from './application/ports/payments-repo';
 // Track B — F9 reads waived-refund totals through this, never through the repo
 // port (Principle III: insights composes public barrels only).
 export {

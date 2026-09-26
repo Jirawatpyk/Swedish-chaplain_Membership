@@ -56,7 +56,10 @@ A genuine dashboard OOB refund on an **async** payment method (e.g. PromptPay) i
 
 When a stale-invoice auto-refund **fails** at Stripe (`charge.refund.updated(failed|canceled)` — the money did NOT reach the customer while the payment reads `auto_refunded`), `processRefundUpdated` emits the 10-year forensic `auto_refund_failed_needs_manual_reconcile` and pages ops. This is the genuine give-up/failed reconcile item referenced in § 1.1 (it is NOT a marker guard-miss). The admin invoice detail page shows a destructive `AutoRefundFailedAlert` and the member's void banner reads "being reconciled".
 
-- **Reconcile the money out-of-band first** (issue a manual F4 credit note per § 2.3 Option A, or refund via the Stripe Dashboard), exactly as for any stuck refund.
+- **Reconcile the money out-of-band first** — refund the payment via the Stripe Dashboard, or return it by bank transfer. A credit note is **not** a way to return this money: it calls no processor and returns nothing.
+- **Do NOT issue a credit note** (this is where § 2.3 Option A does NOT apply). The auto-refunded online payment was never recorded against the invoice, so there is no sale to reduce. Check the alert's cause (the `cause` key on the `payment_auto_refunded_*` audit row; the admin alert shows it for the duplicate case):
+  - **`invoice_already_paid`** (event `payment_auto_refunded_concurrent_manual_mark`) — the invoice was already **paid in full** (e.g. a bank transfer recorded first); the online payment was a **duplicate**, not a sale. The invoice's §86/4 tax receipt and its output VAT are correct and stay on ภ.พ.30. A §86/10 credit note here would cut **real** output VAT and still return no money. The admin alert says: *"Do not issue a credit note: this invoice was paid in full; the online payment was a duplicate."*
+  - `invoice_voided` / `invoice_credited` / `invoice_unknown_status` / `payment_terminal_failed_late_charge` — same rule: return the money out-of-band only. A voided invoice cannot be credited, a credited one is already reduced, and an unpaid one has no receipt to credit.
 - **Then close the loop** — on `/admin/invoices/<id>`, click **"Mark as reconciled"** on the failed-auto-refund alert (confirm dialog). This appends the append-only `auto_refund_reconciled` event (10y) via `POST /api/refunds/resolve-auto-refund-failure` (admin-only). It is **idempotent** (a second click is a benign no-op) and **refuses** when no failure forensic exists.
 - **Effect**: `findStaleInvoiceAutoRefund.failed` becomes failure-AND-NOT-reconciled, so the admin alert clears and the member banner reverts to the (now-true) "refunded" copy. The forensic + the reconcile event both remain in the append-only audit log for the 10-year trail — the acknowledgement does NOT erase the failure record.
 
@@ -135,7 +138,7 @@ Two options:
 **Option B — Mark refund externally + skip credit note** (rare, only when F4 manual CN is not appropriate):
 - The future post-MVP "Mark as refunded externally" escape hatch (out of scope for F5 MVP) would automate this; until then, document the divergence in the audit log + tenant accountant's books
 
-In 99% of cases, **Option A** is the correct response.
+In 99% of cases, **Option A** is the correct response. **Exception — a failed stale-invoice auto-refund (§ 1.5): never Option A.** That payment was never recorded against the invoice (for cause `invoice_already_paid` it duplicated a payment already on it), so a credit note would reduce real output VAT; return the money out-of-band only.
 
 ---
 
