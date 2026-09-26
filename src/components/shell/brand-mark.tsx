@@ -46,7 +46,7 @@ interface BrandMarkProps {
 const MARK_SRC = '/brand/tscc-mark.svg';
 const MARK_REVERSE_SRC = '/brand/tscc-mark-reverse.svg';
 const GOLD = 'var(--brand-accent)';
-const WORDMARK_FONT = 'var(--font-geist-sans), "Segoe UI", system-ui, sans-serif';
+const WORDMARK_FONT = 'var(--font-sans), "Segoe UI", system-ui, sans-serif';
 
 /** White tile behind the crowns — visible only on the dark theme. */
 function DarkTile(props: {
