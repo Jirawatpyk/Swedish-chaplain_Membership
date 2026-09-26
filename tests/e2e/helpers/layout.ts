@@ -48,13 +48,27 @@ export async function signInViaForm(
 /**
  * Assert the document does not horizontally overflow the viewport.
  * SC-005 contract.
+ *
+ * `scrollWidth <= clientWidth`, not `=== clientWidth`. `globals.css` sets
+ * `html { scrollbar-gutter: stable }` (F8 #24, 2026-05-11), so the browser
+ * reserves the scrollbar column permanently and the document is ~15 px
+ * NARROWER than the viewport: 1425 against 1440 at 1440 px, measured the same
+ * on both sides of the AURA shell migration. The equality form therefore could
+ * not hold on any viewport where the gutter applies, and failed with
+ * "must not horizontally overflow" while reporting an UNDER-wide document —
+ * 17 failures in the 2026-09-26 full-suite run, read at first as an AURA
+ * regression. Overflow is what this guards; a narrower document is the gutter
+ * doing its job.
  */
 export async function assertNoHorizontalScroll(page: Page): Promise<void> {
   const { scrollWidth, clientWidth } = await page.evaluate(() => ({
     scrollWidth: document.documentElement.scrollWidth,
     clientWidth: document.documentElement.clientWidth,
   }));
-  expect(scrollWidth, 'body must not horizontally overflow the viewport').toBe(clientWidth);
+  expect(
+    scrollWidth,
+    'body must not horizontally overflow the viewport',
+  ).toBeLessThanOrEqual(clientWidth);
 }
 
 /**

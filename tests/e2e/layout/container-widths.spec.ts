@@ -19,7 +19,7 @@
  * (`data-variant="detail"`, ~1152px), not `FormContainer` (see
  * `docs/ux-standards.md` §18.2's documented exception row).
  */
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import { expect, test } from '../fixtures';
 import { clearE2ERateLimits } from '../helpers/rate-limit';
 import { assertNoHorizontalScroll, signInViaForm, waitForLayoutContainer } from '../helpers/layout';
@@ -52,6 +52,29 @@ async function signInMember(page: Page): Promise<void> {
   await signInViaForm(page, '/portal/sign-in', MEMBER_EMAIL!, MEMBER_PASSWORD!, /^\/portal(\/|$)/);
 }
 
+/**
+ * The width a full-bleed container can actually occupy: its parent's content
+ * box. `globals.css` sets `html { scrollbar-gutter: stable }` (F8 #24,
+ * 2026-05-11), so the browser reserves ~15 px for the scrollbar column and a
+ * full-bleed container measures 360 px inside a 375 px viewport, not 375 —
+ * and `documentElement.clientWidth` still reports 375, so it is not the right
+ * reference either. Comparing against the raw viewport size failed on every
+ * narrow case (3 of the 17 layout failures in the 2026-09-26 full-suite run)
+ * and would keep failing whatever the shell renders.
+ */
+async function parentContentWidth(container: Locator): Promise<number> {
+  return container.evaluate((el) => {
+    const parent = el.parentElement;
+    if (parent === null) throw new Error('container has no parent element');
+    const cs = getComputedStyle(parent);
+    return (
+      parent.clientWidth -
+      Number.parseFloat(cs.paddingInlineStart) -
+      Number.parseFloat(cs.paddingInlineEnd)
+    );
+  });
+}
+
 test.describe('F5 container widths @layout', () => {
   test.skip(!ADMIN_EMAIL || !ADMIN_PASSWORD, 'E2E_ADMIN_* not set');
 
@@ -74,7 +97,10 @@ test.describe('F5 container widths @layout', () => {
         if (width >= 1280) {
           expect(boxWidth, 'table container caps at 96rem (1536px)').toBeLessThanOrEqual(1536);
         } else {
-          expect(boxWidth, 'table container takes full viewport width at 375px').toBe(width);
+          expect(
+            boxWidth,
+            'table container takes the full content width at 375px',
+          ).toBe(await parentContentWidth(container));
         }
 
         await assertNoHorizontalScroll(page);
@@ -99,7 +125,10 @@ test.describe('F5 container widths @layout', () => {
             expect(boxWidth, 'form container sits near 42rem (≈672px) at desktop').toBeGreaterThanOrEqual(650);
             expect(boxWidth, 'form container sits near 42rem (≈672px) at desktop').toBeLessThanOrEqual(680);
           } else {
-            expect(boxWidth, 'form container takes full viewport width at 375px').toBe(width);
+            expect(
+              boxWidth,
+              'form container takes the full content width at 375px',
+            ).toBe(await parentContentWidth(container));
           }
 
           await assertNoHorizontalScroll(page);
@@ -145,7 +174,10 @@ test.describe('F5 container widths @layout', () => {
             expect(boxWidth).toBeGreaterThanOrEqual(1148);
             expect(boxWidth).toBeLessThanOrEqual(1156);
           } else {
-            expect(boxWidth, 'detail container takes full viewport width at 375px').toBe(width);
+            expect(
+              boxWidth,
+              'detail container takes the full content width at 375px',
+            ).toBe(await parentContentWidth(container));
           }
 
           await assertNoHorizontalScroll(page);
