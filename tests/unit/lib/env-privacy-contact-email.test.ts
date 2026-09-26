@@ -70,7 +70,9 @@ describe('env.ts — TENANT_PRIVACY_CONTACT_EMAIL', () => {
   });
 
   it('production with F7 on refuses to boot without it', async () => {
-    stubEnv({ NODE_ENV: 'production', FEATURE_F7_BROADCASTS: 'true', FEATURE_F6_EVENTCREATE: 'false' });
+    stubEnv({ NODE_ENV: 'production', FEATURE_F7_BROADCASTS: 'true', FEATURE_F6_EVENTCREATE: 'false',
+      // Other production guards must not fire first (a dev shell may export it).
+      E2E_X_TENANT_HEADER_ENABLED: 'false' });
     vi.stubEnv('TENANT_PRIVACY_CONTACT_EMAIL', undefined);
     await expect(import('@/lib/env')).rejects.toThrow(/TENANT_PRIVACY_CONTACT_EMAIL must be set/);
   });
@@ -82,6 +84,8 @@ describe('env.ts — TENANT_PRIVACY_CONTACT_EMAIL', () => {
       NODE_ENV: 'production',
       FEATURE_F7_BROADCASTS: 'true',
       FEATURE_F6_EVENTCREATE: 'false',
+      // Other production guards must not fire first (a dev shell may export it).
+      E2E_X_TENANT_HEADER_ENABLED: 'false',
       TENANT_PRIVACY_CONTACT_EMAIL: 'privacy@swecham.com',
     });
     vi.stubEnv('TENANT_PRIVACY_POLICY_URL', undefined);
@@ -93,6 +97,8 @@ describe('env.ts — TENANT_PRIVACY_CONTACT_EMAIL', () => {
       NODE_ENV: 'production',
       FEATURE_F7_BROADCASTS: 'true',
       FEATURE_F6_EVENTCREATE: 'false',
+      // Other production guards must not fire first (a dev shell may export it).
+      E2E_X_TENANT_HEADER_ENABLED: 'false',
       TENANT_PRIVACY_CONTACT_EMAIL: 'privacy@swecham.com',
       TENANT_PRIVACY_POLICY_URL: 'http://swecham.com/privacy',
     });

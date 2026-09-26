@@ -1041,6 +1041,26 @@ if (
   );
 }
 
+// F7 PDPA/GDPR follow-up: every unsubscribe state and the E-Blast banner
+// link the tenant privacy notice (GDPR Art. 13/14). In production with F7 on
+// it must be configured, and over https — never silently omitted.
+if (raw.NODE_ENV === 'production' && raw.FEATURE_F7_BROADCASTS) {
+  if (!raw.TENANT_PRIVACY_POLICY_URL) {
+    throw new Error(
+      'Environment validation failed (src/lib/env.ts):\n' +
+        '  - TENANT_PRIVACY_POLICY_URL must be set when FEATURE_F7_BROADCASTS=true ' +
+        'in production. The unsubscribe page and the E-Blast banner link the ' +
+        'privacy notice.',
+    );
+  }
+  if (!raw.TENANT_PRIVACY_POLICY_URL.startsWith('https://')) {
+    throw new Error(
+      'Environment validation failed (src/lib/env.ts):\n' +
+        '  - TENANT_PRIVACY_POLICY_URL must be set to an https:// URL in production.',
+    );
+  }
+}
+
 // F9 (#8): in PRODUCTION the private-export Blob store MUST be a dedicated
 // PRIVATE store — never the public BLOB_READ_WRITE_TOKEN store (which backs F4
 // invoice PDFs + F9 logos). GDPR export archives + Directory E-Books carry full
