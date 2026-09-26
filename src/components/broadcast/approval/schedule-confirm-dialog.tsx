@@ -45,7 +45,7 @@ import { useEffect, useRef, useState, useTransition } from 'react';
 import { CalendarClock, Loader2Icon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import {
   AlertDialog,
   AlertDialogAction,

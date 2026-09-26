@@ -38,7 +38,7 @@ vi.mock('next/navigation', () => {
   };
 });
 
-vi.mock('sonner', () => ({
+vi.mock('@/lib/toast', () => ({
   toast: {
     info: vi.fn(),
     success: vi.fn(),
@@ -48,7 +48,7 @@ vi.mock('sonner', () => ({
 }));
 
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { AttendeeTable } from '@/components/events/attendee-table';
 import { asEventId } from '@/modules/events/domain/branded-types';
 

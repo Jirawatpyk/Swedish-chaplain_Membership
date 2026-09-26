@@ -10,7 +10,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import enMessages from '@/i18n/messages/en.json';
 import { AlertDialog } from '@/components/ui/alert-dialog';
 import { RefundForm } from '@/app/(staff)/admin/invoices/[invoiceId]/_components/refund-dialog/refund-form';
@@ -18,7 +18,7 @@ import { RefundForm } from '@/app/(staff)/admin/invoices/[invoiceId]/_components
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), replace: vi.fn() }),
 }));
-vi.mock('sonner', () => ({
+vi.mock('@/lib/toast', () => ({
   // `warning` is the waived-refund arm (a caution: money back, output-VAT owed).
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }));

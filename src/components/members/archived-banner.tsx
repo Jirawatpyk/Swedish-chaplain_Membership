@@ -15,7 +15,7 @@
 import { useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations, useLocale } from 'next-intl';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { ArchiveRestoreIcon, AlertTriangleIcon } from 'lucide-react';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
 import { Card } from '@/components/ui/card';

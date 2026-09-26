@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   TranslatedSelectValue,
 } from '@/components/ui/select';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Loader2Icon, TriangleAlertIcon } from 'lucide-react';
 import { routeRecordPaymentError } from './record-payment-error-routing';
 

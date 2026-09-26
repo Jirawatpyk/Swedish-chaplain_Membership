@@ -23,7 +23,7 @@
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { CheckIcon, CopyIcon } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 
 export function CopyChargeIdButton({ chargeId }: { chargeId: string }) {

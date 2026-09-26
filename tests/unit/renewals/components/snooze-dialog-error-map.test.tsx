@@ -19,7 +19,7 @@ import enMessages from '@/i18n/messages/en.json';
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 const toastError = vi.fn();
-vi.mock('sonner', () => ({
+vi.mock('@/lib/toast', () => ({
   toast: { success: vi.fn(), error: (...a: unknown[]) => toastError(...a), info: vi.fn() },
 }));
 vi.mock('@/components/ui/dialog', () => ({

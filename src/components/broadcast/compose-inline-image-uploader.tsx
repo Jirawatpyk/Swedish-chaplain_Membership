@@ -17,7 +17,7 @@ import { useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { isReadOnlyRefusal } from '@/lib/http/read-only-refusal';
 
 /**

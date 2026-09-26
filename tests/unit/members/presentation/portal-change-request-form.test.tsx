@@ -22,7 +22,7 @@ import type { ChangeRequestFormValues } from '@/lib/change-request-form-values';
 import { PortalChangeRequestForm } from '@/components/members/change-requests/portal-change-request-form';
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
-vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() } }));
+vi.mock('@/lib/toast', () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() } }));
 
 const LIVE: ChangeRequestFormValues = {
   firstName: 'Anna',

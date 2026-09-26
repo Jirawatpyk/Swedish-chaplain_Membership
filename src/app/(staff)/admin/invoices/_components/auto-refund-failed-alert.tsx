@@ -24,7 +24,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { TriangleAlertIcon, Loader2Icon } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   AlertDialog,

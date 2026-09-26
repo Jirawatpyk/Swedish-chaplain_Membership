@@ -14,7 +14,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { MailPlusIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 

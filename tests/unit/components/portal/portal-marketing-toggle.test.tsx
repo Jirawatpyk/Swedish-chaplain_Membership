@@ -12,11 +12,11 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { PortalMarketingToggle } from '@/components/members/portal-marketing-toggle';
 import type { MarketingState } from '@/modules/members';
 
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), info: vi.fn(), error: vi.fn() } }));
+vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), info: vi.fn(), error: vi.fn() } }));
 const refreshSpy = vi.fn();
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: refreshSpy }) }));
 

@@ -20,7 +20,7 @@
 import { useTransition } from 'react';
 import { Loader2Icon, MailCheck } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 import { isLocale } from '@/i18n/config';
 import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';

@@ -43,7 +43,7 @@
 import { useId, useState } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
 import { isReadOnlyRefusal } from '@/lib/http/read-only-refusal';
 import { InlineAlert } from '@/components/ui/inline-alert';

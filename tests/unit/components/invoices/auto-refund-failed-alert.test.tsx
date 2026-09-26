@@ -24,12 +24,12 @@ import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
 
 const { refreshMock } = vi.hoisted(() => ({ refreshMock: vi.fn() }));
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ refresh: refreshMock }),
 }));
 
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { AutoRefundFailedAlert } from '@/app/(staff)/admin/invoices/_components/auto-refund-failed-alert';
 
 const copy = en.admin.invoices.detail.autoRefundFailed;

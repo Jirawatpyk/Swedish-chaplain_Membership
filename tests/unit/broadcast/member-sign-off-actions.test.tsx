@@ -22,13 +22,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import enMessages from '@/i18n/messages/en.json';
 import { MemberSignOffActions } from '@/components/broadcast/approval/member-sign-off-actions';
 
 const refresh = vi.fn();
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh }) }));
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }));
+vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }));
 
 const ID = '11111111-1111-4111-8111-111111111111';
 const VERSION = { id: '22222222-2222-4222-8222-222222222222', versionNo: 2 };

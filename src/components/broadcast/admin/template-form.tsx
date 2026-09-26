@@ -29,7 +29,7 @@ import {
   TranslatedSelectValue,
 } from '@/components/ui/select';
 import { loadTiptapEditor } from '@/components/ui/tiptap-loader';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 // R5 Final 2 hotfix — deep-import constants instead of the broadcasts
 // public barrel. The barrel re-exports `submitBroadcast`, which pulls
 // in `@/modules/members` → `verifyContactEmail` → `@/modules/renewals` →

@@ -22,7 +22,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { type SubmitHandler, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { passwordPairFields, refinePasswordPair } from '@/lib/zod-i18n';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
 import { isReadOnlyRefusal } from '@/lib/http/read-only-refusal';
 import { Loader2Icon } from 'lucide-react';

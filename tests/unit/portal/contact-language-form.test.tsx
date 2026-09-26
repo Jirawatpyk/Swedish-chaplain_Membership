@@ -11,7 +11,7 @@ import { ContactLanguageForm } from '@/components/portal/contact-language-form';
 
 const toastError = vi.fn();
 const toastSuccess = vi.fn();
-vi.mock('sonner', () => ({ toast: { error: (...a: unknown[]) => toastError(...a), success: (...a: unknown[]) => toastSuccess(...a), info: vi.fn() } }));
+vi.mock('@/lib/toast', () => ({ toast: { error: (...a: unknown[]) => toastError(...a), success: (...a: unknown[]) => toastSuccess(...a), info: vi.fn() } }));
 
 function renderForm() {
   return render(

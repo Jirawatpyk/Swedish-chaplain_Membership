@@ -24,7 +24,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { InfoIcon } from 'lucide-react';
 import { Stepper, type StepperStep } from '@/components/ui/stepper';
 import { Card, CardContent } from '@/components/ui/card';

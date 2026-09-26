@@ -16,7 +16,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { PencilIcon, Trash2Icon, StarIcon, Loader2Icon } from 'lucide-react';
 import {
   AlertDialog,

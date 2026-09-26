@@ -10,7 +10,7 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushSpy, refresh: refreshSpy }),
 }));
 const errorSpy = vi.fn();
-vi.mock('sonner', () => ({ toast: { error: (...a: unknown[]) => errorSpy(...a) } }));
+vi.mock('@/lib/toast', () => ({ toast: { error: (...a: unknown[]) => errorSpy(...a) } }));
 
 function renderButton() {
   return render(

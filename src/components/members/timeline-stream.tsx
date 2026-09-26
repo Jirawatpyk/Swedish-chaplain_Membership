@@ -27,7 +27,7 @@ import { useEffect, useRef, useState, useTransition } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { History as HistoryIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/shell/empty-state';

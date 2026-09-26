@@ -30,7 +30,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useTranslations, useLocale } from 'next-intl';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { AlertCircleIcon, InfoIcon, Loader2 } from 'lucide-react';
 import {
   Table,

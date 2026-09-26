@@ -84,7 +84,7 @@ vi.mock('@/components/broadcast/compose-inline-image-uploader', () => ({
   },
 }));
 
-vi.mock('sonner', () => ({
+vi.mock('@/lib/toast', () => ({
   toast: { warning: vi.fn(), success: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
 

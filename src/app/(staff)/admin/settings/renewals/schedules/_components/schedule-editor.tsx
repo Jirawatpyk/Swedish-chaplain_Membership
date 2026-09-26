@@ -21,7 +21,7 @@
  */
 import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import {
   Plus,
   Eye,

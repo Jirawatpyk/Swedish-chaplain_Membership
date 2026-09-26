@@ -45,7 +45,7 @@ vi.mock('next-intl', () => ({
 
 // sonner: the control fires a loading toast before the await + dismisses in
 // finally. Stub so no real toaster is needed.
-vi.mock('sonner', () => ({
+vi.mock('@/lib/toast', () => ({
   toast: {
     loading: toastLoading,
     dismiss: toastDismiss,

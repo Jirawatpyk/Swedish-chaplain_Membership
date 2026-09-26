@@ -25,7 +25,7 @@ vi.mock('next/navigation', () => ({
   usePathname: () => '/admin/events/e1/attendees',
   useSearchParams: () => new URLSearchParams(),
 }));
-vi.mock('sonner', () => ({
+vi.mock('@/lib/toast', () => ({
   toast: { info: vi.fn(), success: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }));
 

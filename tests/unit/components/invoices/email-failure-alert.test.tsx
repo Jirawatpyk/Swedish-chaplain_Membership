@@ -11,7 +11,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 
 const toast = { success: vi.fn(), error: vi.fn(), warning: vi.fn() };
-vi.mock('sonner', () => ({ toast }));
+vi.mock('@/lib/toast', () => ({ toast }));
 vi.mock('next-intl', () => ({
   useTranslations:
     () =>

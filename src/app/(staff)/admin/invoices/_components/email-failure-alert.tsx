@@ -11,7 +11,7 @@
 import { useEffect, useRef, useState, useTransition } from 'react';
 import { Loader2Icon, MailWarningIcon } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 

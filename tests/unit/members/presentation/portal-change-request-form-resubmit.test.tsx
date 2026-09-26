@@ -20,7 +20,7 @@ import { PortalChangeRequestForm } from '@/components/members/change-requests/po
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
 const toastError = vi.fn();
-vi.mock('sonner', () => ({ toast: { error: (...a: unknown[]) => toastError(...a), success: vi.fn(), info: vi.fn() } }));
+vi.mock('@/lib/toast', () => ({ toast: { error: (...a: unknown[]) => toastError(...a), success: vi.fn(), info: vi.fn() } }));
 
 const LIVE: ChangeRequestFormValues = {
   firstName: 'Anna',

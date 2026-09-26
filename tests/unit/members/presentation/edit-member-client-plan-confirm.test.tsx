@@ -26,7 +26,7 @@ vi.mock('next-intl', () => ({
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: h.push, refresh: h.refresh }),
 }));
-vi.mock('sonner', () => ({ toast: h.toast }));
+vi.mock('@/lib/toast', () => ({ toast: h.toast }));
 vi.mock('@/components/members/member-form', () => ({
   MemberForm: (props: { onSubmit: (v: unknown) => void }) => (
     <button type="button" onClick={() => props.onSubmit(h.values)}>

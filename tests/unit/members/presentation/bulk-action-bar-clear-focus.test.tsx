@@ -22,7 +22,7 @@ vi.mock('next/navigation', () => ({
   usePathname: () => '/admin/members',
   useSearchParams: () => new URLSearchParams(),
 }));
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
+vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 vi.mock('@/app/(staff)/admin/members/_components/bulk-progress-indicator', () => ({
   BulkProgressIndicator: () => null,
 }));

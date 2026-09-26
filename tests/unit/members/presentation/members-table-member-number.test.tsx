@@ -24,7 +24,7 @@ afterEach(() => {
   cleanup();
 });
 
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 // Mutable ref so individual tests can override the search-params without
 // re-calling vi.mock (same pattern as pay-sheet.test.tsx / pay-now-button.test.tsx).

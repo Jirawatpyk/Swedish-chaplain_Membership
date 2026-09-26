@@ -10,7 +10,7 @@
 
 import { useTranslations } from 'next-intl';
 import { CopyIcon } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 
 export function CopyButton({ value, label }: { value: string; label: string }) {

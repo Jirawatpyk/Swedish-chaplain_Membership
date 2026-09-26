@@ -31,7 +31,7 @@
  *   - anything else (other 409 codes, 404/403/400/5xx, an unparsable
  *     error body, or a rejected `fetch()` itself)            → failed
  *
- * NEVER throws: this is invoked from a `sonner` toast action's `onClick`,
+ * NEVER throws: this is invoked from a toast action's `onClick`,
  * where an uncaught rejection would surface as an unhandled promise
  * rejection with no user-visible feedback.
  */

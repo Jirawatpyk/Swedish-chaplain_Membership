@@ -17,7 +17,7 @@
  */
 
 import { useTranslations } from 'next-intl';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { MailIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useContactResendAction } from './use-contact-resend-action';

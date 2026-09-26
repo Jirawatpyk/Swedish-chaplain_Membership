@@ -28,7 +28,7 @@ beforeAll(() => {
 });
 
 const toastSuccess = vi.fn();
-vi.mock('sonner', () => ({
+vi.mock('@/lib/toast', () => ({
   toast: {
     success: (...a: unknown[]) => toastSuccess(...a),
     error: vi.fn(),

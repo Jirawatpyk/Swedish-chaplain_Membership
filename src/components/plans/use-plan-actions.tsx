@@ -14,7 +14,7 @@
 import { useRef, useState, useTransition, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
 import { isReadOnlyCode, problemCode } from '@/lib/http/read-only-refusal';
 

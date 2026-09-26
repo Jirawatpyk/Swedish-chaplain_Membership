@@ -27,7 +27,7 @@ import { useTranslations } from 'next-intl';
 import { InfoIcon, Loader2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { addMonthsUtc } from '@/lib/dates';
 import { Combobox } from '@/components/ui/combobox';
 import type { ComboboxOption } from '@/components/ui/combobox';

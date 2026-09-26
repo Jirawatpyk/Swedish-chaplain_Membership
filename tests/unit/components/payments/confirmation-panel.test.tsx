@@ -12,7 +12,7 @@ import {
 } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 
-vi.mock('sonner', () => ({
+vi.mock('@/lib/toast', () => ({
   toast: {
     success: vi.fn(),
     info: vi.fn(),
@@ -22,7 +22,7 @@ vi.mock('sonner', () => ({
     dismiss: vi.fn(),
   },
 }));
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 import {
   AUTO_CLOSE_SECONDS,

@@ -157,7 +157,7 @@ vi.mock('@/components/ui/tiptap-loader', () => ({
 }));
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 // ---------------------------------------------------------------------------
 // Helpers for the pickerError server-response test (F8)

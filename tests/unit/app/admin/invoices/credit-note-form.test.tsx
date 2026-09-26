@@ -32,7 +32,7 @@ const { pushMock, toastSuccess } = vi.hoisted(() => ({
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushMock, replace: vi.fn(), refresh: vi.fn() }),
 }));
-vi.mock('sonner', () => ({
+vi.mock('@/lib/toast', () => ({
   toast: { success: toastSuccess, error: vi.fn(), info: vi.fn() },
 }));
 

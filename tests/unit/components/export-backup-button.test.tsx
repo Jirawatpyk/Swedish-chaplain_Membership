@@ -20,11 +20,11 @@ import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/re
 import { NextIntlClientProvider } from 'next-intl';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '@/i18n/messages/en.json';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { buildAttachmentContentDisposition } from '@/lib/content-disposition';
 import { ExportBackupButton } from '@/app/(staff)/admin/members/_components/export-backup-button';
 
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 function renderButton() {
   return render(

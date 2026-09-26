@@ -14,7 +14,7 @@ import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { CheckCircle2Icon, ListChecksIcon, XCircleIcon, XIcon } from 'lucide-react';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { InlineAlert } from '@/components/ui/inline-alert';

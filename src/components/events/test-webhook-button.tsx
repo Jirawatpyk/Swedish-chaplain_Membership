@@ -16,7 +16,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Loader2Icon, SendIcon } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 import { parseProblemDetail } from '@/lib/http/parse-problem-detail';
 import { parseRetryAfterSeconds } from '@/lib/http/parse-retry-after';

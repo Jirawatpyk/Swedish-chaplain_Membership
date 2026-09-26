@@ -22,7 +22,7 @@ import {
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), replace: vi.fn() }),
 }));
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 // jsdom has no real IntersectionObserver — the orchestrator now mounts
 // <SectionNav>, which mounts the real (un-mocked) useScrollSpy hook. Same

@@ -36,7 +36,7 @@ import {
 } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { InfoIcon, Loader2Icon, TriangleAlertIcon } from 'lucide-react';
 import {
   AlertDialogAction,

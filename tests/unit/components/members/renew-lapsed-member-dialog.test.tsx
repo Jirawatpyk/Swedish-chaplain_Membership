@@ -12,14 +12,15 @@ import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/re
 import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
 import th from '@/i18n/messages/th.json';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
-vi.mock('sonner', () => ({
+vi.mock('@/lib/toast', () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }));
 
 const refreshSpy = vi.fn();
-vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: refreshSpy }) }));
+const pushSpy = vi.hoisted(() => vi.fn());
+vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: refreshSpy, push: pushSpy }) }));
 
 const { RenewLapsedMemberDialog } = await import(
   '@/components/members/renew-lapsed-member-dialog'
@@ -92,18 +93,16 @@ describe('<RenewLapsedMemberDialog> — supersede-void warning', () => {
       w.title,
       expect.objectContaining({ duration: Infinity, closeButton: true }),
     );
+    // Plain-text description + one action (spec 122 R4; AURA handoff #53).
     const opts = vi.mocked(toast.warning).mock.calls[0]![1] as {
-      description: React.ReactNode;
+      description: string;
+      action: { label: string; onClick: () => void };
     };
-    cleanup();
-    render(<>{opts.description}</>);
-    expect(
-      screen.getByText(w.voidFailed.replace('{number}', 'SC-2026-000123')),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole('link', { name: w.openBill.replace('{number}', 'SC-2026-000123') }),
-    ).toHaveAttribute('href', '/admin/invoices/inv-old-1');
-    expect(document.body.textContent).not.toMatch(/supersede:|inv-old-1/);
+    expect(opts.description).toContain(w.voidFailed.replace('{number}', 'SC-2026-000123'));
+    expect(opts.description).not.toMatch(/supersede:|inv-old-1/);
+    expect(opts.action.label).toBe(w.openBill.replace('{number}', 'SC-2026-000123'));
+    opts.action.onClick();
+    expect(pushSpy).toHaveBeenCalledWith('/admin/invoices/inv-old-1');
   });
 
   it('renders the warning in Thai for a TH admin', async () => {
@@ -120,12 +119,11 @@ describe('<RenewLapsedMemberDialog> — supersede-void warning', () => {
     await waitFor(() => expect(toast.warning).toHaveBeenCalled());
     const [title, opts] = vi.mocked(toast.warning).mock.calls[0]! as [
       string,
-      { description: React.ReactNode },
+      { description: string; action?: unknown },
     ];
     expect(title).toBe(w.title);
-    cleanup();
-    render(<>{opts.description}</>);
-    expect(screen.getByText(w.listFailed)).toBeInTheDocument();
+    expect(opts.description).toBe(w.listFailed);
+    expect(opts.action).toBeUndefined();
   });
 
   it('no supersede issues → success toast only', async () => {

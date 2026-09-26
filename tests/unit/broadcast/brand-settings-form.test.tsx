@@ -16,10 +16,10 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import userEvent from '@testing-library/user-event';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { BrandSettingsForm } from '@/components/broadcast/brand/brand-settings-form';
 
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 // U27 (portal live walk) — the form renders `<UnsavedChangesGuard>`, which
 // `router.push`es a confirmed in-app navigation. jsdom has no app router.

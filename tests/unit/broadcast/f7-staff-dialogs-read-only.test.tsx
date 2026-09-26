@@ -16,13 +16,13 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import en from '@/i18n/messages/en.json';
 import { ApproveDialog } from '@/components/broadcast/admin/approve-dialog';
 import { RejectDialog } from '@/components/broadcast/admin/reject-dialog';
 import { ClearHaltDialog } from '@/components/broadcast/admin/clear-halt-dialog';
 
-vi.mock('sonner', () => ({
+vi.mock('@/lib/toast', () => ({
   toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() }),
 }));
 vi.mock('next/navigation', () => ({
