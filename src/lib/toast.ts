@@ -3,20 +3,27 @@
  *
  * Every call site imports `toast` from here and every test mocks this module,
  * never a toast library, so the implementation behind it changes in one place
- * (AURA; its Toaster is mounted once, top-centre, by AuraBridge). At most
- * three toasts show at once; more queue. The option set is deliberately
- * narrow — the subset the product actually uses — and plain-text only: a
- * description is a string, and a toast carries at most one action.
+ * (AURA; its Toaster is mounted once, top-centre below the top bar, by
+ * AuraBridge). At most three toasts show at once; more queue. AURA also owns
+ * the keyboard path (Alt+T reaches the newest toast) and returns focus when a
+ * toast that held it closes. The option set is deliberately narrow — the
+ * subset the product actually uses.
  */
+import type { ReactNode } from 'react';
 import { toast as impl, type ToastShorthandOptions } from '@jirawatpyk/aura-react';
 
 export interface ToastAction {
   readonly label: string;
   readonly onClick?: (() => void) | undefined;
+  /** Makes the action a link, routed through `next/link` by AuraBridge. */
+  readonly href?: string | undefined;
+  /** Default true: the toast closes when the action runs. */
+  readonly dismiss?: boolean | undefined;
 }
 
 export interface ToastOptions {
-  readonly description?: string | undefined;
+  /** Text, or lines with their own links (read once inside the toast's live region). */
+  readonly description?: ReactNode | undefined;
   /** Reusing an id replaces that toast in place. */
   readonly id?: string | undefined;
   readonly action?: ToastAction | undefined;
@@ -37,34 +44,13 @@ export interface Toast extends Show {
   readonly dismiss: (id: string) => void;
 }
 
-/**
- * AURA removes the toast — and with it the focused action button — right after
- * the action runs, which would drop keyboard focus to <body>. Put it back on
- * whatever was focused when the toast appeared, unless the action moved focus
- * somewhere on purpose.
- */
-function restoringFocus(action: ToastAction): ToastAction {
-  const before = typeof document === 'undefined' ? null : document.activeElement;
-  return {
-    label: action.label,
-    onClick: () => {
-      action.onClick?.();
-      queueMicrotask(() => {
-        const now = document.activeElement;
-        const lost = now === null || now === document.body || !now.isConnected;
-        if (lost && before instanceof HTMLElement && before.isConnected) before.focus();
-      });
-    },
-  };
-}
-
 function toImpl(opts: ToastOptions | undefined): ToastShorthandOptions | undefined {
   if (opts === undefined) return undefined;
   const out: ToastShorthandOptions = {};
   if (opts.description !== undefined) out.description = opts.description;
   if (opts.id !== undefined) out.id = opts.id;
   if (opts.duration !== undefined) out.duration = opts.duration;
-  if (opts.action !== undefined) out.action = restoringFocus(opts.action);
+  if (opts.action !== undefined) out.action = opts.action;
   return out;
 }
 

@@ -38,11 +38,8 @@ describe('@/lib/toast facade (AURA)', () => {
         description: 'The plan was updated.',
         id: 'plan-save',
         duration: 8000,
-        action: { label: 'Undo', onClick: expect.any(Function) },
+        action: { label: 'Undo', onClick },
       });
-      const passed = impl[method]!.mock.calls[0]![1] as { action: { onClick: () => void } };
-      passed.action.onClick();
-      expect(onClick).toHaveBeenCalledTimes(1);
     },
   );
 
@@ -55,44 +52,13 @@ describe('@/lib/toast facade (AURA)', () => {
     expect(impl.success).toHaveBeenCalledWith('Saved', undefined);
   });
 
-  it('after a toast action, focus returns to where it was when the toast appeared', async () => {
-    const trigger = document.createElement('button');
-    document.body.append(trigger);
-    trigger.focus();
-    toast.success('Removed', { action: { label: 'Undo', onClick: () => {} } });
-    // AURA removes the toast (and its focused action button) after the click.
-    (document.activeElement as HTMLElement | null)?.blur();
-    const passed = impl.success!.mock.calls[0]![1] as { action: { onClick: () => void } };
-    passed.action.onClick();
-    await Promise.resolve();
-    expect(document.activeElement).toBe(trigger);
-    trigger.remove();
-  });
-
-  it('leaves focus alone when the action moved it somewhere on purpose', async () => {
-    const trigger = document.createElement('button');
-    const target = document.createElement('input');
-    document.body.append(trigger, target);
-    trigger.focus();
-    toast.success('Removed', { action: { label: 'Undo', onClick: () => target.focus() } });
-    const passed = impl.success!.mock.calls[0]![1] as { action: { onClick: () => void } };
-    passed.action.onClick();
-    await Promise.resolve();
-    expect(document.activeElement).toBe(target);
-    trigger.remove();
-    target.remove();
-  });
-
-  it('a plain call passes the title (and any options) as one AURA options object', () => {
-    expect(toast('Sending in a moment')).toBe('id-plain');
-    expect(impl).toHaveBeenCalledWith({ title: 'Sending in a moment' });
-    toast('Queued', { id: 'q', duration: 3000 });
-    expect(impl).toHaveBeenLastCalledWith({ title: 'Queued', id: 'q', duration: 3000 });
-  });
-
-  it('never forwards closeButton — every AURA toast is dismissible', () => {
-    toast.warning('Check the bills', { closeButton: true, duration: Infinity });
-    expect(impl.warning).toHaveBeenCalledWith('Check the bills', { duration: Infinity });
+  it('forwards rich descriptions and link actions untouched (AURA 5.6, handoff #53)', () => {
+    const description = { type: 'ul' } as unknown as React.ReactNode;
+    toast.warning('Bills to void', { description, action: { label: 'Open', href: '/admin/invoices/x', dismiss: false } });
+    expect(impl.warning).toHaveBeenCalledWith('Bills to void', {
+      description,
+      action: { label: 'Open', href: '/admin/invoices/x', dismiss: false },
+    });
   });
 
   it('dismiss forwards the id', () => {

@@ -576,26 +576,3 @@ summary,
      between evidence sections — restore inter-section spacing in print. */
   details[data-evidence] > :not(summary) > * + * { margin-top: 1.5rem !important; }
 }
-
-/* --- AURA toaster placement (spec 122) ---------------------------------------
- * The spec decision is top-CENTRE. AURA 5.5's `position="top"` only swaps
- * `bottom` for `top: 24px` (still right-aligned at >= 640px) and would sit on
- * the 56px top bar — over the mobile hamburger / user menu. Until AURA ships a
- * centred top position (AURA-handoff #54), drop it below the bar and centre it.
- * Toast actions get a 44px touch target on coarse pointers (ux-standards § 9.1;
- * AURA-handoff #56). Unlayered on purpose: it must beat AURA's layered CSS. */
-.aura-toaster.is-top {
-  top: calc(env(safe-area-inset-top, 0px) + var(--top-bar-height) + var(--aura-space-2));
-}
-@media (min-width: 640px) {
-  .aura-toaster.is-top {
-    left: 50%;
-    right: auto;
-    transform: translateX(-50%);
-  }
-}
-@media (pointer: coarse) {
-  .aura-toast__action {
-    min-height: 44px;
-  }
-}

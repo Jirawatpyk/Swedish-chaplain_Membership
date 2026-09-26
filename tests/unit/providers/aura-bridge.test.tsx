@@ -80,7 +80,9 @@ describe('<AuraBridge>', () => {
     );
     const regions = screen.getAllByRole('region', { name: /notifications/i });
     expect(regions).toHaveLength(1);
-    expect(regions[0]).toHaveClass('is-top');
+    // Top-centre below the 56px top bar (AURA 5.6 position + offset, handoff #54).
+    expect(regions[0]).toHaveClass('is-top', 'is-center');
+    expect(regions[0]!.style.getPropertyValue('--aura-toaster-offset')).toBe('64px');
 
     const ids: string[] = [];
     act(() => {

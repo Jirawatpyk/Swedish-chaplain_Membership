@@ -27,7 +27,7 @@
  */
 import { useState } from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, cleanup, fireEvent, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
 import th from '@/i18n/messages/th.json';
@@ -44,8 +44,7 @@ vi.mock('@/lib/toast', () => ({
 }));
 
 const refreshSpy = vi.fn();
-const pushSpy = vi.hoisted(() => vi.fn());
-vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: refreshSpy, push: pushSpy }) }));
+vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: refreshSpy }) }));
 
 // Base UI Menu renders its Popup only while open + models portal/pointer
 // positioning jsdom does not support — mocked to plain-HTML stand-ins.
@@ -345,21 +344,23 @@ describe('<AutoRenewalQueueActions> — Issue + Send / Issue silently', () => {
       w.title,
       expect.objectContaining({ duration: Infinity, closeButton: true }),
     );
-    // Plain-text description + one action (spec 122 R4; AURA handoff #53).
+    // AURA 5.6 (handoff #53): each bill line carries its own link and the
+    // toast has no action, so opening one bill never hides the others.
     const opts = vi.mocked(toast.warning).mock.calls[0]![1] as {
-      description: string;
-      action: { label: string; onClick: () => void };
+      description: React.ReactNode;
+      action?: unknown;
     };
-    expect(opts.description).toContain(w.voidFailed.replace('{number}', 'SC-2026-000123'));
-    expect(opts.description).toContain(w.listFailed);
-    expect(opts.description).not.toMatch(/supersede:/);
-    expect(opts.description).not.toContain('inv-old-1');
-    expect(opts.action.label).toBe(w.openBill.replace('{number}', 'SC-2026-000123'));
-    opts.action.onClick();
-    expect(pushSpy).toHaveBeenCalledWith('/admin/invoices/inv-old-1');
+    expect(opts.action).toBeUndefined();
+    const { container } = render(<>{opts.description}</>);
+    expect(container).toHaveTextContent(w.voidFailed.replace('{number}', 'SC-2026-000123'));
+    expect(container).toHaveTextContent(w.listFailed);
+    expect(container.textContent).not.toMatch(/supersede:|inv-old-1/);
+    expect(
+      within(container).getByRole('link', { name: w.openBill.replace('{number}', 'SC-2026-000123') }),
+    ).toHaveAttribute('href', '/admin/invoices/inv-old-1');
   });
 
-  it('two bills to void: opening the first re-shows the warning for the second (AURA dismisses a toast on its action)', async () => {
+  it('two bills to void: one toast lists both, each with its own link', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -376,24 +377,13 @@ describe('<AutoRenewalQueueActions> — Issue + Send / Issue silently', () => {
 
     const w = en.admin.invoices.supersedeWarning;
     await waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
-    type Opts = { id: string; description: string; action: { label: string; onClick: () => void } };
-    const first = vi.mocked(toast.warning).mock.calls[0]![1] as Opts;
-    expect(first.description).toContain('SC-2026-000125');
-    first.action.onClick();
-    expect(pushSpy).toHaveBeenCalledWith('/admin/invoices/inv-old-1');
-
-    // Re-shown under the same id, now naming only the bill still to void.
-    await waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(2));
-    const second = vi.mocked(toast.warning).mock.calls[1]![1] as Opts;
-    expect(second.id).toBe(first.id);
-    expect(second.description).toContain(w.voidFailed.replace('{number}', 'SC-2026-000125'));
-    expect(second.description).not.toContain('SC-2026-000123');
-    expect(second.action.label).toBe(w.openBill.replace('{number}', 'SC-2026-000125'));
-    second.action.onClick();
-    expect(pushSpy).toHaveBeenLastCalledWith('/admin/invoices/inv-old-2');
-    // Nothing left to act on: no third toast.
-    await Promise.resolve();
-    expect(toast.warning).toHaveBeenCalledTimes(2);
+    const opts = vi.mocked(toast.warning).mock.calls[0]![1] as { description: React.ReactNode };
+    const { container } = render(<>{opts.description}</>);
+    const links = within(container).getAllByRole('link');
+    expect(links.map((l) => [l.textContent, l.getAttribute('href')])).toEqual([
+      [w.openBill.replace('{number}', 'SC-2026-000123'), '/admin/invoices/inv-old-1'],
+      [w.openBill.replace('{number}', 'SC-2026-000125'), '/admin/invoices/inv-old-2'],
+    ]);
   });
 
   it('renders the supersede warning in Thai for a TH admin', async () => {
@@ -418,13 +408,16 @@ describe('<AutoRenewalQueueActions> — Issue + Send / Issue silently', () => {
     await waitFor(() => expect(toast.warning).toHaveBeenCalled());
     const [title, opts] = vi.mocked(toast.warning).mock.calls[0]! as [
       string,
-      { description: string; action: { label: string } },
+      { description: React.ReactNode },
     ];
     const w = th.admin.invoices.supersedeWarning;
     expect(title).toBe(w.title);
-    expect(opts.description).toContain(w.voidFailed.replace('{number}', 'SC-2026-000124'));
-    expect(opts.description).not.toMatch(/supersede:/);
-    expect(opts.action.label).toBe(w.openBill.replace('{number}', 'SC-2026-000124'));
+    const { container } = render(<>{opts.description}</>);
+    expect(container).toHaveTextContent(w.voidFailed.replace('{number}', 'SC-2026-000124'));
+    expect(container.textContent).not.toMatch(/supersede:/);
+    expect(
+      within(container).getByRole('link', { name: w.openBill.replace('{number}', 'SC-2026-000124') }),
+    ).toHaveAttribute('href', '/admin/invoices/inv-old-2');
   });
 
   it('a legacy-only string array (no structured issues) is ignored — no raw server string, no warning', async () => {

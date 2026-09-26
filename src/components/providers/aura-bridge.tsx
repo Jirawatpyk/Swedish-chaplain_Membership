@@ -12,32 +12,11 @@
  * - Density is set per portal by a nested `<AuraProvider density>` in the
  *   staff and member layouts; it inherits everything else from here.
  */
-import { useEffect } from 'react';
 import Link from 'next/link';
 import { AuraProvider, Toaster } from '@jirawatpyk/aura-react';
 
-/**
- * AURA-handoff #55 — AURA portals its toaster to the end of <body> with no
- * hotkey, so a keyboard user could only reach a toast's Undo by tabbing
- * through the whole page (ux-standards § 4.2, § 5.3). Alt+T (the shortcut
- * sonner had) focuses the newest toast's action, else its close button.
- * `code` rather than `key`: Option+T on macOS types "†".
- */
-function useToastHotkey(): void {
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (!event.altKey || event.code !== 'KeyT') return;
-      const toasts = document.querySelectorAll<HTMLElement>('.aura-toaster .aura-toast');
-      const newest = toasts[toasts.length - 1];
-      const target = newest?.querySelector<HTMLElement>('.aura-toast__action') ?? newest?.querySelector<HTMLElement>('button');
-      if (!target) return;
-      event.preventDefault();
-      target.focus();
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, []);
-}
+/** 56px top bar (`--top-bar-height`) + 8px: the toast stack starts just below it. */
+const TOASTER_OFFSET = 64;
 
 export interface AuraBridgeProps {
   readonly locale: 'en' | 'th' | 'sv';
@@ -47,7 +26,6 @@ export interface AuraBridgeProps {
 }
 
 export function AuraBridge({ locale, timeZone, children }: AuraBridgeProps): React.ReactElement {
-  useToastHotkey();
   return (
     <AuraProvider
       locale={locale}
@@ -56,8 +34,9 @@ export function AuraBridge({ locale, timeZone, children }: AuraBridgeProps): Rea
       linkComponent={Link}
     >
       {children}
-      {/* The single toast surface for `@/lib/toast`; top-centre per the spec 122 decision. */}
-      <Toaster position="top" />
+      {/* The single toast surface for `@/lib/toast`: top-centre below the top bar
+          (spec 122 decision). AURA's default Alt+T hotkey reaches the newest toast. */}
+      <Toaster position="top-center" offset={TOASTER_OFFSET} />
     </AuraProvider>
   );
 }

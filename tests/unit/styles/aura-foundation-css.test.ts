@@ -132,12 +132,8 @@ describe('globals.css — AURA foundation (spec 122)', () => {
     expect(rule).toContain('var(--aura-bg-skeleton)');
   });
 
-  it('centres the top toaster below the 56px top bar, and gives toast actions a 44px touch target', () => {
-    const top = css.match(/\.aura-toaster\.is-top\s*\{[^}]*\}/g)?.join('\n') ?? '';
-    expect(top).toContain('var(--top-bar-height)');
-    expect(top).toMatch(/left:\s*50%/);
-    expect(top).toMatch(/translateX\(-50%\)/);
-    expect(css).toMatch(/@media \(pointer: coarse\)\s*\{[^}]*\.aura-toast__action\s*\{[^}]*min-height:\s*44px/);
+  it('carries no local toaster override — AURA 5.6 centres and offsets it (handoff #54, #56)', () => {
+    expect(css).not.toMatch(/\.aura-toaster|\.aura-toast__action/);
   });
 
   it('loads no font from a third-party origin anywhere in src/', () => {
