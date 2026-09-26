@@ -17,32 +17,141 @@
  *
  * Pure utility — no React / Next.js imports — so any test environment
  * or server component can consume it identically.
+ *
+ * `Intl`-only on purpose: this module ships to the browser (schedule
+ * picker, approve / schedule-confirm dialogs), and js-joda's tz database
+ * (`@js-joda/timezone`) is an un-tree-shakeable ~900 KB side effect. The
+ * results match the previous js-joda implementation exactly — pinned by the
+ * parity tests in `tests/unit/broadcast/bangkok-datetime.test.ts` — and the
+ * bundle stays clean per
+ * `tests/unit/architecture/broadcast-client-no-js-joda.test.ts`.
  */
-import { LocalDateTime, ZoneId } from '@js-joda/core';
-import '@js-joda/timezone';
 
-const BANGKOK_ZONE = ZoneId.of('Asia/Bangkok');
+const BANGKOK_TZ = 'Asia/Bangkok';
+
+const MS_PER_DAY = 86_400_000;
+
+/**
+ * `YYYY-MM-DDTHH:mm[:ss[.fffffffff]]` — the ISO local date-time shapes
+ * js-joda's `LocalDateTime.parse` accepted: a 4-digit year, `-` plus 4–9
+ * digits, or `+` plus 5–9 digits (`+2026` is rejected); a bare trailing
+ * `.` is allowed.
+ */
+const LOCAL_DATE_TIME =
+  /^(\+\d{5,9}|-\d{4,9}|\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{0,9}))?)?$/;
+
+/** Largest |epoch ms| a JS `Date` can hold. */
+const MAX_DATE_MS = 8.64e15;
+
+function isLeapYear(year: number): boolean {
+  return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+}
+
+function daysInMonth(year: number, month: number): number {
+  if (month === 2) return isLeapYear(year) ? 29 : 28;
+  return [4, 6, 9, 11].includes(month) ? 30 : 31;
+}
+
+/**
+ * Epoch ms of the given fields read as UTC, in plain arithmetic (proleptic
+ * Gregorian, days-from-civil) — unlike `Date.UTC` it maps years 0–99
+ * literally and stays finite past the `Date` range, so wall-times at the
+ * very ends of that range still resolve like js-joda did.
+ */
+function utcEpochMs(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  second: number,
+  ms: number,
+): number {
+  const y = month <= 2 ? year - 1 : year;
+  const era = Math.floor(y / 400);
+  const yearOfEra = y - era * 400;
+  const dayOfYear = Math.floor((153 * (month + (month > 2 ? -3 : 9)) + 2) / 5) + day - 1;
+  const dayOfEra =
+    yearOfEra * 365 + Math.floor(yearOfEra / 4) - Math.floor(yearOfEra / 100) + dayOfYear;
+  const epochDay = era * 146_097 + dayOfEra - 719_468;
+  return epochDay * MS_PER_DAY + ((hour * 60 + minute) * 60 + second) * 1000 + ms;
+}
+
+const zoneFieldsFormatter = new Intl.DateTimeFormat('en-US', {
+  timeZone: BANGKOK_TZ,
+  hourCycle: 'h23',
+  era: 'short',
+  year: 'numeric',
+  month: 'numeric',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: 'numeric',
+  second: 'numeric',
+});
+
+/**
+ * Bangkok's UTC offset (ms, second precision) at the instant `epochMs`,
+ * clamped into the `Date` range (the offset is constant at both ends).
+ */
+function bangkokOffsetMs(epochMs: number): number {
+  const clamped = Math.min(Math.max(epochMs, -MAX_DATE_MS), MAX_DATE_MS);
+  const wholeSecond = Math.floor(clamped / 1000) * 1000;
+  const parts = zoneFieldsFormatter.formatToParts(new Date(wholeSecond));
+  const get = (type: string): number => Number(parts.find((p) => p.type === type)?.value);
+  const era = parts.find((p) => p.type === 'era')?.value;
+  const year = era === 'BC' || era === 'B' ? 1 - get('year') : get('year');
+  const wall = utcEpochMs(
+    year,
+    get('month'),
+    get('day'),
+    get('hour'),
+    get('minute'),
+    get('second'),
+    0,
+  );
+  return wall - wholeSecond;
+}
+
+/**
+ * The instant at which Bangkok wall-clock reads `wallAsUtcMs` (the wall
+ * fields encoded as if they were UTC). Same resolution as js-joda's
+ * `LocalDateTime.atZone`: in an overlap the earlier offset wins; in a gap
+ * the wall-time is shifted forward by the gap length.
+ */
+function bangkokWallToEpochMs(wallAsUtcMs: number): number {
+  const offsetBefore = bangkokOffsetMs(wallAsUtcMs - MS_PER_DAY);
+  const early = wallAsUtcMs - offsetBefore;
+  if (bangkokOffsetMs(early) === offsetBefore) return early;
+  const offsetAfter = bangkokOffsetMs(wallAsUtcMs + MS_PER_DAY);
+  const late = wallAsUtcMs - offsetAfter;
+  if (bangkokOffsetMs(late) === offsetAfter) return late;
+  return early; // gap
+}
 
 /**
  * Convert a naive `<input type="datetime-local">` value (interpreted as
  * Bangkok wall-time) to a UTC ISO-8601 string.
  *
- * Returns `null` for empty / unparseable input so callers can preserve
- * the existing `value: string | null` contract used by the picker.
+ * Returns `null` for empty / unparseable input — including impossible
+ * dates such as `2026-02-30` — so callers can preserve the existing
+ * `value: string | null` contract used by the picker.
  */
 export function bangkokInputToIso(local: string): string | null {
-  if (local === '') return null;
-  // `<input type="datetime-local">` may include `:ss` if the browser
-  // emits seconds (when `step` < 60). Normalise to a fixed shape that
-  // `LocalDateTime.parse` accepts.
-  const normalised = local.length === 16 ? `${local}:00` : local;
-  try {
-    const wall = LocalDateTime.parse(normalised);
-    const instant = wall.atZone(BANGKOK_ZONE).toInstant();
-    return new Date(instant.toEpochMilli()).toISOString();
-  } catch {
-    return null;
-  }
+  const m = LOCAL_DATE_TIME.exec(local);
+  if (m === null) return null;
+  const [year, month, day, hour, minute] = [m[1], m[2], m[3], m[4], m[5]].map(Number) as [
+    number,
+    number,
+    number,
+    number,
+    number,
+  ];
+  const second = m[6] === undefined ? 0 : Number(m[6]);
+  const ms = Number((m[7] ?? '').padEnd(3, '0').slice(0, 3));
+  if (month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month)) return null;
+  if (hour > 23 || minute > 59 || second > 59) return null;
+  const epochMs = bangkokWallToEpochMs(utcEpochMs(year, month, day, hour, minute, second, ms));
+  return Math.abs(epochMs) <= MAX_DATE_MS ? new Date(epochMs).toISOString() : null;
 }
 
 /**
@@ -57,11 +166,10 @@ export function isoToBangkokInput(iso: string | null): string {
   if (iso === null) return '';
   const ms = Date.parse(iso);
   if (Number.isNaN(ms)) return '';
-  // Format ms instant as Bangkok wall-time via Intl (avoids re-parsing
-  // through @js-joda Instant just to re-extract fields — Intl with a
-  // pinned timeZone is the canonical browser-safe way).
+  // Format ms instant as Bangkok wall-time via Intl (a pinned timeZone is
+  // the canonical browser-safe way).
   const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Bangkok',
+    timeZone: BANGKOK_TZ,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -84,7 +192,7 @@ export function isoToBangkokInput(iso: string | null): string {
  * floor authoritatively (per FR-014a, NFR-PERF-002 lead-time).
  */
 export function bangkokMinInputAfterMinutes(plusMinutes: number): string {
-  const future = LocalDateTime.now(BANGKOK_ZONE).plusMinutes(plusMinutes);
-  const pad = (n: number): string => String(n).padStart(2, '0');
-  return `${future.year()}-${pad(future.monthValue())}-${pad(future.dayOfMonth())}T${pad(future.hour())}:${pad(future.minute())}`;
+  // Asia/Bangkok has no DST, so "instant + N min" and "wall-time + N min"
+  // are the same wall-clock reading; seconds are dropped by the formatter.
+  return isoToBangkokInput(new Date(Date.now() + plusMinutes * 60_000).toISOString());
 }
