@@ -1,13 +1,11 @@
 /**
  * T086 — Unit tests for <MemberCommandPalette>.
  *
- * cmdk + Radix Dialog rely on DOM APIs (ResizeObserver, pointer-
- * events layout, focus trap) that are expensive to polyfill in jsdom,
- * so the `@/components/ui/command` primitives are mocked to plain-HTML
- * stand-ins. The test focus is behavioural: role-gating, fetch wiring,
- * and the navigation target (FR-025c `?pay=1`).
+ * Rendered on AURA `Command` itself (spec 122 US1) — no stand-in: its dialog,
+ * combobox and options are plain DOM that jsdom handles. The test focus is
+ * behavioural: role-gating, fetch wiring, and the navigation target
+ * (FR-025c `?pay=1`).
  */
-import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   act,
@@ -16,6 +14,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 
@@ -23,88 +22,6 @@ const pushMock = vi.fn();
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushMock }),
 }));
-
-// Replace the heavy cmdk + Dialog stack with a trivial visibility-gated
-// div tree. Behaviour we still exercise: open state, input value →
-// `onValueChange`, `onSelect` firing on click.
-vi.mock('@/components/ui/command', () => {
-  function CommandDialog({
-    open,
-    children,
-  }: {
-    open: boolean;
-    onOpenChange: (next: boolean) => void;
-    title: string;
-    description: string;
-    children: React.ReactNode;
-  }) {
-    if (!open) return null;
-    return <div role="dialog">{children}</div>;
-  }
-  function Command({ children }: { children: React.ReactNode }) {
-    return <div data-testid="cmd-root">{children}</div>;
-  }
-  function CommandInput({
-    placeholder,
-    value,
-    onValueChange,
-  }: {
-    placeholder: string;
-    value: string;
-    onValueChange: (v: string) => void;
-  }) {
-    return (
-      <input
-        placeholder={placeholder}
-        value={value}
-        onChange={(e) => onValueChange(e.target.value)}
-      />
-    );
-  }
-  function CommandList({ children }: { children: React.ReactNode }) {
-    return <div>{children}</div>;
-  }
-  function CommandEmpty({ children }: { children: React.ReactNode }) {
-    return <div data-testid="cmd-empty">{children}</div>;
-  }
-  function CommandGroup({
-    heading,
-    children,
-  }: {
-    heading: string;
-    children: React.ReactNode;
-  }) {
-    return (
-      <div>
-        <div data-testid="cmd-heading">{heading}</div>
-        {children}
-      </div>
-    );
-  }
-  function CommandItem({
-    onSelect,
-    children,
-  }: {
-    onSelect?: () => void;
-    value?: string;
-    children: React.ReactNode;
-  }) {
-    return (
-      <button type="button" onClick={() => onSelect?.()}>
-        {children}
-      </button>
-    );
-  }
-  return {
-    CommandDialog,
-    Command,
-    CommandInput,
-    CommandList,
-    CommandEmpty,
-    CommandGroup,
-    CommandItem,
-  };
-});
 
 import { MemberCommandPalette } from '@/components/command-palette/member-invoices-group';
 
@@ -154,11 +71,11 @@ function renderPalette(
 
 function triggerCtrlK() {
   act(() => {
-    window.dispatchEvent(
-      new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }),
-    );
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true }));
   });
 }
+
+const option = (name: string) => screen.queryByRole('option', { name });
 
 describe('<MemberCommandPalette>', () => {
   beforeEach(() => {
@@ -213,29 +130,22 @@ describe('<MemberCommandPalette>', () => {
     // F-05 fix: the visible label now includes the formatted amount
     // so members can confirm the amount before pressing Enter. The
     // en-US Intl.NumberFormat grouping renders 50,000 as "50,000".
-    await waitFor(
-      () =>
-        expect(
-          screen.getByText('Pay invoice TSCC-2026-0007 · THB 50,000'),
-        ).toBeTruthy(),
-      { timeout: 1500 },
-    );
-    // Two headings exist now ("Payments" + "Broadcasts" — F7 US3 added
-    // the Broadcasts group). Assert "Payments" appears among them.
-    const headingTexts = screen
-      .getAllByTestId('cmd-heading')
-      .map((el) => el.textContent);
-    expect(headingTexts).toContain('Payments');
-    expect(headingTexts).toContain('Broadcasts');
+    await waitFor(() => expect(option('Pay invoice TSCC-2026-0007 · THB 50,000')).not.toBeNull(), {
+      timeout: 1500,
+    });
+    // Two groups ("Payments" + "Broadcasts" — F7 US3 added the Broadcasts
+    // group), Payments first.
+    const groups = screen.getAllByRole('group').map((g) => within(g).getAllByRole('presentation')[0]?.textContent);
+    expect(groups).toEqual(['Payments', 'Broadcasts']);
   });
 
   it('navigates to /portal/invoices/<id>?pay=1 on select (FR-025c)', async () => {
     renderPalette('member');
     triggerCtrlK();
 
-    const item = await screen.findByText(
-      'Pay invoice TSCC-2026-0007 · THB 50,000',
-      undefined,
+    const item = await screen.findByRole(
+      'option',
+      { name: 'Pay invoice TSCC-2026-0007 · THB 50,000' },
       { timeout: 1500 },
     );
     fireEvent.click(item);
@@ -267,33 +177,29 @@ describe('<MemberCommandPalette>', () => {
     const input = screen.getByPlaceholderText('Search your invoices…');
     fireEvent.change(input, { target: { value: 'TSCC-999' } });
 
-    await waitFor(
-      () =>
-        expect(screen.getByTestId('cmd-empty').textContent).toBe(
-          'No issued invoices to pay',
-        ),
-      { timeout: 1500 },
-    );
+    await waitFor(() => expect(screen.getByText('No issued invoices to pay')).toBeInTheDocument(), {
+      timeout: 1500,
+    });
   });
 
   it('shows "Compose E-Blast" by default (membershipAccess omitted → full)', () => {
     renderPalette('member');
     triggerCtrlK();
-    expect(screen.getByText('Compose E-Blast')).toBeTruthy();
+    expect(option('Compose E-Blast')).not.toBeNull();
   });
 
   it('059-membership-suspension: hides "Compose E-Blast" when suspended (dead-end target)', () => {
     renderPalette('member', 'suspended');
     triggerCtrlK();
-    expect(screen.queryByText('Compose E-Blast')).toBeNull();
+    expect(option('Compose E-Blast')).toBeNull();
     // "View E-Blast usage" stays — the Benefits page is open while suspended.
-    expect(screen.getByText('View E-Blast usage')).toBeTruthy();
+    expect(option('View E-Blast usage')).not.toBeNull();
   });
 
   it('059-membership-suspension: hides "Compose E-Blast" when terminated', () => {
     renderPalette('member', 'terminated');
     triggerCtrlK();
-    expect(screen.queryByText('Compose E-Blast')).toBeNull();
+    expect(option('Compose E-Blast')).toBeNull();
   });
 
   it('F7 break-glass: hides "Compose E-Blast" when broadcasts are disabled, but keeps "View E-Blast usage"', () => {
@@ -301,16 +207,16 @@ describe('<MemberCommandPalette>', () => {
     triggerCtrlK();
     // Compose deep-links to /portal/broadcasts/new, which the proxy 503s when
     // F7 is off — hide the dead-end shortcut.
-    expect(screen.queryByText('Compose E-Blast')).toBeNull();
+    expect(option('Compose E-Blast')).toBeNull();
     // "View E-Blast usage" stays — it lands on the Benefits page, which falls
     // back to the benefits tab gracefully under F7-off.
-    expect(screen.getByText('View E-Blast usage')).toBeTruthy();
+    expect(option('View E-Blast usage')).not.toBeNull();
   });
 
   it('F7 on + full access: shows "Compose E-Blast" (regression guard for the new prop default)', () => {
     renderPalette('member', 'full', true);
     triggerCtrlK();
-    expect(screen.getByText('Compose E-Blast')).toBeTruthy();
+    expect(option('Compose E-Blast')).not.toBeNull();
   });
 
   it('shows the allPaid-hint when zero invoices AND no query (F-04 fix)', async () => {
@@ -328,12 +234,9 @@ describe('<MemberCommandPalette>', () => {
     renderPalette('member');
     triggerCtrlK();
 
-    await waitFor(
-      () =>
-        expect(screen.getByTestId('cmd-empty').textContent).toBe(
-          "No pending invoices — you're all paid up ✨",
-        ),
-      { timeout: 1500 },
-    );
+    // An inert row at the top of Payments — the E-Blast shortcuts stay below it.
+    const row = await screen.findByRole('option', { name: "No pending invoices — you're all paid up ✨" }, { timeout: 1500 });
+    expect(row).toHaveAttribute('aria-disabled', 'true');
+    expect(option('View E-Blast usage')).not.toBeNull();
   });
 });

@@ -1,172 +1,75 @@
 /**
  * T153 — Command palette groups (US6).
  *
- * Three `<CommandGroup>` sections rendered inside `<CommandPalette>`:
- *   - Plans (entity hits)
- *   - Actions (static action registry, pre-filtered by role on the server)
- *   - Navigate (static navigate registry)
- *
- * Each group hides itself when its entry list is empty to avoid
- * empty-heading visual noise. The whole palette falls through to a
- * single `<CommandEmpty>` when every group is empty (wired in the
- * root `<CommandPalette>` component).
+ * The staff palette's result groups: Plans, Members, Refund a paid invoice
+ * (entity hits), then Actions and Navigate (static registries, pre-filtered
+ * on the server). AURA `Command` lists items under their `group` heading in
+ * first-seen order and hides a group with no items.
  */
 'use client';
 
-import { useLocale, useTranslations } from 'next-intl';
+import type { useTranslations } from 'next-intl';
+import type { CommandItem } from '@jirawatpyk/aura-react';
 import { formatCalendarYear } from '@/lib/format-date-localised';
-import { useRouter } from 'next/navigation';
-import { CommandGroup, CommandItem } from '@/components/ui/command';
-import { Badge } from '@/components/ui/badge';
 import type { PaletteSearchResponse } from './registry';
 
 type Results = PaletteSearchResponse['results'];
-
-type GroupsProps = {
-  readonly results: Results;
-  readonly onAfterNavigate: () => void;
-};
-
-export function PaletteGroups({ results, onAfterNavigate }: GroupsProps) {
-  const t = useTranslations('palette');
-  const locale = useLocale();
-  const router = useRouter();
-
-  const handleNavigate = (url: string) => {
-    onAfterNavigate();
-    router.push(url);
-  };
-
-  return (
-    <>
-      {results.plans.length > 0 && (
-        <CommandGroup heading={t('groups.plans')}>
-          {results.plans.map((plan) => (
-            <CommandItem
-              key={`plan-${plan.plan_year}-${plan.plan_id}`}
-              value={`plan ${plan.plan_id} ${plan.plan_name}`}
-              onSelect={() => handleNavigate(plan.url)}
-            >
-              <span>{plan.plan_name}</span>
-              <span className="ml-auto text-xs text-muted-foreground">
-                {formatCalendarYear(plan.plan_year, locale)}
-              </span>
-            </CommandItem>
-          ))}
-        </CommandGroup>
-      )}
-
-      {results.members.length > 0 && (
-        <CommandGroup heading={t('groups.members')}>
-          {results.members.map((m) => (
-            <CommandItem
-              key={`member-${m.member_id}`}
-              // 055-member-number — include the formatted number in the cmdk
-              // fuzzy-match string so typing `42`, `0042`, or `SCCM-0042`
-              // matches this row in addition to company/contact name.
-              value={`member ${m.company_name} ${m.member_number_display} ${m.primary_contact_name ?? ''}`}
-              onSelect={() => handleNavigate(m.url)}
-            >
-              <span className="truncate">{m.company_name}</span>
-              {/* 055-member-number — show the formatted number so the admin
-                  can confirm which row is #42 when multiple names are similar. */}
-              <Badge
-                variant="outline"
-                className="ml-2 shrink-0 font-mono text-xs"
-                data-testid="palette-member-number-badge"
-              >
-                {m.member_number_display}
-              </Badge>
-              {m.primary_contact_name ? (
-                <span className="ml-auto max-w-[12rem] truncate text-xs text-muted-foreground">
-                  {m.primary_contact_name}
-                </span>
-              ) : null}
-            </CommandItem>
-          ))}
-        </CommandGroup>
-      )}
-
-      {results.refundableInvoices.length > 0 && (
-        <CommandGroup heading={t('groups.refundableInvoices')}>
-          {results.refundableInvoices.map((inv) => (
-            <CommandItem
-              key={`refundable-invoice-${inv.invoice_id}`}
-              // Fuzzy match: invoice number + member company name. The
-              // `total_display` is intentionally NOT in the match string —
-              // admins searching "53,500" should hit by amount via the
-              // member's company name (rare) rather than via decimal
-              // matching, which conflicts with invoice-number digits.
-              value={`refundable-invoice ${inv.invoice_number} ${inv.member_company_name}`}
-              onSelect={() => handleNavigate(inv.url)}
-              data-testid="refundable-invoice-cmdk-item"
-            >
-              <span className="font-mono">{inv.invoice_number}</span>
-              <span className="ml-2 truncate text-muted-foreground">
-                {inv.member_company_name}
-              </span>
-              <span className="ml-auto text-xs text-muted-foreground">
-                {inv.total_display}
-              </span>
-            </CommandItem>
-          ))}
-        </CommandGroup>
-      )}
-
-      {results.actions.length > 0 && (
-        <CommandGroup heading={t('groups.actions')}>
-          {results.actions.map((action) => (
-            <CommandItem
-              key={action.id}
-              // Include search synonyms in the cmdk value so the client-side
-              // fuzzy filter matches the visible verb ("create") too — the
-              // label here is still the raw i18n key, so without this cmdk
-              // would re-hide an action the server correctly returned (BUG-024).
-              value={`action ${action.id} ${action.label} ${(action.keywords ?? []).join(' ')}`}
-              onSelect={() => handleNavigate(action.url)}
-            >
-              {/* label is an i18n key like `palette.actions.newPlan` —
-                  resolve its last segment via the `palette.actions` namespace */}
-              <span>{resolveLabel(t, action.label, 'actions')}</span>
-            </CommandItem>
-          ))}
-        </CommandGroup>
-      )}
-
-      {results.navigate.length > 0 && (
-        <CommandGroup heading={t('groups.navigate')}>
-          {results.navigate.map((nav) => (
-            <CommandItem
-              key={nav.id}
-              // Navigate entries carry no search synonyms (unlike actions), so
-              // the cmdk value is just id + i18n key — cmdk fuzzy-matches both.
-              value={`navigate ${nav.id} ${nav.label}`}
-              onSelect={() => handleNavigate(nav.url)}
-            >
-              <span>{resolveLabel(t, nav.label, 'navigate')}</span>
-            </CommandItem>
-          ))}
-        </CommandGroup>
-      )}
-    </>
-  );
-}
+type Translate = ReturnType<typeof useTranslations<'palette'>>;
 
 /**
- * The server sends the full i18n key (`palette.actions.newPlan`) but
- * `useTranslations('palette')` is already scoped to that namespace, so
- * we only need the tail segment. Falls back to the raw label if the
- * shape is unexpected so we never render blank text.
+ * Spec 122 US1 — the staff palette's server results as AURA `Command` items,
+ * in the same group order as before (Plans, Members, Refund a paid invoice,
+ * Actions, Navigate). Each item goes where its entry's `url` says; the
+ * server already filtered the entries per permission, and the client adds no
+ * second gate (T064).
  */
-function resolveLabel(
-  t: ReturnType<typeof useTranslations>,
-  key: string,
-  group: 'actions' | 'navigate',
-): string {
+export function paletteItems(
+  results: Results,
+  t: Translate,
+  locale: string,
+  navigate: (url: string) => void,
+): CommandItem[] {
+  return [
+    ...results.plans.map((plan) => ({
+      id: `plan-${plan.plan_year}-${plan.plan_id}`,
+      group: t('groups.plans'),
+      label: plan.plan_name,
+      description: formatCalendarYear(plan.plan_year, locale),
+      onSelect: () => navigate(plan.url),
+    })),
+    ...results.members.map((m) => ({
+      id: `member-${m.member_id}`,
+      group: t('groups.members'),
+      label: m.company_name,
+      // 055-member-number — the formatted number tells similar names apart.
+      description: [m.member_number_display, m.primary_contact_name].filter(Boolean).join(' · '),
+      onSelect: () => navigate(m.url),
+    })),
+    ...results.refundableInvoices.map((inv) => ({
+      id: `refundable-invoice-${inv.invoice_id}`,
+      group: t('groups.refundableInvoices'),
+      label: inv.invoice_number,
+      description: `${inv.member_company_name} · ${inv.total_display}`,
+      onSelect: () => navigate(inv.url),
+    })),
+    ...results.actions.map((action) => ({
+      id: action.id,
+      group: t('groups.actions'),
+      label: resolveLabel(t, action.label, 'actions'),
+      onSelect: () => navigate(action.url),
+    })),
+    ...results.navigate.map((nav) => ({
+      id: nav.id,
+      group: t('groups.navigate'),
+      label: resolveLabel(t, nav.label, 'navigate'),
+      onSelect: () => navigate(nav.url),
+    })),
+  ];
+}
+
+function resolveLabel(t: Translate, key: string, group: 'actions' | 'navigate'): string {
   const prefix = `palette.${group}.`;
   if (!key.startsWith(prefix)) return key;
   const tail = key.slice(prefix.length);
-  // next-intl returns the raw key when a translation is missing, which
-  // is exactly the fallback we want.
   return t(`${group}.${tail}` as 'groups.plans');
 }
