@@ -13,6 +13,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
+import th from '@/i18n/messages/th.json';
 import { PriorYearLockBanner } from '@/components/plans/prior-year-lock-banner';
 
 afterEach(cleanup);
@@ -52,5 +53,24 @@ describe('PriorYearLockBanner CTA', () => {
     const link = screen.getByRole('link', { name: 'Create the 2026 plan' });
     expect(link).toHaveAttribute('href', '/admin/plans/new');
     expect(screen.queryByRole('link', { name: /clone/i })).not.toBeInTheDocument();
+  });
+});
+
+describe('PriorYearLockBanner — Thai reads the years in Buddhist Era', () => {
+  it('shows 2568 / 2569 in the text while the CTA href stays CE', () => {
+    render(
+      <NextIntlClientProvider locale="th" messages={th}>
+        <PriorYearLockBanner
+          planId="diamond"
+          planYear={2025}
+          currentYear={2026}
+          currentYearStatus="empty"
+        />
+      </NextIntlClientProvider>,
+    );
+    const link = screen.getByRole('link', { name: /2569/ });
+    expect(link).toHaveTextContent('2568');
+    expect(link).not.toHaveTextContent('2026');
+    expect(link).toHaveAttribute('href', '/admin/plans/clone?from=2025&to=2026');
   });
 });

@@ -3,7 +3,8 @@
 import { Fragment } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
+import { formatCalendarYear } from '@/lib/format-date-localised';
 
 import {
   Breadcrumb,
@@ -39,6 +40,7 @@ export function BreadcrumbNav() {
   const dynamicLabels = useBreadcrumbLabelMap();
   const tBreadcrumb = useTranslations('breadcrumb');
   const tLayout = useTranslations('layout');
+  const locale = useLocale();
 
   const staticLabels = buildBreadcrumbStaticLabels(
     (key) => tBreadcrumb(key as Parameters<typeof tBreadcrumb>[0]),
@@ -48,6 +50,8 @@ export function BreadcrumbNav() {
     pathname,
     staticLabels,
     dynamicLabels,
+    // Plan-year crumb reads in the viewer's calendar (TH 2569); href stays CE.
+    formatYear: (year) => formatCalendarYear(year, locale),
   });
 
   if (segments.length < MIN_DEPTH) return null;

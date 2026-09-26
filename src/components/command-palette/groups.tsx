@@ -13,7 +13,8 @@
  */
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
+import { formatCalendarYear } from '@/lib/format-date-localised';
 import { useRouter } from 'next/navigation';
 import { CommandGroup, CommandItem } from '@/components/ui/command';
 import { Badge } from '@/components/ui/badge';
@@ -28,6 +29,7 @@ type GroupsProps = {
 
 export function PaletteGroups({ results, onAfterNavigate }: GroupsProps) {
   const t = useTranslations('palette');
+  const locale = useLocale();
   const router = useRouter();
 
   const handleNavigate = (url: string) => {
@@ -47,7 +49,7 @@ export function PaletteGroups({ results, onAfterNavigate }: GroupsProps) {
             >
               <span>{plan.plan_name}</span>
               <span className="ml-auto text-xs text-muted-foreground">
-                {plan.plan_year}
+                {formatCalendarYear(plan.plan_year, locale)}
               </span>
             </CommandItem>
           ))}

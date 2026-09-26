@@ -7,7 +7,8 @@
  */
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
+import { formatCalendarYear } from '@/lib/format-date-localised';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -41,6 +42,10 @@ export function CloneYearDialog({
   onConfirm,
 }: CloneYearDialogProps) {
   const t = useTranslations('admin.plans.clone');
+  const locale = useLocale();
+  // Stored CE; shown in the viewer's calendar (TH 2569).
+  const shownSource = formatCalendarYear(sourceYear, locale);
+  const shownTarget = formatCalendarYear(targetYear, locale);
   // "…" placeholder while the pre-flight count is loading or its fetch failed.
   const countLabel = sourcePlanCount ?? '…';
 
@@ -49,13 +54,13 @@ export function CloneYearDialog({
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>
-            {t('title')}: {sourceYear} → {targetYear}
+            {t('title')}: {shownSource} → {shownTarget}
           </AlertDialogTitle>
           <AlertDialogDescription>
             {t('description', {
               count: countLabel,
-              sourceYear,
-              targetYear,
+              sourceYear: shownSource,
+              targetYear: shownTarget,
             })}
           </AlertDialogDescription>
         </AlertDialogHeader>

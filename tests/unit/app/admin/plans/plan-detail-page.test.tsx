@@ -24,6 +24,7 @@ vi.mock('next-intl/server', async () => {
         ...(namespace ? { namespace } : {}),
       } as never),
     ),
+    getLocale: vi.fn(async () => 'en'),
   };
 });
 vi.mock('next/navigation', () => ({

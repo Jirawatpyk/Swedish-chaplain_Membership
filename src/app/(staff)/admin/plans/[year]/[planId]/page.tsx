@@ -14,7 +14,8 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
-import { getTranslations } from 'next-intl/server';
+import { getLocale, getTranslations } from 'next-intl/server';
+import { formatCalendarYear } from '@/lib/format-date-localised';
 import { PencilIcon } from 'lucide-react';
 import { canPerform, requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
@@ -78,6 +79,7 @@ export default async function PlanDetailPage({
   const { user: currentUser } = await requirePagePermission('plans.read');
   const { year, planId } = await params;
   const t = await getTranslations('admin.plans');
+  const locale = await getLocale();
   const tM = await getTranslations('admin.plans.create.matrix');
   const tOptions = await getTranslations('admin.plans.create.options');
   const tCommon = await getTranslations('common');
@@ -200,7 +202,7 @@ export default async function PlanDetailPage({
         <CardHeader>
           <CardTitle>{t('create.labels.annualFee')}</CardTitle>
           <CardDescription>
-            {t('columns.year')}: {plan.plan_year}
+            {t('columns.year')}: {formatCalendarYear(plan.plan_year, locale)}
           </CardDescription>
         </CardHeader>
         <CardContent>
