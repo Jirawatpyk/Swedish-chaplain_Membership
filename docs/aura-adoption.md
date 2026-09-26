@@ -83,7 +83,11 @@ Phases 2–12 each depend on 1 and can land in any order.
 
 ## AURA gaps (the handoff doc)
 
-The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, items 52–56 (Addendum 4) in 5.6.0, items 57–62 (Addendum 5, found in US1) in 5.7.0, and item 63 in **5.7.1**, the current pin. None is open.
+The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, items 52–56 (Addendum 4) in 5.6.0, items 57–62 (Addendum 5, found in US1) in 5.7.0, and item 63 in **5.7.1**, the current pin. One is open (Addendum 6):
+
+| # | Gap | Local bridge (removed when AURA ships it) |
+|---|---|---|
+| 64 | A long one-word nav label breaks mid-word with no hyphen ("Marknadsföringsmålgrup" / "p" in the 240px drawer) | Known gap, cosmetic; the proposed fix is `hyphens: auto` on the label |
 
 How Chamber-OS uses the Addendum 5 items (US1 dropped its bridge for each):
 
