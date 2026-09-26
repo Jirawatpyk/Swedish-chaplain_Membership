@@ -55,6 +55,13 @@ describe('routeVoidError (FR-032)', () => {
     });
   });
 
+  it('H1 — maps paid_invoice_requires_refund to a DEDICATED message (reverse a paid event with a refund)', () => {
+    expect(routeVoidError('paid_invoice_requires_refund')).toEqual({
+      kind: 'failure',
+      messageKey: 'errors.paidInvoiceRequiresRefund',
+    });
+  });
+
   it('a missing code falls back to the generic unknown message', () => {
     expect(routeVoidError(undefined)).toEqual({ kind: 'failure', messageKey: 'errors.unknown' });
     expect(routeVoidError(null)).toEqual({ kind: 'failure', messageKey: 'errors.unknown' });

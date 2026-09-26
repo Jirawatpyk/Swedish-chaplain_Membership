@@ -3295,7 +3295,8 @@
           "refreshAction": "Uppdatera",
           "codeFallback": "Felkod: {code}",
           "refundInProgress": "En återbetalning behandlas för denna fakturas betalning. Att makulera nu kan skapa en konflikt – vänta tills återbetalningen är klar och försök igen.",
-          "paidMembershipRequiresCreditNote": "Den här betalda medlemsfakturan kan inte makuleras. För att återföra den, utfärda en kreditnota i stället."
+          "paidMembershipRequiresCreditNote": "Den här betalda medlemsfakturan kan inte makuleras. För att återföra den, utfärda en kreditnota i stället.",
+          "paidInvoiceRequiresRefund": "Den här betalda fakturan kan inte makuleras. För att återföra den, återbetala betalningen i stället."
         }
       }
     },
