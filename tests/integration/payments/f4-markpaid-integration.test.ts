@@ -46,6 +46,12 @@
  *     surface tested in `stripe-gateway-mock.test.ts`).
  *   - REAL `invoicingBridge` (the system under test) + REAL F5
  *     `paymentsRepo` + REAL F5 audit adapter on live Neon.
+ *
+ * Fixture dependency (108 PR-A, #340): each seeded member also carries a live
+ * primary `contacts` row. The receipt recipient is resolved LIVE from that row
+ * — the frozen `member_identity_snapshot.primary_contact_email` names the
+ * §86/4 buyer and is never a delivery address. The two are seeded to DIFFERENT
+ * values on purpose.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { and, eq, sql } from 'drizzle-orm';
@@ -73,6 +79,7 @@ import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/sch
 import { tenantDocumentSequences } from '@/modules/invoicing/infrastructure/db/schema-tenant-document-sequences';
 import { notificationsOutbox } from '@/modules/auth/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
+import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 
@@ -189,6 +196,16 @@ interface IssuedSeed {
   readonly paymentIntentId: string;
   readonly chargeId: string;
   readonly method: 'card' | 'promptpay';
+  /**
+   * 108 FR-001 — the LIVE primary contact this member's money email must
+   * reach. Deliberately DIFFERENT from the invoice's frozen
+   * `member_identity_snapshot.primary_contact_email`: the snapshot names the
+   * buyer §86/4 froze at issue, the contact row is where the receipt is
+   * delivered, and a settlement path that reads the wrong one must fail here
+   * rather than in production. Distinct per seed so three chains in one
+   * tenant stay attributable.
+   */
+  readonly liveContactEmail: string;
 }
 
 describe('F4 receipt-email path verification (T128 / US6 / FR-004)', () => {
@@ -213,6 +230,7 @@ describe('F4 receipt-email path verification (T128 / US6 / FR-004)', () => {
       paymentIntentId: `pi_test_t128_card_${randomUUID().slice(0, 8)}`,
       chargeId: `ch_test_t128_card_${randomUUID().slice(0, 8)}`,
       method: 'card',
+      liveContactEmail: 't128-card-live@example.com',
     };
     promptpaySeed = {
       invoiceId: randomUUID(),
@@ -223,6 +241,7 @@ describe('F4 receipt-email path verification (T128 / US6 / FR-004)', () => {
       paymentIntentId: `pi_test_t128_pp_${randomUUID().slice(0, 8)}`,
       chargeId: `ch_test_t128_pp_${randomUUID().slice(0, 8)}`,
       method: 'promptpay',
+      liveContactEmail: 't128-promptpay-live@example.com',
     };
     suppressedSeed = {
       invoiceId: randomUUID(),
@@ -233,6 +252,7 @@ describe('F4 receipt-email path verification (T128 / US6 / FR-004)', () => {
       paymentIntentId: `pi_test_t128a_${randomUUID().slice(0, 8)}`,
       chargeId: `ch_test_t128a_${randomUUID().slice(0, 8)}`,
       method: 'card',
+      liveContactEmail: 't128-suppressed-live@example.com',
     };
 
     const settings: NewTenantPaymentSettingsRow = {
@@ -322,6 +342,24 @@ describe('F4 receipt-email path verification (T128 / US6 / FR-004)', () => {
           country: 'TH',
           planId,
           planYear: 2026,
+        });
+        // 108 FR-001 (PR-A, #340) — `recordPayment` resolves the receipt
+        // recipient from the member's LIVE primary contact, never from the
+        // invoice snapshot. A member with no contact row therefore has NO
+        // deliverable address, and the settlement takes the
+        // `skipped_no_email` arm instead of enqueueing: without this row all
+        // three enqueue assertions below read 0 calls, and the T128a
+        // suppression test passes vacuously (nothing to suppress). This
+        // fixture predated 108 and was only caught when the rotating nightly
+        // sweep next reached the `payments` module (run 36193994595).
+        await tx.insert(contacts).values({
+          tenantId: tenant.ctx.slug,
+          contactId: randomUUID(),
+          memberId: seed.memberId,
+          firstName: 'Live',
+          lastName: 'Primary',
+          email: seed.liveContactEmail,
+          isPrimary: true,
         });
         await tx.insert(invoices).values({
           tenantId: tenant.ctx.slug,
@@ -535,7 +573,12 @@ describe('F4 receipt-email path verification (T128 / US6 / FR-004)', () => {
     expect(enqueueArg.eventType).toBe('invoice_paid');
     expect(enqueueArg.invoiceId).toBe(cardSeed.invoiceId);
     expect(enqueueArg.pdfBlobKey).toContain(cardSeed.invoiceId);
-    expect(enqueueArg.recipientEmail).toBe('t128-card@example.com');
+    // 108 FR-001 — the LIVE primary contact, and demonstrably NOT the
+    // invoice's frozen `primary_contact_email`. Asserting only the live value
+    // would still pass if the settlement path regressed to the snapshot and
+    // the two happened to agree, so both halves stay.
+    expect(enqueueArg.recipientEmail).toBe(cardSeed.liveContactEmail);
+    expect(enqueueArg.recipientEmail).not.toBe('t128-card@example.com');
     expect(enqueueArg.dependsOnReceiptPdf).toBe(true);
 
     // Async receipt-render outbox row landed — exactly one
@@ -603,7 +646,8 @@ describe('F4 receipt-email path verification (T128 / US6 / FR-004)', () => {
     };
     expect(enqueueArg.eventType).toBe('invoice_paid');
     expect(enqueueArg.invoiceId).toBe(promptpaySeed.invoiceId);
-    expect(enqueueArg.recipientEmail).toBe('t128-promptpay@example.com');
+    expect(enqueueArg.recipientEmail).toBe(promptpaySeed.liveContactEmail);
+    expect(enqueueArg.recipientEmail).not.toBe('t128-promptpay@example.com');
     expect(enqueueArg.dependsOnReceiptPdf).toBe(true);
 
     // Async receipt-render outbox row landed for promptpay too.

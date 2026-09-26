@@ -50,6 +50,7 @@ import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 import { makeRecipientLocaleFake } from '../../helpers/recipient-locale-fake';
+import { ciScaled } from '../../helpers/ci-latency';
 
 const MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -343,10 +344,18 @@ describe('Step 2.4 — void-invoice clears renewal_cycles.linked_invoice_id', ()
 
     // No-deadlock: the clear runs on the void's own tx (no second connection
     // while the member-row lock is held). It must finish in a couple seconds.
+    //
+    // `ciScaled` because this is an anti-hang guard, not a budget: a real
+    // deadlock either errors out or hangs to the 120 s test timeout, so 6× on a
+    // runner still catches it. The bare 8 s was a laptop number and reddened the
+    // nightly sweep at 8507 ms (run 35662335080, `invoicing` rotation) — the
+    // void path pays a trans-Pacific round trip per statement there, with 20
+    // files sharing one Neon compute.
+    const unlinkGuardMs = ciScaled(8_000);
     expect(
       elapsed,
-      `void + cycle-unlink must complete promptly (took ${elapsed}ms)`,
-    ).toBeLessThan(8_000);
+      `void + cycle-unlink must complete promptly (took ${elapsed}ms, guard ${unlinkGuardMs}ms)`,
+    ).toBeLessThan(unlinkGuardMs);
 
     // REISSUE: a fresh §86/4 can now re-link the cycle (guard sees NULL, not the
     // voided id) — the workflow the pre-existing bug blocked.
