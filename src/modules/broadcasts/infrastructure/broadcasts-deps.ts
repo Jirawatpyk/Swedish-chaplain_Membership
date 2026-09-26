@@ -9,7 +9,10 @@ import { asTenantContext } from '@/modules/tenants';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
-import { makeDrizzleBroadcastsRepo } from './db/drizzle-broadcasts-repo';
+import {
+  findBroadcastByResendAudienceIdsBypassRls,
+  makeDrizzleBroadcastsRepo,
+} from './db/drizzle-broadcasts-repo';
 import { makeDrizzleBroadcastSegmentDefinitionsRepo } from './db/drizzle-broadcast-segment-definitions-repo';
 import { makeDrizzleMarketingUnsubscribesRepo } from './db/drizzle-marketing-unsubscribes-repo';
 import { rfc5321EmailValidator } from './email-validator/rfc5321-email-validator';
@@ -40,7 +43,10 @@ import {
 import { isF7ImportAudienceEnabled } from './feature-flags';
 import { err, ok } from '@/lib/result';
 import { recipientSegmentFromPersisted } from '../domain/recipient-segment';
-import { unsafeBrandEmailLower } from '../domain/value-objects/email-lower';
+import { asEmailLower, unsafeBrandEmailLower } from '../domain/value-objects/email-lower';
+import { asBroadcastId } from '../domain/broadcast';
+import { unsubscribeRecipient } from '../application/use-cases/unsubscribe-recipient';
+import { runInTenant } from '@/lib/db';
 import { resolveSegmentRecipients } from '../application/use-cases/resolve-segment-recipients';
 import type { MembersBridgePort } from '../application/ports/members-bridge-port';
 import type { BuildAudienceTickDeps } from '../application/use-cases/build-audience-tick';
@@ -766,9 +772,8 @@ export { resendBroadcastsWebhookVerifier };
 /**
  * Build deps for `unsubscribeRecipient` use-case. Tenant display name is
  * resolved per-call via the existing F4 tenant-invoice-settings shim
- * (mirrors the submit/draft routes); support email defaults to the
- * chamber's verified Resend `fromEmail` until a per-tenant support
- * mailbox is added (F12 white-label config).
+ * (mirrors the submit/draft routes); the support email is the monitored
+ * privacy inbox (`env.broadcasts.privacyContactEmail`).
  */
 export function makeUnsubscribeRecipientDeps(
   tenantId: string,
@@ -795,6 +800,82 @@ export function makeUnsubscribeRecipientDeps(
  * (T147). The verifier side is reached through the same singleton.
  */
 export { unsubscribeTokenSigner };
+
+export type ResendHostedUnsubscribeOutcome =
+  | { readonly kind: 'applied'; readonly tenantId: string }
+  | { readonly kind: 'already'; readonly tenantId: string }
+  | { readonly kind: 'unknown_audience' }
+  | { readonly kind: 'invalid_email' }
+  | { readonly kind: 'failed' };
+
+/**
+ * Mirror a Resend-side opt-out (`contact.updated {unsubscribed:true}` — the
+ * hosted unsubscribe page, or the List-Unsubscribe header Resend adds to
+ * every broadcast) into `marketing_unsubscribes`, tenant + email, through
+ * the same `unsubscribeRecipient` use-case as our own page (channel
+ * `resend_hosted`). Without this the objection lived only on a
+ * per-broadcast Resend audience and the next E-Blast could reach the
+ * person again (GDPR Art. 21(3) / PDPA §32).
+ *
+ * `failed` → the route answers 5xx so Resend retries; never throws.
+ */
+export async function applyResendHostedUnsubscribe(input: {
+  readonly email: string;
+  readonly audienceIds: ReadonlyArray<string>;
+  readonly requestId: string;
+}): Promise<ResendHostedUnsubscribeOutcome> {
+  const email = asEmailLower(input.email);
+  if (!email.ok) return { kind: 'invalid_email' };
+
+  let owner;
+  try {
+    owner = await findBroadcastByResendAudienceIdsBypassRls(input.audienceIds);
+  } catch (cause) {
+    logger.error(
+      { err: errKind(cause), requestId: input.requestId },
+      'broadcasts.resend_hosted_unsubscribe.lookup_failed',
+    );
+    return { kind: 'failed' };
+  }
+  if (owner === null) return { kind: 'unknown_audience' };
+
+  try {
+    // Display name is only echoed back for a confirmation page — none here.
+    const deps = makeUnsubscribeRecipientDeps(
+      owner.tenantId,
+      owner.tenantId,
+      env.broadcasts.privacyContactEmail,
+    );
+    const result = await runInTenant(asTenantContext(owner.tenantId), async () =>
+      unsubscribeRecipient(deps, {
+        tenantId: owner.tenantId,
+        broadcastId: asBroadcastId(owner.broadcastId),
+        emailLower: email.value,
+        tokenPlaintext: null,
+        channel: 'resend_hosted',
+        requestId: input.requestId,
+        reasonText: null,
+      }),
+    );
+    if (!result.ok) {
+      logger.error(
+        { kind: result.error.kind, requestId: input.requestId },
+        'broadcasts.resend_hosted_unsubscribe.failed',
+      );
+      return { kind: 'failed' };
+    }
+    return {
+      kind: result.value.wasNew ? 'applied' : 'already',
+      tenantId: owner.tenantId,
+    };
+  } catch (cause) {
+    logger.error(
+      { err: errKind(cause), requestId: input.requestId },
+      'broadcasts.resend_hosted_unsubscribe.threw',
+    );
+    return { kind: 'failed' };
+  }
+}
 
 /**
  * F7 webhook resolver — pre-tenant lookup. Mirrors F5

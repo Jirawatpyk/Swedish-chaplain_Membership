@@ -16,6 +16,18 @@ Authz: Signed token only (no session cookie; no CSRF check needed because the ac
 
 Why GET and not POST: most email clients pre-fetch links for malware scanning; we need the click action to be safe-on-pre-fetch. Idempotency via `marketing_unsubscribes` upsert ensures pre-fetch + actual-click both produce the same outcome (one upsert, no duplicate audit event).
 
+```
+POST /unsubscribe/[token]          (RFC 8058 one-click, body `List-Unsubscribe=One-Click`)
+Served by: /api/unsubscribe/[token] via a proxy rewrite (Next.js cannot host a page and a route handler in one segment)
+Authz: Signed token only — no cookies, no Origin/CSRF check (mail providers send neither)
+```
+
+Same verify → `unsubscribeRecipient` pipeline as GET (`src/lib/broadcasts-public-unsubscribe.ts`), recorded as channel `one_click_post`. Status-only responses: `200` unsubscribed or already unsubscribed · `400` invalid token · `429` too many failed tokens from this IP (`Retry-After`) · `503` temporary failure, nothing recorded (`Retry-After: 60`).
+
+Today no E-Blast carries a header pointing here: the Resend Broadcasts API has no custom-headers field, so broadcasts carry Resend's own List-Unsubscribe headers, and those opt-outs arrive as `contact.updated` and are mirrored tenant-wide (channel `resend_hosted`). This POST is ready for a per-recipient send path.
+
+**Channels** (recorded as `payload.channel` on `broadcast_unsubscribed` + `broadcast_suppression_applied`): `page_get` · `one_click_post` · `resend_hosted` (Resend hosted page / Resend List-Unsubscribe, via `contact.updated`) · `manual` (staff, `scripts/ops/manual-unsubscribe.ts`). All four write the same tenant + email row.
+
 ---
 
 ## 2. Token format (FR-029 + research.md § 4)
@@ -235,7 +247,9 @@ The chosen locale is exposed to next-intl via the route's server-component `loca
 
 ## 9. Rate limit + bot protection
 
-Per plan.md § Storage: `GET /unsubscribe/[token]` is rate-limited to **20 hits / 5 min per source IP** to prevent token-brute-force enumeration. Legitimate clicks rarely hit the limit.
+Per plan.md § Storage: `GET /unsubscribe/[token]` is rate-limited to **20 hits / 5 min per source IP** to prevent token-brute-force enumeration. Legitimate clicks rarely hit the limit. A limited GET renders its own "Please try again shortly" state, which says nothing about whether the token is valid.
+
+`POST` (one-click) counts only **failed** verifications against the per-IP limit (bucket `unsubscribe-post-fail:<ip>`, 20 / 5 min): mail providers POST from a few shared IPs, so an up-front limit would drop genuine objections. Past the limit, failures answer `429` and skip their audit row (flood guard). Valid tokens are HMAC-SHA256 under a ≥32-byte secret and are never throttled.
 
 Pre-fetch protection: many corporate email clients (Outlook, Gmail with image-proxy mode) pre-fetch links to scan for malware. The handler is idempotent so pre-fetch + actual-click produce the same outcome. The audit log records every successful unsubscribe; if the recipient never explicitly clicks but their email client pre-fetched, the recipient is still unsubscribed — this is **acceptable per ePrivacy guidance** (the recipient's mail-server agent acts on their behalf for safety scanning).
 
@@ -246,7 +260,7 @@ Pre-fetch protection: many corporate email clients (Outlook, Gmail with image-pr
 Per request:
 
 - **Success**: `broadcast_unsubscribed` (with broadcast_id + email_hash + member_id + source_token_hash) — emitted only on first unsubscribe (replays do NOT re-audit per FR-031 idempotency).
-- **Token invalid**: `broadcast_unsubscribe_token_invalid` (with failure_reason + source_ip) — emitted on every invalid attempt, no de-dupe.
+- **Token invalid**: `broadcast_unsubscribe_token_invalid` (with failure_reason + hashed source IP + channel) — emitted on every invalid attempt, no de-dupe (except POST failures past the rate limit, see § 9).
 
 No raw email + no raw token in audit payloads.
 

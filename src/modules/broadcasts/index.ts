@@ -445,15 +445,18 @@ export { makeReclaimOrphanedAudiencesDeps } from './infrastructure/broadcasts-de
 
 // --- Composition root factories (Phase 7 US5) ----------------------------
 export {
+  applyResendHostedUnsubscribe,
   makeProcessWebhookEventDeps,
   makeReconcileStuckSendingDeps,
   resendBroadcastsWebhookVerifier,
   resolveTenantByResendBroadcastId,
+  type ResendHostedUnsubscribeOutcome,
 } from './infrastructure/broadcasts-deps';
 
 // --- Application use-cases (Phase 6 US4) ---------------------------------
 export {
   unsubscribeRecipient,
+  type UnsubscribeChannel,
   type UnsubscribeRecipientDeps,
   type UnsubscribeRecipientError,
   type UnsubscribeRecipientInput,

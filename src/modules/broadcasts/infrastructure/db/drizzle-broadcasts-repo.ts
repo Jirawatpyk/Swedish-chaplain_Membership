@@ -2343,3 +2343,26 @@ export function makeDrizzleBroadcastsRepo(
     },
   };
 }
+
+/**
+ * Webhook pre-tenant resolution for Resend `contact.updated` (hosted-page /
+ * Resend List-Unsubscribe opt-outs). The event names the Resend audience or
+ * segment the contact sits in — never a broadcast — and every E-Blast gets
+ * its own audience, so `broadcasts.resend_audience_id` maps it back to the
+ * broadcast and so the tenant. Same BYPASSRLS read as
+ * `findByResendBroadcastIdBypassRls`: the caller MUST re-enter
+ * `runInTenant` for every write. Returns `null` when no broadcast owns any
+ * of the ids.
+ */
+export async function findBroadcastByResendAudienceIdsBypassRls(
+  resendAudienceIds: ReadonlyArray<string>,
+): Promise<{ readonly tenantId: TenantSlug; readonly broadcastId: string } | null> {
+  if (resendAudienceIds.length === 0) return null;
+  const [row] = await db
+    .select({ tenantId: broadcasts.tenantId, broadcastId: broadcasts.broadcastId })
+    .from(broadcasts)
+    .where(inArray(broadcasts.resendAudienceId, [...resendAudienceIds]))
+    .limit(1);
+  if (row === undefined) return null;
+  return { tenantId: row.tenantId as TenantSlug, broadcastId: row.broadcastId };
+}

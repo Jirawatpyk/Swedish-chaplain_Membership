@@ -44,7 +44,7 @@ describe('Resend hosted-page unsubscribe mirror (contact.updated)', () => {
 
   beforeAll(async () => {
     user = await createActiveTestUser('admin');
-    tenant = await createTestTenant('test-mirror');
+    tenant = await createTestTenant('test-chamber');
     const planId = `mirror-plan-${randomUUID().slice(0, 8)}`;
     await runInTenant(tenant.ctx, (tx) =>
       tx.insert(membershipPlans).values({
