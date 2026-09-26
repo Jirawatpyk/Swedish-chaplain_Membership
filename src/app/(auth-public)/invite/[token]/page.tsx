@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
 import { AuthFrame } from '@/components/auth/auth-frame';
+import { AuthLinkInvalid } from '@/components/auth/auth-link-invalid';
 import { InviteRedeemForm } from '@/components/auth/invite-redeem-form';
 // Presentation-side data loaders for the invitation display page.
 // No Application use case provides a read-only "prefetch invitation
@@ -64,12 +65,7 @@ export default async function InviteRedeemPage({ params }: InviteRedeemPageProps
       tenantName={process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham'}
     >
       {tokenDead || !email ? (
-        <div
-          className="space-y-4 rounded-md border border-destructive/40 bg-destructive/5 p-4"
-          role="alert"
-        >
-          <p className="text-sm text-destructive">{t('errors.tokenExpired')}</p>
-        </div>
+        <AuthLinkInvalid message={t('errors.tokenExpired')} />
       ) : (
         <InviteRedeemForm token={token} email={email} />
       )}

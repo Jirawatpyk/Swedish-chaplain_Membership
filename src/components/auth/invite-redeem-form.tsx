@@ -12,8 +12,10 @@
  *   - confirm password must match
  *   - On success: redirects to the `redirectTo` URL returned by the
  *     API (admin or member landing)
+ *   - AURA fields (spec 122 US2): `TextField` / `PasswordField`,
+ *     `FormErrorSummary` after a failed submit, `Button` with `loading`.
  */
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -21,11 +23,8 @@ import { type SubmitHandler, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { refinePasswordPair, requiredText, type Translator } from '@/lib/zod-i18n';
 import { toast } from '@/lib/toast';
-import { Loader2Icon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { PasswordInput } from '@/components/ui/password-input';
-import { Label } from '@/components/ui/label';
+import { Button, FormErrorSummary, PasswordField, TextField } from '@jirawatpyk/aura-react';
+import { AuthLinkInvalid } from './auth-link-invalid';
 import {
   PasswordStrength,
   usePasswordStrengthMeter,
@@ -74,13 +73,6 @@ export function InviteRedeemForm({ token, email }: InviteRedeemFormProps) {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   const [linkInvalid, setLinkInvalid] = useState(false);
-  // Move keyboard focus to the invalid-link alert when it appears — `role=
-  // "alert"` announces for SR users, but without managed focus a keyboard
-  // user is left on the now-unmounted submit button.
-  const invalidRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (linkInvalid) invalidRef.current?.focus();
-  }, [linkInvalid]);
 
   const {
     control,
@@ -88,7 +80,7 @@ export function InviteRedeemForm({ token, email }: InviteRedeemFormProps) {
     handleSubmit,
     setError,
     setFocus,
-    formState: { errors },
+    formState: { errors, submitCount },
   } = useForm<FormValues>({
     resolver: zodResolver(
       buildSchema(
@@ -99,6 +91,8 @@ export function InviteRedeemForm({ token, email }: InviteRedeemFormProps) {
     ),
     defaultValues: { displayName: '', password: '', confirmPassword: '' },
     mode: 'onSubmit',
+    // The error summary takes focus after a failed submit (spec 122 US2 AS1).
+    shouldFocusError: false,
   });
 
   useEffect(() => {
@@ -147,9 +141,9 @@ export function InviteRedeemForm({ token, email }: InviteRedeemFormProps) {
               : tReset('errors.weakPassword'),
         });
         // Pin the strength bar to red for this value so it agrees with the
-        // inline error instead of contradicting it.
+        // inline error instead of contradicting it. The error summary that
+        // appears with it takes focus and links to the field.
         meter.markRejected(values.password);
-        setFocus('password');
         return;
       }
 
@@ -166,22 +160,16 @@ export function InviteRedeemForm({ token, email }: InviteRedeemFormProps) {
   };
 
   if (linkInvalid) {
-    // M3 (Round 3) — recovery CTA added. Pre-fix this was alert-only;
-    // user had no next-step affordance. No self-service link target
-    // (invitations are admin-issued only) so we render as a guidance
-    // line rather than a clickable button.
+    // M3 (Round 3) — the recovery step is a guidance line, not a link:
+    // invitations are admin-issued only, so there is no self-service target.
+    // The alert takes focus: without it a keyboard user is left on the
+    // now-unmounted submit button.
     return (
-      <div
-        ref={invalidRef}
-        tabIndex={-1}
-        className="space-y-4 rounded-md border border-destructive/40 bg-destructive/5 p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        role="alert"
-      >
-        <p className="text-sm text-destructive">{t('errors.tokenExpired')}</p>
-        <p className="text-sm text-muted-foreground">
-          {t('errors.contactAdminCta')}
-        </p>
-      </div>
+      <AuthLinkInvalid
+        message={t('errors.tokenExpired')}
+        detail={t('errors.contactAdminCta')}
+        autoFocus
+      />
     );
   }
 
@@ -191,97 +179,51 @@ export function InviteRedeemForm({ token, email }: InviteRedeemFormProps) {
       // Native fallback POSTs so the new account password stays out of the
       // URL (CWE-598; see tests/unit/auth/auth-forms-post-method.test.tsx).
       method="post"
-      className="space-y-4"
+      className="flex flex-col gap-4"
       noValidate
+      aria-busy={submitting}
     >
-      <div className="space-y-2">
-        <Label htmlFor="email">{t('emailLabel')}</Label>
-        <Input id="email" type="email" value={email} readOnly disabled />
-      </div>
+      <FormErrorSummary errors={errors} focusKey={submitCount} />
 
-      <div className="space-y-2">
-        <Label htmlFor="display-name">{t('displayNameLabel')}</Label>
-        <Input
-          id="display-name"
-          type="text"
-          autoComplete="name"
-          aria-invalid={errors.displayName ? 'true' : undefined}
-          aria-describedby={
-            errors.displayName ? 'display-name-error' : undefined
-          }
-          {...register('displayName')}
-        />
-        {errors.displayName ? (
-          <p
-            id="display-name-error"
-            role="alert"
-            className="text-sm text-destructive"
-          >
-            {errors.displayName.message}
-          </p>
-        ) : null}
-      </div>
+      <TextField id="email" label={t('emailLabel')} type="email" value={email} readOnly disabled />
 
-      <div className="space-y-2">
-        <Label htmlFor="password">{t('passwordLabel')}</Label>
-        <PasswordInput
+      <TextField
+        id="display-name"
+        label={t('displayNameLabel')}
+        autoComplete="name"
+        error={errors.displayName?.message}
+        {...register('displayName')}
+      />
+
+      <div className="flex flex-col gap-2">
+        <PasswordField
           id="password"
+          label={t('passwordLabel')}
           autoComplete="new-password"
-          aria-invalid={errors.password ? 'true' : undefined}
-          aria-describedby={
-            errors.password ? 'password-error' : 'password-strength'
-          }
+          error={errors.password?.message}
+          // The bar describes the field until an error replaces it (AURA adds
+          // `password-error` itself).
+          aria-describedby={errors.password ? undefined : 'password-strength'}
           {...register('password')}
         />
         <div id="password-strength">
           <PasswordStrength level={meter.level} weakReason={meter.weakReason} />
         </div>
-        {errors.password ? (
-          <p
-            id="password-error"
-            role="alert"
-            className="text-sm text-destructive"
-          >
-            {errors.password.message}
-          </p>
-        ) : null}
       </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="confirm-password">{tReset('confirmPasswordLabel')}</Label>
-        <PasswordInput
-          id="confirm-password"
-          autoComplete="new-password"
-          aria-invalid={errors.confirmPassword ? 'true' : undefined}
-          aria-describedby={
-            errors.confirmPassword ? 'confirm-password-error' : undefined
-          }
-          {...register('confirmPassword')}
-        />
-        {errors.confirmPassword ? (
-          <p
-            id="confirm-password-error"
-            role="alert"
-            className="text-sm text-destructive"
-          >
-            {errors.confirmPassword.message}
-          </p>
-        ) : null}
-      </div>
+      <PasswordField
+        id="confirm-password"
+        label={tReset('confirmPasswordLabel')}
+        autoComplete="new-password"
+        error={errors.confirmPassword?.message}
+        {...register('confirmPassword')}
+      />
 
-      <Button type="submit" className="w-full" size="lg" disabled={submitting}>
-        {submitting ? (
-          <>
-            <Loader2Icon
-              className="size-4 motion-safe:animate-spin"
-              aria-hidden
-            />
-            {t('submit')}
-          </>
-        ) : (
-          t('submit')
-        )}
-      </Button>
+      <div className="flex flex-col pt-2">
+        <Button type="submit" variant="primary" loading={submitting}>
+          {t('submit')}
+        </Button>
+      </div>
     </form>
   );
 }

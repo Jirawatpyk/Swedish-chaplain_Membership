@@ -17,11 +17,13 @@ import { cn } from '@/lib/utils';
 
 export interface AuthLinkInvalidProps {
   readonly message: ReactNode;
+  /** A second line: what to do when there is no self-service path (invitations). */
+  readonly detail?: ReactNode | undefined;
   readonly action?: { readonly label: string; readonly href: string } | undefined;
   readonly autoFocus?: boolean | undefined;
 }
 
-export function AuthLinkInvalid({ message, action, autoFocus = false }: AuthLinkInvalidProps) {
+export function AuthLinkInvalid({ message, detail, action, autoFocus = false }: AuthLinkInvalidProps) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (autoFocus) ref.current?.focus();
@@ -42,6 +44,7 @@ export function AuthLinkInvalid({ message, action, autoFocus = false }: AuthLink
             </a>
           </>
         ) : null}
+        {detail ? <p className="mt-1">{detail}</p> : null}
       </Alert>
     </div>
   );
