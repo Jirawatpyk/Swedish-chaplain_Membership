@@ -43,7 +43,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
+import { formatCalendarYear } from '@/lib/format-date-localised';
 import {
   AlertCircleIcon,
   HelpCircleIcon,
@@ -130,6 +131,7 @@ export interface AutoRenewalQueueMeta {
 
 export function AutoRenewalQueueBadges({ meta }: { meta: AutoRenewalQueueMeta }) {
   const t = useTranslations('admin.invoices.list.queue');
+  const locale = useLocale();
 
   const refusalCopy = (reason: AutoRenewalRefusalReasonClient): string => {
     switch (reason.kind) {
@@ -244,7 +246,7 @@ export function AutoRenewalQueueBadges({ meta }: { meta: AutoRenewalQueueMeta })
                         icon={InfoIcon}
                         label={t('billYearStale')}
                         ariaLabel={t('billYearStaleAria', {
-                          currentFiscalYear: meta.currentFiscalYear,
+                          currentFiscalYear: formatCalendarYear(meta.currentFiscalYear, locale),
                         })}
                         testId="queue-bill-year-stale"
                       />
@@ -253,8 +255,8 @@ export function AutoRenewalQueueBadges({ meta }: { meta: AutoRenewalQueueMeta })
                 />
                 <TooltipContent>
                   {t('billYearStaleTooltip', {
-                    planYear: meta.planYear,
-                    currentFiscalYear: meta.currentFiscalYear,
+                    planYear: formatCalendarYear(meta.planYear, locale),
+                    currentFiscalYear: formatCalendarYear(meta.currentFiscalYear, locale),
                   })}
                 </TooltipContent>
               </Tooltip>

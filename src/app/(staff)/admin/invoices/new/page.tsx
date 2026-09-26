@@ -28,6 +28,7 @@ import { resolvePlanName } from '@/lib/resolve-plan-name';
 import { type MemberOption, type PlanOption } from '../_components/invoice-form';
 import { InvoiceCreateSwitcher } from './_components/invoice-create-switcher';
 import type { EventOption } from './_components/event-fee-form';
+import { formatCalendarYear } from '@/lib/format-date-localised';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -104,7 +105,7 @@ export default async function NewInvoiceDraftPage({
         const planLabel = planNameById.get(r.member.planId) ?? r.member.planId;
         return {
           memberId: r.member.memberId,
-          label: `${r.member.companyName} (${planLabel} / ${r.member.planYear})`,
+          label: `${r.member.companyName} (${planLabel} / ${formatCalendarYear(r.member.planYear, locale)})`,
           currentPlanId: r.member.planId,
           currentPlanYear: r.member.planYear,
         };

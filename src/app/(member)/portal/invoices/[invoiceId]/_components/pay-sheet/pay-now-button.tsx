@@ -58,6 +58,12 @@ export interface PayNowButtonProps {
     readonly amountDue: number;
     readonly currency: string;
     readonly status: string;
+    /**
+     * 088 — the invoice is an SC- bill (ใบแจ้งหนี้), not a tax invoice; the
+     * order summary then notes that the tax invoice/receipt is issued at
+     * payment. Optional (undefined → false).
+     */
+    readonly isBill?: boolean;
   };
   readonly enabledMethods: readonly PaymentMethod[];
   readonly tenantPublishableKey: string;
@@ -104,6 +110,7 @@ export function PayNowButton({
           invoiceNumber: invoice.invoiceNumber,
           amountDue: invoice.amountDue,
           currency: invoice.currency,
+          isBill: invoice.isBill ?? false,
         }}
         enabledMethods={enabledMethods}
         tenantPublishableKey={tenantPublishableKey}

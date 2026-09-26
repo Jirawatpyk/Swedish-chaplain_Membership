@@ -2548,6 +2548,8 @@
           "download": "Faktura",
           "downloadReceipt": "Kvitto",
           "downloadInvoiceAria": "Ladda ner faktura-PDF för {number}",
+          "downloadBill": "Faktura",
+          "downloadBillAria": "Ladda ner faktura-PDF för {number}",
           "downloadReceiptAria": "Ladda ner kvitto-PDF för {number}",
           "receiptPreparing": "Förbereder kvitto…",
           "receiptGenerating": "Kvitto genereras…",
@@ -2972,6 +2974,8 @@
           "downloadCombined": "Ladda ner faktura/kvitto",
           "downloadReceiptAria": "Ladda ner kvitto-PDF för faktura {number}",
           "downloadInvoiceAria": "Ladda ner faktura-PDF för faktura {number}",
+          "downloadBill": "Ladda ner faktura-PDF",
+          "downloadBillAria": "Ladda ner faktura-PDF för {number}",
           "more": "Fler",
           "moreAria": "Fler åtgärder för {number}"
         },
@@ -3458,10 +3462,10 @@
         "fields": {
           "subject": "Ämne",
           "body": "Meddelande",
-          "segment": "Mottagare",
+          "segment": "Målgrupp",
           "recipientCount": "Beräknade mottagare",
           "submittedBy": "Inskickad av",
-          "submittedAt": "Inskickad",
+          "submittedAt": "Inskickat",
           "scheduledFor": "Schemalagd till",
           "actorRole": "Aktörsroll"
         },
@@ -3497,7 +3501,7 @@
         "audit": {
           "title": "Livscykelstidslinje",
           "drafted": "Utkast skapat",
-          "submitted": "Inskickad",
+          "submitted": "Inskickat",
           "approved": "Godkänd",
           "rejected": "Avvisad",
           "cancelled": "Avbruten",
@@ -3579,7 +3583,7 @@
           "noteHelp": "Visas för medlemmen bredvid den här versionen. {count} / {max} tecken.",
           "save": "Spara",
           "saved": "Versionen har sparats.",
-          "savedAt": "Sparad {time}",
+          "savedAt": "Sparat kl. {time}",
           "conflictTitle": "Någon annan har ändrat den här versionen",
           "conflictBody": "En annan personalanvändare sparade versionen efter att du öppnade den. Dina ändringar har inte sparats. Ladda om för att se den aktuella versionen.",
           "reload": "Ladda om (dina ändringar försvinner)"
@@ -3741,7 +3745,7 @@
         "saveDraftButton": "Spara som utkast",
         "draftSavedToast": "Utkast sparat.",
         "draftSaveErrorToast": "Utkastet kunde inte sparas. Försök igen.",
-        "savedAt": "Sparat {time}"
+        "savedAt": "Sparat kl. {time}"
       },
       "proxySubmitButton": "Skicka in å medlems vägnar",
       "haltBanner": {
@@ -6207,6 +6211,8 @@
       "actions": {
         "download": "Faktura",
         "downloadInvoiceAria": "Ladda ner faktura-PDF för {number}",
+        "downloadBill": "Faktura",
+        "downloadBillAria": "Ladda ner faktura-PDF för {number}",
         "downloadVoided": "Annullerad faktura",
         "downloadVoidedAria": "Ladda ner annullerad faktura-PDF (VOID-stämplad) för {number}",
         "downloadReceipt": "Kvitto",
@@ -6344,7 +6350,7 @@
     "broadcasts": {
       "compose": {
         "title": "Skapa E-Blast",
-        "subtitle": "Skicka ett meddelande till din kammares medlemmar.",
+        "subtitle": "Skicka ett meddelande till din handelskammares medlemmar.",
         "templatePicker": {
           "triggerLabel": "Börja från en mall",
           "blankOption": "Tom — börja från noll",
@@ -6362,7 +6368,7 @@
             "cancelLabel": "Behåll mitt meddelande"
           }
         },
-        "savedAt": "Sparat {time}",
+        "savedAt": "Sparat kl. {time}",
         "fields": {
           "subject": "Ämne",
           "subjectPlaceholder": "Ämnesrad (max 200 tecken)",
@@ -6370,7 +6376,7 @@
           "segmentLabel": "Mottagare",
           "customListLabel": "Anpassad e-postlista",
           "customListHelp": "En e-postadress per rad, upp till 100 poster. Varje adress måste redan finnas i din kammares katalog.",
-          "schedulePicker": "Schemalägg till senare",
+          "schedulePicker": "Schemalägg utskick",
           "scheduleHelp": "Lämna tomt för omedelbar granskning.",
           "previewLabel": "Förhandsgranskning",
           "previewLoading": "Laddar förhandsgranskning…",
@@ -6522,7 +6528,7 @@
           "body": "Att skicka in ett E-Blast bekräftar att mottagarna har samtyckt till att ta emot din kammares kommunikation. Du kan återkalla samtycke per mottagare när som helst.",
           "privacyPolicyLink": "Läs sekretesspolicyn",
           "acknowledge": "Jag bekräftar",
-          "remindLater": "Påminn senare",
+          "remindLater": "Påminn mig senare",
           "closeLabel": "Stäng banner",
           "toastAcknowledged": "Samtycke till marknadskommunikation registrerat.",
           "toastAcknowledgeFailed": "Kunde inte registrera ditt samtycke.",
@@ -6543,9 +6549,9 @@
         "columns": {
           "subject": "Ämne",
           "status": "Status",
-          "submittedAt": "Inskickad",
+          "submittedAt": "Inskickat",
           "sentAt": "Skickad",
-          "audience": "Mottagare"
+          "audience": "Målgrupp"
         },
         "status": {
           "draft": "Utkast",
@@ -6585,7 +6591,7 @@
         "subtitle": "Ämne, mottagare och leveranssammanfattning för detta utskick.",
         "fields": {
           "subject": "Ämne",
-          "submittedAt": "Inskickad",
+          "submittedAt": "Inskickat",
           "sentAt": "Skickad",
           "status": "Status",
           "recipients": "Mottagare",
@@ -7028,6 +7034,7 @@
         "heading": "Betalningssammanfattning",
         "invoiceLabel": "Faktura",
         "amountLabel": "Belopp att betala",
+        "billNote": "Detta är en faktura (ใบแจ้งหนี้), inte en skattefaktura. Skattefakturan/kvittot utfärdas när du betalar.",
         "itemsLabel": "Poster",
         "itemSingle": "1 post",
         "itemPlural": "{count} poster"
@@ -7233,6 +7240,7 @@
         "processing": "Din förnyelse behandlas. Det nya utgångsdatumet visas här så snart betalningsbekräftelsen kommer in.",
         "downloadReceipt": "Ladda ner kvitto (PDF)",
         "downloadInvoice": "Ladda ner faktura (PDF)",
+        "downloadBill": "Ladda ner faktura (PDF)",
         "receiptPreparing": "Förbereder kvitto…",
         "viewAllInvoices": "Visa alla fakturor",
         "backToPortal": "Tillbaka till portalens startsida"

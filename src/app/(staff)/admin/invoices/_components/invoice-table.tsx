@@ -173,6 +173,13 @@ export type InvoicesTableRow = {
    */
   readonly mainDownloadIsReceipt: boolean;
   /**
+   * 088 — the main pdf is an SC- bill (ใบแจ้งหนี้), not a §86/4 tax invoice
+   * (that is the RC issued at payment). The main download wears the bill
+   * label + aria. OPTIONAL (undefined → false) so legacy constructors are
+   * unaffected.
+   */
+  readonly mainDownloadIsBill?: boolean;
+  /**
    * 088 (T065 / T065a / FR-016) — the pre-payment NON-§87 bill number (SC-…)
    * for the two-document disambiguation. Present only on a real 088 bill (with
    * the flag on); `null` on legacy rows. `documentNumber` already carries this
@@ -903,7 +910,9 @@ export function InvoicesTable({
                           aria-label={t(
                             r.mainDownloadIsReceipt
                               ? 'actions.downloadReceiptAria'
-                              : 'actions.downloadInvoiceAria',
+                              : r.mainDownloadIsBill
+                                ? 'actions.downloadBillAria'
+                                : 'actions.downloadInvoiceAria',
                             {
                               number: mainDownloadNumber,
                             },
@@ -922,7 +931,9 @@ export function InvoicesTable({
                           )}
                           {r.mainDownloadIsReceipt
                             ? t('actions.downloadReceipt')
-                            : t('actions.download')}
+                            : r.mainDownloadIsBill
+                              ? t('actions.downloadBill')
+                              : t('actions.download')}
                         </button>
                       )}
                       {r.hasReceiptPdf && (

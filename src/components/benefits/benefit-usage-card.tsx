@@ -20,7 +20,7 @@
 import Link from 'next/link';
 import { ArrowRight, PackageOpen, PauseCircle } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { getDateFormatLocale } from '@/lib/format-date-localised';
+import { formatCalendarYear, getDateFormatLocale } from '@/lib/format-date-localised';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
@@ -146,7 +146,7 @@ export function BenefitUsageCard({
               {...(headingId ? { id: headingId } : {})}
               className="font-heading text-base font-medium leading-snug"
             >
-              {t('card.title', { year: membershipYear })}
+              {t('card.title', { year: formatCalendarYear(membershipYear, locale) })}
             </h2>
             {suspended && (
               <Badge
