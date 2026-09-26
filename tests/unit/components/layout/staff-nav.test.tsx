@@ -100,6 +100,16 @@ describe('StaffNav (spec 122 US1)', () => {
     field.remove();
   });
 
+  it('lets the portal badge drop below the brand rather than cut the wordmark (SV "Personal", TH)', () => {
+    renderNav();
+    // Layout is measured in the harness (a 240px nav: SV/TH badges push the
+    // wordmark to "SweC…" inline); here the row must be allowed to wrap, and
+    // a long tenant name still truncates on its own line.
+    const badge = screen.getByText('Staff');
+    expect(badge.closest('.flex-wrap')).not.toBeNull();
+    expect(screen.getByText('SweCham')).toHaveClass('truncate');
+  });
+
   it('never offers the rail toggle inside the phone drawer (AppShell passes collapsible=false)', () => {
     renderNav({ collapsed: false, collapsible: false });
     expect(screen.queryByRole('button', { name: /collapse sidebar|expand sidebar/i })).toBeNull();

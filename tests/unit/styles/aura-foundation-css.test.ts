@@ -162,6 +162,14 @@ describe('globals.css — AURA foundation (spec 122)', () => {
     expect(css).not.toMatch(/\.aura-nav__item/);
   });
 
+  it('lets long nav labels wrap to two lines from AURA 5.7.1, not cut with an ellipsis (handoff #63)', () => {
+    const aura = readFileSync(join(ROOT, 'node_modules/@jirawatpyk/aura-react/dist/styles.layer.css'), 'utf8');
+    const label = aura.match(/\.aura-nav__label\s*\{[^}]*\}/)?.[0] ?? '';
+    expect(label).toMatch(/line-clamp:\s*2/);
+    expect(label).not.toMatch(/white-space:\s*nowrap/);
+    expect(css).not.toMatch(/\.aura-nav__label/);
+  });
+
   it('carries no local toaster override — AURA 5.6 centres and offsets it (handoff #54, #56)', () => {
     expect(css).not.toMatch(/\.aura-toaster|\.aura-toast__action/);
   });

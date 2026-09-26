@@ -83,22 +83,19 @@ Phases 2–12 each depend on 1 and can land in any order.
 
 ## AURA gaps (the handoff doc)
 
-The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, items 52–56 (Addendum 4) in 5.6.0, and items 57–62 (Addendum 5, found in US1) in **5.7.0**, the current pin. One is open:
+The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, items 52–56 (Addendum 4) in 5.6.0, items 57–62 (Addendum 5, found in US1) in 5.7.0, and item 63 in **5.7.1**, the current pin. None is open.
 
-| # | Gap | Local bridge (removed when AURA ships it) |
+How Chamber-OS uses the Addendum 5 items (US1 dropped its bridge for each):
+
+| # | Shipped in | Used by |
 |---|---|---|
-| 63 | `SideNav` labels are one line, cut with an ellipsis | Known gap: long TH/SV labels ("Godkännande av medlemsändringar") are cut in the nav and drawer; the accessible name stays complete |
-
-How Chamber-OS uses the 5.7.0 items (US1 dropped its bridge for each):
-
-| # | Shipped in 5.7.0 | Used by |
-|---|---|---|
-| 57 | `DropdownMenu` `header` (outside the items, the menu's description) | `UserMenu`: name, role and email |
-| 58 | `Breadcrumb` item without `href` / `onClick` renders as text (`.aura-crumbs__text`) | `BreadcrumbNav` keeps its own `aura-crumbs` markup (phone ellipsis trail, e2e data-slots) and uses the class for organisational segments |
-| 59 | `AppShell` `<main tabIndex={-1}>` | `StaffShell`: focus fallbacks to `#main-content` land with no local effect |
-| 60 | `Dialog` `dismissOnScrim`, default off for `role="alertdialog"` | `ConfirmationDialog`: a stray click outside keeps the typed reason; Escape and Cancel still close it. `dismissible={false}` still makes the rotated webhook secret close only from its buttons |
-| 61 | `BottomNav` item `ariaLabel` | `MemberBottomTabs`: the full name where it contains the short label (SV "Konto" → "Mitt konto", TH "บัญชี" → "บัญชีของฉัน"); otherwise the short label, so the name always holds the visible text |
-| 62 | `SideNav` rows 44px on coarse pointers | AURA's own CSS; the local rule is gone |
+| 57 | 5.7.0: `DropdownMenu` `header` (outside the items, the menu's description) | `UserMenu`: name, role and email |
+| 58 | 5.7.0: `Breadcrumb` item without `href` / `onClick` renders as text (`.aura-crumbs__text`) | `BreadcrumbNav` keeps its own `aura-crumbs` markup (phone ellipsis trail, e2e data-slots) and uses the class for organisational segments |
+| 59 | 5.7.0: `AppShell` `<main tabIndex={-1}>` | `StaffShell`: focus fallbacks to `#main-content` land with no local effect |
+| 60 | 5.7.0: `Dialog` `dismissOnScrim`, default off for `role="alertdialog"` | `ConfirmationDialog`: a stray click outside keeps the typed reason; Escape and Cancel still close it. `dismissible={false}` still makes the rotated webhook secret close only from its buttons |
+| 61 | 5.7.0: `BottomNav` item `ariaLabel` | `MemberBottomTabs`: the full name where it contains the short label (SV "Konto" → "Mitt konto", TH "บัญชี" → "บัญชีของฉัน"); otherwise the short label, so the name always holds the visible text |
+| 62 | 5.7.0: `SideNav` rows 44px on coarse pointers | AURA's own CSS; the local rule is gone |
+| 63 | 5.7.1: `SideNav` labels wrap to two lines, then clamp | The staff nav and drawer: long TH/SV names ("Godkännande av medlemsändringar") read in full; one-line rows stay 36px |
 
 How Chamber-OS uses the 5.6.0 items:
 
@@ -113,6 +110,6 @@ How Chamber-OS uses the 5.6.0 items:
 AURA also returns focus when a toast that held it closes, so the facade no longer does.
 
 When AURA ships an item:
-1. Bump the pin in a dedicated PR, or in the open phase PR that added the bridges it removes (5.7.0 rode in US1 for that reason).
+1. Bump the pin in a dedicated PR, or in the open phase PR that added the bridges it removes (5.7.0 and 5.7.1 rode in US1 for that reason).
 2. Delete the `// AURA-handoff #NN` wrapper.
 3. Update this table.

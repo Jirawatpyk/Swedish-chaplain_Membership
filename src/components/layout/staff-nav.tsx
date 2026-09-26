@@ -149,7 +149,9 @@ function RailToggle({ collapsed, onToggle }: { readonly collapsed: boolean; read
 function StaffBrand({ tenantName, collapsed }: { readonly tenantName: string; readonly collapsed: boolean }) {
   const t = useTranslations('shell.portalLabel');
   return (
-    <div className="flex items-center justify-between gap-1.5">
+    // Wraps: where the portal badge is long (SV "Personal", TH) it drops to a
+    // second line rather than cutting the wordmark to "SweC…" in the 240px nav.
+    <div className="flex flex-wrap items-center justify-between gap-x-1.5 gap-y-1">
       <Link
         href="/admin"
         className={cn(
@@ -173,7 +175,11 @@ function StaffBrand({ tenantName, collapsed }: { readonly tenantName: string; re
           </span>
         )}
       </Link>
-      {collapsed ? null : <Badge variant="outline">{t('staff')}</Badge>}
+      {collapsed ? null : (
+        <Badge variant="outline" className="ms-auto">
+          {t('staff')}
+        </Badge>
+      )}
     </div>
   );
 }
