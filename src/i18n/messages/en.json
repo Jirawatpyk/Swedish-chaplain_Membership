@@ -5027,6 +5027,7 @@
           "payment_failed": "Payment failed",
           "payment_canceled": "Payment canceled",
           "auto_refunded": "Payment auto-refunded",
+          "auto_refund_failed": "Auto-refund failed",
           "invoice_paid": "Invoice marked paid",
           "refund_initiated": "Refund initiated",
           "refund_pending": "Refund settling — awaiting processor confirmation",

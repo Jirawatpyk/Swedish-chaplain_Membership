@@ -1250,6 +1250,7 @@ export default async function InvoiceDetailPage({
               }}
               tenantId={tenantCtx.slug}
               isAdmin={isAdmin}
+              autoRefundFailed={autoRefundFailed}
             />
           </Suspense>
         </div>

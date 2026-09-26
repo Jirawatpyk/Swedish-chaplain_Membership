@@ -5027,6 +5027,7 @@
           "payment_failed": "Betalning misslyckades",
           "payment_canceled": "Betalning avbruten",
           "auto_refunded": "Betalning automatiskt återbetald",
+          "auto_refund_failed": "Automatisk återbetalning misslyckades",
           "invoice_paid": "Faktura markerad som betald",
           "refund_initiated": "Återbetalning påbörjad",
           "refund_pending": "Återbetalning behandlas — inväntar bekräftelse från betalningsleverantören",
