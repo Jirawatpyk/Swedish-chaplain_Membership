@@ -3083,7 +3083,7 @@
           "resolve": "Mark as reconciled",
           "resolveConfirm": {
             "title": "Mark this auto-refund as reconciled?",
-            "body": "Do this only after the online payment has been returned to the member outside Chamber-OS (a Stripe Dashboard refund or a bank transfer). Do not issue a credit note: when this payment arrived the invoice was already paid, voided or credited, so the payment is a duplicate, not a sale — a credit note would reduce real output VAT and still return no money. Marking it reconciled clears this alert, updates the member's invoice to show the payment as refunded, and is recorded in the audit log.",
+            "body": "Do this only after the online payment has been returned to the member outside Chamber-OS (a Stripe Dashboard refund or a bank transfer). Do not issue a credit note: this payment was never booked against the invoice (where the invoice was already paid another way, it is a duplicate), so a credit note would reduce the invoice's real output VAT and still return no money. Marking it reconciled clears this alert, updates the member's invoice to show the payment as refunded, and is recorded in the audit log.",
             "cancel": "Cancel",
             "confirm": "Yes, mark as reconciled",
             "pending": "Recording…"
@@ -3298,7 +3298,7 @@
           "codeFallback": "Error code: {code}",
           "refundInProgress": "A refund is currently being processed on this invoice's payment. Voiding now could conflict with it — wait until the refund settles, then try again.",
           "paidMembershipRequiresCreditNote": "This paid membership invoice can't be voided. To reverse it, issue a credit note instead.",
-          "paidInvoiceRequiresRefund": "This paid invoice can't be voided. To reverse it, refund the payment instead."
+          "paidInvoiceRequiresRefund": "This paid invoice can't be voided. Reverse it with a refund instead; if it was paid outside Chamber-OS, return the money outside Chamber-OS and follow the correction runbook."
         }
       }
     },

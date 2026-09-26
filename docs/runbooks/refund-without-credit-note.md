@@ -182,10 +182,11 @@ buyer, VAT split, both dates) plus the Query B month pairing.
 retain-with-cancellation-note → out-of-system instrument → register-pairing
 procedure in `docs/runbooks/event-invoice-legacy-no-tin-remediation.md` § Step 4.
 
-> **Cite that procedure, not its premise.** The first line of that section states
-> that `paid → void` is illegal. It is not — `canTransition` in
-> `src/modules/invoicing/domain/invoice.ts` allows it, which is exactly why the
-> `invoice_voided` waiver exists.
+> `paid → void` **is** illegal (since 2026-09-26): `voidInvoice` refuses a paid
+> invoice (`paid_membership_requires_credit_note` / `paid_invoice_requires_refund`),
+> and `canTransition` plus `applyVoid`'s CAS allow `issued → void` only. The
+> `invoice_voided` waiver still exists for invoices voided while unpaid, and for
+> legacy rows voided while paid before that change.
 
 ---
 
@@ -198,7 +199,7 @@ invoice was ever paid:
 | Condition | Action |
 |---|---|
 | `i.paid_at IS NULL` | No output VAT was ever declared for this sale. Document retention only — nothing for the accountant. |
-| `i.paid_at IS NOT NULL` | Output VAT WAS declared. Same handover as Step 3. |
+| `i.paid_at IS NOT NULL` | Output VAT WAS declared. Same handover as Step 3. Only legacy rows voided before 2026-09-26 can be in this state; a paid invoice can no longer be voided. |
 
 Never hard-delete a §87-numbered document. Retain the original and its copies
 with a written cancellation note. §87/3 requires a 5-year minimum; retain for
