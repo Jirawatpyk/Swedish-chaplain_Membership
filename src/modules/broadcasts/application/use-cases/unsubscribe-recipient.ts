@@ -23,6 +23,17 @@
  *   - Invalid-token clicks NEVER reach this use-case; the route emits
  *     `broadcast_unsubscribe_token_invalid` directly.
  *
+ * Channels — every opt-out path lands here so the tenant+email row and the
+ * two audit events are identical whichever way the recipient objected:
+ *   - `page_get`        — recipient opened `/unsubscribe/[token]`.
+ *   - `one_click_post`  — RFC 8058 `List-Unsubscribe-Post` from a mail client.
+ *   - `resend_hosted`   — Resend's hosted unsubscribe page / Resend's own
+ *                         one-click header, mirrored from `contact.updated`.
+ *                         No token (Resend never sees ours).
+ *   - `manual`          — staff removal after the recipient emailed the
+ *                         privacy contact (`scripts/ops/manual-unsubscribe.ts`).
+ *                         No token, usually no broadcast.
+ *
  * Pure Application — only Domain types + ports.
  */
 import { err, ok, type Result } from '@/lib/result';
@@ -44,12 +55,33 @@ import type {
 import type { MembersBridgePort } from '../ports/members-bridge-port';
 import type { ClockPort } from '../ports/clock-port';
 
+export type UnsubscribeChannel =
+  | 'page_get'
+  | 'one_click_post'
+  | 'resend_hosted'
+  | 'manual';
+
+const ACTOR_BY_CHANNEL: Readonly<Record<UnsubscribeChannel, string>> = {
+  page_get: 'system:public_unsubscribe',
+  one_click_post: 'system:public_unsubscribe',
+  resend_hosted: 'system:resend-webhook',
+  manual: 'system:ops_manual_unsubscribe',
+};
+
 export interface UnsubscribeRecipientInput {
   readonly tenantId: TenantSlug;
-  readonly broadcastId: BroadcastId;
+  /** Source broadcast, when known. `null` for a manual removal. */
+  readonly broadcastId: BroadcastId | null;
   readonly emailLower: EmailLower;
-  /** Raw token plaintext — hashed by this use-case before persisting. */
-  readonly tokenPlaintext: string;
+  /**
+   * Raw token plaintext — hashed by this use-case before persisting.
+   * `null` on the channels that never see our token (`resend_hosted`,
+   * `manual`).
+   */
+  readonly tokenPlaintext: string | null;
+  readonly channel: UnsubscribeChannel;
+  /** `manual` only — who applied the removal (recorded on the audits). */
+  readonly operator?: string;
   readonly requestId: string | null;
   /**
    * Optional recipient feedback (≤500 chars; truncated at this boundary).
@@ -77,7 +109,7 @@ export type UnsubscribeRecipientError =
     }
   | {
       readonly kind: 'unsubscribe.tenant_mismatch';
-      readonly broadcastId: BroadcastId;
+      readonly broadcastId: BroadcastId | null;
     }
   | {
       readonly kind: 'unsubscribe.repo_error';
@@ -121,7 +153,13 @@ export async function unsubscribeRecipient(
         ? input.reasonText.slice(0, REASON_TEXT_MAX)
         : input.reasonText;
 
-  const tokenHash = sha256Hex(input.tokenPlaintext);
+  const tokenHash =
+    input.tokenPlaintext === null ? null : sha256Hex(input.tokenPlaintext);
+  const actorUserId = ACTOR_BY_CHANNEL[input.channel];
+  const channelPayload =
+    input.operator === undefined
+      ? { channel: input.channel }
+      : { channel: input.channel, operator: input.operator };
 
   // Best-effort attribution (108 PR-C, FR-024 / US3 s7): the address is
   // looked up against EVERY live contact in the tenant graph first, so a
@@ -171,11 +209,14 @@ export async function unsubscribeRecipient(
     // foreign-key value (NULL'd out below).
     let sourceBroadcastId: BroadcastId | null = null;
     try {
-      const broadcast = await deps.broadcastsRepo.findByIdInTx(
-        tx,
-        input.tenantId,
-        input.broadcastId,
-      );
+      const broadcast =
+        input.broadcastId === null
+          ? null
+          : await deps.broadcastsRepo.findByIdInTx(
+              tx,
+              input.tenantId,
+              input.broadcastId,
+            );
       if (broadcast !== null) sourceBroadcastId = broadcast.broadcastId;
     } catch (cause) {
       logger.warn(
@@ -208,8 +249,11 @@ export async function unsubscribeRecipient(
       try {
         await deps.audit.emit(tx, {
           eventType: 'broadcast_unsubscribed',
-          actorUserId: 'system:public_unsubscribe',
-          summary: `Recipient unsubscribed from broadcast ${input.broadcastId}`,
+          actorUserId,
+          summary:
+            input.broadcastId === null
+              ? `Recipient unsubscribed from E-Blasts (${input.channel})`
+              : `Recipient unsubscribed from broadcast ${input.broadcastId} (${input.channel})`,
           payload: {
             broadcastId: sourceBroadcastId,
             emailHash,
@@ -217,20 +261,22 @@ export async function unsubscribeRecipient(
             contactId,
             sourceTokenHash: tokenHash,
             reason: 'recipient_initiated',
+            ...channelPayload,
           },
           tenantId: input.tenantId,
           requestId: input.requestId,
         });
         await deps.audit.emit(tx, {
           eventType: 'broadcast_suppression_applied',
-          actorUserId: 'system:public_unsubscribe',
-          summary: `Suppression applied for ${emailHash.slice(0, 12)} (recipient_initiated)`,
+          actorUserId,
+          summary: `Suppression applied for ${emailHash.slice(0, 12)} (recipient_initiated, ${input.channel})`,
           payload: {
             broadcastId: sourceBroadcastId,
             emailHash,
             memberId,
             contactId,
             reason: 'recipient_initiated',
+            ...channelPayload,
           },
           tenantId: input.tenantId,
           requestId: input.requestId,
