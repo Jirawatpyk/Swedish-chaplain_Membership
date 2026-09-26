@@ -237,6 +237,7 @@ const MIGRATED_PATHS = [
   'src/components/command-palette/**',
   'src/components/auth/idle-warning-dialog.tsx',
   'src/app/test-fixtures/aura-shell/**',
+  'src/app/test-fixtures/aura-auth/**',
   // US2 — the auth pages. The user-admin screens in src/components/auth
   // (user list, filters, invite / change-role dialogs) move with US10.
   'src/app/(auth-public)/**',
