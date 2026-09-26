@@ -6529,15 +6529,15 @@
       },
       "banner": {
         "acknowledgement": {
-          "title": "Marketing communications consent",
-          "body": "Submitting an E-Blast confirms recipients have agreed to receive your chamber's communications. You can revoke consent on a per-recipient basis at any time.",
+          "title": "Before you send E-Blasts",
+          "body": "E-Blasts go to contacts at member companies and to recent event attendees, except anyone who has opted out of marketing emails. Every E-Blast includes an unsubscribe link, and opt-outs are applied automatically. Keep your message relevant to members and don't include other people's personal data.",
           "privacyPolicyLink": "Read the privacy policy",
           "acknowledge": "I acknowledge",
           "remindLater": "Remind me later",
           "closeLabel": "Close banner",
-          "toastAcknowledged": "Marketing-communications consent recorded.",
+          "toastAcknowledged": "Acknowledgement recorded.",
           "toastAcknowledgeFailed": "Could not record your acknowledgement.",
-          "toastAcknowledgeFailedHint": "Please try again — the banner stays open until consent is recorded."
+          "toastAcknowledgeFailedHint": "Please try again — the banner stays open until your acknowledgement is recorded."
         }
       },
       "list": {
@@ -7873,26 +7873,34 @@
       "metaTitle": "Unsubscribe",
       "fallbackChamberName": "the chamber",
       "chamberWebsiteLink": "Visit the chamber website",
+      "opensInNewTab": "(opens in a new tab)",
+      "privacyLine": "How {tenantDisplayName} uses your data: <link>Privacy notice</link>",
       "success": {
         "heading": "Unsubscribed",
-        "body": "You have been unsubscribed from {tenantDisplayName} marketing broadcasts. You will no longer receive E-Blasts.",
-        "transactional": "You will continue to receive transactional emails (password resets, invoice receipts, renewal reminders) related to your account, if any.",
+        "body": "{tenantDisplayName} will no longer send marketing E-Blasts to this email address. This applies to all E-Blasts from {tenantDisplayName}, including those sent on behalf of other members.",
+        "transactional": "This does not affect service emails. If you receive emails about your organisation's membership, such as invoices, receipts, renewal reminders or password resets, they will continue.",
         "contact": "If you unsubscribed by mistake, please contact <email></email>."
       },
       "already": {
         "heading": "Already unsubscribed",
-        "body": "Your email is already on our suppression list for {tenantDisplayName}. No further action needed.",
-        "contact": "If you would like to receive broadcasts again, please contact <email></email>."
+        "body": "This address is already opted out of {tenantDisplayName} E-Blasts. No further action needed.",
+        "contact": "If you'd like to receive E-Blasts again, contact <email></email>."
       },
       "invalid": {
         "heading": "Link is invalid",
-        "body": "This unsubscribe link is invalid or expired. This can happen if the link was copied incorrectly, or if you are clicking an older email.",
-        "contact": "Please contact <email></email> and we will remove your email manually."
+        "body": "This unsubscribe link is invalid. This can happen if the link was copied incorrectly, or if you are clicking an older email.",
+        "contact": "Please email us at <email></email> and we will remove your address from all {tenantDisplayName} E-Blasts within 2 business days. This is free of charge."
       },
       "error": {
         "heading": "Temporary error",
         "body": "We could not record your unsubscribe right now due to a temporary system error. Your unsubscribe was NOT recorded — please try the link again in a few minutes.",
-        "contact": "If the problem persists, please contact <email></email> and we will remove your email manually."
+        "contact": "If the problem persists, email us at <email></email> and we will remove your address from all {tenantDisplayName} E-Blasts within 2 business days. This is free of charge.",
+        "tryAgain": "Try again"
+      },
+      "rateLimited": {
+        "heading": "Please try again shortly",
+        "body": "Too many requests from your network. Please try the link again in a few minutes.",
+        "contact": "If this keeps happening, email us at <email></email> and we will remove your address from all {tenantDisplayName} E-Blasts within 2 business days. This is free of charge."
       }
     }
   },

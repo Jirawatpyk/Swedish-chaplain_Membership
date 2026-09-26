@@ -59,6 +59,7 @@ const TEST_PLACEHOLDERS: Record<string, string> = {
   RESEND_BROADCASTS_WEBHOOK_SECRET:
     'test-broadcasts-webhook-secret-at-least-32-chars-pad',
   BROADCASTS_FROM_EMAIL: 'broadcasts@zyncdata.app',
+  TENANT_PRIVACY_CONTACT_EMAIL: 'privacy@zyncdata.app',
   // ≥32 bytes AND distinct from AUTH_COOKIE_SIGNING_SECRET above.
   UNSUBSCRIBE_TOKEN_SECRET:
     'test-unsubscribe-token-secret-32-chars-min-distinct',

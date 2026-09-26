@@ -104,7 +104,7 @@ const AUDIT_CATEGORY_OVERRIDES: ReadonlyMap<string, AuditEventCategory> = new Ma
   ['auto_email_skipped_no_recipient', 'billing'],
   // F8 renewals cron dispatch — no renewals-family prefix.
   ['cron_dispatch_orchestrated', 'renewals'],
-  // F7 broadcast consent event carries a `member_` prefix.
+  // F7 E-Blast terms-acknowledgement event carries a `member_` prefix.
   ['member_acknowledged_broadcasts_terms', 'broadcasts'],
 ] as const);
 

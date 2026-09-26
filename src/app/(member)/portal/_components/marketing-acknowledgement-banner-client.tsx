@@ -4,15 +4,15 @@
  * T091 — Acknowledgement banner client wrapper.
  *
  * Renders the visual banner + "I acknowledge" / "Remind me later" CTAs.
- * Acknowledge POSTs to `/api/portal/broadcasts/acknowledge` (Q15 GDPR
- * Art. 7 demonstrable consent surface).
+ * Acknowledge POSTs to `/api/portal/broadcasts/acknowledge` (Q15 — the
+ * member acknowledges the E-Blast sending terms; not recipient consent).
  *
  * Behaviour on Acknowledge click:
  *   - 2xx response → success toast + dismiss banner.
  *   - non-2xx response OR network failure → error toast with retry hint.
  *     Banner stays mounted so the user can re-click. NO best-effort
  *     dismiss — silently dismissing on failure would diverge the recorded
- *     consent state from what the UI implies (legal exposure).
+ *     acknowledgement state from what the UI implies.
  *
  * a11y CHK042 — banner-dismissal returns focus to a sibling anchor span
  * that stays mounted across the hidden state so `document.activeElement`
@@ -31,10 +31,10 @@ export interface AcknowledgementBannerClientProps {
   readonly body: string;
   readonly acknowledge: string;
   readonly remindLater: string;
-  /** Server-resolved next-intl locale — recorded as the consent locale
-   *  on the audit row (GDPR Art. 7). Passed as a prop instead of read
-   *  from `document.documentElement.lang` so the consent reflects what
-   *  the user actually saw on the server-rendered page. */
+  /** Server-resolved next-intl locale — recorded as the acknowledgement
+   *  locale on the audit row. Passed as a prop instead of read from
+   *  `document.documentElement.lang` so the record reflects what the
+   *  user actually saw on the server-rendered page. */
   readonly locale: 'en' | 'th' | 'sv';
   /** UX-5 — optional tenant Privacy Policy URL. When null/undefined
    *  the link is omitted entirely (no dead anchor) for tenants

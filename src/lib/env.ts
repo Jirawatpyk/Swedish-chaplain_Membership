@@ -484,6 +484,25 @@ const schema = z.object({
     .optional()
     .or(z.literal('').transform(() => undefined)),
 
+  // Monitored inbox (chamber office or DPO) that recipients are pointed at
+  // on the public unsubscribe page — "email us and we will remove this
+  // address". GDPR Art. 12(2)-(3) / PDPA §32: objecting must be easy, so
+  // this MUST be read by a person; `BROADCASTS_FROM_EMAIL` is a sending
+  // address and may not be. Bare `local@domain` only (it is rendered as
+  // `mailto:` text), no display-name form. Required in production when F7
+  // is on (post-parse guard below); elsewhere the page falls back to the
+  // bare part of `BROADCASTS_FROM_EMAIL`.
+  TENANT_PRIVACY_CONTACT_EMAIL: z
+    .string()
+    .trim()
+    .regex(/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/, 'must be a bare `local@domain` address')
+    .refine(
+      (v) => !/\.(example|invalid|test|localhost)$/i.test(v.split('@')[1] ?? ''),
+      'must not use IANA reserved TLDs (.example/.invalid/.test/.localhost)',
+    )
+    .optional()
+    .or(z.literal('').transform(() => undefined)),
+
   // Kill-switch for F7 Email Broadcast. When FALSE every
   // `/api/broadcasts/**` and `/api/admin/broadcasts/**` route returns
   // 503 `feature_disabled` via the kill-switch helper (T031). Default
@@ -1005,6 +1024,23 @@ if (raw.UNSUBSCRIBE_TOKEN_SECRET) {
   }
 }
 
+// F7 PDPA/GDPR condition: the public unsubscribe page tells recipients to
+// email a person to be removed. In production with F7 on, that inbox must be
+// configured explicitly — never silently the (possibly unmonitored) sending
+// address.
+if (
+  raw.NODE_ENV === 'production' &&
+  raw.FEATURE_F7_BROADCASTS &&
+  !raw.TENANT_PRIVACY_CONTACT_EMAIL
+) {
+  throw new Error(
+    'Environment validation failed (src/lib/env.ts):\n' +
+      '  - TENANT_PRIVACY_CONTACT_EMAIL must be set to a monitored office or DPO ' +
+      'inbox when FEATURE_F7_BROADCASTS=true in production. The public ' +
+      'unsubscribe page shows it as the manual-removal contact.',
+  );
+}
+
 // F9 (#8): in PRODUCTION the private-export Blob store MUST be a dedicated
 // PRIVATE store — never the public BLOB_READ_WRITE_TOKEN store (which backs F4
 // invoice PDFs + F9 logos). GDPR export archives + Directory E-Books carry full
@@ -1200,6 +1236,10 @@ export const env = {
     // F7 UX-5/UX-6 — optional tenant URLs (gracefully omitted when unset).
     privacyPolicyUrl: raw.TENANT_PRIVACY_POLICY_URL,
     websiteUrl: raw.TENANT_WEBSITE_URL,
+    // Always a bare address (see TENANT_PRIVACY_CONTACT_EMAIL above).
+    privacyContactEmail:
+      raw.TENANT_PRIVACY_CONTACT_EMAIL ??
+      (raw.BROADCASTS_FROM_EMAIL.match(/<([^>]+)>\s*$/)?.[1] ?? raw.BROADCASTS_FROM_EMAIL).trim(),
   },
 
   // F8 Renewal Tracking + Smart Reminders. F8 reuses F1+F4 transactional

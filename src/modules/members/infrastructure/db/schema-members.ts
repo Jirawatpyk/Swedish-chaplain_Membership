@@ -165,13 +165,14 @@ export const members = pgTable(
       .notNull()
       .default(false),
 
-    // F7 — GDPR Art. 7 demonstrable-consent timestamp (Clarifications Q15).
-    // Populated when member dismisses the one-time portal acknowledgement
-    // banner ("Your tier includes marketing broadcasts...; you may
-    // unsubscribe at any time"). Emits `member_acknowledged_broadcasts_terms`
-    // audit on first set. NOT a precondition for receiving broadcasts —
-    // lawful basis remains contract performance per PDPA §24 + GDPR
-    // Art. 6(1)(b). Indefinite retention while member row exists.
+    // F7 — timestamp of the member's acknowledgement of the E-Blast sending
+    // terms (Clarifications Q15), set when the member clicks "I acknowledge"
+    // on the one-time portal banner. Emits `member_acknowledged_broadcasts_terms`
+    // audit on first set. This is NOT recipient consent and NOT a
+    // precondition for receiving E-Blasts — recipients are contacted on the
+    // basis of legitimate interest (GDPR Art. 6(1)(f) / PDPA §24(5)) with a
+    // tenant-wide opt-out in `marketing_unsubscribes`. Indefinite retention
+    // while member row exists.
     broadcastsAcknowledgedAt: timestamp('broadcasts_acknowledged_at', {
       withTimezone: true,
     }),

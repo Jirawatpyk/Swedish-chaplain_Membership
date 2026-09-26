@@ -29,6 +29,7 @@ import { logger } from '@/lib/logger';
 import {
   WebhookSignatureError,
   type VerifiedBroadcastEvent,
+  type VerifiedContactUpdatedEvent,
   type WebhookEventStatus,
   type WebhookVerifierPort,
 } from '../../application/ports/webhook-verifier-port';
@@ -123,6 +124,105 @@ function decodeBase64Loose(raw: string): Buffer {
   return Buffer.from(raw, 'utf8');
 }
 
+/**
+ * Svix header checks + timestamp tolerance + HMAC + JSON parse, shared by
+ * every event shape. Verify-before-parse: the body is only parsed after the
+ * signature matched.
+ */
+function verifySignedEnvelope(
+  rawBody: string,
+  svixSignatureHeader: string | null,
+  svixIdHeader: string | null,
+  svixTimestampHeader: string | null,
+  secret: string,
+): { readonly parsed: ResendWebhookEnvelope; readonly ts: number; readonly svixId: string } {
+  if (
+    svixSignatureHeader === null ||
+    svixSignatureHeader.length === 0 ||
+    svixIdHeader === null ||
+    svixIdHeader.length === 0 ||
+    svixTimestampHeader === null ||
+    svixTimestampHeader.length === 0
+  ) {
+    throw new WebhookSignatureError(
+      'missing_header',
+      'Missing one of svix-signature / svix-id / svix-timestamp headers',
+    );
+  }
+
+  const ts = Number.parseInt(svixTimestampHeader, 10);
+  if (!Number.isFinite(ts)) {
+    throw new WebhookSignatureError(
+      'malformed',
+      'svix-timestamp header is not a valid unix-second integer',
+    );
+  }
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  if (Math.abs(nowSeconds - ts) > TIMESTAMP_TOLERANCE_SECONDS) {
+    throw new WebhookSignatureError(
+      'expired_timestamp',
+      `Webhook timestamp ${ts} outside ±${TIMESTAMP_TOLERANCE_SECONDS}s tolerance`,
+    );
+  }
+
+  const rawSecret = secret.startsWith('whsec_') ? secret.slice(6) : secret;
+  // Review ERR-M-R3-1 (round 3): defence-in-depth guard. `env.ts`
+  // zod schema requires `RESEND_BROADCASTS_WEBHOOK_SECRET` to be
+  // ≥32 bytes, so empty secret is impossible at boot. But if a
+  // future config-loader regression bypasses the zod check, an
+  // empty `rawSecret` would HMAC-over-empty-key all webhooks and
+  // surface as generic `bad_signature` audits with no hint that
+  // the secret is misconfigured. Throw `malformed` with an
+  // explicit reason so operators see the real cause.
+  if (rawSecret.length === 0) {
+    throw new WebhookSignatureError(
+      'malformed',
+      'webhook secret is empty after stripping whsec_ prefix — operator misconfiguration',
+    );
+  }
+  const signedPayload = `${svixIdHeader}.${svixTimestampHeader}.${rawBody}`;
+  const expected = createHmac('sha256', decodeBase64Loose(rawSecret))
+    .update(signedPayload, 'utf8')
+    .digest('base64');
+
+  const expectedBuf = Buffer.from(expected, 'utf8');
+  let matched = false;
+  for (const part of svixSignatureHeader.split(' ')) {
+    const [version, sig] = part.split(',');
+    if (version !== 'v1' || !sig) continue;
+    const sigBuf = Buffer.from(sig, 'utf8');
+    if (sigBuf.length !== expectedBuf.length) continue;
+    if (timingSafeEqual(sigBuf, expectedBuf)) {
+      matched = true;
+      break;
+    }
+  }
+  if (!matched) {
+    throw new WebhookSignatureError(
+      'bad_signature',
+      'No v1 signature in svix-signature header matched the computed HMAC',
+    );
+  }
+
+  let parsed: ResendWebhookEnvelope;
+  try {
+    parsed = JSON.parse(rawBody) as ResendWebhookEnvelope;
+  } catch {
+    throw new WebhookSignatureError(
+      'tampered_body',
+      'Body passed signature check but is not valid JSON',
+    );
+  }
+  return { parsed, ts, svixId: svixIdHeader };
+}
+
+interface ResendContactEnvelopeData {
+  readonly email?: unknown;
+  readonly audience_id?: unknown;
+  readonly segment_ids?: unknown;
+  readonly unsubscribed?: unknown;
+}
+
 export const resendBroadcastsWebhookVerifier: WebhookVerifierPort = {
   constructEvent(
     rawBody: string,
@@ -131,83 +231,13 @@ export const resendBroadcastsWebhookVerifier: WebhookVerifierPort = {
     svixTimestampHeader: string | null,
     secret: string,
   ): VerifiedBroadcastEvent {
-    if (
-      svixSignatureHeader === null ||
-      svixSignatureHeader.length === 0 ||
-      svixIdHeader === null ||
-      svixIdHeader.length === 0 ||
-      svixTimestampHeader === null ||
-      svixTimestampHeader.length === 0
-    ) {
-      throw new WebhookSignatureError(
-        'missing_header',
-        'Missing one of svix-signature / svix-id / svix-timestamp headers',
-      );
-    }
-
-    const ts = Number.parseInt(svixTimestampHeader, 10);
-    if (!Number.isFinite(ts)) {
-      throw new WebhookSignatureError(
-        'malformed',
-        'svix-timestamp header is not a valid unix-second integer',
-      );
-    }
-    const nowSeconds = Math.floor(Date.now() / 1000);
-    if (Math.abs(nowSeconds - ts) > TIMESTAMP_TOLERANCE_SECONDS) {
-      throw new WebhookSignatureError(
-        'expired_timestamp',
-        `Webhook timestamp ${ts} outside ±${TIMESTAMP_TOLERANCE_SECONDS}s tolerance`,
-      );
-    }
-
-    const rawSecret = secret.startsWith('whsec_') ? secret.slice(6) : secret;
-    // Review ERR-M-R3-1 (round 3): defence-in-depth guard. `env.ts`
-    // zod schema requires `RESEND_BROADCASTS_WEBHOOK_SECRET` to be
-    // ≥32 bytes, so empty secret is impossible at boot. But if a
-    // future config-loader regression bypasses the zod check, an
-    // empty `rawSecret` would HMAC-over-empty-key all webhooks and
-    // surface as generic `bad_signature` audits with no hint that
-    // the secret is misconfigured. Throw `malformed` with an
-    // explicit reason so operators see the real cause.
-    if (rawSecret.length === 0) {
-      throw new WebhookSignatureError(
-        'malformed',
-        'webhook secret is empty after stripping whsec_ prefix — operator misconfiguration',
-      );
-    }
-    const signedPayload = `${svixIdHeader}.${svixTimestampHeader}.${rawBody}`;
-    const expected = createHmac('sha256', decodeBase64Loose(rawSecret))
-      .update(signedPayload, 'utf8')
-      .digest('base64');
-
-    const expectedBuf = Buffer.from(expected, 'utf8');
-    let matched = false;
-    for (const part of svixSignatureHeader.split(' ')) {
-      const [version, sig] = part.split(',');
-      if (version !== 'v1' || !sig) continue;
-      const sigBuf = Buffer.from(sig, 'utf8');
-      if (sigBuf.length !== expectedBuf.length) continue;
-      if (timingSafeEqual(sigBuf, expectedBuf)) {
-        matched = true;
-        break;
-      }
-    }
-    if (!matched) {
-      throw new WebhookSignatureError(
-        'bad_signature',
-        'No v1 signature in svix-signature header matched the computed HMAC',
-      );
-    }
-
-    let parsed: ResendWebhookEnvelope;
-    try {
-      parsed = JSON.parse(rawBody) as ResendWebhookEnvelope;
-    } catch {
-      throw new WebhookSignatureError(
-        'tampered_body',
-        'Body passed signature check but is not valid JSON',
-      );
-    }
+    const { parsed, ts, svixId } = verifySignedEnvelope(
+      rawBody,
+      svixSignatureHeader,
+      svixIdHeader,
+      svixTimestampHeader,
+      secret,
+    );
 
     // Type guard narrows `parsed.type` to the literal union of known
     // event types; the `Object.hasOwn` check inside the predicate
@@ -285,7 +315,7 @@ export const resendBroadcastsWebhookVerifier: WebhookVerifierPort = {
       : ts;
 
     return {
-      id: svixIdHeader,
+      id: svixId,
       type: parsed.type,
       createdAtUnixSeconds: Number.isFinite(createdAtUnixSeconds)
         ? createdAtUnixSeconds
@@ -299,6 +329,67 @@ export const resendBroadcastsWebhookVerifier: WebhookVerifierPort = {
           errorMessage: errorMessageRaw,
         }),
         ...(bounceType !== undefined && { bounceType }),
+      },
+    };
+  },
+  /**
+   * Resend's hosted unsubscribe page — and the List-Unsubscribe headers
+   * Resend adds to every broadcast — flip the Resend CONTACT to
+   * `unsubscribed`, reported as `contact.updated` (Resend has no
+   * `email.unsubscribed` event). Parsed here so the route can mirror the
+   * opt-out into `marketing_unsubscribes`. Throws `unknown_event_type` for
+   * any other type so the caller keeps its ack-and-ignore behaviour.
+   */
+  constructContactEvent(
+    rawBody: string,
+    svixSignatureHeader: string | null,
+    svixIdHeader: string | null,
+    svixTimestampHeader: string | null,
+    secret: string,
+  ): VerifiedContactUpdatedEvent {
+    const { parsed, ts, svixId } = verifySignedEnvelope(
+      rawBody,
+      svixSignatureHeader,
+      svixIdHeader,
+      svixTimestampHeader,
+      secret,
+    );
+    if (parsed.type !== 'contact.updated') {
+      throw new WebhookSignatureError(
+        'unknown_event_type',
+        `Unhandled Resend webhook event type: ${String(parsed.type)}`,
+      );
+    }
+    const data = (parsed.data ?? {}) as ResendContactEnvelopeData;
+    const email = typeof data.email === 'string' ? data.email.trim() : '';
+    // Resend has moved contacts from audiences to segments; accept both.
+    const audienceIds = [
+      ...(typeof data.audience_id === 'string' ? [data.audience_id] : []),
+      ...(Array.isArray(data.segment_ids)
+        ? data.segment_ids.filter((v): v is string => typeof v === 'string')
+        : []),
+    ].filter((v) => v.length > 0);
+    // No audience/segment id is still an objection — the route audits it
+    // for manual follow-up. Only a missing address is unusable.
+    if (email.length === 0) {
+      throw new WebhookSignatureError(
+        'malformed',
+        'contact.updated payload missing email',
+      );
+    }
+    const createdAtUnixSeconds = parsed.created_at
+      ? Math.floor(new Date(parsed.created_at).getTime() / 1000)
+      : ts;
+    return {
+      id: svixId,
+      type: 'contact.updated',
+      createdAtUnixSeconds: Number.isFinite(createdAtUnixSeconds)
+        ? createdAtUnixSeconds
+        : ts,
+      data: {
+        email,
+        audienceIds,
+        unsubscribed: data.unsubscribed === true,
       },
     };
   },

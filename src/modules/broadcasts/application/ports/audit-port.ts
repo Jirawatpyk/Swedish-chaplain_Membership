@@ -4,7 +4,7 @@
  * 70 live audit event types (55 before F119) as a const tuple + discriminated union for
  * compile-time safety on emit sites. Mirror of F4 audit-port pattern,
  * but ALL F7 events default to **5-year retention** (no tax-document
- * overlap; F7 is operational + marketing-consent + privacy events).
+ * overlap; F7 is operational + marketing-objection + privacy events).
  *
  * The retention column on `audit_log` (Constitution v1.4.0 trigger
  * 0063) defaults to 5 unless the emitter sets it explicitly. F7
@@ -121,7 +121,7 @@ export const F7_AUDIT_EVENT_TYPES = [
   // --- Clarifications session 5 (Q14 + Q15) — 3 events ---------------
   'broadcast_complaint_rate_per_broadcast_breach', // US4-deferred (5% complaint-rate auto-halt webhook handler)
   'broadcast_member_dispatch_resumed',             // Q14 admin clear-halt — emitted
-  'member_acknowledged_broadcasts_terms',          // Q15 GDPR Art. 7 — emitted (round-4 CRIT-B)
+  'member_acknowledged_broadcasts_terms',          // Q15 terms acknowledgement (not recipient consent) — emitted (round-4 CRIT-B)
 
   // --- Phase 8 verify-fix R3 — 2 events ------------------------------
   // (Errors-C1) — distinguishes pre-`createBroadcast` race (two workers
@@ -293,9 +293,11 @@ export type F7AuditEventType = (typeof F7_AUDIT_EVENT_TYPES)[number];
  * Retention-year mapping for F7 audit events (data-model § 6).
  *
  * All F7 events default to **5y** — F7 has NO tax-document touchpoint.
- * Member-acknowledged broadcasts terms (Q15) is GDPR Art. 7
- * "demonstrable consent" evidence; 5y retention covers the audit
- * window. Suppression rows (`marketing_unsubscribes`) are retained
+ * Member-acknowledged broadcasts terms (Q15) records the sending
+ * member's acknowledgement of the E-Blast rules (not recipient consent —
+ * recipients are on legitimate interest). NOTE: migration 0084's trigger
+ * still promotes it to 10y on a consent rationale that no longer applies
+ * (open follow-up, docs/compliance/processing-records.md). Suppression rows (`marketing_unsubscribes`) are retained
  * INDEFINITELY at the row level — that's a separate data-retention
  * policy, not an audit-log retention.
  */

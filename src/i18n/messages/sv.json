@@ -6529,15 +6529,15 @@
       },
       "banner": {
         "acknowledgement": {
-          "title": "Samtycke till marknadskommunikation",
-          "body": "Att skicka in ett utskick bekräftar att mottagarna har samtyckt till att ta emot din handelskammares kommunikation. Du kan återkalla samtycke per mottagare när som helst.",
-          "privacyPolicyLink": "Läs sekretesspolicyn",
+          "title": "Innan du skickar utskick",
+          "body": "Utskick skickas till kontaktpersoner hos medlemsföretag och till personer som nyligen deltagit i evenemang, utom dem som har avregistrerat sig från marknadsföringsmejl. Varje utskick innehåller en avregistreringslänk, och avregistreringar hanteras automatiskt. Håll budskapet relevant för medlemmarna och ta inte med andra personers personuppgifter.",
+          "privacyPolicyLink": "Läs integritetspolicyn",
           "acknowledge": "Jag bekräftar",
           "remindLater": "Påminn mig senare",
           "closeLabel": "Stäng banner",
-          "toastAcknowledged": "Samtycke till marknadskommunikation registrerat.",
-          "toastAcknowledgeFailed": "Kunde inte registrera ditt samtycke.",
-          "toastAcknowledgeFailedHint": "Försök igen — bannern stannar kvar tills samtycket är registrerat."
+          "toastAcknowledged": "Bekräftelsen har registrerats.",
+          "toastAcknowledgeFailed": "Det gick inte att registrera din bekräftelse.",
+          "toastAcknowledgeFailedHint": "Försök igen — bannern visas tills din bekräftelse har registrerats."
         }
       },
       "list": {
@@ -7873,26 +7873,34 @@
       "metaTitle": "Avregistrering",
       "fallbackChamberName": "kammaren",
       "chamberWebsiteLink": "Besök kammarens webbplats",
+      "opensInNewTab": "(öppnas i en ny flik)",
+      "privacyLine": "Så använder {tenantDisplayName} dina uppgifter: <link>Integritetsmeddelande</link>",
       "success": {
         "heading": "Avregistrerad",
-        "body": "Du har avregistrerats från {tenantDisplayName} marknadsutskick. Du kommer inte längre att få marknadsutskick.",
-        "transactional": "Du fortsätter att ta emot transaktionsmejl (lösenordsåterställning, fakturakvitton, förnyelsepåminnelser) kopplade till ditt konto, om sådana finns.",
-        "contact": "Om du avregistrerade av misstag, kontakta <email></email>."
+        "body": "{tenantDisplayName} kommer inte längre att skicka marknadsföringsutskick till den här e-postadressen. Det gäller alla utskick från {tenantDisplayName}, även de som skickas för andra medlemmars räkning.",
+        "transactional": "Det här påverkar inte servicemejl. Om du får mejl om din organisations medlemskap, till exempel fakturor, kvitton, förnyelsepåminnelser eller lösenordsåterställningar, fortsätter de som vanligt.",
+        "contact": "Om du avregistrerade dig av misstag, kontakta <email></email>."
       },
       "already": {
         "heading": "Redan avregistrerad",
-        "body": "Din e-postadress finns redan på spärrlistan för {tenantDisplayName}. Ingen ytterligare åtgärd krävs.",
-        "contact": "Om du vill börja ta emot utskick igen, kontakta <email></email>."
+        "body": "Den här adressen är redan avregistrerad och får inga utskick från {tenantDisplayName}. Ingen ytterligare åtgärd behövs.",
+        "contact": "Om du vill få utskick igen, kontakta <email></email>."
       },
       "invalid": {
         "heading": "Länken är ogiltig",
-        "body": "Denna avregistreringslänk är ogiltig eller har gått ut. Det kan bero på att länken kopierats felaktigt, eller på att du klickar på ett äldre mejl.",
-        "contact": "Kontakta <email></email> så tar vi bort din e-post manuellt."
+        "body": "Denna avregistreringslänk är ogiltig. Det kan bero på att länken kopierats felaktigt, eller på att länken kommer från ett äldre mejl.",
+        "contact": "Mejla oss på <email></email> så tar vi bort din adress från alla utskick från {tenantDisplayName} inom två arbetsdagar. Det är kostnadsfritt."
       },
       "error": {
         "heading": "Tillfälligt fel",
         "body": "Vi kunde inte registrera din avregistrering just nu på grund av ett tillfälligt systemfel. Din avregistrering har INTE registrerats — försök länken igen om några minuter.",
-        "contact": "Om problemet kvarstår, kontakta <email></email> så tar vi bort din e-post manuellt."
+        "contact": "Om problemet kvarstår, mejla oss på <email></email> så tar vi bort din adress från alla utskick från {tenantDisplayName} inom två arbetsdagar. Det är kostnadsfritt.",
+        "tryAgain": "Försök igen"
+      },
+      "rateLimited": {
+        "heading": "Försök igen om en stund",
+        "body": "För många förfrågningar från ditt nätverk. Försök med länken igen om några minuter.",
+        "contact": "Om det fortsätter, mejla oss på <email></email> så tar vi bort din adress från alla utskick från {tenantDisplayName} inom två arbetsdagar. Det är kostnadsfritt."
       }
     }
   },

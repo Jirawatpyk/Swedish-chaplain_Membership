@@ -29,6 +29,16 @@
  *   7. Result.ok → 200 `{received:true}`; Result.err → 500 (Resend
  *      retries with exponential backoff via Svix).
  *
+ * `contact.updated` (step 4b): Resend's hosted unsubscribe page and the
+ * List-Unsubscribe headers Resend adds to every broadcast flip the Resend
+ * contact, which Resend reports as `contact.updated` — there is no
+ * `email.unsubscribed`. When `unsubscribed: true`, the opt-out is mirrored
+ * into `marketing_unsubscribes` (tenant + email, resolved via the
+ * contact's audience → `broadcasts.resend_audience_id`) through the same
+ * `unsubscribeRecipient` use-case as the public page, channel
+ * `resend_hosted`. Requires the `contact.updated` event to be enabled on
+ * this Resend webhook (docs/runbooks/broadcast-manual-unsubscribe.md).
+ *
  * Audit emission for signature rejects uses the F1 audit-repo (since
  * tenant is unknown at that stage); post-tenant audits land via the
  * F7 audit adapter inside the use-case tx.
@@ -45,7 +55,9 @@ import { broadcastsMetrics } from '@/lib/metrics';
 import { broadcastsTracer } from '@/lib/otel-tracer';
 import { SpanStatusCode } from '@opentelemetry/api';
 import { requestIdFromHeaders } from '@/lib/request-id';
+import { sha256Hex } from '@/lib/crypto';
 import {
+  applyResendHostedUnsubscribe,
   asBroadcastId,
   f7AuditAdapter,
   makeProcessWebhookEventDeps,
@@ -206,6 +218,123 @@ async function auditUnknownResendBroadcast(
   }
 }
 
+/**
+ * A recipient objected on Resend's side but the address is unusable. The
+ * route answers 200 (a retry cannot fix it) and leaves a
+ * forensic row so ops can apply it by hand
+ * (docs/runbooks/broadcast-manual-unsubscribe.md). The address is stored
+ * only as the same tenant-scoped hash the use-case audits use
+ * (`sha256(tenant:email)`) — never raw, never an unsalted plain hash.
+ */
+async function auditUnattributedOptOut(
+  reason: 'contact_updated_invalid_email',
+  email: string,
+  audienceIds: ReadonlyArray<string>,
+  requestId: string,
+  correlationId: string,
+): Promise<void> {
+  logger.warn(
+    { reason, audienceIds, requestId, correlationId },
+    'broadcasts.webhook.resend_hosted_unsubscribe_unattributed',
+  );
+  try {
+    await f7AuditAdapter.emit(null, {
+      eventType: 'broadcast_webhook_signature_rejected',
+      actorUserId: 'system:webhook',
+      summary: 'Resend hosted-page unsubscribe could not be attributed to a broadcast',
+      payload: {
+        reason,
+        audienceIds: [...audienceIds],
+        emailHash: sha256Hex(`${env.tenant.slug}:${email.trim().toLowerCase()}`),
+        eventType: 'contact.updated',
+        correlationId,
+      },
+      tenantId: null,
+      requestId,
+    });
+  } catch (e) {
+    logger.error(
+      { err: e instanceof Error ? e.constructor.name : 'unknown', requestId, correlationId },
+      'broadcasts.webhook.audit_unattributed_unsubscribe_failed',
+    );
+  }
+}
+
+/**
+ * Step 4b — Resend `contact.updated`. Returns `null` when the body is not a
+ * `contact.updated` (the caller keeps its unknown-type ack). The Svix
+ * signature is re-checked by `constructContactEvent` — cheap, and it keeps
+ * verify-before-parse on this path too.
+ */
+async function handleContactUpdated(
+  rawBody: string,
+  svixSig: string,
+  svixId: string,
+  svixTimestamp: string,
+  requestId: string,
+  correlationId: string,
+): Promise<NextResponse | null> {
+  let event;
+  try {
+    event = resendBroadcastsWebhookVerifier.constructContactEvent(
+      rawBody,
+      svixSig,
+      svixId,
+      svixTimestamp,
+      env.broadcasts.webhookSecret,
+    );
+  } catch (e) {
+    const kind = e instanceof WebhookSignatureError ? e.kind : 'bad_signature';
+    if (kind === 'unknown_event_type') return null;
+    // The signature already verified once (constructEvent reached the type
+    // check), so this is a contact.updated we cannot read.
+    logger.warn({ kind, requestId, correlationId }, 'broadcasts.webhook.contact_updated_unreadable');
+    return jsonOk(correlationId);
+  }
+
+  if (!event.data.unsubscribed) {
+    // Our own contact imports, name edits, re-subscribes — nothing to mirror.
+    logger.info({ requestId, correlationId }, 'broadcasts.webhook.contact_updated_ignored');
+    return jsonOk(correlationId);
+  }
+
+  const outcome = await applyResendHostedUnsubscribe({
+    email: event.data.email,
+    audienceIds: event.data.audienceIds,
+    requestId,
+  });
+  switch (outcome.kind) {
+    case 'applied':
+    case 'already':
+      // `attributed: false` → no broadcast owns the audience (reaped after
+      // send, or no id at all); filed under this deployment's tenant.
+      (outcome.attributed ? logger.info : logger.warn).call(
+        logger,
+        {
+          outcome: outcome.kind,
+          attributed: outcome.attributed,
+          audienceIds: event.data.audienceIds,
+          tenantId: outcome.tenantId,
+          requestId,
+          correlationId,
+        },
+        'broadcasts.webhook.resend_hosted_unsubscribe_mirrored',
+      );
+      return jsonOk(correlationId);
+    case 'invalid_email':
+      await auditUnattributedOptOut(
+        'contact_updated_invalid_email',
+        event.data.email,
+        event.data.audienceIds,
+        requestId,
+        correlationId,
+      );
+      return jsonOk(correlationId);
+    case 'failed':
+      return jsonInternalError('dispatch_failed', correlationId);
+  }
+}
+
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const requestId = requestIdFromHeaders(request.headers);
   const correlationId = randomUUID();
@@ -310,6 +439,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // event type instead — observability without leaking the diff
     // back to the caller.
     if (kind === 'unknown_event_type') {
+      // Step 4b — `contact.updated` is the one non-email event we act on.
+      const contactResponse = await handleContactUpdated(
+        rawBody,
+        svixSig,
+        svixId,
+        svixTimestamp,
+        requestId,
+        correlationId,
+      );
+      if (contactResponse !== null) return contactResponse;
       logger.info(
         { requestId, correlationId },
         'broadcasts.webhook.unknown_event_type_acked',

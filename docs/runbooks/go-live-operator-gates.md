@@ -133,6 +133,7 @@ echo -n "<paste-generated-value>" | vercel env add AUTH_COOKIE_SIGNING_SECRET pr
 |---------|------|------|
 | **F6 EventCreate** | `EVENTCREATE_PII_PSEUDONYM_SALT` (≥32) **+** `ZAPIER_DPA_EXECUTED=true` | Boot **throws** if `FEATURE_F6_EVENTCREATE=true` without the salt; and in production without `ZAPIER_DPA_EXECUTED=true` (PDPA §28 / GDPR Art.28 legal gate). **Never rotate the salt** once live. |
 | **F9 Dashboard** | `EXPORT_DOWNLOAD_TOKEN_SECRET` (≥32) **+** `BLOB_PRIVATE_READ_WRITE_TOKEN` | Boot **throws** if `FEATURE_F9_DASHBOARD=true` without the token secret. Private Blob store is a separate provisioning step — see §6b. |
+| **F7 E-Blasts** | `TENANT_PRIVACY_CONTACT_EMAIL` (bare `local@domain`, a **monitored** office/DPO inbox) **+** Resend webhook event `contact.updated` enabled | Boot **throws** in production with `FEATURE_F7_BROADCASTS=true` and no `TENANT_PRIVACY_CONTACT_EMAIL` — the public unsubscribe page names it as the free manual-removal contact. Without `contact.updated` on the broadcasts webhook, opt-outs made on Resend's hosted page are not mirrored. See [broadcast-manual-unsubscribe.md](./broadcast-manual-unsubscribe.md). |
 | **F7.1a US2 images** | `CLAMAV_SCAN_URL` (HTTPS) **+** `CLAMAV_SCAN_SECRET` (≥32) | Option D HTTP wrapper (§6). NOT the legacy `CLAMAV_HOST`/`CLAMAV_PORT` (dev-only). Empty `CLAMAV_SCAN_URL` ⇒ scanner returns `error` verdict ⇒ image upload disabled. |
 
 #### 2.2.C — Optional (have safe defaults; set only if you need to override)

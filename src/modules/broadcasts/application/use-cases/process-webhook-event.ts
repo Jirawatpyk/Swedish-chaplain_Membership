@@ -236,14 +236,15 @@ export async function processWebhookEvent(
         return sup.wasNew;
       };
 
-      // Bug #10 fix (2026-07-10): `email.unsubscribed` reaches the F7 MVP
-      // (single-audience) path when a recipient uses Resend's managed
-      // unsubscribe link. It is NOT a `broadcast_deliveries` enum value, so
-      // it must be handled BEFORE the delivery-row insert (which would fail
-      // the pg enum) — we record it as a recipient-level suppression instead.
-      // Multi-batch broadcasts never reach here: the route increments the
-      // per-batch `unsubscribed_count` and returns early. Idempotent — the
-      // suppression upsert's `wasNew` gates the audit emit against replays.
+      // Bug #10 fix (2026-07-10): defensive handling for an
+      // `email.unsubscribed` event. It is NOT a `broadcast_deliveries` enum
+      // value, so it must be handled BEFORE the delivery-row insert (which
+      // would fail the pg enum) — we record it as a recipient-level
+      // suppression instead. Idempotent — the suppression upsert's `wasNew`
+      // gates the audit emit against replays.
+      // NOTE: Resend does not document an `email.unsubscribed` event. Its
+      // hosted-page / List-Unsubscribe opt-outs arrive as `contact.updated`,
+      // mirrored by the route via `applyResendHostedUnsubscribe`.
       if (event.data.status === 'unsubscribed') {
         const sup = await deps.marketingUnsubscribes.upsert(tx, {
           tenantId,

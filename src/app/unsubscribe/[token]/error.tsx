@@ -50,8 +50,9 @@ export default function UnsubscribeErrorBoundary({
           please try the link again in a few minutes.
         </p>
         <p className="mb-4 text-sm text-foreground">
-          If the problem persists, please reply to the email and ask to
-          be removed from broadcasts. We will remove your email manually.
+          If the problem persists, email the chamber office and we will
+          remove this address from all E-Blasts within 2 business days.
+          This is free of charge.
         </p>
         <button
           type="button"
