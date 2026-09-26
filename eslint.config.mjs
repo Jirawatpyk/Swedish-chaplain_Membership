@@ -246,6 +246,7 @@ const MIGRATED_PATHS = [
   'src/components/auth/auth-frame.tsx',
   'src/components/auth/auth-title.tsx',
   'src/components/auth/auth-link-invalid.tsx',
+  'src/components/auth/use-submitted-errors.ts',
   'src/components/auth/password-strength.tsx',
   'src/components/auth/security-update-banner.tsx',
 ];

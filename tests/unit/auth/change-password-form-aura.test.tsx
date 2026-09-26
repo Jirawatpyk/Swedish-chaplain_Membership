@@ -87,6 +87,10 @@ describe('ChangePasswordForm on AURA (spec 122 US2)', () => {
     });
     expect(error).toBeInTheDocument();
     expect(container.querySelector('#current-password')).toHaveAttribute('aria-invalid', 'true');
+    // The summary lists it and takes focus (the form no longer calls setFocus).
+    const summary = await screen.findByRole('alert', { name: /fix 1 field/i });
+    await waitFor(() => expect(summary).toHaveFocus());
+    expect(within(summary).getByRole('link', { name: en.auth.changePassword.errors.wrongCurrent })).toBeInTheDocument();
   });
 
   it('submits through an AURA primary button', () => {
