@@ -55,6 +55,16 @@ describe('routeVoidError (FR-032)', () => {
     });
   });
 
+  it('H1 — maps paid_event_invoice_requires_reversal to a DEDICATED message (refund / credit-note reversal)', () => {
+    // A paid EVENT invoice can't be voided either — a void strands the payment
+    // and drops its output VAT from ภ.พ.30. Dedicated actionable copy, never a
+    // raw code dump.
+    expect(routeVoidError('paid_event_invoice_requires_reversal')).toEqual({
+      kind: 'failure',
+      messageKey: 'errors.paidEventInvoiceRequiresReversal',
+    });
+  });
+
   it('a missing code falls back to the generic unknown message', () => {
     expect(routeVoidError(undefined)).toEqual({ kind: 'failure', messageKey: 'errors.unknown' });
     expect(routeVoidError(null)).toEqual({ kind: 'failure', messageKey: 'errors.unknown' });

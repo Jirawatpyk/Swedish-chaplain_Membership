@@ -19,7 +19,10 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { eq, and, sql } from 'drizzle-orm';
 import { createHash, randomUUID } from 'node:crypto';
 import { runInTenant } from '@/lib/db';
-import { makeDrizzleInvoiceRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-invoice-repo';
+import {
+  makeDrizzleInvoiceRepo,
+  makeDrizzleTaxRegisterRepo,
+} from '@/modules/invoicing/infrastructure/repos/drizzle-invoice-repo';
 import { drizzleTenantSettingsRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-tenant-settings-repo';
 import { f4AuditAdapter } from '@/modules/invoicing/infrastructure/adapters/audit-adapter';
 import { voidInvoice } from '@/modules/invoicing/application/use-cases/void-invoice';
@@ -578,6 +581,158 @@ describe('F4 US5 — void-invoice (T098)', () => {
             eq(auditLog.tenantId, tenant.ctx.slug),
             eq(auditLog.eventType, 'invoice_voided'),
             sql`${auditLog.payload}->>'invoice_id' = ${invoiceId}`,
+          ),
+        ),
+    );
+    expect(voidedAudits).toHaveLength(0);
+  }, 60_000);
+
+  it('H1 — REFUSES to void a PAID event §105 receipt: its output VAT stays in the ภ.พ.30 period total', async () => {
+    // A paid EVENT invoice was voidable before (the guard was membership-only):
+    // a void writes NOTHING to `payments` (the money is stranded) and
+    // `sumPeriodOutputVat` filters `status <> 'void'`, so the receipt's output
+    // VAT silently LEFT the ภ.พ.30 period — possibly an already-filed one. The
+    // refusal must happen above the first write and leave the period total
+    // untouched.
+    const eventId = randomUUID();
+    const regId = randomUUID();
+    const paidEventInvoiceId = randomUUID();
+    const reNumber = `RE-2026-${String(900_000 + Math.floor(Math.random() * 99_999)).padStart(6, '0')}`;
+    const paymentDate = '2026-07-14';
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(events).values({
+        tenantId: tenant.ctx.slug,
+        eventId,
+        source: 'eventcreate',
+        externalId: `evt-void-paid-${regId.slice(0, 8)}`,
+        name: 'Void Paid Gala',
+        startDate: new Date('2026-07-10T11:00:00Z'),
+      } satisfies NewEventRow);
+      await tx.insert(eventRegistrations).values({
+        tenantId: tenant.ctx.slug,
+        registrationId: regId,
+        eventId,
+        externalId: `att-void-paid-${regId.slice(0, 8)}`,
+        attendeeEmail: 'sim.paid@void.test',
+        attendeeName: 'Sim Paid Guest',
+        attendeeCompany: null,
+        matchType: 'non_member',
+        ticketType: 'Standard',
+        ticketPriceThb: 1070,
+        paymentStatus: 'paid',
+        registeredAt: new Date('2026-07-01T03:00:00Z'),
+      } satisfies NewEventRegistrationRow);
+      // 064 β as-paid no-TIN shape: the main PDF IS the §105 ใบเสร็จรับเงิน,
+      // numbered from the RECEIPT stream (sequence/document number NULL).
+      await tx.insert(invoices).values({
+        tenantId: tenant.ctx.slug,
+        invoiceId: paidEventInvoiceId,
+        invoiceSubject: 'event',
+        eventId,
+        eventRegistrationId: regId,
+        vatInclusive: true,
+        memberId: null,
+        planYear: null,
+        planId: null,
+        draftByUserId: user.userId,
+        status: 'paid',
+        pdfDocKind: 'receipt_separate',
+        fiscalYear: 2026,
+        sequenceNumber: null,
+        documentNumber: null,
+        receiptDocumentNumberRaw: reNumber,
+        issueDate: paymentDate,
+        dueDate: paymentDate,
+        subtotalSatang: 100_000n,
+        vatRateSnapshot: '0.0700',
+        vatSatang: 7_000n,
+        totalSatang: 107_000n,
+        creditedTotalSatang: 0n,
+        proRatePolicySnapshot: null,
+        netDaysSnapshot: 0,
+        tenantIdentitySnapshot: SNAP_TENANT,
+        memberIdentitySnapshot: {
+          legal_name: 'Sim Paid Guest',
+          tax_id: null,
+          address: '50 Simulated Road, Bangkok',
+          primary_contact_name: 'Sim Paid Guest',
+          primary_contact_email: 'sim.paid@void.test',
+        },
+        autoEmailOnIssue: true,
+        pdfBlobKey: `invoicing/${tenant.ctx.slug}/2026/${paidEventInvoiceId}_v1.pdf`,
+        pdfSha256: ORIGINAL_SHA,
+        pdfTemplateVersion: 1,
+        paymentMethod: 'bank_transfer',
+        paymentReference: 'seed-event-ref',
+        paymentRecordedByUserId: user.userId,
+        paymentDate,
+        paidAt: new Date('2026-07-14T03:00:00Z'),
+        receiptPdfStatus: 'rendered',
+      });
+      await tx.insert(invoiceLines).values({
+        tenantId: tenant.ctx.slug,
+        lineId: randomUUID(),
+        invoiceId: paidEventInvoiceId,
+        kind: 'event_fee',
+        descriptionTh: 'ค่าเข้าร่วมงาน Void Paid Gala (2026-07-10)',
+        descriptionEn: 'Event: Void Paid Gala (2026-07-10)',
+        unitPriceSatang: 107_000n,
+        totalSatang: 107_000n,
+        position: 1,
+      });
+    });
+
+    const registerRepo = makeDrizzleTaxRegisterRepo(tenant.ctx.slug);
+    const period = { from: '2026-07-01', to: '2026-07-31' };
+    const before = await registerRepo.sumPeriodOutputVat(tenant.ctx.slug, period);
+    // The seeded receipt's 70.00 THB output VAT is in the July §105 total.
+    expect(BigInt(before.reVatSatang)).toBeGreaterThanOrEqual(7_000n);
+
+    const deps = makeDeps(tenant.ctx.slug);
+    const r = await voidInvoice(deps, {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      invoiceId: paidEventInvoiceId,
+      voidReason: 'Keyed against the wrong attendee',
+    });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe('paid_event_invoice_requires_reversal');
+
+    // Row untouched: still paid, original sha, never voided.
+    const [row] = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({
+          status: invoices.status,
+          pdfSha256: invoices.pdfSha256,
+          voidedAt: invoices.voidedAt,
+          voidReason: invoices.voidReason,
+        })
+        .from(invoices)
+        .where(eq(invoices.invoiceId, paidEventInvoiceId)),
+    );
+    expect(row?.status).toBe('paid');
+    expect(row?.pdfSha256).toBe(ORIGINAL_SHA);
+    expect(row?.voidedAt).toBeNull();
+    expect(row?.voidReason).toBeNull();
+
+    // The ภ.พ.30 period output VAT is unchanged — the VAT did not go missing.
+    const after = await registerRepo.sumPeriodOutputVat(tenant.ctx.slug, period);
+    expect(after).toEqual(before);
+
+    // Read-only refusal ABOVE the first write: no render, no upload, no audit.
+    expect(deps.renderCalls).toHaveLength(0);
+    expect(deps.uploadCalls).toHaveLength(0);
+    expect(deps.outboxCalls).toHaveLength(0);
+    const voidedAudits = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({ payload: auditLog.payload })
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.tenantId, tenant.ctx.slug),
+            eq(auditLog.eventType, 'invoice_voided'),
+            sql`${auditLog.payload}->>'invoice_id' = ${paidEventInvoiceId}`,
           ),
         ),
     );

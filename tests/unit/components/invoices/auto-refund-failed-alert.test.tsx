@@ -146,3 +146,28 @@ describe('AutoRefundFailedAlert — CF-2 resolve/acknowledge action', () => {
     expect(refreshMock).not.toHaveBeenCalled();
   });
 });
+
+describe('AutoRefundFailedAlert — cause invoice_already_paid: no credit note', () => {
+  // With cause `invoice_already_paid` the invoice was ALREADY paid in full (e.g.
+  // a bank transfer recorded first); the online payment was a DUPLICATE, not a
+  // sale. A credit note would cut real output VAT and still return no money, so
+  // the operator is told explicitly NOT to issue one.
+  const NO_CREDIT_NOTE = /Do not issue a credit note: this invoice was paid in full; the online payment was a duplicate\./;
+
+  it('states "do not issue a credit note" on the alert AND in the confirm dialog', async () => {
+    renderAlert({ cause: 'invoice_already_paid' });
+    expect(screen.getByRole('alert').textContent).toMatch(NO_CREDIT_NOTE);
+    fireEvent.click(screen.getByRole('button', { name: copy.resolve }));
+    await screen.findByText(copy.resolveConfirm.title);
+    const dialog = screen.getByRole('alertdialog');
+    expect(dialog.textContent).toMatch(NO_CREDIT_NOTE);
+  });
+
+  it('does not show the duplicate-payment line for another cause, or when the cause is unknown', async () => {
+    for (const cause of ['invoice_voided', null] as const) {
+      renderAlert({ cause });
+      expect(screen.getByRole('alert').textContent).not.toMatch(NO_CREDIT_NOTE);
+      cleanup();
+    }
+  });
+});

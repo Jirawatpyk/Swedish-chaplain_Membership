@@ -537,6 +537,9 @@ describe('DrizzlePaymentsRepo — live Neon', () => {
     expect(afterFail).not.toBeNull();
     expect(afterFail!.processorRefundId).toBe(probeRefundId);
     expect(afterFail!.failed).toBe(true);
+    // The refund-start cause is surfaced so the admin alert can tell a
+    // duplicate payment (invoice_already_paid — no credit note!) from others.
+    expect(afterFail!.cause).toBe('invoice_voided');
 
     // (3) Tenant B repo asking about tenant A's invoice → null. The
     //     factory-bound tenantId predicate means this would be null
@@ -567,6 +570,44 @@ describe('DrizzlePaymentsRepo — live Neon', () => {
       rlsProbe.length,
       'tenant B MUST NOT see tenant A audit_log rows under RLS — Constitution Principle I clause 3',
     ).toBe(0);
+  });
+
+  it('findStaleInvoiceAutoRefund reports cause=invoice_already_paid for a concurrent-manual-mark refund (duplicate payment)', async () => {
+    // confirm-payment emits `payment_auto_refunded_concurrent_manual_mark` when
+    // the invoice was already paid (e.g. a bank transfer recorded first). The
+    // online payment is a DUPLICATE — the admin alert must say "do not issue a
+    // credit note". The cause comes from the payload, falling back to the
+    // event type when an older payload lacks it.
+    const repoA = makeDrizzlePaymentsRepo(tenantA.ctx.slug);
+    const { sql: rawSql } = await import('drizzle-orm');
+    for (const withCause of [true, false]) {
+      const probeInvoiceId = randomUUID();
+      const payload = JSON.stringify({
+        payment_id: makeUlid(),
+        invoice_id: probeInvoiceId,
+        refunded_amount_satang: '1712000',
+        ...(withCause ? { cause: 'invoice_already_paid' } : {}),
+        processor_refund_id: `re_dup_${randomUUID().slice(0, 8)}`,
+      });
+      await runInTenant(tenantA.ctx, async (tx) => {
+        await tx.execute(rawSql`
+          INSERT INTO audit_log
+            (event_type, actor_user_id, summary, request_id, payload,
+             tenant_id, retention_years)
+          VALUES
+            ('payment_auto_refunded_concurrent_manual_mark'::audit_event_type,
+             '00000000-0000-0000-0000-000000000000',
+             'duplicate-payment cause probe',
+             ${`dup-cause-${probeInvoiceId}`},
+             ${payload}::jsonb,
+             ${tenantA.ctx.slug},
+             10)
+        `);
+      });
+      const found = await repoA.findStaleInvoiceAutoRefund(probeInvoiceId);
+      expect(found, `withCause=${withCause}`).not.toBeNull();
+      expect(found!.cause, `withCause=${withCause}`).toBe('invoice_already_paid');
+    }
   });
 
   it('CF-2: findStaleInvoiceAutoRefund.failed flips FALSE after a auto_refund_reconciled event; findFailedAutoRefundForInvoice reports ids + reconcile state', async () => {

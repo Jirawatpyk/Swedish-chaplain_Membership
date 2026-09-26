@@ -94,3 +94,30 @@ describe('updateTenantInvoiceSettingsSchema — statutory termination notice (06
     }
   });
 });
+
+describe('updateTenantInvoiceSettingsSchema — seller taxId Thai RD checksum', () => {
+  // The seller's 13-digit tax ID is printed on every §86/4 tax invoice and
+  // §86/10 credit note. A format-only /^\d{13}$/ check accepts a mistyped ID
+  // (one wrong digit); the RD mod-11 check digit catches it.
+  it('rejects a 13-digit taxId with a bad check digit', () => {
+    for (const taxId of ['1234567890122', '0000000000000', '9999999999999']) {
+      const r = updateTenantInvoiceSettingsSchema.safeParse({ ...BASE, taxId });
+      expect(r.success, `taxId ${taxId} must be rejected`).toBe(false);
+      if (!r.success) {
+        expect(r.error.issues.some((i) => i.path.includes('taxId'))).toBe(true);
+      }
+    }
+  });
+
+  it('accepts a checksum-valid taxId (the SweCham TSCC seller ID)', () => {
+    const r = updateTenantInvoiceSettingsSchema.safeParse({ ...BASE, taxId: '0994000187203' });
+    expect(r.success).toBe(true);
+  });
+
+  it('still rejects a non-13-digit taxId', () => {
+    for (const taxId of ['12345', '12345A7890121', '09940001872031']) {
+      const r = updateTenantInvoiceSettingsSchema.safeParse({ ...BASE, taxId });
+      expect(r.success, `taxId ${taxId} must be rejected`).toBe(false);
+    }
+  });
+});

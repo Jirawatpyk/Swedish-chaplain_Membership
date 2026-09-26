@@ -204,6 +204,20 @@ describe('contract: POST /api/invoices/[invoiceId]/void', () => {
     expect(body.error.code).toBe('paid_membership_requires_credit_note');
   });
 
+  it('H1 — maps paid_event_invoice_requires_reversal to 409 (wiring pin)', async () => {
+    // A paid EVENT invoice is refused too (a void strands the payment and drops
+    // its ภ.พ.30 output VAT); the route surfaces the refusal as 409.
+    voidInvoiceMock.mockResolvedValueOnce(
+      err({ code: 'paid_event_invoice_requires_reversal' }),
+    );
+
+    const res = await callRoute(VALID_INVOICE_ID, { voidReason: 'legit reason' });
+
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('paid_event_invoice_requires_reversal');
+  });
+
   it('returns the gate rejection untouched (key + shim row pinned)', async () => {
     // 016 review C1 — denial is decided BY THE GATE, not by a role literal in
     // the handler (that literal also 403'd super_admin, whom the frozen
