@@ -69,6 +69,7 @@ function job(kind: ExportKind, status: ExportJobRecord['status'] = 'requested'):
     requestedBy: 'u-1',
     requestedForPeriod: null,
     requesterLocale: kind === 'gdpr_member_archive' ? 'en' : null,
+    subjectContactId: null,
     status,
     idempotencyKey: 'k',
     blobKey: null,
@@ -245,6 +246,17 @@ describe('processExportJob — claim guards', () => {
       'gdpr_member_archive',
       'ok',
       'test-tenant',
+    );
+  });
+
+  it('gdpr_member_archive for one named contact → the builder gets that contact (PDPA §30)', async () => {
+    const forContact = { ...job('gdpr_member_archive'), subjectContactId: 'c-nils' };
+    const { deps, gdprArchive } = makeMocks({ jobRecord: forContact });
+    const r = await processExportJob(JOB_ID, ctx, deps);
+    expect(r.ok).toBe(true);
+    expect(gdprArchive.buildArchiveForMember).toHaveBeenCalledWith(
+      ctx,
+      expect.objectContaining({ subjectMemberId: 'mem-1', subjectContactId: 'c-nils' }),
     );
   });
 

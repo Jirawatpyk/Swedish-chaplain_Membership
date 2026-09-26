@@ -112,6 +112,9 @@ export interface GdprMemberData {
    */
   readonly broadcastVersions: readonly Record<string, unknown>[];
   readonly auditEvents: readonly GdprAuditEntry[];
+  /** The named contact a staff export was built for (README "Prepared for" + manifest); null otherwise. */
+  readonly subjectContactId?: string | null;
+  readonly subjectContactName?: string | null;
   /** F114 — the requester's change-request history (FR-029-scoped when the requester is a linked contact). */
   readonly changeRequests: readonly GdprChangeRequestEntry[];
   /**
@@ -138,6 +141,14 @@ export interface GdprArchiveSource {
        * review round 1 of PR-2, C1).
        */
       readonly requestedByUserId?: string;
+      /**
+       * PDPA §30 / GDPR Art. 15 — staff answering ONE contact's access request
+       * (incl. a former contact). The archive is built for that contact: their
+       * own record in full, their own change requests + account activity when
+       * they have a linked account, colleagues by name and role only. Must be
+       * a contact of `subjectMemberId` — `gather` throws otherwise.
+       */
+      readonly subjectContactId?: string;
     },
   ): Promise<GdprMemberData | null>;
 }

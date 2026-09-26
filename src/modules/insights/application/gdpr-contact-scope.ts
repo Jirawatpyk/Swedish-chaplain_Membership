@@ -9,7 +9,9 @@
  * in full; current colleagues appear only with the business identity the
  * member already shares internally — name, role, primary flag; former
  * (removed) colleagues are left out entirely (Art. 5(1)(c)/(e)). A staff
- * on-behalf export (no linked requester) gets the colleague view for everyone.
+ * export for one named contact (a PDPA §30 / Art. 15 request) applies the same
+ * rule with that contact as the owner; a company-level staff export (no owner)
+ * gets the colleague view for everyone.
  *
  * Pure — no framework/ORM imports (Constitution Principle III).
  */
@@ -35,18 +37,31 @@ function isoOrNull(d: Date | string | null): string | null {
   return typeof d === 'string' ? d : d.toISOString();
 }
 
+/** Whose record the archive is FOR — by contact id, by linked user id, or nobody. */
+export interface ArchiveOwner {
+  /** Staff export for one named contact (PDPA §30 / Art. 15 request). */
+  readonly contactId?: string | null;
+  /** Self-export: the requester's linked user id. */
+  readonly userId?: string | null;
+}
+
 /**
- * Project the member's contacts for the archive's viewer. `requesterUserId` is
- * the requester's user id when they are a linked contact of the member, else
- * `null` (staff on-behalf / unlinked requester — nobody's record is "own").
+ * Project the member's contacts for the archive's viewer. The owner's record
+ * (matched by contact id, or by linked user id for a self-export) is kept in
+ * full, even if removed — a former contact keeps the right of access. With no
+ * owner (a company-level staff export) nobody's record is "own".
  */
 export function projectContactsForRequester(
   contacts: readonly ScopableContact[],
-  requesterUserId: string | null,
+  owner: ArchiveOwner,
 ): Record<string, unknown>[] {
+  const ownContactId = owner.contactId ?? null;
+  const ownUserId = owner.userId ?? null;
   const out: Record<string, unknown>[] = [];
   for (const c of contacts) {
-    const own = requesterUserId !== null && c.linkedUserId === requesterUserId;
+    const own =
+      (ownContactId !== null && c.contactId === ownContactId) ||
+      (ownUserId !== null && c.linkedUserId === ownUserId);
     if (own) {
       out.push({
         contactId: c.contactId,
@@ -55,7 +70,7 @@ export function projectContactsForRequester(
         email: c.email,
         phone: c.phone,
         // P2 Wave-0 — a contact's date of birth is material personal data
-        // (Art. 15/20) — the requester's own, so it stays.
+        // (Art. 15/20) — the owner's own, so it stays.
         dateOfBirth: isoOrNull(c.dateOfBirth),
         roleTitle: c.roleTitle,
         preferredLanguage: c.preferredLanguage,

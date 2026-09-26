@@ -38,6 +38,7 @@ function toRecord(row: ExportJobRow): ExportJobRecord {
       row.requesterLocale !== null && isLocale(row.requesterLocale)
         ? row.requesterLocale
         : null,
+    subjectContactId: row.subjectContactId,
     status: row.status,
     idempotencyKey: row.idempotencyKey,
     blobKey: row.blobKey,
@@ -61,6 +62,7 @@ export function makeDrizzleExportJobRepo(tenantId: string): ExportJobRepo {
           requestedBy: input.requestedBy,
           requestedForPeriod: input.requestedForPeriod,
           requesterLocale: input.requesterLocale,
+          subjectContactId: input.subjectContactId ?? null,
           idempotencyKey: input.idempotencyKey,
           status: 'requested',
         })

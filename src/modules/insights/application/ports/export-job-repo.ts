@@ -29,6 +29,8 @@ export interface ExportJobRecord {
   readonly requestedForPeriod: string | null;
   /** FR-029 — requester's locale for the GDPR README (null for non-GDPR kinds). */
   readonly requesterLocale: Locale | null;
+  /** GDPR archive built for ONE named contact (migration 0314); null = company-level. */
+  readonly subjectContactId: string | null;
   readonly status: ExportStatus;
   readonly idempotencyKey: string;
   readonly blobKey: string | null;
@@ -46,6 +48,8 @@ export interface CreateExportJobInput {
   readonly requestedForPeriod: string | null;
   /** FR-029 — requester locale for the GDPR README (null for non-GDPR kinds). */
   readonly requesterLocale: Locale | null;
+  /** GDPR archive for ONE named contact (staff only); omitted/null = company-level. */
+  readonly subjectContactId?: string | null;
   readonly idempotencyKey: string;
 }
 

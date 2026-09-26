@@ -32,6 +32,8 @@ export interface GdprReadmeVars {
   readonly tenantName: string;
   readonly generatedAtIso: string;
   readonly memberId: string;
+  /** The named contact a staff export was built for (PDPA §30 request); absent = company archive. */
+  readonly subjectContactName?: string | null;
 }
 
 /**
@@ -55,6 +57,9 @@ export function buildGdprReadme(
     interpolate(r.intro, { tenant: vars.tenantName, generatedAt: vars.generatedAtIso }),
     '',
     interpolate(r.subjectLine, { memberId: vars.memberId }),
+    ...(vars.subjectContactName
+      ? [interpolate(r.subjectContactLine, { name: vars.subjectContactName })]
+      : []),
     '',
     r.filesHeading,
     '-'.repeat(r.filesHeading.length),

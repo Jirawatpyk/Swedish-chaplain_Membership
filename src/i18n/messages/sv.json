@@ -8044,6 +8044,7 @@
       "title": "Export av dina uppgifter",
       "intro": "Detta arkiv innehåller en kopia av dina personuppgifter som {tenant} har lagrat, genererat {generatedAt}. Det tillhandahålls för att stödja din rätt till dataportabilitet enligt GDPR artikel 20 och Thailands PDPA.",
       "subjectLine": "Registrerad (medlems-id): {memberId}",
+      "subjectContactLine": "Framtaget för: {name}",
       "filesHeading": "Vad arkivet innehåller",
       "files": {
         "profile": "profile.json — uppgifter om din organisations-/medlemsprofil.",
@@ -8054,7 +8055,7 @@
         "broadcastImages": "broadcast-images.json — alla bilder som laddats upp för dina utskick, även bilder som redan markerats för radering. En markerad bild visas utan webbadress: den är markerad för radering, och filen kan behållas om en identisk bild fortfarande används någon annanstans. Bilder från ett kasserat eller utgånget utkast listas inte; att de tagits bort syns i audit-events.json, och filen raderas vid nästa dagliga rensning.",
         "broadcastVersions": "broadcast-versions.json — för vart och ett av dina utskick: de versioner du fått att granska (ditt original och varje version som handelskammaren skickat till dig, med följebrev) och dina beslut om dem (godkänt, ändringar begärda, godkännande återkallat – med din kommentar eller ditt skäl). Versioner som handelskammaren arbetar med och aldrig skickat till dig ingår inte, och upphovet anges som du eller organisationen. Efter en radering står texten som [redacted] och endast datum och beslut finns kvar.",
         "auditEvents": "audit-events.json — händelser i aktivitetsloggen som rör dig och ditt företags medlemskap. Dina kollegors egen kontoaktivitet ingår inte, och händelser du inte deltog i visas utan beskrivning.",
-        "changeRequests": "change-requests.json — de ändringar du föreslagit i din medlemspost och kammarens beslut om var och en (med angiven anledning). Granskaren visas som organisationen. Begäranden som en kollega skickat visas endast med sina företagsfält och utan motivering. Ett arkiv som kammarens personal tagit fram för din räkning, eller som en kollega begärt, innehåller endast begäranden på företagsnivå och utan granskarens motivering. Kontakta kammaren om du behöver din personliga historik.",
+        "changeRequests": "change-requests.json — de ändringar du föreslagit i din medlemspost och kammarens beslut om var och en (med angiven anledning). Granskaren visas som organisationen. Begäranden som en kollega skickat visas endast med sina företagsfält och utan motivering. Ett arkiv som kammarens personal tagit fram för hela företaget, eller som en kollega begärt, innehåller endast begäranden på företagsnivå och utan granskarens motivering. Be kammaren ta fram ett arkiv för dig om du behöver din personliga historik.",
         "manifest": "manifest.json — en maskinläsbar lista över varje fil med dess SHA-256-kontrollsumma så att du kan verifiera integriteten."
       },
       "truncationWarning": "⚠ DELVIS EXPORT — Vissa kategorier innehåller endast dina senaste poster; äldre poster har utelämnats för att begränsa arkivets storlek: {files}. Kontakta handelskammaren om du vill ha din fullständiga historik för dessa kategorier. Manifestets kontrollsummor omfattar endast de poster som ingår här.",
@@ -8087,6 +8088,14 @@
     "colRequested": "Begärd",
     "adminHeading": "Dataexport (GDPR)",
     "adminDescription": "Skapa ett nedladdningsbart arkiv med den här medlemmens uppgifter å deras vägnar för en begäran från den registrerade. Åtgärden loggas i granskningsloggen och tillskrivs dig.",
+    "adminScopeLabel": "Ta fram arkivet för",
+    "adminScopeCompany": "Hela företaget (kollegor med namn och roll)",
+    "adminScopeCompanyHint": "För en begäran från företaget: företagets uppgifter, med varje kontaktperson endast med namn och roll.",
+    "adminScopeContactHint": "För en persons begäran om tillgång: personens egna kontaktuppgifter, kontoaktivitet och ändringsbegäranden i sin helhet; kollegor endast med namn och roll.",
+    "adminScopeRemoved": "borttagen",
+    "colFor": "Framtaget för",
+    "forCompany": "Hela företaget",
+    "forContact": "{name}",
     "alreadyPending": "En export förbereds redan — se status nedan."
   }
 }

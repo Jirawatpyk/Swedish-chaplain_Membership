@@ -1503,7 +1503,7 @@ export default async function MemberDetailPage({
           canPerform(session.user.role, 'members.bulk') &&
           !isErased && (
           <Suspense fallback={<MemberDataExportSkeleton />}>
-            <MemberDataExportSection tenant={tenant} memberId={member.memberId} />
+            <MemberDataExportSection tenant={tenant} memberId={member.memberId} contacts={contacts} />
           </Suspense>
         )}
 

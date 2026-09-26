@@ -92,3 +92,22 @@ describe('buildDataExportLabels', () => {
     expect(buildDataExportLabels(t).caption).toBe('statusHeading');
   });
 });
+
+// PDPA §30 — the admin card says whom each archive was prepared for.
+describe('buildDataExportRows — who the archive is for (admin)', () => {
+  it('labels each row with the caller-supplied scope', () => {
+    const jobs: DataExportJobView[] = [
+      { ...job('ready'), id: 'j-contact', subjectContactId: 'c-nils' },
+      { ...job('ready'), id: 'j-company', subjectContactId: null },
+    ];
+    const rows = buildDataExportRows(jobs, t, 'en', (j) =>
+      j.subjectContactId ? `For: ${j.subjectContactId}` : 'Whole company',
+    );
+    expect(rows.map((r) => r.forLabel)).toEqual(['For: c-nils', 'Whole company']);
+  });
+
+  it('leaves the member portal rows unlabelled', () => {
+    const [row] = buildDataExportRows([job('ready')], t, 'en');
+    expect(row!.forLabel).toBeUndefined();
+  });
+});

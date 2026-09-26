@@ -8044,6 +8044,7 @@
       "title": "Your data export",
       "intro": "This archive contains a copy of your personal data held by {tenant}, generated on {generatedAt}. It is provided to support your data-portability rights under GDPR Article 20 and Thailand PDPA.",
       "subjectLine": "Data subject (member id): {memberId}",
+      "subjectContactLine": "Prepared for: {name}",
       "filesHeading": "What is in this archive",
       "files": {
         "profile": "profile.json — your organisation/member profile details.",
@@ -8054,7 +8055,7 @@
         "broadcastImages": "broadcast-images.json — every image uploaded for your E-Blasts, including images already marked for deletion. A marked image is listed without its web address: it is marked for deletion, and the file may be kept if an identical image is still used elsewhere. Images of a discarded or expired draft are not listed; their removal appears in audit-events.json, and the file is deleted in the next daily clean-up.",
         "broadcastVersions": "broadcast-versions.json — for each of your E-Blasts, the versions you were shown (your original and each version the chamber sent you, with its covering note) and your decisions on them (approved, changes requested, approval withdrawn — with your note or reason). The chamber's versions in progress that were never sent to you are not included, and the author is shown as you or as the organisation. After an erasure, the text reads [redacted] and only the dates and decisions remain.",
         "auditEvents": "audit-events.json — the activity-log events relating to you and to your company's membership. Your colleagues' own account activity is not included, and events you did not take part in are listed without their description.",
-        "changeRequests": "change-requests.json — the changes you proposed to your member record and the chamber's decision on each (with the reason given). Requests submitted by a colleague appear with their company-level fields only and without the reason. The reviewer is shown as the organisation. An archive produced by chamber staff on your behalf, or requested by a colleague, holds the company-level requests only, without the reviewer's reason; ask the chamber for your personal request history if you need it.",
+        "changeRequests": "change-requests.json — the changes you proposed to your member record and the chamber's decision on each (with the reason given). Requests submitted by a colleague appear with their company-level fields only and without the reason. The reviewer is shown as the organisation. An archive produced by chamber staff for your company as a whole, or requested by a colleague, holds the company-level requests only, without the reviewer's reason; ask the chamber for an archive prepared for you if you need your personal request history.",
         "manifest": "manifest.json — a machine-readable list of every file with its SHA-256 checksum so you can verify integrity."
       },
       "truncationWarning": "⚠ PARTIAL EXPORT — Some categories contain only your most recent records; older entries were omitted to keep the archive a manageable size: {files}. To request your complete history for these categories, contact the chamber. The manifest checksums cover only the records included here.",
@@ -8087,6 +8088,14 @@
     "colRequested": "Requested",
     "adminHeading": "Data export (GDPR)",
     "adminDescription": "Produce a downloadable archive of this member’s data on their behalf for a data-subject request. The action is recorded in the audit log, attributed to you.",
+    "adminScopeLabel": "Prepare the archive for",
+    "adminScopeCompany": "Whole company (colleagues by name and role)",
+    "adminScopeCompanyHint": "For a request from the company: company records, with each contact by name and role only.",
+    "adminScopeContactHint": "For one person's access request: their own contact details, account activity and change requests in full; colleagues by name and role only.",
+    "adminScopeRemoved": "removed",
+    "colFor": "Prepared for",
+    "forCompany": "Whole company",
+    "forContact": "{name}",
     "alreadyPending": "An export is already being prepared — see its status below."
   }
 }

@@ -22,6 +22,9 @@ let memberLookup: { ok: boolean; value?: { memberId: string }; error?: { code: s
 let adminCtx: unknown;
 let memberIdValid = true;
 let rlSuccess = true;
+const CONTACT = '66666666-6666-6666-6666-666666666666';
+let memberContacts: Array<{ contactId: string }> = [{ contactId: CONTACT }];
+const listByMemberMock = vi.fn();
 const requestDataExportMock = vi.fn();
 
 vi.mock('@/lib/env', () => ({
@@ -40,6 +43,12 @@ vi.mock('next-intl/server', () => ({ getLocale: () => Promise.resolve('en') }));
 vi.mock('@/modules/members/members-deps', () => ({
   buildMembersDeps: () => ({
     memberRepo: { findByLinkedUserId: () => Promise.resolve(memberLookup) },
+    contactRepo: {
+      listByMember: (...a: unknown[]) => {
+        listByMemberMock(...a);
+        return Promise.resolve({ ok: true, value: memberContacts });
+      },
+    },
   }),
 }));
 vi.mock('@/modules/members', () => ({
@@ -179,6 +188,51 @@ describe('POST /api/admin/members/[id]/data-export (admin on-behalf)', () => {
     const meta = requestDataExportMock.mock.calls[0]![1] as { actorRole: string; actorMemberId: null };
     expect(meta.actorRole).toBe('admin');
     expect(meta.actorMemberId).toBeNull();
+  });
+
+  // PDPA §30 / GDPR Art. 15 — staff answering ONE contact's access request.
+  function adminReq(body: unknown) {
+    return new NextRequest('http://localhost/api/admin/members/x/data-export', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it("a named contact of the member is forwarded to the use case", async () => {
+    memberContacts = [{ contactId: CONTACT }];
+    const res = await (await route()).POST(adminReq({ subjectContactId: CONTACT }), ctx);
+    expect(res.status).toBe(202);
+    const input = requestDataExportMock.mock.calls[0]![0] as { subjectContactId?: string };
+    expect(input.subjectContactId).toBe(CONTACT);
+    // removed contacts count: a former contact keeps the right of access
+    expect(listByMemberMock).toHaveBeenCalledWith(
+      expect.anything(),
+      '11111111-1111-1111-1111-111111111111',
+      expect.objectContaining({ includeRemoved: true }),
+    );
+  });
+
+  it("a contact that is not the member's → 404 contact_not_found, no job", async () => {
+    memberContacts = [{ contactId: '77777777-7777-7777-7777-777777777777' }];
+    const res = await (await route()).POST(adminReq({ subjectContactId: CONTACT }), ctx);
+    expect(res.status).toBe(404);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe('contact_not_found');
+    expect(requestDataExportMock).not.toHaveBeenCalled();
+  });
+
+  it('a malformed contact id → 400, no job', async () => {
+    const res = await (await route()).POST(adminReq({ subjectContactId: 'not-a-uuid' }), ctx);
+    expect(res.status).toBe(400);
+    expect(requestDataExportMock).not.toHaveBeenCalled();
+  });
+
+  it('an empty body keeps the company-level export', async () => {
+    const res = await (await route()).POST(memberReq(), ctx);
+    expect(res.status).toBe(202);
+    const input = requestDataExportMock.mock.calls[0]![0] as { subjectContactId?: string | null };
+    expect(input.subjectContactId ?? null).toBeNull();
+    expect(listByMemberMock).not.toHaveBeenCalled();
   });
 
   it('rate-limited → 429, no job enqueued (W0-18 admin on-behalf)', async () => {

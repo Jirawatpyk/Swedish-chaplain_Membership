@@ -153,7 +153,11 @@ function serialiseInvoiceRecord(inv: Invoice): Record<string, unknown> {
 export const gdprArchiveSourceAdapter: GdprArchiveSource = {
   async gather(
     ctx: TenantContext,
-    opts: { readonly subjectMemberId: string; readonly requestedByUserId?: string },
+    opts: {
+      readonly subjectMemberId: string;
+      readonly requestedByUserId?: string;
+      readonly subjectContactId?: string;
+    },
   ): Promise<GdprMemberData | null> {
     const memberId = asMemberId(opts.subjectMemberId);
     const memberDeps = buildMembersDeps(ctx);
@@ -185,6 +189,18 @@ export const gdprArchiveSourceAdapter: GdprArchiveSource = {
           .map((id) => String(id)),
       ),
     ];
+
+    // PDPA §30 / GDPR Art. 15 — a staff export for ONE named contact is built
+    // for that person (incl. a former contact: the right of access outlives
+    // the membership). FAIL-LOUD when the id is not one of this member's
+    // contacts: never ship an archive for the wrong person.
+    const subjectContact =
+      opts.subjectContactId === undefined
+        ? null
+        : (contacts.find((c) => String(c.contactId) === opts.subjectContactId) ?? null);
+    if (opts.subjectContactId !== undefined && subjectContact === null) {
+      throw new Error('GDPR gather: the subject contact is not a contact of this member');
+    }
 
     // 3) Invoices (+ PDF bytes for documented invoices).
     const invoiceDeps = makeListInvoicesByMemberDeps(ctx.slug);
@@ -369,25 +385,33 @@ export const gdprArchiveSourceAdapter: GdprArchiveSource = {
     //     unlinked between the request and the build — gets the same
     //     company-level scope; the second case is logged, since the member's
     //     own export is then narrower than they asked for (PR review).
-    const requesterIsLinked = opts.requestedByUserId !== undefined && memberUserIds.includes(opts.requestedByUserId);
-    if (opts.requestedByUserId !== undefined && !requesterIsLinked) {
-      logger.warn(
-        { errorId: 'M114.gdpr.requester_not_linked', tenantId: ctx.slug, subjectMemberId: opts.subjectMemberId },
-        'gdpr gather: the requester is not a linked contact of the member — change-request history scoped to company level',
-      );
+    // The VIEWER is the person the archive is for: the named contact of a
+    // staff export (their linked account, if any), else the requester when
+    // they are a linked contact. The admin who asked is never the viewer.
+    let viewerUserId: UserId | null;
+    if (subjectContact !== null) {
+      viewerUserId = subjectContact.linkedUserId === null ? null : (String(subjectContact.linkedUserId) as UserId);
+    } else {
+      const requesterIsLinked = opts.requestedByUserId !== undefined && memberUserIds.includes(opts.requestedByUserId);
+      if (opts.requestedByUserId !== undefined && !requesterIsLinked) {
+        logger.warn(
+          { errorId: 'M114.gdpr.requester_not_linked', tenantId: ctx.slug, subjectMemberId: opts.subjectMemberId },
+          'gdpr gather: the requester is not a linked contact of the member — change-request history scoped to company level',
+        );
+      }
+      viewerUserId = requesterIsLinked ? (opts.requestedByUserId as UserId) : null;
     }
-    const requesterUserId: UserId | null = requesterIsLinked ? (opts.requestedByUserId as UserId) : null;
     const changeRequests: GdprChangeRequestEntry[] = [];
     let crCursor: ChangeRequestCursor | null = null;
     for (;;) {
       const page: Awaited<ReturnType<typeof memberDeps.changeRequestRepo.listByMember>> =
-        requesterUserId !== null
-          ? await memberDeps.changeRequestRepo.listVisibleToUser(ctx, requesterUserId, memberId, { cursor: crCursor, limit: CHANGE_REQUEST_PAGE })
+        viewerUserId !== null
+          ? await memberDeps.changeRequestRepo.listVisibleToUser(ctx, viewerUserId, memberId, { cursor: crCursor, limit: CHANGE_REQUEST_PAGE })
           : await memberDeps.changeRequestRepo.listByMember(ctx, memberId, { cursor: crCursor, limit: CHANGE_REQUEST_PAGE });
       if (!page.ok) throw new Error(`GDPR gather: change-request list failed (${page.error.code})`);
       for (const row of page.value.items) {
-        if (requesterUserId === null && row.request.scope === 'own_contact') continue; // a contact's own request is theirs alone
-        changeRequests.push(serialiseChangeRequest(projectChangeRequestForViewer(row, requesterUserId), requesterUserId));
+        if (viewerUserId === null && row.request.scope === 'own_contact') continue; // a contact's own request is theirs alone
+        changeRequests.push(serialiseChangeRequest(projectChangeRequestForViewer(row, viewerUserId), viewerUserId));
         if (changeRequests.length > MAX_CHANGE_REQUESTS) break; // one probe row past the cap
       }
       crCursor = page.value.nextCursor;
@@ -403,7 +427,7 @@ export const gdprArchiveSourceAdapter: GdprArchiveSource = {
     //    REQUESTER's own account only: a colleague's login / session / account
     //    events are that colleague's personal data. Company rows still arrive
     //    via the payload member-id arms; `viewerUserId` strips their free text.
-    const auditUserIds = requesterUserId !== null ? [String(requesterUserId)] : [];
+    const auditUserIds = viewerUserId !== null ? [String(viewerUserId)] : [];
     const auditRowsRaw = await gdprAuditSubsetReadAdapter.query(ctx, {
       memberUserIds: auditUserIds,
       memberId: opts.subjectMemberId,
@@ -424,7 +448,7 @@ export const gdprArchiveSourceAdapter: GdprArchiveSource = {
       {
         memberUserIds: auditUserIds,
         memberId: opts.subjectMemberId,
-        viewerUserId: requesterUserId === null ? null : String(requesterUserId),
+        viewerUserId: viewerUserId === null ? null : String(viewerUserId),
       },
     );
 
@@ -509,8 +533,15 @@ export const gdprArchiveSourceAdapter: GdprArchiveSource = {
           removedAt: c.removedAt,
           createdAt: c.createdAt,
         })),
-        requesterUserId,
+        subjectContact !== null
+          ? { contactId: String(subjectContact.contactId) }
+          : { userId: viewerUserId === null ? null : String(viewerUserId) },
       ),
+      subjectContactId: subjectContact === null ? null : String(subjectContact.contactId),
+      subjectContactName:
+        subjectContact === null
+          ? null
+          : `${subjectContact.firstName} ${subjectContact.lastName}`.trim(),
       invoices,
       events,
       broadcasts,

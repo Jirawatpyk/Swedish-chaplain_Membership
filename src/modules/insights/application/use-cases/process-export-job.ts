@@ -124,6 +124,8 @@ export async function processExportJob(
       requesterLocale: job.requesterLocale,
       // F114 (FR-029) — scopes the change-request history to the requester
       requestedBy: job.requestedBy,
+      // PDPA §30 — a staff export built for ONE named contact (migration 0314)
+      subjectContactId: job.subjectContactId,
     };
   });
 
@@ -234,6 +236,7 @@ export async function processExportJob(
       const archive = await deps.gdprArchive.buildArchiveForMember(ctx, {
         subjectMemberId: claim.subjectMemberId,
         requestedByUserId: claim.requestedBy,
+        ...(claim.subjectContactId !== null ? { subjectContactId: claim.subjectContactId } : {}),
         requesterLocale: claim.requesterLocale ?? deps.tenantDefaultLocale,
         generatedAtIso,
       });

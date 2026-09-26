@@ -22,6 +22,8 @@ export interface DataExportJobView {
   readonly id: string;
   readonly status: ExportStatus;
   readonly createdAt: Date;
+  /** PDPA §30 — the named contact a staff archive was prepared for (admin card only). */
+  readonly subjectContactId?: string | null;
 }
 
 const STATUS_LABEL_KEY: Record<ExportStatus, string> = {
@@ -33,13 +35,19 @@ const STATUS_LABEL_KEY: Record<ExportStatus, string> = {
   failed: 'statusFailed',
 };
 
-/** Project export jobs → panel rows (status label, localised date, download flag). */
+/**
+ * Project export jobs → panel rows (status label, localised date, download
+ * flag). `forLabel` (admin card only) says whom each archive was prepared for;
+ * the member portal omits it.
+ */
 export function buildDataExportRows(
   jobs: readonly DataExportJobView[],
   t: Translate,
   locale: string,
+  forLabel?: (job: DataExportJobView) => string,
 ): DataExportRow[] {
   return jobs.map((job) => ({
+    ...(forLabel ? { forLabel: forLabel(job) } : {}),
     jobId: job.id,
     status: job.status,
     statusLabel: t(STATUS_LABEL_KEY[job.status]),

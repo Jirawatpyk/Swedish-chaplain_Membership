@@ -125,6 +125,8 @@ export interface F9AuditPayloadByType {
     readonly subject_member_id: string;
     /** true when an admin produces the export on a member's behalf (FR-031). */
     readonly on_behalf: boolean;
+    /** Staff export answering ONE contact's access request (PDPA §30 / Art. 15). */
+    readonly subject_contact_id?: string;
   };
   data_export_generated: {
     readonly job_id: string;
