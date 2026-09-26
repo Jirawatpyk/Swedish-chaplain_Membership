@@ -36,3 +36,20 @@ export function AuraBridge({ locale, timeZone, children }: AuraBridgeProps): Rea
     </AuraProvider>
   );
 }
+
+export interface AuraDensityProps {
+  readonly density: 'compact' | 'comfortable';
+  readonly children: React.ReactNode;
+}
+
+/**
+ * Per-portal density (staff compact, member comfortable), inheriting the rest
+ * from the bridge. Server layouts render this instead of importing
+ * `AuraProvider` themselves: a server file importing AURA's barrel makes the
+ * whole barrel a client reference, so every AURA component ships on every
+ * route (measured +138 KB first-load JS); importing it here keeps the client
+ * graph tree-shakeable.
+ */
+export function AuraDensity({ density, children }: AuraDensityProps): React.ReactElement {
+  return <AuraProvider density={density}>{children}</AuraProvider>;
+}

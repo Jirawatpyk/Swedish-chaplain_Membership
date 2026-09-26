@@ -4,8 +4,8 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
-import { AuraProvider, useAuraLocale } from '@jirawatpyk/aura-react';
-import { AuraBridge } from '@/components/providers/aura-bridge';
+import { useAuraLocale } from '@jirawatpyk/aura-react';
+import { AuraBridge, AuraDensity } from '@/components/providers/aura-bridge';
 import { toast } from '@/lib/toast';
 
 vi.mock('next/link', () => ({
@@ -57,12 +57,12 @@ describe('<AuraBridge>', () => {
     expect(probe()).toHaveAttribute('data-link', 'yes');
   });
 
-  it('a nested density provider keeps the language, calendar, time zone and link from the bridge', () => {
+  it('AuraDensity sets the portal density and keeps the language, calendar, time zone and link from the bridge', () => {
     render(
       <AuraBridge locale="th" timeZone="Asia/Bangkok">
-        <AuraProvider density="compact">
+        <AuraDensity density="compact">
           <Probe />
-        </AuraProvider>
+        </AuraDensity>
       </AuraBridge>,
     );
     expect(probe()).toHaveAttribute('data-density', 'compact');

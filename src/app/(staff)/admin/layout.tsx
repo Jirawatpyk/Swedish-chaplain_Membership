@@ -2,8 +2,8 @@ import type { ReactNode } from 'react';
 import { Suspense } from 'react';
 import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { AuraProvider } from '@jirawatpyk/aura-react';
 import { IdleWarningDialog } from '@/components/auth/idle-warning-dialog';
+import { AuraDensity } from '@/components/providers/aura-bridge';
 import { CommandPaletteRoot } from '@/components/shell/command-palette-root';
 import { LocaleSwitcher } from '@/components/shell/locale-switcher';
 import { OutboxHealthBadge } from '@/components/shell/outbox-health-badge';
@@ -75,7 +75,7 @@ export default async function StaffLayout({ children }: { children: ReactNode })
   return (
     // Spec 122 — staff screens are data-dense: compact density. Locale,
     // calendar, time zone and link are inherited from the root AuraBridge.
-    <AuraProvider density="compact">
+    <AuraDensity density="compact">
       <SidebarProvider defaultOpen={defaultOpen}>
         <TooltipProvider>
           {/*
@@ -147,6 +147,6 @@ export default async function StaffLayout({ children }: { children: ReactNode })
           <CommandPaletteRoot />
         </TooltipProvider>
       </SidebarProvider>
-    </AuraProvider>
+    </AuraDensity>
   );
 }

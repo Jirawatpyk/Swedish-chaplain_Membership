@@ -2,9 +2,9 @@ import type { ReactNode } from 'react';
 import type { Viewport } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { AuraProvider } from '@jirawatpyk/aura-react';
 import { getTranslations } from 'next-intl/server';
 import { IdleWarningDialog } from '@/components/auth/idle-warning-dialog';
+import { AuraDensity } from '@/components/providers/aura-bridge';
 import { MemberNav } from '@/components/layout/member-nav';
 import { MemberBottomTabs } from '@/components/layout/member-bottom-tabs';
 import { LocaleSwitcher } from '@/components/shell/locale-switcher';
@@ -68,7 +68,7 @@ export default async function MemberLayout({ children }: { children: ReactNode }
     // Spec 122 — member screens use comfortable density (larger touch
     // targets). Locale, calendar, time zone and link come from the root
     // AuraBridge.
-    <AuraProvider density="comfortable">
+    <AuraDensity density="comfortable">
       <div className="flex min-h-screen flex-col">
         {/* 063 UX — navy brand chrome matching the admin sidebar's Swedish-flag
             field. `bg-sidebar` (navy #10487A) + `text-sidebar-foreground` (white
@@ -158,6 +158,6 @@ export default async function MemberLayout({ children }: { children: ReactNode }
         {/* T086 — ⌘K member command palette (Pay-invoice shortcut). */}
         <MemberCommandPaletteRoot />
       </div>
-    </AuraProvider>
+    </AuraDensity>
   );
 }
