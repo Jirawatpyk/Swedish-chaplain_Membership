@@ -2305,6 +2305,7 @@
         "bankAccountNo": "Kontonumret måste bestå av siffror (bindestreck eller mellanslag tillåtna).",
         "receiptPrefixReserved": "\"RE\" är reserverat för §105-evenemangskvitton. Använd ett annat kvittonummerprefix, till exempel RC.",
         "requiredFields": "Fyll i de markerade obligatoriska fälten.",
+        "taxIdChecksum": "Detta skatte-ID är ogiltigt. Kontrollera det 13-siffriga numret och checksiffran.",
         "readOnly": "Systemet är tillfälligt skrivskyddat för underhåll. Försök igen snart."
       },
       "saving": "Sparar…",

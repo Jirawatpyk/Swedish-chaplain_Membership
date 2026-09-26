@@ -2305,6 +2305,7 @@
         "bankAccountNo": "Account number must be digits (dashes or spaces allowed).",
         "receiptPrefixReserved": "\"RE\" is reserved for §105 event receipts. Use a different receipt number prefix such as RC.",
         "requiredFields": "Fill in the highlighted required fields.",
+        "taxIdChecksum": "This Tax ID is invalid. Check the 13-digit number and its checksum.",
         "readOnly": "The system is temporarily read-only for maintenance. Try again shortly."
       },
       "saving": "Saving…",
