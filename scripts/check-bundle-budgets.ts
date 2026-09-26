@@ -96,6 +96,21 @@
  *       supersedes the Task 7 pre-chart ceiling — do not revert to 1100.)
  *
 
+ *   Spec 122 US1 (AURA shell, 2026-09-26) — dual-library window re-baseline
+ *   (plan.md § Complexity Tracking, Principle VII: budgets re-baselined per
+ *   phase with the rule above; every route must be back at or below its
+ *   pre-122 ceiling by US13, when the legacy kit is deleted). The renewals
+ *   admin pages still render the legacy kit (Base UI dialogs, cmdk picker)
+ *   and now also load AURA Dialog / Pagination through the shared
+ *   ConfirmationDialog / TablePagination / EmptyState, so both sets ship:
+ *     /admin/renewals               1253.3 → 1289.8 KB → ≤ 1390 KB (was 1260)
+ *     /admin/renewals/tasks         1164.9 → 1316.9 KB → ≤ 1420 KB (was 1190)
+ *     /admin/renewals/tier-upgrades 1051.8 → 1148.9 KB → ≤ 1250 KB (was 1100)
+ *   (main 528c605f5 → US1, same build env). The same build shrank /admin
+ *   (1006.7 → 756.8 KB), /portal/benefits/e-blasts (942.4 → 699.8 KB),
+ *   /portal/preferences/renewals (936.9 → 695.3 KB) and the broadcast
+ *   routes (−30 to −103 KB); their ceilings stay as they are.
+ *
  * Run as a post-build step:
  *
  *   pnpm build
@@ -139,10 +154,11 @@ const BUDGETS: ReadonlyArray<RouteBudget> = [
   { route: '/portal/benefits/e-blasts', maxKb: 1050 },
   { route: '/unsubscribe/[token]', maxKb: 690 },
   // --- F8 renewals (Phase 9 / T255) ------------------------------------
-  { route: '/admin/renewals', maxKb: 1260 },
+  // Spec 122 US1 re-baseline (dual-library window) — see docblock.
+  { route: '/admin/renewals', maxKb: 1390 },
   { route: '/admin/renewals/[cycleId]', maxKb: 1140 },
-  { route: '/admin/renewals/tasks', maxKb: 1190 },
-  { route: '/admin/renewals/tier-upgrades', maxKb: 1100 },
+  { route: '/admin/renewals/tasks', maxKb: 1420 },
+  { route: '/admin/renewals/tier-upgrades', maxKb: 1250 },
   { route: '/portal/renewal/[memberId]', maxKb: 1090 },
   { route: '/portal/preferences/renewals', maxKb: 1040 },
   // PR #24 review-fix — schedule editor is the only F8 admin surface
