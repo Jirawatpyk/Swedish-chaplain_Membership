@@ -56,11 +56,11 @@ export function AuthFrame({ title, description, portalLabel, tenantName, childre
   );
 }
 
-/** The auth pages' h1 and its one-line description, as the boards set them. */
+/** The auth pages' h1 and its one-line description, as the boards set them (28px on phones, 30px from 1024px). */
 export function AuthTitle({ title, description }: { readonly title: string; readonly description?: string | undefined }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <h1 className="font-[family-name:var(--font-display)] text-[30px] leading-[1.2] font-semibold tracking-[-0.01em] text-balance">
+      <h1 className="font-[family-name:var(--font-display)] text-[28px] leading-[1.2] lg:text-[30px] font-semibold tracking-[-0.01em] text-balance">
         {title}
       </h1>
       {description ? <p className="text-[var(--aura-fg-secondary)]">{description}</p> : null}

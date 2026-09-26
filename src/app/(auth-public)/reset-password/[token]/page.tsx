@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
 import { AuthFrame } from '@/components/auth/auth-frame';
+import { AuthLinkInvalid } from '@/components/auth/auth-link-invalid';
 import { ResetPasswordForm } from '@/components/auth/reset-password-form';
 // Presentation-side data loader for the reset-password page.
 // No Application use case wraps a read-only "is this token
@@ -65,15 +66,10 @@ export default async function ResetPasswordPage({
       tenantName={process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham'}
     >
       {tokenDead ? (
-        <div
-          className="space-y-4 rounded-md border border-destructive/40 bg-destructive/5 p-4"
-          role="alert"
-        >
-          <p className="text-sm text-destructive">{t('errors.tokenExpired')}</p>
-          <a href="/forgot-password" className="text-sm underline underline-offset-4">
-            {t('requestNewLink')}
-          </a>
-        </div>
+        <AuthLinkInvalid
+          message={t('errors.tokenExpired')}
+          action={{ label: t('requestNewLink'), href: '/forgot-password' }}
+        />
       ) : (
         <ResetPasswordForm token={token} />
       )}
