@@ -143,6 +143,9 @@ const PUBLIC_ROUTES: readonly string[] = [
   '/api/auth/redeem-invite',
   '/api/auth/email-verification/[token]',
   '/api/auth/email-change/revert/[token]',
+  // RFC 8058 one-click unsubscribe (proxy rewrite of POST /unsubscribe/[token]);
+  // the signed token is the credential.
+  '/api/unsubscribe/[token]',
 ];
 
 function classify(h: Handler): ExpectedClass | null {
