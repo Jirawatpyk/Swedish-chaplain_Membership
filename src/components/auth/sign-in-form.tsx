@@ -25,7 +25,6 @@ import { type SubmitHandler, useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { toast } from '@/lib/toast';
 import { Alert, Button, FormErrorSummary, PasswordField, TextField } from '@jirawatpyk/aura-react';
-import { useSubmittedErrors } from './use-submitted-errors';
 import { safeReturnTo } from '@/lib/return-url';
 import { emailText, requiredText, type Translator } from '@/lib/zod-i18n';
 
@@ -71,7 +70,8 @@ export function SignInForm({ portal, returnTo }: SignInFormProps) {
     // The error summary takes focus after a failed submit (spec 122 US2 AS1).
     shouldFocusError: false,
   });
-  const summary = useSubmittedErrors<FormValues>();
+  // `root` is the server message with its own alert, never a field.
+  const { root: _root, ...fieldErrors } = errors;
 
   // Auto-focus the email field on mount (spec FR-024 primary-input table).
   useEffect(() => {
@@ -79,7 +79,6 @@ export function SignInForm({ portal, returnTo }: SignInFormProps) {
   }, [setFocus]);
 
   const onSubmit: SubmitHandler<FormValues> = async (values) => {
-    summary.clear();
     setSubmitting(true);
     // Clear any prior server-rejection banner so it can't linger next to a
     // different outcome (e.g. a later network throw) on a fresh attempt.
@@ -134,7 +133,7 @@ export function SignInForm({ portal, returnTo }: SignInFormProps) {
 
   return (
     <form
-      onSubmit={handleSubmit(onSubmit, summary.onInvalid)}
+      onSubmit={handleSubmit(onSubmit)}
       // Native (pre-hydration) fallback MUST be POST so credentials land in
       // the request body, never the URL query string. CWE-598 — see
       // tests/unit/auth/auth-forms-post-method.test.tsx. Inert once hydrated
@@ -144,7 +143,7 @@ export function SignInForm({ portal, returnTo }: SignInFormProps) {
       noValidate
       aria-busy={submitting}
     >
-      <FormErrorSummary errors={summary.errors} focusKey={submitCount} />
+      <FormErrorSummary errors={fieldErrors} focusKey={submitCount} />
 
       <TextField
         id="email"

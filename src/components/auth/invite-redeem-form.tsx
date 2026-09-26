@@ -25,7 +25,6 @@ import { refinePasswordPair, requiredText, type Translator } from '@/lib/zod-i18
 import { toast } from '@/lib/toast';
 import { Button, FormErrorSummary, PasswordField, TextField } from '@jirawatpyk/aura-react';
 import { AuthLinkInvalid } from './auth-link-invalid';
-import { useSubmittedErrors } from './use-submitted-errors';
 import {
   PasswordStrength,
   usePasswordStrengthMeter,
@@ -100,13 +99,10 @@ export function InviteRedeemForm({ token, email }: InviteRedeemFormProps) {
     setFocus('displayName');
   }, [setFocus]);
 
-  const summary = useSubmittedErrors<FormValues>();
-
   const passwordValue = useWatch({ control, name: 'password' });
   const meter = usePasswordStrengthMeter(passwordValue ?? '');
 
   const onSubmit: SubmitHandler<FormValues> = async (values) => {
-    summary.clear();
     setSubmitting(true);
     try {
       const response = await fetch('/api/auth/redeem-invite', {
@@ -143,7 +139,6 @@ export function InviteRedeemForm({ token, email }: InviteRedeemFormProps) {
             ? tReset('errors.passwordBreached')
             : tReset('errors.weakPassword');
         setError('password', { message });
-        summary.show('password', message);
         // Pin the strength bar to red for this value so it agrees with the
         // inline error instead of contradicting it. The error summary that
         // appears with it takes focus and links to the field.
@@ -160,7 +155,7 @@ export function InviteRedeemForm({ token, email }: InviteRedeemFormProps) {
   };
 
   const handleFormSubmit = (event: FormEvent) => {
-    void handleSubmit(onSubmit, summary.onInvalid)(event);
+    void handleSubmit(onSubmit)(event);
   };
 
   if (linkInvalid) {
@@ -187,7 +182,7 @@ export function InviteRedeemForm({ token, email }: InviteRedeemFormProps) {
       noValidate
       aria-busy={submitting}
     >
-      <FormErrorSummary errors={summary.errors} focusKey={submitCount} />
+      <FormErrorSummary errors={errors} focusKey={submitCount} />
 
       {/* Read-only, not disabled: it stays in the tab order for keyboard and
           screen-reader users, and password managers pair the new password

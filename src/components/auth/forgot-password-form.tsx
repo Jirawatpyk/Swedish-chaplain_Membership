@@ -26,7 +26,6 @@ import { Alert, Button, FormErrorSummary, Icon, TextField } from '@jirawatpyk/au
 import { AURA_FOCUS_RING } from '@/components/shell/aura-classes';
 import { cn } from '@/lib/utils';
 import { emailText, type Translator } from '@/lib/zod-i18n';
-import { useSubmittedErrors } from './use-submitted-errors';
 
 function buildForgotPasswordSchema(tv: Translator) {
   return z.object({
@@ -74,7 +73,6 @@ export function ForgotPasswordForm() {
     // The error summary takes focus after a failed submit (spec 122 US2 AS1).
     shouldFocusError: false,
   });
-  const summary = useSubmittedErrors<FormValues>();
 
   useEffect(() => {
     setFocus('email');
@@ -141,7 +139,6 @@ export function ForgotPasswordForm() {
   );
 
   const onSubmit: SubmitHandler<FormValues> = async (values) => {
-    summary.clear();
     await sendRequest(values.email);
   };
 
@@ -153,14 +150,14 @@ export function ForgotPasswordForm() {
 
   return (
     <form
-      onSubmit={handleSubmit(onSubmit, summary.onInvalid)}
+      onSubmit={handleSubmit(onSubmit)}
       // Keep the email out of the URL on a pre-hydration native submit
       // (CWE-598; see tests/unit/components/pii-forms-post-method.test.tsx).
       method="post"
       className="flex flex-col gap-4"
       noValidate
     >
-      <FormErrorSummary errors={summary.errors} focusKey={submitCount} />
+      <FormErrorSummary errors={errors} focusKey={submitCount} />
 
       <TextField
         id="email"
