@@ -172,6 +172,11 @@ describe('globals.css — AURA foundation (spec 122)', () => {
     expect(css).not.toMatch(/\.aura-nav__label/);
   });
 
+  it('tints the auth brand panel\'s mesh from the brand blue to the boards\' soft yellow (spec 122 US2)', () => {
+    const layer = css.match(/@layer components\s*\{[\s\S]*?\n\}/)?.[0] ?? '';
+    expect(layer).toMatch(/\.auth-mesh\s*\{\s*--aura-mesh-to:\s*#ffe27a;/);
+  });
+
   it('carries no local toaster override — AURA 5.6 centres and offsets it (handoff #54, #56)', () => {
     expect(css).not.toMatch(/\.aura-toaster|\.aura-toast__action/);
   });

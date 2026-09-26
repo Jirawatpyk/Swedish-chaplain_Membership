@@ -1,5 +1,8 @@
 {
   "auth": {
+    "frame": {
+      "everyone": "สมาชิกและเจ้าหน้าที่"
+    },
     "signIn": {
       "title": "เข้าสู่ระบบ",
       "cardDescription": "พอร์ทัลเจ้าหน้าที่",

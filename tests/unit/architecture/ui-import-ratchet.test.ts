@@ -101,4 +101,25 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, 'src/components/shell/reason-confirmation-dialog.tsx')).toEqual([]);
     });
   });
+
+  describe('the US2 auth pages are on AURA (the real MIGRATED_PATHS)', () => {
+    const legacy = "import { Button } from '@/components/ui/button';\nexport const B = Button;\n";
+
+    it.each([
+      'src/app/(auth-public)/admin/sign-in/page.tsx',
+      'src/app/(auth-public)/reset-password/[token]/page.tsx',
+      'src/components/auth/sign-in-form.tsx',
+      'src/components/auth/change-password-form.tsx',
+      'src/components/auth/change-password-form-skeleton.tsx',
+      'src/components/auth/password-strength.tsx',
+      'src/components/auth/security-update-banner.tsx',
+      'src/components/auth/auth-frame.tsx',
+    ])('%s cannot import the legacy kit', async (path) => {
+      expect(await ratchetHits(legacy, path)).toHaveLength(1);
+    });
+
+    it('control: the user-admin screens in the same folder keep the legacy kit until US10', async () => {
+      expect(await ratchetHits(legacy, 'src/components/auth/user-list-table.tsx')).toEqual([]);
+    });
+  });
 });

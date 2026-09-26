@@ -6,7 +6,7 @@
  * line. Render against the REAL en.json so a missing key would surface
  * here as MISSING_MESSAGE (next-intl), which the key-echoing mocks in
  * the form tests cannot catch. Also pins that a server-rejected meter
- * paints the bar red (bg-destructive), the visual the bar-reset UX fix
+ * paints the bar in AURA's danger colour, the visual the bar-reset UX fix
  * is meant to deliver.
  */
 import { describe, expect, it } from 'vitest';
@@ -57,6 +57,15 @@ describe('PasswordStrength caption', () => {
 
   it('a server-rejected (weak) bar paints the first segment red', () => {
     const { container } = renderBar({ level: 'weak', weakReason: 'rejected' });
-    expect(container.querySelector('.bg-destructive')).not.toBeNull();
+    expect(container.querySelector('[class*="--aura-fg-danger"]')).not.toBeNull();
+  });
+
+  it.each([
+    ['acceptable', '--aura-fg-accent', 2],
+    ['strong', '--aura-fg-positive', 3],
+  ] as const)('%s fills its segments with AURA %s, as on the boards (spec 122 US2)', (level, token, filled) => {
+    const { container } = renderBar({ level });
+    expect(container.querySelectorAll(`[class*="${token}"]`)).toHaveLength(filled);
+    expect(container.querySelectorAll('[class*="--aura-bg-surface-hover"]')).toHaveLength(3 - filled);
   });
 });

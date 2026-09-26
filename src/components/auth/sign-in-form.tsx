@@ -3,18 +3,18 @@
 /**
  * SignInForm — credentials entry for staff and member portals (T072).
  *
- * Uses react-hook-form + zod for client-side validation and shadcn
- * Input/Label/Button for consistent styling. The shadcn `form` wrapper
- * is no longer in the registry under base-nova; we compose RHF
- * primitives directly.
+ * Uses react-hook-form + zod for client-side validation on AURA fields
+ * (spec 122 US2): `TextField` / `PasswordField` (the show/hide toggle
+ * announces its state), `FormErrorSummary` after a failed submit, an AURA
+ * `Alert` for a server rejection and `Button` with `loading`.
  *
  * UX requirements (spec FR-024 + ux-standards § 8 + § 11):
  *   - Email field has auto-focus on mount
  *   - Enter submits the form
  *   - Submit button shows in-place spinner state
  *   - Inline error messages localised via next-intl
- *   - On submission failure, focus moves to the first invalid field
- *     (or the email if the failure is "invalid-credentials")
+ *   - On a validation failure the error summary takes focus and links to
+ *     each field; on a server rejection focus moves to the email
  *   - All toasts are routed through `@/lib/toast` (AURA; see AuraBridge)
  */
 import { useEffect, useMemo, useState } from 'react';
@@ -24,11 +24,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { type SubmitHandler, useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { toast } from '@/lib/toast';
-import { Loader2Icon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { EmailInput } from '@/components/ui/email-input';
-import { PasswordInput } from '@/components/ui/password-input';
-import { Label } from '@/components/ui/label';
+import { Alert, Button, FormErrorSummary, PasswordField, TextField } from '@jirawatpyk/aura-react';
 import { safeReturnTo } from '@/lib/return-url';
 import { emailText, requiredText, type Translator } from '@/lib/zod-i18n';
 
@@ -66,12 +62,16 @@ export function SignInForm({ portal, returnTo }: SignInFormProps) {
     setError,
     clearErrors,
     setFocus,
-    formState: { errors },
+    formState: { errors, submitCount },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: { email: '', password: '' },
     mode: 'onSubmit',
+    // The error summary takes focus after a failed submit (spec 122 US2 AS1).
+    shouldFocusError: false,
   });
+  // `root` is the server message with its own alert, never a field.
+  const { root: _root, ...fieldErrors } = errors;
 
   // Auto-focus the email field on mount (spec FR-024 primary-input table).
   useEffect(() => {
@@ -139,87 +139,60 @@ export function SignInForm({ portal, returnTo }: SignInFormProps) {
       // tests/unit/auth/auth-forms-post-method.test.tsx. Inert once hydrated
       // (RHF handleSubmit calls preventDefault).
       method="post"
-      className="space-y-4"
+      className="flex flex-col gap-4"
       noValidate
       aria-busy={submitting}
     >
-      <div className="space-y-2">
-        <Label htmlFor="email">{t('emailLabel')}</Label>
-        <EmailInput
-          id="email"
-          autoComplete="username"
-          spellCheck={false}
-          // aria-invalid only for an actual email-FORMAT error — a server
-          // rejection (bad credentials / account state) doesn't mean the email
-          // value is malformed, so we don't mark the field invalid for it. But
-          // we DO describe the focused field with the rejection banner so a SR
-          // user hears the reason (audit XF-01 / WCAG 3.3.1).
-          aria-invalid={errors.email ? 'true' : undefined}
-          aria-describedby={
-            [errors.email ? 'email-error' : null, errors.root ? 'signin-error' : null]
-              .filter(Boolean)
-              .join(' ') || undefined
-          }
-          {...register('email')}
-        />
-        {errors.email ? (
-          <p id="email-error" role="alert" className="text-sm text-destructive">
-            {errors.email.message}
-          </p>
-        ) : null}
-      </div>
+      <FormErrorSummary errors={fieldErrors} focusKey={submitCount} />
 
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <Label htmlFor="password">{t('passwordLabel')}</Label>
-          <a
-            href="/forgot-password"
-            className="text-sm text-muted-foreground underline-offset-4 hover:underline"
-          >
-            {t('forgotPassword')}
-          </a>
-        </div>
-        <PasswordInput
+      <TextField
+        id="email"
+        label={t('emailLabel')}
+        type="email"
+        inputMode="email"
+        autoComplete="username"
+        spellCheck={false}
+        error={errors.email?.message}
+        // aria-invalid only for an actual email-FORMAT error (AURA sets it from
+        // `error`) — a server rejection (bad credentials / account state)
+        // doesn't mean the email is malformed. But the focused field IS
+        // described by the rejection so a SR user hears the reason (audit
+        // XF-01 / WCAG 3.3.1).
+        aria-describedby={errors.root ? 'signin-error' : undefined}
+        {...register('email')}
+      />
+
+      <div className="flex flex-col">
+        <PasswordField
           id="password"
+          label={t('passwordLabel')}
           autoComplete="current-password"
-          aria-invalid={errors.password ? 'true' : undefined}
-          aria-describedby={errors.password ? 'password-error' : undefined}
+          error={errors.password?.message}
           {...register('password')}
         />
-        {errors.password ? (
-          <p
-            id="password-error"
-            role="alert"
-            className="text-sm text-destructive"
-          >
-            {errors.password.message}
-          </p>
-        ) : null}
+        {/* Under the field, not beside its label as the boards draw it: there
+            it is a 20px target flush against the input, and it would sit
+            before the field visually but after it in tab order. Here it is
+            44px tall and visual order is tab order. */}
+        <a
+          href="/forgot-password"
+          className="inline-flex min-h-11 items-center self-end text-[13px] font-medium text-[var(--aura-fg-accent)] no-underline hover:text-[var(--aura-fg-primary)] hover:underline"
+        >
+          {t('forgotPassword')}
+        </a>
       </div>
 
       {errors.root ? (
-        <div
-          id="signin-error"
-          className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"
-          role="alert"
-        >
-          {errors.root.message}
+        <div id="signin-error">
+          <Alert tone="danger">{errors.root.message}</Alert>
         </div>
       ) : null}
 
-      <Button type="submit" className="w-full" size="lg" disabled={submitting}>
-        {submitting ? (
-          <>
-            <Loader2Icon
-              className="size-4 motion-safe:animate-spin"
-              aria-hidden
-            />
-            {t('submitting')}
-          </>
-        ) : (
-          t('submit')
-        )}
-      </Button>
+      <div className="flex flex-col">
+        <Button type="submit" variant="primary" loading={submitting}>
+          {submitting ? t('submitting') : t('submit')}
+        </Button>
+      </div>
     </form>
   );
 }

@@ -30,6 +30,13 @@
  */
 export type BrandVariant = 'mark' | 'lockup' | 'vertical';
 
+/**
+ * The chamber's full name, as the vertical / lockup wordmarks spell it. A
+ * proper name, not translated; spec 122's auth frame sets it in the display
+ * face on the brand panel.
+ */
+export const CHAMBER_FULL_NAME = 'Thai-Swedish Chamber of Commerce';
+
 interface BrandMarkProps {
   readonly variant?: BrandVariant;
   readonly className?: string;

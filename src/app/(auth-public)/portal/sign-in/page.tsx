@@ -1,17 +1,9 @@
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
 import { redirect } from 'next/navigation';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
 import { SignInForm } from '@/components/auth/sign-in-form';
+import { AuthFrame } from '@/components/auth/auth-frame';
 import { SecurityUpdateBanner } from '@/components/auth/security-update-banner';
-import { AuthPageControls } from '@/components/shell/auth-page-controls';
-import { BrandMark } from '@/components/shell/brand-mark';
 import { getCurrentSession } from '@/lib/auth-session';
 import { safeReturnTo } from '@/lib/return-url';
 
@@ -63,36 +55,18 @@ export default async function MemberSignInPage({
   }
 
   const t = await getTranslations('auth.signIn');
-  const tPortal = await getTranslations('shell.portalLabel');
   const tenantName = process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham';
 
   return (
-    <main id="main-content" className="relative flex min-h-screen flex-col bg-muted/20">
-      <AuthPageControls />
-      <div className="flex flex-1 items-center justify-center p-4">
-        <div className="w-full max-w-md space-y-6">
-          <BrandMark
-            variant="vertical"
-            title={`${tenantName} — ${tPortal('member')}`}
-            className="mx-auto w-44"
-          />
-          <Card className="w-full">
-            <CardHeader className="space-y-2">
-              <CardTitle className="text-2xl">{t('title')}</CardTitle>
-              <CardDescription>{t('memberCardDescription')}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {showSecurityBanner ? (
-                <SecurityUpdateBanner message={t('securityUpdateBanner')} />
-              ) : null}
-              {showLinkInvalidBanner ? (
-                <SecurityUpdateBanner message={t('linkInvalidBanner')} />
-              ) : null}
-              <SignInForm portal="member" returnTo={validatedReturnTo} />
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    </main>
+    <AuthFrame
+      title={t('title')}
+      description={t('memberCardDescription')}
+      portalLabel={t('memberCardDescription')}
+      tenantName={tenantName}
+    >
+      {showSecurityBanner ? <SecurityUpdateBanner message={t('securityUpdateBanner')} /> : null}
+      {showLinkInvalidBanner ? <SecurityUpdateBanner message={t('linkInvalidBanner')} /> : null}
+      <SignInForm portal="member" returnTo={validatedReturnTo} />
+    </AuthFrame>
   );
 }

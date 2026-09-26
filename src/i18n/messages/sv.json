@@ -1,5 +1,8 @@
 {
   "auth": {
+    "frame": {
+      "everyone": "Medlemmar och personal"
+    },
     "signIn": {
       "title": "Logga in",
       "cardDescription": "Personalportal",

@@ -15,8 +15,11 @@
  *     the `signInUrl` the API returned (staff vs member portal).
  *   - On `link-invalid`: swaps the form for a full error card with a
  *     "Request a new link" affordance.
+ *   - AURA fields (spec 122 US2): `PasswordField` (the show/hide toggle
+ *     announces its state), `FormErrorSummary` after a failed submit, and
+ *     `Button` with `loading`.
  */
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -24,10 +27,8 @@ import { type SubmitHandler, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { passwordPairFields, refinePasswordPair } from '@/lib/zod-i18n';
 import { toast } from '@/lib/toast';
-import { Loader2Icon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { PasswordInput } from '@/components/ui/password-input';
-import { Label } from '@/components/ui/label';
+import { Button, FormErrorSummary, PasswordField } from '@jirawatpyk/aura-react';
+import { AuthLinkInvalid } from './auth-link-invalid';
 import {
   PasswordStrength,
   usePasswordStrengthMeter,
@@ -63,11 +64,6 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   const [linkInvalid, setLinkInvalid] = useState(false);
-  // Managed focus on the invalid-link alert — see InviteRedeemForm for rationale.
-  const invalidRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (linkInvalid) invalidRef.current?.focus();
-  }, [linkInvalid]);
 
   const {
     control,
@@ -75,7 +71,7 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
     handleSubmit,
     setError,
     setFocus,
-    formState: { errors },
+    formState: { errors, submitCount },
   } = useForm<FormValues>({
     resolver: zodResolver(
       buildSchema(
@@ -86,6 +82,8 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
     ),
     defaultValues: { newPassword: '', confirmPassword: '' },
     mode: 'onSubmit',
+    // The error summary takes focus after a failed submit (spec 122 US2 AS1).
+    shouldFocusError: false,
   });
 
   useEffect(() => {
@@ -126,16 +124,15 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
 
       if (body.error === 'weak-password') {
         const first = body.issues?.[0] ?? 'too-short';
-        setError('newPassword', {
-          message:
-            first === 'breached'
-              ? t('errors.passwordBreached')
-              : t('errors.weakPassword'),
-        });
+        const message =
+          first === 'breached'
+            ? t('errors.passwordBreached')
+            : t('errors.weakPassword');
+        setError('newPassword', { message });
         // Pin the strength bar to red for this value so it agrees with the
-        // inline error instead of contradicting it.
+        // inline error instead of contradicting it. The error summary that
+        // appears with it takes focus and links to the field.
         meter.markRejected(values.newPassword);
-        setFocus('newPassword');
         return;
       }
 
@@ -157,21 +154,13 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
   };
 
   if (linkInvalid) {
+    // Managed focus on the alert that replaces the form (see AuthLinkInvalid).
     return (
-      <div
-        ref={invalidRef}
-        tabIndex={-1}
-        className="space-y-4 rounded-md border border-destructive/40 bg-destructive/5 p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        role="alert"
-      >
-        <p className="text-sm text-destructive">{t('errors.tokenExpired')}</p>
-        <a
-          href="/forgot-password"
-          className="inline-flex h-10 w-full items-center justify-center rounded-md border border-input bg-background px-4 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
-        >
-          {t('requestNewLink')}
-        </a>
-      </div>
+      <AuthLinkInvalid
+        message={t('errors.tokenExpired')}
+        action={{ label: t('requestNewLink'), href: '/forgot-password' }}
+        autoFocus
+      />
     );
   }
 
@@ -181,71 +170,41 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
       // Native fallback POSTs so the new password stays out of the URL
       // (CWE-598; see tests/unit/auth/auth-forms-post-method.test.tsx).
       method="post"
-      className="space-y-4"
+      className="flex flex-col gap-4"
       noValidate
+      aria-busy={submitting}
     >
-      <div className="space-y-2">
-        <Label htmlFor="new-password">{t('newPasswordLabel')}</Label>
-        <PasswordInput
+      <FormErrorSummary errors={errors} focusKey={submitCount} />
+
+      <div className="flex flex-col gap-2">
+        <PasswordField
           id="new-password"
+          label={t('newPasswordLabel')}
           autoComplete="new-password"
-          aria-invalid={errors.newPassword ? 'true' : undefined}
-          aria-describedby={
-            errors.newPassword
-              ? 'new-password-error'
-              : 'new-password-strength'
-          }
+          error={errors.newPassword?.message}
+          // The bar describes the field until an error replaces it (AURA adds
+          // `new-password-error` itself).
+          aria-describedby={errors.newPassword ? undefined : 'new-password-strength'}
           {...register('newPassword')}
         />
         <div id="new-password-strength">
           <PasswordStrength level={meter.level} weakReason={meter.weakReason} />
         </div>
-        {errors.newPassword ? (
-          <p
-            id="new-password-error"
-            role="alert"
-            className="text-sm text-destructive"
-          >
-            {errors.newPassword.message}
-          </p>
-        ) : null}
       </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="confirm-password">{t('confirmPasswordLabel')}</Label>
-        <PasswordInput
-          id="confirm-password"
-          autoComplete="new-password"
-          aria-invalid={errors.confirmPassword ? 'true' : undefined}
-          aria-describedby={
-            errors.confirmPassword ? 'confirm-password-error' : undefined
-          }
-          {...register('confirmPassword')}
-        />
-        {errors.confirmPassword ? (
-          <p
-            id="confirm-password-error"
-            role="alert"
-            className="text-sm text-destructive"
-          >
-            {errors.confirmPassword.message}
-          </p>
-        ) : null}
-      </div>
+      <PasswordField
+        id="confirm-password"
+        label={t('confirmPasswordLabel')}
+        autoComplete="new-password"
+        error={errors.confirmPassword?.message}
+        {...register('confirmPassword')}
+      />
 
-      <Button type="submit" className="w-full" size="lg" disabled={submitting}>
-        {submitting ? (
-          <>
-            <Loader2Icon
-              className="size-4 motion-safe:animate-spin"
-              aria-hidden
-            />
-            {t('submit')}
-          </>
-        ) : (
-          t('submit')
-        )}
-      </Button>
+      <div className="flex flex-col pt-2">
+        <Button type="submit" variant="primary" loading={submitting}>
+          {t('submit')}
+        </Button>
+      </div>
     </form>
   );
 }

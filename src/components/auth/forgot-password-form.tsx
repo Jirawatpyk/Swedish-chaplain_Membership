@@ -22,10 +22,9 @@ import { useLocale, useTranslations } from 'next-intl';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { type SubmitHandler, useForm } from 'react-hook-form';
 import { z } from 'zod';
-import { Loader2Icon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { EmailInput } from '@/components/ui/email-input';
-import { Label } from '@/components/ui/label';
+import { Alert, Button, FormErrorSummary, Icon, TextField } from '@jirawatpyk/aura-react';
+import { AURA_FOCUS_RING } from '@/components/shell/aura-classes';
+import { cn } from '@/lib/utils';
 import { emailText, type Translator } from '@/lib/zod-i18n';
 
 function buildForgotPasswordSchema(tv: Translator) {
@@ -66,11 +65,13 @@ export function ForgotPasswordForm() {
     handleSubmit,
     setFocus,
     getValues,
-    formState: { errors },
+    formState: { errors, submitCount },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: { email: '' },
     mode: 'onSubmit',
+    // The error summary takes focus after a failed submit (spec 122 US2 AS1).
+    shouldFocusError: false,
   });
 
   useEffect(() => {
@@ -153,88 +154,65 @@ export function ForgotPasswordForm() {
       // Keep the email out of the URL on a pre-hydration native submit
       // (CWE-598; see tests/unit/components/pii-forms-post-method.test.tsx).
       method="post"
-      className="space-y-4"
+      className="flex flex-col gap-4"
       noValidate
     >
-      <div className="space-y-2">
-        <Label htmlFor="email">{t('emailLabel')}</Label>
-        <EmailInput
-          id="email"
-          autoComplete="username"
-          disabled={submitting || submitted}
-          aria-invalid={errors.email ? 'true' : undefined}
-          aria-describedby={errors.email ? 'email-error' : undefined}
-          {...register('email')}
-        />
-        {errors.email ? (
-          <p id="email-error" role="alert" className="text-sm text-destructive">
-            {errors.email.message}
-          </p>
-        ) : null}
-      </div>
+      <FormErrorSummary errors={errors} focusKey={submitCount} />
+
+      <TextField
+        id="email"
+        label={t('emailLabel')}
+        type="email"
+        inputMode="email"
+        autoComplete="username"
+        spellCheck={false}
+        disabled={submitting || submitted}
+        error={errors.email?.message}
+        {...register('email')}
+      />
 
       {/* Gated on errorMsg alone (NOT `!submitted`): a failed RESEND happens
         * while submitted===true, so `!submitted` would swallow it. Each send
         * clears errorMsg first (setErrorMsg(null)), so the success path leaves
         * it null and the banner stays hidden; only a real failure shows it. */}
-      {errorMsg ? (
-        <div
-          className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"
-          role="alert"
-        >
-          {errorMsg}
-        </div>
-      ) : null}
+      {errorMsg ? <Alert tone="danger">{errorMsg}</Alert> : null}
 
       {submitted ? (
+        // AURA's success alert, drawn from its classes: it takes focus when the
+        // submit button it replaces unmounts, which `Alert` cannot (no tabIndex).
         <div
           ref={successRef}
           tabIndex={-1}
-          className="space-y-2 rounded-md border border-primary/30 bg-primary/5 p-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className={cn('aura-alert aura-alert--success', AURA_FOCUS_RING)}
           role="status"
         >
-          <p>{t('submitted')}</p>
-          {/* FR-025 user-facing advisory — shown UNCONDITIONALLY (to matched
-              and unmatched submitters alike) so it never reveals whether the
-              email matched an account (preserves the FR-016 enumeration guard),
-              while still helping a real user whose mail was delayed/spam-filed. */}
-          <p className="text-muted-foreground">{t('deliveryHint')}</p>
+          <Icon name="circle-check" className="aura-alert__icon" />
+          <div className="aura-alert__body">
+            <p className="aura-alert__text">{t('submitted')}</p>
+            {/* FR-025 user-facing advisory — shown UNCONDITIONALLY (to matched
+                and unmatched submitters alike) so it never reveals whether the
+                email matched an account (preserves the FR-016 enumeration guard),
+                while still helping a real user whose mail was delayed/spam-filed. */}
+            <p className="aura-alert__text text-[var(--aura-fg-secondary)]">{t('deliveryHint')}</p>
+          </div>
         </div>
       ) : null}
 
       {!submitted ? (
-        <Button type="submit" className="w-full" size="lg" disabled={submitting}>
-          {submitting ? (
-            <>
-              <Loader2Icon
-                className="size-4 motion-safe:animate-spin"
-                aria-hidden
-              />
-              {t('submit')}
-            </>
-          ) : (
-            t('submit')
-          )}
-        </Button>
+        <div className="flex flex-col pt-2">
+          <Button type="submit" variant="primary" loading={submitting}>
+            {t('submit')}
+          </Button>
+        </div>
       ) : (
         <Button
           type="button"
-          variant="outline"
-          className="w-full"
-          size="lg"
+          variant="secondary"
           onClick={handleResend}
           disabled={remaining > 0 || submitting}
-          aria-busy={submitting}
+          loading={submitting}
         >
-          {submitting && (
-            <Loader2Icon
-              className="size-4 motion-safe:animate-spin"
-              aria-hidden
-            />
-          )}
-          {remaining > 0
-            ? t('resendCountdown', { seconds: remaining })
-            : t('resend')}
+          {remaining > 0 ? t('resendCountdown', { seconds: remaining }) : t('resend')}
         </Button>
       )}
     </form>

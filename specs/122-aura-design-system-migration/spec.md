@@ -293,7 +293,7 @@ The old component kit folder, its primitives library, the old toast/palette/date
 ## Assumptions
 
 - The AURA maintainer is also the Chamber-OS maintainer and fixes AURA gaps in parallel; the handoff doc is the contract between the two.
-- AURA 5.5.0 covers handoff items 1–51 (5.6.0 adds 52–56; 5.7.0 adds 57–62; 5.7.1 adds 63; 5.7.2, the pin since US1, adds 64) and exposes the same package entry points as 4.17 (verified on the registry 2026-09-26); no item is open.
+- AURA 5.5.0 covers handoff items 1–51 (5.6.0 adds 52–56; 5.7.0 adds 57–62; 5.7.1 adds 63; 5.7.2 adds 64; 5.7.3, the pin since US2, adds 65) and exposes the same package entry points as 4.17 (verified on the registry 2026-09-26); no item is open.
 - The ~300 canvas boards are the visual reference; where a board is marked "Proposed", the phase may either implement the proposal or keep the current behaviour, and says which in its PR.
 - End-to-end tests have no CI job and run locally; each phase links its run log.
 - The dashboard's charting library stays; only its colours move to AURA's chart palette.

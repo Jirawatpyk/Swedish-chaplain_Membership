@@ -20,7 +20,10 @@ vi.mock('@/components/auth/sign-in-form', () => ({
 vi.mock('@/components/shell/auth-page-controls', () => ({
   AuthPageControls: () => null,
 }));
-vi.mock('@/components/shell/brand-mark', () => ({ BrandMark: () => null }));
+vi.mock('@/components/shell/brand-mark', () => ({
+  BrandMark: () => null,
+  CHAMBER_FULL_NAME: 'Thai-Swedish Chamber of Commerce',
+}));
 vi.mock('@/components/auth/security-update-banner', () => ({
   SecurityUpdateBanner: ({ message }: { message: string }) => (
     <div role="status">{message}</div>

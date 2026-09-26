@@ -83,9 +83,9 @@ Phases 2–12 each depend on 1 and can land in any order.
 
 ## AURA gaps (the handoff doc)
 
-The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, items 52–56 (Addendum 4) in 5.6.0, items 57–62 (Addendum 5, found in US1) in 5.7.0, item 63 in 5.7.1 and item 64 (Addendum 6) in **5.7.2**, the current pin. None is open.
+The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, items 52–56 (Addendum 4) in 5.6.0, items 57–62 (Addendum 5, found in US1) in 5.7.0, item 63 in 5.7.1, item 64 (Addendum 6) in 5.7.2 and item 65 (Addendum 7, found in US2) in **5.7.3**, the current pin. None is open.
 
-How Chamber-OS uses the Addendum 5 and 6 items (US1 dropped its bridge for each):
+How Chamber-OS uses the Addendum 5 – 7 items (US1 and US2 dropped their bridge for each):
 
 | # | Shipped in | Used by |
 |---|---|---|
@@ -97,6 +97,7 @@ How Chamber-OS uses the Addendum 5 and 6 items (US1 dropped its bridge for each)
 | 62 | 5.7.0: `SideNav` rows 44px on coarse pointers | AURA's own CSS; the local rule is gone |
 | 63 | 5.7.1: `SideNav` labels wrap to two lines, then clamp | The staff nav and drawer: long TH/SV names ("Godkännande av medlemsändringar") read in full; one-line rows stay 36px |
 | 64 | 5.7.2: `SideNav` labels hyphenate long compounds (`hyphens: auto`, words of 12+ letters) | The drawer's SV "Marknadsförings-" / "målgrupp" where the browser has a Swedish dictionary (Safari, Chrome on macOS / Android); elsewhere it still breaks where the line runs out |
+| 65 | 5.7.3: `FormErrorSummary` with `focusKey` takes focus only after a submit, never while live errors come and go as someone types | The auth forms pass react-hook-form's live `errors` with `focusKey={formState.submitCount}` and `shouldFocusError: false`; the `useSubmittedErrors` snapshot is gone |
 
 How Chamber-OS uses the 5.6.0 items:
 
@@ -111,6 +112,6 @@ How Chamber-OS uses the 5.6.0 items:
 AURA also returns focus when a toast that held it closes, so the facade no longer does.
 
 When AURA ships an item:
-1. Bump the pin in a dedicated PR, or in the open phase PR that added the bridges it removes (5.7.0 – 5.7.2 rode in US1 for that reason).
+1. Bump the pin in a dedicated PR, or in the open phase PR that added the bridges it removes (5.7.0 – 5.7.2 rode in US1 and 5.7.3 in US2 for that reason).
 2. Delete the `// AURA-handoff #NN` wrapper.
 3. Update this table.

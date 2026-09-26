@@ -192,17 +192,20 @@ function activeSegments(level: PasswordStrengthLevel): number {
   }
 }
 
+// Spec 122 US2 — AURA's colours, as the `Auth-reset` / `Auth-invite` boards fill the bar.
+const EMPTY_SEGMENT = 'bg-[var(--aura-bg-surface-hover)]';
+
 function barColour(level: PasswordStrengthLevel): string {
   switch (level) {
     case 'strong':
-      return 'bg-success';
+      return 'bg-[var(--aura-fg-positive)]';
     case 'acceptable':
-      return 'bg-warning';
+      return 'bg-[var(--aura-fg-accent)]';
     case 'weak':
-      return 'bg-destructive';
+      return 'bg-[var(--aura-fg-danger)]';
     case 'empty':
     default:
-      return 'bg-muted';
+      return EMPTY_SEGMENT;
   }
 }
 
@@ -223,20 +226,20 @@ export function PasswordStrength({ level, weakReason }: PasswordStrengthProps) {
     level === 'weak' && weakReason ? WEAK_REASON_KEY[weakReason] : level;
 
   return (
-    <div className="space-y-1" aria-live="polite">
-      <div className="flex gap-1.5">
+    <div className="flex flex-col gap-1" aria-live="polite">
+      <div className="flex gap-1">
         {Array.from({ length: SEGMENT_COUNT }, (_, index) => (
           <div
             key={index}
             className={cn(
-              'h-1.5 flex-1 rounded-full transition-colors',
-              index < filled ? colour : 'bg-muted',
+              'h-1 flex-1 rounded-full motion-safe:transition-colors',
+              index < filled ? colour : EMPTY_SEGMENT,
             )}
           />
         ))}
       </div>
       {level !== 'empty' ? (
-        <p className="text-xs text-muted-foreground">{t(messageKey)}</p>
+        <p className="text-xs text-[var(--aura-fg-secondary)]">{t(messageKey)}</p>
       ) : null}
     </div>
   );

@@ -1,15 +1,8 @@
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { AuthFrame } from '@/components/auth/auth-frame';
+import { AuthLinkInvalid } from '@/components/auth/auth-link-invalid';
 import { ResetPasswordForm } from '@/components/auth/reset-password-form';
-import { AuthPageControls } from '@/components/shell/auth-page-controls';
-import { BrandMark } from '@/components/shell/brand-mark';
 // Presentation-side data loader for the reset-password page.
 // No Application use case wraps a read-only "is this token
 // displayable?" check — all existing use cases CONSUME the token,
@@ -64,42 +57,22 @@ export default async function ResetPasswordPage({
     tokenDead = true;
   }
 
+  const tFrame = await getTranslations('auth.frame');
   return (
-    <main id="main-content" className="relative flex min-h-screen flex-col bg-muted/20">
-      <AuthPageControls />
-      <div className="flex flex-1 flex-col items-center justify-center gap-6 p-4">
-        <BrandMark
-          variant="vertical"
-          title={process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham'}
-          className="w-44"
+    <AuthFrame
+      title={t('title')}
+      description={t('cardDescription')}
+      portalLabel={tFrame('everyone')}
+      tenantName={process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham'}
+    >
+      {tokenDead ? (
+        <AuthLinkInvalid
+          message={t('errors.tokenExpired')}
+          action={{ label: t('requestNewLink'), href: '/forgot-password' }}
         />
-        <Card className="w-full max-w-md">
-          <CardHeader className="space-y-2">
-            <CardTitle className="text-2xl">{t('title')}</CardTitle>
-            <CardDescription>{t('cardDescription')}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {tokenDead ? (
-              <div
-                className="space-y-4 rounded-md border border-destructive/40 bg-destructive/5 p-4"
-                role="alert"
-              >
-                <p className="text-sm text-destructive">
-                  {t('errors.tokenExpired')}
-                </p>
-                <a
-                  href="/forgot-password"
-                  className="text-sm underline underline-offset-4"
-                >
-                  {t('requestNewLink')}
-                </a>
-              </div>
-            ) : (
-              <ResetPasswordForm token={token} />
-            )}
-          </CardContent>
-        </Card>
-      </div>
-    </main>
+      ) : (
+        <ResetPasswordForm token={token} />
+      )}
+    </AuthFrame>
   );
 }

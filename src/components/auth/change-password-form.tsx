@@ -15,6 +15,9 @@
  *     to current-password
  *   - On `same-password`: inline error on new-password
  *   - On `weak-password` / `breached`: inline error on new-password
+ *   - AURA fields (spec 122 US2): `PasswordField`, `FormErrorSummary`
+ *     after a failed submit (it takes focus and links to each field, the
+ *     server's field errors included), `Button` with `loading`
  */
 import { useEffect, useState, type FormEvent } from 'react';
 import { useTranslations } from 'next-intl';
@@ -25,10 +28,7 @@ import { passwordPairFields, refinePasswordPair } from '@/lib/zod-i18n';
 import { toast } from '@/lib/toast';
 import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
 import { isReadOnlyRefusal } from '@/lib/http/read-only-refusal';
-import { Loader2Icon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { PasswordInput } from '@/components/ui/password-input';
-import { Label } from '@/components/ui/label';
+import { Button, FormErrorSummary, PasswordField } from '@jirawatpyk/aura-react';
 import {
   PasswordStrength,
   usePasswordStrengthMeter,
@@ -73,7 +73,7 @@ export function ChangePasswordForm() {
     setError,
     setFocus,
     reset,
-    formState: { errors },
+    formState: { errors, submitCount },
   } = useForm<FormValues>({
     resolver: zodResolver(
       buildSchema(
@@ -89,6 +89,8 @@ export function ChangePasswordForm() {
       confirmPassword: '',
     },
     mode: 'onSubmit',
+    // The error summary takes focus after a failed submit (spec 122 US2 AS1).
+    shouldFocusError: false,
   });
 
   useEffect(() => {
@@ -129,14 +131,10 @@ export function ChangePasswordForm() {
 
       switch (body.error) {
         case 'wrong-current-password':
-          setError('currentPassword', {
-            message: t('errors.wrongCurrent'),
-          });
-          setFocus('currentPassword');
+          setError('currentPassword', { message: t('errors.wrongCurrent') });
           break;
         case 'same-password':
           setError('newPassword', { message: t('errors.samePassword') });
-          setFocus('newPassword');
           break;
         case 'weak-password': {
           const first = body.issues?.[0] ?? 'too-short';
@@ -149,7 +147,6 @@ export function ChangePasswordForm() {
           // Pin the strength bar to red for this value so it agrees with the
           // inline error instead of contradicting it.
           meter.markRejected(values.newPassword);
-          setFocus('newPassword');
           break;
         }
         case 'rate-limited':
@@ -175,93 +172,49 @@ export function ChangePasswordForm() {
       // Native fallback POSTs so current/new password stays out of the URL
       // (CWE-598; see tests/unit/auth/auth-forms-post-method.test.tsx).
       method="post"
-      className="space-y-4"
+      className="flex flex-col gap-4"
       noValidate
+      aria-busy={submitting}
     >
-      <div className="space-y-2">
-        <Label htmlFor="current-password">{t('currentPasswordLabel')}</Label>
-        <PasswordInput
-          id="current-password"
-          autoComplete="current-password"
-          aria-invalid={errors.currentPassword ? 'true' : undefined}
-          aria-describedby={
-            errors.currentPassword ? 'current-password-error' : undefined
-          }
-          {...register('currentPassword')}
-        />
-        {errors.currentPassword ? (
-          <p
-            id="current-password-error"
-            role="alert"
-            className="text-sm text-destructive"
-          >
-            {errors.currentPassword.message}
-          </p>
-        ) : null}
-      </div>
+      <FormErrorSummary errors={errors} focusKey={submitCount} />
 
-      <div className="space-y-2">
-        <Label htmlFor="new-password">{t('newPasswordLabel')}</Label>
-        <PasswordInput
+      <PasswordField
+        id="current-password"
+        label={t('currentPasswordLabel')}
+        autoComplete="current-password"
+        error={errors.currentPassword?.message}
+        {...register('currentPassword')}
+      />
+
+      <div className="flex flex-col gap-2">
+        <PasswordField
           id="new-password"
+          label={t('newPasswordLabel')}
           autoComplete="new-password"
-          aria-invalid={errors.newPassword ? 'true' : undefined}
-          aria-describedby={
-            errors.newPassword
-              ? 'new-password-error'
-              : 'new-password-strength'
-          }
+          error={errors.newPassword?.message}
+          // The bar describes the field until an error replaces it (AURA adds
+          // `new-password-error` itself).
+          aria-describedby={errors.newPassword ? undefined : 'new-password-strength'}
           {...register('newPassword')}
         />
         <div id="new-password-strength">
           <PasswordStrength level={meter.level} weakReason={meter.weakReason} />
         </div>
-        {errors.newPassword ? (
-          <p
-            id="new-password-error"
-            role="alert"
-            className="text-sm text-destructive"
-          >
-            {errors.newPassword.message}
-          </p>
-        ) : null}
       </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="confirm-password">{tReset('confirmPasswordLabel')}</Label>
-        <PasswordInput
-          id="confirm-password"
-          autoComplete="new-password"
-          aria-invalid={errors.confirmPassword ? 'true' : undefined}
-          aria-describedby={
-            errors.confirmPassword ? 'confirm-password-error' : undefined
-          }
-          {...register('confirmPassword')}
-        />
-        {errors.confirmPassword ? (
-          <p
-            id="confirm-password-error"
-            role="alert"
-            className="text-sm text-destructive"
-          >
-            {errors.confirmPassword.message}
-          </p>
-        ) : null}
-      </div>
+      <PasswordField
+        id="confirm-password"
+        label={tReset('confirmPasswordLabel')}
+        autoComplete="new-password"
+        error={errors.confirmPassword?.message}
+        {...register('confirmPassword')}
+      />
 
-      <Button type="submit" className="w-full" size="lg" disabled={submitting}>
-        {submitting ? (
-          <>
-            <Loader2Icon
-              className="size-4 motion-safe:animate-spin"
-              aria-hidden
-            />
-            {t('submit')}
-          </>
-        ) : (
-          t('submit')
-        )}
-      </Button>
+      <div className="flex flex-col pt-2">
+        <Button type="submit" variant="primary" loading={submitting}>
+          {t('submit')}
+        </Button>
+      </div>
     </form>
   );
 }

@@ -6,11 +6,14 @@
  * Auto-submits on mount (the user clicks the email link and expects
  * verification to just complete). An explicit retry button covers the
  * 5-minute activation-delay case + transient rate-limit.
+ *
+ * Spec 122 US2 (`Auth-verify` boards): AURA `Alert` for the outcome and
+ * `Button` for the next step.
  */
 
 import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Button } from '@/components/ui/button';
+import { Alert, Button } from '@jirawatpyk/aura-react';
 
 type SubmitState =
   | { kind: 'submitting' }
@@ -92,11 +95,7 @@ export function EmailVerificationForm({
 
   if (state.kind === 'submitting') {
     return (
-      <p
-        className="text-sm text-muted-foreground"
-        role="status"
-        aria-live="polite"
-      >
+      <p className="text-[var(--aura-fg-secondary)]" role="status" aria-live="polite">
         {t('verifying')}
       </p>
     );
@@ -104,20 +103,13 @@ export function EmailVerificationForm({
 
   if (state.kind === 'success') {
     return (
-      <div
-        className="space-y-4 rounded-md border border-emerald-500/40 bg-emerald-500/5 p-4"
-        role="status"
-        aria-live="polite"
-      >
-        <p className="text-sm text-emerald-700 dark:text-emerald-300">
-          {t('successMessage')}
-        </p>
-        <a
-          href={redirectTo}
-          className="inline-flex items-center text-sm font-medium underline underline-offset-4"
-        >
+      <div className="flex flex-col gap-6">
+        {/* AURA's success alert is role="status": announced politely. */}
+        <Alert tone="success">{t('successMessage')}</Alert>
+        {/* A full page load, as before: the destination re-reads the session. */}
+        <Button href={redirectTo} linkComponent="a" variant="primary" icon="arrow-right" fullWidth>
           {t('signInCta')}
-        </a>
+        </Button>
       </div>
     );
   }
@@ -132,15 +124,10 @@ export function EmailVerificationForm({
           : t('errors.serverError');
 
   return (
-    <div className="space-y-4">
-      <p
-        className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"
-        role="alert"
-      >
-        {errorMessage}
-      </p>
+    <div className="flex flex-col gap-6">
+      <Alert tone="danger">{errorMessage}</Alert>
       {state.code !== 'invalid' ? (
-        <Button type="button" onClick={submit} className="w-full">
+        <Button type="button" variant="primary" onClick={submit} fullWidth>
           {t('retry')}
         </Button>
       ) : null}

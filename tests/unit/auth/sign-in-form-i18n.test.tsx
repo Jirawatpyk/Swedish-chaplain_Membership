@@ -47,15 +47,16 @@ describe('SignInForm i18n validation messages', () => {
     const { form } = renderSignIn();
     fireEvent.submit(form);
 
+    // Each message shows on its field and in the error summary (spec 122 US2).
     // email '' fails .email() → shared.validation.invalidEmail
     expect(
-      await screen.findByText('Please enter a valid email address.'),
-    ).toBeTruthy();
+      await screen.findAllByText('Please enter a valid email address.'),
+    ).toHaveLength(2);
     // password '' fails .min(1) → shared.validation.required
-    expect(await screen.findByText('This field is required.')).toBeTruthy();
+    expect(await screen.findAllByText('This field is required.')).toHaveLength(2);
 
     for (const pattern of RAW_ZOD_DEFAULTS) {
-      expect(screen.queryByText(pattern)).toBeNull();
+      expect(screen.queryAllByText(pattern)).toHaveLength(0);
     }
   });
 
@@ -70,7 +71,7 @@ describe('SignInForm i18n validation messages', () => {
     fireEvent.submit(form);
 
     expect(
-      await screen.findByText('Please use 256 characters or fewer.'),
-    ).toBeTruthy();
+      await screen.findAllByText('Please use 256 characters or fewer.'),
+    ).toHaveLength(2);
   });
 });
