@@ -40,6 +40,16 @@ export interface MemberAuditScope {
   readonly memberUserIds: readonly string[];
   /** The member id (matches `payload.member_id` / `payload.subject_member_id`). */
   readonly memberId: string;
+  /**
+   * GDPR Art. 15(4) / 20(4) · PDPA §30 — the person the archive is FOR. When
+   * the key is present, a colleague's personal data never reaches the archive:
+   * a row about another user account is dropped, and a company row the viewer
+   * neither performed nor was targeted by loses its free-text summary and any
+   * name keys (neither is redacted by the role projection). `null` is a
+   * company-level (staff on-behalf) viewer — no row is "own". Absent keeps the
+   * pre-scoping behaviour for callers that are not an archive.
+   */
+  readonly viewerUserId?: string | null;
 }
 
 /** The minimal row shape the scoping predicate needs. */
@@ -103,6 +113,32 @@ export function isInMemberAuditSubset(
   return false;
 }
 
+/** Payload keys that carry a person's name (never redacted by the role projection). */
+const NAME_KEYS: ReadonlySet<string> = new Set([
+  'first_name',
+  'last_name',
+  'firstName',
+  'lastName',
+  'name',
+  'display_name',
+  'displayName',
+  'contact_name',
+  'contactName',
+  'full_name',
+  'fullName',
+]);
+
+function stripNameKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stripNameKeys);
+  if (value === null || typeof value !== 'object') return value;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (NAME_KEYS.has(k)) continue;
+    out[k] = stripNameKeys(v);
+  }
+  return out;
+}
+
 /**
  * Filter the reader rows to the member's subset (defence-in-depth re-filter) and
  * project each to a redacted, member-facing entry. The `manager` projection is
@@ -113,13 +149,34 @@ export function buildMemberAuditSubset(
   rows: readonly SubsetSourceRow[],
   scope: MemberAuditScope,
 ): readonly GdprAuditEntry[] {
-  return rows
-    .filter((r) => isInMemberAuditSubset(r, scope))
-    .map((r) => ({
+  const scoped = scope.viewerUserId !== undefined;
+  const viewer = scope.viewerUserId ?? null;
+  const out: GdprAuditEntry[] = [];
+  for (const r of rows) {
+    if (!isInMemberAuditSubset(r, scope)) continue;
+    const payload = redactPayloadForRole(r.eventType, r.payload, 'manager');
+    const own =
+      viewer !== null && (r.actorUserId === viewer || r.targetUserId === viewer);
+    if (!scoped || own) {
+      out.push({
+        id: r.id,
+        eventType: r.eventType,
+        occurredAt: r.occurredAt.toISOString(),
+        summary: redactSummaryForRole(r.summary, 'manager'),
+        payload,
+      });
+      continue;
+    }
+    // An event about another person's account (a colleague's login, invite,
+    // role change …) is that person's data, not the requester's.
+    if (r.targetUserId !== null) continue;
+    out.push({
       id: r.id,
       eventType: r.eventType,
       occurredAt: r.occurredAt.toISOString(),
-      summary: redactSummaryForRole(r.summary, 'manager'),
-      payload: redactPayloadForRole(r.eventType, r.payload, 'manager'),
-    }));
+      summary: '',
+      payload: stripNameKeys(payload) as Record<string, unknown> | null,
+    });
+  }
+  return out;
 }

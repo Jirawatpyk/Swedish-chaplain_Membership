@@ -53,10 +53,13 @@ interface SearchRawRow {
   readonly logo_blob_key: string | null;
   readonly location_city: string | null;
   readonly location_country: string | null;
+  readonly contact_visibility_set_by_contact_id: string | null;
   readonly total_count: number;
 }
 
-type PublishedRawRow = Omit<SearchRawRow, 'total_count' | 'listed'>;
+type PublishedRawRow = Omit<SearchRawRow, 'total_count' | 'listed'> & {
+  readonly primary_contact_id: string | null;
+};
 
 function contactName(first: string | null, last: string | null): string | null {
   const name = `${first ?? ''} ${last ?? ''}`.trim();
@@ -81,6 +84,7 @@ function toListingRecord(
     logoUrl: row.logo_blob_key,
     locationCity: row.location_city,
     locationCountry: row.location_country,
+    contactVisibilitySetByContactId: row.contact_visibility_set_by_contact_id,
   };
 }
 
@@ -111,6 +115,7 @@ export function makeDrizzleDirectoryRepo(tenantId: string): DirectoryRepo {
         logoUrl: row.logoBlobKey,
         locationCity: row.locationCity,
         locationCountry: row.locationCountry,
+        contactVisibilitySetByContactId: row.contactVisibilitySetByContactId,
       };
     },
 
@@ -138,6 +143,7 @@ export function makeDrizzleDirectoryRepo(tenantId: string): DirectoryRepo {
           logoUrl: row.logoBlobKey,
           locationCity: row.locationCity,
           locationCountry: row.locationCountry,
+          contactVisibilitySetByContactId: row.contactVisibilitySetByContactId,
         };
       });
     },
@@ -160,11 +166,20 @@ export function makeDrizzleDirectoryRepo(tenantId: string): DirectoryRepo {
       if (existing.length === 0) return { memberNotFound: true };
 
       const now = new Date();
+      // Record the member's LIVE primary contact as the person who chose the
+      // contact toggles (only the primary may change them — the use-case
+      // gate). Otherwise leave the recorded chooser untouched.
+      const setBy = patch.recordContactChooser
+        ? {
+            contactVisibilitySetByContactId: sql`(SELECT c.contact_id FROM contacts c WHERE c.tenant_id = ${tenantId} AND c.member_id = ${memberId}::uuid AND c.is_primary = true AND c.removed_at IS NULL LIMIT 1)`,
+          }
+        : {};
       await tx
         .insert(directoryListings)
         .values({
           tenantId,
           memberId,
+          ...setBy,
           listed: patch.listed,
           fieldVisibility: patch.fieldVisibility,
           industry: patch.industry,
@@ -184,6 +199,7 @@ export function makeDrizzleDirectoryRepo(tenantId: string): DirectoryRepo {
             website: patch.website,
             locationCity: patch.locationCity,
             locationCountry: patch.locationCountry,
+            ...setBy,
             updatedAt: now,
           },
         });
@@ -290,6 +306,7 @@ export function makeDrizzleDirectoryRepo(tenantId: string): DirectoryRepo {
             dl.logo_blob_key                        AS logo_blob_key,
             dl.location_city                        AS location_city,
             dl.location_country                     AS location_country,
+            dl.contact_visibility_set_by_contact_id::text AS contact_visibility_set_by_contact_id,
             (count(*) OVER ())::int                 AS total_count
           FROM members m
           LEFT JOIN directory_listings dl
@@ -336,7 +353,9 @@ export function makeDrizzleDirectoryRepo(tenantId: string): DirectoryRepo {
           dl.website              AS website,
           dl.logo_blob_key        AS logo_blob_key,
           dl.location_city        AS location_city,
-          dl.location_country     AS location_country
+          dl.location_country     AS location_country,
+          dl.contact_visibility_set_by_contact_id::text AS contact_visibility_set_by_contact_id,
+          c.contact_id::text      AS primary_contact_id
         FROM directory_listings dl
         JOIN members m
           ON m.tenant_id = dl.tenant_id AND m.member_id = dl.member_id
@@ -358,6 +377,7 @@ export function makeDrizzleDirectoryRepo(tenantId: string): DirectoryRepo {
         memberId: r.member_id,
         companyName: r.company_name,
         tier: r.tier,
+        primaryContactId: r.primary_contact_id,
         contactName: contactName(r.contact_first_name, r.contact_last_name),
         contactEmail: r.contact_email,
         listing: toListingRecord(r, r.member_id, true),

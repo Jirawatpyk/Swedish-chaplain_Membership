@@ -188,6 +188,8 @@ const SURFACES: readonly Surface[] = [
           locationCity: null,
           locationCountry: null,
         }}
+        contact={{ viewerIsPrimary: true, chosenByPrimary: true, hasListing: true }}
+        identity={{ companyName: 'Acme Co', tier: null, logoUrl: null, primaryContact: null }}
       />
     ),
     act: () => fireEvent.click(byName(en.directorySettings.save)),

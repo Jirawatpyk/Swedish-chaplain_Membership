@@ -144,6 +144,7 @@ describe('searchDirectory — row mapping', () => {
       logoUrl: 'tenants/x/logo.png',
       locationCity: 'Bangkok',
       locationCountry: 'TH',
+      contactVisibilitySetByContactId: null,
     },
   };
 

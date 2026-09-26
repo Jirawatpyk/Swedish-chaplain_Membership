@@ -10,6 +10,15 @@
  * integration test.
  */
 import { describe, expect, it, vi } from 'vitest';
+
+// The primary-contact gate reads the stored listing INSIDE the tx — run the
+// callback against a fake tx so the gate is testable without a DB.
+vi.mock('@/lib/db', () => ({
+  runInTenant: (_ctx: unknown, fn: (tx: unknown) => unknown) => fn({ fake: 'tx' }),
+}));
+vi.mock('@/lib/metrics', () => ({
+  insightsMetrics: { directoryListingUpdated: vi.fn() },
+}));
 import { asTenantContext } from '@/modules/tenants';
 import {
   updateDirectoryListing,
@@ -49,6 +58,7 @@ const memberMeta: UpdateDirectoryListingMeta = {
   actorUserId: 'u-1',
   actorRole: 'member',
   actorMemberId: 'm-1',
+  actorIsPrimaryContact: true,
   requestId: 'req-1',
 };
 
@@ -104,5 +114,113 @@ describe('updateDirectoryListing — guard branches', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toBe('description_too_long');
     expect(deps.directoryRepo.upsertInTx).not.toHaveBeenCalled();
+  });
+});
+
+// GDPR Art. 6 / PDPA §19 · §24 — the contact name + email the directory
+// publishes are the LIVE primary contact's. Only that person may decide to
+// publish them; a colleague may still edit every company field.
+describe('updateDirectoryListing — primary-contact gate on the personal-data toggles', () => {
+  const stored = {
+    memberId: 'm-1',
+    listed: true,
+    fieldVisibility: { name: true, contact_name: true, contact_email: false },
+    industry: 'Manufacturing',
+    description: null,
+    website: null,
+    logoUrl: null,
+    locationCity: null,
+    locationCountry: null,
+    contactVisibilitySetByContactId: 'c-primary',
+  };
+  const colleague: UpdateDirectoryListingMeta = { ...memberMeta, actorIsPrimaryContact: false };
+
+  function depsWithStored(): UpdateDirectoryListingDeps {
+    const deps = stubDeps();
+    vi.mocked(deps.directoryRepo.findByMemberIdInTx).mockResolvedValue(stored);
+    vi.mocked(deps.directoryRepo.upsertInTx).mockResolvedValue({ memberNotFound: false });
+    return deps;
+  }
+
+  it("refuses a non-primary colleague's attempt to enable email visibility — nothing written", async () => {
+    const deps = depsWithStored();
+    const result = await updateDirectoryListing(
+      { ...baseInput, fieldVisibility: { ...stored.fieldVisibility, contact_email: true } },
+      colleague,
+      ctx,
+      deps,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toBe('not_primary_contact');
+    expect(deps.directoryRepo.upsertInTx).not.toHaveBeenCalled();
+    expect(deps.audit.recordInTx).not.toHaveBeenCalled();
+  });
+
+  it("refuses a colleague turning the primary contact's name on when nothing is stored yet", async () => {
+    const deps = stubDeps();
+    vi.mocked(deps.directoryRepo.findByMemberIdInTx).mockResolvedValue(null);
+    const result = await updateDirectoryListing(
+      { ...baseInput, fieldVisibility: { name: true, contact_name: true } },
+      colleague,
+      ctx,
+      deps,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toBe('not_primary_contact');
+    expect(deps.directoryRepo.upsertInTx).not.toHaveBeenCalled();
+  });
+
+  it('lets a colleague edit company fields when the contact toggles are resubmitted unchanged', async () => {
+    const deps = depsWithStored();
+    const result = await updateDirectoryListing(
+      { ...baseInput, industry: 'Logistics', fieldVisibility: stored.fieldVisibility },
+      colleague,
+      ctx,
+      deps,
+    );
+    expect(result.ok).toBe(true);
+    expect(deps.directoryRepo.upsertInTx).toHaveBeenCalledWith(
+      { fake: 'tx' },
+      'm-1',
+      expect.objectContaining({ industry: 'Logistics', recordContactChooser: false }),
+    );
+  });
+
+  it('a save by the primary confirms toggles a predecessor chose, even when unchanged', async () => {
+    const deps = depsWithStored();
+    const result = await updateDirectoryListing(
+      { ...baseInput, fieldVisibility: stored.fieldVisibility },
+      memberMeta,
+      ctx,
+      deps,
+    );
+    expect(result.ok).toBe(true);
+    expect(deps.directoryRepo.upsertInTx).toHaveBeenCalledWith(
+      { fake: 'tx' },
+      'm-1',
+      expect.objectContaining({ recordContactChooser: true }),
+    );
+  });
+
+  it('lets the primary contact publish their own email, recorded as a contact-visibility change', async () => {
+    const deps = depsWithStored();
+    const result = await updateDirectoryListing(
+      { ...baseInput, fieldVisibility: { ...stored.fieldVisibility, contact_email: true } },
+      memberMeta,
+      ctx,
+      deps,
+    );
+    expect(result.ok).toBe(true);
+    expect(deps.directoryRepo.upsertInTx).toHaveBeenCalledWith(
+      { fake: 'tx' },
+      'm-1',
+      expect.objectContaining({ recordContactChooser: true }),
+    );
+    expect(deps.audit.recordInTx).toHaveBeenCalledWith(
+      { fake: 'tx' },
+      expect.objectContaining({
+        payload: expect.objectContaining({ contact_visibility_changed: true }),
+      }),
+    );
   });
 });

@@ -42,6 +42,12 @@ export interface DirectoryListingRecord {
   readonly logoUrl: string | null;
   readonly locationCity: string | null;
   readonly locationCountry: string | null;
+  /**
+   * The contact who last chose `contact_name` / `contact_email` (migration
+   * 0313) — null when nobody is recorded. Compared with the live primary by
+   * `effectiveContactVisibility` before anything is published.
+   */
+  readonly contactVisibilitySetByContactId: string | null;
 }
 
 /** Mutable directory fields written by `updateDirectoryListing` (logo is separate). */
@@ -53,6 +59,14 @@ export interface DirectoryListingPatch {
   readonly website: string | null;
   readonly locationCity: string | null;
   readonly locationCountry: string | null;
+  /**
+   * Record the member's LIVE primary contact as the person who chose
+   * `contact_name` / `contact_email` (`contact_visibility_set_by_contact_id`).
+   * Set when the toggles changed (only the primary — or staff on the
+   * primary's instruction — may change them) and on every save by the primary
+   * themselves, which confirms toggles a predecessor chose.
+   */
+  readonly recordContactChooser: boolean;
 }
 
 export interface DirectorySearchFilter {
@@ -86,6 +100,8 @@ export interface PublishedSourceRow {
   readonly memberId: string;
   readonly companyName: string;
   readonly tier: string | null;
+  /** The live primary contact whose name/email `contactName`/`contactEmail` are. */
+  readonly primaryContactId: string | null;
   readonly contactName: string | null;
   readonly contactEmail: string | null;
   readonly listing: DirectoryListingRecord;

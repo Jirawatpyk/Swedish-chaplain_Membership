@@ -21,6 +21,7 @@ import {
   projectPublishedListing,
   sanitizeFieldVisibility,
   type DirectoryRecord,
+  effectiveContactVisibility,
 } from '@/modules/insights/domain/directory-listing';
 
 const identity = {
@@ -234,5 +235,33 @@ describe('projectPublishedListing (FR-028 / SC-007 zero-leakage)', () => {
       metadata: { ...metadata, industry: null },
     });
     expect(out).toBeNull();
+  });
+});
+
+// GDPR Art. 6 / PDPA §19, §24 — the contact toggles are the choice of the
+// person whose details they publish. A new primary contact inherits the
+// defaults (name shown, email hidden) until they confirm.
+describe('effectiveContactVisibility — toggles bound to the live primary', () => {
+  const chosen = { name: true, contact_name: false, contact_email: true };
+
+  it('keeps the stored toggles when the live primary chose them', () => {
+    expect(effectiveContactVisibility(chosen, 'c-1', 'c-1')).toEqual(chosen);
+  });
+
+  it('falls back to name shown / email hidden when the primary has changed', () => {
+    expect(effectiveContactVisibility(chosen, 'c-old', 'c-new')).toEqual({
+      name: true,
+      contact_name: true,
+      contact_email: false,
+    });
+  });
+
+  it('falls back when nobody is recorded as having chosen them', () => {
+    expect(effectiveContactVisibility(chosen, null, 'c-1').contact_email).toBe(false);
+  });
+
+  it('never publishes an email the new primary did not choose, even if hidden before', () => {
+    const out = effectiveContactVisibility({ contact_email: false }, 'c-old', 'c-new');
+    expect(out.contact_email).toBe(false);
   });
 });

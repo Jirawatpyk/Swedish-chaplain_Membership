@@ -180,3 +180,48 @@ describe('isInMemberAuditSubset — related_member_id (F114 review privacy I-3)'
     expect(isInMemberAuditSubset(other, scope as unknown as Parameters<typeof isInMemberAuditSubset>[1])).toBe(false);
   });
 });
+
+// GDPR Art. 15(4) / 20(4) · PDPA §30 — a colleague's own account activity is
+// THEIR personal data, not the requesting colleague's. With `viewerUserId` set,
+// the subset keeps the requester's own rows in full and company rows without
+// any free text that could name another person.
+describe('buildMemberAuditSubset — colleague scoping (Art. 15(4))', () => {
+  const REQUESTER = '33333333-3333-3333-3333-333333333333';
+  const COLLEAGUE = '44444444-4444-4444-4444-444444444444';
+  const at = new Date('2026-05-01T10:00:00Z');
+  const scope = { memberUserIds: [REQUESTER], memberId: MEMBER_ID, viewerUserId: REQUESTER };
+
+  const rows: SubsetSourceRow[] = [
+    // the requester's own login — kept in full
+    { id: 'own', eventType: 'sign_in_success', actorUserId: REQUESTER, targetUserId: null, summary: 'Som Chai signed in', occurredAt: at, payload: null },
+    // a staff event about a COLLEAGUE's account, keyed to the member
+    { id: 'colleague-target', eventType: 'contact_invited', actorUserId: OTHER_USER, targetUserId: COLLEAGUE, summary: 'Invited Anna Lindqvist', occurredAt: at, payload: { member_id: MEMBER_ID, first_name: 'Anna' } },
+    // a company change a colleague made — kept, but no names
+    { id: 'company', eventType: 'member_updated', actorUserId: COLLEAGUE, targetUserId: null, summary: 'Anna Lindqvist updated Acme Co', occurredAt: at, payload: { member_id: MEMBER_ID, changed_fields: ['website'], contact: { first_name: 'Anna', last_name: 'Lindqvist' } } },
+  ];
+
+  it("drops rows about another person's account", () => {
+    const out = buildMemberAuditSubset(rows, scope);
+    expect(out.map((e) => e.id)).not.toContain('colleague-target');
+  });
+
+  it("keeps the requester's own rows with their summary", () => {
+    const own = buildMemberAuditSubset(rows, scope).find((e) => e.id === 'own');
+    expect(own?.summary).toBe('Som Chai signed in');
+  });
+
+  it('keeps company rows but strips the free-text summary and name keys', () => {
+    const company = buildMemberAuditSubset(rows, scope).find((e) => e.id === 'company');
+    expect(company).toBeDefined();
+    expect(company!.summary).toBe('');
+    expect(JSON.stringify(company!.payload)).not.toContain('Anna');
+    expect(JSON.stringify(company!.payload)).not.toContain('Lindqvist');
+    expect(company!.payload).toMatchObject({ changed_fields: ['website'] });
+  });
+
+  it('an on-behalf (null) viewer gets company rows only', () => {
+    const out = buildMemberAuditSubset(rows, { memberUserIds: [], memberId: MEMBER_ID, viewerUserId: null });
+    expect(out.map((e) => e.id)).toEqual(['company']);
+    expect(out[0]!.summary).toBe('');
+  });
+});

@@ -17,6 +17,10 @@ export {
   DIRECTORY_FIELDS,
   DEFAULT_FIELD_VISIBILITY,
   MAX_DIRECTORY_DESCRIPTION_LENGTH,
+  effectiveContactVisibility,
+  projectPublishedListing,
   type DirectoryField,
+  type DirectoryRecord,
   type FieldVisibility,
+  type PublishedListing,
 } from './domain/directory-listing';

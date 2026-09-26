@@ -128,7 +128,7 @@ describe('F9 export worker — integration (T071)', () => {
         locationCity: 'Bangkok',
         locationCountry: 'TH',
       },
-      { actorUserId: admin.userId, actorRole: 'admin', actorMemberId: null, requestId: `exp-seed-${randomUUID()}` },
+      { actorUserId: admin.userId, actorRole: 'admin', actorMemberId: null, actorIsPrimaryContact: false, requestId: `exp-seed-${randomUUID()}` },
       tenant.ctx,
       makeUpdateDirectoryListingDeps(tenant.ctx.slug),
     );
