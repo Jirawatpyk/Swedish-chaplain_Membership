@@ -39,9 +39,11 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { LocalDateTime, ZoneId } from '@js-joda/core';
-import '@js-joda/timezone';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
+import {
+  bangkokInputToIso,
+  bangkokMinInputAfterMinutes,
+} from '@/components/broadcast/bangkok-datetime';
 import { useDialogFinalFocus } from '@/components/broadcast/reason-confirmation-dialog';
 import { cancelApprovedBroadcasts } from '@/components/broadcast/admin/send-now-undo';
 import { readErrorCode, STANDING_REFUSAL_CODES } from '@/components/broadcast/approval/approval-error';
@@ -55,7 +57,6 @@ const FORM_ERROR_ID = 'approve-dialog-error';
 
 /** A refusal that keeps the dialog open: a named reason, or the write freeze. */
 type FormRefusal = { readonly kind: 'error'; readonly message: string } | { readonly kind: 'read_only' };
-const BANGKOK_ZONE = ZoneId.of('Asia/Bangkok');
 
 /**
  * Code-review TZ fix — `<input type="datetime-local">` returns a naive
@@ -66,18 +67,16 @@ const BANGKOK_ZONE = ZoneId.of('Asia/Bangkok');
  * does). Mismatch would let an admin in UTC type "14:00 Bangkok" but
  * the system would dispatch at 21:00 Bangkok — UX claim broken.
  *
- * `LocalDateTime.parse` accepts the `YYYY-MM-DDTHH:mm` shape directly
- * (the input adds `:ss` if seconds enabled — we don't). Then bind to
- * Asia/Bangkok and convert to a real `Date`/ISO instant.
+ * Delegates to the shared `Intl`-based `bangkokInputToIso` (no js-joda in
+ * this client bundle). Throws on empty / unparseable input — every caller
+ * wraps it in try/catch.
  */
 function bangkokInputToInstant(scheduledFor: string): Date {
-  // Pad with `:00` seconds if missing (datetime-local without `step`
-  // omits seconds).
-  const normalised =
-    scheduledFor.length === 16 ? `${scheduledFor}:00` : scheduledFor;
-  const local = LocalDateTime.parse(normalised);
-  const instant = local.atZone(BANGKOK_ZONE).toInstant();
-  return new Date(instant.toEpochMilli());
+  const iso = bangkokInputToIso(scheduledFor);
+  if (iso === null) {
+    throw new RangeError(`Invalid Bangkok wall-time: "${scheduledFor}"`);
+  }
+  return new Date(iso);
 }
 
 function minLocalDateTime(): string {
@@ -88,9 +87,7 @@ function minLocalDateTime(): string {
   // Bangkok admin's browser may still allow earlier selections within
   // its local +X-hour window; the server-side use-case enforces the
   // hard 5-minute minimum so the client min is best-effort.
-  const future = LocalDateTime.now(BANGKOK_ZONE).plusMinutes(6);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${future.year()}-${pad(future.monthValue())}-${pad(future.dayOfMonth())}T${pad(future.hour())}:${pad(future.minute())}`;
+  return bangkokMinInputAfterMinutes(6);
 }
 
 export interface ApproveDialogProps {

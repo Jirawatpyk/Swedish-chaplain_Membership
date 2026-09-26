@@ -1112,7 +1112,7 @@ The member + contact scrub + the in-tx F7 delivery tombstone +
    `official_document`} + optional note). These are recorded once in the
    originating `member_erasure_requested` audit (never on a reconciler re-drive).
 2. **B — durable request + atomic scrub (US1).** A `member_erasure_requested`
-   audit is emitted in its own committed tx (the **Art. 12 / §30 clock-start**);
+   audit is emitted in its own committed tx (the **Art. 12(3) / PDPA 30-day clock-start**; §33 sets no deadline, §30's 30 days apply by analogy);
    then the atomic scrub tx (above) + session revocation + invitation
    soft-consume + email-change-token invalidation + pending-outbox cancel + the
    in-tx F7 delivery tombstone.
@@ -1153,7 +1153,7 @@ only to the F4 tax-document copy until the statutory window elapses.
 > **Resend (sub-processor):** best-effort-once erasure propagation
 > (audience-contact removal on member erasure), un-enumerable historical
 > audiences out of automated reach, manual remediation on failure within the
-> Art. 12(3) / §30 response window.
+> Art. 12(3) / PDPA 30-day response window.
 
 This is the documented compensating control that makes the **non-blocking**
 US3-C cascade Art. 17(2) / Art. 19 compliant (security-engineer + DPO sign-off,
@@ -1177,7 +1177,7 @@ when answering a DSR:
 | 5 | **NULL-`matched_member_id` event registrations** | A fuzzy/unlinked F6 registration the system never matched to the member is unreachable by the fan-out — remediate by hand on a DSR. |
 | 6 | **Old-address broadcast deliveries / outbox mail** — a contact's email was *edited off* its row before erasure (peer-collision sub-case) | A contact **archived** before erasure is now tombstoned: the in-tx redaction set is **all** the member's contact emails (any `removed_at`) **minus** any address a *peer* holds via a LIVE contact (COMP-1 review **FIX-3**), and the `notifications_outbox` cancel carries a two-pronged cross-member ownership guard (**FIX-4**). The residual is narrowed to (a) an address that was UPDATE-edited off every contact row (no longer discoverable) and (b) the deliberate **peer-collision exclusion** — an address a peer still holds live is left un-redacted to avoid cross-member over-deletion. |
 | 7 | **Cross-author `custom_recipient_emails`** (peer-collision edge only) | The erased member's email is now **element-wise redacted** out of OTHER authors' custom recipient lists tenant-wide, keyed on the same peer-excluding email set as the tombstone (COMP-1 review **FIX-9**). Residual narrowed to the deliberate peer-collision exclusion: an email that is ALSO a peer's LIVE contact is left in place to avoid over-redacting the peer's legitimate target. |
-| 8 | **Resend historical / un-enumerable audiences** (US3-C #H-2 above) | Best-effort-once; manual remediation within the §30 window. |
+| 8 | **Resend historical / un-enumerable audiences** (US3-C #H-2 above) | Best-effort-once; manual remediation within the Art. 12(3) / PDPA 30-day window. |
 | 8a | **Resend "Global Contacts" survive erasure — MEASURED, not inferred** | The erasure cascade calls `DELETE /audiences/{id}/contacts/{email}`, which **detaches** rather than deletes. Measured 2026-09-09 (108 Phase 9 review U1) against the live account: the call answers `{"deleted": true}` and the audience-scoped read then 404s, **while an audience-less `GET /contacts/{email}` still returns the contact at 200**. The provider's own response is what made this invisible for as long as it was. Per research § R16 a contact is one record per team that survives an audience delete, so the address persists at the processor indefinitely and is **not under chamber control**. An audience-less `DELETE /contacts/{email}` was measured in the same run to delete for real (read-back 404) and is implemented as `deleteContactGlobally`, but it is **deliberately not called by the cascade**: the Resend account is shared by every tenant, so two tenants whose members share an address share ONE contact record, and deleting it during tenant A's erasure would destroy tenant B's record together with the Resend-side `unsubscribed` flag that `on_conflict=upsert` exists to preserve — trading an Art. 17 residual for an Art. 21 regression on an uninvolved person. Closing this properly requires a cross-tenant "is this address held by any live member anywhere" check, which is an architectural decision. **OPEN — owner: solo maintainer (Jirawatpyk). Opened 2026-09-09. Review by 2026-12-09 (90 days) or on the event below, whichever is sooner.** ⚠️ **The protective trade is VACUOUS in production today, measured not assumed: prod holds exactly ONE tenant** (`SELECT DISTINCT tenant_id FROM members` → `swecham`; there is no `tenants` table). There is no tenant B, so tenant A's Art. 17 right is currently withheld to protect an Art. 21 flag belonging to nobody. It is nevertheless NOT closed by simply calling the global delete: the platform is Multi-Tenant Aware by design (MTA+STD), a cross-tenant integration test already enforces the safe behaviour, and "correct because we only have one tenant" is the class of thing that breaks silently on tenant #2. **Revisit condition: the second live tenant, or a per-tenant Resend account — whichever comes first.** **Instructing the processor — NOT yet attempted.** The zero-cost measure here is to INSTRUCT Resend to delete the contact record, and no such instruction has been sent; that is an action item on this residual, not a limitation of it. Legal basis: **Art. 28(3)(a)** (the processor processes only on the controller's documented instructions) together with **Art. 28(3)(e)** (the processor assists the controller in responding to data-subject-rights requests), and **PDPA s.33** for the Thai data subjects, who are the majority here. *(Round 4 M-2 — this cited **Art. 28(3)(g)**, which is the duty to delete or return all personal data **after the end of the provision of services**; it is a contract-termination obligation and has not been triggered. The action item was right and the citation named the wrong duty, in a document written to be read by a regulator. The same paragraph was framed GDPR-only while the code and `docs/runbooks/member-erasure.md` cite PDPA s.33.)* Until closed, a DSR answer must say the address may remain in the processor's contact store. |
 | 9 | **Sentinel vocabulary divergence** (`'[erased]'` F1/F3 vs `'[redacted]'` F7) | Clean-Architecture prevents F7 importing F3's constant; a single-token PII-oracle must check both. Cosmetic, no leak. |
 
@@ -1223,8 +1223,8 @@ This record IS the Art. 17 / §33 erasure mechanism. The DPO operates it via the
 US3-A admin UI + the `docs/runbooks/member-erasure.md` procedure; the **US3-D
 evidence log** (`/admin/compliance/erasure-log`) is the accountability proof
 (requested + completion + the F1 `user_erased` proof + the tax-redaction +
-sub-processor outcomes + a half-run/overdue badge). The **Art. 12 / §30
-one-month deadline** runs from the `member_erasure_requested` timestamp.
+sub-processor outcomes + a half-run/overdue badge). The **Art. 12(3) / PDPA
+30-day deadline** runs from the `member_erasure_requested` timestamp.
 
 ### DPO contact
 
@@ -1432,7 +1432,7 @@ administrative login (`users_last_admin_protection`, surfaced as
 Here the blocked subject is a data subject with no employment-retention
 counterweight, and Art. 17(3) contains no operational-continuity exemption.
 
-The erasure is therefore **deferred, not refused**. The Art. 12 / §30 one-month
+The erasure is therefore **deferred, not refused**. The Art. 12(3) / PDPA 30-day
 clock runs from `member_erasure_requested`, and the remediation is to re-link
 that contact to a different login or promote a successor — minutes of work, no
 code deploy, **provided a super_admin is available to act**. Where the last

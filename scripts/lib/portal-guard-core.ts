@@ -86,7 +86,7 @@ export const EXEMPT_ROUTES: readonly ExemptRoute[] = [
   {
     path: 'src/app/api/portal/account/data-export/route.ts',
     reason:
-      'GDPR Art. 20 / PDPA §30 data-portability REQUEST must stay reachable ' +
+      'GDPR Art. 20 / PDPA §31 data-portability REQUEST must stay reachable ' +
       'regardless of membership status — mirrors the page-level allowlist ' +
       'rationale for /portal/account in src/lib/lapsed-portal-scope.ts.',
   },

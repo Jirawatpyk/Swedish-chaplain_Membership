@@ -16,6 +16,8 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 export interface SeededAtRiskMember {
   readonly memberId: string;
+  /** `members.company_name` — the name the pipeline row labels its controls with. */
+  readonly companyName: string;
   readonly cleanup: () => Promise<void>;
 }
 
@@ -44,6 +46,7 @@ export async function seedOneAtRiskMember(
   // (2026-09-10). High value: never collides with the allocator's low 1..N in
   // the shared `swecham` tenant; the row is deleted by `cleanup()` below.
   const memberNumber = 970_000 + Math.floor(Math.random() * 9_000);
+  const companyName = `E2E At-Risk ${memberId.slice(0, 8)}`;
   const contactId = randomUUID();
   const cycleId = randomUUID();
   const now = new Date();
@@ -72,7 +75,7 @@ export async function seedOneAtRiskMember(
         VALUES (
           ${TENANT_ID}, ${memberId}::uuid,
           ${memberNumber},
-          ${'E2E At-Risk ' + memberId.slice(0, 8)}, 'TH',
+          ${companyName}, 'TH',
           ${planId}, ${planYear},
           ${registrationDate}::date, true,
           'active', ${createdAt.toISOString()}::timestamptz,
@@ -124,6 +127,7 @@ export async function seedOneAtRiskMember(
 
   return {
     memberId,
+    companyName,
     cleanup: async () => {
       let cleanupError: unknown;
       try {

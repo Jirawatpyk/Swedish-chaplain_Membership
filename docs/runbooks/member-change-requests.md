@@ -56,7 +56,7 @@ Payloads carry ids, field KEYS and outcomes only — never a value, a reason tex
 ## Alarm 1 — `oldest_age_seconds` > 7 d (warning) / > 14 d (page): a stuck pending queue
 
 The thresholds are bound to the one-month data-subject-request clock (GDPR Art. 12(3) / PDPA
-§ 30 — FR-037): a proposal is expected to be decided well inside the month a data subject can
+§ 36, which sets no deadline, so § 30's 30 days apply by analogy — FR-037): a proposal is expected to be decided well inside the month a data subject can
 hold the chamber to, so the operational alarm doubles as the statutory backstop.
 
 Causes, in the order to check:
