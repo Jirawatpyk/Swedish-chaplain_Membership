@@ -176,7 +176,11 @@ For each row from query (a):
    `invoice_voided` and preserves the §87 number (voided, never reused).
    Executable for **non-member** legacy rows too (W1 S32 — voidInvoice no
    longer rejects `member_id IS NULL` event rows; the audit row correlates
-   via `event_registration_id` instead of `member_id`). The VOID-stamped
+   via `event_registration_id` instead of `member_id`). Only ISSUED rows are
+   voidable: `voidInvoice` refuses every PAID row (H1 —
+   `paid_event_invoice_requires_reversal`, 409), because a void writes nothing
+   to `payments` and would drop the row's output VAT from the ภ.พ.30 total.
+   Query (b) rows are therefore never voided in-system. The VOID-stamped
    re-render **preserves the original document's title** (W1 S31): a
    legacy §105 ใบเสร็จรับเงิน comes back as a VOID-stamped
    ใบเสร็จรับเงิน — never re-titled as a ใบกำกับภาษี — so the retained

@@ -53,6 +53,10 @@ const ERROR_STATUS: Record<VoidInvoiceError['code'], number> = {
   // voided (a void strands the settled payment). 409 Conflict: the operator
   // switches to the credit-note workflow.
   paid_membership_requires_credit_note: 409,
+  // H1 — a paid EVENT invoice is refused too: a void strands the payment and
+  // drops its output VAT from ภ.พ.30. 409 Conflict: the operator reverses it
+  // with a refund (+ credit note for a ใบกำกับภาษี).
+  paid_event_invoice_requires_reversal: 409,
 };
 
 export async function POST(

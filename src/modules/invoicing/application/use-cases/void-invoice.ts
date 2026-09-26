@@ -1,9 +1,9 @@
 /**
  * T100 — void-invoice use case (F4 / US5 · 088 T068).
  *
- * Transitions an ISSUED invoice (any subject) or a PAID non-membership invoice
- * → `void` with a required reason. A PAID MEMBERSHIP §86/4 is REFUSED (H1) —
- * reverse it via a §86/10 credit note instead (see Refusals).
+ * Transitions an ISSUED invoice (any subject) → `void` with a required reason.
+ * A PAID invoice is REFUSED whatever its subject (H1) — reverse it via a §86/10
+ * credit note / refund instead (see Refusals).
  * Void is terminal: the invoice keeps its sequential tax-document
  * number (§87 no-gap — never reused), the PDF(s) are re-rendered with a
  * diagonal "VOID / ยกเลิก" overlay at the SAME content-addressed
@@ -17,8 +17,8 @@
  * plus, for a bill, `billMode` (a new-flow bill carries a `billDocumentNumberRaw`).
  *
  * ROW-SHAPE dispatch (NOT flag-gated — the flag only decides which shape a row
- * was issued in; void handles every shape EXCEPT a paid membership §86/4, which
- * H1 refuses — legacy + new-flow both cancel otherwise):
+ * was issued in; void handles every ISSUED shape — H1 refuses every PAID one —
+ * legacy + new-flow both cancel):
  *   - ISSUED bill (new-flow): documentNumber NULL, billDocumentNumberRaw set,
  *     one blob (the bill). Void re-renders the bill under ใบแจ้งหนี้.
  *   - ISSUED §86/4 (legacy) / §105 as-paid: one blob. Byte-identical re-render.
@@ -29,14 +29,20 @@
  *     below survives ONLY for the void-pdf-reconcile cron re-rendering LEGACY
  *     pre-H1 voided-paid rows (both blobs stamped so a voided sale never leaves an
  *     un-stamped downloadable document — § F.3 / CHK027 / FR-015).
- *   - PAID as-paid / legacy combined (ONE blob, EVENT / non-member): stamps its
- *     single blob. Still voidable (drives no renewal cycle).
+ *   - PAID as-paid / legacy combined (ONE blob, EVENT / non-member): H1 now
+ *     REFUSES it too (the void stranded the payment and dropped its output VAT
+ *     from ภ.พ.30). Its single-blob stamp survives only for the reconcile cron.
  *
  * Refusals:
  *   - PAID membership §86/4 → reverse via a §86/10 credit note, not a void
  *                              (`paid_membership_requires_credit_note`; H1). A void
  *                              strands the settled payment + double-charges on
- *                              restore. EVENT / non-member paid rows stay voidable.
+ *                              restore.
+ *   - PAID event            → reverse via a refund (+ a §86/10 credit note when
+ *                              the document is a ใบกำกับภาษี; a §105 receipt is not
+ *                              creditable) (`paid_event_invoice_requires_reversal`;
+ *                              H1). A void strands the payment and silently drops
+ *                              the row's output VAT from the ภ.พ.30 period total.
  *   - `void` / `credited` / `partially_credited` → terminal / already-adjusted,
  *                              re-void / edit blocked (`invalid_status`).
  *   - `draft`               → can't void a draft; use deleteInvoiceDraft.
@@ -165,11 +171,19 @@ export type VoidInvoiceError =
    * §86/4 writes NOTHING to `payments` (the settled money is stranded) and,
    * combined with the effective-paid retract (#24), double-charges the member on
    * restore/comeback. The correct reversal is a §86/10 CREDIT NOTE (→ `credited`,
-   * real refund). Refuse (409). MEMBERSHIP-ONLY: event/non-member rows drive no
-   * renewal cycle (no double-charge) and the legacy no-TIN remediation runbook
-   * (Step 2.1) must still void event rows.
+   * real refund). Refuse (409).
    */
-  | { code: 'paid_membership_requires_credit_note' };
+  | { code: 'paid_membership_requires_credit_note' }
+  /**
+   * H1 — a PAID EVENT invoice may NOT be voided either. The void writes NOTHING
+   * to `payments` (the attendee's money is stranded) and `sumPeriodOutputVat`
+   * filters `status <> 'void'`, so the row's output VAT silently leaves the
+   * ภ.พ.30 period — possibly one already filed. The reversal is a refund (the
+   * refund flow issues the §86/10 credit note for a ใบกำกับภาษี and waives it for
+   * a §105 ใบเสร็จรับเงิน, which is not creditable). Refuse (409). The legacy
+   * no-TIN remediation runbook (Step 2.1) voids ISSUED rows only — unaffected.
+   */
+  | { code: 'paid_event_invoice_requires_reversal' };
 
 class VoidInvoiceInternalError extends TxAbort<VoidInvoiceError> {
   override readonly name = 'VoidInvoiceInternalError';
@@ -363,21 +377,30 @@ export async function voidInvoice(
       }
       if (!settings) return err({ code: 'settings_missing' });
 
-      // H1 — a PAID membership §86/4 may NOT be voided: it must be reversed via a
-      // §86/10 CREDIT NOTE (→ `credited`, real refund). A void writes NOTHING to
-      // `payments` (the settled money is stranded) and, combined with the
-      // effective-paid retract (#24), double-charges the member on restore. Refuse
-      // (409) ABOVE the first write (`applyVoid` below) — `err()` inside
+      // H1 — a PAID invoice may NOT be voided, whatever its subject. A void
+      // writes NOTHING to `payments` (the settled money is stranded) and
+      // `sumPeriodOutputVat` filters `status <> 'void'`, so the row's output VAT
+      // silently leaves the ภ.พ.30 period (possibly an already-filed one).
+      //   - MEMBERSHIP: reverse via a §86/10 CREDIT NOTE (→ `credited`, real
+      //     refund); a void would also double-charge the member on restore via
+      //     the effective-paid retract (#24).
+      //   - EVENT: reverse via a refund (+ §86/10 credit note for a ใบกำกับภาษี;
+      //     a §105 ใบเสร็จรับเงิน is not creditable). The legacy no-TIN
+      //     remediation runbook (Step 2.1) voids ISSUED rows only, so it stays
+      //     executable.
+      // Refuse (409) ABOVE the first write (`applyVoid` below) — `err()` inside
       // `runInTenant` COMMITS, so a guard below a write would leave a phantom
       // half-void + false audit; consistent with the read-only refusals above
-      // (:not-found / :no-snapshot / :settings-missing). MEMBERSHIP-ONLY,
-      // deliberately: an EVENT / non-member row drives no renewal cycle (no
-      // double-charge) and the legacy no-TIN remediation runbook (Step 2.1) MUST
-      // still be able to void it. The void-on-reissue path is unaffected — its
-      // `requireStatus:'issued'` gate above already refuses a paid row
-      // (`invalid_status`), so it never reaches here.
-      if (lockedStatus === 'paid' && loaded.invoiceSubject === 'membership') {
-        return err({ code: 'paid_membership_requires_credit_note' });
+      // (:not-found / :no-snapshot / :settings-missing). The void-on-reissue path
+      // is unaffected — its `requireStatus:'issued'` gate above already refuses a
+      // paid row (`invalid_status`), so it never reaches here.
+      if (lockedStatus === 'paid') {
+        return err({
+          code:
+            loaded.invoiceSubject === 'membership'
+              ? 'paid_membership_requires_credit_note'
+              : 'paid_event_invoice_requires_reversal',
+        });
       }
 
       // D. Build the VOID-overlay render targets — the tax-critical render

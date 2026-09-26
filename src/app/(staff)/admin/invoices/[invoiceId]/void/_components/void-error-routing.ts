@@ -55,6 +55,11 @@ export function routeVoidError(
   if (code === 'paid_membership_requires_credit_note') {
     return { kind: 'failure', messageKey: 'errors.paidMembershipRequiresCreditNote' };
   }
+  // H1 — a paid EVENT invoice can't be voided either (the payment would be
+  // stranded and its output VAT dropped from ภ.พ.30); reverse it with a refund.
+  if (code === 'paid_event_invoice_requires_reversal') {
+    return { kind: 'failure', messageKey: 'errors.paidEventInvoiceRequiresReversal' };
+  }
   if (code) return { kind: 'failure', messageKey: 'errors.codeFallback', codeArg: code };
   return { kind: 'failure', messageKey: 'errors.unknown' };
 }

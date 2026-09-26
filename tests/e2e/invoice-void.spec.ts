@@ -211,17 +211,13 @@ test.describe('@us5 void-invoice', () => {
       }
     });
 
-    test('AS2 a paid invoice CAN be voided (088 §F.3 error-correction edge)', async ({ page }) => {
-      // 088 §F.3 — voiding a PAID membership is a supported edge path (the
-      // ยกเลิก / same-period error-correction mechanism; the void stamps VOID on
-      // BOTH the bill + §86/4 tax-receipt blobs — see void-kind-true-golden). It
-      // is DISTINCT from a genuine refund/reduction, which goes through a §86/10
-      // ใบลดหนี้ credit note (US6). The void UI intentionally exposes only the
-      // issued-invoice path (routine reversals → credit-note); this paid-void
-      // edge is reachable via the API for admin error correction. A voided §86/4
-      // receipt is correctly EXCLUDED from the ภ.พ.30 output-VAT total (register
-      // status<>'void' filter) while staying LISTED as cancelled.
-      // (Was pre-088 "paid invoice CANNOT be voided" — stale before §F.3 landed.)
+    test('AS2 a paid invoice CANNOT be voided (H1 — reverse via credit note / refund)', async ({ page }) => {
+      // H1 — a PAID invoice is never voided: a void writes nothing to `payments`
+      // (the settled money is stranded) and the ภ.พ.30 output-VAT sum filters
+      // `status <> 'void'`, so the receipt's VAT would silently leave the period.
+      // A paid membership §86/4 is reversed with a §86/10 ใบลดหนี้ credit note
+      // (US6); the API refuses the void with 409 and leaves the row untouched.
+      // (The 088 §F.3 paid-void edge this test once pinned was closed by H1.)
       const { tenant, invoiceId } = await setupIssuedInvoice(page);
       try {
         // Record payment via API → status flips to paid.
@@ -249,7 +245,7 @@ test.describe('@us5 void-invoice', () => {
           );
         }
 
-        // Void the PAID invoice → §F.3 supports it (2xx).
+        // Void the PAID invoice → refused (409), row untouched.
         const voidResp = await page.context().request.post(
           `/api/invoices/${invoiceId}/void`,
           {
@@ -258,27 +254,21 @@ test.describe('@us5 void-invoice', () => {
               Origin: new URL(page.url()).origin,
               'X-Tenant': tenant.slug,
             },
-            data: { voidReason: 'E2E §F.3 — cancelling an erroneous paid record' },
+            data: { voidReason: 'E2E H1 — attempting to void a paid record' },
           },
         );
-        const voidStatus = voidResp.status();
-        if (!(voidStatus >= 200 && voidStatus < 300)) {
-          const body = await voidResp.text();
-          throw new Error(
-            `POST /api/invoices/${invoiceId}/void (paid, §F.3) → ${voidStatus}: ${body.slice(0, 500)}`,
-          );
-        }
+        expect(voidResp.status()).toBe(409);
+        const voidBody = (await voidResp.json()) as { error: { code: string } };
+        expect(voidBody.error.code).toBe('paid_membership_requires_credit_note');
 
-        // Status flips to 'void'; the paid_at / receipt fields are retained
-        // (the register excludes the VAT via its status<>'void' filter).
         const row = await runInTenant(tenant.ctx, async (tx) =>
           tx
             .select()
             .from(invoices)
             .where(eq(invoices.invoiceId, invoiceId)),
         );
-        expect(row[0]!.status).toBe('void');
-        expect(row[0]!.voidedAt).not.toBeNull();
+        expect(row[0]!.status).toBe('paid');
+        expect(row[0]!.voidedAt).toBeNull();
       } finally {
         await tenant.cleanup().catch(() => {});
       }
