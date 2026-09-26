@@ -83,13 +83,17 @@ import {
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import { formatDate, formatSatangThb } from '../_utils/format';
+import { formatCalendarYear } from '@/lib/format-date-localised';
 import { InvoiceStatusBadge } from '../_components/invoice-status-badge';
 import { ResendInvoiceButton } from '../_components/resend-invoice-button';
 import {
   PortalInvoiceDownloadButton,
   PortalReceiptDownloadButton,
 } from '../_components/portal-pdf-download-button';
-import { downloadLabelKeys } from '../_utils/invoice-row-view-model';
+import {
+  downloadLabelKeys,
+  resolveMainPdfKind,
+} from '../_utils/invoice-row-view-model';
 // REMOVE-WITH-064-REMEDIATION — legacy no-TIN event pay-gate predicate
 // (extracted pure helper, unit-pinned; master checklist at the guard in
 // record-payment.ts).
@@ -361,13 +365,9 @@ export default async function PortalInvoiceDetailPage({
                 // 064 remediation S3 — generalised: 'combined' (as-paid TIN)
                 // keeps the dual-role wording; 'receipt' (β as-paid no-TIN /
                 // legacy §105 rows) flips the main download to the receipt
-                // wording; 'invoice' = plain label.
-                const mainPdfKind: 'invoice' | 'combined' | 'receipt' =
-                  invoice.pdfDocKind === 'receipt_combined'
-                    ? 'combined'
-                    : invoice.pdfDocKind === 'receipt_separate'
-                      ? 'receipt'
-                      : 'invoice';
+                // wording; 'bill' = 088 SC- ใบแจ้งหนี้ (not a tax invoice);
+                // 'invoice' = plain label.
+                const mainPdfKind = resolveMainPdfKind(invoice);
                 // 092 — receipt-bearing status set (not `paid` alone) so a
                 // §86/10 credit note does NOT un-hide the stale pre-payment
                 // bill PDF; the combined receipt stays the sole legal document.
@@ -700,7 +700,10 @@ export default async function PortalInvoiceDetailPage({
               <p className="text-caption uppercase tracking-wide text-muted-foreground">
                 {t('fields.planYear')}
               </p>
-              <p className="text-body">{invoice.planYear}</p>
+              {/* Stored CE; Thai reads the plan year in BE (2026 → 2569). */}
+              <p className="text-body">
+                {formatCalendarYear(invoice.planYear, userLocale)}
+              </p>
             </div>
           )}
         </CardContent>
@@ -866,6 +869,7 @@ export default async function PortalInvoiceDetailPage({
               amountDue: total !== null ? Number(total) : 0,
               currency: 'THB',
               status: invoice.status,
+              isBill: resolveMainPdfKind(invoice) === 'bill',
             }}
             enabledMethods={paymentSettings.enabledMethods}
             tenantPublishableKey={paymentSettings.processorPublishableKey}

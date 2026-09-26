@@ -23,12 +23,13 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useTransition, useMemo } from 'react';
 import Link from 'next/link';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { InfoIcon, Loader2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { toast } from '@/lib/toast';
 import { addMonthsUtc } from '@/lib/dates';
+import { formatCalendarYear } from '@/lib/format-date-localised';
 import { Combobox } from '@/components/ui/combobox';
 import type { ComboboxOption } from '@/components/ui/combobox';
 import {
@@ -250,6 +251,7 @@ export function CreateDraftForm({
   const tPicker = useTranslations('admin.invoices.form.memberPicker');
   const tPlan = useTranslations('admin.invoices.form.planInfo');
   const tDup = useTranslations('admin.invoices.form.duplicateConfirm');
+  const locale = useLocale();
   // Reuse the existing invoice-status labels rather than minting a second set
   // that could drift out of step with the list/detail pages. `t.has` guards a
   // status the label map hasn't caught up with (e.g. a new enum value) and
@@ -382,7 +384,9 @@ export function CreateDraftForm({
               <div className="text-xs text-muted-foreground">{t('fields.planId')}</div>
               <div className="text-base font-medium">
                 {selectedPlan?.label ?? planId}
-                <span className="ml-2 text-sm text-muted-foreground">/ {planYear}</span>
+                <span className="ml-2 text-sm text-muted-foreground">
+                  / {formatCalendarYear(planYear, locale)}
+                </span>
               </div>
               {selectedPlan && (
                 <div className="mt-1 text-xs text-muted-foreground">
@@ -445,7 +449,7 @@ export function CreateDraftForm({
               Caught by the real-en.json render convention, not by typecheck.
             */}
             <AlertDialogTitle>
-              {tDup('title', { year: String(planYear) })}
+              {tDup('title', { year: formatCalendarYear(planYear, locale) })}
             </AlertDialogTitle>
             <AlertDialogDescription>{tDup('description')}</AlertDialogDescription>
           </AlertDialogHeader>

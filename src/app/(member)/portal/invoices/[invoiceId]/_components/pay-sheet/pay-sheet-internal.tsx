@@ -212,6 +212,7 @@ export interface PaySheetInternalProps {
     readonly invoiceNumber: string;
     readonly amountDue: number;
     readonly currency: string;
+    readonly isBill?: boolean;
   };
   readonly enabledMethods: readonly PaymentMethod[];
   readonly tenantPublishableKey: string;
@@ -845,6 +846,7 @@ export function PaySheetInternal({
           invoiceNumber={invoice.invoiceNumber}
           amountDue={invoice.amountDue}
           currency={invoice.currency}
+          isBill={invoice.isBill ?? false}
         />
       ) : null}
       {showChrome ? (

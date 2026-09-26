@@ -122,6 +122,12 @@ describe('<BenefitUsageCard>', () => {
     expect(screen.getByText(/2027/)).toBeInTheDocument();
   });
 
+  it('AS-5: Thai reads the membership year in Buddhist Era (storage stays CE)', () => {
+    renderCard({ locale: 'th', membershipYear: 2026 });
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('2569');
+    expect(screen.getByRole('heading', { level: 2 })).not.toHaveTextContent('2026');
+  });
+
   // --- Pass A · Section 2 — compact preview mode -------------------------
 
   it('compact: keeps the quota progress bars but hides the live freshness note', () => {

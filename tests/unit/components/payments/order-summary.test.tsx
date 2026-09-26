@@ -16,6 +16,8 @@ const messages = {
         heading: 'Order summary',
         invoiceLabel: 'Invoice',
         amountLabel: 'Amount due',
+        billNote:
+          'This is an invoice (ใบแจ้งหนี้), not a tax invoice. Your tax invoice/receipt is issued when you pay.',
         itemsLabel: 'Items',
         itemSingle: '1 item',
         itemPlural: '{count} items',
@@ -103,5 +105,36 @@ describe('<OrderSummary>', () => {
     // Heading exists with the referenced id.
     const heading = screen.getByText('Order summary');
     expect(heading.id).toBe('pay-sheet-summary-heading');
+  });
+
+  it('formats the amount with the Swedish decimal comma on sv', () => {
+    renderSummary(
+      { invoiceNumber: 'SC-2026-900003', amountDue: 535_000, currency: 'THB' },
+      'sv',
+    );
+    expect(
+      screen.getByTestId('pay-sheet-summary-amount').textContent,
+    ).toBe('5\u00a0350,00 THB');
+  });
+
+  it('notes that the tax invoice/receipt is issued at payment on an 088 bill', () => {
+    renderSummary({
+      invoiceNumber: 'SC-2026-900003',
+      amountDue: 535_000,
+      currency: 'THB',
+      isBill: true,
+    });
+    expect(
+      screen.getByTestId('pay-sheet-summary-bill-note').textContent,
+    ).toContain('not a tax invoice');
+  });
+
+  it('omits the bill note on a legacy invoice', () => {
+    renderSummary({
+      invoiceNumber: 'INV-2025-000001',
+      amountDue: 535_000,
+      currency: 'THB',
+    });
+    expect(screen.queryByTestId('pay-sheet-summary-bill-note')).toBeNull();
   });
 });

@@ -169,6 +169,25 @@ describe("InvoiceMoreMenu — β receipt main download (064 remediation A4, main
   });
 });
 
+describe("InvoiceMoreMenu — 088 SC- bill main download (mainDownloadKind='bill')", () => {
+  it('labels the main download as a bill (ใบแจ้งหนี้), never a tax invoice', () => {
+    render(
+      <InvoiceMoreMenu
+        {...BASE}
+        documentNumber="SC-2026-000045"
+        showDownload
+        mainDownloadKind="bill"
+      />,
+    );
+    const item = screen.getByTestId('download-invoice-trigger');
+    expect(item.textContent).toBe('actions.downloadBill');
+    expect(item).toHaveAttribute(
+      'aria-label',
+      'actions.downloadBillAria {"number":"SC-2026-000045"}',
+    );
+  });
+});
+
 describe('InvoiceMoreMenu — 088 paid bill SC-vs-RC naming (T065 review fix)', () => {
   it('names the MAIN (SC bill) download by invoiceDownloadNumber while the receipt arm keeps documentNumber (RC)', () => {
     // On a paid 088 bill `documentNumber` resolves to the RC §86/4 tax-receipt

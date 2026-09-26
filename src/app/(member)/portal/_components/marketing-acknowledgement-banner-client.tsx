@@ -132,7 +132,10 @@ export function AcknowledgementBannerClient({
                     href={privacyPolicyUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="underline underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    // `whitespace-nowrap` — the short link phrase must not
+                    // wrap mid-phrase (TH "อ่านนโยบายความเป็นส่วนตัว" has no
+                    // spaces, so the browser would break it at any syllable).
+                    className="whitespace-nowrap underline underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                   >
                     {privacyPolicyLinkLabel}
                   </a>

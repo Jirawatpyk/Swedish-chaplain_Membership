@@ -17,7 +17,7 @@ import { CopyButton } from '@/components/members/copy-button';
 import { CountryDisplay } from '@/components/members/country-display';
 import { DetailField } from '@/components/members/detail-field';
 import { resolveLegalEntityTypeLabel } from '@/components/members/resolve-legal-entity-type-label';
-import { formatLocalisedDate } from '@/lib/format-date-localised';
+import { formatCalendarYear, formatLocalisedDate } from '@/lib/format-date-localised';
 import { safeExternalHref } from '@/lib/safe-url';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
@@ -449,7 +449,7 @@ export async function PortalProfileBody({
               />
               <DetailField
                 label={t('fields.planYear')}
-                value={m.planYear}
+                value={formatCalendarYear(m.planYear, locale)}
               />
               <DetailField
                 label={t('fields.registrationDate')}

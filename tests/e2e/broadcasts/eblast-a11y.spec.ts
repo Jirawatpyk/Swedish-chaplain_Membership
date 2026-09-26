@@ -341,7 +341,7 @@ test.describe('@a11y F119 T139 — E-Blast screens PR-1 builds (320 px)', () => 
      * F119 dashboard UX review B1 — the chip strip at 320 px in the two
      * locales with the longest new-stage labels. The U2 case above runs in EN,
      * where "Member approved — awaiting schedule" happens to fit; the SV
-     * "Godkänd av medlem — inväntar schemaläggning" did not: the fieldset's
+     * "Godkänt av medlem — inväntar schemaläggning" did not: the fieldset's
      * default `min-inline-size: min-content` and the two `role="group"` flex
      * rows' `min-width: auto` held the chip at its min-content width, so its
      * `truncate` never engaged.

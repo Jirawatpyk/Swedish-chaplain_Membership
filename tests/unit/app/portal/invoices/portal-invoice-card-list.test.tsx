@@ -661,6 +661,18 @@ describe('<PortalInvoiceCardList> — 088 UNPAID bill (A-refined)', () => {
     // No RC yet → no Receipt No. line.
     expect(theCard()).not.toHaveTextContent('Receipt No.');
   });
+
+  it('labels the main download as a bill (ใบแจ้งหนี้), never a tax invoice', () => {
+    renderCard088For({
+      status: 'issued',
+      documentNumber: null,
+      billDocumentNumberRaw: 'SC-2026-000045',
+      receiptDocumentNumberRaw: null,
+    });
+    const download = screen.getByTestId('invoice-download');
+    expect(download).toHaveAttribute('aria-label', 'Download invoice PDF for SC-2026-000045');
+    expect(download.getAttribute('aria-label')).not.toMatch(/tax invoice/i);
+  });
 });
 
 describe('<PortalInvoiceCardList> — 088 PAID bill (A-refined)', () => {

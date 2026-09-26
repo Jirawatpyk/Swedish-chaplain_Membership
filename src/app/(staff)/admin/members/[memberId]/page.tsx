@@ -29,7 +29,7 @@ import { env } from '@/lib/env';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
-import { formatLocalisedDate } from '@/lib/format-date-localised';
+import { formatCalendarYear, formatLocalisedDate } from '@/lib/format-date-localised';
 import { isInvitationExpired } from '@/lib/invitation-expiry';
 import { safeExternalHref } from '@/lib/safe-url';
 import { headers } from 'next/headers';
@@ -927,11 +927,11 @@ export default async function MemberDetailPage({
           member.status === 'archived'
             ? t('subtitleArchived', {
                 plan: planDisplayName,
-                year: member.planYear,
+                year: formatCalendarYear(member.planYear, locale),
               })
             : t('subtitle', {
                 plan: planDisplayName,
-                year: member.planYear,
+                year: formatCalendarYear(member.planYear, locale),
               })
         }
         actions={
@@ -1119,7 +1119,7 @@ export default async function MemberDetailPage({
                 <DetailField label={t('fields.plan')} value={planDisplayName} />
                 <DetailField
                   label={t('fields.planYear')}
-                  value={member.planYear}
+                  value={formatCalendarYear(member.planYear, locale)}
                 />
                 {/* 056 fix #2 — Buddhist-aware localised date (no raw .toISOString()). */}
                 <DetailField

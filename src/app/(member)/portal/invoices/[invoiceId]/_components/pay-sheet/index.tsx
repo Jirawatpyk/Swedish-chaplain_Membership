@@ -98,6 +98,8 @@ export interface PaySheetInvoice {
   readonly invoiceNumber: string;
   readonly amountDue: number;
   readonly currency: string;
+  /** 088 — SC- bill (ใบแจ้งหนี้); see `PayNowButtonProps['invoice']['isBill']`. */
+  readonly isBill?: boolean;
 }
 
 export interface PaySheetProps {

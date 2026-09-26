@@ -53,6 +53,7 @@ import { buildMembersDeps } from '@/modules/members/members-deps';
 import { shouldShowPlanChangedExplainer } from '@/components/broadcast/quota-banner';
 import { formatCalendarYear, getDateFormatLocale } from '@/lib/format-date-localised';
 import { env } from '@/lib/env';
+import { keepTermTogether } from '@/components/broadcast/keep-term-together';
 import {
   BroadcastHistoryCardList,
   type BroadcastHistoryRowView,
@@ -289,7 +290,7 @@ export async function BroadcastsPanel({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1">
           <h2 id="broadcasts-panel-heading" className="text-lg font-semibold">
-            {t('title')}
+            {keepTermTogether(t('title'))}
           </h2>
           <p className="text-sm text-muted-foreground">{t('subtitle')}</p>
         </div>

@@ -5,6 +5,7 @@ import { getTranslations } from 'next-intl/server';
 import { LayoutTemplateIcon } from 'lucide-react';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
+import { keepTermTogether } from '@/components/broadcast/keep-term-together';
 import { buttonVariants } from '@/components/ui/button';
 import { QueueTable } from '@/components/broadcast/admin/queue-table';
 import { QueueFilters } from '@/components/broadcast/admin/queue-filters';
@@ -361,7 +362,7 @@ export default async function AdminBroadcastsPage({
           tap target there. axe has no horizontal-scroll rule, so T139 could
           never have caught this; `eblast-a11y.spec.ts` now measures it. */}
       <PageHeader
-        title={t('title')}
+        title={keepTermTogether(t('title'))}
         subtitle={
           totalPending > 0
             ? `${t('subtitle')} · ${t('totalPending', { count: totalPending })}`

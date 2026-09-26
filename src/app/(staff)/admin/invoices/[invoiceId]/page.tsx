@@ -27,7 +27,7 @@ import { canPerform, requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { env } from '@/lib/env';
-import { formatLocalisedDate } from '@/lib/format-date-localised';
+import { formatCalendarYear, formatLocalisedDate } from '@/lib/format-date-localised';
 import { formatTaxDocDate } from '@/lib/format-tax-doc-date';
 import { bangkokLocalDate } from '@/lib/fiscal-year';
 import {
@@ -755,13 +755,17 @@ export default async function InvoiceDetailPage({
                 showDownloadReceipt={hasReceiptPdf}
                 // 064 remediation A4 — what the main pdf IS: combined for
                 // as-paid TIN rows, receipt for β/legacy §105 rows whose
-                // main pdf is itself the receipt; plain invoice otherwise.
+                // main pdf is itself the receipt; bill for 088 SC- bills
+                // (ใบแจ้งหนี้, not a tax invoice); plain invoice otherwise.
                 mainDownloadKind={
                   invoice.pdfDocKind === 'receipt_combined'
                     ? 'combined'
                     : invoice.pdfDocKind === 'receipt_separate'
                       ? 'receipt'
-                      : undefined
+                      : invoice.pdfDocKind === 'invoice' &&
+                          invoice.billDocumentNumberRaw !== null
+                        ? 'bill'
+                        : undefined
                 }
                 // combinedModeReceipt is derived inside the menu component
                 // from (showDownloadReceipt && !showDownload).
@@ -830,7 +834,9 @@ export default async function InvoiceDetailPage({
                 <dt className="text-muted-foreground">{t('fields.plan')}</dt>
                 <dd>
                   {planDisplayName}{' '}
-                  <span className="text-muted-foreground">/ {invoice.planYear}</span>
+                  <span className="text-muted-foreground">
+                    / {invoice.planYear !== null ? formatCalendarYear(invoice.planYear, userLocale) : null}
+                  </span>
                 </dd>
               </div>
             )}

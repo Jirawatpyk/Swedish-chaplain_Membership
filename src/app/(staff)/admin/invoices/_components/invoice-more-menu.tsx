@@ -78,10 +78,14 @@ export interface InvoiceMoreMenuProps {
    *     receipt). Download item flips to `actions.downloadReceipt` + the
    *     receipt aria so the admin never sees a "tax invoice" label on a
    *     document that is legally a receipt.
-   *   - omitted — plain invoice label (bill-first/membership rows,
+   *   - `'bill'` — `pdfDocKind === 'invoice'` with a bill number (088 SC-…):
+   *     the main pdf is a ใบแจ้งหนี้, not a tax invoice (the §86/4 tax
+   *     invoice/receipt is the RC issued at payment). Download item uses
+   *     `actions.downloadBill[Aria]`.
+   *   - omitted — plain invoice label (legacy INV- tax invoice rows,
    *     byte-identical to the pre-064 behaviour).
    */
-  readonly mainDownloadKind?: 'combined' | 'receipt' | undefined;
+  readonly mainDownloadKind?: 'combined' | 'receipt' | 'bill' | undefined;
 }
 
 export function InvoiceMoreMenu({
@@ -311,7 +315,9 @@ export function InvoiceMoreMenu({
             aria-label={t(
               mainDownloadKind === 'receipt'
                 ? 'actions.downloadReceiptAria'
-                : 'actions.downloadInvoiceAria',
+                : mainDownloadKind === 'bill'
+                  ? 'actions.downloadBillAria'
+                  : 'actions.downloadInvoiceAria',
               { number: mainDownloadNumber },
             )}
           >
@@ -331,7 +337,9 @@ export function InvoiceMoreMenu({
               ? t('actions.downloadCombined')
               : mainDownloadKind === 'receipt'
                 ? t('actions.downloadReceipt')
-                : t('actions.download')}
+                : mainDownloadKind === 'bill'
+                  ? t('actions.downloadBill')
+                  : t('actions.download')}
           </DropdownMenuItem>
         )}
         {showDownloadReceipt && (

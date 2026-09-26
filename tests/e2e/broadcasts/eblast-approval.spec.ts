@@ -195,10 +195,10 @@ test.describe('F119 UX review H3 — the sign-off page at 320 px in Swedish', ()
       await expect(banner).toContainText('Inväntar ditt godkännande', { timeout: 60_000 });
       await fits();
 
-      // After approving: the longest stage label, "Godkänd — inväntar schemaläggning".
+      // After approving: the longest stage label, "Godkänt — inväntar schemaläggning".
       await member.locator('[data-testid="eblast-approve"]:visible').click();
       await member.getByRole('alertdialog').locator('[data-testid="eblast-approve-confirm"]').click();
-      await expect(banner).toContainText('Godkänd — inväntar schemaläggning', { timeout: 30_000 });
+      await expect(banner).toContainText('Godkänt — inväntar schemaläggning', { timeout: 30_000 });
       await fits();
     } finally {
       await phone.close();
