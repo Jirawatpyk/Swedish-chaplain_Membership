@@ -74,6 +74,7 @@ describe('unsubscribeRecipient — attribution reads run before the transaction 
       broadcastId,
       emailLower: recipient,
       tokenPlaintext: 'v1.fake.fakemac',
+      channel: 'page_get',
       requestId: 'req-order',
       reasonText: null,
     });
@@ -188,6 +189,7 @@ describe('unsubscribeRecipient (T137)', () => {
       broadcastId,
       emailLower: recipient,
       tokenPlaintext: 'v1.fake.fakemac',
+      channel: 'page_get',
       requestId: 'req-1',
       reasonText: null,
     });
@@ -235,6 +237,7 @@ describe('unsubscribeRecipient (T137)', () => {
       broadcastId,
       emailLower: recipient,
       tokenPlaintext: 'v1.fake.fakemac',
+      channel: 'page_get',
       requestId: 'req-2',
       reasonText: null,
     });
@@ -252,6 +255,7 @@ describe('unsubscribeRecipient (T137)', () => {
       broadcastId,
       emailLower: recipient,
       tokenPlaintext: 'v1.fake.fakemac',
+      channel: 'page_get',
       requestId: 'req-3',
       reasonText: null,
     });
@@ -272,6 +276,7 @@ describe('unsubscribeRecipient (T137)', () => {
       broadcastId,
       emailLower: recipient,
       tokenPlaintext: 'v1.fake.fakemac',
+      channel: 'page_get',
       requestId: 'req-4',
       reasonText: null,
     });
@@ -294,6 +299,7 @@ describe('unsubscribeRecipient (T137)', () => {
       broadcastId,
       emailLower: recipient,
       tokenPlaintext: 'v1.fake.fakemac',
+      channel: 'page_get',
       requestId: 'req-5',
       reasonText: null,
     });
@@ -315,6 +321,7 @@ describe('unsubscribeRecipient (T137)', () => {
       broadcastId,
       emailLower: recipient,
       tokenPlaintext: 'v1.fake.fakemac',
+      channel: 'page_get',
       requestId: 'req-6',
       reasonText: null,
     });
@@ -333,6 +340,7 @@ describe('unsubscribeRecipient (T137)', () => {
       broadcastId,
       emailLower: recipient,
       tokenPlaintext: 'v1.fake.fakemac',
+      channel: 'page_get',
       requestId: 'req-7',
       reasonText: longText,
     });
@@ -352,6 +360,7 @@ describe('unsubscribeRecipient (T137)', () => {
       broadcastId,
       emailLower: recipient,
       tokenPlaintext: 'v1.fake.fakemac',
+      channel: 'page_get',
       requestId: 'req-8',
       reasonText: longText,
     });
@@ -442,5 +451,91 @@ describe('unsubscribe-recipient — 108 PR-C contact attribution (T078)', () => 
     expect(upsertCall.memberId).toBe('mem-1');
     expect(upsertCall.contactId).toBeNull();
     expect((deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(2);
+  });
+});
+
+// Every opt-out path — the public page (GET), the RFC 8058 one-click POST,
+// Resend's hosted page mirrored from `contact.updated`, and a manual removal
+// by staff — writes the same tenant+email row and the same two audit events.
+// The `channel` says which path it came through.
+describe('unsubscribeRecipient — channel', () => {
+  function auditCalls(deps: UnsubscribeRecipientDeps) {
+    return (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[1]);
+  }
+
+  it.each([
+    ['page_get', 'system:public_unsubscribe'],
+    ['one_click_post', 'system:public_unsubscribe'],
+  ] as const)('%s: both audit events carry the channel', async (channel, actor) => {
+    const deps = makeDeps();
+    const result = await unsubscribeRecipient(deps, {
+      tenantId: TENANT_SLUG,
+      broadcastId,
+      emailLower: recipient,
+      tokenPlaintext: 'v1.fake.fakemac',
+      channel,
+      requestId: 'req-ch',
+      reasonText: null,
+    });
+    expect(result.ok).toBe(true);
+    const calls = auditCalls(deps);
+    expect(calls.map((c) => c.eventType)).toEqual([
+      'broadcast_unsubscribed',
+      'broadcast_suppression_applied',
+    ]);
+    for (const c of calls) {
+      expect(c.payload.channel).toBe(channel);
+      expect(c.actorUserId).toBe(actor);
+    }
+  });
+
+  it('resend_hosted: no token — the row and audits still land, attributed to the webhook', async () => {
+    const deps = makeDeps();
+    const result = await unsubscribeRecipient(deps, {
+      tenantId: TENANT_SLUG,
+      broadcastId,
+      emailLower: recipient,
+      tokenPlaintext: null,
+      channel: 'resend_hosted',
+      requestId: 'req-rh',
+      reasonText: null,
+    });
+    expect(result.ok).toBe(true);
+    const upsert = (deps.marketingUnsubscribes.upsert as ReturnType<typeof vi.fn>).mock.calls[0]![1];
+    expect(upsert.sourceTokenHash).toBeNull();
+    expect(upsert.reason).toBe('recipient_initiated');
+    const calls = auditCalls(deps);
+    expect(calls).toHaveLength(2);
+    for (const c of calls) {
+      expect(c.payload.channel).toBe('resend_hosted');
+      expect(c.actorUserId).toBe('system:resend-webhook');
+    }
+  });
+
+  it('manual: no token, no broadcast — the operator is recorded on both audits', async () => {
+    const deps = makeDeps();
+    const result = await unsubscribeRecipient(deps, {
+      tenantId: TENANT_SLUG,
+      broadcastId: null,
+      emailLower: recipient,
+      tokenPlaintext: null,
+      channel: 'manual',
+      operator: 'ops@example.org',
+      requestId: 'req-man',
+      reasonText: 'Emailed privacy inbox, ticket 123',
+    });
+    expect(result.ok).toBe(true);
+    expect(deps.broadcastsRepo.findByIdInTx).not.toHaveBeenCalled();
+    const upsert = (deps.marketingUnsubscribes.upsert as ReturnType<typeof vi.fn>).mock.calls[0]![1];
+    expect(upsert.sourceBroadcastId).toBeNull();
+    expect(upsert.sourceTokenHash).toBeNull();
+    expect(upsert.reasonText).toBe('Emailed privacy inbox, ticket 123');
+    const calls = auditCalls(deps);
+    expect(calls).toHaveLength(2);
+    for (const c of calls) {
+      expect(c.payload.channel).toBe('manual');
+      expect(c.payload.operator).toBe('ops@example.org');
+      expect(c.actorUserId).toBe('system:ops_manual_unsubscribe');
+    }
   });
 });
