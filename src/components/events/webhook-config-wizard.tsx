@@ -92,10 +92,10 @@ export function WebhookConfigWizard({ view, walkthrough }: WebhookConfigWizardPr
   // last-4 hint is blank.
   useEffect(() => {
     if (phase === 'c-test' && !view.secretConfigured) {
-      toast.error(t('postRefreshResyncFailed'));
+      toast.error(t('postRefreshResyncFailed'), { id: 'webhook-resync-failed' });
     }
-    // Intentional: react to phase + view changes; toast is idempotent
-    // (sonner dedupes by message).
+    // Intentional: react to phase + view changes; the fixed id keeps the
+    // toast idempotent (a repeat replaces it in place instead of stacking).
   }, [phase, view.secretConfigured, t]);
 
   const steps: StepperStep[] = [

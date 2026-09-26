@@ -13,7 +13,7 @@
  *   staff and member layouts; it inherits everything else from here.
  */
 import Link from 'next/link';
-import { AuraProvider } from '@jirawatpyk/aura-react';
+import { AuraProvider, Toaster } from '@jirawatpyk/aura-react';
 
 export interface AuraBridgeProps {
   readonly locale: 'en' | 'th' | 'sv';
@@ -31,6 +31,8 @@ export function AuraBridge({ locale, timeZone, children }: AuraBridgeProps): Rea
       linkComponent={Link}
     >
       {children}
+      {/* The single toast surface for `@/lib/toast`; top-centre per the spec 122 decision. */}
+      <Toaster position="top" />
     </AuraProvider>
   );
 }

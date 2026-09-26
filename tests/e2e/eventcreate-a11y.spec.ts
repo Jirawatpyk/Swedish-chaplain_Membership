@@ -56,20 +56,12 @@ async function expectNoAxeViolations(
   // not user-interactive. The exemption mirrors the documented
   // pattern in `tests/e2e/idle-warning-a11y.spec.ts:64-67`.
   //
-  // F6.1 R3 a11y-fix 2026-05-16 — exclude Sonner toast surfaces
-  // (`.cn-toast` / `[data-sonner-toaster]`). Sonner's `richColors`
-  // success variant (enabled globally at `src/app/layout.tsx:93`)
-  // renders dark-green-on-light-green at contrast ratio 4.25:1
-  // which falls just under WCAG AA 4.5:1. This is a pre-existing
-  // global theme choice — toasts auto-dismiss in ~4s and are
-  // transient surfaces (not persistent UI state) so they are not
-  // the right gate to fail an F6.1 import-result scan. Re-themeing
-  // Sonner globally is tracked separately as a UX-standards epic.
+  // The Sonner toast exclusion (F6.1 R3, richColors success at 4.25:1) was
+  // dropped with spec 122: toasts are AURA's now, whose tones are
+  // contrast-checked, so the scan covers them too.
   const results = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
     .exclude('[data-base-ui-focus-guard]')
-    .exclude('[data-sonner-toaster]')
-    .exclude('.cn-toast')
     .analyze();
   const seriousOrWorse = results.violations.filter(
     (v) => v.impact === 'serious' || v.impact === 'critical',

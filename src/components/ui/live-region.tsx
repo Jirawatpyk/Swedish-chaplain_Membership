@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils"
  * LiveRegion — visually-hidden ARIA live region for inline async feedback
  * that should NOT pop a toast.
  *
- * Design-system audit P0 gap D1. sonner already handles toast live
+ * Design-system audit P0 gap D1. The toaster already handles toast live
  * regions internally (role=status / role=alert + aria-live), but the
  * F5 PaySheet needs to announce "Verifying with your bank…",
  * "Authorizing…", "Payment succeeded" *inside* the drawer without

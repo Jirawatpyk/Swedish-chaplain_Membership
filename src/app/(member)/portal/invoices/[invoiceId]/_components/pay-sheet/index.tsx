@@ -266,7 +266,7 @@ export function PaySheet({
     // second toast here produced a double-toast on every successful
     // payment — both toasts visible side-by-side. The drawer's
     // toast IS visible to the user before/after the drawer closes
-    // (sonner persists across drawer unmount), so silence here is
+    // (toasts persist across drawer unmount), so silence here is
     // correct.
 
     // 🟡 M3 — fire-and-forget telemetry ping. Lets ops correlate

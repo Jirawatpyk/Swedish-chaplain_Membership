@@ -19,7 +19,7 @@
  *   - Round 4 (R4-SF-H-B) — log malformed RFC 5987 percent-encoding
  *     instead of silently swallowing `decodeURIComponent` throws.
  *   - Round 6 (R5-UX-M1) — optional `toastSuccess` callback for fast-
- *     cache feedback (when the loading toast dismisses before sonner's
+ *     cache feedback (when the loading toast dismisses before its
  *     animation budget and the user otherwise sees no completion cue).
  *   - Round 6 (P1) — unified `downloadPdf` (was separate `downloadInvoice`/
  *     `downloadReceipt`). `url` is now a required input so the portal can

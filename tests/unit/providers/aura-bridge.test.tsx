@@ -3,9 +3,10 @@
  * zone, router link and density (spec 122 FR-005, contracts/aura-bridge.md).
  */
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { AuraProvider, useAuraLocale } from '@jirawatpyk/aura-react';
 import { AuraBridge } from '@/components/providers/aura-bridge';
+import { toast } from '@/lib/toast';
 
 vi.mock('next/link', () => ({
   default: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => (
@@ -69,5 +70,26 @@ describe('<AuraBridge>', () => {
     expect(probe()).toHaveAttribute('data-calendar', 'buddhist');
     expect(probe()).toHaveAttribute('data-tz', 'Asia/Bangkok');
     expect(probe()).toHaveAttribute('data-link', 'yes');
+  });
+
+  it('mounts the one Toaster, top-centre, and the facade toasts land in it', () => {
+    render(
+      <AuraBridge locale="en" timeZone="Asia/Bangkok">
+        <p>page</p>
+      </AuraBridge>,
+    );
+    const regions = screen.getAllByRole('region', { name: /notifications/i });
+    expect(regions).toHaveLength(1);
+    expect(regions[0]).toHaveClass('is-top');
+
+    const ids: string[] = [];
+    act(() => {
+      ids.push(toast.success('Plan saved'), toast.error('Could not save'));
+    });
+    expect(screen.getByRole('status')).toHaveTextContent('Plan saved');
+    // The danger tone is announced assertively.
+    expect(screen.getByRole('alert')).toHaveTextContent('Could not save');
+    // AURA keeps toasts in module state; clear them for the next test.
+    act(() => ids.forEach((id) => toast.dismiss(id)));
   });
 });

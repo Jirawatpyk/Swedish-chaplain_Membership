@@ -3,11 +3,12 @@
  *
  * Every call site imports `toast` from here and every test mocks this module,
  * never a toast library, so the implementation behind it changes in one place
- * (sonner today, AURA next). The option set is deliberately narrow — the
- * subset the product actually uses — and plain-text only: a description is a
- * string, and a toast carries at most one action.
+ * (AURA; its Toaster is mounted once, top-centre, by AuraBridge). At most
+ * three toasts show at once; more queue. The option set is deliberately
+ * narrow — the subset the product actually uses — and plain-text only: a
+ * description is a string, and a toast carries at most one action.
  */
-import { toast as impl, type ExternalToast } from 'sonner';
+import { toast as impl, type ToastShorthandOptions } from '@jirawatpyk/aura-react';
 
 export interface ToastAction {
   readonly label: string;
@@ -21,7 +22,7 @@ export interface ToastOptions {
   readonly action?: ToastAction | undefined;
   /** Milliseconds; `Infinity` keeps the toast until dismissed. */
   readonly duration?: number | undefined;
-  /** Accepted for existing callers; the toast is always dismissible. */
+  /** Accepted for existing callers and ignored: every AURA toast has a close button. */
   readonly closeButton?: boolean | undefined;
 }
 
@@ -36,26 +37,26 @@ export interface Toast extends Show {
   readonly dismiss: (id: string) => void;
 }
 
-function toImpl(opts: ToastOptions | undefined): ExternalToast | undefined {
+function toImpl(opts: ToastOptions | undefined): ToastShorthandOptions | undefined {
   if (opts === undefined) return undefined;
-  const out: ExternalToast = {};
+  const out: ToastShorthandOptions = {};
   if (opts.description !== undefined) out.description = opts.description;
   if (opts.id !== undefined) out.id = opts.id;
   if (opts.duration !== undefined) out.duration = opts.duration;
-  if (opts.closeButton !== undefined) out.closeButton = opts.closeButton;
-  if (opts.action !== undefined) out.action = { label: opts.action.label, onClick: opts.action.onClick ?? (() => {}) };
+  if (opts.action !== undefined) out.action = opts.action;
   return out;
 }
 
-const show = (fn: (title: string, data?: ExternalToast) => string | number): Show =>
-  (title, opts) => String(fn(title, toImpl(opts)));
+const shorthand = (fn: (title: string, opts?: ToastShorthandOptions) => string): Show =>
+  (title, opts) => fn(title, toImpl(opts));
 
-export const toast: Toast = Object.assign(show(impl), {
-  success: show(impl.success),
-  error: show(impl.error),
-  warning: show(impl.warning),
-  info: show(impl.info),
-  loading: show(impl.loading),
+/** `toast(title)` is AURA's default (info) tone; `error` is AURA's danger tone, announced as an alert. */
+export const toast: Toast = Object.assign((title: string, opts?: ToastOptions) => impl({ title, ...toImpl(opts) }), {
+  success: shorthand(impl.success),
+  error: shorthand(impl.error),
+  warning: shorthand(impl.warning),
+  info: shorthand(impl.info),
+  loading: shorthand(impl.loading),
   dismiss: (id: string) => {
     impl.dismiss(id);
   },

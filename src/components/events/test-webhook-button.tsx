@@ -7,7 +7,7 @@
  * Renders three states:
  *   - idle: "Send test event"
  *   - pending: spinner + `aria-busy=true` (disabled)
- *   - resolved: sonner toast (success/failure) + outcome callback fires
+ *   - resolved: toast (success/failure) + outcome callback fires
  *
  * `aria-live="polite"` SR announcement on resolve. 2-second cooldown
  * before re-enabling so accidental double-clicks don't immediately

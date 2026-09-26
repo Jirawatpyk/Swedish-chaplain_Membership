@@ -4,7 +4,7 @@
  * FR-030 — copy-to-clipboard button on member_id, email, tax_id.
  *
  * Uses the Clipboard API with a graceful fallback (selecting the text in a
- * hidden textarea) for older browsers. Fires a sonner toast on success so
+ * hidden textarea) for older browsers. Fires a toast on success so
  * the action lands with feedback (ux-standards § 4.2).
  */
 

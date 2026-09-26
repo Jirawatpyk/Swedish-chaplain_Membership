@@ -562,8 +562,8 @@ export function ScheduleEditor({
                      * after Save the server-side upsert removes the
                      * step from the policy's persisted JSONB. ux-
                      * standards § 5.3 calls for an Undo affordance
-                     * on reversible destructive actions; sonner's
-                     * `action` prop renders an inline 8s Undo button.
+                     * on reversible destructive actions; the toast's
+                     * `action` renders an inline 8s Undo button.
                      * The captured `previousSteps` snapshot restores
                      * the exact array (including the removed step's
                      * field values) — admin can experiment freely

@@ -1,7 +1,7 @@
 /**
  * Members Backup Export button (design 2026-07-07). Admin-only (the page
  * renders it only for role==='admin'; the route enforces regardless).
- * fetch→blob→anchor download so failures surface as a sonner toast instead
+ * fetch→blob→anchor download so failures surface as a toast instead
  * of navigating the admin to a bare JSON error page. Row counts for the
  * success toast come from the route's X-*-Count headers.
  */

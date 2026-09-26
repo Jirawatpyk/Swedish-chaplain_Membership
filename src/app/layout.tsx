@@ -4,7 +4,6 @@ import { Geist, Geist_Mono } from 'next/font/google';
 import { NextIntlClientProvider } from 'next-intl';
 import { getLocale, getMessages, getNow, getTimeZone } from 'next-intl/server';
 import { ThemeProvider } from 'next-themes';
-import { Toaster } from '@/components/ui/sonner';
 import { AuraBridge } from '@/components/providers/aura-bridge';
 import { defaultLocale, isLocale } from '@/i18n/config';
 import { SkipToContent } from '@/components/shell/skip-to-content';
@@ -17,9 +16,9 @@ import './globals.css';
  *   - Geist sans + mono fonts (next/font CSS variables)
  *   - next-intl provider (per-request locale + messages)
  *   - next-themes ThemeProvider (light / dark / system, no SSR flash)
- *   - AuraBridge — AURA's locale, calendar, time zone and router link (spec 122)
+ *   - AuraBridge — AURA's locale, calendar, time zone, router link and the
+ *     single Toaster (top-centre) behind `@/lib/toast` (spec 122)
  *   - SkipToContent — first focusable element for keyboard users
- *   - Sonner Toaster — single global toast root
  */
 
 const geistSans = Geist({
@@ -126,7 +125,6 @@ export default async function RootLayout({
               <div className="min-h-full">
                 {children}
               </div>
-              <Toaster position="top-right" richColors />
             </AuraBridge>
           </ThemeProvider>
         </NextIntlClientProvider>

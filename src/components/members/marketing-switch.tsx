@@ -178,7 +178,7 @@ export function MarketingSwitch({
                 action: {
                   label: t('undo'),
                   onClick: () => {
-                    // sonner dismisses the toast after this handler — the Undo
+                    // AURA dismisses the toast after this handler — the Undo
                     // button unmounts under the user's focus. Catch it: back to
                     // this switch if it is still in the DOM, else the count
                     // line (the row left a filtered view) (review HIGH-2).

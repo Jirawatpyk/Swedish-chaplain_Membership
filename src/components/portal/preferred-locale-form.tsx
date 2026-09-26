@@ -9,7 +9,7 @@
  *  - Loading: shimmer skeleton mirroring final layout (4 radio rows + button)
  *  - Saving: button shows Loader2 spinner alongside disabled state
  *  - SR feedback: visually-hidden aria-live polite region announces save
- *    success/error in addition to sonner toasts
+ *    success/error in addition to toasts
  *  - Error (load-time): explicit error block with role="alert" and i18n copy;
  *    does NOT silently fall through to a half-broken form
  */

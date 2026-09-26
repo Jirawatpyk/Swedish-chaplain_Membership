@@ -15,7 +15,7 @@
  *   - Inline error messages localised via next-intl
  *   - On submission failure, focus moves to the first invalid field
  *     (or the email if the failure is "invalid-credentials")
- *   - All toasts are routed through `sonner` (see RootLayout)
+ *   - All toasts are routed through `@/lib/toast` (AURA; see AuraBridge)
  */
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';

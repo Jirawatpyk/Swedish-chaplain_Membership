@@ -9,7 +9,7 @@
  *     own the account first)
  *   - new-password + confirm-password with live strength indicator
  *     (client-side heuristic only; server runs HIBP)
- *   - On success: sonner toast + stays on the page (the cookie
+ *   - On success: toast + stays on the page (the cookie
  *     rotation happened server-side, so no navigation needed)
  *   - On `wrong-current-password`: inline error + focus moves back
  *     to current-password

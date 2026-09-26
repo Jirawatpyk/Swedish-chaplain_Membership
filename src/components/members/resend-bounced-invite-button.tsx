@@ -7,7 +7,7 @@
  * has reached a dead-end: it either BOUNCED (`inviteBouncedAt` non-null)
  * OR expired unaccepted (`pendingInvitation.expired` — Cluster 3, the
  * linked user is still pending). POSTs to the resend-invite route and
- * surfaces the result via `sonner` toast. On success the page is
+ * surfaces the result via a toast. On success the page is
  * refreshed so the dead-end badge disappears.
  *
  * Fix 10: delegates fetch/toast/refresh to useContactResendAction.

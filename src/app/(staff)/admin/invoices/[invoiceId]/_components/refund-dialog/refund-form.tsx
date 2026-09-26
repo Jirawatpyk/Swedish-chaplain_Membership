@@ -21,9 +21,9 @@
  * Submit pipeline:
  *   1. RHF validation (zod) — invalid blocks Confirm.
  *   2. POST /api/refunds/initiate — bigint amount as JSON number.
- *   3. On 201: sonner.success with credit-note number; close dialog;
+ *   3. On 201: toast.success with credit-note number; close dialog;
  *      router.refresh() to update payment timeline + status badges.
- *   4. On 4xx/5xx: inline alert above buttons (FR-029(g)) + sonner.
+ *   4. On 4xx/5xx: inline alert above buttons (FR-029(g)) + a toast.
  *
  * Track B — a refund can legitimately carry NO §86/10 ใบลดหนี้ (the invoice was
  * voided, or the buyer holds a §105 receipt). Both success arms above therefore

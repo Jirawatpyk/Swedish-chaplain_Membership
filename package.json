@@ -114,7 +114,6 @@
     "recharts": "^3",
     "resend": "^4.0.1",
     "sharp": "^0.34.5",
-    "sonner": "^1.7.4",
     "stripe": "^22.0.2",
     "tailwind-merge": "^3.5.0",
     "thai-baht-text": "^2.0.5",

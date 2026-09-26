@@ -12,7 +12,7 @@
  *         re-submit with confirm_soft_duplicate=true
  *       422 turnover/age/startup warning → show OverrideReasonDialog;
  *         on confirm, re-submit with override_reason_{code,note}
- *       anything else → sonner toast with localized error message
+ *       anything else → toast with localized error message
  */
 
 import { useRef, useState } from 'react';

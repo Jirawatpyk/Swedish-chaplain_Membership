@@ -1,7 +1,8 @@
 /**
  * `@/lib/toast` — the product's single toast API (spec 122 FR-007,
- * contracts/toast-facade.md). Every call site and every test mock goes
- * through this module, so the library behind it can change in one place.
+ * contracts/toast-facade.md), backed by AURA's `toast`. Every call site and
+ * every test mock goes through this module, so the library behind it changes
+ * in one place.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -15,11 +16,11 @@ const impl = vi.hoisted(() => {
   fn.dismiss = vi.fn();
   return fn;
 });
-vi.mock('sonner', () => ({ toast: impl }));
+vi.mock('@jirawatpyk/aura-react', () => ({ toast: impl }));
 
 import { toast } from '@/lib/toast';
 
-describe('@/lib/toast facade', () => {
+describe('@/lib/toast facade (AURA)', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it.each(['success', 'error', 'warning', 'info', 'loading'] as const)(
@@ -33,27 +34,25 @@ describe('@/lib/toast facade', () => {
         action: { label: 'Undo', onClick },
       });
       expect(id).toBe(`id-${method}`);
-      const [title, opts] = impl[method]!.mock.calls[0] as [string, Record<string, unknown>];
-      expect(title).toBe('Saved');
-      expect(opts).toMatchObject({ description: 'The plan was updated.', id: 'plan-save', duration: 8000 });
-      expect((opts.action as { label: string }).label).toBe('Undo');
+      expect(impl[method]).toHaveBeenCalledWith('Saved', {
+        description: 'The plan was updated.',
+        id: 'plan-save',
+        duration: 8000,
+        action: { label: 'Undo', onClick },
+      });
     },
   );
 
-  it('a plain call is the neutral toast and returns its id', () => {
+  it('a plain call passes the title (and any options) as one AURA options object', () => {
     expect(toast('Sending in a moment')).toBe('id-plain');
-    expect(impl).toHaveBeenCalledWith('Sending in a moment', undefined);
+    expect(impl).toHaveBeenCalledWith({ title: 'Sending in a moment' });
+    toast('Queued', { id: 'q', duration: 3000 });
+    expect(impl).toHaveBeenLastCalledWith({ title: 'Queued', id: 'q', duration: 3000 });
   });
 
-  it('an action without onClick still reaches the library with a callable onClick', () => {
-    toast.info('Heads up', { action: { label: 'OK' } });
-    const opts = impl.info!.mock.calls[0]![1] as { action: { onClick: unknown } };
-    expect(typeof opts.action.onClick).toBe('function');
-  });
-
-  it('returns ids as strings even when the library hands back a number', () => {
-    impl.success!.mockReturnValueOnce(7 as unknown as string);
-    expect(toast.success('Done')).toBe('7');
+  it('never forwards closeButton — every AURA toast is dismissible', () => {
+    toast.warning('Check the bills', { closeButton: true, duration: Infinity });
+    expect(impl.warning).toHaveBeenCalledWith('Check the bills', { duration: Infinity });
   });
 
   it('dismiss forwards the id', () => {

@@ -17,7 +17,7 @@
  * of `at-risk/_components/outreach-dialog.tsx`:
  *
  *   1. **Approve** — a non-destructive confirmation `Dialog` → POST
- *      `/api/admin/renewals/[cycleId]/reactivate` → sonner toast → refresh.
+ *      `/api/admin/renewals/[cycleId]/reactivate` → toast → refresh.
  *   2. **Reject & refund** — a DESTRUCTIVE `AlertDialog` with a required
  *      reason `<Textarea>` (client-validated 1..500) + irreversible-refund
  *      copy → POST `/api/admin/renewals/[cycleId]/reject` → toast that

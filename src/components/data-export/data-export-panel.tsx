@@ -77,7 +77,7 @@ export function DataExportPanel({
   const readOnlyToast = useReadOnlyToast();
   const [pending, setPending] = React.useState(false);
   // Polite live-region message so screen-reader users hear the request result
-  // even if the sonner toast (rendered in a portal outside main) is missed (W1).
+  // even if the toast (rendered in a portal outside main) is missed (W1).
   const [announcement, setAnnouncement] = React.useState('');
 
   // An export already in flight (requested/processing) — disable the button so a

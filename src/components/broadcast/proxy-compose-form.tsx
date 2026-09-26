@@ -124,7 +124,7 @@ type ServerErrorField = 'subject' | 'body' | 'segment' | 'customList' | null;
 /**
  * Map a route error code → how the proxy form reacts. Field codes set an
  * inline error; `picker` refocuses the member combobox; `toast` shows a
- * sonner toast keyed to a `{company}`-interpolated message.
+ * toast keyed to a `{company}`-interpolated message.
  *
  * UX-review fix (DV-4) — WCAG 3.3.1/3.3.3: each field/segment code now
  * carries a SPECIFIC message key (mirrors the member compose-form's

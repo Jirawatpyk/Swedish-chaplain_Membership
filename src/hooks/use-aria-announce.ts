@@ -11,7 +11,7 @@
  *   2. Consecutive announce() calls cancel the previous timer so the
  *      most-recent message is the one that gets cleared.
  *
- * Use alongside sonner toasts for SR a11y per docs/ux-standards.md
+ * Use alongside toasts for SR a11y per docs/ux-standards.md
  * § 15 (toasts alone are not reliably announced across SR×browser
  * combos).
  */

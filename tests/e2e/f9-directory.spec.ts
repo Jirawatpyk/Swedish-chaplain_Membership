@@ -77,7 +77,7 @@ test.describe('F9 — member directory (US5) @f9', () => {
     // export jobs exist, which makes a bare getByText ambiguous (strict-mode).
     // The async worker is operator-gated, so we only assert the enqueue ack here.
     await expect(
-      page.locator('[data-sonner-toaster]').getByText(/queued|will be ready/i),
+      page.locator('.aura-toaster').getByText(/queued|will be ready/i),
     ).toBeVisible({ timeout: 15_000 });
   });
 
