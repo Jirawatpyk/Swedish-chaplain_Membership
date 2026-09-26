@@ -2,7 +2,7 @@
  * Phase B B7 — Contract test: POST /api/admin/events/[eventId]/registrations/[registrationId]/erase
  *
  * Closes the test-coverage gap C1 flagged by the F6 review (GDPR Art. 17
- * / PDPA §30 surface; previously only use-case-level integration tests
+ * / PDPA §33 surface; previously only use-case-level integration tests
  * exercised the path). Verifies the route-level RBAC + 400/404/409/429
  * grid + audit emission.
  *
