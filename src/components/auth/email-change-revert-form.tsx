@@ -22,20 +22,19 @@
  * No CSRF token — the public endpoint is protected by origin check +
  * rate limit, and the action is idempotent after the first successful
  * consumption.
+ *
+ * Spec 122 US2 (`Auth-revert*` boards): the title is the page's h1 inside
+ * `AuthFrame`; AURA alerts carry each outcome (429 is a warning: waiting
+ * fixes it) and the buttons are AURA's.
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { Loader2Icon } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Alert, Button, Icon } from '@jirawatpyk/aura-react';
+import { AURA_FOCUS_RING } from '@/components/shell/aura-classes';
 import { portalSignInPath } from '@/lib/portal-paths';
+import { cn } from '@/lib/utils';
+import { AuthTitle } from './auth-title';
 
 type SubmitState =
   | { kind: 'idle' }
@@ -44,7 +43,7 @@ type SubmitState =
   // 400 invalid_token — the link can never succeed (consumed or past its
   // 48 h TTL), so no retry button is offered.
   | { kind: 'expired' }
-  | { kind: 'error'; message: string };
+  | { kind: 'error'; message: string; tone: 'warning' | 'danger' };
 
 export function EmailChangeRevertForm({ token }: { token: string }) {
   const t = useTranslations('auth.emailChangeRevert');
@@ -79,6 +78,7 @@ export function EmailChangeRevertForm({ token }: { token: string }) {
         setState({
           kind: 'error',
           message: t('errors.rateLimited', { seconds: retry }),
+          tone: 'warning',
         });
         return;
       }
@@ -87,97 +87,75 @@ export function EmailChangeRevertForm({ token }: { token: string }) {
         return;
       }
       if (response.status === 409 && body.error === 'conflict') {
-        setState({ kind: 'error', message: t('errors.conflict') });
+        setState({ kind: 'error', message: t('errors.conflict'), tone: 'danger' });
         return;
       }
-      setState({ kind: 'error', message: t('errors.serverError') });
+      setState({ kind: 'error', message: t('errors.serverError'), tone: 'danger' });
     } catch {
-      setState({ kind: 'error', message: t('errors.serverError') });
+      setState({ kind: 'error', message: t('errors.serverError'), tone: 'danger' });
     }
   }
 
   return (
-    <Card className="w-full max-w-md">
-      <CardHeader className="space-y-2">
-        <CardTitle className="text-2xl">{t('title')}</CardTitle>
-        {state.kind === 'success' || state.kind === 'expired' ? null : (
-          <CardDescription>{t('cardDescription')}</CardDescription>
-        )}
-      </CardHeader>
-      <CardContent>{renderBody()}</CardContent>
-    </Card>
+    <div className="flex flex-col gap-8">
+      <AuthTitle
+        title={t('title')}
+        description={state.kind === 'success' || state.kind === 'expired' ? undefined : t('cardDescription')}
+      />
+      {renderBody()}
+    </div>
   );
 
   function renderBody() {
     if (state.kind === 'success') {
       return (
-        <div
-          ref={resultRef}
-          tabIndex={-1}
-          className="space-y-4 rounded-md border border-emerald-500/40 bg-emerald-500/5 p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          role="status"
-          aria-live="polite"
-        >
-          <p className="text-sm text-emerald-700 dark:text-emerald-300">
-            {t('successMessage')}
-          </p>
-          <p className="text-sm text-muted-foreground">{t('successNextStep')}</p>
-          <a
-            href="/forgot-password"
-            className="inline-flex items-center text-sm font-medium underline underline-offset-4"
+        <div className="flex flex-col gap-6">
+          <div
+            ref={resultRef}
+            tabIndex={-1}
+            className={cn('aura-alert aura-alert--success', AURA_FOCUS_RING)}
+            role="status"
+            aria-live="polite"
           >
+            <Icon name="circle-check" className="aura-alert__icon" />
+            <div className="aura-alert__body">
+              <p className="aura-alert__title">{t('successMessage')}</p>
+              <p className="aura-alert__text">{t('successNextStep')}</p>
+            </div>
+          </div>
+          <Button href="/forgot-password" linkComponent="a" variant="primary" icon="arrow-right" fullWidth>
             {t('completePasswordReset')}
-          </a>
+          </Button>
         </div>
       );
     }
 
     if (state.kind === 'expired') {
       return (
-        <div
-          ref={resultRef}
-          tabIndex={-1}
-          className="space-y-4 rounded-md border border-destructive/40 bg-destructive/5 p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          role="alert"
-        >
-          <p className="text-sm text-destructive">{t('errors.invalidToken')}</p>
-          <a
-            href={portalSignInPath('member')}
-            className="inline-flex h-10 w-full items-center justify-center rounded-md border border-input bg-background px-4 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
-          >
+        <div ref={resultRef} tabIndex={-1} className={cn('flex flex-col gap-6 rounded-[var(--aura-radius-lg)]', AURA_FOCUS_RING)}>
+          <Alert tone="danger">{t('errors.invalidToken')}</Alert>
+          <Button href={portalSignInPath('member')} linkComponent="a" variant="primary" icon="arrow-right" fullWidth>
             {t('goToSignIn')}
-          </a>
+          </Button>
         </div>
       );
     }
 
     return (
-      <div className="space-y-4">
-        <p className="text-sm text-muted-foreground">{t('description')}</p>
+      <div className="flex flex-col gap-6">
         {state.kind === 'error' ? (
-          <p
-            className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"
-            role="alert"
-          >
-            {state.message}
-          </p>
-        ) : null}
+          <Alert tone={state.tone}>{state.message}</Alert>
+        ) : (
+          <Alert tone="warning">{t('description')}</Alert>
+        )}
         <Button
           type="button"
           onClick={handleRevert}
-          disabled={state.kind === 'submitting'}
-          aria-busy={state.kind === 'submitting'}
-          variant="destructive"
-          className="w-full"
+          loading={state.kind === 'submitting'}
+          variant="danger"
+          fullWidth
         >
-          {state.kind === 'submitting' ? (
-            <>
-              <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" />
-              {t('submitting')}
-            </>
-          ) : (
-            t('revert')
-          )}
+          {state.kind === 'submitting' ? t('submitting') : t('revert')}
         </Button>
       </div>
     );
