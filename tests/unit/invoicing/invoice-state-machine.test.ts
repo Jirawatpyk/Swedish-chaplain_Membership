@@ -30,9 +30,6 @@ describe('Invoice state machine', () => {
       ['issued', 'void'],
       ['paid', 'partially_credited'],
       ['paid', 'credited'],
-      // 088 (data-model.md § 3.1) — an admin may void a PAID invoice; the
-      // void use-case's own guard already accepts `paid`.
-      ['paid', 'void'],
       ['partially_credited', 'partially_credited'],
       ['partially_credited', 'credited'],
     ];
@@ -48,6 +45,9 @@ describe('Invoice state machine', () => {
       ['draft', 'void'],
       ['issued', 'draft'],
       ['paid', 'issued'],
+      // H1 — a PAID invoice is never voided (money stranded, VAT pulled out of
+      // a filed ภ.พ.30 month); it is reversed with a credit note or a refund.
+      ['paid', 'void'],
       ['void', 'issued'],
       ['void', 'paid'],
       ['credited', 'issued'],
