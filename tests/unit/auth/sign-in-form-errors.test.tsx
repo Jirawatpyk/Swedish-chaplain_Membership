@@ -170,4 +170,12 @@ describe('SignInForm', () => {
     expect(container.querySelector('#email-error')).not.toBeNull();
     expect(container.querySelector('#password-error')).not.toBeNull();
   });
+  it('puts "Forgot your password?" after the password field with a 44px target (spec 122 US2 review)', () => {
+    const { container } = renderForm();
+    const link = screen.getByRole('link', { name: enMessages.auth.signIn.forgotPassword });
+    const password = container.querySelector('#password')!;
+    // Visual order = tab order: field, show/hide toggle, then the link.
+    expect(password.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(link).toHaveClass('min-h-11');
+  });
 });

@@ -7,7 +7,7 @@
 export function AuthTitle({ title, description }: { readonly title: string; readonly description?: string | undefined }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <h1 className="font-[family-name:var(--font-display)] text-[28px] leading-[1.2] lg:text-[30px] font-semibold tracking-[-0.01em] text-balance">
+      <h1 className="font-[family-name:var(--font-display)] text-[28px] leading-[1.2] lg:text-[30px] [:lang(th)_&]:leading-[var(--line-height-th)] font-semibold tracking-[-0.01em] text-balance">
         {title}
       </h1>
       {description ? <p className="text-sm leading-6 text-[var(--aura-fg-secondary)]">{description}</p> : null}

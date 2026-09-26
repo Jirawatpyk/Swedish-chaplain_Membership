@@ -25,6 +25,7 @@ import { type SubmitHandler, useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { toast } from '@/lib/toast';
 import { Alert, Button, FormErrorSummary, PasswordField, TextField } from '@jirawatpyk/aura-react';
+import { useSubmittedErrors } from './use-submitted-errors';
 import { safeReturnTo } from '@/lib/return-url';
 import { emailText, requiredText, type Translator } from '@/lib/zod-i18n';
 
@@ -70,7 +71,7 @@ export function SignInForm({ portal, returnTo }: SignInFormProps) {
     // The error summary takes focus after a failed submit (spec 122 US2 AS1).
     shouldFocusError: false,
   });
-  const { root: _root, ...fieldErrors } = errors;
+  const summary = useSubmittedErrors<FormValues>();
 
   // Auto-focus the email field on mount (spec FR-024 primary-input table).
   useEffect(() => {
@@ -78,6 +79,7 @@ export function SignInForm({ portal, returnTo }: SignInFormProps) {
   }, [setFocus]);
 
   const onSubmit: SubmitHandler<FormValues> = async (values) => {
+    summary.clear();
     setSubmitting(true);
     // Clear any prior server-rejection banner so it can't linger next to a
     // different outcome (e.g. a later network throw) on a fresh attempt.
@@ -132,7 +134,7 @@ export function SignInForm({ portal, returnTo }: SignInFormProps) {
 
   return (
     <form
-      onSubmit={handleSubmit(onSubmit)}
+      onSubmit={handleSubmit(onSubmit, summary.onInvalid)}
       // Native (pre-hydration) fallback MUST be POST so credentials land in
       // the request body, never the URL query string. CWE-598 — see
       // tests/unit/auth/auth-forms-post-method.test.tsx. Inert once hydrated
@@ -142,7 +144,7 @@ export function SignInForm({ portal, returnTo }: SignInFormProps) {
       noValidate
       aria-busy={submitting}
     >
-      <FormErrorSummary errors={fieldErrors} focusKey={submitCount} />
+      <FormErrorSummary errors={summary.errors} focusKey={submitCount} />
 
       <TextField
         id="email"
@@ -161,7 +163,7 @@ export function SignInForm({ portal, returnTo }: SignInFormProps) {
         {...register('email')}
       />
 
-      <div className="relative">
+      <div className="flex flex-col">
         <PasswordField
           id="password"
           label={t('passwordLabel')}
@@ -169,10 +171,13 @@ export function SignInForm({ portal, returnTo }: SignInFormProps) {
           error={errors.password?.message}
           {...register('password')}
         />
-        {/* Beside the label, as the boards place it. */}
+        {/* Under the field, not beside its label as the boards draw it: there
+            it is a 20px target flush against the input, and it would sit
+            before the field visually but after it in tab order. Here it is
+            44px tall and visual order is tab order. */}
         <a
           href="/forgot-password"
-          className="absolute top-0 right-0 text-[13px] leading-5 font-medium text-[var(--aura-fg-accent)] no-underline hover:text-[var(--aura-fg-primary)] hover:underline"
+          className="inline-flex min-h-11 items-center self-end text-[13px] font-medium text-[var(--aura-fg-accent)] no-underline hover:text-[var(--aura-fg-primary)] hover:underline"
         >
           {t('forgotPassword')}
         </a>
@@ -184,7 +189,7 @@ export function SignInForm({ portal, returnTo }: SignInFormProps) {
         </div>
       ) : null}
 
-      <div className="flex flex-col pt-2">
+      <div className="flex flex-col">
         <Button type="submit" variant="primary" loading={submitting}>
           {submitting ? t('submitting') : t('submit')}
         </Button>

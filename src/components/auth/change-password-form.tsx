@@ -29,6 +29,7 @@ import { toast } from '@/lib/toast';
 import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
 import { isReadOnlyRefusal } from '@/lib/http/read-only-refusal';
 import { Button, FormErrorSummary, PasswordField } from '@jirawatpyk/aura-react';
+import { useSubmittedErrors } from './use-submitted-errors';
 import {
   PasswordStrength,
   usePasswordStrengthMeter,
@@ -97,10 +98,19 @@ export function ChangePasswordForm() {
     setFocus('currentPassword');
   }, [setFocus]);
 
+  const summary = useSubmittedErrors<FormValues>();
+  // A server rejection that belongs to one field: on the field, and in the
+  // summary, which takes focus and links to it.
+  const rejectField = (field: keyof FormValues, message: string) => {
+    setError(field, { message });
+    summary.show(field, message);
+  };
+
   const newValue = useWatch({ control, name: 'newPassword' });
   const meter = usePasswordStrengthMeter(newValue ?? '');
 
   const onSubmit: SubmitHandler<FormValues> = async (values) => {
+    summary.clear();
     setSubmitting(true);
     try {
       const response = await fetch('/api/auth/change-password', {
@@ -131,23 +141,19 @@ export function ChangePasswordForm() {
 
       switch (body.error) {
         case 'wrong-current-password':
-          // The error summary that appears with each field error below takes
-          // focus and links to the field.
-          setError('currentPassword', {
-            message: t('errors.wrongCurrent'),
-          });
+          rejectField('currentPassword', t('errors.wrongCurrent'));
           break;
         case 'same-password':
-          setError('newPassword', { message: t('errors.samePassword') });
+          rejectField('newPassword', t('errors.samePassword'));
           break;
         case 'weak-password': {
           const first = body.issues?.[0] ?? 'too-short';
-          setError('newPassword', {
-            message:
-              first === 'breached'
-                ? tReset('errors.passwordBreached')
-                : tReset('errors.weakPassword'),
-          });
+          rejectField(
+            'newPassword',
+            first === 'breached'
+              ? tReset('errors.passwordBreached')
+              : tReset('errors.weakPassword'),
+          );
           // Pin the strength bar to red for this value so it agrees with the
           // inline error instead of contradicting it.
           meter.markRejected(values.newPassword);
@@ -167,7 +173,7 @@ export function ChangePasswordForm() {
   };
 
   const handleFormSubmit = (event: FormEvent) => {
-    void handleSubmit(onSubmit)(event);
+    void handleSubmit(onSubmit, summary.onInvalid)(event);
   };
 
   return (
@@ -180,7 +186,7 @@ export function ChangePasswordForm() {
       noValidate
       aria-busy={submitting}
     >
-      <FormErrorSummary errors={errors} focusKey={submitCount} />
+      <FormErrorSummary errors={summary.errors} focusKey={submitCount} />
 
       <PasswordField
         id="current-password"

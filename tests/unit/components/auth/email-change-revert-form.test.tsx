@@ -61,7 +61,10 @@ describe('<EmailChangeRevertForm>', () => {
   it('draws the page h1, a warning alert on what reverting does and an AURA danger button', () => {
     renderForm();
     expect(screen.getByRole('heading', { level: 1, name: copy.title })).toBeInTheDocument();
-    expect(screen.getByText(copy.description).closest('.aura-alert')).toHaveClass('aura-alert--warning');
+    const note = screen.getByText(copy.description).closest('.aura-alert');
+    expect(note).toHaveClass('aura-alert--warning');
+    // Static text: not a live region, so it is not read out as an alert on load.
+    expect(note).not.toHaveAttribute('role');
     expect(screen.getByRole('button', { name: copy.revert })).toHaveClass('aura-btn', 'aura-btn--danger');
   });
 
@@ -101,6 +104,8 @@ describe('<EmailChangeRevertForm>', () => {
     await clickRevert();
 
     expect(screen.getByText(message).closest('.aura-alert')).toHaveClass(tone);
+    // What reverting does stays on screen beside the retry button.
+    expect(screen.queryByText(copy.description)).not.toBeNull();
     expect(screen.queryByRole('button', { name: copy.revert })).not.toBeNull();
   });
 });

@@ -2,16 +2,17 @@
 
 /**
  * The dead-link state of the reset and invite pages (spec 122 US2,
- * `Auth-expired` boards): an AURA danger alert whose text carries the way
- * forward as an inline link. A client component because server pages never
- * import AURA.
+ * `Auth-expired` boards): an AURA danger alert with the way forward as its
+ * action. The boards draw that as an inline link; it is a secondary link
+ * button here so the target is 44px (ux-standards § 9.1). A client component
+ * because server pages never import AURA.
  *
  * `autoFocus` moves focus to the alert when it replaces a form mid-flow (the
  * API answered 410), so a keyboard or screen-reader user lands on the reason
  * instead of on a vanished submit button.
  */
 import { useEffect, useRef, type ReactNode } from 'react';
-import { Alert } from '@jirawatpyk/aura-react';
+import { Alert, Button } from '@jirawatpyk/aura-react';
 import { AURA_FOCUS_RING } from '@/components/shell/aura-classes';
 import { cn } from '@/lib/utils';
 
@@ -31,19 +32,17 @@ export function AuthLinkInvalid({ message, detail, action, autoFocus = false }: 
 
   return (
     <div ref={ref} tabIndex={-1} className={cn('rounded-[var(--aura-radius-lg)]', AURA_FOCUS_RING)}>
-      <Alert tone="danger">
-        {message}
-        {action ? (
-          <>
-            {' '}
-            <a
-              href={action.href}
-              className="font-medium text-[var(--aura-fg-accent)] underline underline-offset-2 hover:text-[var(--aura-fg-primary)]"
-            >
+      <Alert
+        tone="danger"
+        action={
+          action ? (
+            <Button href={action.href} linkComponent="a" variant="secondary">
               {action.label}
-            </a>
-          </>
-        ) : null}
+            </Button>
+          ) : undefined
+        }
+      >
+        {message}
         {detail ? <p className="mt-1">{detail}</p> : null}
       </Alert>
     </div>

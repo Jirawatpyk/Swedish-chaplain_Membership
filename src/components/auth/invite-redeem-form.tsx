@@ -25,6 +25,7 @@ import { refinePasswordPair, requiredText, type Translator } from '@/lib/zod-i18
 import { toast } from '@/lib/toast';
 import { Button, FormErrorSummary, PasswordField, TextField } from '@jirawatpyk/aura-react';
 import { AuthLinkInvalid } from './auth-link-invalid';
+import { useSubmittedErrors } from './use-submitted-errors';
 import {
   PasswordStrength,
   usePasswordStrengthMeter,
@@ -99,10 +100,13 @@ export function InviteRedeemForm({ token, email }: InviteRedeemFormProps) {
     setFocus('displayName');
   }, [setFocus]);
 
+  const summary = useSubmittedErrors<FormValues>();
+
   const passwordValue = useWatch({ control, name: 'password' });
   const meter = usePasswordStrengthMeter(passwordValue ?? '');
 
   const onSubmit: SubmitHandler<FormValues> = async (values) => {
+    summary.clear();
     setSubmitting(true);
     try {
       const response = await fetch('/api/auth/redeem-invite', {
@@ -134,12 +138,12 @@ export function InviteRedeemForm({ token, email }: InviteRedeemFormProps) {
 
       if (body.error === 'weak-password') {
         const first = body.issues?.[0] ?? 'too-short';
-        setError('password', {
-          message:
-            first === 'breached'
-              ? tReset('errors.passwordBreached')
-              : tReset('errors.weakPassword'),
-        });
+        const message =
+          first === 'breached'
+            ? tReset('errors.passwordBreached')
+            : tReset('errors.weakPassword');
+        setError('password', { message });
+        summary.show('password', message);
         // Pin the strength bar to red for this value so it agrees with the
         // inline error instead of contradicting it. The error summary that
         // appears with it takes focus and links to the field.
@@ -156,7 +160,7 @@ export function InviteRedeemForm({ token, email }: InviteRedeemFormProps) {
   };
 
   const handleFormSubmit = (event: FormEvent) => {
-    void handleSubmit(onSubmit)(event);
+    void handleSubmit(onSubmit, summary.onInvalid)(event);
   };
 
   if (linkInvalid) {
@@ -183,9 +187,12 @@ export function InviteRedeemForm({ token, email }: InviteRedeemFormProps) {
       noValidate
       aria-busy={submitting}
     >
-      <FormErrorSummary errors={errors} focusKey={submitCount} />
+      <FormErrorSummary errors={summary.errors} focusKey={submitCount} />
 
-      <TextField id="email" label={t('emailLabel')} type="email" value={email} readOnly disabled />
+      {/* Read-only, not disabled: it stays in the tab order for keyboard and
+          screen-reader users, and password managers pair the new password
+          with it. Not registered, so it is never submitted. */}
+      <TextField id="email" label={t('emailLabel')} type="email" value={email} readOnly autoComplete="username" />
 
       <TextField
         id="display-name"

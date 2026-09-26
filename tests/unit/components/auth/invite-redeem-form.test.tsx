@@ -43,6 +43,10 @@ describe('InviteRedeemForm on AURA (spec 122 US2)', () => {
     expect(email.closest('.aura-field')).not.toBeNull();
     expect(email).toHaveValue('sofia.ek@example.test');
     expect(email).toHaveAttribute('readonly');
+    // Read-only, not disabled: reachable by keyboard and screen readers, and
+    // password managers pair the new password with it.
+    expect(email).not.toBeDisabled();
+    expect(email).toHaveAttribute('autocomplete', 'username');
     expect(container.querySelector('#display-name')?.closest('.aura-field')).not.toBeNull();
     await waitFor(() => expect(container.querySelector('#display-name')).toHaveFocus());
   });

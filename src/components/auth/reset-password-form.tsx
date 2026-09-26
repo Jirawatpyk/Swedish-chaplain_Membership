@@ -29,6 +29,7 @@ import { passwordPairFields, refinePasswordPair } from '@/lib/zod-i18n';
 import { toast } from '@/lib/toast';
 import { Button, FormErrorSummary, PasswordField } from '@jirawatpyk/aura-react';
 import { AuthLinkInvalid } from './auth-link-invalid';
+import { useSubmittedErrors } from './use-submitted-errors';
 import {
   PasswordStrength,
   usePasswordStrengthMeter,
@@ -90,10 +91,13 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
     setFocus('newPassword');
   }, [setFocus]);
 
+  const summary = useSubmittedErrors<FormValues>();
+
   const newPasswordValue = useWatch({ control, name: 'newPassword' });
   const meter = usePasswordStrengthMeter(newPasswordValue ?? '');
 
   const onSubmit: SubmitHandler<FormValues> = async (values) => {
+    summary.clear();
     setSubmitting(true);
     try {
       const response = await fetch('/api/auth/reset-password', {
@@ -124,12 +128,12 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
 
       if (body.error === 'weak-password') {
         const first = body.issues?.[0] ?? 'too-short';
-        setError('newPassword', {
-          message:
-            first === 'breached'
-              ? t('errors.passwordBreached')
-              : t('errors.weakPassword'),
-        });
+        const message =
+          first === 'breached'
+            ? t('errors.passwordBreached')
+            : t('errors.weakPassword');
+        setError('newPassword', { message });
+        summary.show('newPassword', message);
         // Pin the strength bar to red for this value so it agrees with the
         // inline error instead of contradicting it. The error summary that
         // appears with it takes focus and links to the field.
@@ -151,7 +155,7 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
   };
 
   const handleDirectSubmit = (event: FormEvent) => {
-    void handleSubmit(onSubmit)(event);
+    void handleSubmit(onSubmit, summary.onInvalid)(event);
   };
 
   if (linkInvalid) {
@@ -175,7 +179,7 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
       noValidate
       aria-busy={submitting}
     >
-      <FormErrorSummary errors={errors} focusKey={submitCount} />
+      <FormErrorSummary errors={summary.errors} focusKey={submitCount} />
 
       <div className="flex flex-col gap-2">
         <PasswordField

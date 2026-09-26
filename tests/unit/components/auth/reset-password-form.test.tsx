@@ -72,6 +72,23 @@ describe('ResetPasswordForm on AURA (spec 122 US2)', () => {
     expect(container.querySelector('#confirm-password')).toHaveAttribute('aria-invalid', 'true');
   });
 
+  it('keeps the summary to the last submit, so typing never pulls focus back to it (WCAG 3.2.2)', async () => {
+    const { container } = renderForm();
+    fireEvent.submit(container.querySelector('form')!);
+    const summary = await screen.findByRole('alert', { name: /fix \d+ field/i });
+    await waitFor(() => expect(summary).toHaveFocus());
+
+    // Fix both fields (live re-validation clears them), then break one again.
+    const field = container.querySelector<HTMLInputElement>('#new-password')!;
+    field.focus();
+    type(container, 'new-password', 'correct horse battery staple');
+    type(container, 'confirm-password', 'correct horse battery staple');
+    await waitFor(() => expect(container.querySelector('#new-password-error')).toBeNull());
+    type(container, 'new-password', '');
+    await screen.findByText((_t, node) => node?.id === 'new-password-error');
+    expect(field).toHaveFocus();
+  });
+
   it('swaps the form for a focused danger alert with a new-link path when the link is dead', async () => {
     vi.stubGlobal(
       'fetch',
@@ -85,10 +102,10 @@ describe('ResetPasswordForm on AURA (spec 122 US2)', () => {
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveClass('aura-alert', 'aura-alert--danger');
     expect(alert).toHaveTextContent('This reset link has expired.');
-    expect(within(alert).getByRole('link', { name: 'Request a new link' })).toHaveAttribute(
-      'href',
-      '/forgot-password',
-    );
+    const next = within(alert).getByRole('link', { name: 'Request a new link' });
+    expect(next).toHaveAttribute('href', '/forgot-password');
+    // A 44px AURA button, not a 17px inline link (ux-standards § 9.1).
+    expect(next).toHaveClass('aura-btn');
     await waitFor(() => expect(alert.closest('[tabindex="-1"]')).toHaveFocus());
     expect(container.querySelector('form')).toBeNull();
   });

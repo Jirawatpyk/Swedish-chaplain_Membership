@@ -97,7 +97,7 @@ export function EmailChangeRevertForm({ token }: { token: string }) {
   }
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-6">
       <AuthTitle
         title={t('title')}
         description={state.kind === 'success' || state.kind === 'expired' ? undefined : t('cardDescription')}
@@ -143,11 +143,15 @@ export function EmailChangeRevertForm({ token }: { token: string }) {
 
     return (
       <div className="flex flex-col gap-6">
-        {state.kind === 'error' ? (
-          <Alert tone={state.tone}>{state.message}</Alert>
-        ) : (
-          <Alert tone="warning">{t('description')}</Alert>
-        )}
+        {state.kind === 'error' ? <Alert tone={state.tone}>{state.message}</Alert> : null}
+        {/* What reverting does stays beside the button, retry included. AURA
+            classes without a role: static text, so no alert on page load. */}
+        <div className="aura-alert aura-alert--warning">
+          <Icon name="triangle-alert" className="aura-alert__icon" />
+          <div className="aura-alert__body">
+            <p className="aura-alert__text">{t('description')}</p>
+          </div>
+        </div>
         <Button
           type="button"
           onClick={handleRevert}

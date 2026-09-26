@@ -65,7 +65,7 @@ export default async function InviteRedeemPage({ params }: InviteRedeemPageProps
       tenantName={process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham'}
     >
       {tokenDead || !email ? (
-        <AuthLinkInvalid message={t('errors.tokenExpired')} />
+        <AuthLinkInvalid message={t('errors.tokenExpired')} detail={t('errors.contactAdminCta')} />
       ) : (
         <InviteRedeemForm token={token} email={email} />
       )}

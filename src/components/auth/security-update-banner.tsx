@@ -39,17 +39,19 @@ export function SecurityUpdateBanner({ message }: SecurityUpdateBannerProps) {
     setDisplayedText(message);
   }, [message]);
 
+  // The live region is always mounted (so the text appearing is announced);
+  // the visible box only once there is text, so the server HTML never shows
+  // an empty box with just an icon before hydration.
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      aria-atomic="true"
-      className="aura-alert aura-alert--info min-h-[2.5rem]"
-    >
-      <Icon name="info" className="aura-alert__icon" />
-      <div className="aura-alert__body">
-        <div className="aura-alert__text">{displayedText}</div>
-      </div>
+    <div role="status" aria-live="polite" aria-atomic="true" className="min-h-[2.5rem]">
+      {displayedText ? (
+        <div className="aura-alert aura-alert--info">
+          <Icon name="info" className="aura-alert__icon" />
+          <div className="aura-alert__body">
+            <div className="aura-alert__text">{displayedText}</div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

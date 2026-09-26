@@ -125,4 +125,12 @@ describe('ForgotPasswordForm', () => {
     expect(screen.getByRole('button', { name: /resend/i })).toHaveClass('aura-btn', 'aura-btn--secondary');
     vi.unstubAllGlobals();
   });
+  it('shows the AURA error summary after a failed submit and focuses it (spec 122 US2 AS1)', async () => {
+    const { container } = renderForm();
+    fireEvent.change(container.querySelector('#email')!, { target: { value: 'not-an-email' } });
+    fireEvent.submit(container.querySelector('form')!);
+    const summary = await screen.findByRole('alert', { name: /fix 1 field/i });
+    await waitFor(() => expect(summary).toHaveFocus());
+    expect(summary.querySelector('a[href="#email"]')).not.toBeNull();
+  });
 });
