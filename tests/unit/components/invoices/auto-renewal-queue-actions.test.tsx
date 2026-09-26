@@ -359,6 +359,43 @@ describe('<AutoRenewalQueueActions> — Issue + Send / Issue silently', () => {
     expect(pushSpy).toHaveBeenCalledWith('/admin/invoices/inv-old-1');
   });
 
+  it('two bills to void: opening the first re-shows the warning for the second (AURA dismisses a toast on its action)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        invoice_number: 'SC2026-00105',
+        supersede_issues: [
+          { kind: 'void_failed', invoice_id: 'inv-old-1', bill_document_number: 'SC-2026-000123' },
+          { kind: 'void_threw', invoice_id: 'inv-old-2', bill_document_number: 'SC-2026-000125' },
+        ],
+      }),
+    } as Response);
+    renderActions();
+    openMenuAndClick('queue-row-issue-send');
+    fireEvent.click(screen.getByRole('button', { name: t.issueAndSend }));
+
+    const w = en.admin.invoices.supersedeWarning;
+    await waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+    type Opts = { id: string; description: string; action: { label: string; onClick: () => void } };
+    const first = vi.mocked(toast.warning).mock.calls[0]![1] as Opts;
+    expect(first.description).toContain('SC-2026-000125');
+    first.action.onClick();
+    expect(pushSpy).toHaveBeenCalledWith('/admin/invoices/inv-old-1');
+
+    // Re-shown under the same id, now naming only the bill still to void.
+    await waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(2));
+    const second = vi.mocked(toast.warning).mock.calls[1]![1] as Opts;
+    expect(second.id).toBe(first.id);
+    expect(second.description).toContain(w.voidFailed.replace('{number}', 'SC-2026-000125'));
+    expect(second.description).not.toContain('SC-2026-000123');
+    expect(second.action.label).toBe(w.openBill.replace('{number}', 'SC-2026-000125'));
+    second.action.onClick();
+    expect(pushSpy).toHaveBeenLastCalledWith('/admin/invoices/inv-old-2');
+    // Nothing left to act on: no third toast.
+    await Promise.resolve();
+    expect(toast.warning).toHaveBeenCalledTimes(2);
+  });
+
   it('renders the supersede warning in Thai for a TH admin', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,

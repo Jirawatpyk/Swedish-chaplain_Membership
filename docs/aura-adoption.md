@@ -22,10 +22,10 @@ The migration was decided on 2026-09-26, with these settled points:
 | CSS layer order + imports | head of `src/app/globals.css` | `@layer aura-tokens, theme, base, aura, components, utilities;` then Tailwind, the legacy kit's CSS, AURA tokens, AURA fonts, the prefixed AURA Tailwind theme, the brand theme, and AURA's layered component CSS. Utilities beat AURA components without `!important`. See `specs/122-…/contracts/css-layers.md`. |
 | Token bridge | `:root` / `.dark` in `src/app/globals.css` | Legacy shadcn variables (`--background`, `--primary`, `--border`, `--ring`, `--chart-*`, `--sidebar-*`, `--radius`, …) are aliases of `--aura-*`, so un-migrated pages already look like AURA. A contrast failure is fixed in this mapping, never per page. It is removed at US13. |
 | Brand theme | `src/styles/aura-theme.css` (generated) | Regenerate with `npx aura-theme --brand "#10487A" --out src/styles/aura-theme.css`. The CLI exits 1 if any contrast check fails. Do not edit by hand. |
-| Fonts | `@jirawatpyk/aura-tokens/aura-fonts.local.css` | Inter + Noto Sans Thai (text), Fraunces (display), JetBrains Mono (mono), served from our own origin. The CSP is unchanged. |
+| Fonts | `@jirawatpyk/aura-tokens/aura-fonts.local.css` | Inter + Noto Sans Thai (text and kit headings), Fraunces (AURA display only), JetBrains Mono (mono), served from our own origin. The CSP is unchanged. |
 | Provider | `src/components/providers/aura-bridge.tsx`, mounted in `src/app/layout.tsx` | `locale` (en/th/sv); `calendar` (Buddhist for `th`, else Gregorian — display only); the tenant `timeZone`; `linkComponent` = `next/link`. AURA's built-in labels come in EN/TH/SV. |
 | Density | `<AuraDensity>` (from the bridge file) in `src/app/(staff)/admin/layout.tsx` (compact) and `src/app/(member)/portal/layout.tsx` (comfortable) | Inherits everything else from the bridge. |
-| Toasts | `@/lib/toast` (facade) → AURA `toast`; `<Toaster position="top">` in the bridge | The only toast import. Options: `description` (text), `id`, one `action`, `duration`. At most 3 visible. |
+| Toasts | `@/lib/toast` (facade) → AURA `toast`; `<Toaster position="top">` in the bridge | The only toast import. Options: `description` (text), `id`, one `action`, `duration`. At most 3 visible. Errors persist by default. Centred below the top bar by `globals.css` (#54); Alt+T reaches the newest toast (#55); focus returns after an action; 44px actions on touch (#56). |
 | Dates | `src/lib/format-date-localised.ts` | Stays the only formatter. AURA's `formatDate` / `useFormatDate` are lint-banned. |
 | Overlay stacking | legacy kit wrappers use `var(--aura-z-menu)` / `var(--aura-z-dialog)` | AURA scale: dialog 900, menu 1000, toast 1200, tooltip 1300. Never open an overlay from one library inside an overlay from the other. |
 
@@ -86,6 +86,9 @@ The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requ
 |---|---|---|---|
 | 52 | DataTable per-row selectable | US12 (E-Blast queue: only rows awaiting marketing review can be ticked) | local selection column |
 | 53 | Toast rich description (links) or a second action | US0 (supersede warning) | text description + one action (`src/components/invoices/use-supersede-warning-toast.tsx`) |
+| 54 | Toaster `position="top"` centred, with a top offset | US0 | `.aura-toaster.is-top` override in `globals.css` |
+| 55 | Keyboard shortcut to reach the newest toast | US0 | Alt+T handler in `aura-bridge.tsx` |
+| 56 | 44px toast action on coarse pointers | US0 | `@media (pointer: coarse)` rule in `globals.css` |
 
 When AURA ships an item:
 1. Bump the pin in a dedicated PR.

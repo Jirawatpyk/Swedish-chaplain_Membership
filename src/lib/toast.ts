@@ -37,23 +37,48 @@ export interface Toast extends Show {
   readonly dismiss: (id: string) => void;
 }
 
+/**
+ * AURA removes the toast — and with it the focused action button — right after
+ * the action runs, which would drop keyboard focus to <body>. Put it back on
+ * whatever was focused when the toast appeared, unless the action moved focus
+ * somewhere on purpose.
+ */
+function restoringFocus(action: ToastAction): ToastAction {
+  const before = typeof document === 'undefined' ? null : document.activeElement;
+  return {
+    label: action.label,
+    onClick: () => {
+      action.onClick?.();
+      queueMicrotask(() => {
+        const now = document.activeElement;
+        const lost = now === null || now === document.body || !now.isConnected;
+        if (lost && before instanceof HTMLElement && before.isConnected) before.focus();
+      });
+    },
+  };
+}
+
 function toImpl(opts: ToastOptions | undefined): ToastShorthandOptions | undefined {
   if (opts === undefined) return undefined;
   const out: ToastShorthandOptions = {};
   if (opts.description !== undefined) out.description = opts.description;
   if (opts.id !== undefined) out.id = opts.id;
   if (opts.duration !== undefined) out.duration = opts.duration;
-  if (opts.action !== undefined) out.action = opts.action;
+  if (opts.action !== undefined) out.action = restoringFocus(opts.action);
   return out;
 }
 
 const shorthand = (fn: (title: string, opts?: ToastShorthandOptions) => string): Show =>
   (title, opts) => fn(title, toImpl(opts));
 
+/** Errors stay until dismissed (ux-standards § 4.2) unless the caller sets a duration. */
+const persistentError: Show = (title, opts) =>
+  impl.error(title, toImpl({ ...opts, duration: opts?.duration ?? Infinity }));
+
 /** `toast(title)` is AURA's default (info) tone; `error` is AURA's danger tone, announced as an alert. */
 export const toast: Toast = Object.assign((title: string, opts?: ToastOptions) => impl({ title, ...toImpl(opts) }), {
   success: shorthand(impl.success),
-  error: shorthand(impl.error),
+  error: persistentError,
   warning: shorthand(impl.warning),
   info: shorthand(impl.info),
   loading: shorthand(impl.loading),

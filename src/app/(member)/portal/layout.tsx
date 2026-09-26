@@ -70,19 +70,14 @@ export default async function MemberLayout({ children }: { children: ReactNode }
     // AuraBridge.
     <AuraDensity density="comfortable">
       <div className="flex min-h-screen flex-col">
-        {/* 063 UX — navy brand chrome matching the admin sidebar's Swedish-flag
-            field. `bg-sidebar` (navy #10487A) + `text-sidebar-foreground` (white
-            9:1) cascades white to every currentColor child (BrandMark, ghost
-            control buttons, tenant wordmark); the 4px `--sidebar-flag` (#FECC02)
-            bottom edge is the flag stripe (decorative — no text sits on it, so
-            flag yellow never enters a contrast pairing). MemberNav carries its
-            own sidebar-token variants for the same reason.
-            `[--ring:var(--sidebar-ring)]` locally re-points the focus-ring token
-            to the gold sidebar ring: the default `--ring` is navy (identical to
-            `--sidebar`), so the shared ghost control buttons (ThemeToggle /
-            LocaleSwitcher / UserMenu) would otherwise draw a navy-on-navy —
-            invisible — focus indicator here (WCAG 2.4.7 / 1.4.11). Scoped to the
-            header so the rest of the portal keeps its normal ring. */}
+        {/* 063 UX — the portal top bar shares the admin sidebar's tokens
+            (`bg-sidebar` + `text-sidebar-foreground`, cascading to every
+            currentColor child), with the 4px `--sidebar-flag` bottom edge as
+            the flag stripe (decorative — no text sits on it). Since spec 122
+            those tokens are AURA's via the bridge (it was navy); US1 replaces
+            this chrome. `[--ring:var(--sidebar-ring)]` keeps the header's
+            ghost controls on the sidebar ring token, so the focus indicator
+            stays right if the bar goes dark again (WCAG 2.4.7 / 1.4.11). */}
         <header className="flex h-[var(--top-bar-height)] items-center border-b-4 border-b-[color:var(--sidebar-flag)] bg-sidebar text-sidebar-foreground [--ring:var(--sidebar-ring)] px-[var(--page-padding-x)] gap-2">
           {/*
            * Mobile-first header layout (WCAG 2.1 1.4.4 reflow fix).

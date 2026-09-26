@@ -3,7 +3,7 @@
  * zone, router link and density (spec 122 FR-005, contracts/aura-bridge.md).
  */
 import { describe, it, expect, vi } from 'vitest';
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { useAuraLocale } from '@jirawatpyk/aura-react';
 import { AuraBridge, AuraDensity } from '@/components/providers/aura-bridge';
 import { toast } from '@/lib/toast';
@@ -91,5 +91,40 @@ describe('<AuraBridge>', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Could not save');
     // AURA keeps toasts in module state; clear them for the next test.
     act(() => ids.forEach((id) => toast.dismiss(id)));
+  });
+
+  it('Alt+T moves keyboard focus to the newest toast — its action, else its close button', () => {
+    render(
+      <AuraBridge locale="en" timeZone="Asia/Bangkok">
+        <button type="button">page</button>
+      </AuraBridge>,
+    );
+    const ids: string[] = [];
+    act(() => {
+      ids.push(toast.info('Older'));
+      ids.push(toast.success('Member removed', { action: { label: 'Undo' } }));
+    });
+    fireEvent.keyDown(document, { key: 't', code: 'KeyT', altKey: true });
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Undo' }));
+
+    act(() => toast.dismiss(ids.pop()!));
+    fireEvent.keyDown(document, { key: '†', code: 'KeyT', altKey: true }); // macOS Option+T
+    expect(document.activeElement).toHaveAccessibleName(/dismiss|close/i);
+    act(() => ids.forEach((id) => toast.dismiss(id)));
+  });
+
+  it('reusing an id replaces that toast in place instead of stacking a second one', () => {
+    render(
+      <AuraBridge locale="en" timeZone="Asia/Bangkok">
+        <p>page</p>
+      </AuraBridge>,
+    );
+    act(() => {
+      toast.loading('Uploading', { id: 'upload' });
+      toast.success('Uploaded', { id: 'upload' });
+    });
+    expect(screen.getAllByRole('status')).toHaveLength(1);
+    expect(screen.getByRole('status')).toHaveTextContent('Uploaded');
+    act(() => toast.dismiss('upload'));
   });
 });

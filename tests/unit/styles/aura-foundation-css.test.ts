@@ -39,11 +39,13 @@ const BRIDGE: Record<string, string> = {
   '--card-foreground': 'fg-primary',
   '--popover': 'bg-surface',
   '--popover-foreground': 'fg-primary',
-  '--primary': 'button-primary-bg',
-  '--primary-foreground': 'button-primary-fg',
-  '--secondary': 'bg-surface-hover',
+  // Brand accent, not AURA's ink button: `text-primary` links must not read as body text.
+  '--primary': 'fg-accent',
+  '--primary-foreground': 'fg-inverted',
+  // Not bg-surface-hover: in light it equals the canvas, so muted fills vanish on the page.
+  '--secondary': 'status-neutral-bg',
   '--secondary-foreground': 'fg-primary',
-  '--muted': 'bg-surface-hover',
+  '--muted': 'status-neutral-bg',
   '--muted-foreground': 'fg-secondary',
   '--accent': 'bg-selected',
   '--accent-foreground': 'fg-primary',
@@ -76,8 +78,6 @@ const BRIDGE: Record<string, string> = {
   '--sidebar-accent-foreground': 'fg-accent',
   '--sidebar-border': 'border-default',
   '--sidebar-ring': 'focus-ring',
-  '--brand-accent': 'fg-accent',
-  '--brand-accent-foreground': 'fg-inverted',
   '--nav-indicator': 'fg-accent',
 };
 
@@ -115,10 +115,29 @@ describe('globals.css — AURA foundation (spec 122)', () => {
 
   it.each([
     ['--font-sans', '"Inter", "Noto Sans Thai", sans-serif'],
-    ['--font-heading', '"Fraunces", "Noto Sans Thai", serif'],
+    // Kit titles (card, dialog, sheet) are h2/h3-level: AURA sets those in sans; Fraunces is display-only.
+    ['--font-heading', '"Inter", "Noto Sans Thai", sans-serif'],
     ['--font-mono', '"JetBrains Mono", monospace'],
   ])('%s names the AURA families', (name, stack) => {
     expect(declared(block('@theme inline'), name)).toBe(stack);
+  });
+
+  it('keeps the TSCC gold as a literal — decorative, never AURA\'s accent blue', () => {
+    expect(declared(block(':root'), '--brand-accent')).toMatch(/^oklch\(0\.728/);
+    expect(declared(block(':root'), '--brand-accent-foreground')).toMatch(/^oklch\(0\.205/);
+  });
+
+  it('draws skeletons in AURA\'s skeleton tone, visible on the page background', () => {
+    const rule = css.match(/\.skeleton-shimmer\s*\{[^}]*\}/)?.[0] ?? '';
+    expect(rule).toContain('var(--aura-bg-skeleton)');
+  });
+
+  it('centres the top toaster below the 56px top bar, and gives toast actions a 44px touch target', () => {
+    const top = css.match(/\.aura-toaster\.is-top\s*\{[^}]*\}/g)?.join('\n') ?? '';
+    expect(top).toContain('var(--top-bar-height)');
+    expect(top).toMatch(/left:\s*50%/);
+    expect(top).toMatch(/translateX\(-50%\)/);
+    expect(css).toMatch(/@media \(pointer: coarse\)\s*\{[^}]*\.aura-toast__action\s*\{[^}]*min-height:\s*44px/);
   });
 
   it('loads no font from a third-party origin anywhere in src/', () => {
@@ -138,12 +157,24 @@ describe('globals.css — AURA foundation (spec 122)', () => {
   });
 });
 
+describe('legacy kit inputs in dark mode (spec 122 review)', () => {
+  it.each(['input', 'textarea', 'select', 'button', 'checkbox', 'radio-group', 'input-group', 'tabs'])(
+    'ui/%s.tsx fills dark controls with --aura-bg-input, not a tint of the border colour',
+    (file) => {
+      // `--input` is AURA's control BORDER (zinc-400 in dark); 30 % of it under a
+      // zinc-400 placeholder measured 3.95:1 on a dark card.
+      const src = readFileSync(join(ROOT, `src/components/ui/${file}.tsx`), 'utf8');
+      expect(src).not.toMatch(/dark:(?:[a-z-]+:)*bg-input\/(?:30|50)\b/);
+    },
+  );
+});
+
 describe('legacy kit overlays stack on the AURA z-index scale (spec 122 T013)', () => {
   it.each([
     ['popover', 'menu'],
     ['select', 'menu'],
     ['dropdown-menu', 'menu'],
-    ['tooltip', 'menu'],
+    ['tooltip', 'tooltip'],
     ['dialog', 'dialog'],
     ['alert-dialog', 'dialog'],
     ['sheet', 'dialog'],

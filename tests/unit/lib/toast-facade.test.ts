@@ -38,10 +38,50 @@ describe('@/lib/toast facade (AURA)', () => {
         description: 'The plan was updated.',
         id: 'plan-save',
         duration: 8000,
-        action: { label: 'Undo', onClick },
+        action: { label: 'Undo', onClick: expect.any(Function) },
       });
+      const passed = impl[method]!.mock.calls[0]![1] as { action: { onClick: () => void } };
+      passed.action.onClick();
+      expect(onClick).toHaveBeenCalledTimes(1);
     },
   );
+
+  it('an error toast stays until dismissed unless a duration is given (ux-standards § 4.2)', () => {
+    toast.error('Could not save');
+    expect(impl.error).toHaveBeenCalledWith('Could not save', { duration: Infinity });
+    toast.error('Retrying', { duration: 4000 });
+    expect(impl.error).toHaveBeenLastCalledWith('Retrying', { duration: 4000 });
+    toast.success('Saved');
+    expect(impl.success).toHaveBeenCalledWith('Saved', undefined);
+  });
+
+  it('after a toast action, focus returns to where it was when the toast appeared', async () => {
+    const trigger = document.createElement('button');
+    document.body.append(trigger);
+    trigger.focus();
+    toast.success('Removed', { action: { label: 'Undo', onClick: () => {} } });
+    // AURA removes the toast (and its focused action button) after the click.
+    (document.activeElement as HTMLElement | null)?.blur();
+    const passed = impl.success!.mock.calls[0]![1] as { action: { onClick: () => void } };
+    passed.action.onClick();
+    await Promise.resolve();
+    expect(document.activeElement).toBe(trigger);
+    trigger.remove();
+  });
+
+  it('leaves focus alone when the action moved it somewhere on purpose', async () => {
+    const trigger = document.createElement('button');
+    const target = document.createElement('input');
+    document.body.append(trigger, target);
+    trigger.focus();
+    toast.success('Removed', { action: { label: 'Undo', onClick: () => target.focus() } });
+    const passed = impl.success!.mock.calls[0]![1] as { action: { onClick: () => void } };
+    passed.action.onClick();
+    await Promise.resolve();
+    expect(document.activeElement).toBe(target);
+    trigger.remove();
+    target.remove();
+  });
 
   it('a plain call passes the title (and any options) as one AURA options object', () => {
     expect(toast('Sending in a moment')).toBe('id-plain');

@@ -55,7 +55,9 @@
     }
   }
 
-  --font-heading: "Fraunces", "Noto Sans Thai", serif;
+  /* Kit titles (card, dialog, sheet) are h2/h3-level, which AURA sets in sans;
+     Fraunces is AURA's display face only (and mixes badly with Thai). */
+  --font-heading: "Inter", "Noto Sans Thai", sans-serif;
 
   --color-sidebar-ring: var(--sidebar-ring);
 
@@ -157,11 +159,15 @@
   --card-foreground: var(--aura-fg-primary);
   --popover: var(--aura-bg-surface);
   --popover-foreground: var(--aura-fg-primary);
-  --primary: var(--aura-button-primary-bg);
-  --primary-foreground: var(--aura-button-primary-fg);
-  --secondary: var(--aura-bg-surface-hover);
+  /* The brand accent, not AURA's ink button colour: ink equals body text, so
+   * every `text-primary` link would stop reading as a link (review B1). */
+  --primary: var(--aura-fg-accent);
+  --primary-foreground: var(--aura-fg-inverted);
+  /* Not bg-surface-hover: in light it equals the canvas (#fafafa), so muted
+   * fills — tabs, skeletons, secondary buttons — vanish on the page. */
+  --secondary: var(--aura-status-neutral-bg);
   --secondary-foreground: var(--aura-fg-primary);
-  --muted: var(--aura-bg-surface-hover);
+  --muted: var(--aura-status-neutral-bg);
   --muted-foreground: var(--aura-fg-secondary);
   --accent: var(--aura-bg-selected);
   --accent-foreground: var(--aura-fg-primary);
@@ -194,13 +200,17 @@
   --sidebar-accent-foreground: var(--aura-fg-accent);
   --sidebar-border: var(--aura-border-default);
   --sidebar-ring: var(--aura-focus-ring);
-  --brand-accent: var(--aura-fg-accent);
-  --brand-accent-foreground: var(--aura-fg-inverted);
   --nav-indicator: var(--aura-fg-accent);
 
   /* Exact Swedish flag yellow. Decorative edge stripe ONLY — never a text
    * background. Hex (not oklch) so the brand value stays literal. */
   --sidebar-flag: #FECC02;
+
+  /* TSCC gold (BrandMark rule, badges on navy). Kept literal, not bridged:
+   * AURA has no gold, and its accent is blue. Pair ONLY with dark text or a
+   * dark surface (gold-on-white = 2.4:1). */
+  --brand-accent: oklch(0.7280 0.1380 89.73);   /* #C9A227 */
+  --brand-accent-foreground: oklch(0.205 0 0);  /* near-black on gold — 6.3:1 */
 
   /* --- Page layout tokens --- */
   --layout-max-width-form: 42rem;     /* 672px — FormContainer (F5) */
@@ -410,11 +420,13 @@ body {
 
 /* --- Skeleton shimmer base + reduced-motion fallback --- */
 .skeleton-shimmer {
+  /* AURA's skeleton tone (zinc-200 / zinc-700), so a skeleton stays visible
+     on the page background too — also static under reduced motion. */
   background: linear-gradient(
     90deg,
-    var(--muted) 0%,
-    color-mix(in srgb, var(--muted) 60%, var(--foreground) 10%) 50%,
-    var(--muted) 100%
+    var(--aura-bg-skeleton) 0%,
+    color-mix(in srgb, var(--aura-bg-skeleton) 60%, var(--foreground) 10%) 50%,
+    var(--aura-bg-skeleton) 100%
   );
   background-size: 200% 100%;
 }
@@ -570,4 +582,27 @@ summary,
   /* The `display:block` override above drops CardContent's flex `gap-6`
      between evidence sections — restore inter-section spacing in print. */
   details[data-evidence] > :not(summary) > * + * { margin-top: 1.5rem !important; }
+}
+
+/* --- AURA toaster placement (spec 122) ---------------------------------------
+ * The spec decision is top-CENTRE. AURA 5.5's `position="top"` only swaps
+ * `bottom` for `top: 24px` (still right-aligned at >= 640px) and would sit on
+ * the 56px top bar — over the mobile hamburger / user menu. Until AURA ships a
+ * centred top position (AURA-handoff #54), drop it below the bar and centre it.
+ * Toast actions get a 44px touch target on coarse pointers (ux-standards § 9.1;
+ * AURA-handoff #56). Unlayered on purpose: it must beat AURA's layered CSS. */
+.aura-toaster.is-top {
+  top: calc(env(safe-area-inset-top, 0px) + var(--top-bar-height) + var(--aura-space-2));
+}
+@media (min-width: 640px) {
+  .aura-toaster.is-top {
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+  }
+}
+@media (pointer: coarse) {
+  .aura-toast__action {
+    min-height: 44px;
+  }
 }

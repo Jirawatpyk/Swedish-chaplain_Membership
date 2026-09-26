@@ -255,12 +255,14 @@ The member portal placeholder landing page IS an empty state:
 
 ### 4.2 Toast for global / async errors
 
-- **Sonner** component (shadcn) for non-blocking toasts.
-- Error toast: `sonner.error(message, { description, action })`
-- Position: `top-right` on desktop, `top-center` on mobile.
-- Auto-dismiss after 5 s by default; error toasts persist until dismissed
-  by user action.
-- Each toast has a "Dismiss" button for keyboard users.
+- AURA toasts, only through `@/lib/toast` (spec 122): `toast.error(title, { description, action })`.
+  The description is plain text and a toast carries at most one action.
+- Position: top-centre, below the top bar, on every width. At most 3 show; more queue.
+- Auto-dismiss after 5 s by default; `toast.error` persists until dismissed
+  unless the caller passes a `duration` (the facade enforces it).
+- Each toast has a close button, and **Alt+T** focuses the newest toast's
+  action (else its close button) for keyboard users. After an action runs,
+  focus returns to where it was.
 
 ### 4.3 Full-page error (500, network failure, unexpected)
 
@@ -304,7 +306,7 @@ flow ships with the resend pattern or the gate fails.
 
 ### 5.1 Toast for non-blocking success
 
-- **Sonner** `sonner.success(message)` — auto-dismiss after 3 s.
+- `toast.success(title)` (AURA via `@/lib/toast`) — auto-dismisses after 5 s.
 - Used for: form saved, user invited, password changed, session rotated.
 - NEVER used for critical security operations that need acknowledgement
   (use a modal confirmation screen instead).
