@@ -121,7 +121,7 @@ export const F7_AUDIT_EVENT_TYPES = [
   // --- Clarifications session 5 (Q14 + Q15) — 3 events ---------------
   'broadcast_complaint_rate_per_broadcast_breach', // US4-deferred (5% complaint-rate auto-halt webhook handler)
   'broadcast_member_dispatch_resumed',             // Q14 admin clear-halt — emitted
-  'member_acknowledged_broadcasts_terms',          // Q15 GDPR Art. 7 — emitted (round-4 CRIT-B)
+  'member_acknowledged_broadcasts_terms',          // Q15 terms acknowledgement (not recipient consent) — emitted (round-4 CRIT-B)
 
   // --- Phase 8 verify-fix R3 — 2 events ------------------------------
   // (Errors-C1) — distinguishes pre-`createBroadcast` race (two workers

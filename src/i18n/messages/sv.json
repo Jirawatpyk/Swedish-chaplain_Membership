@@ -6518,15 +6518,15 @@
       },
       "banner": {
         "acknowledgement": {
-          "title": "Samtycke till marknadskommunikation",
-          "body": "Att skicka in ett E-Blast bekräftar att mottagarna har samtyckt till att ta emot din kammares kommunikation. Du kan återkalla samtycke per mottagare när som helst.",
+          "title": "Innan du skickar E-Blasts",
+          "body": "E-Blasts skickas till kontaktpersoner hos medlemsföretag som inte har avregistrerat sig från marknadsföringsmejl. Varje E-Blast innehåller en avregistreringslänk, och avregistreringar tillämpas automatiskt. Håll budskapet relevant för medlemmarna och ta inte med andra personers personuppgifter.",
           "privacyPolicyLink": "Läs sekretesspolicyn",
           "acknowledge": "Jag bekräftar",
           "remindLater": "Påminn senare",
           "closeLabel": "Stäng banner",
-          "toastAcknowledged": "Samtycke till marknadskommunikation registrerat.",
-          "toastAcknowledgeFailed": "Kunde inte registrera ditt samtycke.",
-          "toastAcknowledgeFailedHint": "Försök igen — bannern stannar kvar tills samtycket är registrerat."
+          "toastAcknowledged": "Bekräftelsen har registrerats.",
+          "toastAcknowledgeFailed": "Det gick inte att registrera din bekräftelse.",
+          "toastAcknowledgeFailedHint": "Försök igen — bannern visas tills din bekräftelse har registrerats."
         }
       },
       "list": {

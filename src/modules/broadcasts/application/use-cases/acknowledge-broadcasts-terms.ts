@@ -1,7 +1,9 @@
 /**
  * F7 US3 AS7 — `acknowledge-broadcasts-terms.ts` Application use-case.
  *
- * Member CTA on the GDPR Art. 7 banner (Q15 + Q19 per-tenant scope).
+ * Member CTA on the E-Blast sending-terms banner (Q15 + Q19 per-tenant
+ * scope). The member acknowledges the sending rules; this is not recipient
+ * consent — E-Blasts rely on legitimate interest with a tenant-wide opt-out.
  * Sets `members.broadcasts_acknowledged_at = now()` via the F3
  * `markBroadcastsAcknowledged` bridge + emits the
  * `member_acknowledged_broadcasts_terms` F7 audit event.
@@ -9,19 +11,19 @@
  * Idempotent: re-acknowledgment returns `{ kind: 'idempotent' }` with
  * no audit emission (the event-type already lives in the audit log
  * from the first acknowledgment; emitting it twice would create
- * misleading consent records). The `'fresh' | 'idempotent'` discriminant
+ * misleading acknowledgement records). The `'fresh' | 'idempotent'` discriminant
  * is gated on the bridge's `previouslyNull` flag so concurrent re-acks
  * never emit a duplicate `member_acknowledged_broadcasts_terms` row
  * (PR #18 code-review CRIT — bridge previously collapsed both paths).
  *
  * Atomicity tradeoff: F3 use-case + F7 audit emit run in two phases (F3
  * first, F7 audit second) — F3's tx is closed before the F7 audit fires.
- * The F3 column change is the **legal source of truth** for consent.
+ * The F3 column change is the **source of truth** for the acknowledgement.
  * If the audit emit fails AFTER the F3 column commits, we route it through
  * `safeAuditEmit` (canonical `broadcasts.audit.emit_failed` log +
  * `broadcasts_audit_emit_failed_total` metric) and **still return ok** —
  * surfacing the audit-emit error to the route would force the client to
- * display an error banner for a successfully-recorded consent, AND a retry
+ * display an error banner for a successfully-recorded acknowledgement, AND a retry
  * would hit the F3 idempotent path which skips the audit emit, leaving the
  * audit row permanently missing. The metric is what fires Alert F7-A1 so
  * on-call runs the manual recovery in docs/runbooks/audit-emit-loss.md;

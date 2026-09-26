@@ -1,10 +1,12 @@
 /**
  * F7 Q15 — POST `/api/portal/broadcasts/acknowledge`.
  *
- * Member CTA on the marketing-acknowledgement banner records GDPR Art. 7
- * demonstrable consent: sets `members.broadcasts_acknowledged_at = now()`
- * + emits `member_acknowledged_broadcasts_terms` audit row carrying the
- * locale the consent was shown in.
+ * Member CTA on the E-Blast acknowledgement banner records that the
+ * member acknowledged the E-Blast sending terms: sets
+ * `members.broadcasts_acknowledged_at = now()` + emits
+ * `member_acknowledged_broadcasts_terms` audit row carrying the locale
+ * the terms were shown in. This is NOT recipient consent — E-Blasts rely
+ * on legitimate interest, with a tenant-wide opt-out.
  *
  * Delegates to the `acknowledgeBroadcastsTerms` Application use-case so
  * Presentation never reaches into Application internals (Constitution

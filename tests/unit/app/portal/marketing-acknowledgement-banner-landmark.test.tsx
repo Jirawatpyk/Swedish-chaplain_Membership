@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * F119 walk U36 — the marketing-consent banner rendered an `<h2>` above the
+ * F119 walk U36 — the E-Blast acknowledgement banner rendered an `<h2>` above the
  * page `<h1>` (outline h2 → h1 → h2) and sat inside `<main>`, so its three
  * controls were the first tab stops after "Skip to main content".
  *

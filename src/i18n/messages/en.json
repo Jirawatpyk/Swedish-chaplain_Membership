@@ -6518,15 +6518,15 @@
       },
       "banner": {
         "acknowledgement": {
-          "title": "Marketing communications consent",
-          "body": "Submitting an E-Blast confirms recipients have agreed to receive your chamber's communications. You can revoke consent on a per-recipient basis at any time.",
+          "title": "Before you send E-Blasts",
+          "body": "E-Blasts go to contacts of member companies who have not opted out of marketing emails. Every E-Blast includes an unsubscribe link, and opt-outs are applied automatically. Keep your message relevant to members and don't include other people's personal data.",
           "privacyPolicyLink": "Read the privacy policy",
           "acknowledge": "I acknowledge",
           "remindLater": "Remind me later",
           "closeLabel": "Close banner",
-          "toastAcknowledged": "Marketing-communications consent recorded.",
+          "toastAcknowledged": "Acknowledgement recorded.",
           "toastAcknowledgeFailed": "Could not record your acknowledgement.",
-          "toastAcknowledgeFailedHint": "Please try again — the banner stays open until consent is recorded."
+          "toastAcknowledgeFailedHint": "Please try again — the banner stays open until your acknowledgement is recorded."
         }
       },
       "list": {

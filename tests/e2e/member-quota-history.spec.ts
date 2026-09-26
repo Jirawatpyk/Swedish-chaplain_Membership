@@ -342,7 +342,7 @@ test.describe('US3 — Member quota + history (T129 RED)', () => {
       // of the visibility window. Tighter than the global 30s test
       // timeout but loose enough to avoid the round-2 4s flake.
       await expect(
-        page.getByText(/consent recorded|บันทึก|registrerat/i).first(),
+        page.getByText(/acknowledgement recorded|บันทึกการรับทราบ|registrerats/i).first(),
       ).toBeVisible({ timeout: 8_000 });
     });
 
