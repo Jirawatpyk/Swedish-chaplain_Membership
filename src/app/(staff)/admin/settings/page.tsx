@@ -157,7 +157,7 @@ export default async function SettingsIndexPage() {
   return (
     <DetailContainer>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {visible.map(({ titleKey, descriptionKey, href, icon: Icon }) => (
           <Link
             key={href}

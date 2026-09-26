@@ -165,7 +165,7 @@ export function PortalEditForm({ initialValues }: PortalEditFormProps) {
           <CardHeader>
             <CardTitle>{t('contactSection')}</CardTitle>
           </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-2">
+          <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <Label htmlFor="firstName">
                 {t('fields.firstName')} <RequiredMark />

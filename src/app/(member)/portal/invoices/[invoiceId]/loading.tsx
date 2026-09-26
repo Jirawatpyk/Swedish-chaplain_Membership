@@ -40,7 +40,7 @@ export default async function Loading() {
           actions={<SkeletonBlock className="h-11 w-28" />}
         />
         <Card>
-          <CardContent className="grid gap-4 sm:grid-cols-2">
+          <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {Array.from({ length: 4 }).map((_, i) => (
               <div key={i} className="flex flex-col gap-2">
                 <SkeletonBlock className="h-3 w-24" />

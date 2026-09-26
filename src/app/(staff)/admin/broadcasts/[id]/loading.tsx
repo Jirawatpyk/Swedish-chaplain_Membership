@@ -68,7 +68,7 @@ export default function AdminBroadcastDetailLoading(): React.ReactElement {
           <Skeleton className="h-5.5 w-36" />
         </CardHeader>
         <CardContent>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <FieldSkeletons count={5} />
           </div>
         </CardContent>
@@ -80,7 +80,7 @@ export default function AdminBroadcastDetailLoading(): React.ReactElement {
           <Skeleton className="h-5.5 w-28" />
         </CardHeader>
         <CardContent>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <FieldSkeletons count={5} />
           </div>
         </CardContent>
@@ -88,7 +88,7 @@ export default function AdminBroadcastDetailLoading(): React.ReactElement {
 
       {/* The content (V7 above): the version, the member's original beside it
           from lg — a heading, the subject line, the sandboxed frame. */}
-      <div data-skeleton="content-grid" className="grid gap-6 lg:grid-cols-2">
+      <div data-skeleton="content-grid" className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {Array.from({ length: 2 }, (_, i) => (
           <Card key={i} className={i === 1 ? 'hidden lg:flex' : undefined}>
             <CardHeader>

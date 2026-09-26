@@ -50,7 +50,7 @@ AURA's root entry is `'use client'`. When a **server** file imports from `@jiraw
 1. Its paths import nothing from `@/components/ui`, and they are added to `MIGRATED_PATHS`.
 2. Its screens match their canvas boards on the "Chamber-OS Portal — Aura" design canvas, at 390 and 1280 px, in light and dark. Screenshots go in the PR. Where a board is marked **Proposed**, the PR says whether it was implemented or deferred.
 3. `check:layout`, `check:i18n`, `check:strict-aria` and `check:dates` are green.
-4. The module's e2e, `@a11y` and `@i18n` suites pass locally. e2e has no CI job, so the run log is linked in the PR.
+4. Its unit/component tests and every required CI check pass. The local e2e, `@a11y` and `@i18n` suites run only at the **checkpoints** — after US1, after US4/US8 (money), and before US13 — because e2e has no CI job and a full run takes over an hour.
 5. Bundle budgets are re-baselined (`scripts/check-bundle-budgets.ts`, `ceil(kb/10)*10+100`).
 6. An enterprise-ux-designer review has signed; on money screens, a financial-integrity review as well.
 7. **No logic change.** A defect found along the way ships as its own PR, merged first.

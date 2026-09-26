@@ -485,7 +485,7 @@ export function PortalChangeRequestForm({
           <CardHeader>
             <h2 className="font-heading text-base font-medium leading-snug">{t('contactSection')}</h2>
           </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-2">
+          <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {field('firstName', t('fields.firstName'), { required: true, autoComplete: 'given-name' })}
             {field('lastName', t('fields.lastName'), { required: true, autoComplete: 'family-name' })}
             {field('phone', t('fields.phone'), { type: 'tel', autoComplete: 'tel' })}
@@ -533,7 +533,7 @@ export function PortalChangeRequestForm({
               <CardHeader>
                 <h2 className="font-heading text-base font-medium leading-snug">{t('registeredAddressSection')}</h2>
               </CardHeader>
-              <CardContent className="grid gap-4 sm:grid-cols-2">
+              <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 {field('regLine1', t('fields.line1'), { autoComplete: 'address-line1' })}
                 {field('regLine2', t('fields.line2'), { autoComplete: 'address-line2' })}
                 {field('regSubDistrict', t('fields.subDistrict'))}
@@ -548,7 +548,7 @@ export function PortalChangeRequestForm({
                 <h2 className="font-heading text-base font-medium leading-snug">{t('billingAddressSection')}</h2>
                 <p className="text-caption text-muted-foreground">{t('billingAddressHint')}</p>
               </CardHeader>
-              <CardContent className="grid gap-4 sm:grid-cols-2">
+              <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 {field('billLine1', t('fields.line1'), { required: billTouched })}
                 {field('billLine2', t('fields.line2'))}
                 {field('billSubDistrict', t('fields.subDistrict'))}

@@ -329,7 +329,10 @@ function IssuanceModeFieldset({
         onValueChange={(v) =>
           onModeChoice(v === 'already_paid' || v === 'bill_first' ? v : null)
         }
-        className="gap-3 sm:grid-cols-2"
+        // `grid-cols-1` = minmax(0, 1fr): without an explicit track the implicit
+        // column sizes to its content, so a long Swedish label pushes the form
+        // wider than a 320px viewport (WCAG 1.4.10; spec 122 e2e, AURA fonts).
+        className="grid-cols-1 gap-3 sm:grid-cols-2"
       >
         <div className="flex items-start gap-2 rounded-md border p-3">
           {/* Explicit `aria-labelledby` → the name-span. Without it,
@@ -453,7 +456,8 @@ function AsPaidPaymentFields({
   const tPay = useTranslations('admin.invoices.pay');
   return (
     <div
-      className="mt-1 grid gap-4 sm:grid-cols-2"
+      // grid-cols-1 = minmax(0, 1fr) — see the mode selector above.
+      className="mt-1 grid grid-cols-1 gap-4 sm:grid-cols-2"
       data-testid="as-paid-fields"
       suppressHydrationWarning
     >

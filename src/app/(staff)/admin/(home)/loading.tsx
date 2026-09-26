@@ -68,7 +68,7 @@ export default async function Loading() {
           <PageHeader title={t('title')} subtitle={<SkeletonBlock className="h-4 w-56" />} />
 
           {/* KPI grid — matches `grid gap-4 sm:grid-cols-2 lg:grid-cols-4`. */}
-          <div aria-hidden className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div aria-hidden className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {Array.from({ length: 4 }).map((_, i) => (
               <Card key={i}>
                 <CardHeader className="pb-2">
@@ -80,7 +80,7 @@ export default async function Loading() {
           </div>
 
           {/* Needs-attention + insights — two equal cards. */}
-          <div aria-hidden className="grid gap-4 lg:grid-cols-2">
+          <div aria-hidden className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             {Array.from({ length: 2 }).map((_, i) => (
               <Card key={i}>
                 <CardHeader>
@@ -97,7 +97,7 @@ export default async function Loading() {
 
           {/* Trend charts — two equal cards (summary stat + sparkline), matches
               the real chart row so the activity feed below doesn't shift (CLS). */}
-          <div aria-hidden className="grid gap-4 lg:grid-cols-2">
+          <div aria-hidden className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             {Array.from({ length: 2 }).map((_, i) => (
               <Card key={i}>
                 <CardHeader className="pb-2">
@@ -116,7 +116,7 @@ export default async function Loading() {
               circular donut block + a reserved legend line) so the skeleton
               reads as "two different chart types" rather than two identical
               placeholders, matching the real Breakdown section below. */}
-          <div aria-hidden className="grid gap-4 lg:grid-cols-2">
+          <div aria-hidden className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <Card>
               <CardHeader className="pb-2">
                 <SkeletonBlock className="h-5 w-40" />

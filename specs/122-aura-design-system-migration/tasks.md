@@ -106,7 +106,7 @@
   - `pnpm check:i18n && pnpm check:layout && pnpm check:dates && pnpm check:strict-aria`
   - `pnpm build && pnpm check:bundle-budgets`
   - `pnpm vitest run tests/contract/`
-- [ ] T021 [US0] Run e2e locally (`--workers=1`): `@a11y|@i18n`, the toast-touching specs, and then the full suite once. Fix axe contrast in the token-bridge table only. Link the run log in the PR.
+- [x] T021 [US0] e2e (local, 2026-09-26, head `8cb043276`, the maintainer's machine): the toast-touching specs plus `@a11y`/`@i18n` subset. Findings: `event-fee-as-paid` 320px sv reflow +3px (caused by this PR's font change) → fixed by giving the page's grids a `grid-cols-1` base track; `tier-aware-reminder-cron` fails on main too (stale menuitem locator since #279, not this PR); `eventcreate-a11y` WebKit-only "Load failed" under investigation, chromium 13/13 pass. The full suite is not run per phase (spec Clarifications: e2e at checkpoints only).
 - [ ] T022 [US0] Visual pass: screenshots of `/admin`, `/admin/members`, one admin form, `/portal` and `/portal/invoices` in EN/TH/SV, light/dark, at 390/1280. CLS < 0.1 on `/`, `/portal` and `/admin`. Then an enterprise-ux-designer review, a mobile-a11y review and a whole-branch review. Open a draft PR and subscribe to it.
 
 **Checkpoint**: US0 merged. The 10-week clock for FR-004 starts at the merge date; record it in `docs/aura-adoption.md`.

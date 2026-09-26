@@ -554,7 +554,7 @@ export default async function StaffHomePage() {
         ))}
       </section>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <NeedsAttentionList
           title={t('needsAttention.title')}
           emptyLabel={t('needsAttention.empty')}
@@ -583,7 +583,7 @@ export default async function StaffHomePage() {
         <>
           <section
             aria-label={t('trends.sectionLabel')}
-            className="grid gap-4 lg:grid-cols-2"
+            className="grid grid-cols-1 gap-4 lg:grid-cols-2"
           >
             <RevenueTrendChart
               title={t('revenueTrend.title')}
@@ -616,7 +616,7 @@ export default async function StaffHomePage() {
               `<ChartDataTable>` even though the decorative canvas is client-lazy. */}
           <section
             aria-label={t('breakdown.sectionLabel')}
-            className="grid gap-4 lg:grid-cols-2"
+            className="grid grid-cols-1 gap-4 lg:grid-cols-2"
           >
             <MembershipTierChart slices={metrics.tierDistribution} />
             <InvoiceStatusChart distribution={finance.invoiceStatus} />
@@ -625,7 +625,7 @@ export default async function StaffHomePage() {
       ) : (
         <section
           aria-label={t('engagement.sectionLabel')}
-          className="grid gap-4 lg:grid-cols-2"
+          className="grid grid-cols-1 gap-4 lg:grid-cols-2"
         >
           <MemberGrowthChart
             title={t('memberGrowth.title')}

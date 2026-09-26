@@ -419,7 +419,7 @@ export default async function BroadcastDetailPage(props: {
         // top, the original below on this same page — never a link away, never
         // a tab that unmounts the decision controls) and ≥ lg sets them side
         // by side.
-        <div className="grid gap-6 lg:grid-cols-2" data-testid="eblast-compare">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2" data-testid="eblast-compare">
           <section
             aria-labelledby="eblast-formatted-title"
             data-testid="eblast-formatted-version"

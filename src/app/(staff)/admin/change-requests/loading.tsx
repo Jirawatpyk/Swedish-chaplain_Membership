@@ -17,7 +17,7 @@ export default async function Loading() {
     <PageSkeletonShell ariaLabel={tLayout('loadingTable')}>
       <TableContainer>
         <PageHeader title={t('title')} subtitle={t('subtitle')} />
-        <div className="grid gap-3 rounded-md border p-3 sm:grid-cols-2 lg:grid-cols-[repeat(4,minmax(0,1fr))_auto] lg:items-end" aria-hidden="true">
+        <div className="grid grid-cols-1 gap-3 rounded-md border p-3 sm:grid-cols-2 lg:grid-cols-[repeat(4,minmax(0,1fr))_auto] lg:items-end" aria-hidden="true">
           {/* the default view: state + from + to (the outcome control exists only under `decided`) */}
           {Array.from({ length: 3 }, (_, i) => (
             <div key={i} className="flex flex-col gap-1.5">

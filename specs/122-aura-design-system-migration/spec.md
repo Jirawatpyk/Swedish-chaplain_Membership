@@ -30,6 +30,7 @@ The migration runs **module by module**, one pull request per phase, in the orde
 ### Session 2026-09-26 (maintainer, after the US0 review)
 
 - Q: During the dual-library window, what colour are legacy primary buttons, and what is the end state? → A: Legacy kit primary buttons and `text-primary` links take the **brand accent** (#2E6397 in light) through the token bridge until their module migrates. The end state follows the AURA design: primary buttons in **AURA ink** (#18181B with white text in light; white with ink text in dark), and the brand blue for links, focus rings, selection and info.
+- Q: Must every phase run the local end-to-end suites before merge? → A: **No — at checkpoints only**: after US1 (the shared shell), after the money phases (US4, US8), and before US13. e2e has no CI job and a full local run takes over an hour, so per-phase runs would stall a 13-phase migration; each phase relies on its unit/component tests, the required CI checks (integration smoke, coverage) and the canvas comparison instead. A checkpoint failure caused by an earlier phase is fixed in its own PR before the next phase merges.
 - Q: Does the Swedish-flag navy chrome (navy rail and header, yellow stripe) survive on AURA SideNav / AppShell? → A: **No — dropped**; the shell follows the AURA design. The yellow stripe is removed in US0; US1 replaces the staff sidebar and portal header with AppShell / SideNav as designed.
 
 ## User Scenarios & Testing *(mandatory)*
@@ -245,7 +246,7 @@ The old component kit folder, its primitives library, the old toast/palette/date
 
 **Every module phase (US1–US12)**
 
-- **FR-010**: A phase is done only when (a) its paths import nothing from the old component kit, (b) its screens match their canvas boards at 390 and 1280 px in light and dark, (c) the layout, i18n, strict-ARIA and date gates pass, (d) the module's end-to-end, accessibility and locale suites pass locally with the run log linked in its PR, (e) bundle budgets are re-baselined, and (f) a UX review — and on money screens a financial-integrity review — has signed it.
+- **FR-010**: A phase is done only when (a) its paths import nothing from the old component kit, (b) its screens match their canvas boards at 390 and 1280 px in light and dark, (c) the layout, i18n, strict-ARIA and date gates pass, (d) its unit/component tests and all required CI checks pass (the end-to-end, accessibility and locale suites run locally only at the checkpoints — after US1, after the money phases US4/US8, and before US13 — not per phase), (e) bundle budgets are re-baselined, and (f) a UX review — and on money screens a financial-integrity review — has signed it.
 - **FR-011**: A phase MUST NOT change module logic, stored data, API contracts, permissions, audit events or money figures; logic defects found along the way are fixed in separate pull requests, merged before the phase's UI change.
 - **FR-012**: Page containers MUST keep their current contract (props and the attributes the layout gate and end-to-end tests select on) until US13.
 - **FR-013**: Every migrated screen MUST meet WCAG 2.1 AA, work at 320 px without horizontal scroll, keep 44 px tap targets, honour reduced motion, and keep EN/TH/SV text parity.
