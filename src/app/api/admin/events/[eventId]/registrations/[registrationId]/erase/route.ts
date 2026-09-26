@@ -2,7 +2,7 @@
  * POST `/api/admin/events/[eventId]/registrations/[registrationId]/erase`
  *
  * Phase 10 T111 — admin PII erasure (FR-032a / GDPR Article 17 / PDPA
- * Section 30). Atomically:
+ * Section 33). Atomically:
  *   - Loads + validates registration belongs to path's eventId
  *   - Emits `pii_erasure_requested` (severity: error)
  *   - Acquires per-(tenant, member, event) advisory lock + emits

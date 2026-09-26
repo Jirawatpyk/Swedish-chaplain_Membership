@@ -17,7 +17,7 @@
  * `vercel blob del <url>` CLI syntax which (a) is not the correct
  * subcommand (`delete`, not `del`), and (b) the `--token` flag refers
  * to Vercel CLI auth, NOT `BLOB_READ_WRITE_TOKEN`. A DPO running the
- * wrong command during a real GDPR Art. 17 / PDPA §30 request could
+ * wrong command during a real GDPR Art. 17 / PDPA §33 request could
  * believe the blob was deleted when it was not.
  *
  * This script calls `del()` from `@vercel/blob` directly with the

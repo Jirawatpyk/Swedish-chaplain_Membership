@@ -665,7 +665,7 @@ Existing F6 record already lists Vercel as hosting + OTel processor. F6.1 expand
 
 | Right | F6.1 procedure |
 |---|---|
-| Erasure (Art. 17 / §30) | Cascades to error-CSV Blobs per `docs/runbooks/f6-manual-erasure.md § F6.1` (staff-review H-5). Operator queries `csv_import_records WHERE error_csv_expires_at > NOW()` for the affected event + run-time-range, `del()` the matching Blob URLs, emits `csv_import_error_csv_manually_erased` audit. Also clears DB columns. |
+| Erasure (Art. 17 / §33) | Cascades to error-CSV Blobs per `docs/runbooks/f6-manual-erasure.md § F6.1` (staff-review H-5). Operator queries `csv_import_records WHERE error_csv_expires_at > NOW()` for the affected event + run-time-range, `del()` the matching Blob URLs, emits `csv_import_error_csv_manually_erased` audit. Also clears DB columns. |
 | Access (Art. 15 / §30) | Existing F6 procedure covers attendee row export. F6.1 csv_import_records contains only operational metadata + counts (no attendee PII outside the linked event_registrations); not exported separately. |
 
 ---

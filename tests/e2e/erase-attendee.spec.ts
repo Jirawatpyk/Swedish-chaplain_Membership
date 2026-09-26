@@ -1,7 +1,7 @@
 /**
  * DV-6 — F6 "Erase attendee PII" row-action E2E.
  *
- * DV-6 surfaces the EXISTING per-registration erase tool (FR-032a, PDPA §30 /
+ * DV-6 surfaces the EXISTING per-registration erase tool (FR-032a, PDPA §33 /
  * GDPR Art.17) as a row action in the attendee table — previously reachable
  * only by hand-typing the deep-link URL. This spec covers what the jsdom
  * table-guard unit test (attendee-table-erase-guard.test.tsx) cannot: the

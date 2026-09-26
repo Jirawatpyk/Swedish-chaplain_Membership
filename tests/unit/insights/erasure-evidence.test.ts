@@ -586,7 +586,7 @@ describe('getErasureEvidenceLog', () => {
       const row = out.rows[0]!;
       // Four same-login re-drive rows collapse to ONE proof…
       expect(row.userErasedProofs).toHaveLength(1);
-      // …kept at the EARLIEST occurredAt (the Art.12/§30 credential-erasure clock).
+      // …kept at the EARLIEST occurredAt (the Art.12/§33 credential-erasure clock).
       expect(row.userErasedProofs[0]!.occurredAt.toISOString()).toBe(isoMinus(t0));
       expect(row.userErasedProofs[0]!.credentialErased).toBe(true);
     }

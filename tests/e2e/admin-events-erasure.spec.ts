@@ -1,6 +1,6 @@
 /**
  * F6 remediation PR 2.2 / P4 — `@a11y @i18n` E2E for the by-email attendee
- * erasure surface (`/admin/events/erasure`, FR-032a, GDPR Art.17 / PDPA §30).
+ * erasure surface (`/admin/events/erasure`, FR-032a, GDPR Art.17 / PDPA §33).
  *
  * The admin-only destructive surface that finds every event registration
  * sharing a data subject's email and erases them in one sweep. Covers what the

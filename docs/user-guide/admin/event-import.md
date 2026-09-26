@@ -163,12 +163,12 @@
 
 ## งานที่ 9 — ลบข้อมูลส่วนบุคคล (Erase PII) ตามคำขอ PDPA/GDPR
 
-**ใช้เมื่อ:** ผู้ร่วมงานยื่นคำขอลบข้อมูล (PDPA §30 / GDPR Art. 17)
+**ใช้เมื่อ:** ผู้ร่วมงานยื่นคำขอลบข้อมูล (PDPA §33 / GDPR Art. 17)
 
 1. หาเลข `eventId` และ `registrationId` ของแถวที่ต้องการลบ (จากหน้ารายละเอียดงาน) แล้วเปิด URL โดยตรง:
    `/admin/events/{eventId}/registrations/{registrationId}/erase`
    - ⚠️ การลบ PII **ไม่มีปุ่มในตาราง Attendees** — ต้องเข้าผ่าน URL deep-link นี้ (หน้าจะเปิดกล่องยืนยันให้อัตโนมัติ)
-2. ในกล่อง **"Erase personal data for {ชื่อ}?"** กรอก **"Reason for erasure"** (บังคับ — เช่น GDPR Art. 17 / PDPA §30)
+2. ในกล่อง **"Erase personal data for {ชื่อ}?"** กรอก **"Reason for erasure"** (บังคับ — เช่น GDPR Art. 17 / PDPA §33)
 3. กด **"Erase PII"** → ระบบ: ลบ ชื่อ/อีเมล/บริษัท ออกจากแถวถาวร → **คืนโควตา** ที่เคยตัด → เก็บ audit (admin, เวลา, เหตุผล) ไว้ตามกฎหมาย
    - สำเร็จขึ้น **"Personal data erased"** พร้อมสรุปโควตาที่คืน
 
