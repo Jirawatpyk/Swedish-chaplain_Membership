@@ -57,6 +57,7 @@ A genuine dashboard OOB refund on an **async** payment method (e.g. PromptPay) i
 When a stale-invoice auto-refund **fails** at Stripe (`charge.refund.updated(failed|canceled)` — the money did NOT reach the customer while the payment reads `auto_refunded`), `processRefundUpdated` emits the 10-year forensic `auto_refund_failed_needs_manual_reconcile` and pages ops. This is the genuine give-up/failed reconcile item referenced in § 1.1 (it is NOT a marker guard-miss). The admin invoice detail page shows a destructive `AutoRefundFailedAlert` and the member's void banner reads "being reconciled".
 
 - **Reconcile the money out-of-band first** — refund the payment via the Stripe Dashboard, or return it by bank transfer. A credit note is **not** a way to return this money: it calls no processor and returns nothing.
+- **Expect a follow-on OOB alert if you refund via the Stripe Dashboard.** The Dashboard refund gets a NEW `re_…` id; the durable marker (`payments.auto_refund_processor_refund_id`) still holds the FAILED auto-refund's id, so the `charge.refunded` webhook raises `out_of_band_refund_detected` for the new id. That alert is the expected echo of this step — handle it per § 2.1's auto-refunded rule (**no credit note**), not § 2.3 Option A. A bank-transfer return raises no alert.
 - **Do NOT issue a credit note** (this is where § 2.3 Option A does NOT apply). The auto-refunded online payment was never recorded against the invoice, so there is no sale to reduce. Check the alert's cause (the `cause` key on the `payment_auto_refunded_*` audit row; the admin alert shows it for the duplicate case):
   - **`invoice_already_paid`** (event `payment_auto_refunded_concurrent_manual_mark`) — the invoice was already **paid in full** (e.g. a bank transfer recorded first); the online payment was a **duplicate**, not a sale. The invoice's receipt (§86/4 tax receipt, or §105 ใบเสร็จรับเงิน for a no-TIN event) and its output VAT are correct and stay on ภ.พ.30. A §86/10 credit note here would cut **real** output VAT and still return no money (and is impossible on a §105 receipt). The admin alert says: *"Do not issue a credit note: this invoice was paid in full; the online payment was a duplicate."*
   - `invoice_voided` / `invoice_credited` / `invoice_unknown_status` / `payment_terminal_failed_late_charge` — same rule: return the money out-of-band only. A voided invoice cannot be credited, a credited one is already reduced, and an unpaid one has no receipt to credit.
@@ -103,12 +104,16 @@ SELECT
   p.id as payment_id,
   p.invoice_id,
   p.amount_satang as paid_amount,
+  p.status as payment_status,
+  p.auto_refund_processor_refund_id,
   i.status as invoice_status,
   i.tenant_id
 FROM payments p
 JOIN invoices i ON i.id = p.invoice_id
 WHERE p.processor_charge_id = '<charge_id_from_audit>';
 ```
+
+**Auto-refunded payment → never a credit note.** If `payment_status = 'auto_refunded'` (or an `auto_refund_failed_needs_manual_reconcile` audit row exists for the invoice), this OOB refund is the manual return of a failed stale-invoice auto-refund (§ 1.5). That payment was never recorded against the invoice — for cause `invoice_already_paid` it duplicated a payment already on it — so **skip § 2.3 Option A**: a credit note would cut real output VAT on a sale that stands. Close it with § 1.5's "Mark as reconciled" instead.
 
 If no row is returned, the refund was for a payment we don't know about — escalate to maintainer (likely a bug or stale environment state).
 

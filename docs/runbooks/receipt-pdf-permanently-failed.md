@@ -114,9 +114,13 @@ Most common when a template change shipped without a backfill golden:
 
 If the source data is unrecoverable, escalate to Finance. Options:
 
-- **Re-issue manually:** void the original invoice (regular F4 void
-  flow), refund the payment, and ask Finance to re-issue. Tax
-  consequences must be reviewed (Thai RD §82/3 credit note vs §86 void).
+- **Escalate to Finance — do NOT void.** A `paid` invoice cannot be voided
+  (H1: `voidInvoice` answers `paid_membership_requires_credit_note` /
+  `paid_event_invoice_requires_reversal`, 409) — a void would strand the
+  payment and drop the receipt's output VAT from ภ.พ.30. Finance decides the
+  reversal (a §86/10 credit note once the receipt renders, a refund, or the
+  accountant's manual correction procedure in
+  `event-invoice-legacy-no-tin-remediation.md` § Step 4).
 - **Bypass async:** flip kill-switch (see
   `receipt-pdf-async-rollback.md`) and run the worker in inline mode
   for that one tenant — but this only helps for FUTURE invoices.
@@ -306,12 +310,15 @@ anchor.
    recovery for a missing file.** It cancels a legally valid §86/4 document
    and burns a new §87 number because a storage object is missing. It is
    also refused for most rows that reach this section:
-   - `voidInvoice` accepts only `issued` or `paid`. `partially_credited`,
+   - `voidInvoice` accepts only `issued`. `partially_credited`,
      `credited` and `void` answer `invalid_status`; a voided invoice cannot
      be voided again.
    - A `paid` membership invoice answers
      `paid_membership_requires_credit_note` (409): it is reversed with a
      §86/10 credit note and a real refund, not a void.
+   - A `paid` event invoice answers `paid_event_invoice_requires_reversal`
+     (409): it is reversed with a refund (plus a §86/10 credit note when the
+     document is a ใบกำกับภาษี; a §105 receipt cannot be credited).
    - A credit note has no void flow at all.
 
    `docs/runbooks/void-on-reissue.md` is the feature-flag runbook for the

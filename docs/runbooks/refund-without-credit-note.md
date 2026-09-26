@@ -182,10 +182,12 @@ buyer, VAT split, both dates) plus the Query B month pairing.
 retain-with-cancellation-note → out-of-system instrument → register-pairing
 procedure in `docs/runbooks/event-invoice-legacy-no-tin-remediation.md` § Step 4.
 
-> **Cite that procedure, not its premise.** The first line of that section states
-> that `paid → void` is illegal. It is not — `canTransition` in
-> `src/modules/invoicing/domain/invoice.ts` allows it, which is exactly why the
-> `invoice_voided` waiver exists.
+> **`paid → void` is illegal (H1).** `voidInvoice` refuses every paid invoice
+> (`paid_membership_requires_credit_note` / `paid_event_invoice_requires_reversal`,
+> 409), `canTransition` in `src/modules/invoicing/domain/invoice.ts` no longer
+> lists it, and `applyVoid`'s CAS accepts `issued` only. The `invoice_voided`
+> waiver below therefore applies to rows voided while still `issued`, and to
+> legacy paid rows voided before H1.
 
 ---
 

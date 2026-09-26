@@ -683,25 +683,20 @@ export interface InvoiceRepo {
   // pool-global scan does not belong on a tenant-bound repo factory.
 
   /**
-   * T100 / R-1 fix — US5 void transition. Atomic issued|paid → void with
+   * T100 / R-1 fix — US5 void transition. Atomic issued → void with
    * void_reason + voided_by_user_id + voided_at. The PDF sha256 is
    * DELIBERATELY NOT written here: the blob upload happens AFTER this
    * transaction commits, so sha256 is updated in a second transaction
-   * via `applyInvoicePdfRegeneration` (and, for a paid membership's separate
-   * §86/4 receipt blob, `applyReceiptPdfRegeneration`) once the blob upload
-   * succeeds. This ordering means a post-commit blob failure leaves a
-   * stale-but-consistent state (old sha, old bytes) that a sweeper can
-   * re-render.
+   * via `applyInvoicePdfRegeneration` once the blob upload succeeds. This
+   * ordering means a post-commit blob failure leaves a stale-but-consistent
+   * state (old sha, old bytes) that a sweeper can re-render.
    *
-   * WHERE CAS accepts `status IN ('issued','paid')` — voiding a PAID
-   * membership is the 088 § F.3 edge path (VOID-stamp BOTH the ใบแจ้งหนี้
-   * bill and the §86/4 tax-receipt blobs). A concurrent transition to
-   * void / credited / partially_credited returns no rows and the repo throws
-   * `InvoiceApplyConflictError`, which the use case maps to typed
-   * `concurrent_state_change`. The DB immutability trigger + CHECKs permit
-   * paid→void (status is not a locked column; the paid-has-receipt-status
-   * CHECK is vacuous for a non-paid row; the event-registration partial unique
-   * index frees voided rows), so NO migration is required.
+   * WHERE CAS accepts `status = 'issued'` ONLY (H1) — a PAID invoice is never
+   * voided: the void writes nothing to `payments` and the ภ.พ.30 output-VAT sum
+   * filters `status <> 'void'`. A PAID row, or a concurrent transition to
+   * paid / void / credited / partially_credited, returns no rows and the repo
+   * throws `InvoiceApplyConflictError`, which the use case maps to typed
+   * `concurrent_state_change`.
    *
    * The invoices immutability trigger whitelists `void_reason`,
    * `voided_by_user_id`, `voided_at`, `status` — see

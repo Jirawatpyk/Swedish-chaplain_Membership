@@ -424,7 +424,7 @@ export async function voidInvoice(
         built.value;
 
       // E. applyVoid (does NOT write pdf_sha256 / receipt_pdf_sha256 — both
-      // deferred to Phase 2). CAS accepts issued|paid; a concurrent flip →
+      // deferred to Phase 2). CAS accepts `issued` only (H1); a concurrent flip →
       // concurrent_state_change.
       let voided: Invoice;
       try {

@@ -3299,7 +3299,7 @@
           "codeFallback": "Error code: {code}",
           "refundInProgress": "A refund is currently being processed on this invoice's payment. Voiding now could conflict with it — wait until the refund settles, then try again.",
           "paidMembershipRequiresCreditNote": "This paid membership invoice can't be voided. To reverse it, issue a credit note instead.",
-          "paidEventInvoiceRequiresReversal": "This paid event invoice can't be voided: a void would not return the payment and would drop its output VAT from the ภ.พ.30 return. Reverse it with a refund instead (with a credit note only if the document is a tax invoice; a §105 receipt cannot be credited)."
+          "paidEventInvoiceRequiresReversal": "This paid event invoice can't be voided: a void would not return the payment and would drop its output VAT from the ภ.พ.30 return. Reverse it instead: refund an online payment with Issue refund…; for a tax invoice, issue a credit note and return an offline payment outside the system; a §105 receipt cannot be credited, so follow the accountant's manual correction procedure."
         }
       }
     },

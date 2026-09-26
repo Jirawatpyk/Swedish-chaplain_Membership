@@ -3299,7 +3299,7 @@
           "codeFallback": "Felkod: {code}",
           "refundInProgress": "En återbetalning behandlas för denna fakturas betalning. Att makulera nu kan skapa en konflikt – vänta tills återbetalningen är klar och försök igen.",
           "paidMembershipRequiresCreditNote": "Den här betalda medlemsfakturan kan inte makuleras. För att återföra den, utfärda en kreditnota i stället.",
-          "paidEventInvoiceRequiresReversal": "Den här betalda evenemangsfakturan kan inte makuleras: en makulering betalar inte tillbaka beloppet och tar bort dess utgående moms från ภ.พ.30-deklarationen. Återför den i stället med en återbetalning (med en kreditnota endast om dokumentet är en skattefaktura; ett §105-kvitto kan inte krediteras)."
+          "paidEventInvoiceRequiresReversal": "Den här betalda evenemangsfakturan kan inte makuleras: en makulering betalar inte tillbaka beloppet och tar bort dess utgående moms från ภ.พ.30-deklarationen. Återför den i stället: återbetala en onlinebetalning med Utfärda återbetalning…; för en skattefaktura, utfärda en kreditnota och betala tillbaka en offlinebetalning utanför systemet; ett §105-kvitto kan inte krediteras, så följ revisorns manuella rättelserutin."
         }
       }
     },

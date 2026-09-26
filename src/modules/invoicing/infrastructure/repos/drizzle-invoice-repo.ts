@@ -1568,18 +1568,16 @@ export function makeDrizzleInvoiceRepo(
       // the blob upload succeeds, preventing DB/Blob desync on blob
       // failure.
       //
-      // 088 T068 — the WHERE CAS accepts BOTH `issued` AND `paid`. Voiding a
-      // PAID membership is the spec's edge path (§ F.3 / edge-case line 172):
-      // normally an issued §86/4 is cancelled via a §86/10 credit note, but a
-      // void must still stamp VOID on both the ใบแจ้งหนี้ bill AND the §86/4
-      // tax-receipt blobs. The CAS still rejects any concurrent transition to
-      // void / credited / partially_credited / draft (→ InvoiceApplyConflictError
-      // → typed `concurrent_state_change`) — the caller already holds the
-      // invoice-row FOR UPDATE lock, so this guard is defence-in-depth against a
-      // status flip between the lock read and this write. The DB immutability
-      // trigger + CHECKs permit paid→void (status is not locked; the
-      // receipt-status CHECK is vacuous for non-paid rows; the event-registration
-      // partial unique index explicitly frees voided rows).
+      // H1 — the WHERE CAS accepts ONLY `issued`. A PAID invoice is never
+      // voided (a void writes nothing to `payments` and `sumPeriodOutputVat`
+      // filters `status <> 'void'`, so the row's ภ.พ.30 output VAT would vanish);
+      // voidInvoice refuses it above this write, and this CAS is the
+      // defence-in-depth backstop for any caller that skips the use-case. It
+      // also rejects a concurrent transition to paid / void / credited /
+      // partially_credited / draft (→ InvoiceApplyConflictError → typed
+      // `concurrent_state_change`) between the caller's FOR UPDATE lock read
+      // and this write. (Legacy voided-paid rows from before H1 are re-stamped
+      // by the void-pdf-reconcile cron, which never calls applyVoid.)
       const [updated] = await tx
         .update(invoices)
         .set({
@@ -1593,7 +1591,7 @@ export function makeDrizzleInvoiceRepo(
           and(
             eq(invoices.tenantId, input.tenantId),
             eq(invoices.invoiceId, input.invoiceId),
-            or(eq(invoices.status, 'issued'), eq(invoices.status, 'paid')),
+            eq(invoices.status, 'issued'),
           ),
         )
         .returning();
