@@ -38,8 +38,9 @@ describe('ChangePasswordForm eager i18n validation', () => {
     fireEvent.submit(form);
 
     // currentPassword '' fails .min(1, tv('required')) — proves the eager
-    // shared.validation.required key resolves to real localized text.
-    expect(await screen.findByText('This field is required.')).toBeTruthy();
+    // shared.validation.required key resolves to real localized text. It
+    // shows twice: under the field and in the error summary (spec 122 US2).
+    expect(await screen.findAllByText('This field is required.')).toHaveLength(2);
     expect(screen.queryByText(/String must contain/i)).toBeNull();
   });
 });
