@@ -53,26 +53,24 @@ export function EmptyState({
   'data-testid': dataTestId,
   announce = true,
 }: EmptyStateProps) {
+  // Spec 122 US1 — AURA's EmptyState markup (its classes, so its spacing,
+  // tint and dashed edge), drawn here rather than imported: this is a server
+  // component, and server files never import AURA (docs/aura-adoption.md).
+  // The title stays a <p>, not AURA's heading, so no page's outline changes.
   return (
     <div
       data-testid={dataTestId}
-      className={cn(
-        'flex flex-col items-center justify-center gap-3 text-center',
-        bordered ? 'rounded-lg border border-dashed border-border p-12' : 'py-12',
-        className,
-      )}
+      className={cn('aura-empty', bordered && 'is-bordered', className)}
       role={announce ? 'status' : undefined}
     >
       {Icon ? (
-        <Icon className={cn('size-10 text-muted-foreground', iconClassName)} aria-hidden />
+        <span className="aura-empty__icon" aria-hidden>
+          <Icon className={cn('size-6', iconClassName)} aria-hidden />
+        </span>
       ) : null}
-      <div className="space-y-1">
-        <p className="text-base font-medium">{title}</p>
-        {description ? (
-          <p className="max-w-md text-sm text-muted-foreground">{description}</p>
-        ) : null}
-      </div>
-      {action ? <div className="mt-2">{action}</div> : null}
+      <p className="aura-empty__title">{title}</p>
+      {description ? <p className="aura-empty__text">{description}</p> : null}
+      {action ? <div className="aura-empty__action">{action}</div> : null}
     </div>
   );
 }

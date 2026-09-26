@@ -34,7 +34,7 @@ function renderMenu(role: 'member' | 'admin' = 'member') {
 }
 
 function openMenu() {
-  fireEvent.click(screen.getByRole('button', { name: 'Account menu' }));
+  fireEvent.click(screen.getByRole('button', { name: /^Account menu/ }));
 }
 
 describe('<UserMenu> member Account hub (057)', () => {
@@ -57,6 +57,14 @@ describe('<UserMenu> member Account hub (057)', () => {
     expect(
       screen.getByRole('menuitem', { name: /data & privacy/i }),
     ).toHaveAttribute('href', '/portal/account#data-privacy');
+  });
+
+  it('says who is signed in as the menu\'s description, not as menu items (spec 122)', async () => {
+    renderMenu();
+    openMenu();
+    const menu = await screen.findByRole('menu');
+    expect(menu).toHaveAccessibleDescription('Jane Member · Member jane@example.com');
+    expect(screen.queryByRole('menuitem', { name: /jane/i })).toBeNull();
   });
 
   it('renders a sign-out item; theme controls live on the top bar, not in this menu', async () => {

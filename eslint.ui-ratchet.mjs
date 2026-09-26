@@ -17,7 +17,11 @@
 
 const TS_FILES = ["src/**/*.{ts,tsx}", "tests/**/*.{ts,tsx}"];
 
-/** The legacy kit's only `cmdk` consumer; it goes when US1 swaps in AURA `Command`. */
+/**
+ * The legacy kit's only `cmdk` consumer. US1 moved both command palettes to
+ * AURA `Command`; the host stays for the pickers and `ui/combobox` until the
+ * last of their modules migrates (at the latest US13).
+ */
 const CMDK_HOST = "src/components/ui/command.tsx";
 
 const GLOBAL_PATHS = [
@@ -44,9 +48,11 @@ const rule = (paths, patterns = []) => ({
 
 /**
  * @param {readonly string[]} migratedPaths globs already on AURA
+ * @param {readonly string[]} [notYet] files inside those globs that still wait
+ *   for a later phase — each named, with the phase, in `eslint.config.mjs`
  * @returns {import("eslint").Linter.Config[]}
  */
-export function uiRatchet(migratedPaths) {
+export function uiRatchet(migratedPaths, notYet = []) {
   const blocks = [
     { name: "spec-122/ui-ratchet", files: TS_FILES, rules: rule([...GLOBAL_PATHS, CMDK]) },
     { name: "spec-122/ui-ratchet/cmdk-host", files: [CMDK_HOST], rules: rule(GLOBAL_PATHS) },
@@ -55,6 +61,7 @@ export function uiRatchet(migratedPaths) {
     blocks.push({
       name: "spec-122/ui-ratchet/migrated",
       files: [...migratedPaths],
+      ...(notYet.length > 0 ? { ignores: [...notYet] } : {}),
       rules: rule([...GLOBAL_PATHS, CMDK], [LEGACY_KIT]),
     });
   }

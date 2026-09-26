@@ -832,7 +832,7 @@ export async function runToggleIngest(
 // opt-out requirement materialises later):
 //   - `NavVisibilityFlag` typed union (src/config/nav.ts)
 //   - `visibilityFlag` field on `NavItem`
-//   - `filterNavConfig()` in `src/components/layout/staff-sidebar.tsx`
+//   - `filterNavConfig()` in `src/components/layout/staff-nav.tsx`
 // A future resolver would be ~30 lines to add against those hooks,
 // shaped by the real requirement at that time (admin toggle, DB
 // column, super-admin override, etc.) rather than the Phase 5

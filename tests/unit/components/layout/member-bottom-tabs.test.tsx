@@ -1,12 +1,16 @@
 /**
  * 057 — <MemberBottomTabs> mobile tab bar. Pins: 5 tabs, visible short labels,
- * aria-current="page" on active, ≥44px touch targets, unique nav aria-label,
- * and the mobile-only (lg:hidden) wrapper.
+ * aria-current="page" on active, unique nav aria-label. Since spec 122 it is
+ * AURA `BottomNav`, which owns the 44px targets, the safe-area inset and the
+ * hide-from-1024px rule; the pins below check that it is AURA's bar, hidden
+ * from lg, with the spacer that keeps the page clear of it.
  */
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
+import svMessages from '@/i18n/messages/sv.json';
+import thMessages from '@/i18n/messages/th.json';
 import { MemberBottomTabs } from '@/components/layout/member-bottom-tabs';
 
 const mockPathname = vi.fn<() => string>(() => '/portal');
@@ -14,9 +18,10 @@ vi.mock('next/navigation', () => ({
   usePathname: () => mockPathname(),
 }));
 
-function renderTabs() {
+function renderTabs(locale: 'en' | 'sv' | 'th' = 'en') {
+  const messages = { en: enMessages, sv: svMessages, th: thMessages }[locale];
   return render(
-    <NextIntlClientProvider locale="en" messages={enMessages}>
+    <NextIntlClientProvider locale={locale} messages={messages}>
       <MemberBottomTabs />
     </NextIntlClientProvider>,
   );
@@ -41,6 +46,19 @@ describe('<MemberBottomTabs> (057 mobile tab bar)', () => {
     expect(screen.getByRole('link', { name: 'Account' })).toBeInTheDocument();
   });
 
+  it('names a shortened tab in full when the full name contains the short one (WCAG 2.5.3)', () => {
+    mockPathname.mockReturnValue('/portal');
+    const { unmount } = renderTabs('sv');
+    // "Konto" is shown; "Mitt konto" is read. "Översikt" is not part of
+    // "Instrumentpanel", so that tab keeps its visible text as its name.
+    expect(screen.getByRole('link', { name: 'Mitt konto' })).toHaveTextContent('Konto');
+    expect(screen.getByRole('link', { name: 'Översikt' })).toBeInTheDocument();
+    unmount();
+    renderTabs('th');
+    expect(screen.getByRole('link', { name: 'บัญชีของฉัน' })).toHaveTextContent('บัญชี');
+    expect(screen.getByRole('link', { name: 'สิทธิ์' })).toBeInTheDocument();
+  });
+
   it('shows the compact short label text for overflow-prone tabs', () => {
     mockPathname.mockReturnValue('/portal');
     renderTabs();
@@ -63,19 +81,11 @@ describe('<MemberBottomTabs> (057 mobile tab bar)', () => {
     expect(screen.getByRole('link', { name: 'Benefits' })).toHaveAttribute('aria-current', 'page');
   });
 
-  it('each tab is a ≥44px touch target (WCAG 2.5.8)', () => {
+  it('is AURA\'s phone bar: hidden from lg, with the spacer that keeps the page clear of it', () => {
     mockPathname.mockReturnValue('/portal');
-    renderTabs();
-    for (const link of screen.getAllByRole('link')) {
-      expect(link.className).toContain('min-h-[44px]');
-    }
-  });
-
-  it('is mobile-only — the nav carries lg:hidden + safe-area padding', () => {
-    mockPathname.mockReturnValue('/portal');
-    renderTabs();
+    const { container } = renderTabs();
     const nav = screen.getByRole('navigation', { name: 'Member tab bar' });
-    expect(nav.className).toContain('lg:hidden');
-    expect(nav.className).toContain('pb-[env(safe-area-inset-bottom)]');
+    expect(nav).toHaveClass('aura-bottomnav', 'aura-bottomnav--below-lg');
+    expect(container.querySelector('.aura-bottomnav-spacer.aura-bottomnav--below-lg')).not.toBeNull();
   });
 });

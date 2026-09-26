@@ -38,16 +38,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import { Button, Dialog } from '@jirawatpyk/aura-react';
 // Client component — cannot import from the `@/modules/auth`
 // barrel because the barrel transitively pulls in Application
 // use-case composition roots which load Node-only Infrastructure
@@ -337,37 +328,28 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
   }, [open, remaining, forceSignOut]);
 
   return (
-    <AlertDialog open={open} onOpenChange={setOpen}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{t('title')}</AlertDialogTitle>
-          <AlertDialogDescription
-            // aria-live ensures the screen-reader announces the
-            // countdown updates without re-reading the whole dialog.
-            aria-live="polite"
-          >
-            {t('description', { seconds: remaining })}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel
-            onClick={(event) => {
-              event.preventDefault();
-              void forceSignOut('voluntary');
-            }}
-          >
+    // Spec 122 US1 — AURA `Dialog role="alertdialog"`. Focus starts on "Stay
+    // signed in", so a stray Enter keeps the session rather than ending it.
+    <Dialog
+      role="alertdialog"
+      open={open}
+      // Escape, the close button or the scrim mean "I'm here": the same
+      // heartbeat as "Stay signed in". Closing without one would let the
+      // server session keep ageing while the poll re-opens a fresh 60 s
+      // countdown the server no longer matches (ux-standards § 8.2).
+      onClose={() => void stayAction()}
+      title={t('title')}
+      description={<span aria-live="polite">{t('description', { seconds: remaining })}</span>}
+      footer={
+        <>
+          <Button variant="secondary" onClick={() => void forceSignOut('voluntary')}>
             {t('signOut')}
-          </AlertDialogCancel>
-          <AlertDialogAction
-            onClick={(event) => {
-              event.preventDefault();
-              void stayAction();
-            }}
-          >
+          </Button>
+          <Button variant="primary" data-autofocus onClick={() => void stayAction()}>
             {t('stay')}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+          </Button>
+        </>
+      }
+    />
   );
 }

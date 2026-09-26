@@ -538,7 +538,7 @@ export function FormattedVersionWorkspace({
         </CardContent>
       </Card>
 
-      <div className="min-w-0 space-y-6 lg:sticky lg:top-4 lg:self-start">
+      <div className="min-w-0 space-y-6 lg:sticky lg:top-[calc(var(--shell-bar-height,0px)+1rem)] lg:self-start">
         <PreviewPane subject={subject} bodyHtml={deferredBody} endpoint="/api/admin/broadcasts/preview" locale={locale} />
         <Card data-testid="eblast-member-original" role="region" aria-labelledby="eblast-original-title">
           <CardHeader>

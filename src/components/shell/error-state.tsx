@@ -9,7 +9,7 @@
  */
 import { TriangleAlertIcon } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { Button } from '@/components/ui/button';
+import { Button } from '@jirawatpyk/aura-react';
 import { cn } from '@/lib/utils';
 
 export interface ErrorStateProps {
@@ -38,7 +38,7 @@ export function ErrorState({ title, description, onRetry, className }: ErrorStat
         ) : null}
       </div>
       {onRetry ? (
-        <Button variant="outline" size="sm" onClick={onRetry}>
+        <Button variant="secondary" size="sm" onClick={onRetry}>
           {t('buttons.retry')}
         </Button>
       ) : null}

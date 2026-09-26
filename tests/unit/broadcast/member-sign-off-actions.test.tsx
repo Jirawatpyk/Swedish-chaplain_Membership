@@ -20,7 +20,7 @@
  * `finalFocus` names the trigger.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import { toast } from '@/lib/toast';
 import enMessages from '@/i18n/messages/en.json';
@@ -270,7 +270,11 @@ describe('PR #392 review C1 — a decision refused by the read-only proxy', () =
         // double-rAF in ReasonConfirmationDialog); that is the settled state —
         // "somewhere inside the dialog" was not enough under the slower
         // coverage run, where the rAF landed after the refusal's focus.
+        // Base UI already focuses the textarea on open (its first tabbable),
+        // so "the textarea has focus" can hold before that rAF fires; wait
+        // two frames of our own so the dialog's chain (queued first) has run.
         await waitFor(() => expect(reason).toHaveFocus());
+        await act(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
         fireEvent.change(reason, { target: { value: 'The date is wrong.' } });
         fireEvent.click(within(dialog).getByRole('button', { name: t.requestChanges.confirm }));
         return dialog;

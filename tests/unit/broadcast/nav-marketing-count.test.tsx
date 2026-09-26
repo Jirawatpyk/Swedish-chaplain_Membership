@@ -17,8 +17,6 @@
  *   3. The staff layout's seam: the read → `applyNavBadges` → the Broadcasts
  *      link's accessible name carries the count and its sr-only noun.
  */
-import type { ReactElement, ReactNode } from 'react';
-import { cloneElement } from 'react';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -33,7 +31,6 @@ import { MARKETING_TURN_STATUSES, turnOf } from '@/modules/broadcasts/domain/sta
 import { APPROVAL_ROUND_STATUSES } from '@/modules/broadcasts/domain/stage/in-progress-statuses';
 import {
   applyNavBadges,
-  filterNavConfig,
   isNavGroup,
   isNavItemActive,
   staffNavConfig,
@@ -66,14 +63,7 @@ vi.mock('@/lib/rbac', async () => {
   return { canPerform: (role: string, key: never) => hasPermission(role, key) };
 });
 vi.mock('next/navigation', () => ({ usePathname: () => '/admin' }));
-vi.mock('@/components/ui/sidebar', () => ({
-  useSidebar: () => ({ isMobile: false, setOpenMobile: vi.fn() }),
-  SidebarMenuItem: ({ children }: { children: ReactNode }) => <li>{children}</li>,
-  SidebarMenuButton: ({ render: el, children }: { render: ReactElement; children: ReactNode }) => cloneElement(el, {}, children),
-  SidebarMenuSub: ({ children }: { children: ReactNode }) => <ul>{children}</ul>,
-  SidebarMenuSubItem: ({ children }: { children: ReactNode }) => <li>{children}</li>,
-  SidebarMenuSubButton: ({ render: el, children }: { render: ReactElement; children: ReactNode }) => cloneElement(el, {}, children),
-}));
+
 /** `runInTenant` hands the counter a tx that records its SELECT and answers `h.counts`. */
 vi.mock('@/lib/db', () => ({
   runInTenant: async (_ctx: unknown, fn: (tx: unknown) => Promise<unknown>) => {
@@ -102,7 +92,7 @@ vi.mock('@/modules/broadcasts/infrastructure/feature-flags', async (importOrigin
 }));
 
 import { EBLAST_NAV_BADGE_TIMEOUT_MS, readEblastWaitingCount, readEblastWaitingCountForNav } from '@/lib/eblast-waiting-count';
-import { NavEntry } from '@/components/layout/nav-item';
+import { StaffNav, type StaffNavProps } from '@/components/layout/staff-nav';
 
 const TENANT = asTenantContext('tenant-a');
 const ROOT = join(__dirname, '..', '..', '..');
@@ -122,6 +112,14 @@ afterEach(() => {
   cleanup();
   vi.useRealTimers();
 });
+
+function renderNav(props: Pick<StaffNavProps, 'allowedHrefs'> & Partial<StaffNavProps>) {
+  return render(
+    <NextIntlClientProvider locale="en" messages={en}>
+      <StaffNav tenantName="SweCham" {...props} />
+    </NextIntlClientProvider>,
+  );
+}
 
 describe('the badge counts the marketing-turn set — the gauge\'s own Domain predicate', () => {
   it('MARKETING_TURN_STATUSES is exactly the statuses whose turn is marketing', () => {
@@ -211,13 +209,11 @@ describe('the staff layout seam: read → applyNavBadges → the Broadcasts link
   it('the Broadcasts item declares the badge, and the count reaches its accessible name with the sr-only noun', () => {
     const item = broadcastsItem({ '/admin/broadcasts': 4 });
     expect(item.badge).toEqual({ labelKey: 'nav.staff.broadcastsBadge' });
-    render(
-      <NextIntlClientProvider locale="en" messages={en}>
-        <ul>
-          <NavEntry item={item} />
-        </ul>
-      </NextIntlClientProvider>,
-    );
+    renderNav({
+      allowedHrefs: staffNavAllowedHrefs('marketing'),
+      navVisibilityFlags: { broadcastsEnabled: true, eblastApprovalRoundVisible: true },
+      navBadgeCounts: { '/admin/broadcasts': 4 },
+    });
     const link = screen.getByRole('link', { name: 'Broadcasts 4 waiting' });
     // #400 item 8 — the link opens the view the badge counts, not the
     // submitted-only default; the badge stays keyed on the item's `href`.
@@ -248,28 +244,18 @@ describe('the staff layout seam: read → applyNavBadges → the Broadcasts link
 });
 
 describe('#400 U2 — the link opens the waiting-on-marketing preset ONLY while the approval round is visible', () => {
-  // The sidebar's own path: filterNavConfig (visibility + link target) → applyNavBadges → NavEntry.
-  const renderedBroadcasts = (flags: NavVisibilityFlags) =>
-    applyNavBadges(filterNavConfig(staffNavConfig, flags, new Set(staffNavAllowedHrefs('marketing'))), {})
-      .sections.flatMap((s) => s.items.flatMap((i) => (isNavGroup(i) ? i.children : [i])))
-      .find((i) => i.href === '/admin/broadcasts') as RenderedNavItem;
-  const hrefOf = (item: RenderedNavItem) => {
-    render(
-      <NextIntlClientProvider locale="en" messages={en}>
-        <ul>
-          <NavEntry item={item} />
-        </ul>
-      </NextIntlClientProvider>,
-    );
+  // The nav's own path: filterNavConfig (visibility + link target) → applyNavBadges → SideNav.
+  const hrefOf = (flags: NavVisibilityFlags) => {
+    renderNav({ allowedHrefs: staffNavAllowedHrefs('marketing'), navVisibilityFlags: flags });
     return screen.getByRole('link', { name: 'Broadcasts' }).getAttribute('href');
   };
 
   it('round NOT visible (flag off, no row in the round — prod today): the plain queue, never three empty preset chips', () => {
-    expect(hrefOf(renderedBroadcasts({ broadcastsEnabled: true, eblastApprovalRoundVisible: false }))).toBe('/admin/broadcasts');
+    expect(hrefOf({ broadcastsEnabled: true, eblastApprovalRoundVisible: false })).toBe('/admin/broadcasts');
   });
 
   it('round visible (flag on, or a row still in the round): the preset view the badge counts', () => {
-    expect(hrefOf(renderedBroadcasts({ broadcastsEnabled: true, eblastApprovalRoundVisible: true }))).toBe(MARKETING_TURN_QUEUE_HREF);
+    expect(hrefOf({ broadcastsEnabled: true, eblastApprovalRoundVisible: true })).toBe(MARKETING_TURN_QUEUE_HREF);
   });
 
   it('the staff layout derives the flag from the SAME read as the badge (R18: `ok` = flag on or a round row)', () => {

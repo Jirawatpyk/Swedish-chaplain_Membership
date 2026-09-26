@@ -174,7 +174,7 @@ describe('readPendingChangeRequestsForNav — the layout read is time-boxed (R-H
  * composition it is.
  *
  * An RSC test of `layout.tsx` itself would be a test of `requireSession` +
- * `cookies()` + `<StaffSidebar>`, none of which is the property in question.
+ * `cookies()` + `<StaffShell>`, none of which is the property in question.
  * The property is: whichever of the three kinds the read answers, what
  * `badgeCount` reaches the rendered nav? The layout's own line is
  * `kind === 'ok' ? summary.count : 0`, so this pipes all three through the

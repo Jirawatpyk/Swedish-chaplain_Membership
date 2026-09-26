@@ -11,24 +11,23 @@
  * refresh runs the button says it is busy and stays focusable.
  */
 import { useTransition } from 'react';
-import { RotateCwIcon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/button';
+import { Button } from '@jirawatpyk/aura-react';
 
 export function RefreshPageButton({ label }: { readonly label: string }): React.ReactElement {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   return (
+    // AURA's `loading` keeps the button focusable, says it is busy and
+    // swallows repeat clicks — what `focusableWhenDisabled` did before.
     <Button
       type="button"
-      variant="outline"
+      variant="secondary"
       size="sm"
-      disabled={pending}
-      focusableWhenDisabled
-      aria-busy={pending || undefined}
+      icon="rotate-ccw"
+      loading={pending}
       onClick={() => startTransition(() => router.refresh())}
     >
-      <RotateCwIcon className={pending ? 'size-4 motion-safe:animate-spin' : 'size-4'} aria-hidden="true" />
       {label}
     </Button>
   );

@@ -63,7 +63,9 @@ test.describe('F4 US3 — breadcrumb navigation @layout', () => {
     // /admin/settings/renewals/schedules → raw=4 → filtered=3 (admin
     // dropped). Mobile truncation triggers when filtered > 2.
     await page.goto('/admin/settings/renewals/schedules');
-    const ellipsis = page.locator('[data-slot="breadcrumb-ellipsis"]');
+    // Spec 122 US1 — the trail renders in the top bar from 1024px and above
+    // the page below it (one of the two is display:none), so take the visible one.
+    const ellipsis = page.locator('[data-slot="breadcrumb-ellipsis"]:visible');
     await expect(ellipsis).toBeVisible();
   });
 });

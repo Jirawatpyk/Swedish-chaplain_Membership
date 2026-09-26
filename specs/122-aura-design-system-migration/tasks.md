@@ -14,7 +14,7 @@
 
 ## Phase 1: Setup
 
-- [x] T001 [US0] Add `@jirawatpyk/aura-react@5.5.0` and `@jirawatpyk/aura-tokens@5.5.0` (bumped to 5.6.0 on 2026-09-26 when handoff items 52–56 shipped) as exact pins in `package.json` and `pnpm-lock.yaml`. Remove `react-day-picker`, delete `src/components/ui/calendar.tsx` and `src/components/ui/scroll-area.tsx` (0 importers), and confirm `pnpm typecheck` and `pnpm test` are green.
+- [x] T001 [US0] Add `@jirawatpyk/aura-react@5.5.0` and `@jirawatpyk/aura-tokens@5.5.0` (bumped to 5.6.0 on 2026-09-26 when handoff items 52–56 shipped, and to 5.7.0 – 5.7.2 in US1 when 57–64 shipped) as exact pins in `package.json` and `pnpm-lock.yaml`. Remove `react-day-picker`, delete `src/components/ui/calendar.tsx` and `src/components/ui/scroll-area.tsx` (0 importers), and confirm `pnpm typecheck` and `pnpm test` are green.
 - [x] T002 [US0] Generate the brand theme with `npx aura-theme --brand "#10487A" --out src/styles/aura-theme.css`. The CLI must exit 0 (all contrast checks pass). Commit the output, with a header comment naming the regenerate command.
 
 ---
@@ -113,9 +113,23 @@
 
 ---
 
+## Phase 3: User Story 1 — Shell (Priority: P1) — PR 2
+
+Goal: every page sits in the AURA frame of the canvas boards (`Admin-members`, `Admin-members-tablet`, `Admin-members-mobile`, `Admin-command`, the portal `Main` boards). Logic is unchanged (FR-011): the same nav entries per permission, the same badges, the same palette results.
+
+- [x] T101 [US1] Page titles (`.text-h1`) use AURA's display face (Fraunces), as on every board; h2–h4 stay on the text face. RED: `aura-foundation-css.test.ts` › page titles.
+- [x] T102 [US1] Preview harness `src/app/test-fixtures/aura-shell/page.tsx` (behind `ALLOW_TEST_ROUTES`, like `button-matrix`): the staff and member shells with fixture data, no session or DB, so they can be screenshot at 390/1280, light/dark, and compared with the boards. RED: none (a fixture page); verified by the screenshots in the PR.
+- [x] T103 [US1] Staff navigation is AURA `SideNav` inside `AppShell`: the same permission-filtered entries and badges (a badge stays part of the link's name: "Change requests 3 pending"), the active entry carries `aria-current="page"`, Settings is one collapsible group that opens on a settings route (board proposal, implemented), the rail state persists in the `sidebar_state` cookie, and below 1024px the nav opens in AURA's drawer. RED: `tests/unit/components/layout/staff-nav.test.tsx`.
+- [x] T104 [US1] Staff top bar: breadcrumb, a search button that opens the palette (⌘K still works), language, colour scheme and account menu, per `topbar()` on the boards. RED: `tests/unit/components/layout/staff-top-bar.test.tsx`. Below 640px the colour-scheme choice moves into the account menu (the mobile board has no room for the button).
+- [x] T105 [US1] Member frame: header with brand, pill nav (desktop), language, colour scheme, account; AURA `BottomNav` below 1024px with the same five tabs; the E-Blast acknowledgement banner stays outside the skip target. RED: `tests/unit/app/portal-layout-shell.test.tsx` and `tests/unit/components/layout/member-bottom-tabs.test.tsx` (updated to AURA's bar and spacer); `member-nav.test.tsx` passes unchanged.
+- [x] T106 [US1] Both ⌘K palettes use AURA `Command` (server-searched results, `filter={false}`, `loading`), with the same groups, results and destinations. `cmdk` stays installed for the pickers and `ui/combobox` until their modules migrate, and is removed with the last of them (at the latest US13). RED: `tests/unit/components/command-palette/*.test.tsx`.
+- [x] T107 [US1] Confirmation and idle-warning dialogs use AURA `Dialog role="alertdialog"` with the same props and focus behaviour (Cancel first; a caller's required field first when named; the idle dialog starts on "Stay signed in"). RED: `confirmation-dialog.test.tsx` › focus, `idle-warning-dialog.test.tsx`. The reason + typed-phrase dialog (`reason-confirmation-dialog.tsx`, `typed-phrase-field.tsx`) is F119-reviewed E-Blast/F114 behaviour with many focus and live-region rules; it moves with its callers (US5 / US12), listed in `NOT_YET_ON_AURA`.
+- [x] T108 [US1] EmptyState, the page skeletons, Breadcrumb and TablePagination render AURA components behind their current props and `data-slot`s; `.skeleton-shimmer` becomes AURA's pulse (FR-009). RED: `breadcrumb-nav.test.tsx`, `table-pagination.test.tsx`, `empty-state.test.tsx` (updated), `aura-foundation-css.test.ts` › pulse; `page-skeletons.test.tsx` passes unchanged (the skeletons keep their markup and take the pulse from CSS).
+- [x] T109 [US1] `src/components/layout`, `src/components/shell`, `src/components/command-palette` and `src/components/auth/idle-warning-dialog.tsx` join `MIGRATED_PATHS` (with `NOT_YET_ON_AURA` for the reason dialog); e2e selectors that named old-kit internals (`data-slot="sidebar*"`, `breadcrumb*`) move to roles and names. RED: `ui-import-ratchet.test.ts`.
+- [x] T110 [US1] Exit: gates, board screenshots in the PR, enterprise-ux-designer review, then the **e2e checkpoint** on the maintainer's machine: the 16 shell specs on chromium + WebKit, compared with main by test title (full suite moved to the US4 checkpoint — spec Clarifications, 2026-09-26). Build + bundle budgets re-baselined (renewals admin routes, dual-library window).
+
 ## Later phases (one PR each; tasks written when the phase starts)
 
-- [ ] T100 [US1] Shell: AppShell/SideNav/BottomNav, header, menus, Breadcrumb, Pagination, Command (remove `cmdk`, ratchet to `error`), idle/confirm dialogs, EmptyState, Skeleton pulse (remove shimmer CSS). Layout containers keep API + `data-slot`.
 - [ ] T200 [US2] Auth pages: TextField, PasswordField, Checkbox (`hideLabel`), FormErrorSummary.
 - [ ] T300 [US3] Portal home, profile, account: Card, Stat, StatusPill, link Tabs, ActionBar.
 - [ ] T400 [US4] Portal invoicing + pay sheet: DataTable totals, Stepper, Drawer ≤ 92 dvh around the unchanged Stripe Elements. Financial-integrity review.

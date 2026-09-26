@@ -132,6 +132,46 @@ describe('globals.css — AURA foundation (spec 122)', () => {
     expect(rule).toContain('var(--aura-bg-skeleton)');
   });
 
+  it('pulses skeletons with AURA\'s own animation, and only without reduced motion (FR-009, spec 122 US1)', () => {
+    // The shimmer sweep is gone: the pulse is AURA's keyframes and duration.
+    expect(css).not.toMatch(/--animate-shimmer|@keyframes shimmer/);
+    const motion = css.match(/@media \(prefers-reduced-motion: no-preference\)\s*\{\s*\.skeleton-shimmer\s*\{[^}]*\}/)?.[0] ?? '';
+    expect(motion).toMatch(/animation:\s*aura-pulse var\(--aura-duration-pulse\)/);
+  });
+
+  it('sets page titles in AURA\'s display face, as the canvas boards do (Fraunces, Thai falls back to Noto Sans Thai)', () => {
+    expect(declared(block('.text-h1'), 'font-family')).toBe('var(--font-display)');
+    // Section headings stay in the text face (the boards use Inter for h2/h3).
+    expect(declared(block('.text-h2'), 'font-family')).toBeUndefined();
+  });
+
+  it('lets the page containers own the padding inside the AURA shell, on AURA\'s 16 / 24 / 32 steps (spec 122 US1)', () => {
+    const layer = css.match(/@layer components\s*\{[\s\S]*?\n\}/)?.[0] ?? '';
+    // AppShell pads <main> itself; the containers already pad, so one of the two must go.
+    expect(layer).toMatch(/\.chamber-shell \.aura-shell__content\s*\{\s*padding:\s*0;/);
+    expect(layer).toMatch(/\.chamber-shell\s*\{[^}]*--page-padding-x:\s*1rem;/);
+    // Sticky page parts stop below the sticky bar (whole-branch review M2).
+    expect(layer).toMatch(/\.chamber-shell\s*\{[^}]*--shell-bar-height:\s*56px;/);
+    expect(layer).toMatch(/min-width:\s*768px\)\s*\{\s*\.chamber-shell\s*\{\s*--page-padding-x:\s*1\.5rem;/);
+    expect(layer).toMatch(/min-width:\s*1024px\)\s*\{\s*\.chamber-shell\s*\{\s*--page-padding-x:\s*2rem;/);
+  });
+
+  it('takes the 44px touch rows for shell nav from AURA 5.7, with no local override (FR-013; handoff #62)', () => {
+    const aura = readFileSync(join(ROOT, 'node_modules/@jirawatpyk/aura-react/dist/styles.layer.css'), 'utf8');
+    expect(aura).toMatch(/@media \(pointer: coarse\)\s*\{\s*\.aura-nav__item\s*\{[^}]*min-height:\s*var\(--aura-touch-target\)/);
+    expect(css).not.toMatch(/\.aura-nav__item/);
+  });
+
+  it('lets long nav labels wrap to two lines and hyphenate (AURA 5.7.1 / 5.7.2), not cut with an ellipsis (handoff #63, #64)', () => {
+    const aura = readFileSync(join(ROOT, 'node_modules/@jirawatpyk/aura-react/dist/styles.layer.css'), 'utf8');
+    const label = aura.match(/\.aura-nav__label\s*\{[^}]*\}/)?.[0] ?? '';
+    expect(label).toMatch(/line-clamp:\s*2/);
+    expect(label).not.toMatch(/white-space:\s*nowrap/);
+    // 5.7.2 (handoff #64): a long compound breaks at a syllable, not mid-word.
+    expect(label).toMatch(/(?<!-webkit-)hyphens:\s*auto/);
+    expect(css).not.toMatch(/\.aura-nav__label/);
+  });
+
   it('carries no local toaster override — AURA 5.6 centres and offsets it (handoff #54, #56)', () => {
     expect(css).not.toMatch(/\.aura-toaster|\.aura-toast__action/);
   });

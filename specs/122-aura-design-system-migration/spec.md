@@ -31,6 +31,9 @@ The migration runs **module by module**, one pull request per phase, in the orde
 
 - Q: During the dual-library window, what colour are legacy primary buttons, and what is the end state? → A: Legacy kit primary buttons and `text-primary` links take the **brand accent** (#2E6397 in light) through the token bridge until their module migrates. The end state follows the AURA design: primary buttons in **AURA ink** (#18181B with white text in light; white with ink text in dark), and the brand blue for links, focus rings, selection and info.
 - Q: Must every phase run the local end-to-end suites before merge? → A: **No — at checkpoints only**: after US1 (the shared shell), after the money phases (US4, US8), and before US13. e2e has no CI job and a full local run takes over an hour, so per-phase runs would stall a 13-phase migration; each phase relies on its unit/component tests, the required CI checks (integration smoke, coverage) and the canvas comparison instead. A checkpoint failure caused by an earlier phase is fixed in its own PR before the next phase merges.
+- Q: What does the US1 checkpoint cover? → A: **The shell specs, not the full suite** (maintainer, 2026-09-26). US1 changes only the shared frame, so its checkpoint ran the 16 shell specs on chromium and WebKit against main, by test title; every failure was either on main too or fixed in the US1 PR. The first full-suite run moves to the checkpoint after US4 and also covers US1.
+- Q: Do the staff bar and the portal header stay the same height (spec 004 SC-009, "identical 56px")? → A: **No** (US1, 2026-09-26): the boards draw the staff bar at AppShell's 56px and the portal header at 72px from 1024px (64px below). SC-009 is superseded; each bar keeps a fixed height, so the no-layout-shift intent stands.
+- Q: Can US1 remove the old command-palette library? → A: **Not yet** (found at US1, 2026-09-26): besides the two ⌘K palettes it backs the pickers and the kit's combobox (member, event, template and task pickers; the invoice and plan forms). US1 moves both palettes to AURA `Command`; the library leaves with the last of those modules, at the latest US13, and the lint ban goes global then.
 - Q: Does the Swedish-flag navy chrome (navy rail and header, yellow stripe) survive on AURA SideNav / AppShell? → A: **No — dropped**; the shell follows the AURA design. The yellow stripe is removed in US0; US1 replaces the staff sidebar and portal header with AppShell / SideNav as designed.
 
 ## User Scenarios & Testing *(mandatory)*
@@ -66,8 +69,8 @@ Staff get AURA's sidebar navigation, header, user menu, breadcrumb, pagination a
 **Acceptance Scenarios**:
 
 1. **Given** each role, **When** it opens the portal, **Then** it sees exactly the navigation entries its permissions allow (unchanged), in AURA's side or bottom navigation.
-2. **Given** the command palette shortcut, **When** pressed, **Then** the AURA palette opens with the same actions and keyboard behaviour as before; the old palette library is removed.
-3. **Given** the existing page-layout checks and end-to-end selectors, **When** the shell is swapped, **Then** they pass unchanged.
+2. **Given** the command palette shortcut, **When** pressed, **Then** the AURA palette opens with the same actions and keyboard behaviour as before; the palettes no longer use the old palette library.
+3. **Given** the existing page-layout checks and end-to-end selectors, **When** the shell is swapped, **Then** the layout-container contract passes unchanged; selectors that named the old kit's internals (`data-slot="sidebar*"`, cmdk testids, `data-active`) move to roles and names, and the top-bar heights follow the boards (supersedes spec 004 SC-009, see Clarifications).
 
 ---
 
@@ -241,12 +244,12 @@ The old component kit folder, its primitives library, the old toast/palette/date
 - **FR-005**: AURA components MUST receive the user's language (EN/TH/SV), use the Buddhist calendar for Thai and the Gregorian calendar otherwise, render internal links through the app's router, and use a compact density on staff pages and a comfortable density on member pages.
 - **FR-006**: All dates the product formats itself MUST keep going through the existing localised formatter; AURA's generic date formatter MUST NOT be used directly.
 - **FR-007**: All toasts MUST come from one AURA toast surface at the top centre; every existing toast keeps its title, description, tone and action; at most three are visible; the old toast library is removed in the foundation.
-- **FR-008**: A lint gate MUST reject imports of the old toast library and of AURA's generic date formatter everywhere, of the old command-palette library once US1 merges, and of the old component kit inside every path already migrated (a list that grows with each phase); a test MUST prove the gate catches each banned import.
+- **FR-008**: A lint gate MUST reject imports of the old toast library and of AURA's generic date formatter everywhere, of the old command-palette library once its last consumer migrates (US1 moves both command palettes; the pickers that also use it move with their modules, at the latest US13), and of the old component kit inside every path already migrated (a list that grows with each phase); a test MUST prove the gate catches each banned import.
 - **FR-009**: Loading skeletons MUST use AURA's pulse style from US1 onward; the UX playbook MUST describe AURA as the component library and the pulse as the skeleton standard.
 
 **Every module phase (US1–US12)**
 
-- **FR-010**: A phase is done only when (a) its paths import nothing from the old component kit, (b) its screens match their canvas boards at 390 and 1280 px in light and dark, (c) the layout, i18n, strict-ARIA and date gates pass, (d) its unit/component tests and all required CI checks pass (the end-to-end, accessibility and locale suites run locally only at the checkpoints — after US1, after the money phases US4/US8, and before US13 — not per phase), (e) bundle budgets are re-baselined, and (f) a UX review — and on money screens a financial-integrity review — has signed it.
+- **FR-010**: A phase is done only when (a) its paths import nothing from the old component kit, (b) its screens match their canvas boards at 390 and 1280 px in light and dark, (c) the layout, i18n, strict-ARIA and date gates pass, (d) its unit/component tests and all required CI checks pass (the end-to-end, accessibility and locale suites run locally only at the checkpoints — the shell specs after US1, the full suite after the money phases US4/US8 and before US13 — not per phase), (e) bundle budgets are re-baselined, and (f) a UX review — and on money screens a financial-integrity review — has signed it.
 - **FR-011**: A phase MUST NOT change module logic, stored data, API contracts, permissions, audit events or money figures; logic defects found along the way are fixed in separate pull requests, merged before the phase's UI change.
 - **FR-012**: Page containers MUST keep their current contract (props and the attributes the layout gate and end-to-end tests select on) until US13.
 - **FR-013**: Every migrated screen MUST meet WCAG 2.1 AA, work at 320 px without horizontal scroll, keep 44 px tap targets, honour reduced motion, and keep EN/TH/SV text parity.
@@ -290,7 +293,7 @@ The old component kit folder, its primitives library, the old toast/palette/date
 ## Assumptions
 
 - The AURA maintainer is also the Chamber-OS maintainer and fixes AURA gaps in parallel; the handoff doc is the contract between the two.
-- AURA 5.5.0 covers handoff items 1–51 (5.6.0, the pin since 2026-09-26, adds 52–56) and exposes the same package entry points as 4.17 (verified on the registry 2026-09-26); item 52 is open.
+- AURA 5.5.0 covers handoff items 1–51 (5.6.0 adds 52–56; 5.7.0 adds 57–62; 5.7.1 adds 63; 5.7.2, the pin since US1, adds 64) and exposes the same package entry points as 4.17 (verified on the registry 2026-09-26); no item is open.
 - The ~300 canvas boards are the visual reference; where a board is marked "Proposed", the phase may either implement the proposal or keep the current behaviour, and says which in its PR.
 - End-to-end tests have no CI job and run locally; each phase links its run log.
 - The dashboard's charting library stays; only its colours move to AURA's chart palette.

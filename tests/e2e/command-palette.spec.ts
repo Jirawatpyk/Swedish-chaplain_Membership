@@ -121,8 +121,13 @@ test.describe('command palette — US6', () => {
     // to the highlighted option under React 19.
     await palette.getByRole('option', { name: /platinum/i }).click();
 
+    // 30 s, not 5: the plan page is often the first visit to that route in
+    // the run, and the dev server compiles it on demand. In the preview
+    // harness the same click reached it in 4.8 s with no database behind it
+    // (3.3 s of that was compiling); with the real Neon queries 5 s ran out
+    // before the URL changed (relay R5).
     await page.waitForURL(/\/admin\/plans\/\d{4}\/platinum/, {
-      timeout: 5_000,
+      timeout: 30_000,
     });
   });
 

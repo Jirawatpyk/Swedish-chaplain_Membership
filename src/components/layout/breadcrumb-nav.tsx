@@ -1,20 +1,11 @@
 'use client';
 
-import { Fragment } from 'react';
 import Link from 'next/link';
+import { ChevronRightIcon } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { formatCalendarYear } from '@/lib/format-date-localised';
 
-import {
-  Breadcrumb,
-  BreadcrumbEllipsis,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from '@/components/ui/breadcrumb';
 import {
   buildBreadcrumbStaticLabels,
   parseBreadcrumbPath,
@@ -22,6 +13,7 @@ import {
   type BreadcrumbSegment,
 } from '@/components/layout/breadcrumb-path';
 import { useBreadcrumbLabelMap } from '@/components/layout/breadcrumb-provider';
+import { cn } from '@/lib/utils';
 
 /**
  * Breadcrumbs render only when the route has 2+ filtered segments
@@ -35,7 +27,11 @@ import { useBreadcrumbLabelMap } from '@/components/layout/breadcrumb-provider';
  */
 const MIN_DEPTH = 2;
 
-export function BreadcrumbNav() {
+/**
+ * Spec 122 US1 — `bar` sits in the AURA top bar (from 1024px, no padding);
+ * `page` is the old in-page row, kept below 1024px where the bar has no room.
+ */
+export function BreadcrumbNav({ placement = 'page' }: { readonly placement?: 'bar' | 'page' } = {}) {
   const pathname = usePathname() ?? '/';
   const dynamicLabels = useBreadcrumbLabelMap();
   const tBreadcrumb = useTranslations('breadcrumb');
@@ -58,75 +54,61 @@ export function BreadcrumbNav() {
 
   const mobile = truncateForMobile(segments);
 
+  // Spec 122 US1 — AURA's breadcrumb markup (`aura-crumbs`), drawn here
+  // rather than with AURA `Breadcrumb` for the phone trail (parent + current
+  // behind a leading ellipsis) and the data-slots the e2e breadcrumb spec
+  // selects on.
   return (
-    <Breadcrumb
+    <nav
       aria-label={tLayout('breadcrumbAriaLabel')}
-      className="px-[var(--page-padding-x)] [padding-block-start:var(--page-padding-y)]"
+      data-slot="breadcrumb"
+      className={cn(
+        'aura-crumbs',
+        placement === 'bar' ? undefined : 'px-[var(--page-padding-x)] [padding-block-start:var(--page-padding-y)]',
+      )}
     >
-      {/* Desktop: full trail */}
-      {/* Key composes `href` + `idx` because non-route segments
-        * (NON_ROUTE_SEGMENTS in breadcrumb-path.ts) rewrite their
-        * href to the parent path — e.g. `/admin/credit-notes/<id>`
-        * has a `credit-notes` segment whose fallback href is
-        * `/admin`, which duplicates the `admin` segment's href.
-        * React key uniqueness requires disambiguation via position.
-        */}
-      <BreadcrumbList className="hidden sm:flex">
+      {/* Desktop: full trail. Keys compose `href` + `idx` because a
+          non-route segment (NON_ROUTE_SEGMENTS in breadcrumb-path.ts)
+          rewrites its href to the parent path, duplicating it. */}
+      <ol data-slot="breadcrumb-list" className="hidden sm:flex">
         {segments.map((seg, idx) => (
-          <BreadcrumbFragment
-            key={`${idx}:${seg.href}`}
-            segment={seg}
-            isLast={idx === segments.length - 1}
-          />
+          <Crumb key={`${idx}:${seg.href}`} segment={seg} isLast={idx === segments.length - 1} />
         ))}
-      </BreadcrumbList>
-      {/* Mobile: parent + current with leading ellipsis */}
-      <BreadcrumbList className="flex sm:hidden">
+      </ol>
+      {/* Mobile: parent + current with a leading ellipsis */}
+      <ol data-slot="breadcrumb-list" className="flex sm:hidden">
         {mobile.hasEllipsis ? (
-          <>
-            <BreadcrumbItem>
-              <BreadcrumbEllipsis />
-              <span className="sr-only">{tLayout('ellipsis')}</span>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator />
-          </>
+          <li data-slot="breadcrumb-item">
+            <span data-slot="breadcrumb-ellipsis" aria-hidden className="text-[var(--aura-fg-tertiary)]">
+              …
+            </span>
+            <span className="sr-only">{tLayout('ellipsis')}</span>
+            <ChevronRightIcon className="aura-crumbs__sep size-3" aria-hidden />
+          </li>
         ) : null}
         {mobile.visible.map((seg, idx) => (
-          <BreadcrumbFragment
-            key={`${idx}:${seg.href}`}
-            segment={seg}
-            isLast={idx === mobile.visible.length - 1}
-          />
+          <Crumb key={`${idx}:${seg.href}`} segment={seg} isLast={idx === mobile.visible.length - 1} />
         ))}
-      </BreadcrumbList>
-    </Breadcrumb>
+      </ol>
+    </nav>
   );
 }
 
-function BreadcrumbFragment({
-  segment,
-  isLast,
-}: {
-  segment: BreadcrumbSegment;
-  isLast: boolean;
-}) {
+function Crumb({ segment, isLast }: { segment: BreadcrumbSegment; isLast: boolean }) {
   return (
-    <Fragment>
-      <BreadcrumbItem>
-        {isLast || !segment.isLinkable ? (
-          // Last segment OR organisational non-routable segment
-          // (NON_ROUTE_BY_PARENT match — its href was rewritten to
-          // the parent's path so making it a link would create two
-          // adjacent trail items pointing at the same URL).
-          // `BreadcrumbPage` styles it as plain muted text.
-          <BreadcrumbPage>{segment.label}</BreadcrumbPage>
-        ) : (
-          <BreadcrumbLink render={<Link href={segment.href} />}>
-            {segment.label}
-          </BreadcrumbLink>
-        )}
-      </BreadcrumbItem>
-      {isLast ? null : <BreadcrumbSeparator />}
-    </Fragment>
+    <li data-slot="breadcrumb-item">
+      {isLast ? (
+        <span aria-current="page" className="aura-crumbs__current">
+          {segment.label}
+        </span>
+      ) : segment.isLinkable ? (
+        <Link href={segment.href}>{segment.label}</Link>
+      ) : (
+        // An organisational segment (NON_ROUTE_BY_PARENT): its href was
+        // rewritten to the parent's, so a link would duplicate that one.
+        <span className="aura-crumbs__text">{segment.label}</span>
+      )}
+      {isLast ? null : <ChevronRightIcon className="aura-crumbs__sep size-3" aria-hidden />}
+    </li>
   );
 }

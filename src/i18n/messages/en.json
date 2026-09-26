@@ -176,6 +176,10 @@
       "manager": "Manager",
       "marketing": "Marketing",
       "member": "Member"
+    },
+    "search": {
+      "open": "Open command palette",
+      "placeholder": "Search members, plans, pages…"
     }
   },
   "errors": {
@@ -5897,7 +5901,6 @@
       "changeRequests": "Change requests",
       "changeRequestsBadge": "pending",
       "broadcastsBadge": "waiting",
-      "badgeTooltip": "{title} ({count})",
       "plans": "Plans",
       "users": "Users",
       "settings": "Settings",
@@ -5940,6 +5943,7 @@
       "ariaLabel": "Member navigation",
       "benefits": "Benefits",
       "renewalPrefs": "Renewal reminders",
+      "dashboardShort": "Dashboard",
       "benefitsShort": "Benefits",
       "accountShort": "Account",
       "bottomTabsAriaLabel": "Member tab bar"

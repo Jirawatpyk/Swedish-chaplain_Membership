@@ -20,11 +20,9 @@
  * `errors.generic` as the CardTitle, one line under the identical h1.
  */
 import { useEffect, type ComponentType, type ReactNode } from 'react';
-import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { AlertCircleIcon } from 'lucide-react';
-import { Button, buttonVariants } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Button, Card } from '@jirawatpyk/aura-react';
 import { PageHeader } from '@/components/layout/page-header';
 
 export interface PortalRouteErrorProps {
@@ -56,7 +54,7 @@ export function PortalRouteError({
     <Container>
       <PageHeader title={t('generic')} />
       <Card>
-        <CardContent className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4">
           {error.digest ? (
             <p className="flex items-center gap-2 text-sm text-muted-foreground">
               <AlertCircleIcon className="size-4 shrink-0 text-destructive" aria-hidden />
@@ -66,11 +64,11 @@ export function PortalRouteError({
           <div className="flex flex-wrap gap-2">
             <Button onClick={reset}>{tButtons('retry')}</Button>
             {actions}
-            <Link href="/portal" className={buttonVariants({ variant: 'outline' })}>
+            <Button href="/portal" variant="secondary">
               {t('backToDashboard')}
-            </Link>
+            </Button>
           </div>
-        </CardContent>
+        </div>
       </Card>
     </Container>
   );
