@@ -232,7 +232,7 @@ function num(payload: Record<string, unknown> | null, key: string): number | nul
  *    latest `ok` would MASK the original `failed` on the very page built to
  *    surface it. Pick the earliest = the real first-pass outcome.
  *  - `member_erasure_requested`: concurrent requests — the EARLIEST timestamp
- *    wins the Art.12/§30 clock (the conservative direction; erase-member.ts).
+ *    wins the Art.12(3)/PDPA 30-day clock (the conservative direction; erase-member.ts).
  *  - `member_erased`: a racing reconciler re-drive can emit a 2nd completion
  *    (`re_drive:true`, 0/0 counts) — the first-pass completion has the real
  *    cascade counts. Picked by min timestamp (order-independent of the reader).
@@ -273,7 +273,7 @@ function fold(member: ErasedMemberRow, rows: readonly ErasureEvidenceRow[], now:
   // per pass (erase-member re-runs eraseUser unconditionally; eraseUser appends
   // another user_erased each pass — deliberate append-only audit noise). Collapse
   // those re-drive duplicates of the SAME login onto the EARLIEST occurredAt (the
-  // Art.12/§30 credential-erasure clock), while keeping ONE proof per DISTINCT
+  // Art.12(3)/PDPA 30-day credential-erasure clock), while keeping ONE proof per DISTINCT
   // targetUserId (multiple linked logins => multiple proofs). targetUserId is the
   // dedupe KEY only — NEVER projected into the output (M-2 minimisation). Mirrors
   // the earliest()-is-authoritative doctrine used for the other arms.

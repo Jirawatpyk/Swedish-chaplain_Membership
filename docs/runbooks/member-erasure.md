@@ -26,7 +26,7 @@ hand within the legal response window. The RoPA for this activity is
 ## DPO member-erasure procedure (end-to-end)
 
 Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
-**Art. 12 / §30 one-month clock starts at receipt** — see § H-1 for the SLA.
+**Art. 12(3) / PDPA 30-day clock (§30 by analogy) starts at receipt** — see § H-1 for the SLA.
 
 1. **Receive + log the request.** Record the DSR in your intake register with
    the data subject's identity, the member they relate to, and the **received
@@ -135,7 +135,7 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
    (F1/F6/F7/F8) failed transiently. The **US2d reconciler cron** re-drives stuck
    erasures automatically (oldest-first) and will emit `member_erased` once the
    cascade clears — re-check the evidence log on the next cron tick. If the badge
-   is **OVERDUE** (past the §30/Art. 12 window) it is a **reportable compliance
+   is **OVERDUE** (past the Art. 12(3) / PDPA 30-day window) it is a **reportable compliance
    gap** — escalate to the DPO/legal-counsel and investigate the stuck cascade
    (check `members_erasure_outcome_total{still_pending}` + the cascade logs)
    before the deadline lapses.
@@ -581,18 +581,19 @@ When the alert fires:
    inputs are gone) and only writes a misleading second audit (§ Security
    cond-3).
 
-### H-1 — remediation SLA (GDPR Art. 12(3) / PDPA §30)
+### H-1 — remediation SLA (GDPR Art. 12(3) / PDPA 30 days by analogy)
 
 The manual remediation MUST complete **within the SAME one-month erasure
 window** as the original request — NOT "eventually". Bind the SLA clock to the
-**`member_erasure_requested`** audit timestamp (the Art. 12 / §30 clock start),
+**`member_erasure_requested`** audit timestamp (the Art. 12(3) / PDPA 30-day clock start),
 which is the SAME timestamp the **US3-A admin attestation** is recorded against
 and the SAME one the **US3-D evidence log** tracks. Cross-reference all three so
 the sub-processor residual is closed inside the window the controller-copy
 erasure already committed to:
 
-- **PDPA §30** (Thailand-resident subjects): 30 days from receipt, extendable by
-  30 days with written notice to the data subject.
+- **PDPA** (Thailand-resident subjects): §33 sets no erasure deadline;
+  Chamber-OS applies §30's 30 days from receipt by analogy. §30 has no
+  extension clause — consult counsel before relying on more time.
 - **GDPR Art. 12(3)** (EU/EEA-resident subjects): 1 month from receipt,
   extendable to 3 months total with notification within the first month.
 
@@ -654,7 +655,7 @@ limitation, verbatim:
 > **Resend (sub-processor):** best-effort-once erasure propagation
 > (audience-contact removal on member erasure), un-enumerable historical
 > audiences out of automated reach, manual remediation on failure within the
-> Art. 12(3) / §30 response window.
+> Art. 12(3) / PDPA 30-day response window.
 
 This is the documented compensating control that makes the non-blocking cascade
 design Art. 17(2) / Art. 19 compliant. **Do not drop it** from the RoPA on a
