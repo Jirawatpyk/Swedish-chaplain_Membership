@@ -1,10 +1,12 @@
 /**
  * F7 Q15 — POST `/api/portal/broadcasts/acknowledge`.
  *
- * Member CTA on the marketing-acknowledgement banner records GDPR Art. 7
- * demonstrable consent: sets `members.broadcasts_acknowledged_at = now()`
- * + emits `member_acknowledged_broadcasts_terms` audit row carrying the
- * locale the consent was shown in.
+ * Member CTA on the E-Blast acknowledgement banner records that the
+ * member acknowledged the E-Blast sending terms: sets
+ * `members.broadcasts_acknowledged_at = now()` + emits
+ * `member_acknowledged_broadcasts_terms` audit row carrying the locale
+ * the terms were shown in. This is NOT recipient consent — E-Blasts rely
+ * on legitimate interest, with a tenant-wide opt-out.
  *
  * Delegates to the `acknowledgeBroadcastsTerms` Application use-case so
  * Presentation never reaches into Application internals (Constitution
@@ -71,7 +73,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         case 'ack.repo_error':
           // Use-case already logged the cause; surface 500 so the
           // banner stays mounted and the user retries instead of
-          // dismissing on a lost-consent silent success.
+          // dismissing on a lost-acknowledgement silent success.
           return errorResponse(500, 'internal_error', correlationId);
         default: {
           const _exhaustive: never = result.error;

@@ -80,7 +80,8 @@ a processor under contract.
   appears in a `broadcasts.custom_recipient_emails` array. **Per
   FR-015d** these MUST resolve to a known email in the tenant graph
   (members.primary_contact_email OR contacts.email OR
-  event_attendees.email — F6 stub returns `[]` until F6 ships).
+  event_attendees.email — served by the F6 `event_attendees_last_90d`
+  bridge since F6 shipped).
   External-only recipients are out of MVP scope. This restriction
   prevents chamber sender reputation being used for arbitrary
   external mass-marketing.
@@ -93,7 +94,7 @@ a processor under contract.
 | **Contact** | `members.primary_contact_email`, `contacts.email`, `broadcasts.custom_recipient_emails`, `broadcasts.reply_to_email` | All normalised lowercase + trimmed (`EmailLower` VO) |
 | **Membership** | `members.plan_id`, `members.plan_year`, plan tier code from F2 | Used for segment targeting |
 | **Behavioural** | `broadcast_deliveries.status` (sent\|delivered\|bounced\|soft_bounced\|complained), `broadcast_deliveries.event_timestamp` | Per-recipient × per-broadcast |
-| **Consent** | `members.broadcasts_acknowledged_at` (Q15 GDPR Art. 7 banner ack timestamp) | Indefinite retention while member row exists |
+| **Sender terms acknowledgement** | `members.broadcasts_acknowledged_at` (Q15 banner: the SENDING member acknowledges the E-Blast rules — not recipient consent) | Indefinite retention while member row exists |
 | **Suppression / objection** | `marketing_unsubscribes.email_lower` + reason (recipient_initiated\|hard_bounce\|complaint\|admin_added) | **Indefinite retention** per GDPR Art. 21 + PDPA §32 |
 | **Operational** | `broadcasts.subject`, `broadcasts.body_html` (sanitised), `broadcasts.body_source` (Tiptap raw), `broadcasts.from_name`, `broadcasts.reply_to_email` | Member-authored content; sanitised at Application boundary (FR-002a strict-allowlist DOMPurify) |
 
@@ -153,6 +154,13 @@ business categorisation, not special-category PII.
   first-contact notice, or attest per contact through the FR-027a pre-flight.
   Sign-off surface: `docs/go-live-readiness.md` § 6.9; full record:
   `specs/108-contact-recipient-rules/reviews/cutover.md` § 2–3.
+- **OPEN (2026-09-26, PDPA/GDPR review):** the `event_attendees_last_90d`
+  segment also reaches recent event attendees who are NOT member-company
+  contacts (`event_registrations.matched_member_id` NULL). The LIA above
+  covers member-company contacts only. Decision pending: restrict the
+  segment to matched members, or extend the LIA (PDPA §24(5); for natural
+  persons in Sweden also ePrivacy / Marknadsföringslagen §19). The member
+  banner now states that attendees receive E-Blasts.
 - **Per-contact marketing preference** (108 PR-D, 2026-09-06) — a NEW
   processing activity: `contacts.marketing_opt_out_at` /
   `marketing_opt_out_source` (`staff` | `self`) /
@@ -168,11 +176,15 @@ business categorisation, not special-category PII.
   never manager). Precedence: the person's own unsubscribe > their own
   opt-out > a staff opt-out > receiving; staff cannot lift the person's
   own objection (FR-025 AMENDMENT).
-- **Demonstrable consent timestamp** per **GDPR Art. 7** — the Q15
-  banner CTA records `broadcasts_acknowledged_at` as evidence-
-  strengthening for the "demonstrable consent" obligation. Does NOT
-  shift the lawful basis from contract to consent; both bases coexist
-  per the controller's discretion.
+- **Sender terms acknowledgement** (amended 2026-09-26, PDPA/GDPR review
+  conditions) — the Q15 banner CTA records `broadcasts_acknowledged_at`:
+  the SENDING member acknowledges who receives E-Blasts, that every
+  E-Blast carries an unsubscribe link and that opt-outs apply
+  automatically. It is accountability evidence (GDPR Art. 5(2)) for the
+  sender side, NOT recipient consent: recipients are processed on
+  legitimate interest (above) and no consent basis is claimed. The banner
+  previously told members that recipients "have agreed"; that copy was
+  withdrawn.
 - **Statutory compliance** — `broadcast_deliveries` retention serves
   PDPA §39 / GDPR Art. 30 record-of-processing obligation. Audit-log
   retention serves Constitution Principle VIII reliability + financial-
@@ -214,11 +226,11 @@ business categorisation, not special-category PII.
 |---|---|---|
 | `broadcasts` rows + `broadcast_deliveries` rows | **5 years** (Constitution v1.4.0 default for non-tax-document audit; a row's own `retention_years` may say 10) — **enforced by the retention-sweep cron (0310)**: `/api/cron/broadcasts/retention-sweep`, daily 20:50 UTC, deletes a CLOSED E-Blast once its anchor + `retention_years` has passed. The anchor is the moment it closed — `sent_at`, `partial_delivery_accepted_at`, `failed_to_dispatch_at`, `rejected_at` or `cancelled_at` by status, falling back to `stage_entered_at`; `stage_entered_at` for `expired_no_member_response`; **never `updated_at` directly**. One inherited exception: migration 0308 backfilled `stage_entered_at = COALESCE(submitted_at, updated_at)`, so a terminal row from before 0308 whose own anchor column is NULL **and** whose `submitted_at` is NULL anchors on the `updated_at` it carried at 0308 (check query in `docs/runbooks/cron-jobs.md` § F7 retention-sweep; expected 0 on the `updated_at` path; to be measured on prod before the first expiry). A row whose Resend audience is still live is held until `cleanup-audiences` reaps it. **Before a row is deleted, its Resend copy is deleted** (the Resend broadcast object holds the HTML body and a name that identifies the member and the tenant): the row's own `resend_broadcast_id` and any per-batch `broadcast_batch_manifests.provider_broadcast_id`, outside any transaction; a copy confirmed gone (or already 404 / 410) lets the row go, and a transient failure (5xx / 429 / network) keeps the row — and the key — for the next run. **Residual — Resend's copy of a SENT E-Blast outlives our row.** Resend documents that a queued or sent broadcast cannot be deleted; on that refusal our row is **deleted anyway** (maintainer decision, 2026-09-25) and counted `provider_copy_retained_at_processor` (no ids). For a sent E-Blast, therefore, the Resend broadcast object — its HTML body and its name, which identifies the member and the tenant — persists under **Resend's own retention** after our row is gone: unreachable from our side (the only key is deleted with the row), and covered by the Resend DPA + SCCs (§ Cross-border data transfers above). **Not measured:** `DELETE /broadcasts/{id}` has been exercised on a draft only; the runbook item (`docs/runbooks/cron-jobs.md` § F7 retention-sweep, "Resend copies") is to measure the answer for a sent broadcast and to confirm Resend's retention for broadcast objects before the first E-Blast expires (~2031). The deliveries, versions, decisions and batch manifests go with the parent by ON DELETE CASCADE; its images are stamped for the daily image sweep in the same transaction. Evidence: one counts-only `broadcast_retention_swept` audit row per tenant per run (no ids, no content — counts, the kept-copy counts and the oldest / newest anchor of the rows deleted, so an auditor can check nothing younger than the period was removed) and `broadcast_image_removed { reason: 'retention_expired' }` per image. **The E-Blast's audit rows outlive it:** no job deletes `audit_log` rows, so the rows that name a swept E-Blast's `broadcast_id` / `related_member_id` (its submission, decisions, image rows, the `retention_expired` rows themselves) stay for their own retention (next rows) — ids and metadata, not the content. **Two readers silently lose a swept send:** the member timeline's broadcast arm (the 0196 view reads `broadcasts`) and the GDPR export's `listMemberBroadcasts` (`gdpr-archive-source-adapter.ts`) — after the sweep an Art. 15 / 20 export no longer lists an E-Blast older than its retention, which is the intended effect of the deletion. **`partially_sent` never ages out:** it is not terminal, and nothing has produced it — or closed it — since 108 Phase 9 deleted the batch path (`ca51f59a1`); the population is frozen at what existed then, and only an operator's status move bounds it (runbook count, to be measured on prod). `marketing_unsubscribes.source_broadcast_id` is left pointing at a deleted E-Blast by design — the suppression row is indefinite (next row) | F7 has no §87/3 / §86/10 obligation; standard 5y matches operational + record-of-processing baseline |
 | `marketing_unsubscribes` rows | **Indefinite** | GDPR Art. 21 right to object — once a recipient unsubscribes, the suppression record MUST persist forever to honour future processing avoidance |
-| `members.broadcasts_acknowledged_at` | **Indefinite** while member row exists | GDPR Art. 7 demonstrable consent — deleted alongside member on Art. 17 erasure; admin SHOULD reset to NULL on F12 white-label terms change to force re-acknowledgement |
+| `members.broadcasts_acknowledged_at` | **Indefinite** while member row exists | Sender terms acknowledgement (accountability, Art. 5(2)) — not consent — deleted alongside member on Art. 17 erasure; admin SHOULD reset to NULL on F12 white-label terms change to force re-acknowledgement |
 | `members.broadcasts_halted_until_admin_review` | **Indefinite** while member row exists | Q14 SC-005 (b) auto-halt operational state |
 | `contacts.marketing_opt_out_{at,source,by_user_id}` (108 PR-D) | **Life of the contact row**, KEPT through the Art. 17 scrub (no PII: a timestamp, an enum and a user id) | Kept because it carries no PII and the audit trail (`contact_marketing_opted_out` / `_in`) is the authoritative record of the objection. It does NOT survive as a suppression: the scrub stamps `removed_at`, the dispatch filter reads live rows only, and the preference is bound to the contact ROW, not the address — a re-added address is re-marketed unless it is on `marketing_unsubscribes`, which is the only address-keyed, indefinite suppression (see its row above). The `self` case's `by_user_id` is the data subject's own user id and is swept together with `linked_user_id` when F1 user erasure lands (108 privacy review L-3) |
 | `audit_log` rows `contact_marketing_opted_out` / `contact_marketing_opted_in` (108 PR-D) | **5 years** | Constitution default; payload carries `member_id` / `related_member_id`, `contact_id`, `source`, `actor_role` — no address (FR-053a) |
-| `audit_log` rows for F7 events (70 live event types) | **5 years**, except **`member_acknowledged_broadcasts_terms` — 10 years** | F7 events default to 5y (`f7RetentionFor` in `src/modules/broadcasts/application/ports/audit-port.ts`; the column default). The one exception is the marketing-consent acknowledgement: the `audit_log_default_retention_for_f4_tax_docs` trigger promotes it to 10y (PDPA §35 + GDPR Art. 7 demonstrable consent; migration 0084, current body `0257_payment_on_terminated_member_audit.sql` line 60). No job deletes `audit_log` rows on either period today — the period is the declared retention, and these rows outlive a swept E-Blast (row above) |
+| `audit_log` rows for F7 events (70 live event types) | **5 years**, except **`member_acknowledged_broadcasts_terms` — 10 years** | F7 events default to 5y (`f7RetentionFor` in `src/modules/broadcasts/application/ports/audit-port.ts`; the column default). The one exception is the E-Blast terms acknowledgement: the `audit_log_default_retention_for_f4_tax_docs` trigger promotes it to 10y (originally justified as GDPR Art. 7 demonstrable consent, which no longer applies — the event records a sender terms acknowledgement, not consent; **OPEN 2026-09-26**: re-justify or return it to the 5y F7 default in a new migration; migration 0084, current body `0257_payment_on_terminated_member_audit.sql` line 60). No job deletes `audit_log` rows on either period today — the period is the declared retention, and these rows outlive a swept E-Blast (row above) |
 | Resend Broadcasts API send logs | Resend default (90 days) | Provider retention; not under chamber control |
 | **Resend contact records ("Global Contacts")** | **Indefinite — survives both audience deletion and member erasure** | One record per team, not per audience (research § R16). The erasure cascade detaches the contact from the audience; measured 2026-09-09 (U1), that leaves the contact readable at `GET /contacts/{email}`. Not under chamber control and **not currently erased** — see residual 8a for why the audience-less delete is not called and what closing it needs. |
 
@@ -277,7 +289,7 @@ business categorisation, not special-category PII.
 | **Right to erasure (Art. 17 / §32)** | F1 admin-archive cascade sets `member_id` to NULL on `marketing_unsubscribes` + `broadcast_deliveries` BUT retains the rows for record-of-processing. Suppression invariant ("we will not contact this email again") preserves the data subject's prior objection |
 | **Right to restrict processing (Art. 18 / §33)** | F7 kill-switch (`FEATURE_F7_BROADCASTS=false`) halts all new submissions tenant-wide; per-member halt via Q14 `broadcasts_halted_until_admin_review` |
 | **Right to data portability (Art. 20)** | F1+F2+F3 portable export covers member + plan + contact data; F7 broadcast history accessible via member portal |
-| **Right to object (Art. 21 / PDPA §32)** | One-click unsubscribe link in every broadcast (HMAC token → suppression upsert → indefinite retention of objection record) |
+| **Right to object (Art. 21 / PDPA §32)** | Every E-Blast carries Resend's hosted unsubscribe link (footer merge tag) and Resend's `List-Unsubscribe` / `List-Unsubscribe-Post` headers; both are mirrored from Resend `contact.updated` into `marketing_unsubscribes` (channel `resend_hosted`). Our signed `/unsubscribe/[token]` (GET page + RFC 8058 POST) records the same row (`page_get` / `one_click_post`), and anyone can email the monitored privacy inbox (`TENANT_PRIVACY_CONTACT_EMAIL`) for free manual removal within 2 business days (`manual`, runbook `broadcast-manual-unsubscribe.md`). Scope is tenant + email, retained indefinitely as the objection record |
 | **Right not to be subject to automated decision-making (Art. 22)** | F7 has no automated decision-making affecting members; admin review is human-mediated per FR-013 |
 
 ### DPO contact

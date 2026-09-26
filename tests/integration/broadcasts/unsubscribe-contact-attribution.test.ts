@@ -101,6 +101,7 @@ describe('108 PR-C T078 — unsubscribe attribution to member + contact (live Ne
       broadcastId,
       emailLower: unsafeBrandEmailLower(secondaryEmail),
       tokenPlaintext: `tok-${tag}`,
+      channel: 'page_get',
       requestId: randomUUID(),
       reasonText: null,
     });
@@ -181,6 +182,7 @@ describe('108 PR-C T078 — unsubscribe attribution to member + contact (live Ne
       broadcastId,
       emailLower: unsafeBrandEmailLower(mixedStored.toLowerCase()),
       tokenPlaintext: `tok-mixed-${tag}`,
+      channel: 'page_get',
       requestId: randomUUID(),
       reasonText: null,
     });

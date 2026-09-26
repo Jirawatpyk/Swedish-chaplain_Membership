@@ -30,9 +30,18 @@ const headersMock = vi.fn<() => Promise<Map<string, string>>>(
 const unsubscribesCountMock = vi.fn();
 const unsubscribePageTtfbMsMock = vi.fn();
 
+// `fromEmail` is the SENDING address in display-name form (as in
+// `.env.example`) — the page must never render it. Recipients are pointed
+// at the monitored privacy inbox instead.
 const envMock = {
+  tenant: { slug: 'test-tenant' },
+  features: { f7Broadcasts: true },
+  flags: { readOnlyMode: false },
   broadcasts: {
-    fromEmail: 'broadcasts@swecham.example',
+    fromEmail: 'Chamber <broadcasts@swecham.example>',
+    privacyContactEmail: 'privacy@swecham.example',
+    privacyPolicyUrl: 'https://swecham.example/privacy' as string | undefined,
+    websiteUrl: 'https://swecham.example' as string | undefined,
   },
 };
 
@@ -89,9 +98,11 @@ vi.mock('next-intl/server', () => ({
     // React tree carries the rendered <a> elements. Returns an array
     // with the key string + each tag's rendered output so assertions
     // can inspect both the i18n lookup and the rich element output.
-    t.rich = (key: string, tags?: Record<string, () => unknown>) => {
+    t.rich = (key: string, tags?: Record<string, unknown>) => {
       const out: unknown[] = [key];
-      if (tags) for (const fn of Object.values(tags)) out.push(fn());
+      if (tags)
+        for (const v of Object.values(tags))
+          out.push(typeof v === 'function' ? (v as (c?: unknown) => unknown)(`${key}:chunk`) : v);
       return out;
     };
     return t;
@@ -168,6 +179,7 @@ describe('GET /unsubscribe/[token] (T136 contract)', () => {
     expect(useCaseInput.emailLower).toBe(VALID_EMAIL);
     expect(useCaseInput.tokenPlaintext).toBe(VALID_TOKEN);
     expect(useCaseInput.reasonText).toBeNull();
+    expect(useCaseInput.channel).toBe('page_get');
   });
 
   it('malformed token (peek returns null) → use-case NOT invoked + invalid-token audit written', async () => {
@@ -518,7 +530,7 @@ describe('GET /unsubscribe/[token] (T136 contract)', () => {
       searchParams: Promise.resolve({}),
     });
     const tree = JSON.stringify(node);
-    expect(tree).toContain('mailto:broadcasts@swecham.example');
+    expect(tree).toContain('mailto:privacy@swecham.example');
     // `getTranslations({namespace: 'public.unsubscribe'})` returns relative
     // keys, so the rendered string is `success.contact` not the full path.
     expect(tree).toContain('success.contact');
@@ -543,5 +555,121 @@ describe('GET /unsubscribe/[token] (T136 contract)', () => {
     expect(tree).toContain('error.body');
     // MUST NOT bleed the invalid state into the error render.
     expect(tree).not.toContain('invalid.heading');
+  });
+
+  // --- PDPA/GDPR review conditions (Art. 12(2)-(3), Art. 21) -------------
+
+  it('contact: every state shows the bare privacy contact, never the sending address', async () => {
+    const { default: Page } = await importPage();
+    const renders = [
+      await Page({ params: Promise.resolve({ token: VALID_TOKEN }), searchParams: Promise.resolve({}) }),
+    ];
+    verifyMock.mockReturnValueOnce({ ok: false, error: { kind: 'token.bad_signature' } });
+    renders.push(
+      await Page({ params: Promise.resolve({ token: VALID_TOKEN }), searchParams: Promise.resolve({}) }),
+    );
+    unsubscribeRecipientMock.mockResolvedValueOnce({
+      ok: false,
+      error: { kind: 'unsubscribe.repo_error', cause: new Error('boom') },
+    });
+    renders.push(
+      await Page({ params: Promise.resolve({ token: VALID_TOKEN }), searchParams: Promise.resolve({}) }),
+    );
+    for (const node of renders) {
+      const tree = JSON.stringify(node);
+      expect(tree).toContain('"href":"mailto:privacy@swecham.example"');
+      expect(tree).not.toContain('broadcasts@swecham.example');
+      expect(tree).not.toContain('Chamber <');
+    }
+  });
+
+  it('rate limited → its own state, which says nothing about the token', async () => {
+    rateLimitCheckMock.mockResolvedValueOnce({
+      ok: false as unknown as true,
+      error: { kind: 'rate_limit_exceeded', retryAfterSeconds: 60, key: 'k' },
+    } as unknown as { ok: true; value: true });
+    const { default: Page } = await importPage();
+    const node = await Page({
+      params: Promise.resolve({ token: VALID_TOKEN }),
+      searchParams: Promise.resolve({}),
+    });
+    const tree = JSON.stringify(node);
+    expect(tree).toContain('rateLimited.heading');
+    expect(tree).toContain('rateLimited.body');
+    // A recipient stuck behind a shared IP still has a free route to object.
+    expect(tree).toContain('rateLimited.contact');
+    expect(tree).toContain('"href":"mailto:privacy@swecham.example"');
+    expect(tree).not.toContain('invalid.heading');
+    expect(tree).not.toContain('success.heading');
+    // Decided before the token is even parsed.
+    expect(peekTokenTenantIdMock).not.toHaveBeenCalled();
+    expect(verifyMock).not.toHaveBeenCalled();
+  });
+
+  it('error state offers a "Try again" link to the same URL', async () => {
+    unsubscribeRecipientMock.mockResolvedValueOnce({
+      ok: false,
+      error: { kind: 'unsubscribe.repo_error', cause: new Error('boom') },
+    });
+    const { default: Page } = await importPage();
+    const node = await Page({
+      params: Promise.resolve({ token: VALID_TOKEN }),
+      searchParams: Promise.resolve({}),
+    });
+    const tree = JSON.stringify(node);
+    expect(tree).toContain('error.tryAgain');
+    expect(tree).toContain(`"href":"/unsubscribe/${encodeURIComponent(VALID_TOKEN)}?lang=th"`);
+  });
+
+  it('privacy notice line links TENANT_PRIVACY_POLICY_URL in a new tab, announced to screen readers', async () => {
+    const { default: Page } = await importPage();
+    const node = await Page({
+      params: Promise.resolve({ token: VALID_TOKEN }),
+      searchParams: Promise.resolve({}),
+    });
+    const tree = JSON.stringify(node);
+    expect(tree).toContain('privacyLine');
+    expect(tree).toContain('"href":"https://swecham.example/privacy"');
+    expect(tree).toContain('"href":"https://swecham.example"');
+    // Both external links: new tab, no opener, sr-only hint.
+    expect(tree.match(/"rel":"noopener noreferrer"/g)?.length).toBe(2);
+    expect(tree.match(/opensInNewTab/g)?.length).toBe(2);
+  });
+
+  it('privacy notice line is omitted when TENANT_PRIVACY_POLICY_URL is unset', async () => {
+    const saved = envMock.broadcasts.privacyPolicyUrl;
+    envMock.broadcasts.privacyPolicyUrl = undefined;
+    try {
+      const { default: Page } = await importPage();
+      const node = await Page({
+        params: Promise.resolve({ token: VALID_TOKEN }),
+        searchParams: Promise.resolve({}),
+      });
+      expect(JSON.stringify(node)).not.toContain('privacyLine');
+    } finally {
+      envMock.broadcasts.privacyPolicyUrl = saved;
+    }
+  });
+
+  // Security review: GET can bypass the proxy (prefetch headers skip the
+  // matcher) and READ_ONLY_MODE never froze GET, yet this page WRITES. The
+  // pipeline therefore gates itself: no write while F7 is off or frozen.
+  it.each([
+    ['F7 kill switch off', () => { envMock.features.f7Broadcasts = false; }],
+    ['READ_ONLY_MODE on', () => { envMock.flags.readOnlyMode = true; }],
+  ])('%s → no write, "try again" error state', async (_label, flip) => {
+    flip();
+    try {
+      const { default: Page } = await importPage();
+      const node = await Page({
+        params: Promise.resolve({ token: VALID_TOKEN }),
+        searchParams: Promise.resolve({}),
+      });
+      expect(unsubscribeRecipientMock).not.toHaveBeenCalled();
+      expect(JSON.stringify(node)).toContain('error.heading');
+    } finally {
+      envMock.features.f7Broadcasts = true;
+      envMock.flags.readOnlyMode = false;
+    }
   });
 });

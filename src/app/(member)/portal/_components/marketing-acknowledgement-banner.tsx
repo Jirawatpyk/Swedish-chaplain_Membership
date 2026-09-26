@@ -1,5 +1,7 @@
 /**
- * T091 — Marketing acknowledgement banner (Q15 / GDPR Art. 7).
+ * T091 — E-Blast sending-terms acknowledgement banner (Q15). Records the
+ * member's acknowledgement of the sending rules — not recipient consent
+ * (E-Blasts rely on legitimate interest, with a tenant-wide opt-out).
  *
  * Server component rendered on every portal landing surface. Renders
  * if and only if:
@@ -10,8 +12,7 @@
  *     `getPlanForMember`)
  *
  * "Acknowledge" CTA POSTs to `/api/portal/broadcasts/acknowledge`
- * (deferred to a follow-up Wave; for now the button calls the F3
- * `markBroadcastsAcknowledged` use-case via a server action).
+ * (client wrapper), which runs the `acknowledgeBroadcastsTerms` use-case.
  *
  * "Remind me later" records nothing — the banner re-appears on the
  * next portal session.
@@ -94,9 +95,9 @@ export async function MarketingAcknowledgementBanner(): Promise<React.ReactEleme
     'portal.broadcasts.banner.acknowledgement',
   );
   // Pass the server-resolved locale (next-intl `getLocale()`) as a
-  // prop so the consent record reflects what the user actually saw —
-  // not whatever `document.documentElement.lang` happens to be when
-  // the click handler fires (GDPR Art. 7 demonstrable consent).
+  // prop so the acknowledgement record reflects what the user actually
+  // saw — not whatever `document.documentElement.lang` happens to be
+  // when the click handler fires.
   const locale = await getLocale();
   const ackLocale: 'en' | 'th' | 'sv' =
     locale === 'th' || locale === 'sv' ? locale : 'en';

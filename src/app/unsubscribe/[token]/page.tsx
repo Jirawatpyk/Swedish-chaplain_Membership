@@ -6,29 +6,17 @@
  * required to complete the unsubscribe — the entire flow happens
  * server-side at request time and renders the result inline.
  *
- * Pipeline:
- *   1. Peek the token's tenant id (pre-tenant resolver — verifies nothing).
- *   2. Bind RLS context with `runInTenant(tenantCtx, ...)`.
- *   3. Verify HMAC under the bound tenant via `unsubscribeTokenSigner.verify`.
- *      Failure → emit `broadcast_unsubscribe_token_invalid` audit + render
- *      fallback page (T145).
- *   4. Call `unsubscribeRecipient` use-case (T142). Returns
- *      `{wasNew: true}` first time → success page; `{wasNew: false}` →
- *      idempotent "already unsubscribed" page (T146).
+ * The verify → `unsubscribeRecipient` pipeline lives in
+ * `@/lib/broadcasts-public-unsubscribe` (`processUnsubscribe`), shared
+ * with the RFC 8058 one-click POST handler (`/api/unsubscribe/[token]`,
+ * reached via the proxy rewrite of `POST /unsubscribe/[token]`). This page
+ * is the `page_get` channel.
  *
- * Locale resolution per FR-039 + i18n.md CHK010:
- *   1. Token's signed `lang` claim
- *   2. `?lang=` query param (un-signed; only used as fallback)
- *   3. `Accept-Language` request header
- *   4. Tenant default ('th' for SweCham; static map for now)
- *   5. 'en' final fallback
- *
- * Pre-fetch protection: many corporate mail clients pre-fetch links to
- * scan for malware. The handler is idempotent so pre-fetch + actual
- * click produce the same outcome (one upsert, no duplicate audit).
- *
- * Rate-limit (per contracts/unsubscribe-public.md § 9): 20 hits / 5 min
- * per source IP — defends against token-brute-force enumeration.
+ * States: success · already · invalid · error (with a "Try again" link to
+ * this same URL) · rate_limited (says nothing about the token). Every
+ * state names the monitored privacy inbox (`TENANT_PRIVACY_CONTACT_EMAIL`,
+ * bare address) as the free manual-removal route (GDPR Art. 12(2)-(3),
+ * Art. 21; PDPA §32) and links the tenant privacy notice when configured.
  *
  * NOTE: this page is OUTSIDE any (group) so it inherits ONLY
  * `src/app/layout.tsx` which sets `NextIntlClientProvider` from the
@@ -40,39 +28,21 @@ import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 import { randomUUID } from 'node:crypto';
 import { getTranslations } from 'next-intl/server';
-import { AlertCircle, CheckCircle2, Info, XCircle } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Clock, Info, XCircle } from 'lucide-react';
 
-import { runInTenant } from '@/lib/db';
-import { logger } from '@/lib/logger';
-import { isLocale, type Locale } from '@/i18n/config';
-import { asTenantContext } from '@/modules/tenants';
-import {
-  asBroadcastId,
-  broadcastsRateLimiter,
-  f7AuditAdapter,
-  makeUnsubscribeRecipientDeps,
-  peekTokenLang,
-  peekTokenTenantId,
-  tenantDefaultLocaleFor,
-  unsubscribeRecipient,
-  unsubscribeTokenSigner,
-} from '@/modules/broadcasts';
+import { peekTokenLang } from '@/modules/broadcasts';
 import { resolveTenantDisplayName } from '@/lib/broadcasts-route-helpers';
+import {
+  processUnsubscribe,
+  type UnsubscribeOutcome,
+} from '@/lib/broadcasts-public-unsubscribe';
 import { env } from '@/lib/env';
-import { broadcastsMetrics } from '@/lib/metrics';
+import { logger } from '@/lib/logger';
 import { broadcastsTracer } from '@/lib/otel-tracer';
 import { SpanStatusCode } from '@opentelemetry/api';
-import { sha256Hex } from '@/lib/crypto';
 
-/**
- * E1 — anti-enumeration rate limit per plan.md § Storage L67:
- *   20 hits / 5 min per source IP.
- * Legitimate clicks rarely hit the limit; a token-brute-force scanner
- * does. Rate-limit window keyed by IP (not by token) so an attacker
- * cycling many forged tokens still bumps the same bucket.
- */
-const UNSUBSCRIBE_RATE_LIMIT_MAX = 20;
-const UNSUBSCRIBE_RATE_LIMIT_WINDOW_S = 300;
+// Test seam kept at its historical import path (T138 integration test).
+export { processUnsubscribe, type UnsubscribeOutcome };
 
 // Force dynamic rendering — token verification must happen per request.
 export const dynamic = 'force-dynamic';
@@ -109,301 +79,9 @@ export async function generateMetadata({
   };
 }
 
-export type UnsubscribeOutcome =
-  | {
-      readonly state: 'success';
-      readonly tenantDisplayName: string;
-      readonly tenantSupportEmail: string;
-    }
-  | {
-      readonly state: 'already';
-      readonly tenantDisplayName: string;
-      readonly tenantSupportEmail: string;
-    }
-  | { readonly state: 'invalid' }
-  | {
-      readonly state: 'error';
-      readonly tenantSupportEmail: string;
-    };
-
 function pickFirst(value: string | string[] | undefined): string | null {
   if (Array.isArray(value)) return value[0] ?? null;
   return value ?? null;
-}
-
-function parseAcceptLanguage(header: string | null): Locale | null {
-  if (!header) return null;
-  // Take the first language tag's primary subtag (`th-TH;q=0.9,en;q=0.8` → `th`).
-  const first = header.split(',')[0]?.split(';')[0]?.trim().toLowerCase();
-  if (!first) return null;
-  const primary = first.split('-')[0];
-  if (primary === 'th' || primary === 'sv' || primary === 'en') return primary;
-  return null;
-}
-
-function resolveLocale(
-  tokenLang: Locale | undefined,
-  queryLang: string | null,
-  acceptLanguage: string | null,
-  tenantId: string | null,
-): Locale {
-  if (tokenLang && isLocale(tokenLang)) return tokenLang;
-  if (queryLang && isLocale(queryLang)) return queryLang;
-  const fromHeader = parseAcceptLanguage(acceptLanguage);
-  if (fromHeader) return fromHeader;
-  if (tenantId) return tenantDefaultLocaleFor(tenantId);
-  return 'en';
-}
-
-async function emitInvalidTokenAudit(
-  tenantId: string | null,
-  failureReason: string,
-  sourceIp: string,
-  requestId: string,
-): Promise<void> {
-  // Routes through the typed F7 audit adapter (consistent with
-  // PR #20's typed-emit pattern + Constitution Principle III barrel
-  // discipline) rather than a raw `db.execute(sql\`INSERT…\`)`. The
-  // adapter accepts `tx=null` for pre-tenant pathways and falls back
-  // to the system `db` handle, and `f7RetentionFor(eventType)` derives
-  // the 5y retention from the typed event union — so a future spec
-  // amendment promoting any F7 event to 10y propagates here without
-  // a hardcoded literal at the call site.
-  try {
-    // T198 T-F7-05 (Phase 10) — sourceIp is GDPR Art. 4(1) PII; stored
-    // raw in a 5y-retention column violates data-minimisation. Hash
-    // before persistence; first 12 hex chars of sha256 are sufficient
-    // for cross-request correlation while making the original IP
-    // unrecoverable from a DB dump.
-    const sourceIpHash = `sha256:${sha256Hex(sourceIp).slice(0, 12)}`;
-    await f7AuditAdapter.emit(null, {
-      eventType: 'broadcast_unsubscribe_token_invalid',
-      actorUserId: 'system:public_unsubscribe',
-      summary: `Public unsubscribe rejected: ${failureReason}`,
-      payload: { failureReason, sourceIpHash },
-      tenantId,
-      requestId,
-    });
-  } catch (e) {
-    logger.error(
-      { err: (e as Error).message, failureReason, requestId },
-      'unsubscribe_invalid_audit_emit_failed',
-    );
-  }
-}
-
-/**
- * Test seam: `processUnsubscribe(...)` is exported for the T138
- * integration test which exercises the full token → DB write pipeline
- * without dragging in the Next.js request-scoped header reader.
- * Production callers go through the page component below which awaits
- * the request headers and forwards them into this function.
- *
- * Contract: this function NEVER throws. Every code path either returns
- * a valid `{outcome, locale}` pair or is wrapped in a try/catch that
- * logs + emits an audit + falls back to `state: 'error'`. Throwing
- * would surface a Next.js 500 to the recipient on a GDPR Art. 21
- * surface — the worst possible outcome.
- */
-export async function processUnsubscribe(
-  tokenPlain: string,
-  queryLang: string | null,
-  acceptLanguage: string | null,
-  sourceIp: string,
-  requestId: string,
-): Promise<{ readonly outcome: UnsubscribeOutcome; readonly locale: Locale }> {
-  const startedAt = Date.now();
-  const recordTtfb = (tenantIdLabel: string | null): void => {
-    broadcastsMetrics.unsubscribePageTtfbMs(
-      tenantIdLabel,
-      Date.now() - startedAt,
-    );
-  };
-
-  // Centralise the "render fallback page + emit audit + counter +
-  // record TTFB" exit path so the 4–5 reject branches below stay
-  // consistent (any divergence here is a Principle I append-only
-  // signal-loss bug). `outcome` defaults to `'invalid'` because
-  // every reject branch except the unhandled-throw uses that state.
-  const reject = async (
-    reason: string,
-    tenantIdLabel: string | null,
-    tokenLang: Locale | undefined,
-    outcomeLabel: 'invalid' | 'rate_limited' = 'invalid',
-  ): Promise<{ readonly outcome: UnsubscribeOutcome; readonly locale: Locale }> => {
-    await emitInvalidTokenAudit(tenantIdLabel, reason, sourceIp, requestId);
-    broadcastsMetrics.unsubscribesCount(tenantIdLabel, outcomeLabel);
-    recordTtfb(tenantIdLabel);
-    return {
-      outcome: { state: 'invalid' },
-      locale: resolveLocale(tokenLang, queryLang, acceptLanguage, tenantIdLabel),
-    };
-  };
-
-  // E1 — anti-enumeration rate limit (20 hits / 5 min per source IP).
-  // Best-effort: a Redis outage MUST NOT take the unsubscribe page
-  // offline (GDPR Art. 21 right-to-object overrides operational
-  // signal loss). On limiter error we log and proceed with the request.
-  try {
-    const rl = await broadcastsRateLimiter.checkLimit(
-      `unsubscribe:${sourceIp}`,
-      UNSUBSCRIBE_RATE_LIMIT_MAX,
-      UNSUBSCRIBE_RATE_LIMIT_WINDOW_S,
-    );
-    if (!rl.ok) return reject('rate_limited', null, undefined, 'rate_limited');
-  } catch (e) {
-    logger.warn(
-      { err: (e as Error).message, requestId },
-      'unsubscribe_rate_limit_check_failed',
-    );
-  }
-
-  const tenantId = peekTokenTenantId(tokenPlain);
-  if (tenantId === null) return reject('malformed_token', null, undefined);
-
-  // Verify under the resolved tenant (HMAC secret is process-wide so
-  // verification is tenant-agnostic, but we bind RLS context first so
-  // the use-case's repo calls hit the right tenant slice).
-  const verifyResult = unsubscribeTokenSigner.verify(tokenPlain);
-  if (!verifyResult.ok) {
-    return reject(verifyResult.error.kind, tenantId, undefined);
-  }
-  const payload = verifyResult.value;
-
-  // Defence-in-depth: pre-tenant `peekTokenTenantId` parses `tid`
-  // from the unauthenticated token to bind RLS, while `verify` re-parses
-  // `tid` from the SAME base64url payload AFTER constant-time MAC
-  // verification. Today both parsers read the same field, so the only
-  // way they diverge is if (a) a future refactor separates the two
-  // parsers, (b) one parser is silently broken by a dependency bump,
-  // or (c) an attacker crafts a token whose unauthenticated peek path
-  // returns a different tenant from the MAC-verified payload. Any of
-  // those scenarios would let cross-tenant probes bind RLS to one
-  // tenant while the suppression row writes to another — this guard
-  // closes the window. Reject as `tenant_id_mismatch` (separate audit
-  // category from `bad_signature`) so dashboards can spot drift early.
-  // R7 MED-S4 — `tenantId` is `UnverifiedTenantSlug` (peek), `payload.tenantId`
-  // is `TenantSlug` (verified). Compare as plain strings; the brand
-  // mismatch is an intentional type-level marker that this comparison
-  // is exactly the verified-vs-unverified consistency check.
-  if ((payload.tenantId as string) !== (tenantId as string)) {
-    return reject('tenant_id_mismatch', tenantId, payload.lang);
-  }
-
-  let tenantCtx;
-  try {
-    tenantCtx = asTenantContext(payload.tenantId);
-  } catch (e) {
-    logger.warn(
-      { err: (e as Error).message, tenantId: payload.tenantId },
-      'unsubscribe_invalid_tenant_slug',
-    );
-    return reject('invalid_tenant_slug', payload.tenantId, payload.lang);
-  }
-
-  const tenantSupportEmail = env.broadcasts.fromEmail;
-  const locale = resolveLocale(
-    payload.lang,
-    queryLang,
-    acceptLanguage,
-    payload.tenantId,
-  );
-
-  // Top-level guard: every step from here on touches infrastructure
-  // (tenant settings, RLS bind, DB upsert) and may throw on transient
-  // outages. The `/unsubscribe/[token]` page contract is "always
-  // render, never throw" (GDPR Art. 21 surface) — collapse any throw
-  // into the retry-state error page below.
-  // Fallback uses the localised "the chamber" string rather than echoing
-  // the raw tenant slug — slugs read as internal identifiers ("swecham")
-  // and feel unprofessional on a GDPR Art. 21 surface where the recipient
-  // already trusts the link came from a real organisation.
-  let tenantDisplayName: string;
-  try {
-    tenantDisplayName = await resolveTenantDisplayName(payload.tenantId);
-  } catch (e) {
-    logger.error(
-      { err: (e as Error).message, tenantId: payload.tenantId, requestId },
-      'unsubscribe_tenant_displayname_lookup_failed',
-    );
-    const tFallback = await getTranslations({
-      locale,
-      namespace: 'public.unsubscribe',
-    });
-    tenantDisplayName = tFallback('fallbackChamberName');
-  }
-
-  const deps = makeUnsubscribeRecipientDeps(
-    payload.tenantId,
-    tenantDisplayName,
-    tenantSupportEmail,
-  );
-
-  let result;
-  try {
-    result = await runInTenant(tenantCtx, async () =>
-      unsubscribeRecipient(deps, {
-        tenantId: payload.tenantId,
-        broadcastId: asBroadcastId(payload.broadcastId),
-        emailLower: payload.emailLower,
-        tokenPlaintext: tokenPlain,
-        requestId,
-        reasonText: null,
-      }),
-    );
-  } catch (e) {
-    logger.error(
-      { err: (e as Error).message, tenantId: payload.tenantId, requestId },
-      'unsubscribe_unhandled_error',
-    );
-    broadcastsMetrics.unsubscribesCount(payload.tenantId, 'unhandled_error');
-    recordTtfb(payload.tenantId);
-    return {
-      outcome: { state: 'error', tenantSupportEmail },
-      locale,
-    };
-  }
-
-  if (!result.ok) {
-    // Distinguish transient infrastructure failure (`repo_error`) from
-    // a token / business-rule rejection. The recipient sees a distinct
-    // "please try again" state with support contact, not the misleading
-    // "link invalid or expired" — their unsubscribe was NOT recorded.
-    if (result.error.kind === 'unsubscribe.repo_error') {
-      logger.error(
-        { kind: result.error.kind, requestId },
-        'unsubscribe_repo_error',
-      );
-      broadcastsMetrics.unsubscribesCount(payload.tenantId, 'repo_error');
-      recordTtfb(payload.tenantId);
-      return {
-        outcome: { state: 'error', tenantSupportEmail },
-        locale,
-      };
-    }
-    logger.error(
-      { kind: result.error.kind, requestId },
-      'unsubscribe_use_case_error',
-    );
-    broadcastsMetrics.unsubscribesCount(payload.tenantId, 'invalid');
-    recordTtfb(payload.tenantId);
-    return { outcome: { state: 'invalid' }, locale };
-  }
-
-  broadcastsMetrics.unsubscribesCount(
-    payload.tenantId,
-    result.value.wasNew ? 'success' : 'already',
-  );
-  recordTtfb(payload.tenantId);
-
-  return {
-    outcome: {
-      state: result.value.wasNew ? 'success' : 'already',
-      tenantDisplayName: result.value.tenantDisplayName,
-      tenantSupportEmail: result.value.tenantSupportEmail,
-    },
-    locale,
-  };
 }
 
 export default async function UnsubscribePage({
@@ -456,13 +134,32 @@ export default async function UnsubscribePage({
     namespace: 'public.unsubscribe',
   });
 
-  // The support email rendered in the contact line. For the `invalid`
-  // state we don't have a verified tenant — fall back to the platform
-  // broadcasts inbox.
-  const supportEmail =
-    outcome.state === 'invalid'
-      ? env.broadcasts.fromEmail
-      : outcome.tenantSupportEmail;
+  // The manual-removal contact on every state: the monitored privacy inbox,
+  // always a bare address — never the (possibly unmonitored, display-name)
+  // sending address `BROADCASTS_FROM_EMAIL`.
+  const supportEmail = env.broadcasts.privacyContactEmail;
+
+  // Tenant name for the contact + privacy lines. States that verified a
+  // token carry it; the others (invalid, rate_limited, error) use this
+  // deployment's tenant — known from config, never from the token, so it
+  // reveals nothing about the link.
+  let tenantDisplayName: string;
+  if ('tenantDisplayName' in outcome) {
+    tenantDisplayName = outcome.tenantDisplayName;
+  } else {
+    try {
+      tenantDisplayName = await resolveTenantDisplayName(env.tenant.slug);
+    } catch (e) {
+      logger.warn(
+        { err: (e as Error).message, requestId },
+        'unsubscribe_page_tenant_name_failed',
+      );
+      tenantDisplayName = t('fallbackChamberName');
+    }
+  }
+  const privacyPolicyUrl = env.broadcasts.privacyPolicyUrl;
+  const websiteUrl = env.broadcasts.websiteUrl;
+  const retryHref = `/unsubscribe/${encodeURIComponent(token)}?lang=${locale}`;
 
   // Render `<email></email>` rich placeholder in i18n contact strings
   // as a real `<a href="mailto:...">` so mobile recipients can tap to
@@ -495,6 +192,7 @@ export default async function UnsubscribePage({
       className: 'text-yellow-600 dark:text-yellow-400',
     },
     invalid: { Icon: XCircle, className: 'text-muted-foreground' },
+    rate_limited: { Icon: Clock, className: 'text-muted-foreground' },
   };
   const { Icon: StateIcon, className: stateIconColor } =
     STATE_ICON[outcome.state];
@@ -554,8 +252,28 @@ export default async function UnsubscribePage({
             <p className="mb-3 text-base text-foreground">
               {t('error.body')}
             </p>
+            <p className="mb-3">
+              <a
+                href={retryHref}
+                className="inline-flex min-h-11 items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                {t('error.tryAgain')}
+              </a>
+            </p>
             <p className="text-sm text-muted-foreground">
-              {t.rich('error.contact', { email: mailtoLink })}
+              {t.rich('error.contact', { email: mailtoLink, tenantDisplayName })}
+            </p>
+          </>
+        ) : outcome.state === 'rate_limited' ? (
+          <>
+            <h1 className="mb-4 text-2xl font-semibold">
+              {t('rateLimited.heading')}
+            </h1>
+            <p className="mb-3 text-base text-foreground">
+              {t('rateLimited.body')}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              {t.rich('rateLimited.contact', { email: mailtoLink, tenantDisplayName })}
             </p>
           </>
         ) : (
@@ -567,21 +285,42 @@ export default async function UnsubscribePage({
               {t('invalid.body')}
             </p>
             <p className="text-sm text-muted-foreground">
-              {t.rich('invalid.contact', { email: mailtoLink })}
+              {t.rich('invalid.contact', { email: mailtoLink, tenantDisplayName })}
             </p>
           </>
         )}
+        {/* Privacy notice (GDPR Art. 13/14 transparency) — every state,
+            when the tenant has published one. */}
+        {privacyPolicyUrl ? (
+          <p className="mt-6 text-sm text-muted-foreground">
+            {t.rich('privacyLine', {
+              tenantDisplayName,
+              link: (chunks) => (
+                <a
+                  href={privacyPolicyUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={EXTERNAL_LINK_CLASS}
+                >
+                  {chunks}
+                  <span className="sr-only"> {t('opensInNewTab')}</span>
+                </a>
+              ),
+            })}
+          </p>
+        ) : null}
         {/* UX-6 — link back to chamber website (when configured).
             Omitted entirely when env var unset so no dead anchor. */}
-        {env.broadcasts.websiteUrl ? (
-          <p className="mt-6 text-sm">
+        {websiteUrl ? (
+          <p className={privacyPolicyUrl ? 'mt-2 text-sm' : 'mt-6 text-sm'}>
             <a
-              href={env.broadcasts.websiteUrl}
+              href={websiteUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="underline underline-offset-2 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 inline-block py-1"
+              className={EXTERNAL_LINK_CLASS}
             >
               {t('chamberWebsiteLink')}
+              <span className="sr-only"> {t('opensInNewTab')}</span>
             </a>
           </p>
         ) : null}
@@ -589,3 +328,6 @@ export default async function UnsubscribePage({
     </main>
   );
 }
+
+const EXTERNAL_LINK_CLASS =
+  'underline underline-offset-2 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 inline-block py-1';

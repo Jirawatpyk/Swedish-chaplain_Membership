@@ -14,30 +14,28 @@
  * per-contact merge field for our HMAC-signed token. Two surfaces share
  * the work:
  *
- *   1. **Body CTA** — uses Resend's built-in `{{{RESEND_UNSUBSCRIBE_URL}}}`
- *      merge tag. Resend substitutes per-recipient at send time;
- *      clicking lands on Resend's hosted unsubscribe page; their hosted
- *      page emits `email.complained` / `email.unsubscribed` webhook.
- *      F7 US5 `process-webhook-event.ts` (T154) mirrors that into our
- *      `marketing_unsubscribes` table — so the suppression list under
- *      our control still grows correctly.
+ *   1. **Body CTA + List-Unsubscribe header (what ships today)** — the
+ *      body uses Resend's `{{{RESEND_UNSUBSCRIBE_URL}}}` merge tag, which
+ *      Resend substitutes per recipient, and Resend adds its own
+ *      `List-Unsubscribe` / `List-Unsubscribe-Post` (RFC 8058) headers to
+ *      every broadcast. Both land on Resend's side and flip the Resend
+ *      contact to unsubscribed, which Resend reports as `contact.updated`
+ *      (there is no `email.unsubscribed` event). The broadcasts webhook
+ *      route mirrors that into `marketing_unsubscribes` — tenant + email —
+ *      via `applyResendHostedUnsubscribe` (channel `resend_hosted`).
+ *      The Broadcasts API has no `headers` field, so our own signed
+ *      header below cannot be attached to a broadcast.
  *
- *   2. **List-Unsubscribe RFC 8058 header + admin direct links** — use
- *      `signUnsubscribeUrl(...)` (exported below) to mint a per-recipient
- *      HMAC-signed URL pointing to OUR `/unsubscribe/[token]` route. The
- *      route verifies HMAC, resolves the tenant context, runs
- *      `unsubscribeRecipient`, and renders the bilingual confirmation
- *      page directly (no Resend round-trip). Currently consumed by:
- *        - `signListUnsubscribePostUrl(...)` (below) — emits the
- *          one-click opt-out URL for the `List-Unsubscribe-Post` header.
- *        - Admin "share unsubscribe link" affordance in the broadcast
- *          detail view (US2 surface).
- *      Future per-recipient batch send (`emails.send` loop, post-MVP)
- *      will inject this URL directly into the body footer instead of
- *      relying on Resend's merge tag. The plumbing is in place today.
+ *   2. **Our signed URL (ready, not yet sent)** — `signUnsubscribeUrl(...)`
+ *      mints a per-recipient HMAC-signed URL to OUR `/unsubscribe/[token]`,
+ *      which answers both GET (the page) and the RFC 8058 one-click POST
+ *      (proxy rewrite → `/api/unsubscribe/[token]`).
+ *      `buildListUnsubscribeHeaders(...)` wraps it as header values. No
+ *      production caller today; a future per-recipient send path would
+ *      use them.
  *
- * Both surfaces convergent: any unsubscribe — whether via Resend's
- * hosted page or our `/unsubscribe/[token]` route — lands a row in
+ * Both surfaces converge: any unsubscribe — Resend's hosted page, Resend's
+ * one-click header, or our `/unsubscribe/[token]` — lands a row in
  * `marketing_unsubscribes` and protects the recipient on subsequent
  * dispatches (FR-017 + FR-031).
  *
@@ -213,10 +211,9 @@ export function renderBroadcastHtml(input: RenderBroadcastHtmlInput): string {
 
 /**
  * Mint a per-recipient HMAC-signed unsubscribe URL pointing to OUR
- * `/unsubscribe/[token]` route. Used by:
- *   - List-Unsubscribe RFC 8058 header generator (`signListUnsubscribePostUrl`)
- *   - Admin "share unsubscribe link" affordance
- *   - Future per-recipient `emails.send` body-injection path
+ * `/unsubscribe/[token]` route. Used by `buildListUnsubscribeHeaders`
+ * below; no production caller yet (see the file header — the Broadcasts
+ * API cannot carry per-recipient headers).
  *
  * `tenantHost` is the recipient-facing host (e.g. `swecham.dxtspace.com`).
  * Production deployments pass a fully-qualified host with TLS; tests pass

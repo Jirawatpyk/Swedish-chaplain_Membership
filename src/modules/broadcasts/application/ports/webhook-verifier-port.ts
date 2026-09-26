@@ -87,6 +87,24 @@ export interface VerifiedBroadcastEvent {
   };
 }
 
+/**
+ * `contact.updated` — how Resend reports an opt-out made on its hosted
+ * unsubscribe page or through the List-Unsubscribe header it adds to every
+ * broadcast. `audienceIds` holds the legacy `audience_id` and any
+ * `segment_ids`; the route maps them back to our broadcast (and so the
+ * tenant) via `broadcasts.resend_audience_id`.
+ */
+export interface VerifiedContactUpdatedEvent {
+  readonly id: string;
+  readonly type: 'contact.updated';
+  readonly createdAtUnixSeconds: number;
+  readonly data: {
+    readonly email: string;
+    readonly audienceIds: ReadonlyArray<string>;
+    readonly unsubscribed: boolean;
+  };
+}
+
 export interface WebhookVerifierPort {
   /**
    * Verify the Svix signature header against the raw body. Returns
@@ -106,4 +124,17 @@ export interface WebhookVerifierPort {
     svixTimestampHeader: string | null,
     secret: string,
   ): VerifiedBroadcastEvent;
+
+  /**
+   * Same Svix verification as `constructEvent`, for `contact.updated`.
+   * Throws `WebhookSignatureError{kind:'unknown_event_type'}` for any other
+   * event type.
+   */
+  constructContactEvent(
+    rawBody: string,
+    svixSignatureHeader: string | null,
+    svixIdHeader: string | null,
+    svixTimestampHeader: string | null,
+    secret: string,
+  ): VerifiedContactUpdatedEvent;
 }

@@ -491,4 +491,49 @@ describe('F7 public unsubscribe integration (T138)', () => {
       await tenantB.cleanup();
     }
   });
+
+  it('RFC 8058 one-click POST unsubscribes idempotently: one row, one audit pair, channel one_click_post', async () => {
+    const email = `t138-post-${randomUUID().slice(0, 8)}@example.com`;
+    const token = unsubscribeTokenSigner.sign({
+      tenantId: tenant.ctx.slug,
+      broadcastId: asBroadcastId(broadcastId),
+      emailLower: unsafeBrandEmailLower(email),
+      lang: 'en',
+    });
+    const { NextRequest } = await import('next/server');
+    const { POST } = await import('@/app/api/unsubscribe/[token]/route');
+    const post = () =>
+      POST(
+        new NextRequest(`https://members.example.org/api/unsubscribe/${token}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/x-www-form-urlencoded' },
+          body: 'List-Unsubscribe=One-Click',
+        }),
+        { params: Promise.resolve({ token }) },
+      );
+
+    expect((await post()).status).toBe(200);
+    expect((await post()).status).toBe(200);
+
+    const rows = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select()
+        .from(marketingUnsubscribes)
+        .where(
+          and(
+            eq(marketingUnsubscribes.tenantId, tenant.ctx.slug),
+            eq(marketingUnsubscribes.emailLower, email),
+          ),
+        ),
+    );
+    expect(rows).toHaveLength(1);
+
+    const tokenHash = rows[0]!.sourceTokenHash;
+    const audits = (await fetchAuditRowsForTenant(tenant.ctx.slug, 'broadcast_unsubscribed')).filter(
+      (a) => a.payload['sourceTokenHash'] === tokenHash,
+    );
+    expect(audits).toHaveLength(1);
+    expect(audits[0]!.payload['channel']).toBe('one_click_post');
+  });
 });
+
