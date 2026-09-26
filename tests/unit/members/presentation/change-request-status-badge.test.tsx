@@ -49,3 +49,19 @@ describe('changeRequestStatusOf → <ChangeRequestStatusBadge>', () => {
     expect(screen.getByText(staff.state.pending).closest('[data-state]')).toHaveAttribute('data-state', 'decided');
   });
 });
+
+describe('<ChangeRequestStatusBadge> on AURA (spec 122 US3)', () => {
+  it.each([
+    [{ state: 'pending' } as const, 'aura-pill--progress', staff.state.pending],
+    [{ state: 'decided', outcome: 'approved' } as const, 'aura-pill--ready', staff.outcome.approved],
+    [{ state: 'decided', outcome: 'partially_approved' } as const, 'aura-pill--warning', staff.outcome.partially_approved],
+    [{ state: 'decided', outcome: 'rejected' } as const, 'aura-pill--blocked', staff.outcome.rejected],
+    [{ state: 'withdrawn', withdrawnReason: null } as const, 'aura-pill--neutral', staff.state.withdrawn],
+  ])('draws %o as an AURA status pill (%s) with an icon and its word', (status, tone, word) => {
+    renderBadge(status);
+    const pill = screen.getByText(word).closest('.aura-pill')!;
+    expect(pill).toHaveClass(tone);
+    expect(pill).toHaveAttribute('data-state', status.state);
+    expect(pill.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+  });
+});

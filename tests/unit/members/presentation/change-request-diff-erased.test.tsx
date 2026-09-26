@@ -42,3 +42,25 @@ describe('erased values render as the sentinel (F114 FR-030, review P-4)', () =>
     expect(container.textContent).not.toContain(enMessages.portal.changeRequests.diff.empty);
   });
 });
+
+describe('the diff on AURA table markup (spec 122 US3)', () => {
+  it('is a table with column headers and one row header per field', () => {
+    const { container } = render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <ChangeRequestDiffTable fields={[{ ...erasedField('phone', 'contact'), seen: '+661', proposed: '+662' }]} showOutcome />
+      </NextIntlClientProvider>,
+    );
+    const diff = container.querySelector('[data-testid="change-request-diff"]')!;
+    const table = diff.querySelector('table.aura-tbl')!;
+    expect(table).not.toBeNull();
+    const cols = [...table.querySelectorAll('thead th')].map((th) => th.textContent);
+    const copy = enMessages.portal.changeRequests.diff;
+    expect(cols).toEqual([copy.field, copy.seen, copy.proposed]);
+    const row = table.querySelector('tbody tr[data-field-key="phone"]')!;
+    expect(row.querySelector('th[scope="row"]')?.textContent).toContain(copy.labels.phone);
+    expect([...row.querySelectorAll('td')].map((td) => td.textContent)).toEqual([
+      expect.stringContaining('+661'),
+      expect.stringContaining('+662'),
+    ]);
+  });
+});

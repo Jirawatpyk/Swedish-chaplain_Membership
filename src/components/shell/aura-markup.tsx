@@ -114,7 +114,7 @@ const PILL_ICON: Record<AuraStatusTone, LucideIcon> = {
   blocked: Ban,
 };
 
-export interface AuraStatusPillProps {
+export interface AuraStatusPillProps extends Omit<React.HTMLAttributes<HTMLSpanElement>, 'children'> {
   /** Pass it: AURA guesses the tone from English words, and ours are translated. */
   readonly tone: AuraStatusTone;
   readonly children: React.ReactNode;
@@ -122,10 +122,10 @@ export interface AuraStatusPillProps {
 }
 
 /** AURA `StatusPill`: a record's state as a tone fill, an icon and the status word. */
-export function AuraStatusPill({ tone, children, className }: AuraStatusPillProps) {
+export function AuraStatusPill({ tone, children, className, ...rest }: AuraStatusPillProps) {
   const Icon = PILL_ICON[tone];
   return (
-    <span className={cx('aura-pill', `aura-pill--${tone}`, className)}>
+    <span {...rest} className={cx('aura-pill', `aura-pill--${tone}`, className)}>
       <Icon size={12} className="aura-icon" aria-hidden="true" focusable="false" />
       {children}
     </span>
