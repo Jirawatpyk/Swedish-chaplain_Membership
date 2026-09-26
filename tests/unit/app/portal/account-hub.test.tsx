@@ -132,12 +132,14 @@ describe('Account hub — sectioned IA (G2)', () => {
     }
   });
 
-  it('each titled card heading sits inside a CardHeader (slot=card-header)', async () => {
+  it('each titled card heading sits inside its AURA card head', async () => {
     await renderHub();
-    // Guards the "title INSIDE the card" fix: the h2 must be a descendant of a
-    // CardHeader, not a bare sibling above the Card (the old empty-pt-6 shape).
+    // Guards the "title INSIDE the card" fix: the h2 must be a descendant of
+    // the card head, not a bare sibling above the card (the old empty-pt-6
+    // shape). Spec 122 US3: AURA card markup.
     const heading = screen.getByRole('heading', { level: 2, name: /^Account$/ });
-    expect(heading.closest('[data-slot="card-header"]')).not.toBeNull();
+    expect(heading).toHaveClass('aura-card__title');
+    expect(heading.closest('.aura-card__head')).not.toBeNull();
   });
 
   it('anchors the language + renewal + data-privacy sections with scroll-mt offsets', async () => {
@@ -370,5 +372,41 @@ describe('Account hub — never-500 throw paths (I3)', () => {
       );
       expect(logger.warn).not.toHaveBeenCalledWith(expect.anything(), 'portal.account.data_export_list_failed');
     });
+  });
+});
+
+describe('Account hub on AURA (spec 122 US3)', () => {
+  it('draws each section as an AURA card, the role as an AURA badge, and the renewal switch as an AURA switch', async () => {
+    const { container } = await renderHub();
+    for (const id of ['account', 'language', 'renewal-prefs', 'data-privacy']) {
+      const section = container.querySelector(`#${id}`)!;
+      expect(section).toHaveClass('aura-card');
+      expect(section).toHaveAttribute('aria-labelledby', `${id}-heading`);
+    }
+    expect(screen.getByText(enMessages.shell.roleBadge.member)).toHaveClass('aura-badge');
+    const renewal = within(container.querySelector('#renewal-prefs') as HTMLElement).getByRole('switch', {
+      name: enMessages.portal.preferences.renewals.pauseLabel,
+    });
+    expect(renewal).toHaveClass('aura-switch');
+  });
+
+  it('lists data exports in an AURA table with a status badge and an AURA download button', async () => {
+    listMemberDataExports.mockResolvedValueOnce([
+      { id: 'job-1', status: 'ready', createdAt: new Date('2026-09-20T08:00:00Z') },
+    ]);
+    const { container } = await renderHub();
+    const privacy = container.querySelector('#data-privacy') as HTMLElement;
+    expect(within(privacy).getByRole('button', { name: enMessages.dataExport.requestButton })).toHaveClass(
+      'aura-btn',
+      'aura-btn--secondary',
+    );
+    expect(privacy.querySelector('table')).toHaveClass('aura-tbl');
+    // AURA's table wrap carries the one border; no second box around it
+    expect(privacy.querySelector('.aura-tbl-wrap')!.parentElement).not.toHaveClass('border');
+    expect(within(privacy).getByText(enMessages.dataExport.statusReady)).toHaveClass('aura-badge', 'aura-badge--success');
+    const download = within(privacy).getByRole('link', { name: new RegExp(enMessages.dataExport.download) });
+    expect(download).toHaveClass('aura-btn', 'aura-btn--secondary');
+    // below sm the link is its icon (still 44px); the aria-label keeps the name
+    expect(within(download).getByText(enMessages.dataExport.download)).toHaveClass('max-sm:sr-only');
   });
 });

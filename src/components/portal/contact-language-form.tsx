@@ -9,15 +9,17 @@
  * endpoint accepts while the tenant requires approval. Same UX contract as
  * the sibling form: radio group, Save button with spinner, toast + sr-only
  * live announcement.
+ *
+ * Spec 122 US3: AURA RadioGroup (its legend is the form title, kept for
+ * screen readers — the section shows the title above); Save in an ActionBar
+ * pinned to the card that reads "Unsaved changes" while the choice differs
+ * from what the server holds.
  */
 import type { ReactElement } from 'react';
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
-import { Loader2Icon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { ActionBar, Button, RadioGroup } from '@jirawatpyk/aura-react';
 import { useAriaAnnounce } from '@/hooks/use-aria-announce';
 
 export type ContactLanguage = 'en' | 'th' | 'sv';
@@ -70,32 +72,23 @@ export function ContactLanguageForm({ initialValue }: ContactLanguageFormProps):
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4" data-testid="contact-language-form">
-      <fieldset className="space-y-2">
-        <legend className="sr-only">{t('title')}</legend>
-        <RadioGroup
-          value={value}
-          onValueChange={(v) => setValue(v as ContactLanguage)}
-          disabled={saving}
-          className="space-y-2"
-        >
-          {(['en', 'th', 'sv'] as const).map((opt) => {
-            const id = `contact-language-${opt}`;
-            const label = tLang(`languageOptions.${opt}`);
-            return (
-              <div key={opt} className="flex items-center gap-2">
-                <RadioGroupItem id={id} value={opt} aria-label={label} />
-                <Label htmlFor={id} className="mb-0 cursor-pointer leading-4">
-                  {label}
-                </Label>
-              </div>
-            );
-          })}
-        </RadioGroup>
-      </fieldset>
-      <Button type="submit" disabled={saving} className="w-full" size="lg">
-        {saving && <Loader2Icon className="mr-2 h-4 w-4 motion-safe:animate-spin" />}
-        {t('save')}
-      </Button>
+      <RadioGroup
+        label={t('title')}
+        className="[&>legend]:sr-only"
+        value={value}
+        onChange={(v) => setValue(v as ContactLanguage)}
+        disabled={saving}
+        options={(['en', 'th', 'sv'] as const).map((opt) => ({ value: opt, label: tLang(`languageOptions.${opt}`) }))}
+      />
+      <ActionBar
+        position="container"
+        label={t('title')}
+        status={value !== saved ? tLang('unsavedStatus') : null}
+      >
+        <Button type="submit" loading={saving}>
+          {t('save')}
+        </Button>
+      </ActionBar>
       <span role="status" aria-live="polite" className="sr-only">
         {announcement}
       </span>

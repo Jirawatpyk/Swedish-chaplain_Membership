@@ -12,27 +12,21 @@
  * RSC boundary: imports the `ExportStatus` TYPE only from the insights barrel
  * (erased at compile) — never the server-only runtime (mirrors the directory
  * forms' convention).
+ *
+ * Spec 122 US3: AURA Button (`loading`), Table, Badge (status tone) and a
+ * secondary link button for the download; shared with the staff member page.
  */
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from '@/lib/toast';
 import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
 import { isReadOnlyResponse } from '@/lib/http/read-only-refusal';
-import { Download, Loader2 } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
-import { Button, buttonVariants } from '@/components/ui/button';
+import { Download } from 'lucide-react';
+import { Badge, Button, Table, TBody, THead, Td, Th, Tr } from '@jirawatpyk/aura-react';
+import { auraButtonClass } from '@/components/shell/aura-markup';
 import { cn } from '@/lib/utils';
-import {
-  Table,
-  TableBody,
-  TableCaption,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import type { ExportStatus } from '@/modules/insights';
-import { exportStatusVariant } from '@/lib/export-status-variant';
+import { exportStatusTone } from '@/lib/export-status-variant';
 
 export interface DataExportRow {
   readonly jobId: string;
@@ -116,18 +110,11 @@ export function DataExportPanel({
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <Button onClick={requestExport} disabled={disabled} aria-busy={pending}>
-          {pending ? (
-            <>
-              <Loader2 aria-hidden="true" className="size-4 motion-safe:animate-spin" />
-              {labels.requesting}
-            </>
-          ) : (
-            labels.requestButton
-          )}
+        <Button variant="secondary" onClick={requestExport} disabled={disabled} loading={pending}>
+          {pending ? labels.requesting : labels.requestButton}
         </Button>
         {hasPending && !pending ? (
-          <p className="text-sm text-muted-foreground">{labels.alreadyPending}</p>
+          <p className="text-sm text-[var(--aura-fg-secondary)]">{labels.alreadyPending}</p>
         ) : null}
       </div>
 
@@ -141,45 +128,52 @@ export function DataExportPanel({
           {labels.statusHeading}
         </h2>
         {rows.length === 0 ? (
-          <p className="rounded-md border py-6 text-center text-sm text-muted-foreground">
+          <p className="rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)] py-6 text-center text-sm text-[var(--aura-fg-secondary)]">
             {labels.empty}
           </p>
         ) : (
           <>
-            <Table>
-              <TableCaption className="sr-only">{labels.caption}</TableCaption>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{labels.colStatus}</TableHead>
-                  <TableHead>{labels.colRequested}</TableHead>
-                  <TableHead className="sr-only">{labels.download}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+            {/* below sm: 12px cell padding, so three columns fit a 390px phone */}
+            <Table
+              caption={labels.caption}
+              captionHidden
+              className="max-sm:[&_.aura-tbl\_\_td]:px-3 max-sm:[&_.aura-tbl\_\_th]:px-3"
+            >
+              <THead>
+                <Tr>
+                  <Th>{labels.colStatus}</Th>
+                  <Th>{labels.colRequested}</Th>
+                  <Th>
+                    <span className="sr-only">{labels.download}</span>
+                  </Th>
+                </Tr>
+              </THead>
+              <TBody>
                 {rows.map((row) => (
-                  <TableRow key={row.jobId}>
-                    <TableCell>
-                      <Badge variant={exportStatusVariant(row.status)}>{row.statusLabel}</Badge>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">{row.requestedAt}</TableCell>
-                    <TableCell className="text-right">
+                  <Tr key={row.jobId}>
+                    <Td>
+                      <Badge tone={exportStatusTone(row.status)}>{row.statusLabel}</Badge>
+                    </Td>
+                    <Td className="text-[var(--aura-fg-secondary)]">{row.requestedAt}</Td>
+                    <Td align="end">
                       {row.downloadable ? (
                         <a
                           href={`${downloadUrlBase}/${row.jobId}/download`}
                           aria-label={`${labels.download} — ${row.requestedAt}`}
-                          // min-h-11 = 44px touch target on mobile (ux-standards § 9.1 / S4).
-                          className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'min-h-11')}
+                          // AURA's md button is 44px: the touch target (ux-standards § 9.1 / S4);
+                          // below sm it is just the icon, so the row fits at 390px
+                          className={cn(auraButtonClass({ variant: 'secondary' }), 'max-sm:w-11 max-sm:px-0')}
                         >
-                          <Download aria-hidden="true" className="size-4" />
-                          {labels.download}
+                          <Download aria-hidden="true" className="aura-icon size-4" />
+                          <span className="max-sm:sr-only">{labels.download}</span>
                         </a>
                       ) : null}
-                    </TableCell>
-                  </TableRow>
+                    </Td>
+                  </Tr>
                 ))}
-              </TableBody>
+              </TBody>
             </Table>
-            <p className="text-xs text-muted-foreground">{labels.expiresHint}</p>
+            <p className="text-xs text-[var(--aura-fg-secondary)]">{labels.expiresHint}</p>
           </>
         )}
       </section>

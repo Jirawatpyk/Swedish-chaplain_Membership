@@ -6,8 +6,7 @@ import {
   XCircle,
   type LucideIcon,
 } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
-import { buttonVariants } from '@/components/ui/button';
+import { auraButtonClass } from '@/components/shell/aura-markup';
 import { cn } from '@/lib/utils';
 
 /**
@@ -21,6 +20,10 @@ import { cn } from '@/lib/utils';
  *
  * Heading rule (spec a11y-6): the label renders as a real `<h2>`, not
  * a CardTitle div, so the dashboard outline is h1 (PageHeader) → h2.
+ *
+ * Spec 122 US3: AURA `Stat` markup (the `Main` / `Home-mobile` boards), drawn
+ * with AURA's classes because this is a server component (`aura-markup.tsx`).
+ * The label keeps its h2; `data-testid` / `data-variant` stay for the e2e.
  *
  * The variant set is intentionally identical to the route-layer `StatVariant`
  * (dashboard-stats.ts) — the previously-declared `'ok'` member was dead (no
@@ -39,8 +42,8 @@ const VARIANT_STATUS_CLASS: Record<
   Exclude<StatCardVariant, 'neutral'>,
   string
 > = {
-  warning: 'text-warning',
-  destructive: 'text-destructive',
+  warning: 'text-[var(--aura-alert-warning-fg)]',
+  destructive: 'text-[var(--aura-fg-danger)]',
 };
 
 export interface StatCardProps {
@@ -86,6 +89,8 @@ export interface StatCardProps {
    * the default `XCircle`.
    */
   readonly icon?: LucideIcon;
+  /** The small icon top-right of the tile, as the boards draw one per stat. */
+  readonly headIcon?: LucideIcon;
   readonly className?: string;
 }
 
@@ -106,67 +111,61 @@ export function StatCard({
   variantLabel,
   action,
   icon,
+  headIcon: HeadIcon,
   className,
 }: StatCardProps) {
   const showStatus = variant !== 'neutral' && Boolean(variantLabel);
   const Icon = icon ?? (variant === 'neutral' ? Info : VARIANT_ICON[variant]);
 
   return (
-    <Card
+    <div
       data-testid="stat-card"
       data-variant={variant}
-      className={cn('h-full', className)}
+      className={cn('aura-stat h-full', className)}
     >
-      <CardContent className="flex flex-col gap-1.5">
-        <h2 className="text-caption font-medium text-muted-foreground">
-          {label}
-        </h2>
-        <p className="text-2xl font-semibold leading-tight tabular-nums">
-          {value}
-        </p>
-        {sub !== undefined ? (
-          <p
-            data-slot="stat-card-sub"
-            className="text-caption text-muted-foreground"
-          >
-            {sub}
-          </p>
+      <div className="aura-stat__head">
+        <h2 className="aura-stat__label">{label}</h2>
+        {HeadIcon ? (
+          <span className="aura-stat__icon">
+            <HeadIcon size={16} className="aura-icon" aria-hidden="true" focusable="false" />
+          </span>
         ) : null}
-        {showStatus ? (
-          <p
-            data-testid="stat-card-status"
-            className={cn(
-              'mt-1 inline-flex items-center gap-1.5 text-caption font-medium',
-              showStatus &&
+      </div>
+      <p className="aura-stat__value tabular-nums">{value}</p>
+      {sub !== undefined || showStatus ? (
+        <span className="aura-stat__foot flex-col items-start">
+          {sub !== undefined ? (
+            <span data-slot="stat-card-sub" className="aura-stat__caption">
+              {sub}
+            </span>
+          ) : null}
+          {showStatus ? (
+            <span
+              data-testid="stat-card-status"
+              className={cn(
+                'inline-flex items-center gap-1.5 text-[13px] font-medium',
                 VARIANT_STATUS_CLASS[variant as Exclude<StatCardVariant, 'neutral'>],
-            )}
-          >
-            <Icon className="size-3.5" aria-hidden="true" />
-            {variantLabel}
-          </p>
-        ) : null}
-        {action ? (
-          // `min-h-11` (≥44px) tap target on BOTH branches — the `size: 'sm'`
-          // buttonVariant is h-7 (28px), below the WCAG 2.5.8 / SC 2.5.5
-          // 44px minimum. Matches the sibling `invoices-summary-card.tsx`
-          // CTAs (Cluster 4 review a11y fix).
-          isExternalHref(action.href) ? (
-            <a
-              href={action.href}
-              className={cn(buttonVariants({ size: 'sm' }), 'mt-2 w-fit min-h-11')}
+              )}
             >
-              {action.label}
-            </a>
-          ) : (
-            <Link
-              href={action.href}
-              className={cn(buttonVariants({ size: 'sm' }), 'mt-2 w-fit min-h-11')}
-            >
-              {action.label}
-            </Link>
-          )
-        ) : null}
-      </CardContent>
-    </Card>
+              <Icon className="size-3.5" aria-hidden="true" />
+              {variantLabel}
+            </span>
+          ) : null}
+        </span>
+      ) : null}
+      {action ? (
+        // The card's one next step: AURA's primary default (44px) button, not
+        // `sm` (32px), for the WCAG 2.5.5 target.
+        isExternalHref(action.href) ? (
+          <a href={action.href} className={cn(auraButtonClass(), 'mt-3 w-fit')}>
+            {action.label}
+          </a>
+        ) : (
+          <Link href={action.href} className={cn(auraButtonClass(), 'mt-3 w-fit')}>
+            {action.label}
+          </Link>
+        )
+      ) : null}
+    </div>
   );
 }

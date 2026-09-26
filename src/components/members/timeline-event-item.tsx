@@ -25,7 +25,8 @@ import {
   UserCogIcon,
   type LucideIcon,
 } from 'lucide-react';
-import { RelativeTime } from '@/components/ui/relative-time';
+import { RelativeTime } from '@/components/shell/relative-time';
+import { AuraBadge } from '@/components/shell/aura-markup';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
 import type { TimelineSource, TimelineActorKind } from '@/lib/timeline-shared';
 
@@ -221,37 +222,34 @@ export function TimelineEventItem({
 
   return (
     <div
-      className="relative border-l-2 border-muted pl-6 py-3"
+      className="relative border-l-2 border-[var(--aura-border-default)] pl-6 py-3"
       data-event-type={eventType}
       data-source={source}
     >
       {/* Source marker — reduced-motion friendly (static icon, no pulse). */}
       <span
         aria-hidden
-        className="absolute -left-[13px] top-4 flex size-6 items-center justify-center rounded-full border bg-background text-muted-foreground"
+        className="absolute -left-[13px] top-4 flex size-6 items-center justify-center rounded-full border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] text-[var(--aura-fg-secondary)]"
       >
         <SourceIcon className="size-3.5" />
       </span>
       <div className="flex flex-col gap-1">
         <div className="flex flex-wrap items-baseline gap-2">
           <span className="font-medium text-sm">{eventLabel}</span>
-          {/* bg-secondary/text-secondary-foreground is a designed ≥4.5:1
-              accessible pair (WCAG 1.4.3) — the prior muted-on-muted chip
-              failed contrast (review-run I6). */}
-          <span className="rounded bg-secondary px-1.5 py-0.5 text-[11px] font-medium uppercase tracking-wide text-secondary-foreground">
-            {sourceLabel}
-          </span>
+          {/* AURA neutral badge — a designed ≥4.5:1 pair (WCAG 1.4.3; the
+              muted-on-muted chip before it failed, review-run I6). */}
+          <AuraBadge>{sourceLabel}</AuraBadge>
           <RelativeTime
             iso={timestamp}
             title={formatLocalisedTimestamp(timestamp, locale)}
-            className="text-xs text-muted-foreground"
+            className="text-xs text-[var(--aura-fg-secondary)]"
             locale={locale}
           />
         </div>
         {payloadDetail && (
-          <p className="text-sm text-muted-foreground">{payloadDetail}</p>
+          <p className="text-sm text-[var(--aura-fg-secondary)]">{payloadDetail}</p>
         )}
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-[var(--aura-fg-secondary)]">
           {tTimeline('actorBy', { actor: actorDisplay })}
         </p>
       </div>

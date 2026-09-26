@@ -181,15 +181,43 @@ describe('<BenefitUsageCard>', () => {
 
     it('uses an amber (warning) colour token, never destructive red', () => {
       renderCard({ suspended: true });
-      const badge = screen.getByText('Suspended').closest('span[class]');
+      // AURA badge tones (spec 122 US3): warning, never danger.
+      const badge = screen.getByText('Suspended').closest('.aura-badge');
       expect(badge).not.toBeNull();
-      expect(badge?.className).toMatch(/text-warning/);
-      expect(badge?.className).not.toMatch(/text-destructive/);
+      expect(badge).toHaveClass('aura-badge--warning');
+      expect(badge).not.toHaveClass('aura-badge--danger');
     });
 
     it('renders in compact mode too (inline member-detail preview surface)', () => {
       renderCard({ compact: true, suspended: true });
       expect(screen.getByText('Suspended')).toBeInTheDocument();
+    });
+  });
+
+  describe('on AURA (spec 122 US3)', () => {
+    it('is an AURA card with AURA progress bars, badges and a warning alert', () => {
+      renderCard({ underUseWarning: true });
+      const card = screen.getByTestId('benefit-usage-card');
+      expect(card).toHaveClass('aura-card');
+      expect(screen.getByRole('progressbar').closest('.aura-progress')).not.toBeNull();
+      expect(screen.getByText('Directory listing')).toHaveClass('aura-badge');
+      expect(screen.getByText(/not using all your benefits/i).closest('.aura-alert')).toHaveClass(
+        'aura-alert--warning',
+      );
+    });
+
+    it('compact: "Full benefits" is a footer link, as on the Main board', () => {
+      renderCard({ compact: true, previewHref: '/portal/benefits' });
+      const link = screen.getByRole('link', { name: /full benefits/i });
+      expect(link).toHaveAttribute('href', '/portal/benefits');
+      expect(link.closest('.aura-card__foot')).not.toBeNull();
+    });
+
+    it('marks a suspended member with an AURA warning badge that is not colour-only', () => {
+      renderCard({ suspended: true });
+      const badge = screen.getByText(enMessages.benefits.card.suspendedBadge).closest('.aura-badge');
+      expect(badge).toHaveClass('aura-badge--warning');
+      expect(badge?.querySelector('svg')).not.toBeNull();
     });
   });
 });

@@ -140,6 +140,17 @@ describe('<BenefitsTabs> — showBroadcastsTab F7 kill-switch (058)', () => {
     vi.useFakeTimers();
   });
 
+  it('draws AURA tabs and navigates with ?tab= when one is chosen (spec 122 US3)', async () => {
+    renderTabs({ showBroadcastsTab: true });
+    const list = screen.getByRole('tablist');
+    expect(list).toHaveClass('aura-tabs__list');
+    const broadcasts = screen.getByRole('tab', { name: /broadcasts/i });
+    expect(broadcasts).toHaveClass('aura-tab');
+    expect(screen.getByRole('tab', { name: /benefits/i })).toHaveAttribute('aria-selected', 'true');
+    fireEvent.click(broadcasts);
+    await waitFor(() => expect(replaceSpy).toHaveBeenCalledWith('/portal/benefits?tab=broadcasts'));
+  });
+
   // -------------------------------------------------------------------------
   // Case 1 — F7 ON: both tabs visible
   // -------------------------------------------------------------------------

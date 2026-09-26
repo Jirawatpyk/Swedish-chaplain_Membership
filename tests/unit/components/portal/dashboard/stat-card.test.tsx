@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { FileText } from 'lucide-react';
 import { StatCard } from '@/components/portal/dashboard/stat-card';
 
 describe('<StatCard>', () => {
@@ -43,5 +44,25 @@ describe('<StatCard>', () => {
     const card = screen.getByTestId('stat-card');
     expect(card.getAttribute('data-variant')).toBe('neutral');
     expect(screen.queryByTestId('stat-card-status')).toBeNull();
+  });
+  it('draws AURA Stat markup: label in the head, value, caption, and the board icon (spec 122 US3)', () => {
+    const { container } = render(
+      <StatCard label="Outstanding balance" value="38,520.00 THB" sub="1 unpaid invoice" headIcon={FileText} />,
+    );
+    const card = screen.getByTestId('stat-card');
+    expect(card).toHaveClass('aura-stat');
+    const heading = screen.getByRole('heading', { level: 2 });
+    expect(heading).toHaveClass('aura-stat__label');
+    expect(heading.parentElement).toHaveClass('aura-stat__head');
+    expect(container.querySelector('.aura-stat__icon svg')).toHaveAttribute('aria-hidden', 'true');
+    expect(screen.getByText('38,520.00 THB')).toHaveClass('aura-stat__value');
+    expect(screen.getByText('1 unpaid invoice')).toHaveClass('aura-stat__caption');
+  });
+
+  it('renders its action as an AURA link button with a 44px target', () => {
+    render(<StatCard label="Membership" value="Due" action={{ href: '/portal/renewal', label: 'Renew now' }} />);
+    const link = screen.getByRole('link', { name: 'Renew now' });
+    expect(link).toHaveClass('aura-btn', 'aura-btn--primary');
+    expect(link).not.toHaveClass('aura-btn--sm');
   });
 });

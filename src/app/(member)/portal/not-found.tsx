@@ -3,7 +3,8 @@ import { getTranslations } from 'next-intl/server';
 import { FileQuestionIcon } from 'lucide-react';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { buttonVariants } from '@/components/ui/button';
+import { EmptyState } from '@/components/shell/empty-state';
+import { auraButtonClass } from '@/components/shell/aura-markup';
 
 /**
  * Member-portal not-found boundary (portal error states #3; AURA canvas
@@ -23,6 +24,9 @@ import { buttonVariants } from '@/components/ui/button';
  * The segment-level boundaries (`invoices/[invoiceId]`,
  * `credit-notes/[creditNoteId]`, `broadcasts/[id]`) keep their own
  * back-to-list links.
+ *
+ * Spec 122 US3: the shared (AURA) EmptyState with an AURA button link back.
+ * `announce={false}`: this is a page, not a status change within one.
  */
 export default async function PortalNotFound(): Promise<React.ReactElement> {
   const t = await getTranslations('errors');
@@ -30,16 +34,17 @@ export default async function PortalNotFound(): Promise<React.ReactElement> {
   return (
     <DetailContainer>
       <PageHeader title={t('notFound')} />
-      <div
+      <EmptyState
         data-testid="portal-not-found"
-        className="flex flex-col items-center gap-3 rounded-md border p-12 text-center"
-      >
-        <FileQuestionIcon className="size-12 text-muted-foreground" aria-hidden="true" />
-        <p className="max-w-md text-sm text-muted-foreground">{t('notFoundHint')}</p>
-        <Link href="/portal" className={`${buttonVariants()} mt-2`}>
-          {t('backToDashboard')}
-        </Link>
-      </div>
+        icon={FileQuestionIcon}
+        title={t('notFoundHint')}
+        announce={false}
+        action={
+          <Link href="/portal" className={auraButtonClass()}>
+            {t('backToDashboard')}
+          </Link>
+        }
+      />
     </DetailContainer>
   );
 }

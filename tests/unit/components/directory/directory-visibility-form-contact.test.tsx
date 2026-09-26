@@ -35,6 +35,8 @@ vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn(), warni
 const fetchMock = vi.fn();
 
 beforeEach(() => {
+  // the shared setup installs fake timers; `findBy*` needs real ones
+  vi.useRealTimers();
   fetchMock.mockReset();
   fetchMock.mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
   vi.stubGlobal('fetch', fetchMock);
@@ -69,11 +71,9 @@ function renderForm(contact: DirectoryContactContext, fieldVisibility: Record<st
   );
 }
 
-/** The checkbox carrying exactly this `aria-label` (the wrapping <label> repeats it in the computed name). */
-function checkbox(label: string): HTMLElement {
-  const el = document.querySelector<HTMLElement>(`[role="checkbox"][aria-label="${label}"]`);
-  if (el === null) throw new Error(`no checkbox labelled ${label}`);
-  return el;
+/** The AURA checkbox (a native input) named by its visible label. */
+function checkbox(label: string): HTMLInputElement {
+  return screen.getByRole('checkbox', { name: label }) as HTMLInputElement;
 }
 
 const stored = { name: true, industry: true, contact_name: true, contact_email: false };
@@ -87,7 +87,7 @@ describe('DirectoryVisibilityForm — contact toggles', () => {
 
   it('disables them for a colleague and tells them who decides', () => {
     renderForm({ viewerIsPrimary: false, chosenByPrimary: true, hasListing: true }, stored);
-    expect(checkbox(emailLabel).hasAttribute('data-disabled')).toBe(true);
+    expect(checkbox(emailLabel)).toBeDisabled();
     expect(
       screen.getByText(
         `Only your company's primary contact (${PRIMARY.name}) can choose whether their name and email are published. Let ${PRIMARY.name} know if you'd like them shown.`,
@@ -112,7 +112,7 @@ describe('DirectoryVisibilityForm — contact toggles', () => {
       { ...stored, contact_email: true },
     );
     expect(screen.getByTestId('directory-contact-confirm')).toBeTruthy();
-    expect(checkbox(emailLabel).getAttribute('aria-checked')).toBe('false');
+    expect(checkbox(emailLabel)).not.toBeChecked();
   });
 });
 
@@ -138,5 +138,52 @@ describe('DirectoryVisibilityForm — preview', () => {
     expect(screen.getByTestId('directory-listing-preview').textContent).toContain(
       en.directorySettings.previewNotListed,
     );
+  });
+});
+
+describe('DirectoryVisibilityForm on AURA (spec 122 US3)', () => {
+  it('uses AURA fields and keeps Save in an ActionBar that says when changes are unsaved', () => {
+    renderForm({ viewerIsPrimary: true, chosenByPrimary: true, hasListing: true }, stored);
+    expect(screen.getByRole('switch', { name: en.directorySettings.listed })).toHaveClass('aura-switch');
+    // (the field names repeat as visibility checkboxes, so find the inputs by id)
+    expect(document.getElementById('dir-industry')?.closest('.aura-field')).not.toBeNull();
+    expect(document.getElementById('dir-description')).toHaveClass('aura-textarea');
+    const bar = screen.getByRole('region', { name: 'Actions' });
+    expect(bar).toHaveClass('aura-actionbar');
+    const save = screen.getByRole('button', { name: en.directorySettings.save });
+    expect(bar).toContainElement(save);
+    expect(save).toHaveAttribute('type', 'submit');
+    const status = bar.querySelector('[role="status"]')!;
+    expect(status.textContent).toBe('');
+    fireEvent.click(checkbox(emailLabel));
+    expect(status.textContent).toBe(en.common.unsavedStatus);
+  });
+
+  it('lists a refused website in an error summary and on the field after a failed save', async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ error: { code: 'invalid_website' } }), { status: 400 }),
+    );
+    renderForm({ viewerIsPrimary: true, chosenByPrimary: true, hasListing: true }, stored);
+    fireEvent.click(screen.getByRole('button', { name: en.directorySettings.save }));
+    const summary = await screen.findByRole('alert', { name: /fix 1 field/i });
+    expect(summary).toHaveTextContent(en.directorySettings.invalidWebsite);
+    expect(document.getElementById('dir-website')).toHaveAttribute('aria-invalid', 'true');
+  });
+
+  it('a successful re-save leaves focus on Save, not on the stale summary or <body>', async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: { code: 'invalid_website' } }), { status: 400 }),
+    );
+    renderForm({ viewerIsPrimary: true, chosenByPrimary: true, hasListing: true }, stored);
+    const save = screen.getByRole('button', { name: en.directorySettings.save });
+    fireEvent.click(save);
+    await screen.findByRole('alert', { name: /fix 1 field/i });
+    // AURA's Button ignores clicks while `loading`: wait for the first save to settle
+    await vi.waitFor(() => expect(save).not.toHaveAttribute('aria-busy'));
+    save.focus();
+    fireEvent.click(save);
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(screen.queryByRole('alert', { name: /fix 1 field/i })).toBeNull());
+    expect(document.activeElement).toBe(save);
   });
 });

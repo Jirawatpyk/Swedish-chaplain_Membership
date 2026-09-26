@@ -49,3 +49,15 @@ describe('DecisionOutcomeBanner', () => {
     expect(container.textContent).not.toContain(enMessages.portal.changeRequests.outcome.title.rejected);
   });
 });
+
+describe('DecisionOutcomeBanner on AURA (spec 122 US3)', () => {
+  it('is an AURA alert in the outcome tone that still announces without interrupting', () => {
+    const { container } = renderBanner(decided);
+    const banner = container.querySelector('[data-testid="decision-outcome-banner"]')!;
+    expect(banner).toHaveClass('aura-alert', 'aura-alert--danger');
+    expect(banner).toHaveAttribute('role', 'status');
+    expect(banner.querySelector('.aura-alert__title')?.textContent).toBe(enMessages.portal.changeRequests.outcome.title.rejected);
+    expect(container.querySelector('[data-testid="resubmit-link"]')).toHaveClass('aura-btn', 'aura-btn--primary');
+    expect(container.querySelector('[data-testid="dismiss-decision"]')).toHaveClass('aura-btn--secondary');
+  });
+});

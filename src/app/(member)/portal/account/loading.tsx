@@ -1,5 +1,4 @@
 import { getTranslations } from 'next-intl/server';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { ChangePasswordFormSkeleton } from '@/components/auth/change-password-form-skeleton';
 import { env } from '@/lib/env';
 import { FormContainer } from '@/components/layout';
@@ -17,9 +16,9 @@ import {
  * shimmer→content swap doesn't pop extra sections into existence (CLS = 0,
  * ux-standards § 2.1). BUG-023 removed the standalone Appearance card (theme
  * toggle) and folded Sign out into the Account card — this skeleton matches.
- * Each card is self-titled: a title-height SkeletonBlock INSIDE the CardHeader
- * (mirroring the real `HubCard`'s h2-in-CardHeader, so the title doesn't shift
- * when content arrives) + body SkeletonBlocks in CardContent. FormContainer
+ * Each card is self-titled: a title-height SkeletonBlock INSIDE the AURA card
+ * head (mirroring the real `HubCard`'s h2 in its card head, so the title
+ * doesn't shift when content arrives) + body SkeletonBlocks in the card body. FormContainer
  * matches the real page (42rem) so width never reflows.
  *
  * Flag-gated cards (R2-1): the page renders Data & privacy only when
@@ -43,14 +42,14 @@ function HubCardSkeleton({
   children: React.ReactNode;
 }) {
   return (
-    <Card>
-      {/* Title-skeleton INSIDE the CardHeader so it lands where the real h2
-          renders (h-5 ≈ the text-base h2) — no shift on the content swap. */}
-      <CardHeader>
+    <div className="aura-card">
+      {/* Title-skeleton INSIDE the card head so it lands where the real h2
+          renders — no shift on the content swap. */}
+      <div className="aura-card__head">
         <SkeletonBlock className={`h-5 ${titleWidth}`} />
-      </CardHeader>
-      <CardContent className="space-y-3">{children}</CardContent>
-    </Card>
+      </div>
+      <div className="aura-card__body flex flex-col gap-3">{children}</div>
+    </div>
   );
 }
 
@@ -73,7 +72,7 @@ export default async function Loading() {
           <SkeletonBlock className="h-4 w-40" />
           {/* Sign out row — separated by a rule in the real card; 44px tap
               target (ux-standards § 9.1) so the swap doesn't reflow. */}
-          <div className="border-t pt-4">
+          <div className="border-t border-[var(--aura-border-default)] pt-4">
             <SkeletonBlock className="h-11 w-28" />
           </div>
         </HubCardSkeleton>

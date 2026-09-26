@@ -29,7 +29,7 @@ import { useTranslations } from 'next-intl';
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import { toast } from '@/lib/toast';
 import { History as HistoryIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button } from '@jirawatpyk/aura-react';
 import { EmptyState } from '@/components/shell/empty-state';
 import { TimelineEventItem, type TimelineItemProps } from './timeline-event-item';
 
@@ -159,13 +159,8 @@ export function TimelineStream({
 
       {cursor !== null && (
         <div className="flex justify-center pt-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={loadMore}
-            disabled={isPending}
-            className="min-h-11"
-          >
+          {/* AURA secondary, md = 44px touch target (spec 122 US3) */}
+          <Button variant="secondary" onClick={loadMore} loading={isPending}>
             {isPending ? t('loading') : t('loadMore')}
           </Button>
         </div>

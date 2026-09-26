@@ -46,6 +46,12 @@ async function expectNoAxeViolations(
   await page.waitForFunction(() => document.title.length > 0, undefined, {
     timeout: 15_000,
   });
+  // The events list fades in over 120 ms (`motion-safe:animate-in
+  // fade-in-0`). A scan that lands mid-fade measures the muted text at
+  // partial opacity (#52525b at ~0.7 over the canvas → #83838a, 3.73:1) and
+  // reports a contrast failure the settled page does not have. Reduced motion
+  // drops the `motion-safe:` fade at once, even one already running.
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   // Exclude Base UI's internal focus-guard spans. Base UI (the Radix
   // successor used by shadcn/ui v3) injects invisible
   // `<span role="button" data-base-ui-focus-guard>` sentinels around

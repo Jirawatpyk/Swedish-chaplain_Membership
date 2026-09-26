@@ -122,4 +122,46 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, 'src/components/auth/user-list-table.tsx')).toEqual([]);
     });
   });
+
+  describe('the US3 member portal is on AURA (the real MIGRATED_PATHS)', () => {
+    const legacy = "import { Button } from '@/components/ui/button';\nexport const B = Button;\n";
+
+    it.each([
+      'src/app/(member)/portal/(home)/page.tsx',
+      'src/app/(member)/portal/_components/recent-activity-section.tsx',
+      'src/app/(member)/portal/profile/page.tsx',
+      'src/app/(member)/portal/profile/directory/page.tsx',
+      'src/app/(member)/portal/edit/page.tsx',
+      'src/app/(member)/portal/change-requests/page.tsx',
+      'src/app/(member)/portal/account/page.tsx',
+      'src/app/(member)/portal/contacts/invite/page.tsx',
+      'src/app/(member)/portal/timeline/page.tsx',
+      'src/app/(member)/portal/benefits/page.tsx',
+      'src/app/(member)/portal/not-found.tsx',
+      'src/components/portal/dashboard/stat-card.tsx',
+      'src/components/portal/contact-language-form.tsx',
+      'src/components/benefits/benefit-usage-card.tsx',
+      'src/components/data-export/data-export-panel.tsx',
+      'src/components/directory/directory-visibility-form.tsx',
+      'src/components/members/change-requests/pending-request-banner.tsx',
+      'src/components/members/change-requests/change-request-diff-table.tsx',
+      'src/components/members/timeline-event-item.tsx',
+      'src/components/members/portal-edit-form.tsx',
+      'src/components/members/invite-colleague-form.tsx',
+    ])('%s cannot import the legacy kit', async (path) => {
+      expect(await ratchetHits(legacy, path)).toHaveLength(1);
+    });
+
+    it("except the benefits page's E-Blast tab, which moves with US12", async () => {
+      expect(
+        await ratchetHits(legacy, 'src/app/(member)/portal/benefits/_components/broadcasts-panel.tsx'),
+      ).toEqual([]);
+    });
+
+    it('control: the staff change-request review keeps the legacy kit until US5', async () => {
+      expect(
+        await ratchetHits(legacy, 'src/components/members/change-requests/change-request-review-client.tsx'),
+      ).toEqual([]);
+    });
+  });
 });

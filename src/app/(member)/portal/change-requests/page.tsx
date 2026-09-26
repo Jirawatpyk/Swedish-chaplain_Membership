@@ -29,8 +29,7 @@ import { listPortalChangeRequests } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { buttonVariants } from '@/components/ui/button';
+import { AuraCard, auraButtonClass } from '@/components/shell/aura-markup';
 import { EmptyState } from '@/components/shell/empty-state';
 import { ChangeRequestDiffTable } from '@/components/members/change-requests/change-request-diff-table';
 import { ChangeRequestStatusBadge, changeRequestStatusOf } from '@/components/members/change-requests/change-request-status-badge';
@@ -101,7 +100,7 @@ export default async function PortalChangeRequestHistoryPage({ searchParams }: P
         title={t('title')}
         subtitle={t('subtitle')}
         actions={
-          <Link href="/portal/profile" className={buttonVariants({ variant: 'outline' })}>
+          <Link href="/portal/profile" className={auraButtonClass({ variant: 'secondary' })}>
             {t('backToProfile')}
           </Link>
         }
@@ -114,34 +113,42 @@ export default async function PortalChangeRequestHistoryPage({ searchParams }: P
         <ul className="flex flex-col gap-4" data-testid="history-list" aria-label={t('listLabel')}>
           {items.map((r) => (
             <li key={r.id}>
-              <Card data-testid="history-item" data-request-id={r.id}>
-                <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="space-y-1">
-                    <h2 className="font-heading text-base font-medium leading-snug">{t('submittedOn', { submittedAt: fmt(r.submittedAt) })}</h2>
-                    <p className="text-caption text-muted-foreground">
-                      {r.submittedBy.isMe ? t('submittedByYou') : t('submittedBy', { name: r.submittedBy.displayName })}
-                      {r.decidedAt ? ` · ${t('decidedOn', { decidedAt: fmt(r.decidedAt) })}` : null}
-                    </p>
-                  </div>
-                  <ChangeRequestStatusBadge status={changeRequestStatusOf(r)} audience="portal" />
-                </CardHeader>
-                <CardContent className="space-y-3">
+              {/* An AURA card per request (spec 122 US3): the submission time as its
+                  h2, who and when as its description, the status pill top-right. */}
+              <AuraCard
+                data-testid="history-item"
+                data-request-id={r.id}
+                headingLevel={2}
+                titleId={`history-${r.id}-heading`}
+                title={t('submittedOn', { submittedAt: fmt(r.submittedAt) })}
+                description={
+                  <>
+                    {r.submittedBy.isMe ? t('submittedByYou') : t('submittedBy', { name: r.submittedBy.displayName })}
+                    {r.decidedAt ? ` · ${t('decidedOn', { decidedAt: fmt(r.decidedAt) })}` : null}
+                  </>
+                }
+                actions={<ChangeRequestStatusBadge status={changeRequestStatusOf(r)} audience="portal" />}
+              >
+                <div className="space-y-3">
                   <ChangeRequestDiffTable fields={r.fields} showOutcome={r.state === 'decided'} />
                   {r.decisionReason ? (
-                    <div className="rounded-md bg-muted/40 p-3 text-sm" data-testid="history-reason">
+                    <div
+                      className="rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface-hover)] p-3 text-sm"
+                      data-testid="history-reason"
+                    >
                       <p className="font-medium">{tOutcome('reasonLabel')}</p>
                       <p className="whitespace-pre-wrap break-words">{r.decisionReason}</p>
                     </div>
                   ) : null}
-                </CardContent>
-              </Card>
+                </div>
+              </AuraCard>
             </li>
           ))}
         </ul>
       )}
       {result.value.nextCursor ? (
         <div className="flex justify-center">
-          <Link href={`/portal/change-requests?cursor=${encodeURIComponent(result.value.nextCursor)}`} className={buttonVariants({ variant: 'outline' })} data-testid="history-more">
+          <Link href={`/portal/change-requests?cursor=${encodeURIComponent(result.value.nextCursor)}`} className={auraButtonClass({ variant: 'secondary' })} data-testid="history-more">
             {t('loadMore')}
           </Link>
         </div>

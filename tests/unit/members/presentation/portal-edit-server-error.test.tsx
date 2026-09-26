@@ -109,3 +109,37 @@ describe('PortalEditForm — inline server field error', () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe('PortalEditForm on AURA (spec 122 US3)', () => {
+  function renderForm() {
+    return render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <PortalEditForm initialValues={INITIAL} />
+      </NextIntlClientProvider>,
+    );
+  }
+
+  it('uses AURA fields and keeps Save in an ActionBar that says when changes are unsaved', () => {
+    const { container } = renderForm();
+    for (const id of ['firstName', 'lastName', 'phone', 'website']) {
+      expect(container.querySelector(`#${id}`)?.closest('.aura-field')).not.toBeNull();
+    }
+    expect(container.querySelector('#description')).toHaveClass('aura-textarea');
+    const bar = screen.getByRole('region', { name: 'Actions' });
+    expect(bar).toHaveClass('aura-actionbar');
+    expect(bar).toContainElement(screen.getByRole('button', { name: enMessages.portal.edit.saveButton }));
+    const status = bar.querySelector('[role="status"]')!;
+    expect(status.textContent).toBe('');
+    fireEvent.change(container.querySelector('#firstName')!, { target: { value: 'Janet' } });
+    expect(status.textContent).toBe(enMessages.common.unsavedStatus);
+  });
+
+  it('lists a failed submit in a focused error summary that links to the field', async () => {
+    const { container } = renderForm();
+    fireEvent.change(container.querySelector('#firstName')!, { target: { value: '' } });
+    fireEvent.submit(container.querySelector('form')!);
+    const summary = await screen.findByRole('alert', { name: /fix 1 field/i });
+    await waitFor(() => expect(summary).toHaveFocus());
+    expect(summary.querySelector('a')).toHaveAttribute('href', '#firstName');
+  });
+});

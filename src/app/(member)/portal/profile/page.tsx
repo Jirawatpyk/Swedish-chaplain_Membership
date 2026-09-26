@@ -3,14 +3,12 @@ import Link from 'next/link';
 import { getTranslations, getLocale } from 'next-intl/server';
 import { BookUserIcon, FileClockIcon, PencilIcon, UserPlusIcon } from 'lucide-react';
 import {
-  Card,
-  CardContent,
-  CardHeader,
-} from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { buttonVariants } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
-import { InlineAlert } from '@/components/ui/inline-alert';
+  AuraAlert,
+  AuraBadge,
+  AuraCard,
+  AuraStatusPill,
+  auraButtonClass,
+} from '@/components/shell/aura-markup';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { CopyButton } from '@/components/members/copy-button';
@@ -59,28 +57,11 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 /**
- * 057 fix — section heading as a real `<h2>` (not a CardTitle `<div>`) so
- * every content group is reachable via SR heading navigation under the
- * page `<h1>`. Mirrors the admin detail page's SectionHeading; carries
- * CardTitle font classes so the visual is unchanged. The `id` is wired to
- * the wrapping `<section aria-labelledby>`.
+ * 057 fix — every section heading is a real `<h2>` labelling its card
+ * (`<section aria-labelledby>`), so each content group is reachable via SR
+ * heading navigation under the page `<h1>`. Spec 122 US3: `AuraCard` with
+ * `headingLevel={2}` and `titleId` renders exactly that, in AURA's look.
  */
-function SectionHeading({
-  id,
-  children,
-}: {
-  id: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <h2
-      id={id}
-      className="font-heading text-base font-medium leading-snug"
-    >
-      {children}
-    </h2>
-  );
-}
 
 /**
  * Testable RSC body — accepts the already-resolved session user so a unit
@@ -302,19 +283,17 @@ export async function PortalProfileBody({
         subtitle={t('pageTitle')}
         badge={
           <div className="flex flex-wrap items-center gap-2">
-            <Badge
-              variant={m.status === 'active' ? 'default' : 'secondary'}
-            >
+            <AuraStatusPill tone={m.status === 'active' ? 'ready' : 'neutral'}>
               {t(`statusBadge.${m.status}`)}
-            </Badge>
-            <Badge variant="outline" className="font-mono">
+            </AuraStatusPill>
+            <AuraBadge variant="outline" className="font-mono">
               {memberNumberFormatted}
-            </Badge>
+            </AuraBadge>
           </div>
         }
         actions={
-          <Link href="/portal/edit" className={buttonVariants()}>
-            <PencilIcon className="size-4" aria-hidden />
+          <Link href="/portal/edit" className={auraButtonClass()}>
+            <PencilIcon className="aura-icon size-4" aria-hidden />
             {t('editButton')}
           </Link>
         }
@@ -323,22 +302,17 @@ export async function PortalProfileBody({
       {/* F114 — awaiting-review banner (role=status), above the record it will change. */}
       {pendingRequest ? <PendingRequestBanner request={pendingRequest} /> : null}
       {ownRequestReadFailed ? (
-        <InlineAlert tone="destructive" role="status" data-testid="portal-own-request-unavailable">
-          <p className="text-sm">{tPending('loadFailed')}</p>
-        </InlineAlert>
+        <div data-testid="portal-own-request-unavailable">
+          <AuraAlert tone="danger" role="status">
+            {tPending('loadFailed')}
+          </AuraAlert>
+        </div>
       ) : null}
       {/* F114 US3 — the shown decision (role=status) until dismissed; never alongside a pending one. */}
       {!pendingRequest && decidedRequest ? <DecisionOutcomeBanner request={decidedRequest} /> : null}
 
       {/* Organisation — who the member is. */}
-      <section aria-labelledby="portal-profile-org-heading">
-        <Card>
-          <CardHeader>
-            <SectionHeading id="portal-profile-org-heading">
-              {t('organisationSection')}
-            </SectionHeading>
-          </CardHeader>
-          <CardContent>
+      <AuraCard title={t('organisationSection')} titleId="portal-profile-org-heading" headingLevel={2}>
             <dl className="grid grid-cols-1 gap-x-8 gap-y-1 md:grid-cols-2 lg:grid-cols-3">
               <DetailField
                 label={t('fields.memberNumber')}
@@ -403,7 +377,7 @@ export async function PortalProfileBody({
                       href={websiteHref}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 rounded-sm text-sm font-medium text-foreground underline underline-offset-4 hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                      className="inline-flex items-center gap-1 text-sm font-medium text-[var(--aura-fg-accent)] no-underline hover:text-[var(--aura-fg-primary)] hover:underline"
                     >
                       <span className="truncate">{m.website}</span>
                     </a>
@@ -429,19 +403,10 @@ export async function PortalProfileBody({
                 />
               ) : null}
             </dl>
-          </CardContent>
-        </Card>
-      </section>
+      </AuraCard>
 
       {/* Membership — the chamber relationship. */}
-      <section aria-labelledby="portal-profile-membership-heading">
-        <Card>
-          <CardHeader>
-            <SectionHeading id="portal-profile-membership-heading">
-              {t('membershipSection')}
-            </SectionHeading>
-          </CardHeader>
-          <CardContent>
+      <AuraCard title={t('membershipSection')} titleId="portal-profile-membership-heading" headingLevel={2}>
             <dl className="grid grid-cols-1 gap-x-8 gap-y-1 md:grid-cols-2 lg:grid-cols-3">
               <DetailField
                 label={t('fields.planName')}
@@ -472,32 +437,29 @@ export async function PortalProfileBody({
                 }
               />
             </dl>
-          </CardContent>
-        </Card>
-      </section>
+      </AuraCard>
 
       {/* Contacts — primary + others. */}
-      <section aria-labelledby="portal-profile-contacts-heading">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <SectionHeading id="portal-profile-contacts-heading">
-              {t('contactsSection')}
-            </SectionHeading>
-            {isPrimary && (
-              <Link
-                href="/portal/contacts/invite"
-                className={buttonVariants({ variant: 'outline' })}
-              >
-                <UserPlusIcon className="size-4" aria-hidden />
-                {t('inviteColleague')}
-              </Link>
-            )}
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-col gap-4">
-              {activeContacts.map((contact, i) => (
-                <div key={contact.contactId} className="flex flex-col gap-4">
-                  {i > 0 ? <Separator /> : null}
+      <AuraCard
+        title={t('contactsSection')}
+        titleId="portal-profile-contacts-heading"
+        headingLevel={2}
+        actions={
+          isPrimary ? (
+            <Link href="/portal/contacts/invite" className={auraButtonClass({ variant: 'secondary' })}>
+              <UserPlusIcon className="aura-icon size-4" aria-hidden />
+              {t('inviteColleague')}
+            </Link>
+          ) : undefined
+        }
+      >
+            <div className="flex flex-col">
+              {activeContacts.map((contact) => (
+                // Hairline rows, as on the Portal-profile board.
+                <div
+                  key={contact.contactId}
+                  className="flex flex-col gap-4 border-t border-[var(--aura-border-default)] py-4 first:border-t-0 first:pt-0 last:pb-0"
+                >
                   <div className="flex items-start justify-between">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
@@ -505,24 +467,22 @@ export async function PortalProfileBody({
                           {`${contact.firstName} ${contact.lastName}`.trim()}
                         </p>
                         {contact.isPrimary && (
-                          <Badge variant="secondary">
-                            {t('primaryBadge')}
-                          </Badge>
+                          <AuraBadge variant="outline">{t('primaryBadge')}</AuraBadge>
                         )}
                         {contact.linkedUserId && (
-                          <Badge variant="outline">{t('portalLinked')}</Badge>
+                          <AuraBadge variant="outline">{t('portalLinked')}</AuraBadge>
                         )}
                       </div>
-                      <p className="text-caption text-muted-foreground">
+                      <p className="text-[13px] text-[var(--aura-fg-secondary)]">
                         {contact.email}
                       </p>
                       {contact.phone ? (
-                        <p className="text-caption text-muted-foreground">
+                        <p className="text-[13px] text-[var(--aura-fg-secondary)]">
                           {contact.phone}
                         </p>
                       ) : null}
                       {contact.roleTitle ? (
-                        <p className="text-caption text-muted-foreground">
+                        <p className="text-[13px] text-[var(--aura-fg-secondary)]">
                           {contact.roleTitle}
                         </p>
                       ) : null}
@@ -543,69 +503,52 @@ export async function PortalProfileBody({
                 </div>
               ))}
               {activeContacts.length === 0 && (
-                <p className="text-body text-muted-foreground">
-                  {t('noContacts')}
-                </p>
+                <p className="text-[var(--aura-fg-secondary)]">{t('noContacts')}</p>
               )}
             </div>
-          </CardContent>
-        </Card>
-      </section>
+      </AuraCard>
 
       {/* F114 US4 (FR-029) — the member's own change-request history. Gated on
           the platform flag (the target page notFounds when dark); shown
           regardless of the tenant setting — history exists once requests do
           (FR-032). Real <h2> like the sibling cards. */}
       {env.features.memberChangeApproval ? (
-        <section aria-labelledby="portal-profile-change-requests-heading">
-          <Card>
-            <CardHeader>
-              <SectionHeading id="portal-profile-change-requests-heading">
-                {tHistory('profileCard.title')}
-              </SectionHeading>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-body text-muted-foreground">
-                {tHistory('profileCard.subtitle')}
-              </p>
-              <Link
-                href="/portal/change-requests"
-                className={buttonVariants({ variant: 'outline' })}
-                data-testid="profile-history-link"
-              >
-                <FileClockIcon className="size-4" aria-hidden />
-                {tHistory('profileCard.link')}
-              </Link>
-            </CardContent>
-          </Card>
-        </section>
+        <AuraCard
+          title={tHistory('profileCard.title')}
+          titleId="portal-profile-change-requests-heading"
+          headingLevel={2}
+          actions={
+            <Link
+              href="/portal/change-requests"
+              className={auraButtonClass({ variant: 'secondary' })}
+              data-testid="profile-history-link"
+            >
+              <FileClockIcon className="aura-icon size-4" aria-hidden />
+              {tHistory('profileCard.link')}
+            </Link>
+          }
+        >
+          <p className="text-[var(--aura-fg-secondary)]">{tHistory('profileCard.subtitle')}</p>
+        </AuraCard>
       ) : null}
 
       {/* F9 directory listing self-service — gated on the F9 flag so it stays
           hidden until the feature flips on; the target page notFounds when
           dark. Heading is a real <h2> per a11y-6. */}
       {env.features.f9Dashboard ? (
-        <section aria-labelledby="portal-profile-directory-heading">
-          <Card>
-            <CardHeader>
-              <SectionHeading id="portal-profile-directory-heading">
-                {tDir('title')}
-              </SectionHeading>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-body text-muted-foreground">
-                {tDir('subtitle')}
-              </p>
-              <Link
-                href="/portal/profile/directory"
-                className={buttonVariants({ variant: 'outline' })}
-              >
-                <BookUserIcon className="size-4" aria-hidden />
-                {tDir('manage')}
-              </Link>
-            </CardContent>
-          </Card>
-        </section>
+        <AuraCard
+          title={tDir('title')}
+          titleId="portal-profile-directory-heading"
+          headingLevel={2}
+          actions={
+            <Link href="/portal/profile/directory" className={auraButtonClass({ variant: 'secondary' })}>
+              <BookUserIcon className="aura-icon size-4" aria-hidden />
+              {tDir('manage')}
+            </Link>
+          }
+        >
+          <p className="text-[var(--aura-fg-secondary)]">{tDir('subtitle')}</p>
+        </AuraCard>
       ) : null}
     </DetailContainer>
   );

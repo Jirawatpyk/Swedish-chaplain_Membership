@@ -9,26 +9,22 @@
  * skeleton ABOVE the tab strip, so it passes `withPageTitle={false}` to get the
  * card-only body and avoid a duplicated/misplaced title block below the tabs.
  */
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
+import { SkeletonBlock as Skeleton } from '@/components/shell/page-skeletons';
 
 export function BenefitUsageSkeleton({
   withPageTitle = true,
 }: {
   readonly withPageTitle?: boolean;
 } = {}): React.ReactElement {
+  // AURA card shape (spec 122 US3), mirroring the real card's head
+  // (<h2> title + the liveNote caption) and body so the swap has no CLS.
   const card = (
-    <Card>
-      <CardHeader>
-        {/* CardHeader on the real card holds an <h2> title row + a caption
-            (the liveNote "Updated on load · current year" line) — mirror both
-            so the header height matches. */}
-        <div className="flex items-center justify-between gap-3">
-          <Skeleton className="h-5 w-48" />
-        </div>
+    <div className="aura-card">
+      <div className="aura-card__head flex-col items-start gap-1">
+        <Skeleton className="h-5 w-48" />
         <Skeleton className="h-3 w-56" />
-      </CardHeader>
-      <CardContent className="flex flex-col gap-5">
+      </div>
+      <div className="aura-card__body flex flex-col gap-5">
         {[0, 1].map((i) => (
           <div key={i} className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
@@ -39,8 +35,8 @@ export function BenefitUsageSkeleton({
             <Skeleton className="h-3 w-40" />
           </div>
         ))}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 
   if (!withPageTitle) return card;

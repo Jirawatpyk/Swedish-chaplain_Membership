@@ -14,8 +14,7 @@
  * rather than throwing inside a list of 100 rows.
  */
 import { useTranslations } from 'next-intl';
-import { CheckCircle2Icon, ClockIcon, ListChecksIcon, Undo2Icon, XCircleIcon } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { AuraStatusPill, type AuraStatusTone } from '@/components/shell/aura-markup';
 import type { ChangeRequest, ChangeRequestOutcome, WithdrawnReason } from '@/modules/members';
 
 export type ChangeRequestStatus =
@@ -48,6 +47,12 @@ export interface ChangeRequestStatusBadgeProps {
   readonly className?: string;
 }
 
+const OUTCOME_TONE: Record<ChangeRequestOutcome, AuraStatusTone> = {
+  approved: 'ready',
+  partially_approved: 'warning',
+  rejected: 'blocked',
+};
+
 export function ChangeRequestStatusBadge({ status, audience, className }: ChangeRequestStatusBadgeProps) {
   const t = useTranslations(audience === 'staff' ? 'admin.changeRequests.review' : 'portal.changeRequests.history');
   switch (status.state) {
@@ -55,20 +60,17 @@ export function ChangeRequestStatusBadge({ status, audience, className }: Change
       // the DB CHECK makes a decided row without an outcome unreachable — fail soft to the pending badge below
       if (status.outcome === null) break;
       const outcome = status.outcome;
-      const Icon = outcome === 'approved' ? CheckCircle2Icon : outcome === 'rejected' ? XCircleIcon : ListChecksIcon;
       return (
-        <Badge variant={outcome === 'rejected' ? 'destructive' : outcome === 'approved' ? 'default' : 'outline'} className={className} data-state={status.state} data-outcome={outcome}>
-          <Icon className="mr-1 size-3" aria-hidden="true" />
+        <AuraStatusPill tone={OUTCOME_TONE[outcome]} className={className} data-state={status.state} data-outcome={outcome}>
           {t(`outcome.${outcome}`)}
-        </Badge>
+        </AuraStatusPill>
       );
     }
     case 'withdrawn':
       return (
-        <Badge variant="outline" className={className} data-state={status.state} data-withdrawn-reason={status.withdrawnReason ?? undefined}>
-          <Undo2Icon className="mr-1 size-3" aria-hidden="true" />
+        <AuraStatusPill tone="neutral" className={className} data-state={status.state} data-withdrawn-reason={status.withdrawnReason ?? undefined}>
           {status.withdrawnReason ? t(`withdrawn.${status.withdrawnReason}`) : t('state.withdrawn')}
-        </Badge>
+        </AuraStatusPill>
       );
     case 'pending':
       break;
@@ -78,9 +80,8 @@ export function ChangeRequestStatusBadge({ status, audience, className }: Change
     }
   }
   return (
-    <Badge variant="secondary" className={className} data-state={status.state}>
-      <ClockIcon className="mr-1 size-3" aria-hidden="true" />
+    <AuraStatusPill tone="progress" className={className} data-state={status.state}>
       {t('state.pending')}
-    </Badge>
+    </AuraStatusPill>
   );
 }

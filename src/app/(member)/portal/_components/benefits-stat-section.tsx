@@ -1,3 +1,4 @@
+import { TrendingUp } from 'lucide-react';
 import { getTranslations } from 'next-intl/server';
 import { StatCard } from '@/components/portal/dashboard/stat-card';
 import { deriveBenefitsStat } from '../_lib/dashboard-stats';
@@ -63,6 +64,7 @@ export async function BenefitsStatSection({
 
   return (
     <StatCard
+      headIcon={TrendingUp}
       label={t('label')}
       value={value}
       sub={sub}

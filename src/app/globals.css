@@ -276,6 +276,16 @@ html {
   scrollbar-gutter: stable;
 }
 
+/* Spec 122 US3 — keep a field that gets focus (an error-summary link, Tab)
+   clear of the sticky shell bar (56px; the portal's is 72px at lg) and of a
+   viewport ActionBar (~72px) riding above the bottom nav. */
+html:has(.chamber-shell) {
+  scroll-padding-top: 5.5rem;
+}
+html:has(.aura-actionbar--viewport) {
+  scroll-padding-bottom: calc(var(--aura-bottomnav-offset, 0px) + 5.5rem);
+}
+
 body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;

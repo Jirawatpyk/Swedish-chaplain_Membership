@@ -176,6 +176,22 @@ describe('PortalProfileBody — heading order + DetailField + dates (057 G4)', (
     expect(html).not.toContain('<h3');
   });
 
+  it('draws each section as an AURA card labelled by its h2, with a status pill and AURA badges (spec 122 US3)', async () => {
+    const tree = await PortalProfileBody({ user: { id: 'user-a' } });
+    const el = document.createElement('div');
+    el.innerHTML = renderToStaticMarkup(tree as ReactElement);
+    for (const id of ['portal-profile-org-heading', 'portal-profile-membership-heading', 'portal-profile-contacts-heading']) {
+      const card = el.querySelector(`section[aria-labelledby="${id}"]`);
+      expect(card).toHaveClass('aura-card');
+      expect(card?.querySelector(`h2#${id}`)).toHaveClass('aura-card__title');
+    }
+    const pill = [...el.querySelectorAll('.aura-pill')].find((n) => n.textContent === 'statusBadge.active');
+    expect(pill).toHaveClass('aura-pill--ready');
+    expect(el.querySelector('.aura-badge.is-outline.font-mono')?.textContent).toBe('SCCM-0042');
+    const edit = el.querySelector('a[href="/portal/edit"]');
+    expect(edit).toHaveClass('aura-btn', 'aura-btn--primary');
+  });
+
   it('uses DetailField label keys for organisation rows', async () => {
     const tree = await PortalProfileBody({ user: { id: 'user-a' } });
     const html = renderToStaticMarkup(tree as ReactElement);

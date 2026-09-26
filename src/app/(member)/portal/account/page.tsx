@@ -1,8 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { getLocale, getTranslations } from 'next-intl/server';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { AuraAlert, AuraBadge, AuraCard } from '@/components/shell/aura-markup';
 import { env } from '@/lib/env';
 import { runInTenant } from '@/lib/db';
 import { ChangePasswordForm } from '@/components/auth/change-password-form';
@@ -10,7 +9,6 @@ import { PreferredLocaleForm } from '@/components/portal/preferred-locale-form';
 // F114 FR-004 / R6 — the contact's OWN email language (Group A) lives here.
 import { ContactLanguageForm } from '@/components/portal/contact-language-form';
 import { DataExportPanel } from '@/components/data-export/data-export-panel';
-import { InlineAlert, InlineAlertDescription, InlineAlertTitle } from '@/components/ui/inline-alert';
 import {
   buildDataExportLabels,
   buildDataExportRows,
@@ -65,14 +63,12 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 /**
- * One self-titled hub card. Renders the scroll-anchored `<section>` + a
- * `<Card>` whose `<CardHeader>` carries a real `<h2>` title (NOT the shadcn
- * `CardTitle` <div>, so the heading lands in the SR heading tree — mirrors the
- * `benefit-usage-card.tsx` 056 fix #1) and a `<CardContent>` body. The title
- * lives INSIDE the card so there is no empty top-space above the content.
+ * One self-titled hub card: the scroll-anchored AURA card (`<section>`) whose
+ * head carries a real `<h2>` title, so the heading lands in the SR heading
+ * tree and there is no empty top-space above the content (spec 122 US3).
  *
  * Derives the h2 `id` from the section `id` (`${id}-heading`) and reuses it for
- * `aria-labelledby` so the heading↔section pairing can't drift across the five
+ * `aria-labelledby` so the heading↔section pairing can't drift across the
  * cards. The CONDITIONAL wrapping (`{memberId ? ... : null}`, the f9 gate)
  * stays at the call site — this helper only renders the card chrome, never the
  * gate. `contentClassName` tunes the per-card body layout (spacing / flex).
@@ -88,25 +84,10 @@ function HubCard({
   readonly contentClassName?: string;
   readonly children: React.ReactNode;
 }) {
-  const headingId = `${id}-heading`;
   return (
-    <section
-      id={id}
-      aria-labelledby={headingId}
-      className="scroll-mt-24"
-    >
-      <Card>
-        <CardHeader>
-          <h2
-            id={headingId}
-            className="font-heading text-base font-medium leading-snug"
-          >
-            {title}
-          </h2>
-        </CardHeader>
-        <CardContent className={contentClassName}>{children}</CardContent>
-      </Card>
-    </section>
+    <AuraCard id={id} title={title} titleId={`${id}-heading`} headingLevel={2} className="scroll-mt-24">
+      <div className={contentClassName}>{children}</div>
+    </AuraCard>
   );
 }
 
@@ -276,7 +257,7 @@ export default async function MemberAccountPage() {
       <PageHeader
         title={tPage('title')}
         subtitle={tPage('subtitle')}
-        badge={<Badge variant="outline">{tShell(user.role)}</Badge>}
+        badge={<AuraBadge variant="outline">{tShell(user.role)}</AuraBadge>}
       />
 
       <HubCard
@@ -284,11 +265,11 @@ export default async function MemberAccountPage() {
         title={tPage('sections.account')}
         contentClassName="space-y-4"
       >
-        <p className="text-sm text-muted-foreground">{user.email}</p>
+        <p className="text-sm text-[var(--aura-fg-secondary)]">{user.email}</p>
         <ChangePasswordForm />
         <Link
           href="/forgot-password"
-          className="text-sm text-primary underline-offset-4 hover:underline"
+          className="inline-flex min-h-11 items-center text-sm font-medium text-[var(--aura-fg-accent)] no-underline hover:text-[var(--aura-fg-primary)] hover:underline"
         >
           {tPage('forgotPassword')}
         </Link>
@@ -310,15 +291,15 @@ export default async function MemberAccountPage() {
         title={tLocale('title')}
         contentClassName="space-y-2"
       >
-        <p className="text-sm text-muted-foreground">{tLocale('description')}</p>
+        <p className="text-sm text-[var(--aura-fg-secondary)]">{tLocale('description')}</p>
         <PreferredLocaleForm initialValue={initialLocale} />
         {/* F114 FR-004 — the contact's OWN email language (Group A): saves
             immediately, and is the ONE body the narrowed profile endpoint still
             accepts while the tenant requires approval for member changes. */}
         {contactLanguage ? (
-          <div className="mt-6 space-y-2 border-t pt-6" id="contact-language">
+          <div className="mt-6 space-y-2 border-t border-[var(--aura-border-default)] pt-6" id="contact-language">
             <h3 className="text-sm font-medium">{tContactLang('title')}</h3>
-            <p className="text-sm text-muted-foreground">{tContactLang('description')}</p>
+            <p className="text-sm text-[var(--aura-fg-secondary)]">{tContactLang('description')}</p>
             <ContactLanguageForm initialValue={contactLanguage} />
           </div>
         ) : null}
@@ -345,20 +326,24 @@ export default async function MemberAccountPage() {
           title={tPage('sections.dataPrivacy')}
           contentClassName="space-y-4"
         >
-          <p className="max-w-prose text-sm text-muted-foreground">
+          <p className="max-w-prose text-sm text-[var(--aura-fg-secondary)]">
             {tExport('description')}
           </p>
           {/* GDPR Art. 15(4) · PDPA §30 — any colleague may request the member
               archive; it carries colleagues' names + roles (never their contact
               details), so say so before request / download. */}
-          <InlineAlert tone="info" role="status" data-testid="portal-export-colleagues-notice">
-            <InlineAlertTitle>{tExport('colleaguesNoticeTitle')}</InlineAlertTitle>
-            <InlineAlertDescription>{tExport('colleaguesNoticeBody')}</InlineAlertDescription>
-          </InlineAlert>
+          <AuraAlert
+            tone="info"
+            role="status"
+            title={tExport('colleaguesNoticeTitle')}
+            data-testid="portal-export-colleagues-notice"
+          >
+            {tExport('colleaguesNoticeBody')}
+          </AuraAlert>
           {exportsReadFailed ? (
-            <InlineAlert tone="destructive" role="status" data-testid="portal-exports-unavailable">
-              <p className="text-sm">{tExport('loadFailed')}</p>
-            </InlineAlert>
+            <AuraAlert tone="danger" role="status" data-testid="portal-exports-unavailable">
+              {tExport('loadFailed')}
+            </AuraAlert>
           ) : (
             <DataExportPanel
               rows={buildDataExportRows(exportJobs, tExport, locale)}

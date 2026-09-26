@@ -13,8 +13,7 @@ import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
 import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
 import { isReadOnlyResponse } from '@/lib/http/read-only-refusal';
-import { Loader2Icon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button } from '@jirawatpyk/aura-react';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
 import { TRANSPARENCY_CHECKER_STYLE } from '@/components/shell/transparency-checker';
 import { readErrorCode } from './read-error-code';
@@ -102,7 +101,7 @@ export function DirectoryLogoControl({
         // Brand settings logo preview (T155 U16, F119 UX review).
         <div
           data-testid="directory-logo-preview"
-          className="inline-block rounded-md border p-1"
+          className="inline-block rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)] p-1"
           style={TRANSPARENCY_CHECKER_STYLE}
         >
           {/* eslint-disable-next-line @next/next/no-img-element -- external Blob URL; next/image remotePatterns not configured for tenant logos */}
@@ -113,7 +112,7 @@ export function DirectoryLogoControl({
           />
         </div>
       ) : null}
-      <p id="dir-logo-hint" className="text-sm text-muted-foreground">
+      <p id="dir-logo-hint" className="text-sm text-[var(--aura-fg-secondary)]">
         {t('logoHint')}
       </p>
       <input
@@ -125,31 +124,30 @@ export function DirectoryLogoControl({
         aria-label={t('logoUpload')}
         aria-describedby="dir-logo-hint"
       />
-      <div className="flex gap-2">
+      {/* AURA buttons (spec 122 US3): `loading` shows the spinner on the one
+          action that is running and sets aria-busy; both stay disabled while
+          either runs. */}
+      <div className="flex flex-wrap gap-2">
         <Button
           type="button"
-          variant="outline"
+          variant="secondary"
+          icon="upload"
           disabled={pending}
-          aria-busy={pendingAction === 'upload'}
+          loading={pendingAction === 'upload'}
           onClick={() => inputRef.current?.click()}
           aria-describedby="dir-logo-hint"
         >
-          {pendingAction === 'upload' ? (
-            <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden />
-          ) : null}
           {t('logoUpload')}
         </Button>
         {currentLogoUrl !== null ? (
           <Button
             type="button"
             variant="ghost"
+            icon="trash-2"
             disabled={pending}
-            aria-busy={pendingAction === 'remove'}
+            loading={pendingAction === 'remove'}
             onClick={() => setRemoveOpen(true)}
           >
-            {pendingAction === 'remove' ? (
-              <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden />
-            ) : null}
             {t('logoRemove')}
           </Button>
         ) : null}

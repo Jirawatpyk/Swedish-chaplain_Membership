@@ -36,9 +36,9 @@ import { useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
-import { ClockIcon, Undo2Icon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { InlineAlert } from '@/components/ui/inline-alert';
+import { ClockIcon } from 'lucide-react';
+import { Button } from '@jirawatpyk/aura-react';
+import { AuraAlert } from '@/components/shell/aura-markup';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
 import { useDialogFinalFocus } from '@/components/shell/reason-confirmation-dialog';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
@@ -122,45 +122,55 @@ export function PendingRequestBanner({ request, showEditLink = true }: PendingRe
   if (result === 'hidden') return null;
   if (result !== null) {
     return (
-      <InlineAlert tone={result === 'withdrawn' ? 'success' : 'info'} role="status" data-testid="withdraw-result">
-        <p className="text-sm">{result === 'withdrawn' ? tw('done') : tw('gone')}</p>
-      </InlineAlert>
+      <AuraAlert tone={result === 'withdrawn' ? 'success' : 'info'} role="status" data-testid="withdraw-result">
+        {result === 'withdrawn' ? tw('done') : tw('gone')}
+      </AuraAlert>
     );
   }
 
+  // AURA Alert markup (spec 122 US3): the helper, not AURA's `Alert`, because
+  // the banner needs its own role, test id and clock icon — AURA's takes none.
   return (
-    <InlineAlert tone="info" role="status" className="space-y-3" data-testid="pending-request-banner">
-      <div className="flex items-start gap-2">
-        <ClockIcon className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-        <div className="space-y-1">
-          <p className="font-medium">{t('title')}</p>
-          <p className="text-sm">{t('body', { submittedAt })}</p>
+    <AuraAlert
+      tone="info"
+      role="status"
+      icon={ClockIcon}
+      title={t('title')}
+      data-testid="pending-request-banner"
+      action={
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            ref={triggerRef}
+            type="button"
+            variant="secondary"
+            icon="rotate-ccw"
+            onClick={() => setConfirmOpen(true)}
+            disabled={busy}
+            data-testid="withdraw-request"
+          >
+            {tw('button')}
+          </Button>
+          {showEditLink ? (
+            <Link
+              href="/portal/edit"
+              className="inline-flex min-h-11 items-center text-sm font-medium text-[var(--aura-fg-accent)] no-underline hover:text-[var(--aura-fg-primary)] hover:underline"
+            >
+              {t('editLink')}
+            </Link>
+          ) : null}
         </div>
-      </div>
-      <ChangeRequestDiffTable fields={request.fields} className="bg-background text-foreground" />
-      {failed !== null ? (
-        <p className="text-sm font-medium text-destructive" data-testid="withdraw-error">
-          {failed === 'read_only' ? tw('readOnly') : tw('error')}
-        </p>
-      ) : null}
-      <div className="flex flex-wrap items-center gap-3">
-        <Button
-          ref={triggerRef}
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-9"
-          onClick={() => setConfirmOpen(true)}
-          disabled={busy}
-          data-testid="withdraw-request"
-        >
-          <Undo2Icon className="mr-1 h-4 w-4" aria-hidden="true" />
-          {tw('button')}
-        </Button>
-        {showEditLink ? (
-          <Link href="/portal/edit" className="text-sm text-primary underline-offset-4 hover:underline">
-            {t('editLink')}
-          </Link>
+      }
+    >
+      <div className="space-y-3">
+        <p>{t('body', { submittedAt })}</p>
+        <ChangeRequestDiffTable
+          fields={request.fields}
+          className="bg-[var(--aura-bg-surface)] text-[var(--aura-fg-primary)]"
+        />
+        {failed !== null ? (
+          <p className="font-medium text-[var(--aura-fg-danger)]" data-testid="withdraw-error">
+            {failed === 'read_only' ? tw('readOnly') : tw('error')}
+          </p>
         ) : null}
       </div>
       <ConfirmationDialog
@@ -173,6 +183,6 @@ export function PendingRequestBanner({ request, showEditLink = true }: PendingRe
         onConfirm={withdraw}
         finalFocus={finalFocus}
       />
-    </InlineAlert>
+    </AuraAlert>
   );
 }

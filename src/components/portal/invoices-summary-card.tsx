@@ -35,13 +35,7 @@ import {
   makeListInvoicesDeps,
 } from '@/modules/invoicing';
 import { buildMembersDeps } from '@/modules/members/members-deps';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-} from '@/components/ui/card';
-import { buttonVariants } from '@/components/ui/button';
+import { AuraCard, auraButtonClass } from '@/components/shell/aura-markup';
 import { cn } from '@/lib/utils';
 import {
   formatDate,
@@ -97,40 +91,22 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
         '[portal-invoices-summary] member lookup failed — rendering error variant',
       );
       return (
-        <Card>
-          <CardHeader>
-            <h2 className="font-heading text-base font-medium leading-snug">{t('summary.heading')}</h2>
-            <CardDescription>{t('summary.description')}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-caption text-muted-foreground">{t('loadFailed')}</p>
-          </CardContent>
-        </Card>
+        <AuraCard title={t('summary.heading')} description={t('summary.description')} headingLevel={2}>
+          <p className="text-sm text-[var(--aura-fg-secondary)]">{t('loadFailed')}</p>
+        </AuraCard>
       );
     }
     // Not-linked state: surface the same copy the full list uses so
     // members don't get conflicting signals across portal surfaces.
     return (
-      <Card>
-        <CardHeader>
-          <h2 className="font-heading text-base font-medium leading-snug">{t('summary.heading')}</h2>
-          <CardDescription>{t('summary.description')}</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3">
-          <p className="text-caption text-muted-foreground">
-            {t('notLinked')}
-          </p>
-          <a
-            href={`mailto:${env.supportEmail}`}
-            className={cn(
-              buttonVariants({ variant: 'outline', size: 'sm' }),
-              'min-h-11 px-3 self-start',
-            )}
-          >
+      <AuraCard title={t('summary.heading')} description={t('summary.description')} headingLevel={2}>
+        <div className="flex flex-col gap-3">
+          <p className="text-sm text-[var(--aura-fg-secondary)]">{t('notLinked')}</p>
+          <a href={`mailto:${env.supportEmail}`} className={cn(auraButtonClass({ variant: 'secondary' }), 'self-start')}>
             {t('summary.contactAdmin')}
           </a>
-        </CardContent>
-      </Card>
+        </div>
+      </AuraCard>
     );
   }
 
@@ -177,15 +153,9 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
       '[portal-invoices-summary] listInvoicesPaged threw — rendering error variant',
     );
     return (
-      <Card>
-        <CardHeader>
-          <h2 className="font-heading text-base font-medium leading-snug">{t('summary.heading')}</h2>
-          <CardDescription>{t('summary.description')}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-caption text-muted-foreground">{t('loadFailed')}</p>
-        </CardContent>
-      </Card>
+      <AuraCard title={t('summary.heading')} description={t('summary.description')} headingLevel={2}>
+        <p className="text-sm text-[var(--aura-fg-secondary)]">{t('loadFailed')}</p>
+      </AuraCard>
     );
   }
 
@@ -195,34 +165,29 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
   const nowUtcIso = new Date().toISOString();
 
   return (
-    <Card>
-      {/* Heading + "view all" share one centred row (heading level with the
-          button, matching the Recent activity card); the description sits on
-          its own line below. */}
-      <CardHeader>
-        <div className="flex flex-row items-center justify-between gap-3">
-          <h2 className="font-heading text-base font-medium leading-snug">{t('summary.heading')}</h2>
-          {rows.length > 0 ? (
-            <Link
-              href="/portal/invoices"
-              // Mirror the Benefit usage card's "Full benefits" header action
-              // exactly (benefit-usage-card.tsx) so the two side-by-side
-              // dashboard cards read as one component: same outline variant,
-              // `shrink-0`, and a trailing arrow icon.
-              className={cn(buttonVariants({ variant: 'outline' }), 'shrink-0')}
-            >
-              {t('summary.viewAll')}
-              <ArrowRight aria-hidden="true" className="size-4" />
-            </Link>
-          ) : null}
-        </div>
-        <CardDescription>{t('summary.description')}</CardDescription>
-      </CardHeader>
-      <CardContent>
+    // AURA card (spec 122 US3, `Main` board): heading and description on top,
+    // hairline rows, and "view all" as a footer text link, as the board draws
+    // it (the benefit usage card beside it does the same).
+    <AuraCard
+      title={t('summary.heading')}
+      description={t('summary.description')}
+      headingLevel={2}
+      footer={
+        rows.length > 0 ? (
+          <Link
+            href="/portal/invoices"
+            className="inline-flex min-h-11 items-center gap-1.5 text-sm font-medium text-[var(--aura-fg-accent)] no-underline hover:text-[var(--aura-fg-primary)] hover:underline"
+          >
+            {t('summary.viewAll')}
+            <ArrowRight aria-hidden="true" size={16} className="aura-icon" />
+          </Link>
+        ) : undefined
+      }
+    >
         {rows.length === 0 ? (
-          <p className="text-caption text-muted-foreground">{t('empty')}</p>
+          <p className="text-sm text-[var(--aura-fg-secondary)]">{t('empty')}</p>
         ) : (
-          <ul className="divide-y">
+          <ul className="divide-y divide-[var(--aura-border-default)]">
             {rows.map((r) => {
               // 088 FR-030 — an 088 bill has NULL §87 `documentNumber`; its
               // number lives in `billDocumentNumberRaw` (unpaid/paid) and, once
@@ -263,7 +228,7 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
                   <div className="flex min-w-0 flex-col gap-1">
                     <Link
                       href={`/portal/invoices/${r.invoiceId}`}
-                      className="font-mono text-caption text-muted-foreground underline underline-offset-4 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2 self-start"
+                      className="self-start font-mono text-[13px] text-[var(--aura-fg-primary)] underline underline-offset-4 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2"
                       aria-label={`${t('actions.viewDetail')} ${displayNo ?? r.invoiceId}`}
                     >
                       {displayNo ?? '—'}
@@ -274,7 +239,7 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
                           badge (not mid-date "Apr 27, / 2026") when the row is
                           tight on a narrow phone; flex-wrap on the parent lets it
                           drop to its own line. */}
-                      <span className="text-caption text-muted-foreground whitespace-nowrap">
+                      <span className="whitespace-nowrap text-[13px] text-[var(--aura-fg-secondary)]">
                         {formatDate(r.issueDate, userLocale)}
                       </span>
                     </div>
@@ -312,10 +277,9 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
                             number: displayNo ?? r.invoiceId,
                           },
                         )}
-                        // Default size (h-9, 36px) so the download actions match
-                        // the card's "View all" header button — one button height
-                        // across the whole card (was size:'sm' + min-h-11 = 44px).
-                        className={cn(buttonVariants({ variant: 'outline' }))}
+                        // AURA's default secondary button (44px), one height
+                        // for both downloads (spec 122 US3).
+                        className={auraButtonClass({ variant: 'secondary' })}
                       />
                     ) : null}
                     {/* 090 Bug 3 — §86/4 RC receipt download, shown once the row
@@ -339,17 +303,14 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
                             : 'actions.downloadReceiptAria',
                           { number: receiptRef },
                         )}
-                        // Default size (h-9, 36px) to match the invoice button +
-                        // the card's "View all" header button — one button height
-                        // across the card (was size:'sm' + min-h-11 = 44px).
+                        // AURA's default secondary button (44px), as the
+                        // invoice button beside it.
                         className={cn(
-                          buttonVariants({ variant: 'outline' }),
+                          auraButtonClass({ variant: 'secondary' }),
                           // finding #3 — the long combined dual-role label wraps
-                          // to 2 lines instead of clipping (Button defaults to
-                          // whitespace-nowrap); `h-auto` lets it grow past the
-                          // 36px base, `min-h-9` keeps the 1-line case aligned.
-                          vm.isCombinedPaid &&
-                            'h-auto min-h-9 whitespace-normal text-left py-1.5',
+                          // to 2 lines instead of clipping; AURA's button is
+                          // at least 44px, so `h-auto` only lets it grow.
+                          vm.isCombinedPaid && 'h-auto whitespace-normal text-left',
                         )}
                       />
                     ) : null}
@@ -360,7 +321,6 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
             })}
           </ul>
         )}
-      </CardContent>
-    </Card>
+    </AuraCard>
   );
 }

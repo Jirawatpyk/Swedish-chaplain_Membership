@@ -25,7 +25,7 @@
  */
 import { DetailContainer } from '@/components/layout';
 import { env } from '@/lib/env';
-import { Skeleton } from '@/components/ui/skeleton';
+import { SkeletonBlock as Skeleton } from '@/components/shell/page-skeletons';
 import { BenefitUsageSkeleton } from '@/components/benefits/benefit-usage-skeleton';
 
 export default function Loading() {
@@ -38,23 +38,18 @@ export default function Loading() {
         <Skeleton className="mt-1 h-4 w-64" />
       </div>
 
-      {/* Tab strip + active-panel card. The real TabsList variant="line" is a
-          w-fit, transparent, gap-1 row of triggers with NO full-width bottom
-          border — only the active tab gets a short 2px ::after underline. So
-          the skeleton is two pills in a w-fit row (no border-b). The 8px gap
-          (gap-2 on the real <Tabs>) + the TabsContent pt-4 (16px) reproduce the
-          tabs → card spacing. */}
-      <div className="flex flex-col gap-2">
-        <div className="flex h-8 w-fit items-center gap-1">
-          {/* Benefits pill — always rendered. */}
-          <Skeleton className="h-7 w-20 rounded-sm" />
-          {/* Broadcasts pill — only when F7 is on, matching the page's
+      {/* Tab strip + active-panel card, in AURA's tab shape (spec 122 US3):
+          44px tabs 24px apart over a full-width 1px rule, then the panel 24px
+          below. */}
+      <div className="flex flex-col">
+        <div className="flex h-[var(--aura-input-height)] items-center gap-6 border-b border-[var(--aura-border-default)]">
+          {/* Benefits tab — always rendered. */}
+          <Skeleton className="h-4 w-20" />
+          {/* Broadcasts tab — only when F7 is on, matching the page's
               `showBroadcastsTab={env.features.f7Broadcasts}` gate (R2-2). */}
-          {env.features.f7Broadcasts ? (
-            <Skeleton className="h-7 w-24 rounded-sm" />
-          ) : null}
+          {env.features.f7Broadcasts ? <Skeleton className="h-4 w-24" /> : null}
         </div>
-        <div className="pt-4">
+        <div className="pt-6">
           {/* Card only — the PageHeader above already supplies the page title,
               so suppress the shared skeleton's leading title/subtitle block. */}
           <BenefitUsageSkeleton withPageTitle={false} />

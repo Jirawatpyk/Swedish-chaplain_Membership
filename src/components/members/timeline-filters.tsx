@@ -8,21 +8,15 @@
  * Changing any filter clears the keyset `cursor` so pagination restarts from
  * the newest page. Filters: source type, actor kind (staff/member/system),
  * and a from/to date range — individually and in combination.
+ *
+ * Spec 122 US3: AURA FilterBar (the named region), AURA Selects with visible
+ * labels, and labelled AURA date fields; Clear is an AURA
+ * ghost button. Shared with the staff member timeline.
  */
 import { useCallback, useTransition } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { XIcon } from 'lucide-react';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { FilterBar } from '@/components/ui/filter-bar';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  TranslatedSelectValue,
-} from '@/components/ui/select';
+import { Button, FilterBar, Select, TextField } from '@jirawatpyk/aura-react';
 import {
   TIMELINE_SOURCES,
   TIMELINE_ACTOR_KINDS,
@@ -71,60 +65,42 @@ export function TimelineFilters(): React.JSX.Element {
     Boolean(currentTo);
 
   return (
-    <FilterBar aria-label={t('title')}>
+    <FilterBar label={t('title')}>
       <Select
+        name="source"
+        label={t('source')}
+        className="sm:w-48"
         value={currentSource}
-        onValueChange={(v) => pushUrl({ source: v === ALL ? null : v })}
-      >
-        <SelectTrigger className="sm:w-48" aria-label={t('source')}>
-          <TranslatedSelectValue
-            placeholder={t('all')}
-            translate={(v) => (v === ALL ? t('all') : tSource(v as TimelineSource))}
-          />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={ALL}>{t('all')}</SelectItem>
-          {TIMELINE_SOURCES.map((s) => (
-            <SelectItem key={s} value={s}>
-              {tSource(s)}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
+        onChange={(e) => pushUrl({ source: e.target.value === ALL ? null : e.target.value })}
+        options={[
+          { value: ALL, label: t('all') },
+          ...TIMELINE_SOURCES.map((s) => ({ value: s, label: tSource(s as TimelineSource) })),
+        ]}
+      />
       <Select
+        name="actorKind"
+        label={t('actor')}
+        className="sm:w-40"
         value={currentActor}
-        onValueChange={(v) => pushUrl({ actorKind: v === ALL ? null : v })}
-      >
-        <SelectTrigger className="sm:w-40" aria-label={t('actor')}>
-          <TranslatedSelectValue
-            placeholder={t('all')}
-            translate={(v) => (v === ALL ? t('all') : tActor(v as TimelineActorKind))}
-          />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={ALL}>{t('all')}</SelectItem>
-          {TIMELINE_ACTOR_KINDS.map((k) => (
-            <SelectItem key={k} value={k}>
-              {tActor(k)}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
-      <Input
+        onChange={(e) => pushUrl({ actorKind: e.target.value === ALL ? null : e.target.value })}
+        options={[
+          { value: ALL, label: t('all') },
+          ...TIMELINE_ACTOR_KINDS.map((k) => ({ value: k, label: tActor(k as TimelineActorKind) })),
+        ]}
+      />
+      <TextField
         type="date"
+        label={t('from')}
+        className="sm:w-40"
         value={currentFrom}
         onChange={(e) => pushUrl({ from: e.target.value || null })}
-        aria-label={t('from')}
-        className="sm:w-40"
       />
-      <Input
+      <TextField
         type="date"
+        label={t('to')}
+        className="sm:w-40"
         value={currentTo}
         onChange={(e) => pushUrl({ to: e.target.value || null })}
-        aria-label={t('to')}
-        className="sm:w-40"
       />
 
       {hasAnyFilter && (
@@ -132,10 +108,9 @@ export function TimelineFilters(): React.JSX.Element {
           type="button"
           variant="ghost"
           size="sm"
+          icon="x"
           onClick={() => pushUrl({ source: null, actorKind: null, from: null, to: null })}
-          className="whitespace-nowrap"
         >
-          <XIcon className="size-4" aria-hidden />
           {t('clear')}
         </Button>
       )}

@@ -1,3 +1,4 @@
+import { FileText } from 'lucide-react';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { formatSatangThb } from '@/lib/format-thb';
 import { bangkokLocalDate } from '@/lib/fiscal-year';
@@ -34,6 +35,7 @@ export async function OutstandingStatSection({
   if (read.error) {
     return (
       <StatCard
+        headIcon={FileText}
         label={t('label')}
         value={t('errorValue')}
         sub={t('errorSub')}
@@ -51,6 +53,7 @@ export async function OutstandingStatSection({
   if (stat.kind === 'clear') {
     return (
       <StatCard
+        headIcon={FileText}
         label={t('label')}
         value={t('clearValue')}
         sub={t('clearSub')}
@@ -100,6 +103,7 @@ export async function OutstandingStatSection({
 
   return (
     <StatCard
+      headIcon={FileText}
       label={t('label')}
       value={value}
       sub={sub}

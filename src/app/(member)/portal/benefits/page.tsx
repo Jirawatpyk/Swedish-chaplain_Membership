@@ -27,12 +27,8 @@ import { computeBenefitUsage, makeComputeBenefitUsageDeps } from '@/modules/insi
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { Card, CardContent } from '@/components/ui/card';
-import {
-  InlineAlert,
-  InlineAlertDescription,
-  InlineAlertTitle,
-} from '@/components/ui/inline-alert';
+import { AuraAlert } from '@/components/shell/aura-markup';
+import { EmptyState } from '@/components/shell/empty-state';
 import {
   BenefitUsageCard,
   type BenefitUsageItem,
@@ -97,18 +93,15 @@ export default async function PortalBenefitsPage(props: {
     return (
       <DetailContainer>
         <PageHeader title={t('title')} subtitle={t('subtitleMember')} />
-        <Card>
-          <CardContent className="flex flex-col items-center gap-2 py-12 text-center">
-            <UserX aria-hidden="true" className="size-10 text-muted-foreground/60" />
-            <p className="text-lg font-semibold">{t('emptyTitle')}</p>
-            <p className="text-sm text-muted-foreground">{t('empty')}</p>
-            {/* Review 2026-09-07 round 2 (C13 / UX M-3): the compose page
-                sends a member with no profile here — say that is why. */}
-            {unavailable === 'no_member' ? (
-              <p className="text-sm text-muted-foreground">{t('emptyFromBroadcasts')}</p>
-            ) : null}
-          </CardContent>
-        </Card>
+        {/* AURA empty state (spec 122 US3). Review 2026-09-07 round 2
+            (C13 / UX M-3): the compose page sends a member with no profile
+            here — the extra line says that is why. */}
+        <EmptyState
+          bordered
+          icon={UserX}
+          title={t('emptyTitle')}
+          description={unavailable === 'no_member' ? `${t('empty')} ${t('emptyFromBroadcasts')}` : t('empty')}
+        />
       </DetailContainer>
     );
   }
@@ -177,11 +170,10 @@ export default async function PortalBenefitsPage(props: {
     benefitsPanel = (
       <div className="flex flex-col gap-4">
         {membershipAccess.access === 'suspended' && (
-          <InlineAlert tone="warning" role="status">
-            <PauseCircle aria-hidden="true" />
-            <InlineAlertTitle>{tSuspended('benefitsPausedTitle')}</InlineAlertTitle>
-            <InlineAlertDescription>{tSuspended('benefitsPausedBody')}</InlineAlertDescription>
-          </InlineAlert>
+          // A standing notice, so role="status" (not AURA's default alert).
+          <AuraAlert tone="warning" role="status" icon={PauseCircle} title={tSuspended('benefitsPausedTitle')}>
+            {tSuspended('benefitsPausedBody')}
+          </AuraAlert>
         )}
         <BenefitUsageCard
           locale={locale}

@@ -76,12 +76,18 @@ describe('PortalChangeRequestForm — server 422 issues map to per-rule copy (UX
     );
     fireEvent.submit(screen.getByTestId('change-request-form'));
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    await waitFor(() => expect(screen.getByText(copy.errors.phone)).toBeTruthy());
-    expect(screen.getByText(copy.errors.website)).toBeTruthy();
-    expect(screen.getByText(enMessages.shared.validation.tooLong.replace('{max}', '2000'))).toBeTruthy();
-    expect(screen.getByText(enMessages.shared.validation.required)).toBeTruthy();
-    expect(screen.getByText(copy.errors.country)).toBeTruthy();
-    expect(screen.getByText(enMessages.portal.changeRequests.errors.field)).toBeTruthy();
+    // Each message sits on its own field (and again in the error summary,
+    // spec 122 US3), so read it from the field's error line.
+    const onField = (id: string) => document.getElementById(`${id}-error`)?.textContent ?? '';
+    await waitFor(() => expect(onField('phone')).toContain(copy.errors.phone));
+    expect(onField('website')).toContain(copy.errors.website);
+    expect(onField('description')).toContain(enMessages.shared.validation.tooLong.replace('{max}', '2000'));
+    expect(onField('lastName')).toContain(enMessages.shared.validation.required);
+    expect(onField('billCountry')).toContain(copy.errors.country);
+    expect(onField('firstName')).toContain(enMessages.portal.changeRequests.errors.field);
+    // …and the error summary lists all six and takes focus.
+    const summary = await screen.findByRole('alert', { name: /fix 6 fields/i });
+    await waitFor(() => expect(summary).toHaveFocus());
   });
 });
 

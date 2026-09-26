@@ -170,3 +170,29 @@ describe('PortalChangeRequestForm — one Idempotency-Key per attempt sequence (
     expect(keys[1]).not.toBe(keys[0]);
   });
 });
+
+describe('PortalChangeRequestForm on AURA (spec 122 US3)', () => {
+  it('uses AURA cards and fields, and keeps Submit in an ActionBar that says when changes are unsaved', () => {
+    const { container } = renderForm();
+    for (const id of ['firstName', 'companyName', 'regLine1', 'billCountry']) {
+      expect(container.querySelector(`#${id}`)?.closest('.aura-field')).not.toBeNull();
+    }
+    expect(container.querySelector('#description')).toHaveClass('aura-textarea');
+    expect(screen.getByRole('heading', { level: 2, name: copy.billingAddressSection })).toHaveClass('aura-card__title');
+    const bar = screen.getByRole('region', { name: 'Actions' });
+    expect(bar).toContainElement(submitButton());
+    const status = bar.querySelector('[role="status"]')!;
+    expect(status.textContent).toBe('');
+    fireEvent.change(container.querySelector('#roleTitle')!, { target: { value: 'CFO' } });
+    expect(status.textContent).toBe(enMessages.common.unsavedStatus);
+  });
+
+  it('lists a client-side failure in a focused error summary', async () => {
+    const { container } = renderForm();
+    fireEvent.change(container.querySelector('#billLine1')!, { target: { value: 'Box 9' } });
+    fireEvent.click(submitButton());
+    const summary = await screen.findByRole('alert', { name: /fix 3 fields/i });
+    await waitFor(() => expect(summary).toHaveFocus());
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});

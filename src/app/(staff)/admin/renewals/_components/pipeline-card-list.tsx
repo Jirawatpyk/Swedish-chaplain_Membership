@@ -73,7 +73,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { UrgencyPill } from '@/components/renewals/urgency-pill';
 import { BillIssuedBadge } from '@/components/renewals/bill-issued-badge';
 import { isPastDeadlineUrgency } from '@/components/renewals/urgency';
-import { RelativeTime } from '@/components/ui/relative-time';
+import { RelativeTime } from '@/components/shell/relative-time';
 import {
   CycleTierCell,
   CycleCompanyCell,
