@@ -27,7 +27,7 @@ export default async function Loading() {
           {/* Invoice-type selector skeleton (2 radio cards) */}
           <div className="flex flex-col gap-2">
             <Skeleton className="h-4 w-40" />
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-2">
               <Skeleton className="h-16 w-full rounded-md" />
               <Skeleton className="h-16 w-full rounded-md" />
             </div>

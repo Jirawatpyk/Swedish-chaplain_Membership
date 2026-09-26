@@ -194,7 +194,7 @@ export function ChangeRequestQueueFilters({ resultCount, hasMore }: ChangeReques
     <form
       method="get"
       action={pathname}
-      className="grid grid-cols-1 gap-3 rounded-md border p-3 sm:grid-cols-2 lg:grid-cols-[repeat(4,minmax(0,1fr))_auto] lg:items-end"
+      className="grid gap-3 rounded-md border p-3 sm:grid-cols-2 lg:grid-cols-[repeat(4,minmax(0,1fr))_auto] lg:items-end"
       aria-label={tFilters('label')}
       aria-busy={pending}
       data-testid="queue-filters"

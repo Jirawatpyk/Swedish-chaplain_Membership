@@ -383,7 +383,7 @@ export default async function AdminBroadcastDetailPage({
             </h2>
           </CardHeader>
           <CardContent>
-            <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <Field
                 label={tHeader('turn')}
                 value={turn === null ? <EmptyValue label={tHeader('turnValue.none')} /> : tHeader(`turnValue.${turn}`)}
@@ -415,7 +415,7 @@ export default async function AdminBroadcastDetailPage({
           <CardContent>
             {/* B1 UX hardening — `<dl>/<dt>/<dd>` so each label↔value pair is
                 announced as a unit (WCAG 1.3.1). */}
-            <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <dl className="grid gap-3 sm:grid-cols-2">
               <Field label={t('fields.submittedBy')} value={memberDisplayName} />
               <Field label={t('fields.actorRole')} value={tActor(broadcast.actorRole)} />
               <Field label={t('fields.submittedAt')} value={formatDate(broadcast.submittedAt)} />
@@ -460,7 +460,7 @@ export default async function AdminBroadcastDetailPage({
         // Read-only comparison: the version marketing is on (or sent, or the
         // member approved) beside the member's original — the manager's view
         // of `in_design`, and everyone's view after a version was sent.
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2" data-testid="eblast-version-comparison">
+        <div className="grid gap-6 lg:grid-cols-2" data-testid="eblast-version-comparison">
           <ContentCard
             id="eblast-shown-version-title"
             title={

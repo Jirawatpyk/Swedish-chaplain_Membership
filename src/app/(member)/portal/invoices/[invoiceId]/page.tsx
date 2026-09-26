@@ -636,7 +636,7 @@ export default async function PortalInvoiceDetailPage({
       )}
 
       <Card>
-        <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <CardContent className="grid gap-4 sm:grid-cols-2">
           <div>
             <p className="text-caption uppercase tracking-wide text-muted-foreground">
               {t('fields.issueDate')}

@@ -87,7 +87,7 @@ export default async function BroadcastDetailLoading(): Promise<React.ReactEleme
             sent yet) or two stacked, and reserving one keeps the first
             viewport still either way. Frames are the page's own
             DETAIL_PREVIEW_FRAME_HEIGHT, so the reservation cannot drift. */}
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div className="grid gap-6 lg:grid-cols-2">
           {Array.from({ length: 2 }).map((_, i) => (
             <Card key={i} className={i === 1 ? 'hidden lg:flex' : undefined}>
               <CardHeader>

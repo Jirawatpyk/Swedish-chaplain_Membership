@@ -192,7 +192,9 @@ export function EventAttendeePicker({
               className={cn('size-4 shrink-0', selected ? 'opacity-100' : 'opacity-0')}
               aria-hidden="true"
             />
-            <span className="flex flex-1 flex-col">
+            {/* min-w-0 lets the name column shrink so the shrink-0 member badge
+                stays inside a 320px viewport (WCAG 1.4.10; wider AURA Inter font). */}
+            <span className="flex min-w-0 flex-1 flex-col">
               <span className="text-sm font-medium">{row.attendeeName}</span>
               {row.attendeeCompany && (
                 <span className="text-xs text-muted-foreground">{row.attendeeCompany}</span>

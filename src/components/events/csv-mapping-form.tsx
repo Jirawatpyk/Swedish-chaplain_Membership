@@ -961,7 +961,7 @@ function PreviewPanel({
               {t('remapIntro')}
             </p>
           </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-2">
             {REMAP_COLUMNS.map((canonical) => {
               const isRequired = (
                 REMAP_REQUIRED_COLUMNS as ReadonlyArray<string>
