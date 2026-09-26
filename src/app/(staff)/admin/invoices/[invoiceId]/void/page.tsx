@@ -14,11 +14,17 @@ import { getTranslations } from 'next-intl/server';
 import { ArrowLeftIcon } from 'lucide-react';
 import { requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
-import { getInvoice, makeGetInvoiceDeps, issuedInvoiceIdentity } from '@/modules/invoicing';
+import {
+  getInvoice,
+  makeGetInvoiceDeps,
+  issuedInvoiceIdentity,
+  resolveTaxDocumentKind,
+} from '@/modules/invoicing';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card, CardContent } from '@/components/ui/card';
 import { VoidConfirmDialog } from './_components/void-confirm-dialog';
+import { voidDescriptionKey } from './_components/void-copy';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.invoices.void');
@@ -57,6 +63,14 @@ export default async function VoidInvoicePage({
   // `documentNumber`.
   const confirmNumber = issuedInvoiceIdentity(invoice);
   if (!confirmNumber) notFound();
+  // An 088 ใบแจ้งหนี้ bill never carried a §87 / §86/4 number, so it gets
+  // bill-aware copy (row shape decides — see void-copy.ts); legacy INV- rows
+  // keep the "sequential tax-document number is retired" copy.
+  const descriptionKey = voidDescriptionKey(resolveTaxDocumentKind(invoice, true));
+  const subtitle =
+    descriptionKey === 'descriptionBill'
+      ? t('descriptionBill', { number: confirmNumber })
+      : t('description');
 
   return (
     <FormContainer>
@@ -69,7 +83,7 @@ export default async function VoidInvoicePage({
         <ArrowLeftIcon className="size-4" aria-hidden="true" />
         {t('backToInvoice')}
       </Link>
-      <PageHeader title={t('title')} subtitle={t('description')} />
+      <PageHeader title={t('title')} subtitle={subtitle} />
       <Card>
         <CardContent>
           <VoidConfirmDialog

@@ -102,6 +102,7 @@ import { DeleteDraftDialog } from '../_components/delete-draft-dialog';
 import { InvoiceMoreMenu } from '../_components/invoice-more-menu';
 import { EmailFailureAlert } from '../_components/email-failure-alert';
 import { AutoRefundFailedAlert } from '../_components/auto-refund-failed-alert';
+import { voidDetailsHintKey } from './void/_components/void-copy';
 import { PaymentTimeline } from './_components/payment-timeline';
 import { PaymentTimelineSkeleton } from './_components/payment-timeline-skeleton';
 import { RefundDialog } from './_components/refund-dialog';
@@ -1051,7 +1052,14 @@ export default async function InvoiceDetailPage({
                   until then we surface the intent as a disabled CTA
                   with tooltip so admins know where it's coming. */}
               <p className="mt-3 text-xs text-muted-foreground">
-                {t('voidDetails.creditNoteHint')}
+                {/* An 088 ใบแจ้งหนี้ bill never carried a §87 / §86/4 number —
+                    bill-aware copy (row shape decides, see void-copy.ts). */}
+                {voidDetailsHintKey(resolveTaxDocumentKind(invoice, true)) ===
+                  'creditNoteHintBill' && invoice.billDocumentNumberRaw
+                  ? t('voidDetails.creditNoteHintBill', {
+                      number: invoice.billDocumentNumberRaw,
+                    })
+                  : t('voidDetails.creditNoteHint')}
               </p>
             </section>
           )}
