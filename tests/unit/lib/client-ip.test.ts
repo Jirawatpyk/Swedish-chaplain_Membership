@@ -21,6 +21,7 @@ import { NextRequest } from 'next/server';
 import {
   assertVercelDeploymentForTrustedXff,
   getClientIp,
+  rateLimitIpKey,
 } from '@/lib/client-ip';
 
 function makeRequest(headers: Record<string, string>): NextRequest {
@@ -180,5 +181,37 @@ describe('assertVercelDeploymentForTrustedXff() — boot-time XFF trust diagnost
     vi.stubEnv('TRUSTED_REVERSE_PROXY', '1');
     assertVercelDeploymentForTrustedXff();
     expect(warnSpy).not.toHaveBeenCalled();
+  });
+});
+
+// Per-IP rate-limit buckets: an IPv6 client usually controls a whole /64, so
+// keying on the full address lets it rotate through 2^64 buckets. IPv4 stays
+// per-address.
+describe('rateLimitIpKey', () => {
+  it('leaves IPv4 unchanged', () => {
+    expect(rateLimitIpKey('203.0.113.9')).toBe('203.0.113.9');
+  });
+
+  it('collapses every address in an IPv6 /64 to one key', () => {
+    const a = rateLimitIpKey('2001:db8:1234:5678:aaaa:bbbb:cccc:dddd');
+    const b = rateLimitIpKey('2001:db8:1234:5678::1');
+    expect(a).toBe('2001:0db8:1234:5678::/64');
+    expect(b).toBe(a);
+    expect(rateLimitIpKey('2001:db8:1234:5679::1')).not.toBe(a);
+  });
+
+  it('expands compressed forms and loopback', () => {
+    expect(rateLimitIpKey('::1')).toBe('0000:0000:0000:0000::/64');
+    expect(rateLimitIpKey('2001:DB8::')).toBe('2001:0db8:0000:0000::/64');
+  });
+
+  it('handles IPv4-mapped IPv6 as the IPv4 address', () => {
+    expect(rateLimitIpKey('::ffff:203.0.113.9')).toBe('203.0.113.9');
+  });
+
+  it('returns anything unparseable unchanged (never throws)', () => {
+    expect(rateLimitIpKey('0.0.0.0')).toBe('0.0.0.0');
+    expect(rateLimitIpKey('not-an-ip')).toBe('not-an-ip');
+    expect(rateLimitIpKey('1:2:3:4:5:6:7:8:9')).toBe('1:2:3:4:5:6:7:8:9');
   });
 });

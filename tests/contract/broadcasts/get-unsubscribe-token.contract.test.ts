@@ -672,4 +672,39 @@ describe('GET /unsubscribe/[token] (T136 contract)', () => {
       envMock.flags.readOnlyMode = false;
     }
   });
+
+  // Security hardening: an IPv6 client usually holds a whole /64, so the
+  // bucket is keyed on the /64, not the full address.
+  it('keys the GET rate limit on the IPv6 /64', async () => {
+    headersMock.mockResolvedValueOnce(
+      new Map([['x-forwarded-for', '2001:db8:1234:5678:aaaa:bbbb:cccc:dddd']]),
+    );
+    const { default: Page } = await importPage();
+    await Page({ params: Promise.resolve({ token: VALID_TOKEN }), searchParams: Promise.resolve({}) });
+    expect(rateLimitCheckMock.mock.calls[0]![0]).toBe('unsubscribe:2001:0db8:1234:5678::/64');
+  });
+
+  // Once an IP is over the limit, every further request used to write its
+  // own audit row. Now one row per IP per window; the metric still counts all.
+  it('rate-limited GETs are audited once per window, counted every time', async () => {
+    const exceeded = {
+      ok: false as unknown as true,
+      error: { kind: 'rate_limit_exceeded', retryAfterSeconds: 60, key: 'k' },
+    } as unknown as { ok: true; value: true };
+    const { default: Page } = await importPage();
+
+    // 1st: over the limit, audit bucket still open → audited.
+    rateLimitCheckMock.mockResolvedValueOnce(exceeded);
+    rateLimitCheckMock.mockResolvedValueOnce({ ok: true, value: true });
+    await Page({ params: Promise.resolve({ token: VALID_TOKEN }), searchParams: Promise.resolve({}) });
+    // 2nd: over the limit, audit bucket spent → not audited.
+    rateLimitCheckMock.mockResolvedValueOnce(exceeded);
+    rateLimitCheckMock.mockResolvedValueOnce(exceeded);
+    await Page({ params: Promise.resolve({ token: VALID_TOKEN }), searchParams: Promise.resolve({}) });
+
+    expect(f7AuditEmitMock).toHaveBeenCalledTimes(1);
+    expect(rateLimitCheckMock.mock.calls[1]![0]).toMatch(/^unsubscribe-rl-audit:/);
+    expect(unsubscribesCountMock.mock.calls.filter((c) => c[1] === 'rate_limited')).toHaveLength(2);
+  });
 });
+
