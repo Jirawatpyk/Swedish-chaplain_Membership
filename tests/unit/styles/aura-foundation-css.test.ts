@@ -162,11 +162,13 @@ describe('globals.css — AURA foundation (spec 122)', () => {
     expect(css).not.toMatch(/\.aura-nav__item/);
   });
 
-  it('lets long nav labels wrap to two lines from AURA 5.7.1, not cut with an ellipsis (handoff #63)', () => {
+  it('lets long nav labels wrap to two lines and hyphenate (AURA 5.7.1 / 5.7.2), not cut with an ellipsis (handoff #63, #64)', () => {
     const aura = readFileSync(join(ROOT, 'node_modules/@jirawatpyk/aura-react/dist/styles.layer.css'), 'utf8');
     const label = aura.match(/\.aura-nav__label\s*\{[^}]*\}/)?.[0] ?? '';
     expect(label).toMatch(/line-clamp:\s*2/);
     expect(label).not.toMatch(/white-space:\s*nowrap/);
+    // 5.7.2 (handoff #64): a long compound breaks at a syllable, not mid-word.
+    expect(label).toMatch(/(?<!-webkit-)hyphens:\s*auto/);
     expect(css).not.toMatch(/\.aura-nav__label/);
   });
 
