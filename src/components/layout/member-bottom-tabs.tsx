@@ -3,71 +3,44 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { BottomNav } from '@jirawatpyk/aura-react';
 
-import { isNavItemActive, memberBottomTabItems } from '@/config/nav';
-import { cn } from '@/lib/utils';
+import { findActivePattern, memberBottomTabItems } from '@/config/nav';
 
 /**
- * MemberBottomTabs — mobile bottom tab bar (057 redesign, spec §2/§7).
+ * MemberBottomTabs — the phone tab bar (057 redesign), on AURA `BottomNav`
+ * since spec 122 (the `Home-mobile` board).
  *
- * Five tabs (Dashboard / Profile / Invoices / Benefits / Account) fixed to the
- * bottom of the viewport on viewports below `lg`; hidden at `lg` and up where
- * the desktop top-nav (`MemberNav`) + avatar Account menu take over.
- *
- * a11y (spec §7):
- *  - unique `<nav aria-label>` landmark
- *  - icon + VISIBLE short text label per tab (not sr-only — review a11y-3);
- *    the FULL label is the link's `aria-label` so AT never gets a truncated name
- *  - `aria-current="page"` on the active tab
- *  - touch targets ≥44px (`min-h/min-w-[44px]` — WCAG 2.5.8)
- *  - `env(safe-area-inset-bottom)` padding for the iPhone home-bar (review a11y-1);
- *    pairs with `viewport-fit=cover`, which is scoped to the member portal
- *    layout's viewport export (`(member)/portal/layout.tsx`) — NOT the root
- *    layout (where it would leak app-wide and break the admin fixed-bottom
- *    safe-area).
+ * Five tabs (Dashboard / Profile / Invoices / Benefits / Account), hidden from
+ * 1024px where the header nav + avatar menu take over. The board draws four;
+ * Account stays because it is the phone's only way to the account hub
+ * (FR-011: the same entries). AURA gives each tab an icon + visible label,
+ * `aria-current="page"`, a 44px target, the home-indicator inset, and a spacer
+ * so the page never sits under the bar. The label is the compact
+ * `shortTitleKey` where one exists (TH strings in a 320px tab) and is also the
+ * accessible name.
  */
-export function MemberBottomTabs() {
-  const pathname = usePathname();
+export function MemberBottomTabs({ currentPath }: { readonly currentPath?: string } = {}) {
+  // `currentPath` is for the preview harness; pages use the router's pathname.
+  const routerPath = usePathname();
+  const pathname = currentPath ?? routerPath;
   const t = useTranslations();
+  const active = findActivePattern(
+    pathname,
+    memberBottomTabItems.map((item) => item.activePattern),
+  );
 
   return (
-    <nav
-      aria-label={t('nav.member.bottomTabsAriaLabel')}
-      className={cn(
-        'fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background lg:hidden',
-        'pb-[env(safe-area-inset-bottom)]',
-      )}
-    >
-      <ul className="grid grid-cols-5">
-        {memberBottomTabItems.map((item) => {
-          const active = isNavItemActive(pathname, item.activePattern);
-          const fullLabel = t(item.titleKey);
-          const shortLabel = item.shortTitleKey ? t(item.shortTitleKey) : fullLabel;
-          return (
-            <li key={item.href}>
-              <Link
-                href={item.href}
-                aria-label={fullLabel}
-                aria-current={active ? 'page' : undefined}
-                className={cn(
-                  // `border-t-2` is always reserved (transparent when inactive) so
-                  // the active indicator bar adds no layout shift. The active state
-                  // is conveyed by THREE cues — the top bar, a heavier font weight,
-                  // and aria-current — so it never relies on colour alone (WCAG 1.4.1).
-                  'flex min-h-[44px] min-w-[44px] flex-col items-center justify-center gap-0.5 border-t-2 px-1 py-1.5 text-xs transition-colors',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
-                  active
-                    ? 'border-[var(--nav-indicator)] font-semibold text-accent-foreground'
-                    : 'border-transparent font-medium text-muted-foreground',
-                )}
-              >
-                <item.icon className="size-5 shrink-0" aria-hidden />
-                <span className="max-w-full truncate">{shortLabel}</span>
-              </Link>
-            </li>
-          );
-        })}
-      </ul>
-    </nav>
+    <BottomNav
+      label={t('nav.member.bottomTabsAriaLabel')}
+      linkComponent={Link}
+      value={memberBottomTabItems.find((item) => item.activePattern === active)?.href}
+      items={memberBottomTabItems.map((item) => ({
+        id: item.href,
+        label: t(item.shortTitleKey ?? item.titleKey),
+        icon: <item.icon aria-hidden />,
+        href: item.href,
+      }))}
+    />
   );
 }

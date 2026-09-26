@@ -1,6 +1,8 @@
 import { notFound } from 'next/navigation';
 
-import { TableContainer } from '@/components/layout';
+import { DetailContainer, TableContainer } from '@/components/layout';
+import { MemberBottomTabs } from '@/components/layout/member-bottom-tabs';
+import { MemberHeader } from '@/components/layout/member-header';
 import { PageHeader } from '@/components/layout/page-header';
 import { StaffShell } from '@/components/layout/staff-shell';
 import { flattenNavItems, staffNavConfig } from '@/config/nav';
@@ -20,10 +22,32 @@ export const dynamic = 'force-dynamic';
 export default async function AuraShellPreviewPage({
   searchParams,
 }: {
-  searchParams: Promise<{ rail?: string }>;
+  searchParams: Promise<{ rail?: string; view?: string }>;
 }) {
   if (!process.env.ALLOW_TEST_ROUTES) notFound();
-  const { rail } = await searchParams;
+  const { rail, view } = await searchParams;
+
+  if (view === 'member') {
+    // The member frame as the portal layout composes it (header, main, tab bar).
+    return (
+      <div className="chamber-shell flex min-h-screen flex-col">
+        <header className="sticky top-0 z-10 border-b border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)]">
+          <MemberHeader
+            tenantName="SweCham"
+            user={{ displayName: 'Anna Lindqvist', email: 'anna@example.com', role: 'member' }}
+            currentPath="/portal"
+          />
+        </header>
+        <main className="flex-1" id="main-content" tabIndex={-1}>
+          <DetailContainer>
+            <PageHeader title="Hi Anna" subtitle="Here's your membership at a glance." />
+            <p className="text-body text-muted-foreground">Page content.</p>
+          </DetailContainer>
+        </main>
+        <MemberBottomTabs currentPath="/portal" />
+      </div>
+    );
+  }
 
   return (
     <StaffShell

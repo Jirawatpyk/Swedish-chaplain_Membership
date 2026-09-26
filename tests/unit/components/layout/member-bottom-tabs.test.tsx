@@ -1,7 +1,9 @@
 /**
  * 057 — <MemberBottomTabs> mobile tab bar. Pins: 5 tabs, visible short labels,
- * aria-current="page" on active, ≥44px touch targets, unique nav aria-label,
- * and the mobile-only (lg:hidden) wrapper.
+ * aria-current="page" on active, unique nav aria-label. Since spec 122 it is
+ * AURA `BottomNav`, which owns the 44px targets, the safe-area inset and the
+ * hide-from-1024px rule; the pins below check that it is AURA's bar, hidden
+ * from lg, with the spacer that keeps the page clear of it.
  */
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
@@ -63,19 +65,11 @@ describe('<MemberBottomTabs> (057 mobile tab bar)', () => {
     expect(screen.getByRole('link', { name: 'Benefits' })).toHaveAttribute('aria-current', 'page');
   });
 
-  it('each tab is a ≥44px touch target (WCAG 2.5.8)', () => {
+  it('is AURA\'s phone bar: hidden from lg, with the spacer that keeps the page clear of it', () => {
     mockPathname.mockReturnValue('/portal');
-    renderTabs();
-    for (const link of screen.getAllByRole('link')) {
-      expect(link.className).toContain('min-h-[44px]');
-    }
-  });
-
-  it('is mobile-only — the nav carries lg:hidden + safe-area padding', () => {
-    mockPathname.mockReturnValue('/portal');
-    renderTabs();
+    const { container } = renderTabs();
     const nav = screen.getByRole('navigation', { name: 'Member tab bar' });
-    expect(nav.className).toContain('lg:hidden');
-    expect(nav.className).toContain('pb-[env(safe-area-inset-bottom)]');
+    expect(nav).toHaveClass('aura-bottomnav', 'aura-bottomnav--below-lg');
+    expect(container.querySelector('.aura-bottomnav-spacer.aura-bottomnav--below-lg')).not.toBeNull();
   });
 });

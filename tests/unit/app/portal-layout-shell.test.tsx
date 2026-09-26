@@ -38,10 +38,10 @@ describe('portal layout shell wiring (057)', () => {
     expect(portalLayoutSrc).toContain('<MemberBottomTabs');
   });
 
-  it('pads <main> bottom on mobile so the fixed tab bar never obscures content', () => {
-    // Mobile-only bottom padding (>= bottom-tab height) cleared at lg where
-    // the bar is hidden.
-    expect(portalLayoutSrc).toMatch(/pb-\[calc\(var\(--bottom-tab-height\)/);
-    expect(portalLayoutSrc).toContain('lg:pb-0');
+  it('never lets the fixed tab bar cover content: AURA BottomNav\'s spacer follows <main>, with no second padding (spec 122)', () => {
+    // The spacer is asserted where it is rendered (member-bottom-tabs.test.tsx);
+    // here: the bar comes after <main>, and <main> no longer pads for it too.
+    expect(portalLayoutSrc.indexOf('<MemberBottomTabs')).toBeGreaterThan(portalLayoutSrc.indexOf('</main>'));
+    expect(portalLayoutSrc).not.toMatch(/--bottom-tab-height/);
   });
 });
