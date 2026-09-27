@@ -5934,7 +5934,7 @@
   "nav": {
     "staff": {
       "dashboard": "Instrumentpanel",
-      "changeRequests": "Ändringsbegäranden",
+      "changeRequests": "Ändrings\u00adbegäranden",
       "changeRequestsBadge": "som väntar",
       "broadcastsBadge": "som väntar",
       "plans": "Paket",
@@ -5967,7 +5967,7 @@
       "audit": "Granskningslogg",
       "directory": "Katalog",
       "erasureLog": "Raderingslogg",
-      "marketingAudience": "Marknadsföringsmålgrupp"
+      "marketingAudience": "Marknadsförings\u00admålgrupp"
     },
     "member": {
       "dashboard": "Instrumentpanel",
