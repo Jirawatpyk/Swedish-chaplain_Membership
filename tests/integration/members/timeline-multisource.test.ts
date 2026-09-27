@@ -328,6 +328,17 @@ describe('F9 US3 — multi-source timeline (T051, live Neon)', () => {
     const audit = r.value.events.find((e) => e.source === 'audit');
     expect(audit?.eventType.length).toBeGreaterThan(0);
     expect(audit?.actorKind).toBe('staff');
+
+    // Spec 122 US3 — each non-audit row carries its human reference, resolved
+    // on the tenant transaction (the SQL twin of timeline-repo-references.test.ts).
+    const byDate = (source: string, day: string) =>
+      r.value.events.find((e) => e.source === source && e.timestamp.toISOString().startsWith(day));
+    expect(byDate('invoice', '2026-06-01')?.payload?.document_number).toBe('TL-2026-000001');
+    expect(event?.payload?.event_name).toBe('Networking Night');
+    const payment = r.value.events.find((e) => e.source === 'payment');
+    expect(payment?.payload).toMatchObject({ payment_method: 'promptpay', document_number: 'TL-2026-000002' });
+    const broadcast = r.value.events.find((e) => e.source === 'broadcast');
+    expect(broadcast?.payload?.broadcast_subject).toBe('Member newsletter');
   });
 
   it('AS-3 — source filter narrows to invoices only', async () => {

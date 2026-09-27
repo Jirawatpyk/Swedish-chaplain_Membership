@@ -1,41 +1,34 @@
 'use client';
 
 import Link from 'next/link';
-import { ChevronRightIcon } from 'lucide-react';
+import { ArrowLeftIcon, ChevronRightIcon } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { formatCalendarYear } from '@/lib/format-date-localised';
 
 import {
+  backLinkTarget,
   buildBreadcrumbStaticLabels,
   parseBreadcrumbPath,
-  truncateForMobile,
   type BreadcrumbSegment,
 } from '@/components/layout/breadcrumb-path';
 import { useBreadcrumbLabelMap } from '@/components/layout/breadcrumb-provider';
+import { AURA_FOCUS_RING } from '@/components/shell/aura-classes';
 import { cn } from '@/lib/utils';
 
 /**
- * Breadcrumbs render only when the route has 2+ filtered segments
- * (the leading `admin` / `portal` segment is dropped per the SaaS-
- * convention filter in `parseBreadcrumbPath`). Top-level pages like
- * `/admin/users`, `/admin/plans`, `/admin/members` produce a single
- * filtered segment and rely on sidebar active state + page h1
- * instead — breadcrumbs would be redundant there. The first
- * surface that renders breadcrumbs is a 2-deep route, e.g.
- * `/admin/settings/invoicing` → "Settings / Invoice settings".
+ * Spec 122 — the trail as the staff boards draw it, in the top bar from
+ * 1024px: every page has one (the leading `admin` / `portal` segment is
+ * dropped per the SaaS-convention filter in `parseBreadcrumbPath`), so a
+ * top-level page shows itself as the current crumb and `/admin` shows
+ * "Dashboard". Below 1024px the boards replace the trail with a "← Parent"
+ * link above the page (`BreadcrumbBackLink`).
  */
-const MIN_DEPTH = 2;
-
-/**
- * Spec 122 US1 — `bar` sits in the AURA top bar (from 1024px, no padding);
- * `page` is the old in-page row, kept below 1024px where the bar has no room.
- */
-export function BreadcrumbNav({ placement = 'page' }: { readonly placement?: 'bar' | 'page' } = {}) {
-  const pathname = usePathname() ?? '/';
+function useBreadcrumbSegments(pathnameOverride: string | undefined): BreadcrumbSegment[] {
+  const routerPath = usePathname() ?? '/';
+  const pathname = pathnameOverride ?? routerPath;
   const dynamicLabels = useBreadcrumbLabelMap();
   const tBreadcrumb = useTranslations('breadcrumb');
-  const tLayout = useTranslations('layout');
   const locale = useLocale();
 
   const staticLabels = buildBreadcrumbStaticLabels(
@@ -49,48 +42,56 @@ export function BreadcrumbNav({ placement = 'page' }: { readonly placement?: 'ba
     // Plan-year crumb reads in the viewer's calendar (TH 2569); href stays CE.
     formatYear: (year) => formatCalendarYear(year, locale),
   });
+  if (segments.length === 0 && pathname.replace(/\/+$/, '') === '/admin') {
+    return [{ href: '/admin', segment: 'dashboard', label: tBreadcrumb('dashboard'), isCurrent: true, isLinkable: true }];
+  }
+  return segments;
+}
 
-  if (segments.length < MIN_DEPTH) return null;
+/** The pathname props let the preview harness show a board's trail; pages leave them unset. */
+export function BreadcrumbNav({ pathname }: { readonly pathname?: string | undefined } = {}) {
+  const tLayout = useTranslations('layout');
+  const segments = useBreadcrumbSegments(pathname);
+  if (segments.length === 0) return null;
 
-  const mobile = truncateForMobile(segments);
-
-  // Spec 122 US1 — AURA's breadcrumb markup (`aura-crumbs`), drawn here
-  // rather than with AURA `Breadcrumb` for the phone trail (parent + current
-  // behind a leading ellipsis) and the data-slots the e2e breadcrumb spec
-  // selects on.
+  // AURA's breadcrumb markup (`aura-crumbs`), drawn here rather than with
+  // AURA `Breadcrumb` for the organisational segments and the data-slots the
+  // e2e breadcrumb spec selects on.
   return (
-    <nav
-      aria-label={tLayout('breadcrumbAriaLabel')}
-      data-slot="breadcrumb"
-      className={cn(
-        'aura-crumbs',
-        placement === 'bar' ? undefined : 'px-[var(--page-padding-x)] [padding-block-start:var(--page-padding-y)]',
-      )}
-    >
-      {/* Desktop: full trail. Keys compose `href` + `idx` because a
-          non-route segment (NON_ROUTE_SEGMENTS in breadcrumb-path.ts)
-          rewrites its href to the parent path, duplicating it. */}
-      <ol data-slot="breadcrumb-list" className="hidden sm:flex">
+    <nav aria-label={tLayout('breadcrumbAriaLabel')} data-slot="breadcrumb" className="aura-crumbs">
+      {/* Keys compose `href` + `idx` because a non-route segment
+          (NON_ROUTE_SEGMENTS in breadcrumb-path.ts) rewrites its href to the
+          parent path, duplicating it. */}
+      <ol data-slot="breadcrumb-list" className="flex">
         {segments.map((seg, idx) => (
           <Crumb key={`${idx}:${seg.href}`} segment={seg} isLast={idx === segments.length - 1} />
         ))}
       </ol>
-      {/* Mobile: parent + current with a leading ellipsis */}
-      <ol data-slot="breadcrumb-list" className="flex sm:hidden">
-        {mobile.hasEllipsis ? (
-          <li data-slot="breadcrumb-item">
-            <span data-slot="breadcrumb-ellipsis" aria-hidden className="text-[var(--aura-fg-tertiary)]">
-              …
-            </span>
-            <span className="sr-only">{tLayout('ellipsis')}</span>
-            <ChevronRightIcon className="aura-crumbs__sep size-3" aria-hidden />
-          </li>
-        ) : null}
-        {mobile.visible.map((seg, idx) => (
-          <Crumb key={`${idx}:${seg.href}`} segment={seg} isLast={idx === mobile.visible.length - 1} />
-        ))}
-      </ol>
     </nav>
+  );
+}
+
+/**
+ * Below 1024px: "← Members" above the page, as the phone boards draw it
+ * (13px, accent, a 44px target). Nothing on a top-level page.
+ */
+export function BreadcrumbBackLink({ pathname }: { readonly pathname?: string | undefined } = {}) {
+  const target = backLinkTarget(useBreadcrumbSegments(pathname));
+  if (!target) return null;
+  return (
+    <div className="px-[var(--page-padding-x)] pt-[calc(var(--page-padding-y)-6px)] mb-[calc(8px-var(--page-padding-y))]">
+      <Link
+        href={target.href}
+        data-slot="breadcrumb-back"
+        className={cn(
+          'inline-flex min-h-11 items-center gap-1.5 rounded-[var(--aura-radius-sm)] text-[13px] font-medium text-[var(--aura-fg-accent)] no-underline hover:underline',
+          AURA_FOCUS_RING,
+        )}
+      >
+        <ArrowLeftIcon className="size-4 shrink-0" aria-hidden />
+        {target.label}
+      </Link>
+    </div>
   );
 }
 

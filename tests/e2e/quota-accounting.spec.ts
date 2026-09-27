@@ -233,6 +233,10 @@ test.describe('F6 quota accounting — admin UI surface @workers=1', () => {
     await page.waitForFunction(() => document.title.length > 0, undefined, {
       timeout: 15_000,
     });
+    // The detail page fades in over 120 ms (`motion-safe:animate-in`); a scan
+    // mid-fade measures muted text at partial opacity (#ababaf, 2.19:1).
+    // Reduced motion drops the fade at once (see eventcreate-a11y.spec).
+    await page.emulateMedia({ reducedMotion: 'reduce' });
 
     // (1) scan with dialog CLOSED — covers Quota column + toggle buttons.
     const detailResults = await new AxeBuilder({ page })

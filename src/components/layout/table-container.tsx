@@ -26,7 +26,7 @@ export function TableContainer({
       aria-busy={ariaBusy}
       className={cn(
         'mx-auto w-full max-w-[var(--layout-max-width-table)]',
-        'px-[var(--page-padding-x)] py-[var(--page-padding-y)]',
+        'px-[var(--page-padding-x)] pt-[var(--page-padding-y)] pb-[var(--page-padding-bottom)]',
         'flex flex-col gap-[var(--page-section-gap)]',
         className,
       )}

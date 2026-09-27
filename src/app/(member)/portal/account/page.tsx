@@ -1,22 +1,11 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { getLocale, getTranslations } from 'next-intl/server';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { env } from '@/lib/env';
 import { runInTenant } from '@/lib/db';
-import { ChangePasswordForm } from '@/components/auth/change-password-form';
-import { PreferredLocaleForm } from '@/components/portal/preferred-locale-form';
-// F114 FR-004 / R6 — the contact's OWN email language (Group A) lives here.
-import { ContactLanguageForm } from '@/components/portal/contact-language-form';
-import { DataExportPanel } from '@/components/data-export/data-export-panel';
-import { InlineAlert, InlineAlertDescription, InlineAlertTitle } from '@/components/ui/inline-alert';
-import {
-  buildDataExportLabels,
-  buildDataExportRows,
-} from '@/components/data-export/data-export-view-model';
-import { FormContainer } from '@/components/layout';
-import { PageHeader } from '@/components/layout/page-header';
+import { buildDataExportRows } from '@/components/data-export/data-export-view-model';
+// F114 FR-004 / R6 — the contact's OWN email language (Group A) lives here, in the view.
+import { DetailContainer } from '@/components/layout';
+import { renderPortalAccountView } from '@/components/portal/portal-account-view';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
@@ -29,7 +18,6 @@ import {
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { makeRenewalsDeps } from '@/modules/renewals';
 import { listMemberDataExports } from '@/modules/insights';
-import { RenewalRemindersToggle } from '../preferences/renewals/_components/renewal-reminders-toggle';
 
 /**
  * Member account hub (G2 / D2 redesign) at URL `/portal/account`.
@@ -64,57 +52,8 @@ export async function generateMetadata(): Promise<Metadata> {
   return { title: t('title') };
 }
 
-/**
- * One self-titled hub card. Renders the scroll-anchored `<section>` + a
- * `<Card>` whose `<CardHeader>` carries a real `<h2>` title (NOT the shadcn
- * `CardTitle` <div>, so the heading lands in the SR heading tree — mirrors the
- * `benefit-usage-card.tsx` 056 fix #1) and a `<CardContent>` body. The title
- * lives INSIDE the card so there is no empty top-space above the content.
- *
- * Derives the h2 `id` from the section `id` (`${id}-heading`) and reuses it for
- * `aria-labelledby` so the heading↔section pairing can't drift across the five
- * cards. The CONDITIONAL wrapping (`{memberId ? ... : null}`, the f9 gate)
- * stays at the call site — this helper only renders the card chrome, never the
- * gate. `contentClassName` tunes the per-card body layout (spacing / flex).
- */
-function HubCard({
-  id,
-  title,
-  contentClassName,
-  children,
-}: {
-  readonly id: string;
-  readonly title: string;
-  readonly contentClassName?: string;
-  readonly children: React.ReactNode;
-}) {
-  const headingId = `${id}-heading`;
-  return (
-    <section
-      id={id}
-      aria-labelledby={headingId}
-      className="scroll-mt-24"
-    >
-      <Card>
-        <CardHeader>
-          <h2
-            id={headingId}
-            className="font-heading text-base font-medium leading-snug"
-          >
-            {title}
-          </h2>
-        </CardHeader>
-        <CardContent className={contentClassName}>{children}</CardContent>
-      </Card>
-    </section>
-  );
-}
-
 export default async function MemberAccountPage() {
   const { user } = await requireSession('member');
-  const tPage = await getTranslations('portal.account');
-  const tLocale = await getTranslations('portal.preferredLocale');
-  const tContactLang = await getTranslations('portal.account.contactLanguage');
   const tShell = await getTranslations('shell.roleBadge');
   const tExport = await getTranslations('dataExport');
   const locale = await getLocale();
@@ -272,102 +211,20 @@ export default async function MemberAccountPage() {
   }
 
   return (
-    <FormContainer>
-      <PageHeader
-        title={tPage('title')}
-        subtitle={tPage('subtitle')}
-        badge={<Badge variant="outline">{tShell(user.role)}</Badge>}
-      />
-
-      <HubCard
-        id="account"
-        title={tPage('sections.account')}
-        contentClassName="space-y-4"
-      >
-        <p className="text-sm text-muted-foreground">{user.email}</p>
-        <ChangePasswordForm />
-        <Link
-          href="/forgot-password"
-          className="text-sm text-primary underline-offset-4 hover:underline"
-        >
-          {tPage('forgotPassword')}
-        </Link>
-        {/* 063 UX: the in-hub sign-out was removed at the member's request.
-            The top-bar UserMenu carries a persistent sign-out at every width
-            (desktop + mobile — it is never hidden), so a second one in this
-            hub was redundant. Supersedes the 023-option-B "findable in-hub
-            sign-out" (TC-MEM-26); sign-out is now top-bar-only. */}
-      </HubCard>
-
-      {/*
-        Preferred language: the locale form's `title` moves UP into the card's
-        CardHeader h2 (don't duplicate it in the body); the `description` muted
-        line stays in the body above the form. Always rendered (a member is not
-        required to choose a notification language).
-      */}
-      <HubCard
-        id="language"
-        title={tLocale('title')}
-        contentClassName="space-y-2"
-      >
-        <p className="text-sm text-muted-foreground">{tLocale('description')}</p>
-        <PreferredLocaleForm initialValue={initialLocale} />
-        {/* F114 FR-004 — the contact's OWN email language (Group A): saves
-            immediately, and is the ONE body the narrowed profile endpoint still
-            accepts while the tenant requires approval for member changes. */}
-        {contactLanguage ? (
-          <div className="mt-6 space-y-2 border-t pt-6" id="contact-language">
-            <h3 className="text-sm font-medium">{tContactLang('title')}</h3>
-            <p className="text-sm text-muted-foreground">{tContactLang('description')}</p>
-            <ContactLanguageForm initialValue={contactLanguage} />
-          </div>
-        ) : null}
-      </HubCard>
-
-      {/*
-        Renewal preferences + Data & privacy are MEMBER-SPECIFIC: their writes
-        target the session-resolved member row. An authenticated user with NO
-        linked member (e.g. a pending invitation) has memberId === null — the
-        toggle's POST and the export request would 404. Mirror the legacy
-        per-route notFound() at the section level: hide these when unlinked,
-        but keep Account (with Sign out) + Preferred language, which work
-        without a member.
-      */}
-      {memberId ? (
-        <HubCard id="renewal-prefs" title={tPage('sections.renewalPrefs')}>
-          <RenewalRemindersToggle initialOptedOut={initialOptedOut} />
-        </HubCard>
-      ) : null}
-
-      {env.features.f9Dashboard && memberId ? (
-        <HubCard
-          id="data-privacy"
-          title={tPage('sections.dataPrivacy')}
-          contentClassName="space-y-4"
-        >
-          <p className="max-w-prose text-sm text-muted-foreground">
-            {tExport('description')}
-          </p>
-          {/* GDPR Art. 15(4) · PDPA §30 — any colleague may request the member
-              archive; it carries colleagues' names + roles (never their contact
-              details), so say so before request / download. */}
-          <InlineAlert tone="info" role="status" data-testid="portal-export-colleagues-notice">
-            <InlineAlertTitle>{tExport('colleaguesNoticeTitle')}</InlineAlertTitle>
-            <InlineAlertDescription>{tExport('colleaguesNoticeBody')}</InlineAlertDescription>
-          </InlineAlert>
-          {exportsReadFailed ? (
-            <InlineAlert tone="destructive" role="status" data-testid="portal-exports-unavailable">
-              <p className="text-sm">{tExport('loadFailed')}</p>
-            </InlineAlert>
-          ) : (
-            <DataExportPanel
-              rows={buildDataExportRows(exportJobs, tExport, locale)}
-              labels={buildDataExportLabels(tExport)}
-            />
-          )}
-        </HubCard>
-      ) : null}
-
-    </FormContainer>
+    <DetailContainer>
+      {await renderPortalAccountView({
+    email: user.email,
+    roleLabel: tShell(user.role),
+    initialLocale,
+    contactLanguage,
+    hasMember: memberId !== null,
+    initialOptedOut,
+    showDataPrivacy: env.features.f9Dashboard && memberId !== null,
+    exportsReadFailed,
+    exportRows: buildDataExportRows(exportJobs, tExport, locale),
+    privacyContactEmail: env.broadcasts.privacyContactEmail ?? null,
+    privacyPolicyUrl: env.broadcasts.privacyPolicyUrl ?? null,
+      })}
+    </DetailContainer>
   );
 }

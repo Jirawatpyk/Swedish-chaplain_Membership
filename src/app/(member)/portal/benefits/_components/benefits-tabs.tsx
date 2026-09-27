@@ -18,7 +18,7 @@
 import { useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Tabs, type TabItem } from '@jirawatpyk/aura-react';
 import { BENEFITS_TAB, type BenefitsTab, resolveBenefitsTab } from '../_helpers/tabs';
 
 /**
@@ -68,22 +68,28 @@ export function BenefitsTabs(props: BenefitsTabsProps): React.ReactElement {
     });
   }
 
+  // AURA Tabs (spec 122 US3): roles, `aria-selected` and arrow keys are
+  // AURA's; the URL stays the source of truth (`value` + `?tab=`). Each panel
+  // renders only while its tab is active, as before.
+  const tabs: TabItem[] = [
+    {
+      id: BENEFITS_TAB.benefits,
+      label: t('benefits'),
+      content: active === BENEFITS_TAB.benefits ? benefitsPanel : null,
+    },
+  ];
+  if (props.showBroadcastsTab) {
+    tabs.push({
+      id: BENEFITS_TAB.broadcasts,
+      label: t('broadcasts'),
+      content: active === BENEFITS_TAB.broadcasts ? props.broadcastsPanel : null,
+    });
+  }
+
   return (
-    <Tabs value={active} onValueChange={onValueChange} aria-busy={isPending}>
-      <TabsList aria-label={t('ariaLabel')} variant="line">
-        <TabsTrigger value={BENEFITS_TAB.benefits}>{t('benefits')}</TabsTrigger>
-        {props.showBroadcastsTab ? (
-          <TabsTrigger value={BENEFITS_TAB.broadcasts}>{t('broadcasts')}</TabsTrigger>
-        ) : null}
-      </TabsList>
-      <TabsContent value={BENEFITS_TAB.benefits} className="pt-4">
-        {active === BENEFITS_TAB.benefits ? benefitsPanel : null}
-      </TabsContent>
-      {props.showBroadcastsTab ? (
-        <TabsContent value={BENEFITS_TAB.broadcasts} className="pt-4">
-          {active === BENEFITS_TAB.broadcasts ? props.broadcastsPanel : null}
-        </TabsContent>
-      ) : null}
-    </Tabs>
+    // On phones the two tabs share the width, as `Benefits-mobile` draws them.
+    <div aria-busy={isPending || undefined} className="max-lg:[&_.aura-tabs\_\_list>*]:flex-1 max-lg:[&_.aura-tabs\_\_list>*]:justify-center">
+      <Tabs tabs={tabs} label={t('ariaLabel')} value={active} onChange={onValueChange} />
+    </div>
   );
 }

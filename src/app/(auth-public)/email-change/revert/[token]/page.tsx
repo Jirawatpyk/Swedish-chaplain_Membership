@@ -32,10 +32,11 @@ export default async function EmailChangeRevertPage({
 }: RevertPageProps) {
   const { token } = await params;
 
-  const tFrame = await getTranslations('auth.frame');
+  // A contact email belongs to a member company, so this is a member page.
+  const tSignIn = await getTranslations('auth.signIn');
   return (
     // The form draws its own title: the header copy follows its state.
-    <AuthFrame portalLabel={tFrame('everyone')} tenantName={process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham'}>
+    <AuthFrame portalLabel={tSignIn('memberCardDescription')} tenantName={process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham'}>
       <EmailChangeRevertForm token={token} />
     </AuthFrame>
   );

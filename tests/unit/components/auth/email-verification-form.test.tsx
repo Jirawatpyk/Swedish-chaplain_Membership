@@ -28,13 +28,15 @@ function renderWith(response: Response) {
 }
 
 describe('EmailVerificationForm on AURA (spec 122 US2)', () => {
-  it('announces success in AURA’s success alert with a full-width link button to sign in', async () => {
+  it('announces success in a titled success alert, retitles the page, and links a member on to the portal', async () => {
     renderWith(new Response(null, { status: 200 }));
-    const status = await screen.findByText(en.auth.emailVerification.successMessage);
+    const status = await screen.findByText(en.auth.emailVerification.successAlertBody);
     const alert = status.closest('.aura-alert');
     expect(alert).toHaveClass('aura-alert--success');
     expect(alert).toHaveAttribute('role', 'status');
-    const cta = screen.getByRole('link', { name: en.auth.emailVerification.signInCta });
+    expect(alert).toHaveTextContent(en.auth.emailVerification.successAlertTitle);
+    expect(screen.getByRole('heading', { level: 1, name: en.auth.emailVerification.successTitle })).toBeInTheDocument();
+    const cta = screen.getByRole('link', { name: en.auth.emailVerification.continueToPortal });
     expect(cta).toHaveAttribute('href', '/portal');
     expect(cta).toHaveClass('aura-btn');
   });

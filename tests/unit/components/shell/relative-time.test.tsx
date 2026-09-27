@@ -27,7 +27,7 @@ import { render, act, cleanup } from '@testing-library/react';
 import { renderToString } from 'react-dom/server';
 import { NextIntlClientProvider } from 'next-intl';
 
-import { RelativeTime } from '@/components/ui/relative-time';
+import { RelativeTime } from '@/components/shell/relative-time';
 
 const ENGLISH_MESSAGES = {} as const;
 

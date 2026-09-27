@@ -175,7 +175,8 @@ export function SignInForm({ portal, returnTo }: SignInFormProps) {
             before the field visually but after it in tab order. Here it is
             44px tall and visual order is tab order. */}
         <a
-          href="/forgot-password"
+          // `?from=staff` only picks where the reset page's "Back to sign in" goes.
+          href={portal === 'staff' ? '/forgot-password?from=staff' : '/forgot-password'}
           className="inline-flex min-h-11 items-center self-end text-[13px] font-medium text-[var(--aura-fg-accent)] no-underline hover:text-[var(--aura-fg-primary)] hover:underline"
         >
           {t('forgotPassword')}
@@ -184,7 +185,8 @@ export function SignInForm({ portal, returnTo }: SignInFormProps) {
 
       {errors.root ? (
         <div id="signin-error">
-          <Alert tone="danger">{errors.root.message}</Alert>
+          {/* The message as the alert's title: bold, in the danger colour, as the sign-in boards draw it. */}
+          <Alert tone="danger" title={errors.root.message} />
         </div>
       ) : null}
 

@@ -1,8 +1,7 @@
-import { PauseCircle, TriangleAlert } from 'lucide-react';
+import { CircleCheck, PauseCircle, TriangleAlert } from 'lucide-react';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { env } from '@/lib/env';
-import { Card, CardContent } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
+import { SkeletonBlock } from '@/components/shell/page-skeletons';
 import { StatCard } from '@/components/portal/dashboard/stat-card';
 import { deriveMembershipStat, shouldOfferRenewNow } from '../_lib/dashboard-stats';
 import { formatDueDate } from '../_lib/format-due-date';
@@ -117,8 +116,9 @@ export async function MembershipStatSection({
                 : t('suspended.unpaidSubNoDueDate')
             : stat.kind === 'overdue' && stat.daysRemaining !== null
               ? t('overdueSub', { days: Math.abs(stat.daysRemaining) })
-              : stat.daysRemaining !== null && stat.kind === 'due'
-                ? t('daysRemainingSub', { days: stat.daysRemaining })
+              : stat.daysRemaining !== null && (stat.kind === 'due' || stat.kind === 'active')
+                ? // "Renews in 98 days" for an active member too, as the `Main` board draws it.
+                  t('daysRemainingSub', { days: stat.daysRemaining })
                 : t('activeSub');
 
   // variantLabel mirrors the value text so the icon + text pair conveys
@@ -211,6 +211,7 @@ export async function MembershipStatSection({
       label={t('label')}
       value={value}
       sub={sub}
+      headIcon={CircleCheck}
       variant={stat.variant}
       {...variantProps}
       {...iconProps}
@@ -219,15 +220,13 @@ export async function MembershipStatSection({
   );
 }
 
-/** Shimmer skeleton while the async section streams in. */
+/** Skeleton in the shape of a stat tile while the async section streams in. */
 export function StatSkeleton(): React.JSX.Element {
   return (
-    <Card aria-busy="true" aria-hidden="true" className="h-full">
-      <CardContent className="flex flex-col gap-2 py-5">
-        <Skeleton className="h-3 w-24" />
-        <Skeleton className="h-7 w-32" />
-        <Skeleton className="h-3 w-40" />
-      </CardContent>
-    </Card>
+    <div aria-busy="true" aria-hidden="true" className="aura-stat h-full gap-2">
+      <SkeletonBlock className="h-3 w-24" />
+      <SkeletonBlock className="h-7 w-32" />
+      <SkeletonBlock className="h-3 w-40" />
+    </div>
   );
 }

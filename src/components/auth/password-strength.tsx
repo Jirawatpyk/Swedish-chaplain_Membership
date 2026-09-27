@@ -227,7 +227,8 @@ export function PasswordStrength({ level, weakReason }: PasswordStrengthProps) {
 
   return (
     <div className="flex flex-col gap-1" aria-live="polite">
-      <div className="flex gap-1">
+      {/* The bars repeat the caption below them; assistive tech reads the caption. */}
+      <div className="flex gap-1" aria-hidden="true">
         {Array.from({ length: SEGMENT_COUNT }, (_, index) => (
           <div
             key={index}

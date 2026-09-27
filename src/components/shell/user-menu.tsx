@@ -28,9 +28,9 @@ import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Avatar, DropdownMenu, useBreakpoint, type MenuItem } from '@jirawatpyk/aura-react';
-import { toast } from '@/lib/toast';
 import { AURA_FOCUS_RING } from '@/components/shell/aura-classes';
 import { cn } from '@/lib/utils';
+import { useSignOut } from '@/components/shell/use-sign-out';
 
 import type { Role } from '@/modules/auth/domain/role';
 
@@ -44,9 +44,17 @@ export interface UserMenuProps {
    * into this menu below 640px. The member portal keeps its own button.
    */
   readonly themeChoicesOnPhone?: boolean;
+  /** Sizing for the trigger where a bar's board differs (the portal header's 44px button). */
+  readonly className?: string;
+  /**
+   * The member portal's header shows the first name beside the avatar
+   * (`Main`, `Portal-*` boards: "Anna"); the menu header keeps the full name.
+   * The staff top bar shows the full name, as its boards do.
+   */
+  readonly firstNameOnTrigger?: boolean;
 }
 
-export function UserMenu({ displayName, email, role, themeChoicesOnPhone = false }: UserMenuProps) {
+export function UserMenu({ displayName, email, role, themeChoicesOnPhone = false, className, firstNameOnTrigger = false }: UserMenuProps) {
   const t = useTranslations('shell.userMenu');
   const tBadge = useTranslations('shell.roleBadge');
   const tHub = useTranslations('portal.account.menu');
@@ -58,22 +66,12 @@ export function UserMenu({ displayName, email, role, themeChoicesOnPhone = false
   const { theme, setTheme } = useTheme();
   const onPhone = useBreakpoint() === 'base';
 
-  const handleSignOut = async () => {
-    try {
-      const response = await fetch('/api/auth/sign-out', { method: 'POST' });
-      if (response.ok) {
-        // rbac-portal-identity-ok: picks which sign-in screen to return to.
-        router.push(role === 'member' ? '/portal/sign-in' : '/admin/sign-in');
-        router.refresh();
-      } else {
-        toast.error(t('signOutFailed'));
-      }
-    } catch {
-      toast.error(t('signOutNetworkError'));
-    }
-  };
+  // rbac-portal-identity-ok: picks which sign-in screen to return to.
+  const handleSignOut = useSignOut(isMember ? 'member' : 'staff');
 
   const name = displayName?.trim() || email;
+  // The first word of the name; an address is shown whole.
+  const triggerName = firstNameOnTrigger && name !== email ? (name.split(/\s+/)[0] ?? name) : name;
   const header = (
     <>
       <p>
@@ -111,8 +109,10 @@ export function UserMenu({ displayName, email, role, themeChoicesOnPhone = false
         <button
           type="button"
           className={cn(
-            'inline-flex h-10 items-center justify-center gap-2 rounded-full py-0 pr-2.5 pl-1 text-[13px] font-medium text-[var(--aura-fg-primary)] hover:bg-[var(--aura-bg-surface-hover)] pointer-coarse:h-11 pointer-coarse:min-w-11',
+            // On phones the avatar alone in a 44px circle, as the phone boards draw it.
+            'inline-flex h-10 items-center justify-center gap-2 rounded-full py-0 pr-2.5 pl-1 text-[13px] font-medium text-[var(--aura-fg-primary)] hover:bg-[var(--aura-bg-surface-hover)] pointer-coarse:h-11 pointer-coarse:min-w-11 max-sm:size-11 max-sm:p-0',
             AURA_FOCUS_RING,
+            className,
           )}
         >
           {/* The name is "Account menu" + the visible name (WCAG 2.5.3). The
@@ -121,7 +121,7 @@ export function UserMenu({ displayName, email, role, themeChoicesOnPhone = false
           <span aria-hidden className="contents">
             <Avatar name={name} size="sm" />
           </span>
-          <span className="hidden max-w-40 truncate lg:inline">{name}</span>
+          <span className="hidden max-w-40 truncate lg:inline">{triggerName}</span>
           <ChevronDownIcon className="size-4 max-sm:hidden" aria-hidden />
         </button>
       }

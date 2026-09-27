@@ -9,15 +9,16 @@
  * endpoint accepts while the tenant requires approval. Same UX contract as
  * the sibling form: radio group, Save button with spinner, toast + sr-only
  * live announcement.
+ *
+ * Spec 122 US3 (`Portal-account`): AURA RadioGroup with its visible legend
+ * ("Emails to you personally") and hint under the options, then a secondary
+ * Save button (decision 2026-09-27: no action bar).
  */
 import type { ReactElement } from 'react';
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
-import { Loader2Icon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Button, RadioGroup } from '@jirawatpyk/aura-react';
 import { useAriaAnnounce } from '@/hooks/use-aria-announce';
 
 export type ContactLanguage = 'en' | 'th' | 'sv';
@@ -70,30 +71,18 @@ export function ContactLanguageForm({ initialValue }: ContactLanguageFormProps):
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4" data-testid="contact-language-form">
-      <fieldset className="space-y-2">
-        <legend className="sr-only">{t('title')}</legend>
-        <RadioGroup
-          value={value}
-          onValueChange={(v) => setValue(v as ContactLanguage)}
-          disabled={saving}
-          className="space-y-2"
-        >
-          {(['en', 'th', 'sv'] as const).map((opt) => {
-            const id = `contact-language-${opt}`;
-            const label = tLang(`languageOptions.${opt}`);
-            return (
-              <div key={opt} className="flex items-center gap-2">
-                <RadioGroupItem id={id} value={opt} aria-label={label} />
-                <Label htmlFor={id} className="mb-0 cursor-pointer leading-4">
-                  {label}
-                </Label>
-              </div>
-            );
-          })}
-        </RadioGroup>
-      </fieldset>
-      <Button type="submit" disabled={saving} className="w-full" size="lg">
-        {saving && <Loader2Icon className="mr-2 h-4 w-4 motion-safe:animate-spin" />}
+      <RadioGroup
+        label={t('groupLabel')}
+        hint={t('hint')}
+        // 44px option rows on phones (the `Portal-account-mobile` board's touch targets)
+        className="max-sm:[&_.aura-choice]:min-h-11 max-sm:[&_.aura-choice]:items-center"
+        value={value}
+        onChange={(v) => setValue(v as ContactLanguage)}
+        disabled={saving}
+        options={(['en', 'th', 'sv'] as const).map((opt) => ({ value: opt, label: tLang(`languageOptions.${opt}`) }))}
+      />
+      {/* Decision 2026-09-27 (`Portal-account`): a plain secondary button under the hint, no action bar. */}
+      <Button type="submit" variant="secondary" loading={saving}>
         {t('save')}
       </Button>
       <span role="status" aria-live="polite" className="sr-only">

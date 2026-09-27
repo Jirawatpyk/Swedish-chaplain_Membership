@@ -15,11 +15,9 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
-import { CheckCircle2Icon, ListChecksIcon, XCircleIcon, XIcon } from 'lucide-react';
-import { Button, buttonVariants } from '@/components/ui/button';
-import { InlineAlert } from '@/components/ui/inline-alert';
+import { Button } from '@jirawatpyk/aura-react';
+import { Alert, buttonClass } from '@jirawatpyk/aura-react/server';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
-import { cn } from '@/lib/utils';
 import type { ChangeRequestView } from '@/lib/change-request-portal-view';
 import { ChangeRequestDiffTable } from './change-request-diff-table';
 
@@ -27,7 +25,8 @@ export interface DecisionOutcomeBannerProps {
   readonly request: ChangeRequestView;
 }
 
-const TONE = { approved: 'success', partially_approved: 'warning', rejected: 'destructive' } as const;
+// Partially approved reads as information (the `Portal-profile-states` board), not a warning.
+const TONE = { approved: 'success', partially_approved: 'info', rejected: 'danger' } as const;
 
 export function DecisionOutcomeBanner({ request }: DecisionOutcomeBannerProps) {
   const t = useTranslations('portal.changeRequests.outcome');
@@ -41,7 +40,7 @@ export function DecisionOutcomeBanner({ request }: DecisionOutcomeBannerProps) {
   const outcome = request.outcome;
   const anyRejected = request.fields.some((f) => f.outcome === 'rejected');
   const decidedAt = request.decidedAt
-    ? formatLocalisedDate(request.decidedAt, locale, { dateStyle: 'medium', timeStyle: 'short' })
+    ? formatLocalisedDate(request.decidedAt, locale, { dateStyle: 'medium' })
     : '';
 
   if (dismissed || outcome === null) return null;
@@ -69,35 +68,43 @@ export function DecisionOutcomeBanner({ request }: DecisionOutcomeBannerProps) {
     });
   }
 
-  const Icon = outcome === 'approved' ? CheckCircle2Icon : outcome === 'rejected' ? XCircleIcon : ListChecksIcon;
-
+  // AURA Alert (spec 122 US3) with each tone's own icon, as the board draws
+  // it. It stays `role="status"` whatever the tone: a decision is news, not
+  // an interruption. The per-field table stays (FR-010: each field's outcome).
   return (
-    <InlineAlert tone={TONE[outcome]} role="status" className="space-y-3" data-testid="decision-outcome-banner" data-outcome={outcome}>
-      <div className="flex items-start gap-2">
-        <Icon className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-        <div className="space-y-1">
-          <p className="font-medium">{t(`title.${outcome}`)}</p>
-          <p className="text-sm">{t(`body.${outcome}`, { decidedAt })}</p>
+    <Alert
+      tone={TONE[outcome]}
+      role="status"
+      title={t(`title.${outcome}`)}
+      data-testid="decision-outcome-banner"
+      data-outcome={outcome}
+      action={
+        <div className="flex flex-wrap items-center gap-2">
+          {anyRejected ? (
+            <Link
+              href={`/portal/edit?resubmit=${encodeURIComponent(request.id)}`}
+              className={buttonClass({ variant: 'secondary', size: 'sm' })}
+              data-testid="resubmit-link"
+            >
+              {t('resubmit')}
+            </Link>
+          ) : null}
+          <Button type="button" variant="secondary" size="sm" onClick={dismiss} disabled={pending} data-testid="dismiss-decision">
+            {t('dismiss')}
+          </Button>
         </div>
-      </div>
-      <ChangeRequestDiffTable fields={request.fields} showOutcome className="bg-background text-foreground" />
-      {request.decisionReason ? (
-        <div className="rounded-md bg-background p-3 text-sm text-foreground" data-testid="decision-reason">
-          <p className="font-medium">{t('reasonLabel')}</p>
-          <p className="whitespace-pre-wrap break-words">{request.decisionReason}</p>
-        </div>
-      ) : null}
-      <div className="flex flex-wrap items-center gap-2">
-        {anyRejected ? (
-          <Link href={`/portal/edit?resubmit=${encodeURIComponent(request.id)}`} className={cn(buttonVariants({ size: 'sm' }), 'h-9')} data-testid="resubmit-link">
-            {t('resubmit')}
-          </Link>
+      }
+    >
+      <div className="space-y-3">
+        <p>{t(`body.${outcome}`, { decidedAt })}</p>
+        <ChangeRequestDiffTable fields={request.fields} showOutcome variant="plain" />
+        {request.decisionReason ? (
+          <div className="mt-2 flex flex-col gap-0.5" data-testid="decision-reason">
+            <p className="text-xs font-semibold">{t('reasonLabel')}</p>
+            <p className="whitespace-pre-wrap break-words">{request.decisionReason}</p>
+          </div>
         ) : null}
-        <Button type="button" variant="outline" size="sm" className="h-9" onClick={dismiss} disabled={pending} data-testid="dismiss-decision">
-          <XIcon className="mr-1 h-4 w-4" aria-hidden="true" />
-          {t('dismiss')}
-        </Button>
       </div>
-    </InlineAlert>
+    </Alert>
   );
 }

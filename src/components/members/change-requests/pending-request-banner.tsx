@@ -33,12 +33,10 @@
  * landmark — the shell's own rule, UX C3).
  */
 import { useRef, useState, useTransition } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
-import { ClockIcon, Undo2Icon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { InlineAlert } from '@/components/ui/inline-alert';
+import { Button } from '@jirawatpyk/aura-react';
+import { Alert } from '@jirawatpyk/aura-react/server';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
 import { useDialogFinalFocus } from '@/components/shell/reason-confirmation-dialog';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
@@ -48,15 +46,13 @@ import { ChangeRequestDiffTable } from './change-request-diff-table';
 
 export interface PendingRequestBannerProps {
   readonly request: ChangeRequestView;
-  /** Show the "edit your request" link (hidden on the edit page itself). */
-  readonly showEditLink?: boolean;
 }
 
 /** `hidden` — a 404 the server cannot explain (the flag-off race): render nothing, let the refresh decide. */
 type WithdrawResult = 'withdrawn' | 'gone' | 'hidden' | null;
 type WithdrawFailure = 'error' | 'read_only' | null;
 
-export function PendingRequestBanner({ request, showEditLink = true }: PendingRequestBannerProps) {
+export function PendingRequestBanner({ request }: PendingRequestBannerProps) {
   const t = useTranslations('portal.changeRequests.pending');
   const tw = useTranslations('portal.changeRequests.withdraw');
   const locale = useLocale();
@@ -122,45 +118,48 @@ export function PendingRequestBanner({ request, showEditLink = true }: PendingRe
   if (result === 'hidden') return null;
   if (result !== null) {
     return (
-      <InlineAlert tone={result === 'withdrawn' ? 'success' : 'info'} role="status" data-testid="withdraw-result">
-        <p className="text-sm">{result === 'withdrawn' ? tw('done') : tw('gone')}</p>
-      </InlineAlert>
+      <Alert tone={result === 'withdrawn' ? 'success' : 'info'} role="status" data-testid="withdraw-result">
+        {result === 'withdrawn' ? tw('done') : tw('gone')}
+      </Alert>
     );
   }
 
+  // AURA Alert (spec 122 US3, `Portal-profile` board): the info tone's own
+  // icon, the diff, then Withdraw with a line saying how to change it instead.
   return (
-    <InlineAlert tone="info" role="status" className="space-y-3" data-testid="pending-request-banner">
-      <div className="flex items-start gap-2">
-        <ClockIcon className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-        <div className="space-y-1">
-          <p className="font-medium">{t('title')}</p>
-          <p className="text-sm">{t('body', { submittedAt })}</p>
+    <Alert
+      tone="info"
+      role="status"
+      title={t('title')}
+      data-testid="pending-request-banner"
+      action={
+        <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:gap-4">
+          <Button
+            ref={triggerRef}
+            type="button"
+            variant="secondary"
+            icon="rotate-ccw"
+            onClick={() => setConfirmOpen(true)}
+            disabled={busy}
+            data-testid="withdraw-request"
+          >
+            {tw('button')}
+          </Button>
+          {/* The page header's primary button reads "Edit your request" while one
+              is pending; this line points there rather than repeating it. */}
+          <p className="text-xs text-[var(--aura-fg-secondary)] sm:text-[13px]">
+            {t.rich('editHint', { strong: (chunks) => <strong className="font-semibold text-[var(--aura-fg-primary)]">{chunks}</strong> })}
+          </p>
         </div>
-      </div>
-      <ChangeRequestDiffTable fields={request.fields} className="bg-background text-foreground" />
-      {failed !== null ? (
-        <p className="text-sm font-medium text-destructive" data-testid="withdraw-error">
-          {failed === 'read_only' ? tw('readOnly') : tw('error')}
-        </p>
-      ) : null}
-      <div className="flex flex-wrap items-center gap-3">
-        <Button
-          ref={triggerRef}
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-9"
-          onClick={() => setConfirmOpen(true)}
-          disabled={busy}
-          data-testid="withdraw-request"
-        >
-          <Undo2Icon className="mr-1 h-4 w-4" aria-hidden="true" />
-          {tw('button')}
-        </Button>
-        {showEditLink ? (
-          <Link href="/portal/edit" className="text-sm text-primary underline-offset-4 hover:underline">
-            {t('editLink')}
-          </Link>
+      }
+    >
+      <div className="space-y-3">
+        <p>{t('body', { submittedAt })}</p>
+        <ChangeRequestDiffTable fields={request.fields} variant="plain" />
+        {failed !== null ? (
+          <p className="font-medium text-[var(--aura-fg-danger)]" data-testid="withdraw-error">
+            {failed === 'read_only' ? tw('readOnly') : tw('error')}
+          </p>
         ) : null}
       </div>
       <ConfirmationDialog
@@ -173,6 +172,6 @@ export function PendingRequestBanner({ request, showEditLink = true }: PendingRe
         onConfirm={withdraw}
         finalFocus={finalFocus}
       />
-    </InlineAlert>
+    </Alert>
   );
 }

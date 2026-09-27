@@ -1,18 +1,31 @@
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
-import { FormContainer } from '@/components/layout';
+import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { InviteColleagueForm } from '@/components/members/invite-colleague-form';
+import { BackLink } from '@/components/portal/back-link';
+import { env } from '@/lib/env';
 
 /**
  * Portal colleague invite page — US5 AS4 (T125).
  *
  * Only accessible to the primary contact of the member. Non-primary
  * contacts see a "not authorized" message (enforced server-side too).
+ *
+ * Spec 122 US3 (`Portal-contacts-invite`): the portal column with a
+ * "← Back to profile" link over the title and the form in a 720px column.
  */
+function InviteFrame({ back, children }: { readonly back: string; readonly children: React.ReactNode }) {
+  return (
+    <DetailContainer>
+      <BackLink href="/portal/profile">{back}</BackLink>
+      <div className="flex max-w-[720px] flex-col gap-[var(--page-section-gap)]">{children}</div>
+    </DetailContainer>
+  );
+}
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('portal.invite');
   return { title: t('pageTitle') };
@@ -21,6 +34,7 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function PortalInvitePage() {
   const { user } = await requireSession('member');
   const t = await getTranslations('portal.invite');
+  const tHistory = await getTranslations('portal.changeRequests.history');
 
   const tenant = resolveTenantFromRequest();
   const deps = buildMembersDeps(tenant);
@@ -29,12 +43,12 @@ export default async function PortalInvitePage() {
   const memberResult = await deps.memberRepo.findByLinkedUserId(tenant, user.id);
   if (!memberResult.ok) {
     return (
-      <FormContainer>
+      <InviteFrame back={tHistory('backToProfile')}>
         <PageHeader title={t('pageTitle')} />
         <div className="py-12 text-center">
-          <p className="text-body text-muted-foreground">{t('notLinked')}</p>
+          <p className="text-body text-[var(--aura-fg-secondary)]">{t('notLinked')}</p>
         </div>
-      </FormContainer>
+      </InviteFrame>
     );
   }
 
@@ -44,12 +58,12 @@ export default async function PortalInvitePage() {
   const contactsResult = await deps.contactRepo.listByMember(tenant, member.memberId);
   if (!contactsResult.ok) {
     return (
-      <FormContainer>
+      <InviteFrame back={tHistory('backToProfile')}>
         <PageHeader title={t('pageTitle')} />
         <div className="py-12 text-center">
-          <p className="text-body text-muted-foreground">{t('loadError')}</p>
+          <p className="text-body text-[var(--aura-fg-secondary)]">{t('loadError')}</p>
         </div>
-      </FormContainer>
+      </InviteFrame>
     );
   }
 
@@ -58,19 +72,19 @@ export default async function PortalInvitePage() {
   );
   if (!ownContact?.isPrimary) {
     return (
-      <FormContainer>
+      <InviteFrame back={tHistory('backToProfile')}>
         <PageHeader title={t('pageTitle')} />
         <div className="py-12 text-center">
-          <p className="text-body text-muted-foreground">{t('notPrimary')}</p>
+          <p className="text-body text-[var(--aura-fg-secondary)]">{t('notPrimary')}</p>
         </div>
-      </FormContainer>
+      </InviteFrame>
     );
   }
 
   return (
-    <FormContainer>
+    <InviteFrame back={tHistory('backToProfile')}>
       <PageHeader title={t('pageTitle')} subtitle={member.companyName} />
-      <InviteColleagueForm />
-    </FormContainer>
+      <InviteColleagueForm privacyNoticeHref={env.broadcasts.privacyPolicyUrl ?? null} />
+    </InviteFrame>
   );
 }

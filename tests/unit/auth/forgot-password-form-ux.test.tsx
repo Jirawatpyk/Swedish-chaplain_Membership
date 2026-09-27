@@ -18,7 +18,7 @@ beforeEach(() => {
 function renderForm(locale: 'en' | 'th' | 'sv' = 'en') {
   return render(
     <NextIntlClientProvider locale={locale} messages={enMessages}>
-      <ForgotPasswordForm />
+      <ForgotPasswordForm signInHref="/portal/sign-in" />
     </NextIntlClientProvider>,
   );
 }
@@ -112,17 +112,26 @@ describe('ForgotPasswordForm', () => {
     vi.unstubAllGlobals();
   });
 
-  it('is built on AURA: the email field, a success alert for the status, an outline resend button (spec 122 US2)', async () => {
+  it('once sent, shows the Auth-forgot board: "Check your email", a small Resend, and the ways out (spec 122 US2)', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200 }));
     const { container } = renderForm();
     expect(container.querySelector('#email')).toHaveClass('aura-input__control');
+    // A way back before sending too.
+    expect(screen.getByRole('link', { name: 'Back to sign in' })).toHaveAttribute('href', '/portal/sign-in');
     fireEvent.change(container.querySelector('#email')!, {
       target: { value: 'user@example.com' },
     });
     fireEvent.submit(container.querySelector('form')!);
 
-    expect(await screen.findByRole('status')).toHaveClass('aura-alert', 'aura-alert--success');
-    expect(screen.getByRole('button', { name: /resend/i })).toHaveClass('aura-btn', 'aura-btn--secondary');
+    const status = await screen.findByRole('status');
+    expect(status).toHaveTextContent('Check your email');
+    expect(container.querySelector('#email')).toBeNull();
+    expect(screen.getByRole('button', { name: /resend/i })).toHaveClass('aura-btn', 'aura-btn--secondary', 'aura-btn--sm');
+    expect(screen.getByRole('link', { name: 'Back to sign in' })).toHaveAttribute('href', '/portal/sign-in');
+
+    // "Use a different email" brings the field back, with what was typed.
+    fireEvent.click(screen.getByRole('button', { name: 'Use a different email' }));
+    await waitFor(() => expect(container.querySelector('#email')).toHaveValue('user@example.com'));
     vi.unstubAllGlobals();
   });
   it('shows the AURA error summary after a failed submit and focuses it (spec 122 US2 AS1)', async () => {

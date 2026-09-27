@@ -12,14 +12,7 @@
  */
 import * as React from 'react';
 import { useTranslations } from 'next-intl';
-import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  TranslatedSelectValue,
-} from '@/components/ui/select';
+import { Select } from '@jirawatpyk/aura-react';
 import { DataExportPanel, type DataExportLabels, type DataExportRow } from './data-export-panel';
 
 const COMPANY = 'company';
@@ -47,32 +40,21 @@ export function AdminDataExportRequest({
 }): React.JSX.Element {
   const t = useTranslations('dataExport');
   const [scope, setScope] = React.useState<string>(initialContactId ?? COMPANY);
-  const labelFor = (value: string): string =>
-    value === COMPANY
-      ? t('adminScopeCompany')
-      : (contacts.find((c) => c.contactId === value)?.label ?? t('adminScopeCompany'));
-
   return (
     <div className="space-y-4">
-      <div className="space-y-1">
-        <Label htmlFor="admin-export-scope">{t('adminScopeLabel')}</Label>
-        <Select value={scope} onValueChange={(v) => setScope(typeof v === 'string' ? v : COMPANY)}>
-          <SelectTrigger id="admin-export-scope" className="w-full sm:w-[360px]">
-            <TranslatedSelectValue placeholder={t('adminScopeCompany')} translate={labelFor} />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={COMPANY}>{t('adminScopeCompany')}</SelectItem>
-            {contacts.map((c) => (
-              <SelectItem key={c.contactId} value={c.contactId}>
-                {c.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <p className="text-sm text-muted-foreground">
-          {scope === COMPANY ? t('adminScopeCompanyHint') : t('adminScopeContactHint')}
-        </p>
-      </div>
+      {/* Spec 122 (data-export is on AURA): a labelled native select, the hint says what the archive holds. */}
+      <Select
+        id="admin-export-scope"
+        label={t('adminScopeLabel')}
+        hint={scope === COMPANY ? t('adminScopeCompanyHint') : t('adminScopeContactHint')}
+        className="sm:max-w-[360px]"
+        value={scope}
+        onChange={(e) => setScope(e.target.value || COMPANY)}
+        options={[
+          { value: COMPANY, label: t('adminScopeCompany') },
+          ...contacts.map((c) => ({ value: c.contactId, label: c.label })),
+        ]}
+      />
       <DataExportPanel
         rows={rows}
         labels={labels}

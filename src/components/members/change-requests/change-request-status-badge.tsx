@@ -14,8 +14,7 @@
  * rather than throwing inside a list of 100 rows.
  */
 import { useTranslations } from 'next-intl';
-import { CheckCircle2Icon, ClockIcon, ListChecksIcon, Undo2Icon, XCircleIcon } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { Badge, StatusPill, type StatusTone } from '@jirawatpyk/aura-react/server';
 import type { ChangeRequest, ChangeRequestOutcome, WithdrawnReason } from '@/modules/members';
 
 export type ChangeRequestStatus =
@@ -48,6 +47,12 @@ export interface ChangeRequestStatusBadgeProps {
   readonly className?: string;
 }
 
+const OUTCOME_TONE: Record<ChangeRequestOutcome, StatusTone> = {
+  approved: 'ready',
+  partially_approved: 'warning',
+  rejected: 'blocked',
+};
+
 export function ChangeRequestStatusBadge({ status, audience, className }: ChangeRequestStatusBadgeProps) {
   const t = useTranslations(audience === 'staff' ? 'admin.changeRequests.review' : 'portal.changeRequests.history');
   switch (status.state) {
@@ -55,21 +60,27 @@ export function ChangeRequestStatusBadge({ status, audience, className }: Change
       // the DB CHECK makes a decided row without an outcome unreachable — fail soft to the pending badge below
       if (status.outcome === null) break;
       const outcome = status.outcome;
-      const Icon = outcome === 'approved' ? CheckCircle2Icon : outcome === 'rejected' ? XCircleIcon : ListChecksIcon;
+      // The portal boards draw a partial approval neutral: news, not a problem.
+      const tone = audience === 'portal' && outcome === 'partially_approved' ? 'neutral' : OUTCOME_TONE[outcome];
       return (
-        <Badge variant={outcome === 'rejected' ? 'destructive' : outcome === 'approved' ? 'default' : 'outline'} className={className} data-state={status.state} data-outcome={outcome}>
-          <Icon className="mr-1 size-3" aria-hidden="true" />
+        <StatusPill tone={tone} className={className} data-state={status.state} data-outcome={outcome}>
           {t(`outcome.${outcome}`)}
-        </Badge>
+        </StatusPill>
       );
     }
-    case 'withdrawn':
-      return (
+    case 'withdrawn': {
+      const label = status.withdrawnReason ? t(`withdrawn.${status.withdrawnReason}`) : t('state.withdrawn');
+      // The portal boards draw a withdrawn request as a plain outline chip.
+      return audience === 'portal' ? (
         <Badge variant="outline" className={className} data-state={status.state} data-withdrawn-reason={status.withdrawnReason ?? undefined}>
-          <Undo2Icon className="mr-1 size-3" aria-hidden="true" />
-          {status.withdrawnReason ? t(`withdrawn.${status.withdrawnReason}`) : t('state.withdrawn')}
+          {label}
         </Badge>
+      ) : (
+        <StatusPill tone="neutral" className={className} data-state={status.state} data-withdrawn-reason={status.withdrawnReason ?? undefined}>
+          {label}
+        </StatusPill>
       );
+    }
     case 'pending':
       break;
     default: {
@@ -78,9 +89,8 @@ export function ChangeRequestStatusBadge({ status, audience, className }: Change
     }
   }
   return (
-    <Badge variant="secondary" className={className} data-state={status.state}>
-      <ClockIcon className="mr-1 size-3" aria-hidden="true" />
+    <StatusPill tone="progress" className={className} data-state={status.state}>
       {t('state.pending')}
-    </Badge>
+    </StatusPill>
   );
 }

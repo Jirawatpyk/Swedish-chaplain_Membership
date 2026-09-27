@@ -1,17 +1,21 @@
 import { getLocale } from 'next-intl/server';
-import { BenefitUsageCard } from '@/components/benefits/benefit-usage-card';
+import { PortalBenefitsSummaryCard } from '@/components/benefits/portal-benefits-summary-card';
+import { env } from '@/lib/env';
 import { deriveBenefitsStat } from '../_lib/dashboard-stats';
-import { loadDashboardBenefitUsage } from './dashboard-reads';
+import { loadDashboardBenefitUsage, loadDashboardEblastQuota } from './dashboard-reads';
 import type { TenantContext } from '@/modules/tenants';
+import type { MemberId } from '@/modules/members';
+import type { PortalBenefitsSummaryItem } from '@/components/benefits/portal-benefits-summary-card';
 
 const PORTAL_BENEFITS_HREF = '/portal/benefits';
+const EBLAST_COMPOSE_HREF = '/portal/broadcasts/new';
 
 /**
  * 057 portal redesign §4.1 — 2-col benefits quota panel (right column).
  *
  * Async server component that reads the SAME per-request cached benefit
  * usage the `BenefitsStatSection` uses (React `cache()` dedups), then renders
- * the compact `BenefitUsageCard`. Lives in its OWN Suspense boundary so the
+ * the portal summary card (spec 122 US3, the `Main` board). Lives in its OWN Suspense boundary so the
  * benefits read never blocks the 3 stat cards (F2 — the page body must not
  * `await` benefit usage, which would serialise every stat boundary AND make
  * BenefitsStatSection's skeleton dead).
@@ -30,7 +34,7 @@ export async function BenefitsPanelSection({
   memberId,
 }: {
   readonly ctx: TenantContext;
-  readonly memberId: string;
+  readonly memberId: MemberId;
 }): Promise<React.JSX.Element | null> {
   const locale = await getLocale();
   const usage = await loadDashboardBenefitUsage(ctx, memberId);
@@ -45,17 +49,27 @@ export async function BenefitsPanelSection({
   const benefitsStat = deriveBenefitsStat(usage);
   if (benefitsStat.kind === 'empty') return null;
 
+  // "Compose E-Blast" beside the E-Blast bar, only while F7 is on — the
+  // compose route 503s behind the kill switch (same gate as the benefits page).
+  // Spec 122 US3 (`Main` board): with F7 on, the E-Blast bar takes the quota
+  // counter's used / reserved / cap — the Benefits page's E-Blasts tab reads
+  // the same counter — so submitted, not-yet-sent E-Blasts show as reserved.
+  const eblastQuota =
+    env.features.f7Broadcasts && usage.quantifiable.some((b) => b.key === 'eblast')
+      ? await loadDashboardEblastQuota(ctx.slug, memberId)
+      : null;
+  const quantifiable: PortalBenefitsSummaryItem[] = usage.quantifiable.map((b) => {
+    if (b.key !== 'eblast' || !env.features.f7Broadcasts) return b;
+    const counted = eblastQuota ? { used: eblastQuota.used, entitlement: eblastQuota.cap, reserved: eblastQuota.reserved } : {};
+    return { ...b, ...counted, actionHref: EBLAST_COMPOSE_HREF };
+  });
+
   return (
-    <BenefitUsageCard
+    <PortalBenefitsSummaryCard
       locale={locale}
       membershipYear={usage.membershipYear}
-      elapsedYearPct={usage.elapsedYearPct}
-      quantifiable={usage.quantifiable}
-      active={usage.active}
-      aggregateConsumedPct={usage.aggregateConsumedPct}
-      underUseWarning={usage.underUseWarning}
-      compact
-      previewHref={PORTAL_BENEFITS_HREF}
+      quantifiable={quantifiable}
+      fullHref={PORTAL_BENEFITS_HREF}
       headingId="dashboard-benefits-panel"
     />
   );

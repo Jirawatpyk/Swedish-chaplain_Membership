@@ -25,7 +25,8 @@ import { timelineList } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card } from '@jirawatpyk/aura-react/server';
+import { EmptyState } from '@/components/shell/empty-state';
 import { TimelineFilters } from '@/components/members/timeline-filters';
 import { TimelineStream } from '@/components/members/timeline-stream';
 import type { TimelineItemProps } from '@/components/members/timeline-event-item';
@@ -70,11 +71,7 @@ export default async function PortalTimelinePage({
     return (
       <DetailContainer>
         <PageHeader title={t('title')} subtitle={t('subtitleMember')} />
-        <Card>
-          <CardContent className="py-12 text-center">
-            <p className="text-muted-foreground">{t('empty')}</p>
-          </CardContent>
-        </Card>
+        <EmptyState title={t('empty')} />
       </DetailContainer>
     );
   }
@@ -126,7 +123,7 @@ export default async function PortalTimelinePage({
     <DetailContainer>
       <PageHeader title={t('title')} subtitle={t('subtitleMember')} />
       <Card>
-        <CardContent className="flex flex-col gap-4">
+        <div className="flex flex-col gap-2 sm:gap-3">
           <TimelineFilters />
           <TimelineStream
             key={filterKey}
@@ -135,8 +132,9 @@ export default async function PortalTimelinePage({
             initialCursor={initialCursor}
             emptyLabel={hasFilter ? t('emptyFiltered') : t('empty')}
             listLabel={t('title')}
+            audience="member"
           />
-        </CardContent>
+        </div>
       </Card>
     </DetailContainer>
   );

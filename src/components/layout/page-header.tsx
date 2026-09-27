@@ -9,6 +9,8 @@ type PageHeaderProps = {
   subtitle?: ReactNode;
   actions?: ReactNode;
   badge?: ReactNode;
+  /** Chips on their own row under the subtitle (the portal `Main` board's member number, plan and status). */
+  meta?: ReactNode;
   className?: string;
   /**
    * Staff-Review-2026-05-09 Round-2 R2-W2 fix: auto-focus the H1 on
@@ -20,6 +22,13 @@ type PageHeaderProps = {
    * instead of the previous page's last-focused element (WCAG 2.4.3).
    */
   autoFocusTitle?: boolean;
+  /**
+   * Spec 122 — `hero` is the larger page the portal home and edit boards
+   * draw: a 30 / 36px title and more room above it (globals.css sizes it off
+   * `data-size`); `hero-lg` is the Benefits board's, larger from 1024px only
+   * (26 / 36px). Every other page uses the default 26 / 32px.
+   */
+  size?: 'default' | 'hero' | 'hero-lg';
 };
 
 /**
@@ -32,8 +41,10 @@ export function PageHeader({
   subtitle,
   actions,
   badge,
+  meta,
   className,
   autoFocusTitle = false,
+  size = 'default',
 }: PageHeaderProps) {
   const titleRef = useRef<HTMLHeadingElement | null>(null);
   useEffect(() => {
@@ -47,20 +58,22 @@ export function PageHeader({
   return (
     <header
       data-slot="page-header"
+      data-size={size}
       className={cn(
         // Below Tailwind's sm breakpoint (640px) stack title + actions
         // vertically so action groups wrap cleanly on mobile. `items-stretch`
         // on mobile gives the actions row full container width so multiple
         // buttons have room to wrap into a proper grid and tap targets
         // don't bunch up against the left edge. Desktop (sm+) reverts to
-        // `items-start` so title + actions sit naturally side-by-side.
+        // `items-end` so the actions sit on the subtitle line, as the staff
+        // boards draw them; the portal boards top-align them with the title.
         //
         // No margin-block-end: vertical spacing between PageHeader and
         // the following Cards/content is owned by the parent layout
         // container's `flex flex-col gap-[var(--page-section-gap)]`.
         // Previously the margin here + the parent's gap doubled to 48 px
         // on pages that opted into flex-gap wrappers.
-        'flex flex-col items-stretch justify-between gap-3 sm:flex-row sm:flex-wrap sm:items-start',
+        'flex flex-col items-stretch justify-between gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:[.chamber-portal_&]:items-start',
         className,
       )}
     >
@@ -74,7 +87,7 @@ export function PageHeader({
          * that pass no badge are unaffected (the empty slot renders
          * nothing; `break-words` on h1 is safe everywhere).
          */}
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
           {/*
            * R4 + Round-5 review-finding H4: focus-only announcement
            * pattern. R4-W10 had paired `tabIndex={-1}.focus()` with
@@ -105,9 +118,20 @@ export function PageHeader({
           // error.
           <div
             data-slot="page-header-subtitle"
-            className="[margin-block-start:0.25rem] text-body text-muted-foreground"
+            // Joined by hand, not with cn(): tailwind-merge reads `text-body`
+            // (our type utility) and `text-muted-foreground` as one conflict
+            // and drops the size.
+            className={[
+              '[margin-block-start:0.25rem] text-body text-muted-foreground [.chamber-portal_&]:[margin-block-start:0.375rem]',
+              size !== 'default' ? 'lg:[.chamber-portal_&]:[margin-block-start:0.5rem]' : '',
+            ].join(' ')}
           >
             {subtitle}
+          </div>
+        ) : null}
+        {meta ? (
+          <div data-slot="page-header-meta" className="flex flex-wrap items-center gap-2 pt-2">
+            {meta}
           </div>
         ) : null}
       </div>

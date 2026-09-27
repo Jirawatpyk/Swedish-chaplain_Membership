@@ -33,21 +33,15 @@ import {
   billFirstDocumentNumber,
   listInvoicesPaged,
   makeListInvoicesDeps,
+  type Invoice,
 } from '@/modules/invoicing';
 import { buildMembersDeps } from '@/modules/members/members-deps';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-} from '@/components/ui/card';
-import { buttonVariants } from '@/components/ui/button';
+import { Card, StatusPill, buttonClass, type StatusTone } from '@jirawatpyk/aura-react/server';
 import { cn } from '@/lib/utils';
 import {
   formatDate,
   formatSatangThb,
 } from '@/app/(member)/portal/invoices/_utils/format';
-import { InvoiceStatusBadge } from '@/app/(member)/portal/invoices/_components/invoice-status-badge';
 import {
   PortalInvoiceDownloadButton,
   PortalReceiptDownloadButton,
@@ -97,39 +91,21 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
         '[portal-invoices-summary] member lookup failed — rendering error variant',
       );
       return (
-        <Card>
-          <CardHeader>
-            <h2 className="font-heading text-base font-medium leading-snug">{t('summary.heading')}</h2>
-            <CardDescription>{t('summary.description')}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-caption text-muted-foreground">{t('loadFailed')}</p>
-          </CardContent>
+        <Card title={t('summary.heading')} description={t('summary.description')} headingLevel={2}>
+          <p className="text-sm text-[var(--aura-fg-secondary)]">{t('loadFailed')}</p>
         </Card>
       );
     }
     // Not-linked state: surface the same copy the full list uses so
     // members don't get conflicting signals across portal surfaces.
     return (
-      <Card>
-        <CardHeader>
-          <h2 className="font-heading text-base font-medium leading-snug">{t('summary.heading')}</h2>
-          <CardDescription>{t('summary.description')}</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3">
-          <p className="text-caption text-muted-foreground">
-            {t('notLinked')}
-          </p>
-          <a
-            href={`mailto:${env.supportEmail}`}
-            className={cn(
-              buttonVariants({ variant: 'outline', size: 'sm' }),
-              'min-h-11 px-3 self-start',
-            )}
-          >
+      <Card title={t('summary.heading')} description={t('summary.description')} headingLevel={2}>
+        <div className="flex flex-col gap-3">
+          <p className="text-sm text-[var(--aura-fg-secondary)]">{t('notLinked')}</p>
+          <a href={`mailto:${env.supportEmail}`} className={cn(buttonClass({ variant: 'secondary' }), 'self-start')}>
             {t('summary.contactAdmin')}
           </a>
-        </CardContent>
+        </div>
       </Card>
     );
   }
@@ -177,14 +153,8 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
       '[portal-invoices-summary] listInvoicesPaged threw — rendering error variant',
     );
     return (
-      <Card>
-        <CardHeader>
-          <h2 className="font-heading text-base font-medium leading-snug">{t('summary.heading')}</h2>
-          <CardDescription>{t('summary.description')}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-caption text-muted-foreground">{t('loadFailed')}</p>
-        </CardContent>
+      <Card title={t('summary.heading')} description={t('summary.description')} headingLevel={2}>
+        <p className="text-sm text-[var(--aura-fg-secondary)]">{t('loadFailed')}</p>
       </Card>
     );
   }
@@ -194,35 +164,44 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
   // supplies now; the mapper never calls `new Date()`). Mirrors the list page.
   const nowUtcIso = new Date().toISOString();
 
+  return <InvoicesSummaryView rows={rows} nowUtcIso={nowUtcIso} t={t} tStatus={tStatus} userLocale={userLocale} />;
+}
+
+type PortalInvoicesT = Awaited<ReturnType<typeof getTranslations<'portal.invoices'>>>;
+type InvoiceStatusT = Awaited<ReturnType<typeof getTranslations<'admin.invoices.list.statuses'>>>;
+
+/**
+ * The card's rows, apart from the reads so the preview route can render them
+ * with fixture invoices (spec 122 US3 board comparison).
+ */
+export function InvoicesSummaryView({
+  rows,
+  nowUtcIso,
+  t,
+  tStatus,
+  userLocale,
+}: {
+  readonly rows: readonly Invoice[];
+  readonly nowUtcIso: string;
+  readonly t: PortalInvoicesT;
+  readonly tStatus: InvoiceStatusT;
+  readonly userLocale: string;
+}) {
+  // The board's pills: paid ready, issued in progress, overdue blocked, the
+  // rest neutral (void, draft…). Status TEXT stays the admin catalogue's label.
+  const pillTone = (status: string): StatusTone =>
+    status === 'paid' ? 'ready' : status === 'issued' ? 'progress' : status === 'overdue' ? 'blocked' : 'neutral';
+
   return (
-    <Card>
-      {/* Heading + "view all" share one centred row (heading level with the
-          button, matching the Recent activity card); the description sits on
-          its own line below. */}
-      <CardHeader>
-        <div className="flex flex-row items-center justify-between gap-3">
-          <h2 className="font-heading text-base font-medium leading-snug">{t('summary.heading')}</h2>
-          {rows.length > 0 ? (
-            <Link
-              href="/portal/invoices"
-              // Mirror the Benefit usage card's "Full benefits" header action
-              // exactly (benefit-usage-card.tsx) so the two side-by-side
-              // dashboard cards read as one component: same outline variant,
-              // `shrink-0`, and a trailing arrow icon.
-              className={cn(buttonVariants({ variant: 'outline' }), 'shrink-0')}
-            >
-              {t('summary.viewAll')}
-              <ArrowRight aria-hidden="true" className="size-4" />
-            </Link>
-          ) : null}
-        </div>
-        <CardDescription>{t('summary.description')}</CardDescription>
-      </CardHeader>
-      <CardContent>
+    // AURA card (spec 122 US3, `Main` board): heading and description on top,
+    // a hairline above every row, and "View all invoices" as the last row of
+    // the body (left-aligned), as the board draws it.
+    <Card title={t('summary.heading')} description={t('summary.description')} headingLevel={2}>
         {rows.length === 0 ? (
-          <p className="text-caption text-muted-foreground">{t('empty')}</p>
+          <p className="text-sm text-[var(--aura-fg-secondary)]">{t('empty')}</p>
         ) : (
-          <ul className="divide-y">
+          <>
+          <ul>
             {rows.map((r) => {
               // 088 FR-030 — an 088 bill has NULL §87 `documentNumber`; its
               // number lives in `billDocumentNumberRaw` (unpaid/paid) and, once
@@ -230,75 +209,65 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
               // this widget's "latest invoices" rows never render '—'/UUID.
               const displayNo =
                 billFirstDocumentNumber(r) ?? r.receiptDocumentNumberRaw;
-              // 090 Bug 3 — derive the download flags from the SHARED
-              // single-source-of-truth view-model (same one the detail page +
-              // full list consume) so this summary card can never drift on
-              // WHICH document(s) a row exposes. Passed 2-arg (tax-at-payment
-              // flag defaults false): the flags this card reads —
-              // `showInvoice` / `showReceipt` / `isCombinedPaid` / `mainPdfKind`
-              // — are all flag-INDEPENDENT (only `taxDocumentKind` /
-              // `primaryNumber` depend on the flag, and this card keeps its own
-              // bill-first `displayNo` for the visible number). Pre-fix the card
-              // only ever rendered the invoice/bill PDF, so a PAID member never
-              // saw the §86/4 RC receipt download.
+              // 090 Bug 3 — the download flags come from the SHARED view-model
+              // (same one the detail page + full list consume), so this card
+              // can never drift on WHICH document(s) a row exposes (the
+              // invoice/bill PDF, and the §86/4 RC receipt once paid).
               const vm = toInvoiceRowViewModel(r, nowUtcIso);
               const receiptRef =
                 r.receiptDocumentNumberRaw ?? displayNo ?? r.invoiceId;
+              const issued = t('summary.issuedOn', { date: formatDate(r.issueDate, userLocale) });
+              const due = r.dueDate ? t('summary.dueOn', { date: formatDate(r.dueDate, userLocale) }) : null;
+              const unpaid = r.status === 'issued';
+              // Desktop: "Issued … · Due …" (unpaid) or "Issued … · Receipt RC-…"
+              // (paid). Phone: the one date that matters — Due while unpaid.
+              const metaWide =
+                unpaid && due
+                  ? `${issued} · ${due}`
+                  : r.receiptDocumentNumberRaw
+                    ? `${issued} · ${t('summary.receiptRef', { number: r.receiptDocumentNumberRaw })}`
+                    : issued;
+              const metaNarrow = unpaid && due ? due : issued;
+              const pill = <StatusPill tone={pillTone(r.status)}>{tStatus(r.status)}</StatusPill>;
+              const amount = formatSatangThb(r.total?.satang ?? null, userLocale);
               return (
               <li
                 key={r.invoiceId}
-                /* 090 finding #1 — a `flex-col` row: a header row (doc#/badge/
-                   date on the left, total on the right) ABOVE a separate
-                   full-width `flex-wrap justify-end` download-button row.
-                   The pre-fix layout put both download buttons in the trailing
-                   `shrink-0` column, which defeated `flex-wrap` and starved the
-                   `min-w-0` doc#/date column to ~27px at 320px (overflow/clip).
-                   Giving the buttons their OWN full-width row lets flex-wrap
-                   actually work — mirrors the full invoice-list card
-                   (`portal-invoice-card-list.tsx`). */
-                className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0"
+                className="flex items-center gap-3 border-t border-[var(--aura-border-default)] py-3 sm:gap-4"
               >
-                {/* Header row — doc#/badge/date (left, min-w-0) + total (right). */}
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex min-w-0 flex-col gap-1">
-                    <Link
-                      href={`/portal/invoices/${r.invoiceId}`}
-                      className="font-mono text-caption text-muted-foreground underline underline-offset-4 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2 self-start"
-                      aria-label={`${t('actions.viewDetail')} ${displayNo ?? r.invoiceId}`}
-                    >
-                      {displayNo ?? '—'}
-                    </Link>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <InvoiceStatusBadge status={r.status} label={tStatus(r.status)} />
-                      {/* whitespace-nowrap so the date wraps as a UNIT below the
-                          badge (not mid-date "Apr 27, / 2026") when the row is
-                          tight on a narrow phone; flex-wrap on the parent lets it
-                          drop to its own line. */}
-                      <span className="text-caption text-muted-foreground whitespace-nowrap">
-                        {formatDate(r.issueDate, userLocale)}
-                      </span>
+                <div className="flex min-w-0 flex-1 items-center gap-4">
+                  <div className="flex min-w-0 flex-1 flex-col gap-1">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <Link
+                        href={`/portal/invoices/${r.invoiceId}`}
+                        className="min-w-0 truncate font-mono text-xs text-[var(--aura-fg-primary)] no-underline hover:underline focus-visible:outline-2 focus-visible:outline-offset-2"
+                        aria-label={`${t('actions.viewDetail')} ${displayNo ?? r.invoiceId}`}
+                      >
+                        {displayNo ?? '—'}
+                      </Link>
+                      <span className="shrink-0 font-semibold tabular-nums sm:hidden">{amount}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 text-xs text-[var(--aura-fg-secondary)]">
+                      <span className="min-w-0 max-sm:hidden">{metaWide}</span>
+                      <span className="min-w-0 sm:hidden">{metaNarrow}</span>
+                      <span className="shrink-0 sm:hidden">{pill}</span>
                     </div>
                   </div>
-                  <span className="shrink-0 tabular-nums text-body font-medium">
-                    {formatSatangThb(r.total?.satang ?? null, userLocale)}
-                  </span>
+                  <span className="shrink-0 max-sm:hidden">{pill}</span>
+                  <span className="w-[120px] shrink-0 text-right font-semibold tabular-nums max-sm:hidden">{amount}</span>
                 </div>
-                {/* Download row — its OWN full-width `flex-wrap` line (finding #1)
-                    so both PDFs (invoice/bill + §86/4 receipt) wrap at 320px
-                    without starving the header above. `gap-2` (finding #6);
-                    `outline` variant matches the full invoice-list card
-                    (finding #4 — ghost read as too low-discoverability). */}
                 {vm.showInvoice || vm.showReceipt ? (
-                  <div className="flex flex-wrap items-center justify-end gap-2">
+                  <div className="flex shrink-0 items-center gap-1">
                     {/* Invoice/bill PDF — hidden in combined-mode paid (the
                         stale pre-payment draft is not a legal doc; the combined
                         receipt is), matching the detail page's `showInvoicePdf`.
-                        The mainPdfKind nuance flips the label for as-paid
-                        combined/§105 receipt rows. */}
+                        Icon buttons, as the board draws them; the name is the
+                        full "Download … PDF for {number}". */}
                     {vm.showInvoice ? (
                       <PortalInvoiceDownloadButton
                         invoiceId={r.invoiceId}
                         documentNumber={displayNo ?? r.invoiceId}
+                        iconOnly
                         label={
                           r.status === 'void'
                             ? t('actions.downloadVoided')
@@ -312,22 +281,17 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
                             number: displayNo ?? r.invoiceId,
                           },
                         )}
-                        // Default size (h-9, 36px) so the download actions match
-                        // the card's "View all" header button — one button height
-                        // across the whole card (was size:'sm' + min-h-11 = 44px).
-                        className={cn(buttonVariants({ variant: 'outline' }))}
+                        className="aura-icon-btn"
                       />
                     ) : null}
-                    {/* 090 Bug 3 — §86/4 RC receipt download, shown once the row
-                        is paid + its receipt PDF has rendered (blob present).
-                        Combined-mode paid uses the dual-role label + the wrap
-                        treatment (finding #3 — the long TH "ใบกำกับภาษี /
-                        ใบเสร็จรับเงิน" would otherwise clip); separate-mode the
-                        plain "Receipt". Matches the detail page + full list. */}
+                    {/* 090 Bug 3 — §86/4 RC receipt download, once the row is
+                        paid and its receipt PDF has rendered. A separate-mode
+                        paid row keeps both buttons (FR-011). */}
                     {vm.showReceipt ? (
                       <PortalReceiptDownloadButton
                         invoiceId={r.invoiceId}
                         documentNumber={receiptRef}
+                        iconOnly
                         label={
                           vm.isCombinedPaid
                             ? t('actions.downloadCombined')
@@ -339,18 +303,7 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
                             : 'actions.downloadReceiptAria',
                           { number: receiptRef },
                         )}
-                        // Default size (h-9, 36px) to match the invoice button +
-                        // the card's "View all" header button — one button height
-                        // across the card (was size:'sm' + min-h-11 = 44px).
-                        className={cn(
-                          buttonVariants({ variant: 'outline' }),
-                          // finding #3 — the long combined dual-role label wraps
-                          // to 2 lines instead of clipping (Button defaults to
-                          // whitespace-nowrap); `h-auto` lets it grow past the
-                          // 36px base, `min-h-9` keeps the 1-line case aligned.
-                          vm.isCombinedPaid &&
-                            'h-auto min-h-9 whitespace-normal text-left py-1.5',
-                        )}
+                        className="aura-icon-btn"
                       />
                     ) : null}
                   </div>
@@ -359,8 +312,17 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
               );
             })}
           </ul>
+          <div className="border-t border-[var(--aura-border-default)] pt-3">
+            <Link
+              href="/portal/invoices"
+              className="inline-flex min-h-11 items-center gap-1.5 text-[13px] font-medium text-[var(--aura-fg-accent)] no-underline hover:text-[var(--aura-fg-primary)] hover:underline sm:min-h-0"
+            >
+              {t('summary.viewAll')}
+              <ArrowRight aria-hidden="true" size={16} className="aura-icon" />
+            </Link>
+          </div>
+          </>
         )}
-      </CardContent>
     </Card>
   );
 }

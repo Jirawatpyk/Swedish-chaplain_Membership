@@ -29,6 +29,7 @@ import { passwordPairFields, refinePasswordPair } from '@/lib/zod-i18n';
 import { toast } from '@/lib/toast';
 import { Button, FormErrorSummary, PasswordField } from '@jirawatpyk/aura-react';
 import { AuthLinkInvalid } from './auth-link-invalid';
+import { portalSignInPath } from '@/lib/portal-paths';
 import {
   PasswordStrength,
   usePasswordStrengthMeter,
@@ -59,6 +60,7 @@ export interface ResetPasswordFormProps {
 
 export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
   const t = useTranslations('auth.resetPassword');
+  const tFrame = useTranslations('auth.frame');
   const tErrors = useTranslations('errors');
   const tv = useTranslations('shared.validation');
   const router = useRouter();
@@ -157,8 +159,10 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
     // Managed focus on the alert that replaces the form (see AuthLinkInvalid).
     return (
       <AuthLinkInvalid
-        message={t('errors.tokenExpired')}
+        title={t('expiredTitle')}
+        detail={t('expiredBody')}
         action={{ label: t('requestNewLink'), href: '/forgot-password' }}
+        back={{ label: tFrame('backToSignIn'), href: portalSignInPath('member') }}
         autoFocus
       />
     );
@@ -170,16 +174,17 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
       // Native fallback POSTs so the new password stays out of the URL
       // (CWE-598; see tests/unit/auth/auth-forms-post-method.test.tsx).
       method="post"
-      className="flex flex-col gap-4"
+      className="flex flex-col gap-5"
       noValidate
       aria-busy={submitting}
     >
       <FormErrorSummary errors={errors} focusKey={submitCount} />
 
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-1.5">
         <PasswordField
           id="new-password"
           label={t('newPasswordLabel')}
+          hint={t('newPasswordHint')}
           autoComplete="new-password"
           error={errors.newPassword?.message}
           // The bar describes the field until an error replaces it (AURA adds
@@ -200,10 +205,12 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
         {...register('confirmPassword')}
       />
 
-      <div className="flex flex-col pt-2">
+      <div className="flex flex-col gap-3">
         <Button type="submit" variant="primary" loading={submitting}>
           {t('submit')}
         </Button>
+        {/* True: resetting revokes every session (reset-password.ts). */}
+        <p className="text-[13px] text-[var(--aura-fg-secondary)]">{t('signsOutNote')}</p>
       </div>
     </form>
   );

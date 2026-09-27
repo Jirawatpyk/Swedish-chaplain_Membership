@@ -13,8 +13,7 @@ import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
 import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
 import { isReadOnlyResponse } from '@/lib/http/read-only-refusal';
-import { Loader2Icon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button } from '@jirawatpyk/aura-react';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
 import { TRANSPARENCY_CHECKER_STYLE } from '@/components/shell/transparency-checker';
 import { readErrorCode } from './read-error-code';
@@ -94,26 +93,26 @@ export function DirectoryLogoControl({
     });
   }
 
+  const hasLogo = currentLogoUrl !== null;
+  // Spec 122 US3 (`Portal-directory`): the logo in a 96px tile (72px on a
+  // phone) with the hint and the buttons beside it; on a phone the buttons
+  // take the row under both.
   return (
-    <div className="space-y-3">
-      {currentLogoUrl !== null ? (
+    <div className={hasLogo ? 'grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-5 gap-y-3 max-sm:gap-x-4' : 'flex flex-col gap-3'}>
+      {hasLogo ? (
         // The fixed light checker — the logo as an email shows it, on white in
         // either theme (a themed checker hid dark logos). Same swatch as the
         // Brand settings logo preview (T155 U16, F119 UX review).
         <div
           data-testid="directory-logo-preview"
-          className="inline-block rounded-md border p-1"
+          className="flex size-24 items-center justify-center overflow-hidden rounded-[var(--aura-radius-lg)] border border-[var(--aura-border-default)] p-1.5 max-sm:size-[72px] sm:row-span-2"
           style={TRANSPARENCY_CHECKER_STYLE}
         >
           {/* eslint-disable-next-line @next/next/no-img-element -- external Blob URL; next/image remotePatterns not configured for tenant logos */}
-          <img
-            src={currentLogoUrl}
-            alt={t('logoCurrent')}
-            className="h-20 w-auto object-contain"
-          />
+          <img src={currentLogoUrl} alt={t('logoCurrent')} className="max-h-full max-w-full object-contain" />
         </div>
       ) : null}
-      <p id="dir-logo-hint" className="text-sm text-muted-foreground">
+      <p id="dir-logo-hint" className="text-[13px] text-[var(--aura-fg-secondary)] max-sm:text-xs">
         {t('logoHint')}
       </p>
       <input
@@ -125,31 +124,29 @@ export function DirectoryLogoControl({
         aria-label={t('logoUpload')}
         aria-describedby="dir-logo-hint"
       />
-      <div className="flex gap-2">
+      {/* AURA buttons (spec 122 US3): `loading` shows the spinner on the one
+          action that is running and sets aria-busy; both stay disabled while
+          either runs. */}
+      <div className={hasLogo ? 'flex flex-wrap gap-2 max-sm:col-span-2 sm:col-start-2' : 'flex flex-wrap gap-2'}>
         <Button
           type="button"
-          variant="outline"
+          variant="secondary"
+          icon="upload"
           disabled={pending}
-          aria-busy={pendingAction === 'upload'}
+          loading={pendingAction === 'upload'}
           onClick={() => inputRef.current?.click()}
           aria-describedby="dir-logo-hint"
         >
-          {pendingAction === 'upload' ? (
-            <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden />
-          ) : null}
           {t('logoUpload')}
         </Button>
-        {currentLogoUrl !== null ? (
+        {hasLogo ? (
           <Button
             type="button"
-            variant="ghost"
+            variant="danger-secondary"
             disabled={pending}
-            aria-busy={pendingAction === 'remove'}
+            loading={pendingAction === 'remove'}
             onClick={() => setRemoveOpen(true)}
           >
-            {pendingAction === 'remove' ? (
-              <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden />
-            ) : null}
             {t('logoRemove')}
           </Button>
         ) : null}

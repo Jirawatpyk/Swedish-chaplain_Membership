@@ -77,7 +77,7 @@ function renderIt(initialContactId?: string) {
 describe('AdminDataExportRequest', () => {
   it('defaults to the whole-company archive and sends no contact', async () => {
     renderIt();
-    expect(screen.getByText(en.dataExport.adminScopeCompany)).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: en.dataExport.adminScopeLabel })).toHaveTextContent(en.dataExport.adminScopeCompany);
     fireEvent.click(screen.getByRole('button', { name: 'Request export' }));
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
     expect(JSON.parse(fetchMock.mock.calls[0]![1].body as string)).toEqual({});

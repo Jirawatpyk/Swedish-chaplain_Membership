@@ -140,6 +140,17 @@ describe('<BenefitsTabs> — showBroadcastsTab F7 kill-switch (058)', () => {
     vi.useFakeTimers();
   });
 
+  it('draws AURA tabs and navigates with ?tab= when one is chosen (spec 122 US3)', async () => {
+    renderTabs({ showBroadcastsTab: true });
+    const list = screen.getByRole('tablist');
+    expect(list).toHaveClass('aura-tabs__list');
+    const broadcasts = screen.getByRole('tab', { name: /e-blasts/i });
+    expect(broadcasts).toHaveClass('aura-tab');
+    expect(screen.getByRole('tab', { name: /benefits/i })).toHaveAttribute('aria-selected', 'true');
+    fireEvent.click(broadcasts);
+    await waitFor(() => expect(replaceSpy).toHaveBeenCalledWith('/portal/benefits?tab=broadcasts'));
+  });
+
   // -------------------------------------------------------------------------
   // Case 1 — F7 ON: both tabs visible
   // -------------------------------------------------------------------------
@@ -149,7 +160,7 @@ describe('<BenefitsTabs> — showBroadcastsTab F7 kill-switch (058)', () => {
     const tabs = screen.getAllByRole('tab');
     expect(tabs).toHaveLength(2);
     expect(screen.getByRole('tab', { name: /benefits/i })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /broadcasts/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /e-blasts/i })).toBeInTheDocument();
   });
 
   it('showBroadcastsTab=true → benefits panel body is present', () => {
@@ -168,7 +179,7 @@ describe('<BenefitsTabs> — showBroadcastsTab F7 kill-switch (058)', () => {
 
   it('showBroadcastsTab=false → Broadcasts tab is NOT rendered', () => {
     renderTabs({ showBroadcastsTab: false });
-    expect(screen.queryByRole('tab', { name: /broadcasts/i })).toBeNull();
+    expect(screen.queryByRole('tab', { name: /e-blasts/i })).toBeNull();
   });
 
   // R2-4 facet 2 — RUNTIME trigger/panel suppression on the VALID F7-off arm.
@@ -178,7 +189,7 @@ describe('<BenefitsTabs> — showBroadcastsTab F7 kill-switch (058)', () => {
   // `props.showBroadcastsTab ?` guard is deleted.
   it('showBroadcastsTab=false (valid arm) → no broadcasts trigger AND no broadcasts panel', () => {
     renderTabs({ showBroadcastsTab: false });
-    expect(screen.queryByRole('tab', { name: /broadcasts/i })).toBeNull();
+    expect(screen.queryByRole('tab', { name: /e-blasts/i })).toBeNull();
     expect(screen.queryByTestId('bp')).toBeNull();
   });
 
@@ -197,7 +208,7 @@ describe('<BenefitsTabs> — showBroadcastsTab F7 kill-switch (058)', () => {
       broadcastsPanel: <div data-testid="bp">broadcasts panel</div>,
     } as never);
     expect(screen.queryByTestId('bp')).toBeNull();
-    expect(screen.queryByRole('tab', { name: /broadcasts/i })).toBeNull();
+    expect(screen.queryByRole('tab', { name: /e-blasts/i })).toBeNull();
   });
 
   // R2-4 facet 4 — POSITIVE CONTROL. Proves the suppression tests above aren't
@@ -270,7 +281,7 @@ describe('<BenefitsTabs> — showBroadcastsTab F7 kill-switch (058)', () => {
 
   it('activating the Broadcasts tab navigates to ?tab=broadcasts (replace, no ?page=)', async () => {
     renderTabs({ showBroadcastsTab: true });
-    fireEvent.click(screen.getByRole('tab', { name: /broadcasts/i }));
+    fireEvent.click(screen.getByRole('tab', { name: /e-blasts/i }));
     await waitFor(() =>
       expect(replaceSpy).toHaveBeenCalledWith('/portal/benefits?tab=broadcasts'),
     );
@@ -298,7 +309,7 @@ describe('<BenefitsTabs> — showBroadcastsTab F7 kill-switch (058)', () => {
     // If t() produced a raw key string, the tab text would contain 'benefits'
     // or 'broadcasts' literally but NOT as capitalized display strings.
     // Assert the resolved labels match the canonical en.json values.
-    expect(screen.getByRole('tab', { name: 'Benefits' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Broadcasts' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: enMessages.portal.benefits.tabs.benefits })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: enMessages.portal.benefits.tabs.broadcasts })).toBeInTheDocument();
   });
 });

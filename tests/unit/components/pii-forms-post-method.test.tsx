@@ -55,7 +55,7 @@ function formMethodOf(ui: React.ReactElement): string | null {
 
 describe('PII forms declare method="post" — rendered (CWE-598)', () => {
   it('ForgotPasswordForm posts (keeps the email out of the URL)', () => {
-    expect(formMethodOf(<ForgotPasswordForm />)).toBe('post');
+    expect(formMethodOf(<ForgotPasswordForm signInHref="/portal/sign-in" />)).toBe('post');
   });
 
   it('InviteColleagueForm posts (keeps colleague email/name out of the URL)', () => {

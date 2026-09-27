@@ -34,7 +34,7 @@ import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { useTranslations, useLocale } from 'next-intl';
-import { RelativeTime } from '@/components/ui/relative-time';
+import { RelativeTime } from '@/components/shell/relative-time';
 import {
   useReactTable,
   getCoreRowModel,

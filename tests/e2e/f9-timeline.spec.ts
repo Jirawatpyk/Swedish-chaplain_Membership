@@ -52,10 +52,13 @@ test.describe('F9 — unified multi-source timeline (US3) @f9', () => {
       page.getByRole('heading', { name: 'Timeline', level: 1 }),
     ).toBeVisible();
 
-    // Filter bar (FR-015): source + actor comboboxes present.
+    // Filter bar (FR-015): source + actor comboboxes present. On a phone
+    // Actor and the dates sit behind "More filters" (spec 122 US3 board).
     const sourceFilter = page.getByRole('combobox', { name: /source/i });
     const actorFilter = page.getByRole('combobox', { name: /actor/i });
     await expect(sourceFilter).toBeVisible();
+    const moreFilters = page.getByRole('button', { name: /more filters/i });
+    if (await moreFilters.isVisible()) await moreFilters.click();
     await expect(actorFilter).toBeVisible();
 
     // The source filter commits to the URL and the view re-renders (a stream

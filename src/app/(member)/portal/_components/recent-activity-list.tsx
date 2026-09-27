@@ -26,10 +26,16 @@ export interface RecentActivityListProps {
 
 export function RecentActivityList({ events }: RecentActivityListProps): React.ReactElement {
   return (
-    <ol className="flex flex-col gap-3">
+    // A hairline above every row, the first included (the `Main` board).
+    <ol className="flex flex-col">
       {events.map((ev, i) => (
-        <li key={ev.id} aria-setsize={events.length} aria-posinset={i + 1}>
-          <TimelineEventItem {...ev} />
+        <li
+          key={ev.id}
+          aria-setsize={events.length}
+          aria-posinset={i + 1}
+          className="border-t border-[var(--aura-border-default)]"
+        >
+          <TimelineEventItem {...ev} variant="compact" audience="member" />
         </li>
       ))}
     </ol>

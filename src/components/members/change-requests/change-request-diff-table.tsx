@@ -11,8 +11,22 @@
  * Used by the portal pending banner (US1), the decision banner + history
  * (US3/US4) and the staff record section (US4). Staff's decision table is a
  * separate component (checkboxes + three-value display).
+ *
+ * Spec 122 US3: AURA `Table` with `stackBelow="sm"` (AURA 5.8): column
+ * headers and a row header per field; below 640 px of its own width each row
+ * reads as a card, each value labelled by its column header ("Seen" /
+ * "Proposed") in the server HTML, headers kept for screen readers.
+ *
+ * `variant="plain"` is the portal boards' table (`Portal-profile`,
+ * `Portal-change-requests`): no box, mono uppercase headers, the first
+ * column flush with the text, the submitted value in the secondary colour,
+ * the tax marker as an outline chip beside the field name, an address on one
+ * line, each decided field's outcome as a pill in a Decision column, and on
+ * phones "Was" / "Proposed" labels beside the values (globals.css
+ * `.cr-diff--plain`). The staff record section keeps the boxed table.
  */
 import { useTranslations } from 'next-intl';
+import { Badge, StatusPill, Table, TBody, THead, Td, Th, Tr } from '@jirawatpyk/aura-react';
 import { ReceiptTextIcon, CheckIcon, XIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ChangeRequestFieldView } from '@/lib/change-request-portal-view';
@@ -22,61 +36,123 @@ export interface ChangeRequestDiffTableProps {
   readonly fields: readonly ChangeRequestFieldView[];
   /** Show each field's decided outcome (US3 / US4 history). */
   readonly showOutcome?: boolean;
+  /** `plain` — the member portal's boards; `boxed` (default) — the staff record section. */
+  readonly variant?: 'boxed' | 'plain';
   readonly className?: string;
 }
 
-export function ChangeRequestDiffTable({ fields, showOutcome = false, className }: ChangeRequestDiffTableProps) {
+export function ChangeRequestDiffTable({ fields, showOutcome = false, variant = 'boxed', className }: ChangeRequestDiffTableProps) {
   const t = useTranslations('portal.changeRequests.diff');
+  if (variant === 'plain') return <PlainDiffTable fields={fields} showOutcome={showOutcome} className={className} />;
 
   return (
-    <ul className={cn('divide-y divide-border rounded-md border', className)} data-testid="change-request-diff">
-      <li className="hidden gap-4 px-3 py-2 text-caption font-medium text-muted-foreground sm:grid sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,1.4fr)]" aria-hidden="true">
-        <span>{t('field')}</span>
-        {/* `seen` is the value AT SUBMISSION, not the live record — the staff
-            table shows the live one under `current` (round 5, code #1) */}
-        <span>{t('seen')}</span>
-        <span>{t('proposed')}</span>
-      </li>
-      {fields.map((f) => (
-        <li
-          key={f.key}
-          className="grid grid-cols-1 gap-2 px-3 py-3 text-sm sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,1.4fr)] sm:gap-4"
-          data-field-key={f.key}
-        >
-          <div className="font-medium">
-            <span>{t(`labels.${f.key}`)}</span>
-            {f.affectsTaxDocuments ? (
-              <span className="mt-1 flex items-center gap-1 text-caption font-normal text-amber-800 dark:text-amber-300">
-                <ReceiptTextIcon className="h-3.5 w-3.5" aria-hidden="true" />
-                {t('taxAffecting')}
-              </span>
-            ) : null}
-            {showOutcome && f.outcome ? (
-              <span
-                className={cn(
-                  'mt-1 flex items-center gap-1 text-caption font-normal',
-                  f.outcome === 'approved' ? 'text-emerald-800 dark:text-emerald-300' : 'text-destructive',
-                )}
-              >
-                {f.outcome === 'approved' ? (
-                  <CheckIcon className="h-3.5 w-3.5" aria-hidden="true" />
-                ) : (
-                  <XIcon className="h-3.5 w-3.5" aria-hidden="true" />
-                )}
-                {t(`outcome.${f.outcome}`)}
-              </span>
-            ) : null}
-          </div>
-          <div>
-            <span className="text-caption text-muted-foreground sm:sr-only">{t('seen')}: </span>
-            <ProposedValueDisplay fieldKey={f.key} value={f.seen} />
-          </div>
-          <div>
-            <span className="text-caption text-muted-foreground sm:sr-only">{t('proposed')}: </span>
-            <ProposedValueDisplay fieldKey={f.key} value={f.proposed} />
-          </div>
-        </li>
-      ))}
-    </ul>
+    <div className={className} data-testid="change-request-diff">
+      <Table stackBelow="sm">
+        <THead>
+          <Tr>
+            <Th className="text-[var(--aura-fg-secondary)]">{t('field')}</Th>
+            {/* `seen` is the value AT SUBMISSION, not the live record — the staff
+                table shows the live one under `current` (round 5, code #1) */}
+            <Th className="text-[var(--aura-fg-secondary)]">{t('seen')}</Th>
+            <Th className="text-[var(--aura-fg-secondary)]">{t('proposed')}</Th>
+          </Tr>
+        </THead>
+        <TBody>
+          {fields.map((f) => (
+            <Tr key={f.key} data-field-key={f.key}>
+              <Th scope="row" className="sm:w-[28%]">
+                <span>{t(`labels.${f.key}`)}</span>
+                {f.affectsTaxDocuments ? (
+                  <span className="mt-1 flex items-center gap-1 text-xs font-normal text-[var(--aura-alert-warning-fg)]">
+                    <ReceiptTextIcon className="h-3.5 w-3.5" aria-hidden="true" />
+                    {t('taxAffecting')}
+                  </span>
+                ) : null}
+                {showOutcome && f.outcome ? (
+                  <span
+                    className={cn(
+                      'mt-1 flex items-center gap-1 text-xs font-normal',
+                      f.outcome === 'approved' ? 'text-[var(--aura-fg-positive)]' : 'text-[var(--aura-fg-danger)]',
+                    )}
+                  >
+                    {f.outcome === 'approved' ? (
+                      <CheckIcon className="h-3.5 w-3.5" aria-hidden="true" />
+                    ) : (
+                      <XIcon className="h-3.5 w-3.5" aria-hidden="true" />
+                    )}
+                    {t(`outcome.${f.outcome}`)}
+                  </span>
+                ) : null}
+              </Th>
+              <Td>
+                <ProposedValueDisplay fieldKey={f.key} value={f.seen} />
+              </Td>
+              <Td>
+                <ProposedValueDisplay fieldKey={f.key} value={f.proposed} />
+              </Td>
+            </Tr>
+          ))}
+        </TBody>
+      </Table>
+    </div>
+  );
+}
+
+function PlainDiffTable({
+  fields,
+  showOutcome,
+  className,
+}: {
+  readonly fields: readonly ChangeRequestFieldView[];
+  readonly showOutcome: boolean;
+  readonly className?: string | undefined;
+}) {
+  const t = useTranslations('portal.changeRequests.diff');
+  const decided = showOutcome && fields.some((f) => f.outcome);
+  return (
+    <div className={cn('cr-diff--plain', className)} data-testid="change-request-diff">
+      <Table stackBelow="sm">
+        <THead>
+          <Tr>
+            <Th>{t('field')}</Th>
+            <Th>{t('seen')}</Th>
+            <Th>{t('proposed')}</Th>
+            {decided ? <Th>{t('decision')}</Th> : null}
+          </Tr>
+        </THead>
+        <TBody>
+          {fields.map((f) => (
+            <Tr key={f.key} data-field-key={f.key}>
+              <Th scope="row" className="sm:w-[26%]">
+                <span className="inline-flex flex-wrap items-center gap-1.5">
+                  <span>{t(`labels.${f.key}`)}</span>
+                  {/* Still text, never colour alone (FR-034). */}
+                  {f.affectsTaxDocuments ? <Badge variant="outline">{t('taxAffecting')}</Badge> : null}
+                  {/* The phone boards put the outcome beside the name. */}
+                  {decided && f.outcome ? (
+                    <span className="sm:hidden">
+                      <StatusPill tone={f.outcome === 'approved' ? 'ready' : 'blocked'}>{t(`outcome.${f.outcome}`)}</StatusPill>
+                    </span>
+                  ) : null}
+                </span>
+              </Th>
+              <Td label={t('wasShort')} className="text-[var(--aura-fg-secondary)]">
+                <ProposedValueDisplay fieldKey={f.key} value={f.seen} inline />
+              </Td>
+              <Td label={t('proposed')}>
+                <ProposedValueDisplay fieldKey={f.key} value={f.proposed} inline />
+              </Td>
+              {decided ? (
+                <Td className="max-sm:hidden">
+                  {f.outcome ? (
+                    <StatusPill tone={f.outcome === 'approved' ? 'ready' : 'blocked'}>{t(`outcome.${f.outcome}`)}</StatusPill>
+                  ) : null}
+                </Td>
+              ) : null}
+            </Tr>
+          ))}
+        </TBody>
+      </Table>
+    </div>
   );
 }

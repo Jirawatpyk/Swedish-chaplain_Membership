@@ -23,7 +23,6 @@ export function ThemeToggle({ className }: { readonly className?: string } = {})
       trigger={
         <IconButton
           label={t('label')}
-          size="md"
           {...(className ? { className } : {})}
           // Sun in light, moon in dark — by CSS, so the server's HTML is right
           // before next-themes knows the resolved theme (no hydration flip).

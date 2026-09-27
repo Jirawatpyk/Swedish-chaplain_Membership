@@ -2,11 +2,9 @@ import { Suspense } from 'react';
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
 import { PackageOpen } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { buttonVariants } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
-import { cn } from '@/lib/utils';
+import { Badge, StatusPill, buttonClass } from '@jirawatpyk/aura-react/server';
+import { EmptyState } from '@/components/shell/empty-state';
+import { SkeletonBlock } from '@/components/shell/page-skeletons';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { requireSession } from '@/lib/auth-session';
@@ -22,6 +20,7 @@ import {
 import { OutstandingStatSection } from '../_components/outstanding-stat-section';
 import { BenefitsStatSection } from '../_components/benefits-stat-section';
 import { BenefitsPanelSection } from '../_components/benefits-panel-section';
+import { MembershipInvoiceAlertSection } from '../_components/membership-invoice-alert-section';
 import {
   RecentActivitySection,
   RecentActivitySkeleton,
@@ -65,24 +64,21 @@ export default async function MemberPortalHomePage() {
         <PageHeader
           title={t('welcome', { name: user.displayName ?? user.email })}
           subtitle={t('intro')}
+        size="hero"
         />
-        <Card>
-          <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
-            <PackageOpen aria-hidden="true" className="size-10 text-muted-foreground/60" />
-            <p className="text-lg font-semibold">
-              {t('firstRun.title', {
-                tenant: process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham',
-              })}
-            </p>
-            <p className="max-w-prose text-sm text-muted-foreground">{t('firstRun.body')}</p>
-            <Link
-              href={PORTAL_BENEFITS_HREF}
-              className={cn(buttonVariants({ variant: 'default' }), 'min-h-11')}
-            >
+        <EmptyState
+          bordered
+          icon={PackageOpen}
+          title={t('firstRun.title', {
+            tenant: process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham',
+          })}
+          description={t('firstRun.body')}
+          action={
+            <Link href={PORTAL_BENEFITS_HREF} className={buttonClass()}>
               {t('firstRun.exploreBenefits')}
             </Link>
-          </CardContent>
-        </Card>
+          }
+        />
       </DetailContainer>
     );
   }
@@ -118,21 +114,33 @@ export default async function MemberPortalHomePage() {
       <PageHeader
         title={t('welcome', { name: user.displayName ?? user.email })}
         subtitle={t('intro')}
-        badge={
-          <span className="flex flex-wrap items-center gap-2">
+        size="hero"
+        meta={
+          <>
             <Badge variant="outline" className="font-mono">
               {memberNumberLabel}
             </Badge>
-            {/* 063 UX — membership tier (e.g. "Diamond Partnership"). Filled
-                brand badge so the member's level reads as the headline of the
+            {/* 063 UX — membership tier (e.g. "Diamond Partnership"). Solid
+                badge so the member's level reads as the headline of the
                 three chips. Omitted when the plan row can't be resolved. */}
             {planDisplayName !== null && (
-              <Badge variant="default">{planDisplayName}</Badge>
+              <Badge tone="accent" variant="solid">{planDisplayName}</Badge>
             )}
-            <Badge variant="secondary">{t(`statusChip.${statusChipKey}`)}</Badge>
-          </span>
+            {/* Neutral whatever the status: this is the RECORD's status, and a
+                lapsed member's record is still active — green would read as
+                "your membership is fine" above the lapsed card. */}
+            <StatusPill tone="neutral">
+              {t(`statusChip.${statusChipKey}`)}
+            </StatusPill>
+          </>
         }
       />
+
+      {/* Spec 122 US3 (`Main` board): the unpaid membership invoice leads the
+          page, with Pay now. Its own boundary; renders nothing when none is due. */}
+      <Suspense fallback={null}>
+        <MembershipInvoiceAlertSection tenantId={tenant.slug} memberId={memberId} />
+      </Suspense>
 
       {/* 3 stat cards — 1 col mobile, 3-up desktop. Each in its own Suspense
           boundary so a slow read never blocks the others. The sections share
@@ -168,16 +176,16 @@ export default async function MemberPortalHomePage() {
   );
 }
 
-/** Shimmer placeholder for the 2-col benefits quota panel while it streams. */
+/** Placeholder for the 2-col benefits quota panel while it streams. */
 function BenefitsPanelSkeleton(): React.JSX.Element {
   return (
-    <Card aria-busy="true" aria-hidden="true">
-      <CardContent className="flex flex-col gap-4 py-5">
-        <Skeleton className="h-5 w-40" />
-        <Skeleton className="h-3 w-full" />
-        <Skeleton className="h-3 w-5/6" />
-        <Skeleton className="h-3 w-2/3" />
-      </CardContent>
-    </Card>
+    <div aria-busy="true" aria-hidden="true" className="aura-card">
+      <div className="aura-card__body flex flex-col gap-4">
+        <SkeletonBlock className="h-5 w-40" />
+        <SkeletonBlock className="h-3 w-full" />
+        <SkeletonBlock className="h-3 w-5/6" />
+        <SkeletonBlock className="h-3 w-2/3" />
+      </div>
+    </div>
   );
 }

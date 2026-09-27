@@ -17,7 +17,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Badge } from '@/components/ui/badge';
-import { RelativeTime } from '@/components/ui/relative-time';
+import { RelativeTime } from '@/components/shell/relative-time';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import {

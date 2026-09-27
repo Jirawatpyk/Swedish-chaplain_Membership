@@ -416,19 +416,15 @@ export function buildBreadcrumbStaticLabels(
   return result;
 }
 
-export type TruncatedBreadcrumb = {
-  visible: BreadcrumbSegment[];
-  hasEllipsis: boolean;
-};
-
-export function truncateForMobile(
-  segments: BreadcrumbSegment[],
-): TruncatedBreadcrumb {
-  if (segments.length <= 2) {
-    return { visible: segments, hasEllipsis: false };
+/**
+ * Spec 122 — the page a phone "← Parent" link goes back to: the nearest
+ * ancestor of the current page that has a page of its own. Null on a
+ * top-level page (nothing to go back to).
+ */
+export function backLinkTarget(segments: readonly BreadcrumbSegment[]): BreadcrumbSegment | null {
+  for (let i = segments.length - 2; i >= 0; i -= 1) {
+    const seg = segments[i]!;
+    if (seg.isLinkable) return seg;
   }
-  return {
-    visible: segments.slice(-2),
-    hasEllipsis: true,
-  };
+  return null;
 }

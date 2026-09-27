@@ -28,3 +28,26 @@ export const STATUS_VARIANT = {
 export function exportStatusVariant(status: ExportStatus): BadgeVariant {
   return STATUS_VARIANT[status];
 }
+
+/**
+ * Spec 122 US3 — the same statuses as AURA StatusPill tones, for the AURA
+ * panels (the `Portal-account` boards): in flight = progress ("Preparing"),
+ * ready/delivered = ready, failed = blocked, and expired = neutral — a link
+ * that timed out is the normal end of an export, not a failure. Same
+ * `satisfies` guard as the map above.
+ */
+export type ExportStatusTone = 'neutral' | 'progress' | 'ready' | 'blocked';
+
+export const STATUS_TONE = {
+  requested: 'progress',
+  processing: 'progress',
+  ready: 'ready',
+  delivered: 'ready',
+  expired: 'neutral',
+  failed: 'blocked',
+} as const satisfies Record<ExportStatus, ExportStatusTone>;
+
+/** Maps an export status to its AURA StatusPill tone. */
+export function exportStatusTone(status: ExportStatus): ExportStatusTone {
+  return STATUS_TONE[status];
+}

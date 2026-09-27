@@ -44,8 +44,8 @@ describe('<BenefitUsageCard>', () => {
     renderCard();
     const link = screen.getByRole('link', { name: /compose/i });
     expect(link).toHaveAttribute('href', '/portal/benefits/e-blasts');
-    // SR-context: the accessible name names the benefit, not bare "Compose".
-    expect(link).toHaveAccessibleName(/e-blasts/i);
+    // SR-context: the name names the benefit ("Compose E-Blast"), not bare "Compose".
+    expect(link).toHaveAccessibleName(/e-blast/i);
   });
 
   it('AS-1: shows the used/entitlement readout + last-used date', () => {
@@ -56,7 +56,7 @@ describe('<BenefitUsageCard>', () => {
 
   it('AS-3: active benefits render as badges (no numeric quota)', () => {
     renderCard();
-    expect(screen.getByText('Directory listing')).toBeInTheDocument();
+    expect(screen.getByText('Directory E-Book listing')).toBeInTheDocument();
   });
 
   it('AS-2: the under-use warning renders only when flagged', () => {
@@ -155,7 +155,7 @@ describe('<BenefitUsageCard>', () => {
 
   it('compact: hides the active-benefits badge section (summary stays tight)', () => {
     renderCard({ compact: true, active: [{ key: 'directory_listing' }] });
-    expect(screen.queryByText('Directory listing')).not.toBeInTheDocument();
+    expect(screen.queryByText('Directory E-Book listing')).not.toBeInTheDocument();
   });
 
   // --- 059-membership-suspension Task 18 — suspended-membership badge -----
@@ -181,15 +181,43 @@ describe('<BenefitUsageCard>', () => {
 
     it('uses an amber (warning) colour token, never destructive red', () => {
       renderCard({ suspended: true });
-      const badge = screen.getByText('Suspended').closest('span[class]');
+      // AURA badge tones (spec 122 US3): warning, never danger.
+      const badge = screen.getByText('Suspended').closest('.aura-badge');
       expect(badge).not.toBeNull();
-      expect(badge?.className).toMatch(/text-warning/);
-      expect(badge?.className).not.toMatch(/text-destructive/);
+      expect(badge).toHaveClass('aura-badge--warning');
+      expect(badge).not.toHaveClass('aura-badge--danger');
     });
 
     it('renders in compact mode too (inline member-detail preview surface)', () => {
       renderCard({ compact: true, suspended: true });
       expect(screen.getByText('Suspended')).toBeInTheDocument();
+    });
+  });
+
+  describe('on AURA (spec 122 US3)', () => {
+    it('is an AURA card with AURA progress bars, badges and a warning alert', () => {
+      renderCard({ underUseWarning: true });
+      const card = screen.getByTestId('benefit-usage-card');
+      expect(card).toHaveClass('aura-card');
+      expect(screen.getByRole('progressbar').closest('.aura-progress')).not.toBeNull();
+      expect(screen.getByText('Directory E-Book listing')).toHaveClass('aura-badge');
+      expect(screen.getByText(/not using all your benefits/i).closest('.aura-alert')).toHaveClass(
+        'aura-alert--warning',
+      );
+    });
+
+    it('compact: "Full benefits" is a footer link, as on the Main board', () => {
+      renderCard({ compact: true, previewHref: '/portal/benefits' });
+      const link = screen.getByRole('link', { name: /full benefits/i });
+      expect(link).toHaveAttribute('href', '/portal/benefits');
+      expect(link.closest('.aura-card__foot')).not.toBeNull();
+    });
+
+    it('marks a suspended member with an AURA warning badge that is not colour-only', () => {
+      renderCard({ suspended: true });
+      const badge = screen.getByText(enMessages.benefits.card.suspendedBadge).closest('.aura-badge');
+      expect(badge).toHaveClass('aura-badge--warning');
+      expect(badge?.querySelector('svg')).not.toBeNull();
     });
   });
 });

@@ -64,6 +64,7 @@ export default async function StaffSignInPage({ searchParams }: StaffSignInPageP
       description={t('cardDescription')}
       portalLabel={t('cardDescription')}
       tenantName={tenantName}
+      variant="sign-in"
     >
       {showSecurityBanner ? <SecurityUpdateBanner message={t('securityUpdateBanner')} /> : null}
       <SignInForm portal="staff" returnTo={validatedReturnTo} />

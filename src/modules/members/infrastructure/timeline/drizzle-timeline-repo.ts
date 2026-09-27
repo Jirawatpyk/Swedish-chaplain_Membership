@@ -23,7 +23,7 @@
  * strips them from the returned payload, and keeps the F3 plan-name
  * enrichment so the audit half renders exactly as before.
  */
-import { sql, inArray } from 'drizzle-orm';
+import { sql, inArray, type SQL } from 'drizzle-orm';
 import { ok, err } from '@/lib/result';
 import { runInTenant, db } from '@/lib/db';
 import { insightsMetrics } from '@/lib/metrics';
@@ -116,6 +116,99 @@ function nonAuditEventKind(
     default:
       return 'updated';
   }
+}
+
+type RowReference = Readonly<Record<string, string>>;
+type SqlExecutor = { execute: (query: SQL) => Promise<unknown> };
+
+const uuidList = (ids: readonly string[]) =>
+  sql`ARRAY[${sql.join(ids.map((id) => sql`${id}`), sql`, `)}]::uuid[]`;
+const textList = (ids: readonly string[]) =>
+  sql`ARRAY[${sql.join(ids.map((id) => sql`${id}`), sql`, `)}]::text[]`;
+
+const str = (v: unknown): string | null => (typeof v === 'string' && v.length > 0 ? v : null);
+
+/**
+ * `source|ref_id` → the fields the row shows beside its label. Keys never
+ * match the money-shape probe (`*_satang`, `*_thb`, price, amount), and the
+ * money sources are already dropped upstream for a viewer without
+ * `invoicing.read`.
+ */
+async function loadRowReferences(
+  tx: SqlExecutor,
+  tenantId: string,
+  rows: readonly ViewRow[],
+): Promise<Map<string, RowReference>> {
+  const out = new Map<string, RowReference>();
+  const ids = (source: TimelineSource, pick: (r: ViewRow) => unknown, uuid: boolean) =>
+    Array.from(
+      new Set(
+        rows
+          .filter((r) => r.source === source)
+          .map(pick)
+          .filter((v): v is string => typeof v === 'string' && (!uuid || UUID_RE.test(v))),
+      ),
+    );
+  const run = async (query: SQL) => (await tx.execute(query)) as unknown as Array<Record<string, unknown>>;
+
+  const invoiceIds = ids('invoice', (r) => r.ref_id, true);
+  if (invoiceIds.length > 0) {
+    for (const r of await run(sql`
+      SELECT invoice_id::text AS id, COALESCE(bill_document_number_raw, document_number) AS document_number
+      FROM invoices WHERE tenant_id = ${tenantId} AND invoice_id = ANY(${uuidList(invoiceIds)})`)) {
+      const id = str(r.id);
+      const number = str(r.document_number);
+      if (id && number) out.set(`invoice|${id}`, { document_number: number });
+    }
+  }
+
+  const paymentIds = ids('payment', (r) => r.ref_id, false);
+  if (paymentIds.length > 0) {
+    for (const r of await run(sql`
+      SELECT p.id AS id, p.method AS method, COALESCE(i.bill_document_number_raw, i.document_number) AS document_number
+      FROM payments p
+      LEFT JOIN invoices i ON i.tenant_id = p.tenant_id AND i.invoice_id = p.invoice_id
+      WHERE p.tenant_id = ${tenantId} AND p.id = ANY(${textList(paymentIds)})`)) {
+      const id = str(r.id);
+      if (!id) continue;
+      const ref: Record<string, string> = {};
+      const method = str(r.method);
+      const number = str(r.document_number);
+      if (method) ref.payment_method = method;
+      if (number) ref.document_number = number;
+      out.set(`payment|${id}`, ref);
+    }
+  }
+
+  const eventRows = rows.filter((r) => r.source === 'event');
+  const eventIds = ids('event', (r) => r.payload?.event_id, true);
+  if (eventIds.length > 0) {
+    const names = new Map<string, string>();
+    for (const r of await run(sql`
+      SELECT event_id::text AS id, name FROM events
+      WHERE tenant_id = ${tenantId} AND event_id = ANY(${uuidList(eventIds)})`)) {
+      const id = str(r.id);
+      const name = str(r.name);
+      if (id && name) names.set(id, name);
+    }
+    for (const r of eventRows) {
+      const name = names.get(String(r.payload?.event_id ?? ''));
+      if (name) out.set(`event|${r.ref_id}`, { event_name: name });
+    }
+  }
+
+  const broadcastIds = ids('broadcast', (r) => r.ref_id, true);
+  if (broadcastIds.length > 0) {
+    for (const r of await run(sql`
+      SELECT broadcast_id::text AS id, subject FROM broadcasts
+      WHERE tenant_id = ${tenantId} AND broadcast_id = ANY(${uuidList(broadcastIds)})`)) {
+      const id = str(r.id);
+      const subject = str(r.subject);
+      if (id && subject) out.set(`broadcast|${id}`, { broadcast_subject: subject });
+    }
+  }
+
+  return out;
 }
 
 export const drizzleTimelineRepo: TimelinePort = {
@@ -286,6 +379,15 @@ export const drizzleTimelineRepo: TimelinePort = {
           return planMap.get(`${id}|${yearNum}`) ?? planMap.get(`${id}|0`);
         };
 
+        // --- row references (non-audit rows) ---------------------------
+        // Spec 122 US3 (`Portal-timeline` board): the view carries only ids for
+        // these sources, so each row's human reference — the invoice number (bill number first, as `billFirstDocumentNumber`),
+        // the payment's method and the invoice it paid, the event's name, the
+        // E-Blast's subject — is looked up once per source for the whole page,
+        // on `tx` (RLS) and with the explicit tenant predicate as well. Ids are
+        // UUID-checked before they reach a `::uuid[]` cast.
+        const refs = await loadRowReferences(tx, ctx.slug, pageRows);
+
         // --- map rows → TimelineEvent -----------------------------------
         const events: TimelineEvent[] = pageRows.map((row) => {
           // Guard the union discriminants at the view boundary — a migration
@@ -333,6 +435,7 @@ export const drizzleTimelineRepo: TimelinePort = {
           // Non-audit sources: no single acting user → the discriminated
           // union omits `actorUserId`; the UI renders a localized actor-kind
           // label from `actorKind`.
+          const ref = refs.get(`${row.source}|${row.ref_id}`);
           return {
             id: row.ref_id,
             timestamp: new Date(row.occurred_at_iso),
@@ -340,7 +443,7 @@ export const drizzleTimelineRepo: TimelinePort = {
             eventType: nonAuditEventKind(row.source, rawPayload),
             actorKind: row.actor_kind,
             actorDisplayName: null,
-            payload: rawPayload,
+            payload: ref ? { ...(rawPayload ?? {}), ...ref } : rawPayload,
           };
         });
 

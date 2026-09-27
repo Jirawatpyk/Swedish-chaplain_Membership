@@ -25,13 +25,15 @@
 
 import { useEffect, useRef, useState, useTransition } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import { toast } from '@/lib/toast';
 import { History as HistoryIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button } from '@jirawatpyk/aura-react';
 import { EmptyState } from '@/components/shell/empty-state';
 import { TimelineEventItem, type TimelineItemProps } from './timeline-event-item';
+import { cn } from '@/lib/utils';
+import { formatTimelineMonth, timelineGroup, timelineGroupKey } from '@/lib/timeline-groups';
 
 const VIRTUALIZE_THRESHOLD = 40;
 
@@ -55,6 +57,8 @@ export type TimelineStreamProps = {
   /** Localized empty-state copy (filtered vs unfiltered chosen by the page). */
   readonly emptyLabel: string;
   readonly listLabel: string;
+  /** `member` on the portal: audit rows use the member wording (see `TimelineItemProps.audience`). */
+  readonly audience?: TimelineItemProps['audience'];
 };
 
 export function TimelineStream({
@@ -63,6 +67,7 @@ export function TimelineStream({
   initialCursor,
   emptyLabel,
   listLabel,
+  audience = 'staff',
 }: TimelineStreamProps) {
   const t = useTranslations('timeline.page');
   const searchParams = useSearchParams();
@@ -132,19 +137,26 @@ export function TimelineStream({
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-2 sm:gap-3">
+      {/* the Portal-timeline boards' caption: how many rows, and whose clock —
+          on phones also which filters sit behind "More filters" */}
+      <p className="text-xs text-[var(--aura-fg-secondary)] sm:text-[13px]">
+        {t('caption', { count: events.length })}
+        <span className="sm:hidden">. {t('captionMoreFilters')}</span>
+      </p>
       {events.length > VIRTUALIZE_THRESHOLD ? (
         <VirtualizedList
           events={events}
           listLabel={listLabel}
           isBusy={isPending}
           scrollTarget={scrollTarget}
+          audience={audience}
         />
       ) : (
         <ol className="flex flex-col" aria-busy={isPending} aria-label={listLabel}>
           {events.map((e, i) => (
             <li key={e.id} aria-setsize={events.length} aria-posinset={i + 1}>
-              <TimelineEventItem {...e} />
+              <TimelineRow events={events} index={i} audience={audience} />
             </li>
           ))}
         </ol>
@@ -159,13 +171,8 @@ export function TimelineStream({
 
       {cursor !== null && (
         <div className="flex justify-center pt-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={loadMore}
-            disabled={isPending}
-            className="min-h-11"
-          >
+          {/* AURA secondary, md = 44px touch target, full width on phones (spec 122 US3) */}
+          <Button variant="secondary" className="max-sm:w-full" onClick={loadMore} loading={isPending}>
             {isPending ? t('loading') : t('loadMore')}
           </Button>
         </div>
@@ -184,12 +191,14 @@ function VirtualizedList({
   listLabel,
   isBusy,
   scrollTarget,
+  audience,
 }: {
   readonly events: readonly TimelineItemProps[];
   readonly listLabel: string;
   readonly isBusy: boolean;
   /** Index of the first row appended by the last load-more (scroll into view). */
   readonly scrollTarget: number | null;
+  readonly audience: NonNullable<TimelineItemProps['audience']>;
 }) {
   const listRef = useRef<HTMLDivElement>(null);
   // The list's document offset feeds the window virtualizer. Reading
@@ -240,10 +249,59 @@ function VirtualizedList({
               transform: `translateY(${vi.start - scrollMargin}px)`,
             }}
           >
-            <TimelineEventItem {...event} />
+            <TimelineRow events={events} index={vi.index} audience={audience} />
           </div>
         );
       })}
     </div>
+  );
+}
+
+/**
+ * One row, under a heading when it opens a group (spec 122 US3, the
+ * `Portal-timeline` boards): "Today", "This month", then each earlier month.
+ * The heading sits inside the row so the virtualized list gets it too.
+ */
+function TimelineRow({
+  events,
+  index,
+  audience,
+}: {
+  readonly events: readonly TimelineItemProps[];
+  readonly index: number;
+  readonly audience: NonNullable<TimelineItemProps['audience']>;
+}) {
+  const t = useTranslations('timeline.page');
+  const locale = useLocale();
+  const event = events[index]!;
+  const group = timelineGroup(event.timestamp);
+  const previous = index > 0 ? events[index - 1] : undefined;
+  const opensGroup =
+    !previous || timelineGroupKey(timelineGroup(previous.timestamp)) !== timelineGroupKey(group);
+  const heading =
+    group?.kind === 'today'
+      ? t('groupToday')
+      : group?.kind === 'thisMonth'
+        ? t('groupThisMonth')
+        : group?.kind === 'month'
+          ? formatTimelineMonth(group.month, locale)
+          : null;
+  return (
+    <>
+      {opensGroup && heading ? (
+        <h2
+          className={cn(
+            // the boards: 11px mono, 16px above every group (the first too), 4px below
+            'pt-4 pb-1 font-mono text-[11px] font-normal uppercase tracking-[0.04em] text-[var(--aura-fg-secondary)]',
+          )}
+          suppressHydrationWarning
+        >
+          {heading}
+        </h2>
+      ) : null}
+      <div className="border-t border-[var(--aura-border-default)]">
+        <TimelineEventItem {...event} audience={audience} />
+      </div>
+    </>
   );
 }

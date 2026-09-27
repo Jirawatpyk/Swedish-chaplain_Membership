@@ -1,33 +1,17 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { Loader2Icon } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { useForm, Controller } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from '@/lib/toast';
 import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
 import { isReadOnlyRefusal } from '@/lib/http/read-only-refusal';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { EmailInput } from '@/components/ui/email-input';
-import { Label } from '@/components/ui/label';
-import { RequiredMark } from '@/components/ui/required-mark';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  TranslatedSelectValue,
-} from '@/components/ui/select';
+import { SendIcon } from 'lucide-react';
+import { Button, FormErrorSummary, Select, TextField } from '@jirawatpyk/aura-react';
+import { Alert, Card } from '@jirawatpyk/aura-react/server';
 import {
   boundedText,
   emailText,
@@ -39,7 +23,19 @@ import {
  * Invite colleague form — US5 AS4 (T125).
  *
  * Primary contact invites a secondary contact via F1 invitation flow.
+ *
+ * Spec 122 US3 (`Portal-contacts-invite`): AURA card, fields and Select;
+ * `FormErrorSummary` after a failed submit (client or server field errors —
+ * it takes focus, so server errors no longer call `setFocus`). The card
+ * opens with what a colleague can do, marks the one optional field (the
+ * required ones stay `aria-required`), says where the colleague's details
+ * are kept, and ends with Cancel + Send as plain buttons (decision
+ * 2026-09-27: full width with Send on top below 640 px).
  */
+export interface InviteColleagueFormProps {
+  /** The tenant's privacy notice; null → the note names it without a link (never a dead link). */
+  readonly privacyNoticeHref?: string | null;
+}
 
 function buildInviteSchema(tv: Translator) {
   return z.object({
@@ -53,7 +49,7 @@ function buildInviteSchema(tv: Translator) {
 
 type InviteFormValues = z.infer<ReturnType<typeof buildInviteSchema>>;
 
-export function InviteColleagueForm() {
+export function InviteColleagueForm({ privacyNoticeHref = null }: InviteColleagueFormProps = {}) {
   const t = useTranslations('portal.invite');
   const readOnlyToast = useReadOnlyToast();
   const tLang = useTranslations('common');
@@ -75,16 +71,12 @@ export function InviteColleagueForm() {
       role_title: '',
       preferred_language: 'en',
     },
+    // the error summary takes focus after a failed submit, not the field
+    shouldFocusError: false,
   });
 
-  const { errors } = form.formState;
-
-  // Auto-focus the primary input on mount (ux-standards § 7.2), matching the
-  // auth/PII forms (forgot-password, sign-in, …).
-  const { setFocus } = form;
-  useEffect(() => {
-    setFocus('first_name');
-  }, [setFocus]);
+  const { errors, submitCount } = form.formState;
+  const firstName = useWatch({ control: form.control, name: 'first_name' }).trim();
 
   const onSubmit = async (values: InviteFormValues) => {
     setSubmitting(true);
@@ -111,22 +103,20 @@ export function InviteColleagueForm() {
         }
         const code = data?.error?.code;
         if (code === 'email_taken') {
-          // Field-scoped — surface inline on the email input (+ focus) rather
-          // than a transient toast (audit XF-01). Only returned when the
+          // Field-scoped — surface inline on the email input (and in the error
+          // summary, which takes focus) rather than a transient toast (audit
+          // XF-01). Only returned when the
           // address is already a contact of the member's OWN company.
           form.setError('email', { type: 'server', message: t('emailTaken') });
-          form.setFocus('email');
         } else if (code === 'invite_unavailable') {
           // Neutral on purpose (account-enumeration guard): the server does
           // not say WHY this address can't be invited, so neither do we.
           form.setError('email', { type: 'server', message: t('inviteUnavailable') });
-          form.setFocus('email');
         } else if (code === 'invalid_email') {
           // Field-scoped like email_taken — the server rejected the address,
-          // so highlight the email input (+ focus) with a LOCALISED message
+          // so highlight the email input (the summary takes focus) with a LOCALISED message
           // instead of toasting the server's raw "Invalid email address".
           form.setError('email', { type: 'server', message: t('invalidEmail') });
-          form.setFocus('email');
         } else if (code === 'forbidden') {
           toast.error(t('notPrimary'));
         } else if (code === 'link_failed') {
@@ -154,120 +144,96 @@ export function InviteColleagueForm() {
     }
   };
 
+  const privacyLink = (chunks: React.ReactNode) =>
+    privacyNoticeHref ? (
+      <a
+        href={privacyNoticeHref}
+        target="_blank"
+        rel="noreferrer"
+        className="text-[var(--aura-fg-accent)] underline underline-offset-4 hover:text-[var(--aura-fg-primary)]"
+      >
+        {chunks}
+      </a>
+    ) : (
+      chunks
+    );
+
   return (
-    <form onSubmit={form.handleSubmit(onSubmit)} method="post" noValidate>
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('formTitle')}</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <Label htmlFor="first_name">
-              {t('fields.firstName')} <RequiredMark />
-            </Label>
-            <Input
+    <form onSubmit={form.handleSubmit(onSubmit)} method="post" noValidate className="flex flex-col gap-4">
+      <FormErrorSummary errors={errors} focusKey={submitCount} />
+      <Card title={t('formTitle')} titleId="invite-colleague-heading" headingLevel={2}>
+        <div className="flex flex-col gap-4">
+          <Alert tone="info" role="note" title={t('capabilities.title')}>
+            {t('capabilities.body')}
+          </Alert>
+          <div className="grid gap-3.5 sm:grid-cols-2 sm:gap-4">
+            {/* Focused on mount (ux-standards § 7.2), like the auth / PII forms.
+                `autoFocus`, not an effect calling setFocus: a late effect could
+                pull focus back off the error summary. Required without the
+                asterisk (the board marks the optional field instead). */}
+            <TextField
               id="first_name"
+              label={t('fields.firstName')}
+              aria-required
+              autoFocus
               autoComplete="given-name"
-              aria-required="true"
-              aria-invalid={Boolean(errors.first_name)}
-              aria-describedby={errors.first_name ? 'first_name-error' : undefined}
+              error={errors.first_name?.message}
               {...form.register('first_name')}
             />
-            {errors.first_name && (
-              <p id="first_name-error" role="alert" className="mt-1 text-caption text-destructive">
-                {errors.first_name.message}
-              </p>
-            )}
-          </div>
-          <div>
-            <Label htmlFor="last_name">
-              {t('fields.lastName')} <RequiredMark />
-            </Label>
-            <Input
+            <TextField
               id="last_name"
+              label={t('fields.lastName')}
+              aria-required
               autoComplete="family-name"
-              aria-required="true"
-              aria-invalid={Boolean(errors.last_name)}
-              aria-describedby={errors.last_name ? 'last_name-error' : undefined}
+              error={errors.last_name?.message}
               {...form.register('last_name')}
             />
-            {errors.last_name && (
-              <p id="last_name-error" role="alert" className="mt-1 text-caption text-destructive">
-                {errors.last_name.message}
-              </p>
-            )}
-          </div>
-          <div className="sm:col-span-2">
-            <Label htmlFor="email">
-              {t('fields.email')} <RequiredMark />
-            </Label>
-            <EmailInput
+            {/* type + inputMode + autoComplete: the @-keyboard on phones
+                (ux-standards § 11.2, audit XF-06) — what EmailInput baked in */}
+            <TextField
               id="email"
-              aria-required="true"
-              aria-invalid={Boolean(errors.email)}
-              aria-describedby={errors.email ? 'email-error' : undefined}
+              className="sm:col-span-2"
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              label={t('fields.email')}
+              hint={t('emailHint')}
+              aria-required
+              error={errors.email?.message}
               {...form.register('email')}
             />
-            {errors.email && (
-              <p id="email-error" role="alert" className="mt-1 text-caption text-destructive">
-                {errors.email.message}
-              </p>
-            )}
-          </div>
-          <div>
-            <Label htmlFor="role_title">{t('fields.roleTitle')}</Label>
-            <Input
+            <TextField
               id="role_title"
+              label={t('fields.roleTitle')}
+              optional
+              hint={t('roleTitleHint')}
               autoComplete="organization-title"
+              error={errors.role_title?.message}
               {...form.register('role_title')}
             />
-          </div>
-          <div>
-            <Label htmlFor="preferred_language">
-              {t('fields.preferredLanguage')}
-            </Label>
-            {/* W-9: Use Controller for proper RHF integration */}
-            <Controller
-              control={form.control}
-              name="preferred_language"
-              render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange}>
-                  <SelectTrigger id="preferred_language" className="w-full">
-                    <TranslatedSelectValue
-                      translate={(value: string) =>
-                        tLang(`languageOptions.${value as 'en' | 'th' | 'sv'}`)
-                      }
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {/* W-7: i18n language option labels */}
-                    <SelectItem value="en">{tLang('languageOptions.en')}</SelectItem>
-                    <SelectItem value="th">{tLang('languageOptions.th')}</SelectItem>
-                    <SelectItem value="sv">{tLang('languageOptions.sv')}</SelectItem>
-                  </SelectContent>
-                </Select>
-              )}
+            <Select
+              id="preferred_language"
+              label={t('fields.preferredLanguage')}
+              options={(['en', 'th', 'sv'] as const).map((v) => ({ value: v, label: tLang(`languageOptions.${v}`) }))}
+              {...form.register('preferred_language')}
             />
           </div>
-        </CardContent>
+          <p className="text-[13px] text-[var(--aura-fg-secondary)]" data-testid="invite-privacy-note">
+            {firstName
+              ? t.rich('privacyNote', { firstName, link: privacyLink })
+              : t.rich('privacyNoteNoName', { link: privacyLink })}
+          </p>
+          {/* Cancel before Send (ux-standards § 11.1, and the tab order); Send on top on phones. */}
+          <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end sm:gap-3">
+            <Button type="button" variant="secondary" onClick={() => router.push('/portal/profile')}>
+              {t('cancelButton')}
+            </Button>
+            <Button type="submit" icon={<SendIcon aria-hidden />} loading={submitting}>
+              {submitting ? t('sending') : t('sendButton')}
+            </Button>
+          </div>
+        </div>
       </Card>
-
-      {/* H6: justify-end + Cancel before Submit (ux-standards § 11.1). */}
-      <div className="mt-6 flex items-center justify-end gap-3">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => router.push('/portal/profile')}
-        >
-          {t('cancelButton')}
-        </Button>
-        <Button type="submit" disabled={submitting} aria-busy={submitting}>
-          {submitting && (
-            <Loader2Icon className="mr-2 size-4 motion-safe:animate-spin" aria-hidden />
-          )}
-          {submitting ? t('sending') : t('sendButton')}
-        </Button>
-      </div>
     </form>
   );
 }

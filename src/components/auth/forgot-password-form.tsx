@@ -22,9 +22,11 @@ import { useLocale, useTranslations } from 'next-intl';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { type SubmitHandler, useForm } from 'react-hook-form';
 import { z } from 'zod';
-import { Alert, Button, FormErrorSummary, Icon, TextField } from '@jirawatpyk/aura-react';
+import { Alert, Button, FormErrorSummary, TextField } from '@jirawatpyk/aura-react';
+import { ArrowLeftIcon } from 'lucide-react';
 import { AURA_FOCUS_RING } from '@/components/shell/aura-classes';
 import { cn } from '@/lib/utils';
+import { AuthTitle } from './auth-title';
 import { emailText, type Translator } from '@/lib/zod-i18n';
 
 function buildForgotPasswordSchema(tv: Translator) {
@@ -37,8 +39,9 @@ type FormValues = z.infer<ReturnType<typeof buildForgotPasswordSchema>>;
 
 const RESEND_COUNTDOWN_SECONDS = 60;
 
-export function ForgotPasswordForm() {
+export function ForgotPasswordForm({ signInHref }: { readonly signInHref: string }) {
   const t = useTranslations('auth.forgotPassword');
+  const tFrame = useTranslations('auth.frame');
   const tErrors = useTranslations('errors');
   const tv = useTranslations('shared.validation');
   // Email-locale audit 2026-07-16 — the reset email must arrive in the language
@@ -51,8 +54,8 @@ export function ForgotPasswordForm() {
   const [remaining, setRemaining] = useState(0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  // Managed focus on the success card so a keyboard/SR user isn't dropped on
-  // <body> when the submit button is replaced by the resend button (XF focus).
+  // Managed focus on the sent-state heading so a keyboard/SR user isn't dropped
+  // on <body> when the submit button is replaced by the resend row (XF focus).
   const successRef = useRef<HTMLDivElement>(null);
 
   const schema = useMemo(
@@ -78,11 +81,15 @@ export function ForgotPasswordForm() {
     setFocus('email');
   }, [setFocus]);
 
-  // Move focus to the success card when the form swaps to the submitted state
-  // (WCAG 2.4.3 — the focused submit button is unmounted).
+  // Move focus to the sent-state heading when the form swaps to the submitted
+  // state (WCAG 2.4.3 — the focused submit button is unmounted), and back to
+  // the email field on "Use a different email".
+  const wasSubmitted = useRef(false);
   useEffect(() => {
     if (submitted) successRef.current?.focus();
-  }, [submitted]);
+    else if (wasSubmitted.current) setFocus('email');
+    wasSubmitted.current = submitted;
+  }, [submitted, setFocus]);
 
   useEffect(
     () => () => {
@@ -148,73 +155,85 @@ export function ForgotPasswordForm() {
     await sendRequest(email);
   }, [getValues, sendRequest]);
 
-  return (
-    <form
-      onSubmit={handleSubmit(onSubmit)}
-      // Keep the email out of the URL on a pre-hydration native submit
-      // (CWE-598; see tests/unit/components/pii-forms-post-method.test.tsx).
-      method="post"
-      className="flex flex-col gap-4"
-      noValidate
-    >
-      <FormErrorSummary errors={errors} focusKey={submitCount} />
+  const linkClass = cn(
+    'inline-flex min-h-11 items-center gap-1.5 self-start rounded-[var(--aura-radius-sm)] text-[13px] font-medium text-[var(--aura-fg-accent)] no-underline hover:underline sm:min-h-0',
+    AURA_FOCUS_RING,
+  );
+  const backToSignIn = (
+    <a href={signInHref} className={linkClass}>
+      <ArrowLeftIcon className="size-4" aria-hidden />
+      {tFrame('backToSignIn')}
+    </a>
+  );
 
-      <TextField
-        id="email"
-        label={t('emailLabel')}
-        type="email"
-        inputMode="email"
-        autoComplete="username"
-        spellCheck={false}
-        disabled={submitting || submitted}
-        error={errors.email?.message}
-        {...register('email')}
-      />
-
-      {/* Gated on errorMsg alone (NOT `!submitted`): a failed RESEND happens
-        * while submitted===true, so `!submitted` would swallow it. Each send
-        * clears errorMsg first (setErrorMsg(null)), so the success path leaves
-        * it null and the banner stays hidden; only a real failure shows it. */}
-      {errorMsg ? <Alert tone="danger">{errorMsg}</Alert> : null}
-
-      {submitted ? (
-        // AURA's success alert, drawn from its classes: it takes focus when the
-        // submit button it replaces unmounts, which `Alert` cannot (no tabIndex).
-        <div
-          ref={successRef}
-          tabIndex={-1}
-          className={cn('aura-alert aura-alert--success', AURA_FOCUS_RING)}
-          role="status"
-        >
-          <Icon name="circle-check" className="aura-alert__icon" />
-          <div className="aura-alert__body">
-            <p className="aura-alert__text">{t('submitted')}</p>
-            {/* FR-025 user-facing advisory — shown UNCONDITIONALLY (to matched
-                and unmatched submitters alike) so it never reveals whether the
-                email matched an account (preserves the FR-016 enumeration guard),
-                while still helping a real user whose mail was delayed/spam-filed. */}
-            <p className="aura-alert__text text-[var(--aura-fg-secondary)]">{t('deliveryHint')}</p>
-          </div>
+  if (submitted) {
+    // The `Auth-forgot` board: "Check your email", the neutral line (it never
+    // says whether the email matched — FR-016), a Resend row, the spam hint,
+    // then the ways out. The heading block takes focus and is announced.
+    return (
+      <div className="flex flex-col gap-5">
+        <div ref={successRef} tabIndex={-1} role="status" className={cn('rounded-[var(--aura-radius-sm)]', AURA_FOCUS_RING)}>
+          <AuthTitle title={t('sentTitle')} description={t('submitted')} />
         </div>
-      ) : null}
-
-      {!submitted ? (
-        <div className="flex flex-col pt-2">
-          <Button type="submit" variant="primary" loading={submitting}>
-            {t('submit')}
+        {/* Gated on errorMsg alone: a failed RESEND happens while submitted===true. */}
+        {errorMsg ? <Alert tone="danger">{errorMsg}</Alert> : null}
+        <div className="flex flex-wrap items-center gap-2 text-[13px]">
+          <span>{t('didntGetIt')}</span>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={handleResend}
+            disabled={remaining > 0 || submitting}
+            loading={submitting}
+          >
+            {remaining > 0 ? t('resendCountdown', { seconds: remaining }) : t('resend')}
           </Button>
         </div>
-      ) : (
-        <Button
-          type="button"
-          variant="secondary"
-          onClick={handleResend}
-          disabled={remaining > 0 || submitting}
-          loading={submitting}
-        >
-          {remaining > 0 ? t('resendCountdown', { seconds: remaining }) : t('resend')}
+        {/* FR-025 — shown to every submitter alike, so it never reveals whether the email matched. */}
+        <p className="text-xs text-[var(--aura-fg-secondary)]">{t('deliveryHint')}</p>
+        <div className="flex flex-col sm:flex-row sm:flex-wrap sm:gap-x-5">
+          <button type="button" className={cn(linkClass, 'cursor-pointer border-0 bg-transparent p-0')} onClick={() => setSubmitted(false)}>
+            {t('useDifferentEmail')}
+          </button>
+          {backToSignIn}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-5">
+      <AuthTitle title={t('title')} description={t('description')} />
+      <form
+        onSubmit={handleSubmit(onSubmit)}
+        // Keep the email out of the URL on a pre-hydration native submit
+        // (CWE-598; see tests/unit/components/pii-forms-post-method.test.tsx).
+        method="post"
+        className="flex flex-col gap-5"
+        noValidate
+      >
+        <FormErrorSummary errors={errors} focusKey={submitCount} />
+
+        <TextField
+          id="email"
+          label={t('emailLabel')}
+          type="email"
+          inputMode="email"
+          autoComplete="username"
+          spellCheck={false}
+          disabled={submitting}
+          error={errors.email?.message}
+          {...register('email')}
+        />
+
+        {errorMsg ? <Alert tone="danger">{errorMsg}</Alert> : null}
+
+        <Button type="submit" variant="primary" loading={submitting}>
+          {t('submit')}
         </Button>
-      )}
-    </form>
+      </form>
+      {backToSignIn}
+    </div>
   );
 }

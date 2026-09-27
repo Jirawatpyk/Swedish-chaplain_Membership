@@ -91,7 +91,7 @@ vi.mock('@/lib/broadcast-approval-deps', () => ({
   makeReadFormattingWarningsDeps: () => ({}),
   makeReadDispatchHoldDeps: () => ({}),
 }));
-vi.mock('@/components/ui/relative-time', () => ({ RelativeTime: () => null }));
+vi.mock('@/components/shell/relative-time', () => ({ RelativeTime: () => null }));
 vi.mock('@/components/shell/refresh-page-button', () => ({
   RefreshPageButton: ({ label }: { label: string }) => <button data-testid="refresh-page-button">{label}</button>,
 }));

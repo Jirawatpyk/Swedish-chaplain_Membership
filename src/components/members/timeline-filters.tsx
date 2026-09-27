@@ -8,21 +8,20 @@
  * Changing any filter clears the keyset `cursor` so pagination restarts from
  * the newest page. Filters: source type, actor kind (staff/member/system),
  * and a from/to date range — individually and in combination.
+ *
+ * Spec 122 US3 (`Portal-timeline`): AURA FilterBar (the named region), AURA
+ * Selects with visible labels and AURA DatePickers (typed or picked; the
+ * provider shows Buddhist-era years in Thai — display only, the URL keeps
+ * ISO dates), in four equal columns with Clear at the end — always there,
+ * disabled until something is filtered. On phones only Source shows, with a
+ * "More filters" toggle for the rest. Shared with the staff member timeline.
  */
-import { useCallback, useTransition } from 'react';
+import { useCallback, useId, useState, useTransition } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { XIcon } from 'lucide-react';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { FilterBar } from '@/components/ui/filter-bar';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  TranslatedSelectValue,
-} from '@/components/ui/select';
+import { SlidersHorizontalIcon } from 'lucide-react';
+import { Button, DatePicker, FilterBar, Select, type ISODate } from '@jirawatpyk/aura-react';
+import { cn } from '@/lib/utils';
 import {
   TIMELINE_SOURCES,
   TIMELINE_ACTOR_KINDS,
@@ -45,6 +44,12 @@ export function TimelineFilters(): React.JSX.Element {
   const currentActor = searchParams.get('actorKind') ?? ALL;
   const currentFrom = searchParams.get('from') ?? '';
   const currentTo = searchParams.get('to') ?? '';
+  // Phones (the Portal-timeline-mobile board): Source, then "More filters"
+  // opens Actor and the dates — open from the start when one of them is set.
+  const [moreOpen, setMoreOpen] = useState(
+    currentActor !== ALL || Boolean(currentFrom) || Boolean(currentTo),
+  );
+  const moreId = useId();
 
   const pushUrl = useCallback(
     (patch: Record<string, string | null>) => {
@@ -71,74 +76,70 @@ export function TimelineFilters(): React.JSX.Element {
     Boolean(currentTo);
 
   return (
-    <FilterBar aria-label={t('title')}>
+    <FilterBar
+      label={t('title')}
+      className="[&_.aura-filterbar\_\_controls]:w-full [&_.aura-filterbar\_\_controls]:items-end sm:[&_.aura-filterbar\_\_controls]:grid sm:[&_.aura-filterbar\_\_controls]:grid-cols-[repeat(4,minmax(0,1fr))_auto] sm:[&_.aura-filterbar\_\_controls]:gap-3"
+    >
       <Select
+        name="source"
+        label={t('source')}
+        className="max-sm:min-w-0 max-sm:flex-1"
         value={currentSource}
-        onValueChange={(v) => pushUrl({ source: v === ALL ? null : v })}
-      >
-        <SelectTrigger className="sm:w-48" aria-label={t('source')}>
-          <TranslatedSelectValue
-            placeholder={t('all')}
-            translate={(v) => (v === ALL ? t('all') : tSource(v as TimelineSource))}
-          />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={ALL}>{t('all')}</SelectItem>
-          {TIMELINE_SOURCES.map((s) => (
-            <SelectItem key={s} value={s}>
-              {tSource(s)}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
-      <Select
-        value={currentActor}
-        onValueChange={(v) => pushUrl({ actorKind: v === ALL ? null : v })}
-      >
-        <SelectTrigger className="sm:w-40" aria-label={t('actor')}>
-          <TranslatedSelectValue
-            placeholder={t('all')}
-            translate={(v) => (v === ALL ? t('all') : tActor(v as TimelineActorKind))}
-          />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={ALL}>{t('all')}</SelectItem>
-          {TIMELINE_ACTOR_KINDS.map((k) => (
-            <SelectItem key={k} value={k}>
-              {tActor(k)}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
-      <Input
-        type="date"
-        value={currentFrom}
-        onChange={(e) => pushUrl({ from: e.target.value || null })}
-        aria-label={t('from')}
-        className="sm:w-40"
+        onChange={(e) => pushUrl({ source: e.target.value === ALL ? null : e.target.value })}
+        options={[
+          { value: ALL, label: t('all') },
+          ...TIMELINE_SOURCES.map((s) => ({ value: s, label: tSource(s as TimelineSource) })),
+        ]}
       />
-      <Input
-        type="date"
-        value={currentTo}
-        onChange={(e) => pushUrl({ to: e.target.value || null })}
-        aria-label={t('to')}
-        className="sm:w-40"
-      />
+      <Button
+        type="button"
+        variant="secondary"
+        className="sm:hidden"
+        icon={<SlidersHorizontalIcon aria-hidden />}
+        aria-expanded={moreOpen}
+        aria-controls={moreId}
+        onClick={() => setMoreOpen((open) => !open)}
+      >
+        {t('moreFilters')}
+      </Button>
+      <div id={moreId} className={cn('flex w-full flex-col gap-3 sm:contents', !moreOpen && 'max-sm:hidden')}>
+        <Select
+          name="actorKind"
+          label={t('actor')}
+          value={currentActor}
+          onChange={(e) => pushUrl({ actorKind: e.target.value === ALL ? null : e.target.value })}
+          options={[
+            { value: ALL, label: t('all') },
+            ...TIMELINE_ACTOR_KINDS.map((k) => ({ value: k, label: tActor(k as TimelineActorKind) })),
+          ]}
+        />
+        <DatePicker
+          name="from"
+          label={t('from')}
+          timeZone="Asia/Bangkok"
+          value={(currentFrom || null) as ISODate | null}
+          onChange={(iso) => pushUrl({ from: iso })}
+        />
+        <DatePicker
+          name="to"
+          label={t('to')}
+          timeZone="Asia/Bangkok"
+          value={(currentTo || null) as ISODate | null}
+          onChange={(iso) => pushUrl({ to: iso })}
+        />
+      </div>
 
-      {hasAnyFilter && (
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={() => pushUrl({ source: null, actorKind: null, from: null, to: null })}
-          className="whitespace-nowrap"
-        >
-          <XIcon className="size-4" aria-hidden />
-          {t('clear')}
-        </Button>
-      )}
+      {/* From 640px always there, disabled until something is filtered; on a
+          phone only when it can act, on its own row after the filters. */}
+      <Button
+        type="button"
+        variant="secondary"
+        className={cn('max-sm:order-last max-sm:w-full', !hasAnyFilter && 'max-sm:hidden')}
+        disabled={!hasAnyFilter}
+        onClick={() => pushUrl({ source: null, actorKind: null, from: null, to: null })}
+      >
+        {t('clear')}
+      </Button>
     </FilterBar>
   );
 }

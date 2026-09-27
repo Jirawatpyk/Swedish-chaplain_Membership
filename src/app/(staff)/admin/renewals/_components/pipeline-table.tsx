@@ -80,7 +80,7 @@ import {
   CycleCompanyCell,
   CycleExpiresCell,
 } from '@/components/renewals/cycle-cells';
-import { RelativeTime } from '@/components/ui/relative-time';
+import { RelativeTime } from '@/components/shell/relative-time';
 import { OutreachDialog } from './outreach-dialog';
 import { MarkPaidOfflineDialog } from './mark-paid-offline-dialog';
 import { PipelineCardList } from './pipeline-card-list';

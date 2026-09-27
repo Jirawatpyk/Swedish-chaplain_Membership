@@ -109,3 +109,31 @@ describe('PortalEditForm — inline server field error', () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe('PortalEditForm on AURA (spec 122 US3)', () => {
+  function renderForm() {
+    return render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <PortalEditForm initialValues={INITIAL} />
+      </NextIntlClientProvider>,
+    );
+  }
+
+  it('uses AURA fields', () => {
+    const { container } = renderForm();
+    for (const id of ['firstName', 'lastName', 'phone', 'website']) {
+      expect(container.querySelector(`#${id}`)?.closest('.aura-field')).not.toBeNull();
+    }
+    expect(container.querySelector('#description')).toHaveClass('aura-textarea');
+    // Save and Cancel sit at the end of the card now: portal-edit-form-layout.test.tsx.
+  });
+
+  it('lists a failed submit in a focused error summary that links to the field', async () => {
+    const { container } = renderForm();
+    fireEvent.change(container.querySelector('#firstName')!, { target: { value: '' } });
+    fireEvent.submit(container.querySelector('form')!);
+    const summary = await screen.findByRole('alert', { name: /fix 1 field/i });
+    await waitFor(() => expect(summary).toHaveFocus());
+    expect(summary.querySelector('a')).toHaveAttribute('href', '#firstName');
+  });
+});

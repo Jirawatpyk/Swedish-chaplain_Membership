@@ -43,6 +43,12 @@ interface BaseProps {
    */
   readonly ariaLabel?: string;
   readonly className?: string;
+  /**
+   * Spec 122 US3 — the dashboard's recent-invoices rows draw the download as
+   * an icon button (the `Main` board): the label leaves the view and the
+   * accessible name (`ariaLabel`) stays; the label becomes the tooltip.
+   */
+  readonly iconOnly?: boolean;
   readonly 'data-testid'?: string;
 }
 
@@ -57,6 +63,7 @@ function PortalPdfDownloadButton({
   label,
   ariaLabel,
   className,
+  iconOnly = false,
   'data-testid': testId,
 }: PortalPdfDownloadButtonProps) {
   const t = useTranslations('portal.invoices.toast');
@@ -123,6 +130,7 @@ function PortalPdfDownloadButton({
       onClick={handleClick}
       disabled={loading}
       aria-label={ariaLabel ?? label}
+      {...(iconOnly ? { title: label } : {})}
       className={cn('inline-flex items-center justify-center gap-1', className)}
       {...(testId !== undefined && { 'data-testid': testId })}
     >
@@ -137,7 +145,7 @@ function PortalPdfDownloadButton({
       ) : (
         <Download className="size-4" aria-hidden="true" />
       )}
-      {label}
+      {iconOnly ? null : label}
     </button>
   );
 }

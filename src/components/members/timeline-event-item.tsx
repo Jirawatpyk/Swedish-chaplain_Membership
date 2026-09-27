@@ -4,7 +4,8 @@
  * Renders a single `member_timeline_v` row. The label is resolved from
  * `(source, eventType)` (FR-014):
  *   - `audit` rows reuse the existing `audit.eventType.*` catalogue, falling
- *     back to the legacy `payload.summary` string, then the source label.
+ *     back to the legacy `payload.summary` string, then the source label. On
+ *     the portal (`audience="member"`) `timeline.memberAudit.*` comes first.
  *   - the other five sources resolve `timeline.<source>.<eventKind>`,
  *     falling back to the localized source label.
  *
@@ -17,16 +18,17 @@
 
 import { useTranslations, useLocale } from 'next-intl';
 import {
-  CreditCardIcon,
-  FileTextIcon,
+  BellIcon,
   CalendarCheckIcon,
-  MegaphoneIcon,
-  RefreshCwIcon,
+  CircleCheckIcon,
+  FileTextIcon,
+  MailIcon,
   UserCogIcon,
   type LucideIcon,
 } from 'lucide-react';
-import { RelativeTime } from '@/components/ui/relative-time';
+import { Badge } from '@jirawatpyk/aura-react/server';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
+import { formatTimelineTime, timelineGroup } from '@/lib/timeline-groups';
 import type { TimelineSource, TimelineActorKind } from '@/lib/timeline-shared';
 
 export type TimelineItemProps = {
@@ -39,18 +41,45 @@ export type TimelineItemProps = {
   readonly actorUserId?: string;
   readonly actorDisplayName: string | null;
   readonly payload: Record<string, unknown> | null;
+  /**
+   * Spec 122 US3 — `compact` is the dashboard's "Recent activity" row (the
+   * `Main` board): the event at regular weight, a soft source badge and the
+   * date in its own column, no actor; on phones the date sits under the event
+   * and the badge leaves. The default is the timeline page's row.
+   */
+  readonly variant?: 'default' | 'compact';
+  /**
+   * Who reads the row. `member` (the portal) names an audit row from
+   * `timeline.memberAudit.*` — the member's own words ("Invoice cancelled",
+   * not "Invoice voided") — and falls back to the staff `audit.eventType.*`
+   * catalogue for a type with no member wording. The default is staff.
+   */
+  readonly audience?: 'staff' | 'member';
 };
 
 const SYSTEM_ACTORS = new Set(['system', 'system:bootstrap', 'anonymous']);
 
+// The icon set of the `Main` and `Portal-timeline` boards.
 const SOURCE_ICON: Record<TimelineSource, LucideIcon> = {
   audit: UserCogIcon,
   invoice: FileTextIcon,
-  payment: CreditCardIcon,
+  payment: CircleCheckIcon,
   event: CalendarCheckIcon,
-  broadcast: MegaphoneIcon,
-  renewal: RefreshCwIcon,
+  broadcast: MailIcon,
+  renewal: BellIcon,
 };
+
+/** "15 Sep 2026" / "15 ก.ย. 2569" — the date column of the compact row. */
+function formatTimelineDate(iso: string, locale: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return new Intl.DateTimeFormat(getDateFormatLocale(locale), {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'Asia/Bangkok',
+  }).format(d);
+}
 
 /**
  * Locale-aware timestamp formatter. Thai uses Buddhist Era (BE = CE + 543)
@@ -157,6 +186,38 @@ function formatAuditPayload(
   }
 }
 
+type RowDetail = { readonly text: string; readonly mono: boolean };
+
+const payloadString = (payload: Record<string, unknown> | null, key: string): string | null => {
+  const v = payload?.[key];
+  return typeof v === 'string' && v.length > 0 ? v : null;
+};
+
+/**
+ * Spec 122 US3 (`Portal-timeline` / `Main` boards) — what a non-audit row is
+ * about, as the repo resolved it: the document number (a stable identifier,
+ * mono), the event's name or the E-Blast's subject (prose).
+ */
+function sourceDetail(source: TimelineSource, payload: Record<string, unknown> | null): RowDetail | null {
+  switch (source) {
+    case 'invoice':
+    case 'payment': {
+      const number = payloadString(payload, 'document_number');
+      return number ? { text: number, mono: true } : null;
+    }
+    case 'event': {
+      const name = payloadString(payload, 'event_name');
+      return name ? { text: name, mono: false } : null;
+    }
+    case 'broadcast': {
+      const subject = payloadString(payload, 'broadcast_subject');
+      return subject ? { text: subject, mono: false } : null;
+    }
+    default:
+      return null;
+  }
+}
+
 export function TimelineEventItem({
   source,
   timestamp,
@@ -165,11 +226,15 @@ export function TimelineEventItem({
   actorKind,
   actorDisplayName,
   payload,
+  variant = 'default',
+  audience = 'staff',
 }: TimelineItemProps) {
   const t = useTranslations('admin.members.timeline');
   const tPayload = useTranslations('admin.members.timeline.payload');
   const tAuditEvent = useTranslations('audit.eventType');
   const tTimeline = useTranslations('timeline');
+  const tFieldLabel = useTranslations('portal.changeRequests.diff.labels');
+  const tMethod = useTranslations('portal.payment.methods');
   const locale = useLocale();
 
   // --- localised label resolution (FR-014) --------------------------------
@@ -184,7 +249,10 @@ export function TimelineEventItem({
     // can swallow the throw — so guard with `.has` first (silent), falling back
     // to the row summary then the source label. Mirrors the shared
     // `resolveEventLabel` helper (src/lib/audit-event-label.ts).
-    if (tAuditEvent.has(eventType)) {
+    const memberKey = `memberAudit.${eventType}`;
+    if (audience === 'member' && tTimeline.has(memberKey as 'unknownEvent')) {
+      eventLabel = tTimeline(memberKey as 'unknownEvent');
+    } else if (tAuditEvent.has(eventType)) {
       eventLabel = tAuditEvent(eventType);
     } else {
       const summary = typeof payload?.summary === 'string' ? payload.summary : '';
@@ -214,46 +282,103 @@ export function TimelineEventItem({
     actorDisplay = tTimeline(`actorKind.${actorKind}` as 'actorKind.staff');
   }
 
-  const sourceLabel = tTimeline(`source.${source}` as 'source.audit');
+  // The row badge names a profile change "Profile" (the boards); the filter keeps "Profile / Audit".
+  const sourceLabel = source === 'audit' ? tTimeline('sourceBadgeAudit') : tTimeline(`source.${source}` as 'source.audit');
   const SourceIcon = SOURCE_ICON[source];
-  const payloadDetail =
-    source === 'audit' ? formatAuditPayload(eventType, payload, tPayload) : null;
+  let payloadDetail: RowDetail | null;
+  if (source !== 'audit') {
+    payloadDetail = sourceDetail(source, payload);
+  } else if (eventType.startsWith('member_change_request_') && Array.isArray(payload?.field_keys)) {
+    // The fields a change request touched, by their form labels ("Registered address, Website").
+    const labels = payload.field_keys
+      .filter((k): k is string => typeof k === 'string')
+      .map((k) => (tFieldLabel.has(k as 'website') ? tFieldLabel(k as 'website') : k));
+    payloadDetail = labels.length > 0 ? { text: labels.join(', '), mono: false } : null;
+  } else {
+    // Mono only for a document number (a stable identifier); a company name, a
+    // role or a status is prose (R9: "Membership record created · “…”" read as code).
+    const text = formatAuditPayload(eventType, payload, tPayload);
+    payloadDetail = text ? { text, mono: eventType === 'tax_receipt_issued' } : null;
+  }
+  // A payment row names how it was paid on the actor line (the board's "Anna Lindqvist · PromptPay · 10:03").
+  const method = source === 'payment' ? payloadString(payload, 'payment_method') : null;
+  const methodLabel = method && tMethod.has(method as 'card') ? tMethod(method as 'card') : null;
+
+  const chip = (
+    // Source marker — reduced-motion friendly (static icon, no pulse). 36px on
+    // the hover surface, as both boards draw it.
+    <span
+      aria-hidden
+      className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[var(--aura-bg-surface-hover)] text-[var(--aura-fg-secondary)]"
+    >
+      <SourceIcon className="size-4" />
+    </span>
+  );
+  const label = (
+    <>
+      <span>{eventLabel}</span>
+      {payloadDetail ? (
+        <>
+          {' · '}
+          <span className={payloadDetail.mono ? 'font-mono text-xs' : undefined}>{payloadDetail.text}</span>
+        </>
+      ) : null}
+    </>
+  );
+
+  if (variant === 'compact') {
+    const date = formatTimelineDate(timestamp, locale);
+    const time = (className: string) => (
+      <time
+        dateTime={timestamp}
+        title={formatLocalisedTimestamp(timestamp, locale)}
+        suppressHydrationWarning
+        className={className}
+      >
+        {date}
+      </time>
+    );
+    return (
+      <div className="flex items-center gap-4 py-3" data-event-type={eventType} data-source={source}>
+        {chip}
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <p className="text-sm">{label}</p>
+          {time('text-xs text-[var(--aura-fg-secondary)] sm:hidden')}
+        </div>
+        <Badge className="shrink-0 max-sm:hidden">{sourceLabel}</Badge>
+        {time('w-28 shrink-0 text-right text-xs text-[var(--aura-fg-secondary)] max-sm:hidden')}
+      </div>
+    );
+  }
+
+  // Spec 122 US3 (`Portal-timeline` boards): an icon chip, the event (and
+  // its detail) over "actor · time", an outline source badge beside it —
+  // under it on phones. Under Today the time alone; elsewhere date and time.
+  const timeOnly = timelineGroup(timestamp)?.kind === 'today';
 
   return (
-    <div
-      className="relative border-l-2 border-muted pl-6 py-3"
-      data-event-type={eventType}
-      data-source={source}
-    >
-      {/* Source marker — reduced-motion friendly (static icon, no pulse). */}
-      <span
-        aria-hidden
-        className="absolute -left-[13px] top-4 flex size-6 items-center justify-center rounded-full border bg-background text-muted-foreground"
-      >
-        <SourceIcon className="size-3.5" />
-      </span>
-      <div className="flex flex-col gap-1">
-        <div className="flex flex-wrap items-baseline gap-2">
-          <span className="font-medium text-sm">{eventLabel}</span>
-          {/* bg-secondary/text-secondary-foreground is a designed ≥4.5:1
-              accessible pair (WCAG 1.4.3) — the prior muted-on-muted chip
-              failed contrast (review-run I6). */}
-          <span className="rounded bg-secondary px-1.5 py-0.5 text-[11px] font-medium uppercase tracking-wide text-secondary-foreground">
-            {sourceLabel}
-          </span>
-          <RelativeTime
-            iso={timestamp}
-            title={formatLocalisedTimestamp(timestamp, locale)}
-            className="text-xs text-muted-foreground"
-            locale={locale}
-          />
+    <div className="flex items-start gap-3 py-3 sm:items-center" data-event-type={eventType} data-source={source}>
+      {chip}
+      <div className="flex min-w-0 flex-1 flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <p className="text-sm font-medium">{label}</p>
+          <p className="text-xs text-[var(--aura-fg-secondary)]">
+            {actorDisplay}
+            {methodLabel ? ` · ${methodLabel}` : null}
+            {' · '}
+            <time
+              dateTime={timestamp}
+              title={formatLocalisedTimestamp(timestamp, locale)}
+              suppressHydrationWarning
+            >
+              {formatTimelineTime(timestamp, locale, timeOnly)}
+            </time>
+          </p>
         </div>
-        {payloadDetail && (
-          <p className="text-sm text-muted-foreground">{payloadDetail}</p>
-        )}
-        <p className="text-xs text-muted-foreground">
-          {tTimeline('actorBy', { actor: actorDisplay })}
-        </p>
+        {/* AURA outline badge — a designed ≥4.5:1 pair (WCAG 1.4.3). */}
+        <Badge variant="outline" className="w-fit shrink-0">
+          {sourceLabel}
+        </Badge>
       </div>
     </div>
   );

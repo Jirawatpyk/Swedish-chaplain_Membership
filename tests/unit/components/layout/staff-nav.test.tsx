@@ -13,7 +13,7 @@ import { StaffNav } from '@/components/layout/staff-nav';
 import { flattenNavItems, staffNavConfig } from '@/config/nav';
 
 const nav = vi.hoisted(() => ({ pathname: '/admin/members' }));
-vi.mock('next/navigation', () => ({ usePathname: () => nav.pathname }));
+vi.mock('next/navigation', () => ({ usePathname: () => nav.pathname, useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
 
 const ALL_HREFS = flattenNavItems(staffNavConfig).map((item) => item.href);
 const FLAGS = { broadcastsEnabled: true, eventsEnabled: true, memberChangeApproval: true };
@@ -113,5 +113,11 @@ describe('StaffNav (spec 122 US1)', () => {
   it('never offers the rail toggle inside the phone drawer (AppShell passes collapsible=false)', () => {
     renderNav({ collapsed: false, collapsible: false });
     expect(screen.queryByRole('button', { name: /collapse sidebar|expand sidebar/i })).toBeNull();
+  });
+
+  it('gives the phone drawer a Sign out row and leaves the Staff badge to the close button (Admin-nav-mobile)', () => {
+    renderNav({ collapsed: false, collapsible: false });
+    expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+    expect(screen.queryByText('Staff')).toBeNull();
   });
 });

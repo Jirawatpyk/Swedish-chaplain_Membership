@@ -1,6 +1,6 @@
 /**
- * Shimmer skeleton matching the timeline page shape for CLS 0
- * transitions. Used by `/admin/members/[memberId]/timeline/loading.tsx`.
+ * Skeleton matching the timeline page shape for CLS 0 transitions — AURA
+ * card markup and SkeletonBlocks (spec 122 US3). Used by `/admin/members/[memberId]/timeline/loading.tsx`.
  *
  * Structure mirrors the real timeline page BODY (the enclosing
  * DetailContainer owns section-gap spacing):
@@ -14,18 +14,17 @@
  * owns the spacing between PageHeader and Card.
  */
 
-import { Skeleton } from '@/components/ui/skeleton';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { SkeletonBlock as Skeleton } from '@/components/shell/page-skeletons';
 import { PageHeader } from '@/components/layout/page-header';
 
 function TimelineEventSkeleton() {
   return (
-    <li className="relative border-l-2 border-muted pl-6 py-3">
+    <li className="relative border-l-2 border-[var(--aura-border-default)] pl-6 py-3">
       {/* Matches the real TimelineEventItem source marker (24px circle at
           -left-[13px]) so skeleton→content is CLS-free (review-run R2-3). */}
       <span
         aria-hidden
-        className="absolute -left-[13px] top-4 size-6 rounded-full border bg-background"
+        className="absolute -left-[13px] top-4 size-6 rounded-full border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)]"
       />
       <div className="flex flex-col gap-1">
         <div className="flex flex-wrap items-baseline gap-2">
@@ -45,23 +44,21 @@ export function TimelineSkeleton() {
       <PageHeader
         title={<Skeleton className="h-7 w-36" />}
         subtitle={<Skeleton className="h-4 w-52" />}
-        actions={<Skeleton className="h-9 w-32" />}
+        actions={<Skeleton className="h-11 w-32" />}
       />
-      <Card aria-hidden>
-        <CardHeader className="flex flex-row items-start justify-between gap-4">
-          <CardTitle className="text-base">
-            <Skeleton className="h-4 w-40" />
-          </CardTitle>
+      <div className="aura-card" aria-hidden>
+        <div className="aura-card__head">
+          <Skeleton className="h-4 w-40" />
           <Skeleton className="h-4 w-24" />
-        </CardHeader>
-        <CardContent>
+        </div>
+        <div className="aura-card__body">
           <ol className="flex flex-col">
             {Array.from({ length: 5 }).map((_, i) => (
               <TimelineEventSkeleton key={i} />
             ))}
           </ol>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </>
   );
 }

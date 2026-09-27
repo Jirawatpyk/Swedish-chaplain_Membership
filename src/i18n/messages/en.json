@@ -1,7 +1,8 @@
 {
   "auth": {
     "frame": {
-      "everyone": "Members & staff"
+      "everyone": "Members & staff",
+      "backToSignIn": "Back to sign in"
     },
     "signIn": {
       "title": "Sign in",
@@ -34,10 +35,13 @@
       "emailLabel": "Email",
       "submit": "Send reset link",
       "submitted": "If that email matches an account, a reset link is on the way.",
-      "resend": "Didn't get the email? Resend",
+      "resend": "Resend",
       "resendCountdown": "Resend ({seconds}s)",
-      "deliveryHint": "Didn’t receive it after a minute? Check your spam folder, or contact support if it still doesn’t arrive.",
-      "rateLimited": "Too many requests. Please wait a moment and try again."
+      "deliveryHint": "Check your spam folder, or contact support if it still doesn't arrive after a minute.",
+      "rateLimited": "Too many requests. Please wait a moment and try again.",
+      "sentTitle": "Check your email",
+      "didntGetIt": "Didn't get it?",
+      "useDifferentEmail": "Use a different email"
     },
     "resetPassword": {
       "title": "Choose a new password",
@@ -48,12 +52,16 @@
       "submit": "Update password",
       "success": "Password updated. You can now sign in.",
       "errors": {
-        "tokenExpired": "This reset link has expired. Request a new one.",
         "weakPassword": "Choose a stronger password.",
         "passwordBreached": "This password appears in a known data breach. Choose a different one.",
         "tooShort": "Password must be at least 12 characters",
         "passwordMismatch": "Passwords must match"
-      }
+      },
+      "newPasswordHint": "At least 12 characters. Passwords found in known data breaches are refused.",
+      "signsOutNote": "Updating your password signs you out everywhere.",
+      "expiredDescription": "Reset link",
+      "expiredTitle": "This reset link has expired.",
+      "expiredBody": "Request a new one — links work for a limited time."
     },
     "passwordStrength": {
       "weak": "Weak — use a longer, more varied password.",
@@ -83,10 +91,12 @@
       "displayNameLabel": "Your name",
       "passwordLabel": "Choose a password",
       "submit": "Activate account",
-      "errors": {
-        "tokenExpired": "This invitation has expired. Ask an administrator to send a new one.",
-        "contactAdminCta": "Contact an administrator to request a new invitation."
-      }
+      "passwordHint": "At least 12 characters.",
+      "confirmPasswordLabel": "Confirm password",
+      "expiredDescription": "Invitation link",
+      "expiredTitle": "This invitation has expired.",
+      "expiredBody": "Ask the person who invited you, or the chamber, to send a new invitation.",
+      "privacyLine": "How {tenantDisplayName} uses your data: <link>Privacy notice</link>"
     },
     "idleWarning": {
       "title": "Still there?",
@@ -104,8 +114,8 @@
     },
     "emailChangeRevert": {
       "title": "Revert email change",
-      "cardDescription": "The contact email on your SweCham account was changed. If you did not request this, click below to revert it and reset your password.",
-      "description": "Reverting will restore your previous email, sign out every active session, and require you to set a new password before signing in again.",
+      "cardDescription": "The contact email on your account was changed. If you did not request this, revert it and reset your password.",
+      "description": "Restores your previous email, signs out every active session, and requires a new password before you can sign in again. This link works for {hours} hours.",
       "revert": "Revert and reset password",
       "submitting": "Reverting…",
       "successMessage": "Email change reverted. Complete the password reset to regain access.",
@@ -116,14 +126,16 @@
         "invalidToken": "This revert link has expired or has already been used.",
         "conflict": "The previous email is no longer available. Contact your chamber administrator.",
         "rateLimited": "Too many attempts. Try again in {seconds}s.",
-        "serverError": "Something went wrong. Please try again."
-      }
+        "serverError": "Something went wrong. Please try again.",
+        "invalidTokenBody": "If you still don't recognise the email change, sign in or contact your chamber."
+      },
+      "warningTitle": "What reverting does",
+      "madeThisChange": "I made this change — back to sign in"
     },
     "emailVerification": {
       "title": "Verify email address",
       "cardDescription": "Confirming your new email address — one moment.",
       "verifying": "Verifying your email address…",
-      "successMessage": "Email verified. You can now sign in.",
       "signInCta": "Go to sign in",
       "retry": "Try again",
       "errors": {
@@ -131,7 +143,12 @@
         "notYetActive": "This link is not active yet. Try again in {seconds}s.",
         "rateLimited": "Too many attempts. Try again in {seconds}s.",
         "serverError": "Something went wrong. Please try again."
-      }
+      },
+      "successTitle": "Email verified",
+      "successDescription": "Your new email address is active.",
+      "successAlertTitle": "Email verified.",
+      "successAlertBody": "Emails from the chamber now go to your new address.",
+      "continueToPortal": "Continue to portal"
     }
   },
   "shell": {
@@ -220,6 +237,7 @@
       "confirmLabel": "Leave the page",
       "cancelLabel": "Stay on this page"
     },
+    "unsavedStatus": "Unsaved changes",
     "yes": "Yes",
     "no": "No",
     "languageOptions": {
@@ -230,7 +248,7 @@
   },
   "directorySettings": {
     "title": "Directory listing",
-    "subtitle": "Choose whether you appear in the member directory and which details are shown",
+    "subtitle": "Choose whether you appear in the member directory and which details are shown.",
     "emptyTitle": "No member profile",
     "empty": "Your account isn't linked to a member profile yet.",
     "listed": "List my organisation in the member directory",
@@ -252,13 +270,13 @@
     "description": "Short description",
     "website": "Website",
     "city": "City",
-    "country": "Country (ISO code, e.g. TH)",
+    "country": "Country",
     "logoHeading": "Logo",
-    "logoHint": "PNG, JPEG, or WebP, up to 2 MB. Re-encoded and stripped of metadata on upload.",
+    "logoHint": "PNG, JPEG, or WebP, up to 2 MB. Re-encoded and stripped of metadata on upload. Logo changes save immediately.",
     "logoUpload": "Upload logo",
     "logoRemove": "Remove logo",
     "logoCurrent": "Current logo",
-    "save": "Save",
+    "save": "Save listing",
     "contactNameLabel": "Primary contact's name ({name})",
     "contactEmailLabel": "Primary contact's email ({email})",
     "contactHeading": "Primary contact's details",
@@ -268,9 +286,7 @@
     "contactConfirmTitle": "Please confirm your contact details",
     "contactConfirmBody": "These settings were chosen by your company's previous primary contact. Until you save, the directory shows your name only and hides your email.",
     "notPrimaryContact": "Only your company's primary contact can change whether their name and email are published.",
-    "previewHeading": "Preview",
     "previewUnsaved": "Preview of unsaved changes",
-    "previewHint": "How your listing will appear in the member directory E-Book.",
     "previewNotListed": "Not listed — your organisation won't appear in the directory.",
     "previewEmpty": "No details selected — your organisation won't appear in the directory.",
     "previewContactForm": "Contact via the chamber",
@@ -289,7 +305,10 @@
     "logoTooLarge": "Logo exceeds 2 MB — choose a smaller file.",
     "logoUnsupported": "Unsupported format — use PNG, JPEG, or WebP.",
     "logoProfileMissing": "Member profile not found — reload the page and try again.",
-    "logoInvalidImage": "We couldn't read that image — the file may be corrupt. Try re-exporting it."
+    "logoInvalidImage": "We couldn't read that image — the file may be corrupt. Try re-exporting it.",
+    "listingHeading": "Listing",
+    "descriptionHint": "Up to {max} characters. ({count}/{max})",
+    "previewLabel": "How your listing looks"
   },
   "admin": {
     "directory": {
@@ -6185,19 +6204,25 @@
         "title": "Welcome to the {tenant} member portal",
         "body": "Your dashboard fills up as you use your membership — pay invoices, attend events, and use your benefits.",
         "exploreBenefits": "Explore your benefits"
+      },
+      "invoiceAlert": {
+        "title": "Your membership invoice is ready",
+        "body": "{hasNumber, select, yes {{number} · } other {}}{amount}{due, select, upcoming { due {date}} overdue { was due {date}} other {}}.{online, select, both { Pay online by card or PromptPay.} card { Pay online by card.} promptpay { Pay online by PromptPay.} other {}}",
+        "payNow": "Pay now",
+        "viewInvoice": "View invoice"
       }
     },
     "account": {
       "contactLanguage": {
-        "title": "Language for emails to you",
-        "description": "Used for messages addressed to you personally, such as the decision on a change you proposed. Emails to the company follow the setting above.",
-        "save": "Save language",
+        "save": "Save personal language",
         "savedToast": "Email language updated.",
         "errorToast": "Could not save the language. Please try again.",
-        "readOnlyToast": "The system is in read-only mode for a moment. Try again shortly."
+        "readOnlyToast": "The system is in read-only mode for a moment. Try again shortly.",
+        "groupLabel": "Emails to you personally",
+        "hint": "Messages addressed to you personally, such as the decision on a change you proposed."
       },
       "title": "Account settings",
-      "subtitle": "Manage your password and notification language.",
+      "subtitle": "Manage your password, email language, reminders and your data.",
       "forgotPassword": "Forgot your password?",
       "sections": {
         "account": "Account",
@@ -6207,17 +6232,20 @@
       "menu": {
         "renewalPrefs": "Renewal reminders",
         "dataPrivacy": "Data & privacy"
-      }
+      },
+      "emailLabel": "Email",
+      "passwordSessionsNote": "Changing your password signs you out on every other device."
     },
     "preferredLocale": {
       "title": "Notification language",
-      "description": "Choose the language for the emails you receive (broadcast approvals, invoices, password resets). Leave on \"Use chamber default\" to follow your chamber's setting.",
       "useTenantDefault": "Use chamber default",
-      "save": "Save preference",
+      "save": "Save company language",
       "savedToast": "Notification language updated.",
       "errorToast": "Could not save preference. Please try again.",
       "loading": "Loading…",
-      "loadError": "Could not load your current preference. Please refresh the page and try again."
+      "loadError": "Could not load your current preference. Please refresh the page and try again.",
+      "groupLabel": "Emails to your company",
+      "hint": "Invoices, broadcast approvals and other emails sent to the company. “Use chamber default” follows your chamber's setting."
     },
     "invoices": {
       "title": "Invoices",
@@ -6284,8 +6312,11 @@
       "summary": {
         "heading": "Recent invoices",
         "description": "Your latest 3 invoices — download PDFs or view all.",
-        "viewAll": "View all",
-        "contactAdmin": "Contact your chamber admin"
+        "viewAll": "View all invoices",
+        "contactAdmin": "Contact your chamber admin",
+        "issuedOn": "Issued {date}",
+        "dueOn": "Due {date}",
+        "receiptRef": "Receipt {number}"
       },
       "detail": {
         "a11y": {
@@ -6770,8 +6801,8 @@
     "benefits": {
       "tabs": {
         "ariaLabel": "Benefits sections",
-        "benefits": "Benefits",
-        "broadcasts": "Broadcasts"
+        "benefits": "Plan benefits",
+        "broadcasts": "E-Blasts"
       }
     },
     "profile": {
@@ -6807,7 +6838,7 @@
           }
         }
       },
-      "inviteColleague": "Invite Colleague",
+      "inviteColleague": "Invite colleague",
       "primaryBadge": "Primary",
       "portalLinked": "Portal linked",
       "noContacts": "No contacts found.",
@@ -6838,13 +6869,15 @@
         "registrationDate": "Registration Date",
         "lastActivityAt": "Last activity",
         "status": "Status"
-      }
+      },
+      "youSuffix": "(you)",
+      "moreAboutProfile": "More about your profile"
     },
     "changeRequests": {
       "history": {
           "pageTitle": "Change request history",
           "title": "Change request history",
-          "subtitle": "Every change you proposed to your member record and what the chamber decided.",
+          "subtitle": "Changes you proposed, plus company-detail changes proposed by colleagues, and what the chamber decided.",
           "notLinked": "Your account is not linked to a member.",
           "empty": "No change requests yet.",
           "emptyHint": "Changes you propose on the edit page appear here with the chamber’s decision.",
@@ -6874,7 +6907,9 @@
             "title": "Change request history",
             "subtitle": "See every change you proposed and what the chamber decided.",
             "link": "View history"
-          }
+          },
+          "colleagueNote": "A colleague's changes to their own contact details are never shown here.",
+          "withdrawnOn": "withdrawn {withdrawnAt}"
         },
       "form": {
         "pageTitle": "Propose changes",
@@ -6883,7 +6918,7 @@
         "companySection": "Company details",
         "registeredAddressSection": "Registered address",
         "billingAddressSection": "Billing address",
-        "billingAddressHint": "Use when the VAT-registered address (ภ.พ.20) differs from the registered address — tax documents carry the billing address. Leave every line empty to keep none. The registered address then becomes the address printed on your tax invoices.",
+        "billingAddressHint": "Use when the VAT-registered address (ภ.พ.20) differs from the registered address — tax documents carry the billing address. Leave every line empty to keep none.",
         "requiredNote": "* fields are required",
         "fields": {
           "firstName": "First name",
@@ -6899,7 +6934,8 @@
           "city": "City",
           "province": "Province",
           "postalCode": "Postal code",
-          "country": "Country (2-letter code)"
+          "country": "Country",
+          "countryHint": "2-letter code, e.g. TH"
         },
         "submit": "Submit for review",
         "submitting": "Submitting…",
@@ -6907,14 +6943,15 @@
         "secondaryNote": "Only your company's primary contact can propose changes to the company details. Contact them if something needs updating.",
         "notice": "Your proposal is reviewed by chamber staff, emailed to them, and kept with your member record.",
         "privacyLink": "Privacy notice",
-        "pendingHint": "You already have a request awaiting review. Submitting again replaces it with these values.",
         "resubmitTitle": "The chamber did not approve part of your last request:",
         "errors": {
           "phone": "Enter a phone number in international format, e.g. +66 81 234 5678.",
           "website": "Enter a valid web address, e.g. https://example.com.",
           "country": "Enter a 2-letter country code, e.g. TH.",
           "billingIncomplete": "A billing address needs at least line 1, city, postal code and country — or leave every line empty."
-        }
+        },
+        "pendingReplaces": "Submitting again replaces it with these values.",
+        "errorSummaryTitle": "{count, plural, one {# field needs your attention} other {# fields need your attention}}"
       },
       "status": {
         "submitted": "Your changes were sent for review.",
@@ -6937,7 +6974,8 @@
         "title": "Awaiting chamber review",
         "body": "Submitted {submittedAt}. Nothing has changed on your record yet — the chamber will email you the decision.",
         "editLink": "Edit your request",
-        "loadFailed": "Your pending change request could not be loaded right now. Refresh to try again. It is still waiting for review."
+        "loadFailed": "Your pending change request could not be loaded right now. Refresh to try again. It is still waiting for review.",
+        "editHint": "Editing your request replaces it — use <strong>Edit your request</strong> above."
       },
       "withdraw": {
         "button": "Withdraw request",
@@ -6999,24 +7037,26 @@
         "outcome": {
           "approved": "Approved",
           "rejected": "Not approved"
-        }
+        },
+        "decision": "Decision",
+        "wasShort": "Was"
       }
     },
     "edit": {
-      "pageTitle": "Edit Profile",
+      "pageTitle": "Edit profile",
       "notLinked": "Your account is not linked to a member.",
       "loadError": "Could not load your profile.",
-      "contactSection": "Your Contact Information",
-      "companySection": "Company Information",
+      "contactSection": "Your contact details",
+      "companySection": "Company details",
       "fields": {
-        "firstName": "First Name",
-        "lastName": "Last Name",
+        "firstName": "First name",
+        "lastName": "Last name",
         "phone": "Phone",
-        "preferredLanguage": "Preferred Language",
+        "preferredLanguage": "Preferred language",
         "website": "Website",
         "description": "Description"
       },
-      "saveButton": "Save Changes",
+      "saveButton": "Save changes",
       "cancelButton": "Cancel",
       "saving": "Saving…",
       "saveSuccess": "Profile updated successfully.",
@@ -7026,19 +7066,19 @@
       "noChanges": "No changes to save."
     },
     "invite": {
-      "pageTitle": "Invite Colleague",
+      "pageTitle": "Invite colleague",
       "notLinked": "Your account is not linked to a member.",
       "loadError": "Could not load your profile.",
       "notPrimary": "Only the primary contact can invite colleagues.",
-      "formTitle": "Colleague Details",
+      "formTitle": "Colleague details",
       "fields": {
-        "firstName": "First Name",
-        "lastName": "Last Name",
+        "firstName": "First name",
+        "lastName": "Last name",
         "email": "Email",
-        "roleTitle": "Role / Title",
-        "preferredLanguage": "Preferred Language"
+        "roleTitle": "Role / title",
+        "preferredLanguage": "Preferred language"
       },
-      "sendButton": "Send Invitation",
+      "sendButton": "Send invitation",
       "cancelButton": "Cancel",
       "sending": "Sending…",
       "sendSuccess": "Invitation sent successfully.",
@@ -7047,7 +7087,15 @@
       "inviteUnavailable": "We couldn't invite this address. Please contact the chamber for help.",
       "invalidEmail": "Enter a valid email address.",
       "validationError": "Please check the form and try again.",
-      "linkFailed": "Couldn't complete the invitation. No invitation was sent — please try again."
+      "linkFailed": "Couldn't complete the invitation. No invitation was sent — please try again.",
+      "capabilities": {
+        "title": "What your colleague can do",
+        "body": "Colleagues you invite get their own portal login for this membership. They can view and pay invoices, renew the membership and use its benefits. Only the primary contact can invite colleagues."
+      },
+      "emailHint": "They get an email with a link to set their password.",
+      "roleTitleHint": "Up to 100 characters.",
+      "privacyNote": "{firstName}'s name and email are stored as a contact of your membership — see the <link>privacy notice</link>.",
+      "privacyNoteNoName": "Your colleague's name and email are stored as a contact of your membership — see the <link>privacy notice</link>."
     },
     "payment": {
       "payNow": "Pay now",
@@ -7278,7 +7326,7 @@
         "title": "Renewal reminders",
         "subtitle": "Choose whether to receive renewal-reminder emails. Transactional emails (password resets, invoice receipts) continue regardless.",
         "pauseLabel": "Pause renewal reminders",
-        "pauseDescription": "We'll still keep your renewal cycle on the admin pipeline so staff can reach out if needed.",
+        "pauseDescription": "We'll still keep your renewal cycle on the admin pipeline so staff can reach out if needed. Invoices and payment emails continue either way.",
         "saveErrorTitle": "Couldn't save your preference",
         "saveErrorDescription": "Your previous setting has been restored. Please try again."
       }
@@ -7938,7 +7986,11 @@
       "loadMore": "Load older activity",
       "loading": "Loading…",
       "loadError": "Failed to load more activity. Please try again.",
-      "results": "{count, plural, =0 {No entries} one {# entry} other {# entries}}"
+      "results": "{count, plural, =0 {No entries} one {# entry} other {# entries}}",
+      "groupToday": "Today",
+      "groupThisMonth": "This month",
+      "caption": "Showing the latest {count} · times in Bangkok time · Thai shows dates in the Buddhist Era",
+      "captionMoreFilters": "More filters: actor, from date, to date."
     },
     "filters": {
       "title": "Filters",
@@ -7947,7 +7999,8 @@
       "from": "From date",
       "to": "To date",
       "all": "All",
-      "clear": "Clear filters"
+      "clear": "Clear filters",
+      "moreFilters": "More filters"
     },
     "source": {
       "audit": "Profile / Audit",
@@ -7995,7 +8048,134 @@
       "pending_admin_reactivation": "Pending reactivation",
       "updated": "Renewal updated"
     },
-    "unknownEvent": "Activity"
+    "unknownEvent": "Activity",
+    "sourceBadgeAudit": "Profile",
+    "memberAudit": {
+      "member_created": "Membership record created",
+      "member_number_assigned": "Member number assigned",
+      "member_updated": "Your membership details were updated",
+      "member_status_changed": "Your membership status changed",
+      "member_archived": "Your membership was archived",
+      "member_undeleted": "Your membership was restored",
+      "member_plan_changed": "Your membership plan was changed",
+      "plan_bundle_changed": "Your bundled corporate plan was changed",
+      "member_plan_change_billing_effect": "Billing adjusted for your plan change",
+      "member_primary_contact_changed": "Your primary contact was changed",
+      "contact_created": "Contact person added",
+      "contact_updated": "Contact details updated",
+      "contact_removed": "Contact person removed",
+      "contact_linked_to_user": "Portal login linked to a contact",
+      "member_self_updated": "Profile updated in the portal",
+      "member_self_update_forbidden": "Change not saved — only staff can edit this field",
+      "member_contact_email_changed": "Contact email address changed",
+      "user_sessions_revoked": "A portal user was signed out on all devices",
+      "email_verification_sent": "Verification email sent to the new address",
+      "email_change_notification_sent_to_old_address": "Email change notice sent to the old address",
+      "email_verification_resent": "Verification email sent again",
+      "member_portal_invite_queued": "Portal invitation queued to send",
+      "member_auto_invoice_enrolled": "Automatic renewal invoices turned on",
+      "member_auto_invoice_unenrolled": "Automatic renewal invoices turned off",
+      "contact_marketing_opted_out": "Marketing emails turned off for a contact",
+      "contact_marketing_opted_in": "Marketing emails turned on for a contact",
+      "member_change_request_submitted": "Change request submitted",
+      "member_change_request_decided": "Change request reviewed",
+      "member_change_request_withdrawn": "Change request withdrawn",
+      "member_change_request_rate_limited": "Change request not sent — too many requests, try again later",
+      "member_erasure_requested": "Deletion of your personal data requested",
+      "member_erased": "Your personal data was deleted",
+      "subprocessor_erasure_propagated": "Deletion passed on to our service providers",
+      "plan_change_scheduled": "Plan change scheduled for your next renewal",
+      "plan_change_superseded": "Scheduled plan change replaced by a newer one",
+      "plan_change_cancelled": "Scheduled plan change cancelled",
+      "plan_change_applied": "Your scheduled plan change is now in effect",
+      "invoice_draft_created": "Invoice draft prepared",
+      "invoice_issued": "Invoice issued",
+      "invoice_paid": "Invoice paid",
+      "invoice_voided": "Invoice cancelled",
+      "invoice_pdf_resent": "Invoice emailed again to your primary contact",
+      "credit_note_issued": "Credit note issued",
+      "tax_receipt_issued": "Tax receipt issued",
+      "invoice_overdue_detected": "Invoice is now overdue",
+      "invoice_pdf_downloaded": "Invoice PDF downloaded",
+      "receipt_pdf_downloaded": "Receipt PDF downloaded",
+      "receipt_rendered": "Receipt ready",
+      "auto_email_skipped_no_recipient": "Email not sent — no primary contact on file",
+      "event_buyer_pii_redacted": "Old invoice details anonymised",
+      "renewal_cycle_created": "Renewal period opened",
+      "renewal_cycle_cancelled": "Renewal cancelled",
+      "renewal_cycle_completed_offline": "Renewal completed — payment received offline",
+      "renewal_cycle_reanchored": "Renewal dates adjusted to your payment date",
+      "renewal_lapsed": "Your membership lapsed",
+      "renewal_entered_awaiting_payment": "Renewal awaiting payment",
+      "renewal_invoice_created": "Renewal invoice created",
+      "renewal_with_plan_change": "Renewal confirmed with a plan change",
+      "renewal_completed": "Membership renewed",
+      "renewal_completed_post_lapse": "Renewal payment received after lapse",
+      "renewal_self_service_initiated": "Renewal started",
+      "renewal_token_clicked_on_completed_cycle": "Renewal link opened — already renewed",
+      "renewal_reminder_sent": "Renewal reminder sent to your primary contact",
+      "renewal_reminder_skipped": "Renewal reminder skipped",
+      "renewal_reminder_send_failed": "Renewal reminder not delivered — retrying",
+      "renewal_reminder_send_failed_permanent": "Renewal reminder could not be delivered",
+      "renewal_reminder_retried": "Renewal reminder resent",
+      "renewal_reminder_deferred_read_only": "Renewal reminder postponed",
+      "renewal_skipped_no_joined_at": "Renewal reminder not sent — join date missing",
+      "renewal_schedule_rescheduled": "Renewal reminders rescheduled",
+      "renewal_schedule_reschedule_skipped": "Renewal reminders unchanged",
+      "renewal_lapse_deferred_invoice_not_due": "Membership stays active — invoice not yet due",
+      "renewal_lapse_deferred_warning_pending": "Membership stays active — final notice period still running",
+      "renewal_auto_drafted": "Renewal invoice draft prepared",
+      "renewal_auto_draft_discarded": "Renewal invoice draft discarded",
+      "renewal_orphan_invoice_relinked": "Renewal invoice linked to your renewal",
+      "payment_on_terminated_member": "Payment received after your membership ended",
+      "lapsed_member_admin_reactivated": "Your membership was reactivated",
+      "lapsed_member_admin_reactivation_reminder_t-7": "Reactivation under review — 7 days left",
+      "lapsed_member_admin_reactivation_reminder_t-3": "Reactivation under review — 3 days left",
+      "lapsed_member_admin_reactivation_reminder_t-1": "Reactivation under review — 1 day left",
+      "member_auto_reactivation_blocked": "Automatic reactivation turned off",
+      "member_auto_reactivation_unblocked": "Automatic reactivation turned back on",
+      "lapsed_member_action_blocked": "Action not available while your membership is lapsed",
+      "membership_suspended_action_blocked": "Action not available while your membership is suspended",
+      "membership_access_fail_open": "Membership check skipped — access allowed",
+      "member_email_unverified_threshold_crossed": "Emails to your primary contact are bouncing — please check the address",
+      "tier_upgrade_suggested": "Plan upgrade suggested",
+      "tier_upgrade_accepted": "Plan upgrade confirmed",
+      "tier_upgrade_dismissed": "Plan upgrade suggestion dismissed",
+      "tier_upgrade_applied_at_renewal": "Plan upgrade applied at renewal",
+      "tier_upgrade_pending_admin_verification_due": "Plan upgrade awaiting staff check",
+      "tier_upgrade_pending_member_notified": "Plan upgrade notice sent to your primary contact",
+      "tier_upgrade_pending_member_notify_skipped": "Plan upgrade notice not sent",
+      "tier_upgrade_pending_member_notify_failed": "Plan upgrade notice could not be sent",
+      "tier_upgrade_pending_orphan_detected": "Plan upgrade suggestion closed automatically",
+      "tier_upgrade_apply_post_invoice_paid_failed": "Plan upgrade could not be applied",
+      "escalation_task_created": "Follow-up task created",
+      "escalation_task_completed": "Follow-up task completed",
+      "escalation_task_skipped": "Follow-up task skipped",
+      "escalation_task_reassigned": "Follow-up task reassigned",
+      "at_risk_score_recomputed": "Membership health score updated",
+      "at_risk_score_threshold_crossed": "Membership health status changed",
+      "at_risk_snoozed": "Follow-up paused",
+      "at_risk_outreach_recorded": "Our team contacted you",
+      "at_risk_skipped_below_min_tenure": "Health score not calculated yet",
+      "broadcast_submitted": "E-Blast submitted for review",
+      "broadcast_content_redacted": "E-Blast content removed",
+      "broadcast_test_copy_sent": "E-Blast test copy sent",
+      "broadcast_image_uploaded": "Image added to your E-Blast",
+      "broadcast_image_removed": "Image removed from your E-Blast",
+      "broadcast_version_started": "Our team started formatting your E-Blast",
+      "broadcast_version_sent_to_member": "E-Blast version sent to you for approval",
+      "broadcast_member_approved": "E-Blast approved",
+      "broadcast_member_changes_requested": "Changes to the E-Blast requested",
+      "broadcast_member_approval_withdrawn": "E-Blast approval withdrawn",
+      "broadcast_member_approval_voided": "E-Blast approval reset after an edit",
+      "broadcast_schedule_confirmed": "E-Blast send time confirmed",
+      "broadcast_approval_reminder_sent": "Reminder sent to review your E-Blast",
+      "broadcast_approval_expiry_warned": "E-Blast approval about to expire",
+      "broadcast_approval_expired": "E-Blast closed — no response received",
+      "broadcast_member_halted_pending_review": "E-Blast not submitted — account on hold for staff review",
+      "broadcast_membership_suspended_blocked": "E-Blast not sent — membership suspended",
+      "member_acknowledged_broadcasts_terms": "E-Blast terms accepted"
+    }
   },
   "benefits": {
     "page": {
@@ -8003,7 +8183,11 @@
       "subtitleMember": "Your membership benefits for this year",
       "empty": "We couldn't find a membership profile for your account yet.",
       "emptyFromBroadcasts": "You followed a link to E-Blast — composing needs a linked membership profile. Ask your chamber to link your account.",
-      "emptyTitle": "No membership profile yet"
+      "emptyTitle": "No membership profile yet",
+      "subtitlePlan": "What your {plan} plan includes.",
+      "subtitlePlanEblasts": "What your {plan} plan includes, and the E-Blasts you have sent.",
+      "statusFull": "Full benefits",
+      "statusPaused": "Benefits paused"
     },
     "card": {
       "title": "Benefit usage · {year}",
@@ -8016,19 +8200,29 @@
       "emptyTitle": "No tracked benefits",
       "fullBenefits": "Full benefits",
       "suspendedBadge": "Suspended",
-      "suspendedBadgeSr": "Membership suspended — benefits paused"
+      "suspendedBadgeSr": "Membership suspended — benefits paused",
+      "ofTotalUsed": "of {total} used",
+      "benefitUsed": "{benefit} used",
+      "activeDescriptionPlan": "Part of your {plan} plan for {year}",
+      "activeDescription": "Part of your plan for {year}",
+      "reservedHint": "{reserved} reserved · {remaining} left{hasDate, select, yes { · last used {date}} other {}}",
+      "quotaValueText": "{used} used, {reserved} reserved, {remaining} remaining of {total}"
     },
     "benefit": {
       "eblast": "E-Blasts",
       "cultural_tickets": "Cultural event tickets",
       "action": {
-        "eblast": "Compose",
+        "eblast": "Compose E-Blast",
         "cultural_tickets": "View events"
+      },
+      "description": {
+        "eblast": "Email campaigns sent to the chamber's audience on your behalf",
+        "cultural_tickets": "Tickets to the chamber's cultural events"
       }
     },
     "active": {
-      "all_employee_event_discount": "All-employee event discount",
-      "directory_listing": "Directory listing",
+      "all_employee_event_discount": "Member discount rate",
+      "directory_listing": "Directory E-Book listing",
       "m2m_benefits": "Member-to-member benefits",
       "business_referrals": "Business referrals",
       "tailor_made_services": "Tailor-made services",
@@ -8099,6 +8293,14 @@
     "colFor": "Prepared for",
     "forCompany": "Whole company",
     "forContact": "{name}",
-    "alreadyPending": "An export is already being prepared — see its status below."
+    "alreadyPending": "An export is already being prepared — see its status below.",
+    "statusHeadingMember": "Your recent requests",
+    "otherRequests": {
+      "title": "Other requests about your data",
+      "edit": "To correct details, use <edit>Edit profile</edit>.",
+      "contact": "For erasure, restriction or objection, contact the chamber at <mail>{address}</mail>.",
+      "contactNoEmail": "For erasure, restriction or objection, contact the chamber.",
+      "privacyLink": "Privacy notice"
+    }
   }
 }

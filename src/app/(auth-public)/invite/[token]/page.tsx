@@ -1,7 +1,9 @@
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
 import { AuthFrame } from '@/components/auth/auth-frame';
+import { env } from '@/lib/env';
 import { AuthLinkInvalid } from '@/components/auth/auth-link-invalid';
+import { portalSignInPath } from '@/lib/portal-paths';
 import { InviteRedeemForm } from '@/components/auth/invite-redeem-form';
 // Presentation-side data loaders for the invitation display page.
 // No Application use case provides a read-only "prefetch invitation
@@ -13,7 +15,7 @@ import { InviteRedeemForm } from '@/components/auth/invite-redeem-form';
 import { tokenRepo } from '@/modules/auth/infrastructure/db/token-repo';
 import { userRepo } from '@/modules/auth/infrastructure/db/user-repo';
  
-import { isInvitationValid, asInvitationTokenId } from '@/modules/auth';
+import { isInvitationValid, asInvitationTokenId, isStaffRole } from '@/modules/auth';
 
 /**
  * Invitation redemption page (T136) at URL `/invite/[token]`.
@@ -37,6 +39,9 @@ export default async function InviteRedeemPage({ params }: InviteRedeemPageProps
   const t = await getTranslations('auth.invite');
 
   let email: string | null = null;
+  // Which portal the invitee joins: names the brand panel's line and where
+  // "Back to sign in" goes. Unknown for a dead token → the member portal.
+  let staffInvite = false;
   let tokenDead = false;
   try {
     const invitation = await tokenRepo.findInvitationById(
@@ -50,6 +55,7 @@ export default async function InviteRedeemPage({ params }: InviteRedeemPageProps
         tokenDead = true;
       } else {
         email = user.email;
+        staffInvite = isStaffRole(user.role);
       }
     }
   } catch {
@@ -57,17 +63,27 @@ export default async function InviteRedeemPage({ params }: InviteRedeemPageProps
   }
 
   const tFrame = await getTranslations('auth.frame');
+  const tSignIn = await getTranslations('auth.signIn');
   return (
     <AuthFrame
       title={t('title')}
-      description={t('cardDescription')}
-      portalLabel={tFrame('everyone')}
+      description={tokenDead || !email ? t('expiredDescription') : t('cardDescription')}
+      portalLabel={staffInvite ? tSignIn('cardDescription') : tSignIn('memberCardDescription')}
       tenantName={process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham'}
     >
       {tokenDead || !email ? (
-        <AuthLinkInvalid message={t('errors.tokenExpired')} detail={t('errors.contactAdminCta')} />
+        <AuthLinkInvalid
+          title={t('expiredTitle')}
+          detail={t('expiredBody')}
+          back={{ label: tFrame('backToSignIn'), href: portalSignInPath('member') }}
+        />
       ) : (
-        <InviteRedeemForm token={token} email={email} />
+        <InviteRedeemForm
+          token={token}
+          email={email}
+          tenantName={process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham'}
+          privacyNoticeHref={env.broadcasts.privacyPolicyUrl ?? null}
+        />
       )}
     </AuthFrame>
   );

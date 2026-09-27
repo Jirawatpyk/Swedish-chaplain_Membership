@@ -4,7 +4,10 @@ import { describe, expect, it, vi } from 'vitest';
 // no try/catch, so a DB error THROWS. We mock the invoicing barrel so the call
 // throws and assert `loadDashboardOutstanding` resolves to the error sentinel
 // (not a crash). `makeListInvoicesDeps` is stubbed so no live DB is touched.
-vi.mock('@/modules/invoicing', () => ({
+vi.mock('@/modules/invoicing', async () => ({
+  // The real (pure Domain) number rule — the barrel itself would pull the DB layer.
+  billFirstDocumentNumber: (await vi.importActual<typeof import('@/modules/invoicing/domain/invoice')>('@/modules/invoicing/domain/invoice'))
+    .billFirstDocumentNumber,
   listInvoicesPaged: vi.fn(async () => {
     throw new Error('simulated DB read failure');
   }),
@@ -63,8 +66,15 @@ describe('toOutstandingInvoiceInputs', () => {
     ] as const;
     const out = toOutstandingInvoiceInputs(rows as never);
     expect(out).toEqual([
-      { status: 'issued', totalSatang: 107_000n, dueDate: '2026-06-20' },
-      { status: 'draft', totalSatang: null, dueDate: null },
+      { status: 'issued', totalSatang: 107_000n, dueDate: '2026-06-20', documentNumber: null },
+      { status: 'draft', totalSatang: null, dueDate: null, documentNumber: null },
     ]);
+  });
+
+  it('carries the number the member sees, bill number first (spec 122 US3 home alert)', () => {
+    const [out] = toOutstandingInvoiceInputs([
+      { status: 'issued', total: { satang: 1n }, dueDate: null, billDocumentNumberRaw: 'SC-2026-000123', documentNumber: { raw: 'INV-2026-000045' } },
+    ] as never);
+    expect(out?.documentNumber).toBe('SC-2026-000123');
   });
 });

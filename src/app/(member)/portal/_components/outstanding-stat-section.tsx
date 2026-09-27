@@ -1,3 +1,4 @@
+import { FileText } from 'lucide-react';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { formatSatangThb } from '@/lib/format-thb';
 import { bangkokLocalDate } from '@/lib/fiscal-year';
@@ -34,6 +35,7 @@ export async function OutstandingStatSection({
   if (read.error) {
     return (
       <StatCard
+        headIcon={FileText}
         label={t('label')}
         value={t('errorValue')}
         sub={t('errorSub')}
@@ -51,6 +53,7 @@ export async function OutstandingStatSection({
   if (stat.kind === 'clear') {
     return (
       <StatCard
+        headIcon={FileText}
         label={t('label')}
         value={t('clearValue')}
         sub={t('clearSub')}
@@ -69,10 +72,11 @@ export async function OutstandingStatSection({
   // warning so the stat does not over-alarm during the normal payment window.
   const isOverdue = stat.kind === 'overdue';
 
-  const sub =
-    stat.earliestDueDate !== null
-      ? t('dueSub', { date: formatDueDate(stat.earliestDueDate, locale) })
-      : countSub;
+  const dueSub = stat.earliestDueDate !== null ? t('dueSub', { date: formatDueDate(stat.earliestDueDate, locale) }) : null;
+  // Spec 122 US3 — the calm `due` window is one caption, "1 unpaid invoice ·
+  // Earliest due 15 Oct 2026", as the `Main` board draws it; only overdue
+  // keeps the red status row.
+  const sub = isOverdue ? (dueSub ?? countSub) : dueSub ? `${countSub} · ${dueSub}` : countSub;
 
   // 057 R2 finding D — when the cap clipped the result the overdue count is
   // also a floor, so use a "{count} or more" form for the overdue label too.
@@ -100,11 +104,12 @@ export async function OutstandingStatSection({
 
   return (
     <StatCard
+      headIcon={FileText}
       label={t('label')}
       value={value}
       sub={sub}
-      variant={isOverdue ? 'destructive' : 'warning'}
-      variantLabel={variantLabel}
+      href="/portal/invoices"
+      {...(isOverdue ? { variant: 'destructive' as const, variantLabel } : {})}
     />
   );
 }

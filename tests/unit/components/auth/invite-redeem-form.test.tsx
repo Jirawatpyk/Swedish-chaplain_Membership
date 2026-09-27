@@ -81,7 +81,7 @@ describe('InviteRedeemForm on AURA (spec 122 US2)', () => {
     expect(within(summary).getAllByRole('link').length).toBeGreaterThanOrEqual(2);
   });
 
-  it('swaps the form for a focused danger alert saying who can send a new invitation', async () => {
+  it('swaps the form for a titled danger alert saying who can send a new invitation, and a way back to sign in', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: 'link-invalid' }), { status: 410 })),
@@ -95,7 +95,10 @@ describe('InviteRedeemForm on AURA (spec 122 US2)', () => {
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveClass('aura-alert', 'aura-alert--danger');
     expect(alert).toHaveTextContent('This invitation has expired.');
-    expect(alert).toHaveTextContent('Contact an administrator to request a new invitation.');
+    expect(alert).toHaveTextContent('Ask the person who invited you, or the chamber, to send a new invitation.');
+    // Said once: the old copy repeated "ask an administrator" in two sentences.
+    expect(alert.textContent?.match(/invitation/gi)).toHaveLength(2);
+    expect(screen.getByRole('link', { name: 'Back to sign in' })).toHaveAttribute('href', '/portal/sign-in');
     await waitFor(() => expect(alert.closest('[tabindex="-1"]')).toHaveFocus());
     expect(container.querySelector('form')).toBeNull();
   });
@@ -105,5 +108,30 @@ describe('InviteRedeemForm on AURA (spec 122 US2)', () => {
     const submit = screen.getByRole('button', { name: 'Activate account' });
     expect(submit).toHaveClass('aura-btn');
     expect(submit).toHaveAttribute('type', 'submit');
+  });
+});
+
+describe('InviteRedeemForm — privacy notice at collection (spec 122 US2, Auth-invite board)', () => {
+  it('links the tenant privacy notice under Activate account, opening in a new tab', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <InviteRedeemForm token="tok" email="sofia.ek@example.test" tenantName="SweCham" privacyNoticeHref="https://example.test/privacy" />
+      </NextIntlClientProvider>,
+    );
+    const link = screen.getByRole('link', { name: 'Privacy notice' });
+    expect(link).toHaveAttribute('href', 'https://example.test/privacy');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link.closest('p')).toHaveTextContent('How SweCham uses your data: Privacy notice');
+    const submit = screen.getByRole('button', { name: 'Activate account' });
+    expect(submit.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('shows no line when the tenant has no privacy notice URL', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <InviteRedeemForm token="tok" email="sofia.ek@example.test" tenantName="SweCham" privacyNoticeHref={null} />
+      </NextIntlClientProvider>,
+    );
+    expect(screen.queryByRole('link', { name: 'Privacy notice' })).toBeNull();
   });
 });

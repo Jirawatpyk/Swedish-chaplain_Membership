@@ -79,4 +79,20 @@ describe('<PageHeader>', () => {
     expect(h1.className).toMatch(/\btext-h1\b/);
     expect(h1.className).not.toMatch(/\btext-(?:xl|2xl|3xl)\b/);
   });
+
+  it('marks the size for the stylesheet: default, or hero for the larger portal pages (spec 122)', () => {
+    const { container, rerender } = render(<PageHeader title="Members" />);
+    const header = () => container.querySelector('[data-slot="page-header"]');
+    expect(header()).toHaveAttribute('data-size', 'default');
+    rerender(<PageHeader title="Hi Anna" size="hero" />);
+    expect(header()).toHaveAttribute('data-size', 'hero');
+  });
+
+  it('keeps the subtitle at the body size in both sizes (tailwind-merge must not drop text-body)', () => {
+    const { container, rerender } = render(<PageHeader title="Members" subtitle="Member companies" />);
+    const sub = () => container.querySelector('[data-slot="page-header-subtitle"]');
+    expect(sub()?.className).toMatch(/\btext-body\b/);
+    rerender(<PageHeader title="Hi Anna" subtitle="Nordic Trading" size="hero" />);
+    expect(sub()?.className).toMatch(/\btext-body\b/);
+  });
 });

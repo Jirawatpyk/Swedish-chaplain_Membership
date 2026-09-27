@@ -14,7 +14,7 @@ export function FormContainer({ children, className }: FormContainerProps) {
       data-variant="form"
       className={cn(
         'mx-auto w-full max-w-[var(--layout-max-width-form)]',
-        'px-[var(--page-padding-x)] py-[var(--page-padding-y)]',
+        'px-[var(--page-padding-x)] pt-[var(--page-padding-y)] pb-[var(--page-padding-bottom)]',
         'flex flex-col gap-[var(--page-section-gap)]',
         className,
       )}

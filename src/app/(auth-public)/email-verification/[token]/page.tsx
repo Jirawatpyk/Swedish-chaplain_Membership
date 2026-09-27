@@ -33,7 +33,6 @@ export default async function EmailVerificationPage({
   params,
 }: VerifyPageProps) {
   const { token } = await params;
-  const t = await getTranslations('auth.emailVerification');
   // Resolve role from the current session if the user is already
   // signed in (typical flow — the email-change request requires
   // an active session). Falls back to /admin for the rare case
@@ -44,11 +43,16 @@ export default async function EmailVerificationPage({
     : '/admin';
 
   const tFrame = await getTranslations('auth.frame');
+  const tSignIn = await getTranslations('auth.signIn');
+  const portalLabel = !current
+    ? tFrame('everyone')
+    : PORTAL_FOR_ROLE[current.user.role] === 'member'
+      ? tSignIn('memberCardDescription')
+      : tSignIn('cardDescription');
   return (
+    // The form draws the title: it follows the outcome ("Email verified").
     <AuthFrame
-      title={t('title')}
-      description={t('cardDescription')}
-      portalLabel={tFrame('everyone')}
+      portalLabel={portalLabel}
       tenantName={process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham'}
     >
       <EmailVerificationForm token={token} redirectTo={redirectTo} />

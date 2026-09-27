@@ -170,3 +170,44 @@ describe('PortalChangeRequestForm — one Idempotency-Key per attempt sequence (
     expect(keys[1]).not.toBe(keys[0]);
   });
 });
+
+describe('PortalChangeRequestForm on AURA (spec 122 US3)', () => {
+  it('uses AURA cards and fields, with Cancel and Submit at the end of the form (decision 2026-09-27)', () => {
+    const { container } = renderForm();
+    for (const id of ['firstName', 'companyName', 'regLine1', 'billCountry']) {
+      expect(container.querySelector(`#${id}`)?.closest('.aura-field')).not.toBeNull();
+    }
+    expect(container.querySelector('#description')).toHaveClass('aura-textarea');
+    expect(screen.getByRole('heading', { level: 2, name: copy.billingAddressSection })).toHaveClass('aura-card__title');
+    // No sticky ActionBar: plain buttons, Cancel then Submit (the tab order),
+    // stacked in reverse on a phone so Submit is on top.
+    expect(screen.queryByRole('region', { name: 'Actions' })).toBeNull();
+    const footer = container.querySelector('[data-slot="form-actions"]')!;
+    const buttons = [...footer.querySelectorAll('button')];
+    expect(buttons.map((b) => b.textContent)).toEqual([copy.cancel, copy.submit]);
+    expect(footer).toHaveClass('flex-col-reverse', 'sm:flex-row');
+  });
+
+  it('warns before the page is left with unsaved input, and not before', () => {
+    const { container } = renderForm();
+    const leave = () => {
+      const e = new Event('beforeunload', { cancelable: true });
+      window.dispatchEvent(e);
+      return e.defaultPrevented;
+    };
+    expect(leave()).toBe(false);
+    fireEvent.change(container.querySelector('#roleTitle')!, { target: { value: 'CFO' } });
+    expect(leave()).toBe(true);
+  });
+
+  it('lists a client-side failure in a focused error summary', async () => {
+    const { container } = renderForm();
+    fireEvent.change(container.querySelector('#billLine1')!, { target: { value: 'Box 9' } });
+    fireEvent.click(submitButton());
+    const summary = await screen.findByRole('alert', { name: '3 fields need your attention' });
+    // each entry names its field before what to fix
+    expect(summary.textContent).toContain(`${copy.billingAddressSection}, ${copy.fields.city} — `);
+    await waitFor(() => expect(summary).toHaveFocus());
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});

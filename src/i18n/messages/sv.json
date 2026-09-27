@@ -1,7 +1,8 @@
 {
   "auth": {
     "frame": {
-      "everyone": "Medlemmar och personal"
+      "everyone": "Medlemmar och personal",
+      "backToSignIn": "Tillbaka till inloggningen"
     },
     "signIn": {
       "title": "Logga in",
@@ -34,10 +35,13 @@
       "emailLabel": "E-post",
       "submit": "Skicka återställningslänk",
       "submitted": "Om e-posten matchar ett konto är en återställningslänk på väg.",
-      "resend": "Fick du inget mejl? Skicka igen",
+      "resend": "Skicka igen",
       "resendCountdown": "Skicka igen ({seconds}s)",
-      "deliveryHint": "Har du inte fått det efter en minut? Kontrollera din skräppostmapp, eller kontakta support om det fortfarande inte kommer fram.",
-      "rateLimited": "För många förfrågningar. Vänta en stund och försök igen."
+      "deliveryHint": "Kontrollera din skräppostmapp, eller kontakta support om det inte har kommit fram efter en minut.",
+      "rateLimited": "För många förfrågningar. Vänta en stund och försök igen.",
+      "sentTitle": "Kolla din e-post",
+      "didntGetIt": "Fick du inget?",
+      "useDifferentEmail": "Använd en annan e-post"
     },
     "resetPassword": {
       "title": "Välj ett nytt lösenord",
@@ -48,12 +52,16 @@
       "submit": "Uppdatera lösenord",
       "success": "Lösenordet uppdaterat. Du kan nu logga in.",
       "errors": {
-        "tokenExpired": "Den här återställningslänken har gått ut. Begär en ny.",
         "weakPassword": "Välj ett starkare lösenord.",
         "passwordBreached": "Det här lösenordet har förekommit i ett känt dataläckage. Välj ett annat.",
         "tooShort": "Lösenordet måste vara minst 12 tecken",
         "passwordMismatch": "Lösenorden måste stämma överens"
-      }
+      },
+      "newPasswordHint": "Minst 12 tecken. Lösenord som förekommit i kända dataläckor godtas inte.",
+      "signsOutNote": "När du byter lösenord loggas du ut överallt.",
+      "expiredDescription": "Återställningslänk",
+      "expiredTitle": "Den här återställningslänken har gått ut.",
+      "expiredBody": "Begär en ny — länkarna gäller en begränsad tid."
     },
     "passwordStrength": {
       "weak": "Svagt — använd ett längre och mer varierat lösenord.",
@@ -83,10 +91,12 @@
       "displayNameLabel": "Ditt namn",
       "passwordLabel": "Välj ett lösenord",
       "submit": "Aktivera konto",
-      "errors": {
-        "tokenExpired": "Den här inbjudan har gått ut. Be en administratör skicka en ny.",
-        "contactAdminCta": "Kontakta en administratör för att begära en ny inbjudan."
-      }
+      "passwordHint": "Minst 12 tecken.",
+      "confirmPasswordLabel": "Bekräfta lösenord",
+      "expiredDescription": "Inbjudningslänk",
+      "expiredTitle": "Den här inbjudan har gått ut.",
+      "expiredBody": "Be personen som bjöd in dig, eller kammaren, att skicka en ny inbjudan.",
+      "privacyLine": "Så använder {tenantDisplayName} dina uppgifter: <link>Integritetsmeddelande</link>"
     },
     "idleWarning": {
       "title": "Är du kvar?",
@@ -104,8 +114,8 @@
     },
     "emailChangeRevert": {
       "title": "Återställ e-postbyte",
-      "cardDescription": "Kontakt-e-posten på ditt SweCham-konto har ändrats. Om du inte begärde detta, klicka nedan för att återställa den och välja ett nytt lösenord.",
-      "description": "Återställning återställer din tidigare e-post, loggar ut alla aktiva sessioner och kräver att du väljer ett nytt lösenord innan du loggar in igen.",
+      "cardDescription": "E-postadressen för kontakt på ditt konto har ändrats.",
+      "description": "Återställer din tidigare e-post, loggar ut alla aktiva sessioner och kräver ett nytt lösenord innan du kan logga in igen. Länken gäller i {hours} timmar.",
       "revert": "Återställ och välj nytt lösenord",
       "submitting": "Återställer…",
       "successMessage": "E-postbytet har återställts. Slutför lösenordsåterställningen för att få tillgång igen.",
@@ -116,14 +126,16 @@
         "invalidToken": "Denna återställningslänk har upphört att gälla eller har redan använts.",
         "conflict": "Den tidigare e-postadressen är inte längre tillgänglig. Kontakta din kammaradministratör.",
         "rateLimited": "För många försök. Försök igen om {seconds}s.",
-        "serverError": "Något gick fel. Försök igen."
-      }
+        "serverError": "Något gick fel. Försök igen.",
+        "invalidTokenBody": "Om du fortfarande inte känner igen e-postbytet, logga in eller kontakta din handelskammare."
+      },
+      "warningTitle": "Vad återställningen gör",
+      "madeThisChange": "Jag gjorde ändringen — tillbaka till inloggningen"
     },
     "emailVerification": {
       "title": "Bekräfta e-postadress",
       "cardDescription": "Bekräftar din nya e-postadress — ett ögonblick.",
       "verifying": "Bekräftar din e-postadress…",
-      "successMessage": "E-post bekräftad. Du kan logga in nu.",
       "signInCta": "Gå till inloggning",
       "retry": "Försök igen",
       "errors": {
@@ -131,7 +143,12 @@
         "notYetActive": "Den här länken är inte aktiv ännu. Försök igen om {seconds}s.",
         "rateLimited": "För många försök. Försök igen om {seconds}s.",
         "serverError": "Något gick fel. Försök igen."
-      }
+      },
+      "successTitle": "E-post bekräftad",
+      "successDescription": "Din nya e-postadress är aktiv.",
+      "successAlertTitle": "E-post bekräftad.",
+      "successAlertBody": "Mejl från kammaren går nu till din nya adress.",
+      "continueToPortal": "Fortsätt till portalen"
     }
   },
   "shell": {
@@ -220,6 +237,7 @@
       "confirmLabel": "Lämna sidan",
       "cancelLabel": "Stanna kvar på sidan"
     },
+    "unsavedStatus": "Osparade ändringar",
     "yes": "Ja",
     "no": "Nej",
     "languageOptions": {
@@ -230,7 +248,7 @@
   },
   "directorySettings": {
     "title": "Katalogpost",
-    "subtitle": "Välj om du visas i medlemskatalogen och vilka uppgifter som visas",
+    "subtitle": "Välj om du visas i medlemskatalogen och vilka uppgifter som visas.",
     "emptyTitle": "Ingen medlemsprofil",
     "empty": "Ditt konto är inte kopplat till en medlemsprofil än.",
     "listed": "Lista min organisation i medlemskatalogen",
@@ -252,13 +270,13 @@
     "description": "Kort beskrivning",
     "website": "Webbplats",
     "city": "Stad",
-    "country": "Land (ISO-kod, t.ex. TH)",
+    "country": "Land",
     "logoHeading": "Logotyp",
-    "logoHint": "PNG, JPEG eller WebP, upp till 2 MB. Omkodas och metadata tas bort vid uppladdning.",
+    "logoHint": "PNG, JPEG eller WebP, upp till 2 MB. Bilden omkodas och metadata tas bort vid uppladdning. Logotypändringar sparas direkt.",
     "logoUpload": "Ladda upp logotyp",
     "logoRemove": "Ta bort logotyp",
     "logoCurrent": "Nuvarande logotyp",
-    "save": "Spara",
+    "save": "Spara katalogposten",
     "contactNameLabel": "Primär kontaktpersons namn ({name})",
     "contactEmailLabel": "Primär kontaktpersons mejl ({email})",
     "contactHeading": "Primär kontaktpersons uppgifter",
@@ -268,9 +286,7 @@
     "contactConfirmTitle": "Bekräfta dina kontaktuppgifter",
     "contactConfirmBody": "De här inställningarna valdes av företagets tidigare primära kontaktperson. Tills du sparar visar katalogen bara ditt namn och döljer ditt mejl.",
     "notPrimaryContact": "Endast företagets primära kontaktperson kan ändra om deras namn och mejl publiceras.",
-    "previewHeading": "Förhandsvisning",
     "previewUnsaved": "Förhandsvisning av osparade ändringar",
-    "previewHint": "Så här visas din post i medlemskatalogens E-bok.",
     "previewNotListed": "Inte listad — din organisation visas inte i katalogen.",
     "previewEmpty": "Inga uppgifter valda — din organisation visas inte i katalogen.",
     "previewContactForm": "Kontakt via kammaren",
@@ -289,7 +305,10 @@
     "logoTooLarge": "Logotypen överstiger 2 MB — välj en mindre fil.",
     "logoUnsupported": "Format som inte stöds — använd PNG, JPEG eller WebP.",
     "logoProfileMissing": "Medlemsprofilen hittades inte — ladda om sidan och försök igen.",
-    "logoInvalidImage": "Vi kunde inte läsa bilden — filen kan vara skadad. Försök exportera om den."
+    "logoInvalidImage": "Vi kunde inte läsa bilden — filen kan vara skadad. Försök exportera om den.",
+    "listingHeading": "Katalogpost",
+    "descriptionHint": "Högst {max} tecken. ({count}/{max})",
+    "previewLabel": "Så här ser din post ut"
   },
   "admin": {
     "directory": {
@@ -5916,7 +5935,7 @@
   "nav": {
     "staff": {
       "dashboard": "Instrumentpanel",
-      "changeRequests": "Ändringsbegäranden",
+      "changeRequests": "Ändrings\u00adbegäranden",
       "changeRequestsBadge": "som väntar",
       "broadcastsBadge": "som väntar",
       "plans": "Paket",
@@ -5949,7 +5968,7 @@
       "audit": "Granskningslogg",
       "directory": "Katalog",
       "erasureLog": "Raderingslogg",
-      "marketingAudience": "Marknadsföringsmålgrupp"
+      "marketingAudience": "Marknadsförings\u00admålgrupp"
     },
     "member": {
       "dashboard": "Instrumentpanel",
@@ -6185,19 +6204,25 @@
         "title": "Välkommen till {tenant}s medlemsportal",
         "body": "Din instrumentpanel fylls på när du använder ditt medlemskap — betala fakturor, delta i evenemang och använd dina förmåner.",
         "exploreBenefits": "Utforska dina förmåner"
+      },
+      "invoiceAlert": {
+        "title": "Din medlemsfaktura är klar",
+        "body": "{hasNumber, select, yes {{number} · } other {}}{amount}{due, select, upcoming { förfaller {date}} overdue { förföll {date}} other {}}.{online, select, both { Betala online med kort eller PromptPay.} card { Betala online med kort.} promptpay { Betala online med PromptPay.} other {}}",
+        "payNow": "Betala nu",
+        "viewInvoice": "Visa faktura"
       }
     },
     "account": {
       "contactLanguage": {
-        "title": "Språk för e-post till dig",
-        "description": "Används för meddelanden som riktas till dig personligen, till exempel beslutet om en ändring du föreslagit. E-post till företaget följer inställningen ovan.",
-        "save": "Spara språk",
+        "save": "Spara ditt språk",
         "savedToast": "E-postspråket har uppdaterats.",
         "errorToast": "Det gick inte att spara språket. Försök igen.",
-        "readOnlyToast": "Systemet är tillfälligt i skrivskyddat läge. Försök igen om en stund."
+        "readOnlyToast": "Systemet är tillfälligt i skrivskyddat läge. Försök igen om en stund.",
+        "groupLabel": "Mejl till dig personligen",
+        "hint": "Meddelanden som riktas till dig personligen, till exempel beslutet om en ändring du föreslagit."
       },
       "title": "Kontoinställningar",
-      "subtitle": "Hantera ditt lösenord och språket för aviseringsmejl.",
+      "subtitle": "Hantera ditt lösenord, e-postspråk, påminnelser och dina uppgifter.",
       "forgotPassword": "Glömt ditt lösenord?",
       "sections": {
         "account": "Konto",
@@ -6207,17 +6232,20 @@
       "menu": {
         "renewalPrefs": "Förnyelsepåminnelser",
         "dataPrivacy": "Data och integritet"
-      }
+      },
+      "emailLabel": "E-post",
+      "passwordSessionsNote": "När du byter lösenord loggas du ut på alla andra enheter."
     },
     "preferredLocale": {
       "title": "Språk för aviseringar",
-      "description": "Välj språket för de mejl du får (utskicksgodkännanden, fakturor, lösenordsåterställning). Lämna på \"Använd kammarens standardspråk\" för att följa kammarens inställning.",
       "useTenantDefault": "Använd kammarens standardspråk",
-      "save": "Spara inställning",
+      "save": "Spara företagets språk",
       "savedToast": "Aviseringsspråk uppdaterat.",
       "errorToast": "Kunde inte spara inställningen. Försök igen.",
       "loading": "Läser in…",
-      "loadError": "Kunde inte läsa in din nuvarande inställning. Uppdatera sidan och försök igen."
+      "loadError": "Kunde inte läsa in din nuvarande inställning. Uppdatera sidan och försök igen.",
+      "groupLabel": "Mejl till ditt företag",
+      "hint": "Fakturor, godkännanden av utskick och andra mejl som skickas till företaget. ”Använd kammarens standardspråk” följer handelskammarens inställning."
     },
     "invoices": {
       "title": "Fakturor",
@@ -6284,8 +6312,11 @@
       "summary": {
         "heading": "Senaste fakturor",
         "description": "Dina tre senaste fakturor — ladda ner PDF eller visa alla.",
-        "viewAll": "Visa alla",
-        "contactAdmin": "Kontakta din kammaradministratör"
+        "viewAll": "Visa alla fakturor",
+        "contactAdmin": "Kontakta din kammaradministratör",
+        "issuedOn": "Utfärdad {date}",
+        "dueOn": "Förfaller {date}",
+        "receiptRef": "Kvitto {number}"
       },
       "detail": {
         "a11y": {
@@ -6770,7 +6801,7 @@
     "benefits": {
       "tabs": {
         "ariaLabel": "Förmånssektioner",
-        "benefits": "Förmåner",
+        "benefits": "Paketets förmåner",
         "broadcasts": "Utskick"
       }
     },
@@ -6838,13 +6869,15 @@
         "registrationDate": "Registreringsdatum",
         "lastActivityAt": "Senaste aktivitet",
         "status": "Status"
-      }
+      },
+      "youSuffix": "(du)",
+      "moreAboutProfile": "Mer om din profil"
     },
     "changeRequests": {
       "history": {
           "pageTitle": "Historik över ändringsbegäranden",
           "title": "Historik över ändringsbegäranden",
-          "subtitle": "Varje ändring du föreslagit i din medlemspost och vad kammaren beslutade.",
+          "subtitle": "Ändringar du föreslagit, plus ändringar av företagsuppgifter som kollegor föreslagit, och vad kammaren beslutade.",
           "notLinked": "Ditt konto är inte kopplat till någon medlem.",
           "empty": "Inga ändringsbegäranden ännu.",
           "emptyHint": "Ändringar du föreslår på redigeringssidan visas här tillsammans med kammarens beslut.",
@@ -6874,7 +6907,9 @@
             "title": "Historik över ändringsbegäranden",
             "subtitle": "Se varje ändring du föreslagit och vad kammaren beslutade.",
             "link": "Visa historik"
-          }
+          },
+          "colleagueNote": "Ändringar som en kollega gör i sina egna kontaktuppgifter visas aldrig här.",
+          "withdrawnOn": "återkallad {withdrawnAt}"
         },
       "form": {
         "pageTitle": "Föreslå ändringar",
@@ -6883,7 +6918,7 @@
         "companySection": "Företagsuppgifter",
         "registeredAddressSection": "Registrerad adress",
         "billingAddressSection": "Faktureringsadress",
-        "billingAddressHint": "Använd när den momsregistrerade adressen (ภ.พ.20) skiljer sig från den registrerade adressen — skattedokumenten bär faktureringsadressen. Lämna alla rader tomma för att inte ange någon. Då blir den registrerade adressen den adress som trycks på dina skattedokument.",
+        "billingAddressHint": "Använd när den momsregistrerade adressen (ภ.พ.20) skiljer sig från den registrerade adressen — skattedokumenten visar faktureringsadressen. Lämna alla rader tomma för att inte ange någon.",
         "requiredNote": "* obligatoriska fält",
         "fields": {
           "firstName": "Förnamn",
@@ -6899,22 +6934,24 @@
           "city": "Stad",
           "province": "Provins",
           "postalCode": "Postnummer",
-          "country": "Land (tvåbokstavskod)"
+          "country": "Land",
+          "countryHint": "Tvåbokstavskod, t.ex. TH"
         },
         "submit": "Skicka för granskning",
         "submitting": "Skickar…",
         "cancel": "Avbryt",
         "secondaryNote": "Endast företagets primära kontakt kan föreslå ändringar av företagsuppgifterna. Kontakta hen om något behöver uppdateras.",
         "notice": "Ditt förslag granskas av kammarens personal, skickas till dem via e-post och sparas tillsammans med din medlemspost.",
-        "privacyLink": "Integritetspolicy",
-        "pendingHint": "Du har redan en begäran som väntar på granskning. Skickar du igen ersätts den med dessa värden.",
+        "privacyLink": "Integritetsmeddelande",
         "resubmitTitle": "Kammaren godkände inte hela din förra begäran:",
         "errors": {
           "phone": "Ange ett telefonnummer i internationellt format, t.ex. +46 70 123 45 67.",
           "website": "Ange en giltig webbadress, t.ex. https://example.com.",
           "country": "Ange en landskod med två bokstäver, t.ex. SE.",
           "billingIncomplete": "En faktureringsadress behöver minst rad 1, stad, postnummer och land — eller lämna alla rader tomma."
-        }
+        },
+        "pendingReplaces": "Skickar du igen ersätts den med dessa värden.",
+        "errorSummaryTitle": "{count, plural, one {# fält behöver åtgärdas} other {# fält behöver åtgärdas}}"
       },
       "status": {
         "submitted": "Dina ändringar har skickats för granskning.",
@@ -6937,7 +6974,8 @@
         "title": "Väntar på kammarens granskning",
         "body": "Inskickat {submittedAt}. Inget har ändrats i dina uppgifter ännu — kammaren meddelar beslutet via e-post.",
         "editLink": "Redigera din begäran",
-        "loadFailed": "Din väntande ändringsbegäran kunde inte läsas in just nu. Uppdatera sidan för att försöka igen. Den väntar fortfarande på granskning."
+        "loadFailed": "Din väntande ändringsbegäran kunde inte läsas in just nu. Uppdatera sidan för att försöka igen. Den väntar fortfarande på granskning.",
+        "editHint": "Om du redigerar din begäran ersätts den — använd <strong>Redigera din begäran</strong> ovan."
       },
       "withdraw": {
         "button": "Dra tillbaka begäran",
@@ -6999,15 +7037,17 @@
         "outcome": {
           "approved": "Godkänd",
           "rejected": "Ej godkänd"
-        }
+        },
+        "decision": "Beslut",
+        "wasShort": "Tidigare"
       }
     },
     "edit": {
       "pageTitle": "Redigera profil",
       "notLinked": "Ditt konto är inte kopplat till en medlem.",
       "loadError": "Kunde inte ladda din profil.",
-      "contactSection": "Din kontaktinformation",
-      "companySection": "Företagsinformation",
+      "contactSection": "Dina kontaktuppgifter",
+      "companySection": "Företagsuppgifter",
       "fields": {
         "firstName": "Förnamn",
         "lastName": "Efternamn",
@@ -7035,7 +7075,7 @@
         "firstName": "Förnamn",
         "lastName": "Efternamn",
         "email": "E-post",
-        "roleTitle": "Roll / Titel",
+        "roleTitle": "Roll / titel",
         "preferredLanguage": "Föredraget språk"
       },
       "sendButton": "Skicka inbjudan",
@@ -7047,7 +7087,15 @@
       "inviteUnavailable": "Vi kunde inte bjuda in den här adressen. Kontakta handelskammaren för hjälp.",
       "invalidEmail": "Ange en giltig e-postadress.",
       "validationError": "Kontrollera formuläret och försök igen.",
-      "linkFailed": "Det gick inte att slutföra inbjudan. Ingen inbjudan skickades – försök igen."
+      "linkFailed": "Det gick inte att slutföra inbjudan. Ingen inbjudan skickades – försök igen.",
+      "capabilities": {
+        "title": "Vad din kollega kan göra",
+        "body": "Kollegor du bjuder in får en egen portalinloggning för medlemskapet. De kan se och betala fakturor, förnya medlemskapet och använda dess förmåner. Endast den primära kontaktpersonen kan bjuda in kollegor."
+      },
+      "emailHint": "De får ett mejl med en länk för att välja lösenord.",
+      "roleTitleHint": "Högst 100 tecken.",
+      "privacyNote": "Namn och e-post för {firstName} sparas som en kontakt för ert medlemskap — se <link>integritetsmeddelandet</link>.",
+      "privacyNoteNoName": "Din kollegas namn och e-post sparas som en kontakt för ert medlemskap — se <link>integritetsmeddelandet</link>."
     },
     "payment": {
       "payNow": "Betala nu",
@@ -7278,7 +7326,7 @@
         "title": "Förnyelsepåminnelser",
         "subtitle": "Välj om du vill ta emot e-post om förnyelsepåminnelser. Transaktionsmejl (lösenordsåterställning, fakturakvitton) skickas oavsett.",
         "pauseLabel": "Pausa förnyelsepåminnelser",
-        "pauseDescription": "Vi behåller din förnyelsecykel i administratörsöversikten så att personalen kan höra av sig vid behov.",
+        "pauseDescription": "Vi behåller din förnyelsecykel i administratörsöversikten så att personalen kan höra av sig vid behov. Fakturor och betalningsmejl skickas som vanligt.",
         "saveErrorTitle": "Kunde inte spara din inställning",
         "saveErrorDescription": "Din tidigare inställning har återställts. Försök igen."
       }
@@ -7938,7 +7986,11 @@
       "loadMore": "Ladda äldre aktivitet",
       "loading": "Laddar…",
       "loadError": "Det gick inte att ladda mer aktivitet. Försök igen.",
-      "results": "{count, plural, =0 {Inga poster} one {# post} other {# poster}}"
+      "results": "{count, plural, =0 {Inga poster} one {# post} other {# poster}}",
+      "groupToday": "Idag",
+      "groupThisMonth": "Denna månad",
+      "caption": "Visar de senaste {count} · tider i Bangkoktid · thailändska visar datum i buddhistisk tideräkning",
+      "captionMoreFilters": "Fler filter: aktör, från datum, till datum."
     },
     "filters": {
       "title": "Filter",
@@ -7947,7 +7999,8 @@
       "from": "Från datum",
       "to": "Till datum",
       "all": "Alla",
-      "clear": "Rensa filter"
+      "clear": "Rensa filter",
+      "moreFilters": "Fler filter"
     },
     "source": {
       "audit": "Profil / Granskning",
@@ -7995,7 +8048,134 @@
       "pending_admin_reactivation": "Väntar på återaktivering",
       "updated": "Förnyelse uppdaterad"
     },
-    "unknownEvent": "Aktivitet"
+    "unknownEvent": "Aktivitet",
+    "sourceBadgeAudit": "Profil",
+    "memberAudit": {
+      "member_created": "Medlemskapet registrerades",
+      "member_number_assigned": "Medlemsnummer tilldelat",
+      "member_updated": "Dina medlemsuppgifter uppdaterades",
+      "member_status_changed": "Din medlemsstatus ändrades",
+      "member_archived": "Ditt medlemskap arkiverades",
+      "member_undeleted": "Ditt medlemskap återställdes",
+      "member_plan_changed": "Ditt medlemspaket ändrades",
+      "plan_bundle_changed": "Det inkluderade företagspaketet ändrades",
+      "member_plan_change_billing_effect": "Faktureringen för paketbytet uppdaterades",
+      "member_primary_contact_changed": "Din primära kontakt ändrades",
+      "contact_created": "Kontaktperson tillagd",
+      "contact_updated": "Kontaktuppgifter uppdaterade",
+      "contact_removed": "Kontaktperson borttagen",
+      "contact_linked_to_user": "Portalinloggning kopplad till en kontakt",
+      "member_self_updated": "Profilen uppdaterad i portalen",
+      "member_self_update_forbidden": "Ändringen sparades inte — bara kammarens personal kan ändra fältet",
+      "member_contact_email_changed": "Kontaktens e-postadress ändrades",
+      "user_sessions_revoked": "En portalanvändare loggades ut på alla enheter",
+      "email_verification_sent": "Verifieringsmejl skickat till den nya adressen",
+      "email_change_notification_sent_to_old_address": "Meddelande om e-poständring skickat till den gamla adressen",
+      "email_verification_resent": "Verifieringsmejl skickat igen",
+      "member_portal_invite_queued": "Portalinbjudan köad för att skickas",
+      "member_auto_invoice_enrolled": "Automatiska förnyelsefakturor påslagna",
+      "member_auto_invoice_unenrolled": "Automatiska förnyelsefakturor avstängda",
+      "contact_marketing_opted_out": "Marknadsföringsmejl avstängda för en kontakt",
+      "contact_marketing_opted_in": "Marknadsföringsmejl påslagna för en kontakt",
+      "member_change_request_submitted": "Ändringsbegäran skickad",
+      "member_change_request_decided": "Ändringsbegäran granskad",
+      "member_change_request_withdrawn": "Ändringsbegäran återkallad",
+      "member_change_request_rate_limited": "Ändringsbegäran skickades inte — för många begäranden, försök igen senare",
+      "member_erasure_requested": "Radering av dina personuppgifter begärd",
+      "member_erased": "Dina personuppgifter raderades",
+      "subprocessor_erasure_propagated": "Raderingen vidarebefordrades till våra tjänsteleverantörer",
+      "plan_change_scheduled": "Paketbyte schemalagt till nästa förnyelse",
+      "plan_change_superseded": "Schemalagt paketbyte ersatt av ett nyare",
+      "plan_change_cancelled": "Schemalagt paketbyte avbrutet",
+      "plan_change_applied": "Ditt schemalagda paketbyte gäller nu",
+      "invoice_draft_created": "Fakturautkast förberett",
+      "invoice_issued": "Faktura utfärdad",
+      "invoice_paid": "Faktura betald",
+      "invoice_voided": "Faktura makulerad",
+      "invoice_pdf_resent": "Fakturan mejlades igen till den primära kontakten",
+      "credit_note_issued": "Kreditnota utfärdad",
+      "tax_receipt_issued": "Skattekvitto utfärdat",
+      "invoice_overdue_detected": "Fakturan är nu förfallen",
+      "invoice_pdf_downloaded": "Faktura-PDF nedladdad",
+      "receipt_pdf_downloaded": "Kvitto-PDF nedladdad",
+      "receipt_rendered": "Skattekvittot är klart",
+      "auto_email_skipped_no_recipient": "Mejlet skickades inte — ingen primär kontakt registrerad",
+      "event_buyer_pii_redacted": "Uppgifter på gamla fakturor anonymiserade",
+      "renewal_cycle_created": "Förnyelseperiod öppnad",
+      "renewal_cycle_cancelled": "Förnyelse avbruten",
+      "renewal_cycle_completed_offline": "Förnyelse slutförd — betalning mottagen utanför portalen",
+      "renewal_cycle_reanchored": "Förnyelsedatum justerade efter ditt betalningsdatum",
+      "renewal_lapsed": "Ditt medlemskap upphörde",
+      "renewal_entered_awaiting_payment": "Förnyelse inväntar betalning",
+      "renewal_invoice_created": "Förnyelsefaktura skapad",
+      "renewal_with_plan_change": "Förnyelse bekräftad med paketbyte",
+      "renewal_completed": "Medlemskapet förnyat",
+      "renewal_completed_post_lapse": "Förnyelsebetalning mottagen efter att medlemskapet upphört",
+      "renewal_self_service_initiated": "Förnyelse påbörjad",
+      "renewal_token_clicked_on_completed_cycle": "Förnyelselänk öppnad — redan förnyat",
+      "renewal_reminder_sent": "Förnyelsepåminnelse skickad till den primära kontakten",
+      "renewal_reminder_skipped": "Förnyelsepåminnelse hoppades över",
+      "renewal_reminder_send_failed": "Förnyelsepåminnelse ej levererad — försöker igen",
+      "renewal_reminder_send_failed_permanent": "Förnyelsepåminnelsen kunde inte levereras",
+      "renewal_reminder_retried": "Förnyelsepåminnelse skickad igen",
+      "renewal_reminder_deferred_read_only": "Förnyelsepåminnelse uppskjuten",
+      "renewal_skipped_no_joined_at": "Förnyelsepåminnelse ej skickad — inträdesdatum saknas",
+      "renewal_schedule_rescheduled": "Förnyelsepåminnelser omplanerade",
+      "renewal_schedule_reschedule_skipped": "Förnyelsepåminnelser oförändrade",
+      "renewal_lapse_deferred_invoice_not_due": "Upphörande uppskjutet — fakturan är inte förfallen än",
+      "renewal_lapse_deferred_warning_pending": "Upphörande uppskjutet — sista varningsperioden pågår",
+      "renewal_auto_drafted": "Utkast till förnyelsefaktura förberett",
+      "renewal_auto_draft_discarded": "Utkast till förnyelsefaktura kasserat",
+      "renewal_orphan_invoice_relinked": "Förnyelsefakturan kopplad till din förnyelse",
+      "payment_on_terminated_member": "Betalning mottagen efter att medlemskapet avslutats",
+      "lapsed_member_admin_reactivated": "Ditt medlemskap återaktiverades",
+      "lapsed_member_admin_reactivation_reminder_t-7": "Återaktivering granskas — 7 dagar kvar",
+      "lapsed_member_admin_reactivation_reminder_t-3": "Återaktivering granskas — 3 dagar kvar",
+      "lapsed_member_admin_reactivation_reminder_t-1": "Återaktivering granskas — 1 dag kvar",
+      "member_auto_reactivation_blocked": "Automatisk återaktivering avstängd",
+      "member_auto_reactivation_unblocked": "Automatisk återaktivering påslagen igen",
+      "lapsed_member_action_blocked": "Åtgärden är inte tillgänglig när medlemskapet har upphört",
+      "membership_suspended_action_blocked": "Åtgärden är inte tillgänglig när medlemskapet är avstängt",
+      "membership_access_fail_open": "Medlemskontroll hoppades över — åtkomst tillåten",
+      "member_email_unverified_threshold_crossed": "Mejl till den primära kontakten studsar — kontrollera adressen",
+      "tier_upgrade_suggested": "Paketuppgradering föreslagen",
+      "tier_upgrade_accepted": "Paketuppgradering bekräftad",
+      "tier_upgrade_dismissed": "Förslag om paketuppgradering avfärdat",
+      "tier_upgrade_applied_at_renewal": "Paketuppgradering tillämpad vid förnyelse",
+      "tier_upgrade_pending_admin_verification_due": "Paketuppgradering inväntar kontroll av personalen",
+      "tier_upgrade_pending_member_notified": "Meddelande om paketuppgradering skickat till den primära kontakten",
+      "tier_upgrade_pending_member_notify_skipped": "Meddelande om paketuppgradering skickades inte",
+      "tier_upgrade_pending_member_notify_failed": "Meddelande om paketuppgradering kunde inte skickas",
+      "tier_upgrade_pending_orphan_detected": "Förslaget om paketuppgradering stängdes automatiskt",
+      "tier_upgrade_apply_post_invoice_paid_failed": "Paketuppgraderingen kunde inte tillämpas",
+      "escalation_task_created": "Uppföljningsuppgift skapad",
+      "escalation_task_completed": "Uppföljningsuppgift slutförd",
+      "escalation_task_skipped": "Uppföljningsuppgift överhoppad",
+      "escalation_task_reassigned": "Uppföljningsuppgift omfördelad",
+      "at_risk_score_recomputed": "Medlemskapets hälsopoäng uppdaterad",
+      "at_risk_score_threshold_crossed": "Medlemskapets hälsostatus ändrad",
+      "at_risk_snoozed": "Uppföljning pausad",
+      "at_risk_outreach_recorded": "Vårt team kontaktade dig",
+      "at_risk_skipped_below_min_tenure": "Hälsopoäng har inte beräknats än",
+      "broadcast_submitted": "Utskicket har skickats in för granskning",
+      "broadcast_content_redacted": "Utskickets innehåll borttaget",
+      "broadcast_test_copy_sent": "Testexemplar av utskicket skickat",
+      "broadcast_image_uploaded": "Bild tillagd i ditt utskick",
+      "broadcast_image_removed": "Bild borttagen från ditt utskick",
+      "broadcast_version_started": "Vårt team började formge ditt utskick",
+      "broadcast_version_sent_to_member": "Utskicksversion skickad till dig för godkännande",
+      "broadcast_member_approved": "Utskicket godkänt",
+      "broadcast_member_changes_requested": "Ändringar i utskicket begärda",
+      "broadcast_member_approval_withdrawn": "Godkännandet av utskicket återkallat",
+      "broadcast_member_approval_voided": "Godkännandet av utskicket nollställdes efter en ändring",
+      "broadcast_schedule_confirmed": "Utskickstid bekräftad",
+      "broadcast_approval_reminder_sent": "Påminnelse skickad om att granska ditt utskick",
+      "broadcast_approval_expiry_warned": "Godkännandet av utskicket löper snart ut",
+      "broadcast_approval_expired": "Utskicket stängt — inget svar mottaget",
+      "broadcast_member_halted_pending_review": "Utskicket kunde inte skickas in — kontot väntar på granskning",
+      "broadcast_membership_suspended_blocked": "Utskicket skickades inte — medlemskapet är avstängt",
+      "member_acknowledged_broadcasts_terms": "Villkoren för utskick godkända"
+    }
   },
   "benefits": {
     "page": {
@@ -8003,7 +8183,11 @@
       "subtitleMember": "Dina medlemsförmåner för i år",
       "empty": "Vi hittade ingen medlemsprofil för ditt konto ännu.",
       "emptyFromBroadcasts": "Du kom hit via en länk för utskick – för att skriva ett utskick behöver kontot vara kopplat till en medlemsprofil. Be din handelskammare koppla ditt konto.",
-      "emptyTitle": "Ingen medlemsprofil ännu"
+      "emptyTitle": "Ingen medlemsprofil ännu",
+      "subtitlePlan": "Vad ditt {plan}-paket innehåller.",
+      "subtitlePlanEblasts": "Vad ditt {plan}-paket innehåller och de utskick du har skickat.",
+      "statusFull": "Fulla förmåner",
+      "statusPaused": "Förmåner pausade"
     },
     "card": {
       "title": "Förmånsanvändning · {year}",
@@ -8016,19 +8200,29 @@
       "emptyTitle": "Inga spårade förmåner",
       "fullBenefits": "Alla förmåner",
       "suspendedBadge": "Pausad",
-      "suspendedBadgeSr": "Medlemskap pausat — förmåner tillfälligt stoppade"
+      "suspendedBadgeSr": "Medlemskap pausat — förmåner tillfälligt stoppade",
+      "ofTotalUsed": "av {total} använda",
+      "benefitUsed": "Användning av {benefit}",
+      "activeDescriptionPlan": "Ingår i ditt {plan}-paket för {year}",
+      "activeDescription": "Ingår i ditt paket för {year}",
+      "reservedHint": "{reserved} reserverade · {remaining} kvar{hasDate, select, yes { · senast använd {date}} other {}}",
+      "quotaValueText": "{used} använda, {reserved} reserverade, {remaining} kvar av {total}"
     },
     "benefit": {
       "eblast": "Utskick",
       "cultural_tickets": "Biljetter till kulturevenemang",
       "action": {
-        "eblast": "Skriv",
+        "eblast": "Skriv utskick",
         "cultural_tickets": "Visa evenemang"
+      },
+      "description": {
+        "eblast": "E-postkampanjer som skickas till kammarens mottagare för din räkning",
+        "cultural_tickets": "Biljetter till kammarens kulturevenemang"
       }
     },
     "active": {
-      "all_employee_event_discount": "Evenemangsrabatt för alla anställda",
-      "directory_listing": "Katalognotering",
+      "all_employee_event_discount": "Medlemsrabatt",
+      "directory_listing": "Post i katalog-E-boken",
       "m2m_benefits": "Medlem-till-medlem-förmåner",
       "business_referrals": "Affärsrekommendationer",
       "tailor_made_services": "Skräddarsydda tjänster",
@@ -8099,6 +8293,14 @@
     "colFor": "Framtaget för",
     "forCompany": "Hela företaget",
     "forContact": "{name}",
-    "alreadyPending": "En export förbereds redan — se status nedan."
+    "alreadyPending": "En export förbereds redan — se status nedan.",
+    "statusHeadingMember": "Dina senaste förfrågningar",
+    "otherRequests": {
+      "title": "Andra förfrågningar om dina uppgifter",
+      "edit": "Rätta uppgifter via <edit>Redigera profil</edit>.",
+      "contact": "För radering, begränsning eller invändning, kontakta handelskammaren på <mail>{address}</mail>.",
+      "contactNoEmail": "För radering, begränsning eller invändning, kontakta handelskammaren.",
+      "privacyLink": "Integritetsmeddelande"
+    }
   }
 }

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildBreadcrumbStaticLabels,
   parseBreadcrumbPath,
-  truncateForMobile,
+  backLinkTarget,
 } from '@/components/layout/breadcrumb-path';
 import enMessages from '@/i18n/messages/en.json';
 import { formatCalendarYear } from '@/lib/format-date-localised';
@@ -269,49 +269,27 @@ describe('parseBreadcrumbPath', () => {
   });
 });
 
-describe('truncateForMobile', () => {
-  const mk = (segment: string, label: string, isCurrent = false) => ({
-    href: `/x/${segment}`,
+describe('backLinkTarget (spec 122 — the phone back link)', () => {
+  const mk = (segment: string, label: string, isLinkable = true) => ({
+    href: `/admin/${segment}`,
     segment,
     label,
-    ...(isCurrent ? { isCurrent: true as const } : { isCurrent: false as const }),
-    isLinkable: true,
+    isCurrent: false,
+    isLinkable,
   });
 
-  it('returns all segments with hasEllipsis=false when <=2 segments', () => {
-    expect(truncateForMobile([])).toEqual({ visible: [], hasEllipsis: false });
-
-    const one = [mk('admin', 'Admin', true)];
-    expect(truncateForMobile(one)).toEqual({ visible: one, hasEllipsis: false });
-
-    const two = [mk('admin', 'Admin'), mk('users', 'Users', true)];
-    expect(truncateForMobile(two)).toEqual({ visible: two, hasEllipsis: false });
+  it('has no target on a top-level page', () => {
+    expect(backLinkTarget([])).toBeNull();
+    expect(backLinkTarget([mk('members', 'Members')])).toBeNull();
   });
 
-  it('shows parent + current + ellipsis when >2 segments', () => {
-    const trail = [
-      mk('admin', 'Admin'),
-      mk('plans', 'Plans'),
-      mk('2026', '2026'),
-      mk('abc', 'Corporate Gold', true),
-    ];
-    const result = truncateForMobile(trail);
-    expect(result.visible.map((s) => s.label)).toEqual(['2026', 'Corporate Gold']);
-    expect(result.hasEllipsis).toBe(true);
+  it('points at the parent page', () => {
+    expect(backLinkTarget([mk('members', 'Members'), mk('abc', 'Nordic Trading')])?.label).toBe('Members');
   });
 
-  it('3-segment trail shows ellipsis + last 2', () => {
-    const trail = [
-      mk('admin', 'Admin'),
-      mk('settings', 'Settings'),
-      mk('fees', 'Fee Configuration', true),
-    ];
-    const result = truncateForMobile(trail);
-    expect(result.visible.map((s) => s.label)).toEqual([
-      'Settings',
-      'Fee Configuration',
-    ]);
-    expect(result.hasEllipsis).toBe(true);
+  it('skips a parent that has no page of its own', () => {
+    const trail = [mk('settings', 'Settings'), mk('renewals', 'Renewals', false), mk('schedules', 'Schedules')];
+    expect(backLinkTarget(trail)?.label).toBe('Settings');
   });
 });
 

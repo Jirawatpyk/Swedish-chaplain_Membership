@@ -63,6 +63,7 @@ export default async function MemberSignInPage({
       description={t('memberCardDescription')}
       portalLabel={t('memberCardDescription')}
       tenantName={tenantName}
+      variant="sign-in"
     >
       {showSecurityBanner ? <SecurityUpdateBanner message={t('securityUpdateBanner')} /> : null}
       {showLinkInvalidBanner ? <SecurityUpdateBanner message={t('linkInvalidBanner')} /> : null}

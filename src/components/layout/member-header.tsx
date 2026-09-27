@@ -34,8 +34,9 @@ export function MemberHeader({
 }) {
   const tPortal = useTranslations('shell.portalLabel');
   return (
-    <div className="flex h-16 items-center gap-2 px-4 sm:gap-3 md:px-6 lg:h-[72px] lg:px-10">
-      <div className="flex min-w-0 flex-1 items-center gap-6">
+    // 63 / 71px + the header's 1px border = the boards' 64 / 72px bars.
+    <div className="flex h-[63px] items-center gap-2 px-4 sm:gap-3 md:px-6 lg:h-[71px] lg:px-10">
+      <div className="flex min-w-0 flex-1 items-center gap-6 lg:gap-10">
         <Link
           href="/portal"
           className={cn(
@@ -56,9 +57,15 @@ export function MemberHeader({
         </Link>
         <MemberNav {...(currentPath ? { currentPath } : {})} />
       </div>
-      <LocaleSwitcher persistToAccount />
-      <ThemeToggle />
-      <UserMenu {...user} />
+      {/* The boards group the three controls tighter than the brand row: 4px on phones, 8px from 640px. */}
+      <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+        <LocaleSwitcher
+          persistToAccount
+          className="max-sm:h-11 max-sm:gap-1 max-sm:pr-2.5 max-sm:pl-3 lg:h-10 lg:pr-3 lg:pl-4"
+        />
+        <ThemeToggle className="max-sm:size-11" />
+        <UserMenu {...user} firstNameOnTrigger className="lg:h-11 lg:pr-3" />
+      </div>
     </div>
   );
 }

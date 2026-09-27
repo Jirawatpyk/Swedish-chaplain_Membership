@@ -95,10 +95,12 @@ test.describe('members erase — COMP-1 US3-A @f3 @a11y @i18n', () => {
     await page.goto(`/admin/members/${memberId}`);
     await page.waitForLoadState('networkidle');
 
-    // The header member-number badge is the first mono element on the page;
-    // its trimmed text (e.g. "SCCM-0042") is the type-to-confirm target.
+    // The header member-number badge is the first mono element in the page
+    // content; its trimmed text (e.g. "SCCM-0042") is the type-to-confirm
+    // target. Scoped to <main>: the shell's top bar carries a mono "⌘K" hint
+    // (spec 122 US1) that comes first in the DOM and is not the member number.
     const memberNumber = (
-      await page.locator('.font-mono').first().innerText()
+      await page.locator('#main-content .font-mono').first().innerText()
     ).trim();
     expect(memberNumber.length).toBeGreaterThan(0);
 

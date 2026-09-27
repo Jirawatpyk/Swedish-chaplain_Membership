@@ -20,9 +20,11 @@ import { getDirectoryListing, makeUpdateDirectoryListingDeps } from '@/modules/i
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { Card, CardContent } from '@/components/ui/card';
+import { EmptyState } from '@/components/shell/empty-state';
+import { Card } from '@jirawatpyk/aura-react/server';
 import { DirectoryVisibilityForm } from '@/components/directory/directory-visibility-form';
 import { DirectoryLogoControl } from '@/components/directory/directory-logo-control';
+import { BackLink } from '@/components/portal/back-link';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('directorySettings');
@@ -34,6 +36,7 @@ export default async function PortalDirectorySettingsPage(): Promise<React.JSX.E
   if (!env.features.f9Dashboard) notFound();
 
   const t = await getTranslations('directorySettings');
+  const tHistory = await getTranslations('portal.changeRequests.history');
   const tenant = resolveTenantFromRequest();
 
   const memberResult = await buildMembersDeps(tenant).memberRepo.findByLinkedUserId(
@@ -51,13 +54,7 @@ export default async function PortalDirectorySettingsPage(): Promise<React.JSX.E
     return (
       <DetailContainer>
         <PageHeader title={t('title')} subtitle={t('subtitle')} />
-        <Card>
-          <CardContent className="flex flex-col items-center gap-2 py-12 text-center">
-            <UserX aria-hidden="true" className="size-10 text-muted-foreground/60" />
-            <p className="text-lg font-semibold">{t('emptyTitle')}</p>
-            <p className="text-sm text-muted-foreground">{t('empty')}</p>
-          </CardContent>
-        </Card>
+        <EmptyState icon={UserX} title={t('emptyTitle')} description={t('empty')} />
       </DetailContainer>
     );
   }
@@ -94,16 +91,17 @@ export default async function PortalDirectorySettingsPage(): Promise<React.JSX.E
 
   return (
     <DetailContainer>
+      {/* The `Portal-directory` boards: back to the profile, the header, then
+          the form's two columns (Logo + Listing, and the preview). */}
+      <BackLink href="/portal/profile">{tHistory('backToProfile')}</BackLink>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
 
-      <section aria-labelledby="dir-logo-heading" className="space-y-3">
-        <h2 id="dir-logo-heading" className="text-h4">
-          {t('logoHeading')}
-        </h2>
-        <DirectoryLogoControl currentLogoUrl={listing?.logoUrl ?? null} />
-      </section>
-
       <DirectoryVisibilityForm
+        logoCard={
+          <Card title={t('logoHeading')} titleId="dir-logo-heading" headingLevel={2}>
+            <DirectoryLogoControl currentLogoUrl={listing?.logoUrl ?? null} />
+          </Card>
+        }
         // Remount after a save (router.refresh) so the "unsaved changes"
         // baseline is the freshly saved listing.
         key={JSON.stringify(listing)}

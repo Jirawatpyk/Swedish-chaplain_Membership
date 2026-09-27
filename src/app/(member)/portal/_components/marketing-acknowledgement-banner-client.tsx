@@ -19,10 +19,10 @@
  * is always a known element.
  */
 import { useRef, useState, useTransition } from 'react';
-import { Loader2, ShieldCheck } from 'lucide-react';
+import { ShieldCheck } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
-import { Button } from '@/components/ui/button';
+import { Button } from '@jirawatpyk/aura-react';
 import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
 import { isReadOnlyResponse } from '@/lib/http/read-only-refusal';
 
@@ -114,18 +114,20 @@ export function AcknowledgementBannerClient({
             role="region"
             aria-labelledby="broadcasts-ack-banner-heading"
             data-testid="broadcasts-acknowledge-banner"
-            className="flex items-start gap-4 rounded-md border border-warning/30 bg-warning-surface p-4"
+            // AURA's warning alert look (spec 122 US3); a named region, not an
+            // alert: it is a standing request, announced by its landmark.
+            className="aura-alert aura-alert--warning"
           >
-            <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-warning" aria-hidden="true" />
-            <div className="flex-1 space-y-2">
+            <ShieldCheck className="aura-alert__icon size-4" aria-hidden="true" />
+            <div className="aura-alert__body flex flex-col gap-2">
               {/* U36 — a `<p>`, not an `<h2>`: the banner renders ABOVE the
                   page `<h1>`, so a heading here made the outline read
                   h2 → h1 → h2. The region is still named by this text via
                   `aria-labelledby`. */}
-              <p id="broadcasts-ack-banner-heading" className="text-sm font-semibold">
+              <p id="broadcasts-ack-banner-heading" className="aura-alert__title">
                 {title}
               </p>
-              <p className="text-sm text-muted-foreground">{body}</p>
+              <p className="aura-alert__text">{body}</p>
               {privacyPolicyUrl && privacyPolicyLinkLabel ? (
                 <p className="text-sm">
                   <a
@@ -135,7 +137,7 @@ export function AcknowledgementBannerClient({
                     // `whitespace-nowrap` — the short link phrase must not
                     // wrap mid-phrase (TH "อ่านนโยบายความเป็นส่วนตัว" has no
                     // spaces, so the browser would break it at any syllable).
-                    className="whitespace-nowrap underline underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    className="whitespace-nowrap font-medium text-[var(--aura-fg-accent)] underline underline-offset-2 hover:text-[var(--aura-fg-primary)]"
                   >
                     {privacyPolicyLinkLabel}
                   </a>
@@ -144,19 +146,15 @@ export function AcknowledgementBannerClient({
               <div className="flex flex-wrap gap-2">
                 <Button
                   type="button"
-                  size="sm"
+                  variant="primary"
                   onClick={onAcknowledge}
-                  disabled={pending}
+                  loading={pending}
                   data-testid="banner-acknowledge-cta"
                 >
-                  {pending ? (
-                    <Loader2 className="mr-2 h-4 w-4 motion-safe:animate-spin" aria-hidden="true" />
-                  ) : null}
                   {acknowledge}
                 </Button>
                 <Button
                   type="button"
-                  size="sm"
                   variant="ghost"
                   onClick={dismiss}
                   disabled={pending}

@@ -76,7 +76,11 @@ const findByLinkedUserId = vi.hoisted(() =>
   vi.fn().mockResolvedValue({ ok: true, value: { memberId: 'm1' } }),
 );
 vi.mock('@/modules/members/members-deps', () => ({
-  buildMembersDeps: () => ({ memberRepo: { findByLinkedUserId } }),
+  buildMembersDeps: () => ({
+    memberRepo: { findByLinkedUserId },
+    // Spec 122 US3 — the plan name for the header chip and the included-benefits card.
+    plans: { getPlan: vi.fn().mockResolvedValue({ ok: true, value: { planNameEn: 'Premium Corporate' } }) },
+  }),
 }));
 
 const computeBenefitUsage = vi.hoisted(() =>
@@ -149,8 +153,10 @@ describe('PortalBenefitsPage — suspended "benefits paused" banner (059-members
   it('does NOT grey the quota to zero when suspended — the entitlement is untouched', async () => {
     loadMembershipAccess.mockResolvedValue({ access: 'suspended', reason: 'unpaid' });
     await renderPage();
-    // "3 of 10 used" per the mocked usage above — unaffected by suspension.
-    expect(screen.getByText('3 of 10 used')).toBeInTheDocument();
+    // 3 used of 10 per the mocked usage above — unaffected by suspension
+    // (the `Benefits` board's big figure, "of 10 used" beside it).
+    expect(screen.getByText('of 10 used')).toBeInTheDocument();
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '3');
   });
 
   it('renders no MISSING_KEY/MISSING_NS/NOT_STRING sentinels when suspended', async () => {

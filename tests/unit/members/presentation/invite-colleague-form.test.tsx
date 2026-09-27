@@ -94,3 +94,63 @@ describe('InviteColleagueForm', () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe('InviteColleagueForm on AURA (spec 122 US3)', () => {
+  it('uses AURA fields (an email keyboard for the address) and an AURA select, with Cancel and Send in the card (decision 2026-09-27)', () => {
+    const { container } = renderForm();
+    for (const id of ['first_name', 'last_name', 'email', 'role_title']) {
+      expect(container.querySelector(`#${id}`)?.closest('.aura-field')).not.toBeNull();
+    }
+    const email = container.querySelector('#email')!;
+    expect(email).toHaveAttribute('type', 'email');
+    expect(email).toHaveAttribute('inputmode', 'email');
+    expect(email).toHaveAttribute('autocomplete', 'email');
+    expect(container.querySelector('select[name="preferred_language"]')?.closest('.aura-field')).not.toBeNull();
+    expect(screen.queryByRole('region', { name: 'Actions' })).toBeNull();
+    const card = container.querySelector('.aura-card')!;
+    const buttons = [...card.querySelectorAll('button')].map((b) => b.textContent);
+    expect(buttons.slice(-2)).toEqual([enMessages.portal.invite.cancelButton, enMessages.portal.invite.sendButton]);
+  });
+
+  it('marks only the optional field — the required ones stay aria-required without an asterisk (Portal-contacts-invite)', () => {
+    const { container } = renderForm();
+    for (const id of ['first_name', 'last_name', 'email']) {
+      expect(container.querySelector(`#${id}`)).toHaveAttribute('aria-required', 'true');
+    }
+    expect(container.querySelector('.aura-field__req')).toBeNull();
+    expect(container.querySelector('#role_title')?.closest('.aura-field')?.textContent).toMatch(/optional/i);
+  });
+
+  it('names the colleague being invited in the privacy note once a first name is typed', () => {
+    const { container } = renderForm();
+    const note = screen.getByTestId('invite-privacy-note');
+    expect(note.textContent).toContain("Your colleague's name and email");
+    fireEvent.change(container.querySelector('#first_name')!, { target: { value: 'Sofia' } });
+    expect(note.textContent).toContain("Sofia's name and email");
+  });
+
+  it('sends the language picked in the AURA select', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 201, json: async () => ({}) });
+    vi.stubGlobal('fetch', fetchMock);
+    const { container } = renderForm();
+    fireEvent.change(container.querySelector('#first_name')!, { target: { value: 'Jane' } });
+    fireEvent.change(container.querySelector('#last_name')!, { target: { value: 'Doe' } });
+    fireEvent.change(container.querySelector('#email')!, { target: { value: 'jane@acme.example' } });
+    // AURA's list sits over the real <select>, which `register` still drives
+    fireEvent.change(container.querySelector('select[name="preferred_language"]')!, {
+      target: { value: 'sv' },
+    });
+    fireEvent.submit(container.querySelector('form')!);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = JSON.parse(fetchMock.mock.calls[0]![1].body as string);
+    expect(body.preferred_language).toBe('sv');
+    vi.unstubAllGlobals();
+  });
+
+  it('lists a failed submit in a focused error summary', async () => {
+    const { container } = renderForm();
+    fireEvent.submit(container.querySelector('form')!);
+    const summary = await screen.findByRole('alert', { name: /fix 3 fields/i });
+    await waitFor(() => expect(summary).toHaveFocus());
+  });
+});
