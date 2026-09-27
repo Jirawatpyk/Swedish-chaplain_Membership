@@ -23,7 +23,7 @@ import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
 import { isReadOnlyResponse } from '@/lib/http/read-only-refusal';
 import { Download } from 'lucide-react';
 import { Badge, Button, Table, TBody, THead, Td, Th, Tr } from '@jirawatpyk/aura-react';
-import { auraButtonClass } from '@/components/shell/aura-markup';
+import { buttonClass } from '@jirawatpyk/aura-react/server';
 import { cn } from '@/lib/utils';
 import type { ExportStatus } from '@/modules/insights';
 import { exportStatusTone } from '@/lib/export-status-variant';
@@ -162,7 +162,7 @@ export function DataExportPanel({
                           aria-label={`${labels.download} — ${row.requestedAt}`}
                           // AURA's md button is 44px: the touch target (ux-standards § 9.1 / S4);
                           // below sm it is just the icon, so the row fits at 390px
-                          className={cn(auraButtonClass({ variant: 'secondary' }), 'max-sm:w-11 max-sm:px-0')}
+                          className={cn(buttonClass({ variant: 'secondary' }), 'max-sm:w-11 max-sm:px-0')}
                         >
                           <Download aria-hidden="true" className="aura-icon size-4" />
                           <span className="max-sm:sr-only">{labels.download}</span>

@@ -2,7 +2,7 @@ import { Suspense } from 'react';
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
 import { PackageOpen } from 'lucide-react';
-import { AuraBadge, AuraStatusPill, auraButtonClass } from '@/components/shell/aura-markup';
+import { Badge, StatusPill, buttonClass } from '@jirawatpyk/aura-react/server';
 import { EmptyState } from '@/components/shell/empty-state';
 import { SkeletonBlock } from '@/components/shell/page-skeletons';
 import { DetailContainer } from '@/components/layout';
@@ -72,7 +72,7 @@ export default async function MemberPortalHomePage() {
           })}
           description={t('firstRun.body')}
           action={
-            <Link href={PORTAL_BENEFITS_HREF} className={auraButtonClass()}>
+            <Link href={PORTAL_BENEFITS_HREF} className={buttonClass()}>
               {t('firstRun.exploreBenefits')}
             </Link>
           }
@@ -114,18 +114,18 @@ export default async function MemberPortalHomePage() {
         subtitle={t('intro')}
         badge={
           <span className="flex flex-wrap items-center gap-2">
-            <AuraBadge variant="outline" className="font-mono">
+            <Badge variant="outline" className="font-mono">
               {memberNumberLabel}
-            </AuraBadge>
+            </Badge>
             {/* 063 UX — membership tier (e.g. "Diamond Partnership"). Solid
                 badge so the member's level reads as the headline of the
                 three chips. Omitted when the plan row can't be resolved. */}
             {planDisplayName !== null && (
-              <AuraBadge variant="solid">{planDisplayName}</AuraBadge>
+              <Badge variant="solid">{planDisplayName}</Badge>
             )}
-            <AuraStatusPill tone={statusChipKey === 'active' ? 'ready' : 'neutral'}>
+            <StatusPill tone={statusChipKey === 'active' ? 'ready' : 'neutral'}>
               {t(`statusChip.${statusChipKey}`)}
-            </AuraStatusPill>
+            </StatusPill>
           </span>
         }
       />

@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { getLocale, getTranslations } from 'next-intl/server';
-import { AuraAlert, AuraBadge, AuraCard } from '@/components/shell/aura-markup';
+import { Alert, Badge, Card } from '@jirawatpyk/aura-react/server';
 import { env } from '@/lib/env';
 import { runInTenant } from '@/lib/db';
 import { ChangePasswordForm } from '@/components/auth/change-password-form';
@@ -85,9 +85,9 @@ function HubCard({
   readonly children: React.ReactNode;
 }) {
   return (
-    <AuraCard id={id} title={title} titleId={`${id}-heading`} headingLevel={2} className="scroll-mt-24">
+    <Card id={id} title={title} titleId={`${id}-heading`} headingLevel={2} className="scroll-mt-24">
       <div className={contentClassName}>{children}</div>
-    </AuraCard>
+    </Card>
   );
 }
 
@@ -257,7 +257,7 @@ export default async function MemberAccountPage() {
       <PageHeader
         title={tPage('title')}
         subtitle={tPage('subtitle')}
-        badge={<AuraBadge variant="outline">{tShell(user.role)}</AuraBadge>}
+        badge={<Badge variant="outline">{tShell(user.role)}</Badge>}
       />
 
       <HubCard
@@ -332,18 +332,18 @@ export default async function MemberAccountPage() {
           {/* GDPR Art. 15(4) · PDPA §30 — any colleague may request the member
               archive; it carries colleagues' names + roles (never their contact
               details), so say so before request / download. */}
-          <AuraAlert
+          <Alert
             tone="info"
             role="status"
             title={tExport('colleaguesNoticeTitle')}
             data-testid="portal-export-colleagues-notice"
           >
             {tExport('colleaguesNoticeBody')}
-          </AuraAlert>
+          </Alert>
           {exportsReadFailed ? (
-            <AuraAlert tone="danger" role="status" data-testid="portal-exports-unavailable">
+            <Alert tone="danger" role="status" data-testid="portal-exports-unavailable">
               {tExport('loadFailed')}
-            </AuraAlert>
+            </Alert>
           ) : (
             <DataExportPanel
               rows={buildDataExportRows(exportJobs, tExport, locale)}

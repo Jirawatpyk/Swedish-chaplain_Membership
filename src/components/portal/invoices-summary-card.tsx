@@ -35,7 +35,7 @@ import {
   makeListInvoicesDeps,
 } from '@/modules/invoicing';
 import { buildMembersDeps } from '@/modules/members/members-deps';
-import { AuraCard, auraButtonClass } from '@/components/shell/aura-markup';
+import { Card, buttonClass } from '@jirawatpyk/aura-react/server';
 import { cn } from '@/lib/utils';
 import {
   formatDate,
@@ -91,22 +91,22 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
         '[portal-invoices-summary] member lookup failed — rendering error variant',
       );
       return (
-        <AuraCard title={t('summary.heading')} description={t('summary.description')} headingLevel={2}>
+        <Card title={t('summary.heading')} description={t('summary.description')} headingLevel={2}>
           <p className="text-sm text-[var(--aura-fg-secondary)]">{t('loadFailed')}</p>
-        </AuraCard>
+        </Card>
       );
     }
     // Not-linked state: surface the same copy the full list uses so
     // members don't get conflicting signals across portal surfaces.
     return (
-      <AuraCard title={t('summary.heading')} description={t('summary.description')} headingLevel={2}>
+      <Card title={t('summary.heading')} description={t('summary.description')} headingLevel={2}>
         <div className="flex flex-col gap-3">
           <p className="text-sm text-[var(--aura-fg-secondary)]">{t('notLinked')}</p>
-          <a href={`mailto:${env.supportEmail}`} className={cn(auraButtonClass({ variant: 'secondary' }), 'self-start')}>
+          <a href={`mailto:${env.supportEmail}`} className={cn(buttonClass({ variant: 'secondary' }), 'self-start')}>
             {t('summary.contactAdmin')}
           </a>
         </div>
-      </AuraCard>
+      </Card>
     );
   }
 
@@ -153,9 +153,9 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
       '[portal-invoices-summary] listInvoicesPaged threw — rendering error variant',
     );
     return (
-      <AuraCard title={t('summary.heading')} description={t('summary.description')} headingLevel={2}>
+      <Card title={t('summary.heading')} description={t('summary.description')} headingLevel={2}>
         <p className="text-sm text-[var(--aura-fg-secondary)]">{t('loadFailed')}</p>
-      </AuraCard>
+      </Card>
     );
   }
 
@@ -168,7 +168,7 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
     // AURA card (spec 122 US3, `Main` board): heading and description on top,
     // hairline rows, and "view all" as a footer text link, as the board draws
     // it (the benefit usage card beside it does the same).
-    <AuraCard
+    <Card
       title={t('summary.heading')}
       description={t('summary.description')}
       headingLevel={2}
@@ -279,7 +279,7 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
                         )}
                         // AURA's default secondary button (44px), one height
                         // for both downloads (spec 122 US3).
-                        className={auraButtonClass({ variant: 'secondary' })}
+                        className={buttonClass({ variant: 'secondary' })}
                       />
                     ) : null}
                     {/* 090 Bug 3 — §86/4 RC receipt download, shown once the row
@@ -306,7 +306,7 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
                         // AURA's default secondary button (44px), as the
                         // invoice button beside it.
                         className={cn(
-                          auraButtonClass({ variant: 'secondary' }),
+                          buttonClass({ variant: 'secondary' }),
                           // finding #3 — the long combined dual-role label wraps
                           // to 2 lines instead of clipping; AURA's button is
                           // at least 44px, so `h-auto` only lets it grow.
@@ -321,6 +321,6 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
             })}
           </ul>
         )}
-    </AuraCard>
+    </Card>
   );
 }

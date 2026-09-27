@@ -4,7 +4,7 @@ import { FileQuestionIcon } from 'lucide-react';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { EmptyState } from '@/components/shell/empty-state';
-import { auraButtonClass } from '@/components/shell/aura-markup';
+import { buttonClass } from '@jirawatpyk/aura-react/server';
 
 /**
  * Member-portal not-found boundary (portal error states #3; AURA canvas
@@ -40,7 +40,7 @@ export default async function PortalNotFound(): Promise<React.ReactElement> {
         title={t('notFoundHint')}
         announce={false}
         action={
-          <Link href="/portal" className={auraButtonClass()}>
+          <Link href="/portal" className={buttonClass()}>
             {t('backToDashboard')}
           </Link>
         }

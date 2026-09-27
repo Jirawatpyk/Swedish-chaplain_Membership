@@ -10,7 +10,7 @@ import { toast } from '@/lib/toast';
 import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
 import { isReadOnlyRefusal } from '@/lib/http/read-only-refusal';
 import { ActionBar, Button, FormErrorSummary, Select, TextField } from '@jirawatpyk/aura-react';
-import { AuraCard } from '@/components/shell/aura-markup';
+import { Card } from '@jirawatpyk/aura-react/server';
 import {
   boundedText,
   emailText,
@@ -138,7 +138,7 @@ export function InviteColleagueForm() {
   return (
     <form onSubmit={form.handleSubmit(onSubmit)} method="post" noValidate className="space-y-6">
       <FormErrorSummary errors={errors} focusKey={submitCount} />
-      <AuraCard title={t('formTitle')} titleId="invite-colleague-heading" headingLevel={2}>
+      <Card title={t('formTitle')} titleId="invite-colleague-heading" headingLevel={2}>
         <div className="grid gap-4 sm:grid-cols-2">
           {/* Focused on mount (ux-standards § 7.2), like the auth / PII forms.
               `autoFocus`, not an effect calling setFocus: a late effect could
@@ -186,7 +186,7 @@ export function InviteColleagueForm() {
             {...form.register('preferred_language')}
           />
         </div>
-      </AuraCard>
+      </Card>
 
       {/* H6: Cancel before Submit (ux-standards § 11.1), in the ActionBar. */}
       <ActionBar status={isDirty ? tLang('unsavedStatus') : null}>

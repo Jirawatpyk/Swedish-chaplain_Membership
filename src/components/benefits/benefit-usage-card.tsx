@@ -22,7 +22,7 @@ import { ArrowRight, PackageOpen, PauseCircle } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { formatCalendarYear, getDateFormatLocale } from '@/lib/format-date-localised';
 import { Badge, Progress, Separator } from '@jirawatpyk/aura-react';
-import { AuraCard } from '@/components/shell/aura-markup';
+import { Card } from '@jirawatpyk/aura-react/server';
 import { UnderUseWarning } from './under-use-warning';
 
 export interface BenefitUsageItem {
@@ -145,7 +145,7 @@ export function BenefitUsageCard({
     // testid, so a scan can wait for the LOADED card before running axe (F9-QA-03).
     // Spec 122 US3: AURA card (`Main` / `Benefits` boards). The title is a real
     // <h2> (056 fix #1) and, with `headingId`, labels the card.
-    <AuraCard
+    <Card
       data-testid="benefit-usage-card"
       className={className}
       title={title}
@@ -248,6 +248,6 @@ export function BenefitUsageCard({
           </div>
         )}
       </div>
-    </AuraCard>
+    </Card>
   );
 }

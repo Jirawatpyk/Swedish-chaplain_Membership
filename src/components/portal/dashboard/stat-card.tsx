@@ -6,7 +6,7 @@ import {
   XCircle,
   type LucideIcon,
 } from 'lucide-react';
-import { auraButtonClass } from '@/components/shell/aura-markup';
+import { buttonClass } from '@jirawatpyk/aura-react/server';
 import { cn } from '@/lib/utils';
 
 /**
@@ -22,7 +22,8 @@ import { cn } from '@/lib/utils';
  * a CardTitle div, so the dashboard outline is h1 (PageHeader) → h2.
  *
  * Spec 122 US3: AURA `Stat` markup (the `Main` / `Home-mobile` boards), drawn
- * with AURA's classes because this is a server component (`aura-markup.tsx`).
+ * with AURA's classes because this is a server component and `Stat` is not in
+ * `@jirawatpyk/aura-react/server`.
  * The label keeps its h2; `data-testid` / `data-variant` stay for the e2e.
  *
  * The variant set is intentionally identical to the route-layer `StatVariant`
@@ -157,11 +158,11 @@ export function StatCard({
         // The card's one next step: AURA's primary default (44px) button, not
         // `sm` (32px), for the WCAG 2.5.5 target.
         isExternalHref(action.href) ? (
-          <a href={action.href} className={cn(auraButtonClass(), 'mt-3 w-fit')}>
+          <a href={action.href} className={cn(buttonClass(), 'mt-3 w-fit')}>
             {action.label}
           </a>
         ) : (
-          <Link href={action.href} className={cn(auraButtonClass(), 'mt-3 w-fit')}>
+          <Link href={action.href} className={cn(buttonClass(), 'mt-3 w-fit')}>
             {action.label}
           </Link>
         )

@@ -36,9 +36,8 @@ import { useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
-import { ClockIcon } from 'lucide-react';
 import { Button } from '@jirawatpyk/aura-react';
-import { AuraAlert } from '@/components/shell/aura-markup';
+import { Alert } from '@jirawatpyk/aura-react/server';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
 import { useDialogFinalFocus } from '@/components/shell/reason-confirmation-dialog';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
@@ -122,19 +121,19 @@ export function PendingRequestBanner({ request, showEditLink = true }: PendingRe
   if (result === 'hidden') return null;
   if (result !== null) {
     return (
-      <AuraAlert tone={result === 'withdrawn' ? 'success' : 'info'} role="status" data-testid="withdraw-result">
+      <Alert tone={result === 'withdrawn' ? 'success' : 'info'} role="status" data-testid="withdraw-result">
         {result === 'withdrawn' ? tw('done') : tw('gone')}
-      </AuraAlert>
+      </Alert>
     );
   }
 
   // AURA Alert markup (spec 122 US3): the helper, not AURA's `Alert`, because
   // the banner needs its own role, test id and clock icon — AURA's takes none.
   return (
-    <AuraAlert
+    <Alert
       tone="info"
       role="status"
-      icon={ClockIcon}
+      icon="clock"
       title={t('title')}
       data-testid="pending-request-banner"
       action={
@@ -183,6 +182,6 @@ export function PendingRequestBanner({ request, showEditLink = true }: PendingRe
         onConfirm={withdraw}
         finalFocus={finalFocus}
       />
-    </AuraAlert>
+    </Alert>
   );
 }

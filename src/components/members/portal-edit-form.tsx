@@ -10,7 +10,7 @@ import { toast } from '@/lib/toast';
 import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
 import { isReadOnlyRefusal } from '@/lib/http/read-only-refusal';
 import { ActionBar, Button, FormErrorSummary, TextField, Textarea } from '@jirawatpyk/aura-react';
-import { AuraCard } from '@/components/shell/aura-markup';
+import { Card } from '@jirawatpyk/aura-react/server';
 import {
   boundedText,
   requiredText,
@@ -166,7 +166,7 @@ export function PortalEditForm({ initialValues }: PortalEditFormProps) {
     <form onSubmit={form.handleSubmit(onSubmit)} method="post" noValidate className="space-y-6">
       <FormErrorSummary errors={errors} focusKey={submitCount} />
 
-      <AuraCard title={t('contactSection')} titleId="portal-edit-contact-heading" headingLevel={2}>
+      <Card title={t('contactSection')} titleId="portal-edit-contact-heading" headingLevel={2}>
         <div className="grid gap-4 sm:grid-cols-2">
           <TextField
             id="firstName"
@@ -194,9 +194,9 @@ export function PortalEditForm({ initialValues }: PortalEditFormProps) {
             {...form.register('phone')}
           />
         </div>
-      </AuraCard>
+      </Card>
 
-      <AuraCard title={t('companySection')} titleId="portal-edit-company-heading" headingLevel={2}>
+      <Card title={t('companySection')} titleId="portal-edit-company-heading" headingLevel={2}>
         <div className="grid gap-4">
           <TextField
             id="website"
@@ -227,7 +227,7 @@ export function PortalEditForm({ initialValues }: PortalEditFormProps) {
             </p>
           </div>
         </div>
-      </AuraCard>
+      </Card>
 
       {/* Cancel before Save (ux-standards § 11.1), in the ActionBar. */}
       <ActionBar status={isDirty ? tc('unsavedStatus') : null}>

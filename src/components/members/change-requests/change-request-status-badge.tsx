@@ -14,7 +14,7 @@
  * rather than throwing inside a list of 100 rows.
  */
 import { useTranslations } from 'next-intl';
-import { AuraStatusPill, type AuraStatusTone } from '@/components/shell/aura-markup';
+import { StatusPill, type StatusTone } from '@jirawatpyk/aura-react/server';
 import type { ChangeRequest, ChangeRequestOutcome, WithdrawnReason } from '@/modules/members';
 
 export type ChangeRequestStatus =
@@ -47,7 +47,7 @@ export interface ChangeRequestStatusBadgeProps {
   readonly className?: string;
 }
 
-const OUTCOME_TONE: Record<ChangeRequestOutcome, AuraStatusTone> = {
+const OUTCOME_TONE: Record<ChangeRequestOutcome, StatusTone> = {
   approved: 'ready',
   partially_approved: 'warning',
   rejected: 'blocked',
@@ -61,16 +61,16 @@ export function ChangeRequestStatusBadge({ status, audience, className }: Change
       if (status.outcome === null) break;
       const outcome = status.outcome;
       return (
-        <AuraStatusPill tone={OUTCOME_TONE[outcome]} className={className} data-state={status.state} data-outcome={outcome}>
+        <StatusPill tone={OUTCOME_TONE[outcome]} className={className} data-state={status.state} data-outcome={outcome}>
           {t(`outcome.${outcome}`)}
-        </AuraStatusPill>
+        </StatusPill>
       );
     }
     case 'withdrawn':
       return (
-        <AuraStatusPill tone="neutral" className={className} data-state={status.state} data-withdrawn-reason={status.withdrawnReason ?? undefined}>
+        <StatusPill tone="neutral" className={className} data-state={status.state} data-withdrawn-reason={status.withdrawnReason ?? undefined}>
           {status.withdrawnReason ? t(`withdrawn.${status.withdrawnReason}`) : t('state.withdrawn')}
-        </AuraStatusPill>
+        </StatusPill>
       );
     case 'pending':
       break;
@@ -80,8 +80,8 @@ export function ChangeRequestStatusBadge({ status, audience, className }: Change
     }
   }
   return (
-    <AuraStatusPill tone="progress" className={className} data-state={status.state}>
+    <StatusPill tone="progress" className={className} data-state={status.state}>
       {t('state.pending')}
-    </AuraStatusPill>
+    </StatusPill>
   );
 }

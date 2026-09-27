@@ -25,7 +25,7 @@ import { timelineList } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { AuraCard } from '@/components/shell/aura-markup';
+import { Card } from '@jirawatpyk/aura-react/server';
 import { EmptyState } from '@/components/shell/empty-state';
 import { TimelineFilters } from '@/components/members/timeline-filters';
 import { TimelineStream } from '@/components/members/timeline-stream';
@@ -122,7 +122,7 @@ export default async function PortalTimelinePage({
   return (
     <DetailContainer>
       <PageHeader title={t('title')} subtitle={t('subtitleMember')} />
-      <AuraCard>
+      <Card>
         <div className="flex flex-col gap-4">
           <TimelineFilters />
           <TimelineStream
@@ -134,7 +134,7 @@ export default async function PortalTimelinePage({
             listLabel={t('title')}
           />
         </div>
-      </AuraCard>
+      </Card>
     </DetailContainer>
   );
 }

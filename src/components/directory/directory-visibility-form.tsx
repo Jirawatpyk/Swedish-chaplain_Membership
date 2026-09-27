@@ -24,7 +24,7 @@ import {
 import { toast } from '@/lib/toast';
 import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
 import { isReadOnlyResponse } from '@/lib/http/read-only-refusal';
-import { AuraAlert, AuraCard } from '@/components/shell/aura-markup';
+import { Alert, Card } from '@jirawatpyk/aura-react/server';
 // Pure directory constants come from the insights CLIENT-SAFE sub-entry
 // (`@/modules/insights/constants`), never the index barrel. Importing these
 // runtime values from `@/modules/insights` would drag the barrel's server-only
@@ -148,7 +148,7 @@ export function DirectoryVisibilityForm({
   const [websiteError, setWebsiteError] = useState<string | null>(null);
   const [descriptionError, setDescriptionError] = useState<string | null>(null);
   // Bumped on every save so the error summary takes focus after a refused
-  // save, never while the person types (AURA 5.7.3 `focusKey`).
+  // save, never while the person types (AURA `focusKey`, 5.7.3).
   const [submitCount, setSubmitCount] = useState(0);
   const errors: FormErrorItem[] = [
     ...(descriptionError !== null ? [{ field: 'dir-description', message: descriptionError }] : []),
@@ -205,7 +205,7 @@ export function DirectoryVisibilityForm({
     <form onSubmit={onSubmit} className="space-y-6">
       <FormErrorSummary errors={errors} focusKey={submitCount} />
 
-      <AuraCard>
+      <Card>
         <Switch
           id="dir-listed"
           label={t('listed')}
@@ -213,9 +213,9 @@ export function DirectoryVisibilityForm({
           checked={listed}
           onChange={setListed}
         />
-      </AuraCard>
+      </Card>
 
-      <AuraCard title={t('fieldsHeading')} titleId="dir-fields-heading" headingLevel={2}>
+      <Card title={t('fieldsHeading')} titleId="dir-fields-heading" headingLevel={2}>
         <fieldset aria-labelledby="dir-fields-heading" className="flex flex-col gap-3">
           {COMPANY_FIELDS.map((f) => (
             <Checkbox
@@ -227,23 +227,23 @@ export function DirectoryVisibilityForm({
             </Checkbox>
           ))}
         </fieldset>
-      </AuraCard>
+      </Card>
 
-      <AuraCard title={t('contactHeading')} titleId="dir-contact-heading" headingLevel={2}>
+      <Card title={t('contactHeading')} titleId="dir-contact-heading" headingLevel={2}>
         <fieldset
           aria-labelledby="dir-contact-heading"
           aria-describedby="dir-contact-hint"
           className="flex flex-col gap-3"
         >
           {contact.viewerIsPrimary && !contact.chosenByPrimary && contact.hasListing ? (
-            <AuraAlert
+            <Alert
               tone="info"
               role="status"
               title={t('contactConfirmTitle')}
               data-testid="directory-contact-confirm"
             >
               {t('contactConfirmBody')}
-            </AuraAlert>
+            </Alert>
           ) : null}
           {CONTACT_FIELDS.map((f) => {
             // Say exactly whose data the toggle publishes.
@@ -272,9 +272,9 @@ export function DirectoryVisibilityForm({
                 : t('contactHintColleague', { name: identity.primaryContact.name })}
           </p>
         </fieldset>
-      </AuraCard>
+      </Card>
 
-      <AuraCard title={t('detailsHeading')} titleId="dir-details-heading" headingLevel={2}>
+      <Card title={t('detailsHeading')} titleId="dir-details-heading" headingLevel={2}>
         <fieldset aria-labelledby="dir-details-heading" className="flex flex-col gap-4">
           <TextField
             id="dir-industry"
@@ -328,7 +328,7 @@ export function DirectoryVisibilityForm({
             />
           </div>
         </fieldset>
-      </AuraCard>
+      </Card>
 
       <DirectoryListingPreview
         dirty={dirty}

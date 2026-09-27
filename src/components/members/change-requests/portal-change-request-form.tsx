@@ -31,7 +31,7 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from '@/lib/toast';
 import { ActionBar, Button, FormErrorSummary, TextField, Textarea } from '@jirawatpyk/aura-react';
-import { AuraAlert, AuraCard } from '@/components/shell/aura-markup';
+import { Alert, Card } from '@jirawatpyk/aura-react/server';
 import { boundedText, requiredText, type Translator } from '@/lib/zod-i18n';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 import { isReadOnlyRefusal } from '@/lib/http/read-only-refusal';
@@ -456,29 +456,29 @@ export function PortalChangeRequestForm({
         </p>
         <FormErrorSummary errors={errors} focusKey={submitCount} />
         {resubmitOf && resubmitOf.decisionReason ? (
-          <AuraAlert tone="warning" role="status" title={t('resubmitTitle')} data-testid="resubmit-reason">
+          <Alert tone="warning" role="status" title={t('resubmitTitle')} data-testid="resubmit-reason">
             <p className="whitespace-pre-wrap break-words">{resubmitOf.decisionReason}</p>
-          </AuraAlert>
+          </Alert>
         ) : null}
 
         {pending ? (
-          <AuraAlert tone="warning" role="none" data-testid="pending-hint">
+          <Alert tone="warning" role="none" data-testid="pending-hint">
             {t('pendingHint')}
-          </AuraAlert>
+          </Alert>
         ) : null}
 
-        <AuraCard title={t('contactSection')} titleId="cr-contact-heading" headingLevel={2}>
+        <Card title={t('contactSection')} titleId="cr-contact-heading" headingLevel={2}>
           <div className="grid gap-4 sm:grid-cols-2">
             {field('firstName', t('fields.firstName'), { required: true, autoComplete: 'given-name' })}
             {field('lastName', t('fields.lastName'), { required: true, autoComplete: 'family-name' })}
             {field('phone', t('fields.phone'), { type: 'tel', autoComplete: 'tel' })}
             {field('roleTitle', t('fields.roleTitle'), { autoComplete: 'organization-title' })}
           </div>
-        </AuraCard>
+        </Card>
 
         {canProposeCompanyFields ? (
           <>
-            <AuraCard title={t('companySection')} titleId="cr-company-heading" headingLevel={2}>
+            <Card title={t('companySection')} titleId="cr-company-heading" headingLevel={2}>
               <div className="grid gap-4">
                 {field('companyName', t('fields.companyName'), { required: true, autoComplete: 'organization' })}
                 {field('website', t('fields.website'), { type: 'url', autoComplete: 'url' })}
@@ -502,9 +502,9 @@ export function PortalChangeRequestForm({
                   </p>
                 </div>
               </div>
-            </AuraCard>
+            </Card>
 
-            <AuraCard title={t('registeredAddressSection')} titleId="cr-registered-heading" headingLevel={2}>
+            <Card title={t('registeredAddressSection')} titleId="cr-registered-heading" headingLevel={2}>
               <div className="grid gap-4 sm:grid-cols-2">
                 {field('regLine1', t('fields.line1'), { autoComplete: 'address-line1' })}
                 {field('regLine2', t('fields.line2'), { autoComplete: 'address-line2' })}
@@ -513,9 +513,9 @@ export function PortalChangeRequestForm({
                 {field('regProvince', t('fields.province'), { autoComplete: 'address-level1' })}
                 {field('regPostalCode', t('fields.postalCode'), { autoComplete: 'postal-code' })}
               </div>
-            </AuraCard>
+            </Card>
 
-            <AuraCard
+            <Card
               title={t('billingAddressSection')}
               titleId="cr-billing-heading"
               description={t('billingAddressHint')}
@@ -530,12 +530,12 @@ export function PortalChangeRequestForm({
                 {field('billPostalCode', t('fields.postalCode'), { required: billTouched })}
                 {field('billCountry', t('fields.country'), { autoComplete: 'country', required: billTouched })}
               </div>
-            </AuraCard>
+            </Card>
           </>
         ) : (
-          <AuraAlert tone="info" role="note" data-testid="secondary-note">
+          <Alert tone="info" role="note" data-testid="secondary-note">
             {t('secondaryNote')}
-          </AuraAlert>
+          </Alert>
         )}
 
         {/* FR-010 — GDPR Art. 13 / PDPA § 23 notice */}
@@ -559,9 +559,9 @@ export function PortalChangeRequestForm({
         {/* FR-034 — outcome messages announced through a live region, not a toast */}
         <div id={statusId} role="status" aria-live="polite" className={statusMessage ? 'text-sm' : 'sr-only'} data-testid="submit-status">
           {statusMessage ? (
-            <AuraAlert tone={status.kind === 'rate_limited' || status.kind === 'read_only' ? 'warning' : 'info'} role="none">
+            <Alert tone={status.kind === 'rate_limited' || status.kind === 'read_only' ? 'warning' : 'info'} role="none">
               {statusMessage}
-            </AuraAlert>
+            </Alert>
           ) : null}
         </div>
 

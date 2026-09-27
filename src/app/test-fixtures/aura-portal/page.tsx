@@ -29,7 +29,7 @@ import type { TimelineItemProps } from '@/components/members/timeline-event-item
 import { ContactLanguageForm } from '@/components/portal/contact-language-form';
 import { StatCard } from '@/components/portal/dashboard/stat-card';
 import { PreferredLocaleForm } from '@/components/portal/preferred-locale-form';
-import { AuraBadge, AuraCard, AuraStatusPill, auraButtonClass } from '@/components/shell/aura-markup';
+import { Badge, Card, StatusPill, buttonClass } from '@jirawatpyk/aura-react/server';
 import type { ChangeRequestView } from '@/lib/change-request-portal-view';
 import { RenewalRemindersToggle } from '@/app/(member)/portal/preferences/renewals/_components/renewal-reminders-toggle';
 import { RecentActivityList } from '@/app/(member)/portal/_components/recent-activity-list';
@@ -200,19 +200,19 @@ export default async function AuraPortalPreviewPage({
             subtitle={t('pageTitle')}
             badge={
               <div className="flex flex-wrap items-center gap-2">
-                <AuraStatusPill tone="ready">{t('statusBadge.active')}</AuraStatusPill>
-                <AuraBadge variant="outline" className="font-mono">SCCM-0042</AuraBadge>
+                <StatusPill tone="ready">{t('statusBadge.active')}</StatusPill>
+                <Badge variant="outline" className="font-mono">SCCM-0042</Badge>
               </div>
             }
             actions={
-              <Link href="/portal/edit" className={auraButtonClass()}>
+              <Link href="/portal/edit" className={buttonClass()}>
                 <PencilIcon className="aura-icon size-4" aria-hidden />
                 {t('editButton')}
               </Link>
             }
           />
           <PendingRequestBanner request={PENDING} />
-          <AuraCard title={t('organisationSection')} titleId="org-heading" headingLevel={2}>
+          <Card title={t('organisationSection')} titleId="org-heading" headingLevel={2}>
             <dl className="grid grid-cols-1 gap-x-8 gap-y-1 md:grid-cols-2 lg:grid-cols-3">
               <DetailField
                 label={t('fields.memberNumber')}
@@ -223,13 +223,13 @@ export default async function AuraPortalPreviewPage({
               <DetailField label={t('fields.companyName')} value="Nordic Trading Co., Ltd." />
               <DetailField label={t('fields.website')} value="https://nordic.example" />
             </dl>
-          </AuraCard>
-          <AuraCard
+          </Card>
+          <Card
             title={t('contactsSection')}
             titleId="contacts-heading"
             headingLevel={2}
             actions={
-              <Link href="/portal/contacts/invite" className={auraButtonClass({ variant: 'secondary' })}>
+              <Link href="/portal/contacts/invite" className={buttonClass({ variant: 'secondary' })}>
                 <UserPlusIcon className="aura-icon size-4" aria-hidden />
                 {t('inviteColleague')}
               </Link>
@@ -240,8 +240,8 @@ export default async function AuraPortalPreviewPage({
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="text-body font-medium">Anna Lindqvist</p>
-                    <AuraBadge variant="outline">{t('primaryBadge')}</AuraBadge>
-                    <AuraBadge variant="outline">{t('portalLinked')}</AuraBadge>
+                    <Badge variant="outline">{t('primaryBadge')}</Badge>
+                    <Badge variant="outline">{t('portalLinked')}</Badge>
                   </div>
                   <p className="text-[13px] text-[var(--aura-fg-secondary)]">anna@nordic.example</p>
                   <p className="text-[13px] text-[var(--aura-fg-secondary)]">Managing Director</p>
@@ -257,20 +257,20 @@ export default async function AuraPortalPreviewPage({
                 <p className="-mt-3 text-[13px] text-[var(--aura-fg-secondary)]">erik@nordic.example</p>
               </div>
             </div>
-          </AuraCard>
-          <AuraCard
+          </Card>
+          <Card
             title={tHistory('profileCard.title')}
             titleId="history-heading"
             headingLevel={2}
             actions={
-              <Link href="/portal/change-requests" className={auraButtonClass({ variant: 'secondary' })}>
+              <Link href="/portal/change-requests" className={buttonClass({ variant: 'secondary' })}>
                 <FileClockIcon className="aura-icon size-4" aria-hidden />
                 {tHistory('profileCard.link')}
               </Link>
             }
           >
             <p className="text-[var(--aura-fg-secondary)]">{tHistory('profileCard.subtitle')}</p>
-          </AuraCard>
+          </Card>
         </DetailContainer>
       </MemberFrame>
     );
@@ -318,12 +318,12 @@ export default async function AuraPortalPreviewPage({
           <PageHeader
             title={t('title')}
             subtitle={t('subtitle')}
-            actions={<Link href="/portal/profile" className={auraButtonClass({ variant: 'secondary' })}>{t('backToProfile')}</Link>}
+            actions={<Link href="/portal/profile" className={buttonClass({ variant: 'secondary' })}>{t('backToProfile')}</Link>}
           />
           <ul className="flex flex-col gap-4" aria-label={t('listLabel')}>
             {[PENDING, DECIDED, WITHDRAWN].map((r) => (
               <li key={r.id}>
-                <AuraCard
+                <Card
                   headingLevel={2}
                   titleId={`h-${r.id}`}
                   title={t('submittedOn', { submittedAt: fmt(r.submittedAt) })}
@@ -344,7 +344,7 @@ export default async function AuraPortalPreviewPage({
                       </div>
                     ) : null}
                   </div>
-                </AuraCard>
+                </Card>
               </li>
             ))}
           </ul>
@@ -365,14 +365,14 @@ export default async function AuraPortalPreviewPage({
     return (
       <MemberFrame path="/portal/account">
         <FormContainer>
-          <PageHeader title={tPage('title')} subtitle={tPage('subtitle')} badge={<AuraBadge variant="outline">Member</AuraBadge>} />
-          <AuraCard id="account" title={tPage('sections.account')} titleId="account-heading" headingLevel={2} className="scroll-mt-24">
+          <PageHeader title={tPage('title')} subtitle={tPage('subtitle')} badge={<Badge variant="outline">Member</Badge>} />
+          <Card id="account" title={tPage('sections.account')} titleId="account-heading" headingLevel={2} className="scroll-mt-24">
             <div className="space-y-4">
               <p className="text-sm text-[var(--aura-fg-secondary)]">anna@nordic.example</p>
               <ChangePasswordForm />
             </div>
-          </AuraCard>
-          <AuraCard id="language" title={tLocale('title')} titleId="language-heading" headingLevel={2} className="scroll-mt-24">
+          </Card>
+          <Card id="language" title={tLocale('title')} titleId="language-heading" headingLevel={2} className="scroll-mt-24">
             <div className="space-y-2">
               <p className="text-sm text-[var(--aura-fg-secondary)]">{tLocale('description')}</p>
               <PreferredLocaleForm initialValue="en" />
@@ -382,16 +382,16 @@ export default async function AuraPortalPreviewPage({
                 <ContactLanguageForm initialValue="en" />
               </div>
             </div>
-          </AuraCard>
-          <AuraCard id="renewal-prefs" title={tPage('sections.renewalPrefs')} titleId="renewal-heading" headingLevel={2} className="scroll-mt-24">
+          </Card>
+          <Card id="renewal-prefs" title={tPage('sections.renewalPrefs')} titleId="renewal-heading" headingLevel={2} className="scroll-mt-24">
             <RenewalRemindersToggle initialOptedOut={false} />
-          </AuraCard>
-          <AuraCard id="data-privacy" title={tPage('sections.dataPrivacy')} titleId="privacy-heading" headingLevel={2} className="scroll-mt-24">
+          </Card>
+          <Card id="data-privacy" title={tPage('sections.dataPrivacy')} titleId="privacy-heading" headingLevel={2} className="scroll-mt-24">
             <div className="space-y-4">
               <p className="max-w-prose text-sm text-[var(--aura-fg-secondary)]">{tExport('description')}</p>
               <DataExportPanel rows={rows} labels={buildDataExportLabels(tExport)} />
             </div>
-          </AuraCard>
+          </Card>
         </FormContainer>
       </MemberFrame>
     );
@@ -415,9 +415,9 @@ export default async function AuraPortalPreviewPage({
       <MemberFrame path="/portal/profile">
         <DetailContainer>
           <PageHeader title={t('title')} subtitle={t('subtitle')} />
-          <AuraCard title={t('logoHeading')} titleId="dir-logo-heading" headingLevel={2}>
+          <Card title={t('logoHeading')} titleId="dir-logo-heading" headingLevel={2}>
             <DirectoryLogoControl currentLogoUrl={null} />
-          </AuraCard>
+          </Card>
           <DirectoryVisibilityForm
             contact={{ viewerIsPrimary: true, chosenByPrimary: true, hasListing: true }}
             identity={{ companyName: 'Nordic Trading Co., Ltd.', tier: 'Corporate Gold', logoUrl: null, primaryContact: { name: 'Anna Lindqvist', email: 'anna@nordic.example' } }}
@@ -442,7 +442,7 @@ export default async function AuraPortalPreviewPage({
       <MemberFrame path="/portal/timeline">
         <DetailContainer>
           <PageHeader title={t('title')} subtitle={t('subtitleMember')} />
-          <AuraCard>
+          <Card>
             <div className="flex flex-col gap-4">
               <TimelineFilters />
               <TimelineStream
@@ -453,7 +453,7 @@ export default async function AuraPortalPreviewPage({
                 listLabel={t('title')}
               />
             </div>
-          </AuraCard>
+          </Card>
         </DetailContainer>
       </MemberFrame>
     );
@@ -474,9 +474,9 @@ export default async function AuraPortalPreviewPage({
           <StatCard label="Outstanding" value="฿ 21,400.00" sub="1 invoice · due 22 Oct 2026" variant="warning" variantLabel="Due soon" headIcon={FileText} />
           <StatCard label="Benefits used" value="30%" sub="3 of 10 this year" headIcon={TrendingUp} />
         </div>
-        <AuraCard title={t('title')} titleId="recent-heading" headingLevel={2}>
+        <Card title={t('title')} titleId="recent-heading" headingLevel={2}>
           <RecentActivityList events={EVENTS} />
-        </AuraCard>
+        </Card>
       </DetailContainer>
     </MemberFrame>
   );

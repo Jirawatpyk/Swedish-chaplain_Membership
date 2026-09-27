@@ -29,7 +29,7 @@ import { listPortalChangeRequests } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { AuraCard, auraButtonClass } from '@/components/shell/aura-markup';
+import { Card, buttonClass } from '@jirawatpyk/aura-react/server';
 import { EmptyState } from '@/components/shell/empty-state';
 import { ChangeRequestDiffTable } from '@/components/members/change-requests/change-request-diff-table';
 import { ChangeRequestStatusBadge, changeRequestStatusOf } from '@/components/members/change-requests/change-request-status-badge';
@@ -100,7 +100,7 @@ export default async function PortalChangeRequestHistoryPage({ searchParams }: P
         title={t('title')}
         subtitle={t('subtitle')}
         actions={
-          <Link href="/portal/profile" className={auraButtonClass({ variant: 'secondary' })}>
+          <Link href="/portal/profile" className={buttonClass({ variant: 'secondary' })}>
             {t('backToProfile')}
           </Link>
         }
@@ -115,7 +115,7 @@ export default async function PortalChangeRequestHistoryPage({ searchParams }: P
             <li key={r.id}>
               {/* An AURA card per request (spec 122 US3): the submission time as its
                   h2, who and when as its description, the status pill top-right. */}
-              <AuraCard
+              <Card
                 data-testid="history-item"
                 data-request-id={r.id}
                 headingLevel={2}
@@ -141,14 +141,14 @@ export default async function PortalChangeRequestHistoryPage({ searchParams }: P
                     </div>
                   ) : null}
                 </div>
-              </AuraCard>
+              </Card>
             </li>
           ))}
         </ul>
       )}
       {result.value.nextCursor ? (
         <div className="flex justify-center">
-          <Link href={`/portal/change-requests?cursor=${encodeURIComponent(result.value.nextCursor)}`} className={auraButtonClass({ variant: 'secondary' })} data-testid="history-more">
+          <Link href={`/portal/change-requests?cursor=${encodeURIComponent(result.value.nextCursor)}`} className={buttonClass({ variant: 'secondary' })} data-testid="history-more">
             {t('loadMore')}
           </Link>
         </div>

@@ -21,7 +21,7 @@ import { buildMembersDeps } from '@/modules/members/members-deps';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { EmptyState } from '@/components/shell/empty-state';
-import { AuraCard } from '@/components/shell/aura-markup';
+import { Card } from '@jirawatpyk/aura-react/server';
 import { DirectoryVisibilityForm } from '@/components/directory/directory-visibility-form';
 import { DirectoryLogoControl } from '@/components/directory/directory-logo-control';
 
@@ -91,9 +91,9 @@ export default async function PortalDirectorySettingsPage(): Promise<React.JSX.E
     <DetailContainer>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
 
-      <AuraCard title={t('logoHeading')} titleId="dir-logo-heading" headingLevel={2}>
+      <Card title={t('logoHeading')} titleId="dir-logo-heading" headingLevel={2}>
         <DirectoryLogoControl currentLogoUrl={listing?.logoUrl ?? null} />
-      </AuraCard>
+      </Card>
 
       <DirectoryVisibilityForm
         // Remount after a save (router.refresh) so the "unsaved changes"

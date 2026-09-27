@@ -27,7 +27,7 @@ import { computeBenefitUsage, makeComputeBenefitUsageDeps } from '@/modules/insi
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { AuraAlert } from '@/components/shell/aura-markup';
+import { Alert } from '@jirawatpyk/aura-react/server';
 import { EmptyState } from '@/components/shell/empty-state';
 import {
   BenefitUsageCard,
@@ -171,9 +171,9 @@ export default async function PortalBenefitsPage(props: {
       <div className="flex flex-col gap-4">
         {membershipAccess.access === 'suspended' && (
           // A standing notice, so role="status" (not AURA's default alert).
-          <AuraAlert tone="warning" role="status" icon={PauseCircle} title={tSuspended('benefitsPausedTitle')}>
+          <Alert tone="warning" role="status" icon={<PauseCircle />} title={tSuspended('benefitsPausedTitle')}>
             {tSuspended('benefitsPausedBody')}
-          </AuraAlert>
+          </Alert>
         )}
         <BenefitUsageCard
           locale={locale}

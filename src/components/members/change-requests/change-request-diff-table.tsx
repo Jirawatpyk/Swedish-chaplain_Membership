@@ -12,12 +12,13 @@
  * (US3/US4) and the staff record section (US4). Staff's decision table is a
  * separate component (checkboxes + three-value display).
  *
- * Spec 122 US3: AURA table markup (`aura-tbl` — column headers, a row header
- * per field). AURA's table does not stack, so below 640 px the table, body,
- * rows and cells drop to blocks and each row reads as a card with its own
- * "Seen" / "Proposed" labels, as before.
+ * Spec 122 US3: AURA `Table` with `stackBelow="sm"` (AURA 5.8): column
+ * headers and a row header per field; below 640 px of its own width each row
+ * reads as a card, each value labelled by its column header ("Seen" /
+ * "Proposed") in the server HTML, headers kept for screen readers.
  */
 import { useTranslations } from 'next-intl';
+import { Table, TBody, THead, Td, Th, Tr } from '@jirawatpyk/aura-react';
 import { ReceiptTextIcon, CheckIcon, XIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ChangeRequestFieldView } from '@/lib/change-request-portal-view';
@@ -33,30 +34,22 @@ export interface ChangeRequestDiffTableProps {
 export function ChangeRequestDiffTable({ fields, showOutcome = false, className }: ChangeRequestDiffTableProps) {
   const t = useTranslations('portal.changeRequests.diff');
 
-  // below `sm` every cell is a block: no AURA cell padding or separators there
-  const cell = 'max-sm:block max-sm:border-0 max-sm:p-0';
   return (
-    <div
-      className={cn(
-        'aura-tbl-wrap overflow-hidden rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)]',
-        className,
-      )}
-      data-testid="change-request-diff"
-    >
-      <table className="aura-tbl max-sm:block">
-        <thead className="aura-tbl__head max-sm:hidden">
-          <tr className="aura-tbl__row">
-            <th scope="col" className="aura-tbl__th text-[var(--aura-fg-secondary)]">{t('field')}</th>
+    <div className={className} data-testid="change-request-diff">
+      <Table stackBelow="sm">
+        <THead>
+          <Tr>
+            <Th className="text-[var(--aura-fg-secondary)]">{t('field')}</Th>
             {/* `seen` is the value AT SUBMISSION, not the live record — the staff
                 table shows the live one under `current` (round 5, code #1) */}
-            <th scope="col" className="aura-tbl__th text-[var(--aura-fg-secondary)]">{t('seen')}</th>
-            <th scope="col" className="aura-tbl__th text-[var(--aura-fg-secondary)]">{t('proposed')}</th>
-          </tr>
-        </thead>
-        <tbody className="aura-tbl__body max-sm:block max-sm:divide-y max-sm:divide-[var(--aura-border-default)]">
+            <Th className="text-[var(--aura-fg-secondary)]">{t('seen')}</Th>
+            <Th className="text-[var(--aura-fg-secondary)]">{t('proposed')}</Th>
+          </Tr>
+        </THead>
+        <TBody>
           {fields.map((f) => (
-            <tr key={f.key} className="aura-tbl__row max-sm:flex max-sm:flex-col max-sm:gap-2 max-sm:p-3" data-field-key={f.key}>
-              <th scope="row" className={cn('aura-tbl__th sm:w-[28%]', cell)}>
+            <Tr key={f.key} data-field-key={f.key}>
+              <Th scope="row" className="sm:w-[28%]">
                 <span>{t(`labels.${f.key}`)}</span>
                 {f.affectsTaxDocuments ? (
                   <span className="mt-1 flex items-center gap-1 text-xs font-normal text-[var(--aura-alert-warning-fg)]">
@@ -79,19 +72,17 @@ export function ChangeRequestDiffTable({ fields, showOutcome = false, className 
                     {t(`outcome.${f.outcome}`)}
                   </span>
                 ) : null}
-              </th>
-              <td className={cn('aura-tbl__td', cell)}>
-                <span className="text-xs text-[var(--aura-fg-secondary)] sm:hidden">{t('seen')}: </span>
+              </Th>
+              <Td>
                 <ProposedValueDisplay fieldKey={f.key} value={f.seen} />
-              </td>
-              <td className={cn('aura-tbl__td', cell)}>
-                <span className="text-xs text-[var(--aura-fg-secondary)] sm:hidden">{t('proposed')}: </span>
+              </Td>
+              <Td>
                 <ProposedValueDisplay fieldKey={f.key} value={f.proposed} />
-              </td>
-            </tr>
+              </Td>
+            </Tr>
           ))}
-        </tbody>
-      </table>
+        </TBody>
+      </Table>
     </div>
   );
 }

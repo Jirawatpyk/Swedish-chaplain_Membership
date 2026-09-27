@@ -10,7 +10,7 @@ import { toTimelineItemProps } from '@/lib/timeline-presenter';
 import { asMemberId, timelineList } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { ArrowRight } from 'lucide-react';
-import { AuraCard, auraButtonClass } from '@/components/shell/aura-markup';
+import { Card, buttonClass } from '@jirawatpyk/aura-react/server';
 import { SkeletonBlock } from '@/components/shell/page-skeletons';
 import { RecentActivityList } from './recent-activity-list';
 
@@ -89,7 +89,7 @@ export async function RecentActivitySection({
   return (
     // AURA card (spec 122 US3, `Main` board): the "view all" link sits in the
     // footer as a text link, as the board draws it.
-    <AuraCard
+    <Card
       title={t('title')}
       headingLevel={2}
       footer={
@@ -105,14 +105,14 @@ export async function RecentActivitySection({
         <div className="flex flex-col items-center gap-3 py-8 text-center">
           {/* activity.empty.title = "No activity yet" (nested key, existing G2 key) */}
           <p className="text-sm text-[var(--aura-fg-secondary)]">{t('empty.title')}</p>
-          <Link href="/portal/benefits" className={auraButtonClass({ variant: 'secondary' })}>
+          <Link href="/portal/benefits" className={buttonClass({ variant: 'secondary' })}>
             {t('emptyCta')}
           </Link>
         </div>
       ) : (
         <RecentActivityList events={events} />
       )}
-    </AuraCard>
+    </Card>
   );
 }
 
@@ -138,8 +138,8 @@ export function RecentActivitySkeleton(): React.JSX.Element {
 /** The B2 "unavailable" state — one card for a failed list read and for an unresolved viewer contact. */
 function unavailableCard(title: string, body: string) {
   return (
-    <AuraCard title={title} headingLevel={2}>
+    <Card title={title} headingLevel={2}>
       <p className="py-8 text-center text-sm text-[var(--aura-fg-secondary)]">{body}</p>
-    </AuraCard>
+    </Card>
   );
 }

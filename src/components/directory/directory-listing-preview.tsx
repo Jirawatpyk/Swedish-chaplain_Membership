@@ -15,7 +15,7 @@
  * entry — never the server-only barrel.
  */
 import { useTranslations } from 'next-intl';
-import { AuraCard } from '@/components/shell/aura-markup';
+import { Card } from '@jirawatpyk/aura-react/server';
 import {
   projectPublishedListing,
   type FieldVisibility,
@@ -81,7 +81,7 @@ export function DirectoryListingPreview({
   return (
     // An AURA card; the heading stays in its own live region (it flips to
     // "Preview of unsaved changes"), so it is drawn here, not as the card title.
-    <AuraCard aria-labelledby="dir-preview-heading" data-testid="directory-listing-preview">
+    <Card aria-labelledby="dir-preview-heading" data-testid="directory-listing-preview">
       <div aria-live="polite">
         <h2 id="dir-preview-heading" className="aura-card__title">
           {dirty ? t('previewUnsaved') : t('previewHeading')}
@@ -125,6 +125,6 @@ export function DirectoryListingPreview({
           </div>
         )}
       </div>
-    </AuraCard>
+    </Card>
   );
 }

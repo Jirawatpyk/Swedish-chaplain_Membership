@@ -58,16 +58,13 @@ describe('the diff on AURA table markup (spec 122 US3)', () => {
     expect(cols).toEqual([copy.field, copy.seen, copy.proposed]);
     const row = table.querySelector('tbody tr[data-field-key="phone"]')!;
     expect(row.querySelector('th[scope="row"]')?.textContent).toContain(copy.labels.phone);
-    expect([...row.querySelectorAll('td')].map((td) => td.textContent)).toEqual([
-      expect.stringContaining('+661'),
-      expect.stringContaining('+662'),
+    expect([...row.querySelectorAll('td')].map((td) => td.textContent)).toEqual(['+661', '+662']);
+    // below sm AURA stacks each row into a card (AURA 5.8 `stackBelow`); each
+    // value is labelled by its column header, which stays for screen readers
+    expect(table).toHaveClass('aura-tbl--stack-sm');
+    expect([...row.querySelectorAll('td')].map((td) => td.getAttribute('data-label'))).toEqual([
+      copy.seen,
+      copy.proposed,
     ]);
-    // the stacked (phone) layout's inline labels are display-only from sm up,
-    // where the column headers already name each cell — never read twice
-    for (const label of row.querySelectorAll('td > span:first-child')) {
-      expect(label).toHaveClass('sm:hidden');
-      expect(label).not.toHaveClass('sm:sr-only');
-    }
-    expect(row.querySelectorAll('td > span:first-child')).toHaveLength(2);
   });
 });

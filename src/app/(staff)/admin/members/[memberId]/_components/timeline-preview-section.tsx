@@ -29,7 +29,7 @@ import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import { headers } from 'next/headers';
 import { ClockIcon } from 'lucide-react';
-import { AuraCard, auraButtonClass } from '@/components/shell/aura-markup';
+import { Card, buttonClass } from '@jirawatpyk/aura-react/server';
 import { SkeletonBlock as Skeleton } from '@/components/shell/page-skeletons';
 import { logger } from '@/lib/logger';
 import { canPerform } from '@/lib/rbac';
@@ -116,12 +116,12 @@ export async function TimelinePreviewSection({
   // Spec 122 US3: an AURA card — its h2 title (056 fix #1: reachable via SR
   // heading navigation under the page h1) and the "view all" link as its action.
   return (
-    <AuraCard
+    <Card
       title={t('sections.audit')}
       titleId="member-timeline-preview-heading"
       headingLevel={2}
       actions={
-        <Link href={`/admin/members/${memberId}/timeline`} className={auraButtonClass({ variant: 'secondary' })}>
+        <Link href={`/admin/members/${memberId}/timeline`} className={buttonClass({ variant: 'secondary' })}>
           <ClockIcon className="aura-icon size-4" aria-hidden="true" />
           {t('timelinePreview.viewAll')}
         </Link>
@@ -144,7 +144,7 @@ export async function TimelinePreviewSection({
           ))}
         </ul>
       )}
-    </AuraCard>
+    </Card>
   );
 }
 

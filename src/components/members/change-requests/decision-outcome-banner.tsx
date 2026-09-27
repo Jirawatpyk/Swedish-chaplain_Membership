@@ -17,7 +17,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
 import { CheckCircle2Icon, ListChecksIcon, XCircleIcon } from 'lucide-react';
 import { Button } from '@jirawatpyk/aura-react';
-import { AuraAlert, auraButtonClass } from '@/components/shell/aura-markup';
+import { Alert, buttonClass } from '@jirawatpyk/aura-react/server';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 import type { ChangeRequestView } from '@/lib/change-request-portal-view';
 import { ChangeRequestDiffTable } from './change-request-diff-table';
@@ -74,10 +74,10 @@ export function DecisionOutcomeBanner({ request }: DecisionOutcomeBannerProps) {
   // banner stays `role="status"` whatever the tone (a decision is news, not an
   // interruption), and carries its outcome icon and test hooks.
   return (
-    <AuraAlert
+    <Alert
       tone={TONE[outcome]}
       role="status"
-      icon={Icon}
+      icon={<Icon />}
       title={t(`title.${outcome}`)}
       data-testid="decision-outcome-banner"
       data-outcome={outcome}
@@ -86,7 +86,7 @@ export function DecisionOutcomeBanner({ request }: DecisionOutcomeBannerProps) {
           {anyRejected ? (
             <Link
               href={`/portal/edit?resubmit=${encodeURIComponent(request.id)}`}
-              className={auraButtonClass()}
+              className={buttonClass()}
               data-testid="resubmit-link"
             >
               {t('resubmit')}
@@ -115,6 +115,6 @@ export function DecisionOutcomeBanner({ request }: DecisionOutcomeBannerProps) {
           </div>
         ) : null}
       </div>
-    </AuraAlert>
+    </Alert>
   );
 }

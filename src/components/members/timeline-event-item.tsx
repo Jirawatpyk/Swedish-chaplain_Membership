@@ -26,7 +26,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { RelativeTime } from '@/components/shell/relative-time';
-import { AuraBadge } from '@/components/shell/aura-markup';
+import { Badge } from '@jirawatpyk/aura-react/server';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
 import type { TimelineSource, TimelineActorKind } from '@/lib/timeline-shared';
 
@@ -238,7 +238,7 @@ export function TimelineEventItem({
           <span className="font-medium text-sm">{eventLabel}</span>
           {/* AURA neutral badge — a designed ≥4.5:1 pair (WCAG 1.4.3; the
               muted-on-muted chip before it failed, review-run I6). */}
-          <AuraBadge>{sourceLabel}</AuraBadge>
+          <Badge>{sourceLabel}</Badge>
           <RelativeTime
             iso={timestamp}
             title={formatLocalisedTimestamp(timestamp, locale)}
