@@ -9,14 +9,18 @@
  * the newest page. Filters: source type, actor kind (staff/member/system),
  * and a from/to date range — individually and in combination.
  *
- * Spec 122 US3: AURA FilterBar (the named region), AURA Selects with visible
- * labels, and labelled AURA date fields; Clear is an AURA ghost button. On
- * phones only Source shows, with a "More filters" toggle for the rest. Shared with the staff member timeline.
+ * Spec 122 US3 (`Portal-timeline`): AURA FilterBar (the named region), AURA
+ * Selects with visible labels and AURA DatePickers (typed or picked; the
+ * provider shows Buddhist-era years in Thai — display only, the URL keeps
+ * ISO dates), in four equal columns with Clear at the end — always there,
+ * disabled until something is filtered. On phones only Source shows, with a
+ * "More filters" toggle for the rest. Shared with the staff member timeline.
  */
 import { useCallback, useId, useState, useTransition } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { Button, FilterBar, Select, TextField } from '@jirawatpyk/aura-react';
+import { SlidersHorizontalIcon } from 'lucide-react';
+import { Button, DatePicker, FilterBar, Select, type ISODate } from '@jirawatpyk/aura-react';
 import { cn } from '@/lib/utils';
 import {
   TIMELINE_SOURCES,
@@ -72,11 +76,14 @@ export function TimelineFilters(): React.JSX.Element {
     Boolean(currentTo);
 
   return (
-    <FilterBar label={t('title')} className="[&_.aura-filterbar\_\_controls]:w-full [&_.aura-filterbar\_\_controls]:items-end">
+    <FilterBar
+      label={t('title')}
+      className="[&_.aura-filterbar\_\_controls]:w-full [&_.aura-filterbar\_\_controls]:items-end sm:[&_.aura-filterbar\_\_controls]:grid sm:[&_.aura-filterbar\_\_controls]:grid-cols-[repeat(4,minmax(0,1fr))_auto] sm:[&_.aura-filterbar\_\_controls]:gap-3"
+    >
       <Select
         name="source"
         label={t('source')}
-        className="max-sm:min-w-0 max-sm:flex-1 sm:w-48"
+        className="max-sm:min-w-0 max-sm:flex-1"
         value={currentSource}
         onChange={(e) => pushUrl({ source: e.target.value === ALL ? null : e.target.value })}
         options={[
@@ -88,6 +95,7 @@ export function TimelineFilters(): React.JSX.Element {
         type="button"
         variant="secondary"
         className="sm:hidden"
+        icon={<SlidersHorizontalIcon aria-hidden />}
         aria-expanded={moreOpen}
         aria-controls={moreId}
         onClick={() => setMoreOpen((open) => !open)}
@@ -98,7 +106,6 @@ export function TimelineFilters(): React.JSX.Element {
         <Select
           name="actorKind"
           label={t('actor')}
-          className="sm:w-40"
           value={currentActor}
           onChange={(e) => pushUrl({ actorKind: e.target.value === ALL ? null : e.target.value })}
           options={[
@@ -106,33 +113,33 @@ export function TimelineFilters(): React.JSX.Element {
             ...TIMELINE_ACTOR_KINDS.map((k) => ({ value: k, label: tActor(k as TimelineActorKind) })),
           ]}
         />
-        <TextField
-          type="date"
+        <DatePicker
+          name="from"
           label={t('from')}
-          className="sm:w-40"
-          value={currentFrom}
-          onChange={(e) => pushUrl({ from: e.target.value || null })}
+          timeZone="Asia/Bangkok"
+          value={(currentFrom || null) as ISODate | null}
+          onChange={(iso) => pushUrl({ from: iso })}
         />
-        <TextField
-          type="date"
+        <DatePicker
+          name="to"
           label={t('to')}
-          className="sm:w-40"
-          value={currentTo}
-          onChange={(e) => pushUrl({ to: e.target.value || null })}
+          timeZone="Asia/Bangkok"
+          value={(currentTo || null) as ISODate | null}
+          onChange={(iso) => pushUrl({ to: iso })}
         />
       </div>
 
-      {hasAnyFilter && (
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          icon="x"
-          onClick={() => pushUrl({ source: null, actorKind: null, from: null, to: null })}
-        >
-          {t('clear')}
-        </Button>
-      )}
+      {/* From 640px always there, disabled until something is filtered; on a
+          phone only when it can act, on its own row after the filters. */}
+      <Button
+        type="button"
+        variant="secondary"
+        className={cn('max-sm:order-last max-sm:w-full', !hasAnyFilter && 'max-sm:hidden')}
+        disabled={!hasAnyFilter}
+        onClick={() => pushUrl({ source: null, actorKind: null, from: null, to: null })}
+      >
+        {t('clear')}
+      </Button>
     </FilterBar>
   );
 }

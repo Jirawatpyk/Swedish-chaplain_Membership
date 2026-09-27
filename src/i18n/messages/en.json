@@ -7981,7 +7981,8 @@
       "results": "{count, plural, =0 {No entries} one {# entry} other {# entries}}",
       "groupToday": "Today",
       "groupThisMonth": "This month",
-      "caption": "Showing the latest {count} · times in Bangkok time · Thai shows dates in the Buddhist Era"
+      "caption": "Showing the latest {count} · times in Bangkok time · Thai shows dates in the Buddhist Era",
+      "captionMoreFilters": "More filters: actor, from date, to date."
     },
     "filters": {
       "title": "Filters",
@@ -8039,7 +8040,8 @@
       "pending_admin_reactivation": "Pending reactivation",
       "updated": "Renewal updated"
     },
-    "unknownEvent": "Activity"
+    "unknownEvent": "Activity",
+    "sourceBadgeAudit": "Profile"
   },
   "benefits": {
     "page": {

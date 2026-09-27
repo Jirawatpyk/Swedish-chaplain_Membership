@@ -134,9 +134,13 @@ export function TimelineStream({
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      {/* the Portal-timeline boards' caption: how many rows, and whose clock */}
-      <p className="text-xs text-[var(--aura-fg-secondary)]">{t('caption', { count: events.length })}</p>
+    <div className="flex flex-col gap-2 sm:gap-3">
+      {/* the Portal-timeline boards' caption: how many rows, and whose clock —
+          on phones also which filters sit behind "More filters" */}
+      <p className="text-xs text-[var(--aura-fg-secondary)] sm:text-[13px]">
+        {t('caption', { count: events.length })}
+        <span className="sm:hidden">. {t('captionMoreFilters')}</span>
+      </p>
       {events.length > VIRTUALIZE_THRESHOLD ? (
         <VirtualizedList
           events={events}
@@ -273,8 +277,8 @@ function TimelineRow({ events, index }: { readonly events: readonly TimelineItem
       {opensGroup && heading ? (
         <h2
           className={cn(
-            'pb-2 font-mono text-xs font-medium uppercase tracking-wider text-[var(--aura-fg-secondary)]',
-            index > 0 && 'pt-6',
+            // the boards: 11px mono, 16px above every group (the first too), 4px below
+            'pt-4 pb-1 font-mono text-[11px] font-normal uppercase tracking-[0.04em] text-[var(--aura-fg-secondary)]',
           )}
           suppressHydrationWarning
         >

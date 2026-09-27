@@ -7981,7 +7981,8 @@
       "results": "{count, plural, other {# รายการ}}",
       "groupToday": "วันนี้",
       "groupThisMonth": "เดือนนี้",
-      "caption": "แสดง {count} รายการล่าสุด · เวลาตามเวลากรุงเทพฯ · ภาษาไทยแสดงปีเป็นพุทธศักราช"
+      "caption": "แสดง {count} รายการล่าสุด · เวลาตามเวลากรุงเทพฯ · ภาษาไทยแสดงปีเป็นพุทธศักราช",
+      "captionMoreFilters": "ตัวกรองเพิ่มเติม: ผู้ดำเนินการ ตั้งแต่วันที่ ถึงวันที่"
     },
     "filters": {
       "title": "ตัวกรอง",
@@ -8039,7 +8040,8 @@
       "pending_admin_reactivation": "รอการเปิดใช้งานอีกครั้ง",
       "updated": "อัปเดตการต่ออายุ"
     },
-    "unknownEvent": "กิจกรรม"
+    "unknownEvent": "กิจกรรม",
+    "sourceBadgeAudit": "โปรไฟล์"
   },
   "benefits": {
     "page": {

@@ -123,7 +123,7 @@ export default async function PortalTimelinePage({
     <DetailContainer>
       <PageHeader title={t('title')} subtitle={t('subtitleMember')} />
       <Card>
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-2 sm:gap-3">
           <TimelineFilters />
           <TimelineStream
             key={filterKey}

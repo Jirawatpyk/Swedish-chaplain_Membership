@@ -236,7 +236,8 @@ export function TimelineEventItem({
     actorDisplay = tTimeline(`actorKind.${actorKind}` as 'actorKind.staff');
   }
 
-  const sourceLabel = tTimeline(`source.${source}` as 'source.audit');
+  // The row badge names a profile change "Profile" (the boards); the filter keeps "Profile / Audit".
+  const sourceLabel = source === 'audit' ? tTimeline('sourceBadgeAudit') : tTimeline(`source.${source}` as 'source.audit');
   const SourceIcon = SOURCE_ICON[source];
   const payloadDetail =
     source === 'audit' ? formatAuditPayload(eventType, payload, tPayload) : null;

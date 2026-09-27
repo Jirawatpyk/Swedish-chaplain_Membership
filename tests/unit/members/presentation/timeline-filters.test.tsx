@@ -35,7 +35,7 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('TimelineFilters on AURA (spec 122 US3)', () => {
-  it('is an AURA filter bar with AURA selects and labelled AURA date fields', () => {
+  it('is an AURA filter bar with AURA selects, labelled AURA date pickers and a Clear that waits for a filter', () => {
     const { container } = renderFilters();
     const bar = screen.getByRole('region', { name: copy.title });
     expect(bar).toHaveClass('aura-filterbar');
@@ -45,15 +45,18 @@ describe('TimelineFilters on AURA (spec 122 US3)', () => {
       // a visible label, like the date fields beside it (not an aria-label only)
       expect(field!.querySelector('label')).toHaveTextContent(label);
     }
-    expect(screen.getByLabelText(copy.from)).toHaveAttribute('type', 'date');
+    // AURA DatePicker: a typed date field with its calendar button
+    expect(screen.getByLabelText(copy.from)).toHaveAttribute('inputmode', 'numeric');
     expect(screen.getByLabelText(copy.to).closest('.aura-field')).not.toBeNull();
-    expect(screen.queryByRole('button', { name: copy.clear })).toBeNull();
+    expect(screen.getByRole('button', { name: copy.clear })).toBeDisabled();
   });
 
   it('writes a date to the URL and drops the cursor', () => {
     search = new URLSearchParams('cursor=abc');
     renderFilters();
-    fireEvent.change(screen.getByLabelText(copy.from), { target: { value: '2026-09-01' } });
+    const from = screen.getByLabelText(copy.from);
+    fireEvent.change(from, { target: { value: '2026-09-01' } });
+    fireEvent.blur(from);
     expect(replace).toHaveBeenCalledWith('/portal/timeline?from=2026-09-01');
   });
 
