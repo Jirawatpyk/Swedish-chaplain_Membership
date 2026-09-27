@@ -34,7 +34,8 @@ import { signInAsMember } from '../helpers/member-session';
 // regardless of the default render locale (en.json: "Benefits"/"Broadcasts";
 // th.json: "สิทธิประโยชน์"/"การประกาศ"; sv.json: "Förmåner"/"Utskick").
 const BENEFITS_TAB_NAME = /benefits|förmåner|สิทธิประโยชน์/i;
-const BROADCASTS_TAB_NAME = /broadcasts|utskick|การประกาศ/i;
+// Spec 122 US3 (`Benefits` board): the tab reads "E-Blasts" (EN), "E-Blast" (TH), "Utskick" (SV).
+const BROADCASTS_TAB_NAME = /e-blasts?|utskick/i;
 
 test.describe('Benefits tabs @a11y', () => {
   test('default tab = Benefits; renders a real <h2>', async ({ page }) => {
