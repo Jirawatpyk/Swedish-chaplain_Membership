@@ -6790,8 +6790,8 @@
     "benefits": {
       "tabs": {
         "ariaLabel": "ส่วนสิทธิประโยชน์",
-        "benefits": "สิทธิประโยชน์",
-        "broadcasts": "การประกาศ"
+        "benefits": "สิทธิประโยชน์ของแพ็กเกจ",
+        "broadcasts": "E-Blast"
       }
     },
     "profile": {
@@ -8027,7 +8027,11 @@
       "subtitleMember": "สิทธิประโยชน์สมาชิกของคุณในปีนี้",
       "empty": "ยังไม่พบโปรไฟล์สมาชิกสำหรับบัญชีของคุณ",
       "emptyFromBroadcasts": "คุณมาจากลิงก์ E-Blast — การเขียน E-Blast ต้องมีโปรไฟล์สมาชิกที่เชื่อมกับบัญชี โปรดติดต่อหอการค้าเพื่อเชื่อมบัญชีของคุณ",
-      "emptyTitle": "ยังไม่มีโปรไฟล์สมาชิก"
+      "emptyTitle": "ยังไม่มีโปรไฟล์สมาชิก",
+      "subtitlePlan": "สิ่งที่แพ็กเกจ {plan} ของคุณรวมไว้",
+      "subtitlePlanEblasts": "สิ่งที่แพ็กเกจ {plan} ของคุณรวมไว้ และ E-Blast ที่คุณส่งแล้ว",
+      "statusFull": "ใช้สิทธิประโยชน์ได้เต็มที่",
+      "statusPaused": "สิทธิประโยชน์ถูกพักไว้"
     },
     "card": {
       "title": "การใช้สิทธิประโยชน์ · {year}",
@@ -8040,7 +8044,11 @@
       "emptyTitle": "ไม่มีสิทธิประโยชน์ที่ติดตาม",
       "fullBenefits": "ดูสิทธิประโยชน์ทั้งหมด",
       "suspendedBadge": "ระงับชั่วคราว",
-      "suspendedBadgeSr": "สมาชิกภาพถูกระงับชั่วคราว — สิทธิประโยชน์หยุดชั่วคราว"
+      "suspendedBadgeSr": "สมาชิกภาพถูกระงับชั่วคราว — สิทธิประโยชน์หยุดชั่วคราว",
+      "ofTotalUsed": "จาก {total} ที่ใช้แล้ว",
+      "benefitUsed": "ใช้ {benefit} แล้ว",
+      "activeDescriptionPlan": "รวมอยู่ในแพ็กเกจ {plan} ของคุณสำหรับปี {year}",
+      "activeDescription": "รวมอยู่ในแพ็กเกจของคุณสำหรับปี {year}"
     },
     "benefit": {
       "eblast": "อีเมลประชาสัมพันธ์ (E-Blast)",
@@ -8048,11 +8056,15 @@
       "action": {
         "eblast": "เขียน E-Blast",
         "cultural_tickets": "ดูกิจกรรม"
+      },
+      "description": {
+        "eblast": "แคมเปญอีเมลที่หอการค้าส่งถึงผู้รับของหอการค้าในนามของคุณ",
+        "cultural_tickets": "บัตรเข้าร่วมกิจกรรมทางวัฒนธรรมของหอการค้า"
       }
     },
     "active": {
-      "all_employee_event_discount": "ส่วนลดงานสำหรับพนักงานทุกคน",
-      "directory_listing": "รายชื่อในทำเนียบสมาชิก",
+      "all_employee_event_discount": "อัตราส่วนลดสำหรับสมาชิก",
+      "directory_listing": "รายชื่อใน Directory E-Book",
       "m2m_benefits": "สิทธิประโยชน์ระหว่างสมาชิก",
       "business_referrals": "การแนะนำธุรกิจ",
       "tailor_made_services": "บริการเฉพาะตามความต้องการ",

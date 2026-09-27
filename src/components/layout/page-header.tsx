@@ -23,11 +23,12 @@ type PageHeaderProps = {
    */
   autoFocusTitle?: boolean;
   /**
-   * Spec 122 — `hero` is the larger page the portal home, benefits and edit
-   * boards draw: a 30 / 36px title and more room above it (globals.css
-   * sizes it off `data-size`). Every other page uses the default 26 / 32px.
+   * Spec 122 — `hero` is the larger page the portal home and edit boards
+   * draw: a 30 / 36px title and more room above it (globals.css sizes it off
+   * `data-size`); `hero-lg` is the Benefits board's, larger from 1024px only
+   * (26 / 36px). Every other page uses the default 26 / 32px.
    */
-  size?: 'default' | 'hero';
+  size?: 'default' | 'hero' | 'hero-lg';
 };
 
 /**
@@ -122,7 +123,7 @@ export function PageHeader({
             // and drops the size.
             className={[
               '[margin-block-start:0.25rem] text-body text-muted-foreground [.chamber-portal_&]:[margin-block-start:0.375rem]',
-              size === 'hero' ? 'lg:[.chamber-portal_&]:[margin-block-start:0.5rem]' : '',
+              size !== 'default' ? 'lg:[.chamber-portal_&]:[margin-block-start:0.5rem]' : '',
             ].join(' ')}
           >
             {subtitle}

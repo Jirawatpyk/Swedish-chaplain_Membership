@@ -106,7 +106,11 @@ const findByLinkedUserId = vi.hoisted(() =>
   vi.fn().mockResolvedValue({ ok: true, value: { memberId: 'm1' } }),
 );
 vi.mock('@/modules/members/members-deps', () => ({
-  buildMembersDeps: () => ({ memberRepo: { findByLinkedUserId } }),
+  buildMembersDeps: () => ({
+    memberRepo: { findByLinkedUserId },
+    // Spec 122 US3 — the plan name for the header chip and the included-benefits card.
+    plans: { getPlan: vi.fn().mockResolvedValue({ ok: true, value: { planNameEn: 'Premium Corporate' } }) },
+  }),
 }));
 
 // 059-membership-suspension — the page now also resolves membership access
@@ -119,7 +123,7 @@ vi.mock('@/lib/load-membership-access', () => ({
 }));
 
 // Benefits-tab usage compute → a minimal valid usage (the benefits arm always
-// runs under F7-off; BenefitUsageCard is stubbed below so the shape can be
+// runs under F7-off; PortalBenefitsPanel is stubbed below so the shape can be
 // minimal — `quantifiable` must be an array because the page `.map`s it).
 const computeBenefitUsage = vi.hoisted(() =>
   vi.fn().mockResolvedValue({
@@ -169,8 +173,8 @@ vi.mock('@/modules/broadcasts', () => ({
 // (it stubbed the card with no prop capture AND used an empty `quantifiable`,
 // so the eblast branch never ran).
 const benefitCardProps = vi.hoisted(() => ({ value: undefined as unknown }));
-vi.mock('@/components/benefits/benefit-usage-card', () => ({
-  BenefitUsageCard: (props: unknown) => {
+vi.mock('@/components/benefits/portal-benefits-panel', () => ({
+  PortalBenefitsPanel: (props: unknown) => {
     benefitCardProps.value = props;
     return <div data-testid="benefit-usage-card">benefit usage</div>;
   },
@@ -270,7 +274,7 @@ describe('PortalBenefitsPage — page-level F7 kill-switch (C1, xhigh #12)', () 
     expect(computeBenefitUsage).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId('benefit-usage-card')).toBeInTheDocument();
     // The single visible tab is the Benefits tab.
-    expect(screen.getByRole('tab', { name: 'Benefits' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Plan benefits' })).toBeInTheDocument();
   });
 
   // -------------------------------------------------------------------------

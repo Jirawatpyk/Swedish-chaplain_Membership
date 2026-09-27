@@ -6790,8 +6790,8 @@
     "benefits": {
       "tabs": {
         "ariaLabel": "Benefits sections",
-        "benefits": "Benefits",
-        "broadcasts": "Broadcasts"
+        "benefits": "Plan benefits",
+        "broadcasts": "E-Blasts"
       }
     },
     "profile": {
@@ -8027,7 +8027,11 @@
       "subtitleMember": "Your membership benefits for this year",
       "empty": "We couldn't find a membership profile for your account yet.",
       "emptyFromBroadcasts": "You followed a link to E-Blast — composing needs a linked membership profile. Ask your chamber to link your account.",
-      "emptyTitle": "No membership profile yet"
+      "emptyTitle": "No membership profile yet",
+      "subtitlePlan": "What your {plan} plan includes.",
+      "subtitlePlanEblasts": "What your {plan} plan includes, and the E-Blasts you have sent.",
+      "statusFull": "Full benefits",
+      "statusPaused": "Benefits paused"
     },
     "card": {
       "title": "Benefit usage · {year}",
@@ -8040,7 +8044,11 @@
       "emptyTitle": "No tracked benefits",
       "fullBenefits": "Full benefits",
       "suspendedBadge": "Suspended",
-      "suspendedBadgeSr": "Membership suspended — benefits paused"
+      "suspendedBadgeSr": "Membership suspended — benefits paused",
+      "ofTotalUsed": "of {total} used",
+      "benefitUsed": "{benefit} used",
+      "activeDescriptionPlan": "Part of your {plan} plan for {year}",
+      "activeDescription": "Part of your plan for {year}"
     },
     "benefit": {
       "eblast": "E-Blasts",
@@ -8048,11 +8056,15 @@
       "action": {
         "eblast": "Compose E-Blast",
         "cultural_tickets": "View events"
+      },
+      "description": {
+        "eblast": "Email campaigns sent to the chamber's audience on your behalf",
+        "cultural_tickets": "Tickets to the chamber's cultural events"
       }
     },
     "active": {
-      "all_employee_event_discount": "All-employee event discount",
-      "directory_listing": "Directory listing",
+      "all_employee_event_discount": "Member discount rate",
+      "directory_listing": "Directory E-Book listing",
       "m2m_benefits": "Member-to-member benefits",
       "business_referrals": "Business referrals",
       "tailor_made_services": "Tailor-made services",

@@ -4,7 +4,7 @@ import { getTranslations } from 'next-intl/server';
 import { CircleCheck, FileClockIcon, FileText, PencilIcon, TrendingUp, UserPlusIcon } from 'lucide-react';
 
 import { ChangePasswordForm } from '@/components/auth/change-password-form';
-import { BenefitUsageCard } from '@/components/benefits/benefit-usage-card';
+import { PortalBenefitsPanel } from '@/components/benefits/portal-benefits-panel';
 import { DataExportPanel, type DataExportRow } from '@/components/data-export/data-export-panel';
 import { buildDataExportLabels } from '@/components/data-export/data-export-view-model';
 import { DirectoryLogoControl } from '@/components/directory/directory-logo-control';
@@ -166,27 +166,45 @@ export default async function AuraPortalPreviewPage({
   const { view = 'home' } = await searchParams;
 
   if (view === 'benefits') {
+    // The `Benefits` / `Benefits-mobile` board data.
     const t = await getTranslations('benefits.page');
     return (
       <MemberFrame path="/portal/benefits">
         <DetailContainer>
-          <PageHeader title={t('title')} subtitle={t('subtitleMember')} size="hero" />
+          <PageHeader
+            title={t('title')}
+            subtitle={t('subtitlePlanEblasts', { plan: 'Premium Corporate' })}
+            size="hero-lg"
+            meta={
+              <>
+                <Badge tone="accent" variant="solid">Premium Corporate</Badge>
+                <StatusPill tone="ready">{t('statusFull')}</StatusPill>
+              </>
+            }
+          />
           <BenefitsTabs
-            showBroadcastsTab={false}
+            showBroadcastsTab
             active="benefits"
+            broadcastsPanel={null}
             benefitsPanel={
-              <BenefitUsageCard
+              <PortalBenefitsPanel
                 locale="en"
                 membershipYear={2026}
                 elapsedYearPct={74}
                 quantifiable={[
-                  { key: 'eblast', used: 1, entitlement: 4, lastUsedAt: '2026-05-10T00:00:00.000Z', actionHref: '/portal/broadcasts/new' },
-                  { key: 'cultural_tickets', used: 2, entitlement: 6, lastUsedAt: '2026-06-02T00:00:00.000Z' },
+                  { key: 'eblast', used: 2, entitlement: 6, lastUsedAt: '2026-07-03T08:00:00.000Z', actionHref: '/portal/broadcasts/new' },
+                  { key: 'cultural_tickets', used: 0, entitlement: 2, lastUsedAt: null },
                 ]}
-                active={[{ key: 'directory_listing' }, { key: 'm2m_benefits' }]}
-                aggregateConsumedPct={30}
-                underUseWarning
-                warningActionHref="/portal/broadcasts/new"
+                active={[
+                  { key: 'directory_listing' },
+                  { key: 'all_employee_event_discount' },
+                  { key: 'm2m_benefits' },
+                  { key: 'business_referrals' },
+                  { key: 'tailor_made_services' },
+                ]}
+                aggregateConsumedPct={60}
+                underUseWarning={false}
+                planName="Premium Corporate"
               />
             }
           />
@@ -467,7 +485,7 @@ export default async function AuraPortalPreviewPage({
   }
 
   if (view === 'not-found') {
-    return <MemberFrame path="/portal">{await PortalNotFound()}</MemberFrame>;
+    return <MemberFrame path="/portal/does-not-exist">{await PortalNotFound()}</MemberFrame>;
   }
 
   // home — the `Main` / `Home-mobile` board data

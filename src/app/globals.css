@@ -591,10 +591,10 @@ summary,
       --page-padding-y: 2rem;
       --page-padding-bottom: 4rem;
     }
-    [data-slot='page-header'][data-size='hero'] {
+    [data-slot='page-header']:is([data-size='hero'], [data-size='hero-lg']) {
       --font-size-h1: 2.25rem;
     }
-    .chamber-portal [data-slot='layout-container']:has(> [data-slot='page-header'][data-size='hero']) {
+    .chamber-portal [data-slot='layout-container']:has(> [data-slot='page-header']:is([data-size='hero'], [data-size='hero-lg'])) {
       --page-padding-y: 2.5rem;
       --page-section-gap: 1.5rem;
     }

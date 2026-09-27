@@ -27,12 +27,10 @@ import { computeBenefitUsage, makeComputeBenefitUsageDeps } from '@/modules/insi
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { Alert } from '@jirawatpyk/aura-react/server';
+import { Alert, Badge, StatusPill } from '@jirawatpyk/aura-react/server';
 import { EmptyState } from '@/components/shell/empty-state';
-import {
-  BenefitUsageCard,
-  type BenefitUsageItem,
-} from '@/components/benefits/benefit-usage-card';
+import type { BenefitUsageItem } from '@/components/benefits/benefit-usage-card';
+import { PortalBenefitsPanel } from '@/components/benefits/portal-benefits-panel';
 import { BenefitsTabs, type BenefitsTabsProps } from './_components/benefits-tabs';
 import { BroadcastsPanel } from './_components/broadcasts-panel';
 import { resolveBenefitsTab, clampBenefitsPage, BENEFITS_TAB } from './_helpers/tabs';
@@ -92,7 +90,7 @@ export default async function PortalBenefitsPage(props: {
     }
     return (
       <DetailContainer>
-        <PageHeader title={t('title')} subtitle={t('subtitleMember')} size="hero" />
+        <PageHeader title={t('title')} subtitle={t('subtitleMember')} size="hero-lg" />
         {/* AURA empty state (spec 122 US3). Review 2026-09-07 round 2
             (C13 / UX M-3): the compose page sends a member with no profile
             here — the extra line says that is why. */}
@@ -131,6 +129,10 @@ export default async function PortalBenefitsPage(props: {
     redirect('/portal');
   }
   const tSuspended = await getTranslations('portal.dashboard.membership.suspended');
+  // The plan's name for the header chip, the subtitle and the included-benefits
+  // card (the `Benefits` board); omitted when the plan row does not resolve.
+  const planLookup = await deps.plans.getPlan(tenant, member.planId, member.planYear);
+  const planName = planLookup.ok ? planLookup.value.planNameEn : null;
 
   // Render only the ACTIVE panel server-side. The inactive panel stays null so
   // we never do the other tab's DB roundtrips on a page that won't show them.
@@ -175,7 +177,7 @@ export default async function PortalBenefitsPage(props: {
             {tSuspended('benefitsPausedBody')}
           </Alert>
         )}
-        <BenefitUsageCard
+        <PortalBenefitsPanel
           locale={locale}
           membershipYear={usage.membershipYear}
           elapsedYearPct={usage.elapsedYearPct}
@@ -183,8 +185,8 @@ export default async function PortalBenefitsPage(props: {
           active={usage.active}
           aggregateConsumedPct={usage.aggregateConsumedPct}
           underUseWarning={usage.underUseWarning}
-          {...(f7Enabled ? { warningActionHref: EBLAST_COMPOSE_HREF } : {})}
-          headingId="benefits-panel-heading"
+          warningActionHref={f7Enabled ? EBLAST_COMPOSE_HREF : undefined}
+          planName={planName}
         />
       </div>
     );
@@ -218,7 +220,32 @@ export default async function PortalBenefitsPage(props: {
 
   return (
     <DetailContainer>
-      <PageHeader title={t('title')} subtitle={t('subtitleMember')} size="hero" />
+      <PageHeader
+        title={t('title')}
+        subtitle={
+          planName === null
+            ? t('subtitleMember')
+            : f7Enabled
+              ? t('subtitlePlanEblasts', { plan: planName })
+              : t('subtitlePlan', { plan: planName })
+        }
+        size="hero-lg"
+        meta={
+          <>
+            {planName !== null ? (
+              <Badge tone="accent" variant="solid">
+                {planName}
+              </Badge>
+            ) : null}
+            {/* Whether the benefits can be used now: full, or paused while suspended (the banner below says why). */}
+            {membershipAccess.access === 'suspended' ? (
+              <StatusPill tone="warning">{t('statusPaused')}</StatusPill>
+            ) : (
+              <StatusPill tone="ready">{t('statusFull')}</StatusPill>
+            )}
+          </>
+        }
+      />
       <BenefitsTabs {...tabsProps} />
     </DetailContainer>
   );

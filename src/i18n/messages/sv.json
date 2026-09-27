@@ -6790,8 +6790,8 @@
     "benefits": {
       "tabs": {
         "ariaLabel": "Förmånssektioner",
-        "benefits": "Förmåner",
-        "broadcasts": "Utskick"
+        "benefits": "Paketets förmåner",
+        "broadcasts": "E-Blasts"
       }
     },
     "profile": {
@@ -8027,7 +8027,11 @@
       "subtitleMember": "Dina medlemsförmåner för i år",
       "empty": "Vi hittade ingen medlemsprofil för ditt konto ännu.",
       "emptyFromBroadcasts": "Du kom hit via en länk för utskick – för att skriva ett utskick behöver kontot vara kopplat till en medlemsprofil. Be din handelskammare koppla ditt konto.",
-      "emptyTitle": "Ingen medlemsprofil ännu"
+      "emptyTitle": "Ingen medlemsprofil ännu",
+      "subtitlePlan": "Vad ditt {plan}-paket innehåller.",
+      "subtitlePlanEblasts": "Vad ditt {plan}-paket innehåller, och de E-Blasts du har skickat.",
+      "statusFull": "Fulla förmåner",
+      "statusPaused": "Förmåner pausade"
     },
     "card": {
       "title": "Förmånsanvändning · {year}",
@@ -8040,7 +8044,11 @@
       "emptyTitle": "Inga spårade förmåner",
       "fullBenefits": "Alla förmåner",
       "suspendedBadge": "Pausad",
-      "suspendedBadgeSr": "Medlemskap pausat — förmåner tillfälligt stoppade"
+      "suspendedBadgeSr": "Medlemskap pausat — förmåner tillfälligt stoppade",
+      "ofTotalUsed": "av {total} använda",
+      "benefitUsed": "{benefit} använda",
+      "activeDescriptionPlan": "Ingår i ditt {plan}-paket för {year}",
+      "activeDescription": "Ingår i ditt paket för {year}"
     },
     "benefit": {
       "eblast": "Utskick",
@@ -8048,11 +8056,15 @@
       "action": {
         "eblast": "Skriv E-Blast",
         "cultural_tickets": "Visa evenemang"
+      },
+      "description": {
+        "eblast": "E-postkampanjer som skickas till kammarens publik för din räkning",
+        "cultural_tickets": "Biljetter till kammarens kulturevenemang"
       }
     },
     "active": {
-      "all_employee_event_discount": "Evenemangsrabatt för alla anställda",
-      "directory_listing": "Katalognotering",
+      "all_employee_event_discount": "Medlemsrabatt",
+      "directory_listing": "Listning i Directory E-Book",
       "m2m_benefits": "Medlem-till-medlem-förmåner",
       "business_referrals": "Affärsrekommendationer",
       "tailor_made_services": "Skräddarsydda tjänster",

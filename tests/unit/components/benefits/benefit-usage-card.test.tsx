@@ -56,7 +56,7 @@ describe('<BenefitUsageCard>', () => {
 
   it('AS-3: active benefits render as badges (no numeric quota)', () => {
     renderCard();
-    expect(screen.getByText('Directory listing')).toBeInTheDocument();
+    expect(screen.getByText('Directory E-Book listing')).toBeInTheDocument();
   });
 
   it('AS-2: the under-use warning renders only when flagged', () => {
@@ -155,7 +155,7 @@ describe('<BenefitUsageCard>', () => {
 
   it('compact: hides the active-benefits badge section (summary stays tight)', () => {
     renderCard({ compact: true, active: [{ key: 'directory_listing' }] });
-    expect(screen.queryByText('Directory listing')).not.toBeInTheDocument();
+    expect(screen.queryByText('Directory E-Book listing')).not.toBeInTheDocument();
   });
 
   // --- 059-membership-suspension Task 18 — suspended-membership badge -----
@@ -200,7 +200,7 @@ describe('<BenefitUsageCard>', () => {
       const card = screen.getByTestId('benefit-usage-card');
       expect(card).toHaveClass('aura-card');
       expect(screen.getByRole('progressbar').closest('.aura-progress')).not.toBeNull();
-      expect(screen.getByText('Directory listing')).toHaveClass('aura-badge');
+      expect(screen.getByText('Directory E-Book listing')).toHaveClass('aura-badge');
       expect(screen.getByText(/not using all your benefits/i).closest('.aura-alert')).toHaveClass(
         'aura-alert--warning',
       );
