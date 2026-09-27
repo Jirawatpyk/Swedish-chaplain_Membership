@@ -251,7 +251,7 @@ export default async function AuraPortalPreviewPage({
   if (view === 'edit') {
     const t = await getTranslations('portal.edit');
     return (
-      <MemberFrame path="/portal/profile">
+      <MemberFrame path="/portal/edit">
         <FormContainer>
           <PageHeader title={t('pageTitle')} size="hero" />
           <PortalEditForm
