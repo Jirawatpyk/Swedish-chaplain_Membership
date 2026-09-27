@@ -55,4 +55,26 @@ describe('<ResendInvoiceButton layout="compact">', () => {
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it('the full form (detail page) shows the 5-minute cooldown as aria-disabled too', async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 202 }));
+    vi.stubGlobal('fetch', fetchMock);
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <ResendInvoiceButton invoiceId="inv-1" documentNumber="SC-2026-000123" layout="full" />
+      </NextIntlClientProvider>,
+    );
+    const button = screen.getByRole('button', { name: /SC-2026-000123/ });
+    button.focus();
+    await act(async () => {
+      fireEvent.click(button);
+    });
+    expect(button).toHaveAttribute('aria-disabled', 'true');
+    expect(button).not.toBeDisabled();
+    expect(button).toHaveFocus();
+    await act(async () => {
+      fireEvent.click(button);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });

@@ -17,7 +17,8 @@ import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
 import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
 import { isReadOnlyResponse } from '@/lib/http/read-only-refusal';
-import { Button, IconButton } from '@jirawatpyk/aura-react';
+import { Icon, IconButton } from '@jirawatpyk/aura-react';
+import { buttonClass } from '@jirawatpyk/aura-react/server';
 import { cn } from '@/lib/utils';
 
 export interface ResendInvoiceButtonProps {
@@ -139,19 +140,25 @@ export function ResendInvoiceButton({
       />
     );
   }
+  // A plain button in AURA's button classes, not `<Button>`: AURA's Button
+  // writes its own `aria-disabled` (from `loading`) over the caller's, which
+  // erased the 5-minute cooldown state (whole-branch review M2).
   return (
-    <Button
+    <button
       type="button"
-      variant={variant === 'outline' ? 'secondary' : 'ghost'}
-      size="sm"
-      icon="mail"
-      loading={isPending}
       onClick={handleClick}
-      aria-disabled={recentlySent || undefined}
+      aria-disabled={disabled || undefined}
+      aria-busy={isPending || undefined}
       aria-label={label}
-      className={dimmed}
+      className={buttonClass({
+        variant: variant === 'outline' ? 'secondary' : 'ghost',
+        size: 'sm',
+        loading: isPending,
+        className: dimmed,
+      })}
     >
+      <Icon name={isPending ? 'loader-circle' : 'mail'} {...(isPending ? { className: 'aura-spin' } : {})} />
       {t('actions.emailCopy')}
-    </Button>
+    </button>
   );
 }
