@@ -216,7 +216,7 @@ describe('I5 — PDF routes cross-tenant probe (Principle I Review-Gate)', () =>
     expect(payload.attempted_invoice_id).toBe(invoiceId);
     expect(payload.actor_role).toBe('admin');
     expect(payload.route).toBe('get-invoice-pdf-signed-url');
-  }, 30_000);
+  });
 
   it('getCreditNotePdfSignedUrl from tenant B refuses tenant A\u2019s creditNoteId + emits probe', async () => {
     const requestId = `i5-cn-${randomUUID()}`;
@@ -249,7 +249,7 @@ describe('I5 — PDF routes cross-tenant probe (Principle I Review-Gate)', () =>
     expect(payload.attempted_credit_note_id).toBe(creditNoteId);
     expect(payload.actor_role).toBe('admin');
     expect(payload.route).toBe('get-credit-note-pdf-signed-url');
-  }, 30_000);
+  });
 
   it('member actor from tenant B cannot even see existence of tenant A\u2019s CN', async () => {
     const requestId = `i5-cn-member-${randomUUID()}`;
@@ -269,5 +269,5 @@ describe('I5 — PDF routes cross-tenant probe (Principle I Review-Gate)', () =>
     // MUST be the opaque "not found" so a cross-tenant member cannot
     // distinguish "exists elsewhere" from "truly absent".
     expect(result.error.code).toBe('credit_note_not_found');
-  }, 30_000);
+  });
 });

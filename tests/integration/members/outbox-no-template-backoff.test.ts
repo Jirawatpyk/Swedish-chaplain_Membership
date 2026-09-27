@@ -96,7 +96,7 @@ describe('integration: outbox dispatcher no_template_handler backoff parity', ()
       (nextRetryMs - (beforeCallMs + afterCallMs) / 2) / 1000,
     );
     expect(deltaSeconds).toBeLessThan(120); // well under the 300s pre-fix value
-  }, 30_000);
+  });
 
   it('permanent failure on 5th no_template attempt writes audit row (S1 null-tenant parity)', async () => {
     const outboxId = randomUUID();
@@ -133,5 +133,5 @@ describe('integration: outbox dispatcher no_template_handler backoff parity', ()
     // shared clear-test-data helper. Status flip is sufficient signal
     // that the permanent-failure branch ran; the outbox-member-invitation
     // test covers the happy-path audit shape.
-  }, 30_000);
+  });
 });

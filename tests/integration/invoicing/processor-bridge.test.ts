@@ -307,7 +307,7 @@ describe('F5 → F4 processor-bridge integration (T015)', () => {
     expect(result.value.totalSatang).toBe(INVOICE_TOTAL);
     expect(result.value.memberId).toBe(memberId);
     expect(result.value.tenantId).toBe(tenant.ctx.slug);
-  }, 30_000);
+  });
 
   it('getInvoiceForPayment returns not_found when invoice does not exist', async () => {
     const fakeId = randomUUID();
@@ -321,7 +321,7 @@ describe('F5 → F4 processor-bridge integration (T015)', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe('not_found');
-  }, 30_000);
+  });
 
   // -----------------------------------------------------------------------
   // T012 — markPaidFromProcessor end-to-end
@@ -367,7 +367,7 @@ describe('F5 → F4 processor-bridge integration (T015)', () => {
     expect(row?.paymentNotes).toContain('pi_test_abc123');
     expect(row?.paymentNotes).toContain('ch_test_xyz789');
     expect(row?.paymentDate).toBe('2026-04-23');
-  }, 30_000);
+  });
 
   it('markPaidFromProcessor handles PromptPay (null charge id) — paymentNotes omits charge=', async () => {
     const { invoiceId } = await seedInvoice(tenant, user, planId, 'issued');
@@ -396,7 +396,7 @@ describe('F5 → F4 processor-bridge integration (T015)', () => {
     expect(row?.paymentNotes).toContain('Stripe PromptPay');
     expect(row?.paymentNotes).toContain('pi_test_pp456');
     expect(row?.paymentNotes).not.toContain('charge=');
-  }, 30_000);
+  });
 
   // -----------------------------------------------------------------------
   // T013 — issueCreditNoteFromRefund persists source_refund_id
@@ -484,7 +484,7 @@ describe('F5 → F4 processor-bridge integration (T015)', () => {
         .where(eq(invoices.invoiceId, invoiceId)),
     );
     expect(inv?.status).toBe('partially_credited');
-  }, 30_000);
+  });
 
   it('F4-manual issueCreditNote still produces source_refund_id=NULL', async () => {
     // Regression guard — the optional `sourceRefundId` param must not
@@ -518,5 +518,5 @@ describe('F5 → F4 processor-bridge integration (T015)', () => {
         .where(eq(creditNotes.tenantId, tenant.ctx.slug)),
     );
     expect(row?.sourceRefundId).toBeNull();
-  }, 30_000);
+  });
 });

@@ -225,7 +225,7 @@ describe('credit_notes PII-redaction GUC arm (COMP-1 US3-B, live Neon)', () => {
     )) as unknown as Array<{ ln: string; pii_blob_purged_at: Date | null }>;
     expect(rows[0]?.ln).toBe('[REDACTED]');
     expect(rows[0]?.pii_blob_purged_at).not.toBeNull();
-  }, 30_000);
+  });
 
   it('UNDER the GUC, changing a MONEY/numbering column RAISEs (only PII + marker exempt)', async () => {
     const { tenant, creditNoteId } = await seedCreditNote();
@@ -237,7 +237,7 @@ describe('credit_notes PII-redaction GUC arm (COMP-1 US3-B, live Neon)', () => {
     );
     expect(msg, 'expected the GUC per-field check to raise on a money change').not.toBeNull();
     expect(msg!).toMatch(/immutable|only member_identity_snapshot/i);
-  }, 30_000);
+  });
 
   it('WITHOUT the GUC, changing member_identity_snapshot RAISEs (normal path still locks it)', async () => {
     const { tenant, creditNoteId } = await seedCreditNote();
@@ -248,7 +248,7 @@ describe('credit_notes PII-redaction GUC arm (COMP-1 US3-B, live Neon)', () => {
     );
     expect(msg, 'expected the normal-path immutability trigger to raise').not.toBeNull();
     expect(msg!).toMatch(/immutable/i);
-  }, 30_000);
+  });
 
   it('UNDER the GUC, changing source_refund_id RAISEs (the money-FK is NOT in the 2-col exemption)', async () => {
     // thai-tax + security plan review: source_refund_id (mig 0038, post-0027) is a
@@ -262,7 +262,7 @@ describe('credit_notes PII-redaction GUC arm (COMP-1 US3-B, live Neon)', () => {
     );
     expect(msg, 'expected the GUC per-field check to raise on a source_refund_id change').not.toBeNull();
     expect(msg!).toMatch(/immutable|only member_identity_snapshot/i);
-  }, 30_000);
+  });
 
   it('the immutability function retains its search_path hardening after CREATE OR REPLACE', async () => {
     // The 0124 gotcha: CREATE OR REPLACE resets per-function proconfig. Gate the
@@ -271,5 +271,5 @@ describe('credit_notes PII-redaction GUC arm (COMP-1 US3-B, live Neon)', () => {
       tx.execute(sql`SELECT proconfig FROM pg_proc WHERE proname = 'credit_notes_enforce_immutability'`),
     )) as unknown as Array<{ proconfig: string[] | null }>;
     expect(rows[0]?.proconfig ?? []).toContain('search_path=pg_catalog, public');
-  }, 30_000);
+  });
 });

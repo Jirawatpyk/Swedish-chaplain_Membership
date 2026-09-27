@@ -238,7 +238,7 @@ describe('eraseMember — Art.17 session/invitation cascade (Bug I-1)', () => {
     linkedUser = await createActiveTestUser('member');
     tenant = await createTestTenant('test-swecham');
     await seedPlan(tenant, admin.userId);
-  }, 30_000);
+  });
 
   afterAll(async () => {
     await tenant.cleanup().catch(() => {});
@@ -332,7 +332,7 @@ describe('eraseMember — Art.17 session/invitation cascade (Bug I-1)', () => {
     );
     expect(userRows[0]?.passwordHash).toBeNull();
     expect(userRows[0]?.status).toBe('disabled');
-  }, 30_000);
+  });
 
   it('soft-consumes a pending invitation for the linked user', async () => {
     const { memberId } = await seedMemberWithLinkedContact(
@@ -368,7 +368,7 @@ describe('eraseMember — Art.17 session/invitation cascade (Bug I-1)', () => {
       .from(invitations)
       .where(eq(invitations.id, invitationId));
     expect(rows[0]?.consumedAt).not.toBeNull();
-  }, 30_000);
+  });
 
   /**
    * M1 accumulators — the `member_erased` completion-proof payload must report
@@ -440,7 +440,7 @@ describe('eraseMember — Art.17 session/invitation cascade (Bug I-1)', () => {
     // Accumulators must reflect the real cascade work, not 0/0.
     expect(payload.sessions_revoked_total).toBeGreaterThanOrEqual(1);
     expect(payload.invitations_revoked_count).toBe(PENDING_INVITE_COUNT);
-  }, 30_000);
+  });
 
   /**
    * H3 (code-review), part 1 — APPLICATION-LAYER invariant: if the
@@ -510,5 +510,5 @@ describe('eraseMember — Art.17 session/invitation cascade (Bug I-1)', () => {
       .where(eq(contacts.contactId, contactId));
     expect(contactRows[0]?.removedAt).toBeNull();
     expect(contactRows[0]?.firstName).not.toBe('[erased]');
-  }, 30_000);
+  });
 });

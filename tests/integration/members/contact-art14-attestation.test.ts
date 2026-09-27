@@ -98,7 +98,7 @@ describe('Task 8 — GDPR Art. 14 attestation (live Neon)', () => {
         },
       });
     });
-  }, 30_000);
+  });
 
   afterAll(async () => {
     await tenant.cleanup().catch(() => {});
@@ -158,7 +158,7 @@ describe('Task 8 — GDPR Art. 14 attestation (live Neon)', () => {
       tx.select().from(contacts).where(eq(contacts.email, email)),
     );
     expect(rows).toHaveLength(0);
-  }, 30_000);
+  });
 
   it('addContact with art14_attested:true persists a real art14_attested_at timestamp', async () => {
     const memberId = await seedMemberWithPrimaryContact();
@@ -195,7 +195,7 @@ describe('Task 8 — GDPR Art. 14 attestation (live Neon)', () => {
     const ts = row.art14AttestedAt!.getTime();
     expect(ts).toBeGreaterThanOrEqual(before);
     expect(ts).toBeLessThanOrEqual(after);
-  }, 30_000);
+  });
 
   it('scrubPiiForMemberInTx PRESERVES art14_attested_at across erasure (compliance evidence, not PII)', async () => {
     const memberId = randomUUID();
@@ -280,5 +280,5 @@ describe('Task 8 — GDPR Art. 14 attestation (live Neon)', () => {
     // The load-bearing assertion — the Art. 14 evidence survives erasure.
     expect(row.art14AttestedAt).not.toBeNull();
     expect(row.art14AttestedAt!.toISOString()).toBe(attestedAt.toISOString());
-  }, 30_000);
+  });
 });

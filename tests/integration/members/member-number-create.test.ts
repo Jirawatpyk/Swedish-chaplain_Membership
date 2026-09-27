@@ -94,7 +94,7 @@ describe('CM-5 — createMember persists member_number (integration)', () => {
         updatedBy: user.userId,
       });
     });
-  }, 30_000);
+  });
 
   afterAll(async () => {
     await tenant.cleanup().catch(() => {});

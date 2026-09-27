@@ -230,5 +230,5 @@ describe('concurrent cross-method cancel — partial unique index safety', () =>
     );
     expect(reasonStr.toLowerCase()).not.toContain('deadlock');
     expect(reasonStr.toLowerCase()).not.toContain('timeout');
-  }, 30_000);
+  });
 });

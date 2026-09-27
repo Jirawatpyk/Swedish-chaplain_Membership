@@ -142,7 +142,7 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
     // The row is STILL approved and therefore still cancellable. The whole
     // reason there is no `audience_building` status.
     expect(row.status).toBe('approved');
-  }, 30_000);
+  });
 
   /**
    * Round 4 F9 — the `isNull(audienceImportCompletedAt)` precondition IS the fix
@@ -190,7 +190,7 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
     });
     const after = await readStamp();
     expect(after).toBe(before);
-  }, 30_000);
+  });
 
   it('F9 — stamping a broadcast that does not exist is BroadcastNotFoundError, not a silent no-op', async () => {
     if (!RUN_INTEGRATION) return;
@@ -205,7 +205,7 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
         repo.markAudienceImportCompleted(tx, tenantCtx.slug, ghost),
       ),
     ).rejects.toThrow(/not found/i);
-  }, 30_000);
+  });
 
   it('the coherence CHECK rejects a completion stamp with no import id', async () => {
     const raw = await seedApproved();
@@ -217,7 +217,7 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
         `),
       ),
     );
-  }, 30_000);
+  });
 
   it('the coherence CHECK rejects a submitted-at with no import id', async () => {
     // The mirror case. Both directions matter: a half-written pair is how a
@@ -231,7 +231,7 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
         `),
       ),
     );
-  }, 30_000);
+  });
 
   /**
    * S13 — compare-and-set, replacing a blind overwrite.
@@ -288,7 +288,7 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
     // branch had just added a precondition to stop the SIBLING stamp doing
     // exactly that. `COALESCE` keeps the first value.
     expect(await readSubmitted()).toBe(firstStamp);
-  }, 30_000);
+  });
 
   it('attaching a DIFFERENT import id over an existing one fails loudly', async () => {
     if (!RUN_INTEGRATION) return;
@@ -309,7 +309,7 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
 
     // And the first id survives — a losing writer must not have half-applied.
     expect((await readImportCols(raw)).audience_import_id).toBe('imp_first');
-  }, 30_000);
+  });
 
   it('attaching a DIFFERENT audience id over an existing one fails loudly', async () => {
     if (!RUN_INTEGRATION) return;
@@ -331,7 +331,7 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
         await repo.attachAudienceId(tx, slug, broadcastId, 'aud_second');
       }),
     ).rejects.toThrow(BroadcastConcurrentMutationError);
-  }, 30_000);
+  });
 
   /**
    * 0299 (review S10). THIS CASE PASSED BEFORE 0299 AND IS THE PROOF OF THE BUG.
@@ -355,7 +355,7 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
           WHERE tenant_id = ${TEST_TENANT} AND broadcast_id = ${raw}::uuid`),
       ),
     );
-  }, 30_000);
+  });
 
   it('the coherence CHECK rejects a completion that precedes its submit (0299)', async () => {
     if (!RUN_INTEGRATION) return;
@@ -371,7 +371,7 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
            WHERE tenant_id = ${TEST_TENANT} AND broadcast_id = ${raw}::uuid`),
       ),
     );
-  }, 30_000);
+  });
 
   /**
    * POSITIVE CONTROL for the two cases above. Without it they pass just as
@@ -406,7 +406,7 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
     expect(cols.audience_import_id).toBe('imp_ok');
     expect(cols.submitted).toBe(true);
     expect(cols.completed).toBe(true);
-  }, 30_000);
+  });
 
   /**
    * S11 / S46 — the stuck gauge must not LATCH.
@@ -463,7 +463,7 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
     // ...and the genuinely stuck one is still counted. Without this half, a
     // predicate that matched nothing at all would pass the assertion above.
     expect(ids).toContain(live);
-  }, 30_000);
+  });
 
   /**
    * S9 — the erasure derivation must see an audience that was PUSHED but never
@@ -497,7 +497,7 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
     );
 
     expect(pairs).toContainEqual({ audienceId, email });
-  }, 30_000);
+  });
 
   /**
    * **This case asserted the OPPOSITE until round 2 R2-3, and the change is
@@ -532,7 +532,7 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
     );
 
     expect(pairs).toContainEqual({ audienceId, email });
-  }, 30_000);
+  });
 
   /**
    * POSITIVE CONTROL for the bound that replaced it (R2-3). A broadcast that DID
@@ -601,7 +601,7 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
     // address still in a live marketing audience is Art. 12(3), in a record
     // that cannot be corrected.
     expect(pairs).toContainEqual({ audienceId, email: erased });
-  }, 30_000);
+  });
 
   /**
    * Constitution v1.4.2 Principle I clause 3 — the mandatory cross-tenant
@@ -652,5 +652,5 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
     expect(cols.audience_import_id).toBeNull();
     expect(cols.submitted).toBe(false);
     expect(cols.completed).toBe(false);
-  }, 30_000);
+  });
 });

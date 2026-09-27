@@ -286,7 +286,7 @@ describe('F4 Seq-number atomicity — T016 (live Neon)', () => {
     expect(rows).toHaveLength(1);
     // After allocation the next value is bumped to 2 (post-increment).
     expect(rows[0]!.nextSequenceNumber).toBe(2);
-  }, 30_000);
+  });
 
   // -------------------------------------------------------------------------
   // (h) Sequential allocation — 3 back-to-back calls produce 1, 2, 3
@@ -306,7 +306,7 @@ describe('F4 Seq-number atomicity — T016 (live Neon)', () => {
       seqs.push(s);
     }
     expect(seqs).toEqual([1, 2, 3]);
-  }, 30_000);
+  });
 
   // -------------------------------------------------------------------------
   // (d) Advisory-lock contention — 10 concurrent allocations yield 1..10
@@ -363,7 +363,7 @@ describe('F4 Seq-number atomicity — T016 (live Neon)', () => {
     expect(fy2027Seq2).toBe(2);
     // FY 2026 had 1,2,3 from (h) + d just touched 2029, so next FY 2026 = 4.
     expect(fy2026SeqNext).toBeGreaterThanOrEqual(4);
-  }, 30_000);
+  });
 
   // -------------------------------------------------------------------------
   // (a) PDF render throws → whole tx rolls back, no seq increment

@@ -58,7 +58,7 @@ describe('integration: sign-in F3 security guards', () => {
     if (!result.ok) {
       expect(result.error.code).toBe('invalid-credentials');
     }
-  }, 30_000);
+  });
 
   it('rejects sign-in when requiresPasswordReset = true (FR-012b)', async () => {
     await db
@@ -78,7 +78,7 @@ describe('integration: sign-in F3 security guards', () => {
     if (!result.ok) {
       expect(result.error.code).toBe('invalid-credentials');
     }
-  }, 30_000);
+  });
 
   it('allows sign-in after flags are cleared', async () => {
     // Both flags should be in their default (passing) state from the
@@ -92,5 +92,5 @@ describe('integration: sign-in F3 security guards', () => {
     });
 
     expect(result.ok).toBe(true);
-  }, 30_000);
+  });
 });

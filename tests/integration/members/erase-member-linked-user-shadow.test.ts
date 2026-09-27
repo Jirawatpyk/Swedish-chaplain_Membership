@@ -144,7 +144,7 @@ describe('listAllLinkedUserIdsForMemberInTx — survives the removed_at scrub sh
     linkedUser = await createActiveTestUser('member');
     tenant = await createTestTenant('test-swecham');
     await seedPlan(tenant, admin.userId);
-  }, 30_000);
+  });
 
   afterAll(async () => {
     await tenant.cleanup().catch(() => {});
@@ -207,5 +207,5 @@ describe('listAllLinkedUserIdsForMemberInTx — survives the removed_at scrub sh
       );
       expect(afterAllRead).toContain(linkedUser.userId);
     });
-  }, 30_000);
+  });
 });

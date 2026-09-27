@@ -276,7 +276,7 @@ describe('change-contact-email atomic tx (T072, FR-012a)', () => {
       .set({ emailVerified: true })
       .where(eq(users.id, seed.linkedUser.userId));
     await deleteTestUser(seed.linkedUser);
-  }, 30_000);
+  });
 
   it('chaos (a): outbox enqueue throws → full rollback', async () => {
     const seed = await seedMemberWithLinkedContact({
@@ -337,7 +337,7 @@ describe('change-contact-email atomic tx (T072, FR-012a)', () => {
     expect(sessRows.length).toBeGreaterThan(0);
 
     await deleteTestUser(seed.linkedUser);
-  }, 30_000);
+  });
 
   it('chaos (b): session revocation throws → full rollback', async () => {
     const seed = await seedMemberWithLinkedContact({
@@ -381,7 +381,7 @@ describe('change-contact-email atomic tx (T072, FR-012a)', () => {
     expect(userRow?.email).toBe(seed.linkedUserOldEmail);
 
     await deleteTestUser(seed.linkedUser);
-  }, 30_000);
+  });
 
   it('chaos (c): user-email conflict → full rollback', async () => {
     const seed = await seedMemberWithLinkedContact({
@@ -427,7 +427,7 @@ describe('change-contact-email atomic tx (T072, FR-012a)', () => {
 
     await deleteTestUser(conflicting);
     await deleteTestUser(seed.linkedUser);
-  }, 30_000);
+  });
 });
 
 // Silence unused import if asUserId isn't used — kept for future assertions.

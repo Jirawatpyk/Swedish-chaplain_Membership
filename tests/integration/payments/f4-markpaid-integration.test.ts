@@ -713,7 +713,7 @@ describe('F4 receipt-email path verification (T128 / US6 / FR-004)', () => {
     // to false without updating this seed, the prior `it`s would also
     // fail — this redundant guard is a fast canary.
     expect(enqueueSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
-  }, 30_000);
+  });
 
   /**
    * T128a (verify-driven 2026-04-27) — `autoEmailOnPayment=false`
@@ -825,5 +825,5 @@ describe('F4 receipt-email path verification (T128 / US6 / FR-004)', () => {
     expect(td).not.toHaveProperty('paymentIntentId');
     expect(td).not.toHaveProperty('chargeId');
     expect(td).not.toHaveProperty('method');
-  }, 30_000);
+  });
 });

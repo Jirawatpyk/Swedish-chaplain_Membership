@@ -135,7 +135,7 @@ describe('member billing address — live Neon roundtrip + CHECK backstop (0284)
         updatedBy: user.userId,
       });
     });
-  }, 30_000);
+  });
 
   afterAll(async () => {
     await tenant.cleanup().catch(() => {});

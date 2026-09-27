@@ -156,7 +156,7 @@ describe('revokeInvitation — integration (Staff Invitation Lifecycle Task 3, l
 
   afterAll(async () => {
     await db.delete(users).where(eq(users.id, admin.userId)).catch(() => {});
-  }, 30_000);
+  });
 
   it('F3-SAFE + OUTBOX CLEANUP: deletes the user, unlinks (not deletes) the contact, audits invitation_revoked, drops the pending member_invitation outbox row(s) for that email, leaves other notification types + already-sent rows untouched', async () => {
     const tenant = await createTestTenant('test-swecham');

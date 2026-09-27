@@ -39,7 +39,7 @@ beforeAll(async () => {
     .update(users)
     .set({ emailVerified: false })
     .where(eq(users.id, unverifiedUser.userId));
-}, 30_000);
+});
 
 afterAll(async () => {
   await deleteTestUser(verifiedUser);

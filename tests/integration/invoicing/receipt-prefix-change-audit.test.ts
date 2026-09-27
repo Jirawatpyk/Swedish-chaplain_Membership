@@ -112,7 +112,7 @@ describe('Round-4 — tenant_receipt_prefix_changed audit emit (live Neon)', () 
         ),
       );
     expect(prefixRows).toHaveLength(0);
-  }, 30_000);
+  });
 
   it('prefix flip after issuing documents captures correct last_sequences', async () => {
     // R10-T3 — explicit bootstrap inside the test body (not relying on

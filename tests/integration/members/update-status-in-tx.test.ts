@@ -85,7 +85,7 @@ describe('updateStatusInTx + findByIdInTx (T3 — round-3)', () => {
         updatedBy: user.userId,
       });
     });
-  }, 30_000);
+  });
 
   afterAll(async () => {
     await tenant.cleanup().catch(() => {});

@@ -129,7 +129,7 @@ describe('archive-member integration (T135, US7)', () => {
     user = await createActiveTestUser('admin');
     tenant = await createTestTenant('test');
     await seedPlan(tenant.ctx.slug, user.userId, planId);
-  }, 30_000);
+  });
 
   afterAll(async () => {
     await tenant.cleanup().catch(() => {});

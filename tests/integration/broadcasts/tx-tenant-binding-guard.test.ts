@@ -74,7 +74,7 @@ describe('assertTenantBoundTx — the application layer of Principle I', () => {
         await repoForA.attachAudienceId(tx, TENANT_A, BROADCAST_ID, 'aud-x');
       }),
     ).rejects.toThrow(/tx tenant mismatch/);
-  }, 30_000);
+  });
 
   it('names BOTH tenants in the refusal, so an operator knows which way round it was', async () => {
     if (!RUN_INTEGRATION) return;
@@ -97,7 +97,7 @@ describe('assertTenantBoundTx — the application layer of Principle I', () => {
     // "17" was produced. Correcting a miscount with a miscount, in the test
     // written to fix the miscount.)
     expect(err).toContain('attachAudienceId');
-  }, 30_000);
+  });
 
   /**
    * The unbound case. A raw `db` handle has no `app.current_tenant`, which is
@@ -119,7 +119,7 @@ describe('assertTenantBoundTx — the application layer of Principle I', () => {
         );
       }),
     ).rejects.toThrow(/NOT inside a runInTenant scope/);
-  }, 30_000);
+  });
 
   /**
    * Positive control. Without it, a guard that threw unconditionally would
@@ -164,5 +164,5 @@ describe('assertTenantBoundTx — the application layer of Principle I', () => {
     // concurrency error proves the guard admitted us, because a binding mismatch
     // throws a DIFFERENT message earlier. Rollback of a real write belongs in a
     // case that performs one, not in a comment here.
-  }, 30_000);
+  });
 });
