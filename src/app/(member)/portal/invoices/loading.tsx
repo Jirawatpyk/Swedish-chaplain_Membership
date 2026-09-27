@@ -37,7 +37,7 @@ export default async function Loading() {
               <SkeletonBlock className="h-9 w-[12rem]" />
             </div>
             {/* Desktop table skeleton (≥ md) — header row + 5 body rows. */}
-            <div className="hidden flex-col gap-4 md:flex">
+            <div className="hidden flex-col gap-4 lg:flex">
               <div className="grid grid-cols-7 gap-3">
                 {Array.from({ length: 7 }).map((_, c) => (
                   <SkeletonBlock key={c} className="h-4 w-20" />
@@ -58,7 +58,7 @@ export default async function Loading() {
                 (h-11 w-11) LAST — mirroring the real card's "text buttons
                 first, icon-only resend last" order (D4). Keeps CLS-0 when the
                 real cards paint. */}
-            <ul role="list" className="flex flex-col gap-3 md:hidden">
+            <ul role="list" className="flex flex-col gap-3 lg:hidden">
               {Array.from({ length: 5 }).map((_, i) => (
                 <li key={i}>
                   <Card>

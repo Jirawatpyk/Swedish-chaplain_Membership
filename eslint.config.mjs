@@ -286,8 +286,7 @@ const MIGRATED_PATHS = [
   'src/components/members/invite-colleague-form.tsx',
   // US4 — the member invoices and the pay sheet. The invoice filters are
   // shared with /admin/invoices, which renders them in AURA from US4 on.
-  'src/app/(member)/portal/invoices/page.tsx',
-  'src/app/(member)/portal/invoices/loading.tsx',
+  'src/app/(member)/portal/invoices/*.tsx',
   'src/app/(member)/portal/invoices/_components/**',
   'src/app/(member)/portal/invoices/_utils/**',
   // Brackets are a glob character class: a route segment such as

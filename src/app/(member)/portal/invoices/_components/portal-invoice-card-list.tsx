@@ -3,7 +3,7 @@
  *
  * Server Component. Renders the same per-row data as the desktop
  * `<table>` (in `page.tsx`) as a stacked card list for narrow viewports
- * (`< md`). The page dual-renders: `<table>` inside `hidden md:block`,
+ * (`< lg`). The page dual-renders: `<table>` inside `hidden lg:block`,
  * this list with `className="lg:hidden"`.
  *
  * SINGLE SOURCE OF TRUTH — this list consumes the SAME per-row

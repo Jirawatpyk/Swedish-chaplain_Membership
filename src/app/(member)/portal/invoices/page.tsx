@@ -309,9 +309,10 @@ export async function renderPortalInvoicesView({
     <DetailContainer>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
       {alert}
-      {/* Below 768px the card frame drops away: the phone rows are cards of
-          their own (the `Invoices-mobile` board), not cards in a card. */}
-      <Card className="max-md:border-0 max-md:bg-transparent max-md:shadow-none max-md:[&_.aura-card\_\_body]:p-0">
+      {/* Below 1024px, where the rows turn into cards, the card frame drops
+          away: those rows are cards of their own (the `Invoices-mobile`
+          board), not cards in a card. */}
+      <Card className="max-lg:border-0 max-lg:bg-transparent max-lg:shadow-none max-lg:[&_.aura-card\_\_body]:p-0">
         <div className="flex flex-col gap-4">
           {/* Reuse the admin InvoiceFilters client component for UI parity
               (same shadcn Select, same debounced search, same X-clear
@@ -620,7 +621,7 @@ export async function renderPortalInvoicesView({
                   </TBody>
                 </Table>
               </div>
-              {/* Mobile card list (`< md`). Consumes the same `rows[].vm`
+              {/* Mobile card list (`< lg`). Consumes the same `rows[].vm`
                   the table consumes — no recomputed flags. */}
               <PortalInvoiceCardList
                 rows={rows}
