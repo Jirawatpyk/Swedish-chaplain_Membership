@@ -113,7 +113,7 @@
     },
     "emailChangeRevert": {
       "title": "Återställ e-postbyte",
-      "cardDescription": "Kontakt-e-posten på ditt konto har ändrats. Om du inte begärde detta, återställ den och välj ett nytt lösenord.",
+      "cardDescription": "E-postadressen för kontakt på ditt konto har ändrats.",
       "description": "Återställer din tidigare e-post, loggar ut alla aktiva sessioner och kräver ett nytt lösenord innan du kan logga in igen. Länken gäller i {hours} timmar.",
       "revert": "Återställ och välj nytt lösenord",
       "submitting": "Återställer…",
@@ -271,7 +271,7 @@
     "city": "Stad",
     "country": "Land",
     "logoHeading": "Logotyp",
-    "logoHint": "PNG, JPEG eller WebP, upp till 2 MB. Omkodas och metadata tas bort vid uppladdning. Logotypändringar sparas direkt.",
+    "logoHint": "PNG, JPEG eller WebP, upp till 2 MB. Bilden omkodas och metadata tas bort vid uppladdning. Logotypändringar sparas direkt.",
     "logoUpload": "Ladda upp logotyp",
     "logoRemove": "Ta bort logotyp",
     "logoCurrent": "Nuvarande logotyp",
@@ -6238,7 +6238,7 @@
       "loading": "Läser in…",
       "loadError": "Kunde inte läsa in din nuvarande inställning. Uppdatera sidan och försök igen.",
       "groupLabel": "Mejl till ditt företag",
-      "hint": "Fakturor, godkännanden av E-Blasts och andra mejl som skickas till företaget. ”Använd kammarens standardspråk” följer handelskammarens inställning."
+      "hint": "Fakturor, godkännanden av utskick och andra mejl som skickas till företaget. ”Använd kammarens standardspråk” följer handelskammarens inställning."
     },
     "invoices": {
       "title": "Fakturor",
@@ -6795,7 +6795,7 @@
       "tabs": {
         "ariaLabel": "Förmånssektioner",
         "benefits": "Paketets förmåner",
-        "broadcasts": "E-Blasts"
+        "broadcasts": "Utskick"
       }
     },
     "profile": {
@@ -6901,7 +6901,7 @@
             "subtitle": "Se varje ändring du föreslagit och vad kammaren beslutade.",
             "link": "Visa historik"
           },
-          "colleagueNote": "En kollegas ändringar av sina egna kontaktuppgifter visas aldrig här."
+          "colleagueNote": "Ändringar som en kollega gör i sina egna kontaktuppgifter visas aldrig här."
         },
       "form": {
         "pageTitle": "Föreslå ändringar",
@@ -6910,7 +6910,7 @@
         "companySection": "Företagsuppgifter",
         "registeredAddressSection": "Registrerad adress",
         "billingAddressSection": "Faktureringsadress",
-        "billingAddressHint": "Använd när den momsregistrerade adressen (ภ.พ.20) skiljer sig från den registrerade adressen — skattedokumenten bär faktureringsadressen. Lämna alla rader tomma för att inte ange någon.",
+        "billingAddressHint": "Använd när den momsregistrerade adressen (ภ.พ.20) skiljer sig från den registrerade adressen — skattedokumenten visar faktureringsadressen. Lämna alla rader tomma för att inte ange någon.",
         "requiredNote": "* obligatoriska fält",
         "fields": {
           "firstName": "Förnamn",
@@ -6934,7 +6934,7 @@
         "cancel": "Avbryt",
         "secondaryNote": "Endast företagets primära kontakt kan föreslå ändringar av företagsuppgifterna. Kontakta hen om något behöver uppdateras.",
         "notice": "Ditt förslag granskas av kammarens personal, skickas till dem via e-post och sparas tillsammans med din medlemspost.",
-        "privacyLink": "Integritetspolicy",
+        "privacyLink": "Integritetsmeddelande",
         "resubmitTitle": "Kammaren godkände inte hela din förra begäran:",
         "errors": {
           "phone": "Ange ett telefonnummer i internationellt format, t.ex. +46 70 123 45 67.",
@@ -7082,12 +7082,12 @@
       "linkFailed": "Det gick inte att slutföra inbjudan. Ingen inbjudan skickades – försök igen.",
       "capabilities": {
         "title": "Vad din kollega kan göra",
-        "body": "Kollegor du bjuder in får en egen portalinloggning för medlemskapet. De kan se och betala fakturor, förnya medlemskapet och använda dess förmåner. Endast huvudkontakten kan bjuda in kollegor."
+        "body": "Kollegor du bjuder in får en egen portalinloggning för medlemskapet. De kan se och betala fakturor, förnya medlemskapet och använda dess förmåner. Endast den primära kontaktpersonen kan bjuda in kollegor."
       },
       "emailHint": "De får ett mejl med en länk för att välja lösenord.",
       "roleTitleHint": "Högst 100 tecken.",
-      "privacyNote": "Namn och e-post för {firstName} sparas som en kontakt för ert medlemskap — se <link>integritetspolicyn</link>.",
-      "privacyNoteNoName": "Din kollegas namn och e-post sparas som en kontakt för ert medlemskap — se <link>integritetspolicyn</link>."
+      "privacyNote": "Namn och e-post för {firstName} sparas som en kontakt för ert medlemskap — se <link>integritetsmeddelandet</link>.",
+      "privacyNoteNoName": "Din kollegas namn och e-post sparas som en kontakt för ert medlemskap — se <link>integritetsmeddelandet</link>."
     },
     "payment": {
       "payNow": "Betala nu",
@@ -8051,7 +8051,7 @@
       "emptyFromBroadcasts": "Du kom hit via en länk för utskick – för att skriva ett utskick behöver kontot vara kopplat till en medlemsprofil. Be din handelskammare koppla ditt konto.",
       "emptyTitle": "Ingen medlemsprofil ännu",
       "subtitlePlan": "Vad ditt {plan}-paket innehåller.",
-      "subtitlePlanEblasts": "Vad ditt {plan}-paket innehåller, och de E-Blasts du har skickat.",
+      "subtitlePlanEblasts": "Vad ditt {plan}-paket innehåller och de utskick du har skickat.",
       "statusFull": "Fulla förmåner",
       "statusPaused": "Förmåner pausade"
     },
@@ -8068,7 +8068,7 @@
       "suspendedBadge": "Pausad",
       "suspendedBadgeSr": "Medlemskap pausat — förmåner tillfälligt stoppade",
       "ofTotalUsed": "av {total} använda",
-      "benefitUsed": "{benefit} använda",
+      "benefitUsed": "Användning av {benefit}",
       "activeDescriptionPlan": "Ingår i ditt {plan}-paket för {year}",
       "activeDescription": "Ingår i ditt paket för {year}"
     },
@@ -8076,17 +8076,17 @@
       "eblast": "Utskick",
       "cultural_tickets": "Biljetter till kulturevenemang",
       "action": {
-        "eblast": "Skriv E-Blast",
+        "eblast": "Skriv utskick",
         "cultural_tickets": "Visa evenemang"
       },
       "description": {
-        "eblast": "E-postkampanjer som skickas till kammarens publik för din räkning",
+        "eblast": "E-postkampanjer som skickas till kammarens mottagare för din räkning",
         "cultural_tickets": "Biljetter till kammarens kulturevenemang"
       }
     },
     "active": {
       "all_employee_event_discount": "Medlemsrabatt",
-      "directory_listing": "Listning i Directory E-Book",
+      "directory_listing": "Post i katalog-E-boken",
       "m2m_benefits": "Medlem-till-medlem-förmåner",
       "business_referrals": "Affärsrekommendationer",
       "tailor_made_services": "Skräddarsydda tjänster",
@@ -8155,7 +8155,7 @@
       "edit": "Rätta uppgifter via <edit>Redigera profil</edit>.",
       "contact": "För radering, begränsning eller invändning, kontakta handelskammaren på <mail>{address}</mail>.",
       "contactNoEmail": "För radering, begränsning eller invändning, kontakta handelskammaren.",
-      "privacyLink": "Integritetspolicy"
+      "privacyLink": "Integritetsmeddelande"
     }
   }
 }
