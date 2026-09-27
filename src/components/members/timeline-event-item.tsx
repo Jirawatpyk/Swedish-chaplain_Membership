@@ -186,6 +186,38 @@ function formatAuditPayload(
   }
 }
 
+type RowDetail = { readonly text: string; readonly mono: boolean };
+
+const payloadString = (payload: Record<string, unknown> | null, key: string): string | null => {
+  const v = payload?.[key];
+  return typeof v === 'string' && v.length > 0 ? v : null;
+};
+
+/**
+ * Spec 122 US3 (`Portal-timeline` / `Main` boards) — what a non-audit row is
+ * about, as the repo resolved it: the document number (a stable identifier,
+ * mono), the event's name or the E-Blast's subject (prose).
+ */
+function sourceDetail(source: TimelineSource, payload: Record<string, unknown> | null): RowDetail | null {
+  switch (source) {
+    case 'invoice':
+    case 'payment': {
+      const number = payloadString(payload, 'document_number');
+      return number ? { text: number, mono: true } : null;
+    }
+    case 'event': {
+      const name = payloadString(payload, 'event_name');
+      return name ? { text: name, mono: false } : null;
+    }
+    case 'broadcast': {
+      const subject = payloadString(payload, 'broadcast_subject');
+      return subject ? { text: subject, mono: false } : null;
+    }
+    default:
+      return null;
+  }
+}
+
 export function TimelineEventItem({
   source,
   timestamp,
@@ -201,6 +233,8 @@ export function TimelineEventItem({
   const tPayload = useTranslations('admin.members.timeline.payload');
   const tAuditEvent = useTranslations('audit.eventType');
   const tTimeline = useTranslations('timeline');
+  const tFieldLabel = useTranslations('portal.changeRequests.diff.labels');
+  const tMethod = useTranslations('portal.payment.methods');
   const locale = useLocale();
 
   // --- localised label resolution (FR-014) --------------------------------
@@ -251,8 +285,22 @@ export function TimelineEventItem({
   // The row badge names a profile change "Profile" (the boards); the filter keeps "Profile / Audit".
   const sourceLabel = source === 'audit' ? tTimeline('sourceBadgeAudit') : tTimeline(`source.${source}` as 'source.audit');
   const SourceIcon = SOURCE_ICON[source];
-  const payloadDetail =
-    source === 'audit' ? formatAuditPayload(eventType, payload, tPayload) : null;
+  let payloadDetail: RowDetail | null;
+  if (source !== 'audit') {
+    payloadDetail = sourceDetail(source, payload);
+  } else if (eventType.startsWith('member_change_request_') && Array.isArray(payload?.field_keys)) {
+    // The fields a change request touched, by their form labels ("Registered address, Website").
+    const labels = payload.field_keys
+      .filter((k): k is string => typeof k === 'string')
+      .map((k) => (tFieldLabel.has(k as 'website') ? tFieldLabel(k as 'website') : k));
+    payloadDetail = labels.length > 0 ? { text: labels.join(', '), mono: false } : null;
+  } else {
+    const text = formatAuditPayload(eventType, payload, tPayload);
+    payloadDetail = text ? { text, mono: true } : null;
+  }
+  // A payment row names how it was paid on the actor line (the board's "Anna Lindqvist · PromptPay · 10:03").
+  const method = source === 'payment' ? payloadString(payload, 'payment_method') : null;
+  const methodLabel = method && tMethod.has(method as 'card') ? tMethod(method as 'card') : null;
 
   const chip = (
     // Source marker — reduced-motion friendly (static icon, no pulse). 36px on
@@ -270,7 +318,7 @@ export function TimelineEventItem({
       {payloadDetail ? (
         <>
           {' · '}
-          <span className="font-mono text-xs">{payloadDetail}</span>
+          <span className={payloadDetail.mono ? 'font-mono text-xs' : undefined}>{payloadDetail.text}</span>
         </>
       ) : null}
     </>
@@ -314,6 +362,7 @@ export function TimelineEventItem({
           <p className="text-sm font-medium">{label}</p>
           <p className="text-xs text-[var(--aura-fg-secondary)]">
             {actorDisplay}
+            {methodLabel ? ` · ${methodLabel}` : null}
             {' · '}
             <time
               dateTime={timestamp}

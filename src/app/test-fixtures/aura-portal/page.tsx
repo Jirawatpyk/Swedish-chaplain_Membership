@@ -53,11 +53,12 @@ export const dynamic = 'force-dynamic';
 // Dated from now so the timeline shows its Today / This month / month groups.
 const ago = (days: number, hours = 0): string => new Date(Date.now() - (days * 24 + hours) * 3_600_000).toISOString();
 const EVENTS: TimelineItemProps[] = [
-  { id: 'e1', timestamp: ago(0, 1), source: 'payment', eventType: 'succeeded', actorKind: 'member', actorDisplayName: null, payload: null },
-  { id: 'e2', timestamp: ago(0, 3), source: 'audit', eventType: 'tax_receipt_issued', actorKind: 'staff', actorUserId: 'u-1', actorDisplayName: 'Somchai Prasert', payload: { receipt_document_number_raw: 'RC-2026-000045' } },
-  { id: 'e3', timestamp: ago(2), source: 'invoice', eventType: 'issued', actorKind: 'staff', actorDisplayName: null, payload: null },
-  { id: 'e4', timestamp: ago(4), source: 'renewal', eventType: 'reminded', actorKind: 'system', actorDisplayName: null, payload: null },
-  { id: 'e5', timestamp: ago(70), source: 'broadcast', eventType: 'sent', actorKind: 'member', actorDisplayName: null, payload: null },
+  { id: 'e1', timestamp: ago(0, 1), source: 'payment', eventType: 'succeeded', actorKind: 'member', actorDisplayName: null, payload: { document_number: 'SC-2026-000123', payment_method: 'promptpay' } },
+  { id: 'e2', timestamp: ago(5), source: 'audit', eventType: 'member_change_request_submitted', actorKind: 'member', actorUserId: '', actorDisplayName: null, payload: { scope: 'company', field_keys: ['registered_address', 'website'] } },
+  { id: 'e3', timestamp: ago(12), source: 'invoice', eventType: 'issued', actorKind: 'staff', actorDisplayName: null, payload: { document_number: 'SC-2026-000123' } },
+  { id: 'e4', timestamp: ago(12), source: 'renewal', eventType: 'reminded', actorKind: 'system', actorDisplayName: null, payload: null },
+  { id: 'e5', timestamp: ago(22), source: 'event', eventType: 'attended', actorKind: 'member', actorDisplayName: null, payload: { event_name: 'Crayfish Party 2026' } },
+  { id: 'e6', timestamp: ago(86), source: 'broadcast', eventType: 'sent', actorKind: 'member', actorDisplayName: null, payload: { broadcast_subject: 'New office on Wireless Road' } },
 ];
 
 const ADDR_OLD = { line1: '98 Sathorn Road', line2: null, sub_district: 'Silom, Bang Rak', city: 'Bangkok', province: null, postal_code: '10500' };
