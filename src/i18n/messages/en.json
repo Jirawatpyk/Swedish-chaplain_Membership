@@ -6901,7 +6901,8 @@
             "subtitle": "See every change you proposed and what the chamber decided.",
             "link": "View history"
           },
-          "colleagueNote": "A colleague's changes to their own contact details are never shown here."
+          "colleagueNote": "A colleague's changes to their own contact details are never shown here.",
+          "withdrawnOn": "withdrawn {withdrawnAt}"
         },
       "form": {
         "pageTitle": "Propose changes",

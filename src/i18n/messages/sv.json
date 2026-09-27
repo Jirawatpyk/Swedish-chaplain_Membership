@@ -6901,7 +6901,8 @@
             "subtitle": "Se varje ändring du föreslagit och vad kammaren beslutade.",
             "link": "Visa historik"
           },
-          "colleagueNote": "Ändringar som en kollega gör i sina egna kontaktuppgifter visas aldrig här."
+          "colleagueNote": "Ändringar som en kollega gör i sina egna kontaktuppgifter visas aldrig här.",
+          "withdrawnOn": "återkallad {withdrawnAt}"
         },
       "form": {
         "pageTitle": "Föreslå ändringar",

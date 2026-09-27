@@ -71,6 +71,7 @@ const PENDING: ChangeRequestView = {
   state: 'pending',
   outcome: null,
   withdrawnReason: null,
+  withdrawnAt: null,
   submittedAt: '2026-09-22T07:10:00.000Z',
   submittedBy: { contactId: 'c-1', displayName: 'Anna Lindqvist', isMe: true },
   decidedAt: null,
@@ -104,6 +105,7 @@ const WITHDRAWN: ChangeRequestView = {
   scope: 'own_contact',
   state: 'withdrawn',
   withdrawnReason: 'member',
+  withdrawnAt: '2026-05-12T09:30:00.000Z',
   submittedAt: '2026-05-12T09:02:00.000Z',
   fields: [{ key: 'role_title', target: 'contact', seen: 'Director', proposed: 'Managing Director', affectsTaxDocuments: false, outcome: null, appliedAt: null }],
 } as unknown as ChangeRequestView;

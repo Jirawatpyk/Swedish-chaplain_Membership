@@ -65,6 +65,7 @@ export async function renderChangeRequestHistoryView({ items, nextCursor, isFirs
                       <p className="text-xs text-[var(--aura-fg-secondary)] sm:text-[13px]">
                         {r.submittedBy.isMe ? t('submittedByYou') : t('submittedBy', { name: r.submittedBy.displayName })}
                         {r.decidedAt ? ` · ${t('decidedOn', { decidedAt: fmtDay(r.decidedAt) })}` : null}
+                        {r.state === 'withdrawn' && r.withdrawnAt ? ` · ${t('withdrawnOn', { withdrawnAt: fmtDay(r.withdrawnAt) })}` : null}
                       </p>
                     </div>
                     <span className="self-start">

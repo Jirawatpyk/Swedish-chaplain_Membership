@@ -52,6 +52,7 @@ const DECIDED: ChangeRequestView = {
   state: 'decided',
   outcome: 'partially_approved',
   withdrawnReason: null,
+  withdrawnAt: null,
   submittedAt: '2026-09-11T08:00:00.000Z',
   submittedBy: { contactId: '22222222-2222-4222-8222-222222222222', displayName: 'Anna Svensson', isMe: true },
   decidedAt: '2026-09-11T09:00:00.000Z',

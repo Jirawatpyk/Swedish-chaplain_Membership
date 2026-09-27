@@ -34,6 +34,8 @@ export interface ChangeRequestView {
   readonly state: ChangeRequest['state'];
   readonly outcome: ChangeRequest['outcome'];
   readonly withdrawnReason: ChangeRequest['withdrawnReason'];
+  /** When the request was withdrawn (the history card's "withdrawn {date}"); null unless withdrawn. */
+  readonly withdrawnAt: string | null;
   readonly submittedAt: string;
   readonly submittedBy: PortalSubmitter;
   readonly decidedAt: string | null;
@@ -66,6 +68,7 @@ export function serialiseChangeRequestForPortal(
     state: request.state,
     outcome: request.outcome,
     withdrawnReason: request.withdrawnReason,
+    withdrawnAt: request.withdrawnAt?.toISOString() ?? null,
     submittedAt: request.submittedAt.toISOString(),
     submittedBy,
     decidedAt: request.decidedAt?.toISOString() ?? null,
