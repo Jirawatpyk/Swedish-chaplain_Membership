@@ -182,6 +182,9 @@ describe('UI import ratchet (spec 122)', () => {
       'src/app/(member)/portal/invoices/[invoiceId]/not-found.tsx',
       'src/app/(member)/portal/invoices/[invoiceId]/_components/online-payment-disabled-card.tsx',
       'src/components/shell/live-region.tsx',
+      'src/app/(member)/portal/credit-notes/[creditNoteId]/page.tsx',
+      'src/app/(member)/portal/credit-notes/[creditNoteId]/loading.tsx',
+      'src/components/invoices/credit-note-original-receipt.tsx',
     ])('%s cannot import the legacy kit', async (path) => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
