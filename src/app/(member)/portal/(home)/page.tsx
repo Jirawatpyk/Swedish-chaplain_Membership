@@ -125,7 +125,10 @@ export default async function MemberPortalHomePage() {
             {planDisplayName !== null && (
               <Badge variant="solid">{planDisplayName}</Badge>
             )}
-            <StatusPill tone={statusChipKey === 'active' ? 'ready' : 'neutral'}>
+            {/* Neutral whatever the status: this is the RECORD's status, and a
+                lapsed member's record is still active — green would read as
+                "your membership is fine" above the lapsed card. */}
+            <StatusPill tone="neutral">
               {t(`statusChip.${statusChipKey}`)}
             </StatusPill>
           </span>
