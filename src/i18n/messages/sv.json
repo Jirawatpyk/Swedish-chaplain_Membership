@@ -7039,8 +7039,8 @@
       "pageTitle": "Redigera profil",
       "notLinked": "Ditt konto är inte kopplat till en medlem.",
       "loadError": "Kunde inte ladda din profil.",
-      "contactSection": "Din kontaktinformation",
-      "companySection": "Företagsinformation",
+      "contactSection": "Dina kontaktuppgifter",
+      "companySection": "Företagsuppgifter",
       "fields": {
         "firstName": "Förnamn",
         "lastName": "Efternamn",

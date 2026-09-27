@@ -119,19 +119,13 @@ describe('PortalEditForm on AURA (spec 122 US3)', () => {
     );
   }
 
-  it('uses AURA fields and keeps Save in an ActionBar that says when changes are unsaved', () => {
+  it('uses AURA fields', () => {
     const { container } = renderForm();
     for (const id of ['firstName', 'lastName', 'phone', 'website']) {
       expect(container.querySelector(`#${id}`)?.closest('.aura-field')).not.toBeNull();
     }
     expect(container.querySelector('#description')).toHaveClass('aura-textarea');
-    const bar = screen.getByRole('region', { name: 'Actions' });
-    expect(bar).toHaveClass('aura-actionbar');
-    expect(bar).toContainElement(screen.getByRole('button', { name: enMessages.portal.edit.saveButton }));
-    const status = bar.querySelector('[role="status"]')!;
-    expect(status.textContent).toBe('');
-    fireEvent.change(container.querySelector('#firstName')!, { target: { value: 'Janet' } });
-    expect(status.textContent).toBe(enMessages.common.unsavedStatus);
+    // Save and Cancel sit at the end of the card now: portal-edit-form-layout.test.tsx.
   });
 
   it('lists a failed submit in a focused error summary that links to the field', async () => {

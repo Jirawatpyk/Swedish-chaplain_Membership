@@ -7036,20 +7036,20 @@
       }
     },
     "edit": {
-      "pageTitle": "Edit Profile",
+      "pageTitle": "Edit profile",
       "notLinked": "Your account is not linked to a member.",
       "loadError": "Could not load your profile.",
-      "contactSection": "Your Contact Information",
-      "companySection": "Company Information",
+      "contactSection": "Your contact details",
+      "companySection": "Company details",
       "fields": {
-        "firstName": "First Name",
-        "lastName": "Last Name",
+        "firstName": "First name",
+        "lastName": "Last name",
         "phone": "Phone",
-        "preferredLanguage": "Preferred Language",
+        "preferredLanguage": "Preferred language",
         "website": "Website",
         "description": "Description"
       },
-      "saveButton": "Save Changes",
+      "saveButton": "Save changes",
       "cancelButton": "Cancel",
       "saving": "Saving…",
       "saveSuccess": "Profile updated successfully.",

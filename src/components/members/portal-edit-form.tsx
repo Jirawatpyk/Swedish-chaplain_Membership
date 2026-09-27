@@ -9,8 +9,9 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from '@/lib/toast';
 import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
 import { isReadOnlyRefusal } from '@/lib/http/read-only-refusal';
-import { ActionBar, Button, FormErrorSummary, TextField, Textarea } from '@jirawatpyk/aura-react';
+import { Button, FormErrorSummary, TextField, Textarea } from '@jirawatpyk/aura-react';
 import { Card } from '@jirawatpyk/aura-react/server';
+import { useBeforeUnloadGuard } from '@/hooks/use-beforeunload-guard';
 import {
   boundedText,
   requiredText,
@@ -31,9 +32,10 @@ import {
  *
  * Spec 122 US3 (`Portal-edit`): AURA cards and fields; `FormErrorSummary`
  * after a failed submit (client or server field errors — it takes focus, so
- * the form no longer calls `setFocus`); Cancel + Save in an `ActionBar` that
- * reads "Unsaved changes" while the form is dirty, so Save stays in reach
- * while scrolling on a phone.
+ * the form no longer calls `setFocus`). Decisions of 27 Sep 2026 (the
+ * approval-mode form already follows them): sentence-case copy, and Cancel +
+ * Save as plain buttons at the end of the last card — no action bar — with the
+ * browser's unsaved-changes prompt armed while the form is dirty.
  */
 
 function buildEditSchema(tv: Translator) {
@@ -54,7 +56,6 @@ type PortalEditFormProps = {
 
 export function PortalEditForm({ initialValues }: PortalEditFormProps) {
   const t = useTranslations('portal.edit');
-  const tc = useTranslations('common');
   const readOnlyToast = useReadOnlyToast();
   const tv = useTranslations('shared.validation');
   const router = useRouter();
@@ -70,6 +71,7 @@ export function PortalEditForm({ initialValues }: PortalEditFormProps) {
   });
 
   const { errors, submitCount, isDirty } = form.formState;
+  useBeforeUnloadGuard(isDirty && !submitting);
   const descriptionLength = form.watch('description')?.length ?? 0;
 
   const onSubmit = async (values: EditFormValues) => {
@@ -227,17 +229,20 @@ export function PortalEditForm({ initialValues }: PortalEditFormProps) {
             </p>
           </div>
         </div>
+        {/* Cancel before Save (ux-standards § 11.1), at the end of the card; full width, Save on top, on phones. */}
+        <div
+          data-slot="form-actions"
+          className="mt-6 flex flex-col-reverse gap-2 border-t border-[var(--aura-border-default)] pt-4 sm:flex-row sm:justify-end sm:gap-3"
+        >
+          <Button type="button" variant="secondary" onClick={() => router.push('/portal/profile')} fullWidth className="sm:w-auto">
+            {t('cancelButton')}
+          </Button>
+          <Button type="submit" loading={submitting} fullWidth className="sm:w-auto">
+            {submitting ? t('saving') : t('saveButton')}
+          </Button>
+        </div>
       </Card>
 
-      {/* Cancel before Save (ux-standards § 11.1), in the ActionBar. */}
-      <ActionBar status={isDirty ? tc('unsavedStatus') : null}>
-        <Button type="button" variant="secondary" onClick={() => router.push('/portal/profile')}>
-          {t('cancelButton')}
-        </Button>
-        <Button type="submit" loading={submitting}>
-          {submitting ? t('saving') : t('saveButton')}
-        </Button>
-      </ActionBar>
     </form>
   );
 }
