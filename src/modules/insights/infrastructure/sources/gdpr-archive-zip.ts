@@ -99,6 +99,7 @@ export function buildGdprArchiveBytes(
           tenantName: meta.tenantName,
           generatedAtIso: meta.generatedAtIso,
           memberId: data.subjectMemberId,
+          subjectContactName: data.subjectContactName ?? null,
         },
         truncatedFiles,
       ),
@@ -137,6 +138,8 @@ export function buildGdprArchiveBytes(
     schema: 'gdpr-export/v1',
     tenant: meta.tenantName,
     subjectMemberId: data.subjectMemberId,
+    // PDPA §30 — the named contact a staff export was built for; null = company archive
+    subjectContactId: data.subjectContactId ?? null,
     generatedAt: meta.generatedAtIso,
     // Machine-readable completeness signal (F9 #5): `complete: false` + the
     // capped files tell a recipient (or an automated verifier) the archive is a

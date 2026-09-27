@@ -615,6 +615,49 @@ describe('gdprArchiveSourceAdapter.gather — PDF-fetch resilience (W1)', () => 
       ]);
       expect(auditQueryMock).toHaveBeenCalledWith(CTX, expect.objectContaining({ memberUserIds: [] }));
     });
+
+    // PDPA §30 / GDPR Art. 15 — staff answer ONE person's access request: the
+    // archive is built for that contact under the same colleague rule.
+    describe('a staff export for one named contact', () => {
+      const noAccount = contact({ contactId: 'c-nils', firstName: 'Nils', lastName: 'Berg', email: 'nils@acme.example', phone: '+66822222222' });
+
+      beforeEach(() => {
+        contactListByMemberMock.mockResolvedValue({ ok: true, value: [...roster, noAccount] });
+        crListByMemberMock.mockResolvedValue({ ok: true, value: { items: [], nextCursor: null } });
+      });
+
+      it('a contact without an account gets their own record in full and colleagues by name and role', async () => {
+        const data = await gdprArchiveSourceAdapter.gather(CTX, { subjectMemberId: MEMBER, requestedByUserId: 'admin-1', subjectContactId: 'c-nils' });
+        expect(data!.contacts.find((c) => c.contactId === 'c-nils')).toMatchObject({
+          email: 'nils@acme.example',
+          phone: '+66822222222',
+          dateOfBirth: '1990-07-15T00:00:00.000Z',
+        });
+        const json = JSON.stringify(data!.contacts);
+        expect(json).not.toContain('anna@acme.example');
+        expect(json).not.toContain('som@acme.example');
+        expect(data!.subjectContactName).toBe('Nils Berg');
+        expect(auditQueryMock).toHaveBeenCalledWith(CTX, expect.objectContaining({ memberUserIds: [] }));
+      });
+
+      it("a contact with an account gets their own change requests and account activity — never the admin's", async () => {
+        const data = await gdprArchiveSourceAdapter.gather(CTX, { subjectMemberId: MEMBER, requestedByUserId: 'admin-1', subjectContactId: 'c-anna' });
+        expect(data!.contacts.find((c) => c.contactId === 'c-anna')).toMatchObject({ email: 'anna@acme.example' });
+        expect(crListVisibleToUserMock).toHaveBeenCalledWith(CTX, 'u-anna', MEMBER, expect.anything());
+        expect(auditQueryMock).toHaveBeenCalledWith(CTX, expect.objectContaining({ memberUserIds: ['u-anna'] }));
+      });
+
+      it('a former (removed) contact keeps the right of access to their own record', async () => {
+        const data = await gdprArchiveSourceAdapter.gather(CTX, { subjectMemberId: MEMBER, requestedByUserId: 'admin-1', subjectContactId: 'c-gone' });
+        expect(data!.contacts.find((c) => c.contactId === 'c-gone')).toMatchObject({ email: 'gone@acme.example' });
+      });
+
+      it("FAILS LOUD for a contact that is not the member's — never ships someone else's archive", async () => {
+        await expect(
+          gdprArchiveSourceAdapter.gather(CTX, { subjectMemberId: MEMBER, requestedByUserId: 'admin-1', subjectContactId: 'c-elsewhere' }),
+        ).rejects.toThrow(/subject contact/);
+      });
+    });
   });
 
   it('FAILS LOUD when the contacts read errors — never degrades to an empty archive (C2)', async () => {

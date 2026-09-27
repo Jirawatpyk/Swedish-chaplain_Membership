@@ -35,6 +35,8 @@ export interface DataExportRow {
   readonly statusLabel: string;
   readonly downloadable: boolean;
   readonly requestedAt: string;
+  /** Admin card only — whom the archive was prepared for (PDPA §30). */
+  readonly forLabel?: string;
 }
 
 export interface DataExportLabels {
@@ -53,6 +55,8 @@ export interface DataExportLabels {
   readonly caption: string;
   /** Shown (+ button disabled) when an export is already requested/processing. */
   readonly alreadyPending: string;
+  /** Column header for `DataExportRow.forLabel` (admin card only). */
+  readonly colFor?: string;
 }
 
 export function DataExportPanel({
@@ -60,6 +64,7 @@ export function DataExportPanel({
   labels,
   requestUrl = '/api/portal/account/data-export',
   downloadUrlBase = '/api/portal/account/data-export',
+  requestBody = {},
 }: {
   readonly rows: readonly DataExportRow[];
   readonly labels: DataExportLabels;
@@ -67,6 +72,8 @@ export function DataExportPanel({
   readonly requestUrl?: string;
   /** Base for the per-job download link: `${downloadUrlBase}/${jobId}/download`. */
   readonly downloadUrlBase?: string;
+  /** JSON body of the request POST (the admin card names a contact; default `{}`). */
+  readonly requestBody?: Readonly<Record<string, unknown>>;
 }): React.JSX.Element {
   const router = useRouter();
   const readOnlyToast = useReadOnlyToast();
@@ -79,6 +86,8 @@ export function DataExportPanel({
   // member can't spawn duplicate jobs across idempotency windows (W4).
   const hasPending = rows.some((r) => r.status === 'requested' || r.status === 'processing');
   const disabled = pending || hasPending;
+  // Admin card only: a "prepared for" column when the caller labels its rows.
+  const showFor = labels.colFor !== undefined && rows.some((r) => r.forLabel !== undefined);
 
   async function requestExport(): Promise<void> {
     setPending(true);
@@ -86,7 +95,7 @@ export function DataExportPanel({
       const res = await fetch(requestUrl, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: '{}',
+        body: JSON.stringify(requestBody),
       });
       if (!res.ok) {
         if (await isReadOnlyResponse(res)) {
@@ -152,6 +161,7 @@ export function DataExportPanel({
                 <THead className="max-sm:hidden">
                   <Tr>
                     <Th>{labels.colStatus}</Th>
+                    {showFor ? <Th>{labels.colFor}</Th> : null}
                     <Th>{labels.colRequested}</Th>
                     <Th>
                       <span className="sr-only">{labels.download}</span>
@@ -163,9 +173,12 @@ export function DataExportPanel({
                     <Tr key={row.jobId}>
                       <Td>
                         <StatusPill tone={exportStatusTone(row.status)}>{row.statusLabel}</StatusPill>
-                        {/* below sm the date sits under the pill, its column hidden */}
-                        <span className="mt-1 block text-[13px] sm:hidden">{row.requestedAt}</span>
+                        {/* below sm the date (and who it was prepared for) sits under the pill, their columns hidden */}
+                        <span className="mt-1 block text-[13px] sm:hidden">
+                          {showFor && row.forLabel ? `${row.forLabel} · ${row.requestedAt}` : row.requestedAt}
+                        </span>
                       </Td>
+                      {showFor ? <Td className="max-sm:hidden">{row.forLabel ?? ''}</Td> : null}
                       <Td className="max-sm:hidden">{row.requestedAt}</Td>
                       <Td align="end">
                         {row.downloadable ? (

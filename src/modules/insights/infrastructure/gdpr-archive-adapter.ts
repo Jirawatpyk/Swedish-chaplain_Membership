@@ -27,6 +27,7 @@ export function makeGdprArchiveAdapter(tenantName: string): GdprArchivePort {
       const data = await gdprArchiveSourceAdapter.gather(ctx, {
         subjectMemberId: opts.subjectMemberId,
         ...(opts.requestedByUserId ? { requestedByUserId: opts.requestedByUserId } : {}),
+        ...(opts.subjectContactId ? { subjectContactId: opts.subjectContactId } : {}),
       });
       if (data === null) return err('member_not_found');
 

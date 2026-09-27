@@ -35,6 +35,13 @@ process.env['FEATURE_F5_ASYNC_RECEIPT_PDF'] = 'true';
 process.env['FEATURE_F4_INVOICING'] = 'true';
 process.env['FEATURE_F8_RENEWALS'] = 'true';
 process.env['FEATURE_F6_EVENTCREATE'] = 'true';
+// F114 — same reason, one feature later. `broadcasts-gauges-cron.test.ts`
+// asserts `membersGaugesSkipped === null`, i.e. that the members half of the
+// gauges tick actually SCANNED; the route skips that scan with `'flag_off'`
+// when this flag is absent. It passed on every workstation (`.env.local`
+// carries the flag from the F114 dev work) and reddened the nightly sweep the
+// first time the rotation reached `broadcasts` afterwards — run 36064329707.
+process.env['FEATURE_MEMBER_CHANGE_APPROVAL'] = 'true';
 
 beforeAll(() => {
   const dbUrl =

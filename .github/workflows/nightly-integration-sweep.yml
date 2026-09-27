@@ -138,13 +138,23 @@ jobs:
       # asserting everything that is not a clock — the walk, the order, no gap
       # or duplicate, the EXPLAIN control.
       INTEGRATION_FOLDER_RUN: '1'
+      # 108 PR-C T081's FR-043 budget: 20,000 contacts resolve in < 3 s from
+      # `sin1`. The file's own default only widens that by CI_LATENCY_FACTOR
+      # (6 -> 18 s), which is not enough here: this test ships 20,000 rows over
+      # four pages across the Pacific while 19 other files share the compute,
+      # and it measured 28509 ms on run 35278856771 (2026-09-17) and 27613 ms
+      # on 36064329707 (2026-09-24) — the only two `broadcasts` rotations since
+      # the test landed, i.e. it has never once been green in this workflow.
+      # 60 s is a runaway guard over those two numbers, not an SLO; the N+1
+      # shape is policed by the EXPLAIN assertion in the same file, and the SLO
+      # itself by SLO-F7-013 in production.
+      PERF_AUDIENCE_20K_MS: '60000'
       # 108 PR-D's marketing-audience budget is SC-004's PRODUCTION number
       # (< 3 s from `sin1` to Neon `ap-southeast-1`, ~25 ms RTT). A US runner
       # pays ~200 ms a statement: the same two pages measured 3007 ms on
       # 2026-09-09 and 4047 / 3808 ms on 2026-09-16. Scaled here the way
-      # PERF_RLS_P95_MS and PERF_AUDIENCE_20K_MS already are, so the check
-      # still catches a runaway (a missing index blows past 18 s) without
-      # asserting the Atlantic.
+      # PERF_RLS_P95_MS is, so the check still catches a runaway (a missing
+      # index blows past 18 s) without asserting the Atlantic.
       PERF_AUDIENCE_PAGE_MS: '18000'
       # F6 CSV import short-circuits to `timeout` when its 55 s "may a new
       # batch start" budget trips; on the runner's link a fixture that finishes
