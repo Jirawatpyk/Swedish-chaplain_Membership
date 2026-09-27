@@ -28,7 +28,7 @@ function getPath(obj: unknown, path: string): unknown {
 }
 
 function makeRealTranslator(ns: string) {
-  return (key: string, params?: Record<string, unknown>): string => {
+  const t = (key: string, params?: Record<string, unknown>): string => {
     const nsObj = getPath(enMessages as unknown, ns);
     if (!nsObj) return `MISSING_NS:${ns}`;
     const val = getPath(nsObj, key);
@@ -39,6 +39,17 @@ function makeRealTranslator(ns: string) {
       params[k] !== undefined ? String(params[k]) : `{${k}}`,
     );
   };
+  // `t.rich`: each <tag>chunks</tag> goes through its function (the account
+  // view's data-requests box links "Edit profile" and the privacy address).
+  const rich = (key: string, params: Record<string, unknown> = {}): React.ReactNode[] => {
+    const text = t(key, params);
+    return text.split(/(<\w+>.*?<\/\w+>)/).map((part, i) => {
+      const m = /^<(\w+)>(.*?)<\/\1>$/.exec(part);
+      const fn = m ? params[m[1]!] : undefined;
+      return typeof fn === 'function' ? <span key={i}>{(fn as (c: string) => React.ReactNode)(m![2]!)}</span> : part;
+    });
+  };
+  return Object.assign(t, { rich });
 }
 
 vi.mock('next-intl/server', () => ({
@@ -72,7 +83,7 @@ vi.mock('@/lib/auth-session', () => ({
 vi.mock('@/lib/tenant-context', () => ({
   resolveTenantFromRequest: () => ({ slug: 't1' }),
 }));
-vi.mock('@/lib/env', () => ({ env: { features: { f9Dashboard: true } } }));
+vi.mock('@/lib/env', () => ({ env: { features: { f9Dashboard: true }, broadcasts: {} } }));
 vi.mock('@/lib/db', () => ({ runInTenant: async (_t: unknown, fn: (tx: unknown) => unknown) => fn({}) }));
 // Hoisted logger spy so the throw-path suites can assert which level fired
 // (warn vs error) on each best-effort seed failure.
@@ -410,5 +421,24 @@ describe('Account hub on AURA (spec 122 US3)', () => {
     const download = within(privacy).getByRole('link', { name: new RegExp(enMessages.dataExport.download) });
     expect(download).toHaveClass('aura-btn', 'aura-btn--secondary');
     expect(download).toHaveTextContent(enMessages.dataExport.download);
+  });
+
+  it('says where to go for the other data rights, linking only what the tenant configured (no dead link)', async () => {
+    const envModule = (await import('@/lib/env')) as unknown as { env: { broadcasts: Record<string, string | undefined> } };
+    const box = async () => (await renderHub()).container.querySelector('[data-testid="portal-other-data-requests"]') as HTMLElement;
+    const copy = enMessages.dataExport.otherRequests;
+    let el = await box();
+    expect(within(el).getByRole('link', { name: 'Edit profile' })).toHaveAttribute('href', '/portal/edit');
+    expect(el.textContent).toContain(copy.contactNoEmail);
+    expect(el.querySelector('a[href^="mailto:"]')).toBeNull();
+    expect(within(el).queryByRole('link', { name: copy.privacyLink })).toBeNull();
+    envModule.env.broadcasts = { privacyContactEmail: 'privacy@swecham.example', privacyPolicyUrl: 'https://swecham.example/privacy' };
+    try {
+      el = await box();
+      expect(el.querySelector('a[href="mailto:privacy@swecham.example"]')).toHaveTextContent('privacy@swecham.example');
+      expect(within(el).getByRole('link', { name: copy.privacyLink })).toHaveAttribute('href', 'https://swecham.example/privacy');
+    } finally {
+      envModule.env.broadcasts = {};
+    }
   });
 });

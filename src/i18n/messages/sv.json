@@ -6206,15 +6206,15 @@
     },
     "account": {
       "contactLanguage": {
-        "title": "Språk för e-post till dig",
-        "description": "Används för meddelanden som riktas till dig personligen, till exempel beslutet om en ändring du föreslagit. E-post till företaget följer inställningen ovan.",
-        "save": "Spara språk",
+        "save": "Spara ditt språk",
         "savedToast": "E-postspråket har uppdaterats.",
         "errorToast": "Det gick inte att spara språket. Försök igen.",
-        "readOnlyToast": "Systemet är tillfälligt i skrivskyddat läge. Försök igen om en stund."
+        "readOnlyToast": "Systemet är tillfälligt i skrivskyddat läge. Försök igen om en stund.",
+        "groupLabel": "Mejl till dig personligen",
+        "hint": "Meddelanden som riktas till dig personligen, till exempel beslutet om en ändring du föreslagit."
       },
       "title": "Kontoinställningar",
-      "subtitle": "Hantera ditt lösenord och språket för aviseringsmejl.",
+      "subtitle": "Hantera ditt lösenord, e-postspråk, påminnelser och dina uppgifter.",
       "forgotPassword": "Glömt ditt lösenord?",
       "sections": {
         "account": "Konto",
@@ -6224,17 +6224,20 @@
       "menu": {
         "renewalPrefs": "Förnyelsepåminnelser",
         "dataPrivacy": "Data och integritet"
-      }
+      },
+      "emailLabel": "E-post",
+      "passwordSessionsNote": "När du byter lösenord loggas du ut på alla andra enheter."
     },
     "preferredLocale": {
       "title": "Språk för aviseringar",
-      "description": "Välj språket för de mejl du får (utskicksgodkännanden, fakturor, lösenordsåterställning). Lämna på \"Använd kammarens standardspråk\" för att följa kammarens inställning.",
       "useTenantDefault": "Använd kammarens standardspråk",
-      "save": "Spara inställning",
+      "save": "Spara företagets språk",
       "savedToast": "Aviseringsspråk uppdaterat.",
       "errorToast": "Kunde inte spara inställningen. Försök igen.",
       "loading": "Läser in…",
-      "loadError": "Kunde inte läsa in din nuvarande inställning. Uppdatera sidan och försök igen."
+      "loadError": "Kunde inte läsa in din nuvarande inställning. Uppdatera sidan och försök igen.",
+      "groupLabel": "Mejl till ditt företag",
+      "hint": "Fakturor, godkännanden av E-Blasts och andra mejl som skickas till företaget. ”Använd kammarens standardspråk” följer handelskammarens inställning."
     },
     "invoices": {
       "title": "Fakturor",
@@ -7306,7 +7309,7 @@
         "title": "Förnyelsepåminnelser",
         "subtitle": "Välj om du vill ta emot e-post om förnyelsepåminnelser. Transaktionsmejl (lösenordsåterställning, fakturakvitton) skickas oavsett.",
         "pauseLabel": "Pausa förnyelsepåminnelser",
-        "pauseDescription": "Vi behåller din förnyelsecykel i administratörsöversikten så att personalen kan höra av sig vid behov.",
+        "pauseDescription": "Vi behåller din förnyelsecykel i administratörsöversikten så att personalen kan höra av sig vid behov. Fakturor och betalningsmejl skickas som vanligt.",
         "saveErrorTitle": "Kunde inte spara din inställning",
         "saveErrorDescription": "Din tidigare inställning har återställts. Försök igen."
       }
@@ -8134,6 +8137,14 @@
     "colRequested": "Begärd",
     "adminHeading": "Dataexport (GDPR)",
     "adminDescription": "Skapa ett nedladdningsbart arkiv med den här medlemmens uppgifter å deras vägnar för en begäran från den registrerade. Åtgärden loggas i granskningsloggen och tillskrivs dig.",
-    "alreadyPending": "En export förbereds redan — se status nedan."
+    "alreadyPending": "En export förbereds redan — se status nedan.",
+    "statusHeadingMember": "Dina senaste förfrågningar",
+    "otherRequests": {
+      "title": "Andra förfrågningar om dina uppgifter",
+      "edit": "Rätta uppgifter via <edit>Redigera profil</edit>.",
+      "contact": "För radering, begränsning eller invändning, kontakta handelskammaren på <mail>{address}</mail>.",
+      "contactNoEmail": "För radering, begränsning eller invändning, kontakta handelskammaren.",
+      "privacyLink": "Integritetspolicy"
+    }
   }
 }

@@ -10,16 +10,15 @@
  * the sibling form: radio group, Save button with spinner, toast + sr-only
  * live announcement.
  *
- * Spec 122 US3: AURA RadioGroup (its legend is the form title, kept for
- * screen readers — the section shows the title above); Save in an ActionBar
- * pinned to the card that reads "Unsaved changes" while the choice differs
- * from what the server holds.
+ * Spec 122 US3 (`Portal-account`): AURA RadioGroup with its visible legend
+ * ("Emails to you personally") and hint under the options, then a secondary
+ * Save button (decision 2026-09-27: no action bar).
  */
 import type { ReactElement } from 'react';
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
-import { ActionBar, Button, RadioGroup } from '@jirawatpyk/aura-react';
+import { Button, RadioGroup } from '@jirawatpyk/aura-react';
 import { useAriaAnnounce } from '@/hooks/use-aria-announce';
 
 export type ContactLanguage = 'en' | 'th' | 'sv';
@@ -73,22 +72,19 @@ export function ContactLanguageForm({ initialValue }: ContactLanguageFormProps):
   return (
     <form onSubmit={handleSubmit} className="space-y-4" data-testid="contact-language-form">
       <RadioGroup
-        label={t('title')}
-        className="[&>legend]:sr-only"
+        label={t('groupLabel')}
+        hint={t('hint')}
+        // 44px option rows on phones (the `Portal-account-mobile` board's touch targets)
+        className="max-sm:[&_.aura-choice]:min-h-11 max-sm:[&_.aura-choice]:items-center"
         value={value}
         onChange={(v) => setValue(v as ContactLanguage)}
         disabled={saving}
         options={(['en', 'th', 'sv'] as const).map((opt) => ({ value: opt, label: tLang(`languageOptions.${opt}`) }))}
       />
-      <ActionBar
-        position="container"
-        label={t('title')}
-        status={value !== saved ? tLang('unsavedStatus') : null}
-      >
-        <Button type="submit" loading={saving}>
-          {t('save')}
-        </Button>
-      </ActionBar>
+      {/* Decision 2026-09-27 (`Portal-account`): a plain secondary button under the hint, no action bar. */}
+      <Button type="submit" variant="secondary" loading={saving}>
+        {t('save')}
+      </Button>
       <span role="status" aria-live="polite" className="sr-only">
         {announcement}
       </span>

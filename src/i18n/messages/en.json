@@ -6206,15 +6206,15 @@
     },
     "account": {
       "contactLanguage": {
-        "title": "Language for emails to you",
-        "description": "Used for messages addressed to you personally, such as the decision on a change you proposed. Emails to the company follow the setting above.",
-        "save": "Save language",
+        "save": "Save personal language",
         "savedToast": "Email language updated.",
         "errorToast": "Could not save the language. Please try again.",
-        "readOnlyToast": "The system is in read-only mode for a moment. Try again shortly."
+        "readOnlyToast": "The system is in read-only mode for a moment. Try again shortly.",
+        "groupLabel": "Emails to you personally",
+        "hint": "Messages addressed to you personally, such as the decision on a change you proposed."
       },
       "title": "Account settings",
-      "subtitle": "Manage your password and notification language.",
+      "subtitle": "Manage your password, email language, reminders and your data.",
       "forgotPassword": "Forgot your password?",
       "sections": {
         "account": "Account",
@@ -6224,17 +6224,20 @@
       "menu": {
         "renewalPrefs": "Renewal reminders",
         "dataPrivacy": "Data & privacy"
-      }
+      },
+      "emailLabel": "Email",
+      "passwordSessionsNote": "Changing your password signs you out on every other device."
     },
     "preferredLocale": {
       "title": "Notification language",
-      "description": "Choose the language for the emails you receive (broadcast approvals, invoices, password resets). Leave on \"Use chamber default\" to follow your chamber's setting.",
       "useTenantDefault": "Use chamber default",
-      "save": "Save preference",
+      "save": "Save company language",
       "savedToast": "Notification language updated.",
       "errorToast": "Could not save preference. Please try again.",
       "loading": "Loading…",
-      "loadError": "Could not load your current preference. Please refresh the page and try again."
+      "loadError": "Could not load your current preference. Please refresh the page and try again.",
+      "groupLabel": "Emails to your company",
+      "hint": "Invoices, broadcast approvals and other emails sent to the company. “Use chamber default” follows your chamber's setting."
     },
     "invoices": {
       "title": "Invoices",
@@ -7306,7 +7309,7 @@
         "title": "Renewal reminders",
         "subtitle": "Choose whether to receive renewal-reminder emails. Transactional emails (password resets, invoice receipts) continue regardless.",
         "pauseLabel": "Pause renewal reminders",
-        "pauseDescription": "We'll still keep your renewal cycle on the admin pipeline so staff can reach out if needed.",
+        "pauseDescription": "We'll still keep your renewal cycle on the admin pipeline so staff can reach out if needed. Invoices and payment emails continue either way.",
         "saveErrorTitle": "Couldn't save your preference",
         "saveErrorDescription": "Your previous setting has been restored. Please try again."
       }
@@ -8134,6 +8137,14 @@
     "colRequested": "Requested",
     "adminHeading": "Data export (GDPR)",
     "adminDescription": "Produce a downloadable archive of this member’s data on their behalf for a data-subject request. The action is recorded in the audit log, attributed to you.",
-    "alreadyPending": "An export is already being prepared — see its status below."
+    "alreadyPending": "An export is already being prepared — see its status below.",
+    "statusHeadingMember": "Your recent requests",
+    "otherRequests": {
+      "title": "Other requests about your data",
+      "edit": "To correct details, use <edit>Edit profile</edit>.",
+      "contact": "For erasure, restriction or objection, contact the chamber at <mail>{address}</mail>.",
+      "contactNoEmail": "For erasure, restriction or objection, contact the chamber.",
+      "privacyLink": "Privacy notice"
+    }
   }
 }

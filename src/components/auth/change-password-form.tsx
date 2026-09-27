@@ -18,8 +18,18 @@
  *   - AURA fields (spec 122 US2): `PasswordField`, `FormErrorSummary`
  *     after a failed submit (it takes focus and links to each field, the
  *     server's field errors included), `Button` with `loading`
+ *   - Spec 122 US3 (`Portal-account`): the member page opts into the new
+ *     password's rule hint and puts its "Forgot your password?" link beside
+ *     the button (`secondaryAction`); the staff page keeps the plain form
+ *     its `Admin-account` board draws.
  */
-import { useEffect, useState, type FormEvent } from 'react';
+export interface ChangePasswordFormProps {
+  /** Show "At least 12 characters…" under the new password. */
+  readonly showPasswordHint?: boolean;
+  /** Beside the button from 640px, centred under it below. */
+  readonly secondaryAction?: ReactNode;
+}
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { useTranslations } from 'next-intl';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { type SubmitHandler, useForm, useWatch } from 'react-hook-form';
@@ -58,7 +68,7 @@ function buildSchema(
   );
 }
 
-export function ChangePasswordForm() {
+export function ChangePasswordForm({ showPasswordHint = false, secondaryAction }: ChangePasswordFormProps = {}) {
   const t = useTranslations('auth.changePassword');
   const tReset = useTranslations('auth.resetPassword');
   const tErrors = useTranslations('errors');
@@ -191,6 +201,7 @@ export function ChangePasswordForm() {
           id="new-password"
           label={t('newPasswordLabel')}
           autoComplete="new-password"
+          hint={showPasswordHint ? tReset('newPasswordHint') : undefined}
           error={errors.newPassword?.message}
           // The bar describes the field until an error replaces it (AURA adds
           // `new-password-error` itself).
@@ -210,11 +221,20 @@ export function ChangePasswordForm() {
         {...register('confirmPassword')}
       />
 
-      <div className="flex flex-col pt-2">
-        <Button type="submit" variant="primary" loading={submitting}>
-          {t('submit')}
-        </Button>
-      </div>
+      {secondaryAction ? (
+        <div className="flex flex-col items-stretch gap-1 pt-2 sm:flex-row sm:items-center sm:gap-4">
+          <Button type="submit" variant="primary" loading={submitting}>
+            {t('submit')}
+          </Button>
+          <div className="self-center sm:self-auto">{secondaryAction}</div>
+        </div>
+      ) : (
+        <div className="flex flex-col pt-2">
+          <Button type="submit" variant="primary" loading={submitting}>
+            {t('submit')}
+          </Button>
+        </div>
+      )}
     </form>
   );
 }

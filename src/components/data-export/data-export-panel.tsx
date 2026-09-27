@@ -109,8 +109,9 @@ export function DataExportPanel({
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+    // The boards: 16px between the parts, the pending note 12px from the button.
+    <div className="space-y-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
         <Button
           variant="secondary"
           icon="download"
@@ -122,7 +123,7 @@ export function DataExportPanel({
           {pending ? labels.requesting : labels.requestButton}
         </Button>
         {hasPending && !pending ? (
-          <p className="text-sm text-[var(--aura-fg-secondary)]">{labels.alreadyPending}</p>
+          <p className="text-[13px] text-[var(--aura-fg-secondary)]">{labels.alreadyPending}</p>
         ) : null}
       </div>
 
@@ -131,21 +132,22 @@ export function DataExportPanel({
         {announcement}
       </div>
 
-      <section aria-labelledby="data-export-recent-heading" className="space-y-3">
-        <h2
+      <section aria-labelledby="data-export-recent-heading" className="space-y-4">
+        {/* h3: the panel sits under its card's h2 on both the portal and the staff page. */}
+        <h3
           id="data-export-recent-heading"
-          className="font-mono text-xs font-medium uppercase tracking-wider text-[var(--aura-fg-secondary)]"
+          className="m-0 font-mono text-[11px] font-normal uppercase tracking-[0.04em] text-[var(--aura-fg-tertiary)]"
         >
           {labels.statusHeading}
-        </h2>
+        </h3>
         {rows.length === 0 ? (
           <p className="rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)] py-6 text-center text-sm text-[var(--aura-fg-secondary)]">
             {labels.empty}
           </p>
         ) : (
           <>
-            {/* the boards draw the list without a box, rows on hairlines */}
-            <div className="[&_.aura-tbl-wrap]:rounded-none [&_.aura-tbl-wrap]:border-0 [&_.aura-tbl-wrap]:bg-transparent [&_.aura-tbl\_\_td:first-child]:pl-0 [&_.aura-tbl\_\_th:first-child]:pl-0 [&_.aura-tbl\_\_td:last-child]:pr-0 [&_.aura-tbl\_\_th:last-child]:pr-0 [&_td]:align-middle [&_thead_th]:bg-transparent [&_thead_th]:text-[11px] [&_thead_th]:uppercase [&_thead_th]:tracking-wider">
+            {/* the boards draw the list without a box, 44px rows on hairlines (the download button's height) */}
+            <div className="[&_.aura-tbl-wrap]:rounded-none [&_.aura-tbl-wrap]:border-0 [&_.aura-tbl-wrap]:bg-transparent [&_.aura-tbl\_\_td:first-child]:pl-0 [&_.aura-tbl\_\_th:first-child]:pl-0 [&_.aura-tbl\_\_td:last-child]:pr-0 [&_.aura-tbl\_\_th:last-child]:pr-0 [&_td]:align-middle [&_td]:h-11 [&_td]:py-0.5 [&_thead_th]:bg-transparent [&_thead_th]:text-[11px] [&_thead_th]:uppercase [&_thead_th]:font-mono [&_thead_th]:font-normal [&_thead_th]:tracking-[0.04em]">
               <Table caption={labels.caption} captionHidden>
                 <THead className="max-sm:hidden">
                   <Tr>
@@ -162,7 +164,7 @@ export function DataExportPanel({
                       <Td>
                         <StatusPill tone={exportStatusTone(row.status)}>{row.statusLabel}</StatusPill>
                         {/* below sm the date sits under the pill, its column hidden */}
-                        <span className="mt-1 block text-sm sm:hidden">{row.requestedAt}</span>
+                        <span className="mt-1 block text-[13px] sm:hidden">{row.requestedAt}</span>
                       </Td>
                       <Td className="max-sm:hidden">{row.requestedAt}</Td>
                       <Td align="end">

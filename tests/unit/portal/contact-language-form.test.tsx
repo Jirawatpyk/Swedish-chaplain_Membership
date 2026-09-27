@@ -65,16 +65,14 @@ describe('ContactLanguageForm', () => {
 });
 
 describe('ContactLanguageForm on AURA (spec 122 US3)', () => {
-  it('is an AURA radio group named by the form title, with Save in an ActionBar that says when the choice is unsaved', () => {
+  it('is an AURA radio group with its visible legend and hint, then a secondary Save — no action bar (decision 2026-09-27)', () => {
     renderForm();
-    const group = screen.getByRole('group', { name: enMessages.portal.account.contactLanguage.title });
+    const copy = enMessages.portal.account.contactLanguage;
+    const group = screen.getByRole('group', { name: copy.groupLabel });
     expect(group).toHaveClass('aura-radio-group');
-    // named after its form, so the account page's two language bars are told apart
-    const bar = screen.getByRole('region', { name: enMessages.portal.account.contactLanguage.title });
-    expect(bar).toContainElement(screen.getByRole('button', { name: enMessages.portal.account.contactLanguage.save }));
-    const status = bar.querySelector('[role="status"]')!;
-    expect(status.textContent).toBe('');
-    pick('th');
-    expect(status.textContent).toBe(enMessages.common.unsavedStatus);
+    expect(group.querySelector('legend')).not.toHaveClass('sr-only');
+    expect(group.textContent).toContain(copy.hint);
+    expect(screen.queryByRole('region')).toBeNull();
+    expect(screen.getByRole('button', { name: copy.save })).toHaveClass('aura-btn--secondary');
   });
 });

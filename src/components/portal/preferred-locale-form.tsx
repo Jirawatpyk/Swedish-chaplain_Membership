@@ -12,9 +12,9 @@
  *    success/error in addition to toasts
  *  - Error (load-time): explicit error block with role="alert" and i18n copy;
  *    does NOT silently fall through to a half-broken form
- *  - Spec 122 US3: AURA RadioGroup (legend = the title, for screen readers;
- *    the section shows it above) and Save in an ActionBar pinned to the card
- *    that reads "Unsaved changes" while the choice differs from the saved one
+ *  - Spec 122 US3 (`Portal-account`): AURA RadioGroup with its visible
+ *    legend ("Emails to your company") and hint under the options, then a
+ *    secondary Save button (decision 2026-09-27: no action bar)
  */
 'use client';
 
@@ -24,7 +24,7 @@ import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
 import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
 import { isReadOnlyResponse } from '@/lib/http/read-only-refusal';
-import { ActionBar, Button, RadioGroup } from '@jirawatpyk/aura-react';
+import { Button, RadioGroup } from '@jirawatpyk/aura-react';
 import { SkeletonBlock } from '@/components/shell/page-skeletons';
 import { useAriaAnnounce } from '@/hooks/use-aria-announce';
 import {
@@ -54,8 +54,6 @@ export function PreferredLocaleForm({
   const seeded = initialValue !== undefined;
   const [state, setState] = useState<LoadState>(seeded ? 'ready' : 'loading');
   const [value, setValue] = useState<PreferredLocale>(seeded ? initialValue : null);
-  // the last value the server holds — drives the "Unsaved changes" status
-  const [saved, setSaved] = useState<PreferredLocale>(seeded ? initialValue : null);
   const [saving, setSaving] = useState(false);
   const { announcement, announce } = useAriaAnnounce();
 
@@ -74,7 +72,6 @@ export function PreferredLocaleForm({
         const body = (await res.json()) as { preferredLocale: PreferredLocale };
         if (!cancelled) {
           setValue(body.preferredLocale);
-          setSaved(body.preferredLocale);
           setState('ready');
         }
       } catch {
@@ -92,7 +89,6 @@ export function PreferredLocaleForm({
     try {
       const res = await updatePreferredLocale(value);
       if (res.ok) {
-        setSaved(value);
         toast.success(t('savedToast'));
         announce(t('savedToast'));
       } else if (await isReadOnlyResponse(res)) {
@@ -138,8 +134,10 @@ export function PreferredLocaleForm({
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <RadioGroup
-        label={t('title')}
-        className="[&>legend]:sr-only"
+        label={t('groupLabel')}
+        hint={t('hint')}
+        // 44px option rows on phones (the `Portal-account-mobile` board's touch targets)
+        className="max-sm:[&_.aura-choice]:min-h-11 max-sm:[&_.aura-choice]:items-center"
         value={value === null ? '__null' : value}
         onChange={(v) => setValue(v === '__null' ? null : (v as 'en' | 'th' | 'sv'))}
         disabled={saving}
@@ -148,15 +146,10 @@ export function PreferredLocaleForm({
           label: opt === '__null' ? t('useTenantDefault') : tLang(`languageOptions.${opt}`),
         }))}
       />
-      <ActionBar
-        position="container"
-        label={t('title')}
-        status={value !== saved ? tLang('unsavedStatus') : null}
-      >
-        <Button type="submit" loading={saving}>
-          {t('save')}
-        </Button>
-      </ActionBar>
+      {/* Decision 2026-09-27 (`Portal-account`): a plain secondary button under the hint, no action bar. */}
+      <Button type="submit" variant="secondary" loading={saving}>
+        {t('save')}
+      </Button>
       <span role="status" aria-live="polite" className="sr-only">
         {announcement}
       </span>

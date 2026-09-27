@@ -3,10 +3,8 @@ import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { CircleCheck, FileText, TrendingUp } from 'lucide-react';
 
-import { ChangePasswordForm } from '@/components/auth/change-password-form';
 import { PortalBenefitsPanel } from '@/components/benefits/portal-benefits-panel';
-import { DataExportPanel, type DataExportRow } from '@/components/data-export/data-export-panel';
-import { buildDataExportLabels } from '@/components/data-export/data-export-view-model';
+import type { DataExportRow } from '@/components/data-export/data-export-panel';
 import { DirectoryLogoControl } from '@/components/directory/directory-logo-control';
 import { DirectoryVisibilityForm } from '@/components/directory/directory-visibility-form';
 import { DetailContainer, FormContainer } from '@/components/layout';
@@ -18,19 +16,17 @@ import { PortalChangeRequestForm } from '@/components/members/change-requests/po
 import { InviteColleagueForm } from '@/components/members/invite-colleague-form';
 import { PortalEditForm } from '@/components/members/portal-edit-form';
 import { renderPortalProfileView, type PortalProfileViewProps } from '@/components/members/portal-profile-view';
+import { renderPortalAccountView } from '@/components/portal/portal-account-view';
 import { TimelineFilters } from '@/components/members/timeline-filters';
 import { TimelineStream } from '@/components/members/timeline-stream';
 import type { TimelineItemProps } from '@/components/members/timeline-event-item';
-import { ContactLanguageForm } from '@/components/portal/contact-language-form';
 import { StatCard } from '@/components/portal/dashboard/stat-card';
 import { InvoicesSummaryView } from '@/components/portal/invoices-summary-card';
 import { PortalBenefitsSummaryCard } from '@/components/benefits/portal-benefits-summary-card';
 import type { Invoice } from '@/modules/invoicing';
 import type { Contact } from '@/modules/members';
-import { PreferredLocaleForm } from '@/components/portal/preferred-locale-form';
 import { Badge, Card, StatusPill } from '@jirawatpyk/aura-react/server';
 import type { ChangeRequestView } from '@/lib/change-request-portal-view';
-import { RenewalRemindersToggle } from '@/app/(member)/portal/preferences/renewals/_components/renewal-reminders-toggle';
 import { RecentActivityList } from '@/app/(member)/portal/_components/recent-activity-list';
 import { BenefitsTabs } from '@/app/(member)/portal/benefits/_components/benefits-tabs';
 import PortalNotFound from '@/app/(member)/portal/not-found';
@@ -292,46 +288,30 @@ export default async function AuraPortalPreviewPage({
   }
 
   if (view === 'account') {
-    const tPage = await getTranslations('portal.account');
-    const tLocale = await getTranslations('portal.preferredLocale');
-    const tContactLang = await getTranslations('portal.account.contactLanguage');
     const tExport = await getTranslations('dataExport');
+    // The `Portal-account` board's rows.
     const rows: DataExportRow[] = [
       { jobId: 'j0', status: 'processing', statusLabel: tExport('statusPending'), downloadable: false, requestedAt: '24 Sept 2026, 11:02' },
-      { jobId: 'j1', status: 'ready', statusLabel: tExport('statusReady'), downloadable: true, requestedAt: '20 Sept 2026, 15:30' },
-      { jobId: 'j2', status: 'expired', statusLabel: tExport('statusExpired'), downloadable: false, requestedAt: '2 Aug 2026, 09:10' },
+      { jobId: 'j1', status: 'ready', statusLabel: tExport('statusReady'), downloadable: true, requestedAt: '24 Sept 2026, 09:40' },
+      { jobId: 'j2', status: 'expired', statusLabel: tExport('statusExpired'), downloadable: false, requestedAt: '2 Jun 2026, 16:05' },
     ];
     return (
       <MemberFrame path="/portal/account">
-        <FormContainer>
-          <PageHeader title={tPage('title')} subtitle={tPage('subtitle')} badge={<Badge variant="outline">Member</Badge>} />
-          <Card id="account" title={tPage('sections.account')} titleId="account-heading" headingLevel={2} className="scroll-mt-24">
-            <div className="space-y-4">
-              <p className="text-sm text-[var(--aura-fg-secondary)]">anna@nordic.example</p>
-              <ChangePasswordForm />
-            </div>
-          </Card>
-          <Card id="language" title={tLocale('title')} titleId="language-heading" headingLevel={2} className="scroll-mt-24">
-            <div className="space-y-2">
-              <p className="text-sm text-[var(--aura-fg-secondary)]">{tLocale('description')}</p>
-              <PreferredLocaleForm initialValue="en" />
-              <div className="mt-6 space-y-2 border-t border-[var(--aura-border-default)] pt-6">
-                <h3 className="text-sm font-medium">{tContactLang('title')}</h3>
-                <p className="text-sm text-[var(--aura-fg-secondary)]">{tContactLang('description')}</p>
-                <ContactLanguageForm initialValue="en" />
-              </div>
-            </div>
-          </Card>
-          <Card id="renewal-prefs" title={tPage('sections.renewalPrefs')} titleId="renewal-heading" headingLevel={2} className="scroll-mt-24">
-            <RenewalRemindersToggle initialOptedOut={false} />
-          </Card>
-          <Card id="data-privacy" title={tPage('sections.dataPrivacy')} titleId="privacy-heading" headingLevel={2} className="scroll-mt-24">
-            <div className="space-y-4">
-              <p className="max-w-prose text-sm text-[var(--aura-fg-secondary)]">{tExport('description')}</p>
-              <DataExportPanel rows={rows} labels={buildDataExportLabels(tExport)} />
-            </div>
-          </Card>
-        </FormContainer>
+        <DetailContainer>
+          {await renderPortalAccountView({
+            email: 'anna.lindqvist@lindqvist.example',
+            roleLabel: 'Member',
+            initialLocale: null,
+            contactLanguage: 'en',
+            hasMember: true,
+            initialOptedOut: false,
+            showDataPrivacy: true,
+            exportsReadFailed: false,
+            exportRows: rows,
+            privacyContactEmail: 'privacy@swecham.example',
+            privacyPolicyUrl: 'https://swecham.example/privacy',
+          })}
+        </DetailContainer>
       </MemberFrame>
     );
   }
