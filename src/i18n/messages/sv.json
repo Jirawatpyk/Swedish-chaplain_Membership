@@ -7939,7 +7939,10 @@
       "loadMore": "Ladda äldre aktivitet",
       "loading": "Laddar…",
       "loadError": "Det gick inte att ladda mer aktivitet. Försök igen.",
-      "results": "{count, plural, =0 {Inga poster} one {# post} other {# poster}}"
+      "results": "{count, plural, =0 {Inga poster} one {# post} other {# poster}}",
+      "groupToday": "Idag",
+      "groupThisMonth": "Denna månad",
+      "caption": "Visar de senaste {count} · tider i Bangkoktid · thailändska visar datum i buddhistisk tideräkning"
     },
     "filters": {
       "title": "Filter",
@@ -7948,7 +7951,8 @@
       "from": "Från datum",
       "to": "Till datum",
       "all": "Alla",
-      "clear": "Rensa filter"
+      "clear": "Rensa filter",
+      "moreFilters": "Fler filter"
     },
     "source": {
       "audit": "Profil / Granskning",

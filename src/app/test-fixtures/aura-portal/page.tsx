@@ -55,11 +55,14 @@ export const dynamic = 'force-dynamic';
 
 const TS = '2026-09-20T08:30:00.000Z';
 
+// Dated from now so the timeline shows its Today / This month / month groups.
+const ago = (days: number, hours = 0): string => new Date(Date.now() - (days * 24 + hours) * 3_600_000).toISOString();
 const EVENTS: TimelineItemProps[] = [
-  { id: 'e1', timestamp: '2026-09-24T09:12:00.000Z', source: 'invoice', eventType: 'invoice_issued', actorKind: 'staff', actorDisplayName: null, payload: null },
-  { id: 'e2', timestamp: '2026-09-22T14:05:00.000Z', source: 'payment', eventType: 'payment_succeeded', actorKind: 'member', actorDisplayName: null, payload: null },
-  { id: 'e3', timestamp: '2026-09-18T10:40:00.000Z', source: 'event', eventType: 'attendance_recorded', actorKind: 'system', actorDisplayName: null, payload: null },
-  { id: 'e4', timestamp: '2026-09-12T07:55:00.000Z', source: 'broadcast', eventType: 'broadcast_sent', actorKind: 'staff', actorDisplayName: null, payload: null },
+  { id: 'e1', timestamp: ago(0, 1), source: 'payment', eventType: 'succeeded', actorKind: 'member', actorDisplayName: null, payload: null },
+  { id: 'e2', timestamp: ago(0, 3), source: 'audit', eventType: 'tax_receipt_issued', actorKind: 'staff', actorUserId: 'u-1', actorDisplayName: 'Somchai Prasert', payload: { receipt_document_number_raw: 'RC-2026-000045' } },
+  { id: 'e3', timestamp: ago(2), source: 'invoice', eventType: 'issued', actorKind: 'staff', actorDisplayName: null, payload: null },
+  { id: 'e4', timestamp: ago(4), source: 'renewal', eventType: 'reminded', actorKind: 'system', actorDisplayName: null, payload: null },
+  { id: 'e5', timestamp: ago(70), source: 'broadcast', eventType: 'sent', actorKind: 'member', actorDisplayName: null, payload: null },
 ];
 
 const PENDING: ChangeRequestView = {
@@ -359,6 +362,7 @@ export default async function AuraPortalPreviewPage({
     const tContactLang = await getTranslations('portal.account.contactLanguage');
     const tExport = await getTranslations('dataExport');
     const rows: DataExportRow[] = [
+      { jobId: 'j0', status: 'processing', statusLabel: tExport('statusPending'), downloadable: false, requestedAt: '24 Sept 2026, 11:02' },
       { jobId: 'j1', status: 'ready', statusLabel: tExport('statusReady'), downloadable: true, requestedAt: '20 Sept 2026, 15:30' },
       { jobId: 'j2', status: 'expired', statusLabel: tExport('statusExpired'), downloadable: false, requestedAt: '2 Aug 2026, 09:10' },
     ];

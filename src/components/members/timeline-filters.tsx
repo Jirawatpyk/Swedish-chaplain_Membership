@@ -10,13 +10,14 @@
  * and a from/to date range — individually and in combination.
  *
  * Spec 122 US3: AURA FilterBar (the named region), AURA Selects with visible
- * labels, and labelled AURA date fields; Clear is an AURA
- * ghost button. Shared with the staff member timeline.
+ * labels, and labelled AURA date fields; Clear is an AURA ghost button. On
+ * phones only Source shows, with a "More filters" toggle for the rest. Shared with the staff member timeline.
  */
-import { useCallback, useTransition } from 'react';
+import { useCallback, useId, useState, useTransition } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Button, FilterBar, Select, TextField } from '@jirawatpyk/aura-react';
+import { cn } from '@/lib/utils';
 import {
   TIMELINE_SOURCES,
   TIMELINE_ACTOR_KINDS,
@@ -39,6 +40,12 @@ export function TimelineFilters(): React.JSX.Element {
   const currentActor = searchParams.get('actorKind') ?? ALL;
   const currentFrom = searchParams.get('from') ?? '';
   const currentTo = searchParams.get('to') ?? '';
+  // Phones (the Portal-timeline-mobile board): Source, then "More filters"
+  // opens Actor and the dates — open from the start when one of them is set.
+  const [moreOpen, setMoreOpen] = useState(
+    currentActor !== ALL || Boolean(currentFrom) || Boolean(currentTo),
+  );
+  const moreId = useId();
 
   const pushUrl = useCallback(
     (patch: Record<string, string | null>) => {
@@ -65,11 +72,11 @@ export function TimelineFilters(): React.JSX.Element {
     Boolean(currentTo);
 
   return (
-    <FilterBar label={t('title')}>
+    <FilterBar label={t('title')} className="[&_.aura-filterbar\_\_controls]:w-full [&_.aura-filterbar\_\_controls]:items-end">
       <Select
         name="source"
         label={t('source')}
-        className="sm:w-48"
+        className="max-sm:min-w-0 max-sm:flex-1 sm:w-48"
         value={currentSource}
         onChange={(e) => pushUrl({ source: e.target.value === ALL ? null : e.target.value })}
         options={[
@@ -77,31 +84,43 @@ export function TimelineFilters(): React.JSX.Element {
           ...TIMELINE_SOURCES.map((s) => ({ value: s, label: tSource(s as TimelineSource) })),
         ]}
       />
-      <Select
-        name="actorKind"
-        label={t('actor')}
-        className="sm:w-40"
-        value={currentActor}
-        onChange={(e) => pushUrl({ actorKind: e.target.value === ALL ? null : e.target.value })}
-        options={[
-          { value: ALL, label: t('all') },
-          ...TIMELINE_ACTOR_KINDS.map((k) => ({ value: k, label: tActor(k as TimelineActorKind) })),
-        ]}
-      />
-      <TextField
-        type="date"
-        label={t('from')}
-        className="sm:w-40"
-        value={currentFrom}
-        onChange={(e) => pushUrl({ from: e.target.value || null })}
-      />
-      <TextField
-        type="date"
-        label={t('to')}
-        className="sm:w-40"
-        value={currentTo}
-        onChange={(e) => pushUrl({ to: e.target.value || null })}
-      />
+      <Button
+        type="button"
+        variant="secondary"
+        className="sm:hidden"
+        aria-expanded={moreOpen}
+        aria-controls={moreId}
+        onClick={() => setMoreOpen((open) => !open)}
+      >
+        {t('moreFilters')}
+      </Button>
+      <div id={moreId} className={cn('flex w-full flex-col gap-3 sm:contents', !moreOpen && 'max-sm:hidden')}>
+        <Select
+          name="actorKind"
+          label={t('actor')}
+          className="sm:w-40"
+          value={currentActor}
+          onChange={(e) => pushUrl({ actorKind: e.target.value === ALL ? null : e.target.value })}
+          options={[
+            { value: ALL, label: t('all') },
+            ...TIMELINE_ACTOR_KINDS.map((k) => ({ value: k, label: tActor(k as TimelineActorKind) })),
+          ]}
+        />
+        <TextField
+          type="date"
+          label={t('from')}
+          className="sm:w-40"
+          value={currentFrom}
+          onChange={(e) => pushUrl({ from: e.target.value || null })}
+        />
+        <TextField
+          type="date"
+          label={t('to')}
+          className="sm:w-40"
+          value={currentTo}
+          onChange={(e) => pushUrl({ to: e.target.value || null })}
+        />
+      </div>
 
       {hasAnyFilter && (
         <Button

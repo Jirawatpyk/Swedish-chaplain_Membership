@@ -25,9 +25,9 @@ import {
   UserCogIcon,
   type LucideIcon,
 } from 'lucide-react';
-import { RelativeTime } from '@/components/shell/relative-time';
 import { Badge } from '@jirawatpyk/aura-react/server';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
+import { formatTimelineTime, timelineGroup } from '@/lib/timeline-groups';
 import type { TimelineSource, TimelineActorKind } from '@/lib/timeline-shared';
 
 export type TimelineItemProps = {
@@ -220,38 +220,47 @@ export function TimelineEventItem({
   const payloadDetail =
     source === 'audit' ? formatAuditPayload(eventType, payload, tPayload) : null;
 
+  // Spec 122 US3 (`Portal-timeline` boards): an icon chip, the event (and
+  // its detail) over "actor · time", an outline source badge beside it —
+  // under it on phones. Under Today the time alone; elsewhere date and time.
+  const timeOnly = timelineGroup(timestamp)?.kind === 'today';
+
   return (
-    <div
-      className="relative border-l-2 border-[var(--aura-border-default)] pl-6 py-3"
-      data-event-type={eventType}
-      data-source={source}
-    >
+    <div className="flex items-start gap-3 py-3 sm:items-center" data-event-type={eventType} data-source={source}>
       {/* Source marker — reduced-motion friendly (static icon, no pulse). */}
       <span
         aria-hidden
-        className="absolute -left-[13px] top-4 flex size-6 items-center justify-center rounded-full border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] text-[var(--aura-fg-secondary)]"
+        className="mt-0.5 flex size-8 shrink-0 sm:mt-0 items-center justify-center rounded-full bg-[var(--aura-bg-canvas)] text-[var(--aura-fg-secondary)]"
       >
-        <SourceIcon className="size-3.5" />
+        <SourceIcon className="size-4" />
       </span>
-      <div className="flex flex-col gap-1">
-        <div className="flex flex-wrap items-baseline gap-2">
-          <span className="font-medium text-sm">{eventLabel}</span>
-          {/* AURA neutral badge — a designed ≥4.5:1 pair (WCAG 1.4.3; the
-              muted-on-muted chip before it failed, review-run I6). */}
-          <Badge>{sourceLabel}</Badge>
-          <RelativeTime
-            iso={timestamp}
-            title={formatLocalisedTimestamp(timestamp, locale)}
-            className="text-xs text-[var(--aura-fg-secondary)]"
-            locale={locale}
-          />
+      <div className="flex min-w-0 flex-1 flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <p className="text-sm font-medium">
+            <span>{eventLabel}</span>
+            {payloadDetail ? (
+              <>
+                {' · '}
+                <span>{payloadDetail}</span>
+              </>
+            ) : null}
+          </p>
+          <p className="text-xs text-[var(--aura-fg-secondary)]">
+            {actorDisplay}
+            {' · '}
+            <time
+              dateTime={timestamp}
+              title={formatLocalisedTimestamp(timestamp, locale)}
+              suppressHydrationWarning
+            >
+              {formatTimelineTime(timestamp, locale, timeOnly)}
+            </time>
+          </p>
         </div>
-        {payloadDetail && (
-          <p className="text-sm text-[var(--aura-fg-secondary)]">{payloadDetail}</p>
-        )}
-        <p className="text-xs text-[var(--aura-fg-secondary)]">
-          {tTimeline('actorBy', { actor: actorDisplay })}
-        </p>
+        {/* AURA outline badge — a designed ≥4.5:1 pair (WCAG 1.4.3). */}
+        <Badge variant="outline" className="w-fit shrink-0">
+          {sourceLabel}
+        </Badge>
       </div>
     </div>
   );
