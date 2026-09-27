@@ -89,7 +89,7 @@ describe('ResetPasswordForm on AURA (spec 122 US2)', () => {
     expect(field).toHaveFocus();
   });
 
-  it('swaps the form for a focused danger alert with a new-link path when the link is dead', async () => {
+  it('swaps the form for the Auth-expired board: a titled danger alert, then a new-link button and a way back to sign in', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: 'link-invalid' }), { status: 410 })),
@@ -102,10 +102,12 @@ describe('ResetPasswordForm on AURA (spec 122 US2)', () => {
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveClass('aura-alert', 'aura-alert--danger');
     expect(alert).toHaveTextContent('This reset link has expired.');
-    const next = within(alert).getByRole('link', { name: 'Request a new link' });
+    expect(alert).toHaveTextContent('Request a new one — links work for a limited time.');
+    // Full-width 44px AURA buttons under the alert (ux-standards § 9.1).
+    const next = screen.getByRole('link', { name: 'Request a new link' });
     expect(next).toHaveAttribute('href', '/forgot-password');
-    // A 44px AURA button, not a 17px inline link (ux-standards § 9.1).
-    expect(next).toHaveClass('aura-btn');
+    expect(next).toHaveClass('aura-btn', 'aura-btn--primary');
+    expect(screen.getByRole('link', { name: 'Back to sign in' })).toHaveAttribute('href', '/portal/sign-in');
     await waitFor(() => expect(alert.closest('[tabindex="-1"]')).toHaveFocus());
     expect(container.querySelector('form')).toBeNull();
   });

@@ -7,13 +7,15 @@
  * verification to just complete). An explicit retry button covers the
  * 5-minute activation-delay case + transient rate-limit.
  *
- * Spec 122 US2 (`Auth-verify` boards): AURA `Alert` for the outcome and
- * `Button` for the next step.
+ * Spec 122 US2 (`Auth-verify` boards): the form draws the page title, which
+ * follows the outcome ("Email verified" once done), an AURA `Alert` with a
+ * bold title for the outcome and a `Button` for the next step.
  */
 
 import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Alert, Button } from '@jirawatpyk/aura-react';
+import { AuthTitle } from './auth-title';
 
 type SubmitState =
   | { kind: 'submitting' }
@@ -93,44 +95,60 @@ export function EmailVerificationForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (state.kind === 'submitting') {
-    return (
-      <p className="text-[var(--aura-fg-secondary)]" role="status" aria-live="polite">
-        {t('verifying')}
-      </p>
-    );
-  }
+  return (
+    <div className="flex flex-col gap-5">
+      {state.kind === 'success' ? (
+        <AuthTitle title={t('successTitle')} description={t('successDescription')} />
+      ) : (
+        <AuthTitle title={t('title')} description={t('cardDescription')} />
+      )}
+      {renderBody()}
+    </div>
+  );
 
-  if (state.kind === 'success') {
+  function renderBody() {
+    if (state.kind === 'submitting') {
+      return (
+        <p className="text-sm text-[var(--aura-fg-secondary)]" role="status" aria-live="polite">
+          {t('verifying')}
+        </p>
+      );
+    }
+
+    if (state.kind === 'success') {
+      return (
+        <div className="flex flex-col gap-5">
+          {/* AURA's success alert is role="status": announced politely. */}
+          <Alert tone="success" title={t('successAlertTitle')}>
+            {t('successAlertBody')}
+          </Alert>
+          {/* A full page load, as before: the destination re-reads the session.
+              A member goes on to the portal; staff, or no session, to sign-in. */}
+          <Button href={redirectTo} linkComponent="a" variant="primary" icon="arrow-right" fullWidth>
+            {redirectTo === '/portal' ? t('continueToPortal') : t('signInCta')}
+          </Button>
+        </div>
+      );
+    }
+
+    const errorMessage =
+      state.code === 'not_yet_active'
+        ? t('errors.notYetActive', { seconds: state.retrySeconds ?? 300 })
+        : state.code === 'rate_limited'
+          ? t('errors.rateLimited', { seconds: state.retrySeconds ?? 60 })
+          : state.code === 'invalid'
+            ? t('errors.invalidToken')
+            : t('errors.serverError');
+
     return (
-      <div className="flex flex-col gap-6">
-        {/* AURA's success alert is role="status": announced politely. */}
-        <Alert tone="success">{t('successMessage')}</Alert>
-        {/* A full page load, as before: the destination re-reads the session. */}
-        <Button href={redirectTo} linkComponent="a" variant="primary" icon="arrow-right" fullWidth>
-          {t('signInCta')}
-        </Button>
+      <div className="flex flex-col gap-5">
+        <Alert tone="danger" title={errorMessage} />
+        {state.code !== 'invalid' ? (
+          <Button type="button" variant="primary" onClick={submit} fullWidth>
+            {t('retry')}
+          </Button>
+        ) : null}
       </div>
     );
   }
-
-  const errorMessage =
-    state.code === 'not_yet_active'
-      ? t('errors.notYetActive', { seconds: state.retrySeconds ?? 300 })
-      : state.code === 'rate_limited'
-        ? t('errors.rateLimited', { seconds: state.retrySeconds ?? 60 })
-        : state.code === 'invalid'
-          ? t('errors.invalidToken')
-          : t('errors.serverError');
-
-  return (
-    <div className="flex flex-col gap-6">
-      <Alert tone="danger">{errorMessage}</Alert>
-      {state.code !== 'invalid' ? (
-        <Button type="button" variant="primary" onClick={submit} fullWidth>
-          {t('retry')}
-        </Button>
-      ) : null}
-    </div>
-  );
 }

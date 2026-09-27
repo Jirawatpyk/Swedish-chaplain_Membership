@@ -1,7 +1,8 @@
 {
   "auth": {
     "frame": {
-      "everyone": "Medlemmar och personal"
+      "everyone": "Medlemmar och personal",
+      "backToSignIn": "Tillbaka till inloggningen"
     },
     "signIn": {
       "title": "Logga in",
@@ -34,10 +35,13 @@
       "emailLabel": "E-post",
       "submit": "Skicka återställningslänk",
       "submitted": "Om e-posten matchar ett konto är en återställningslänk på väg.",
-      "resend": "Fick du inget mejl? Skicka igen",
+      "resend": "Skicka igen",
       "resendCountdown": "Skicka igen ({seconds}s)",
-      "deliveryHint": "Har du inte fått det efter en minut? Kontrollera din skräppostmapp, eller kontakta support om det fortfarande inte kommer fram.",
-      "rateLimited": "För många förfrågningar. Vänta en stund och försök igen."
+      "deliveryHint": "Kontrollera din skräppostmapp, eller kontakta support om det inte har kommit fram efter en minut.",
+      "rateLimited": "För många förfrågningar. Vänta en stund och försök igen.",
+      "sentTitle": "Kolla din e-post",
+      "didntGetIt": "Fick du inget?",
+      "useDifferentEmail": "Använd en annan e-post"
     },
     "resetPassword": {
       "title": "Välj ett nytt lösenord",
@@ -48,12 +52,16 @@
       "submit": "Uppdatera lösenord",
       "success": "Lösenordet uppdaterat. Du kan nu logga in.",
       "errors": {
-        "tokenExpired": "Den här återställningslänken har gått ut. Begär en ny.",
         "weakPassword": "Välj ett starkare lösenord.",
         "passwordBreached": "Det här lösenordet har förekommit i ett känt dataläckage. Välj ett annat.",
         "tooShort": "Lösenordet måste vara minst 12 tecken",
         "passwordMismatch": "Lösenorden måste stämma överens"
-      }
+      },
+      "newPasswordHint": "Minst 12 tecken. Lösenord som förekommit i kända dataläckor godtas inte.",
+      "signsOutNote": "När du byter lösenord loggas du ut överallt.",
+      "expiredDescription": "Återställningslänk",
+      "expiredTitle": "Den här återställningslänken har gått ut.",
+      "expiredBody": "Begär en ny — länkarna gäller en begränsad tid."
     },
     "passwordStrength": {
       "weak": "Svagt — använd ett längre och mer varierat lösenord.",
@@ -83,10 +91,11 @@
       "displayNameLabel": "Ditt namn",
       "passwordLabel": "Välj ett lösenord",
       "submit": "Aktivera konto",
-      "errors": {
-        "tokenExpired": "Den här inbjudan har gått ut. Be en administratör skicka en ny.",
-        "contactAdminCta": "Kontakta en administratör för att begära en ny inbjudan."
-      }
+      "passwordHint": "Minst 12 tecken.",
+      "confirmPasswordLabel": "Bekräfta lösenord",
+      "expiredDescription": "Inbjudningslänk",
+      "expiredTitle": "Den här inbjudan har gått ut.",
+      "expiredBody": "Be personen som bjöd in dig, eller kammaren, att skicka en ny inbjudan."
     },
     "idleWarning": {
       "title": "Är du kvar?",
@@ -104,8 +113,8 @@
     },
     "emailChangeRevert": {
       "title": "Återställ e-postbyte",
-      "cardDescription": "Kontakt-e-posten på ditt SweCham-konto har ändrats. Om du inte begärde detta, klicka nedan för att återställa den och välja ett nytt lösenord.",
-      "description": "Återställning återställer din tidigare e-post, loggar ut alla aktiva sessioner och kräver att du väljer ett nytt lösenord innan du loggar in igen.",
+      "cardDescription": "Kontakt-e-posten på ditt konto har ändrats. Om du inte begärde detta, återställ den och välj ett nytt lösenord.",
+      "description": "Återställer din tidigare e-post, loggar ut alla aktiva sessioner och kräver ett nytt lösenord innan du kan logga in igen. Länken gäller i {hours} timmar.",
       "revert": "Återställ och välj nytt lösenord",
       "submitting": "Återställer…",
       "successMessage": "E-postbytet har återställts. Slutför lösenordsåterställningen för att få tillgång igen.",
@@ -116,14 +125,16 @@
         "invalidToken": "Denna återställningslänk har upphört att gälla eller har redan använts.",
         "conflict": "Den tidigare e-postadressen är inte längre tillgänglig. Kontakta din kammaradministratör.",
         "rateLimited": "För många försök. Försök igen om {seconds}s.",
-        "serverError": "Något gick fel. Försök igen."
-      }
+        "serverError": "Något gick fel. Försök igen.",
+        "invalidTokenBody": "Om du fortfarande inte känner igen e-postbytet, logga in eller kontakta din kammare."
+      },
+      "warningTitle": "Vad återställningen gör",
+      "madeThisChange": "Jag gjorde ändringen — tillbaka till inloggningen"
     },
     "emailVerification": {
       "title": "Bekräfta e-postadress",
       "cardDescription": "Bekräftar din nya e-postadress — ett ögonblick.",
       "verifying": "Bekräftar din e-postadress…",
-      "successMessage": "E-post bekräftad. Du kan logga in nu.",
       "signInCta": "Gå till inloggning",
       "retry": "Försök igen",
       "errors": {
@@ -131,7 +142,12 @@
         "notYetActive": "Den här länken är inte aktiv ännu. Försök igen om {seconds}s.",
         "rateLimited": "För många försök. Försök igen om {seconds}s.",
         "serverError": "Något gick fel. Försök igen."
-      }
+      },
+      "successTitle": "E-post bekräftad",
+      "successDescription": "Din nya e-postadress är aktiv.",
+      "successAlertTitle": "E-post bekräftad.",
+      "successAlertBody": "Mejl från kammaren går nu till din nya adress.",
+      "continueToPortal": "Fortsätt till portalen"
     }
   },
   "shell": {

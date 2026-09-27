@@ -276,6 +276,11 @@
 html {
   scrollbar-gutter: stable;
 }
+/* Spec 122 US2 — the auth pages never grow past a screen's height on desktop,
+   and the boards run the brand panel to the right edge: no reserved strip. */
+html:has([data-auth-frame]) {
+  scrollbar-gutter: auto;
+}
 
 /* Spec 122 US3 — keep a field that gets focus (an error-summary link, Tab)
    clear of the sticky shell bar (56px; the portal's is 72px at lg) and of a
@@ -595,9 +600,10 @@ summary,
     }
   }
   /* Spec 122 US2 — the auth brand panel's mesh runs from the brand blue
-     (the generated theme's --aura-mesh-from) to the soft yellow the
+     (#5b9bd5, deeper than the generated theme's --aura-mesh-from) to the soft yellow the
      `Sign-in` / `Auth-*` boards use, instead of AURA's lime. */
   .auth-mesh {
+    --aura-mesh-from: #5b9bd5;
     --aura-mesh-to: #ffe27a;
   }
 

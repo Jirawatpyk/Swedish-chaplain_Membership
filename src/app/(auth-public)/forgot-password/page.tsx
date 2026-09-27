@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
 import { AuthFrame } from '@/components/auth/auth-frame';
 import { ForgotPasswordForm } from '@/components/auth/forgot-password-form';
+import { portalSignInPath } from '@/lib/portal-paths';
 
 /**
  * Forgot-password page (T106) at URL `/forgot-password`.
@@ -17,18 +18,21 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-export default async function ForgotPasswordPage() {
-  const t = await getTranslations('auth.forgotPassword');
-
+export default async function ForgotPasswordPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ from?: string | string[] }>;
+}) {
+  // The staff sign-in links here with `?from=staff`, so "Back to sign in"
+  // returns there; anything else goes back to the member portal. It only
+  // picks a link — the request itself never depends on the portal (FR-016).
+  const { from } = await searchParams;
   const tFrame = await getTranslations('auth.frame');
   return (
-    <AuthFrame
-      title={t('title')}
-      description={t('description')}
-      portalLabel={tFrame('everyone')}
-      tenantName={process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham'}
-    >
-      <ForgotPasswordForm />
+    // The form draws its own title: it changes to "Check your email" once sent,
+    // as the `Auth-forgot` board draws that state.
+    <AuthFrame portalLabel={tFrame('everyone')} tenantName={process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham'}>
+      <ForgotPasswordForm signInHref={portalSignInPath(from === 'staff' ? 'staff' : 'member')} />
     </AuthFrame>
   );
 }

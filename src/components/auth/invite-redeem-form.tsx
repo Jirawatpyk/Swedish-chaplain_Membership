@@ -25,6 +25,7 @@ import { refinePasswordPair, requiredText, type Translator } from '@/lib/zod-i18
 import { toast } from '@/lib/toast';
 import { Button, FormErrorSummary, PasswordField, TextField } from '@jirawatpyk/aura-react';
 import { AuthLinkInvalid } from './auth-link-invalid';
+import { portalSignInPath } from '@/lib/portal-paths';
 import {
   PasswordStrength,
   usePasswordStrengthMeter,
@@ -67,6 +68,7 @@ export interface InviteRedeemFormProps {
 
 export function InviteRedeemForm({ token, email }: InviteRedeemFormProps) {
   const t = useTranslations('auth.invite');
+  const tFrame = useTranslations('auth.frame');
   const tReset = useTranslations('auth.resetPassword');
   const tErrors = useTranslations('errors');
   const tv = useTranslations('shared.validation');
@@ -159,14 +161,15 @@ export function InviteRedeemForm({ token, email }: InviteRedeemFormProps) {
   };
 
   if (linkInvalid) {
-    // M3 (Round 3) — the recovery step is a guidance line, not a link:
-    // invitations are admin-issued only, so there is no self-service target.
-    // The alert takes focus: without it a keyboard user is left on the
-    // now-unmounted submit button.
+    // M3 (Round 3) — the recovery step is a guidance line, not a request
+    // button: invitations are issued by someone else, so there is no
+    // self-service target; only "Back to sign in". The block takes focus:
+    // without it a keyboard user is left on the now-unmounted submit button.
     return (
       <AuthLinkInvalid
-        message={t('errors.tokenExpired')}
-        detail={t('errors.contactAdminCta')}
+        title={t('expiredTitle')}
+        detail={t('expiredBody')}
+        back={{ label: tFrame('backToSignIn'), href: portalSignInPath('member') }}
         autoFocus
       />
     );
@@ -178,7 +181,7 @@ export function InviteRedeemForm({ token, email }: InviteRedeemFormProps) {
       // Native fallback POSTs so the new account password stays out of the
       // URL (CWE-598; see tests/unit/auth/auth-forms-post-method.test.tsx).
       method="post"
-      className="flex flex-col gap-4"
+      className="flex flex-col gap-5"
       noValidate
       aria-busy={submitting}
     >
@@ -197,10 +200,11 @@ export function InviteRedeemForm({ token, email }: InviteRedeemFormProps) {
         {...register('displayName')}
       />
 
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-1.5">
         <PasswordField
           id="password"
           label={t('passwordLabel')}
+          hint={t('passwordHint')}
           autoComplete="new-password"
           error={errors.password?.message}
           // The bar describes the field until an error replaces it (AURA adds
@@ -215,13 +219,13 @@ export function InviteRedeemForm({ token, email }: InviteRedeemFormProps) {
 
       <PasswordField
         id="confirm-password"
-        label={tReset('confirmPasswordLabel')}
+        label={t('confirmPasswordLabel')}
         autoComplete="new-password"
         error={errors.confirmPassword?.message}
         {...register('confirmPassword')}
       />
 
-      <div className="flex flex-col pt-2">
+      <div className="flex flex-col">
         <Button type="submit" variant="primary" loading={submitting}>
           {t('submit')}
         </Button>

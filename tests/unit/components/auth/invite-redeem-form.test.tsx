@@ -81,7 +81,7 @@ describe('InviteRedeemForm on AURA (spec 122 US2)', () => {
     expect(within(summary).getAllByRole('link').length).toBeGreaterThanOrEqual(2);
   });
 
-  it('swaps the form for a focused danger alert saying who can send a new invitation', async () => {
+  it('swaps the form for a titled danger alert saying who can send a new invitation, and a way back to sign in', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: 'link-invalid' }), { status: 410 })),
@@ -95,7 +95,10 @@ describe('InviteRedeemForm on AURA (spec 122 US2)', () => {
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveClass('aura-alert', 'aura-alert--danger');
     expect(alert).toHaveTextContent('This invitation has expired.');
-    expect(alert).toHaveTextContent('Contact an administrator to request a new invitation.');
+    expect(alert).toHaveTextContent('Ask the person who invited you, or the chamber, to send a new invitation.');
+    // Said once: the old copy repeated "ask an administrator" in two sentences.
+    expect(alert.textContent?.match(/invitation/gi)).toHaveLength(2);
+    expect(screen.getByRole('link', { name: 'Back to sign in' })).toHaveAttribute('href', '/portal/sign-in');
     await waitFor(() => expect(alert.closest('[tabindex="-1"]')).toHaveFocus());
     expect(container.querySelector('form')).toBeNull();
   });

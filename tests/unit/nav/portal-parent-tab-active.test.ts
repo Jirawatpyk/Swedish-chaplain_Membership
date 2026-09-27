@@ -6,9 +6,9 @@
  * nav.
  */
 import { describe, expect, it } from 'vitest';
-import { isNavItemActive, memberBottomTabItems, memberNavConfig } from '@/config/nav';
+import { isNavGroup, isNavItemActive, memberBottomTabItems, memberNavConfig, type NavItem } from '@/config/nav';
 
-const topNav = memberNavConfig.sections.flatMap((s) => s.items).filter((i) => 'href' in i);
+const topNav = memberNavConfig.sections.flatMap((s) => s.items).filter((i): i is NavItem => !isNavGroup(i));
 const surfaces = { 'top nav': topNav, 'bottom tabs': memberBottomTabItems } as const;
 
 function activeHrefs(items: ReadonlyArray<{ href: string; activePattern: string }>, pathname: string): string[] {

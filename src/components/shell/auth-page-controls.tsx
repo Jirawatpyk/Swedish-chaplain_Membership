@@ -14,9 +14,10 @@ import { ThemeToggle } from '@/components/shell/theme-toggle';
  */
 export function AuthPageControls() {
   return (
-    <header className="absolute right-4 top-4 z-10">
+    <header className="absolute top-4 right-4 z-10 lg:top-5 lg:right-6">
       <div className="flex items-center gap-2">
-        <LocaleSwitcher />
+        {/* The auth boards' 40px pill (44px on phones). */}
+        <LocaleSwitcher className="h-10 pr-3 pl-4 max-sm:h-11" />
         <ThemeToggle />
       </div>
     </header>

@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
 import { AuthFrame } from '@/components/auth/auth-frame';
 import { AuthLinkInvalid } from '@/components/auth/auth-link-invalid';
+import { portalSignInPath } from '@/lib/portal-paths';
 import { ResetPasswordForm } from '@/components/auth/reset-password-form';
 // Presentation-side data loader for the reset-password page.
 // No Application use case wraps a read-only "is this token
@@ -61,14 +62,18 @@ export default async function ResetPasswordPage({
   return (
     <AuthFrame
       title={t('title')}
-      description={t('cardDescription')}
+      description={tokenDead ? t('expiredDescription') : t('cardDescription')}
       portalLabel={tFrame('everyone')}
       tenantName={process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham'}
     >
       {tokenDead ? (
+        // A dead token names no user, so "Back to sign in" goes to the member
+        // portal (most readers); staff reach theirs from there.
         <AuthLinkInvalid
-          message={t('errors.tokenExpired')}
+          title={t('expiredTitle')}
+          detail={t('expiredBody')}
           action={{ label: t('requestNewLink'), href: '/forgot-password' }}
+          back={{ label: tFrame('backToSignIn'), href: portalSignInPath('member') }}
         />
       ) : (
         <ResetPasswordForm token={token} />

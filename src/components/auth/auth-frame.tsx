@@ -20,17 +20,22 @@ export interface AuthFrameProps {
   readonly title?: string;
   /** One line under the title. */
   readonly description?: string;
+  /** The sign-in boards: a 30px title on phones and 24px under it; every other auth board uses 20px. */
+  readonly variant?: 'default' | 'sign-in';
   /** Who the page is for, under the chamber's name on the brand panel. */
   readonly portalLabel: string;
   readonly tenantName: string;
   readonly children: ReactNode;
 }
 
-export function AuthFrame({ title, description, portalLabel, tenantName, children }: AuthFrameProps) {
+export function AuthFrame({ title, description, portalLabel, tenantName, variant = 'default', children }: AuthFrameProps) {
   return (
     <main
       id="main-content"
       tabIndex={-1}
+      // globals.css drops the reserved scrollbar gutter here: the boards run
+      // the brand panel and the form column edge to edge.
+      data-auth-frame
       className="grid min-h-dvh bg-[var(--aura-bg-surface)] text-[var(--aura-fg-primary)] focus:outline-none lg:grid-cols-2"
     >
       <div className="aura-surface aura-mesh aura-grain auth-mesh flex flex-col justify-between rounded-none p-12 text-[var(--aura-on-texture)] max-lg:hidden">
@@ -39,17 +44,18 @@ export function AuthFrame({ title, description, portalLabel, tenantName, childre
           <p className="font-[family-name:var(--font-display)] text-5xl leading-[1.1] font-semibold tracking-[-0.02em] text-balance">
             {CHAMBER_FULL_NAME}
           </p>
-          <p className="text-base">{portalLabel}</p>
+          <p className="text-base leading-[1.7]">{portalLabel}</p>
         </div>
       </div>
 
       <div className="relative flex flex-col gap-8 px-6 pt-[88px] pb-8 lg:items-center lg:justify-center lg:p-12">
         <AuthPageControls />
-        <div data-slot="auth-brand-compact" className="lg:hidden">
+        {/* Named for assistive tech, as the phone boards name it ("SweCham — Member portal"). */}
+        <div data-slot="auth-brand-compact" role="img" aria-label={`${tenantName} — ${portalLabel}`} className="lg:hidden">
           <BrandRow tenantName={tenantName} size="compact" />
         </div>
-        <div className="flex w-full flex-col gap-6 lg:max-w-[400px]">
-          {title ? <AuthTitle title={title} description={description} /> : null}
+        <div className={`flex w-full flex-col lg:max-w-[400px] ${variant === 'sign-in' ? 'gap-6' : 'gap-5'}`}>
+          {title ? <AuthTitle title={title} description={description} size={variant === 'sign-in' ? 'lg' : 'default'} /> : null}
           {children}
         </div>
       </div>
@@ -72,7 +78,7 @@ function BrandRow({ tenantName, size }: { readonly tenantName: string; readonly 
         <BrandMark variant="mark" className="size-full" />
       </span>
       <span
-        className={`font-[family-name:var(--font-display)] leading-none font-semibold tracking-[-0.01em] ${panel ? 'text-[26px]' : 'text-[22px]'}`}
+        className={`font-[family-name:var(--font-display)] font-semibold ${panel ? 'text-[26px]' : 'text-[22px] leading-none tracking-[-0.01em]'}`}
       >
         {tenantName}
       </span>
