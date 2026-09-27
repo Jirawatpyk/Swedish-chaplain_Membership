@@ -218,8 +218,11 @@ export default async function MembersListPage({
           // 'members.bulk' egress (full-tenant PII), "Add member" is a
           // 'members.write' affordance. Identical holders today; the split is
           // what keeps a future bundle diff from dragging the other along.
+          // A fragment, not a wrapper row: PageHeader's actions row wraps and
+          // stretches its direct children on phones; a nowrap row inside it
+          // pushed "Lägg till medlem" past a 360 / 390 px screen in Swedish.
           canPerform(currentUser.role, 'members.write') ? (
-            <div className="flex items-center gap-2">
+            <>
               {canPerform(currentUser.role, 'members.bulk') && (
                 <ExportBackupButton />
               )}
@@ -230,7 +233,7 @@ export default async function MembersListPage({
                 <PlusIcon className="h-3.5 w-3.5" />
                 {t('addMember')}
               </Link>
-            </div>
+            </>
           ) : null
         }
       />
