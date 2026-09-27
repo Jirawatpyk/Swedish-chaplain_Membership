@@ -34,7 +34,7 @@ export default async function AuraAuthPreviewPage({
     const t = await getTranslations('auth.invite');
     return (
       <AuthFrame title={t('title')} description={t('cardDescription')} portalLabel={tFrame('everyone')} tenantName="SweCham">
-        <InviteRedeemForm token={token} email="anna@example.com" />
+        <InviteRedeemForm token={token} email="anna@example.com" tenantName="SweCham" privacyNoticeHref="https://www.swecham.com/privacy" />
       </AuthFrame>
     );
   }

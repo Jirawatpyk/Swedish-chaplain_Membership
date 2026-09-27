@@ -95,7 +95,8 @@
       "confirmPasswordLabel": "Confirm password",
       "expiredDescription": "Invitation link",
       "expiredTitle": "This invitation has expired.",
-      "expiredBody": "Ask the person who invited you, or the chamber, to send a new invitation."
+      "expiredBody": "Ask the person who invited you, or the chamber, to send a new invitation.",
+      "privacyLine": "How {tenantDisplayName} uses your data: <link>Privacy notice</link>"
     },
     "idleWarning": {
       "title": "Still there?",

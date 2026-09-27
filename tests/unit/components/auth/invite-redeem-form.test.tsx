@@ -110,3 +110,28 @@ describe('InviteRedeemForm on AURA (spec 122 US2)', () => {
     expect(submit).toHaveAttribute('type', 'submit');
   });
 });
+
+describe('InviteRedeemForm — privacy notice at collection (spec 122 US2, Auth-invite board)', () => {
+  it('links the tenant privacy notice under Activate account, opening in a new tab', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <InviteRedeemForm token="tok" email="sofia.ek@example.test" tenantName="SweCham" privacyNoticeHref="https://example.test/privacy" />
+      </NextIntlClientProvider>,
+    );
+    const link = screen.getByRole('link', { name: 'Privacy notice' });
+    expect(link).toHaveAttribute('href', 'https://example.test/privacy');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link.closest('p')).toHaveTextContent('How SweCham uses your data: Privacy notice');
+    const submit = screen.getByRole('button', { name: 'Activate account' });
+    expect(submit.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('shows no line when the tenant has no privacy notice URL', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <InviteRedeemForm token="tok" email="sofia.ek@example.test" tenantName="SweCham" privacyNoticeHref={null} />
+      </NextIntlClientProvider>,
+    );
+    expect(screen.queryByRole('link', { name: 'Privacy notice' })).toBeNull();
+  });
+});

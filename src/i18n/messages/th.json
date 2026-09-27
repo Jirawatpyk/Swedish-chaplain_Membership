@@ -95,7 +95,8 @@
       "confirmPasswordLabel": "ยืนยันรหัสผ่าน",
       "expiredDescription": "ลิงก์คำเชิญ",
       "expiredTitle": "คำเชิญนี้หมดอายุแล้ว",
-      "expiredBody": "ขอให้ผู้ที่เชิญคุณ หรือหอการค้า ส่งคำเชิญใหม่"
+      "expiredBody": "ขอให้ผู้ที่เชิญคุณ หรือหอการค้า ส่งคำเชิญใหม่",
+      "privacyLine": "วิธีที่ {tenantDisplayName} ใช้ข้อมูลของคุณ: <link>ประกาศความเป็นส่วนตัว</link>"
     },
     "idleWarning": {
       "title": "ยังอยู่ไหม?",

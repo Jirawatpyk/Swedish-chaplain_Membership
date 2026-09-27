@@ -95,7 +95,8 @@
       "confirmPasswordLabel": "Bekräfta lösenord",
       "expiredDescription": "Inbjudningslänk",
       "expiredTitle": "Den här inbjudan har gått ut.",
-      "expiredBody": "Be personen som bjöd in dig, eller kammaren, att skicka en ny inbjudan."
+      "expiredBody": "Be personen som bjöd in dig, eller kammaren, att skicka en ny inbjudan.",
+      "privacyLine": "Så använder {tenantDisplayName} dina uppgifter: <link>Integritetsmeddelande</link>"
     },
     "idleWarning": {
       "title": "Är du kvar?",

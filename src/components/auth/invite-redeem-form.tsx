@@ -64,9 +64,17 @@ function buildSchema(
 export interface InviteRedeemFormProps {
   readonly token: string;
   readonly email: string;
+  /** Names the chamber in the privacy line under the button. */
+  readonly tenantName?: string;
+  /**
+   * The tenant's privacy notice (`TENANT_PRIVACY_POLICY_URL`). Creating the
+   * account collects the name and password, so the notice is linked at the
+   * point of collection (PDPA s.23, the `Auth-invite` board); null hides it.
+   */
+  readonly privacyNoticeHref?: string | null;
 }
 
-export function InviteRedeemForm({ token, email }: InviteRedeemFormProps) {
+export function InviteRedeemForm({ token, email, tenantName = 'SweCham', privacyNoticeHref = null }: InviteRedeemFormProps) {
   const t = useTranslations('auth.invite');
   const tFrame = useTranslations('auth.frame');
   const tReset = useTranslations('auth.resetPassword');
@@ -230,6 +238,19 @@ export function InviteRedeemForm({ token, email }: InviteRedeemFormProps) {
           {t('submit')}
         </Button>
       </div>
+
+      {privacyNoticeHref ? (
+        <p className="m-0 text-[13px] text-[var(--aura-fg-secondary)]">
+          {t.rich('privacyLine', {
+            tenantDisplayName: tenantName,
+            link: (chunks) => (
+              <a href={privacyNoticeHref} target="_blank" rel="noreferrer" className="text-[var(--aura-fg-accent)] underline underline-offset-4 hover:text-[var(--aura-fg-primary)]">
+                {chunks}
+              </a>
+            ),
+          })}
+        </p>
+      ) : null}
     </form>
   );
 }

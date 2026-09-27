@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
 import { AuthFrame } from '@/components/auth/auth-frame';
+import { env } from '@/lib/env';
 import { AuthLinkInvalid } from '@/components/auth/auth-link-invalid';
 import { portalSignInPath } from '@/lib/portal-paths';
 import { InviteRedeemForm } from '@/components/auth/invite-redeem-form';
@@ -77,7 +78,12 @@ export default async function InviteRedeemPage({ params }: InviteRedeemPageProps
           back={{ label: tFrame('backToSignIn'), href: portalSignInPath('member') }}
         />
       ) : (
-        <InviteRedeemForm token={token} email={email} />
+        <InviteRedeemForm
+          token={token}
+          email={email}
+          tenantName={process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham'}
+          privacyNoticeHref={env.broadcasts.privacyPolicyUrl ?? null}
+        />
       )}
     </AuthFrame>
   );
