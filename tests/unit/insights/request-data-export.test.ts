@@ -30,6 +30,7 @@ function fakeJob(input: CreateExportJobInput, created: boolean): { job: ExportJo
       requestedBy: input.requestedBy,
       requestedForPeriod: input.requestedForPeriod,
       requesterLocale: input.requesterLocale,
+      subjectContactId: input.subjectContactId ?? null,
       status: 'requested',
       idempotencyKey: input.idempotencyKey,
       blobKey: null,
@@ -148,5 +149,37 @@ describe('requestDataExport — idempotency', () => {
     const input = createOrGetInTx.mock.calls[0]![1] as CreateExportJobInput;
     // clock = 2026-05-29T08:30:15Z → minute bucket 2026-05-29T08:30
     expect(input.requestedForPeriod).toBe('2026-05-29T08:30');
+  });
+});
+
+// PDPA §30 / GDPR Art. 15 — staff answering ONE contact's access request.
+describe('requestDataExport — staff export for one named contact', () => {
+  const CONTACT = '66666666-6666-6666-6666-666666666666';
+
+  it('stores the contact on the job, keys it apart from a company export, and audits it', async () => {
+    const { deps, createOrGetInTx, recordInTx } = makeDeps();
+    const meta = { actorUserId: ADMIN_USER, actorRole: 'admin' as const, actorMemberId: null, requesterLocale: 'en' as const, requestId: 'r-c' };
+    await requestDataExport({ subjectMemberId: MEMBER, subjectContactId: CONTACT }, meta, ctx, deps);
+    await requestDataExport({ subjectMemberId: MEMBER }, meta, ctx, deps);
+    const forContact = createOrGetInTx.mock.calls[0]![1] as CreateExportJobInput;
+    const forCompany = createOrGetInTx.mock.calls[1]![1] as CreateExportJobInput;
+    expect(forContact.subjectContactId).toBe(CONTACT);
+    expect(forCompany.subjectContactId ?? null).toBeNull();
+    expect(forContact.idempotencyKey).not.toBe(forCompany.idempotencyKey);
+    const event = recordInTx.mock.calls[0]![1] as { payload: { subject_contact_id?: string } };
+    expect(event.payload.subject_contact_id).toBe(CONTACT);
+  });
+
+  it('a member cannot name a contact — their own export is scoped by their session', async () => {
+    const { deps, createOrGetInTx } = makeDeps();
+    const r = await requestDataExport(
+      { subjectMemberId: MEMBER, subjectContactId: CONTACT },
+      { actorUserId: MEMBER_USER, actorRole: 'member', actorMemberId: MEMBER, requesterLocale: 'en', requestId: 'r-m' },
+      ctx,
+      deps,
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toBe('forbidden');
+    expect(createOrGetInTx).not.toHaveBeenCalled();
   });
 });

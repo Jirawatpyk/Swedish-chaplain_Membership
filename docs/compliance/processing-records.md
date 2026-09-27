@@ -11,7 +11,7 @@ retention periods, and technical + organisational measures (TOMs).
 chamber legal-counsel for regulatory updates and with platform
 on-call for technical detail.
 
-**Last reviewed**: 2026-09-24 (F119 PR-2 — the E-Blast member-approval round: versions, decisions, notes and reasons, the hand-off emails and their staff recipients, `broadcast-versions.json`, the widened erasure reach; T162, the precondition of `FEATURE_EBLAST_MEMBER_APPROVAL`. Previous review 2026-09-22 — F119 PR-1 — E-Blast inline images, the Vercel Blob image tier, the test copy and the chamber postal address; authored before PR-1 merges because PR-1 carries no feature flag. Before that 2026-09-16 — F114 member change requests / approval workflow, per FR-040)
+**Last reviewed**: 2026-09-27 (F9 — member directory publication and GDPR member-archive scope, #432 / #433: primary-only contact toggles bound to the person, colleagues by name and role in the archive, staff archive for one named contact; pending DPO sign-off on five open points. Previous review 2026-09-24 — F119 PR-2 — the E-Blast member-approval round: versions, decisions, notes and reasons, the hand-off emails and their staff recipients, `broadcast-versions.json`, the widened erasure reach; T162, the precondition of `FEATURE_EBLAST_MEMBER_APPROVAL`. Previous review 2026-09-22 — F119 PR-1 — E-Blast inline images, the Vercel Blob image tier, the test copy and the chamber postal address; authored before PR-1 merges because PR-1 carries no feature flag. Before that 2026-09-16 — F114 member change requests / approval workflow, per FR-040)
 
 > **AUTHORED 2026-06-21 (COMP-1 US3-E)**: the **F3 — Members & Contacts** core
 > RoPA and the **COMP-1 — Member Erasure (Art. 17 / §33)** processing-activity
@@ -285,7 +285,7 @@ business categorisation, not special-category PII.
 | Right (GDPR / PDPA equivalent) | Procedure |
 |---|---|
 | **Right to access (Art. 15 / §30)** | Member portal `/portal/profile` shows all stored personal data; admin extension via F1 audit-log query for full dataset including F7 broadcast history |
-| **Right to rectification (Art. 16 / §31)** | Member self-service portal edits primary contact email; admin can update `members` + `contacts` rows directly |
+| **Right to rectification (Art. 16 / §35)** | Member self-service portal edits primary contact email; admin can update `members` + `contacts` rows directly |
 | **Right to erasure (Art. 17 / §32)** | F1 admin-archive cascade sets `member_id` to NULL on `marketing_unsubscribes` + `broadcast_deliveries` BUT retains the rows for record-of-processing. Suppression invariant ("we will not contact this email again") preserves the data subject's prior objection |
 | **Right to restrict processing (Art. 18 / §33)** | F7 kill-switch (`FEATURE_F7_BROADCASTS=false`) halts all new submissions tenant-wide; per-member halt via Q14 `broadcasts_halted_until_admin_review` |
 | **Right to data portability (Art. 20)** | F1+F2+F3 portable export covers member + plan + contact data; F7 broadcast history accessible via member portal |
@@ -467,7 +467,7 @@ membership-onboarding via F1 invitation flow). cron-job.org is EU-based
 | Right | Procedure |
 |---|---|
 | **Right to access (Art. 15 / §30)** | Member portal `/portal/profile` + audit-log query covers all F8-derived data including `risk_score*`, renewal-cycle history, reminder dispatch log |
-| **Right to rectification (Art. 16 / §32)** | F3 admin edit covers member + contact fields; F8-derived `risk_score*` recomputes weekly (no manual edit required) |
+| **Right to rectification (Art. 16 / §35)** | F3 admin edit covers member + contact fields; F8-derived `risk_score*` recomputes weekly (no manual edit required) |
 | **Right to erasure (Art. 17 / §33)** | F3 archive triggers F8 cascade (Phase 10) — cycles cancelled, tasks closed, suggestions dismissed, outreach records retained per audit retention with PII redacted on member-erase request |
 | **Right to restrict processing (Art. 18 / §33)** | Member can opt out of renewal reminders via `/portal/preferences/renewals` (FR-016) — sets `members.renewal_reminders_opted_out=true`, dispatcher skips |
 | **Right to data portability (Art. 20)** | F1+F2+F3 portable export covers member + plan + contact data; F8 cycle + reminder history accessible via member portal |
@@ -596,7 +596,7 @@ of the chamber. Sub-processor chain:
 | Right | Procedure |
 |---|---|
 | **Right to access (Art. 15 / §30)** | Email DSR to DPO; SQL query in `docs/runbooks/f6-manual-erasure.md` § 2 returns all attendee rows for a given email |
-| **Right to rectification (Art. 16 / §32)** | Admin relink (FR-014, Phase 9 T104) corrects mis-matched member |
+| **Right to rectification (Art. 16 / §35)** | Admin relink (FR-014, Phase 9 T104) corrects mis-matched member |
 | **Right to erasure (Art. 17 / §33)** | **Interim manual procedure**: `docs/runbooks/f6-manual-erasure.md` (Issue H-PDPA-2). **Future automated tool**: Phase 10 T110 admin UI |
 | **Right to restrict processing (Art. 18 / §33)** | Chamber can disable tenant-wide ingest via admin wizard (`tenant_webhook_configs.enabled=false`, FR-033) |
 | **Right to data portability (Art. 20)** | DSR export via DPO-driven manual SQL query; automation TBD |
@@ -907,7 +907,7 @@ manually by the DPO (there is no self-service surface for a non-member).
 | Right (GDPR / PDPA equivalent) | Procedure |
 |---|---|
 | **Right to access (Art. 15 / §30)** | Manual DSR to the DPO; SQL query on `invoices WHERE invoice_subject='event' AND member_id IS NULL` for the buyer's email/name returns the stored `member_identity_snapshot`. |
-| **Right to rectification (Art. 16 / §31)** | An issued tax document is **immutable by law** (§86/4 + immutability trigger). A correction is handled the §86/10 way — issue a credit note / corrected document, not an in-place edit. |
+| **Right to rectification (Art. 16 / §35)** | An issued tax document is **immutable by law** (§86/4 + immutability trigger). A correction is handled the §86/10 way — issue a credit note / corrected document, not an in-place edit. |
 | **Right to erasure (Art. 17 / §32)** | The **automated storage-limitation erasure** is the daily redaction cron at the 10-year boundary (tombstone + blob purge, above). **Before** that boundary, erasure is constrained by the §87/3 legal-retention obligation (GDPR Art. 17(3)(b) — retention required for compliance with a legal obligation overrides erasure until the statutory window elapses); the DPO documents this lawful-basis-to-retain in any pre-window erasure request. |
 | **Right to restrict processing (Art. 18 / §33)** | Art. 18 requests for an individual buyer are handled via a manual DPO procedure (no self-service surface). The §87/3 legal-obligation basis means restriction can apply to **optional downstream uses** (e.g. the auto-email copy) but **NOT** the core 10-year tax retention — the chamber cannot restrict what Thai law mandates it keep. The `FEATURE_F4_INVOICING=false` kill-switch halts all new event-invoice issuance tenant-wide; it is an **emergency operational control**, not a per-subject restriction mechanism. |
 | **Right to object (Art. 21 / §32)** | Limited — processing rests on a legal obligation (Art. 6(1)(c)), not legitimate interest, so the Art. 21 objection right does not apply to the statutory retention; the auto-email copy can be declined (the chamber simply does not enable it / does not send). *(Note: Thai PDPA §32 covers both the erasure right [Art. 17, row above] and the objection right [Art. 21, this row] — the §32 citation appearing in both rows is correct.)* |
@@ -1037,11 +1037,11 @@ has a TH region — see `specs/001-auth-rbac/plan.md` Complexity Tracking).
 
 | Right (GDPR / PDPA) | Procedure |
 |---|---|
-| **Access (Art. 15 / §30)** | F9 GDPR data-export — member self-service `POST /api/portal/account/data-export` + admin on-behalf `POST /api/admin/members/[id]/data-export` (enqueue `gdpr_member_archive` → ZIP). |
-| **Rectification (Art. 16 / §31)** | Member portal self-edit `/portal/edit` (whitelisted fields); admin edit `/admin/members/[memberId]/edit` → `PATCH /api/members/[memberId]` (diff-tracked audit); single-field `PATCH …/inline-edit`. |
+| **Access (Art. 15 / §30)** | F9 GDPR data-export — member self-service `POST /api/portal/account/data-export` + staff `POST /api/admin/members/[id]/data-export` (enqueue `gdpr_member_archive` → ZIP), for the whole company or for **one named contact** (incl. a former contact or one without a portal account). The archive carries the owner's own data in full and colleagues by name and role only — see § F9 below. |
+| **Rectification (Art. 16 / §35)** | Member portal self-edit `/portal/edit` (whitelisted fields); admin edit `/admin/members/[memberId]/edit` → `PATCH /api/members/[memberId]` (diff-tracked audit); single-field `PATCH …/inline-edit`. |
 | **Erasure (Art. 17 / §33)** | The **COMP-1 member-erasure** flow — admin-only `POST /api/members/[memberId]/erase` (US3-A) → `eraseMember` cascade → see the COMP-1 record below + `docs/runbooks/member-erasure.md`. |
 | **Restrict processing (Art. 18 / §34)** | Per-member operational halts (F7 `broadcasts_halted_until_admin_review`, F8 renewal opt-out); tenant-wide kill-switches per feature. *(PDPA §34 is the restriction-of-use right; §33 is erasure — distinct sections.)* |
-| **Portability (Art. 20)** | Same F9 export surface as Art. 15 (portable ZIP). |
+| **Portability (Art. 20)** | Same F9 export surface as Art. 15 (portable ZIP); scope per § F9. |
 | **Object (Art. 21 / §32)** | Marketing: one-click F7 unsubscribe (`marketing_unsubscribes`, indefinite suppression). |
 | **No automated decision-making (Art. 22)** | F3 itself makes no automated decision; the F8 risk score is admin-facing only (DPIA documents the analysis). |
 
@@ -1054,6 +1054,193 @@ Same as F7.
 | Date | Change | Author |
 |---|---|---|
 | 2026-06-21 | Initial F3 Members & Contacts core RoPA authored (COMP-1 US3-E) | COMP-1 US3-E pass |
+| 2026-09-27 | Access / portability rows point to the new § F9 record (archive scope, staff archive for one named contact) | F9 privacy follow-up |
+
+---
+
+## F9 — Member directory publication + GDPR member archive (amendment to F3; #432, #433)
+
+**Status**: SHIPPED — #432 (`d3fa3dd`, migration `0313`) and #433 (`b03980b`, migration `0314`),
+merged 2026-09-26/27, unflagged beyond the existing `FEATURE_F9_DASHBOARD`. Two processing
+activities of the F9 insights module that the F3 record only referenced as the Art. 15 / Art. 20
+route. Authority: `src/modules/insights/domain/directory-listing.ts`,
+`application/use-cases/update-directory-listing.ts`, `application/gdpr-contact-scope.ts`,
+`application/gdpr-audit-subset.ts`, `infrastructure/sources/gdpr-archive-source-adapter.ts`,
+`application/use-cases/request-data-export.ts`.
+
+> **Pending DPO sign-off** — authored from the shipped code on 2026-09-27. The open points the
+> DPO must rule on before the next annual review are listed at the end of this record
+> (§ Open points for DPO sign-off). Until then, treat the E-Book **recipients** as unconfirmed.
+
+### What the processing is
+
+**(a) Member directory publication.** A member company opts in to the chamber's member directory
+(`directory_listings.listed`, default **off**) and chooses, field by field, what is shown. Staff
+generate the directory **E-Book (PDF)** and **JSON export** from the listed members. The contact
+shown is always the member's **live primary contact** (`contacts.is_primary AND removed_at IS
+NULL`), read at generation time — the listing never stores the contact's name or email. Two
+toggles govern that person's data:
+
+- `contact_name` — **on by default** when the listing is created;
+- `contact_email` — **off by default**; when off and the name is shown, the entry says the
+  contact is reachable through the chamber instead (FR-028 contact-form indicator).
+
+Since #432 **only the live primary contact** may change either toggle (server-side, 403
+`not_primary_contact`); colleagues can still edit the company fields. Migration `0313` records who
+made the choice (`contact_visibility_set_by_contact_id`); whenever the recorded chooser is not
+the live primary (the primary changed, or the primary has never saved), the published output uses
+the defaults — name shown, email hidden — until the primary saves (`effectiveContactVisibility`). The settings page names the person on each
+toggle and shows a live preview of the listing.
+
+**(b) GDPR member archive (`gdpr_member_archive`).** A ZIP answering an access / portability
+request, requested by (i) any linked portal user of the member for themselves, (ii) staff for the
+**whole company**, or (iii) since #433, staff for **one named contact** of the member — including
+a former (removed) contact, and a contact without a portal account. Since #432 one rule applies to
+every archive: **the owner's own personal data in full; colleagues by name and role only**
+(GDPR Art. 15(4) / 20(4); PDPA §30).
+
+### Controller
+
+The chamber tenant (single-tenant deployment = SweCham / TSCC), as for F3.
+
+### Processors
+
+The shared F1–F9 set, **no new processor**:
+
+- **Vercel Inc.** (`sin1`) — hosting, the `process-export-jobs` cron; **Vercel Blob** — the
+  *private* store for export artefacts (archive ZIP, E-Book PDF, JSON), and the *public* store for
+  directory logos (company data, not personal data).
+- **Neon, Inc.** (`ap-southeast-1`) — `directory_listings`, `export_jobs`, `audit_log`.
+- **Upstash, Inc.** (Singapore) — the export request rate limits (keys carry the tenant slug and a
+  user / member uuid; no content).
+
+### Categories of data subjects
+
+- **Primary contacts** of listed member companies (directory).
+- **Member contacts, current and former** — the owner of an archive, and colleagues who appear in
+  it by name and role.
+- **The requesting user** (a member contact or a staff user) — `export_jobs.requested_by`.
+
+### Categories of personal data
+
+| Category | Field | Notes |
+|---|---|---|
+| **Published contact** | `contacts.first_name`, `last_name`, `email` of the live primary | Read at generation time; never copied into `directory_listings`. Phone is **never** published (no toggle exists). |
+| **Publication choice** | `directory_listings.field_visibility` (jsonb), `contact_visibility_set_by_contact_id` (0313) | The toggles and the contact who last chose the contact toggles (a contact id; no FK). |
+| **Export job** | `export_jobs.requested_by`, `subject_member_id`, `subject_contact_id` (0314) | Ids only. `subject_contact_id` null = a whole-company archive. |
+| **Archive — `contacts.json`** | Owner: contact id, name, email, phone, date of birth, role, language, primary flag, removed/created dates. Current colleagues: **first name, last name, role, primary flag only**. Former colleagues: **not included**. | Owner = the requesting contact (self-service) or the named contact (staff); a whole-company staff archive has no owner. |
+| **Archive — `audit-events.json`** | Rows keyed to the member (`member_id` / `subject_member_id` / `related_member_id`) and rows where the **owner's own account** is actor or target | A colleague's own account activity is excluded; a row the owner took no part in keeps its type, time and redacted payload but loses its free-text summary and name keys. |
+| **Archive — `change-requests.json`** | F114 history scoped to the owner (FR-029) | A colleague's submission is named, never identified by contact id. |
+| **Archive — other files** | `profile.json`, `invoices.json` (+ PDFs), `events.json`, `broadcasts*.json` | Company data; unchanged by #432/#433 (see § F119 for the broadcast files). |
+| **Archive — README / manifest** | "Prepared for: {name}" and `subjectContactId` on a named-contact archive | EN / TH / SV. |
+| **Audit** | `directory_listing_updated` (+ `contact_visibility_changed`), `data_export_requested` (+ `subject_contact_id`), `data_export_generated`, `data_export_downloaded`, `data_export_expired` | Ids, field names and flags only — never a value. |
+
+**No special categories (Art. 9 / PDPA §26).**
+
+### Purpose of processing and lawful basis
+
+| Activity | Purpose | Lawful basis |
+|---|---|---|
+| Listing a member company and its company fields | The chamber's member directory — members finding and contacting each other | Performance of the membership contract / legitimate interest of the chamber (GDPR Art. 6(1)(b)/(f); PDPA §24(3)/(5)); the listing itself is the company's opt-in |
+| **Publishing the primary contact's name (default on)** | A directory entry needs a named point of contact | **Legitimate interest** (GDPR Art. 6(1)(f); PDPA §24(5)). **Balancing test:** *necessity* — a company entry without a person to address is of little use to members; *reasonable expectation* — the person is the company's designated primary contact, acting in a business role, in a chamber-of-commerce directory the company chose to join; *minimisation* — name only, the email stays hidden by default and the entry points to the chamber instead; *safeguards* — a just-in-time notice beside the toggles, layered on the chamber's member privacy notice (Art. 13 / 14, 21(4); PDPA §23 / §25, §32) — whether that notice covers the directory, and whether the primary is told when their name is first published, is open point 5; only the person themselves can change the toggle, switching it off is the Art. 21 / §32 objection, and a successor primary starts from the defaults. This test assumes distribution to members only; redo it if partners or the public receive the E-Book (open point 1). |
+| **Publishing the primary contact's email** | Direct contact from other members | **Consent** of the person themselves (GDPR Art. 6(1)(a) / Art. 7; PDPA §19): off by default, switched on only by the primary contact after the notice, withdrawable with the same toggle, effective from the next edition. **Evidence (Art. 7(1)):** the current toggle, `contact_visibility_set_by_contact_id`, and the audit actor and time; *which* toggle changed, its new value and the notice version are **not** recorded in the audit payload (`contact_visibility_changed` is a boolean only) — **gap**, follow-up: add `contact_email_visible` and `notice_version` to `directory_listing_updated`. PDPA §19 also asks for the consent request to be clearly separate — the hint currently covers name and email together (follow-up). |
+| Recording who chose the contact toggles | Proving the choice was the data subject's own; falling back when it is not | Legal obligation to demonstrate consent (GDPR Art. 6(1)(c) with Art. 7(1) and 5(2)) |
+| The GDPR member archive | Answering access and portability requests | **Legal obligation** (GDPR Art. 6(1)(c) with Art. 12, 15, 20; PDPA §24(6) with §30, §31), limited by Art. 15(4) / 20(4) and PDPA §30 para. 2 — colleagues by name and role only |
+
+### Recipients of personal data
+
+- **Directory E-Book / JSON:** generated and downloaded by staff holding `directory.export`
+  (admin, super_admin, manager) through a private, single-use link. **Onward distribution — who receives the E-Book — is decided by the chamber and is not
+  recorded in the system: to be confirmed by the DPO** (open point 1).
+- **GDPR archive:**
+  - self-service — only the requesting contact (download restricted to `requested_by`);
+  - staff archive — staff holding `members.pii_sensitive`, who hand it to the data subject out
+    of band (the chamber's DSR procedure).
+- **Chamber DPO + legal counsel** — for compliance review.
+
+### Cross-border data transfers
+
+Same as F3 — Singapore (Vercel `sin1`, Neon `ap-southeast-1`, Upstash SG): PDPA §28; GDPR SCCs.
+
+### Retention periods
+
+| Resource | Retention | Mechanism |
+|---|---|---|
+| `directory_listings` (incl. `contact_visibility_set_by_contact_id`) | Until member erasure; never published once the member is archived or erased (`listPublishedInTx`) | Deleted on member erasure (`src/modules/insights/infrastructure/directory-erasure.ts`, COMP-1) |
+| Export artefact (archive ZIP, E-Book PDF, JSON) | **1 hour** after it is ready (`DEFAULT_EXPORT_TTL_MS`) | The `process-export-jobs` cron deletes the private Blob object and marks the job `expired` |
+| `export_jobs` rows (`requested_by`, `subject_member_id`, `subject_contact_id`) | Terminal rows **30 days** after expiry / failure (`RETENTION_GRACE_MS`) | Hard-deleted by the same cron |
+| `audit_log` rows | **5 years** | `f9RetentionFor`; `audit_log.retention_years DEFAULT 5` |
+| E-Books already distributed | Outside the system | See residual risk 2 |
+
+### Technical + organisational measures (TOMs)
+
+- **Tenant isolation** — `directory_listings` and `export_jobs` are RLS + FORCE; every access runs
+  under `runInTenant`.
+- **Primary-only gate, server-side** — `updateDirectoryListing` compares the submitted contact
+  toggles with the stored ones and refuses any change by a non-primary member user (403
+  `not_primary_contact`, nothing written); the portal route resolves the caller's own contact.
+- **Choice bound to the person** — `contact_visibility_set_by_contact_id` + the export-time
+  fallback (`effectiveContactVisibility`); a save by the primary confirms the toggles.
+- **Archive scope in code, not policy** — `projectContactsForRequester` (owner in full,
+  colleagues by name/role, former colleagues dropped), `buildMemberAuditSubset` (`viewerUserId`
+  scoping), the audit SQL arms narrowed to the owner's account.
+- **Named-contact archive checked twice** — the admin route refuses a contact that is not the
+  member's (404 `contact_not_found`); the worker re-checks and fails the job rather than build an
+  archive for the wrong person.
+- **Access to artefacts** — single-use download tokens; member downloads limited to the requester;
+  staff downloads need `members.pii_sensitive`; each download audited.
+- **Transparency** — a just-in-time notice beside the contact toggles (layered on the chamber's member privacy notice — open point 5); the pre-download notice
+  on `/portal/account` ("The archive includes your colleagues' names and roles — … Store it
+  securely and don't share it."); the archive README states what is and is not included.
+
+### Data subject rights — exercise procedures
+
+| Right (GDPR / PDPA) | Procedure |
+|---|---|
+| **Access (Art. 15 / §30)** | Self-service `POST /api/portal/account/data-export` (own archive). For a contact without a portal account, a former contact, or any request made to the chamber: staff `POST /api/admin/members/[id]/data-export` with the contact chosen under "Prepare the archive for" (#433). |
+| **Rectification (Art. 16 / §35)** | Per the F3 / F114 records. |
+| **Erasure (Art. 17 / §33)** | COMP-1; the directory listing is deleted. |
+| **Portability (Art. 20 / §31)** | Same archive (JSON files in a ZIP). |
+| **Object / withdraw consent (Art. 21, Art. 7(3) / §32, §19)** | The primary contact switches `contact_name` / `contact_email` off on `/portal/profile/directory`; applies from the next edition. |
+| **No automated decision (Art. 22)** | None. |
+
+### Residual risks
+
+| # | Risk | Treatment |
+|---|---|---|
+| 1 | The `0313` backfill attributed every existing listing's contact toggles to the primary contact of the day; a colleague may have set them before #432. | **For `contact_name` (legitimate interest): accepted** — the primary sees their name on each toggle and can change it. **For listings with `contact_email` on, consent cannot be demonstrated** (the backfill credits a choice nobody can prove): the recommended remediation is to null `contact_visibility_set_by_contact_id` on those rows — the email then falls back to hidden — until the primary re-confirms (a one-off data change; open point 4). |
+| 2 | E-Books already distributed cannot be recalled; a change applies from the next edition. | Stated in the notice on the settings page. **Accepted.** |
+| 3 | `broadcast-versions.json` carries colleagues' free-text decision reasons (the decider is not named); free text may name a person. | Follow-up — review when the broadcast module is next changed. |
+| 4 | E-Book recipients unconfirmed. | Open point 1. |
+| 5 | The `updateDirectoryListing` use case would let a staff (admin) actor change the contact toggles and would then record the live primary as the chooser. No route reaches this today (the only caller is the portal route, member role). | Follow-up: refuse staff changes to the contact toggles in the use case. |
+
+### DPIA
+
+Not triggered under `dpia-template.md`: no special-category data, no systematic monitoring, no
+automated decision, no new processor and no new cross-border path. Re-assess if the E-Book is
+published openly (e.g. on a public website) or if a phone toggle is added. Screening recorded
+2026-09-27 by the F9 privacy follow-up (pdpa-gdpr-compliance-officer review); to be countersigned
+by the DPO.
+
+### Open points for DPO sign-off
+
+1. **Who receives the E-Book / JSON** (members only; members and partners; public) — record it in
+   § Recipients.
+2. **Confirm legitimate interest** as the basis for publishing the primary contact's name by
+   default, on the balancing test above.
+3. **Confirm consent** as the basis for publishing the primary contact's email.
+4. **Residual risk 1** — approve the remediation for listings with the email on (null the recorded chooser so the email is hidden until the primary re-confirms), optionally with a one-off email asking those primaries to confirm.
+5. **Notice coverage** — confirm the chamber's member privacy notice covers the directory (basis, recipients, retention, the right to object — Art. 13 / 14, 21(4); PDPA §23 / §25), and decide whether the primary is told when their name is first published.
+
+### DPO contact
+
+Same as F7.
+
+### Update history
+
+| Date | Change | Author |
+|---|---|---|
+| 2026-09-27 | Record authored for #432 (directory: primary-only contact toggles, choice bound to the person, migration 0313; archive: colleagues by name and role, owner-scoped audit activity) and #433 (staff archive for one named contact, migration 0314). Pending DPO sign-off on five open points; the compliance-officer review's conditions (PDPA §35 / §31 row labels across the file, the archive's PDPA basis, the fallback wording, the notice wording, the consent-evidence gap, the email residual) applied. | F9 privacy follow-up |
 
 ---
 
@@ -1694,8 +1881,8 @@ Upstash; Resend under its DPA + SCCs. The documented F1 hosting deviation applie
 
 | Right (GDPR / PDPA) | Procedure |
 |---|---|
-| **Access (Art. 15 / §30)** | The F9 GDPR archive gains `change-requests.json` — **scoped to the requester** (the person's own requests plus company-level ones, FR-029) — for both the member self-service and the staff on-behalf export; the person also sees the same history on `/portal/change-requests`. |
-| **Rectification (Art. 16 / §31)** | **This activity IS the rectification path** for Group B fields while the switch is on: the person proposes, staff decide field by field, a rejection carries a reason and the person may resubmit (US3). Group A (the contact's email-language preference) and the email-change flow stay immediate (FR-004). |
+| **Access (Art. 15 / §30)** | The F9 GDPR archive gains `change-requests.json` — **scoped to the archive's owner** (the person's own requests plus company-level ones, FR-029): the requester for a self-service export, the named contact for a staff export for one contact (#433); a staff export for the whole company carries the company-level requests only; the person also sees the same history on `/portal/change-requests`. |
+| **Rectification (Art. 16 / §35)** | **This activity IS the rectification path** for Group B fields while the switch is on: the person proposes, staff decide field by field, a rejection carries a reason and the person may resubmit (US3). Group A (the contact's email-language preference) and the email-change flow stay immediate (FR-004). |
 | **Erasure (Art. 17 / §33)** | The COMP-1 member-erasure flow runs the change-request scrub inside its atomic transaction (FR-030): values / reasons / notes → `[erased]`, pending → `withdrawn / erasure` with one audit row each, queued outbox rows deleted; see `docs/runbooks/member-erasure.md`. |
 | **Restrict (Art. 18 / §34)** | Withdrawing a pending request (US5); the chamber can stop the activity for everyone with the tenant switch (FR-031/032). |
 | **Portability (Art. 20)** | The same `change-requests.json` in the portable ZIP. |
@@ -1878,7 +2065,7 @@ the four is a 10-year event (`audit-port.ts`).
 | Right (GDPR / PDPA) | PR-1 procedure |
 |---|---|
 | **Access (Art. 15 / §30)** | The F9 GDPR archive (member self-service and staff on-behalf) carries **`broadcast-images.json`** (PR-1 follow-up, research R17): every `broadcast_images` row of every E-Blast the member originated, **live and stamped** (a stamped row is still the record of the upload), newest first, capped at 1,000 with the standard partial-export disclosure. Each entry holds the image id, the broadcast id, the content hash, MIME type, size, upload and deletion times; the **public blob URL only while the image is live** (a stamped image is marked for deletion and its URL is not re-published; the file itself may be kept if an identical image is still used elsewhere — see Erasure); **never the uploader** — the archive names no user. Chamber template images are not the member's and are not included. **Images of a discarded or expired draft are not listed**: discard and the draft prune hard-delete the E-Blast row first, and the export reaches images only through the member's E-Blasts, so in practice a stamped entry is an erasure-stamped one (erasure redacts the E-Blast rather than deleting it). Their removal is still in the archive — `audit-events.json` carries each `broadcast_image_removed` row (it keys `related_member_id`, one of the member-subset arms) — and the file is deleted on the next daily sweep tick. **The access export does not report bytes of the member's image still held by another owner's live row** (same `content_hash`): that disclosure — decision (e) below — is made on the erasure DSR ticket (`docs/runbooks/member-erasure.md` § Verifying step 4), not in the archive. The export category for the E-Blast approval round itself (`broadcast-versions.json`) is recorded in § F119 PR-2 below; it is in every archive from the PR-2 merge. |
-| **Rectification (Art. 16 / §31)** | Not applicable to an image or to the brand address (neither is a member-record field). An incorrect image is replaced by editing the E-Blast; the old reference is removed and the bytes are swept under the last-reference rule. |
+| **Rectification (Art. 16 / §35)** | Not applicable to an image or to the brand address (neither is a member-record field). An incorrect image is replaced by editing the E-Blast; the old reference is removed and the bytes are swept under the last-reference rule. |
 | **Erasure (Art. 17 / §33)** | The COMP-1 member-erasure cascade reaches the F7 broadcast CONTENT (subject / body → `'[redacted]'`); PR-1 adds the image leg — the `broadcast_images` row is stamped inside the erasure transaction and the bytes are deleted by the next daily sweep, **unless another live row of either `owner_kind` still shares the `content_hash`**, in which case the image is kept by design (an image still referenced elsewhere is not the erased member's alone). The stamp is `imagesRepo.markDeletedForMember(...)` inside the same transaction as the content redaction (`reason: 'member_erased'`), and it reaches **the erased member's rows only** — a peer's images are untouched, pinned by the live-Neon lifecycle test. Pre-0304 images are the documented residual above. **The public blob URL is unauthenticated, so a copy already fetched by a recipient's mail client or gateway is out of reach** — the same shape as COMP-1 residual #2 (already-downloaded export ZIPs), and a DSR answer must say so. **A kept file has two different outcomes, and they leave different evidence.** (1) *Another live row of either `owner_kind` shares the `content_hash`* (`live > 0`): the erased member's row IS removed and audited `broadcast_image_removed { reason: 'sweep', blob_deleted: false, blob_disposition: 'kept_shared_row' }`; the identical bytes stay for that other holder. (2) *No live row, but live content still embeds the URL*: **the row is not merely left behind — it is un-stamped back into the live set (ROUND-2 S-3), and no audit row records that**, because nothing was removed and an audit row saying otherwise would be untrue. The consequence for accountability is explicit: the trail shows `broadcast_image_removed { reason: 'member_erased' }` with no counter-event, while the database shows a live row and the bytes still served. **The state, not the trail, is the evidence** — `docs/runbooks/member-erasure.md` § Verifying step 4 carries the query that enumerates exactly which of the subject's images survived and which live content holds each one, and requires the count (including zero) on the DSR ticket. A DSR answer must disclose a non-zero count, the reason (another data subject's live content or a chamber template embeds the identical file), and how it is reclaimed: **an erasure-retained row is not re-examined automatically** — the sweep's orphan arm selects only rows whose OWNER is gone, and an erasure redacts the member's broadcast rather than deleting it, so the un-stamped row's owner survives; the runbook step surfaces it and it is reclaimed by hand once the holding content goes. The same step also counts the rows stamped but not yet swept (a backlog or a failing row takes later ticks than the next one; `broadcasts_image_sweep_row_failed_total`). **Decision (e), 2026-09-23** (delegated by the maintainer to Claude as a conservative default; the DPO may revise): a file whose identical bytes are still held by another owner's live row — outcome (1) above — COUNTS as still-served personal data of the erased member and MUST be disclosed on the DSR ticket with its count (including zero), the same as a retained row; runbook step 4 query (ii) derives it from the cascade's own `broadcast_image_removed` rows (`payload.content_hash`). |
 | **Restrict (Art. 18 / §34)** | The F7.1a US2 image kill-switch halts all new uploads tenant-wide (503 at the route); the F7 master switch halts the whole surface. |
 | **Portability (Art. 20)** | Unchanged in PR-1 — see Access. |
@@ -2031,7 +2218,7 @@ type; it is recorded here because the member-addressed rows carry a member conta
 | Right (GDPR / PDPA) | PR-2 procedure |
 |---|---|
 | **Access (Art. 15 / §30)** | The F9 member archive gains **`broadcast-versions.json`** (T083, research R17): for every E-Blast the member originated, the **versions the member was shown** (oldest first) — `versionId`, `versionNo`, `authoredBy` (`member` \| `organisation`, never a staff id or name), `subject`, `bodyHtml`, `noteToMember`, `sentToMemberAt`, `createdAt` — and the member's **decisions** on them — `decisionId`, `versionId`, `round`, `decision`, `reason`, `decidedAt` (no decider identity). Threads run newest activity first; each list is capped at 1,000 rows (newest kept) with the standard truncation disclosure. An E-Blast approved as submitted has no version rows (its content is in `broadcasts.json`). After an erasure the rows appear with the `[redacted]` sentinels the erasure wrote — the archive shows what is held. **Three of the four DPO decisions below govern this export; all four were ruled 2026-09-24.** The member also sees the same history on `/portal/broadcasts/[id]`. |
-| **Rectification (Art. 16 / §31)** | Not applicable to a sent version (it is the record of what was shown) or to a decision. A wrong note or reason is corrected by the next round or a withdrawal; the earlier row stays as history. |
+| **Rectification (Art. 16 / §35)** | Not applicable to a sent version (it is the record of what was shown) or to a decision. A wrong note or reason is corrected by the next round or a withdrawal; the earlier row stays as history. |
 | **Erasure (Art. 17 / §33)** | The COMP-1 cascade (`scrubBroadcastContentForMember`, one transaction with the F7 content redaction) now also: sets **every version's** `subject`, `body_html`, `body_source` — and `note_to_member` where one exists — to `'[redacted]'` for every E-Blast the member originated; sets **every non-NULL decision `reason`** to `'[redacted]'` (a NULL stays NULL — a sentinel would invent a note); and **deletes the member's pending `eblast_*` outbox rows**, including the staff-addressed ones only this leg can find. Rows are **kept**, redacted, so the SC-002 chain (which version was sent, who approved it) survives as ids. The counts land on `broadcast_content_redacted` (`versions_redacted`, `decision_reasons_redacted`, `notifications_cancelled`). In-progress E-Blasts in **any** new stage are cancelled by the existing cascade (the in-progress set now covers all six pre-send statuses). Images: stamped by the PR-1 leg (`member_erased`), bytes deleted **by the daily sweep only** — the next tick, 200 rows per arm per tenant, under the last-reference rule (see the PR-1 Erasure row). **Not reached**: a **sent** or failed outbox row keeps the address frozen at enqueue for up to 90 days (above); `decided_by_user_id` / `decided_by_contact_id` / `authored_by_user_id` stay as ids (the contact and user rows themselves are anonymised by the F3 / F1 cascades); the audit rows keep ids and lengths only; Resend's own send log follows the provider's default. Runbook: `docs/runbooks/member-erasure.md` § E-Blast approval round. |
 | **Restrict (Art. 18 / §34)** | `FEATURE_EBLAST_MEMBER_APPROVAL` off stops **new** E-Blasts entering the round and holds every hand-off email at the drainer; rows already in the round stay completable (FR-034). The F7 master switch halts the whole surface. |
 | **Portability (Art. 20)** | `broadcast-versions.json` is machine-readable JSON, see Access. |
