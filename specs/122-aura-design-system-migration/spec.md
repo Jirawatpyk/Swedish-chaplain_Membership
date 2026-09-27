@@ -45,6 +45,14 @@ A read-only audit compared every screen built so far (US1 shell, US2 auth, US3 p
 - Q: Page-title size, title line height, page padding and the portal column differ from the boards on every page — change the shared tokens, or only on migrated pages? → A: **The shared tokens**, so pages not yet migrated take the board sizes too: page title 36 px (portal) / 32 px (staff) from 1024 px, 30 px (portal) / 26 px (staff) below 640 px, line height 1.2 (Thai keeps its taller line height), a 1200 px portal content column with 40 / 64 px top / bottom padding, and staff page padding 28 px (18 px on phones). This supersedes "without its layout changing" in FR-002 for these tokens only.
 - Q: US1 and US2 are merged; where do their fixes go? → A: **In the US3 pull request** (#435), checked against the boards before pushing.
 
+### Session 2026-09-27 (maintainer, US4 start)
+
+The US4 boards (`Invoices`, `Invoice-paid`, `Portal-invoice-mobile`, `Portal-credit-note`, `Pay-*`) were read before the tasks were written. The rule from the previous session holds: the boards win unless they contradict the product.
+
+- Q: The plan says the pay sheet is a phone sheet at up to 92 dvh with a Stepper; the boards draw something else. Which? → A: **The boards**: the pay sheet is an AURA `Drawer` on the right, 480 px wide from 640 px and full width and full height below it (AURA's 92 dvh bottom-sheet rule belongs to `Dialog`, not `Drawer`). No US4 board draws a Stepper, so there is none. The existing viewport e2e already asserts the full-height sheet.
+- Q: The `Invoices` board has no filter row. Drop the filters? → A: **No**: removing them would remove a feature. The status, search and date filters stay, on AURA fields. They are shared with `/admin/invoices`, which renders them in AURA from US4 on (as US3 did with shared components); so does the original-receipt badge shared with the staff credit-note screens.
+- Q: What around the card form changes? → A: **Only the shell**: Stripe Elements (`<Elements>` / `<PaymentElement>`) and its SAQ-A scope are untouched (Principle IV).
+
 ## User Scenarios & Testing *(mandatory)*
 
 Every story below is one phase and one pull request. A story is done when its screens use only AURA components, match their canvas boards, and pass the per-module definition of done (FR-010).
@@ -111,7 +119,7 @@ Members see their dashboard, benefits, company profile, change requests and acco
 
 ### User Story 4 - Member invoices and payment (Priority: P2)
 
-Invoice list, invoice detail, receipts, credit notes and the card/PromptPay pay sheet use AURA tables with totals rows, the stepper and a phone sheet at up to 92% of the screen height. Amounts, document numbers, VAT lines and document wording are unchanged.
+Invoice list, invoice detail, receipts, credit notes and the card/PromptPay pay sheet use AURA tables, status pills and alerts, and the pay sheet is an AURA drawer on the right (full screen on phones) around the unchanged Stripe Elements (Clarifications, US4 start). Amounts, document numbers, VAT lines and document wording are unchanged.
 
 **Independent Test**: open an unpaid bill, pay it in the test environment, download the receipt, open a credit note — every figure matches the pre-migration screen.
 

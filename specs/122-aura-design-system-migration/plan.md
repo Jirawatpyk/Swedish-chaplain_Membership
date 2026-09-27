@@ -127,7 +127,7 @@ docs/ux-standards.md · docs/aura-adoption.md (NEW) · docs/design-system-audit.
 | 1 | Shell | AppShell/SideNav (from `src/config/nav.ts` via the permission evaluator), member top nav + BottomNav, header/user menu, Breadcrumb, Pagination, Command (drop `cmdk`), idle/confirm Dialogs, EmptyState, Skeleton (pulse; remove shimmer CSS) | US0 | L |
 | 2 | Auth | TextField, PasswordField, Checkbox (`hideLabel`), FormErrorSummary | US1 | M |
 | 3 | Portal home/profile/account | Card, Stat, StatusPill, link Tabs, ActionBar | US1; colleague-contact decision | M |
-| 4 | Portal invoicing + pay sheet | DataTable + totals, Stepper, Drawer sheet ≤ 92 dvh around unchanged Stripe Elements | US1 | L, money |
+| 4 | Portal invoicing + pay sheet | DataTable, StatusPill, Alert, right Drawer (full screen on phones) around unchanged Stripe Elements — no Stepper (spec Clarifications, US4 start) | US1 | L, money |
 | 5 | Members | DataTable server mode (URL contract), FilterBar, bulk action bar | US1 | L |
 | 6 | Plans | forms, SegmentedControl, Switch | US1 | M |
 | 7 | Renewals | one DataTable (stacked cards on phone), cycle detail, tasks | US1 | L |
