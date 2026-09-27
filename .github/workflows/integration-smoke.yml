@@ -14,7 +14,17 @@
 #     dead for twelve days without anyone noticing.
 #
 # So: only the invariants that must never regress silently, and only the ones
-# that stay cheap in CI. Broad per-module coverage belongs in the nightly, and
+# that stay cheap in CI.
+#
+# 2026-09-27 — `scripts/test-tenant-cleanup-completeness` joins on both counts.
+# It writes nothing and issues two catalogue queries (1.4 s locally, ~2 s in CI),
+# and the regression it catches is silent BY CONSTRUCTION: when a feature adds a
+# tenant-scoped table and forgets `createTestTenant().cleanup()`, every call site
+# swallows the failure, so the only symptom is rows piling up on a shared branch.
+# Six such tables had accumulated by the time anyone looked, and one of them
+# (`renewal_escalation_tasks`, a NO ACTION FK) was blocking the `renewal_cycles`
+# delete and stranding whole tenants. It belongs on the PR gate rather than in the
+# nightly because the moment to catch it is the PR that adds the table. Broad per-module coverage belongs in the nightly, and
 # per-PR ephemeral Neon branches are the prerequisite for anything wider.
 #
 # SIZED FROM MEASURED CI TIME, NOT LOCAL TIME (2026-07-28). The first version
@@ -182,4 +192,5 @@ jobs:
             tests/integration/broadcasts/marketing-opt-out-dispatch.test.ts \
             tests/integration/members/marketing-audience-query.test.ts \
             tests/integration/members/broadcast-recipient-contacts-keyset.test.ts \
-            tests/integration/broadcasts/audience-1n-status.test.ts
+            tests/integration/broadcasts/audience-1n-status.test.ts \
+            tests/integration/scripts/test-tenant-cleanup-completeness.test.ts

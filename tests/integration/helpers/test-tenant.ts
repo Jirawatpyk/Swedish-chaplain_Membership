@@ -36,6 +36,16 @@ import {
   tenantRenewalSchedulePolicies,
 } from '@/modules/renewals/infrastructure/schema-tenant-renewal-config';
 import { consumedLinkTokens } from '@/modules/renewals/infrastructure/schema-consumed-link-tokens';
+import { renewalReminderEvents } from '@/modules/renewals/infrastructure/schema-renewal-reminder-events';
+import { renewalEscalationTasks } from '@/modules/renewals/infrastructure/schema-renewal-escalation-tasks';
+import {
+  dashboardMetricsCache,
+  directoryListings,
+  exportJobs,
+  smartInsightDismissals,
+} from '@/modules/insights/infrastructure/db/schema-insights';
+import { atRiskOutreach } from '@/modules/renewals/infrastructure/schema-at-risk-outreach';
+import { tierUpgradeSuggestions } from '@/modules/renewals/infrastructure/schema-tier-upgrade-suggestions';
 import {
   auditLog,
   emailChangeTokens,
@@ -65,6 +75,14 @@ import {
   broadcastDeliveries,
   marketingUnsubscribes,
   broadcastSegmentDefinitions,
+  broadcastImages,
+  tenantImageSourceAllowlist,
+  broadcastTemplates,
+  broadcastVersions,
+  broadcastMemberDecisions,
+  broadcastBatchManifests,
+  broadcastBatchDeliveryEvents,
+  tenantBroadcastSettings,
 } from '@/modules/broadcasts/infrastructure/schema';
 import {
   events,
@@ -154,12 +172,43 @@ export async function createTestTenant(
       ALTER TABLE broadcast_deliveries ENABLE TRIGGER broadcast_deliveries_no_delete
     `);
     await db.delete(broadcasts).where(eq(broadcasts.tenantId, slug));
+    // F119 broadcast children. ORDER IS NOT FREE HERE: `broadcasts` carries
+    // `broadcasts_approved_version_fk → broadcast_versions` with NO ACTION, so
+    // deleting the versions FIRST is refused for any approved broadcast. The
+    // `broadcasts` delete above cascades to versions, member decisions, batch
+    // manifests and batch delivery events, which makes the four deletes below
+    // no-ops today — kept explicit for the reason `invoice_lines` is, so the
+    // order never depends on someone reading the cascade. `broadcast_templates`
+    // comes after `broadcasts` too: its FK is SET NULL, not CASCADE.
+    await db
+      .delete(broadcastMemberDecisions)
+      .where(eq(broadcastMemberDecisions.tenantId, slug));
+    await db
+      .delete(broadcastBatchDeliveryEvents)
+      .where(eq(broadcastBatchDeliveryEvents.tenantId, slug));
+    await db
+      .delete(broadcastBatchManifests)
+      .where(eq(broadcastBatchManifests.tenantId, slug));
+    await db.delete(broadcastVersions).where(eq(broadcastVersions.tenantId, slug));
+    await db.delete(broadcastTemplates).where(eq(broadcastTemplates.tenantId, slug));
+    await db
+      .delete(tenantBroadcastSettings)
+      .where(eq(tenantBroadcastSettings.tenantId, slug));
     await db
       .delete(marketingUnsubscribes)
       .where(eq(marketingUnsubscribes.tenantId, slug));
     await db
       .delete(broadcastSegmentDefinitions)
       .where(eq(broadcastSegmentDefinitions.tenantId, slug));
+    // F119 inline images — `broadcast_images` and
+    // `tenant_image_source_allowlist` carry no outbound FK (the image row
+    // points at its owner by (owner_kind, owner_id), not by a constraint), so
+    // position here is free. They were missing from this list until
+    // 2026-09-27, when a sweep of the `dev` branch found 51 + 23 leaked rows.
+    await db.delete(broadcastImages).where(eq(broadcastImages.tenantId, slug));
+    await db
+      .delete(tenantImageSourceAllowlist)
+      .where(eq(tenantImageSourceAllowlist.tenantId, slug));
     await db.delete(refunds).where(eq(refunds.tenantId, slug));
     await db.delete(payments).where(eq(payments.tenantId, slug));
     await db.delete(processorEvents).where(eq(processorEvents.tenantId, slug));
@@ -204,9 +253,33 @@ export async function createTestTenant(
     await db
       .delete(scheduledPlanChanges)
       .where(eq(scheduledPlanChanges.tenantId, slug));
+    // F8 reminder/escalation children of `renewal_cycles`, both missing from
+    // this list until 2026-09-27. `renewal_escalation_tasks_cycle_fk` declares
+    // NO onDelete, i.e. NO ACTION — it BLOCKS the `renewal_cycles` delete
+    // below, which then blocks `members` (`renewal_cycles_member_fk` is
+    // RESTRICT), which strands the whole tenant. One escalation task was
+    // enough to leak everything else, and the `.catch(() => {})` at every call
+    // site hid it. `renewal_reminder_events` cascades from the cycle, so its
+    // delete is redundant — kept explicit for the same reason `invoice_lines`
+    // is above: the order should not depend on reading the cascade.
+    await db
+      .delete(renewalEscalationTasks)
+      .where(eq(renewalEscalationTasks.tenantId, slug));
+    await db
+      .delete(renewalReminderEvents)
+      .where(eq(renewalReminderEvents.tenantId, slug));
     await db
       .delete(renewalCycles)
       .where(eq(renewalCycles.tenantId, slug));
+    // F8/F9 per-member children — all three CASCADE from `members`, so these
+    // are no-ops in the normal path; explicit so a future FK change to NO
+    // ACTION (the mistake `renewal_escalation_tasks` already made) cannot
+    // silently strand a tenant.
+    await db.delete(atRiskOutreach).where(eq(atRiskOutreach.tenantId, slug));
+    await db
+      .delete(tierUpgradeSuggestions)
+      .where(eq(tierUpgradeSuggestions.tenantId, slug));
+    await db.delete(directoryListings).where(eq(directoryListings.tenantId, slug));
     await db.delete(members).where(eq(members.tenantId, slug));
     await db.delete(membershipPlans).where(eq(membershipPlans.tenantId, slug));
     // F8 Wave C T020 + verify-run B1 — per-test-tenant renewal config
@@ -244,6 +317,18 @@ export async function createTestTenant(
     await db
       .delete(eventcreateIdempotencyReceipts)
       .where(eq(eventcreateIdempotencyReceipts.tenantId, slug));
+    // F9 insights — `export_jobs` and `dashboard_metrics_cache` are keyed by
+    // tenant_id with no outbound FK; also missing until 2026-09-27 (62 + 19
+    // leaked rows on `dev`). A stale metrics-cache row for a recycled slug is
+    // worse than untidy: it is a wrong number waiting for the next test that
+    // reuses the prefix.
+    await db.delete(exportJobs).where(eq(exportJobs.tenantId, slug));
+    await db
+      .delete(dashboardMetricsCache)
+      .where(eq(dashboardMetricsCache.tenantId, slug));
+    await db
+      .delete(smartInsightDismissals)
+      .where(eq(smartInsightDismissals.tenantId, slug));
     // R9 — tenant_fee_config DROPPED (migration 0029). Fiscal config
     // lives in tenant_invoice_settings which is cleaned above.
     // audit_log has an append-only trigger that BLOCKS DELETE — so we
