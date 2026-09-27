@@ -163,6 +163,22 @@ export const drizzleTimelineRepo: TimelinePort = {
             OR COALESCE(payload::text, '') ~* ${MONEY_KEY_TEXT_PATTERN}
           )`);
         }
+        if (filter.auditEventTypeAllowlist) {
+          // SQL twin of the use-case's member allowlist
+          // (`MEMBER_VISIBLE_AUDIT_EVENT_TYPES`): staff-internal audit rows
+          // must not reach `total` or the keyset cursor either. Non-audit
+          // sources pass; an audit row with no `event_type` fails CLOSED
+          // (COALESCE to '' is never on the list).
+          const allowed = filter.auditEventTypeAllowlist;
+          conditions.push(
+            allowed.length === 0
+              ? sql`source <> 'audit'`
+              : sql`(source <> 'audit' OR COALESCE(payload->>'event_type', '') IN (${sql.join(
+                  allowed.map((t) => sql`${t}`),
+                  sql`, `,
+                )}))`,
+          );
+        }
         const baseWhere = conditions.reduce(
           (acc, cond, i) => (i === 0 ? cond : sql`${acc} AND ${cond}`),
         );

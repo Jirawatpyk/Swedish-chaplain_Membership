@@ -5,7 +5,8 @@
  * broadcast · renewal) for one member, newest-first, keyset-paginated in
  * batches of up to 100. Supports filtering by source, actor kind, and date
  * range (FR-015). Member-role callers receive a redacted projection (override
- * reasons + internal notes stripped from payloads — FR-017).
+ * reasons + internal notes stripped from payloads — FR-017) and only the audit
+ * types on `MEMBER_VISIBLE_AUDIT_EVENT_TYPES` (staff-internal rows hidden).
  *
  * Date bounds (`from`/`to`) are UTC ISO instants — the presentation layer
  * converts the caller's `YYYY-MM-DD` tenant-tz calendar day into UTC via
@@ -24,6 +25,10 @@ import type {
   TimelineFilter,
 } from '../ports/timeline-port';
 import type { MemberRepo } from '../ports/member-repo';
+import {
+  MEMBER_VISIBLE_AUDIT_EVENT_TYPES,
+  isMemberVisibleAuditType,
+} from '../member-visible-audit-types';
 
 // Re-export the client-safe source/actor enums so the public barrel can keep
 // surfacing them from this use case (the canonical defs live in
@@ -201,6 +206,15 @@ function carriesMoney(e: TimelineEvent): boolean {
   return hasMoneyShapedPayload(e.payload);
 }
 
+/**
+ * A staff-internal audit row (churn-risk scoring, escalation tasks, reminder
+ * plumbing, …) — anything not on the member allowlist. App-side twin of the
+ * repo's `auditEventTypeAllowlist` SQL arm, applied over whatever it returned.
+ */
+function isInternalAuditRow(e: TimelineEvent): boolean {
+  return e.source === 'audit' && !isMemberVisibleAuditType(e.eventType);
+}
+
 /** FR-029 — a colleague's own-contact change request (its keys + contact) stays theirs. */
 function isChangeRequestRow(e: TimelineEvent): boolean {
   return e.source === 'audit' && e.eventType.startsWith('member_change_request_');
@@ -341,6 +355,12 @@ export async function timelineList(
     // timestamps and invoice ref_ids through those two fields. `!== true`
     // so an absent dep fails CLOSED (same stance as the filter below).
     ...(deps.invoicingRead !== true ? { excludeMoney: true } : {}),
+    // Staff-internal audit rows stay off a member's timeline — in the SQL,
+    // for the same `total` / cursor reason as `excludeMoney` above.
+    // rbac-portal-identity-ok: selects the member's own-history projection.
+    ...(meta.actorRole === 'member'
+      ? { auditEventTypeAllowlist: MEMBER_VISIBLE_AUDIT_EVENT_TYPES }
+      : {}),
   };
 
   const timelineResult = await deps.timeline.listByMember(ctx, filter);
@@ -369,10 +389,16 @@ export async function timelineList(
   // colleague never sees it (T127). A colleague's
   // own_contact row is DROPPED; a mixed row (company keys + the primary's own
   // keys) is kept with its per-field keys stripped for anyone but its
-  // submitter (round 2, privacy I-1 residual).
+  // submitter (round 2, privacy I-1 residual). Staff-internal audit rows are
+  // dropped first (belt-and-braces over the repo's allowlist arm).
   const roleProjected =
     meta.actorRole === 'member'
-      ? redactEvents(projectChangeRequestRowsForViewer(events, deps.viewerContactId))
+      ? redactEvents(
+          projectChangeRequestRowsForViewer(
+            events.filter((e) => !isInternalAuditRow(e)),
+            deps.viewerContactId,
+          ),
+        )
       : events;
   // 016 review (security I-1) — money rows need `invoicing.read` on top of the
   // `members.read` that admitted the request. `!== true` rather than

@@ -26,7 +26,7 @@ import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices'
 import { payments } from '@/modules/payments/infrastructure/schema';
 import { events, eventRegistrations } from '@/modules/events/infrastructure/schema';
 import { broadcasts } from '@/modules/broadcasts/infrastructure/schema';
-import { auditLog } from '@/modules/auth/infrastructure/db/schema';
+import { auditLog, type AuditLogInsert } from '@/modules/auth/infrastructure/db/schema';
 import { drizzleTimelineRepo } from '@/modules/members/infrastructure/timeline/drizzle-timeline-repo';
 import {
   createTestTenant,
@@ -112,6 +112,14 @@ describe('F9 US3 — multi-source timeline (T051, live Neon)', () => {
   /** ref_ids of the seeded money rows (2 invoices + 1 payment) — the SQL
    *  money exclusion must keep every one of them out of cursors. */
   const moneyRefIds: string[] = [];
+  /** ref_ids of the seeded staff-internal audit rows — hidden from a member
+   *  viewer's rows, count and cursors. */
+  const internalRefIds: string[] = [];
+  const INTERNAL_TYPES = [
+    'at_risk_score_recomputed',
+    'escalation_task_created',
+    'membership_access_fail_open',
+  ] as const;
 
   beforeAll(async () => {
     admin = await createActiveTestUser('admin');
@@ -250,6 +258,29 @@ describe('F9 US3 — multi-source timeline (T051, live Neon)', () => {
       })
       .returning({ id: auditLog.id });
     moneyRefIds.push(shapeOnlyMoney[0]!.id);
+
+    // Staff-internal audit rows, interleaved with the stream (06-02 / 06-03 /
+    // 06-05 midday) so limit=1 paging walks through each — a hidden row's
+    // ref_id landing in a member's cursor is exactly the leak. No money keys,
+    // so only the member allowlist can hide them.
+    const internalAt = ['2026-06-02T12:00:00.000Z', '2026-06-03T12:00:00.000Z', '2026-06-05T12:00:00.000Z'];
+    for (const [i, eventType] of INTERNAL_TYPES.entries()) {
+      const row = await db
+        .insert(auditLog)
+        .values({
+          // DB-only enum values (absent from the TS pgEnum) — same cast as
+          // tests/integration/renewals/reminder-audit-query.test.ts.
+          eventType: eventType as AuditLogInsert['eventType'],
+          actorUserId: admin.userId,
+          summary: `synthetic ${eventType} (staff-internal)`,
+          requestId: `tl-${randomUUID()}`,
+          tenantId: tenant.ctx.slug,
+          payload: { member_id: memberId, note_ref: `internal-${i}` },
+          timestamp: new Date(internalAt[i]!),
+        })
+        .returning({ id: auditLog.id });
+      internalRefIds.push(row[0]!.id);
+    }
   }, 180_000);
 
   afterAll(async () => {
@@ -408,6 +439,53 @@ describe('F9 US3 — multi-source timeline (T051, live Neon)', () => {
     expect(full.ok).toBe(true);
     if (!full.ok) return;
     expect(full.value.total).toBeGreaterThan(collected.length);
+  });
+
+  it('member viewer — staff-internal audit rows are absent from rows, total and cursors', async () => {
+    const deps = buildMembersDeps(tenant.ctx);
+    const meta = { actorUserId: admin.userId, actorRole: 'member' as const, requestId: 'us3-internal' };
+
+    const collected: string[] = [];
+    const totals: number[] = [];
+    let cursor: string | undefined;
+    for (let page = 0; page < 25; page++) {
+      const r = await timelineList(
+        { memberId, limit: 1, ...(cursor !== undefined ? { cursor } : {}) },
+        meta,
+        tenant.ctx,
+        { memberRepo: deps.memberRepo, timeline: deps.timeline, viewerContactId: null, invoicingRead: true },
+      );
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      totals.push(r.value.total);
+      for (const e of r.value.events) {
+        collected.push(e.id);
+        expect(INTERNAL_TYPES as readonly string[]).not.toContain(e.eventType);
+      }
+      if (r.value.nextCursor === null) break;
+      const decoded = Buffer.from(r.value.nextCursor, 'base64url').toString('utf-8');
+      const ref = decoded.slice(decoded.indexOf('|') + 1);
+      expect(internalRefIds).not.toContain(ref);
+      cursor = r.value.nextCursor;
+    }
+
+    expect(collected.length).toBeGreaterThan(0);
+    for (const id of internalRefIds) expect(collected).not.toContain(id);
+    // Every page's header count is what the member can actually reach.
+    for (const t of totals) expect(t).toBe(collected.length);
+
+    // Staff see exactly the same stream plus the three internal rows.
+    const staff = await timelineList(
+      { memberId, limit: 50 },
+      { actorUserId: admin.userId, actorRole: 'admin', requestId: 'us3-internal-staff' },
+      tenant.ctx,
+      { memberRepo: deps.memberRepo, timeline: deps.timeline, viewerContactId: null, invoicingRead: true },
+    );
+    expect(staff.ok).toBe(true);
+    if (!staff.ok) return;
+    expect(staff.value.total).toBe(collected.length + internalRefIds.length);
+    const staffIds = staff.value.events.map((e) => e.id);
+    for (const id of internalRefIds) expect(staffIds).toContain(id);
   });
 
   it('AS-5 — a member with no source rows yields an empty stream, no error', async () => {
