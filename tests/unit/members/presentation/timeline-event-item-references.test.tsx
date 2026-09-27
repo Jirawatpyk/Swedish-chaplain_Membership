@@ -62,3 +62,15 @@ describe('<TimelineEventItem> row references', () => {
     expect(screen.getByText('Registered address, Website')).toBeInTheDocument();
   });
 });
+
+describe('<TimelineEventItem> audit detail face (R9)', () => {
+  afterEach(cleanup);
+
+  it('prose details (a company name, a role) are not set in mono; a document number is', () => {
+    show({ ...base, source: 'audit', eventType: 'member_created', actorKind: 'staff', actorUserId: '', audience: 'member', payload: { company_name: 'Review Bill Co' } });
+    expect(screen.getByText('“Review Bill Co”')).not.toHaveClass('font-mono');
+    cleanup();
+    show({ ...base, source: 'audit', eventType: 'tax_receipt_issued', actorKind: 'staff', actorUserId: '', audience: 'member', payload: { receipt_document_number_raw: 'RC-2026-000045' } });
+    expect(screen.getByText('RC-2026-000045')).toHaveClass('font-mono');
+  });
+});

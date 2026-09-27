@@ -295,8 +295,10 @@ export function TimelineEventItem({
       .map((k) => (tFieldLabel.has(k as 'website') ? tFieldLabel(k as 'website') : k));
     payloadDetail = labels.length > 0 ? { text: labels.join(', '), mono: false } : null;
   } else {
+    // Mono only for a document number (a stable identifier); a company name, a
+    // role or a status is prose (R9: "Membership record created · “…”" read as code).
     const text = formatAuditPayload(eventType, payload, tPayload);
-    payloadDetail = text ? { text, mono: true } : null;
+    payloadDetail = text ? { text, mono: eventType === 'tax_receipt_issued' } : null;
   }
   // A payment row names how it was paid on the actor line (the board's "Anna Lindqvist · PromptPay · 10:03").
   const method = source === 'payment' ? payloadString(payload, 'payment_method') : null;
