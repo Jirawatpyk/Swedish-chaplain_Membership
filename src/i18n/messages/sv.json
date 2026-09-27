@@ -126,7 +126,7 @@
         "conflict": "Den tidigare e-postadressen är inte längre tillgänglig. Kontakta din kammaradministratör.",
         "rateLimited": "För många försök. Försök igen om {seconds}s.",
         "serverError": "Något gick fel. Försök igen.",
-        "invalidTokenBody": "Om du fortfarande inte känner igen e-postbytet, logga in eller kontakta din kammare."
+        "invalidTokenBody": "Om du fortfarande inte känner igen e-postbytet, logga in eller kontakta din handelskammare."
       },
       "warningTitle": "Vad återställningen gör",
       "madeThisChange": "Jag gjorde ändringen — tillbaka till inloggningen"
