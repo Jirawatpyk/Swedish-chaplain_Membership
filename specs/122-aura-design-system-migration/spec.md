@@ -11,7 +11,7 @@ The admin portal (`/admin`) and member portal (`/portal`) are built on a local c
 
 Over September 2026 the maintainer redesigned every screen — about 300 boards covering desktop (1440 px) and phone (390 px) layouts, empty/error/role states and TH/SV variants — on the **AURA** design system, which the same maintainer owns and publishes (`@jirawatpyk/aura-react` and `@jirawatpyk/aura-tokens`, 5.5.0). The Chamber-OS requirements AURA needed were handed over item by item (the AURA handoff doc, items 1–52); 5.5.0 covers items 1–51, and item 52 (per-row table selection) is open.
 
-This feature replaces the component layer with AURA so the product matches those boards, and ends with one component library, as Constitution Principle VI requires. It changes **presentation only**: no module, database, API, permission or money behaviour changes, and copy changes only where a component swap forces them.
+This feature replaces the component layer with AURA so the product matches those boards, and ends with one component library, as Constitution Principle VI requires. It changes **presentation only**: no module, database, API, permission or money behaviour changes, and copy changes only where a component swap forces it or a canvas board words it differently (see Session 2026-09-27).
 
 The migration runs **module by module**, one pull request per phase, in the order of the canvas page "Migration plan — AURA". During the migration both libraries coexist; that window is bounded (see FR-004).
 
@@ -35,6 +35,15 @@ The migration runs **module by module**, one pull request per phase, in the orde
 - Q: Do the staff bar and the portal header stay the same height (spec 004 SC-009, "identical 56px")? → A: **No** (US1, 2026-09-26): the boards draw the staff bar at AppShell's 56px and the portal header at 72px from 1024px (64px below). SC-009 is superseded; each bar keeps a fixed height, so the no-layout-shift intent stands.
 - Q: Can US1 remove the old command-palette library? → A: **Not yet** (found at US1, 2026-09-26): besides the two ⌘K palettes it backs the pickers and the kit's combobox (member, event, template and task pickers; the invoice and plan forms). US1 moves both palettes to AURA `Command`; the library leaves with the last of those modules, at the latest US13, and the lint ban goes global then.
 - Q: Does the Swedish-flag navy chrome (navy rail and header, yellow stripe) survive on AURA SideNav / AppShell? → A: **No — dropped**; the shell follows the AURA design. The yellow stripe is removed in US0; US1 replaces the staff sidebar and portal header with AppShell / SideNav as designed.
+
+### Session 2026-09-27 (maintainer, after the board-parity audit)
+
+A read-only audit compared every screen built so far (US1 shell, US2 auth, US3 portal) with its canvas board and found gaps on every page. The maintainer settled four questions before the fixes:
+
+- Q: Portal forms (profile edit / change request, invite a colleague, directory listing, the two language forms) — keep the sticky AURA action bar, or place the buttons at the end of the card as the boards draw them? → A: **As the boards draw them**: primary and secondary buttons at the end of the form card, full width and stacked (primary above) below 640 px, one row at the end on wider screens. The profile edit / change-request form additionally warns before the page is left with unsaved input (the existing `use-beforeunload-guard` hook), since the action bar was its only unsaved-state signal. Staff forms keep action bars where their boards draw them.
+- Q: Keep the current wording, or use the boards' wording? → A: **The boards' wording**, added or changed in EN, TH and SV, **except** where a board's text contradicts what the product does; those strings stay as coded: the data export does not include colleagues' contact details, the company name in the directory is not always shown, and the contact email keeps its label.
+- Q: Page-title size, title line height, page padding and the portal column differ from the boards on every page — change the shared tokens, or only on migrated pages? → A: **The shared tokens**, so pages not yet migrated take the board sizes too: page title 36 px (portal) / 32 px (staff) from 1024 px, 30 px (portal) / 26 px (staff) below 640 px, line height 1.2 (Thai keeps its taller line height), a 1200 px portal content column with 40 / 64 px top / bottom padding, and staff page padding 28 px (18 px on phones). This supersedes "without its layout changing" in FR-002 for these tokens only.
+- Q: US1 and US2 are merged; where do their fixes go? → A: **In the US3 pull request** (#435), checked against the boards before pushing.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -89,13 +98,14 @@ Sign-in (staff and member), forgot/reset password, invitation acceptance and the
 
 ### User Story 3 - Member home, profile and account (Priority: P2)
 
-Members see their dashboard, benefits, company profile, change requests and account settings in AURA cards, stats, status pills, link tabs and sticky action bars.
+Members see their dashboard, benefits, company profile, change requests and account settings in AURA cards, stats, status pills and link tabs, with each form's buttons at the end of its card as the boards draw them.
 
 **Independent Test**: as a member, review the dashboard, edit the profile, submit and withdraw a change request, and change the notification language — compare with the member-portal boards.
 
 **Acceptance Scenarios**:
 
-1. **Given** a form with unsaved changes on a phone, **When** the member scrolls, **Then** the save action stays reachable in an AURA action bar.
+1. **Given** a portal form, **When** it renders on a phone, **Then** its buttons sit at the end of the form card, full width and stacked with the primary action on top; from 640 px they sit in one row at the end (Session 2026-09-27).
+2. **Given** unsaved input in the profile edit / change-request form, **When** the member tries to leave the page, **Then** the browser asks before discarding it.
 
 ---
 
@@ -300,4 +310,4 @@ The old component kit folder, its primitives library, the old toast/palette/date
 - The product UI has one brand theme (SweCham #10487A) for now. Per-tenant UI colours belong to the future white-label feature (F12, `docs/saas-architecture.md` § 8); the brand theme is kept in one place so F12 can later supply it per tenant at runtime without touching screens.
 - Visual parity (SC-006) is judged by a reviewer comparing screenshots of the running page against its canvas board at 390 and 1280 px, light and dark, attached to the phase's PR; there is no pixel-diff gate, because the boards use sample data.
 - Queued logic-bug tasks (void/auto-refund rules; TH/SV wording and bill labels; colleague contact data; E-Blast PDPA) land as their own PRs and are not part of this feature.
-- Out of scope: backend, database, API behaviour, permissions, and copy changes beyond what a component swap forces.
+- Out of scope: backend, database, API behaviour, permissions, and copy changes beyond what a component swap forces or a canvas board words differently (Session 2026-09-27).
