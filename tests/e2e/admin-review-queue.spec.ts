@@ -884,7 +884,7 @@ test.describe('@i18n queue localisation — stable title, no key leaks', () => {
   const TITLE_RE: Record<'en' | 'th' | 'sv', RegExp> = {
     en: /E-Blast review queue/,
     th: /คิวตรวจสอบ E-Blast/,
-    sv: /Granskningskö för E-Blast/,
+    sv: /Granskningskö för utskick/,
   };
   // OPPORTUNISTIC only (see module docstring) — the de-jargoned "review
   // target" line (`admin.broadcasts.queue.slaBanner.targetSla`), present

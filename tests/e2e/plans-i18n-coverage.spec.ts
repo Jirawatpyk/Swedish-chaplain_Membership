@@ -9,6 +9,7 @@
  *      has `sv` missing on a TH/SV locale switch.
  */
 import { expect, test } from './fixtures';
+import { signInAsAdmin } from './helpers/admin-session';
 import { clearE2ERateLimits } from './helpers/rate-limit';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
@@ -35,7 +36,9 @@ test.describe('plans i18n coverage — US1 @i18n', () => {
   for (const locale of LOCALES) {
     test(`plans list renders in ${locale.toUpperCase()}`, async ({ page, context }) => {
       // next-intl without middleware reads the locale from the NEXT_LOCALE
-      // cookie. Seed it before sign-in so the first page render picks it up.
+      // cookie. Seed it AFTER sign-in: set before, it localises the sign-in
+      // form too, and the helper's English "Email" label no longer matches.
+      await signInAsAdmin(page);
       await context.addCookies([
         {
           name: 'NEXT_LOCALE',
@@ -43,12 +46,6 @@ test.describe('plans i18n coverage — US1 @i18n', () => {
           url: 'http://localhost:3100',
         },
       ]);
-
-      await page.goto('/admin/sign-in');
-      await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
-      await page.getByRole('textbox', { name: /^password$/i }).fill(ADMIN_PASSWORD!);
-      await page.getByRole('button', { name: /sign in/i }).click();
-      await page.waitForURL((u) => { const p = new URL(u).pathname; return /^\/admin(\/|$)/.test(p) && !p.startsWith("/admin/sign-in"); });
 
       await page.goto('/admin/plans');
 
@@ -58,21 +55,9 @@ test.describe('plans i18n coverage — US1 @i18n', () => {
       expect(bodyText).not.toMatch(/admin\.plans\.[a-z]/);
       expect(bodyText).not.toMatch(/\bpalette\.[a-z]/);
 
-      // 2. Title renders in the active locale. Only assert when cookie-based
-      //    locale switching is wired — otherwise EN fallback is correct
-      //    behaviour and the bodyText leak check above still catches real
-      //    untranslated keys.
+      // 2. Title renders in the active locale (the cookie is honoured).
       const title = await page.locator('h1').first().textContent();
-      if (locale === 'en') {
-        expect(title).toMatch(EXPECTED_TITLE[locale]);
-      } else {
-        // TH/SV locale may or may not be wired via cookie — accept both
-        // the translated title or the EN fallback. The strict TH/SV
-        // assertion belongs with a locale-switcher UI spec (F5+).
-        const matchesLocale = EXPECTED_TITLE[locale].test(title ?? '');
-        const matchesEnFallback = /membership plans/i.test(title ?? '');
-        expect(matchesLocale || matchesEnFallback).toBe(true);
-      }
+      expect(title).toMatch(EXPECTED_TITLE[locale]);
     });
   }
 });

@@ -63,6 +63,10 @@ import { expect, test, fillField } from '../fixtures';
 import { signInAsSuperAdmin } from '../helpers/admin-session';
 import { waitForLayoutContainer } from '../helpers/layout';
 import { runAxeScan } from '../helpers/axe-scan';
+import { isThaiTaxId } from '@/lib/thai-tax-id';
+
+/** Checksum-valid 13-digit TIN, used only in the intercepted PATCH below. */
+const VALID_TEST_TIN = '0994000187203';
 
 const ADMIN_EMAIL = process.env.E2E_SUPER_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_SUPER_ADMIN_PASSWORD;
@@ -123,6 +127,15 @@ test.describe('invoice settings: section-nav focus + sticky-save prefix guard @f
       originalPrefix,
     );
     await fillField(prefixInput, newPrefix);
+
+    // #415 checks the seller TIN before the §87 dialog, so a stored TIN that
+    // fails the checksum stops the submit before this test reaches the
+    // dialog. The shared dev tenant carries one; replace it for this
+    // (intercepted, never saved) submit only.
+    const taxIdInput = page.locator('#tax_id');
+    if (!isThaiTaxId(await taxIdInput.inputValue())) {
+      await fillField(taxIdInput, VALID_TEST_TIN);
+    }
 
     // Intercept + fulfill the PATCH locally instead of letting it reach
     // the real route/DB — see file header (a real prefix change starts a
