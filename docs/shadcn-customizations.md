@@ -148,7 +148,7 @@ contract.
 | `src/components/ui/progress.tsx`           | WAI-ARIA progressbar; determinate + indeterminate (skeleton-shimmer)        | Tones reuse semantic tokens. Degrades under prefers-reduced-motion. |
 | `src/components/ui/progress-bar.tsx`       | Labeled wrapper over Progress with numeric readout                          | `formatValue` lets caller render locale-aware strings (Intl stays at consumer). |
 | `src/components/ui/stepper.tsx`            | Multi-step flow indicator (complete / current / upcoming)                   | `role="list"` + `aria-current="step"`. Horizontal + vertical. |
-| `src/components/ui/live-region.tsx`        | Visually-hidden ARIA live region for inline async feedback                  | For non-toast announcements (polling, step transitions). sonner handles toasts separately. |
+| `src/components/shell/live-region.tsx`     | Visually-hidden ARIA live region for inline async feedback                  | For non-toast announcements (polling, step transitions). sonner handles toasts separately. |
 
 Semantic color tokens feeding the above live in `src/app/globals.css` under
 the `:root` + `.dark` blocks: `--success`, `--warning`, `--info` (plus

@@ -50,7 +50,7 @@ A read-only audit compared every screen built so far (US1 shell, US2 auth, US3 p
 The US4 boards (`Invoices`, `Invoice-paid`, `Portal-invoice-mobile`, `Portal-credit-note`, `Pay-*`) were read before the tasks were written. The rule from the previous session holds: the boards win unless they contradict the product.
 
 - Q: The plan says the pay sheet is a phone sheet at up to 92 dvh with a Stepper; the boards draw something else. Which? → A: **The boards**: the pay sheet is an AURA `Drawer` on the right, 480 px wide from 640 px and full width and full height below it (AURA's 92 dvh bottom-sheet rule belongs to `Dialog`, not `Drawer`). No US4 board draws a Stepper, so there is none. The existing viewport e2e already asserts the full-height sheet.
-- Q: The `Invoices` board has no filter row. Drop the filters? → A: **No**: removing them would remove a feature. The status, search and date filters stay, on AURA fields. They are shared with `/admin/invoices`, which renders them in AURA from US4 on (as US3 did with shared components); so does the original-receipt badge shared with the staff credit-note screens.
+- Q: The `Invoices` board has no filter row. Drop the filters? → A: **No**: removing them would remove a feature. The search, status and subject filters stay, on AURA fields. They are shared with `/admin/invoices`, which renders them in AURA from US4 on (as US3 did with shared components); so does the original-receipt badge shared with the staff credit-note screens.
 - Q: What around the card form changes? → A: **Only the shell**: Stripe Elements (`<Elements>` / `<PaymentElement>`) and its SAQ-A scope are untouched (Principle IV).
 
 ## User Scenarios & Testing *(mandatory)*

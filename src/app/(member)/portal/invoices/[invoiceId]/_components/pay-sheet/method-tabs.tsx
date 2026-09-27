@@ -7,9 +7,9 @@
  *   - specs/009-online-payment — FR-002: if exactly one method is enabled,
  *     render it as a non-tab heading (no tab UI), otherwise render one
  *     tab per enabled method.
- *   - Keyboard: arrow-key navigation is inherited from the shadcn
- *     <Tabs> primitive (Base-UI Tabs → Radix-equivalent).
- *   - a11y: each <TabsTrigger> carries a localized `aria-label` whose
+ *   - Keyboard: a hand-rolled WAI-ARIA tablist (see `MethodTablist`):
+ *     arrows / Home / End move focus, click / Enter / Space selects.
+ *   - a11y: each tab carries a localized `aria-label` whose
  *     text STARTS with the visible label (e.g. "Card — switch payment
  *     method") so the accessible name CONTAINS the visible name —
  *     WCAG 2.5.3 (Label in Name) requirement for voice-control users

@@ -4,7 +4,7 @@
  * <PayNowButton> — G4 T072.
  *
  * Thin client wrapper around the G2 <PaySheet> drawer:
- *   1. Renders a shadcn `<Button>` trigger visible on the invoice detail
+ *   1. Renders an AURA `<Button>` trigger visible on the invoice detail
  *      page. The parent page (T081) gates on `invoice.status === 'issued'`
  *      + `enabledMethods.length > 0`; this component renders the button
  *      unconditionally when instantiated.
@@ -22,8 +22,8 @@
  * workarounds tripped React 19's `set-state-in-effect` lint rule.
  *
  * Root-cause fix: lazy boundary moved INWARD into <PaySheet>. The
- * Sheet primitive shell now renders eagerly (Base UI Dialog is small,
- * ~3-5 KB) and observes a real `open: false → true` transition on
+ * drawer shell (AURA's `Drawer` since spec 122 US4; Base UI Dialog then)
+ * renders eagerly and observes a real `open: false → true` transition on
  * first click → animation plays naturally. The expensive Stripe SDK +
  * <PaySheetInternal> chunk is still lazy, gated on `hasOpened` inside
  * <PaySheet>. Net effect: -60 lines, 0 ESLint suppressions, 0 effects.

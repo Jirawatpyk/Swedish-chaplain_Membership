@@ -5,11 +5,10 @@
  *
  * Layout (FR-028h)
  * ----------------
- *   - Right-aligned <Sheet> on ≥ 640 px viewports
- *     (`sm:max-w-[480px] sm:h-auto`).
- *   - Full-screen on < 640 px viewports (`w-full h-full`).
- *   - Sticky header with <SheetTitle> (bilingual "Pay {invoiceNumber}")
- *     plus a close button whose tap target is ≥ 44 × 44 px (WCAG 2.5.5).
+ *   - An AURA `Drawer` on the right, 480 px from 640 px (`size="md"`),
+ *     full width and full height below (spec 122 US4, `Pay-*` boards).
+ *   - Header: "Pay invoice" with the document number in mono under it,
+ *     and a close button whose box is ≥ 44 × 44 px (WCAG 2.5.5).
  *
  * Deep-linking (FR-025c)
  * ----------------------
@@ -28,9 +27,11 @@
  * PCI constraint (F5 PCI Group-G must-do)
  * ---------------------------------------
  * All payment state — most critically the Stripe `clientSecret` — lives
- * ONLY inside <PaySheetInternal>'s ephemeral React state. On drawer
- * close we unmount the internal subtree (because `{open && ...}`), which
- * guarantees the state tree is torn down. We do NOT write payment state
+ * ONLY in ephemeral React state: <PaySheetInternal>'s, plus the
+ * `cachedInitiate` this shell keeps so a reopen reuses the same
+ * PaymentIntent. AURA's Drawer renders nothing while closed, so closing
+ * unmounts <PaySheetInternal> (and the Stripe iframe) every time; the
+ * cache, not the drawer, is what survives. We do NOT write payment state
  * to any browser persistence store (localStorage, sessionStorage,
  * cookies, IndexedDB). A grep of this directory MUST return zero
  * references to `localStorage` or `sessionStorage`.
@@ -54,8 +55,8 @@ import { HardCapPrompt } from './hard-cap-prompt';
 import type { PaymentMethod } from './method-tabs';
 
 // Lazy boundary (refactored 2026-04-25 — code-quality audit closeout).
-// Only the Stripe-SDK-heavy <PaySheetInternal> is lazy; the Sheet shell
-// renders eagerly so Base UI Dialog observes a real `open: false → true`
+// Only the Stripe-SDK-heavy <PaySheetInternal> is lazy; the drawer shell
+// renders eagerly so it observes a real `open: false → true`
 // transition on first click and plays its slide-in animation.
 //
 // Loading fallback: invisible spacer reserving the rough vertical
@@ -69,7 +70,7 @@ import type { PaymentMethod } from './method-tabs';
 //       card zone" — confusing layout shift.
 //   (b) `loading: () => null` — works in the fast path (chunk pre-warmed
 //       below renders in <50 ms) but leaves the drawer body empty on
-//       slow networks, and the SheetTitle in the sticky header has no
+//       slow networks, and the drawer title in the sticky header has no
 //       body to anchor against → minor CLS when content arrives.
 //
 // The spacer keeps body height stable from the first paint, prevents
@@ -198,24 +199,27 @@ export function PaySheet({
   // PaymentIntent. If we gate its mount on `{open && ...}` then every
   // close→reopen cycle remounts it, which re-fires the initiate fetch
   // and quickly exhausts the rate-limit budget (10 req / 5 min). The
-  // correct pattern is: lazy-mount on FIRST open, then keep mounted for
-  // the life of the invoice page. The drawer's own `open` prop hides it
-  // visually; PaymentIntent clientSecret stays in React state only
-  // (ephemeral, no persistence) — PCI SAQ-A constraint preserved.
+  // pattern is: lazy-load on FIRST open (`hasOpened`) and keep the
+  // initiate response in `cachedInitiate` below for the life of the invoice
+  // page. AURA's Drawer renders nothing while closed, so each close still
+  // unmounts the body; the cache is what spares the reopen a new initiate.
+  // PaymentIntent clientSecret stays in React state only (ephemeral, no
+  // persistence) — PCI SAQ-A constraint preserved.
   // Derive-during-render pattern (React docs: "Adjusting some state when
   // a prop changes") — once `open` flips true we latch `hasOpened`.
   // React batches the setState during render so no cascading effect
   // commit; bypasses the `set-state-in-effect` rule semantically.
-  // Stable ref: a fresh callback each render would detach + re-run it.
-  const closeLabel = t('close');
-  const drawerRef = useMemo(() => markDrawer(closeLabel), [closeLabel]);
   const [hasOpened, setHasOpened] = useState<boolean>(() => open);
   if (open && !hasOpened) {
     setHasOpened(true);
   }
 
-  // Parent-scope cache for the initiate response so Radix Sheet's
-  // Portal mount/unmount on close/reopen does not discard the Stripe
+  // Stable ref: a fresh callback each render would detach + re-run it.
+  const closeLabel = t('close');
+  const drawerRef = useMemo(() => markDrawer(closeLabel), [closeLabel]);
+
+  // Parent-scope cache for the initiate response so the drawer body's
+  // unmount on close / remount on reopen does not discard the Stripe
   // clientSecret + trigger a fresh POST /api/payments/initiate every
   // cycle. Stored in React state (ephemeral) — NEVER persisted to
   // localStorage / sessionStorage / cookies / IndexedDB (PCI SAQ-A).

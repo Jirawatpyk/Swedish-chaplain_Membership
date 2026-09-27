@@ -15,18 +15,9 @@
  * Harness (mirrors the sibling): real `NextIntlClientProvider` + real `en.json`
  * (assert the SHIPPED copy), stub `next/navigation`.
  *
- * `@/components/ui/select` is mocked to eager stubs — Base UI Select's options
- * live in a pointer-driven Portal jsdom cannot open — but, unlike the sibling,
- * this stub FORWARDS `aria-label` + `data-testid` so the secondary selects are
- * addressable by their testids inside the popover.
- *
- * `@/components/ui/popover` is mocked to a STATEFUL stand-in that gates its
- * content on an open flag (the trigger's injected `onClick` toggles it) — the
- * same "Base UI portal/pointer positioning jsdom can't drive" reason
- * `auto-renewal-queue-actions.test.tsx` mocks `@/components/ui/dropdown-menu`.
- * The ref-forwarding concern is NOT mocked away: no custom `ref` is used here
- * (the component spreads the Trigger's own props into `<Button>` and adds none
- * of its own), so the stand-in calls `render({ onClick })` with no ref.
+ * Nothing UI is mocked since spec 122 US4: AURA's Select keeps a native
+ * `<select>` behind its combobox, and AURA's Popover opens from the trigger
+ * click under jsdom, so the real components are driven directly.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';

@@ -14,12 +14,9 @@
  * These tests pin BOTH the admin defaults (so admin behaviour is unchanged)
  * and the portal subset (no draft option + no chip).
  *
- * Harness note: the status `<Select>` is a Base UI Select whose options live
- * in a `<Portal>` that only mounts on open — and jsdom can't drive Base UI's
- * pointer-based open. So we mock `@/components/ui/select` with lightweight
- * eager-render stubs (SelectContent → div, SelectItem → role="option") to
- * read the options the component *maps* directly, without portal/popup
- * gymnastics. The trigger + the chip are the real component output.
+ * Harness note: AURA's Select (spec 122 US4) keeps a native `<select>` with
+ * real `<option>`s behind its combobox, so the options the component maps
+ * are read straight from the DOM (`optionValues`).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
