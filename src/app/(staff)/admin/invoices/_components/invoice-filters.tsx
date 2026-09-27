@@ -32,7 +32,7 @@
  * the clamps and the chips are unchanged.
  */
 
-import { useCallback, useRef, useTransition } from 'react';
+import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Badge, Button, FilterBar, Icon, Popover, Select, Tooltip } from '@jirawatpyk/aura-react';
@@ -131,6 +131,12 @@ export function InvoiceFilters({
   const barRef = useRef<HTMLDivElement>(null);
   const focusSearch = () =>
     barRef.current?.querySelector<HTMLInputElement>('input[type="search"]')?.focus();
+  // Bumped by Clear all to remount the FilterBar; focus follows to the new
+  // search input once it is in the DOM.
+  const [searchResetKey, setSearchResetKey] = useState(0);
+  useEffect(() => {
+    if (searchResetKey > 0) focusSearch();
+  }, [searchResetKey]);
 
   const tReconciliation = useTranslations('admin.paymentReconciliation.filterChip');
   // The URL is the source of truth; AURA's FilterBar keeps the typed draft,
@@ -252,7 +258,7 @@ export function InvoiceFilters({
   );
 
   const hasAnyFilter =
-    currentQ !== '' ||
+    currentQ.trim() !== '' ||
     effectiveStatus !== 'all' ||
     currentSubject !== 'all' ||
     paidOnlineActive ||
@@ -431,6 +437,10 @@ export function InvoiceFilters({
   ) : null;
 
   const clearAll = () => {
+    // Remount the FilterBar: its unmount clears a search still waiting on
+    // the debounce (which would otherwise land 300 ms later with the old
+    // params and re-apply itself) and its draft restarts from the URL.
+    setSearchResetKey((k) => k + 1);
     pushUrl({
       q: null,
       status: null,
@@ -443,9 +453,8 @@ export function InvoiceFilters({
       dueBefore: null,
     });
     // Clearing flips `hasAnyFilter` false → this button unmounts itself;
-    // move focus to the always-present search input so it never drops to
-    // <body> (same measure as the chip ✕ handlers).
-    focusSearch();
+    // focus moves to the always-present search input (the remounted one —
+    // see the effect on `searchResetKey`) so it never drops to <body>.
   };
 
   const clearButton = hasAnyFilter ? (
@@ -498,9 +507,13 @@ export function InvoiceFilters({
 
   const bar = (children: React.ReactNode) => (
     <FilterBar
+      key={searchResetKey}
       ref={barRef}
       search={currentQ}
-      onSearchChange={(v) => pushUrl({ q: v.trim() || null })}
+      // Untrimmed on purpose: the FilterBar compares the URL back against
+      // what it sent, so a trimmed "Acme " would rewrite the box while the
+      // member types. Both pages trim `q` server-side.
+      onSearchChange={(v) => pushUrl({ q: v || null })}
       searchLabel={t('searchLabel')}
       searchPlaceholder={t('searchPlaceholder')}
     >
