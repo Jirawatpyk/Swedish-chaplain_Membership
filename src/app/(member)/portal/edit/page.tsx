@@ -13,7 +13,6 @@ import { readOwnPendingRequest } from '@/lib/portal-own-pending';
 import { serialiseChangeRequestForPortal, type ChangeRequestView } from '@/lib/change-request-portal-view';
 import { PortalEditForm } from '@/components/members/portal-edit-form';
 import { PortalChangeRequestForm } from '@/components/members/change-requests/portal-change-request-form';
-import { PendingRequestBanner } from '@/components/members/change-requests/pending-request-banner';
 import { changeRequestInitialValues, overlayPending, overlayResubmit } from '@/lib/change-request-form-values';
 import type { ChangeRequestId } from '@/modules/members';
 
@@ -208,13 +207,10 @@ export default async function PortalEditPage({ searchParams }: PageProps) {
   const initialValues = pending ? overlayPending(live, pending) : overlayResubmit(live, resubmitOf);
 
   return (
-    <FormContainer>
-      <PageHeader title={tCr('pageTitle')} subtitle={tCr('pageSubtitle')} />
-      {pending ? (
-        <div className="mb-6">
-          <PendingRequestBanner request={pending} showEditLink={false} />
-        </div>
-      ) : null}
+    // The `Portal-edit` boards' 880px column; a pending request is the form's
+    // own info alert (its diff and Withdraw live on the profile page).
+    <FormContainer className="max-w-[calc(55rem+2*var(--page-padding-x))]">
+      <PageHeader title={tCr('pageTitle')} subtitle={tCr('pageSubtitle')} size="hero" />
       <PortalChangeRequestForm
         initialValues={initialValues}
         canProposeCompanyFields={ownContact.isPrimary}

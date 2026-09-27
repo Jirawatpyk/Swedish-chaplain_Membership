@@ -247,7 +247,7 @@
   },
   "directorySettings": {
     "title": "Katalogpost",
-    "subtitle": "Välj om du visas i medlemskatalogen och vilka uppgifter som visas",
+    "subtitle": "Välj om du visas i medlemskatalogen och vilka uppgifter som visas.",
     "emptyTitle": "Ingen medlemsprofil",
     "empty": "Ditt konto är inte kopplat till en medlemsprofil än.",
     "listed": "Lista min organisation i medlemskatalogen",
@@ -6858,13 +6858,15 @@
         "registrationDate": "Registreringsdatum",
         "lastActivityAt": "Senaste aktivitet",
         "status": "Status"
-      }
+      },
+      "youSuffix": "(du)",
+      "moreAboutProfile": "Mer om din profil"
     },
     "changeRequests": {
       "history": {
           "pageTitle": "Historik över ändringsbegäranden",
           "title": "Historik över ändringsbegäranden",
-          "subtitle": "Varje ändring du föreslagit i din medlemspost och vad kammaren beslutade.",
+          "subtitle": "Ändringar du föreslagit, plus ändringar av företagsuppgifter som kollegor föreslagit, och vad kammaren beslutade.",
           "notLinked": "Ditt konto är inte kopplat till någon medlem.",
           "empty": "Inga ändringsbegäranden ännu.",
           "emptyHint": "Ändringar du föreslår på redigeringssidan visas här tillsammans med kammarens beslut.",
@@ -6894,7 +6896,8 @@
             "title": "Historik över ändringsbegäranden",
             "subtitle": "Se varje ändring du föreslagit och vad kammaren beslutade.",
             "link": "Visa historik"
-          }
+          },
+          "colleagueNote": "En kollegas ändringar av sina egna kontaktuppgifter visas aldrig här."
         },
       "form": {
         "pageTitle": "Föreslå ändringar",
@@ -6903,7 +6906,7 @@
         "companySection": "Företagsuppgifter",
         "registeredAddressSection": "Registrerad adress",
         "billingAddressSection": "Faktureringsadress",
-        "billingAddressHint": "Använd när den momsregistrerade adressen (ภ.พ.20) skiljer sig från den registrerade adressen — skattedokumenten bär faktureringsadressen. Lämna alla rader tomma för att inte ange någon. Då blir den registrerade adressen den adress som trycks på dina skattedokument.",
+        "billingAddressHint": "Använd när den momsregistrerade adressen (ภ.พ.20) skiljer sig från den registrerade adressen — skattedokumenten bär faktureringsadressen. Lämna alla rader tomma för att inte ange någon.",
         "requiredNote": "* obligatoriska fält",
         "fields": {
           "firstName": "Förnamn",
@@ -6919,7 +6922,8 @@
           "city": "Stad",
           "province": "Provins",
           "postalCode": "Postnummer",
-          "country": "Land (tvåbokstavskod)"
+          "country": "Land",
+          "countryHint": "Tvåbokstavskod, t.ex. TH"
         },
         "submit": "Skicka för granskning",
         "submitting": "Skickar…",
@@ -6927,14 +6931,15 @@
         "secondaryNote": "Endast företagets primära kontakt kan föreslå ändringar av företagsuppgifterna. Kontakta hen om något behöver uppdateras.",
         "notice": "Ditt förslag granskas av kammarens personal, skickas till dem via e-post och sparas tillsammans med din medlemspost.",
         "privacyLink": "Integritetspolicy",
-        "pendingHint": "Du har redan en begäran som väntar på granskning. Skickar du igen ersätts den med dessa värden.",
         "resubmitTitle": "Kammaren godkände inte hela din förra begäran:",
         "errors": {
           "phone": "Ange ett telefonnummer i internationellt format, t.ex. +46 70 123 45 67.",
           "website": "Ange en giltig webbadress, t.ex. https://example.com.",
           "country": "Ange en landskod med två bokstäver, t.ex. SE.",
           "billingIncomplete": "En faktureringsadress behöver minst rad 1, stad, postnummer och land — eller lämna alla rader tomma."
-        }
+        },
+        "pendingReplaces": "Skickar du igen ersätts den med dessa värden.",
+        "errorSummaryTitle": "{count, plural, one {# fält behöver åtgärdas} other {# fält behöver åtgärdas}}"
       },
       "status": {
         "submitted": "Dina ändringar har skickats för granskning.",
@@ -6957,7 +6962,8 @@
         "title": "Väntar på kammarens granskning",
         "body": "Inskickat {submittedAt}. Inget har ändrats i dina uppgifter ännu — kammaren meddelar beslutet via e-post.",
         "editLink": "Redigera din begäran",
-        "loadFailed": "Din väntande ändringsbegäran kunde inte läsas in just nu. Uppdatera sidan för att försöka igen. Den väntar fortfarande på granskning."
+        "loadFailed": "Din väntande ändringsbegäran kunde inte läsas in just nu. Uppdatera sidan för att försöka igen. Den väntar fortfarande på granskning.",
+        "editHint": "Om du redigerar din begäran ersätts den — använd <strong>Redigera din begäran</strong> ovan."
       },
       "withdraw": {
         "button": "Dra tillbaka begäran",
@@ -7019,7 +7025,9 @@
         "outcome": {
           "approved": "Godkänd",
           "rejected": "Ej godkänd"
-        }
+        },
+        "decision": "Beslut",
+        "wasShort": "Tidigare"
       }
     },
     "edit": {

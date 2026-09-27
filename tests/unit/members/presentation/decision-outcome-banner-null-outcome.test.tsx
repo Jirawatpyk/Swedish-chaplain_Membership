@@ -57,7 +57,7 @@ describe('DecisionOutcomeBanner on AURA (spec 122 US3)', () => {
     expect(banner).toHaveClass('aura-alert', 'aura-alert--danger');
     expect(banner).toHaveAttribute('role', 'status');
     expect(banner.querySelector('.aura-alert__title')?.textContent).toBe(enMessages.portal.changeRequests.outcome.title.rejected);
-    expect(container.querySelector('[data-testid="resubmit-link"]')).toHaveClass('aura-btn', 'aura-btn--primary');
-    expect(container.querySelector('[data-testid="dismiss-decision"]')).toHaveClass('aura-btn--secondary');
+    expect(container.querySelector('[data-testid="resubmit-link"]')).toHaveClass('aura-btn', 'aura-btn--secondary', 'aura-btn--sm');
+    expect(container.querySelector('[data-testid="dismiss-decision"]')).toHaveClass('aura-btn--secondary', 'aura-btn--sm');
   });
 });

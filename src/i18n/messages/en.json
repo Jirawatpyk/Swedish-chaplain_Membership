@@ -247,7 +247,7 @@
   },
   "directorySettings": {
     "title": "Directory listing",
-    "subtitle": "Choose whether you appear in the member directory and which details are shown",
+    "subtitle": "Choose whether you appear in the member directory and which details are shown.",
     "emptyTitle": "No member profile",
     "empty": "Your account isn't linked to a member profile yet.",
     "listed": "List my organisation in the member directory",
@@ -6827,7 +6827,7 @@
           }
         }
       },
-      "inviteColleague": "Invite Colleague",
+      "inviteColleague": "Invite colleague",
       "primaryBadge": "Primary",
       "portalLinked": "Portal linked",
       "noContacts": "No contacts found.",
@@ -6858,13 +6858,15 @@
         "registrationDate": "Registration Date",
         "lastActivityAt": "Last activity",
         "status": "Status"
-      }
+      },
+      "youSuffix": "(you)",
+      "moreAboutProfile": "More about your profile"
     },
     "changeRequests": {
       "history": {
           "pageTitle": "Change request history",
           "title": "Change request history",
-          "subtitle": "Every change you proposed to your member record and what the chamber decided.",
+          "subtitle": "Changes you proposed, plus company-detail changes proposed by colleagues, and what the chamber decided.",
           "notLinked": "Your account is not linked to a member.",
           "empty": "No change requests yet.",
           "emptyHint": "Changes you propose on the edit page appear here with the chamber’s decision.",
@@ -6894,7 +6896,8 @@
             "title": "Change request history",
             "subtitle": "See every change you proposed and what the chamber decided.",
             "link": "View history"
-          }
+          },
+          "colleagueNote": "A colleague's changes to their own contact details are never shown here."
         },
       "form": {
         "pageTitle": "Propose changes",
@@ -6903,7 +6906,7 @@
         "companySection": "Company details",
         "registeredAddressSection": "Registered address",
         "billingAddressSection": "Billing address",
-        "billingAddressHint": "Use when the VAT-registered address (ภ.พ.20) differs from the registered address — tax documents carry the billing address. Leave every line empty to keep none. The registered address then becomes the address printed on your tax invoices.",
+        "billingAddressHint": "Use when the VAT-registered address (ภ.พ.20) differs from the registered address — tax documents carry the billing address. Leave every line empty to keep none.",
         "requiredNote": "* fields are required",
         "fields": {
           "firstName": "First name",
@@ -6919,7 +6922,8 @@
           "city": "City",
           "province": "Province",
           "postalCode": "Postal code",
-          "country": "Country (2-letter code)"
+          "country": "Country",
+          "countryHint": "2-letter code, e.g. TH"
         },
         "submit": "Submit for review",
         "submitting": "Submitting…",
@@ -6927,14 +6931,15 @@
         "secondaryNote": "Only your company's primary contact can propose changes to the company details. Contact them if something needs updating.",
         "notice": "Your proposal is reviewed by chamber staff, emailed to them, and kept with your member record.",
         "privacyLink": "Privacy notice",
-        "pendingHint": "You already have a request awaiting review. Submitting again replaces it with these values.",
         "resubmitTitle": "The chamber did not approve part of your last request:",
         "errors": {
           "phone": "Enter a phone number in international format, e.g. +66 81 234 5678.",
           "website": "Enter a valid web address, e.g. https://example.com.",
           "country": "Enter a 2-letter country code, e.g. TH.",
           "billingIncomplete": "A billing address needs at least line 1, city, postal code and country — or leave every line empty."
-        }
+        },
+        "pendingReplaces": "Submitting again replaces it with these values.",
+        "errorSummaryTitle": "{count, plural, one {# field needs your attention} other {# fields need your attention}}"
       },
       "status": {
         "submitted": "Your changes were sent for review.",
@@ -6957,7 +6962,8 @@
         "title": "Awaiting chamber review",
         "body": "Submitted {submittedAt}. Nothing has changed on your record yet — the chamber will email you the decision.",
         "editLink": "Edit your request",
-        "loadFailed": "Your pending change request could not be loaded right now. Refresh to try again. It is still waiting for review."
+        "loadFailed": "Your pending change request could not be loaded right now. Refresh to try again. It is still waiting for review.",
+        "editHint": "Editing your request replaces it — use <strong>Edit your request</strong> above."
       },
       "withdraw": {
         "button": "Withdraw request",
@@ -7019,7 +7025,9 @@
         "outcome": {
           "approved": "Approved",
           "rejected": "Not approved"
-        }
+        },
+        "decision": "Decision",
+        "wasShort": "Was"
       }
     },
     "edit": {

@@ -86,7 +86,7 @@ describe('PortalChangeRequestForm — server 422 issues map to per-rule copy (UX
     expect(onField('billCountry')).toContain(copy.errors.country);
     expect(onField('firstName')).toContain(enMessages.portal.changeRequests.errors.field);
     // …and the error summary lists all six and takes focus.
-    const summary = await screen.findByRole('alert', { name: /fix 6 fields/i });
+    const summary = await screen.findByRole('alert', { name: '6 fields need your attention' });
     await waitFor(() => expect(summary).toHaveFocus());
   });
 });

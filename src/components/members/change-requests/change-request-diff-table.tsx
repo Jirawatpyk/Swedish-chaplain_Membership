@@ -16,9 +16,17 @@
  * headers and a row header per field; below 640 px of its own width each row
  * reads as a card, each value labelled by its column header ("Seen" /
  * "Proposed") in the server HTML, headers kept for screen readers.
+ *
+ * `variant="plain"` is the portal boards' table (`Portal-profile`,
+ * `Portal-change-requests`): no box, mono uppercase headers, the first
+ * column flush with the text, the submitted value in the secondary colour,
+ * the tax marker as an outline chip beside the field name, an address on one
+ * line, each decided field's outcome as a pill in a Decision column, and on
+ * phones "Was" / "Proposed" labels beside the values (globals.css
+ * `.cr-diff--plain`). The staff record section keeps the boxed table.
  */
 import { useTranslations } from 'next-intl';
-import { Table, TBody, THead, Td, Th, Tr } from '@jirawatpyk/aura-react';
+import { Badge, StatusPill, Table, TBody, THead, Td, Th, Tr } from '@jirawatpyk/aura-react';
 import { ReceiptTextIcon, CheckIcon, XIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ChangeRequestFieldView } from '@/lib/change-request-portal-view';
@@ -28,11 +36,14 @@ export interface ChangeRequestDiffTableProps {
   readonly fields: readonly ChangeRequestFieldView[];
   /** Show each field's decided outcome (US3 / US4 history). */
   readonly showOutcome?: boolean;
+  /** `plain` — the member portal's boards; `boxed` (default) — the staff record section. */
+  readonly variant?: 'boxed' | 'plain';
   readonly className?: string;
 }
 
-export function ChangeRequestDiffTable({ fields, showOutcome = false, className }: ChangeRequestDiffTableProps) {
+export function ChangeRequestDiffTable({ fields, showOutcome = false, variant = 'boxed', className }: ChangeRequestDiffTableProps) {
   const t = useTranslations('portal.changeRequests.diff');
+  if (variant === 'plain') return <PlainDiffTable fields={fields} showOutcome={showOutcome} className={className} />;
 
   return (
     <div className={className} data-testid="change-request-diff">
@@ -79,6 +90,65 @@ export function ChangeRequestDiffTable({ fields, showOutcome = false, className 
               <Td>
                 <ProposedValueDisplay fieldKey={f.key} value={f.proposed} />
               </Td>
+            </Tr>
+          ))}
+        </TBody>
+      </Table>
+    </div>
+  );
+}
+
+function PlainDiffTable({
+  fields,
+  showOutcome,
+  className,
+}: {
+  readonly fields: readonly ChangeRequestFieldView[];
+  readonly showOutcome: boolean;
+  readonly className?: string | undefined;
+}) {
+  const t = useTranslations('portal.changeRequests.diff');
+  const decided = showOutcome && fields.some((f) => f.outcome);
+  return (
+    <div className={cn('cr-diff--plain', className)} data-testid="change-request-diff">
+      <Table stackBelow="sm">
+        <THead>
+          <Tr>
+            <Th>{t('field')}</Th>
+            <Th>{t('seen')}</Th>
+            <Th>{t('proposed')}</Th>
+            {decided ? <Th>{t('decision')}</Th> : null}
+          </Tr>
+        </THead>
+        <TBody>
+          {fields.map((f) => (
+            <Tr key={f.key} data-field-key={f.key}>
+              <Th scope="row" className="sm:w-[26%]">
+                <span className="inline-flex flex-wrap items-center gap-1.5">
+                  <span>{t(`labels.${f.key}`)}</span>
+                  {/* Still text, never colour alone (FR-034). */}
+                  {f.affectsTaxDocuments ? <Badge variant="outline">{t('taxAffecting')}</Badge> : null}
+                  {/* The phone boards put the outcome beside the name. */}
+                  {decided && f.outcome ? (
+                    <span className="sm:hidden">
+                      <StatusPill tone={f.outcome === 'approved' ? 'ready' : 'blocked'}>{t(`outcome.${f.outcome}`)}</StatusPill>
+                    </span>
+                  ) : null}
+                </span>
+              </Th>
+              <Td label={t('wasShort')} className="text-[var(--aura-fg-secondary)]">
+                <ProposedValueDisplay fieldKey={f.key} value={f.seen} inline />
+              </Td>
+              <Td label={t('proposed')}>
+                <ProposedValueDisplay fieldKey={f.key} value={f.proposed} inline />
+              </Td>
+              {decided ? (
+                <Td className="max-sm:hidden">
+                  {f.outcome ? (
+                    <StatusPill tone={f.outcome === 'approved' ? 'ready' : 'blocked'}>{t(`outcome.${f.outcome}`)}</StatusPill>
+                  ) : null}
+                </Td>
+              ) : null}
             </Tr>
           ))}
         </TBody>

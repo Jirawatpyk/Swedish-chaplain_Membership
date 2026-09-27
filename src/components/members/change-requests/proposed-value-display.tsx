@@ -24,9 +24,15 @@ function isAddress(v: ProposedValue): v is Exclude<ProposedValue, string | null>
 export interface ProposedValueDisplayProps {
   readonly fieldKey: ChangeRequestFieldView['key'];
   readonly value: ProposedValue;
+  /**
+   * Spec 122 US3 — an address on one line, its present lines joined by ", "
+   * ("98 Sathorn Road, Silom, Bang Rak, Bangkok 10500"), as the portal boards
+   * draw it. The staff decision table keeps the labelled line list.
+   */
+  readonly inline?: boolean;
 }
 
-export function ProposedValueDisplay({ fieldKey, value }: ProposedValueDisplayProps) {
+export function ProposedValueDisplay({ fieldKey, value, inline = false }: ProposedValueDisplayProps) {
   const t = useTranslations('portal.changeRequests.diff');
   if (value === null || value === '') return <span className="text-muted-foreground">{t('empty')}</span>;
   // a STRING under an address key is the erasure sentinel (FR-030) — text, never "(empty)"
@@ -36,6 +42,14 @@ export function ProposedValueDisplay({ fieldKey, value }: ProposedValueDisplayPr
     const lines = fieldKey === 'billing_address' ? BILLING_ADDRESS_LINES : REGISTERED_ADDRESS_LINES;
     const present = lines.filter((line) => (obj[line] ?? null) !== null && obj[line] !== '');
     if (present.length === 0) return <span className="text-muted-foreground">{t('empty')}</span>;
+    if (inline) {
+      // the postal code follows its line with a space ("Bangkok 10500"), as the profile prints it
+      const text = present.reduce(
+        (acc, line, i) => (i === 0 ? String(obj[line]) : `${acc}${line === 'postal_code' ? ' ' : ', '}${obj[line]}`),
+        '',
+      );
+      return <span className="break-words">{text}</span>;
+    }
     return (
       <dl className="m-0 space-y-0.5">
         {present.map((line) => (

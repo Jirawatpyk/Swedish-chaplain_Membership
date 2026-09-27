@@ -607,6 +607,59 @@ summary,
     --aura-mesh-to: #ffe27a;
   }
 
+  /* Spec 122 US3 — the change-request diff as the portal boards draw it
+     (ChangeRequestDiffTable variant="plain"): no box, mono uppercase column
+     heads, the first column flush with the surrounding text; stacked (below
+     640px of the table's width) each value sits beside a 76px label. */
+  .cr-diff--plain .aura-tbl-wrap {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+  /* The boards' table: 14px text at the card's 1.7 line height, 8px header
+     rows and 10px body rows (AURA's default is 13/20 with 12px). */
+  .cr-diff--plain .aura-tbl {
+    font-size: 14px;
+    line-height: 1.7;
+  }
+  .cr-diff--plain .aura-tbl__head .aura-tbl__th {
+    padding-block: 8px;
+  }
+  .cr-diff--plain .aura-tbl__body > .aura-tbl__row > * {
+    padding-block: 10px;
+  }
+  .cr-diff--plain .aura-tbl__head .aura-tbl__th {
+    background: transparent;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--aura-fg-secondary);
+  }
+  .cr-diff--plain .aura-tbl__row > :first-child {
+    padding-inline-start: 0;
+  }
+  @container aura-tbl (width < 640px) {
+    .cr-diff--plain .aura-tbl--stack-sm > * > .aura-tbl__row {
+      padding-inline: 0;
+    }
+    /* The phone boards rule off the first field from the card's header too. */
+    .cr-diff--plain .aura-tbl--stack-sm > .aura-tbl__body > .aura-tbl__row:first-child {
+      border-top: 1px solid var(--aura-border-default);
+    }
+    .cr-diff--plain .aura-tbl--stack-sm > * > .aura-tbl__row > .aura-tbl__td[data-label] {
+      display: grid;
+      grid-template-columns: 76px minmax(0, 1fr);
+      column-gap: 8px;
+    }
+    .cr-diff--plain .aura-tbl--stack-sm > * > .aura-tbl__row > .aura-tbl__td[data-label]::before {
+      margin: 0;
+      font-family: var(--font-sans);
+      font-size: 13px;
+      line-height: inherit;
+    }
+  }
+
   /* Spec 122 — the staff nav as `Admin-members` draws it. The Settings group
      points right while closed and down when open (AURA draws down / up). The
      header's end padding is 6px so the brand, its dot and the Staff badge

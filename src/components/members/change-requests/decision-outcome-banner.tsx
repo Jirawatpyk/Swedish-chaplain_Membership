@@ -15,7 +15,6 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
-import { CheckCircle2Icon, ListChecksIcon, XCircleIcon } from 'lucide-react';
 import { Button } from '@jirawatpyk/aura-react';
 import { Alert, buttonClass } from '@jirawatpyk/aura-react/server';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
@@ -26,7 +25,8 @@ export interface DecisionOutcomeBannerProps {
   readonly request: ChangeRequestView;
 }
 
-const TONE = { approved: 'success', partially_approved: 'warning', rejected: 'danger' } as const;
+// Partially approved reads as information (the `Portal-profile-states` board), not a warning.
+const TONE = { approved: 'success', partially_approved: 'info', rejected: 'danger' } as const;
 
 export function DecisionOutcomeBanner({ request }: DecisionOutcomeBannerProps) {
   const t = useTranslations('portal.changeRequests.outcome');
@@ -40,7 +40,7 @@ export function DecisionOutcomeBanner({ request }: DecisionOutcomeBannerProps) {
   const outcome = request.outcome;
   const anyRejected = request.fields.some((f) => f.outcome === 'rejected');
   const decidedAt = request.decidedAt
-    ? formatLocalisedDate(request.decidedAt, locale, { dateStyle: 'medium', timeStyle: 'short' })
+    ? formatLocalisedDate(request.decidedAt, locale, { dateStyle: 'medium' })
     : '';
 
   if (dismissed || outcome === null) return null;
@@ -68,16 +68,13 @@ export function DecisionOutcomeBanner({ request }: DecisionOutcomeBannerProps) {
     });
   }
 
-  const Icon = outcome === 'approved' ? CheckCircle2Icon : outcome === 'rejected' ? XCircleIcon : ListChecksIcon;
-
-  // AURA Alert markup (spec 122 US3). The helper, not AURA's `Alert`: the
-  // banner stays `role="status"` whatever the tone (a decision is news, not an
-  // interruption), and carries its outcome icon and test hooks.
+  // AURA Alert (spec 122 US3) with each tone's own icon, as the board draws
+  // it. It stays `role="status"` whatever the tone: a decision is news, not
+  // an interruption. The per-field table stays (FR-010: each field's outcome).
   return (
     <Alert
       tone={TONE[outcome]}
       role="status"
-      icon={<Icon />}
       title={t(`title.${outcome}`)}
       data-testid="decision-outcome-banner"
       data-outcome={outcome}
@@ -86,13 +83,13 @@ export function DecisionOutcomeBanner({ request }: DecisionOutcomeBannerProps) {
           {anyRejected ? (
             <Link
               href={`/portal/edit?resubmit=${encodeURIComponent(request.id)}`}
-              className={buttonClass()}
+              className={buttonClass({ variant: 'secondary', size: 'sm' })}
               data-testid="resubmit-link"
             >
               {t('resubmit')}
             </Link>
           ) : null}
-          <Button type="button" variant="secondary" icon="x" onClick={dismiss} disabled={pending} data-testid="dismiss-decision">
+          <Button type="button" variant="secondary" size="sm" onClick={dismiss} disabled={pending} data-testid="dismiss-decision">
             {t('dismiss')}
           </Button>
         </div>
@@ -100,17 +97,10 @@ export function DecisionOutcomeBanner({ request }: DecisionOutcomeBannerProps) {
     >
       <div className="space-y-3">
         <p>{t(`body.${outcome}`, { decidedAt })}</p>
-        <ChangeRequestDiffTable
-          fields={request.fields}
-          showOutcome
-          className="bg-[var(--aura-bg-surface)] text-[var(--aura-fg-primary)]"
-        />
+        <ChangeRequestDiffTable fields={request.fields} showOutcome variant="plain" />
         {request.decisionReason ? (
-          <div
-            className="rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface)] p-3 text-[var(--aura-fg-primary)]"
-            data-testid="decision-reason"
-          >
-            <p className="font-medium">{t('reasonLabel')}</p>
+          <div className="mt-2 flex flex-col gap-0.5" data-testid="decision-reason">
+            <p className="text-xs font-semibold">{t('reasonLabel')}</p>
             <p className="whitespace-pre-wrap break-words">{request.decisionReason}</p>
           </div>
         ) : null}

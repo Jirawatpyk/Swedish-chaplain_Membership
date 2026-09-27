@@ -68,3 +68,23 @@ describe('the diff on AURA table markup (spec 122 US3)', () => {
     ]);
   });
 });
+
+describe('the portal boards\' plain diff (spec 122 US3)', () => {
+  it('prints an address on one line with the postal code after its city, and each decided field\'s outcome', () => {
+    const address = { line1: '98 Sathorn Road', line2: null, sub_district: 'Silom', city: 'Bangkok', province: null, postal_code: '10500' };
+    const { container } = render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <ChangeRequestDiffTable
+          variant="plain"
+          showOutcome
+          fields={[{ key: 'registered_address', target: 'member', seen: address, proposed: address, affectsTaxDocuments: true, outcome: 'approved', appliedAt: null }]}
+        />
+      </NextIntlClientProvider>,
+    );
+    const copy = enMessages.portal.changeRequests.diff;
+    const cells = container.querySelectorAll('tbody td');
+    expect(cells[0]?.textContent).toBe('98 Sathorn Road, Silom, Bangkok 10500');
+    expect([...container.querySelectorAll('thead th')].map((th) => th.textContent)).toEqual([copy.field, copy.seen, copy.proposed, copy.decision]);
+    expect(container.querySelector('tbody td .aura-pill--ready')?.textContent).toBe(copy.outcome.approved);
+  });
+});

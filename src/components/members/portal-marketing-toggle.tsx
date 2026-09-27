@@ -31,6 +31,7 @@ import { toast } from '@/lib/toast';
 import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
 import { isReadOnlyRefusal } from '@/lib/http/read-only-refusal';
 import type { MarketingState } from '@/modules/members';
+import { cn } from '@/lib/utils';
 
 type ResponseBody = { readonly outcome?: string; readonly error?: { readonly code?: string } };
 
@@ -132,7 +133,7 @@ export function PortalMarketingToggle({
     // Spec 122 US3 — the `Portal-profile` board: a tinted panel holding the
     // AURA switch, its label and the state sentence, then the notes.
     <div
-      className="flex flex-col gap-1 rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface-hover)] p-3"
+      className="flex flex-col gap-1 rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface-hover)] px-3.5 py-3 max-sm:px-3"
       data-testid="portal-marketing"
       data-marketing-state={state}
     >
@@ -147,11 +148,12 @@ export function PortalMarketingToggle({
           }}
         />
       ) : (
-        <div className="flex flex-wrap items-center gap-3">
+        // The board's stack: the label, the state line in the secondary colour
+        // at 13px, then the hint at 12px — size still sets the state apart
+        // from the hint (review M7).
+        <div className="flex flex-col gap-1">
           <span className="text-sm font-medium">{t('label')}</span>
-          {/* A STATE, not an empty sentinel — muted is reserved for the hints
-              below (spec Assumptions; review M7). */}
-          <span id={stateId} className="text-sm text-[var(--aura-fg-primary)]">
+          <span id={stateId} className="text-[13px] text-[var(--aura-fg-secondary)]">
             {t(`state.${state}`)}
           </span>
         </div>
@@ -164,7 +166,10 @@ export function PortalMarketingToggle({
           {t('unavailableHint')}
         </p>
       )}
-      {isPrimary && <p className="text-xs text-[var(--aura-fg-secondary)]">{t('primaryNote')}</p>}
+      {/* Under the switch's label (the 52px it is indented by), as the board draws it. */}
+      {isPrimary && (
+        <p className={cn('text-xs text-[var(--aura-fg-secondary)]', controllable && 'mt-1.5 ps-[52px]')}>{t('primaryNote')}</p>
+      )}
     </div>
   );
 }

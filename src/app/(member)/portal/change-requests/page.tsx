@@ -12,27 +12,23 @@
  * segment error boundary — never an empty list that says "no requests".
  */
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
-import { getLocale, getTranslations } from 'next-intl/server';
+import { getTranslations } from 'next-intl/server';
 import { InboxIcon } from 'lucide-react';
 import { env } from '@/lib/env';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { logger } from '@/lib/logger';
-import { formatLocalisedDate } from '@/lib/format-date-localised';
 import { asMembersUserId, buildChangeRequestDeps } from '@/lib/members-change-request-deps';
 import { serialiseChangeRequestForPortal, type ChangeRequestView } from '@/lib/change-request-portal-view';
 import { listPortalChangeRequests } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { Card, buttonClass } from '@jirawatpyk/aura-react/server';
 import { EmptyState } from '@/components/shell/empty-state';
-import { ChangeRequestDiffTable } from '@/components/members/change-requests/change-request-diff-table';
-import { ChangeRequestStatusBadge, changeRequestStatusOf } from '@/components/members/change-requests/change-request-status-badge';
+import { renderChangeRequestHistoryView } from '@/components/members/change-requests/change-request-history-view';
 
 const PAGE = 20;
 
@@ -49,8 +45,6 @@ export default async function PortalChangeRequestHistoryPage({ searchParams }: P
   if (!env.features.memberChangeApproval) notFound();
   const { user } = await requireSession('member');
   const t = await getTranslations('portal.changeRequests.history');
-  const tOutcome = await getTranslations('portal.changeRequests.outcome');
-  const locale = await getLocale();
   const tenant = resolveTenantFromRequest();
   const h = await headers();
   const requestId = requestIdFromHeaders(h);
@@ -92,67 +86,9 @@ export default async function PortalChangeRequestHistoryPage({ searchParams }: P
       isMe: row.request.submittedByUserId === me,
     }),
   );
-  const fmt = (iso: string) => formatLocalisedDate(iso, locale, { dateStyle: 'medium', timeStyle: 'short' });
-
-  return (
-    <DetailContainer>
-      <PageHeader
-        title={t('title')}
-        subtitle={t('subtitle')}
-        actions={
-          <Link href="/portal/profile" className={buttonClass({ variant: 'secondary' })}>
-            {t('backToProfile')}
-          </Link>
-        }
-      />
-      {items.length === 0 && !cursorRaw ? (
-        <div data-testid="history-empty">
-          <EmptyState icon={InboxIcon} title={t('empty')} description={t('emptyHint')} bordered />
-        </div>
-      ) : (
-        <ul className="flex flex-col gap-4" data-testid="history-list" aria-label={t('listLabel')}>
-          {items.map((r) => (
-            <li key={r.id}>
-              {/* An AURA card per request (spec 122 US3): the submission time as its
-                  h2, who and when as its description, the status pill top-right. */}
-              <Card
-                data-testid="history-item"
-                data-request-id={r.id}
-                headingLevel={2}
-                titleId={`history-${r.id}-heading`}
-                title={t('submittedOn', { submittedAt: fmt(r.submittedAt) })}
-                description={
-                  <>
-                    {r.submittedBy.isMe ? t('submittedByYou') : t('submittedBy', { name: r.submittedBy.displayName })}
-                    {r.decidedAt ? ` · ${t('decidedOn', { decidedAt: fmt(r.decidedAt) })}` : null}
-                  </>
-                }
-                actions={<ChangeRequestStatusBadge status={changeRequestStatusOf(r)} audience="portal" />}
-              >
-                <div className="space-y-3">
-                  <ChangeRequestDiffTable fields={r.fields} showOutcome={r.state === 'decided'} />
-                  {r.decisionReason ? (
-                    <div
-                      className="rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface-hover)] p-3 text-sm"
-                      data-testid="history-reason"
-                    >
-                      <p className="font-medium">{tOutcome('reasonLabel')}</p>
-                      <p className="whitespace-pre-wrap break-words">{r.decisionReason}</p>
-                    </div>
-                  ) : null}
-                </div>
-              </Card>
-            </li>
-          ))}
-        </ul>
-      )}
-      {result.value.nextCursor ? (
-        <div className="flex justify-center">
-          <Link href={`/portal/change-requests?cursor=${encodeURIComponent(result.value.nextCursor)}`} className={buttonClass({ variant: 'secondary' })} data-testid="history-more">
-            {t('loadMore')}
-          </Link>
-        </div>
-      ) : null}
-    </DetailContainer>
-  );
+  return renderChangeRequestHistoryView({
+    items,
+    nextCursor: result.value.nextCursor ?? null,
+    isFirstPage: !cursorRaw,
+  });
 }

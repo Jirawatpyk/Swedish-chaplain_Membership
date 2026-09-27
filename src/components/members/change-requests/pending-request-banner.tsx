@@ -33,7 +33,6 @@
  * landmark — the shell's own rule, UX C3).
  */
 import { useRef, useState, useTransition } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { Button } from '@jirawatpyk/aura-react';
@@ -47,15 +46,13 @@ import { ChangeRequestDiffTable } from './change-request-diff-table';
 
 export interface PendingRequestBannerProps {
   readonly request: ChangeRequestView;
-  /** Show the "edit your request" link (hidden on the edit page itself). */
-  readonly showEditLink?: boolean;
 }
 
 /** `hidden` — a 404 the server cannot explain (the flag-off race): render nothing, let the refresh decide. */
 type WithdrawResult = 'withdrawn' | 'gone' | 'hidden' | null;
 type WithdrawFailure = 'error' | 'read_only' | null;
 
-export function PendingRequestBanner({ request, showEditLink = true }: PendingRequestBannerProps) {
+export function PendingRequestBanner({ request }: PendingRequestBannerProps) {
   const t = useTranslations('portal.changeRequests.pending');
   const tw = useTranslations('portal.changeRequests.withdraw');
   const locale = useLocale();
@@ -127,17 +124,16 @@ export function PendingRequestBanner({ request, showEditLink = true }: PendingRe
     );
   }
 
-  // AURA Alert markup (spec 122 US3): the helper, not AURA's `Alert`, because
-  // the banner needs its own role, test id and clock icon — AURA's takes none.
+  // AURA Alert (spec 122 US3, `Portal-profile` board): the info tone's own
+  // icon, the diff, then Withdraw with a line saying how to change it instead.
   return (
     <Alert
       tone="info"
       role="status"
-      icon="clock"
       title={t('title')}
       data-testid="pending-request-banner"
       action={
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:gap-4">
           <Button
             ref={triggerRef}
             type="button"
@@ -149,23 +145,17 @@ export function PendingRequestBanner({ request, showEditLink = true }: PendingRe
           >
             {tw('button')}
           </Button>
-          {showEditLink ? (
-            <Link
-              href="/portal/edit"
-              className="inline-flex min-h-11 items-center text-sm font-medium text-[var(--aura-fg-accent)] no-underline hover:text-[var(--aura-fg-primary)] hover:underline"
-            >
-              {t('editLink')}
-            </Link>
-          ) : null}
+          {/* The page header's primary button reads "Edit your request" while one
+              is pending; this line points there rather than repeating it. */}
+          <p className="text-xs text-[var(--aura-fg-secondary)] sm:text-[13px]">
+            {t.rich('editHint', { strong: (chunks) => <strong className="font-semibold text-[var(--aura-fg-primary)]">{chunks}</strong> })}
+          </p>
         </div>
       }
     >
       <div className="space-y-3">
         <p>{t('body', { submittedAt })}</p>
-        <ChangeRequestDiffTable
-          fields={request.fields}
-          className="bg-[var(--aura-bg-surface)] text-[var(--aura-fg-primary)]"
-        />
+        <ChangeRequestDiffTable fields={request.fields} variant="plain" />
         {failed !== null ? (
           <p className="font-medium text-[var(--aura-fg-danger)]" data-testid="withdraw-error">
             {failed === 'read_only' ? tw('readOnly') : tw('error')}
