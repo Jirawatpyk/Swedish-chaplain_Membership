@@ -138,7 +138,7 @@ const CR_VALUES = {
 function MemberFrame({ path, children }: { readonly path: string; readonly children: React.ReactNode }) {
   // The member frame as the portal layout composes it (see /test-fixtures/aura-shell?view=member).
   return (
-    <div className="chamber-shell flex min-h-screen flex-col">
+    <div className="chamber-shell chamber-portal flex min-h-screen flex-col">
       <header className="sticky top-0 z-10 border-b border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)]">
         <MemberHeader
           tenantName="SweCham"
@@ -167,7 +167,7 @@ export default async function AuraPortalPreviewPage({
     return (
       <MemberFrame path="/portal/benefits">
         <DetailContainer>
-          <PageHeader title={t('title')} subtitle={t('subtitleMember')} />
+          <PageHeader title={t('title')} subtitle={t('subtitleMember')} size="hero" />
           <BenefitsTabs
             showBroadcastsTab={false}
             active="benefits"
@@ -284,7 +284,7 @@ export default async function AuraPortalPreviewPage({
     return (
       <MemberFrame path="/portal/profile">
         <FormContainer>
-          <PageHeader title={t('pageTitle')} />
+          <PageHeader title={t('pageTitle')} size="hero" />
           <PortalEditForm
             initialValues={{ firstName: 'Anna', lastName: 'Lindqvist', phone: '+66 81 234 5678', website: 'https://nordic.example', description: '' }}
           />
@@ -472,7 +472,7 @@ export default async function AuraPortalPreviewPage({
   return (
     <MemberFrame path="/portal">
       <DetailContainer>
-        <PageHeader title="Hi Anna" subtitle="Nordic Trading Co., Ltd." />
+        <PageHeader title="Hi Anna" subtitle="Nordic Trading Co., Ltd." size="hero" />
         <div className="grid gap-4 md:grid-cols-3">
           <StatCard label="Membership" value="Active" sub="Renews 31 Dec 2026" headIcon={CircleCheck} />
           <StatCard label="Outstanding" value="฿ 21,400.00" sub="1 invoice · due 22 Oct 2026" variant="warning" variantLabel="Due soon" headIcon={FileText} />

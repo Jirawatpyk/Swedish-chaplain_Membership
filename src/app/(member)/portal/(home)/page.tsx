@@ -63,6 +63,7 @@ export default async function MemberPortalHomePage() {
         <PageHeader
           title={t('welcome', { name: user.displayName ?? user.email })}
           subtitle={t('intro')}
+        size="hero"
         />
         <EmptyState
           bordered
@@ -112,6 +113,7 @@ export default async function MemberPortalHomePage() {
       <PageHeader
         title={t('welcome', { name: user.displayName ?? user.email })}
         subtitle={t('intro')}
+        size="hero"
         badge={
           <span className="flex flex-wrap items-center gap-2">
             <Badge variant="outline" className="font-mono">

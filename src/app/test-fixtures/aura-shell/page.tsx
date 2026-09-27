@@ -6,6 +6,7 @@ import { MemberBottomTabs } from '@/components/layout/member-bottom-tabs';
 import { MemberHeader } from '@/components/layout/member-header';
 import { PageHeader } from '@/components/layout/page-header';
 import { StaffShell } from '@/components/layout/staff-shell';
+import { AuraDensity } from '@/components/providers/aura-bridge';
 import { flattenNavItems, staffNavConfig } from '@/config/nav';
 
 // Request-time evaluation so the guard runs per request (see button-matrix).
@@ -31,7 +32,7 @@ export default async function AuraShellPreviewPage({
   if (view === 'member') {
     // The member frame as the portal layout composes it (header, main, tab bar).
     return (
-      <div className="chamber-shell flex min-h-screen flex-col">
+      <div className="chamber-shell chamber-portal flex min-h-screen flex-col">
         <header className="sticky top-0 z-10 border-b border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)]">
           <MemberHeader
             tenantName="SweCham"
@@ -51,23 +52,26 @@ export default async function AuraShellPreviewPage({
   }
 
   return (
-    <StaffShell
-      nav={{
-        tenantName: 'SweCham',
-        allowedHrefs: flattenNavItems(staffNavConfig).map((item) => item.href),
-        navVisibilityFlags: { broadcastsEnabled: true, eventsEnabled: true, memberChangeApproval: true },
-        navBadgeCounts: { '/admin/change-requests': 3 },
-        currentPath: '/admin/members',
-        defaultCollapsed: rail === '1',
-      }}
-      user={{ displayName: 'Malin Berg', email: 'malin.berg@example.com', role: 'admin' }}
-    >
-      <TableContainer>
-        <PageHeader title="Members" subtitle="Member companies + primary contacts" />
-        <p className="text-body text-muted-foreground">Page content.</p>
-      </TableContainer>
-      {/* As the admin layout mounts it; search answers come from a mocked route in the preview scripts. */}
-      <CommandPalette />
-    </StaffShell>
+    // Compact, as the admin layout wraps the staff shell.
+    <AuraDensity density="compact">
+      <StaffShell
+        nav={{
+          tenantName: 'SweCham',
+          allowedHrefs: flattenNavItems(staffNavConfig).map((item) => item.href),
+          navVisibilityFlags: { broadcastsEnabled: true, eventsEnabled: true, memberChangeApproval: true },
+          navBadgeCounts: { '/admin/change-requests': 3 },
+          currentPath: '/admin/members',
+          defaultCollapsed: rail === '1',
+        }}
+        user={{ displayName: 'Malin Berg', email: 'malin.berg@example.com', role: 'admin' }}
+      >
+        <TableContainer>
+          <PageHeader title="Members" subtitle="Member companies + primary contacts" />
+          <p className="text-body text-muted-foreground">Page content.</p>
+        </TableContainer>
+        {/* As the admin layout mounts it; search answers come from a mocked route in the preview scripts. */}
+        <CommandPalette />
+      </StaffShell>
+    </AuraDensity>
   );
 }

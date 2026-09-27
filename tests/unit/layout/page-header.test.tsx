@@ -79,4 +79,12 @@ describe('<PageHeader>', () => {
     expect(h1.className).toMatch(/\btext-h1\b/);
     expect(h1.className).not.toMatch(/\btext-(?:xl|2xl|3xl)\b/);
   });
+
+  it('marks the size for the stylesheet: default, or hero for the larger portal pages (spec 122)', () => {
+    const { container, rerender } = render(<PageHeader title="Members" />);
+    const header = () => container.querySelector('[data-slot="page-header"]');
+    expect(header()).toHaveAttribute('data-size', 'default');
+    rerender(<PageHeader title="Hi Anna" size="hero" />);
+    expect(header()).toHaveAttribute('data-size', 'hero');
+  });
 });

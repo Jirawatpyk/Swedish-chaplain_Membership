@@ -200,11 +200,12 @@
   --layout-max-width-detail: 72rem;   /* 1152px — DetailContainer (F5) */
   --layout-max-width-table: 96rem;    /* 1536px — TableContainer (F5) */
   --page-padding-x: 1.5rem;           /* 24px */
-  --page-padding-y: 1.5rem;           /* 24px */
+  --page-padding-y: 1.5rem;           /* 24px — top padding; the shells set the board steps */
+  --page-padding-bottom: var(--page-padding-y);
   --page-section-gap: 1.5rem;         /* 24px — gap between content sections (PageHeader → Card, Card → Card). Owned by layout containers' `flex flex-col gap-*` default. */
 
   /* --- Typography scale --- */
-  --font-size-h1: 1.875rem;           /* 30px */
+  --font-size-h1: 1.625rem;           /* 26px on phones, 32px from 640px (spec 122, the boards) */
   --font-size-h2: 1.5rem;             /* 24px */
   --font-size-h3: 1.25rem;            /* 20px */
   --font-size-h4: 1.125rem;           /* 18px */
@@ -298,8 +299,13 @@ body {
   font-family: var(--font-display);
   font-size: var(--font-size-h1);
   font-weight: var(--font-weight-heading);
-  line-height: var(--line-height-body);
+  line-height: 1.2;
   letter-spacing: -0.01em;
+}
+@media (min-width: 640px) {
+  :root {
+    --font-size-h1: 2rem;
+  }
 }
 .text-h2 {
   font-size: var(--font-size-h2);
@@ -540,20 +546,52 @@ summary,
   .chamber-shell .aura-shell__content {
     padding: 0;
   }
+  /* Page padding, section gap and column on the boards' steps (spec 122,
+     Session 2026-09-27): staff 18 / 24 / 28px top and 32px bottom with a
+     16px section gap; the portal 20 / 32px top, 32 / 64px bottom, a 16px
+     gap and a 1200px content column. The home, benefits and edit boards
+     draw a larger page (PageHeader size="hero", see page-header.tsx). */
   .chamber-shell {
     --page-padding-x: 1rem;
+    --page-padding-y: 18px;
+    --page-padding-bottom: 2rem;
+    --page-section-gap: 1rem;
     /* The sticky bar's height, so sticky page parts (the E-Blast preview
        panes) stop below it: AppShell's 56px bar; the portal header sets 72px. */
     --shell-bar-height: 56px;
   }
+  [data-slot='page-header'][data-size='hero'] {
+    --font-size-h1: 1.875rem;
+  }
+  .chamber-portal [data-slot='layout-container']:has(> [data-slot='page-header'][data-size='hero']) {
+    --page-padding-y: 1.5rem;
+  }
+  .chamber-portal {
+    --page-padding-y: 20px;
+    --layout-max-width-detail: calc(1200px + 2 * var(--page-padding-x));
+    --layout-max-width-table: calc(1200px + 2 * var(--page-padding-x));
+  }
   @media (min-width: 768px) {
     .chamber-shell {
       --page-padding-x: 1.5rem;
+      --page-padding-y: 1.5rem;
     }
   }
   @media (min-width: 1024px) {
     .chamber-shell {
       --page-padding-x: 2rem;
+      --page-padding-y: 1.75rem;
+    }
+    .chamber-portal {
+      --page-padding-y: 2rem;
+      --page-padding-bottom: 4rem;
+    }
+    [data-slot='page-header'][data-size='hero'] {
+      --font-size-h1: 2.25rem;
+    }
+    .chamber-portal [data-slot='layout-container']:has(> [data-slot='page-header'][data-size='hero']) {
+      --page-padding-y: 2.5rem;
+      --page-section-gap: 1.5rem;
     }
   }
   /* Spec 122 US2 — the auth brand panel's mesh runs from the brand blue

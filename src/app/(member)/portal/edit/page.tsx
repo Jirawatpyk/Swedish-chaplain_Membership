@@ -61,7 +61,7 @@ export async function generateMetadata(): Promise<Metadata> {
 function loadFailed(title: string, message: string) {
   return (
     <FormContainer>
-      <PageHeader title={title} />
+      <PageHeader title={title} size="hero" />
       <div role="alert" className="py-12 text-center">
         <p className="text-body">{message}</p>
       </div>
@@ -142,7 +142,7 @@ export default async function PortalEditPage({ searchParams }: PageProps) {
   if (gate === 'immediate') {
     return (
       <FormContainer>
-        <PageHeader title={t('pageTitle')} subtitle={member.companyName} />
+        <PageHeader title={t('pageTitle')} subtitle={member.companyName} size="hero" />
         <PortalEditForm
           initialValues={{
             firstName: ownContact.firstName,

@@ -92,7 +92,7 @@ export default async function PortalBenefitsPage(props: {
     }
     return (
       <DetailContainer>
-        <PageHeader title={t('title')} subtitle={t('subtitleMember')} />
+        <PageHeader title={t('title')} subtitle={t('subtitleMember')} size="hero" />
         {/* AURA empty state (spec 122 US3). Review 2026-09-07 round 2
             (C13 / UX M-3): the compose page sends a member with no profile
             here — the extra line says that is why. */}
@@ -218,7 +218,7 @@ export default async function PortalBenefitsPage(props: {
 
   return (
     <DetailContainer>
-      <PageHeader title={t('title')} subtitle={t('subtitleMember')} />
+      <PageHeader title={t('title')} subtitle={t('subtitleMember')} size="hero" />
       <BenefitsTabs {...tabsProps} />
     </DetailContainer>
   );
