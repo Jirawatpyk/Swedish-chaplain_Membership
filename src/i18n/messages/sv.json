@@ -6377,7 +6377,7 @@
           "replacedBy": "Den här fakturan har ersatts av <link>{number}</link>",
           "replacedByIssued": "utfärdad {date}"
         },
-        "detailsHeading": "Detaljer"
+        "detailsHeading": "Uppgifter"
       }
     },
     "creditNotes": {
@@ -7128,7 +7128,7 @@
         "promptpayAriaLabel": "PromptPay — byt betalningsmetod",
         "cardPlaceholder": "Förbereder säkert betalningsformulär…",
         "promptpayPlaceholder": "Förbereder PromptPay-QR-kod…",
-        "groupLabel": "Betalningssätt"
+        "groupLabel": "Betalningsmetod"
       },
       "success": {
         "title": "Betalningen mottagen",
