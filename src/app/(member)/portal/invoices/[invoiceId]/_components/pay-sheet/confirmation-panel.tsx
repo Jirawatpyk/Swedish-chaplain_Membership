@@ -205,7 +205,7 @@ export function ConfirmationPanel({
     >
       <CheckCircle2Icon
         aria-hidden="true"
-        className="size-12 text-primary motion-safe:animate-in motion-safe:zoom-in-50 motion-safe:duration-200"
+        className="size-12 text-[var(--aura-button-primary-bg)] motion-safe:animate-in motion-safe:zoom-in-50 motion-safe:duration-200"
         data-testid="pay-sheet-confirmation-icon"
       />
       <h3
@@ -265,7 +265,7 @@ export function ConfirmationPanel({
         // keeps it subtler than the primary CTA but still WCAG 2.1 AA
         // contrast (4.5:1 on card background).
         // T164: hide on print — close button has no meaning on paper.
-        className="min-h-[44px] text-caption text-[var(--aura-fg-secondary)] hover:text-[var(--aura-fg-primary)] hover:underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:rounded print:hidden"
+        className="min-h-[44px] text-caption text-[var(--aura-fg-secondary)] hover:text-[var(--aura-fg-primary)] hover:underline underline-offset-4 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)] print:hidden"
         data-testid="pay-sheet-confirmation-close"
       >
         {t('close')}
@@ -298,7 +298,7 @@ export function ConfirmationPanel({
           // but a `::before` overlay extends the tap target to ~44px tall to
           // match the codebase 44px convention (WCAG 2.5.5) without adding
           // vertical space; primary keyboard targets remain Download / Close.
-          className="relative inline-flex min-h-[24px] min-w-[24px] items-center gap-1 rounded text-caption text-[var(--aura-fg-secondary)] before:absolute before:inset-x-0 before:-inset-y-2.5 before:content-[''] hover:text-[var(--aura-fg-primary)] hover:underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="relative inline-flex min-h-[24px] min-w-[24px] items-center gap-1 rounded text-caption text-[var(--aura-fg-secondary)] before:absolute before:inset-x-0 before:-inset-y-2.5 before:content-[''] hover:text-[var(--aura-fg-primary)] hover:underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)]"
           data-testid={paused ? 'pay-sheet-confirmation-resume' : 'pay-sheet-confirmation-pause'}
         >
           {paused ? (

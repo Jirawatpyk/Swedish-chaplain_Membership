@@ -124,7 +124,7 @@ export async function renderPortalCreditNoteView({
       <PageHeader
         title={<span className="font-mono">{cn.documentNumber.raw}</span>}
         badge={
-          <Badge tone="success" aria-label={t('status.issued')}>
+          <Badge tone="success">
             {t('status.issued')}
           </Badge>
         }

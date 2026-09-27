@@ -434,7 +434,7 @@ export function CardForm({
       <div
         role="alert"
         data-testid="pay-sheet-card-load-error"
-        className="space-y-4 rounded-md border border-destructive/40 bg-destructive/5 p-4"
+        className="space-y-4 rounded-[var(--aura-radius-md)] border border-[var(--aura-alert-danger-border)] bg-[var(--aura-alert-danger-bg)] p-4"
       >
         <p className="text-body text-[var(--aura-fg-primary)]">{loadError}</p>
         <Button

@@ -499,8 +499,9 @@ export default async function AuraPortalPreviewPage({
               ? ({
                   onlinePaymentEnabled: true,
                   enabledMethods: ['card', 'promptpay'],
-                  processorAccountId: 'acct_preview',
-                  processorPublishableKey: 'pk_test_preview',
+                  processorAccountId: 'preview-account',
+                  // Not key-shaped on purpose (secret scanners); only drawn, never loaded.
+                  processorPublishableKey: 'preview-not-a-key',
                 } as never)
               : null,
           portalCreditNotes: [],

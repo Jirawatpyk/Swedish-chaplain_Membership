@@ -260,7 +260,7 @@ export function PromptPayPanel({
         role="alert"
         aria-live="assertive"
         aria-atomic="true"
-        className="space-y-4 rounded-md border border-destructive/40 bg-destructive/5 p-4"
+        className="space-y-4 rounded-[var(--aura-radius-md)] border border-[var(--aura-alert-danger-border)] bg-[var(--aura-alert-danger-bg)] p-4"
       >
         <div>
           <h3 className="text-body font-medium text-[var(--aura-fg-primary)]">
@@ -353,7 +353,7 @@ export function PromptPayPanel({
           data-testid="pay-sheet-promptpay-waiting"
         >
           <span
-            className="inline-block size-2 rounded-full bg-primary motion-safe:animate-pulse motion-reduce:animate-none"
+            className="inline-block size-2 rounded-full bg-[var(--aura-button-primary-bg)] motion-safe:animate-pulse motion-reduce:animate-none"
           />
           {t('waiting')}
         </div>
