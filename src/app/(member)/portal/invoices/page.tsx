@@ -387,7 +387,7 @@ export async function renderPortalInvoicesView({
                         mobile card. */}
                     {rows.map(({ vm }) => (
                       <Tr key={vm.invoiceId}>
-                        <Td mono>
+                        <Td mono className="whitespace-nowrap">
                           {/* 088 A-refined (FR-016) — the row identity is
                               `primaryNumber` = the invoice's OWN (SC) number for a
                               real 088 bill (paid AND unpaid), the §87 number for
