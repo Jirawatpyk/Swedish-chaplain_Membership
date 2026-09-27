@@ -58,7 +58,7 @@ test.describe('F4 portal /portal/invoices mobile card-view (D4) @a11y @f4', () =
       await page.waitForLoadState('networkidle');
 
       // The desktop table (role=table, aria-label "Invoices") is hidden via
-      // `hidden md:block` at mobile widths.
+      // `hidden lg:block` below 1024px.
       const table = page.getByRole('table');
       await expect(table).toBeHidden();
 
@@ -110,7 +110,7 @@ test.describe('F4 portal /portal/invoices mobile card-view (D4) @a11y @f4', () =
     await page.goto('/portal/invoices');
     await page.waitForLoadState('networkidle');
 
-    // The card list is hidden via `md:hidden` at desktop widths.
+    // The card list is hidden via `lg:hidden` at desktop widths.
     await expect(page.getByTestId('portal-invoice-card-list')).toBeHidden();
 
     if (EXPECTS_ROWS) {

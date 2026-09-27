@@ -336,18 +336,22 @@ export async function renderPortalInvoicesView({
             </div>
           ) : (
             <>
-              {/* 060-member-portal-d4 — dual-render. The 7-column desktop
-                  table is hidden below `md` (768px); the mobile card list
-                  (`PortalInvoiceCardList`) takes over `< md`. Both consume
-                  the SAME per-row view-model (`rows[].vm`) so they can never
+              {/* 060-member-portal-d4 — dual-render. Both forms consume the
+                  SAME per-row view-model (`rows[].vm`) so they can never
                   drift apart. Filters + pagination + empty/no-match states
                   live ABOVE this branch and render ONCE for both form
-                  factors. */}
-              {/* R8-M1-ux — dual-tone inset shadow signals horizontal
-                  scroll on the table (parity with admin table U-I4). The
-                  portal list has 7 columns; without the cue, members miss
-                  the right-edge Total + Actions silently. */}
-              <div className="hidden overflow-x-auto md:block">
+                  factors. Spec 122 US4 (UX review M3): the 7-column table
+                  (~1,100px with three actions) starts at `lg`; below it the
+                  card list (`PortalInvoiceCardList`) takes over, so tablets
+                  no longer get a sideways-scrolling table. Where the table
+                  still overflows (1024–1150px) its scroller is a named,
+                  focusable region so a keyboard can pan it (SC 2.1.1). */}
+              <div
+                role="region"
+                aria-label={t('title')}
+                tabIndex={0}
+                className="hidden overflow-x-auto rounded-[var(--aura-radius-sm)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)] lg:block"
+              >
                 <Table caption={t('title')} captionHidden className="[&_td]:align-middle">
                   <THead>
                     <Tr>
@@ -461,10 +465,10 @@ export async function renderPortalInvoicesView({
                             label={tStatus(vm.displayStatus)}
                           />
                         </Td>
-                        <Td>
+                        <Td className="whitespace-nowrap">
                           {formatDate(vm.issueDate, userLocale)}
                         </Td>
-                        <Td>
+                        <Td className="whitespace-nowrap">
                           {formatDate(vm.dueDate, userLocale)}
                         </Td>
                         <Td numeric>
@@ -628,7 +632,7 @@ export async function renderPortalInvoicesView({
                 // disambiguation only when both this prop is present AND the VM's
                 // taxDocumentKind is non-'none' (byte-identical legacy otherwise).
                 {...(f088TaxAtPayment ? { tTax088 } : {})}
-                className="md:hidden"
+                className="lg:hidden"
               />
               <TablePagination
                 page={page}

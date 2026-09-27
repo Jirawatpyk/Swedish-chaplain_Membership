@@ -4,7 +4,7 @@
  * Server Component. Renders the same per-row data as the desktop
  * `<table>` (in `page.tsx`) as a stacked card list for narrow viewports
  * (`< md`). The page dual-renders: `<table>` inside `hidden md:block`,
- * this list with `className="md:hidden"`.
+ * this list with `className="lg:hidden"`.
  *
  * SINGLE SOURCE OF TRUTH — this list consumes the SAME per-row
  * view-model (`InvoiceRowViewModel`, see `_utils/invoice-row-view-model.ts`)
@@ -100,7 +100,7 @@ export interface PortalInvoiceCardListProps {
    * flag is on (and the VM's `taxDocumentKind` is then non-`'none'`).
    */
   readonly tTax088?: (key: string, values?: Record<string, string | number>) => string;
-  /** Forwarded to the root `<ul>` — the page passes `md:hidden`. */
+  /** Forwarded to the root `<ul>` — the page passes `lg:hidden`. */
   readonly className?: string;
 }
 
