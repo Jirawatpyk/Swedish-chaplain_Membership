@@ -65,6 +65,15 @@ test.describe('F7.1a US2 — Image upload + allowlist E2E @a11y', () => {
     // h-element. `getByRole('heading')` would not match. Use the
     // text+test-id pattern instead. 30s expect-poll covers Turbopack
     // cold-compile of this route on first request.
+    //
+    // `loading.tsx` draws the same card title. While the page streams in,
+    // React holds the finished page in a hidden node beside the skeleton,
+    // so both titles are in the DOM for a moment and the strict locator
+    // below matched two (R10, 2026-09-27). Wait for the skeleton to go
+    // first; the axe scan must not see it either.
+    await expect(
+      page.locator('[role="status"][aria-busy="true"]', { hasText: /loading form/i }),
+    ).toHaveCount(0, { timeout: 30_000 });
     await expect(
       page.locator('[data-slot="card-title"]', { hasText: /image source allowlist/i }),
     ).toBeVisible({ timeout: 30_000 });

@@ -816,7 +816,12 @@ test.describe('@a11y queue render-tree scan — desktop table / mobile card / bu
     const seededRow = page
       .locator('tbody tr')
       .filter({ hasText: SEEDED_SUBJECT });
-    await seededRow.getByRole('checkbox').click();
+    // `check()` inside `toPass`, same as D3: a bare click that lands before
+    // React has attached the handler toggles nothing and the bar never
+    // mounts (R10, 2026-09-27: "toolbar not visible" on one ref only).
+    await expect(async () => {
+      await seededRow.getByRole('checkbox').check({ timeout: 2_000 });
+    }).toPass({ timeout: 15_000 });
 
     const toolbar = page.getByRole('toolbar');
     await expect(toolbar).toBeVisible();
