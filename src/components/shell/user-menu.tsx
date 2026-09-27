@@ -46,9 +46,15 @@ export interface UserMenuProps {
   readonly themeChoicesOnPhone?: boolean;
   /** Sizing for the trigger where a bar's board differs (the portal header's 44px button). */
   readonly className?: string;
+  /**
+   * The member portal's header shows the first name beside the avatar
+   * (`Main`, `Portal-*` boards: "Anna"); the menu header keeps the full name.
+   * The staff top bar shows the full name, as its boards do.
+   */
+  readonly firstNameOnTrigger?: boolean;
 }
 
-export function UserMenu({ displayName, email, role, themeChoicesOnPhone = false, className }: UserMenuProps) {
+export function UserMenu({ displayName, email, role, themeChoicesOnPhone = false, className, firstNameOnTrigger = false }: UserMenuProps) {
   const t = useTranslations('shell.userMenu');
   const tBadge = useTranslations('shell.roleBadge');
   const tHub = useTranslations('portal.account.menu');
@@ -64,6 +70,8 @@ export function UserMenu({ displayName, email, role, themeChoicesOnPhone = false
   const handleSignOut = useSignOut(isMember ? 'member' : 'staff');
 
   const name = displayName?.trim() || email;
+  // The first word of the name; an address is shown whole.
+  const triggerName = firstNameOnTrigger && name !== email ? (name.split(/\s+/)[0] ?? name) : name;
   const header = (
     <>
       <p>
@@ -113,7 +121,7 @@ export function UserMenu({ displayName, email, role, themeChoicesOnPhone = false
           <span aria-hidden className="contents">
             <Avatar name={name} size="sm" />
           </span>
-          <span className="hidden max-w-40 truncate lg:inline">{name}</span>
+          <span className="hidden max-w-40 truncate lg:inline">{triggerName}</span>
           <ChevronDownIcon className="size-4 max-sm:hidden" aria-hidden />
         </button>
       }

@@ -112,3 +112,26 @@ describe('<UserMenu> staff (admin) menu — single Account item, no member extra
     expect(screen.getByRole('menuitem', { name: /sign out/i })).toBeInTheDocument();
   });
 });
+
+describe('<UserMenu> name on the trigger (spec 122, portal boards)', () => {
+  beforeEach(() => {
+    vi.useRealTimers();
+  });
+  afterEach(() => {
+    cleanup();
+    vi.useFakeTimers();
+  });
+
+  it('shows the first name when asked, keeping the full name in the menu header', async () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <UserMenu displayName="Jane Member" email="jane@example.com" role="member" firstNameOnTrigger />
+      </NextIntlClientProvider>,
+    );
+    const trigger = screen.getByRole('button', { name: /account menu/i });
+    expect(trigger).toHaveTextContent('Jane');
+    expect(trigger).not.toHaveTextContent('Jane Member');
+    fireEvent.click(trigger);
+    expect(await screen.findByText('Jane Member')).toBeInTheDocument();
+  });
+});
