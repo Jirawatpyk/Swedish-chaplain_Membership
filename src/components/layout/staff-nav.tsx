@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { PanelLeftCloseIcon, PanelLeftOpenIcon, SettingsIcon } from 'lucide-react';
+import { LogOutIcon, PanelLeftCloseIcon, PanelLeftOpenIcon, SettingsIcon } from 'lucide-react';
 import { Badge, SideNav, type NavItem as AuraNavItem } from '@jirawatpyk/aura-react';
 
 import {
@@ -22,6 +22,7 @@ import {
 } from '@/config/nav';
 import { AURA_FOCUS_RING } from '@/components/shell/aura-classes';
 import { BrandMark } from '@/components/shell/brand-mark';
+import { useSignOut } from '@/components/shell/use-sign-out';
 import { SIDEBAR_COOKIE, SIDEBAR_COOKIE_MAX_AGE } from '@/components/layout/sidebar-cookie';
 import { cn } from '@/lib/utils';
 
@@ -139,14 +140,41 @@ function RailToggle({ collapsed, onToggle }: { readonly collapsed: boolean; read
   return (
     <button type="button" className="aura-nav__item w-full" aria-label={label} onClick={onToggle}>
       <span className="aura-icon" aria-hidden>
-        <Icon className="size-4" />
+        {/* 20px in the rail, as the collapsed boards draw it. */}
+        <Icon className={collapsed ? 'size-5' : 'size-4'} />
       </span>
       {collapsed ? null : <span className="aura-nav__label">{label}</span>}
     </button>
   );
 }
 
-function StaffBrand({ tenantName, collapsed }: { readonly tenantName: string; readonly collapsed: boolean }) {
+/**
+ * The phone drawer's last row, as `Admin-nav-mobile` draws it: the drawer
+ * has no collapse toggle, so its footer signs out (the same call as the
+ * account menu).
+ */
+function DrawerSignOut() {
+  const t = useTranslations('shell.userMenu');
+  const signOut = useSignOut('staff');
+  return (
+    <button type="button" className="aura-nav__item w-full" onClick={() => void signOut()}>
+      <span className="aura-icon" aria-hidden>
+        <LogOutIcon className="size-4" />
+      </span>
+      <span className="aura-nav__label">{t('signOut')}</span>
+    </button>
+  );
+}
+
+function StaffBrand({
+  tenantName,
+  collapsed,
+  inDrawer,
+}: {
+  readonly tenantName: string;
+  readonly collapsed: boolean;
+  readonly inDrawer: boolean;
+}) {
   const t = useTranslations('shell.portalLabel');
   return (
     // Wraps: where the portal badge is long (SV "Personal", TH) it drops to a
@@ -155,7 +183,8 @@ function StaffBrand({ tenantName, collapsed }: { readonly tenantName: string; re
       <Link
         href="/admin"
         className={cn(
-          'flex min-h-11 min-w-0 items-center gap-2 rounded-[var(--aura-radius-md)] text-[var(--aura-fg-primary)] no-underline',
+          // 44px tall for touch; the 40px tile sets the height where a mouse is used (the board's 76px header).
+          'flex min-h-11 min-w-0 items-center gap-3 rounded-[var(--aura-radius-md)] text-[var(--aura-fg-primary)] no-underline pointer-fine:min-h-10',
           AURA_FOCUS_RING,
         )}
       >
@@ -166,7 +195,7 @@ function StaffBrand({ tenantName, collapsed }: { readonly tenantName: string; re
         {collapsed ? (
           <span className="sr-only">{tenantName}</span>
         ) : (
-          <span className="flex min-w-0 items-center gap-1">
+          <span className="flex min-w-0 items-center gap-3">
             <span className="truncate font-[family-name:var(--font-display)] text-xl leading-none font-semibold tracking-[-0.01em]">
               {tenantName}
             </span>
@@ -175,7 +204,8 @@ function StaffBrand({ tenantName, collapsed }: { readonly tenantName: string; re
           </span>
         )}
       </Link>
-      {collapsed ? null : (
+      {/* In the phone drawer AURA's close button takes the badge's place, as on the board. */}
+      {collapsed || inDrawer ? null : (
         <Badge variant="outline" className="ms-auto">
           {t('staff')}
         </Badge>
@@ -253,8 +283,8 @@ export function StaffNav({
       sections={sections}
       value={value}
       linkComponent={Link}
-      header={<StaffBrand tenantName={tenantName} collapsed={collapsed} />}
-      footer={collapsible ? <RailToggle collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} /> : undefined}
+      header={<StaffBrand tenantName={tenantName} collapsed={collapsed} inDrawer={!collapsible} />}
+      footer={collapsible ? <RailToggle collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} /> : <DrawerSignOut />}
       collapsed={collapsed}
       // A group clicked in the rail asks to expand it (AURA calls this with `false`).
       onCollapsedChange={setCollapsed}

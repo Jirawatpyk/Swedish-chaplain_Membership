@@ -600,6 +600,103 @@ summary,
   .auth-mesh {
     --aura-mesh-to: #ffe27a;
   }
+
+  /* Spec 122 — the staff nav as `Admin-members` draws it. The Settings group
+     points right while closed and down when open (AURA draws down / up). The
+     header's end padding is 6px so the brand, its dot and the Staff badge
+     fit one row in EN. */
+  .staff-nav .aura-nav__chevron {
+    transform: rotate(-90deg);
+  }
+  .staff-nav .aura-nav__chevron.is-open {
+    transform: none;
+  }
+  .staff-nav .aura-nav__header {
+    padding-inline-end: 6px;
+  }
+  /* The collapsed rail (`Admin-members`, sidebar=collapsed): 44 × 40 items
+     with 20px icons, a rule under the brand, 8px section rhythm and a 72px
+     header. AURA sets the icon size inline, hence !important. */
+  .staff-nav.aura-nav--collapsed .aura-nav__scroll {
+    padding-inline: 10px;
+  }
+  .staff-nav.aura-nav--collapsed .aura-nav__item {
+    min-height: 40px;
+  }
+  .staff-nav.aura-nav--collapsed .aura-nav__item > .aura-icon,
+  .staff-nav.aura-nav--collapsed .aura-nav__item > svg {
+    width: 20px !important;
+    height: 20px !important;
+  }
+  .staff-nav.aura-nav--collapsed .aura-nav__section:first-child {
+    border-top: 1px solid var(--aura-border-default);
+    padding-top: 8px;
+  }
+  .staff-nav.aura-nav--collapsed .aura-nav__section + .aura-nav__section {
+    margin-top: 0;
+    padding-block: 8px;
+  }
+  .staff-nav.aura-nav--collapsed .aura-nav__header {
+    height: 72px;
+    padding-block: 16px;
+  }
+  /* The phone drawer is 300px wide on `Admin-nav-mobile` (AURA: the nav
+     width). The drawer is portaled out of the shell, hence :has. The close
+     button sits where the badge was; keep the brand clear of it. */
+  .aura-drawer--nav:has(.staff-nav) {
+    max-width: 300px;
+  }
+  .aura-drawer--nav .staff-nav .aura-nav__header {
+    padding-inline-end: 48px;
+  }
+  /* The staff bar's side padding and the menu button, per board: 24px on the
+     tablet board, 8 / 12px and a 60px bar with a 44px menu button on phones;
+     the menu icon is 16px on both (AppShell hard-codes 20). */
+  .chamber-shell .aura-shell__menu .aura-icon,
+  .chamber-shell .aura-shell__menu svg {
+    width: 16px !important;
+    height: 16px !important;
+  }
+  @media (min-width: 640px) and (max-width: 1023.98px) {
+    .chamber-shell .aura-shell__bar {
+      padding-inline: 24px;
+    }
+  }
+  @media (max-width: 639.98px) {
+    .chamber-shell .aura-shell__bar {
+      min-height: 60px;
+      padding: 0 12px 0 8px;
+      gap: 6px;
+    }
+    .chamber-shell .aura-shell__menu {
+      width: 44px;
+      height: 44px;
+    }
+  }
+  /* The portal's phone tab bar (`Home-mobile`): 56px active pill, the label
+     12px and in the accent colour when active, 6 / 8px padding with 22px
+     under the tabs. The spacer and the offset that toasts and viewport
+     ActionBars read grow by the same amount. */
+  @media (max-width: 1023.98px) {
+    .chamber-shell .aura-bottomnav {
+      padding: 6px 8px max(22px, env(safe-area-inset-bottom, 0px));
+    }
+    .chamber-shell .aura-bottomnav__item {
+      font-size: 12px;
+    }
+    .chamber-shell .aura-bottomnav__item.is-active {
+      color: var(--aura-fg-accent);
+    }
+    .chamber-shell .aura-bottomnav__icon {
+      width: 56px;
+    }
+    .chamber-shell .aura-bottomnav-spacer {
+      height: calc(var(--aura-bottomnav-height) + 6px + max(22px, env(safe-area-inset-bottom, 0px)));
+    }
+    :root:has(.chamber-shell .aura-bottomnav--below-lg) {
+      --aura-bottomnav-offset: calc(var(--aura-bottomnav-height) + 6px + max(22px, env(safe-area-inset-bottom, 0px)));
+    }
+  }
 }
 
 @layer base {

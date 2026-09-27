@@ -114,10 +114,13 @@ export function PageHeader({
           // error.
           <div
             data-slot="page-header-subtitle"
-            className={cn(
+            // Joined by hand, not with cn(): tailwind-merge reads `text-body`
+            // (our type utility) and `text-muted-foreground` as one conflict
+            // and drops the size.
+            className={[
               '[margin-block-start:0.25rem] text-body text-muted-foreground [.chamber-portal_&]:[margin-block-start:0.375rem]',
-              size === 'hero' && 'lg:[.chamber-portal_&]:[margin-block-start:0.5rem]',
-            )}
+              size === 'hero' ? 'lg:[.chamber-portal_&]:[margin-block-start:0.5rem]' : '',
+            ].join(' ')}
           >
             {subtitle}
           </div>

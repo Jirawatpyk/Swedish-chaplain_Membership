@@ -87,4 +87,12 @@ describe('<PageHeader>', () => {
     rerender(<PageHeader title="Hi Anna" size="hero" />);
     expect(header()).toHaveAttribute('data-size', 'hero');
   });
+
+  it('keeps the subtitle at the body size in both sizes (tailwind-merge must not drop text-body)', () => {
+    const { container, rerender } = render(<PageHeader title="Members" subtitle="Member companies" />);
+    const sub = () => container.querySelector('[data-slot="page-header-subtitle"]');
+    expect(sub()?.className).toMatch(/\btext-body\b/);
+    rerender(<PageHeader title="Hi Anna" subtitle="Nordic Trading" size="hero" />);
+    expect(sub()?.className).toMatch(/\btext-body\b/);
+  });
 });

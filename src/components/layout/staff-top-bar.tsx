@@ -34,21 +34,26 @@ export function StaffTopBar({ tenantName, user, extras, currentPath }: StaffTopB
   const t = useTranslations('shell.search');
 
   return (
-    <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
-      <div className="flex min-w-0 flex-1 items-center gap-3">
+    <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:gap-3">
+      {/* A size container: when the row is crowded (a phone with the outbox
+          alert showing) the wordmark leaves the view rather than being cut to
+          "SweCh…"; the link keeps it as its name. */}
+      <div className="@container flex min-w-0 flex-1 items-center gap-3">
         <div className="hidden min-w-0 lg:block">
           <BreadcrumbNav pathname={currentPath} />
         </div>
         <Link
           href="/admin"
-          className={cn('flex min-h-11 min-w-0 items-center gap-2 rounded-[var(--aura-radius-sm)] text-[var(--aura-fg-primary)] no-underline lg:hidden', AURA_FOCUS_RING)}
+          className={cn('flex min-h-11 min-w-0 items-center gap-2 rounded-[var(--aura-radius-sm)] text-[var(--aura-fg-primary)] no-underline sm:gap-3 lg:hidden', AURA_FOCUS_RING)}
         >
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-[var(--aura-radius-sm)] border border-[var(--aura-border-default)] bg-white p-1">
+          {/* The phone boards' 32px tile; the tablet board draws the desktop brand (40px tile, 20px wordmark, signal dot). */}
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-[var(--aura-radius-sm)] border border-[var(--aura-border-default)] bg-white p-1 sm:size-10 sm:rounded-[var(--aura-radius-md)] sm:p-[5px]">
             <BrandMark variant="mark" className="size-full" />
           </span>
-          <span className="truncate font-[family-name:var(--font-display)] text-lg leading-none font-semibold tracking-[-0.01em]">
+          <span className="truncate font-[family-name:var(--font-display)] text-lg leading-none font-semibold tracking-[-0.01em] sm:text-xl @max-[8rem]:sr-only">
             {tenantName}
           </span>
+          <span className="hidden size-2 shrink-0 rounded-full bg-[var(--aura-accent-dot)] sm:block" aria-hidden />
         </Link>
       </div>
 
@@ -71,15 +76,15 @@ export function StaffTopBar({ tenantName, user, extras, currentPath }: StaffTopB
         </kbd>
       </button>
       <IconButton
-        className="xl:hidden"
+        className="max-sm:size-11 xl:hidden"
         icon={<SearchIcon aria-hidden />}
         label={t('open')}
-        size="md"
         onClick={openCommandPalette}
       />
 
       {extras}
-      <LocaleSwitcher />
+      {/* The phone board's 44px pill, tighter so the row fits 390px. */}
+      <LocaleSwitcher className="max-sm:h-11 max-sm:gap-1 max-sm:pr-2 max-sm:pl-3" />
       {/* The wrapper, not the button, so the menu's own box leaves the row too. */}
       <span className="contents max-sm:hidden">
         <ThemeToggle />

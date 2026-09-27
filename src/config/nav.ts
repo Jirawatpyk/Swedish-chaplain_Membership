@@ -683,7 +683,7 @@ export const memberNavConfig: NavConfig = {
         },
         {
           titleKey: 'nav.member.invoices',
-          icon: ReceiptIcon,
+          icon: FileTextIcon,
           href: '/portal/invoices',
           activePattern: '/portal/invoices',
         },
@@ -727,7 +727,7 @@ export const memberBottomTabItems: readonly NavItem[] = [
   },
   {
     titleKey: 'nav.member.invoices',
-    icon: ReceiptIcon,
+    icon: FileTextIcon,
     href: '/portal/invoices',
     activePattern: '/portal/invoices',
   },
