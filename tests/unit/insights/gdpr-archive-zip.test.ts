@@ -103,6 +103,17 @@ describe('buildGdprArchiveBytes', () => {
     expect(readme).toContain(MEMBER);
   });
 
+  it('names the contact a staff export was prepared for (README + manifest), and not otherwise', () => {
+    const forNils = { ...data, subjectContactId: 'c-nils', subjectContactName: 'Nils Berg' };
+    const files = unzipSync(buildGdprArchiveBytes(forNils, meta).bytes);
+    expect(strFromU8(files['README.txt']!)).toContain('Prepared for: Nils Berg');
+    expect(JSON.parse(strFromU8(files['manifest.json']!)).subjectContactId).toBe('c-nils');
+
+    const company = unzipSync(buildGdprArchiveBytes(data, meta).bytes);
+    expect(strFromU8(company['README.txt']!)).not.toContain('Prepared for');
+    expect(JSON.parse(strFromU8(company['manifest.json']!)).subjectContactId).toBeNull();
+  });
+
   it('renders the README in Swedish (FR-034 — SV is first-class)', () => {
     const files = unzipSync(buildGdprArchiveBytes(data, { ...meta, requesterLocale: 'sv' }).bytes);
     const readme = strFromU8(files['README.txt']!);

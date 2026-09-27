@@ -48,6 +48,7 @@ function job(overrides: Partial<ExportJobRecord> = {}): ExportJobRecord {
     requestedBy: 'u-1',
     requestedForPeriod: null,
     requesterLocale: null,
+    subjectContactId: null,
     status: 'ready',
     idempotencyKey: 'k',
     blobKey: `exports/test-tenant/${JOB_ID}.json`,

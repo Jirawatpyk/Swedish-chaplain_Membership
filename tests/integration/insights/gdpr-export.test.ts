@@ -436,4 +436,43 @@ describe('F9 GDPR archive — integration (T086)', () => {
     const auditRaw = strFromU8(files['audit-events.json']!);
     expect(auditRaw).not.toContain('colleague-login-marker');
   }, 180_000);
+
+  it('PDPA §30: a staff export for ONE named contact without an account carries their own details, and no colleague\'s', async () => {
+    const nilsId = randomUUID();
+    await runInTenant(tenant.ctx, (tx) =>
+      tx.insert(contacts).values({
+        tenantId: tenant.ctx.slug,
+        contactId: nilsId,
+        memberId: subject,
+        firstName: 'Nils',
+        lastName: 'Berg',
+        email: 'nils.berg@acme.example',
+        isPrimary: false,
+      }),
+    );
+    const ref = await requestDataExport(
+      { subjectMemberId: subject, subjectContactId: nilsId },
+      {
+        actorUserId: admin.userId,
+        actorRole: 'admin',
+        actorMemberId: null,
+        requesterLocale: 'en',
+        requestId: `gdpr-contact-${randomUUID()}`,
+      },
+      tenant.ctx,
+      makeRequestDataExportDeps(tenant.ctx.slug),
+    );
+    expect(ref.ok).toBe(true);
+    if (!ref.ok) return;
+    expect((await processExportJob(ref.value.jobId, tenant.ctx, workerDeps())).ok).toBe(true);
+    const job = await makeDrizzleExportJobRepo(tenant.ctx.slug).findById(tenant.ctx, ref.value.jobId);
+    expect(job?.subjectContactId).toBe(nilsId);
+    const files = unzipSync(stubBlob.store.get(job!.blobKey!)!.body);
+
+    const contactsRaw = strFromU8(files['contacts.json']!);
+    expect(contactsRaw).toContain('nils.berg@acme.example');
+    expect(contactsRaw).not.toContain('som.chai@acme.example');
+    expect(strFromU8(files['README.txt']!)).toContain('Prepared for: Nils Berg');
+    expect(JSON.parse(strFromU8(files['manifest.json']!)).subjectContactId).toBe(nilsId);
+  }, 180_000);
 });
