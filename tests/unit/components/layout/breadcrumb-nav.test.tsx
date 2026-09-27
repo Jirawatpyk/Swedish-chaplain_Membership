@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
-import { BreadcrumbNav } from '@/components/layout/breadcrumb-nav';
+import { BreadcrumbBackLink, BreadcrumbNav } from '@/components/layout/breadcrumb-nav';
 import { BreadcrumbProvider } from '@/components/layout/breadcrumb-provider';
 
 vi.mock('next/navigation', () => ({ usePathname: () => '/admin/settings/renewals/schedules' }));
@@ -20,7 +20,7 @@ describe('BreadcrumbNav (spec 122 US1)', () => {
     render(
       <NextIntlClientProvider locale="en" messages={en}>
         <BreadcrumbProvider>
-          <BreadcrumbNav placement="bar" />
+          <BreadcrumbNav />
         </BreadcrumbProvider>
       </NextIntlClientProvider>,
     );
@@ -36,5 +36,31 @@ describe('BreadcrumbNav (spec 122 US1)', () => {
     expect(within(items[1]!).queryByRole('button')).toBeNull();
     // The current page.
     expect(items[2]!.querySelector('[aria-current="page"]')).not.toBeNull();
+  });
+
+  const wrap = (node: React.ReactNode) =>
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <BreadcrumbProvider>{node}</BreadcrumbProvider>
+      </NextIntlClientProvider>,
+    );
+
+  it('shows a top-level page as the current crumb alone, and the dashboard as "Dashboard"', () => {
+    wrap(<BreadcrumbNav pathname="/admin/members" />);
+    let nav = screen.getByRole('navigation', { name: 'Breadcrumb navigation' });
+    expect(within(nav).getAllByRole('listitem')).toHaveLength(1);
+    expect(within(nav).getByText('Members')).toHaveAttribute('aria-current', 'page');
+    cleanup();
+    wrap(<BreadcrumbNav pathname="/admin" />);
+    nav = screen.getByRole('navigation', { name: 'Breadcrumb navigation' });
+    expect(within(nav).getByText('Dashboard')).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('gives phones a back link to the parent page instead of the trail, and nothing on a top-level page', () => {
+    wrap(<BreadcrumbBackLink pathname="/admin/settings/renewals/schedules" />);
+    expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/admin/settings');
+    cleanup();
+    const { container } = wrap(<BreadcrumbBackLink pathname="/admin/members" />);
+    expect(container).toBeEmptyDOMElement();
   });
 });

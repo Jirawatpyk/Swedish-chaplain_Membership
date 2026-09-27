@@ -26,16 +26,18 @@ export interface StaffTopBarProps {
   readonly user: UserMenuProps;
   /** Server-rendered extras before the language pill (the outbox health badge). */
   readonly extras?: ReactNode;
+  /** The page the trail names; defaults to the router's pathname (the preview harness sets it). */
+  readonly currentPath?: string | undefined;
 }
 
-export function StaffTopBar({ tenantName, user, extras }: StaffTopBarProps) {
+export function StaffTopBar({ tenantName, user, extras, currentPath }: StaffTopBarProps) {
   const t = useTranslations('shell.search');
 
   return (
     <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
       <div className="flex min-w-0 flex-1 items-center gap-3">
         <div className="hidden min-w-0 lg:block">
-          <BreadcrumbNav placement="bar" />
+          <BreadcrumbNav pathname={currentPath} />
         </div>
         <Link
           href="/admin"

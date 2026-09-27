@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import { useTranslations } from 'next-intl';
 import { AppShell } from '@jirawatpyk/aura-react';
 
-import { BreadcrumbNav } from '@/components/layout/breadcrumb-nav';
+import { BreadcrumbBackLink } from '@/components/layout/breadcrumb-nav';
 import { BreadcrumbProvider } from '@/components/layout/breadcrumb-provider';
 import { StaffNav, type StaffNavProps } from '@/components/layout/staff-nav';
 import { StaffTopBar, type StaffTopBarProps } from '@/components/layout/staff-top-bar';
@@ -38,11 +38,11 @@ export function StaffShell({ nav, user, topBarExtras, children }: StaffShellProp
         mainId="main-content"
         navLabel={t('ariaLabel')}
         nav={<StaffNav {...nav} />}
-        header={<StaffTopBar tenantName={nav.tenantName} user={user} extras={topBarExtras} />}
+        header={<StaffTopBar tenantName={nav.tenantName} user={user} extras={topBarExtras} currentPath={nav.currentPath} />}
       >
-        {/* Below 1024px the bar has no room for the trail; it stays above the page. */}
+        {/* Below 1024px the bar has no room for the trail: a "← Parent" link above the page, as on the phone boards. */}
         <div className="lg:hidden">
-          <BreadcrumbNav />
+          <BreadcrumbBackLink pathname={nav.currentPath} />
         </div>
         {children}
       </AppShell>
