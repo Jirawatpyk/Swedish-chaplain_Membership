@@ -201,8 +201,12 @@ vi.mock('@/app/(member)/portal/invoices/_components/portal-pdf-download-button',
 vi.mock('@/app/(member)/portal/invoices/_components/receipt-status-watcher', () => ({
   ReceiptStatusWatcher: () => null,
 }));
+const payNowProps = vi.fn();
 vi.mock('@/app/(member)/portal/invoices/[invoiceId]/_components/pay-sheet/pay-now-button', () => ({
-  PayNowButton: () => null,
+  PayNowButton: (props: unknown) => {
+    payNowProps(props);
+    return null;
+  },
 }));
 vi.mock('@/app/(member)/portal/invoices/[invoiceId]/_components/online-payment-disabled-card', () => ({
   OnlinePaymentDisabledCard: () => null,
@@ -443,5 +447,25 @@ describe('PortalInvoiceDetailPage — AURA layout (spec 122 US4, `Invoice-paid` 
     const bar = /<section[^>]*data-testid="portal-invoice-pay-bar"[^>]*>/.exec(html)?.[0] ?? '';
     expect(bar).toContain('sticky');
     expect(html).toContain('summary.amountLabel');
+  });
+
+  it('the bar amount is the Total row and the amount handed to the pay sheet (one figure)', async () => {
+    getInvoiceMock.mockResolvedValue({ ok: true, value: issuedUnpaid088Bill() });
+    f5OnlinePayment = true;
+    paymentSettingsResult = {
+      onlinePaymentEnabled: true,
+      enabledMethods: ['card'],
+      processorAccountId: 'acct_1',
+      processorPublishableKey: 'pk_test_1',
+    };
+    payNowProps.mockClear();
+    const html = await renderPage();
+    const bar = html.slice(html.indexOf('data-testid="portal-invoice-pay-bar"'));
+    const totalRow = /totals\.total<\/dt><dd[^>]*>([^<]+)<\/dd>/.exec(html)?.[1];
+    expect(totalRow).toBeTruthy();
+    expect(bar).toContain(`>${totalRow}<`);
+    expect(payNowProps).toHaveBeenCalledWith(
+      expect.objectContaining({ invoice: expect.objectContaining({ amountDue: 107_000 }) }),
+    );
   });
 });

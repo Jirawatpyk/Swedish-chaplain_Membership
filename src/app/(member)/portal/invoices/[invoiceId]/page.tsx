@@ -94,6 +94,7 @@ import { isLegacyNoTinEventInvoice } from '../_utils/legacy-no-tin';
 import { PayNowButton } from './_components/pay-sheet/pay-now-button';
 import { OnlinePaymentDisabledCard } from './_components/online-payment-disabled-card';
 import { OptimisticPaidOverlay } from './_components/optimistic-paid-overlay';
+import { PayBar } from './_components/pay-bar';
 import { ReceiptReveal } from './_components/receipt-reveal';
 
 interface RouteParams {
@@ -297,6 +298,10 @@ export async function renderPortalInvoiceDetailView({
   const subtotal = invoice.subtotal?.satang ?? null;
   const vat = invoice.vat?.satang ?? null;
   const total = invoice.total?.satang ?? null;
+  // One figure for the pay bar and the pay sheet. `issued` only moves to
+  // `paid | void` (no part payments, no credit on an unpaid invoice), so the
+  // amount due IS the total — derived once so the two can never drift.
+  const amountDueSatang = total;
 
   // 088 T066a (FR-019) — async §86/4 RC receipt-PDF state (paid only).
   // Surfaced as prominent body sections below (room for the aria-live announce
@@ -846,14 +851,14 @@ export async function renderPortalInvoiceDetailView({
           // Spec 122 US4 (`Portal-invoice-mobile`) — the amount due and Pay
           // now in one bar: sticky above the bottom tabs on phones, a plain
           // card row from 768px.
-          <section
-            aria-label={tPay('summary.amountLabel')}
-            data-testid="portal-invoice-pay-bar"
-            className="sticky bottom-[var(--aura-bottomnav-offset,0px)] z-[4] flex items-center gap-3 rounded-[var(--aura-card-radius)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] p-4 shadow-[0_-4px_12px_rgba(0,0,0,0.06)] md:static md:shadow-none"
+          <PayBar
+            invoiceId={invoice.invoiceId}
+            label={tPay('summary.amountLabel')}
+            className="portal-pay-bar sticky bottom-[var(--aura-bottomnav-offset,0px)] z-[4] flex items-center gap-3 rounded-[var(--aura-card-radius)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] p-4 shadow-[var(--aura-shadow-enterprise)] md:static md:shadow-none [@media(max-height:560px)]:static"
           >
             <span className="flex min-w-0 flex-1 flex-col">
               <span className="text-xs text-[var(--aura-fg-secondary)]">{tPay('summary.amountLabel')}</span>
-              <span className="font-semibold tabular-nums">{formatSatangThb(total, userLocale)}</span>
+              <span className="font-semibold tabular-nums">{formatSatangThb(amountDueSatang, userLocale)}</span>
               <span className="text-xs text-[var(--aura-fg-secondary)]">
                 {t('fields.dueDate')}: {formatDate(invoice.dueDate, userLocale)}
               </span>
@@ -863,7 +868,7 @@ export async function renderPortalInvoiceDetailView({
               id: invoice.invoiceId,
               // 088 FR-030 — an issued 088 bill's number is its SC (headerNumber).
               invoiceNumber: headerNumber,
-              amountDue: total !== null ? Number(total) : 0,
+              amountDue: amountDueSatang !== null ? Number(amountDueSatang) : 0,
               currency: 'THB',
               status: invoice.status,
               isBill: resolveMainPdfKind(invoice) === 'bill',
@@ -871,7 +876,7 @@ export async function renderPortalInvoiceDetailView({
             enabledMethods={paymentSettings.enabledMethods}
             tenantPublishableKey={paymentSettings.processorPublishableKey}
           />
-          </section>
+          </PayBar>
         ) : (
           // FR-030 (#145) — the fallback offers a "Contact administrator" mailto.
           // Source is `env.billingContactEmails` (BILLING_CONTACT_EMAILS, a
