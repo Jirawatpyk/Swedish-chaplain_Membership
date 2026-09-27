@@ -28,7 +28,7 @@
  */
 import { expect, test } from '../fixtures';
 import { runAxeScan } from '../helpers/axe-scan';
-import { signInAsMember } from '../helpers/member-session';
+import { goodStandingMemberCredentials, signInAsMember } from '../helpers/member-session';
 
 // Tab-label matchers cover all three shipped locales so the spec passes
 // regardless of the default render locale (en.json: "Benefits"/"Broadcasts";
@@ -37,9 +37,15 @@ const BENEFITS_TAB_NAME = /benefits|förmåner|สิทธิประโยช
 // Spec 122 US3 (`Benefits` board): the tab reads "E-Blasts" (EN), "E-Blast" (TH), "Utskick" (SV).
 const BROADCASTS_TAB_NAME = /e-blasts?|utskick/i;
 
+// Good-standing persona: the F8 renewals seed lapses `e2e-member`, and a
+// lapsed member is redirected from /portal/benefits to /portal.
+const MEMBER = goodStandingMemberCredentials();
+
 test.describe('Benefits tabs @a11y', () => {
+  test.skip(!MEMBER, 'Set E2E_MEMBER_EMAIL_EMPTY + E2E_MEMBER_PASSWORD_EMPTY');
+
   test('default tab = Benefits; renders a real <h2>', async ({ page }) => {
-    await signInAsMember(page);
+    await signInAsMember(page, MEMBER!);
     await page.goto('/portal/benefits');
 
     const tabs = page.getByRole('tab');
@@ -56,7 +62,7 @@ test.describe('Benefits tabs @a11y', () => {
   test('deep-link ?tab=broadcasts opens the Broadcasts panel with its own <h2>', async ({
     page,
   }) => {
-    await signInAsMember(page);
+    await signInAsMember(page, MEMBER!);
     await page.goto('/portal/benefits?tab=broadcasts');
 
     await expect(
@@ -69,7 +75,7 @@ test.describe('Benefits tabs @a11y', () => {
   test('keyboard: ArrowRight + Enter activates the Broadcasts tab', async ({
     page,
   }) => {
-    await signInAsMember(page);
+    await signInAsMember(page, MEMBER!);
     await page.goto('/portal/benefits');
 
     await page.getByRole('tab', { name: BENEFITS_TAB_NAME }).first().focus();
@@ -91,7 +97,7 @@ test.describe('Benefits tabs @a11y', () => {
   test('/portal/benefits/e-blasts redirects to the Broadcasts tab (no 404)', async ({
     page,
   }) => {
-    await signInAsMember(page);
+    await signInAsMember(page, MEMBER!);
 
     const resp = await page.goto('/portal/benefits/e-blasts');
     expect(resp?.status()).toBeLessThan(400);
@@ -102,7 +108,7 @@ test.describe('Benefits tabs @a11y', () => {
   test('axe: 0 serious/critical violations on the Broadcasts tab', async ({
     page,
   }) => {
-    await signInAsMember(page);
+    await signInAsMember(page, MEMBER!);
     await page.goto('/portal/benefits?tab=broadcasts');
     // Wait for the quota card to settle (it fetches /api/broadcasts/quota on
     // mount) before scanning so the populated layout is what axe sees.
