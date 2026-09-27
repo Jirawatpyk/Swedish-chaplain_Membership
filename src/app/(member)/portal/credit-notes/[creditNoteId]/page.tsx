@@ -65,8 +65,6 @@ export default async function PortalCreditNoteDetailPage({
   params: Promise<{ creditNoteId: string }>;
 }) {
   const { creditNoteId } = await params;
-  const t = await getTranslations('portal.creditNotes.detail');
-  const tInvoice = await getTranslations('portal.invoices.detail');
   const locale = await getLocale();
 
   const { user } = await requireSession('member');
@@ -95,6 +93,24 @@ export default async function PortalCreditNoteDetailPage({
   if (!result.ok) notFound();
   const cn = result.value;
 
+  return renderPortalCreditNoteView({ cn, creditNoteId, locale });
+}
+
+/**
+ * The credit note's markup once loaded — split out (spec 122 US4) so the
+ * no-DB preview route renders the page's own markup.
+ */
+export async function renderPortalCreditNoteView({
+  cn,
+  creditNoteId,
+  locale,
+}: {
+  readonly cn: Extract<Awaited<ReturnType<typeof getCreditNote>>, { ok: true }>['value'];
+  readonly creditNoteId: string;
+  readonly locale: string;
+}): Promise<React.ReactElement> {
+  const t = await getTranslations('portal.creditNotes.detail');
+  const tInvoice = await getTranslations('portal.invoices.detail');
   const invoiceHref = `/portal/invoices/${cn.originalInvoiceId}`;
   const pdfHref = `/api/portal/credit-notes/${creditNoteId}/pdf`;
 
@@ -150,15 +166,15 @@ export default async function PortalCreditNoteDetailPage({
             </div>
           </dl>
           <div className="flex justify-end">
-            <dl className="m-0 grid w-full grid-cols-[1fr_auto] gap-x-4 gap-y-1.5 text-sm sm:w-[340px]">
+            <dl className="m-0 grid w-full grid-cols-[1fr_auto] gap-y-1.5 text-sm sm:w-[340px]">
               <dt className="text-[var(--aura-fg-secondary)]">{t('fields.creditAmount')}</dt>
-              <dd className="m-0 text-right tabular-nums">{formatSatangThb(cn.creditAmount.satang, locale)}</dd>
+              <dd className="m-0 pl-4 text-right tabular-nums">{formatSatangThb(cn.creditAmount.satang, locale)}</dd>
               <dt className="text-[var(--aura-fg-secondary)]">{t('fields.vat')}</dt>
-              <dd className="m-0 text-right tabular-nums">{formatSatangThb(cn.vat.satang, locale)}</dd>
+              <dd className="m-0 pl-4 text-right tabular-nums">{formatSatangThb(cn.vat.satang, locale)}</dd>
               <dt className="border-t border-[var(--aura-border-default)] pt-1.5 font-semibold">
                 {t('fields.total')}
               </dt>
-              <dd className="m-0 border-t border-[var(--aura-border-default)] pt-1.5 text-right font-semibold tabular-nums">
+              <dd className="m-0 border-t border-[var(--aura-border-default)] pt-1.5 pl-4 text-right font-semibold tabular-nums">
                 {formatSatangThb(cn.total.satang, locale)}
               </dd>
             </dl>

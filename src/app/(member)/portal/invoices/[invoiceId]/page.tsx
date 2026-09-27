@@ -52,7 +52,7 @@ import {
 // against that invoice are, by construction, this member's.
 
 import { makeDrizzleCreditNoteRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-credit-note-repo';
-import { asInvoiceId } from '@/modules/invoicing';
+import { asInvoiceId, type CreditNote, type Invoice } from '@/modules/invoicing';
 // F5 G4 — presentation-only settings read (FR-016/FR-030 render-gate).
 // Same escape-hatch pattern as the CN repo above; the Application-
 // layer read-only loader is a Phase-9 consolidation candidate once
@@ -123,10 +123,6 @@ export default async function PortalInvoiceDetailPage({
 }) {
   const { invoiceId } = await params;
   const { user } = await requireSession('member');
-  const t = await getTranslations('portal.invoices.detail');
-  const tList = await getTranslations('portal.invoices');
-  const tStatus = await getTranslations('admin.invoices.list.statuses');
-  const tPay = await getTranslations('portal.payment');
   const userLocale = await getLocale();
 
   const tenantCtx = resolveTenantFromRequest();
@@ -167,63 +163,6 @@ export default async function PortalInvoiceDetailPage({
     notFound();
   }
 
-  // T109 — derive presentation-only overdue status. Portal detail
-  // does not fire the audit emit; the admin detail page handles the
-  // opportunistic audit on their read path.
-  const displayStatus = computeIsOverdue(invoice, new Date().toISOString())
-    ? 'overdue'
-    : invoice.status;
-
-  // R5 round-7: pre-render BOTH badge variants on the server so the
-  // <OptimisticPaidOverlay> client component can swap between them
-  // without having to re-derive the rendered output. Function children
-  // are not allowed across the server→client boundary, so we pass the
-  // pre-rendered JSX as `whenUnpaid` / `whenPaid` props.
-  const renderStatusBadge = (status: typeof displayStatus | 'paid') => (
-    <InvoiceStatusBadge status={status} label={tStatus(status)} />
-  );
-
-  // 064 remediation S3 — β as-paid no-TIN rows have a NULL invoice document
-  // number; their printed §105 number lives in receiptDocumentNumberRaw. The
-  // shared helper resolves whichever exists so the title never reads
-  // "Invoice —" on a paid, numbered receipt.
-  const documentNumber = displayDocumentNumber(invoice) ?? '—';
-  // 088 A-refined (FR-016) — the invoice is ALWAYS identified by its OWN (SC)
-  // NON-§87 bill number — paid or unpaid — so the header ("Invoice {number}")
-  // reads under the SC bill for ANY 088 bill (the shared resolver returns a
-  // non-'none' kind), never the RC on payment. The RC §86/4 tax receipt is
-  // surfaced in the "Receipt No." field below. Only the bill-vs-none distinction
-  // matters here, so the specific bill/tax_receipt value is not bound.
-  const headerNumber =
-    resolveTaxDocumentKind(invoice, env.features.f088TaxAtPayment) !== 'none'
-      ? (invoice.billDocumentNumberRaw ?? '—')
-      : documentNumber;
-  const subtotal = invoice.subtotal?.satang ?? null;
-  const vat = invoice.vat?.satang ?? null;
-  const total = invoice.total?.satang ?? null;
-
-  // 088 T066a (FR-019) — async §86/4 RC receipt-PDF state (paid only).
-  // Surfaced as prominent body sections below (room for the aria-live announce
-  // + reassurance copy, and the graceful permanent-fail support path) rather
-  // than a cramped header-actions chip.
-  const receiptAsyncPending =
-    invoice.status === 'paid' && invoice.receiptPdfStatus === 'pending';
-  const receiptAsyncFailed =
-    invoice.status === 'paid' && invoice.receiptPdfStatus === 'failed';
-  // 090 Bug 2 — hoisted so BOTH the header-actions cell (receipt download
-  // button) AND the <ReceiptReveal> watcher gate below read ONE definition of
-  // "the receipt download is available". `receiptPdf !== null` matters: 064
-  // as-paid rows land 'rendered' with a NULL receipt blob (their MAIN pdf IS
-  // the document); a receipt action on them would 502 (blob_missing).
-  // 092 — the §86/4 receipt stays a valid, downloadable tax document after a
-  // §86/10 credit note, so the status gate is the receipt-bearing set {paid,
-  // partially_credited, credited}, not `paid` alone (prod UAT bug: the receipt
-  // download disappeared once a credit note was issued). `void` is excluded.
-  const showReceiptPdf =
-    invoiceStatusHasReceipt(invoice.status) &&
-    invoice.receiptPdfStatus === 'rendered' &&
-    invoice.receiptPdf !== null;
-
   // F5 G4 T081 — load tenant payment settings to drive the Pay-now
   // render-gate (FR-016 / FR-030). The repo is read-only + RLS-scoped;
   // a null/error branch collapses to the disabled-card empty state
@@ -235,25 +174,6 @@ export default async function PortalInvoiceDetailPage({
         .getByTenantId(tenantCtx.slug)
         .catch(() => null)
     : null;
-
-  // REMOVE-WITH-064-REMEDIATION (online-payment site — master checklist at
-  // the guard in record-payment.ts). A LEGACY pre-064 issued no-TIN EVENT
-  // invoice must not surface the Pay-now button (S0 money trap) — full
-  // rationale + the predicate itself live in `../_utils/legacy-no-tin.ts`,
-  // unit-pinned so the OVER-match arm can't silently widen (drift would
-  // strip Pay-now from every TIN event invoice). Replaced by the localized
-  // "under document correction — contact staff" notice below.
-  const legacyNoTinEventInvoice = isLegacyNoTinEventInvoice(invoice);
-
-  const canPayOnline =
-    env.features.f5OnlinePayment &&
-    invoice.status === 'issued' &&
-    !legacyNoTinEventInvoice &&
-    paymentSettings !== null &&
-    paymentSettings.onlinePaymentEnabled &&
-    paymentSettings.enabledMethods.length > 0 &&
-    paymentSettings.processorAccountId.length > 0 &&
-    paymentSettings.processorPublishableKey.length > 0;
 
   // G-1 — load any credit notes attached to this invoice so the
   // member sees + can download them. Best-effort: a repo failure
@@ -289,6 +209,135 @@ export default async function PortalInvoiceDetailPage({
   });
   const replacedBy = supersession.ok ? supersession.value.replacedBy : null;
   const replaces = supersession.ok ? supersession.value.replaces : [];
+
+  return renderPortalInvoiceDetailView({
+    invoice,
+    userLocale,
+    paymentSettings,
+    portalCreditNotes,
+    autoRefund,
+    replacedBy,
+    replaces,
+    f5OnlinePayment: env.features.f5OnlinePayment,
+    f088TaxAtPayment: env.features.f088TaxAtPayment,
+    tenantContactEmails: env.billingContactEmails,
+  });
+}
+
+type PaymentSettings = NonNullable<
+  Awaited<ReturnType<ReturnType<typeof makeDrizzleTenantPaymentSettingsRepo>['getByTenantId']>>
+>;
+type Supersession = Extract<Awaited<ReturnType<typeof getInvoiceSupersession>>, { ok: true }>['value'];
+
+/**
+ * The detail page's markup once its data is loaded — split out (spec 122
+ * US4) so the no-DB preview route renders the page's own markup. Every
+ * derived flag (status, numbers, receipt state, the pay gate) is computed
+ * here exactly as before; the feature flags come in as arguments.
+ */
+export async function renderPortalInvoiceDetailView({
+  invoice,
+  userLocale,
+  paymentSettings,
+  portalCreditNotes,
+  autoRefund,
+  replacedBy,
+  replaces,
+  f5OnlinePayment,
+  f088TaxAtPayment,
+  tenantContactEmails,
+}: {
+  readonly invoice: Invoice;
+  readonly userLocale: string;
+  readonly paymentSettings: PaymentSettings | null;
+  readonly portalCreditNotes: ReadonlyArray<CreditNote>;
+  readonly autoRefund: { readonly processorRefundId: string | null; readonly failed: boolean } | null;
+  readonly replacedBy: Supersession['replacedBy'];
+  readonly replaces: Supersession['replaces'];
+  readonly f5OnlinePayment: boolean;
+  readonly f088TaxAtPayment: boolean;
+  readonly tenantContactEmails: readonly string[];
+}): Promise<React.ReactElement> {
+  const t = await getTranslations('portal.invoices.detail');
+  const tList = await getTranslations('portal.invoices');
+  const tStatus = await getTranslations('admin.invoices.list.statuses');
+  const tPay = await getTranslations('portal.payment');
+
+  // T109 — derive presentation-only overdue status. Portal detail
+  // does not fire the audit emit; the admin detail page handles the
+  // opportunistic audit on their read path.
+  const displayStatus = computeIsOverdue(invoice, new Date().toISOString())
+    ? 'overdue'
+    : invoice.status;
+
+  // R5 round-7: pre-render BOTH badge variants on the server so the
+  // <OptimisticPaidOverlay> client component can swap between them
+  // without having to re-derive the rendered output. Function children
+  // are not allowed across the server→client boundary, so we pass the
+  // pre-rendered JSX as `whenUnpaid` / `whenPaid` props.
+  const renderStatusBadge = (status: typeof displayStatus | 'paid') => (
+    <InvoiceStatusBadge status={status} label={tStatus(status)} />
+  );
+
+  // 064 remediation S3 — β as-paid no-TIN rows have a NULL invoice document
+  // number; their printed §105 number lives in receiptDocumentNumberRaw. The
+  // shared helper resolves whichever exists so the title never reads
+  // "Invoice —" on a paid, numbered receipt.
+  const documentNumber = displayDocumentNumber(invoice) ?? '—';
+  // 088 A-refined (FR-016) — the invoice is ALWAYS identified by its OWN (SC)
+  // NON-§87 bill number — paid or unpaid — so the header ("Invoice {number}")
+  // reads under the SC bill for ANY 088 bill (the shared resolver returns a
+  // non-'none' kind), never the RC on payment. The RC §86/4 tax receipt is
+  // surfaced in the "Receipt No." field below. Only the bill-vs-none distinction
+  // matters here, so the specific bill/tax_receipt value is not bound.
+  const headerNumber =
+    resolveTaxDocumentKind(invoice, f088TaxAtPayment) !== 'none'
+      ? (invoice.billDocumentNumberRaw ?? '—')
+      : documentNumber;
+  const subtotal = invoice.subtotal?.satang ?? null;
+  const vat = invoice.vat?.satang ?? null;
+  const total = invoice.total?.satang ?? null;
+
+  // 088 T066a (FR-019) — async §86/4 RC receipt-PDF state (paid only).
+  // Surfaced as prominent body sections below (room for the aria-live announce
+  // + reassurance copy, and the graceful permanent-fail support path) rather
+  // than a cramped header-actions chip.
+  const receiptAsyncPending =
+    invoice.status === 'paid' && invoice.receiptPdfStatus === 'pending';
+  const receiptAsyncFailed =
+    invoice.status === 'paid' && invoice.receiptPdfStatus === 'failed';
+  // 090 Bug 2 — hoisted so BOTH the header-actions cell (receipt download
+  // button) AND the <ReceiptReveal> watcher gate below read ONE definition of
+  // "the receipt download is available". `receiptPdf !== null` matters: 064
+  // as-paid rows land 'rendered' with a NULL receipt blob (their MAIN pdf IS
+  // the document); a receipt action on them would 502 (blob_missing).
+  // 092 — the §86/4 receipt stays a valid, downloadable tax document after a
+  // §86/10 credit note, so the status gate is the receipt-bearing set {paid,
+  // partially_credited, credited}, not `paid` alone (prod UAT bug: the receipt
+  // download disappeared once a credit note was issued). `void` is excluded.
+  const showReceiptPdf =
+    invoiceStatusHasReceipt(invoice.status) &&
+    invoice.receiptPdfStatus === 'rendered' &&
+    invoice.receiptPdf !== null;
+
+  // REMOVE-WITH-064-REMEDIATION (online-payment site — master checklist at
+  // the guard in record-payment.ts). A LEGACY pre-064 issued no-TIN EVENT
+  // invoice must not surface the Pay-now button (S0 money trap) — full
+  // rationale + the predicate itself live in `../_utils/legacy-no-tin.ts`,
+  // unit-pinned so the OVER-match arm can't silently widen (drift would
+  // strip Pay-now from every TIN event invoice). Replaced by the localized
+  // "under document correction — contact staff" notice below.
+  const legacyNoTinEventInvoice = isLegacyNoTinEventInvoice(invoice);
+
+  const canPayOnline =
+    f5OnlinePayment &&
+    invoice.status === 'issued' &&
+    !legacyNoTinEventInvoice &&
+    paymentSettings !== null &&
+    paymentSettings.onlinePaymentEnabled &&
+    paymentSettings.enabledMethods.length > 0 &&
+    paymentSettings.processorAccountId.length > 0 &&
+    paymentSettings.processorPublishableKey.length > 0;
 
   return (
     <DetailContainer>
@@ -601,7 +650,7 @@ export default async function PortalInvoiceDetailPage({
           the line items and the totals (figures and wording unchanged). */}
       <Card title={t('detailsHeading')} headingLevel={2}>
         <div className="flex flex-col gap-5">
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
           <div>
             <p className="m-0 text-xs text-[var(--aura-fg-secondary)]">
               {t('fields.issueDate')}
@@ -720,13 +769,13 @@ export default async function PortalInvoiceDetailPage({
                           </span>
                         ) : null}
                       </Td>
-                      <Td numeric className="align-top">
+                      <Td numeric className="align-top" label={t('lines.quantity')}>
                         {line.quantity}
                       </Td>
-                      <Td numeric className="align-top">
+                      <Td numeric className="align-top" label={t('lines.unitPrice')}>
                         {formatSatangThb(line.unitPrice.satang, userLocale)}
                       </Td>
-                      <Td numeric className="align-top">
+                      <Td numeric className="align-top" label={t('lines.lineTotal')}>
                         {formatSatangThb(line.total.satang, userLocale)}
                       </Td>
                     </Tr>
@@ -743,16 +792,16 @@ export default async function PortalInvoiceDetailPage({
           <div className="flex justify-end">
             <dl
               aria-label={t('totals.heading')}
-              className="m-0 grid w-full grid-cols-[1fr_auto] gap-x-4 gap-y-1.5 sm:w-[300px]"
+              className="m-0 grid w-full grid-cols-[1fr_auto] gap-y-1.5 sm:w-[300px]"
             >
               <dt className="text-[var(--aura-fg-secondary)]">{t('totals.subtotal')}</dt>
-              <dd className="m-0 text-right tabular-nums">{formatSatangThb(subtotal, userLocale)}</dd>
+              <dd className="m-0 pl-4 text-right tabular-nums">{formatSatangThb(subtotal, userLocale)}</dd>
               <dt className="text-[var(--aura-fg-secondary)]">{t('totals.vat')}</dt>
-              <dd className="m-0 text-right tabular-nums">{formatSatangThb(vat, userLocale)}</dd>
+              <dd className="m-0 pl-4 text-right tabular-nums">{formatSatangThb(vat, userLocale)}</dd>
               <dt className="border-t border-[var(--aura-border-default)] pt-1.5 font-semibold">
                 {t('totals.total')}
               </dt>
-              <dd className="m-0 border-t border-[var(--aura-border-default)] pt-1.5 text-right font-semibold tabular-nums">
+              <dd className="m-0 border-t border-[var(--aura-border-default)] pt-1.5 pl-4 text-right font-semibold tabular-nums">
                 {formatSatangThb(total, userLocale)}
               </dd>
             </dl>
@@ -833,7 +882,7 @@ export default async function PortalInvoiceDetailPage({
           // 088 — `invoiceNumber` uses `headerNumber` (bill-first SC number).
           <OnlinePaymentDisabledCard
             invoiceNumber={headerNumber}
-            tenantContactEmails={env.billingContactEmails}
+            tenantContactEmails={tenantContactEmails}
           />
         )
       ) : null}

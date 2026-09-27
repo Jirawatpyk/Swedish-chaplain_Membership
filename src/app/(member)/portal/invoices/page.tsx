@@ -119,12 +119,6 @@ export default async function PortalInvoicesPage({
 }) {
   const { user } = await requireSession('member');
   const t = await getTranslations('portal.invoices');
-  const tStatus = await getTranslations('admin.invoices.list.statuses');
-  // 088 (T065 / FR-016) — the SC-bill ↔ RC-tax-receipt disambiguation labels
-  // live in the shared admin.invoices.tax088 namespace (reused by the portal,
-  // mirroring the existing tStatus reuse above). Only surfaced when the
-  // tax-at-payment flag is on.
-  const tTax088 = await getTranslations('admin.invoices.tax088');
   const f088TaxAtPayment = env.features.f088TaxAtPayment;
   const userLocale = await getLocale();
 
@@ -265,15 +259,59 @@ export default async function PortalInvoicesPage({
     statusFilter !== 'all' ||
     subjectFilter !== undefined;
 
-  return (
-    <DetailContainer>
-      <PageHeader title={t('title')} subtitle={t('subtitle')} />
-      {/* Spec 122 US4 — the `Invoices` board opens with the unpaid-membership
-          alert (US3's section: same outstanding read, same access gating). */}
+  return renderPortalInvoicesView({
+    rows,
+    total,
+    page,
+    hasActiveFilter,
+    userLocale,
+    f088TaxAtPayment,
+    // Spec 122 US4 — the `Invoices` board opens with the unpaid-membership
+    // alert (US3's section: same outstanding read, same access gating).
+    alert: (
       <Suspense fallback={null}>
         <MembershipInvoiceAlertSection tenantId={tenantCtx.slug} memberId={member.memberId} />
       </Suspense>
-      <Card>
+    ),
+  });
+}
+
+/**
+ * The list's markup once its data is loaded — split out (spec 122 US4) so
+ * the no-DB preview route renders the page's own markup. Every per-row
+ * decision still comes from the shared view model.
+ */
+export async function renderPortalInvoicesView({
+  rows,
+  total,
+  page,
+  hasActiveFilter,
+  userLocale,
+  f088TaxAtPayment,
+  alert,
+}: {
+  readonly rows: ReadonlyArray<{ readonly vm: ReturnType<typeof toInvoiceRowViewModel> }>;
+  readonly total: number;
+  readonly page: number;
+  readonly hasActiveFilter: boolean;
+  readonly userLocale: string;
+  readonly f088TaxAtPayment: boolean;
+  readonly alert: React.ReactNode;
+}): Promise<React.ReactElement> {
+  const t = await getTranslations('portal.invoices');
+  const tStatus = await getTranslations('admin.invoices.list.statuses');
+  // 088 (T065 / FR-016) — the SC-bill ↔ RC-tax-receipt disambiguation labels
+  // live in the shared admin.invoices.tax088 namespace (reused by the portal,
+  // mirroring the tStatus reuse above). Only surfaced when the tax-at-payment
+  // flag is on.
+  const tTax088 = await getTranslations('admin.invoices.tax088');
+  return (
+    <DetailContainer>
+      <PageHeader title={t('title')} subtitle={t('subtitle')} />
+      {alert}
+      {/* Below 768px the card frame drops away: the phone rows are cards of
+          their own (the `Invoices-mobile` board), not cards in a card. */}
+      <Card className="max-md:border-0 max-md:bg-transparent max-md:shadow-none max-md:[&_.aura-card\_\_body]:p-0">
         <div className="flex flex-col gap-4">
           {/* Reuse the admin InvoiceFilters client component for UI parity
               (same shadcn Select, same debounced search, same X-clear
@@ -310,7 +348,7 @@ export default async function PortalInvoicesPage({
                   portal list has 7 columns; without the cue, members miss
                   the right-edge Total + Actions silently. */}
               <div className="hidden overflow-x-auto md:block">
-                <Table caption={t('title')} captionHidden>
+                <Table caption={t('title')} captionHidden className="[&_td]:align-middle">
                   <THead>
                     <Tr>
                       <Th>
