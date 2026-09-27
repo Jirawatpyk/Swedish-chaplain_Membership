@@ -88,6 +88,15 @@ export type TimelineFilter = {
    * and document ref_ids through those two fields.
    */
   readonly excludeMoney?: boolean;
+  /**
+   * When set, `source='audit'` rows are kept only if their `event_type` is in
+   * this list; every other source passes untouched. Set by the use-case for
+   * a member-role viewer (`MEMBER_VISIBLE_AUDIT_EVENT_TYPES`) so staff-internal
+   * audit rows (churn-risk scoring, escalation tasks, reminder plumbing …)
+   * are excluded inside the SQL — same reason as `excludeMoney`: `total` and
+   * the keyset cursor are computed there. An empty list hides every audit row.
+   */
+  readonly auditEventTypeAllowlist?: readonly string[];
 };
 
 export type TimelineResult = {
