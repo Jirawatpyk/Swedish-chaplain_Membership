@@ -146,8 +146,8 @@ export function DataExportPanel({
           </p>
         ) : (
           <>
-            {/* the boards draw the list without a box, 44px rows on hairlines (the download button's height) */}
-            <div className="[&_.aura-tbl-wrap]:rounded-none [&_.aura-tbl-wrap]:border-0 [&_.aura-tbl-wrap]:bg-transparent [&_.aura-tbl\_\_td:first-child]:pl-0 [&_.aura-tbl\_\_th:first-child]:pl-0 [&_.aura-tbl\_\_td:last-child]:pr-0 [&_.aura-tbl\_\_th:last-child]:pr-0 [&_td]:align-middle [&_td]:h-11 [&_td]:py-0.5 [&_thead_th]:bg-transparent [&_thead_th]:text-[11px] [&_thead_th]:uppercase [&_thead_th]:font-mono [&_thead_th]:font-normal [&_thead_th]:tracking-[0.04em]">
+            {/* the boards draw the list without a box: 44px rows on hairlines (the download button's height); on phones, where the pill and date stack, 12px around them so the button clears the lines */}
+            <div className="[&_.aura-tbl-wrap]:rounded-none [&_.aura-tbl-wrap]:border-0 [&_.aura-tbl-wrap]:bg-transparent [&_.aura-tbl\_\_td:first-child]:pl-0 [&_.aura-tbl\_\_th:first-child]:pl-0 [&_.aura-tbl\_\_td:last-child]:pr-0 [&_.aura-tbl\_\_th:last-child]:pr-0 [&_td]:align-middle [&_td]:h-11 [&_td]:py-0.5 max-sm:[&_td]:py-3 [&_thead_th]:bg-transparent [&_thead_th]:text-[11px] [&_thead_th]:uppercase [&_thead_th]:font-mono [&_thead_th]:font-normal [&_thead_th]:tracking-[0.04em]">
               <Table caption={labels.caption} captionHidden>
                 <THead className="max-sm:hidden">
                   <Tr>
