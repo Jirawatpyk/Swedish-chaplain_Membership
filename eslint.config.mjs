@@ -264,7 +264,7 @@ const MIGRATED_PATHS = [
   'src/app/(member)/portal/timeline/**',
   'src/app/(member)/portal/preferences/**',
   'src/app/(member)/portal/not-found.tsx',
-  'src/app/(member)/portal/[...unknown]/**',
+  'src/app/(member)/portal/\\[...unknown\\]/**',
   'src/components/portal/dashboard/**',
   'src/components/portal/invoices-summary-card.tsx',
   'src/components/portal/preferred-locale-form.tsx',
@@ -290,6 +290,10 @@ const MIGRATED_PATHS = [
   'src/app/(member)/portal/invoices/loading.tsx',
   'src/app/(member)/portal/invoices/_components/**',
   'src/app/(member)/portal/invoices/_utils/**',
+  // Brackets are a glob character class: a route segment such as
+  // `[invoiceId]` must be escaped or the entry silently matches nothing.
+  'src/app/(member)/portal/invoices/\\[invoiceId\\]/*.tsx',
+  'src/app/(member)/portal/invoices/\\[invoiceId\\]/_components/*.tsx',
   'src/app/(staff)/admin/invoices/_components/invoice-filters.tsx',
 ];
 

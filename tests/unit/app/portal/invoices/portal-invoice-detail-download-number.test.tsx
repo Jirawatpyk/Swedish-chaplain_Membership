@@ -53,6 +53,9 @@ vi.mock('@/lib/tenant-context', () => ({
 vi.mock('@/lib/request-id', () => ({
   requestIdFromHeaders: () => null,
 }));
+// Mutable so the pay-bar case can turn online payment on (default off).
+let f5OnlinePayment = false;
+let paymentSettingsResult: unknown = null;
 vi.mock('@/lib/env', () => ({
   // `bootstrap.adminEmail` is read by the issued-invoice OnlinePaymentDisabledCard
   // branch (env-proxy mailto, #145). The mock predated that read (mock drift),
@@ -60,7 +63,12 @@ vi.mock('@/lib/env', () => ({
   // (reading 'adminEmail')` before its assertions ran. Completing the shape
   // (null → the "no email configured" degrade) is unrelated to the 090 fixes.
   env: {
-    features: { f088TaxAtPayment: true, f5OnlinePayment: false },
+    features: {
+      f088TaxAtPayment: true,
+      get f5OnlinePayment() {
+        return f5OnlinePayment;
+      },
+    },
     bootstrap: { adminEmail: null },
   },
 }));
@@ -108,7 +116,7 @@ vi.mock('@/modules/invoicing/infrastructure/repos/drizzle-credit-note-repo', () 
   }),
 }));
 vi.mock('@/modules/payments/infrastructure/repos/drizzle-tenant-payment-settings-repo', () => ({
-  makeDrizzleTenantPaymentSettingsRepo: () => ({ getByTenantId: async () => null }),
+  makeDrizzleTenantPaymentSettingsRepo: () => ({ getByTenantId: async () => paymentSettingsResult }),
 }));
 // F5 UX D1 — the void auto-refund banner keys its copy on the shape returned
 // here. A module-level mutable lets each test drive the `findStaleInvoiceAutoRefund`
@@ -141,24 +149,6 @@ vi.mock('@/components/layout/page-header', () => ({
       <span>{actions as ReactElement}</span>
     </div>
   ),
-}));
-vi.mock('@/components/ui/card', () => ({
-  Card: ({ children }: { children?: unknown }) => children as ReactElement,
-  CardContent: ({ children }: { children?: unknown }) => children as ReactElement,
-  CardHeader: ({ children }: { children?: unknown }) => children as ReactElement,
-}));
-vi.mock('@/components/ui/button', () => ({
-  // 090 finding #5 — echo the chosen `variant` so a test can assert the
-  // paid-invoice download hierarchy (receipt `default` primary, bill `outline`).
-  buttonVariants: (opts?: { variant?: string }) => opts?.variant ?? 'default',
-}));
-vi.mock('@/components/ui/table', () => ({
-  Table: ({ children }: { children?: unknown }) => children as ReactElement,
-  TableBody: ({ children }: { children?: unknown }) => children as ReactElement,
-  TableCell: ({ children }: { children?: unknown }) => children as ReactElement,
-  TableHead: ({ children }: { children?: unknown }) => children as ReactElement,
-  TableHeader: ({ children }: { children?: unknown }) => children as ReactElement,
-  TableRow: ({ children }: { children?: unknown }) => children as ReactElement,
 }));
 vi.mock('@/lib/utils', () => ({ cn: (...c: unknown[]) => c.filter(Boolean).join(' ') }));
 vi.mock('@/app/(member)/portal/invoices/_utils/format', () => ({
@@ -299,6 +289,8 @@ async function renderPage(): Promise<string> {
 beforeEach(() => {
   getInvoiceMock.mockReset();
   autoRefundResult = null;
+  f5OnlinePayment = false;
+  paymentSettingsResult = null;
 });
 
 describe('PortalInvoiceDetailPage — main-download number for an unpaid 088 bill (088 FIX 4)', () => {
@@ -320,14 +312,14 @@ describe('PortalInvoiceDetailPage — paid-invoice download hierarchy (090 findi
     // Both downloads render.
     expect(html).toContain('data-testid="portal-download-invoice-marker"');
     expect(html).toContain('data-testid="portal-download-receipt-marker"');
-    // The receipt is the filled/primary CTA; the bill is demoted to outline.
-    // (buttonVariants is mocked to echo the variant into the className.)
+    // The receipt is the AURA primary CTA; the bill is demoted to secondary
+    // (spec 122 US4: AURA buttonClass, the real one).
     const receiptMarker = /data-testid="portal-download-receipt-marker"[^>]*data-cls="([^"]*)"/.exec(html);
     const invoiceMarker = /data-testid="portal-download-invoice-marker"[^>]*data-cls="([^"]*)"/.exec(html);
-    expect(receiptMarker?.[1]).toContain('default');
-    expect(invoiceMarker?.[1]).toContain('outline');
-    // The demoted bill must NOT also be a filled `default` CTA.
-    expect(invoiceMarker?.[1]).not.toContain('default');
+    expect(receiptMarker?.[1]).toContain('aura-btn--primary');
+    expect(invoiceMarker?.[1]).toContain('aura-btn--secondary');
+    // The demoted bill must NOT also be a primary CTA.
+    expect(invoiceMarker?.[1]).not.toContain('aura-btn--primary');
   });
 });
 
@@ -408,5 +400,48 @@ describe('PortalInvoiceDetailPage — void auto-refund banner: failed vs settlin
     expect(html).not.toContain('void.autoRefundBody');
     // The refund reference line still renders (useful in a support ticket).
     expect(html).toContain('void.autoRefundRef');
+  });
+});
+
+describe('PortalInvoiceDetailPage — AURA layout (spec 122 US4, `Invoice-paid` / `Portal-invoice-mobile` boards)', () => {
+  it('opens with the back link, before the title', async () => {
+    getInvoiceMock.mockResolvedValue({ ok: true, value: paidSeparateInvoice() });
+    const html = await renderPage();
+    expect(html.indexOf('backToList')).toBeGreaterThan(-1);
+    expect(html.indexOf('backToList')).toBeLessThan(html.indexOf('INV-2026-000010'));
+  });
+
+  it('one Details card holds the dates, the line items and the totals', async () => {
+    getInvoiceMock.mockResolvedValue({ ok: true, value: paidSeparateInvoice() });
+    const html = await renderPage();
+    const cards = html.split('class="aura-card"').length - 1;
+    expect(cards).toBe(1);
+    const card = html.slice(html.indexOf('class="aura-card"'));
+    for (const key of ['fields.issueDate', 'lines.description', 'totals.subtotal', 'totals.vat', 'totals.total']) {
+      expect(card).toContain(key);
+    }
+  });
+
+  it('the void notice is an AURA danger alert; the auto-refund news an info alert beside it', async () => {
+    getInvoiceMock.mockResolvedValue({ ok: true, value: voidedInvoice() });
+    autoRefundResult = { processorRefundId: 're_test_ABCD1234', failed: false };
+    const html = await renderPage();
+    expect(html).toMatch(/class="aura-alert aura-alert--danger[^"]*"[^>]*>(?:(?!aura-alert ).)*void\.title/s);
+    expect(html).toMatch(/data-testid="portal-invoice-auto-refund-notice" class="aura-alert aura-alert--info"/);
+  });
+
+  it('an issued invoice gets the amount-due bar holding Pay now (sticky above the tabs on phones)', async () => {
+    getInvoiceMock.mockResolvedValue({ ok: true, value: issuedUnpaid088Bill() });
+    f5OnlinePayment = true;
+    paymentSettingsResult = {
+      onlinePaymentEnabled: true,
+      enabledMethods: ['card'],
+      processorAccountId: 'acct_1',
+      processorPublishableKey: 'pk_test_1',
+    };
+    const html = await renderPage();
+    const bar = /<section[^>]*data-testid="portal-invoice-pay-bar"[^>]*>/.exec(html)?.[0] ?? '';
+    expect(bar).toContain('sticky');
+    expect(html).toContain('summary.amountLabel');
   });
 });

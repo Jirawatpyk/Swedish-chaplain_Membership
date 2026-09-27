@@ -6376,7 +6376,8 @@
           "autoRefundRef": "Refund reference: {ref}",
           "replacedBy": "This bill was replaced by <link>{number}</link>",
           "replacedByIssued": "issued {date}"
-        }
+        },
+        "detailsHeading": "Details"
       }
     },
     "creditNotes": {

@@ -71,16 +71,9 @@ import { buildMembersDeps } from '@/modules/members/members-deps';
 import { env } from '@/lib/env';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { buttonVariants } from '@/components/ui/button';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { Alert, Card, buttonClass } from '@jirawatpyk/aura-react/server';
+import { Table, TBody, THead, Td, Th, Tr } from '@/components/shell/aura-table';
+import { BackLink } from '@/components/portal/back-link';
 import { cn } from '@/lib/utils';
 import { formatDate, formatSatangThb } from '../_utils/format';
 import { formatCalendarYear } from '@/lib/format-date-localised';
@@ -133,6 +126,7 @@ export default async function PortalInvoiceDetailPage({
   const t = await getTranslations('portal.invoices.detail');
   const tList = await getTranslations('portal.invoices');
   const tStatus = await getTranslations('admin.invoices.list.statuses');
+  const tPay = await getTranslations('portal.payment');
   const userLocale = await getLocale();
 
   const tenantCtx = resolveTenantFromRequest();
@@ -298,8 +292,15 @@ export default async function PortalInvoiceDetailPage({
 
   return (
     <DetailContainer>
+      {/* Spec 122 US4 — the boards' "← Back to invoices" above the title
+          (it used to close the page as a ghost button). */}
+      <BackLink href="/portal/invoices">{t('backToList')}</BackLink>
       <PageHeader
-        title={`${t('title')} ${headerNumber}`}
+        title={
+          <>
+            {t('title')} <span className="font-mono">{headerNumber}</span>
+          </>
+        }
         badge={
           // 088 A-refined — the header reads under the invoice's OWN (SC) bill
           // number ("Invoice {SC}"); the StatusBadge (via OptimisticPaidOverlay)
@@ -424,8 +425,8 @@ export default async function PortalInvoiceDetailPage({
                           // void keep the bill as the primary `default` CTA (no
                           // receipt yet). `showReceiptPdf` is true only when the
                           // receipt download actually renders alongside.
-                          buttonVariants({
-                            variant: showReceiptPdf ? 'outline' : 'default',
+                          buttonClass({
+                            variant: showReceiptPdf ? 'secondary' : 'primary',
                             size: 'sm',
                           }),
                           'min-h-11 px-4',
@@ -451,7 +452,7 @@ export default async function PortalInvoiceDetailPage({
                           // invoice, combined OR separate), so it is always the
                           // filled `default` CTA, ranking above the demoted bill
                           // PDF above.
-                          buttonVariants({ variant: 'default', size: 'sm' }),
+                          buttonClass({ variant: 'primary', size: 'sm' }),
                           'min-h-11 px-4',
                         )}
                         data-testid="portal-download-receipt"
@@ -473,28 +474,22 @@ export default async function PortalInvoiceDetailPage({
        * fact on the page for a voided invoice — everything below
        * is archival reference. */}
       {invoice.status === 'void' && invoice.voidedAt && (
-        <section
-          aria-labelledby="invoice-void-heading"
-          className="rounded-md border border-destructive/30 bg-destructive/5 p-4"
-        >
-          <h2 id="invoice-void-heading" className="mb-3 text-sm font-medium text-destructive">
-            {t('void.title')}
-          </h2>
-          <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-[auto_1fr] sm:gap-x-6">
-            <dt className="text-muted-foreground">{t('void.voidedAt')}</dt>
-            <dd>{formatDate(invoice.voidedAt, userLocale)}</dd>
+        // Spec 122 US4 — an AURA danger alert (a standing notice, not a live
+        // region: `role="note"`). Void IS the most load-bearing fact on a
+        // voided invoice, so it leads the page.
+        <Alert tone="danger" role="note" title={t('void.title')}>
+          <dl className="m-0 grid grid-cols-1 gap-2 text-sm sm:grid-cols-[auto_1fr] sm:gap-x-6">
+            <dt className="text-[var(--aura-fg-secondary)]">{t('void.voidedAt')}</dt>
+            <dd className="m-0">{formatDate(invoice.voidedAt, userLocale)}</dd>
             {invoice.voidReason ? (
               <>
-                <dt className="text-muted-foreground">{t('void.reasonLabel')}</dt>
-                <dd className="whitespace-pre-wrap break-words">{invoice.voidReason}</dd>
+                <dt className="text-[var(--aura-fg-secondary)]">{t('void.reasonLabel')}</dt>
+                <dd className="m-0 whitespace-pre-wrap break-words">{invoice.voidReason}</dd>
               </>
             ) : null}
           </dl>
           {replacedBy && (
-            <p
-              className="mt-3 rounded-md border border-dashed border-destructive/40 px-3 py-2 text-sm text-foreground"
-              data-testid="portal-invoice-replaced-by"
-            >
+            <p className="mt-3 mb-0 text-sm" data-testid="portal-invoice-replaced-by">
               {t.rich('void.replacedBy', {
                 number: replacedBy.displayNumber,
                 link: (chunks) => (
@@ -502,14 +497,14 @@ export default async function PortalInvoiceDetailPage({
                   // affordance inside body text (WCAG 1.4.1).
                   <Link
                     href={`/portal/invoices/${replacedBy.invoiceId}`}
-                    className="rounded-xs font-mono font-medium underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                    className="font-mono font-medium underline underline-offset-2"
                   >
                     {chunks}
                   </Link>
                 ),
               })}
               {replacedBy.issueDate && (
-                <span className="text-muted-foreground">
+                <span className="text-[var(--aura-fg-secondary)]">
                   {' · '}
                   {t('void.replacedByIssued', {
                     date: formatDate(replacedBy.issueDate, userLocale),
@@ -526,64 +521,42 @@ export default async function PortalInvoiceDetailPage({
               )}
             </p>
           )}
-          <p className="mt-3 text-sm text-destructive">{t('void.notPayable')}</p>
-          {autoRefund && (
-            // Reassuring-news block. Outer <section aria-labelledby>
-            // creates a screen-reader landmark separate from the
-            // destructive void parent. INNER <div role="status"> hosts
-            // the live region — split because nesting role="status"
-            // and the section's implicit `region` role on the same
-            // element causes JAWS to drop the landmark from nav lists.
-            // Visual: thick left border (--primary) is dark-mode-safe
-            // even if a tenant's --accent token drifts close to
-            // --destructive — the border guarantees visual separation
-            // from the void block above without relying on bg contrast.
-            //
-            // F5 UX D1 — branch on `autoRefund.failed`. When the
-            // auto-refund FAILED at the processor (money NOT returned,
-            // manual reconciliation required) we must NOT assert
-            // completion: switch to the calm support-path copy (mirrors
-            // the `receiptFailed` reassurance below — "recorded, being
-            // reconciled, we'll follow up") instead of the definitive
-            // "your payment has been refunded". The not-failed path keeps
-            // the existing definitive copy (its "within 5–10 business
-            // days" hedge covers the still-settling case, which is not
-            // reliably distinguishable from succeeded — see the port
-            // docstring; do NOT over-engineer that distinction).
-            <section
-              aria-labelledby="invoice-auto-refund-heading"
-              data-testid="portal-invoice-auto-refund-notice"
-              className="mt-4 rounded-md border border-border border-l-4 border-l-primary bg-card p-3"
-            >
-              <h3 id="invoice-auto-refund-heading" className="text-sm font-medium text-foreground">
-                {t(autoRefund.failed ? 'void.autoRefundFailedHeading' : 'void.autoRefundHeading')}
-              </h3>
-              <div role="status" aria-live="polite">
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {t(autoRefund.failed ? 'void.autoRefundFailedBody' : 'void.autoRefundBody')}
-                </p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {t(autoRefund.failed ? 'void.autoRefundFailedContact' : 'void.autoRefundContact')}
-                </p>
-                {autoRefund.processorRefundId && (
-                  <p
-                    className="mt-2 font-mono text-xs text-muted-foreground"
-                    data-testid="portal-invoice-auto-refund-ref"
-                  >
-                    {t('void.autoRefundRef', {
-                      // Stripe refund IDs are stable identifiers — full
-                      // value is safe to surface (no PCI scope; no
-                      // member PII). Truncating to last 8 keeps the line
-                      // scannable on mobile + matches what most banks
-                      // ask for in support tickets.
-                      ref: autoRefund.processorRefundId.slice(-8),
-                    })}
-                  </p>
-                )}
-              </div>
-            </section>
-          )}
-        </section>
+          <p className="mt-3 mb-0 text-sm font-medium">{t('void.notPayable')}</p>
+        </Alert>
+      )}
+      {invoice.status === 'void' && invoice.voidedAt && autoRefund && (
+        // Reassuring news beside the void alert. F5 UX D1 — branch on
+        // `autoRefund.failed`: a refund that FAILED at the processor (money
+        // NOT returned, manual reconciliation) gets the calm support-path
+        // copy, never "your payment has been refunded". The live region stays
+        // the inner `role="status"` block.
+        <Alert
+          tone="info"
+          role="note"
+          data-testid="portal-invoice-auto-refund-notice"
+          title={t(autoRefund.failed ? 'void.autoRefundFailedHeading' : 'void.autoRefundHeading')}
+        >
+          <div role="status" aria-live="polite">
+            <p className="m-0 text-sm">
+              {t(autoRefund.failed ? 'void.autoRefundFailedBody' : 'void.autoRefundBody')}
+            </p>
+            <p className="mt-1 mb-0 text-sm">
+              {t(autoRefund.failed ? 'void.autoRefundFailedContact' : 'void.autoRefundContact')}
+            </p>
+            {autoRefund.processorRefundId && (
+              <p
+                className="mt-2 mb-0 font-mono text-xs text-[var(--aura-fg-secondary)]"
+                data-testid="portal-invoice-auto-refund-ref"
+              >
+                {t('void.autoRefundRef', {
+                  // Stripe refund ids are stable identifiers (no PCI scope, no
+                  // PII); the last 8 keep the line scannable on a phone.
+                  ref: autoRefund.processorRefundId.slice(-8),
+                })}
+              </p>
+            )}
+          </div>
+        </Alert>
       )}
 
       {/* 088 T066a (FR-019) + 090 Bug 2 — async §86/4 RC receipt-PDF reveal.
@@ -613,61 +586,53 @@ export default async function PortalInvoiceDetailPage({
           NOT a dead "unavailable". Informational (role=status, no aria-busy /
           spinner). The member can still download the invoice PDF above. */}
       {receiptAsyncFailed && (
-        <section
-          aria-labelledby="receipt-failed-heading"
+        <Alert
+          tone="info"
+          role="status"
           data-testid="portal-invoice-receipt-failed-notice"
-          className="rounded-md border border-border border-l-4 border-l-primary bg-card p-4"
+          title={t('receiptFailed.heading')}
         >
-          <h2
-            id="receipt-failed-heading"
-            className="text-sm font-medium text-foreground"
-          >
-            {t('receiptFailed.heading')}
-          </h2>
-          <div role="status">
-            <p className="mt-1 text-sm text-muted-foreground">
-              {t('receiptFailed.body')}
-            </p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {t('receiptFailed.contact')}
-            </p>
-          </div>
-        </section>
+          <p className="m-0 text-sm">{t('receiptFailed.body')}</p>
+          <p className="mt-1 mb-0 text-sm">{t('receiptFailed.contact')}</p>
+        </Alert>
       )}
 
-      <Card>
-        <CardContent className="grid gap-4 sm:grid-cols-2">
+      {/* Spec 122 US4 — one "Details" card, as the boards draw it: the facts,
+          the line items and the totals (figures and wording unchanged). */}
+      <Card title={t('detailsHeading')} headingLevel={2}>
+        <div className="flex flex-col gap-5">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           <div>
-            <p className="text-caption uppercase tracking-wide text-muted-foreground">
+            <p className="m-0 text-xs text-[var(--aura-fg-secondary)]">
               {t('fields.issueDate')}
             </p>
-            <p className="text-body">{formatDate(invoice.issueDate, userLocale)}</p>
+            <p className="m-0 text-body">{formatDate(invoice.issueDate, userLocale)}</p>
           </div>
           <div>
-            <p className="text-caption uppercase tracking-wide text-muted-foreground">
+            <p className="m-0 text-xs text-[var(--aura-fg-secondary)]">
               {t('fields.dueDate')}
             </p>
-            <p className="text-body">{formatDate(invoice.dueDate, userLocale)}</p>
+            <p className="m-0 text-body">{formatDate(invoice.dueDate, userLocale)}</p>
           </div>
           <div>
-            <p className="text-caption uppercase tracking-wide text-muted-foreground">
+            <p className="m-0 text-xs text-[var(--aura-fg-secondary)]">
               {t('fields.paidDate')}
             </p>
-            <p className="text-body">
+            <p className="m-0 text-body">
               {invoice.paidAt ? formatDate(invoice.paidAt, userLocale) : '—'}
             </p>
           </div>
           {replaces.length > 0 && (
             <div data-testid="portal-invoice-replaces">
-              <p className="text-caption uppercase tracking-wide text-muted-foreground">
+              <p className="m-0 text-xs text-[var(--aura-fg-secondary)]">
                 {t('fields.replaces')}
               </p>
-              <p className="text-body flex flex-wrap gap-x-3 gap-y-1">
+              <p className="m-0 text-body flex flex-wrap gap-x-3 gap-y-1">
                 {replaces.map((r) => (
                   <Link
                     key={r.invoiceId}
                     href={`/portal/invoices/${r.invoiceId}`}
-                    className="rounded-xs font-mono underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                    className="font-mono underline underline-offset-2"
                   >
                     {r.displayNumber}
                   </Link>
@@ -687,59 +652,40 @@ export default async function PortalInvoiceDetailPage({
           {invoice.receiptDocumentNumberRaw &&
             invoiceStatusHasReceipt(invoice.status) && (
             <div>
-              <p className="text-caption uppercase tracking-wide text-muted-foreground">
+              <p className="m-0 text-xs text-[var(--aura-fg-secondary)]">
                 {t('fields.receiptNumber')}
               </p>
-              <p className="text-body font-mono tabular-nums">{invoice.receiptDocumentNumberRaw}</p>
+              <p className="m-0 text-body font-mono tabular-nums">{invoice.receiptDocumentNumberRaw}</p>
             </div>
           )}
           {/* Plan year is membership-only — event-fee invoices carry no plan
               (plan_year NULL) and would render an empty value here. */}
           {invoice.planYear !== null && (
             <div>
-              <p className="text-caption uppercase tracking-wide text-muted-foreground">
+              <p className="m-0 text-xs text-[var(--aura-fg-secondary)]">
                 {t('fields.planYear')}
               </p>
               {/* Stored CE; Thai reads the plan year in BE (2026 → 2569). */}
-              <p className="text-body">
+              <p className="m-0 text-body">
                 {formatCalendarYear(invoice.planYear, userLocale)}
               </p>
             </div>
           )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <h2
-            id="invoice-lines-heading"
-            className="font-heading text-base font-medium leading-snug"
-          >
-            {t('linesHeading')}
-          </h2>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
+        </div>
           <div className="overflow-x-auto">
-            {/* aria-labelledby (not aria-label) so the table's accessible name
-                reuses the visible <h2> instead of announcing the same string
-                twice (heading + table name) — mirrors the void/auto-refund
-                sections above. */}
-            <Table aria-labelledby="invoice-lines-heading">
-              <TableHeader>
-                <TableRow>
-                  <TableHead scope="col">{t('lines.description')}</TableHead>
-                  <TableHead scope="col" className="text-right">
-                    {t('lines.quantity')}
-                  </TableHead>
-                  <TableHead scope="col" className="text-right">
-                    {t('lines.unitPrice')}
-                  </TableHead>
-                  <TableHead scope="col" className="text-right">
-                    {t('lines.lineTotal')}
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+            {/* The line items keep their name as the table caption (hidden:
+                the card title already heads the section). Below 640px each
+                line stacks as a card with its column labels. */}
+            <Table caption={t('linesHeading')} captionHidden stackBelow="sm">
+              <THead>
+                <Tr>
+                  <Th>{t('lines.description')}</Th>
+                  <Th align="end">{t('lines.quantity')}</Th>
+                  <Th align="end">{t('lines.unitPrice')}</Th>
+                  <Th align="end">{t('lines.lineTotal')}</Th>
+                </Tr>
+              </THead>
+              <TBody>
                 {invoice.lines.map((line) => {
                   const sameText = line.descriptionTh === line.descriptionEn;
                   const primaryLang = userLocale === 'th' ? 'th' : 'en';
@@ -756,8 +702,8 @@ export default async function PortalInvoiceDetailPage({
                   const primary = userLocale === 'th' ? line.descriptionTh : line.descriptionEn;
                   const secondary = userLocale === 'th' ? line.descriptionEn : line.descriptionTh;
                   return (
-                    <TableRow key={line.lineId}>
-                      <TableCell className="align-top">
+                    <Tr key={line.lineId}>
+                      <Td className="align-top">
                         {/* Thai tax invoices require bilingual display
                             at co-equal visual weight (§86); primary
                             locale gets a subtle medium weight so the
@@ -773,53 +719,45 @@ export default async function PortalInvoiceDetailPage({
                             {secondary}
                           </span>
                         ) : null}
-                      </TableCell>
-                      <TableCell className="align-top text-right tabular-nums">
+                      </Td>
+                      <Td numeric className="align-top">
                         {line.quantity}
-                      </TableCell>
-                      <TableCell className="align-top text-right tabular-nums">
+                      </Td>
+                      <Td numeric className="align-top">
                         {formatSatangThb(line.unitPrice.satang, userLocale)}
-                      </TableCell>
-                      <TableCell className="align-top text-right tabular-nums">
+                      </Td>
+                      <Td numeric className="align-top">
                         {formatSatangThb(line.total.satang, userLocale)}
-                      </TableCell>
-                    </TableRow>
+                      </Td>
+                    </Tr>
                   );
                 })}
-              </TableBody>
+              </TBody>
             </Table>
           </div>
-        </CardContent>
-      </Card>
 
-      <Card>
-        <CardHeader>
-          <h2 className="font-heading text-base font-medium leading-snug">
-            {t('totals.heading')}
-          </h2>
-        </CardHeader>
         {/* dl/dt/dd preserves the semantic label-value pairing for
             screen readers; the previous `div.contents` flattening
             caused VoiceOver/NVDA to read the six cells as loose
             items with no association. */}
-        <CardContent>
-          <dl className="grid gap-2 sm:grid-cols-[1fr_auto]">
-            <dt className="text-caption uppercase tracking-wide text-muted-foreground">
-              {t('totals.subtotal')}
-            </dt>
-            <dd className="tabular-nums sm:justify-self-end">
-              {formatSatangThb(subtotal, userLocale)}
-            </dd>
-            <dt className="text-caption uppercase tracking-wide text-muted-foreground">
-              {t('totals.vat')}
-            </dt>
-            <dd className="tabular-nums sm:justify-self-end">{formatSatangThb(vat, userLocale)}</dd>
-            <dt className="text-body font-medium uppercase tracking-wide">{t('totals.total')}</dt>
-            <dd className="text-body font-medium tabular-nums sm:justify-self-end">
-              {formatSatangThb(total, userLocale)}
-            </dd>
-          </dl>
-        </CardContent>
+          <div className="flex justify-end">
+            <dl
+              aria-label={t('totals.heading')}
+              className="m-0 grid w-full grid-cols-[1fr_auto] gap-x-4 gap-y-1.5 sm:w-[300px]"
+            >
+              <dt className="text-[var(--aura-fg-secondary)]">{t('totals.subtotal')}</dt>
+              <dd className="m-0 text-right tabular-nums">{formatSatangThb(subtotal, userLocale)}</dd>
+              <dt className="text-[var(--aura-fg-secondary)]">{t('totals.vat')}</dt>
+              <dd className="m-0 text-right tabular-nums">{formatSatangThb(vat, userLocale)}</dd>
+              <dt className="border-t border-[var(--aura-border-default)] pt-1.5 font-semibold">
+                {t('totals.total')}
+              </dt>
+              <dd className="m-0 border-t border-[var(--aura-border-default)] pt-1.5 text-right font-semibold tabular-nums">
+                {formatSatangThb(total, userLocale)}
+              </dd>
+            </dl>
+          </div>
+        </div>
       </Card>
 
       {/* F5 G4 T081 — online payment entry point. Only surfaced for
@@ -852,15 +790,25 @@ export default async function PortalInvoiceDetailPage({
           // misleadingly suggest the tenant config is the blocker). The
           // member is told the document is being corrected and to contact
           // staff; the remediation runbook voids + reissues the row.
-          <section
-            data-testid="portal-invoice-legacy-no-tin-notice"
-            className="rounded-md border border-border bg-muted/50 p-4"
-          >
-            <p className="text-sm text-muted-foreground">
-              {t('legacyNoTinNotPayable')}
-            </p>
-          </section>
+          <Alert tone="info" role="note" data-testid="portal-invoice-legacy-no-tin-notice">
+            {t('legacyNoTinNotPayable')}
+          </Alert>
         ) : canPayOnline && paymentSettings ? (
+          // Spec 122 US4 (`Portal-invoice-mobile`) — the amount due and Pay
+          // now in one bar: sticky above the bottom tabs on phones, a plain
+          // card row from 768px.
+          <section
+            aria-label={tPay('summary.amountLabel')}
+            data-testid="portal-invoice-pay-bar"
+            className="sticky bottom-[var(--aura-bottomnav-offset,0px)] z-[4] flex items-center gap-3 rounded-[var(--aura-card-radius)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] p-4 shadow-[0_-4px_12px_rgba(0,0,0,0.06)] md:static md:shadow-none"
+          >
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="text-xs text-[var(--aura-fg-secondary)]">{tPay('summary.amountLabel')}</span>
+              <span className="font-semibold tabular-nums">{formatSatangThb(total, userLocale)}</span>
+              <span className="text-xs text-[var(--aura-fg-secondary)]">
+                {t('fields.dueDate')}: {formatDate(invoice.dueDate, userLocale)}
+              </span>
+            </span>
           <PayNowButton
             invoice={{
               id: invoice.invoiceId,
@@ -874,6 +822,7 @@ export default async function PortalInvoiceDetailPage({
             enabledMethods={paymentSettings.enabledMethods}
             tenantPublishableKey={paymentSettings.processorPublishableKey}
           />
+          </section>
         ) : (
           // FR-030 (#145) — the fallback offers a "Contact administrator" mailto.
           // Source is `env.billingContactEmails` (BILLING_CONTACT_EMAILS, a
@@ -890,33 +839,23 @@ export default async function PortalInvoiceDetailPage({
       ) : null}
 
       {portalCreditNotes.length > 0 && (
-        <Card>
-          <CardHeader>
-            <h2 className="font-heading text-base font-medium leading-snug">
-              {t('creditNotes.heading')}
-            </h2>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4">
-            <p className="text-caption text-muted-foreground">{t('creditNotes.description')}</p>
-            <ul role="list" className="flex flex-col gap-2">
+        <Card title={t('creditNotes.heading')} description={t('creditNotes.description')} headingLevel={2}>
+            <ul role="list" className="m-0 flex list-none flex-col p-0">
               {portalCreditNotes.map((pcn) => (
                 <li
                   key={pcn.creditNoteId}
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-md border px-4 py-3"
+                  className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--aura-border-default)] py-3"
                 >
                   <div className="flex flex-col gap-0.5">
                     <span className="font-mono text-sm font-medium">{pcn.documentNumber.raw}</span>
-                    <span className="text-caption text-muted-foreground tabular-nums">
+                    <span className="text-caption text-[var(--aura-fg-secondary)] tabular-nums">
                       {formatDate(pcn.issueDate, userLocale)} ·{' '}
                       {formatSatangThb(pcn.total.satang, userLocale)}
                     </span>
                   </div>
                   <Link
                     href={`/portal/credit-notes/${pcn.creditNoteId}`}
-                    className={cn(
-                      buttonVariants({ variant: 'outline', size: 'sm' }),
-                      'min-h-11 px-4',
-                    )}
+                    className={cn(buttonClass({ variant: 'secondary', size: 'sm' }), 'min-h-11 px-4')}
                     aria-label={t('creditNotes.viewAria', {
                       number: pcn.documentNumber.raw,
                     })}
@@ -926,18 +865,8 @@ export default async function PortalInvoiceDetailPage({
                 </li>
               ))}
             </ul>
-          </CardContent>
         </Card>
       )}
-
-      <div>
-        <Link
-          href="/portal/invoices"
-          className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'min-h-11 px-3')}
-        >
-          {t('backToList')}
-        </Link>
-      </div>
     </DetailContainer>
   );
 }

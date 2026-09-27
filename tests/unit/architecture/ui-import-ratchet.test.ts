@@ -138,6 +138,7 @@ describe('UI import ratchet (spec 122)', () => {
       'src/app/(member)/portal/timeline/page.tsx',
       'src/app/(member)/portal/benefits/page.tsx',
       'src/app/(member)/portal/not-found.tsx',
+      'src/app/(member)/portal/[...unknown]/page.tsx',
       'src/components/portal/dashboard/stat-card.tsx',
       'src/components/portal/contact-language-form.tsx',
       'src/components/benefits/benefit-usage-card.tsx',
@@ -176,6 +177,11 @@ describe('UI import ratchet (spec 122)', () => {
       'src/app/(member)/portal/invoices/_components/receipt-status-watcher.tsx',
       'src/app/(member)/portal/invoices/_components/combined-receipt-hint.tsx',
       'src/app/(staff)/admin/invoices/_components/invoice-filters.tsx',
+      'src/app/(member)/portal/invoices/[invoiceId]/page.tsx',
+      'src/app/(member)/portal/invoices/[invoiceId]/loading.tsx',
+      'src/app/(member)/portal/invoices/[invoiceId]/not-found.tsx',
+      'src/app/(member)/portal/invoices/[invoiceId]/_components/online-payment-disabled-card.tsx',
+      'src/components/shell/live-region.tsx',
     ])('%s cannot import the legacy kit', async (path) => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });

@@ -28,8 +28,8 @@
 import { useTranslations } from 'next-intl';
 import { CreditCard, Slash } from 'lucide-react';
 
-import { Card, CardContent } from '@/components/ui/card';
-import { Button, buttonVariants } from '@/components/ui/button';
+import { Button, Card } from '@jirawatpyk/aura-react';
+import { buttonClass } from '@jirawatpyk/aura-react/server';
 import { cn } from '@/lib/utils';
 
 /**
@@ -90,13 +90,13 @@ export function OnlinePaymentDisabledCard({
 
   return (
     <Card data-testid="online-payment-disabled-card">
-      <CardContent className="flex flex-col items-center gap-4 py-8 text-center">
+      <div className="flex flex-col items-center gap-4 py-4 text-center">
         <CreditCardOff
-          className="size-12 text-muted-foreground"
+          className="size-12 text-[var(--aura-fg-secondary)]"
           aria-hidden="true"
         />
-        <h2 className="text-h4 text-foreground">{t('title')}</h2>
-        <p className="max-w-prose text-body text-muted-foreground">
+        <h2 className="m-0 text-h4 text-[var(--aura-fg-primary)]">{t('title')}</h2>
+        <p className="m-0 max-w-prose text-body text-[var(--aura-fg-secondary)]">
           {t('body')}
         </p>
         {mailtoHref ? (
@@ -104,10 +104,7 @@ export function OnlinePaymentDisabledCard({
             href={mailtoHref}
             data-testid="online-payment-disabled-cta"
             aria-label={t('contactAdminCtaAria', { invoiceNumber })}
-            className={cn(
-              buttonVariants({ variant: 'default', size: 'sm' }),
-              'min-h-11 px-4',
-            )}
+            className={buttonClass({ variant: 'primary', className: 'min-h-11 px-4' })}
           >
             {t('contactAdminCta')}
           </a>
@@ -115,8 +112,7 @@ export function OnlinePaymentDisabledCard({
           <>
             <Button
               type="button"
-              variant="outline"
-              size="sm"
+              variant="secondary"
               disabled
               data-testid="online-payment-disabled-cta"
               className="min-h-11 px-4"
@@ -125,13 +121,13 @@ export function OnlinePaymentDisabledCard({
             </Button>
             <p
               data-testid="online-payment-disabled-no-email-help"
-              className="text-caption text-muted-foreground"
+              className="m-0 text-caption text-[var(--aura-fg-secondary)]"
             >
               {t('noContactEmail')}
             </p>
           </>
         )}
-      </CardContent>
+      </div>
     </Card>
   );
 }

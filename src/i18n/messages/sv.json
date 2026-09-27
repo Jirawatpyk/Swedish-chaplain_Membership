@@ -6376,7 +6376,8 @@
           "autoRefundRef": "Återbetalningsreferens: {ref}",
           "replacedBy": "Den här fakturan har ersatts av <link>{number}</link>",
           "replacedByIssued": "utfärdad {date}"
-        }
+        },
+        "detailsHeading": "Detaljer"
       }
     },
     "creditNotes": {

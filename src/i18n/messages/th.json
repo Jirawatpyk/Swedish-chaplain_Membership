@@ -6376,7 +6376,8 @@
           "autoRefundRef": "รหัสอ้างอิงการคืนเงิน: {ref}",
           "replacedBy": "ใบแจ้งหนี้นี้ถูกแทนที่ด้วยฉบับ <link>{number}</link>",
           "replacedByIssued": "ออกเมื่อ {date}"
-        }
+        },
+        "detailsHeading": "รายละเอียด"
       }
     },
     "creditNotes": {

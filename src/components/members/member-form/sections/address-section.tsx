@@ -88,7 +88,7 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { RequiredMark } from '@/components/ui/required-mark';
-import { LiveRegion } from '@/components/ui/live-region';
+import { LiveRegion } from '@/components/shell/live-region';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { CountryCombobox } from '@/components/members/country-combobox';
 import { FieldError } from '../field-error';

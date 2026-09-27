@@ -23,7 +23,7 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 
 import { useOptimisticPaid } from './optimistic-paid';
-import { LiveRegion } from '@/components/ui/live-region';
+import { LiveRegion } from '@/components/shell/live-region';
 
 export interface OptimisticPaidOverlayProps {
   readonly invoiceId: string;
