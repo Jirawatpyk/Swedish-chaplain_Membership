@@ -57,6 +57,8 @@ export type TimelineStreamProps = {
   /** Localized empty-state copy (filtered vs unfiltered chosen by the page). */
   readonly emptyLabel: string;
   readonly listLabel: string;
+  /** `member` on the portal: audit rows use the member wording (see `TimelineItemProps.audience`). */
+  readonly audience?: TimelineItemProps['audience'];
 };
 
 export function TimelineStream({
@@ -65,6 +67,7 @@ export function TimelineStream({
   initialCursor,
   emptyLabel,
   listLabel,
+  audience = 'staff',
 }: TimelineStreamProps) {
   const t = useTranslations('timeline.page');
   const searchParams = useSearchParams();
@@ -147,12 +150,13 @@ export function TimelineStream({
           listLabel={listLabel}
           isBusy={isPending}
           scrollTarget={scrollTarget}
+          audience={audience}
         />
       ) : (
         <ol className="flex flex-col" aria-busy={isPending} aria-label={listLabel}>
           {events.map((e, i) => (
             <li key={e.id} aria-setsize={events.length} aria-posinset={i + 1}>
-              <TimelineRow events={events} index={i} />
+              <TimelineRow events={events} index={i} audience={audience} />
             </li>
           ))}
         </ol>
@@ -187,12 +191,14 @@ function VirtualizedList({
   listLabel,
   isBusy,
   scrollTarget,
+  audience,
 }: {
   readonly events: readonly TimelineItemProps[];
   readonly listLabel: string;
   readonly isBusy: boolean;
   /** Index of the first row appended by the last load-more (scroll into view). */
   readonly scrollTarget: number | null;
+  readonly audience: NonNullable<TimelineItemProps['audience']>;
 }) {
   const listRef = useRef<HTMLDivElement>(null);
   // The list's document offset feeds the window virtualizer. Reading
@@ -243,7 +249,7 @@ function VirtualizedList({
               transform: `translateY(${vi.start - scrollMargin}px)`,
             }}
           >
-            <TimelineRow events={events} index={vi.index} />
+            <TimelineRow events={events} index={vi.index} audience={audience} />
           </div>
         );
       })}
@@ -256,7 +262,15 @@ function VirtualizedList({
  * `Portal-timeline` boards): "Today", "This month", then each earlier month.
  * The heading sits inside the row so the virtualized list gets it too.
  */
-function TimelineRow({ events, index }: { readonly events: readonly TimelineItemProps[]; readonly index: number }) {
+function TimelineRow({
+  events,
+  index,
+  audience,
+}: {
+  readonly events: readonly TimelineItemProps[];
+  readonly index: number;
+  readonly audience: NonNullable<TimelineItemProps['audience']>;
+}) {
   const t = useTranslations('timeline.page');
   const locale = useLocale();
   const event = events[index]!;
@@ -286,7 +300,7 @@ function TimelineRow({ events, index }: { readonly events: readonly TimelineItem
         </h2>
       ) : null}
       <div className="border-t border-[var(--aura-border-default)]">
-        <TimelineEventItem {...event} />
+        <TimelineEventItem {...event} audience={audience} />
       </div>
     </>
   );

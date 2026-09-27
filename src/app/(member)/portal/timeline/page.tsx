@@ -132,6 +132,7 @@ export default async function PortalTimelinePage({
             initialCursor={initialCursor}
             emptyLabel={hasFilter ? t('emptyFiltered') : t('empty')}
             listLabel={t('title')}
+            audience="member"
           />
         </div>
       </Card>

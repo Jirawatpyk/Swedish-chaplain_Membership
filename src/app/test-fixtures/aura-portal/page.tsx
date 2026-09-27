@@ -390,6 +390,7 @@ export default async function AuraPortalPreviewPage({
                 initialCursor="preview-cursor"
                 emptyLabel={t('empty')}
                 listLabel={t('title')}
+                audience="member"
               />
             </div>
           </Card>

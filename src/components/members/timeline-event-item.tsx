@@ -4,7 +4,8 @@
  * Renders a single `member_timeline_v` row. The label is resolved from
  * `(source, eventType)` (FR-014):
  *   - `audit` rows reuse the existing `audit.eventType.*` catalogue, falling
- *     back to the legacy `payload.summary` string, then the source label.
+ *     back to the legacy `payload.summary` string, then the source label. On
+ *     the portal (`audience="member"`) `timeline.memberAudit.*` comes first.
  *   - the other five sources resolve `timeline.<source>.<eventKind>`,
  *     falling back to the localized source label.
  *
@@ -47,6 +48,13 @@ export type TimelineItemProps = {
    * and the badge leaves. The default is the timeline page's row.
    */
   readonly variant?: 'default' | 'compact';
+  /**
+   * Who reads the row. `member` (the portal) names an audit row from
+   * `timeline.memberAudit.*` — the member's own words ("Invoice cancelled",
+   * not "Invoice voided") — and falls back to the staff `audit.eventType.*`
+   * catalogue for a type with no member wording. The default is staff.
+   */
+  readonly audience?: 'staff' | 'member';
 };
 
 const SYSTEM_ACTORS = new Set(['system', 'system:bootstrap', 'anonymous']);
@@ -187,6 +195,7 @@ export function TimelineEventItem({
   actorDisplayName,
   payload,
   variant = 'default',
+  audience = 'staff',
 }: TimelineItemProps) {
   const t = useTranslations('admin.members.timeline');
   const tPayload = useTranslations('admin.members.timeline.payload');
@@ -206,7 +215,10 @@ export function TimelineEventItem({
     // can swallow the throw — so guard with `.has` first (silent), falling back
     // to the row summary then the source label. Mirrors the shared
     // `resolveEventLabel` helper (src/lib/audit-event-label.ts).
-    if (tAuditEvent.has(eventType)) {
+    const memberKey = `memberAudit.${eventType}`;
+    if (audience === 'member' && tTimeline.has(memberKey as 'unknownEvent')) {
+      eventLabel = tTimeline(memberKey as 'unknownEvent');
+    } else if (tAuditEvent.has(eventType)) {
       eventLabel = tAuditEvent(eventType);
     } else {
       const summary = typeof payload?.summary === 'string' ? payload.summary : '';

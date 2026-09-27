@@ -35,7 +35,7 @@ export function RecentActivityList({ events }: RecentActivityListProps): React.R
           aria-posinset={i + 1}
           className="border-t border-[var(--aura-border-default)]"
         >
-          <TimelineEventItem {...ev} variant="compact" />
+          <TimelineEventItem {...ev} variant="compact" audience="member" />
         </li>
       ))}
     </ol>
