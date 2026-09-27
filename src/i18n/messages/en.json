@@ -7057,19 +7057,19 @@
       "noChanges": "No changes to save."
     },
     "invite": {
-      "pageTitle": "Invite Colleague",
+      "pageTitle": "Invite colleague",
       "notLinked": "Your account is not linked to a member.",
       "loadError": "Could not load your profile.",
       "notPrimary": "Only the primary contact can invite colleagues.",
-      "formTitle": "Colleague Details",
+      "formTitle": "Colleague details",
       "fields": {
-        "firstName": "First Name",
-        "lastName": "Last Name",
+        "firstName": "First name",
+        "lastName": "Last name",
         "email": "Email",
-        "roleTitle": "Role / Title",
-        "preferredLanguage": "Preferred Language"
+        "roleTitle": "Role / title",
+        "preferredLanguage": "Preferred language"
       },
-      "sendButton": "Send Invitation",
+      "sendButton": "Send invitation",
       "cancelButton": "Cancel",
       "sending": "Sending…",
       "sendSuccess": "Invitation sent successfully.",
@@ -7078,7 +7078,15 @@
       "inviteUnavailable": "We couldn't invite this address. Please contact the chamber for help.",
       "invalidEmail": "Enter a valid email address.",
       "validationError": "Please check the form and try again.",
-      "linkFailed": "Couldn't complete the invitation. No invitation was sent — please try again."
+      "linkFailed": "Couldn't complete the invitation. No invitation was sent — please try again.",
+      "capabilities": {
+        "title": "What your colleague can do",
+        "body": "Colleagues you invite get their own portal login for this membership. They can view and pay invoices, renew the membership and use its benefits. Only the primary contact can invite colleagues."
+      },
+      "emailHint": "They get an email with a link to set their password.",
+      "roleTitleHint": "Up to 100 characters.",
+      "privacyNote": "{firstName}'s name and email are stored as a contact of your membership — see the <link>privacy notice</link>.",
+      "privacyNoteNoName": "Your colleague's name and email are stored as a contact of your membership — see the <link>privacy notice</link>."
     },
     "payment": {
       "payNow": "Pay now",

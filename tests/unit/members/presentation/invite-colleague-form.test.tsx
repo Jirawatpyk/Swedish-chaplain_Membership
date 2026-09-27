@@ -96,7 +96,7 @@ describe('InviteColleagueForm', () => {
 });
 
 describe('InviteColleagueForm on AURA (spec 122 US3)', () => {
-  it('uses AURA fields (an email keyboard for the address) and an AURA select, with Send in an ActionBar that says when changes are unsaved', () => {
+  it('uses AURA fields (an email keyboard for the address) and an AURA select, with Cancel and Send in the card (decision 2026-09-27)', () => {
     const { container } = renderForm();
     for (const id of ['first_name', 'last_name', 'email', 'role_title']) {
       expect(container.querySelector(`#${id}`)?.closest('.aura-field')).not.toBeNull();
@@ -106,12 +106,27 @@ describe('InviteColleagueForm on AURA (spec 122 US3)', () => {
     expect(email).toHaveAttribute('inputmode', 'email');
     expect(email).toHaveAttribute('autocomplete', 'email');
     expect(container.querySelector('select[name="preferred_language"]')?.closest('.aura-field')).not.toBeNull();
-    const bar = screen.getByRole('region', { name: 'Actions' });
-    expect(bar).toContainElement(screen.getByRole('button', { name: enMessages.portal.invite.sendButton }));
-    const status = bar.querySelector('[role="status"]')!;
-    expect(status.textContent).toBe('');
-    fireEvent.change(container.querySelector('#first_name')!, { target: { value: 'Jane' } });
-    expect(status.textContent).toBe(enMessages.common.unsavedStatus);
+    expect(screen.queryByRole('region', { name: 'Actions' })).toBeNull();
+    const card = container.querySelector('.aura-card')!;
+    const buttons = [...card.querySelectorAll('button')].map((b) => b.textContent);
+    expect(buttons.slice(-2)).toEqual([enMessages.portal.invite.cancelButton, enMessages.portal.invite.sendButton]);
+  });
+
+  it('marks only the optional field — the required ones stay aria-required without an asterisk (Portal-contacts-invite)', () => {
+    const { container } = renderForm();
+    for (const id of ['first_name', 'last_name', 'email']) {
+      expect(container.querySelector(`#${id}`)).toHaveAttribute('aria-required', 'true');
+    }
+    expect(container.querySelector('.aura-field__req')).toBeNull();
+    expect(container.querySelector('#role_title')?.closest('.aura-field')?.textContent).toMatch(/optional/i);
+  });
+
+  it('names the colleague being invited in the privacy note once a first name is typed', () => {
+    const { container } = renderForm();
+    const note = screen.getByTestId('invite-privacy-note');
+    expect(note.textContent).toContain("Your colleague's name and email");
+    fireEvent.change(container.querySelector('#first_name')!, { target: { value: 'Sofia' } });
+    expect(note.textContent).toContain("Sofia's name and email");
   });
 
   it('sends the language picked in the AURA select', async () => {

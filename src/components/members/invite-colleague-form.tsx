@@ -3,14 +3,15 @@
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from '@/lib/toast';
 import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
 import { isReadOnlyRefusal } from '@/lib/http/read-only-refusal';
-import { ActionBar, Button, FormErrorSummary, Select, TextField } from '@jirawatpyk/aura-react';
-import { Card } from '@jirawatpyk/aura-react/server';
+import { SendIcon } from 'lucide-react';
+import { Button, FormErrorSummary, Select, TextField } from '@jirawatpyk/aura-react';
+import { Alert, Card } from '@jirawatpyk/aura-react/server';
 import {
   boundedText,
   emailText,
@@ -25,9 +26,16 @@ import {
  *
  * Spec 122 US3 (`Portal-contacts-invite`): AURA card, fields and Select;
  * `FormErrorSummary` after a failed submit (client or server field errors —
- * it takes focus, so server errors no longer call `setFocus`); Cancel + Send
- * in an `ActionBar` that reads "Unsaved changes" while the form is dirty.
+ * it takes focus, so server errors no longer call `setFocus`). The card
+ * opens with what a colleague can do, marks the one optional field (the
+ * required ones stay `aria-required`), says where the colleague's details
+ * are kept, and ends with Cancel + Send as plain buttons (decision
+ * 2026-09-27: full width with Send on top below 640 px).
  */
+export interface InviteColleagueFormProps {
+  /** The tenant's privacy notice; null → the note names it without a link (never a dead link). */
+  readonly privacyNoticeHref?: string | null;
+}
 
 function buildInviteSchema(tv: Translator) {
   return z.object({
@@ -41,7 +49,7 @@ function buildInviteSchema(tv: Translator) {
 
 type InviteFormValues = z.infer<ReturnType<typeof buildInviteSchema>>;
 
-export function InviteColleagueForm() {
+export function InviteColleagueForm({ privacyNoticeHref = null }: InviteColleagueFormProps = {}) {
   const t = useTranslations('portal.invite');
   const readOnlyToast = useReadOnlyToast();
   const tLang = useTranslations('common');
@@ -67,7 +75,8 @@ export function InviteColleagueForm() {
     shouldFocusError: false,
   });
 
-  const { errors, submitCount, isDirty } = form.formState;
+  const { errors, submitCount } = form.formState;
+  const firstName = useWatch({ control: form.control, name: 'first_name' }).trim();
 
   const onSubmit = async (values: InviteFormValues) => {
     setSubmitting(true);
@@ -135,68 +144,96 @@ export function InviteColleagueForm() {
     }
   };
 
+  const privacyLink = (chunks: React.ReactNode) =>
+    privacyNoticeHref ? (
+      <a
+        href={privacyNoticeHref}
+        target="_blank"
+        rel="noreferrer"
+        className="text-[var(--aura-fg-accent)] underline underline-offset-4 hover:text-[var(--aura-fg-primary)]"
+      >
+        {chunks}
+      </a>
+    ) : (
+      chunks
+    );
+
   return (
-    <form onSubmit={form.handleSubmit(onSubmit)} method="post" noValidate className="space-y-6">
+    <form onSubmit={form.handleSubmit(onSubmit)} method="post" noValidate className="flex flex-col gap-4">
       <FormErrorSummary errors={errors} focusKey={submitCount} />
       <Card title={t('formTitle')} titleId="invite-colleague-heading" headingLevel={2}>
-        <div className="grid gap-4 sm:grid-cols-2">
-          {/* Focused on mount (ux-standards § 7.2), like the auth / PII forms.
-              `autoFocus`, not an effect calling setFocus: a late effect could
-              pull focus back off the error summary. */}
-          <TextField
-            id="first_name"
-            label={t('fields.firstName')}
-            required
-            autoFocus
-            autoComplete="given-name"
-            error={errors.first_name?.message}
-            {...form.register('first_name')}
-          />
-          <TextField
-            id="last_name"
-            label={t('fields.lastName')}
-            required
-            autoComplete="family-name"
-            error={errors.last_name?.message}
-            {...form.register('last_name')}
-          />
-          {/* type + inputMode + autoComplete: the @-keyboard on phones
-              (ux-standards § 11.2, audit XF-06) — what EmailInput baked in */}
-          <TextField
-            id="email"
-            className="sm:col-span-2"
-            type="email"
-            inputMode="email"
-            autoComplete="email"
-            label={t('fields.email')}
-            required
-            error={errors.email?.message}
-            {...form.register('email')}
-          />
-          <TextField
-            id="role_title"
-            label={t('fields.roleTitle')}
-            autoComplete="organization-title"
-            {...form.register('role_title')}
-          />
-          <Select
-            id="preferred_language"
-            label={t('fields.preferredLanguage')}
-            options={(['en', 'th', 'sv'] as const).map((v) => ({ value: v, label: tLang(`languageOptions.${v}`) }))}
-            {...form.register('preferred_language')}
-          />
+        <div className="flex flex-col gap-4">
+          <Alert tone="info" role="note" title={t('capabilities.title')}>
+            {t('capabilities.body')}
+          </Alert>
+          <div className="grid gap-3.5 sm:grid-cols-2 sm:gap-4">
+            {/* Focused on mount (ux-standards § 7.2), like the auth / PII forms.
+                `autoFocus`, not an effect calling setFocus: a late effect could
+                pull focus back off the error summary. Required without the
+                asterisk (the board marks the optional field instead). */}
+            <TextField
+              id="first_name"
+              label={t('fields.firstName')}
+              aria-required
+              autoFocus
+              autoComplete="given-name"
+              error={errors.first_name?.message}
+              {...form.register('first_name')}
+            />
+            <TextField
+              id="last_name"
+              label={t('fields.lastName')}
+              aria-required
+              autoComplete="family-name"
+              error={errors.last_name?.message}
+              {...form.register('last_name')}
+            />
+            {/* type + inputMode + autoComplete: the @-keyboard on phones
+                (ux-standards § 11.2, audit XF-06) — what EmailInput baked in */}
+            <TextField
+              id="email"
+              className="sm:col-span-2"
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              label={t('fields.email')}
+              hint={t('emailHint')}
+              aria-required
+              error={errors.email?.message}
+              {...form.register('email')}
+            />
+            <TextField
+              id="role_title"
+              label={t('fields.roleTitle')}
+              optional
+              hint={t('roleTitleHint')}
+              autoComplete="organization-title"
+              error={errors.role_title?.message}
+              {...form.register('role_title')}
+            />
+            <Select
+              id="preferred_language"
+              label={t('fields.preferredLanguage')}
+              options={(['en', 'th', 'sv'] as const).map((v) => ({ value: v, label: tLang(`languageOptions.${v}`) }))}
+              {...form.register('preferred_language')}
+            />
+          </div>
+          <p className="text-[13px] text-[var(--aura-fg-secondary)]" data-testid="invite-privacy-note">
+            {firstName
+              ? t.rich('privacyNote', { firstName, link: privacyLink })
+              : t.rich('privacyNoteNoName', { link: privacyLink })}
+          </p>
+          {/* Cancel before Send (ux-standards § 11.1, and the tab order); Send on top on phones. */}
+          <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end sm:gap-3">
+            <Button type="button" variant="secondary" onClick={() => router.push('/portal/profile')}>
+              {t('cancelButton')}
+            </Button>
+            <Button type="submit" icon={<SendIcon aria-hidden />} loading={submitting}>
+              {submitting ? t('sending') : t('sendButton')}
+            </Button>
+          </div>
         </div>
       </Card>
-
-      {/* H6: Cancel before Submit (ux-standards § 11.1), in the ActionBar. */}
-      <ActionBar status={isDirty ? tLang('unsavedStatus') : null}>
-        <Button type="button" variant="secondary" onClick={() => router.push('/portal/profile')}>
-          {t('cancelButton')}
-        </Button>
-        <Button type="submit" loading={submitting}>
-          {submitting ? t('sending') : t('sendButton')}
-        </Button>
-      </ActionBar>
     </form>
   );
 }

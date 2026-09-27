@@ -14,6 +14,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { renderChangeRequestHistoryView } from '@/components/members/change-requests/change-request-history-view';
 import { PortalChangeRequestForm } from '@/components/members/change-requests/portal-change-request-form';
 import { InviteColleagueForm } from '@/components/members/invite-colleague-form';
+import { BackLink } from '@/components/portal/back-link';
 import { PortalEditForm } from '@/components/members/portal-edit-form';
 import { renderPortalProfileView, type PortalProfileViewProps } from '@/components/members/portal-profile-view';
 import { renderPortalAccountView } from '@/components/portal/portal-account-view';
@@ -318,12 +319,17 @@ export default async function AuraPortalPreviewPage({
 
   if (view === 'invite') {
     const t = await getTranslations('portal.invite');
+    const tHistory = await getTranslations('portal.changeRequests.history');
+    // As /portal/contacts/invite renders it (page.tsx `InviteFrame`).
     return (
-      <MemberFrame path="/portal/profile">
-        <FormContainer>
-          <PageHeader title={t('pageTitle')} subtitle="Nordic Trading Co., Ltd." />
-          <InviteColleagueForm />
-        </FormContainer>
+      <MemberFrame path="/portal/contacts/invite">
+        <DetailContainer>
+          <BackLink href="/portal/profile">{tHistory('backToProfile')}</BackLink>
+          <div className="flex max-w-[720px] flex-col gap-[var(--page-section-gap)]">
+            <PageHeader title={t('pageTitle')} subtitle="Lindqvist & Partners Co., Ltd." />
+            <InviteColleagueForm privacyNoticeHref="https://swecham.example/privacy" />
+          </div>
+        </DetailContainer>
       </MemberFrame>
     );
   }

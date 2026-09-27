@@ -7066,7 +7066,7 @@
         "firstName": "Förnamn",
         "lastName": "Efternamn",
         "email": "E-post",
-        "roleTitle": "Roll / Titel",
+        "roleTitle": "Roll / titel",
         "preferredLanguage": "Föredraget språk"
       },
       "sendButton": "Skicka inbjudan",
@@ -7078,7 +7078,15 @@
       "inviteUnavailable": "Vi kunde inte bjuda in den här adressen. Kontakta handelskammaren för hjälp.",
       "invalidEmail": "Ange en giltig e-postadress.",
       "validationError": "Kontrollera formuläret och försök igen.",
-      "linkFailed": "Det gick inte att slutföra inbjudan. Ingen inbjudan skickades – försök igen."
+      "linkFailed": "Det gick inte att slutföra inbjudan. Ingen inbjudan skickades – försök igen.",
+      "capabilities": {
+        "title": "Vad din kollega kan göra",
+        "body": "Kollegor du bjuder in får en egen portalinloggning för medlemskapet. De kan se och betala fakturor, förnya medlemskapet och använda dess förmåner. Endast huvudkontakten kan bjuda in kollegor."
+      },
+      "emailHint": "De får ett mejl med en länk för att välja lösenord.",
+      "roleTitleHint": "Högst 100 tecken.",
+      "privacyNote": "Namn och e-post för {firstName} sparas som en kontakt för ert medlemskap — se <link>integritetspolicyn</link>.",
+      "privacyNoteNoName": "Din kollegas namn och e-post sparas som en kontakt för ert medlemskap — se <link>integritetspolicyn</link>."
     },
     "payment": {
       "payNow": "Betala nu",

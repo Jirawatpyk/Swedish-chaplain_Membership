@@ -1,5 +1,5 @@
 import { getTranslations } from 'next-intl/server';
-import { FormContainer } from '@/components/layout';
+import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import {
   FormSkeleton,
@@ -12,13 +12,17 @@ export default async function Loading() {
   const tLayout = await getTranslations('layout');
   return (
     <PageSkeletonShell ariaLabel={tLayout('loadingForm')}>
-      <FormContainer>
-        <PageHeader
-          title={t('pageTitle')}
-          subtitle={<SkeletonBlock className="h-4 w-48" />}
-        />
-        <FormSkeleton fields={4} footerButtons={1} />
-      </FormContainer>
+      {/* The page's frame: back link, then a 720px column (spec 122 US3). */}
+      <DetailContainer>
+        <SkeletonBlock className="h-5 w-32" />
+        <div className="flex max-w-[720px] flex-col gap-[var(--page-section-gap)]">
+          <PageHeader
+            title={t('pageTitle')}
+            subtitle={<SkeletonBlock className="h-4 w-48" />}
+          />
+          <FormSkeleton fields={5} footerButtons={2} />
+        </div>
+      </DetailContainer>
     </PageSkeletonShell>
   );
 }

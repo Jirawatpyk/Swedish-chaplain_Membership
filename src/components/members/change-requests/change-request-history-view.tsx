@@ -1,10 +1,11 @@
 import Link from 'next/link';
 import { getLocale, getTranslations } from 'next-intl/server';
-import { ArrowLeftIcon, InboxIcon } from 'lucide-react';
+import { InboxIcon } from 'lucide-react';
 import { buttonClass } from '@jirawatpyk/aura-react/server';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { EmptyState } from '@/components/shell/empty-state';
+import { BackLink } from '@/components/portal/back-link';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 import { cn } from '@/lib/utils';
 import type { ChangeRequestView } from '@/lib/change-request-portal-view';
@@ -36,13 +37,7 @@ export async function renderChangeRequestHistoryView({ items, nextCursor, isFirs
   return (
     <DetailContainer>
       {/* The `Portal-change-requests` board: a text link back, above the title. */}
-      <Link
-        href="/portal/profile"
-        className="-mb-1 inline-flex min-h-11 items-center gap-1.5 self-start text-[13px] font-medium text-[var(--aura-fg-accent)] no-underline hover:underline sm:min-h-0"
-      >
-        <ArrowLeftIcon className="aura-icon size-4" aria-hidden />
-        {t('backToProfile')}
-      </Link>
+      <BackLink href="/portal/profile">{t('backToProfile')}</BackLink>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
       {items.length === 0 && isFirstPage ? (
         <div data-testid="history-empty">
