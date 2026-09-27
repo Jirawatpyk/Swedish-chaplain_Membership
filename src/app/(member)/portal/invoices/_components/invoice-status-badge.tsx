@@ -23,18 +23,16 @@
  * passes it via the `className` prop, which `cn(...)` merges onto the base
  * classes — keeping every former class present.
  *
+ * Spec 122 US4 (T401): an AURA StatusPill in the boards' tones
+ * (`invoiceStatusTone`). The pill draws its own status icon beside the
+ * word, so the lucide icon and the Badge variant are gone.
+ *
  * NOTE: the ADMIN invoice table (`app/(staff)/admin/.../invoice-table.tsx`)
  * has its OWN separate `StatusBadge` over a different RowStatus/variant
  * vocabulary — it is intentionally NOT consolidated here.
  */
-import { Badge } from '@/components/ui/badge';
-import { cn } from '@/lib/utils';
-import {
-  STATUS_ICON_MAP,
-  statusBadgeVariant,
-  statusIconName,
-  type InvoiceRowDisplayStatus,
-} from '../_utils/format';
+import { StatusPill } from '@jirawatpyk/aura-react/server';
+import { invoiceStatusTone, type InvoiceRowDisplayStatus } from '../_utils/format';
 
 export function InvoiceStatusBadge({
   status,
@@ -45,22 +43,9 @@ export function InvoiceStatusBadge({
   readonly label: string;
   readonly className?: string;
 }): React.ReactElement {
-  // Resolve the lucide icon via an object-index (NOT the `statusIcon()`
-  // function-call wrapper). Both return the identical component, but the
-  // `react-hooks/static-components` lint rule conservatively flags a
-  // function call whose result is used as a JSX component (it can't prove
-  // the call returns an existing component vs creating one), whereas a map
-  // member-access is recognised as a stable reference — the same idiom
-  // `stat-card.tsx` uses (`VARIANT_ICON[variant]`). Behaviour is identical:
-  // `statusIcon(s)` IS `STATUS_ICON_MAP[statusIconName(s)]`.
-  const Icon = STATUS_ICON_MAP[statusIconName(status)];
   return (
-    <Badge
-      variant={statusBadgeVariant(status)}
-      className={cn('inline-flex items-center gap-1', className)}
-    >
-      <Icon className="size-3.5" aria-hidden="true" />
+    <StatusPill tone={invoiceStatusTone(status)} className={className}>
       {label}
-    </Badge>
+    </StatusPill>
   );
 }

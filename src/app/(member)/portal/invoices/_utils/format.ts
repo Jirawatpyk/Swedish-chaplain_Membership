@@ -6,7 +6,7 @@
  *   - C1: `formatSatangThb` in `invoices-summary-card.tsx` did NOT
  *         handle negative satang (credit note totals) — the detail
  *         page had an `abs` branch that the summary card copy lost.
- *   - I1: `formatSatangThb` + `formatDate` + `statusBadgeVariant`
+ *   - I1: `formatSatangThb` + `formatDate` + the status styling
  *         lived in three places (list page, detail page, summary
  *         card) — Reusable Components principle (CLAUDE.md global
  *         instructions + Constitution § Code Quality).
@@ -25,14 +25,7 @@
 export { formatSatangThb } from '@/lib/format-thb';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 import type { InvoiceStatus } from '@/modules/invoicing';
-import {
-  AlertTriangle,
-  Ban,
-  CheckCircle2,
-  Clock,
-  FileText,
-  type LucideIcon,
-} from 'lucide-react';
+import type { StatusTone } from '@jirawatpyk/aura-react/server';
 
 /**
  * Presentation status surfaced to an invoice row/badge — the stored
@@ -61,77 +54,21 @@ export function formatDate(iso: string | null, locale: string): string {
   });
 }
 
-export type InvoiceStatusBadgeVariant =
-  | 'default'
-  | 'secondary'
-  | 'outline'
-  | 'destructive';
-
 /**
- * Map an invoice status enum to a shadcn Badge variant. Colour alone
- * is not a sufficient a11y signal (review Sugg #2 — deuteranopia);
- * callers MUST pair the badge with a `lucide-react` status icon —
- * see `statusIconName` below.
+ * The AURA status-pill tone per invoice status (spec 122 US4, `Invoices`
+ * board): paid ready, issued in progress, overdue blocked, and the rest
+ * (void, draft, credited) neutral. The pill carries its own icon beside the
+ * word, so colour is never the only signal.
  */
-export function statusBadgeVariant(
-  status: InvoiceRowDisplayStatus,
-): InvoiceStatusBadgeVariant {
+export function invoiceStatusTone(status: InvoiceRowDisplayStatus): StatusTone {
   switch (status) {
     case 'paid':
-      return 'default';
+      return 'ready';
     case 'issued':
-      return 'secondary';
+      return 'progress';
     case 'overdue':
-      return 'destructive';
+      return 'blocked';
     default:
-      return 'outline';
+      return 'neutral';
   }
 }
-
-/**
- * lucide-react icon name per invoice status. Callers import the icon
- * component directly (tree-shaking friendly) and render at ~14px
- * inside the Badge with `aria-hidden` since the text label is
- * already present.
- */
-export type InvoiceStatusIconName =
-  | 'CheckCircle2'
-  | 'Clock'
-  | 'AlertTriangle'
-  | 'FileText'
-  | 'Ban';
-
-export function statusIconName(
-  status: InvoiceRowDisplayStatus,
-): InvoiceStatusIconName {
-  switch (status) {
-    case 'paid':
-      return 'CheckCircle2';
-    case 'issued':
-      return 'Clock';
-    case 'overdue':
-      return 'AlertTriangle';
-    case 'void':
-      return 'Ban';
-    default:
-      return 'FileText';
-  }
-}
-
-/**
- * Maps each {@link InvoiceStatusIconName} to its `lucide-react` component.
- * Single source of truth — every portal invoice surface (list table,
- * mobile card list, summary card, detail page) resolves its status icon
- * through `STATUS_ICON_MAP[statusIconName(status)]` (see
- * `InvoiceStatusBadge`) instead of redeclaring this map, so the status →
- * icon pairing can never drift between surfaces. The map index (not a
- * function-call wrapper) is used so `react-hooks/static-components` sees a
- * stable component reference at the JSX render site.
- */
-export const STATUS_ICON_MAP: Record<InvoiceStatusIconName, LucideIcon> = {
-  CheckCircle2,
-  Clock,
-  AlertTriangle,
-  FileText,
-  Ban,
-};
