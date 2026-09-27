@@ -87,20 +87,9 @@ export async function RecentActivitySection({
     .map(toTimelineItemProps);
 
   return (
-    // AURA card (spec 122 US3, `Main` board): the "view all" link sits in the
-    // footer as a text link, as the board draws it.
-    <Card
-      title={t('title')}
-      headingLevel={2}
-      footer={
-        events.length > 0 ? (
-          <Link href="/portal/timeline" className={VIEW_ALL_LINK}>
-            {t('viewAll')}
-            <ArrowRight size={16} className="aura-icon" aria-hidden="true" />
-          </Link>
-        ) : undefined
-      }
-    >
+    // AURA card (spec 122 US3, `Main` board): "View all activity" is the last
+    // row of the body, left-aligned under a hairline, as the board draws it.
+    <Card title={t('title')} headingLevel={2}>
       {events.length === 0 ? (
         <div className="flex flex-col items-center gap-3 py-8 text-center">
           {/* activity.empty.title = "No activity yet" (nested key, existing G2 key) */}
@@ -110,15 +99,23 @@ export async function RecentActivitySection({
           </Link>
         </div>
       ) : (
-        <RecentActivityList events={events} />
+        <div className="flex flex-col">
+          <RecentActivityList events={events} />
+          <div className="border-t border-[var(--aura-border-default)] pt-3">
+            <Link href="/portal/timeline" className={VIEW_ALL_LINK}>
+              {t('viewAll')}
+              <ArrowRight size={16} className="aura-icon" aria-hidden="true" />
+            </Link>
+          </div>
+        </div>
       )}
     </Card>
   );
 }
 
-/** A footer text link with a 44px target, in AURA's link colour. */
+/** The board's 13px text link in AURA's link colour, a 44px target on phones. */
 const VIEW_ALL_LINK =
-  'inline-flex min-h-11 items-center gap-1.5 text-sm font-medium text-[var(--aura-fg-accent)] no-underline hover:text-[var(--aura-fg-primary)] hover:underline';
+  'inline-flex min-h-11 items-center gap-1.5 text-[13px] font-medium text-[var(--aura-fg-accent)] no-underline hover:text-[var(--aura-fg-primary)] hover:underline sm:min-h-0';
 
 export function RecentActivitySkeleton(): React.JSX.Element {
   return (

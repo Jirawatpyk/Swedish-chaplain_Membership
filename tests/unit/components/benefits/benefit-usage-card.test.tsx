@@ -44,8 +44,8 @@ describe('<BenefitUsageCard>', () => {
     renderCard();
     const link = screen.getByRole('link', { name: /compose/i });
     expect(link).toHaveAttribute('href', '/portal/benefits/e-blasts');
-    // SR-context: the accessible name names the benefit, not bare "Compose".
-    expect(link).toHaveAccessibleName(/e-blasts/i);
+    // SR-context: the name names the benefit ("Compose E-Blast"), not bare "Compose".
+    expect(link).toHaveAccessibleName(/e-blast/i);
   });
 
   it('AS-1: shows the used/entitlement readout + last-used date', () => {

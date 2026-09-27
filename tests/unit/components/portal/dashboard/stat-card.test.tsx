@@ -65,4 +65,12 @@ describe('<StatCard>', () => {
     expect(link).toHaveClass('aura-btn', 'aura-btn--primary');
     expect(link).not.toHaveClass('aura-btn--sm');
   });
+
+  it('with an href, the whole tile opens it, and the link is named by the label alone (spec 122 US3)', () => {
+    render(<StatCard label="Outstanding balance" value="38,520.00 THB" sub="1 unpaid invoice" href="/portal/invoices" />);
+    expect(screen.getByTestId('stat-card')).toHaveClass('aura-stat', 'is-interactive');
+    const link = screen.getByRole('link', { name: 'Outstanding balance' });
+    expect(link).toHaveAttribute('href', '/portal/invoices');
+    expect(link.closest('h2')).not.toBeNull();
+  });
 });

@@ -6301,8 +6301,11 @@
       "summary": {
         "heading": "Recent invoices",
         "description": "Your latest 3 invoices — download PDFs or view all.",
-        "viewAll": "View all",
-        "contactAdmin": "Contact your chamber admin"
+        "viewAll": "View all invoices",
+        "contactAdmin": "Contact your chamber admin",
+        "issuedOn": "Issued {date}",
+        "dueOn": "Due {date}",
+        "receiptRef": "Receipt {number}"
       },
       "detail": {
         "a11y": {
@@ -8043,7 +8046,7 @@
       "eblast": "E-Blasts",
       "cultural_tickets": "Cultural event tickets",
       "action": {
-        "eblast": "Compose",
+        "eblast": "Compose E-Blast",
         "cultural_tickets": "View events"
       }
     },

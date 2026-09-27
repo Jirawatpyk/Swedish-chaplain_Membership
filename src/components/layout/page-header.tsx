@@ -9,6 +9,8 @@ type PageHeaderProps = {
   subtitle?: ReactNode;
   actions?: ReactNode;
   badge?: ReactNode;
+  /** Chips on their own row under the subtitle (the portal `Main` board's member number, plan and status). */
+  meta?: ReactNode;
   className?: string;
   /**
    * Staff-Review-2026-05-09 Round-2 R2-W2 fix: auto-focus the H1 on
@@ -38,6 +40,7 @@ export function PageHeader({
   subtitle,
   actions,
   badge,
+  meta,
   className,
   autoFocusTitle = false,
   size = 'default',
@@ -123,6 +126,11 @@ export function PageHeader({
             ].join(' ')}
           >
             {subtitle}
+          </div>
+        ) : null}
+        {meta ? (
+          <div data-slot="page-header-meta" className="flex flex-wrap items-center gap-2 pt-2">
+            {meta}
           </div>
         ) : null}
       </div>

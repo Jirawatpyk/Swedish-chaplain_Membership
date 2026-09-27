@@ -219,10 +219,9 @@ export function BenefitUsageCard({
                       href={b.actionHref}
                       className="inline-flex min-h-11 items-center gap-1 font-medium text-[var(--aura-fg-accent)] no-underline hover:text-[var(--aura-fg-primary)] hover:underline"
                     >
+                      {/* The label names the benefit ("Compose E-Blast", "View
+                          events"), so tabbing through links is unambiguous (R I-8). */}
                       {t(`benefit.action.${b.key}`)}
-                      {/* SR context: "Compose" alone is ambiguous when tabbing
-                          through links — name the benefit (R I-8). */}
-                      <span className="sr-only">{t(`benefit.${b.key}`)}</span>
                       <ArrowRight aria-hidden="true" size={14} className="aura-icon" />
                     </Link>
                   )}

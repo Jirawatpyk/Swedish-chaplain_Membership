@@ -28,6 +28,9 @@ import { TimelineStream } from '@/components/members/timeline-stream';
 import type { TimelineItemProps } from '@/components/members/timeline-event-item';
 import { ContactLanguageForm } from '@/components/portal/contact-language-form';
 import { StatCard } from '@/components/portal/dashboard/stat-card';
+import { InvoicesSummaryView } from '@/components/portal/invoices-summary-card';
+import { PortalBenefitsSummaryCard } from '@/components/benefits/portal-benefits-summary-card';
+import type { Invoice } from '@/modules/invoicing';
 import { PreferredLocaleForm } from '@/components/portal/preferred-locale-form';
 import { Badge, Card, StatusPill, buttonClass } from '@jirawatpyk/aura-react/server';
 import type { ChangeRequestView } from '@/lib/change-request-portal-view';
@@ -467,19 +470,67 @@ export default async function AuraPortalPreviewPage({
     return <MemberFrame path="/portal">{await PortalNotFound()}</MemberFrame>;
   }
 
-  // home
-  const t = await getTranslations('portal.dashboard.activity');
+  // home — the `Main` / `Home-mobile` board data
+  const t = await getTranslations('portal.dashboard');
+  const tActivity = await getTranslations('portal.dashboard.activity');
+  const tInvoices = await getTranslations('portal.invoices');
+  const tStatus = await getTranslations('admin.invoices.list.statuses');
+  const fakeInvoice = (over: Record<string, unknown>) =>
+    ({
+      documentNumber: null,
+      receiptDocumentNumberRaw: null,
+      pdf: {},
+      pdfDocKind: 'invoice',
+      receiptPdf: null,
+      receiptPdfStatus: null,
+      ...over,
+    }) as unknown as Invoice;
+  const INVOICES = [
+    fakeInvoice({ invoiceId: 'i1', status: 'issued', billDocumentNumberRaw: 'SC-2026-000123', issueDate: '2026-09-15', dueDate: '2026-10-15', total: { satang: 3852000n } }),
+    fakeInvoice({ invoiceId: 'i2', status: 'paid', billDocumentNumberRaw: 'SC-2026-000045', receiptDocumentNumberRaw: 'RC-2026-000045', pdfDocKind: 'receipt_combined', receiptPdfStatus: 'rendered', issueDate: '2026-03-12', dueDate: '2026-04-11', total: { satang: 3852000n } }),
+    fakeInvoice({ invoiceId: 'i3', status: 'paid', billDocumentNumberRaw: 'SC-2025-000087', receiptDocumentNumberRaw: 'RC-2025-000087', pdfDocKind: 'receipt_combined', receiptPdfStatus: 'rendered', issueDate: '2025-09-15', dueDate: '2025-10-15', total: { satang: 3531000n } }),
+  ];
   return (
     <MemberFrame path="/portal">
       <DetailContainer>
-        <PageHeader title="Hi Anna" subtitle="Nordic Trading Co., Ltd." size="hero" />
-        <div className="grid gap-4 md:grid-cols-3">
-          <StatCard label="Membership" value="Active" sub="Renews 31 Dec 2026" headIcon={CircleCheck} />
-          <StatCard label="Outstanding" value="฿ 21,400.00" sub="1 invoice · due 22 Oct 2026" variant="warning" variantLabel="Due soon" headIcon={FileText} />
-          <StatCard label="Benefits used" value="30%" sub="3 of 10 this year" headIcon={TrendingUp} />
+        <PageHeader
+          title="Hi Anna"
+          subtitle={t('intro')}
+          size="hero"
+          meta={
+            <>
+              <Badge variant="outline" className="font-mono">TSCC-0042</Badge>
+              <Badge tone="accent" variant="solid">Premium Corporate</Badge>
+              <StatusPill tone="neutral">{t('statusChip.active')}</StatusPill>
+            </>
+          }
+        />
+        <div className="grid grid-cols-1 gap-[var(--page-section-gap)] sm:grid-cols-3">
+          <StatCard label={t('membership.label')} value={t('membership.activeValue')} sub={t('membership.daysRemainingSub', { days: 98 })} headIcon={CircleCheck} />
+          <StatCard label={t('outstanding.label')} value="38,520.00 THB" sub="1 unpaid invoice · Earliest due 15 Oct 2026" headIcon={FileText} href="/portal/invoices" />
+          <StatCard label={t('benefits.label')} value={t('benefits.underUseValue', { count: 1 })} sub={t('benefits.underUseSub')} headIcon={TrendingUp} href="/portal/benefits" />
         </div>
-        <Card title={t('title')} titleId="recent-heading" headingLevel={2}>
-          <RecentActivityList events={EVENTS} />
+        <div className="grid grid-cols-1 gap-[var(--page-section-gap)] lg:grid-cols-2">
+          <InvoicesSummaryView rows={INVOICES} nowUtcIso={new Date().toISOString()} t={tInvoices} tStatus={tStatus} userLocale="en" />
+          <PortalBenefitsSummaryCard
+            locale="en"
+            membershipYear={2026}
+            fullHref="/portal/benefits"
+            quantifiable={[
+              { key: 'eblast', used: 2, entitlement: 6, lastUsedAt: '2026-07-03T08:00:00.000Z', actionHref: '/portal/broadcasts/new' },
+              { key: 'cultural_tickets', used: 0, entitlement: 2, lastUsedAt: null },
+            ]}
+          />
+        </div>
+        <Card title={tActivity('title')} titleId="recent-heading" headingLevel={2}>
+          <div className="flex flex-col">
+            <RecentActivityList events={EVENTS.slice(0, 4)} />
+            <div className="border-t border-[var(--aura-border-default)] pt-3">
+              <Link href="/portal/timeline" className="text-[13px] font-medium text-[var(--aura-fg-accent)] no-underline">
+                {tActivity('viewAll')}
+              </Link>
+            </div>
+          </div>
         </Card>
       </DetailContainer>
     </MemberFrame>

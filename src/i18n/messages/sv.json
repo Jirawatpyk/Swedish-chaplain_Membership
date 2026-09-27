@@ -6301,8 +6301,11 @@
       "summary": {
         "heading": "Senaste fakturor",
         "description": "Dina tre senaste fakturor — ladda ner PDF eller visa alla.",
-        "viewAll": "Visa alla",
-        "contactAdmin": "Kontakta din kammaradministratör"
+        "viewAll": "Visa alla fakturor",
+        "contactAdmin": "Kontakta din kammaradministratör",
+        "issuedOn": "Utfärdad {date}",
+        "dueOn": "Förfaller {date}",
+        "receiptRef": "Kvitto {number}"
       },
       "detail": {
         "a11y": {
@@ -8043,7 +8046,7 @@
       "eblast": "Utskick",
       "cultural_tickets": "Biljetter till kulturevenemang",
       "action": {
-        "eblast": "Skriv",
+        "eblast": "Skriv E-Blast",
         "cultural_tickets": "Visa evenemang"
       }
     },

@@ -265,35 +265,31 @@ describe('<InvoicesSummaryCard> — row layout + variant (090 UX findings #1/#3/
     cleanup();
   });
 
-  it('finding #1 — the download buttons sit in their OWN full-width flex-wrap row (a direct child of the flex-col <li>), NOT the shrink-0 total column', async () => {
+  it('spec 122 US3 (`Main` board) — one line per invoice: the downloads are icon buttons at the end of the row', async () => {
     await renderCardDom([paidSeparateRow]);
     const receipt = screen.getByTestId('receipt-download');
     const li = receipt.closest('li');
     expect(li).not.toBeNull();
-    // The <li> is a vertical stack (header row above, button row below).
-    expect(li!.className).toContain('flex-col');
-    // The buttons live in a flex-wrap justify-end container...
-    const buttonRow = receipt.parentElement!;
-    expect(buttonRow.className).toContain('flex-wrap');
-    expect(buttonRow.className).toContain('justify-end');
-    // ...that is a DIRECT child of the <li> — i.e. its own full-width row,
-    // NOT nested two levels deep inside the trailing shrink-0 total column
-    // (the pre-fix layout that starved the doc#/date column at 320px).
-    expect(buttonRow.parentElement).toBe(li);
+    // A single row (meta · pill · amount · downloads), a hairline above it.
+    expect(li!.className).toContain('items-center');
+    expect(li!.className).toContain('border-t');
+    // The downloads sit together as the row's last child, so the meta column
+    // keeps the width at 320px (the 090 finding #1 concern).
+    expect(receipt.parentElement!.parentElement).toBe(li);
+    expect(receipt.parentElement!.className).toContain('shrink-0');
   });
 
-  it('finding #4 — download buttons are bordered (AURA secondary), not ghost', async () => {
+  it('spec 122 US3 — the downloads are AURA icon buttons named in full; a separate-mode paid row keeps both (FR-011)', async () => {
     await renderCardDom([paidSeparateRow]);
-    // AURA `secondary` carries the edge; `ghost` has none until hover (spec 122 US3).
-    expect(screen.getByTestId('invoice-download')).toHaveClass('aura-btn', 'aura-btn--secondary');
-    expect(screen.getByTestId('receipt-download')).toHaveClass('aura-btn', 'aura-btn--secondary');
+    const invoice = screen.getByTestId('invoice-download');
+    const receipt = screen.getByTestId('receipt-download');
+    expect(invoice).toHaveClass('aura-icon-btn');
+    expect(receipt).toHaveClass('aura-icon-btn');
   });
 
-  it('finding #3 — a combined-mode paid receipt button gets the wrap treatment so the long TH dual-role label does not clip', async () => {
+  it('finding #3 — a combined-mode paid row shows only the receipt download (the stale invoice PDF is hidden)', async () => {
     await renderCardDom([combinedPaidRow]);
-    const receipt = screen.getByTestId('receipt-download');
-    expect(receipt.className).toContain('whitespace-normal');
-    // Combined-mode hides the (stale) invoice PDF — only the receipt shows.
+    expect(screen.getByTestId('receipt-download')).toHaveClass('aura-icon-btn');
     expect(screen.queryByTestId('invoice-download')).toBeNull();
   });
 });

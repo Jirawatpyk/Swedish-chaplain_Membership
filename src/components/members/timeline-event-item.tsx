@@ -17,11 +17,11 @@
 
 import { useTranslations, useLocale } from 'next-intl';
 import {
-  CreditCardIcon,
-  FileTextIcon,
+  BellIcon,
   CalendarCheckIcon,
-  MegaphoneIcon,
-  RefreshCwIcon,
+  CircleCheckIcon,
+  FileTextIcon,
+  MailIcon,
   UserCogIcon,
   type LucideIcon,
 } from 'lucide-react';
@@ -40,18 +40,38 @@ export type TimelineItemProps = {
   readonly actorUserId?: string;
   readonly actorDisplayName: string | null;
   readonly payload: Record<string, unknown> | null;
+  /**
+   * Spec 122 US3 — `compact` is the dashboard's "Recent activity" row (the
+   * `Main` board): the event at regular weight, a soft source badge and the
+   * date in its own column, no actor; on phones the date sits under the event
+   * and the badge leaves. The default is the timeline page's row.
+   */
+  readonly variant?: 'default' | 'compact';
 };
 
 const SYSTEM_ACTORS = new Set(['system', 'system:bootstrap', 'anonymous']);
 
+// The icon set of the `Main` and `Portal-timeline` boards.
 const SOURCE_ICON: Record<TimelineSource, LucideIcon> = {
   audit: UserCogIcon,
   invoice: FileTextIcon,
-  payment: CreditCardIcon,
+  payment: CircleCheckIcon,
   event: CalendarCheckIcon,
-  broadcast: MegaphoneIcon,
-  renewal: RefreshCwIcon,
+  broadcast: MailIcon,
+  renewal: BellIcon,
 };
+
+/** "15 Sep 2026" / "15 ก.ย. 2569" — the date column of the compact row. */
+function formatTimelineDate(iso: string, locale: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return new Intl.DateTimeFormat(getDateFormatLocale(locale), {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'Asia/Bangkok',
+  }).format(d);
+}
 
 /**
  * Locale-aware timestamp formatter. Thai uses Buddhist Era (BE = CE + 543)
@@ -166,6 +186,7 @@ export function TimelineEventItem({
   actorKind,
   actorDisplayName,
   payload,
+  variant = 'default',
 }: TimelineItemProps) {
   const t = useTranslations('admin.members.timeline');
   const tPayload = useTranslations('admin.members.timeline.payload');
@@ -220,6 +241,53 @@ export function TimelineEventItem({
   const payloadDetail =
     source === 'audit' ? formatAuditPayload(eventType, payload, tPayload) : null;
 
+  const chip = (
+    // Source marker — reduced-motion friendly (static icon, no pulse). 36px on
+    // the hover surface, as both boards draw it.
+    <span
+      aria-hidden
+      className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[var(--aura-bg-surface-hover)] text-[var(--aura-fg-secondary)]"
+    >
+      <SourceIcon className="size-4" />
+    </span>
+  );
+  const label = (
+    <>
+      <span>{eventLabel}</span>
+      {payloadDetail ? (
+        <>
+          {' · '}
+          <span className="font-mono text-xs">{payloadDetail}</span>
+        </>
+      ) : null}
+    </>
+  );
+
+  if (variant === 'compact') {
+    const date = formatTimelineDate(timestamp, locale);
+    const time = (className: string) => (
+      <time
+        dateTime={timestamp}
+        title={formatLocalisedTimestamp(timestamp, locale)}
+        suppressHydrationWarning
+        className={className}
+      >
+        {date}
+      </time>
+    );
+    return (
+      <div className="flex items-center gap-4 py-3" data-event-type={eventType} data-source={source}>
+        {chip}
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <p className="text-sm">{label}</p>
+          {time('text-xs text-[var(--aura-fg-secondary)] sm:hidden')}
+        </div>
+        <Badge className="shrink-0 max-sm:hidden">{sourceLabel}</Badge>
+        {time('w-28 shrink-0 text-right text-xs text-[var(--aura-fg-secondary)] max-sm:hidden')}
+      </div>
+    );
+  }
+
   // Spec 122 US3 (`Portal-timeline` boards): an icon chip, the event (and
   // its detail) over "actor · time", an outline source badge beside it —
   // under it on phones. Under Today the time alone; elsewhere date and time.
@@ -227,24 +295,10 @@ export function TimelineEventItem({
 
   return (
     <div className="flex items-start gap-3 py-3 sm:items-center" data-event-type={eventType} data-source={source}>
-      {/* Source marker — reduced-motion friendly (static icon, no pulse). */}
-      <span
-        aria-hidden
-        className="mt-0.5 flex size-8 shrink-0 sm:mt-0 items-center justify-center rounded-full bg-[var(--aura-bg-canvas)] text-[var(--aura-fg-secondary)]"
-      >
-        <SourceIcon className="size-4" />
-      </span>
+      {chip}
       <div className="flex min-w-0 flex-1 flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <div className="flex min-w-0 flex-col gap-0.5">
-          <p className="text-sm font-medium">
-            <span>{eventLabel}</span>
-            {payloadDetail ? (
-              <>
-                {' · '}
-                <span>{payloadDetail}</span>
-              </>
-            ) : null}
-          </p>
+          <p className="text-sm font-medium">{label}</p>
           <p className="text-xs text-[var(--aura-fg-secondary)]">
             {actorDisplay}
             {' · '}

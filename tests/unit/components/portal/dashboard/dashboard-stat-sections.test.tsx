@@ -175,6 +175,8 @@ describe('MembershipStatSection — every stat.kind resolves real en keys', () =
     const html = await renderMembership();
     noMissing(html);
     expect(html).toContain(en.portal.dashboard.membership.activeValue);
+    // Spec 122 US3 — "Renews in {days} days", as the `Main` board draws it.
+    expect(html).toMatch(/Renews in \d+ days/);
   });
 
   it('due (renew-soon within threshold, not yet invoiced) — informational headline', async () => {
@@ -417,6 +419,11 @@ describe('OutstandingStatSection — every stat.kind resolves real en keys', () 
     noMissing(html);
     // Earliest due present → dueSub form rendered; non-partial value.
     expect(html).toContain('Earliest due');
+    // Spec 122 US3 (`Main` board) — one caption "1 unpaid invoice · Earliest
+    // due …", no amber status row, and the tile opens the invoice list.
+    expect(html).toMatch(/unpaid invoice.* · Earliest due/);
+    expect(html).not.toContain('data-testid="stat-card-status"');
+    expect(html).toContain('href="/portal/invoices"');
   });
 
   it('overdue (past-due present) — resolves overdueSub variantLabel', async () => {
@@ -491,5 +498,8 @@ describe('BenefitsStatSection — every stat.kind resolves real en keys', () => 
     const html = await renderBenefits();
     noMissing(html);
     expect(html).toContain('under-used');
+    // Spec 122 US3 — the value already names it: no status row saying it twice.
+    expect(html).not.toContain('data-testid="stat-card-status"');
+    expect(html).toContain('href="/portal/benefits"');
   });
 });

@@ -72,10 +72,11 @@ export async function OutstandingStatSection({
   // warning so the stat does not over-alarm during the normal payment window.
   const isOverdue = stat.kind === 'overdue';
 
-  const sub =
-    stat.earliestDueDate !== null
-      ? t('dueSub', { date: formatDueDate(stat.earliestDueDate, locale) })
-      : countSub;
+  const dueSub = stat.earliestDueDate !== null ? t('dueSub', { date: formatDueDate(stat.earliestDueDate, locale) }) : null;
+  // Spec 122 US3 — the calm `due` window is one caption, "1 unpaid invoice ·
+  // Earliest due 15 Oct 2026", as the `Main` board draws it; only overdue
+  // keeps the red status row.
+  const sub = isOverdue ? (dueSub ?? countSub) : dueSub ? `${countSub} · ${dueSub}` : countSub;
 
   // 057 R2 finding D — when the cap clipped the result the overdue count is
   // also a floor, so use a "{count} or more" form for the overdue label too.
@@ -107,8 +108,8 @@ export async function OutstandingStatSection({
       label={t('label')}
       value={value}
       sub={sub}
-      variant={isOverdue ? 'destructive' : 'warning'}
-      variantLabel={variantLabel}
+      href="/portal/invoices"
+      {...(isOverdue ? { variant: 'destructive' as const, variantLabel } : {})}
     />
   );
 }

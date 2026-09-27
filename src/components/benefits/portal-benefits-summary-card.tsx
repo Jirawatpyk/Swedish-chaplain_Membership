@@ -1,0 +1,100 @@
+'use client';
+
+/**
+ * Spec 122 US3 — the dashboard's "Benefit usage" card as the portal `Main` /
+ * `Home-mobile` boards draw it: a bar per tracked benefit with its last use
+ * as the bar's hint, the benefit's next step as a secondary button beside it
+ * (under it on phones), and "Full benefits" as the last row of the body.
+ *
+ * Member-portal only: the admin member-detail preview keeps the shared
+ * `BenefitUsageCard compact`. The under-use warning is left to the Benefits
+ * stat beside this card (the board draws none here); the full benefits page
+ * still shows it (FR-021).
+ */
+import Link from 'next/link';
+import { ArrowRight, CalendarDays, Mail, type LucideIcon } from 'lucide-react';
+import { useTranslations } from 'next-intl';
+import { Progress } from '@jirawatpyk/aura-react';
+import { Card, buttonClass } from '@jirawatpyk/aura-react/server';
+import { formatCalendarYear, getDateFormatLocale } from '@/lib/format-date-localised';
+import { cn } from '@/lib/utils';
+import type { BenefitUsageItem } from './benefit-usage-card';
+
+const ACTION_ICON: Readonly<Record<string, LucideIcon>> = {
+  eblast: Mail,
+  cultural_tickets: CalendarDays,
+};
+
+export interface PortalBenefitsSummaryCardProps {
+  readonly locale: string;
+  readonly membershipYear: number;
+  readonly quantifiable: readonly BenefitUsageItem[];
+  /** "Full benefits" — the member's benefits page. */
+  readonly fullHref: string;
+  readonly headingId?: string;
+}
+
+export function PortalBenefitsSummaryCard({
+  locale,
+  membershipYear,
+  quantifiable,
+  fullHref,
+  headingId,
+}: PortalBenefitsSummaryCardProps): React.ReactElement {
+  const t = useTranslations('benefits');
+  // `timeZone` pinned — the server and a Bangkok browser must agree on the day.
+  const formatDate = (iso: string) =>
+    new Intl.DateTimeFormat(getDateFormatLocale(locale), { dateStyle: 'medium', timeZone: 'Asia/Bangkok' }).format(
+      new Date(iso),
+    );
+
+  return (
+    <Card
+      data-testid="benefit-usage-card"
+      title={t('card.title', { year: formatCalendarYear(membershipYear, locale) })}
+      description={t('card.liveNote')}
+      headingLevel={2}
+      {...(headingId ? { titleId: headingId } : {})}
+    >
+      <div className="flex flex-col gap-5">
+        <ul className="flex flex-col gap-5">
+          {quantifiable.map((b) => {
+            const Icon = ACTION_ICON[b.key];
+            return (
+              <li key={b.key} className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+                <div className="min-w-0 flex-1">
+                  <Progress
+                    label={t(`benefit.${b.key}`)}
+                    value={b.used}
+                    max={b.entitlement}
+                    showValue
+                    valueLabel={t('card.usedOf', { used: b.used, total: b.entitlement })}
+                    hint={b.lastUsedAt === null ? t('card.neverUsed') : t('card.lastUsed', { date: formatDate(b.lastUsedAt) })}
+                  />
+                </div>
+                {b.actionHref !== undefined ? (
+                  <Link
+                    href={b.actionHref}
+                    className={cn(buttonClass({ variant: 'secondary' }), 'shrink-0 self-start no-underline sm:w-[148px] sm:self-auto')}
+                  >
+                    {Icon ? <Icon className="aura-icon size-4" aria-hidden /> : null}
+                    {t(`benefit.action.${b.key}`)}
+                  </Link>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+        <div className="border-t border-[var(--aura-border-default)] pt-3">
+          <Link
+            href={fullHref}
+            className="inline-flex min-h-11 items-center gap-1.5 text-[13px] font-medium text-[var(--aura-fg-accent)] no-underline hover:text-[var(--aura-fg-primary)] hover:underline sm:min-h-0"
+          >
+            {t('card.fullBenefits')}
+            <ArrowRight aria-hidden="true" size={16} className="aura-icon" />
+          </Link>
+        </div>
+      </div>
+    </Card>
+  );
+}

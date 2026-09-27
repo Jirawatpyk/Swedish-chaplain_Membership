@@ -114,8 +114,8 @@ export default async function MemberPortalHomePage() {
         title={t('welcome', { name: user.displayName ?? user.email })}
         subtitle={t('intro')}
         size="hero"
-        badge={
-          <span className="flex flex-wrap items-center gap-2">
+        meta={
+          <>
             <Badge variant="outline" className="font-mono">
               {memberNumberLabel}
             </Badge>
@@ -123,7 +123,7 @@ export default async function MemberPortalHomePage() {
                 badge so the member's level reads as the headline of the
                 three chips. Omitted when the plan row can't be resolved. */}
             {planDisplayName !== null && (
-              <Badge variant="solid">{planDisplayName}</Badge>
+              <Badge tone="accent" variant="solid">{planDisplayName}</Badge>
             )}
             {/* Neutral whatever the status: this is the RECORD's status, and a
                 lapsed member's record is still active — green would read as
@@ -131,7 +131,7 @@ export default async function MemberPortalHomePage() {
             <StatusPill tone="neutral">
               {t(`statusChip.${statusChipKey}`)}
             </StatusPill>
-          </span>
+          </>
         }
       />
 

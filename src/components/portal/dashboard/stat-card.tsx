@@ -92,6 +92,14 @@ export interface StatCardProps {
   readonly icon?: LucideIcon;
   /** The small icon top-right of the tile, as the boards draw one per stat. */
   readonly headIcon?: LucideIcon;
+  /**
+   * Makes the whole tile open this page (the `Main` board's Outstanding and
+   * Benefits stats), with AURA's interactive hover. The link wraps only the
+   * label, stretched over the tile, so its name stays the label ("Outstanding
+   * balance") rather than every figure on the card. Ignored with an `action`,
+   * which is the tile's own button.
+   */
+  readonly href?: string;
   readonly className?: string;
 }
 
@@ -113,6 +121,7 @@ export function StatCard({
   action,
   icon,
   headIcon: HeadIcon,
+  href,
   className,
 }: StatCardProps) {
   const showStatus = variant !== 'neutral' && Boolean(variantLabel);
@@ -122,10 +131,22 @@ export function StatCard({
     <div
       data-testid="stat-card"
       data-variant={variant}
-      className={cn('aura-stat h-full', className)}
+      className={cn(
+        'aura-stat h-full',
+        href && !action && 'is-interactive relative has-[a:focus-visible]:outline-2 has-[a:focus-visible]:outline-offset-2 has-[a:focus-visible]:outline-[var(--aura-focus-ring)]',
+        className,
+      )}
     >
       <div className="aura-stat__head">
-        <h2 className="aura-stat__label">{label}</h2>
+        <h2 className="aura-stat__label">
+          {href && !action ? (
+            <Link href={href} className="text-inherit no-underline outline-none after:absolute after:inset-0 after:content-['']">
+              {label}
+            </Link>
+          ) : (
+            label
+          )}
+        </h2>
         {HeadIcon ? (
           <span className="aura-stat__icon">
             <HeadIcon size={16} className="aura-icon" aria-hidden="true" focusable="false" />

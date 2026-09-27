@@ -116,8 +116,9 @@ export async function MembershipStatSection({
                 : t('suspended.unpaidSubNoDueDate')
             : stat.kind === 'overdue' && stat.daysRemaining !== null
               ? t('overdueSub', { days: Math.abs(stat.daysRemaining) })
-              : stat.daysRemaining !== null && stat.kind === 'due'
-                ? t('daysRemainingSub', { days: stat.daysRemaining })
+              : stat.daysRemaining !== null && (stat.kind === 'due' || stat.kind === 'active')
+                ? // "Renews in 98 days" for an active member too, as the `Main` board draws it.
+                  t('daysRemainingSub', { days: stat.daysRemaining })
                 : t('activeSub');
 
   // variantLabel mirrors the value text so the icon + text pair conveys

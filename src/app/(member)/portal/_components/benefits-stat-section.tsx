@@ -58,9 +58,11 @@ export async function BenefitsStatSection({
           ? t('underUseSub')
           : t('onTrackSub');
 
-  // Conditionally spread to satisfy exactOptionalPropertyTypes.
+  // Conditionally spread to satisfy exactOptionalPropertyTypes. Under-use
+  // names the benefit in the value already, so no status row repeats it (the
+  // `Main` board); an error keeps its row.
   const variantProps =
-    stat.variant !== 'neutral' ? { variantLabel: value } : {};
+    stat.kind === 'error' && stat.variant !== 'neutral' ? { variant: stat.variant, variantLabel: value } : {};
 
   return (
     <StatCard
@@ -68,7 +70,7 @@ export async function BenefitsStatSection({
       label={t('label')}
       value={value}
       sub={sub}
-      variant={stat.variant}
+      href="/portal/benefits"
       {...variantProps}
     />
   );
