@@ -284,6 +284,13 @@ const MIGRATED_PATHS = [
   'src/components/members/portal-*.tsx',
   'src/components/members/copy-button.tsx',
   'src/components/members/invite-colleague-form.tsx',
+  // US4 — the member invoices and the pay sheet. The invoice filters are
+  // shared with /admin/invoices, which renders them in AURA from US4 on.
+  'src/app/(member)/portal/invoices/page.tsx',
+  'src/app/(member)/portal/invoices/loading.tsx',
+  'src/app/(member)/portal/invoices/_components/**',
+  'src/app/(member)/portal/invoices/_utils/**',
+  'src/app/(staff)/admin/invoices/_components/invoice-filters.tsx',
 ];
 
 /**

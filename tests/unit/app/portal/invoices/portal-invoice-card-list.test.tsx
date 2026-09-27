@@ -799,7 +799,7 @@ describe('<PortalInvoiceCardList> — 088 A-refined header has no per-row tag (n
 // storage/query values stay Gregorian ISO. Guard both: the rendered card shows
 // the BE year for th and the Gregorian year for en, while the underlying
 // view-model date stays Gregorian ISO. The dates paragraph is queried in
-// isolation (`p.text-muted-foreground`) so the assertion is not confused by the
+// isolation (the first `p` in the card) so the assertion is not confused by the
 // year inside a document number (e.g. INV-2026-000001).
 // ===========================================================================
 describe('<PortalInvoiceCardList> — FR-009 locale date formatting (T063b)', () => {
@@ -815,7 +815,7 @@ describe('<PortalInvoiceCardList> — FR-009 locale date formatting (T063b)', ()
     render(
       <PortalInvoiceCardList rows={[{ vm }]} locale="th" t={t} tStatus={tStatus} />,
     );
-    const datesP = theCard().querySelector('p.text-muted-foreground');
+    const datesP = theCard().querySelector('p');
     expect(datesP).not.toBeNull();
     // th-TH → Buddhist Era: CE 2026 displays as BE 2569 (+543).
     expect(datesP?.textContent).toContain('2569');
@@ -830,7 +830,7 @@ describe('<PortalInvoiceCardList> — FR-009 locale date formatting (T063b)', ()
     render(
       <PortalInvoiceCardList rows={[{ vm }]} locale="en" t={t} tStatus={tStatus} />,
     );
-    const datesP = theCard().querySelector('p.text-muted-foreground');
+    const datesP = theCard().querySelector('p');
     expect(datesP).not.toBeNull();
     expect(datesP?.textContent).toContain('2026');
     expect(datesP?.textContent).not.toContain('2569');

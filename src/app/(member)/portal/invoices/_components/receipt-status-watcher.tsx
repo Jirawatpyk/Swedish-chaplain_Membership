@@ -28,7 +28,8 @@ import { useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Loader2 } from 'lucide-react';
-import { buttonVariants } from '@/components/ui/button';
+import { Alert } from '@jirawatpyk/aura-react';
+import { buttonClass } from '@jirawatpyk/aura-react/server';
 import { cn } from '@/lib/utils';
 
 /** First poll delay (ms) — inside the 5–10s window the spec calls for. */
@@ -125,25 +126,21 @@ export function ReceiptStatusWatcher({
   );
 
   if (variant === 'block') {
+    // Spec 122 US4 — an AURA info Alert, as the `Invoice-paid` board draws
+    // it. The live-region attributes stay on the Alert root.
     return (
-      <section
+      <Alert
+        tone="info"
         role="status"
         aria-live="polite"
         aria-busy="true"
         data-testid="receipt-status-watcher"
-        className={cn(
-          'rounded-md border border-border border-l-4 border-l-primary bg-card p-3',
-          className,
-        )}
+        icon={spinner}
+        title={t('receiptStatus.generating')}
+        {...(className ? { className } : {})}
       >
-        <p className="flex items-center gap-2 text-sm font-medium text-foreground">
-          {spinner}
-          {t('receiptStatus.generating')}
-        </p>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {t('receiptStatus.reassurance')}
-        </p>
-      </section>
+        {t('receiptStatus.reassurance')}
+      </Alert>
     );
   }
 
@@ -157,7 +154,7 @@ export function ReceiptStatusWatcher({
       aria-busy="true"
       data-testid="receipt-status-watcher"
       className={cn(
-        buttonVariants({ variant: 'outline', size: 'sm' }),
+        buttonClass({ variant: 'secondary', size: 'sm' }),
         // 088 B3 (revised) — the VISIBLE label is now the SHORT "Generating…"
         // chip, so it stays one compact line in BOTH the desktop invoice-table
         // actions cell (the full sentence + whitespace-normal previously wrapped

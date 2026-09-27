@@ -28,7 +28,6 @@
  * (the component spreads the Trigger's own props into `<Button>` and adds none
  * of its own), so the stand-in calls `render({ onClick })` with no ref.
  */
-import type { ReactNode } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
@@ -46,72 +45,9 @@ vi.mock('next/navigation', () => ({
   usePathname: () => '/admin/invoices',
 }));
 
-// Eager, testid-preserving Select stubs (Base UI Select's popup is
-// pointer-driven; jsdom can't open it). Forwards `aria-label` + `data-testid`
-// so the secondary selects can be located by testid inside the popover.
-vi.mock('@/components/ui/select', () => ({
-  Select: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  SelectContent: ({ children }: { children: ReactNode }) => (
-    <div>{children}</div>
-  ),
-  SelectItem: ({ value, children }: { value: string; children: ReactNode }) => (
-    <div role="option" aria-selected={false} data-value={value}>
-      {children}
-    </div>
-  ),
-  SelectTrigger: ({
-    children,
-    'aria-label': ariaLabel,
-    'data-testid': testid,
-  }: {
-    children: ReactNode;
-    'aria-label'?: string;
-    'data-testid'?: string;
-  }) => (
-    <div aria-label={ariaLabel} data-testid={testid}>
-      {children}
-    </div>
-  ),
-  TranslatedSelectValue: () => null,
-}));
-
-// Stateful Popover stand-in: content renders only while `open`; the Trigger's
-// injected `onClick` toggles it. This keeps "the secondary Selects appear AFTER
-// opening" a real behavioural assertion rather than a DOM-order proxy.
-vi.mock('@/components/ui/popover', async () => {
-  const { createContext, useContext, useState } = await import('react');
-  const OpenCtx = createContext<{ open: boolean; toggle: () => void }>({
-    open: false,
-    toggle: () => {},
-  });
-  return {
-    Popover: ({ children }: { children: ReactNode }) => {
-      const [open, setOpen] = useState(false);
-      return (
-        <OpenCtx.Provider value={{ open, toggle: () => setOpen((o) => !o) }}>
-          <div>{children}</div>
-        </OpenCtx.Provider>
-      );
-    },
-    PopoverTrigger: ({
-      render: renderProp,
-    }: {
-      render: (props: Record<string, unknown>) => ReactNode;
-    }) => {
-      const { toggle } = useContext(OpenCtx);
-      // React-19 shape: pass props (incl. the click handler) the component
-      // spreads onto its <Button>. No ref — none is used by the component.
-      return <>{renderProp({ onClick: toggle })}</>;
-    },
-    PopoverContent: ({ children }: { children: ReactNode }) => {
-      const { open } = useContext(OpenCtx);
-      return open ? (
-        <div data-testid="filters-popover-content">{children}</div>
-      ) : null;
-    },
-    PopoverTitle: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  };
-});
+// Spec 122 US4 — the real AURA Select and Popover (no stubs): the popover's
+// content mounts only while it is open, so "the secondary Selects appear
+// AFTER opening" stays a behavioural assertion.
 
 import { InvoiceFilters } from '@/app/(staff)/admin/invoices/_components/invoice-filters';
 

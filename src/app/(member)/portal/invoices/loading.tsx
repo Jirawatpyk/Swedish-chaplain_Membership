@@ -1,6 +1,5 @@
 import { getTranslations } from 'next-intl/server';
-import { Card, CardContent } from '@/components/ui/card';
-import { Separator } from '@/components/ui/separator';
+import { Card } from '@jirawatpyk/aura-react/server';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { PageSkeletonShell, SkeletonBlock } from '@/components/shell/page-skeletons';
@@ -29,7 +28,7 @@ export default async function Loading() {
       <DetailContainer>
         <PageHeader title={t('title')} subtitle={t('subtitle')} />
         <Card>
-          <CardContent className="flex flex-col gap-4">
+          <div className="flex flex-col gap-4">
             {/* Reserve InvoiceFilters shape: search input (flex-1) +
                 status select (12rem) — keeps CLS-0 when real form
                 paints. */}
@@ -63,24 +62,24 @@ export default async function Loading() {
               {Array.from({ length: 5 }).map((_, i) => (
                 <li key={i}>
                   <Card>
-                    <CardContent className="flex flex-col gap-3">
+                    <div className="flex flex-col gap-3">
                       <div className="flex items-start justify-between gap-3">
                         <SkeletonBlock className="h-5 w-32" />
                         <SkeletonBlock className="h-6 w-20 rounded-full" />
                       </div>
                       <SkeletonBlock className="h-4 w-56" />
-                      <Separator />
+                      <hr className="m-0 border-0 border-t border-[var(--aura-border-default)]" />
                       <SkeletonBlock className="h-6 w-28" />
                       <div className="flex flex-wrap items-center gap-2">
                         <SkeletonBlock className="h-11 w-24" />
                         <SkeletonBlock className="h-11 w-11" />
                       </div>
-                    </CardContent>
+                    </div>
                   </Card>
                 </li>
               ))}
             </ul>
-          </CardContent>
+          </div>
         </Card>
       </DetailContainer>
     </PageSkeletonShell>

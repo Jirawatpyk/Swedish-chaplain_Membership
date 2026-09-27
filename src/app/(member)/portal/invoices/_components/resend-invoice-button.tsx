@@ -17,8 +17,7 @@ import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
 import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
 import { isReadOnlyResponse } from '@/lib/http/read-only-refusal';
-import { Mail, Loader2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button, IconButton } from '@jirawatpyk/aura-react';
 
 export interface ResendInvoiceButtonProps {
   readonly invoiceId: string;
@@ -113,27 +112,37 @@ export function ResendInvoiceButton({
 
   const disabled = isPending || recentlySent;
 
+  const label = t('actions.emailCopyAria', { number: documentNumber });
+  // Spec 122 US4 — the compact form is an AURA IconButton (its label is the
+  // accessible name and the tooltip); the full form an AURA Button whose
+  // `loading` shows the spinner. `outline` (list rows) maps to AURA's
+  // secondary, `ghost` stays ghost.
+  if (layout === 'compact') {
+    return (
+      <IconButton
+        type="button"
+        icon={isPending ? 'loader-circle' : 'mail'}
+        label={label}
+        onClick={handleClick}
+        disabled={disabled}
+        aria-busy={isPending || undefined}
+        className={className}
+      />
+    );
+  }
   return (
     <Button
       type="button"
-      variant={variant}
+      variant={variant === 'outline' ? 'secondary' : 'ghost'}
       size="sm"
+      icon="mail"
+      loading={isPending}
       onClick={handleClick}
-      disabled={disabled}
-      aria-label={t('actions.emailCopyAria', { number: documentNumber })}
+      disabled={recentlySent}
+      aria-label={label}
       className={className}
     >
-      {isPending ? (
-        // Round 6 (R5-UX-M2 parity) — `motion-safe:` prefix so users
-        // with `prefers-reduced-motion: reduce` don't see a continuously
-        // spinning icon.
-        <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden="true" />
-      ) : (
-        <Mail className="size-4" aria-hidden="true" />
-      )}
-      {layout === 'full' ? (
-        <span className="ml-2">{t('actions.emailCopy')}</span>
-      ) : null}
+      {t('actions.emailCopy')}
     </Button>
   );
 }

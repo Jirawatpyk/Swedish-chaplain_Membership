@@ -45,9 +45,7 @@
  *     (`flex flex-wrap`) so a 320px card never scrolls horizontally.
  */
 import Link from 'next/link';
-import { Card, CardContent } from '@/components/ui/card';
-import { buttonVariants } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
+import { Card, buttonClass } from '@jirawatpyk/aura-react/server';
 import { cn } from '@/lib/utils';
 import { formatDate, formatSatangThb } from '../_utils/format';
 import type { InvoiceRowDisplayStatus } from '../_utils/format';
@@ -142,8 +140,10 @@ export function PortalInvoiceCardList({
             // bill's summary reads under its SC number (via `primaryNumber`).
             aria-label={`${t('detail.title')} ${primaryNumber}, ${statusLabel}`}
           >
+            {/* Spec 122 US4 — an AURA card per invoice (the `Invoices-mobile`
+                board's stacked rows), hairline divider above the total. */}
             <Card>
-              <CardContent className="flex flex-col gap-3">
+              <div className="flex flex-col gap-3">
                 {/* Header: doc-number link + document-kind badge (left) +
                     status badge (right). */}
                 <div className="flex items-start justify-between gap-3">
@@ -163,7 +163,7 @@ export function PortalInvoiceCardList({
                     <div className="flex items-center gap-2">
                       <Link
                         href={`/portal/invoices/${vm.invoiceId}`}
-                        className="rounded-sm underline underline-offset-4 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2"
+                        className="rounded-[var(--aura-radius-sm)] text-[var(--aura-fg-primary)] underline underline-offset-4 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2"
                         aria-label={`${t('actions.viewDetail')} ${primaryNumber}`}
                       >
                         <h2 className="font-mono text-sm font-medium leading-snug">
@@ -182,7 +182,7 @@ export function PortalInvoiceCardList({
                 {/* Dates — reuse the existing column labels as inline labels.
                     Each date stays on one line ("15 ต.ค. 2569"); the row may
                     still wrap between the two. */}
-                <p className="text-sm text-muted-foreground">
+                <p className="m-0 text-sm text-[var(--aura-fg-secondary)]">
                   {t('columns.issueDate')}{' '}
                   <span className="whitespace-nowrap">{formatDate(vm.issueDate, locale)}</span> ·{' '}
                   {t('columns.dueDate')}{' '}
@@ -198,7 +198,7 @@ export function PortalInvoiceCardList({
                     affordance; aria-label names the doc. Legacy separate-mode rows
                     keep the plain-text receipt number. */}
                 {vm.receiptNumber ? (
-                  <p className="text-sm text-muted-foreground">
+                  <p className="m-0 text-sm text-[var(--aura-fg-secondary)]">
                     {t('columns.receiptNumber')}{' '}
                     {tTax088 && vm.taxDocumentKind === 'tax_receipt' ? (
                       // 088 A-refined (FR-016) — the RC §86/4 tax receipt lives on
@@ -208,22 +208,22 @@ export function PortalInvoiceCardList({
                       <Link
                         href={`/portal/invoices/${vm.invoiceId}`}
                         aria-label={tTax088('seeReceiptLink', { number: vm.receiptNumber })}
-                        className="font-mono tabular-nums text-foreground underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2"
+                        className="font-mono tabular-nums text-[var(--aura-fg-primary)] underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2"
                       >
                         {vm.receiptNumber}
                       </Link>
                     ) : (
-                      <span className="font-mono tabular-nums text-foreground">
+                      <span className="font-mono tabular-nums text-[var(--aura-fg-primary)]">
                         {vm.receiptNumber}
                       </span>
                     )}
                   </p>
                 ) : null}
 
-                <Separator />
+                <hr className="m-0 border-0 border-t border-[var(--aura-border-default)]" />
 
                 {/* Total — prominent. */}
-                <p className="text-base font-semibold tabular-nums">
+                <p className="m-0 text-base font-semibold tabular-nums">
                   {formatSatangThb(vm.total?.satang ?? null, locale)}
                 </p>
 
@@ -269,7 +269,7 @@ export function PortalInvoiceCardList({
                           { number: mainDownloadNumber },
                         )}
                         className={cn(
-                          buttonVariants({ variant: 'outline', size: 'sm' }),
+                          buttonClass({ variant: 'secondary', size: 'sm' }),
                           'min-h-11 px-3',
                           // Same wrap treatment the receipt button applies to
                           // its combined label — let the longer dual-role text
@@ -312,7 +312,7 @@ export function PortalInvoiceCardList({
                               { number: receiptRef },
                             )}
                             className={cn(
-                              buttonVariants({ variant: 'outline', size: 'sm' }),
+                              buttonClass({ variant: 'secondary', size: 'sm' }),
                               'min-h-11 px-3',
                               // Allow the combined label to WRAP to 2 lines within
                               // the card instead of clipping (Button defaults to
@@ -364,7 +364,7 @@ export function PortalInvoiceCardList({
                   // em-dash sentinel instead of an empty action group.
                   <EmptyCell />
                 )}
-              </CardContent>
+              </div>
             </Card>
           </li>
         );

@@ -164,4 +164,24 @@ describe('UI import ratchet (spec 122)', () => {
       ).toEqual([]);
     });
   });
+
+  describe('the US4 member invoices are on AURA (the real MIGRATED_PATHS)', () => {
+    const legacy = "import { Button } from '@/components/ui/button';\nexport const B = Button;\n";
+
+    it.each([
+      'src/app/(member)/portal/invoices/page.tsx',
+      'src/app/(member)/portal/invoices/loading.tsx',
+      'src/app/(member)/portal/invoices/_components/portal-invoice-card-list.tsx',
+      'src/app/(member)/portal/invoices/_components/resend-invoice-button.tsx',
+      'src/app/(member)/portal/invoices/_components/receipt-status-watcher.tsx',
+      'src/app/(member)/portal/invoices/_components/combined-receipt-hint.tsx',
+      'src/app/(staff)/admin/invoices/_components/invoice-filters.tsx',
+    ])('%s cannot import the legacy kit', async (path) => {
+      expect(await ratchetHits(legacy, path)).toHaveLength(1);
+    });
+
+    it('control: the rest of the staff invoice screens keep the legacy kit until US8', async () => {
+      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/invoices/page.tsx')).toEqual([]);
+    });
+  });
 });
