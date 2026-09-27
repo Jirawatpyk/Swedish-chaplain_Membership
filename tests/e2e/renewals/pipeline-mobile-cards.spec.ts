@@ -69,8 +69,9 @@ test.describe('Task 12 — /admin/renewals mobile card-view @a11y @layout', () =
     // The desktop table is hidden via `hidden md:block` at mobile widths.
     // It still exists in the DOM (both presentations share one TanStack
     // instance — see `pipeline-table.tsx`'s module docstring), so assert
-    // on visibility, not absence.
-    await expect(page.getByRole('table')).toBeHidden();
+    // on visibility, not absence. Scoped to the work-queue panel: the
+    // "members without a cycle" tray below renders its own table.
+    await expect(page.locator('#work-queue-panel').getByRole('table')).toBeHidden();
 
     // No horizontal scroll at 375px — the whole point of the card view.
     expect(
@@ -105,7 +106,7 @@ test.describe('Task 12 — /admin/renewals mobile card-view @a11y @layout', () =
     ).toBeVisible({ timeout: 10_000 });
 
     await expect(page.getByTestId('pipeline-card-list')).toBeHidden();
-    await expect(page.getByRole('table')).toBeVisible();
+    await expect(page.locator('#work-queue-panel').getByRole('table')).toBeVisible();
   });
 
   test('375px — selecting a card keeps the LAST card reachable above the sticky bulk bar', async ({
@@ -134,7 +135,17 @@ test.describe('Task 12 — /admin/renewals mobile card-view @a11y @layout', () =
     // `ResizeObserver` spacer (mirrors `admin/members/_components/
     // bulk-action-bar.tsx`) must never leave the last card's controls
     // covered by the bar (WCAG 2.4.11 Focus Not Obscured).
+    //
+    // Park the last card half under the bar first. Otherwise, with one
+    // seeded card, the checkbox click has already scrolled it into view and
+    // the assertion below passes without measuring anything.
     const lastCard = cards.last();
+    const parkedBarBox = await bar.boundingBox();
+    const parkedCardBox = await lastCard.boundingBox();
+    if (parkedBarBox && parkedCardBox) {
+      const dy = parkedCardBox.y - (parkedBarBox.y + 20);
+      await page.evaluate((y) => window.scrollBy(0, y), dy);
+    }
     await lastCard.scrollIntoViewIfNeeded();
     const [cardBox, barBox] = await Promise.all([
       lastCard.boundingBox(),

@@ -28,6 +28,7 @@ import { events, eventRegistrations } from '@/modules/events/infrastructure/sche
 import { broadcasts } from '@/modules/broadcasts/infrastructure/schema';
 import { auditLog, type AuditLogInsert } from '@/modules/auth/infrastructure/db/schema';
 import { drizzleTimelineRepo } from '@/modules/members/infrastructure/timeline/drizzle-timeline-repo';
+import { isMemberVisibleAuditType } from '@/modules/members/application/member-visible-audit-types';
 import {
   createTestTenant,
   createTwoTestTenants,
@@ -112,8 +113,10 @@ describe('F9 US3 — multi-source timeline (T051, live Neon)', () => {
   /** ref_ids of the seeded money rows (2 invoices + 1 payment) — the SQL
    *  money exclusion must keep every one of them out of cursors. */
   const moneyRefIds: string[] = [];
-  /** ref_ids of the seeded staff-internal audit rows — hidden from a member
-   *  viewer's rows, count and cursors. */
+  /** ref_ids of every seeded audit row that is NOT on the member allowlist —
+   *  hidden from a member viewer's rows, count and cursors. That is the three
+   *  INTERNAL_TYPES rows below AND the pre-existing shape-only-money
+   *  `renewal_auto_drafted` row (also staff-internal). */
   const internalRefIds: string[] = [];
   const INTERNAL_TYPES = [
     'at_risk_score_recomputed',
@@ -258,6 +261,9 @@ describe('F9 US3 — multi-source timeline (T051, live Neon)', () => {
       })
       .returning({ id: auditLog.id });
     moneyRefIds.push(shapeOnlyMoney[0]!.id);
+    // `renewal_auto_drafted` is staff-internal too, so the member allowlist
+    // hides it even for a viewer who holds invoicing.read.
+    internalRefIds.push(shapeOnlyMoney[0]!.id);
 
     // Staff-internal audit rows, interleaved with the stream (06-02 / 06-03 /
     // 06-05 midday) so limit=1 paging walks through each — a hidden row's
@@ -471,7 +477,7 @@ describe('F9 US3 — multi-source timeline (T051, live Neon)', () => {
       totals.push(r.value.total);
       for (const e of r.value.events) {
         collected.push(e.id);
-        expect(INTERNAL_TYPES as readonly string[]).not.toContain(e.eventType);
+        if (e.source === 'audit') expect(isMemberVisibleAuditType(e.eventType)).toBe(true);
       }
       if (r.value.nextCursor === null) break;
       const decoded = Buffer.from(r.value.nextCursor, 'base64url').toString('utf-8');
@@ -485,7 +491,8 @@ describe('F9 US3 — multi-source timeline (T051, live Neon)', () => {
     // Every page's header count is what the member can actually reach.
     for (const t of totals) expect(t).toBe(collected.length);
 
-    // Staff see exactly the same stream plus the three internal rows.
+    // Staff see exactly the member's stream plus the hidden rows — nothing
+    // more, nothing less (3 seeded internal types + renewal_auto_drafted).
     const staff = await timelineList(
       { memberId, limit: 50 },
       { actorUserId: admin.userId, actorRole: 'admin', requestId: 'us3-internal-staff' },
@@ -494,9 +501,11 @@ describe('F9 US3 — multi-source timeline (T051, live Neon)', () => {
     );
     expect(staff.ok).toBe(true);
     if (!staff.ok) return;
+    expect(internalRefIds).toHaveLength(INTERNAL_TYPES.length + 1);
     expect(staff.value.total).toBe(collected.length + internalRefIds.length);
     const staffIds = staff.value.events.map((e) => e.id);
-    for (const id of internalRefIds) expect(staffIds).toContain(id);
+    const staffOnly = staffIds.filter((id) => !collected.includes(id));
+    expect([...staffOnly].sort()).toEqual([...internalRefIds].sort());
   });
 
   it('AS-5 — a member with no source rows yields an empty stream, no error', async () => {

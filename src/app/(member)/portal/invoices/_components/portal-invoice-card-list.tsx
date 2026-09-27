@@ -329,7 +329,14 @@ export function PortalInvoiceCardList({
                         (aria-live announce + auto-refresh poll). Mirrors the
                         desktop table; both consume vm.receiptPending. */}
                     {vm.receiptPending && (
-                      <ReceiptStatusWatcher invoiceId={vm.invoiceId} />
+                      <ReceiptStatusWatcher
+                        invoiceId={vm.invoiceId}
+                        // Card only: wrap inside the card at 200% text (WCAG
+                        // 1.4.4) instead of being clipped by its
+                        // `overflow-hidden`. The desktop table keeps the
+                        // one-line chip (a wide table may scroll).
+                        className="h-auto max-w-full whitespace-normal"
+                      />
                     )}
                     {/* 088 T066a — TERMINAL receipt-render failure: a calm
                         support-path affordance (NOT a dead "unavailable"), NO

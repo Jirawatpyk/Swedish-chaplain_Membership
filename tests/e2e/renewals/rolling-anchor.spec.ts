@@ -27,6 +27,7 @@ import { eq, and, inArray } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
 import { addMonthsUtc } from '@/lib/dates';
+import { formatDatePreset } from '@/lib/format-date-localised';
 import { users } from '@/modules/auth/infrastructure/db/schema';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { invoiceLines } from '@/modules/invoicing/infrastructure/db/schema-invoice-lines';
@@ -292,11 +293,9 @@ test.describe('rolling-anchor admin flow @renewals', () => {
         .locator('section')
         .filter({ has: page.getByRole('heading', { name: /renewal & health/i }) });
       await expect(healthCard).toBeVisible({ timeout: 20_000 });
-      const expectedExpiryText = new Intl.DateTimeFormat('en', {
-        year: 'numeric',
-        month: 'short',
-        day: '2-digit',
-      }).format(new Date(initialPeriodTo));
+      // The card's own formatter (#402 renders English dates en-GB), so the
+      // assertion cannot drift from the page again.
+      const expectedExpiryText = formatDatePreset(initialPeriodTo, 'en', 'dateMedium2Digit');
       await expect(healthCard).toContainText(expectedExpiryText, { timeout: 20_000 });
 
       // ── Step 5: second invoice → renewal context (no client warning) ───

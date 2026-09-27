@@ -112,6 +112,7 @@
  * open state, which is out of scope for this hotfix.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useFixedBarScrollPadding } from '@/hooks/use-fixed-bar-scroll-padding';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { XIcon } from 'lucide-react';
@@ -216,7 +217,8 @@ export function QueueBulkActionBar({
     }
   }, [executing]);
 
-  // Sticky-bar spacer — verbatim copy of `bulk-action-bar.tsx:138-158`.
+  // Sticky-bar spacer — same shape as the members `bulk-action-bar.tsx`.
+  const visible = !readOnly && selectedIds.length > 0;
   const barRef = useRef<HTMLDivElement | null>(null);
   const [barHeight, setBarHeight] = useState(64);
 
@@ -237,7 +239,13 @@ export function QueueBulkActionBar({
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+    // Re-observe on every hidden↔visible transition: the parent mounts this
+    // bar with nothing selected, so a `[]`-deps effect ran against a null ref
+    // and the spacer stayed at its 64px default however tall the bar wrapped.
+  }, [visible]);
+
+  // WCAG 2.2 SC 2.4.11 — keep focus / scroll-into-view above the bar.
+  useFixedBarScrollPadding(visible, barHeight);
 
   // Task 5 review carry-forward (Task 4) — memoized on `selectedIds` so the
   // `totalRecipients` memo below (keyed on this array's REFERENCE) actually
@@ -428,7 +436,7 @@ export function QueueBulkActionBar({
     onClear();
   }, [onClear]);
 
-  if (readOnly || selectedIds.length === 0) return null;
+  if (!visible) return null;
 
   // Task 7 fix round 1 — see the module docstring's "Fix round 1" note.
   // PERMANENTLY mounted (as long as the bar itself is mounted, i.e. as long
@@ -453,7 +461,6 @@ export function QueueBulkActionBar({
         // `pb-[env(safe-area-inset-bottom)]` keeps the action row clear of the
         // iOS home indicator on a notched device — same as the members bar.
         className="fixed bottom-0 left-0 right-0 z-40 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm shadow-lg"
-        style={{ scrollMarginBottom: '80px' }}
         role="toolbar"
         aria-label={t('toolbarLabel')}
       >

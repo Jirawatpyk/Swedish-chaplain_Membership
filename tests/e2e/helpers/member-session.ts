@@ -59,6 +59,25 @@ import { signInLandingSettled } from './sign-in-landing';
 
 export { expect };
 
+export interface MemberCredentials {
+  readonly email: string;
+  readonly password: string;
+}
+
+/**
+ * The `e2e-member-empty` persona (E2E_MEMBER_EMAIL_EMPTY / _PASSWORD_EMPTY),
+ * or null when unset. Use it for any page a LAPSED member cannot reach: the
+ * F8 renewals seed (`renewals-seed.ts`, global setup) always lapses the
+ * default `e2e-member`, and the portal sends a lapsed member from
+ * non-allowlisted routes back to /portal. Overriding E2E_MEMBER_EMAIL does
+ * not work — the seed follows that variable and lapses the override too.
+ */
+export function goodStandingMemberCredentials(): MemberCredentials | null {
+  const email = process.env.E2E_MEMBER_EMAIL_EMPTY;
+  const password = process.env.E2E_MEMBER_PASSWORD_EMPTY;
+  return email && password ? { email, password } : null;
+}
+
 /**
  * Sign the E2E member fixture in. Uses `fillField` so the WebKit
  * email-input quirk (see fixtures.ts) is handled transparently.
@@ -68,9 +87,12 @@ export { expect };
  * cleanly instead of cascading into "sheet not visible" timeouts
  * further down the test.
  */
-export async function signInAsMember(page: Page): Promise<void> {
-  const email = process.env.E2E_MEMBER_EMAIL;
-  const password = process.env.E2E_MEMBER_PASSWORD;
+export async function signInAsMember(
+  page: Page,
+  credentials?: MemberCredentials,
+): Promise<void> {
+  const email = credentials?.email ?? process.env.E2E_MEMBER_EMAIL;
+  const password = credentials?.password ?? process.env.E2E_MEMBER_PASSWORD;
   if (!email || !password) {
     throw new Error(
       'signInAsMember: E2E_MEMBER_EMAIL / E2E_MEMBER_PASSWORD must be set in .env.local. ' +

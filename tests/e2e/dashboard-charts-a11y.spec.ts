@@ -57,6 +57,15 @@ const CHART_TITLES = {
   invoiceStatus: 'Invoice value by status',
 } as const;
 
+/** en.json `admin.dashboard.<chart>.empty` — each chart's no-data branch
+ * renders this paragraph INSTEAD of the hidden data table. */
+const CHART_EMPTY_TEXT: Record<keyof typeof CHART_TITLES, string> = {
+  revenueTrend: 'No paid revenue recorded yet.',
+  memberGrowth: 'No member data yet.',
+  membershipTier: 'No active members yet.',
+  invoiceStatus: 'No issued invoices yet.',
+};
+
 /** Same filter every a11y spec in this suite uses (`f9-a11y.spec.ts`,
  * `invoice-admin-a11y.spec.ts`, …) — serious/critical only, logged verbosely
  * on failure so a red run is diagnosable from CI output alone. */
@@ -309,8 +318,15 @@ test.describe('@a11y dashboard interactive charts — Task 14 (067-dashboard-int
     // whether the decorative canvas mounted. `toBeAttached` rather than
     // `toBeVisible`: `sr-only` clips to a 1x1px box, which is DOM-present
     // but not meaningfully "visible" in the visual sense Playwright checks.
-    for (const caption of Object.values(CHART_TITLES)) {
-      await expect(page.getByRole('table', { name: caption })).toBeAttached();
+    // A chart with no data in its window renders its empty-state paragraph
+    // instead (the SR equivalent), so accept exactly one of the two.
+    for (const [key, caption] of Object.entries(CHART_TITLES) as [
+      keyof typeof CHART_TITLES,
+      string,
+    ][]) {
+      const table = page.getByRole('table', { name: caption });
+      const empty = chartCard(page, caption).getByText(CHART_EMPTY_TEXT[key], { exact: true });
+      await expect(table.or(empty), `${caption}: data table or empty state`).toHaveCount(1);
     }
   });
 

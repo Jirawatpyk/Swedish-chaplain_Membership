@@ -34,10 +34,10 @@ const NAV_LINK_BASE =
   'relative inline-flex h-[calc(100%-1px)] items-center justify-center gap-1.5 rounded-md border border-transparent px-2.5 py-0.5 text-sm font-medium whitespace-nowrap transition-all focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1 focus-visible:outline-ring pointer-coarse:min-h-11';
 
 const NAV_LINK_INACTIVE =
-  'text-foreground/60 hover:text-foreground dark:text-muted-foreground dark:hover:text-foreground';
+  'text-muted-foreground hover:text-foreground';
 
 const NAV_LINK_ACTIVE =
-  'bg-background text-foreground shadow-sm dark:border-input dark:bg-input/30 dark:text-foreground';
+  'border-input bg-background text-foreground shadow-sm dark:bg-input/30';
 
 function CountBadge({
   count,

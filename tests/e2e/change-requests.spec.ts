@@ -164,6 +164,17 @@ test.describe('@change-requests US1 — member submits, nothing applied, staff n
 
   test('@a11y axe: edit form + profile banner at 320 px', async ({ page }, testInfo) => {
     test.skip(!member, 'persona is not linked to a member');
+    // Own fixture: the profile banner needs a PENDING request, which the
+    // first test leaves behind only when it ran in this same worker — a
+    // filtered run (`--grep @a11y`) or a worker restart starts with none.
+    await wipeChangeRequestsForUser(MEMBER_EMAIL!);
+    const seeded = await seedPendingRequest(member!, {
+      phone: '+66899999999',
+      description: `e2e a11y pending ${Date.now()}`,
+      seenPhone: await readContactPhone(member!.contactId),
+      seenDescription: await readMemberDescription(member!.memberId),
+    });
+    test.skip(!seeded, 'could not seed a pending request');
     await page.setViewportSize({ width: 320, height: 720 });
     await signIn(page, MEMBER_EMAIL!, MEMBER_PASSWORD!);
     await skipUnlessFlagOn(page);
@@ -302,7 +313,14 @@ test.describe('@change-requests US2 — staff decides per field', () => {
     await runAxeScan(page, testInfo, { include: 'main' });
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.getByTestId('confirm-decision').click();
-    await expect(page.getByRole('alertdialog')).toBeVisible();
+    const dialog = page.getByRole('alertdialog');
+    await expect(dialog).toBeVisible();
+    // Let `aura-dialog-in` finish: it fades from opacity 0, and a scan taken
+    // mid-fade measures blended colours (4.38:1 on the help text, not the
+    // real ratio).
+    await dialog.evaluate((el) =>
+      Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)),
+    );
     // Base UI's invisible focus-guard sentinels (`<span role="button"
     // data-base-ui-focus-guard>`) around the decision AlertDialog trip
     // `aria-command-name` on WebKit — the documented exemption in
