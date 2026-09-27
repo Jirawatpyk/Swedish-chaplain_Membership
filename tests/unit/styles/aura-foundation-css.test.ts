@@ -159,7 +159,9 @@ describe('globals.css — AURA foundation (spec 122)', () => {
   it('takes the 44px touch rows for shell nav from AURA 5.7, with no local override (FR-013; handoff #62)', () => {
     const aura = readFileSync(join(ROOT, 'node_modules/@jirawatpyk/aura-react/dist/styles.layer.css'), 'utf8');
     expect(aura).toMatch(/@media \(pointer: coarse\)\s*\{\s*\.aura-nav__item\s*\{[^}]*min-height:\s*var\(--aura-touch-target\)/);
-    expect(css).not.toMatch(/\.aura-nav__item/);
+    // Only a mouse may get shorter rows (the collapsed rail's 40px board rows).
+    const outsideFine = css.replace(/@media \(pointer: fine\)\s*\{(?:[^{}]*\{[^}]*\})*\s*\}/g, '');
+    expect(outsideFine).not.toMatch(/\.aura-nav__item[^{]*\{[^}]*min-height/);
   });
 
   it('lets long nav labels wrap to two lines and hyphenate (AURA 5.7.1 / 5.7.2), not cut with an ellipsis (handoff #63, #64)', () => {
@@ -172,9 +174,11 @@ describe('globals.css — AURA foundation (spec 122)', () => {
     expect(css).not.toMatch(/\.aura-nav__label/);
   });
 
-  it('tints the auth brand panel\'s mesh from the brand blue to the boards\' soft yellow (spec 122 US2)', () => {
+  it('tints the auth brand panel\'s mesh from the boards\' light blue to their soft yellow (spec 122 US2)', () => {
     const layer = css.match(/@layer components\s*\{[\s\S]*?\n\}/)?.[0] ?? '';
-    expect(layer).toMatch(/\.auth-mesh\s*\{\s*--aura-mesh-to:\s*#ffe27a;/);
+    const mesh = layer.match(/\.auth-mesh\s*\{[^}]*\}/)?.[0] ?? '';
+    expect(mesh).toMatch(/--aura-mesh-from:\s*#5b9bd5;/);
+    expect(mesh).toMatch(/--aura-mesh-to:\s*#ffe27a;/);
   });
 
   it('carries no local toaster override — AURA 5.6 centres and offsets it (handoff #54, #56)', () => {

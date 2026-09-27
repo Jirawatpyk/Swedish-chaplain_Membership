@@ -679,8 +679,11 @@ summary,
   .staff-nav.aura-nav--collapsed .aura-nav__scroll {
     padding-inline: 10px;
   }
-  .staff-nav.aura-nav--collapsed .aura-nav__item {
-    min-height: 40px;
+  /* The rail board's 40px rows with a mouse; touch keeps AURA's 44px (FR-013). */
+  @media (pointer: fine) {
+    .staff-nav.aura-nav--collapsed .aura-nav__item {
+      min-height: 40px;
+    }
   }
   .staff-nav.aura-nav--collapsed .aura-nav__item > .aura-icon,
   .staff-nav.aura-nav--collapsed .aura-nav__item > svg {
