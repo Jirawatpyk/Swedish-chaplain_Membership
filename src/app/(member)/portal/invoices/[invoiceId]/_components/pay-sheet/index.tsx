@@ -41,7 +41,7 @@
  * + confirmation panel + the hard-cap prompt.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { dispatchInvoicePaid } from '../optimistic-paid';
@@ -127,7 +127,29 @@ function markDrawer(closeLabel: string) {
     const close = el.querySelector('.aura-drawer__head button');
     close?.setAttribute('data-testid', 'pay-sheet-close');
     close?.setAttribute('aria-label', closeLabel);
+    // AURA's tooltip title ("Close") would otherwise read as a description
+    // after the name ("Close payment drawer, button, Close").
+    close?.setAttribute('title', closeLabel);
   };
+}
+
+/**
+ * AURA's Drawer hands focus back to whatever was focused when it opened —
+ * Pay now, normally. Two paths leave that target gone or wrong (UX review
+ * M1, SC 2.4.3): a `?pay=1` open remembered `<body>`, and a settled payment
+ * unmounted Pay now under the confirmation panel. After the drawer's own
+ * restore runs, land on Pay now if it is still there, else the layout's
+ * `<main id="main-content" tabIndex={-1}>`.
+ */
+function settleFocusAfterClose(): void {
+  setTimeout(() => {
+    const active = document.activeElement;
+    if (active && active !== document.body && active.isConnected) return;
+    const target =
+      document.querySelector<HTMLElement>('[data-testid="pay-now-button"]') ??
+      document.getElementById('main-content');
+    target?.focus();
+  }, 0);
 }
 
 export function PaySheet({
@@ -184,6 +206,9 @@ export function PaySheet({
   // a prop changes") — once `open` flips true we latch `hasOpened`.
   // React batches the setState during render so no cascading effect
   // commit; bypasses the `set-state-in-effect` rule semantically.
+  // Stable ref: a fresh callback each render would detach + re-run it.
+  const closeLabel = t('close');
+  const drawerRef = useMemo(() => markDrawer(closeLabel), [closeLabel]);
   const [hasOpened, setHasOpened] = useState<boolean>(() => open);
   if (open && !hasOpened) {
     setHasOpened(true);
@@ -360,6 +385,7 @@ export function PaySheet({
     }
     if (!next) {
       onClose?.();
+      settleFocusAfterClose();
       // R5 round-7 (2026-04-26): the close-handler `router.refresh()`
       // was removed. Optimistic UI overlay
       // (`dispatchInvoicePaid()` + <OptimisticPaidOverlay>) handles
@@ -382,6 +408,7 @@ export function PaySheet({
     if (isControlled) onOpenChange?.(false);
     else setUncontrolledOpen(false);
     onClose?.();
+    settleFocusAfterClose();
   };
 
   return (
@@ -413,7 +440,7 @@ export function PaySheet({
         // body keeps a scroll padding so a field scrolled into view (the iOS
         // soft keyboard) lands clear of its top edge (SC 2.4.11).
         className="pay-sheet [&_.aura-drawer\_\_body]:scroll-pt-4 [&_.aura-drawer\_\_head_.aura-icon-btn]:min-h-11 [&_.aura-drawer\_\_head_.aura-icon-btn]:min-w-11"
-        ref={markDrawer(t('close'))}
+        ref={drawerRef}
       >
             {hasOpened && timeoutExceeded ? (
               // FR-028c (B3): 30-min hard-cap prompt replaces the

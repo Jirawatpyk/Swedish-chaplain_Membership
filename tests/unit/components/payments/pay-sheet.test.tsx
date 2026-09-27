@@ -16,7 +16,7 @@
  * `waitFor` loop rather than `findBy*` to keep the polling tight.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { act, render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 
 // Mock next/navigation so we can control ?pay=1 per test.
@@ -167,6 +167,43 @@ describe('<PaySheet>', () => {
     renderPaySheet();
     fireEvent.keyDown(screen.getByTestId('pay-sheet-content'), { key: 'Escape' });
     expect(screen.queryByTestId('pay-sheet-content')).toBeNull();
+  });
+
+  // UX review M1 — a `?pay=1` open remembers <body> as the element to return
+  // to, and a settled payment unmounts Pay now under the confirmation panel;
+  // either way focus must land somewhere real when the drawer closes.
+  it('closing a deep-linked drawer puts focus on Pay now, not <body> (SC 2.4.3)', () => {
+    searchParamsMock.current = new URLSearchParams('pay=1');
+    render(
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <PaySheet invoice={invoice} enabledMethods={['card', 'promptpay']} tenantPublishableKey="pk_test_fake">
+          {(open) => (
+            <button type="button" onClick={open} data-testid="pay-now-button">
+              Pay now
+            </button>
+          )}
+        </PaySheet>
+      </NextIntlClientProvider>,
+    );
+    fireEvent.keyDown(screen.getByTestId('pay-sheet-content'), { key: 'Escape' });
+    act(() => vi.runOnlyPendingTimers());
+    expect(screen.getByTestId('pay-now-button')).toHaveFocus();
+  });
+
+  it('when Pay now is gone (paid), closing lands focus on the page <main>', () => {
+    searchParamsMock.current = new URLSearchParams('pay=1');
+    const main = document.createElement('main');
+    main.id = 'main-content';
+    main.tabIndex = -1;
+    document.body.appendChild(main);
+    try {
+      renderPaySheet();
+      fireEvent.keyDown(screen.getByTestId('pay-sheet-content'), { key: 'Escape' });
+      act(() => vi.runOnlyPendingTimers());
+      expect(main).toHaveFocus();
+    } finally {
+      main.remove();
+    }
   });
 
   it('PCI: never writes to localStorage or sessionStorage during drawer lifecycle', () => {
