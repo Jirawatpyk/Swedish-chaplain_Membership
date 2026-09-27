@@ -154,7 +154,7 @@ async function loadRowReferences(
   const invoiceIds = ids('invoice', (r) => r.ref_id, true);
   if (invoiceIds.length > 0) {
     for (const r of await run(sql`
-      SELECT invoice_id::text AS id, COALESCE(document_number, bill_document_number_raw) AS document_number
+      SELECT invoice_id::text AS id, COALESCE(bill_document_number_raw, document_number) AS document_number
       FROM invoices WHERE tenant_id = ${tenantId} AND invoice_id = ANY(${uuidList(invoiceIds)})`)) {
       const id = str(r.id);
       const number = str(r.document_number);
@@ -165,7 +165,7 @@ async function loadRowReferences(
   const paymentIds = ids('payment', (r) => r.ref_id, false);
   if (paymentIds.length > 0) {
     for (const r of await run(sql`
-      SELECT p.id AS id, p.method AS method, COALESCE(i.document_number, i.bill_document_number_raw) AS document_number
+      SELECT p.id AS id, p.method AS method, COALESCE(i.bill_document_number_raw, i.document_number) AS document_number
       FROM payments p
       LEFT JOIN invoices i ON i.tenant_id = p.tenant_id AND i.invoice_id = p.invoice_id
       WHERE p.tenant_id = ${tenantId} AND p.id = ANY(${textList(paymentIds)})`)) {
@@ -365,7 +365,7 @@ export const drizzleTimelineRepo: TimelinePort = {
 
         // --- row references (non-audit rows) ---------------------------
         // Spec 122 US3 (`Portal-timeline` board): the view carries only ids for
-        // these sources, so each row's human reference — the invoice number,
+        // these sources, so each row's human reference — the invoice number (bill number first, as `billFirstDocumentNumber`),
         // the payment's method and the invoice it paid, the event's name, the
         // E-Blast's subject — is looked up once per source for the whole page,
         // on `tx` (RLS) and with the explicit tenant predicate as well. Ids are
