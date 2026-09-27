@@ -83,7 +83,12 @@ Phases 2–12 each depend on 1 and can land in any order.
 
 ## AURA gaps (the handoff doc)
 
-The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, items 52–56 (Addendum 4) in 5.6.0, items 57–62 (Addendum 5, found in US1) in 5.7.0, item 63 in 5.7.1, item 64 (Addendum 6) in 5.7.2, item 65 (Addendum 7, found in US2) in 5.7.3 and items 66–69 (Addendum 8, found in US3) in **5.8.0**, the current pin. No item is open.
+The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, items 52–56 (Addendum 4) in 5.6.0, items 57–62 (Addendum 5, found in US1) in 5.7.0, item 63 in 5.7.1, item 64 (Addendum 6) in 5.7.2, item 65 (Addendum 7, found in US2) in 5.7.3 and items 66–69 (Addendum 8, found in US3) in **5.8.0**, the current pin. Two items found in US4 are open:
+
+| # | Gap | Local stand-in until it ships |
+|---|---|---|
+| 70 | `Drawer` forwards no `data-*` to its panel and takes no label for its close button | `markDrawer` in `portal/invoices/[invoiceId]/_components/pay-sheet/index.tsx`: a stable ref that puts `pay-sheet-content` / `pay-sheet-close` on the panel and close button (the e2e suite reads them) and names the close button after the drawer |
+| 71 | `Tabs` renders only the current panel and takes no per-tab attributes; the pay sheet's card panel must stay mounted (tearing down Stripe `<Elements>` reloads the iframe) | `MethodTablist` in `pay-sheet/method-tabs.tsx`: a hand-rolled WAI-ARIA tablist on AURA's `aura-segmented` classes, manual activation (a switch re-initiates the PaymentIntent), both panels in the DOM with the inactive one `hidden` |
 
 How Chamber-OS uses the Addendum 5 – 8 items (US1, US2 and US3 dropped their bridge for each):
 
