@@ -91,7 +91,11 @@ test.describe('members create — F3 US1 @f3 @a11y @i18n', () => {
       await page.waitForURL(/\/admin\/members\/[0-9a-f-]+$/, {
         timeout: 15_000,
       });
-      await expect(page.getByText(`E2E Co ${suffix}`)).toBeVisible();
+      // The page h1 — the AURA breadcrumb repeats the name as its current
+      // crumb, so a bare getByText matches several elements.
+      await expect(
+        page.getByRole('heading', { level: 1, name: `E2E Co ${suffix}` }),
+      ).toBeVisible();
     } else if (response.status() === 422) {
       // Soft-duplicate or business-rule warning surfaced as the
       // override-reason dialog. The form is correctly wired; we

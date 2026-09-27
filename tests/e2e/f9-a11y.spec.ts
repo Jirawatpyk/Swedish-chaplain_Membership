@@ -11,7 +11,7 @@ import { AxeBuilder } from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { signInAsAdmin } from './helpers/admin-session';
-import { signInAsMember } from './helpers/member-session';
+import { goodStandingMemberCredentials, signInAsMember } from './helpers/member-session';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
@@ -93,11 +93,12 @@ test.describe('@a11y T097 — F9 dashboard axe-core scan', () => {
 
   // F9 US4 — the MEMBER-facing counterpart (same BenefitUsageCard). FR-035
   // requires both surfaces to meet WCAG 2.1 AA.
+  // Signs in as the good-standing persona: a lapsed member is redirected
+  // from /portal/benefits to /portal (see goodStandingMemberCredentials).
   test('member benefit view (/portal/benefits)', async ({ page }) => {
-    if (!MEMBER_EMAIL) {
-      throw new Error('E2E_MEMBER_EMAIL missing — set it in .env.local before running this suite.');
-    }
-    await signInAsMember(page);
+    const member = goodStandingMemberCredentials();
+    test.skip(!member, 'Set E2E_MEMBER_EMAIL_EMPTY + E2E_MEMBER_PASSWORD_EMPTY');
+    await signInAsMember(page, member!);
     await page.goto('/portal/benefits');
     await expect(page.getByRole('heading', { name: 'Benefits', level: 1 })).toBeVisible();
     // Settle past the Suspense skeleton before scanning (F9-QA-03 flake fix).
@@ -124,11 +125,11 @@ test.describe('@a11y T097 — F9 dashboard axe-core scan', () => {
 
   // F9 US5 — member self-service directory settings (listed switch, per-field
   // visibility checkboxes, metadata inputs, logo control). FR-025/FR-035.
+  // Good-standing persona, same reason as /portal/benefits above.
   test('member directory settings (/portal/profile/directory)', async ({ page }) => {
-    if (!MEMBER_EMAIL) {
-      throw new Error('E2E_MEMBER_EMAIL missing — set it in .env.local before running this suite.');
-    }
-    await signInAsMember(page);
+    const member = goodStandingMemberCredentials();
+    test.skip(!member, 'Set E2E_MEMBER_EMAIL_EMPTY + E2E_MEMBER_PASSWORD_EMPTY');
+    await signInAsMember(page, member!);
     await page.goto('/portal/profile/directory');
     await expect(
       page.getByRole('heading', { name: 'Directory listing', level: 1 }),

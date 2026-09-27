@@ -84,6 +84,7 @@
  * no-ops anyway since the trigger it would have targeted is detached).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useFixedBarScrollPadding } from '@/hooks/use-fixed-bar-scroll-padding';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { BanknoteIcon, BellIcon, XIcon } from 'lucide-react';
@@ -395,6 +396,9 @@ export function PipelineBulkActionBar({
     return () => ro.disconnect();
   }, [visible]);
 
+  // WCAG 2.2 SC 2.4.11 — keep focus / scroll-into-view above the bar.
+  useFixedBarScrollPadding(visible, barHeight);
+
   const reportOutcome = useCallback(
     (
       action: BulkAction,
@@ -553,7 +557,6 @@ export function PipelineBulkActionBar({
       <div
         ref={barRef}
         className="fixed bottom-0 left-0 right-0 z-40 flex flex-col border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm shadow-lg"
-        style={{ scrollMarginBottom: '80px' }}
       >
         {lastRunResult && (
           <BulkRunResultsPanel

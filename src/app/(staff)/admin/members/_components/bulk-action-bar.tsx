@@ -49,6 +49,7 @@
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { useFixedBarScrollPadding } from '@/hooks/use-fixed-bar-scroll-padding';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { ArchiveIcon, BellIcon, FileTextIcon, FileMinusIcon, MailIcon, XIcon } from 'lucide-react';
@@ -106,6 +107,7 @@ export function BulkActionBar({
   } | null>(null);
 
   const count = selectedIds.length;
+  const visible = count > 0;
   // Defensive only — currently UNREACHABLE: the effective selection is either the
   // page (≤ PAGE_SIZE 50) or the select-all-matching set (capped at BULK_CAP by
   // /api/members/ids), so `count` can't exceed BULK_CAP today, and the server
@@ -156,7 +158,13 @@ export function BulkActionBar({
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+    // Re-observe on every hidden↔visible transition: the parent mounts this
+    // bar with nothing selected, so a `[]`-deps effect ran against a null ref
+    // and the spacer stayed at its 64px default however tall the bar wrapped.
+  }, [visible]);
+
+  // WCAG 2.2 SC 2.4.11 — keep focus / scroll-into-view above the bar.
+  useFixedBarScrollPadding(visible, barHeight);
 
   // Undo for a bulk archive — restores exactly the ids the archive returned via
   // the `unarchive` bulk action (domain `undelete`, 90-day window). Slim by
@@ -394,7 +402,6 @@ export function BulkActionBar({
         // `pb-[env(safe-area-inset-bottom)]` keeps the action row clear of the
         // iOS home indicator on a notched device.
         className="fixed bottom-0 left-0 right-0 z-40 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm shadow-lg"
-        style={{ scrollMarginBottom: '80px' }}
         role="toolbar"
         aria-label={t('toolbarLabel')}
       >

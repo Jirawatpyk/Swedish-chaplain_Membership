@@ -9,7 +9,7 @@
  * blocked POST's waitForResponse (see memory note "E2E member-create needs
  * §86/4 TH address"). Add future required fields HERE, once.
  */
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import { expect, fillField } from '../fixtures';
 
 /**
@@ -30,16 +30,30 @@ export async function fillRequiredMembershipAndAddress(
   page: Page,
 ): Promise<void> {
   // Plan select trigger has id="plan_id"; pick the first option.
-  await page.locator('#plan_id').click();
-  await page.getByRole('option').first().click();
+  await pickFirstOption(page, page.locator('#plan_id'));
   // 065 §5.1 — billing_cycle is a REQUIRED Select (no default); pick the
   // first option or the form fails validation on submit.
-  await page.locator('#billing_cycle').click();
-  await page.getByRole('option').first().click();
+  await pickFirstOption(page, page.locator('#billing_cycle'));
   // 088 §86/4 — TH member buyer address (required on create).
   await fillField(page.locator('#address_line1'), '99 Test Tower');
   await fillField(page.locator('#postal_code'), '10800');
   await expect(page.locator('#province')).toContainText(/bangkok/i, {
     timeout: 10_000,
   });
+}
+
+/**
+ * Opens a Base UI Select and picks its first option. The open is retried: a
+ * click that lands before hydration toggles nothing, and the option wait then
+ * times out. After the pick it waits for the popup to finish closing: while it
+ * animates out its options are still visible, so the NEXT Select's
+ * `getByRole('option').first()` would resolve to this one's selected item.
+ */
+async function pickFirstOption(page: Page, trigger: Locator): Promise<void> {
+  await expect(async () => {
+    if ((await trigger.getAttribute('aria-expanded')) !== 'true') await trigger.click();
+    await expect(trigger).toHaveAttribute('aria-expanded', 'true', { timeout: 2_000 });
+  }).toPass({ timeout: 15_000 });
+  await page.getByRole('option').first().click();
+  await expect(page.getByRole('option')).toHaveCount(0);
 }

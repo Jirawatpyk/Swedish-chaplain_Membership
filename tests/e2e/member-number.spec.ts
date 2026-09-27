@@ -221,6 +221,10 @@ test.describe('Member-number column + portal badge @f-mn @layout @i18n', () => {
     await page.goto(`/admin/members/${memberId}`);
     await page.waitForLoadState('networkidle');
 
+    // The member-number field sits in the collapsed "Technical" <details>
+    // (056 layout C), so open it first.
+    await page.locator('summary', { hasText: /technical/i }).click();
+
     // CopyButton renders aria-label = "Copy member number" (EN locale).
     const copyButton = page
       .getByRole('button', { name: /copy member number/i })
