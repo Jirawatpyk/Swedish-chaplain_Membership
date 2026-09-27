@@ -269,13 +269,13 @@
     "description": "Short description",
     "website": "Website",
     "city": "City",
-    "country": "Country (ISO code, e.g. TH)",
+    "country": "Country",
     "logoHeading": "Logo",
-    "logoHint": "PNG, JPEG, or WebP, up to 2 MB. Re-encoded and stripped of metadata on upload.",
+    "logoHint": "PNG, JPEG, or WebP, up to 2 MB. Re-encoded and stripped of metadata on upload. Logo changes save immediately.",
     "logoUpload": "Upload logo",
     "logoRemove": "Remove logo",
     "logoCurrent": "Current logo",
-    "save": "Save",
+    "save": "Save listing",
     "contactNameLabel": "Primary contact's name ({name})",
     "contactEmailLabel": "Primary contact's email ({email})",
     "contactHeading": "Primary contact's details",
@@ -285,9 +285,7 @@
     "contactConfirmTitle": "Please confirm your contact details",
     "contactConfirmBody": "These settings were chosen by your company's previous primary contact. Until you save, the directory shows your name only and hides your email.",
     "notPrimaryContact": "Only your company's primary contact can change whether their name and email are published.",
-    "previewHeading": "Preview",
     "previewUnsaved": "Preview of unsaved changes",
-    "previewHint": "How your listing will appear in the member directory E-Book.",
     "previewNotListed": "Not listed — your organisation won't appear in the directory.",
     "previewEmpty": "No details selected — your organisation won't appear in the directory.",
     "previewContactForm": "Contact via the chamber",
@@ -306,7 +304,10 @@
     "logoTooLarge": "Logo exceeds 2 MB — choose a smaller file.",
     "logoUnsupported": "Unsupported format — use PNG, JPEG, or WebP.",
     "logoProfileMissing": "Member profile not found — reload the page and try again.",
-    "logoInvalidImage": "We couldn't read that image — the file may be corrupt. Try re-exporting it."
+    "logoInvalidImage": "We couldn't read that image — the file may be corrupt. Try re-exporting it.",
+    "listingHeading": "Listing",
+    "descriptionHint": "Up to {max} characters. ({count}/{max})",
+    "previewLabel": "How your listing looks"
   },
   "admin": {
     "directory": {

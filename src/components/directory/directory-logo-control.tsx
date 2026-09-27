@@ -93,26 +93,26 @@ export function DirectoryLogoControl({
     });
   }
 
+  const hasLogo = currentLogoUrl !== null;
+  // Spec 122 US3 (`Portal-directory`): the logo in a 96px tile (72px on a
+  // phone) with the hint and the buttons beside it; on a phone the buttons
+  // take the row under both.
   return (
-    <div className="space-y-3">
-      {currentLogoUrl !== null ? (
+    <div className={hasLogo ? 'grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-5 gap-y-3 max-sm:gap-x-4' : 'flex flex-col gap-3'}>
+      {hasLogo ? (
         // The fixed light checker — the logo as an email shows it, on white in
         // either theme (a themed checker hid dark logos). Same swatch as the
         // Brand settings logo preview (T155 U16, F119 UX review).
         <div
           data-testid="directory-logo-preview"
-          className="inline-block rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)] p-1"
+          className="flex size-24 items-center justify-center overflow-hidden rounded-[var(--aura-radius-lg)] border border-[var(--aura-border-default)] p-1.5 max-sm:size-[72px] sm:row-span-2"
           style={TRANSPARENCY_CHECKER_STYLE}
         >
           {/* eslint-disable-next-line @next/next/no-img-element -- external Blob URL; next/image remotePatterns not configured for tenant logos */}
-          <img
-            src={currentLogoUrl}
-            alt={t('logoCurrent')}
-            className="h-20 w-auto object-contain"
-          />
+          <img src={currentLogoUrl} alt={t('logoCurrent')} className="max-h-full max-w-full object-contain" />
         </div>
       ) : null}
-      <p id="dir-logo-hint" className="text-sm text-[var(--aura-fg-secondary)]">
+      <p id="dir-logo-hint" className="text-[13px] text-[var(--aura-fg-secondary)] max-sm:text-xs">
         {t('logoHint')}
       </p>
       <input
@@ -127,7 +127,7 @@ export function DirectoryLogoControl({
       {/* AURA buttons (spec 122 US3): `loading` shows the spinner on the one
           action that is running and sets aria-busy; both stay disabled while
           either runs. */}
-      <div className="flex flex-wrap gap-2">
+      <div className={hasLogo ? 'flex flex-wrap gap-2 max-sm:col-span-2 sm:col-start-2' : 'flex flex-wrap gap-2'}>
         <Button
           type="button"
           variant="secondary"
@@ -139,11 +139,10 @@ export function DirectoryLogoControl({
         >
           {t('logoUpload')}
         </Button>
-        {currentLogoUrl !== null ? (
+        {hasLogo ? (
           <Button
             type="button"
-            variant="ghost"
-            icon="trash-2"
+            variant="danger-secondary"
             disabled={pending}
             loading={pendingAction === 'remove'}
             onClick={() => setRemoveOpen(true)}

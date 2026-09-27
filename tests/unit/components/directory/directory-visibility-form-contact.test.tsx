@@ -120,15 +120,15 @@ describe('DirectoryVisibilityForm — preview', () => {
   it('previews the saved listing, then the unsaved change', () => {
     renderForm({ viewerIsPrimary: true, chosenByPrimary: true, hasListing: true }, stored);
     const preview = screen.getByTestId('directory-listing-preview');
-    expect(preview.textContent).toContain(en.directorySettings.previewHeading);
+    expect(preview.textContent).toContain(en.directorySettings.previewLabel);
     expect(preview.textContent).not.toContain(en.directorySettings.previewUnsaved);
-    expect(preview.textContent).toContain(`${PRIMARY.name} — ${en.directorySettings.previewContactForm}`);
+    expect(preview.textContent).toContain(`${PRIMARY.name} · ${en.directorySettings.previewContactForm}`);
 
     fireEvent.click(checkbox(emailLabel));
 
     expect(preview.textContent).toContain(en.directorySettings.previewUnsaved);
     expect(screen.getByTestId('directory-preview-contact').textContent).toBe(
-      `${PRIMARY.name} — ${PRIMARY.email}`,
+      `${PRIMARY.name} · ${PRIMARY.email}`,
     );
   });
 
@@ -142,21 +142,28 @@ describe('DirectoryVisibilityForm — preview', () => {
 });
 
 describe('DirectoryVisibilityForm on AURA (spec 122 US3)', () => {
-  it('uses AURA fields and keeps Save in an ActionBar that says when changes are unsaved', () => {
+  it('uses AURA fields in one Listing card that ends with Save — no action bar (decision 2026-09-27)', () => {
     renderForm({ viewerIsPrimary: true, chosenByPrimary: true, hasListing: true }, stored);
     expect(screen.getByRole('switch', { name: en.directorySettings.listed })).toHaveClass('aura-switch');
     // (the field names repeat as visibility checkboxes, so find the inputs by id)
     expect(document.getElementById('dir-industry')?.closest('.aura-field')).not.toBeNull();
     expect(document.getElementById('dir-description')).toHaveClass('aura-textarea');
-    const bar = screen.getByRole('region', { name: 'Actions' });
-    expect(bar).toHaveClass('aura-actionbar');
+    expect(screen.queryByRole('region', { name: 'Actions' })).toBeNull();
+    const card = screen.getByRole('heading', { level: 2, name: en.directorySettings.listingHeading }).closest('.aura-card')!;
     const save = screen.getByRole('button', { name: en.directorySettings.save });
-    expect(bar).toContainElement(save);
+    expect(card).toContainElement(save);
     expect(save).toHaveAttribute('type', 'submit');
-    const status = bar.querySelector('[role="status"]')!;
-    expect(status.textContent).toBe('');
+    for (const legend of [en.directorySettings.fieldsHeading, en.directorySettings.detailsHeading]) {
+      expect(screen.getByRole('group', { name: legend })).toBeInTheDocument();
+    }
+  });
+
+  it('flags the preview as unsaved while the form differs from what is saved', () => {
+    renderForm({ viewerIsPrimary: true, chosenByPrimary: true, hasListing: true }, stored);
+    const preview = screen.getByTestId('directory-listing-preview');
+    expect(preview.querySelector('.aura-badge')).toBeNull();
     fireEvent.click(checkbox(emailLabel));
-    expect(status.textContent).toBe(en.common.unsavedStatus);
+    expect(preview.querySelector('.aura-badge')?.textContent).toBe(en.directorySettings.previewUnsaved);
   });
 
   it('lists a refused website in an error summary and on the field after a failed save', async () => {

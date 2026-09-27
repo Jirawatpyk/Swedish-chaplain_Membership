@@ -269,13 +269,13 @@
     "description": "Kort beskrivning",
     "website": "Webbplats",
     "city": "Stad",
-    "country": "Land (ISO-kod, t.ex. TH)",
+    "country": "Land",
     "logoHeading": "Logotyp",
-    "logoHint": "PNG, JPEG eller WebP, upp till 2 MB. Omkodas och metadata tas bort vid uppladdning.",
+    "logoHint": "PNG, JPEG eller WebP, upp till 2 MB. Omkodas och metadata tas bort vid uppladdning. Logotypändringar sparas direkt.",
     "logoUpload": "Ladda upp logotyp",
     "logoRemove": "Ta bort logotyp",
     "logoCurrent": "Nuvarande logotyp",
-    "save": "Spara",
+    "save": "Spara katalogposten",
     "contactNameLabel": "Primär kontaktpersons namn ({name})",
     "contactEmailLabel": "Primär kontaktpersons mejl ({email})",
     "contactHeading": "Primär kontaktpersons uppgifter",
@@ -285,9 +285,7 @@
     "contactConfirmTitle": "Bekräfta dina kontaktuppgifter",
     "contactConfirmBody": "De här inställningarna valdes av företagets tidigare primära kontaktperson. Tills du sparar visar katalogen bara ditt namn och döljer ditt mejl.",
     "notPrimaryContact": "Endast företagets primära kontaktperson kan ändra om deras namn och mejl publiceras.",
-    "previewHeading": "Förhandsvisning",
     "previewUnsaved": "Förhandsvisning av osparade ändringar",
-    "previewHint": "Så här visas din post i medlemskatalogens E-bok.",
     "previewNotListed": "Inte listad — din organisation visas inte i katalogen.",
     "previewEmpty": "Inga uppgifter valda — din organisation visas inte i katalogen.",
     "previewContactForm": "Kontakt via kammaren",
@@ -306,7 +304,10 @@
     "logoTooLarge": "Logotypen överstiger 2 MB — välj en mindre fil.",
     "logoUnsupported": "Format som inte stöds — använd PNG, JPEG eller WebP.",
     "logoProfileMissing": "Medlemsprofilen hittades inte — ladda om sidan och försök igen.",
-    "logoInvalidImage": "Vi kunde inte läsa bilden — filen kan vara skadad. Försök exportera om den."
+    "logoInvalidImage": "Vi kunde inte läsa bilden — filen kan vara skadad. Försök exportera om den.",
+    "listingHeading": "Katalogpost",
+    "descriptionHint": "Högst {max} tecken. ({count}/{max})",
+    "previewLabel": "Så här ser din post ut"
   },
   "admin": {
     "directory": {

@@ -336,22 +336,34 @@ export default async function AuraPortalPreviewPage({
 
   if (view === 'directory') {
     const t = await getTranslations('directorySettings');
+    const tHistory = await getTranslations('portal.changeRequests.history');
+    // A sample logo (the boards show one); served from /public, no Blob needed.
+    const logo = '/icon-192.png';
+    // As /portal/profile/directory renders it (page.tsx), with the boards' data.
     return (
-      <MemberFrame path="/portal/profile">
+      <MemberFrame path="/portal/profile/directory">
         <DetailContainer>
+          <BackLink href="/portal/profile">{tHistory('backToProfile')}</BackLink>
           <PageHeader title={t('title')} subtitle={t('subtitle')} />
-          <Card title={t('logoHeading')} titleId="dir-logo-heading" headingLevel={2}>
-            <DirectoryLogoControl currentLogoUrl={null} />
-          </Card>
           <DirectoryVisibilityForm
+            logoCard={
+              <Card title={t('logoHeading')} titleId="dir-logo-heading" headingLevel={2}>
+                <DirectoryLogoControl currentLogoUrl={logo} />
+              </Card>
+            }
             contact={{ viewerIsPrimary: true, chosenByPrimary: true, hasListing: true }}
-            identity={{ companyName: 'Nordic Trading Co., Ltd.', tier: 'Corporate Gold', logoUrl: null, primaryContact: { name: 'Anna Lindqvist', email: 'anna@nordic.example' } }}
+            identity={{
+              companyName: 'Lindqvist & Partners Co., Ltd.',
+              tier: 'Premium Corporate',
+              logoUrl: logo,
+              primaryContact: { name: 'Anna Lindqvist', email: 'anna.lindqvist@lindqvist.example' },
+            }}
             initial={{
               listed: true,
-              fieldVisibility: { name: true, industry: true, website: true, contact_name: true, contact_email: false },
-              industry: 'Logistics',
-              description: 'Scandinavian design and logistics in Thailand since 2004.',
-              website: 'https://nordic.example',
+              fieldVisibility: { name: true, tier: true, industry: true, description: true, website: true, logo: true, location: true, contact_name: true, contact_email: false },
+              industry: 'Management consulting',
+              description: 'Nordic–Thai management consultancy helping Swedish companies set up and grow in Thailand.',
+              website: 'https://lindqvist.example',
               locationCity: 'Bangkok',
               locationCountry: 'TH',
             }}

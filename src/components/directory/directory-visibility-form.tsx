@@ -12,7 +12,6 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import {
-  ActionBar,
   Button,
   Checkbox,
   FormErrorSummary,
@@ -25,6 +24,7 @@ import { toast } from '@/lib/toast';
 import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
 import { isReadOnlyResponse } from '@/lib/http/read-only-refusal';
 import { Alert, Card } from '@jirawatpyk/aura-react/server';
+import { DirectoryCountryField } from './directory-country-field';
 // Pure directory constants come from the insights CLIENT-SAFE sub-entry
 // (`@/modules/insights/constants`), never the index barrel. Importing these
 // runtime values from `@/modules/insights` would drag the barrel's server-only
@@ -86,13 +86,15 @@ export function DirectoryVisibilityForm({
   initial,
   contact,
   identity,
+  logoCard,
 }: {
   readonly initial: DirectoryVisibilityFormInitial;
   readonly contact: DirectoryContactContext;
   readonly identity: DirectoryPreviewIdentity;
+  /** The Logo card, drawn at the top of the main column (it saves on its own). */
+  readonly logoCard?: React.ReactNode;
 }): React.JSX.Element {
   const t = useTranslations('directorySettings');
-  const tc = useTranslations('common');
   const readOnlyToast = useReadOnlyToast();
   const tf = useTranslations('directorySettings.fields');
   const router = useRouter();
@@ -197,138 +199,107 @@ export function DirectoryVisibilityForm({
     });
   }
 
-  // Spec 122 US3 (`Portal-directory`): one AURA card per group, each
-  // fieldset named by its card title; Save sits in an ActionBar that says
-  // "Unsaved changes" while the form differs from what is saved, so it stays
-  // in reach while scrolling on a phone.
+  const contactHint =
+    identity.primaryContact === null
+      ? t('contactHintNoPrimary')
+      : contact.viewerIsPrimary
+        ? t('contactHintPrimary')
+        : t('contactHintColleague', { name: identity.primaryContact.name });
+
+  // Spec 122 US3 (`Portal-directory`): the Logo card, then one "Listing" card
+  // — the listed switch in its own box, "Fields to show" and "Directory
+  // details" as fieldsets with visible legends, and Save at its end (decision
+  // 2026-09-27: no action bar) — with the preview beside it from 1024px.
   return (
-    <form onSubmit={onSubmit} className="space-y-6">
-      <FormErrorSummary errors={errors} focusKey={submitCount} />
+    <form onSubmit={onSubmit} className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
+      <div className="flex min-w-0 flex-col gap-4">
+        <FormErrorSummary errors={errors} focusKey={submitCount} />
+        {logoCard}
+        <Card title={t('listingHeading')} titleId="dir-listing-heading" headingLevel={2}>
+          <div className="flex flex-col gap-5">
+            <div className="rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface-hover)] px-4 py-3.5 max-sm:p-3">
+              <Switch id="dir-listed" label={t('listed')} description={t('listedHint')} checked={listed} onChange={setListed} />
+            </div>
 
-      <Card>
-        <Switch
-          id="dir-listed"
-          label={t('listed')}
-          description={t('listedHint')}
-          checked={listed}
-          onChange={setListed}
-        />
-      </Card>
+            <fieldset className="m-0 flex min-w-0 flex-col gap-2.5 border-0 p-0">
+              <legend className="mb-2.5 p-0 text-sm font-semibold">{t('fieldsHeading')}</legend>
+              {contact.viewerIsPrimary && !contact.chosenByPrimary && contact.hasListing ? (
+                <Alert tone="info" role="status" title={t('contactConfirmTitle')} data-testid="directory-contact-confirm">
+                  {t('contactConfirmBody')}
+                </Alert>
+              ) : null}
+              {/* 44px rows on phones (the `Portal-directory-mobile` board's touch targets). */}
+              <div className="grid gap-x-4 gap-y-2.5 sm:grid-cols-2 max-sm:gap-y-1 max-sm:[&_.aura-check]:min-h-11 max-sm:[&_.aura-check]:items-center">
+                {COMPANY_FIELDS.map((f) => (
+                  <Checkbox key={f} checked={vis[f]} onChange={(c) => setVis((prev) => ({ ...prev, [f]: c }))}>
+                    {tf(f)}
+                  </Checkbox>
+                ))}
+                {CONTACT_FIELDS.map((f) => {
+                  // Say exactly whose data the toggle publishes (GDPR Art. 6 / PDPA §19, §24).
+                  const label =
+                    identity.primaryContact === null
+                      ? tf(f)
+                      : f === 'contact_name'
+                        ? t('contactNameLabel', { name: identity.primaryContact.name })
+                        : t('contactEmailLabel', { email: identity.primaryContact.email });
+                  return (
+                    <Checkbox
+                      key={f}
+                      checked={vis[f]}
+                      disabled={!canChooseContact}
+                      aria-describedby="dir-contact-hint"
+                      onChange={(c) => setVis((prev) => ({ ...prev, [f]: c }))}
+                    >
+                      {label}
+                    </Checkbox>
+                  );
+                })}
+              </div>
+              <p id="dir-contact-hint" className="text-xs text-[var(--aura-fg-secondary)]">
+                {contactHint}
+              </p>
+            </fieldset>
 
-      <Card title={t('fieldsHeading')} titleId="dir-fields-heading" headingLevel={2}>
-        <fieldset aria-labelledby="dir-fields-heading" className="flex flex-col gap-3">
-          {COMPANY_FIELDS.map((f) => (
-            <Checkbox
-              key={f}
-              checked={vis[f]}
-              onChange={(c) => setVis((prev) => ({ ...prev, [f]: c }))}
-            >
-              {tf(f)}
-            </Checkbox>
-          ))}
-        </fieldset>
-      </Card>
+            <fieldset className="m-0 flex min-w-0 flex-col border-0 p-0">
+              <legend className="mb-3 p-0 text-sm font-semibold">{t('detailsHeading')}</legend>
+              <div className="grid gap-3.5 sm:grid-cols-2 sm:gap-x-4">
+                <TextField id="dir-industry" label={t('industry')} value={industry} onChange={(e) => setIndustry(e.target.value)} />
+                <TextField
+                  id="dir-website"
+                  type="url"
+                  label={t('website')}
+                  value={website}
+                  onChange={(e) => setWebsite(e.target.value)}
+                  placeholder="https://"
+                  error={websiteError ?? undefined}
+                />
+                <Textarea
+                  id="dir-description"
+                  // three lines, four on a phone (the boards)
+                  className="sm:col-span-2 max-sm:[&_textarea]:min-h-32"
+                  label={t('description')}
+                  value={description}
+                  maxLength={MAX_DIRECTORY_DESCRIPTION_LENGTH}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={3}
+                  // the count is the field's hint; an error takes its place
+                  hint={t('descriptionHint', { count: description.length, max: MAX_DIRECTORY_DESCRIPTION_LENGTH })}
+                  error={descriptionError ?? undefined}
+                />
+                <TextField id="dir-city" label={t('city')} value={city} onChange={(e) => setCity(e.target.value)} />
+                <DirectoryCountryField id="dir-country" label={t('country')} value={country} onChange={setCountry} />
+              </div>
+            </fieldset>
 
-      <Card title={t('contactHeading')} titleId="dir-contact-heading" headingLevel={2}>
-        <fieldset
-          aria-labelledby="dir-contact-heading"
-          aria-describedby="dir-contact-hint"
-          className="flex flex-col gap-3"
-        >
-          {contact.viewerIsPrimary && !contact.chosenByPrimary && contact.hasListing ? (
-            <Alert
-              tone="info"
-              role="status"
-              title={t('contactConfirmTitle')}
-              data-testid="directory-contact-confirm"
-            >
-              {t('contactConfirmBody')}
-            </Alert>
-          ) : null}
-          {CONTACT_FIELDS.map((f) => {
-            // Say exactly whose data the toggle publishes.
-            const label =
-              identity.primaryContact === null
-                ? tf(f)
-                : f === 'contact_name'
-                  ? t('contactNameLabel', { name: identity.primaryContact.name })
-                  : t('contactEmailLabel', { email: identity.primaryContact.email });
-            return (
-              <Checkbox
-                key={f}
-                checked={vis[f]}
-                disabled={!canChooseContact}
-                onChange={(c) => setVis((prev) => ({ ...prev, [f]: c }))}
-              >
-                {label}
-              </Checkbox>
-            );
-          })}
-          <p id="dir-contact-hint" className="text-sm text-[var(--aura-fg-secondary)]">
-            {identity.primaryContact === null
-              ? t('contactHintNoPrimary')
-              : contact.viewerIsPrimary
-                ? t('contactHintPrimary')
-                : t('contactHintColleague', { name: identity.primaryContact.name })}
-          </p>
-        </fieldset>
-      </Card>
-
-      <Card title={t('detailsHeading')} titleId="dir-details-heading" headingLevel={2}>
-        <fieldset aria-labelledby="dir-details-heading" className="flex flex-col gap-4">
-          <TextField
-            id="dir-industry"
-            label={t('industry')}
-            value={industry}
-            onChange={(e) => setIndustry(e.target.value)}
-          />
-          <div>
-            <Textarea
-              id="dir-description"
-              label={t('description')}
-              value={description}
-              maxLength={MAX_DIRECTORY_DESCRIPTION_LENGTH}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={3}
-              error={descriptionError ?? undefined}
-              aria-describedby="dir-description-count"
-            />
-            <p
-              id="dir-description-count"
-              aria-live="polite"
-              className="mt-1 text-right text-xs text-[var(--aura-fg-secondary)]"
-            >
-              {description.length}/{MAX_DIRECTORY_DESCRIPTION_LENGTH}
-            </p>
+            <div className="flex sm:justify-end">
+              <Button type="submit" loading={pending} fullWidth className="sm:w-auto">
+                {t('save')}
+              </Button>
+            </div>
           </div>
-          <TextField
-            id="dir-website"
-            type="url"
-            label={t('website')}
-            value={website}
-            onChange={(e) => setWebsite(e.target.value)}
-            placeholder="https://"
-            error={websiteError ?? undefined}
-          />
-          <div className="flex flex-col gap-4 sm:flex-row">
-            <TextField
-              id="dir-city"
-              className="flex-1"
-              label={t('city')}
-              value={city}
-              onChange={(e) => setCity(e.target.value)}
-            />
-            <TextField
-              id="dir-country"
-              className="flex-1"
-              label={t('country')}
-              value={country}
-              maxLength={2}
-              onChange={(e) => setCountry(e.target.value.toUpperCase())}
-            />
-          </div>
-        </fieldset>
-      </Card>
+        </Card>
+      </div>
 
       <DirectoryListingPreview
         dirty={dirty}
@@ -343,12 +314,6 @@ export function DirectoryVisibilityForm({
           locationCountry: country,
         }}
       />
-
-      <ActionBar status={dirty ? tc('unsavedStatus') : null}>
-        <Button type="submit" loading={pending}>
-          {t('save')}
-        </Button>
-      </ActionBar>
     </form>
   );
 }
