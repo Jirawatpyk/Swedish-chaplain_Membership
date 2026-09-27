@@ -38,7 +38,8 @@ import {
  * Active-state matching pattern. A template-literal union so a typo'd mode
  * prefix or a missing leading slash is a COMPILE error (D1 review finding F2):
  *  - `exact:/path` — exact pathname match
- *  - `any:/a|/b`   — active if the pathname matches any pipe-separated prefix
+ *  - `any:/a|/b`   — active if the pathname matches any pipe-separated prefix;
+ *    an entry written `exact:/a` inside the list matches `/a` only
  *  - `/path`       — prefix match (the default mode)
  * The runtime parser (`isNavItemActive`) is unchanged — this only tightens the
  * authoring surface so an invalid literal can't be written.
@@ -672,13 +673,13 @@ export const memberNavConfig: NavConfig = {
           titleKey: 'nav.member.dashboard',
           icon: LayoutDashboardIcon,
           href: '/portal',
-          activePattern: 'exact:/portal',
+          activePattern: 'any:exact:/portal|/portal/timeline',
         },
         {
           titleKey: 'nav.member.profile',
           icon: BuildingIcon,
           href: '/portal/profile',
-          activePattern: '/portal/profile',
+          activePattern: 'any:/portal/profile|/portal/edit|/portal/change-requests|/portal/contacts',
         },
         {
           titleKey: 'nav.member.invoices',
@@ -716,13 +717,13 @@ export const memberBottomTabItems: readonly NavItem[] = [
     shortTitleKey: 'nav.member.dashboardShort',
     icon: LayoutDashboardIcon,
     href: '/portal',
-    activePattern: 'exact:/portal',
+    activePattern: 'any:exact:/portal|/portal/timeline',
   },
   {
     titleKey: 'nav.member.profile',
     icon: BuildingIcon,
     href: '/portal/profile',
-    activePattern: '/portal/profile',
+    activePattern: 'any:/portal/profile|/portal/edit|/portal/change-requests|/portal/contacts',
   },
   {
     titleKey: 'nav.member.invoices',
@@ -774,7 +775,11 @@ export function isNavItemActive(pathname: string, activePattern: string): boolea
     return activePattern
       .slice(ANY_PREFIX.length)
       .split('|')
-      .some((p) => pathname === p || pathname.startsWith(`${p}/`));
+      .some((p) =>
+        // Spec 122 — `any:exact:/portal|/portal/timeline`: Dashboard lights on
+        // the portal root exactly and on the timeline, not on every page.
+        p.startsWith(EXACT_PREFIX) ? pathname === p.slice(EXACT_PREFIX.length) : pathname === p || pathname.startsWith(`${p}/`),
+      );
   }
   return pathname === activePattern || pathname.startsWith(`${activePattern}/`);
 }
