@@ -20,6 +20,7 @@ import {
 import { OutstandingStatSection } from '../_components/outstanding-stat-section';
 import { BenefitsStatSection } from '../_components/benefits-stat-section';
 import { BenefitsPanelSection } from '../_components/benefits-panel-section';
+import { MembershipInvoiceAlertSection } from '../_components/membership-invoice-alert-section';
 import {
   RecentActivitySection,
   RecentActivitySkeleton,
@@ -134,6 +135,12 @@ export default async function MemberPortalHomePage() {
           </>
         }
       />
+
+      {/* Spec 122 US3 (`Main` board): the unpaid membership invoice leads the
+          page, with Pay now. Its own boundary; renders nothing when none is due. */}
+      <Suspense fallback={null}>
+        <MembershipInvoiceAlertSection tenantId={tenant.slug} memberId={memberId} />
+      </Suspense>
 
       {/* 3 stat cards — 1 col mobile, 3-up desktop. Each in its own Suspense
           boundary so a slow read never blocks the others. The sections share

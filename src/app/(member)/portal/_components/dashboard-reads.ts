@@ -27,11 +27,16 @@ import {
   type BenefitUsage,
 } from '@/modules/insights';
 import {
+  billFirstDocumentNumber,
   listInvoicesPaged,
   makeListInvoicesDeps,
   type Invoice,
 } from '@/modules/invoicing';
 import type { TenantContext } from '@/modules/tenants';
+import { computeQuotaCounter, makeComputeQuotaDeps } from '@/modules/broadcasts';
+import type { MemberId } from '@/modules/members';
+import { env } from '@/lib/env';
+import { makeDrizzleTenantPaymentSettingsRepo } from '@/modules/payments/infrastructure/repos/drizzle-tenant-payment-settings-repo';
 import type { OutstandingInvoiceInput } from '../_lib/dashboard-stats';
 
 /**
@@ -118,6 +123,7 @@ export function toOutstandingInvoiceInputs(
     // can find an unpaid MEMBERSHIP invoice without a second DB read.
     id: r.invoiceId,
     invoiceSubject: r.invoiceSubject,
+    documentNumber: billFirstDocumentNumber(r),
   }));
 }
 
@@ -194,5 +200,57 @@ export const loadDashboardOutstanding = cache(
       partial: res.value.total > inputs.length,
       error: false,
     };
+  },
+);
+
+/**
+ * Spec 122 US3 — which online methods the tenant accepts, for the home
+ * invoice alert's "Pay online by …" line: the SAME render gate the invoice
+ * page applies before it shows Pay now (flag on, online payment enabled, a
+ * method, a processor account and a publishable key), so the alert never
+ * promises a payment the invoice page would then refuse. `null` = no online
+ * payment; a failed read is treated the same (the alert then links to the
+ * invoice instead).
+ */
+export const loadDashboardOnlineMethods = cache(
+  async (tenantId: string): Promise<'both' | 'card' | 'promptpay' | null> => {
+    if (!env.features.f5OnlinePayment) return null;
+    const settings = await makeDrizzleTenantPaymentSettingsRepo()
+      .getByTenantId(tenantId)
+      .catch(() => null);
+    if (
+      settings === null ||
+      !settings.onlinePaymentEnabled ||
+      settings.processorAccountId.length === 0 ||
+      settings.processorPublishableKey.length === 0
+    ) {
+      return null;
+    }
+    const card = settings.enabledMethods.includes('card');
+    const promptpay = settings.enabledMethods.includes('promptpay');
+    return card && promptpay ? 'both' : card ? 'card' : promptpay ? 'promptpay' : null;
+  },
+);
+
+/**
+ * Spec 122 US3 — the member's E-Blast quota counter (used · reserved · cap),
+ * the same read the Benefits page's E-Blasts tab shows, so the home bar's
+ * reserved segment and "N left" agree with it. Best-effort: `null` on any
+ * failure, and the bar then falls back to the benefit-usage figures.
+ */
+export const loadDashboardEblastQuota = cache(
+  async (
+    tenantId: string,
+    memberId: MemberId,
+  ): Promise<{ readonly used: number; readonly reserved: number; readonly cap: number } | null> => {
+    try {
+      const res = await computeQuotaCounter(makeComputeQuotaDeps(tenantId), { memberId });
+      if (!res.ok) return null;
+      const { used, reserved, cap } = res.value.counter;
+      return { used, reserved, cap };
+    } catch (e) {
+      logger.warn({ tenantId, memberId, errKind: errKind(e) }, '[dashboard-benefits] computeQuotaCounter threw — reserved E-Blasts not shown');
+      return null;
+    }
   },
 );

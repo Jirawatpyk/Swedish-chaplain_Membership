@@ -2,8 +2,10 @@ import { getLocale } from 'next-intl/server';
 import { PortalBenefitsSummaryCard } from '@/components/benefits/portal-benefits-summary-card';
 import { env } from '@/lib/env';
 import { deriveBenefitsStat } from '../_lib/dashboard-stats';
-import { loadDashboardBenefitUsage } from './dashboard-reads';
+import { loadDashboardBenefitUsage, loadDashboardEblastQuota } from './dashboard-reads';
 import type { TenantContext } from '@/modules/tenants';
+import type { MemberId } from '@/modules/members';
+import type { PortalBenefitsSummaryItem } from '@/components/benefits/portal-benefits-summary-card';
 
 const PORTAL_BENEFITS_HREF = '/portal/benefits';
 const EBLAST_COMPOSE_HREF = '/portal/broadcasts/new';
@@ -32,7 +34,7 @@ export async function BenefitsPanelSection({
   memberId,
 }: {
   readonly ctx: TenantContext;
-  readonly memberId: string;
+  readonly memberId: MemberId;
 }): Promise<React.JSX.Element | null> {
   const locale = await getLocale();
   const usage = await loadDashboardBenefitUsage(ctx, memberId);
@@ -49,9 +51,18 @@ export async function BenefitsPanelSection({
 
   // "Compose E-Blast" beside the E-Blast bar, only while F7 is on — the
   // compose route 503s behind the kill switch (same gate as the benefits page).
-  const quantifiable = usage.quantifiable.map((b) =>
-    b.key === 'eblast' && env.features.f7Broadcasts ? { ...b, actionHref: EBLAST_COMPOSE_HREF } : b,
-  );
+  // Spec 122 US3 (`Main` board): with F7 on, the E-Blast bar takes the quota
+  // counter's used / reserved / cap — the Benefits page's E-Blasts tab reads
+  // the same counter — so submitted, not-yet-sent E-Blasts show as reserved.
+  const eblastQuota =
+    env.features.f7Broadcasts && usage.quantifiable.some((b) => b.key === 'eblast')
+      ? await loadDashboardEblastQuota(ctx.slug, memberId)
+      : null;
+  const quantifiable: PortalBenefitsSummaryItem[] = usage.quantifiable.map((b) => {
+    if (b.key !== 'eblast' || !env.features.f7Broadcasts) return b;
+    const counted = eblastQuota ? { used: eblastQuota.used, entitlement: eblastQuota.cap, reserved: eblastQuota.reserved } : {};
+    return { ...b, ...counted, actionHref: EBLAST_COMPOSE_HREF };
+  });
 
   return (
     <PortalBenefitsSummaryCard

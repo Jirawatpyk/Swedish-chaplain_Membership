@@ -6204,6 +6204,12 @@
         "title": "Välkommen till {tenant}s medlemsportal",
         "body": "Din instrumentpanel fylls på när du använder ditt medlemskap — betala fakturor, delta i evenemang och använd dina förmåner.",
         "exploreBenefits": "Utforska dina förmåner"
+      },
+      "invoiceAlert": {
+        "title": "Din medlemsfaktura är klar",
+        "body": "{hasNumber, select, yes {{number} · } other {}}{amount}{due, select, upcoming { förfaller {date}} overdue { förföll {date}} other {}}.{online, select, both { Betala online med kort eller PromptPay.} card { Betala online med kort.} promptpay { Betala online med PromptPay.} other {}}",
+        "payNow": "Betala nu",
+        "viewInvoice": "Visa faktura"
       }
     },
     "account": {
@@ -8198,7 +8204,9 @@
       "ofTotalUsed": "av {total} använda",
       "benefitUsed": "Användning av {benefit}",
       "activeDescriptionPlan": "Ingår i ditt {plan}-paket för {year}",
-      "activeDescription": "Ingår i ditt paket för {year}"
+      "activeDescription": "Ingår i ditt paket för {year}",
+      "reservedHint": "{reserved} reserverade · {remaining} kvar{hasDate, select, yes { · senast använd {date}} other {}}",
+      "quotaValueText": "{used} använda, {reserved} reserverade, {remaining} kvar av {total}"
     },
     "benefit": {
       "eblast": "Utskick",

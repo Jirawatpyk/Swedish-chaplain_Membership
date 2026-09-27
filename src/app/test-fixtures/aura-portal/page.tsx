@@ -29,6 +29,7 @@ import type { Contact } from '@/modules/members';
 import { Badge, Card, StatusPill } from '@jirawatpyk/aura-react/server';
 import type { ChangeRequestView } from '@/lib/change-request-portal-view';
 import { RecentActivityList } from '@/app/(member)/portal/_components/recent-activity-list';
+import { MembershipInvoiceAlert } from '@/app/(member)/portal/_components/membership-invoice-alert';
 import { BenefitsTabs } from '@/app/(member)/portal/benefits/_components/benefits-tabs';
 import PortalNotFound from '@/app/(member)/portal/not-found';
 
@@ -439,6 +440,14 @@ export default async function AuraPortalPreviewPage({
             </>
           }
         />
+        <MembershipInvoiceAlert
+          invoiceId="00000000-0000-4000-8000-0000000000a1"
+          documentNumber="SC-2026-000123"
+          amount="38,520.00 THB"
+          dueDate="15 Oct 2026"
+          overdue={false}
+          online="both"
+        />
         <div className="grid grid-cols-1 gap-[var(--page-section-gap)] sm:grid-cols-3">
           <StatCard label={t('membership.label')} value={t('membership.activeValue')} sub={t('membership.daysRemainingSub', { days: 98 })} headIcon={CircleCheck} />
           <StatCard label={t('outstanding.label')} value="38,520.00 THB" sub="1 unpaid invoice · Earliest due 15 Oct 2026" headIcon={FileText} href="/portal/invoices" />
@@ -451,7 +460,7 @@ export default async function AuraPortalPreviewPage({
             membershipYear={2026}
             fullHref="/portal/benefits"
             quantifiable={[
-              { key: 'eblast', used: 2, entitlement: 6, lastUsedAt: '2026-07-03T08:00:00.000Z', actionHref: '/portal/broadcasts/new' },
+              { key: 'eblast', used: 2, entitlement: 6, reserved: 1, lastUsedAt: '2026-07-03T08:00:00.000Z', actionHref: '/portal/broadcasts/new' },
               { key: 'cultural_tickets', used: 0, entitlement: 2, lastUsedAt: null },
             ]}
           />

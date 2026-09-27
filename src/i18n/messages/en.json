@@ -6204,6 +6204,12 @@
         "title": "Welcome to the {tenant} member portal",
         "body": "Your dashboard fills up as you use your membership — pay invoices, attend events, and use your benefits.",
         "exploreBenefits": "Explore your benefits"
+      },
+      "invoiceAlert": {
+        "title": "Your membership invoice is ready",
+        "body": "{hasNumber, select, yes {{number} · } other {}}{amount}{due, select, upcoming { due {date}} overdue { was due {date}} other {}}.{online, select, both { Pay online by card or PromptPay.} card { Pay online by card.} promptpay { Pay online by PromptPay.} other {}}",
+        "payNow": "Pay now",
+        "viewInvoice": "View invoice"
       }
     },
     "account": {
@@ -8198,7 +8204,9 @@
       "ofTotalUsed": "of {total} used",
       "benefitUsed": "{benefit} used",
       "activeDescriptionPlan": "Part of your {plan} plan for {year}",
-      "activeDescription": "Part of your plan for {year}"
+      "activeDescription": "Part of your plan for {year}",
+      "reservedHint": "{reserved} reserved · {remaining} left{hasDate, select, yes { · last used {date}} other {}}",
+      "quotaValueText": "{used} used, {reserved} reserved, {remaining} remaining of {total}"
     },
     "benefit": {
       "eblast": "E-Blasts",

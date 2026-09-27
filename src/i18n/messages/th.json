@@ -6204,6 +6204,12 @@
         "title": "ยินดีต้อนรับสู่พอร์ทัลสมาชิก {tenant}",
         "body": "แดชบอร์ดของคุณจะมีข้อมูลมากขึ้นเมื่อคุณใช้สมาชิกภาพ — ชำระใบแจ้งหนี้ เข้าร่วมกิจกรรม และใช้สิทธิประโยชน์",
         "exploreBenefits": "สำรวจสิทธิประโยชน์ของคุณ"
+      },
+      "invoiceAlert": {
+        "title": "ใบแจ้งหนี้ค่าสมาชิกของคุณพร้อมแล้ว",
+        "body": "{hasNumber, select, yes {{number} · } other {}}{amount}{due, select, upcoming { ครบกำหนด {date}} overdue { เลยกำหนดตั้งแต่ {date}} other {}}{online, select, both { ชำระออนไลน์ด้วยบัตรหรือ PromptPay ได้} card { ชำระออนไลน์ด้วยบัตรได้} promptpay { ชำระออนไลน์ด้วย PromptPay ได้} other {}}",
+        "payNow": "ชำระเงิน",
+        "viewInvoice": "ดูใบแจ้งหนี้"
       }
     },
     "account": {
@@ -8198,7 +8204,9 @@
       "ofTotalUsed": "จาก {total} ที่ใช้แล้ว",
       "benefitUsed": "ใช้ {benefit} แล้ว",
       "activeDescriptionPlan": "รวมอยู่ในแพ็กเกจ {plan} ของคุณสำหรับปี {year}",
-      "activeDescription": "รวมอยู่ในแพ็กเกจของคุณสำหรับปี {year}"
+      "activeDescription": "รวมอยู่ในแพ็กเกจของคุณสำหรับปี {year}",
+      "reservedHint": "จองไว้ {reserved} · เหลือ {remaining}{hasDate, select, yes { · ใช้ล่าสุด {date}} other {}}",
+      "quotaValueText": "ใช้ไป {used} จองไว้ {reserved} เหลือ {remaining} จาก {total}"
     },
     "benefit": {
       "eblast": "อีเมลประชาสัมพันธ์ (E-Blast)",

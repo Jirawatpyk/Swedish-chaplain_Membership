@@ -50,3 +50,42 @@ describe('<PortalBenefitsSummaryCard>', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 });
+
+describe('<PortalBenefitsSummaryCard> reserved E-Blasts (spec 122 US3, `Main` board)', () => {
+  it('draws reserved E-Blasts as their own segment and says how many are left', () => {
+    const { container } = render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <PortalBenefitsSummaryCard
+          locale="en"
+          membershipYear={2026}
+          fullHref="/portal/benefits"
+          quantifiable={[
+            { key: 'eblast', used: 2, entitlement: 6, reserved: 1, lastUsedAt: '2026-07-03T08:00:00.000Z', actionHref: '/portal/broadcasts/new' },
+          ]}
+        />
+      </NextIntlClientProvider>,
+    );
+    const bar = screen.getByRole('progressbar');
+    expect(bar).toHaveAttribute('aria-valuenow', '2');
+    expect(bar).toHaveAttribute('aria-valuemax', '6');
+    expect(bar).toHaveAttribute('aria-valuetext', '2 used, 1 reserved, 3 remaining of 6');
+    expect(screen.getByText('2 of 6 used')).toBeInTheDocument();
+    expect(screen.getByText('1 reserved · 3 left · last used 3 Jul 2026')).toBeInTheDocument();
+    expect(container.querySelectorAll('.aura-progress__track > span')).toHaveLength(2);
+  });
+
+  it('keeps the plain bar when nothing is reserved', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <PortalBenefitsSummaryCard
+          locale="en"
+          membershipYear={2026}
+          fullHref="/portal/benefits"
+          quantifiable={[{ key: 'eblast', used: 2, entitlement: 6, reserved: 0, lastUsedAt: null }]}
+        />
+      </NextIntlClientProvider>,
+    );
+    expect(screen.getByText('Not used yet this year')).toBeInTheDocument();
+    expect(screen.queryByText(/reserved/)).toBeNull();
+  });
+});

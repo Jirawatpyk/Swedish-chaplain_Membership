@@ -176,6 +176,8 @@ export interface OutstandingInvoiceInput {
    */
   readonly id: string;
   readonly invoiceSubject: 'membership' | 'event';
+  /** Spec 122 US3 — the number the member sees (bill number first), for the home invoice alert. */
+  readonly documentNumber?: string | null;
 }
 
 export interface OutstandingStat {

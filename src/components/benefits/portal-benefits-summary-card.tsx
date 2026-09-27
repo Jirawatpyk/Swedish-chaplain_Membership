@@ -25,10 +25,17 @@ const ACTION_ICON: Readonly<Record<string, LucideIcon>> = {
   cultural_tickets: CalendarDays,
 };
 
+/**
+ * A bar's item. `reserved` (E-Blasts only) is the count held by submitted,
+ * not-yet-sent E-Blasts, from the quota counter: drawn as a striped segment
+ * after the used one, with "N reserved · M left" as the hint.
+ */
+export type PortalBenefitsSummaryItem = BenefitUsageItem & { readonly reserved?: number };
+
 export interface PortalBenefitsSummaryCardProps {
   readonly locale: string;
   readonly membershipYear: number;
-  readonly quantifiable: readonly BenefitUsageItem[];
+  readonly quantifiable: readonly PortalBenefitsSummaryItem[];
   /** "Full benefits" — the member's benefits page. */
   readonly fullHref: string;
   readonly headingId?: string;
@@ -63,14 +70,36 @@ export function PortalBenefitsSummaryCard({
             return (
               <li key={b.key} className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
                 <div className="min-w-0 flex-1">
-                  <Progress
-                    label={t(`benefit.${b.key}`)}
-                    value={b.used}
-                    max={b.entitlement}
-                    showValue
-                    valueLabel={t('card.usedOf', { used: b.used, total: b.entitlement })}
-                    hint={b.lastUsedAt === null ? t('card.neverUsed') : t('card.lastUsed', { date: formatDate(b.lastUsedAt) })}
-                  />
+                  {b.reserved !== undefined && b.reserved > 0 ? (
+                    <ReservedProgress
+                      label={t(`benefit.${b.key}`)}
+                      used={b.used}
+                      reserved={b.reserved}
+                      total={b.entitlement}
+                      valueLabel={t('card.usedOf', { used: b.used, total: b.entitlement })}
+                      valueText={t('card.quotaValueText', {
+                        used: b.used,
+                        reserved: b.reserved,
+                        remaining: Math.max(0, b.entitlement - b.used - b.reserved),
+                        total: b.entitlement,
+                      })}
+                      hint={t('card.reservedHint', {
+                        reserved: b.reserved,
+                        remaining: Math.max(0, b.entitlement - b.used - b.reserved),
+                        hasDate: b.lastUsedAt === null ? 'no' : 'yes',
+                        date: b.lastUsedAt === null ? '' : formatDate(b.lastUsedAt),
+                      })}
+                    />
+                  ) : (
+                    <Progress
+                      label={t(`benefit.${b.key}`)}
+                      value={b.used}
+                      max={b.entitlement}
+                      showValue
+                      valueLabel={t('card.usedOf', { used: b.used, total: b.entitlement })}
+                      hint={b.lastUsedAt === null ? t('card.neverUsed') : t('card.lastUsed', { date: formatDate(b.lastUsedAt) })}
+                    />
+                  )}
                 </div>
                 {b.actionHref !== undefined ? (
                   <Link
@@ -96,5 +125,59 @@ export function PortalBenefitsSummaryCard({
         </div>
       </div>
     </Card>
+  );
+}
+
+/**
+ * AURA's Progress with a second, striped segment for reserved E-Blasts (the
+ * `Main` board): the same `aura-progress` markup and classes, so it matches
+ * the bars beside it; `aria-valuetext` says all three counts.
+ */
+function ReservedProgress({
+  label,
+  used,
+  reserved,
+  total,
+  valueLabel,
+  valueText,
+  hint,
+}: {
+  readonly label: string;
+  readonly used: number;
+  readonly reserved: number;
+  readonly total: number;
+  readonly valueLabel: string;
+  readonly valueText: string;
+  readonly hint: string;
+}) {
+  const pct = (n: number) => `${total > 0 ? Math.min(100, Math.max(0, (n / total) * 100)) : 0}%`;
+  const usedPct = pct(used);
+  return (
+    <div className="aura-progress">
+      <div className="aura-progress__head">
+        <span className="aura-progress__label">{label}</span>
+        <span className="aura-progress__value">{valueLabel}</span>
+      </div>
+      <div
+        className="aura-progress__track"
+        role="progressbar"
+        aria-label={label}
+        aria-valuemin={0}
+        aria-valuemax={total}
+        aria-valuenow={used}
+        aria-valuetext={valueText}
+      >
+        <span className="aura-progress__bar" style={{ width: usedPct }} />
+        <span
+          className="aura-progress__bar rounded-none opacity-60"
+          style={{
+            left: usedPct,
+            width: pct(Math.min(reserved, total - used)),
+            background: 'repeating-linear-gradient(45deg, var(--aura-fg-accent) 0 3px, transparent 3px 6px)',
+          }}
+        />
+      </div>
+      <p className="aura-progress__hint">{hint}</p>
+    </div>
   );
 }
