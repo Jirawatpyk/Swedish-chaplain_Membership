@@ -25,7 +25,7 @@
  * (card tab) and the PromptPay QR (Phase 4).
  */
 
-import { useId, useRef } from 'react';
+import { useId, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { CreditCardIcon, QrCodeIcon } from 'lucide-react';
 
@@ -108,12 +108,21 @@ function MethodTablist({
   const refs = useRef<Partial<Record<PaymentMethod, HTMLButtonElement | null>>>({});
   const methods = (['card', 'promptpay'] as const).filter((m) => enabledMethods.includes(m));
 
-  const choose = (m: PaymentMethod) => {
-    onMethodChange(m);
+  // Manual activation (WAI-ARIA APG): arrows / Home / End move focus only;
+  // click, Enter or Space selects. Selecting a method re-initiates the
+  // PaymentIntent (`pay-sheet-internal.tsx`), so an arrow sweep must not
+  // spend initiate quota or reload the Stripe iframe — Base UI Tabs, which
+  // this replaces, defaulted to the same (`activateOnFocus: false`).
+  // null while focus is outside the list: the tab stop is then the selected
+  // method, whatever changed it.
+  const [focused, setFocused] = useState<PaymentMethod | null>(null);
+  const tabStop = focused ?? activeMethod;
+  const move = (m: PaymentMethod) => {
+    setFocused(m);
     refs.current[m]?.focus();
   };
   const onKeyDown = (e: React.KeyboardEvent) => {
-    const i = methods.indexOf(activeMethod);
+    const i = methods.indexOf(tabStop);
     const next =
       e.key === 'ArrowRight'
         ? methods[(i + 1) % methods.length]
@@ -126,7 +135,10 @@ function MethodTablist({
               : undefined;
     if (next === undefined) return;
     e.preventDefault();
-    choose(next);
+    move(next);
+  };
+  const onBlur = (e: React.FocusEvent) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocused(null);
   };
 
   const meta = {
@@ -140,6 +152,7 @@ function MethodTablist({
         role="tablist"
         aria-label={t('groupLabel')}
         onKeyDown={onKeyDown}
+        onBlur={onBlur}
         className="aura-segmented flex w-full"
       >
         {methods.map((m) => {
@@ -157,7 +170,8 @@ function MethodTablist({
               aria-controls={`${base}-panel-${m}`}
               aria-selected={on}
               aria-label={aria}
-              tabIndex={on ? 0 : -1}
+              tabIndex={m === tabStop ? 0 : -1}
+              onFocus={() => setFocused(m)}
               onClick={() => onMethodChange(m)}
               data-testid={m === 'card' ? 'pay-sheet-tab-card' : 'pay-sheet-tab-promptpay'}
               className={cn('aura-segmented__option min-h-11 flex-1 justify-center gap-1.5', on && 'is-selected')}

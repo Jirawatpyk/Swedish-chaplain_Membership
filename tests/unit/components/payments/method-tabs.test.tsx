@@ -139,17 +139,24 @@ describe('<MethodTabs>', () => {
     expect(ppTab.getAttribute('tabindex')).toBe('-1');
   });
 
-  it('ArrowRight / End choose and focus the next method; ArrowLeft / Home the first (WAI-ARIA tabs)', () => {
+  it('arrow keys / Home / End move focus only; click activates (manual activation — a switch re-initiates the PaymentIntent)', () => {
     const onMethodChange = vi.fn();
     renderWithIntl({ enabledMethods: ['card', 'promptpay'], activeMethod: 'card', onMethodChange });
     const cardTab = screen.getByRole('tab', { name: 'Card — switch payment method' });
     const ppTab = screen.getByRole('tab', { name: 'PromptPay — switch payment method' });
+    cardTab.focus();
     fireEvent.keyDown(cardTab, { key: 'ArrowRight' });
-    expect(onMethodChange).toHaveBeenLastCalledWith('promptpay');
     expect(ppTab).toHaveFocus();
+    expect(ppTab.getAttribute('tabindex')).toBe('0');
+    expect(ppTab).toHaveAttribute('aria-selected', 'false');
     fireEvent.keyDown(ppTab, { key: 'Home' });
-    expect(onMethodChange).toHaveBeenLastCalledWith('card');
     expect(cardTab).toHaveFocus();
+    fireEvent.keyDown(cardTab, { key: 'End' });
+    expect(ppTab).toHaveFocus();
+    expect(onMethodChange).not.toHaveBeenCalled();
+    fireEvent.click(ppTab);
+    expect(onMethodChange).toHaveBeenCalledTimes(1);
+    expect(onMethodChange).toHaveBeenCalledWith('promptpay');
   });
 
   it('each panel is a tabpanel labelled by its tab; the inactive one is hidden, not unmounted', () => {
