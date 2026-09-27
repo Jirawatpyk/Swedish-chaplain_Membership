@@ -35,7 +35,7 @@ import {
   PlayIcon,
 } from 'lucide-react';
 
-import { buttonVariants } from '@/components/ui/button';
+import { buttonClass } from '@jirawatpyk/aura-react/server';
 import { cn } from '@/lib/utils';
 import { downloadPdf } from '@/lib/download-pdf-client';
 import { useCountdownAutoDismiss } from '@/hooks/use-countdown-auto-dismiss';
@@ -210,11 +210,11 @@ export function ConfirmationPanel({
       />
       <h3
         id="pay-sheet-confirmation-title"
-        className="text-h3 font-semibold text-foreground"
+        className="text-h3 font-semibold text-[var(--aura-fg-primary)]"
       >
         {t('title')}
       </h3>
-      <p className="text-body text-muted-foreground">{summary}</p>
+      <p className="text-body text-[var(--aura-fg-secondary)]">{summary}</p>
       {/*
        * Option A layout (T082 UX feedback 2026-04-24): primary
        * Download CTA takes the full drawer body width; the Close
@@ -232,7 +232,7 @@ export function ConfirmationPanel({
         disabled={downloading}
         onClick={handleDownloadReceipt}
         className={cn(
-          buttonVariants({ variant: 'default' }),
+          buttonClass({ variant: 'primary', fullWidth: true }),
           // WCAG 2.5.5 / SC 2.5.8 — mobile tap target ≥ 44×44 px
           // (G-Review Finding #5).
           'min-h-[44px] w-full px-4',
@@ -265,7 +265,7 @@ export function ConfirmationPanel({
         // keeps it subtler than the primary CTA but still WCAG 2.1 AA
         // contrast (4.5:1 on card background).
         // T164: hide on print — close button has no meaning on paper.
-        className="min-h-[44px] text-caption text-muted-foreground hover:text-foreground hover:underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:rounded print:hidden"
+        className="min-h-[44px] text-caption text-[var(--aura-fg-secondary)] hover:text-[var(--aura-fg-primary)] hover:underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:rounded print:hidden"
         data-testid="pay-sheet-confirmation-close"
       >
         {t('close')}
@@ -283,7 +283,7 @@ export function ConfirmationPanel({
        */}
       <div className="flex items-center gap-3 print:hidden">
         <p
-          className="text-caption text-muted-foreground"
+          className="text-caption text-[var(--aura-fg-secondary)]"
           aria-hidden="true"
           data-testid="pay-sheet-confirmation-countdown"
         >
@@ -298,7 +298,7 @@ export function ConfirmationPanel({
           // but a `::before` overlay extends the tap target to ~44px tall to
           // match the codebase 44px convention (WCAG 2.5.5) without adding
           // vertical space; primary keyboard targets remain Download / Close.
-          className="relative inline-flex min-h-[24px] min-w-[24px] items-center gap-1 rounded text-caption text-muted-foreground before:absolute before:inset-x-0 before:-inset-y-2.5 before:content-[''] hover:text-foreground hover:underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="relative inline-flex min-h-[24px] min-w-[24px] items-center gap-1 rounded text-caption text-[var(--aura-fg-secondary)] before:absolute before:inset-x-0 before:-inset-y-2.5 before:content-[''] hover:text-[var(--aura-fg-primary)] hover:underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           data-testid={paused ? 'pay-sheet-confirmation-resume' : 'pay-sheet-confirmation-pause'}
         >
           {paused ? (

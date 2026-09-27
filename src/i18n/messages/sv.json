@@ -7127,7 +7127,8 @@
         "cardAriaLabel": "Kort — byt betalningsmetod",
         "promptpayAriaLabel": "PromptPay — byt betalningsmetod",
         "cardPlaceholder": "Förbereder säkert betalningsformulär…",
-        "promptpayPlaceholder": "Förbereder PromptPay-QR-kod…"
+        "promptpayPlaceholder": "Förbereder PromptPay-QR-kod…",
+        "groupLabel": "Betalningssätt"
       },
       "success": {
         "title": "Betalningen mottagen",

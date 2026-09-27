@@ -293,7 +293,8 @@ const MIGRATED_PATHS = [
   // Brackets are a glob character class: a route segment such as
   // `[invoiceId]` must be escaped or the entry silently matches nothing.
   'src/app/(member)/portal/invoices/\\[invoiceId\\]/*.tsx',
-  'src/app/(member)/portal/invoices/\\[invoiceId\\]/_components/*.tsx',
+  'src/app/(member)/portal/invoices/\\[invoiceId\\]/_components/**',
+  'src/components/payments/**',
   'src/app/(member)/portal/credit-notes/**',
   'src/components/invoices/credit-note-original-receipt.tsx',
   'src/app/(staff)/admin/invoices/_components/invoice-filters.tsx',

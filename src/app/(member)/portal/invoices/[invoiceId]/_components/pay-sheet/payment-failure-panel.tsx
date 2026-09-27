@@ -26,12 +26,7 @@
  */
 import { useTranslations } from 'next-intl';
 
-import { Button } from '@/components/ui/button';
-import {
-  InlineAlert,
-  InlineAlertDescription,
-  InlineAlertTitle,
-} from '@/components/ui/inline-alert';
+import { Alert, Button } from '@jirawatpyk/aura-react';
 
 export interface PaymentFailurePanelProps {
   /** Localized reason interpolated into `portal.payment.retry.body`. */
@@ -67,9 +62,9 @@ export function PaymentFailurePanel({
 }: PaymentFailurePanelProps) {
   const t = useTranslations('portal.payment.retry');
   return (
-    <InlineAlert
-      tone="destructive"
-      // F5R2-CRIT-3 / WCAG 4.1.3 — InlineAlert defaults to role="alert"
+    <Alert
+      tone="danger"
+      // F5R2-CRIT-3 / WCAG 4.1.3 — AURA's danger Alert defaults to role="alert"
       // (assertive). The parent <pay-sheet-internal> already mounts a
       // persistent polite live region (data-testid="pay-sheet-aria-
       // announcer") that announces the failure transition. Keeping
@@ -78,22 +73,22 @@ export function PaymentFailurePanel({
       // role="status" so AT relies on the parent announcer alone.
       role="status"
       data-testid={testId}
-      className="space-y-4"
+      title={t('title')}
     >
-      <InlineAlertTitle>{t('title')}</InlineAlertTitle>
-      <InlineAlertDescription>{t('body', { reason })}</InlineAlertDescription>
+      <p className="m-0">{t('body', { reason })}</p>
       {permanent ? null : (
         <Button
           type="button"
-          variant="default"
+          variant="primary"
           onClick={onRetry}
+          fullWidth
           // WCAG 2.5.5 / SC 2.5.8 — ≥ 44×44 px on mobile.
-          className="min-h-[44px] w-full"
+          className="mt-4 min-h-[44px]"
           data-testid={ctaTestId}
         >
           {ctaLabel}
         </Button>
       )}
-    </InlineAlert>
+    </Alert>
   );
 }

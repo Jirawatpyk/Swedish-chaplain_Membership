@@ -7127,7 +7127,8 @@
         "cardAriaLabel": "Card — switch payment method",
         "promptpayAriaLabel": "PromptPay — switch payment method",
         "cardPlaceholder": "Preparing secure payment form…",
-        "promptpayPlaceholder": "Preparing the PromptPay QR code…"
+        "promptpayPlaceholder": "Preparing the PromptPay QR code…",
+        "groupLabel": "Payment method"
       },
       "success": {
         "title": "Payment received",

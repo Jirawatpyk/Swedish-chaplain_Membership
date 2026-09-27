@@ -52,7 +52,7 @@ import {
   useStripe,
 } from '@stripe/react-stripe-js';
 
-import { Button } from '@/components/ui/button';
+import { Button } from '@jirawatpyk/aura-react';
 import { useMinDelay } from '@/hooks/use-min-delay';
 // shared Stripe.js cache (used by `<PaySheetInternal>`'s
 // 3DS poll too). See `stripe-cache.ts` header for rationale.
@@ -235,7 +235,9 @@ function CardFormInner({
         />
         <Button
           type="submit"
-          variant="default"
+          variant="primary"
+          icon="lock"
+          fullWidth
           disabled={!stripe || !elements || submitting || !show}
           className="mt-4 w-full min-h-[44px]"
           data-testid="pay-sheet-card-submit"
@@ -434,10 +436,10 @@ export function CardForm({
         data-testid="pay-sheet-card-load-error"
         className="space-y-4 rounded-md border border-destructive/40 bg-destructive/5 p-4"
       >
-        <p className="text-body text-foreground">{loadError}</p>
+        <p className="text-body text-[var(--aura-fg-primary)]">{loadError}</p>
         <Button
           type="button"
-          variant="default"
+          variant="primary"
           onClick={() => {
             setLoadError(null);
             setElementReady(false);

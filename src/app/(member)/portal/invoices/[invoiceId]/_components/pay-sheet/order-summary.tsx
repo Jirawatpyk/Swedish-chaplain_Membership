@@ -52,11 +52,12 @@ export function OrderSummary({
     <section
       aria-labelledby="pay-sheet-summary-heading"
       data-testid="pay-sheet-summary"
-      className="rounded-lg border border-border bg-muted/40 p-4"
+      // Spec 122 US4 (`Pay-*` boards): a quiet band on the drawer surface.
+      className="rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface-hover)] px-3.5 py-3"
     >
       <h3
         id="pay-sheet-summary-heading"
-        className="text-caption font-medium uppercase tracking-wide text-muted-foreground"
+        className="m-0 text-caption font-medium text-[var(--aura-fg-secondary)]"
       >
         {t('heading')}
       </h3>
@@ -64,23 +65,23 @@ export function OrderSummary({
         <div className="flex items-center gap-2 min-w-0">
           <FileTextIcon
             aria-hidden="true"
-            className="size-4 shrink-0 text-muted-foreground"
+            className="size-4 shrink-0 text-[var(--aura-fg-secondary)]"
           />
           <div className="min-w-0">
-            <p className="text-caption text-muted-foreground">
+            <p className="m-0 text-caption text-[var(--aura-fg-secondary)]">
               {t('invoiceLabel')}
             </p>
-            <p className="text-body font-medium text-foreground truncate">
+            <p className="m-0 truncate font-mono text-body font-medium text-[var(--aura-fg-primary)]">
               {invoiceNumber}
             </p>
           </div>
         </div>
         <div className="text-right">
-          <p className="text-caption text-muted-foreground">
+          <p className="m-0 text-caption text-[var(--aura-fg-secondary)]">
             {t('amountLabel')}
           </p>
           <p
-            className="text-h3 font-semibold text-foreground tabular-nums"
+            className="m-0 text-lg font-semibold text-[var(--aura-fg-primary)] tabular-nums"
             data-testid="pay-sheet-summary-amount"
           >
             {formattedAmount}
@@ -89,7 +90,7 @@ export function OrderSummary({
       </div>
       {isBill ? (
         <p
-          className="mt-3 text-caption text-muted-foreground"
+          className="mt-3 mb-0 text-caption text-[var(--aura-fg-secondary)]"
           data-testid="pay-sheet-summary-bill-note"
         >
           {t('billNote')}

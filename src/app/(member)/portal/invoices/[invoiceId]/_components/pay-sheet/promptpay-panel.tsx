@@ -65,9 +65,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import { useLocale, useTranslations } from 'next-intl';
-import { RefreshCwIcon } from 'lucide-react';
 
-import { Button } from '@/components/ui/button';
+import { Button } from '@jirawatpyk/aura-react';
 import { formatSatangThb } from '@/lib/format-thb';
 import { paymentsMetrics } from '@/lib/metrics';
 import { useCountdownAutoDismiss } from '@/hooks/use-countdown-auto-dismiss';
@@ -264,21 +263,22 @@ export function PromptPayPanel({
         className="space-y-4 rounded-md border border-destructive/40 bg-destructive/5 p-4"
       >
         <div>
-          <h3 className="text-body font-medium text-foreground">
+          <h3 className="text-body font-medium text-[var(--aura-fg-primary)]">
             {t('expired')}
           </h3>
-          <p className="text-caption text-muted-foreground mt-1">
+          <p className="text-caption text-[var(--aura-fg-secondary)] mt-1">
             {t('expiredBody')}
           </p>
         </div>
         <Button
           type="button"
-          variant="default"
+          variant="primary"
           onClick={onRefresh}
-          className="min-h-[44px] w-full"
+          icon="rotate-ccw"
+          fullWidth
+          className="min-h-[44px]"
           data-testid="pay-sheet-promptpay-refresh"
         >
-          <RefreshCwIcon className="size-4" aria-hidden="true" />
           {t('refresh')}
         </Button>
       </section>
@@ -314,12 +314,12 @@ export function PromptPayPanel({
           width={220}
           height={220}
           unoptimized
-          className="aspect-square h-auto w-[220px] rounded-md border border-border bg-popover p-3"
+          className="aspect-square h-auto w-[220px] rounded-md border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] p-3"
           data-testid="pay-sheet-promptpay-qr"
           onError={handleQrLoadError}
         />
-        <p className="text-body text-foreground">{t('instructions')}</p>
-        <p className="text-caption text-muted-foreground">
+        <p className="text-body text-[var(--aura-fg-primary)]">{t('instructions')}</p>
+        <p className="text-caption text-[var(--aura-fg-secondary)]">
           {t('amount', { amount: amountDisplay })}
         </p>
       </div>
@@ -329,7 +329,7 @@ export function PromptPayPanel({
         * sibling SR-only `<div>` below (FR-028j refined). */}
       <div
         aria-hidden="true"
-        className="text-center text-caption text-muted-foreground tabular-nums"
+        className="text-center text-caption text-[var(--aura-fg-secondary)] tabular-nums"
         data-testid="pay-sheet-promptpay-countdown"
       >
         {t('countdown', { minutes, seconds })}
@@ -349,7 +349,7 @@ export function PromptPayPanel({
         // (R2 F-4 fix — avoids the NVDA/VO mount-bug).
         <div
           aria-hidden="true"
-          className="flex items-center justify-center gap-2 text-caption text-muted-foreground"
+          className="flex items-center justify-center gap-2 text-caption text-[var(--aura-fg-secondary)]"
           data-testid="pay-sheet-promptpay-waiting"
         >
           <span
@@ -360,7 +360,7 @@ export function PromptPayPanel({
       ) : null}
 
       <p
-        className="rounded-md bg-muted/40 p-3 text-caption text-muted-foreground"
+        className="rounded-md bg-[var(--aura-bg-surface-hover)] p-3 text-caption text-[var(--aura-fg-secondary)]"
         data-testid="pay-sheet-promptpay-warning"
       >
         {t('warning')}
@@ -368,12 +368,13 @@ export function PromptPayPanel({
 
       <Button
         type="button"
-        variant="outline"
+        variant="secondary"
         onClick={onRefresh}
-        className="min-h-[44px] w-full"
+        icon="rotate-ccw"
+        fullWidth
+        className="min-h-[44px]"
         data-testid="pay-sheet-promptpay-refresh"
       >
-        <RefreshCwIcon className="size-4" aria-hidden="true" />
         {t('refresh')}
       </Button>
     </section>

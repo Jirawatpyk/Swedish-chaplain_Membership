@@ -67,14 +67,14 @@ describe('<PaymentFailurePanel> — R2-CRIT-3 / R3-CR-9 regression coverage', ()
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
-  it('preserves destructive visual tone (data-tone="destructive") for affordance', () => {
+  it('preserves the danger visual tone (AURA danger alert) for affordance', () => {
     renderPanel();
     const region = screen.getByRole('status');
     // The InlineAlert primitive applies the tone via class / data-attr.
     // Either surface is acceptable proof; we assert at least one.
     const hasDestructive =
-      region.getAttribute('data-tone') === 'destructive' ||
-      region.className.includes('destructive');
+      // Spec 122 US4 — AURA's danger Alert.
+      region.classList.contains('aura-alert--danger');
     expect(hasDestructive).toBe(true);
   });
 

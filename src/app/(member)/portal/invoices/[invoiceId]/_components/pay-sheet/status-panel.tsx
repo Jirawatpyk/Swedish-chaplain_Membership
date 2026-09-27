@@ -20,8 +20,7 @@
  */
 import { useTranslations } from 'next-intl';
 
-import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Button, Icon } from '@jirawatpyk/aura-react';
 
 export type StatusPanelKind = 'processing' | 'three-d-secure';
 
@@ -64,12 +63,15 @@ export function StatusPanel({ kind, onCancel }: StatusPanelProps) {
       role="status"
       aria-live="polite"
       data-testid={cfg.panelTestId}
-      className="space-y-4"
+      // Spec 122 US4 (`Pay-processing` / `Pay-3ds` boards): a centred
+      // spinner, the title and the reassurance line.
+      className="flex flex-col items-center gap-3.5 px-2 py-12 text-center"
     >
-      <h3 className="text-body font-medium text-foreground">{t('title')}</h3>
-      <p className="text-caption text-muted-foreground">{t('body')}</p>
-      {/* Visual progress shimmer — not interactive. */}
-      <Skeleton className="h-2 w-full" />
+      <span className="flex size-16 items-center justify-center rounded-full bg-[var(--aura-bg-surface-hover)] text-[var(--aura-fg-secondary)]">
+        <Icon name="loader-circle" size="lg" className="motion-safe:animate-spin" />
+      </span>
+      <h3 className="m-0 text-lg font-semibold text-[var(--aura-fg-primary)]">{t('title')}</h3>
+      <p className="m-0 max-w-[340px] text-[var(--aura-fg-secondary)]">{t('body')}</p>
       {onCancel ? (
         <Button
           type="button"

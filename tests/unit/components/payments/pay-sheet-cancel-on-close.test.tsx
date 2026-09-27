@@ -25,55 +25,7 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
 }));
 
-// Inline Sheet — same pattern as pay-sheet.test.tsx so open/close are
-// synchronous + we can query everything via screen.*.
-vi.mock('@/components/ui/sheet', async () => {
-  const React = await import('react');
-  const Sheet = ({
-    open,
-    onOpenChange,
-    children,
-  }: {
-    open?: boolean;
-    onOpenChange?: (next: boolean) => void;
-    children?: React.ReactNode;
-  }) => {
-    React.useEffect(() => {
-      if (!open) return undefined;
-      const handler = (e: KeyboardEvent) => {
-        if (e.key === 'Escape') onOpenChange?.(false);
-      };
-      window.addEventListener('keydown', handler);
-      return () => window.removeEventListener('keydown', handler);
-    }, [open, onOpenChange]);
-    return open
-      ? React.createElement('div', { 'data-testid': 'sheet-root' }, children)
-      : null;
-  };
-  const passthrough = (tag: keyof HTMLElementTagNameMap) => {
-    const Passthrough = (props: Record<string, unknown>) => {
-      const { side: _s, showCloseButton: _c, ...rest } = props as Record<
-        string,
-        unknown
-      >;
-      void _s;
-      void _c;
-      return React.createElement(tag, rest as Record<string, unknown>);
-    };
-    Passthrough.displayName = `MockPassthrough(${tag})`;
-    return Passthrough;
-  };
-  return {
-    Sheet,
-    SheetContent: passthrough('div'),
-    SheetHeader: passthrough('div'),
-    SheetTitle: passthrough('h2'),
-    SheetDescription: passthrough('p'),
-    SheetFooter: passthrough('div'),
-    SheetTrigger: passthrough('button'),
-    SheetClose: passthrough('button'),
-  };
-});
+// Spec 122 US4 — the real AURA Drawer (portalled to document.body).
 
 // Replace next/dynamic with a REAL component that exposes the
 // onInitiateResolved + onPaymentSettled callbacks via two test

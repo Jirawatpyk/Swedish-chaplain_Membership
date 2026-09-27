@@ -45,7 +45,7 @@ import { useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 
-import { Button } from '@/components/ui/button';
+import { Button } from '@jirawatpyk/aura-react';
 
 import { PaySheet } from './index';
 import type { PaymentMethod } from './method-tabs';
@@ -95,8 +95,8 @@ export function PayNowButton({
       {!optimisticallyPaid && (
         <Button
           type="button"
-          variant="default"
-          size="sm"
+          variant="primary"
+          iconRight="arrow-right"
           onClick={() => setOpen(true)}
           data-testid="pay-now-button"
           className="min-h-11 px-4"

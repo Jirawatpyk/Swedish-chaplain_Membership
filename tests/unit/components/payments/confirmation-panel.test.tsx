@@ -312,14 +312,14 @@ describe('<ConfirmationPanel>', () => {
       expect(link.className).toMatch(/w-full/);
     });
 
-    it('Close is a subdued text-link (muted-foreground + hover underline)', () => {
+    it('Close is a subdued text-link (AURA secondary text + hover underline)', () => {
       renderPanel();
       const close = screen.getByTestId('pay-sheet-confirmation-close');
       // Not a shadcn Button with `bg-*` — it's a <button> styled as
       // a link. Verify the muted-foreground + hover underline utilities
       // (visual hierarchy: Close recedes behind the primary Download).
       expect(close.tagName.toLowerCase()).toBe('button');
-      expect(close.className).toMatch(/text-muted-foreground/);
+      expect(close.className).toContain('text-[var(--aura-fg-secondary)]');
       expect(close.className).toMatch(/hover:underline/);
     });
 

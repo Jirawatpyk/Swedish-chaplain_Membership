@@ -25,15 +25,11 @@
  * (card tab) and the PromptPay QR (Phase 4).
  */
 
+import { useId, useRef } from 'react';
 import { useTranslations } from 'next-intl';
 import { CreditCardIcon, QrCodeIcon } from 'lucide-react';
 
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from '@/components/ui/tabs';
+import { cn } from '@/lib/utils';
 
 export type PaymentMethod = 'card' | 'promptpay';
 
@@ -72,7 +68,7 @@ export function MethodTabs({
       only === 'card' ? t('cardPlaceholder') : t('promptpayPlaceholder');
     return (
       <section data-testid="pay-sheet-single-method">
-        <h3 className="text-body font-medium text-foreground">{label}</h3>
+        <h3 className="m-0 text-body font-medium text-[var(--aura-fg-primary)]">{label}</h3>
         <div className="mt-4">
           {only === 'card' ? (cardPanel ?? <p>{placeholder}</p>) : null}
           {only === 'promptpay'
@@ -83,68 +79,107 @@ export function MethodTabs({
     );
   }
 
-  const tabCount =
-    (enabledMethods.includes('card') ? 1 : 0) +
-    (enabledMethods.includes('promptpay') ? 1 : 0);
-  // Full-width TabsList with equal-width columns. Tailwind JIT cannot
-  // compose `grid-cols-${n}` at runtime so map to known literals.
-  const gridCols = tabCount === 2 ? 'grid-cols-2' : 'grid-cols-1';
+  // Spec 122 US4 (`Pay-card` / `Pay-promptpay` boards) — a segmented
+  // tablist on AURA's segmented-control styles. WAI-ARIA tabs by hand
+  // (AURA-handoff #71): AURA's Tabs renders only the current panel and takes
+  // no per-tab attributes, and the card panel MUST stay mounted — tearing
+  // down Stripe <Elements> on every swap reloads the iframe (T082, commit
+  // 018b9cf). Both panels stay in the DOM; the inactive one is `hidden`.
+  return (
+    <MethodTablist
+      enabledMethods={enabledMethods}
+      activeMethod={activeMethod}
+      onMethodChange={onMethodChange}
+      cardPanel={cardPanel ?? <p>{t('cardPlaceholder')}</p>}
+      promptPayPanel={promptPayPanel ?? <p>{t('promptpayPlaceholder')}</p>}
+    />
+  );
+}
+
+function MethodTablist({
+  enabledMethods,
+  activeMethod,
+  onMethodChange,
+  cardPanel,
+  promptPayPanel,
+}: Required<MethodTabsProps>) {
+  const t = useTranslations('portal.payment.methods');
+  const base = useId();
+  const refs = useRef<Partial<Record<PaymentMethod, HTMLButtonElement | null>>>({});
+  const methods = (['card', 'promptpay'] as const).filter((m) => enabledMethods.includes(m));
+
+  const choose = (m: PaymentMethod) => {
+    onMethodChange(m);
+    refs.current[m]?.focus();
+  };
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    const i = methods.indexOf(activeMethod);
+    const next =
+      e.key === 'ArrowRight'
+        ? methods[(i + 1) % methods.length]
+        : e.key === 'ArrowLeft'
+          ? methods[(i - 1 + methods.length) % methods.length]
+          : e.key === 'Home'
+            ? methods[0]
+            : e.key === 'End'
+              ? methods[methods.length - 1]
+              : undefined;
+    if (next === undefined) return;
+    e.preventDefault();
+    choose(next);
+  };
+
+  const meta = {
+    card: { label: t('card'), aria: t('cardAriaLabel'), Icon: CreditCardIcon, panel: cardPanel },
+    promptpay: { label: t('promptpay'), aria: t('promptpayAriaLabel'), Icon: QrCodeIcon, panel: promptPayPanel },
+  } as const;
 
   return (
-    <Tabs
-      value={activeMethod}
-      onValueChange={(value) => {
-        if (value === 'card' || value === 'promptpay') {
-          onMethodChange(value);
-        }
-      }}
-      data-testid="pay-sheet-method-tabs"
-    >
-      <TabsList className={`grid w-full ${gridCols} h-11 p-1`}>
-        {enabledMethods.includes('card') && (
-          <TabsTrigger
-            value="card"
-            aria-label={t('cardAriaLabel')}
-            data-testid="pay-sheet-tab-card"
-            className="h-full gap-1.5"
-          >
-            <CreditCardIcon aria-hidden="true" className="size-4" />
-            {t('card')}
-          </TabsTrigger>
-        )}
-        {enabledMethods.includes('promptpay') && (
-          <TabsTrigger
-            value="promptpay"
-            aria-label={t('promptpayAriaLabel')}
-            data-testid="pay-sheet-tab-promptpay"
-            className="h-full gap-1.5"
-          >
-            <QrCodeIcon aria-hidden="true" className="size-4" />
-            {t('promptpay')}
-          </TabsTrigger>
-        )}
-      </TabsList>
-      {/*
-       * `keepMounted` — critical for the card panel so the Stripe
-       * <Elements> tree + PaymentElement iframe are NOT torn down
-       * when the user toggles to PromptPay and back. Without this,
-       * every tab swap re-fires the Stripe iframe load + 300ms
-       * skeleton floor + button fade-in, which reads as a visible
-       * "flash" (T082 UX feedback 2026-04-24). Base UI Tabs.Panel
-       * supports keepMounted natively — panels stay in the DOM and
-       * are hidden via `hidden` attribute when inactive.
-       */}
-      {enabledMethods.includes('card') && (
-        <TabsContent value="card" keepMounted>
-          {cardPanel ?? <p>{t('cardPlaceholder')}</p>}
-        </TabsContent>
-      )}
-      {enabledMethods.includes('promptpay') && (
-        <TabsContent value="promptpay" keepMounted>
-          {promptPayPanel ?? <p>{t('promptpayPlaceholder')}</p>}
-        </TabsContent>
-      )}
-    </Tabs>
+    <div data-testid="pay-sheet-method-tabs" className="flex flex-col gap-4">
+      <div
+        role="tablist"
+        aria-label={t('groupLabel')}
+        onKeyDown={onKeyDown}
+        className="aura-segmented flex w-full"
+      >
+        {methods.map((m) => {
+          const on = m === activeMethod;
+          const { label, aria, Icon } = meta[m];
+          return (
+            <button
+              key={m}
+              ref={(el) => {
+                refs.current[m] = el;
+              }}
+              type="button"
+              role="tab"
+              id={`${base}-tab-${m}`}
+              aria-controls={`${base}-panel-${m}`}
+              aria-selected={on}
+              aria-label={aria}
+              tabIndex={on ? 0 : -1}
+              onClick={() => onMethodChange(m)}
+              data-testid={m === 'card' ? 'pay-sheet-tab-card' : 'pay-sheet-tab-promptpay'}
+              className={cn('aura-segmented__option min-h-11 flex-1 justify-center gap-1.5', on && 'is-selected')}
+            >
+              <Icon aria-hidden="true" className="aura-icon size-4" />
+              {label}
+            </button>
+          );
+        })}
+      </div>
+      {methods.map((m) => (
+        <div
+          key={m}
+          role="tabpanel"
+          id={`${base}-panel-${m}`}
+          aria-labelledby={`${base}-tab-${m}`}
+          hidden={m !== activeMethod}
+        >
+          {meta[m].panel}
+        </div>
+      ))}
+    </div>
   );
 }
 

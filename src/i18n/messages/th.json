@@ -7127,7 +7127,8 @@
         "cardAriaLabel": "บัตรเครดิต — เปลี่ยนวิธีการชำระเงิน",
         "promptpayAriaLabel": "PromptPay — เปลี่ยนวิธีการชำระเงิน",
         "cardPlaceholder": "กำลังเตรียมแบบฟอร์มชำระเงิน…",
-        "promptpayPlaceholder": "กำลังเตรียม PromptPay QR…"
+        "promptpayPlaceholder": "กำลังเตรียม PromptPay QR…",
+        "groupLabel": "วิธีชำระเงิน"
       },
       "success": {
         "title": "ชำระเงินสำเร็จ",

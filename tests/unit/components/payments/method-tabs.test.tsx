@@ -21,6 +21,7 @@ const messages = {
         promptpayAriaLabel: 'PromptPay — switch payment method',
         cardPlaceholder: 'Card form coming in G3',
         promptpayPlaceholder: 'PromptPay coming in Phase 4',
+        groupLabel: 'Payment method',
       },
     },
   },
@@ -124,13 +125,7 @@ describe('<MethodTabs>', () => {
     expect(screen.getByTestId('promptpay-stub')).toBeTruthy();
   });
 
-  it('tabs are wired for keyboard navigation via the Base-UI Tabs primitive', () => {
-    // Base-UI Tabs owns arrow-key nav. We assert the integration surface:
-    // - both tabs render with role="tab"
-    // - the selected tab has tabindex="0" (active tabstop)
-    // - the unselected tab has tabindex="-1" (reachable only via arrow keys)
-    // The actual ArrowRight keydown handler is covered in the Base-UI test
-    // suite; re-testing it here would only verify the primitive.
+  it('roving tabindex: the selected tab is the tab stop, the other is reached by arrow keys', () => {
     renderWithIntl({
       enabledMethods: ['card', 'promptpay'],
       activeMethod: 'card',
@@ -142,5 +137,34 @@ describe('<MethodTabs>', () => {
     });
     expect(cardTab.getAttribute('tabindex')).toBe('0');
     expect(ppTab.getAttribute('tabindex')).toBe('-1');
+  });
+
+  it('ArrowRight / End choose and focus the next method; ArrowLeft / Home the first (WAI-ARIA tabs)', () => {
+    const onMethodChange = vi.fn();
+    renderWithIntl({ enabledMethods: ['card', 'promptpay'], activeMethod: 'card', onMethodChange });
+    const cardTab = screen.getByRole('tab', { name: 'Card — switch payment method' });
+    const ppTab = screen.getByRole('tab', { name: 'PromptPay — switch payment method' });
+    fireEvent.keyDown(cardTab, { key: 'ArrowRight' });
+    expect(onMethodChange).toHaveBeenLastCalledWith('promptpay');
+    expect(ppTab).toHaveFocus();
+    fireEvent.keyDown(ppTab, { key: 'Home' });
+    expect(onMethodChange).toHaveBeenLastCalledWith('card');
+    expect(cardTab).toHaveFocus();
+  });
+
+  it('each panel is a tabpanel labelled by its tab; the inactive one is hidden, not unmounted', () => {
+    renderWithIntl({
+      enabledMethods: ['card', 'promptpay'],
+      activeMethod: 'card',
+      onMethodChange: vi.fn(),
+      cardPanel: <div data-testid="card-stub">card-panel</div>,
+      promptPayPanel: <div data-testid="promptpay-stub">promptpay-panel</div>,
+    });
+    const cardPanel = screen.getByTestId('card-stub').closest('[role="tabpanel"]');
+    const ppPanel = screen.getByTestId('promptpay-stub').closest('[role="tabpanel"]');
+    expect(cardPanel).not.toHaveAttribute('hidden');
+    expect(ppPanel).toHaveAttribute('hidden');
+    expect(cardPanel).toHaveAccessibleName('Card — switch payment method');
+    expect(screen.getByRole('tablist', { name: 'Payment method' })).toBeInTheDocument();
   });
 });
