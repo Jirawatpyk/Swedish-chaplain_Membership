@@ -18,6 +18,7 @@ import { toast } from '@/lib/toast';
 import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
 import { isReadOnlyResponse } from '@/lib/http/read-only-refusal';
 import { Button, IconButton } from '@jirawatpyk/aura-react';
+import { cn } from '@/lib/utils';
 
 export interface ResendInvoiceButtonProps {
   readonly invoiceId: string;
@@ -54,6 +55,9 @@ export function ResendInvoiceButton({
   );
 
   const handleClick = () => {
+    // The buttons are `aria-disabled`, not `disabled` (focus must survive
+    // a press), so a busy or cooling-down click lands here and stops.
+    if (isPending || recentlySent) return;
     startTransition(async () => {
       try {
         const res = await fetch(`/api/portal/invoices/${invoiceId}/resend`, {
@@ -113,10 +117,15 @@ export function ResendInvoiceButton({
   const disabled = isPending || recentlySent;
 
   const label = t('actions.emailCopyAria', { number: documentNumber });
+  // AURA dims only `:disabled` buttons (and `a[aria-disabled]`), so the
+  // aria-disabled state gets the same look here.
+  const dimmed = cn('aria-disabled:cursor-not-allowed aria-disabled:opacity-[var(--aura-disabled-opacity)]', className);
   // Spec 122 US4 — the compact form is an AURA IconButton (its label is the
   // accessible name and the tooltip); the full form an AURA Button whose
   // `loading` shows the spinner. `outline` (list rows) maps to AURA's
-  // secondary, `ghost` stays ghost.
+  // secondary, `ghost` stays ghost. Both are `aria-disabled` while busy or
+  // cooling down, never `disabled`: a real `disabled` drops keyboard focus to
+  // <body> the instant Enter lands (UX review M4, SC 2.4.3).
   if (layout === 'compact') {
     return (
       <IconButton
@@ -124,9 +133,9 @@ export function ResendInvoiceButton({
         icon={isPending ? 'loader-circle' : 'mail'}
         label={label}
         onClick={handleClick}
-        disabled={disabled}
+        aria-disabled={disabled || undefined}
         aria-busy={isPending || undefined}
-        className={className}
+        className={dimmed}
       />
     );
   }
@@ -138,9 +147,9 @@ export function ResendInvoiceButton({
       icon="mail"
       loading={isPending}
       onClick={handleClick}
-      disabled={recentlySent}
+      aria-disabled={recentlySent || undefined}
       aria-label={label}
-      className={className}
+      className={dimmed}
     >
       {t('actions.emailCopy')}
     </Button>
