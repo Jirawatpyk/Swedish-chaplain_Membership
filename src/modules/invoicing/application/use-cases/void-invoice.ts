@@ -94,6 +94,7 @@ import type { ClockPort } from '../ports/clock-port';
 import type { EmailOutboxPort } from '../ports/email-outbox-port';
 import type { RecipientLocalePort } from '../ports/recipient-locale-port';
 import type { PendingRefundGuardPort } from '../ports/pending-refund-guard-port';
+import type { PendingPaymentCancellerPort } from '../ports/pending-payment-canceller-port';
 import {
   auditAutoEmailSkippedNoRecipient,
   resolveMoneyRecipient,
@@ -240,6 +241,13 @@ export interface VoidInvoiceDeps {
     tx: unknown,
     args: { readonly tenantId: string; readonly invoiceId: string },
   ) => Promise<void>;
+  /**
+   * #446 review M-a — OPTIONAL F5 seam: cancel the invoice's still-live
+   * PaymentIntents once the void has COMMITTED (see the port docblock for why
+   * post-commit and why best-effort). `undefined` → no cancellation, exactly
+   * the pre-M-a behaviour (tests / unwired callers).
+   */
+  readonly pendingPaymentCanceller?: PendingPaymentCancellerPort;
 }
 
 // `sanitiseErrorReason` moved to `../lib/sanitise-error-reason` so
@@ -622,6 +630,31 @@ export async function voidInvoice(
 
   if (!phase1.ok) return err(phase1.error);
   const { voided, targetA, targetB, emailDelivery } = phase1.value;
+
+  // #446 review M-a — the invoice is now COMMITTED as void; cancel whatever
+  // PaymentIntent is still live for it so a PaySheet that cached a card
+  // clientSecret before the void cannot capture money for a voided invoice.
+  // Post-commit on purpose (payment-row locks must never nest under the
+  // invoice lock) and best-effort: a failure here is metric + log only — the
+  // void stands, and the webhook's stale-invoice auto-refund still catches an
+  // attempt that later captures. Runs before the Phase-2 PDF work so a slow
+  // blob upload never delays closing the payment window.
+  if (deps.pendingPaymentCanceller) {
+    try {
+      await deps.pendingPaymentCanceller.cancelPendingPaymentsForVoidedInvoice({
+        tenantId: input.tenantId,
+        invoiceId,
+        actorUserId: input.actorUserId,
+        requestId: input.requestId ?? null,
+      });
+    } catch (e) {
+      invoicingMetrics.voidPendingPaymentCancelFailed(input.tenantId);
+      logger.error(
+        { err: errKind(e), invoiceId, tenantId: input.tenantId },
+        'voidInvoice: post-commit pending-payment cancellation failed (void stands; webhook auto-refund remains the net)',
+      );
+    }
+  }
 
   // Phase 2 — post-commit Blob overwrite + sha sync, PER TARGET. Best-effort:
   // on failure the invoice is ALREADY committed as void in the DB. State after

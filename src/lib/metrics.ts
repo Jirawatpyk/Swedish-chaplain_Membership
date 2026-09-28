@@ -932,6 +932,23 @@ export const invoicingMetrics = {
       ).add(1, { tenant });
     });
   },
+
+  /**
+   * #446 review M-a — the post-commit call that cancels a voided invoice's
+   * still-live PaymentIntents THREW (the void itself stands). A live card
+   * PaymentIntent may remain; if it is later captured the webhook's
+   * stale-invoice auto-refund catches it. Per-row Stripe failures do not land
+   * here (they are audited as `payment_cancel_attempt_failed`); this counts
+   * the whole call failing. Alert: any sustained non-zero rate.
+   */
+  voidPendingPaymentCancelFailed(tenant: string): void {
+    safeMetric(() => {
+      counter(
+        'invoicing_void_pending_payment_cancel_failed_total',
+        'void: post-commit cancellation of pending PaymentIntents threw → a live PaymentIntent may remain',
+      ).add(1, { tenant });
+    });
+  },
 } as const;
 
 // --- COMP-1 member-erasure metrics -------------------------------------------

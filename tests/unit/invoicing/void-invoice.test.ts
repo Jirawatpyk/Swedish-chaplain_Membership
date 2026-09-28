@@ -34,6 +34,7 @@ import type { TenantInvoiceSettingsView } from '@/modules/invoicing/application/
 import type { PdfRenderInput } from '@/modules/invoicing/application/ports/pdf-render-port';
 import { InvoiceApplyConflictError } from '@/modules/invoicing/application/lib/invoice-apply-conflict-error';
 import { makeRecipientLocaleFake } from '../../helpers/recipient-locale-fake';
+import { invoicingMetrics } from '@/lib/metrics';
 
 const INVOICE_ID = '00000000-0000-0000-0000-000000000099';
 const OPAQUE_TX = Symbol('tx');
@@ -1032,5 +1033,114 @@ describe('voidInvoice — the cancellation notice reaches the LIVE primary (108 
     expect(r.ok).toBe(true);
     const outboxCall = vi.mocked(deps.outbox.enqueue).mock.calls[0];
     expect(outboxCall![1].recipientLocale).toBe('th');
+  });
+});
+
+// Follow-up to the #446 financial-integrity review (M-a): a void must cancel
+// the invoice's still-live PaymentIntents, or a PaySheet that cached a card
+// clientSecret before the void can still capture money for a voided invoice
+// (auto-refunded days later by the webhook). The canceller runs AFTER the
+// Phase-1 commit — payment rows are never locked while the invoice lock is
+// held (confirm-payment locks payment → invoice) — and it is best-effort: it
+// can never fail or roll back the void.
+describe('voidInvoice — cancels pending PaymentIntents after the void commits (#446 review M-a)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  function withCanceller(loaded: Invoice | null, impl?: () => Promise<void>) {
+    const cancel = vi.fn(impl ?? (async () => undefined));
+    const deps = makeDeps(loaded, {
+      pendingPaymentCanceller: { cancelPendingPaymentsForVoidedInvoice: cancel },
+    });
+    return { deps, cancel };
+  }
+
+  it('successful void → canceller called once with tenant, invoice, voiding actor and requestId', async () => {
+    const { deps, cancel } = withCanceller(makeIssuedMembership());
+    const r = await voidInvoice(deps, INPUT);
+    expect(r.ok).toBe(true);
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(cancel).toHaveBeenCalledWith({
+      tenantId: 'test-swecham',
+      invoiceId: INVOICE_ID,
+      actorUserId: 'actor-user',
+      requestId: 'req-1',
+    });
+  });
+
+  it('runs only after the Phase-1 transaction has returned (post-commit), never inside it', async () => {
+    const order: string[] = [];
+    const { deps, cancel } = withCanceller(makeIssuedMembership(), async () => {
+      order.push('cancel');
+    });
+    (deps.invoiceRepo.withTx as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      async (fn: (tx: unknown) => Promise<unknown>) => {
+        order.push('tx:begin');
+        const out = await fn({});
+        order.push('tx:commit');
+        return out;
+      },
+    );
+    await voidInvoice(deps, INPUT);
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(order.indexOf('cancel')).toBeGreaterThan(order.indexOf('tx:commit'));
+  });
+
+  it('void-on-reissue (requireStatus issued) also cancels', async () => {
+    const loaded = makeIssuedBill();
+    const { deps, cancel } = withCanceller(loaded);
+    const r = await voidInvoice(deps, {
+      tenantId: 't1',
+      actorUserId: 'admin-1',
+      invoiceId: loaded.invoiceId,
+      voidReason: 'auto-void: superseded',
+      requireStatus: 'issued',
+    });
+    expect(r.ok).toBe(true);
+    expect(cancel).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: 't1', invoiceId: loaded.invoiceId, requestId: null }),
+    );
+  });
+
+  it('a canceller that THROWS never fails the void; the failure metric fires', async () => {
+    const metric = vi.spyOn(invoicingMetrics, 'voidPendingPaymentCancelFailed');
+    const { deps } = withCanceller(makeIssuedMembership(), async () => {
+      throw new Error('neon: connection reset');
+    });
+    const r = await voidInvoice(deps, INPUT);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.status).toBe('void');
+    expect(metric).toHaveBeenCalledWith('test-swecham');
+    metric.mockRestore();
+  });
+
+  it.each([
+    ['refund in progress', () => ({ pendingRefundGuard: { countPendingRefundsForInvoice: vi.fn(async () => 1) } }), makeIssuedMembership],
+    ['credited (invalid_status)', () => ({}), () => makePaidMembershipTwoBlob({ status: 'credited' })],
+    ['paid membership (H1 refusal)', () => ({}), () => makePaidMembershipTwoBlob()],
+  ] as const)('refused void (%s) → canceller NOT called', async (_label, extra, make) => {
+    const cancel = vi.fn(async () => undefined);
+    const deps = makeDeps(make(), {
+      ...extra(),
+      pendingPaymentCanceller: { cancelPendingPaymentsForVoidedInvoice: cancel },
+    } as Partial<VoidInvoiceDeps>);
+    const r = await voidInvoice(deps, INPUT);
+    expect(r.ok).toBe(false);
+    expect(cancel).not.toHaveBeenCalled();
+  });
+
+  it('rolled-back void (applyVoid CAS conflict) → canceller NOT called', async () => {
+    const { deps, cancel } = withCanceller(makeIssuedBill());
+    (deps.invoiceRepo.applyVoid as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new InvoiceApplyConflictError('applyVoid'),
+    );
+    const r = await voidInvoice(deps, INPUT);
+    expect(r.ok).toBe(false);
+    expect(cancel).not.toHaveBeenCalled();
+  });
+
+  it('unwired (no canceller dep) → void behaves exactly as before', async () => {
+    const deps = makeDeps(makeIssuedMembership());
+    const r = await voidInvoice(deps, INPUT);
+    expect(r.ok).toBe(true);
   });
 });

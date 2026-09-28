@@ -27,6 +27,15 @@
 # nightly because the moment to catch it is the PR that adds the table. Broad per-module coverage belongs in the nightly, and
 # per-PR ephemeral Neon branches are the prerequisite for anything wider.
 #
+# 2026-09-28 — `payments/void-cancels-pending-payment` joins: a voided invoice's
+# still-live PaymentIntent must be canceled (the #446 financial-integrity review,
+# M-a). The regression is silent by construction: the webhook auto-refunds a
+# later capture, so the only symptom is members' money held for days and lost
+# Stripe fees. The suite seeds two invoices and runs one use-case twice, with
+# no PDF render and no Stripe call. Its CI time is recorded in the PR that
+# added it. Move it to the nightly if it ever costs more than cross-tenant-probe
+# (~42 s).
+#
 # SIZED FROM MEASURED CI TIME, NOT LOCAL TIME (2026-07-28). The first version
 # of this file carried seven suites because they ran in 95 s locally; on a
 # runner the same set took 547 s, because GitHub runs in the US and Neon lives
@@ -193,4 +202,5 @@ jobs:
             tests/integration/members/marketing-audience-query.test.ts \
             tests/integration/members/broadcast-recipient-contacts-keyset.test.ts \
             tests/integration/broadcasts/audience-1n-status.test.ts \
-            tests/integration/scripts/test-tenant-cleanup-completeness.test.ts
+            tests/integration/scripts/test-tenant-cleanup-completeness.test.ts \
+            tests/integration/payments/void-cancels-pending-payment.test.ts
