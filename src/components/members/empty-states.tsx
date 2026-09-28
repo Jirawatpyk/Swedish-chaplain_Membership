@@ -15,21 +15,15 @@
  *
  * ARIA live-region on the error state so screen readers announce the
  * failure without a page change (ux-standards § 7.3).
+ *
+ * 122 US5a (T503) — AURA `EmptyState` (boards `Admin-state-members-empty`,
+ * `-filtered`, `-error`); the live-region role sits on a wrapper.
  */
 
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
-import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import {
-  BuildingIcon,
-  SearchXIcon,
-  MailCheckIcon,
-  AlertTriangleIcon,
-  PlusIcon,
-  XIcon,
-  RefreshCwIcon,
-} from 'lucide-react';
-import { Button, buttonVariants } from '@/components/ui/button';
+import { Button, EmptyState } from '@jirawatpyk/aura-react';
+import { BuildingIcon, MailCheckIcon, SearchXIcon } from 'lucide-react';
 
 export function MembersZeroState({
   canAddMember,
@@ -39,31 +33,21 @@ export function MembersZeroState({
 }) {
   const t = useTranslations('admin.members.emptyStates.zero');
   return (
-    <div
-      className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-10 text-center"
-      role="status"
-    >
-      <div
-        className="flex size-14 items-center justify-center rounded-full bg-muted"
-        aria-hidden
-      >
-        <BuildingIcon className="size-7 text-muted-foreground" />
-      </div>
-      <div className="space-y-1">
-        <h2 className="text-h3 text-lg font-semibold">{t('title')}</h2>
-        <p className="text-sm text-muted-foreground">
-          {canAddMember ? t('description') : t('adminOnlyHint')}
-        </p>
-      </div>
-      {canAddMember ? (
-        <Link
-          href="/admin/members/new"
-          className={buttonVariants({ size: 'sm' })}
-        >
-          <PlusIcon className="size-4" />
-          {t('cta')}
-        </Link>
-      ) : null}
+    <div role="status">
+      <EmptyState
+        bordered
+        headingLevel={2}
+        icon={<BuildingIcon aria-hidden="true" />}
+        title={t('title')}
+        description={canAddMember ? t('description') : t('adminOnlyHint')}
+        action={
+          canAddMember ? (
+            <Button href="/admin/members/new" size="sm" icon="plus">
+              {t('cta')}
+            </Button>
+          ) : undefined
+        }
+      />
     </div>
   );
 }
@@ -73,29 +57,19 @@ export function MembersFilteredEmptyState() {
   const router = useRouter();
   const pathname = usePathname();
   return (
-    <div
-      className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-10 text-center"
-      role="status"
-    >
-      <div
-        className="flex size-14 items-center justify-center rounded-full bg-muted"
-        aria-hidden
-      >
-        <SearchXIcon className="size-7 text-muted-foreground" />
-      </div>
-      <div className="space-y-1">
-        <h2 className="text-h3 text-lg font-semibold">{t('title')}</h2>
-        <p className="text-sm text-muted-foreground">{t('description')}</p>
-      </div>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={() => router.replace(pathname)}
-      >
-        <XIcon className="size-4" />
-        {t('cta')}
-      </Button>
+    <div role="status">
+      <EmptyState
+        bordered
+        headingLevel={2}
+        icon={<SearchXIcon aria-hidden="true" />}
+        title={t('title')}
+        description={t('description')}
+        action={
+          <Button variant="secondary" size="sm" icon="x" onClick={() => router.replace(pathname)}>
+            {t('cta')}
+          </Button>
+        }
+      />
     </div>
   );
 }
@@ -106,35 +80,34 @@ export function MembersAllInvitedEmptyState() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   return (
-    <div
-      className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-10 text-center"
-      role="status"
-    >
-      <div className="flex size-14 items-center justify-center rounded-full bg-muted" aria-hidden>
-        <MailCheckIcon className="size-7 text-muted-foreground" />
-      </div>
-      <div className="space-y-1">
-        <h2 className="text-h3 text-lg font-semibold">{t('title')}</h2>
-        <p className="text-sm text-muted-foreground">{t('description')}</p>
-      </div>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={() => {
-          // Clear ONLY the chip — router.replace(pathname) (what the filtered
-          // empty state does) would also throw away the user's Plan filter.
-          const params = new URLSearchParams(searchParams.toString());
-          params.delete('portal');
-          params.delete('page');
-          params.delete('cursor');
-          const qs = params.toString();
-          router.replace(qs ? `${pathname}?${qs}` : pathname);
-        }}
-      >
-        <XIcon className="size-4" />
-        {t('cta')}
-      </Button>
+    <div role="status">
+      <EmptyState
+        bordered
+        headingLevel={2}
+        icon={<MailCheckIcon aria-hidden="true" />}
+        title={t('title')}
+        description={t('description')}
+        action={
+          <Button
+            variant="secondary"
+            size="sm"
+            icon="x"
+            onClick={() => {
+              // Clear ONLY the chip — router.replace(pathname) (what the
+              // filtered empty state does) would also throw away the user's
+              // Plan filter.
+              const params = new URLSearchParams(searchParams.toString());
+              params.delete('portal');
+              params.delete('page');
+              params.delete('cursor');
+              const qs = params.toString();
+              router.replace(qs ? `${pathname}?${qs}` : pathname);
+            }}
+          >
+            {t('cta')}
+          </Button>
+        }
+      />
     </div>
   );
 }
@@ -143,30 +116,20 @@ export function MembersErrorState() {
   const t = useTranslations('admin.members.emptyStates.error');
   const router = useRouter();
   return (
-    <div
-      // role="alert" implies aria-live="assertive" — explicit aria-live="polite" removed (contradictory).
-      className="flex flex-col items-center justify-center gap-4 rounded-lg border border-destructive/30 bg-destructive/5 p-10 text-center"
-      role="alert"
-    >
-      <div
-        className="flex size-14 items-center justify-center rounded-full bg-destructive/15"
-        aria-hidden
-      >
-        <AlertTriangleIcon className="size-7 text-destructive" />
-      </div>
-      <div className="space-y-1">
-        <h2 className="text-h3 text-lg font-semibold">{t('title')}</h2>
-        <p className="text-sm text-muted-foreground">{t('description')}</p>
-      </div>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={() => router.refresh()}
-      >
-        <RefreshCwIcon className="size-4" />
-        {t('cta')}
-      </Button>
+    // role="alert" implies aria-live="assertive".
+    <div role="alert">
+      <EmptyState
+        bordered
+        headingLevel={2}
+        icon="triangle-alert"
+        title={t('title')}
+        description={t('description')}
+        action={
+          <Button variant="secondary" size="sm" icon="rotate-ccw" onClick={() => router.refresh()}>
+            {t('cta')}
+          </Button>
+        }
+      />
     </div>
   );
 }

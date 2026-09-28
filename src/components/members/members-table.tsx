@@ -775,9 +775,10 @@ export function MembersTable({
         shiftClickRef.current = e.shiftKey;
       }}
     >
-      {/* Result-count live region — announces the row count on ANY filter
-          change, "N of M" when the full filtered total is known. */}
-      <div className="sr-only" role="status">
+      {/* Result count — visible, as on the board ("Showing 2 of 131
+          members"), and a live region, so ANY filter change is announced;
+          "N of M" when the full filtered total is known. */}
+      <div className="self-end text-xs text-[var(--aura-fg-secondary)]" role="status">
         {total !== undefined
           ? t('resultsCountOfTotal', { count: rows.length, total })
           : t('resultsCount', { count: rows.length })}
