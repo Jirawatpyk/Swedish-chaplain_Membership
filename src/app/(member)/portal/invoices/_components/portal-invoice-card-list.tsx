@@ -16,12 +16,11 @@
  *
  * Card anatomy (member-confirmed mockup):
  *   ┌───────────────────────────────────────────┐
- *   │ INV-2026-0001                 [✓ Paid]     │  doc# link (font-mono) · status Badge (icon+text)
- *   │ Issued 1 Apr 2026 · Due 15 Apr 2026        │  dates (muted) — reuse columns.issueDate/.dueDate labels
- *   │ Receipt No. RCP-2026-0042                   │  ONLY in separate-mode (vm.receiptNumber)
+ *   │ INV-2026-0001                 [✓ Paid]     │  doc# link (font-mono) · status pill (icon+text)
  *   │ ─────────────────────────────────────────  │  divider
- *   │ 50,000.00 THB                               │  total (prominent)
- *   │ [ Invoice ] [ Receipt ] [ Resend ]          │  inline actions ≥44px, flex-wrap (never overflow 320px)
+ *   │ Issued 1 Apr 2026      Due 15 Apr 2026      │  facts grid (spec 122 US4 `Invoices-mobile`)
+ *   │ Receipt No. RCP-…      Total 50,000.00 THB  │  Receipt No. ONLY in separate-mode
+ *   │ [ ⤓ Receipt                        ] [ ⋯ ]  │  one download ≥44px + menu: the other doc, Email me a copy
  *   └───────────────────────────────────────────┘
  *
  * Combined-mode receipt (em-dash + tooltip hint the table shows in its
@@ -41,8 +40,9 @@
  *     real-`<h2>` precedent (the portal card-header convention).
  *   - Status badge = lucide icon (aria-hidden) + text (WCAG 1.4.1 — colour
  *     is not the sole signal).
- *   - Action buttons keep their `min-h-11` (≥44px) treatment and wrap
- *     (`flex flex-wrap`) so a 320px card never scrolls horizontally.
+ *   - The download keeps its `min-h-11` (≥44px) treatment and the "⋯"
+ *     trigger is a 44px square named "More actions for {number}"; the row
+ *     wraps (`flex flex-wrap`) so a 320px card never scrolls horizontally.
  */
 import Link from 'next/link';
 import { Card, buttonClass } from '@jirawatpyk/aura-react/server';
@@ -56,7 +56,7 @@ import {
 } from '../_utils/invoice-row-view-model';
 import { EmptyCell } from './empty-cell';
 import { InvoiceStatusBadge } from './invoice-status-badge';
-import { ResendInvoiceButton } from './resend-invoice-button';
+import { PortalInvoiceCardMenu } from './portal-invoice-card-menu';
 import {
   PortalInvoiceDownloadButton,
   PortalReceiptDownloadButton,
@@ -131,6 +131,24 @@ export function PortalInvoiceCardList({
           vm.taxDocumentKind === 'tax_receipt' && vm.billDocumentNumber
             ? vm.billDocumentNumber
             : primaryNumber;
+        // 064 — as-paid rows: the main pdf IS the final legal document; the
+        // shared downloadLabelKeys helper maps mainPdfKind → label/aria keys
+        // (mirrors the desktop table). 088 — on a paid bill the main pdf is
+        // the SC bill, so the control names the SC (not the RC).
+        const invoiceLabel =
+          vm.displayStatus === 'void'
+            ? t('actions.downloadVoided')
+            : t(downloadLabelKeys(vm.mainPdfKind).labelKey);
+        const invoiceAria = t(
+          vm.displayStatus === 'void'
+            ? 'actions.downloadVoidedAria'
+            : downloadLabelKeys(vm.mainPdfKind).ariaKey,
+          { number: mainDownloadNumber },
+        );
+        // The receipt reference: the separate-mode receipt number, else the
+        // invoice doc number, else the raw id — one value for the visible
+        // doc-ref and the SR aria. Mirrors the desktop table.
+        const receiptRef = vm.receiptNumber ?? vm.displayNumber ?? vm.invoiceId;
         return (
           <li
             key={vm.invoiceId}
@@ -227,18 +245,11 @@ export function PortalInvoiceCardList({
                   </div>
                 </dl>
 
-                {/* Actions — SAME conditional set + flag-gating as the table
-                    cell, driven by vm.* flags; the button `variant` differs
-                    (card = `outline`, table = `ghost`). Wraps on a 320px card.
-
-                    Order (D4): the TEXT download buttons (Invoice / Receipt)
-                    come first, then the icon-only resend square LAST. This is a
-                    DELIBERATE divergence from the desktop table, which renders
-                    the resend FIRST (leading). Only the compact / icon-only
-                    treatment of the resend control is shared with the table;
-                    the card places it last (and uses `variant="outline"` vs the
-                    table's `ghost`) so the primary "grab my document" CTAs sit
-                    leftmost where the eye lands first.
+                {/* Actions — the SAME set of documents + resend as the table
+                    cell, driven by vm.* flags, laid out for a phone: one
+                    labelled download, then the "⋯" menu with the rest (spec
+                    122 US4, option C; the table lists them inline). Wraps on
+                    a 320px card.
 
                     060-member-portal-d4 (F4) — when there is NO action to show
                     (`!rowHasAnyAction(vm)`: an issued invoice whose PDF hasn't
@@ -248,86 +259,69 @@ export function PortalInvoiceCardList({
                     Separator). */}
                 {rowHasAnyAction(vm) ? (
                   <div className="flex flex-wrap items-center gap-2">
-                    {vm.showInvoice && (
-                      <PortalInvoiceDownloadButton
+                    {/* Spec 122 US4 (option C) — ONE labelled download fills
+                        the row: the receipt once paid (the document a member
+                        files), else the invoice. The "⋯" menu beside it holds
+                        the other document and "Email me a copy"; it renders
+                        only when it has an item (a void invoice has none). */}
+                    {vm.showReceipt ? (
+                      <PortalReceiptDownloadButton
                         invoiceId={vm.invoiceId}
-                        documentNumber={mainDownloadNumber}
-                        // 064 — as-paid rows: the main pdf IS the final legal
-                        // document; shared downloadLabelKeys helper (wave-4
-                        // S17) maps mainPdfKind → label/aria keys. Mirrors
-                        // the desktop table. 088 — on a paid bill the main pdf
-                        // is the SC bill, so the control names the SC (not RC).
+                        documentNumber={receiptRef}
+                        // Combined-mode label is the SHORT verb-less
+                        // `actions.downloadCombined` ("Tax invoice / Receipt");
+                        // the download icon carries "download". Separate-mode
+                        // keeps the short "Receipt"; the full aria label is
+                        // preserved for SR users.
                         label={
-                          vm.displayStatus === 'void'
-                            ? t('actions.downloadVoided')
-                            : t(downloadLabelKeys(vm.mainPdfKind).labelKey)
+                          vm.isCombinedPaid
+                            ? t('actions.downloadCombined')
+                            : t('actions.downloadReceipt')
                         }
                         ariaLabel={t(
-                          vm.displayStatus === 'void'
-                            ? 'actions.downloadVoidedAria'
-                            : downloadLabelKeys(vm.mainPdfKind).ariaKey,
-                          { number: mainDownloadNumber },
+                          vm.isCombinedPaid
+                            ? 'actions.downloadCombinedAria'
+                            : 'actions.downloadReceiptAria',
+                          { number: receiptRef },
                         )}
                         className={cn(
                           buttonClass({ variant: 'secondary', size: 'sm' }),
-                          'min-h-11 px-3',
-                          // Same wrap treatment the receipt button applies to
-                          // its combined label — let the longer dual-role text
-                          // wrap inside a 320px card instead of clipping.
-                          vm.mainPdfKind === 'combined' &&
-                            'h-auto min-h-11 whitespace-normal text-left',
+                          'min-h-11 flex-1 px-3',
+                          // The combined label WRAPS to 2 lines inside a 320px
+                          // card instead of clipping; `min-h-11` keeps the
+                          // ≥44px tap target.
+                          vm.isCombinedPaid && 'h-auto whitespace-normal',
                         )}
                       />
-                    )}
-                    {vm.showReceipt &&
-                      (() => {
-                        // 060-member-portal-d4 (final review) — the receipt
-                        // reference (separate-mode receipt number, else the
-                        // invoice doc number, else the raw id) was computed twice
-                        // in this button (the `documentNumber` prop + the aria
-                        // `number`). Hoist it so the visible doc-ref and the SR
-                        // aria can never diverge. Mirrors the desktop table.
-                        const receiptRef =
-                          vm.receiptNumber ?? vm.displayNumber ?? vm.invoiceId;
-                        return (
-                          <PortalReceiptDownloadButton
-                            invoiceId={vm.invoiceId}
-                            documentNumber={receiptRef}
-                            // Combined-mode label is the SHORT verb-less
-                            // `actions.downloadCombined` ("Tax invoice / Receipt").
-                            // The verb was dropped from that key so the download icon
-                            // carries "download" and the card + desktop table + detail
-                            // all share one label (no overflow on a 320px card).
-                            // Separate-mode keeps the short "Receipt"; the full
-                            // combined aria label is preserved below for SR users.
-                            label={
-                              vm.isCombinedPaid
-                                ? t('actions.downloadCombined')
-                                : t('actions.downloadReceipt')
-                            }
-                            ariaLabel={t(
-                              vm.isCombinedPaid
-                                ? 'actions.downloadCombinedAria'
-                                : 'actions.downloadReceiptAria',
-                              { number: receiptRef },
-                            )}
-                            className={cn(
-                              buttonClass({ variant: 'secondary', size: 'sm' }),
-                              'min-h-11 px-3',
-                              // Allow the combined label to WRAP to 2 lines within
-                              // the card instead of clipping (Button defaults to
-                              // `whitespace-nowrap` + the Card is `overflow-hidden`,
-                              // which silently clipped the legally-required CTA).
-                              // `h-auto` lets the button grow past its fixed sm
-                              // height; `min-h-11` keeps the ≥44px tap target.
-                              vm.isCombinedPaid && 'h-auto min-h-11 whitespace-normal text-left',
-                            )}
-                          />
-                        );
-                      })()}
+                    ) : vm.showInvoice ? (
+                      <PortalInvoiceDownloadButton
+                        invoiceId={vm.invoiceId}
+                        documentNumber={mainDownloadNumber}
+                        label={invoiceLabel}
+                        ariaLabel={invoiceAria}
+                        className={cn(
+                          buttonClass({ variant: 'secondary', size: 'sm' }),
+                          'min-h-11 flex-1 px-3',
+                          vm.mainPdfKind === 'combined' && 'h-auto whitespace-normal',
+                        )}
+                      />
+                    ) : null}
+                    {(vm.showReceipt && vm.showInvoice) || vm.resendable ? (
+                      <PortalInvoiceCardMenu
+                        invoiceId={vm.invoiceId}
+                        label={t('actions.moreActions', { number: primaryNumber })}
+                        invoiceDownload={
+                          vm.showReceipt && vm.showInvoice
+                            ? { documentNumber: mainDownloadNumber, label: invoiceLabel }
+                            : undefined
+                        }
+                        resendable={vm.resendable}
+                      />
+                    ) : null}
                     {/* 088 T066a — receipt mid-render: the async watcher
-                        (aria-live announce + auto-refresh poll). Mirrors the
-                        desktop table; both consume vm.receiptPending. */}
+                        (aria-live announce + auto-refresh poll), on its own
+                        row under the buttons. Mirrors the desktop table; both
+                        consume vm.receiptPending. */}
                     {vm.receiptPending && (
                       <ReceiptStatusWatcher
                         invoiceId={vm.invoiceId}
@@ -347,24 +341,6 @@ export function PortalInvoiceCardList({
                         label={t('actions.receiptFailedSupport')}
                       />
                     )}
-                    {/* Resend ("Email me a copy") — icon-only square LAST in the
-                        row. The compact / icon-only treatment is shared with the
-                        desktop table's resend, but the placement diverges (the
-                        table renders resend FIRST) and the variant differs (card
-                        `outline` vs table `ghost`). `layout="compact"` renders
-                        the Mail icon only; the component already sets
-                        `aria-label` (emailCopyAria) so the icon-only control
-                        keeps an accessible name. `min-h-11 min-w-11` keeps the
-                        ≥44px square tap target (§9.1). */}
-                    {vm.resendable ? (
-                      <ResendInvoiceButton
-                        invoiceId={vm.invoiceId}
-                        documentNumber={vm.displayNumber ?? vm.invoiceId}
-                        variant="outline"
-                        layout="compact"
-                        className="min-h-11 min-w-11"
-                      />
-                    ) : null}
                   </div>
                 ) : (
                   // No document/action to show — mirror the desktop table's

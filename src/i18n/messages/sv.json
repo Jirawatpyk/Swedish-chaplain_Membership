@@ -6279,7 +6279,8 @@
         "receiptFailedSupport": "Kvittot är på väg — vi löser det",
         "viewDetail": "Visa faktura",
         "emailCopy": "Mejla mig en kopia",
-        "emailCopyAria": "Mejla en ny kopia av faktura {number} till din registrerade adress"
+        "emailCopyAria": "Mejla en ny kopia av faktura {number} till din registrerade adress",
+        "moreActions": "Fler åtgärder för {number}"
       },
       "receiptStatus": {
         "generating": "Ditt skattekvitto genereras",

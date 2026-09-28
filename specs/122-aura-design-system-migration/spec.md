@@ -55,10 +55,10 @@ The US4 boards (`Invoices`, `Invoice-paid`, `Portal-invoice-mobile`, `Portal-cre
 
 ### Session 2026-09-28 (US4 board-parity pass)
 
-The maintainer asked for every gap in the US4 board comparison to be fixed. The fixes follow the rule "the boards win unless they contradict the product". Where a board gap was left open, this is why:
+The maintainer asked for every gap in the US4 board comparison to be fixed. The invoice filters then got one more change: below 1024 px the search takes its own row and the filters share the next one evenly (from 1024 px it is one row, as before). The fixes follow the rule "the boards win unless they contradict the product". Where a board gap was left open, this is why:
 
-- **List resend icon, no sort, shared pagination.** The invoice list keeps the resend action (removing it would remove a feature). It has no column sort, because sorting needs new server parameters, which a UI swap cannot add. It keeps the shared `TablePagination` with the same URL parameters.
-- **Phone card keeps separate download buttons.** The phone invoice card keeps a labelled button per document rather than the board's single download icon. When an invoice has both an invoice and a receipt, one icon would not say which document it downloads.
+- **List resend, no sort, shared pagination.** The invoice list keeps the resend action (removing it would remove a feature); on phone cards it sits in the "⋯" menu. It has no column sort, because sorting needs new server parameters, which a UI swap cannot add. It keeps the shared `TablePagination` with the same URL parameters.
+- **Phone card: one labelled download plus a "⋯" menu** (the maintainer chose this from a side-by-side mockup). The board's single download icon cannot say which document it downloads when an invoice has both. So the card shows one labelled button, the invoice while unpaid and the receipt once paid (as on the detail page). A "More actions for {number}" menu beside it holds the other document and "Email me a copy". The menu appears only when it has an item, so a void invoice has none. Both documents stay downloadable (FR-015), and the menu items run the same download and resend as the buttons.
 - **Receipt stays primary once paid.** On a paid invoice the receipt download stays the primary button (090 finding #5).
 - **No "Receipt preparing…" header button.** A receipt that is still being prepared is shown by the notice (088 T066a), not by a disabled header button.
 - **Tax wording stays.** The VAT line and the "Original tax invoice" labels stay as coded (FR-010f). The bill note stays on desktop too, since it is a tax disclosure.

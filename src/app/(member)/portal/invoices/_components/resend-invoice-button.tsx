@@ -32,13 +32,15 @@ export interface ResendInvoiceButtonProps {
   readonly className?: string;
 }
 
-export function ResendInvoiceButton({
-  invoiceId,
-  documentNumber,
-  variant = 'ghost',
-  layout = 'full',
-  className,
-}: ResendInvoiceButtonProps) {
+/**
+ * The resend request with its toasts and the 5-minute cooldown, shared by the
+ * button below and the phone card's "⋯" menu (spec 122 US4).
+ */
+export function useResendInvoice(invoiceId: string): {
+  readonly isPending: boolean;
+  readonly recentlySent: boolean;
+  readonly resend: () => void;
+} {
   const t = useTranslations('portal.invoices');
   const readOnlyToast = useReadOnlyToast();
   const [isPending, startTransition] = useTransition();
@@ -55,7 +57,7 @@ export function ResendInvoiceButton({
     [],
   );
 
-  const handleClick = () => {
+  const resend = () => {
     // The buttons are `aria-disabled`, not `disabled` (focus must survive
     // a press), so a busy or cooling-down click lands here and stops.
     if (isPending || recentlySent) return;
@@ -114,6 +116,19 @@ export function ResendInvoiceButton({
       }
     });
   };
+
+  return { isPending, recentlySent, resend };
+}
+
+export function ResendInvoiceButton({
+  invoiceId,
+  documentNumber,
+  variant = 'ghost',
+  layout = 'full',
+  className,
+}: ResendInvoiceButtonProps) {
+  const t = useTranslations('portal.invoices');
+  const { isPending, recentlySent, resend: handleClick } = useResendInvoice(invoiceId);
 
   const disabled = isPending || recentlySent;
 

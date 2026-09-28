@@ -6279,7 +6279,8 @@
         "receiptFailedSupport": "Receipt on the way — we're resolving it",
         "viewDetail": "View invoice",
         "emailCopy": "Email me a copy",
-        "emailCopyAria": "Email a fresh copy of invoice {number} to your address on file"
+        "emailCopyAria": "Email a fresh copy of invoice {number} to your address on file",
+        "moreActions": "More actions for {number}"
       },
       "receiptStatus": {
         "generating": "Your tax receipt is being generated",
