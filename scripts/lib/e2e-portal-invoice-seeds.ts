@@ -19,6 +19,8 @@
  * re-creating the row (`scripts/lib/e2e-issued-fixture-reset.ts`).
  */
 import type { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
+import type { MemberIdentitySnapshot } from '@/modules/invoicing/domain/value-objects/member-identity-snapshot';
+import type { TenantIdentitySnapshot } from '@/modules/invoicing/domain/value-objects/tenant-identity-snapshot';
 
 type InvoiceInsert = typeof invoices.$inferInsert;
 
@@ -76,23 +78,37 @@ export const E2E_SEED_PAYMENT_DATE = '2026-04-18';
  */
 export const E2E_PAID_TEMPLATE_VERSION = 12;
 
+/**
+ * The seller as `issueInvoice` freezes it from `tenant_invoice_settings`. Every
+ * later document on a fixture (the receipt at payment, a credit note, a void)
+ * re-renders from this STORED snapshot, and the column is untyped jsonb — so
+ * `satisfies` is the only shape check. The PDFs the seed renders use the same
+ * object, so what is stored is what was rendered.
+ */
 export const E2E_TENANT_SNAPSHOT = {
-  legal_name_en: 'Thai-Swedish Chamber of Commerce',
   legal_name_th: 'หอการค้าไทย-สวีเดน',
+  legal_name_en: 'Thai-Swedish Chamber of Commerce',
   tax_id: '0000000000000',
-  address: 'Bangkok',
-};
+  address_th: 'กรุงเทพมหานคร',
+  address_en: 'Bangkok',
+  logo_blob_key: null,
+  seller_is_head_office: true,
+  seller_branch_code: null,
+} satisfies TenantIdentitySnapshot;
 
+/** The buyer, stored and rendered alike (see E2E_TENANT_SNAPSHOT). */
 export const E2E_MEMBER_SNAPSHOT = {
-  company_name: 'E2E Alpha Co',
   // 0045 `invoices_snapshot_has_contact_email` — non-draft snapshots must
   // carry string `legal_name` + `address` + the primary contact.
-  legal_name: 'E2E Alpha Co',
-  tax_id: null,
-  address: 'Bangkok (E2E fixture)',
-  primary_contact_email: 'e2e-member@swecham.test',
+  legal_name: 'E2E Alpha Co., Ltd.',
+  tax_id: '1234567890123',
+  address: '99/1 E2E Road, Bangkok',
   primary_contact_name: 'E2E Alpha',
-};
+  primary_contact_email: 'e2e-member@swecham.test',
+  // 055-member-number — both null = no Member No. line on the PDF.
+  member_number: null,
+  member_number_display: null,
+} satisfies MemberIdentitySnapshot;
 
 /** The §86/4 RC receipt number minted for a paid fixture (RC-2026-900001 …). */
 export function receiptNumberFor(seed: E2ePortalInvoiceSeed): string {
@@ -194,12 +210,17 @@ export function buildE2ePortalInvoiceRow(input: BuildE2ePortalInvoiceRowInput): 
 }
 
 /**
- * A fixture still in the legacy pre-088 shape (§87 number, no bill number) —
- * paid or issued, the seed replaces it with the 088 shape.
+ * A fixture the seed must replace: still in the legacy pre-088 shape (§87
+ * number, no bill number), or an 088 bill carrying the old `{ address }` tenant
+ * snapshot, which no later render can read. A snapshot is immutable once
+ * issued, so replacing the row is the only fix.
  */
-export function isLegacyFixtureRow(row: {
+export function fixtureNeedsReseed(row: {
   readonly documentNumber: string | null;
   readonly billDocumentNumberRaw: string | null;
+  readonly tenantIdentitySnapshot: unknown;
 }): boolean {
-  return row.documentNumber !== null && row.billDocumentNumberRaw === null;
+  if (row.documentNumber !== null && row.billDocumentNumberRaw === null) return true;
+  const snapshot = row.tenantIdentitySnapshot as Record<string, unknown> | null;
+  return typeof snapshot?.address_th !== 'string' || typeof snapshot?.address_en !== 'string';
 }

@@ -22,9 +22,10 @@
  *   - Upserts both member rows + their primary contacts.
  *   - Re-creates the 3 invoices if missing, or leaves them alone
  *     if already present (looked up by document or bill number). A
- *     paid fixture still in the legacy pre-088 combined-mode shape
- *     (§87 number, no bill number) is deleted with its payments /
- *     refunds / credit notes and re-seeded as an 088 paid bill.
+ *     fixture still in the legacy pre-088 combined-mode shape (§87
+ *     number, no bill number), or one carrying the old `{ address }`
+ *     tenant snapshot, is deleted with its payments / refunds / credit
+ *     notes and re-seeded (`fixtureNeedsReseed`).
  *
  * Running against a non-swecham tenant is refused (guards the
  * accidental prod-tenant-wipe pathway), and so is a DATABASE_URL the
@@ -69,8 +70,10 @@ import {
   E2E_SEED_FISCAL_YEAR,
   E2E_SEED_ISSUE_DATE,
   E2E_SEED_PAYMENT_DATE,
+  E2E_MEMBER_SNAPSHOT,
+  E2E_TENANT_SNAPSHOT,
   buildE2ePortalInvoiceRow,
-  isLegacyFixtureRow,
+  fixtureNeedsReseed,
   mainPdfBlobKey,
   receiptPdfBlobKey,
   splitVat,
@@ -106,7 +109,7 @@ function requireSwechamTenant(): TenantContext {
 }
 
 /**
- * The seed deletes legacy-shape fixture rows (and their payments / credit
+ * The seed deletes stale fixture rows (and their payments / credit
  * notes) and mints `@swecham.test` users, so refuse a target that cannot be
  * ruled out as production — the shared dev-seeder guard.
  */
@@ -347,24 +350,9 @@ async function renderFixturePdfs(
   const { subtotalSatang, vatSatang } = splitVat(seed.totalSatang);
   const common = {
     dueDate: E2E_SEED_DUE_DATE,
-    tenant: {
-      legal_name_th: 'หอการค้าไทย-สวีเดน',
-      legal_name_en: 'Thai-Swedish Chamber of Commerce',
-      tax_id: '0000000000000',
-      address_th: 'กรุงเทพมหานคร',
-      address_en: 'Bangkok',
-      logo_blob_key: null,
-    },
-    member: {
-      legal_name: 'E2E Alpha Co., Ltd.',
-      tax_id: '1234567890123',
-      address: '99/1 E2E Road, Bangkok',
-      primary_contact_name: 'E2E Alpha',
-      primary_contact_email: 'e2e-member@swecham.test',
-      // 055-member-number — both null = no Member No. line on the PDF.
-      member_number: null,
-      member_number_display: null,
-    },
+    // the stored snapshots themselves, so the row renders what it stores
+    tenant: E2E_TENANT_SNAPSHOT,
+    member: E2E_MEMBER_SNAPSHOT,
     lines: [
       {
         lineId: asInvoiceLineId(randomUUID()),
@@ -412,13 +400,13 @@ async function renderFixturePdfs(
 }
 
 /**
- * Delete a fixture still in the legacy pre-088 shape, with its children in FK
+ * Delete a fixture the seed must replace (`fixtureNeedsReseed`), with its children in FK
  * order (the same order `scripts/lib/e2e-issued-fixture-reset.ts` uses):
  * break the refunds ↔ credit_notes cycle, then refunds, credit notes, payments,
  * and the invoice (its lines cascade). A renewal cycle pointing at a fixture is
  * not ours to unlink, so that refuses instead.
  */
-async function deleteLegacyFixture(
+async function deleteStaleFixture(
   tx: Parameters<Parameters<typeof runInTenant>[1]>[0],
   ctx: TenantContext,
   invoiceId: string,
@@ -449,14 +437,14 @@ async function deleteLegacyFixture(
   await tx.execute(
     sql`DELETE FROM invoices WHERE tenant_id = ${ctx.slug} AND invoice_id = ${invoiceId}`,
   );
-  console.log(`  removed legacy-shape ${number} (${invoiceId}) — re-seeding it as an 088 bill`);
+  console.log(`  removed stale ${number} (${invoiceId}) — re-seeding it`);
 }
 
 /**
  * Seed the e2e member's 3 invoices (`E2E_PORTAL_INVOICE_SEEDS`): two 088 paid
  * bills with rendered receipts and one issued invoice. Idempotent: a fixture
- * already in the right shape is left alone; a paid fixture still in the legacy
- * pre-088 shape is replaced.
+ * already in the right shape is left alone; a stale one (`fixtureNeedsReseed`)
+ * is replaced.
  */
 async function seedInvoicesIfMissing(
   ctx: TenantContext,
@@ -471,6 +459,7 @@ async function seedInvoicesIfMissing(
           status: invoices.status,
           documentNumber: invoices.documentNumber,
           billDocumentNumberRaw: invoices.billDocumentNumberRaw,
+          tenantIdentitySnapshot: invoices.tenantIdentitySnapshot,
         })
         .from(invoices)
         .where(
@@ -484,8 +473,8 @@ async function seedInvoicesIfMissing(
         )
         .limit(1);
       const found = existing[0];
-      if (found && isLegacyFixtureRow(found)) {
-        await deleteLegacyFixture(tx, ctx, found.invoiceId, s.number);
+      if (found && fixtureNeedsReseed(found)) {
+        await deleteStaleFixture(tx, ctx, found.invoiceId, s.number);
       } else if (found) {
         console.log(`  invoice ${s.number} already present — invoice_id=${found.invoiceId}`);
         continue;
