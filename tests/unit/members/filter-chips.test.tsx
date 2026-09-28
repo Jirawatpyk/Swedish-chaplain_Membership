@@ -106,4 +106,20 @@ describe('active-filter chips', () => {
     const url = nav.replaceMock.mock.calls[0]?.[0] as string;
     expect(url).not.toContain('plan_year=');
   });
+
+  // 122 US5a (T503) — the bar is AURA FilterBar: the chips are AURA tags in
+  // its chips row, the clear-all reads "Clear filters" (the board), and each
+  // chip's × is named "Remove <chip>".
+  it('renders the filters as an AURA FilterBar with tag chips', () => {
+    const { container } = renderFilters('status=active&risk_band=at-risk');
+    const bar = container.querySelector('.aura-filterbar');
+    expect(bar).not.toBeNull();
+    const chips = Array.from(bar!.querySelectorAll('.aura-filterbar__chips .aura-tag')).map(
+      (el) => el.textContent,
+    );
+    expect(chips).toEqual(['Status: Active', 'Risk: At-risk']);
+    expect(
+      screen.getByRole('button', { name: messages.admin.members.directory.clearFilters }),
+    ).toBeInTheDocument();
+  });
 });
