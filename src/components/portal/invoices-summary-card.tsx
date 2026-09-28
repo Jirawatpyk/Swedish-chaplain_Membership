@@ -255,10 +255,8 @@ export function InvoicesSummaryView({
                 </div>
                 {vm.showInvoice || vm.showReceipt ? (
                   <div className="flex shrink-0 items-center gap-1">
-                    {/* Invoice/bill PDF — hidden in combined-mode paid (the
-                        stale pre-payment draft is not a legal doc; the combined
-                        receipt is), matching the detail page's `showInvoicePdf`.
-                        Icon buttons, as the board draws them; the name is the
+                    {/* Invoice/bill PDF, whenever the row has one — matching the
+                        detail page's `showInvoicePdf`. Icon buttons, as the board draws them; the name is the
                         full "Download … PDF for {number}". */}
                     {vm.showInvoice ? (
                       <PortalInvoiceDownloadButton
@@ -289,17 +287,8 @@ export function InvoicesSummaryView({
                         invoiceId={r.invoiceId}
                         documentNumber={receiptRef}
                         iconOnly
-                        label={
-                          vm.isCombinedPaid
-                            ? t('actions.downloadCombined')
-                            : t('actions.downloadReceipt')
-                        }
-                        ariaLabel={t(
-                          vm.isCombinedPaid
-                            ? 'actions.downloadCombinedAria'
-                            : 'actions.downloadReceiptAria',
-                          { number: receiptRef },
-                        )}
+                        label={t('actions.downloadReceipt')}
+                        ariaLabel={t('actions.downloadReceiptAria', { number: receiptRef })}
                         className="aura-icon-btn"
                       />
                     ) : null}

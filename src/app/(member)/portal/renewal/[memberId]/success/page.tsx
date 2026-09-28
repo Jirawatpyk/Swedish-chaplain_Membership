@@ -33,10 +33,7 @@ import {
   PortalInvoiceDownloadButton,
   PortalReceiptDownloadButton,
 } from '@/app/(member)/portal/invoices/_components/portal-pdf-download-button';
-import {
-  isStaleCombinedBill,
-  resolveMainPdfKind,
-} from '@/app/(member)/portal/invoices/_utils/invoice-row-view-model';
+import { resolveMainPdfKind } from '@/app/(member)/portal/invoices/_utils/invoice-row-view-model';
 import { formatDatePreset } from '@/lib/format-date-localised';
 
 export default async function RenewalSuccessPage({
@@ -274,11 +271,6 @@ export default async function RenewalSuccessPage({
             // Paid but receipt PDF still rendering — give the member
             // the invoice (immediately available) + an explicit "your
             // receipt is being prepared" affordance.
-            // PR #456 follow-up — EXCEPT a legacy combined-mode invoice: its
-            // issue-time PDF is superseded at payment (the combined receipt
-            // reuses its §87 number), so only the preparing status shows
-            // (shared `isStaleCombinedBill`, lockstep with the portal list +
-            // detail). An 088 bill never matches → its SC bill stays (FR-015).
             // 088 T069 — an 088 ใบแจ้งหนี้ (bill) carries its number in
             // `billDocumentNumberRaw`, NOT `documentNumber` (NULL for a bill);
             // fall back to it before the UUID so the invoice download filename
@@ -289,19 +281,17 @@ export default async function RenewalSuccessPage({
             const isBill = resolveMainPdfKind(invoice) === 'bill';
             return (
               <>
-                {!isStaleCombinedBill(invoice) && (
-                  <PortalInvoiceDownloadButton
-                    invoiceId={invoiceId}
-                    documentNumber={docNum}
-                    label={t(isBill ? 'downloadBill' : 'downloadInvoice')}
-                    ariaLabel={tInvoiceActions(
-                      isBill ? 'downloadBillAria' : 'downloadInvoiceAria',
-                      { number: docNum },
-                    )}
-                    data-testid="invoice-download-link"
-                    className={sharedClassName}
-                  />
-                )}
+                <PortalInvoiceDownloadButton
+                  invoiceId={invoiceId}
+                  documentNumber={docNum}
+                  label={t(isBill ? 'downloadBill' : 'downloadInvoice')}
+                  ariaLabel={tInvoiceActions(
+                    isBill ? 'downloadBillAria' : 'downloadInvoiceAria',
+                    { number: docNum },
+                  )}
+                  data-testid="invoice-download-link"
+                  className={sharedClassName}
+                />
                 <span
                   role="status"
                   aria-live="polite"
@@ -319,10 +309,7 @@ export default async function RenewalSuccessPage({
           // (previous code used `t('downloadReceipt')` label — a real
           // user-confusion bug: members saw "Download receipt PDF" but
           // got an invoice).
-          // PR #456 follow-up — a stale combined-mode bill (e.g. a credited
-          // row whose receipt blob is missing) is never re-offered; it falls
-          // through to the "View all invoices" link below instead.
-          if (invoice && !isStaleCombinedBill(invoice)) {
+          if (invoice) {
             // 088 T069 — bill number lives in `billDocumentNumberRaw` (the
             // ใบแจ้งหนี้ has NULL `documentNumber` in the new flow).
             const docNum = billFirstDocumentNumber(invoice) ?? invoiceId;

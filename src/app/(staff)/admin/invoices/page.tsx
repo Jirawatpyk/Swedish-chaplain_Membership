@@ -689,16 +689,6 @@ export default async function AdminInvoicesPage({
         // a "preparing…" affordance for paid + pending/null/failed
         // (mirrors portal list page receipt-pending pattern).
         receiptPdfStatus: r.receiptPdfStatus,
-        // PR #456 follow-up — combined-mode paid: the issue-time PDF is a stale
-        // draft from PAYMENT (the combined receipt reuses its §87 number), so
-        // the table hides the Invoice download even while the receipt renders.
-        // Same rule as the admin detail `isPaidCombined` and the portal
-        // `isStaleCombinedBill`; as-paid rows ('receipt_combined' main pdf) are
-        // excluded — their main pdf IS the final document.
-        staleCombinedBill:
-          invoiceStatusHasReceipt(r.status) &&
-          r.receiptDocumentNumberRaw === null &&
-          r.pdfDocKind !== 'receipt_combined',
         // 064 remediation S7 — the main pdf IS a §105 receipt (β as-paid
         // no-TIN / legacy issued no-TIN event rows): the table flips the
         // main download to the Receipt label + aria.

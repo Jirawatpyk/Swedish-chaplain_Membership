@@ -261,14 +261,10 @@ describe('InvoiceMoreMenu — paid 088 bill: bill actions name the SC, receipt a
 });
 
 describe('InvoiceMoreMenu — pre-064 matrix pinned (regression net)', () => {
-  it('bill-first combined-mode paid: receipt item carries the combined label, main download hidden', () => {
-    // combinedModeReceipt is derived inside the menu from
-    // (showDownloadReceipt && !showDownload).
+  it('a receipt item on its own keeps the plain receipt label (combined-mode wording retired)', () => {
     render(<InvoiceMoreMenu {...BASE} showDownloadReceipt />);
     expect(screen.queryByTestId('download-invoice-trigger')).toBeNull();
-    expect(labelOf('download-receipt-trigger')).toBe(
-      'actions.downloadCombined',
-    );
+    expect(labelOf('download-receipt-trigger')).toBe('actions.downloadReceipt');
   });
 
   it('separate-mode paid: BOTH downloads with their own plain labels', () => {

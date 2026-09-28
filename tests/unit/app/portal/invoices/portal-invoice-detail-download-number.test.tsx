@@ -160,18 +160,10 @@ vi.mock('@/app/(member)/portal/invoices/_utils/format', async (importOriginal) =
     formatLineQuantity: actual.formatLineQuantity,
   };
 });
-vi.mock('@/app/(member)/portal/invoices/_utils/invoice-row-view-model', async (importOriginal) => {
-  // `isStaleCombinedBill` runs for real (pure; the barrel it imports is mocked
-  // above) so this suite exercises the SAME stale-combined-bill predicate the
-  // list view-model uses.
-  const actual =
-    await importOriginal<typeof import('@/app/(member)/portal/invoices/_utils/invoice-row-view-model')>();
-  return {
-    downloadLabelKeys: () => ({ labelKey: 'actions.downloadInvoice', ariaKey: 'actions.downloadInvoiceAria' }),
-    resolveMainPdfKind: () => mainPdfKind,
-    isStaleCombinedBill: actual.isStaleCombinedBill,
-  };
-});
+vi.mock('@/app/(member)/portal/invoices/_utils/invoice-row-view-model', () => ({
+  downloadLabelKeys: () => ({ labelKey: 'actions.downloadInvoice', ariaKey: 'actions.downloadInvoiceAria' }),
+  resolveMainPdfKind: () => mainPdfKind,
+}));
 vi.mock('@/app/(member)/portal/invoices/_utils/legacy-no-tin', () => ({
   isLegacyNoTinEventInvoice: () => false,
 }));
@@ -291,10 +283,9 @@ function paidSeparateInvoice() {
 }
 
 /**
- * A LEGACY combined-mode invoice, PAID, whose combined receipt is still
- * rendering: §87 number in `documentNumber`, NO RC (the combined receipt reuses
- * the invoice number), `receiptPdfStatus 'pending'`. Mirrors the e2e seed rows
- * SC-2026-900001/2.
+ * A PAID invoice with a §87 number and NO RC, receipt still rendering — the
+ * retired pre-088 combined-mode shape (0 rows in prod; the 088 flag is
+ * permanently on). No longer special-cased.
  */
 function paidCombinedPendingLegacyInvoice() {
   return {
@@ -659,18 +650,14 @@ describe('PortalInvoiceDetailPage — Pay-now gated on a positive total (#443 re
   });
 });
 
-// Local review on dev data (spec 122 US4): the detail page and the list
-// disagreed on a PAID invoice whose receipt PDF is still rendering. The rule
-// both surfaces now share (`isStaleCombinedBill`): a LEGACY combined-mode
-// invoice's issue-time PDF is superseded once paid (the combined receipt reuses
-// its §87 number), so it is never re-offered — not even while the receipt
-// renders. An 088 bill is never combined (its RC is minted at payment), so its
-// SC bill stays downloadable throughout (088 FR-015).
+// A paid invoice keeps its main PDF while the receipt renders — the SC bill on
+// an 088 bill (FR-015), and no special case for the retired combined-mode shape
+// (matches the list view-model's `showInvoice`).
 describe('PortalInvoiceDetailPage — paid invoice whose receipt PDF is still rendering', () => {
-  it('legacy combined-mode + pending → no stale invoice download and no receipt download yet', async () => {
+  it('paid with no RC + pending → the main PDF download stays, no receipt download yet', async () => {
     getInvoiceMock.mockResolvedValue({ ok: true, value: paidCombinedPendingLegacyInvoice() });
     const html = await renderPage();
-    expect(html).not.toContain('data-testid="portal-download-invoice-marker"');
+    expect(html).toContain('data-testid="portal-download-invoice-marker"');
     expect(html).not.toContain('data-testid="portal-download-receipt-marker"');
   });
 

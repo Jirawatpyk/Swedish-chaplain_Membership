@@ -14,8 +14,8 @@
  * is deterministic and unit-testable at boundaries. Mirrors how
  * `page.tsx` derives `displayStatus` via `computeIsOverdue(r, nowUtcIso)`.
  *
- * Flag provenance: `isCombinedPaid` / `showInvoice` / `showReceipt` /
- * `resendable` were extracted VERBATIM from the D3 inline expressions that
+ * Flag provenance: `showInvoice` / `showReceipt` / `resendable` were
+ * extracted VERBATIM from the D3 inline expressions that
  * previously lived in `page.tsx`'s `<TableBody>` row map. `receiptPending`
  * was deliberately NARROWED to `receiptPdfStatus === 'pending'` ONLY and a
  * new `receiptFailed` (`=== 'failed'`) flag was added by the S1 review fix
@@ -112,19 +112,6 @@ export interface InvoiceRowViewModel {
   readonly dueDate: string | null;
   readonly total: Money | null;
   /**
-   * Combined-mode paid invoice (bill-first): the issue-time invoice PDF is
-   * a stale pre-payment draft and the SEPARATE receipt blob (rendered at
-   * record-payment, reusing the invoice number) is the combined legal
-   * document. When true the table/card hides the (stale) invoice anchor and
-   * shows only the combined Receipt download. 092 — the status gate is the
-   * receipt-bearing set (paid / partially_credited / credited), not `paid`
-   * alone, so a §86/10 credit note does not un-hide the stale bill. 064 —
-   * excludes as-paid rows
-   * (`mainPdfKind 'combined'`): their MAIN pdf already IS the final combined
-   * doc, so hiding it would remove the row's only download.
-   */
-  readonly isCombinedPaid: boolean;
-  /**
    * 064 — what the MAIN pdf actually is (the 064-remediation S3
    * generalisation of the former `mainPdfIsFinalCombined` boolean):
    *
@@ -145,11 +132,10 @@ export interface InvoiceRowViewModel {
    */
   readonly mainPdfKind: MainPdfKind;
   /**
-   * Show the invoice-PDF download: the PDF exists and it is not a stale
-   * combined-mode bill ({@link isStaleCombinedBill}). Deliberately NOT gated
-   * on the receipt's render state — a paid combined-mode invoice's issue-time
-   * PDF is superseded the moment it is paid, so it stays hidden while the
-   * receipt is `pending` / `failed` too (lockstep with the detail page).
+   * Show the main-PDF download whenever the PDF exists. The retired pre-088
+   * combined-mode rule (hide the issue-time PDF of a paid invoice with no RC)
+   * is gone: prod has no such rows (query 2026-09-28: 0 of 99) and the 088
+   * flag is permanently on, so every paid bill keeps its SC bill (FR-015).
    */
   readonly showInvoice: boolean;
   /**
@@ -177,9 +163,8 @@ export interface InvoiceRowViewModel {
    * (`receiptPdfStatus === 'failed'`). Surfaces a static, non-busy
    * "Receipt unavailable" affordance (no spinner, no `aria-busy`) — the
    * terminal counterpart to `receiptPending`. The member can still
-   * download the Invoice PDF when `showInvoice` is true (a separate-mode /
-   * 088 bill — never a stale combined-mode bill), and clicking a receipt
-   * action surfaces the existing 502 toast.
+   * download the Invoice PDF when `showInvoice` is true, and clicking a
+   * receipt action surfaces the existing 502 toast.
    */
   readonly receiptFailed: boolean;
   /** Resend the invoice email (not void + invoice PDF exists). */
@@ -253,34 +238,6 @@ export function resolveMainPdfKind(
 }
 
 /**
- * Combined-mode paid invoice whose MAIN pdf is the issue-time pre-payment
- * document: the combined §86/4 + §105ทวิ receipt reuses the invoice's §87
- * number (so `receiptDocumentNumberRaw` stays NULL), which makes it the sole
- * legal document once paid and the issue-time PDF a stale draft that must not
- * be re-offered (`record-payment.ts` "stale draft" rule; admin detail
- * `isPaidCombined`). Independent of the receipt's render state: the bill is
- * superseded at payment, not at render.
- *
- * Only legacy rows can match — an 088 bill always has its RC minted at payment
- * (non-NULL `receiptDocumentNumberRaw`), so its SC bill stays downloadable
- * after payment (088 FR-015). As-paid rows (`mainPdfKind 'combined'`) are
- * excluded: their main pdf already IS the final document. 092 — gated on the
- * receipt-bearing status set so a §86/10 credit note does not un-hide it.
- *
- * Shared by the list view-model and the detail page so the two surfaces can
- * never disagree on whether the bill download is offered.
- */
-export function isStaleCombinedBill(
-  row: Pick<Invoice, 'status' | 'receiptDocumentNumberRaw' | 'pdfDocKind' | 'billDocumentNumberRaw'>,
-): boolean {
-  return (
-    invoiceStatusHasReceipt(row.status) &&
-    row.receiptDocumentNumberRaw === null &&
-    resolveMainPdfKind(row) !== 'combined'
-  );
-}
-
-/**
  * Wave-4 S17 — i18n key pair (in the `portal.invoices` list namespace) for
  * the MAIN pdf download button, keyed by what the main pdf actually IS.
  * Consumed by the desktop table, the mobile card AND the detail page so the
@@ -325,12 +282,11 @@ export function downloadLabelKeys(mainPdfKind: InvoiceRowViewModel['mainPdfKind'
  * `new Date()` here) so overdue derivation stays deterministic and the
  * view-model is testable at boundaries.
  *
- * `isCombinedPaid` / `showInvoice` / `showReceipt` / `resendable` began as a
- * verbatim copy of the former D3 inline expressions in `page.tsx` (`showInvoice`
- * now reads `isStaleCombinedBill`, shared with the detail page);
- * `receiptPending` was narrowed and `receiptFailed` added by the S1 fix;
- * 064 made `isCombinedPaid` pdfDocKind-aware and gated `showReceipt` on the
- * receipt blob's presence; the 064 remediation generalised the former
+ * `showInvoice` / `showReceipt` / `resendable` began as a verbatim copy of the
+ * former D3 inline expressions in `page.tsx` (`showInvoice` has since dropped
+ * the retired combined-mode hiding); `receiptPending` was narrowed and
+ * `receiptFailed` added by the S1 fix; 064 gated `showReceipt` on the receipt
+ * blob's presence; the 064 remediation generalised the former
  * `mainPdfIsFinalCombined` boolean into `mainPdfKind` (β receipt_separate
  * rows now get receipt labelling too) and added `displayNumber` — see the
  * per-flag comments below for each flag's exact condition and provenance.
@@ -356,22 +312,9 @@ export function toInvoiceRowViewModel(
   // document (issued straight to paid; receipt blob columns stay NULL,
   // receiptPdfStatus lands 'rendered'): 'receipt_combined' for TIN buyers,
   // 'receipt_separate' (a bare §105 receipt) for the no-TIN β stream.
-  // Pre-064-fix the combined rows matched `isCombinedPaid` (hiding the main
-  // download) while `showReceipt` pointed at the NULL receipt blob (502
-  // blob_missing) — the member's only affordance was a broken button.
   const mainPdfKind = resolveMainPdfKind(row);
 
-  // Combined-mode paid (bill-first): the issue-time PDF is a stale draft once
-  // paid (see `isStaleCombinedBill` — 092 receipt-bearing status set, as-paid
-  // rows excluded). It is hidden from the moment of payment, while the receipt
-  // is still `pending` / `failed` too — lockstep with the detail page.
-  const staleCombinedBill = isStaleCombinedBill(row);
-  const showInvoice = row.pdf !== null && !staleCombinedBill;
-
-  // …and the combined receipt has finished rendering: drives the combined
-  // receipt-number hint + the combined download label, which must not appear
-  // before the combined document exists (060-member-portal-d4 F3).
-  const isCombinedPaid = staleCombinedBill && row.receiptPdfStatus === 'rendered';
+  const showInvoice = row.pdf !== null;
 
   // Gate the receipt action on the artifact it serves: the receipt BLOB.
   // (064 — 'rendered' alone is not enough; see the mainPdfKind note above.)
@@ -435,7 +378,6 @@ export function toInvoiceRowViewModel(
     issueDate: row.issueDate,
     dueDate: row.dueDate,
     total: row.total,
-    isCombinedPaid,
     mainPdfKind,
     showInvoice,
     showReceipt,
