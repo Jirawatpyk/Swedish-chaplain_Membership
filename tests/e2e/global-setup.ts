@@ -100,7 +100,21 @@ async function resetF5IssuedInvoice(): Promise<void> {
     await sql`DELETE FROM refunds WHERE payment_id IN (SELECT id FROM payments WHERE invoice_id = ${id})`;
     await sql`DELETE FROM credit_notes WHERE original_invoice_id = ${id}`;
     await sql`DELETE FROM payments WHERE invoice_id = ${id}`;
-    await sql`UPDATE invoices SET status='issued', credited_total_satang=0, paid_at=NULL, payment_method=NULL, payment_date=NULL, payment_reference=NULL, updated_at=NOW() WHERE invoice_id=${id}`;
+    const reset = await sql`UPDATE invoices SET status='issued', credited_total_satang=0, paid_at=NULL, payment_method=NULL, payment_date=NULL, payment_reference=NULL, updated_at=NOW() WHERE invoice_id=${id} RETURNING invoice_id`;
+    // A dev-branch re-seed or cleanup can remove the fixture row. The UPDATE
+    // then matched nothing, this still logged "reset", and every pay*/payment*
+    // spec timed out on the portal's not-found page with no hint why (R12,
+    // 2026-09-28: 37 failures on both refs). Same silent miss as #434 fixed in
+    // scripts/reset-e2e-issued-invoice.ts. The caller logs this and carries on.
+    if (reset.length === 0) {
+      throw new Error(
+        `fixture invoice ${id} not found — run ` +
+          '`TENANT_SLUG=swecham node --env-file=.env.local --import tsx scripts/seed-e2e-portal-invoices.ts` ' +
+          '(it re-creates SC-2026-900003 as 00000000-e2e0-4fff-9ffe-000000900003; point E2E_ISSUED_INVOICE_ID there), ' +
+          'then `pnpm seed:f5-e2e:reconciliation` ' +
+          'and update E2E_PAID_ONLINE_INVOICE_ID to the id it prints',
+      );
+    }
     console.log(`[e2e global setup] reset F5 issued-invoice fixture ${id}`);
   } finally {
     await sql.end({ timeout: 5 });
