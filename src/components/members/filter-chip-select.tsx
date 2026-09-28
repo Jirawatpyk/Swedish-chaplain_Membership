@@ -8,7 +8,8 @@
  * A native `<select>` lies transparent over the face and does the work: its
  * accessible name is the filter's name, keyboard and screen-reader behaviour
  * are the platform's, and a phone opens its own picker. The face is
- * `aria-hidden` decoration; the focus ring follows the select.
+ * `aria-hidden` decoration; the focus ring follows the select. A little
+ * less side padding on a phone keeps the three on one row down to 375px.
  */
 import { ChevronDownIcon } from 'lucide-react';
 
@@ -47,7 +48,7 @@ export function FilterChipSelect({
       <span
         data-filter-face=""
         aria-hidden="true"
-        className="pointer-events-none flex min-w-0 flex-1 items-center gap-1.5 whitespace-nowrap pr-3 pl-3.5"
+        className="pointer-events-none flex min-w-0 flex-1 items-center gap-1.5 whitespace-nowrap pr-3 pl-3.5 max-sm:pr-2.5 max-sm:pl-3"
       >
         <span className="text-[var(--aura-fg-secondary)]">{label}</span>
         <span className="min-w-0 truncate font-medium">{current}</span>

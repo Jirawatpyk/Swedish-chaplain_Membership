@@ -236,9 +236,10 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
           ref={barRef}
           // As on the `Admin-members` boards: from 1024px the search fills the
           // row beside the filters; below it the search takes its own row and
-          // the filters share the next; on a phone the three filters split one
-          // row in thirds and the needs-invite chip starts the next.
-          className="[&_.aura-filterbar\_\_search]:max-w-none max-lg:[&_.aura-filterbar\_\_search]:basis-full max-sm:[&_.aura-filterbar\_\_controls]:grid max-sm:[&_.aura-filterbar\_\_controls]:w-full max-sm:[&_.aura-filterbar\_\_controls]:grid-cols-3 max-sm:[&_.aura-filterbar\_\_controls]:gap-2"
+          // the filters share the next; on a phone the three filters share one
+          // row (6px apart, each as wide as its words) and the needs-invite
+          // chip wraps to the next.
+          className="[&_.aura-filterbar\_\_search]:max-w-none max-lg:[&_.aura-filterbar\_\_search]:basis-full max-sm:[&_.aura-filterbar\_\_controls]:w-full max-sm:[&_.aura-filterbar\_\_controls]:gap-1.5"
           search={isSearchFocused ? sentQ : currentQ}
           onSearchChange={onSearchChange}
           searchDelay={DEBOUNCE_MS}
@@ -288,7 +289,6 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
 
           {showChip && (
             <Tag
-              className="max-sm:col-span-3 max-sm:justify-self-start"
               icon={<MailWarningIcon aria-hidden="true" />}
               selected={portalActive}
               onClick={onPortalToggle}
@@ -318,7 +318,7 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
               control, one name), so when it is the ONLY filter applied the
               bar's own "Clear filters" (chips row) is absent: offer it here. */}
           {portalActive && activeChips.length === 0 && (
-            <Button className="max-sm:col-span-3 max-sm:justify-self-start" variant="ghost" size="sm" icon="x" onClick={clearAll}>
+            <Button variant="ghost" size="sm" icon="x" onClick={clearAll}>
               {t('clearFilters')}
             </Button>
           )}
