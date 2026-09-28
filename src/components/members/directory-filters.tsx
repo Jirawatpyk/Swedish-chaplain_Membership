@@ -5,21 +5,23 @@
  *
  * URL is the source of truth (bookmarkable). Filters:
  *   - Search (q): debounced 300ms text input
- *   - Status: Select dropdown (All / Active / Inactive / Archived)
- *   - Plan: Select dropdown (All plans / dynamic list from F2)
- *   - Risk band: Select dropdown
+ *   - Status: select (All / Active / Inactive / Archived)
+ *   - Plan: select (All plans / dynamic list from F2)
+ *   - Risk band: select
  *   - Needs portal invite: toggle chip with the count
  *   - Clear filters: resets all filters + pagination
  *
  * 122 US5a (T503) — AURA `FilterBar` (board `Admin-members`): the search and
  * the selects in one bar, the applied filters as removable tags below it with
- * "Clear filters". The URL contract is unchanged.
+ * "Clear filters". The URL contract is unchanged. Each select is the board's
+ * compact "Status All ▾" trigger (`FilterChipSelect`).
  */
 
 import { useCallback, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
-import { AuraProvider, Button, FilterBar, Select, Tag } from '@jirawatpyk/aura-react';
+import { AuraProvider, Button, FilterBar, Tag } from '@jirawatpyk/aura-react';
+import { FilterChipSelect } from './filter-chip-select';
 import { formatCalendarYear } from '@/lib/format-date-localised';
 import { MailWarningIcon } from 'lucide-react';
 
@@ -232,9 +234,11 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
         <FilterBar
           key={barKey}
           ref={barRef}
-          // Below 1024px the search takes its own row and the selects share the
-          // next one (board `Admin-members-tablet`); from 1024px one row.
-          className="max-lg:[&_.aura-filterbar\_\_search]:basis-full max-lg:[&_.aura-filterbar\_\_search]:max-w-none"
+          // As on the `Admin-members` boards: from 1024px the search fills the
+          // row beside the filters; below it the search takes its own row and
+          // the filters share the next; on a phone the three filters split one
+          // row in thirds and the needs-invite chip starts the next.
+          className="[&_.aura-filterbar\_\_search]:max-w-none max-lg:[&_.aura-filterbar\_\_search]:basis-full max-sm:[&_.aura-filterbar\_\_controls]:grid max-sm:[&_.aura-filterbar\_\_controls]:w-full max-sm:[&_.aura-filterbar\_\_controls]:grid-cols-3 max-sm:[&_.aura-filterbar\_\_controls]:gap-2"
           search={isSearchFocused ? sentQ : currentQ}
           onSearchChange={onSearchChange}
           searchDelay={DEBOUNCE_MS}
@@ -243,11 +247,11 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
           filters={activeChips}
           {...(hasAnyFilter ? { onClearAll: clearAll } : {})}
         >
-          <Select
-            aria-label={t('filters.status.label')}
-            className="sm:w-40"
+          <FilterChipSelect
+            label={t('filters.status.label')}
+            allLabel={t('filters.allShort')}
             value={currentStatus}
-            onChange={(e) => pushUrl({ status: e.target.value === 'all' ? null : e.target.value })}
+            onChange={(v) => pushUrl({ status: v === 'all' ? null : v })}
             options={[
               { value: 'all', label: t('filters.status.all') },
               ...STATUS_VALUES.map((s) => ({ value: s, label: t(`filters.status.${s}`) })),
@@ -255,17 +259,12 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
           />
 
           {plans.length > 0 && (
-            <Select
-              aria-label={t('filters.plan.label')}
-              className="sm:w-56"
+            <FilterChipSelect
+              label={t('filters.plan.label')}
+              allLabel={t('filters.allShort')}
               value={currentPlan}
               // A new plan pick drops a year that belonged to the previous plan.
-              onChange={(e) =>
-                pushUrl({
-                  plan_id: e.target.value === 'all' ? null : e.target.value,
-                  plan_year: null,
-                })
-              }
+              onChange={(v) => pushUrl({ plan_id: v === 'all' ? null : v, plan_year: null })}
               options={[
                 { value: 'all', label: t('filters.plan.all') },
                 ...plans.map((p) => ({ value: p.id, label: p.label })),
@@ -276,11 +275,11 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
           {/* I1 round-10 ui-design-specialist — quick filter on the
               F8-derived risk band, so renewal triage can scan "at-risk" and
               "critical" members in one click. */}
-          <Select
-            aria-label={t('filters.risk.label')}
-            className="sm:w-44"
+          <FilterChipSelect
+            label={t('filters.risk.label')}
+            allLabel={t('filters.allShort')}
             value={currentRisk}
-            onChange={(e) => pushUrl({ risk_band: e.target.value === 'all' ? null : e.target.value })}
+            onChange={(v) => pushUrl({ risk_band: v === 'all' ? null : v })}
             options={[
               { value: 'all', label: t('filters.risk.all') },
               ...RISK_BANDS.map((b) => ({ value: b, label: t(`filters.risk.${b}`) })),
@@ -289,6 +288,7 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
 
           {showChip && (
             <Tag
+              className="max-sm:col-span-3 max-sm:justify-self-start"
               icon={<MailWarningIcon aria-hidden="true" />}
               selected={portalActive}
               onClick={onPortalToggle}
@@ -318,7 +318,7 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
               control, one name), so when it is the ONLY filter applied the
               bar's own "Clear filters" (chips row) is absent: offer it here. */}
           {portalActive && activeChips.length === 0 && (
-            <Button variant="ghost" size="sm" icon="x" onClick={clearAll}>
+            <Button className="max-sm:col-span-3 max-sm:justify-self-start" variant="ghost" size="sm" icon="x" onClick={clearAll}>
               {t('clearFilters')}
             </Button>
           )}
