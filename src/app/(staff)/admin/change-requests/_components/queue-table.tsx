@@ -118,7 +118,13 @@ export async function ChangeRequestQueueTable({
               <Td className={AT.action} label="">
                 <Link
                   href={`/admin/change-requests/${r.id}`}
-                  className={buttonClass({ variant: 'secondary', size: 'sm' })}
+                  // Small in the table; the full-size button on a phone card,
+                  // as the mobile board draws it.
+                  className={buttonClass({
+                    variant: 'secondary',
+                    size: 'sm',
+                    className: '@max-[640px]/aura-tbl:h-11 @max-[640px]/aura-tbl:px-6 @max-[640px]/aura-tbl:text-[15px]',
+                  })}
                   aria-label={r.state === 'pending' ? t('reviewFor', { company: item.row.member.companyName }) : t('viewFor', { company: item.row.member.companyName })}
                   aria-describedby={`${rowId}-waiting`}
                 >
