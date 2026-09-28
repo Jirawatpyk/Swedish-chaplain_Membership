@@ -319,7 +319,7 @@ export default async function AuraAdminPreviewPage({
               )
             }
           />
-          <ChangeRequestQueueFilters resultCount={empty ? 0 : QUEUE.length} hasMore={false} />
+          <ChangeRequestQueueFilters resultCount={empty ? 0 : QUEUE.length} hasMore={false} timeZone="Asia/Bangkok" />
           {/* The page's own empty state (default filters), as the page renders it. */}
           {empty ? (
             <div data-testid="queue-empty">

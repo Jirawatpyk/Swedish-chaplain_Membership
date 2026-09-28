@@ -8,8 +8,8 @@
  * URL is patched on Apply — the `credit-note-filters` / member-page invoice
  * filter shape, so typing a date never churns the router. 122 US5a (T507):
  * AURA `Select`s and `DatePicker`s (board `Admin-change-requests`), each an
- * AURA field with its visible label; the dates take the tenant's day
- * (`Asia/Bangkok`) for "today".
+ * AURA field with its visible label; the dates take the tenant's timezone
+ * for "today" — the same one the page turns ?from/?to into day bounds with.
  *
  * The outcome control exists only while the STAGED state is `decided` — the
  * only state that has an outcome — and leaving `decided` resets the staged
@@ -92,9 +92,11 @@ export interface ChangeRequestQueueFiltersProps {
   readonly resultCount: number;
   /** A next page exists — the announcement says "the first N". */
   readonly hasMore: boolean;
+  /** The tenant's IANA timezone (`env.tenant.timezone`), for the date fields' "today". */
+  readonly timeZone: string;
 }
 
-export function ChangeRequestQueueFilters({ resultCount, hasMore }: ChangeRequestQueueFiltersProps) {
+export function ChangeRequestQueueFilters({ resultCount, hasMore, timeZone }: ChangeRequestQueueFiltersProps) {
   const tFilters = useTranslations('admin.changeRequests.filters');
   const tReview = useTranslations('admin.changeRequests.review');
   const router = useRouter();
@@ -251,13 +253,13 @@ export function ChangeRequestQueueFilters({ resultCount, hasMore }: ChangeReques
       ) : null}
       <DatePicker
         label={tFilters('from')}
-        timeZone="Asia/Bangkok"
+        timeZone={timeZone}
         value={from ? (from as ISODate) : null}
         onChange={(v) => setFrom(v ?? '')}
       />
       <DatePicker
         label={tFilters('to')}
-        timeZone="Asia/Bangkok"
+        timeZone={timeZone}
         value={to ? (to as ISODate) : null}
         onChange={(v) => setTo(v ?? '')}
       />

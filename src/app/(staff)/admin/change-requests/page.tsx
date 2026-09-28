@@ -241,7 +241,7 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
         </Alert>
       ) : null}
 
-      <ChangeRequestQueueFilters resultCount={page.items.length} hasMore={page.nextCursor !== null} />
+      <ChangeRequestQueueFilters resultCount={page.items.length} hasMore={page.nextCursor !== null} timeZone={env.tenant.timezone} />
       {q.memberId || q.submitter ? (
         <div className="space-y-1">
           {q.memberId ? (

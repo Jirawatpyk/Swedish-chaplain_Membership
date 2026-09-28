@@ -60,7 +60,7 @@ const SUBMITTER = '22222222-2222-4222-8222-222222222222';
 function bar(result: { resultCount: number; hasMore: boolean } = { resultCount: 2, hasMore: false }) {
   return (
     <NextIntlClientProvider locale="en" messages={enMessages}>
-      <ChangeRequestQueueFilters resultCount={result.resultCount} hasMore={result.hasMore} />
+      <ChangeRequestQueueFilters resultCount={result.resultCount} hasMore={result.hasMore} timeZone="Asia/Bangkok" />
     </NextIntlClientProvider>
   );
 }
