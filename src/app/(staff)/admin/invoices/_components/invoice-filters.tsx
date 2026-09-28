@@ -505,10 +505,15 @@ export function InvoiceFilters({
       </div>
     ) : null;
 
+  // Spec 122 US4 — below 1024px the search takes its own row and the filters
+  // share the next one evenly, so their edges line up with the search (AURA
+  // does the search row only below 768px, which left 768–1023px ragged). From
+  // 1024px it is AURA's one row: search, then the fixed-width filters.
   const bar = (children: React.ReactNode) => (
     <FilterBar
       key={searchResetKey}
       ref={barRef}
+      className="max-lg:[&_.aura-filterbar\_\_search]:basis-full max-lg:[&_.aura-filterbar\_\_search]:max-w-none max-lg:[&_.aura-filterbar\_\_controls]:basis-full max-lg:[&_.aura-filterbar\_\_controls>.aura-field]:flex-[1_1_8rem]"
       search={currentQ}
       // Untrimmed on purpose: the FilterBar compares the URL back against
       // what it sent, so a trimmed "Acme " would rewrite the box while the

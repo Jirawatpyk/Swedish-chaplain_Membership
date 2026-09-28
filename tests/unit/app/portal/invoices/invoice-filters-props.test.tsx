@@ -162,3 +162,23 @@ describe('<InvoiceFilters> — member portal config', () => {
     ).not.toBeInTheDocument();
   });
 });
+
+describe('<InvoiceFilters> — row layout (spec 122 US4)', () => {
+  beforeEach(() => {
+    searchParamsStub = new URLSearchParams();
+  });
+
+  it('below 1024px the search takes its own row and the filters share the next one evenly; from 1024px it is one row', () => {
+    renderFilters({ statusOptions: ['issued', 'paid'], showPaidOnlineChip: false });
+    const bar = document.querySelector('.aura-filterbar');
+    expect(bar).not.toBeNull();
+    for (const token of [
+      'max-lg:[&_.aura-filterbar\\_\\_search]:basis-full',
+      'max-lg:[&_.aura-filterbar\\_\\_search]:max-w-none',
+      'max-lg:[&_.aura-filterbar\\_\\_controls]:basis-full',
+      'max-lg:[&_.aura-filterbar\\_\\_controls>.aura-field]:flex-[1_1_8rem]',
+    ]) {
+      expect(bar!.className).toContain(token);
+    }
+  });
+});
