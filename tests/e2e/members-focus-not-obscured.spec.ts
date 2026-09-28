@@ -6,7 +6,7 @@
  * Walks the member directory table with keyboard-only navigation
  * while the sticky bulk-action toolbar is visible, and verifies that
  * the focused element's bounding box is not fully occluded by the
- * toolbar's bounding box (ADOPT-01 WCAG 2.2 SC 2.4.11).
+ * toolbar's bounding box, both measured after each Tab (ADOPT-01 WCAG 2.2 SC 2.4.11).
  *
  * The test:
  *   1. Signs in and navigates to /admin/members
@@ -65,11 +65,11 @@ test.describe('members focus-not-obscured by bulk toolbar @f3 @a11y', () => {
     const bulkBar = page.locator('.aura-actionbar');
     await expect(bulkBar).not.toHaveClass(/is-idle/, { timeout: 5_000 });
 
-    // Get the bulk bar's top edge (sticky to the bottom of the viewport)
-    const bulkBarBox = await bulkBar.boundingBox();
-    if (!bulkBarBox) return;
-    const bulkBarTop = bulkBarBox.y;
-
+    // The ActionBar is sticky, not fixed: it rides at the bottom of the
+    // viewport only while the list runs past it, then settles in the page flow
+    // above the pagination. Tabbing scrolls the page, so its box is measured
+    // after every Tab, never once up front (R15: a stale box read the
+    // pagination below the settled bar as covered).
     // Tab through a few elements and check none are fully behind the toolbar
     const MAX_TABS = 10;
     for (let i = 0; i < MAX_TABS; i++) {
@@ -87,6 +87,9 @@ test.describe('members focus-not-obscured by bulk toolbar @f3 @a11y', () => {
 
       if (!focusedBox) continue;
 
+      const bulkBarBox = await bulkBar.boundingBox();
+      if (!bulkBarBox) continue;
+      const bulkBarTop = bulkBarBox.y;
       const focusedBottom = focusedBox.y + focusedBox.height;
 
       // WCAG 2.2 SC 2.4.11: at least some part of the focused element must
