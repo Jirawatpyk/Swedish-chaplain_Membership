@@ -12,16 +12,18 @@
  * in `document_number`, no RC, receipt `pending` forever), which production no
  * longer has (prod query 2026-09-28: 0 of 99 receipt-bearing invoices).
  *
- * The ISSUED fixture SC-2026-900003 is deliberately unchanged: the pay-sheet
- * specs, `scripts/reset-e2e-issued-invoice.ts` and `tests/e2e/global-setup.ts`
- * look it up by `document_number`.
+ * The ISSUED pay-sheet fixture SC-2026-900003 is an unpaid 088 bill (SC number
+ * in `bill_document_number_raw`, no §87 number): with the flag on, paying a
+ * legacy §87-numbered invoice is refused (`legacy_invoice_needs_reissue`), so
+ * the pay specs need a real bill. Paying it mints a frozen RC, so it is reset by
+ * re-creating the row (`scripts/lib/e2e-issued-fixture-reset.ts`).
  */
 import type { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 
 type InvoiceInsert = typeof invoices.$inferInsert;
 
 export interface E2ePortalInvoiceSeed {
-  /** Printed number: the SC bill number (paid) / the §87 number (issued). */
+  /** The SC bill number (`bill_document_number_raw`). */
   readonly number: string;
   readonly status: 'paid' | 'issued';
   readonly totalSatang: bigint;
@@ -68,13 +70,11 @@ export const E2E_SEED_DUE_DATE = '2026-05-15';
 export const E2E_SEED_PAYMENT_DATE = '2026-04-18';
 
 /**
- * Template version the paid fixtures are rendered at. Mirrors
+ * Template version every fixture is rendered at. Mirrors
  * `CURRENT_TEMPLATE_VERSION` (template-registry.ts) at the time of writing; a
  * fixed value keeps the seeded bytes stable when the registry moves on.
  */
 export const E2E_PAID_TEMPLATE_VERSION = 12;
-/** The issued fixture keeps its original render (unchanged shape). */
-export const E2E_ISSUED_TEMPLATE_VERSION = 1;
 
 export const E2E_TENANT_SNAPSHOT = {
   legal_name_en: 'Thai-Swedish Chamber of Commerce',
@@ -99,23 +99,14 @@ export function receiptNumberFor(seed: E2ePortalInvoiceSeed): string {
   return seed.number.replace(/^SC-/, 'RC-');
 }
 
-function templateVersionFor(seed: E2ePortalInvoiceSeed): number {
-  return seed.status === 'paid' ? E2E_PAID_TEMPLATE_VERSION : E2E_ISSUED_TEMPLATE_VERSION;
-}
-
-/**
- * Main (bill) blob key. Paid fixtures use the production scheme
- * (`issue-invoice.ts`); the issued fixture keeps its original key.
- */
+/** Main (bill) blob key — the production scheme (`issue-invoice.ts`). */
 export function mainPdfBlobKey(tenantSlug: string, seed: E2ePortalInvoiceSeed): string {
-  return seed.status === 'paid'
-    ? `invoicing/${tenantSlug}/${E2E_SEED_FISCAL_YEAR}/${seed.invoiceId}_v${templateVersionFor(seed)}.pdf`
-    : `tenants/${tenantSlug}/invoices/${seed.invoiceId}/v1.pdf`;
+  return `invoicing/${tenantSlug}/${E2E_SEED_FISCAL_YEAR}/${seed.invoiceId}_v${E2E_PAID_TEMPLATE_VERSION}.pdf`;
 }
 
 /** Receipt blob key — the production scheme (`record-payment.ts`). */
 export function receiptPdfBlobKey(tenantSlug: string, seed: E2ePortalInvoiceSeed): string {
-  return `invoicing/${tenantSlug}/${E2E_SEED_FISCAL_YEAR}/${seed.invoiceId}_receipt_v${templateVersionFor(seed)}.pdf`;
+  return `invoicing/${tenantSlug}/${E2E_SEED_FISCAL_YEAR}/${seed.invoiceId}_receipt_v${E2E_PAID_TEMPLATE_VERSION}.pdf`;
 }
 
 /** VAT-exclusive 7% split, exact in satang (subtotal + VAT = total). */
@@ -142,7 +133,7 @@ export interface BuildE2ePortalInvoiceRowInput {
 export function buildE2ePortalInvoiceRow(input: BuildE2ePortalInvoiceRowInput): InvoiceInsert {
   const { seed } = input;
   const { subtotalSatang, vatSatang } = splitVat(seed.totalSatang);
-  const templateVersion = templateVersionFor(seed);
+  const templateVersion = E2E_PAID_TEMPLATE_VERSION;
   const common = {
     tenantId: input.tenantSlug,
     invoiceId: seed.invoiceId,
@@ -166,14 +157,15 @@ export function buildE2ePortalInvoiceRow(input: BuildE2ePortalInvoiceRowInput): 
     pdfBlobKey: input.mainPdf.blobKey,
     pdfSha256: input.mainPdf.sha256,
     pdfTemplateVersion: templateVersion,
+    // 088 bill leg of `invoices_non_draft_has_snapshots`: bill raw set, §87 pair NULL.
+    sequenceNumber: null,
+    documentNumber: null,
+    billDocumentNumberRaw: seed.number,
   } satisfies InvoiceInsert;
 
   if (seed.status === 'issued') {
     return {
       ...common,
-      sequenceNumber: seed.sequence,
-      documentNumber: seed.number,
-      billDocumentNumberRaw: null,
       receiptDocumentNumberRaw: null,
       paidAt: null,
       paymentMethod: null,
@@ -186,10 +178,6 @@ export function buildE2ePortalInvoiceRow(input: BuildE2ePortalInvoiceRowInput): 
   }
   return {
     ...common,
-    // 088 bill leg of `invoices_non_draft_has_snapshots`: bill raw set, §87 pair NULL.
-    sequenceNumber: null,
-    documentNumber: null,
-    billDocumentNumberRaw: seed.number,
     receiptDocumentNumberRaw: receiptNumberFor(seed),
     // `invoices_paid_has_payment` + the fields `applyPayment` writes.
     paidAt: new Date(`${E2E_SEED_PAYMENT_DATE}T03:00:00Z`),
@@ -206,13 +194,12 @@ export function buildE2ePortalInvoiceRow(input: BuildE2ePortalInvoiceRowInput): 
 }
 
 /**
- * A paid fixture still in the legacy pre-088 combined-mode shape (§87 number,
- * no bill number) — the seed replaces it with the 088 shape.
+ * A fixture still in the legacy pre-088 shape (§87 number, no bill number) —
+ * paid or issued, the seed replaces it with the 088 shape.
  */
-export function isLegacyPaidFixtureRow(row: {
-  readonly status: string;
+export function isLegacyFixtureRow(row: {
   readonly documentNumber: string | null;
   readonly billDocumentNumberRaw: string | null;
 }): boolean {
-  return row.status === 'paid' && row.documentNumber !== null && row.billDocumentNumberRaw === null;
+  return row.documentNumber !== null && row.billDocumentNumberRaw === null;
 }

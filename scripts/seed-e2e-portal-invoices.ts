@@ -63,7 +63,6 @@ import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
 import { asInvoiceLineId } from '@/modules/invoicing/domain/invoice-line';
 import { seedTargetRefusal } from './lib/seed-target-guard';
 import {
-  E2E_ISSUED_TEMPLATE_VERSION,
   E2E_PAID_TEMPLATE_VERSION,
   E2E_PORTAL_INVOICE_SEEDS,
   E2E_SEED_DUE_DATE,
@@ -71,7 +70,7 @@ import {
   E2E_SEED_ISSUE_DATE,
   E2E_SEED_PAYMENT_DATE,
   buildE2ePortalInvoiceRow,
-  isLegacyPaidFixtureRow,
+  isLegacyFixtureRow,
   mainPdfBlobKey,
   receiptPdfBlobKey,
   splitVat,
@@ -337,10 +336,9 @@ function fixtureDocumentNumber(prefix: 'SC' | 'RC', seed: E2ePortalInvoiceSeed):
 }
 
 /**
- * Render the fixture's PDFs. A paid fixture gets the two documents a real 088
- * paid bill has: the non-tax ใบแจ้งหนี้ (bill mode, SC number, issue date) and
- * the §86/4 tax receipt (`receipt_combined`, RC number, dated at payment). The
- * issued fixture keeps its original single render.
+ * Render the fixture's PDFs. Every fixture gets the non-tax ใบแจ้งหนี้ (bill
+ * mode, SC number, issue date); a paid fixture also gets the §86/4 tax receipt
+ * (`receipt_combined`, RC number, dated at payment), like a real 088 paid bill.
  */
 async function renderFixturePdfs(
   ctx: TenantContext,
@@ -386,20 +384,6 @@ async function renderFixturePdfs(
     total: Money.fromSatangUnsafe(seed.totalSatang),
   };
 
-  if (seed.status === 'issued') {
-    const mainPdf = await renderAndUpload(
-      {
-        ...common,
-        kind: 'invoice',
-        templateVersion: E2E_ISSUED_TEMPLATE_VERSION,
-        documentNumber: fixtureDocumentNumber('SC', seed),
-        issueDate: E2E_SEED_ISSUE_DATE,
-      },
-      mainPdfBlobKey(ctx.slug, seed),
-    );
-    return { mainPdf, receiptPdf: null };
-  }
-
   const mainPdf = await renderAndUpload(
     {
       ...common,
@@ -412,6 +396,7 @@ async function renderFixturePdfs(
     },
     mainPdfBlobKey(ctx.slug, seed),
   );
+  if (seed.status === 'issued') return { mainPdf, receiptPdf: null };
   const receiptPdf = await renderAndUpload(
     {
       ...common,
@@ -427,13 +412,13 @@ async function renderFixturePdfs(
 }
 
 /**
- * Delete a paid fixture still in the legacy pre-088 shape, with its children in
- * FK order (the same order `tests/e2e/global-setup.ts` uses to reset 900003):
+ * Delete a fixture still in the legacy pre-088 shape, with its children in FK
+ * order (the same order `scripts/lib/e2e-issued-fixture-reset.ts` uses):
  * break the refunds ↔ credit_notes cycle, then refunds, credit notes, payments,
  * and the invoice (its lines cascade). A renewal cycle pointing at a fixture is
  * not ours to unlink, so that refuses instead.
  */
-async function deleteLegacyPaidFixture(
+async function deleteLegacyFixture(
   tx: Parameters<Parameters<typeof runInTenant>[1]>[0],
   ctx: TenantContext,
   invoiceId: string,
@@ -464,7 +449,7 @@ async function deleteLegacyPaidFixture(
   await tx.execute(
     sql`DELETE FROM invoices WHERE tenant_id = ${ctx.slug} AND invoice_id = ${invoiceId}`,
   );
-  console.log(`  removed legacy-shape ${number} (${invoiceId}) — re-seeding as an 088 paid bill`);
+  console.log(`  removed legacy-shape ${number} (${invoiceId}) — re-seeding it as an 088 bill`);
 }
 
 /**
@@ -499,8 +484,8 @@ async function seedInvoicesIfMissing(
         )
         .limit(1);
       const found = existing[0];
-      if (found && isLegacyPaidFixtureRow(found)) {
-        await deleteLegacyPaidFixture(tx, ctx, found.invoiceId, s.number);
+      if (found && isLegacyFixtureRow(found)) {
+        await deleteLegacyFixture(tx, ctx, found.invoiceId, s.number);
       } else if (found) {
         console.log(`  invoice ${s.number} already present — invoice_id=${found.invoiceId}`);
         continue;
@@ -607,7 +592,10 @@ async function main(): Promise<void> {
     .where(
       and(
         eq(invoices.tenantId, ctx.slug),
-        eq(invoices.documentNumber, 'SC-2026-900003'),
+        or(
+          eq(invoices.billDocumentNumberRaw, 'SC-2026-900003'),
+          eq(invoices.documentNumber, 'SC-2026-900003'),
+        ),
       ),
     )
     .limit(1);
