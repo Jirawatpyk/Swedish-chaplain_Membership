@@ -82,6 +82,45 @@ If/when SweCham upgrades to Vercel Pro, replace the external trigger with
 a `vercel.json` cron entry at `*/5 * * * *` and remove the cron-job.org
 job. The route handler is unchanged.
 
+## Automated recovery — pending payments on no-longer-payable invoices
+
+Since 2026-09 the hourly `/api/cron/sweep-stale-pending-refunds` run also
+calls `sweepPendingPaymentsOnUnpayableInvoices`. It retries the void-time
+PaymentIntent cancel for any `pending` payment whose invoice is no longer
+`issued` (`void`, `paid`, `credited`, `partially_credited`), up to 50 invoices
+per run within a 20-second budget. The **15-minute to 7-day** window is
+measured from the later of the attempt's `initiated_at` and the invoice's
+`updated_at`, which is when it stopped being payable. An old attempt on a
+freshly voided invoice is still retried, and a void less than 15 minutes old
+is left to its own post-commit cancel.
+
+For an invoice marked **paid through another channel** (manual
+record-payment), nothing cancels the pending attempt at the moment of payment.
+This sweep is then the **primary** cancel, not a retry: it runs 15–75 minutes
+after the payment is recorded. A capture inside that gap is auto-refunded by
+the webhook's stale-invoice guard. Each invoice goes through `cancelPendingPaymentsForInvoice`
+(initiate's advisory lock → row lock → Stripe cancel → status-checked flip),
+audited as `payment_canceled` / `payment_cancel_attempt_failed` with
+`actor_type = 'system'` and `cause = 'invoice_not_payable_sweep'`.
+
+- Signals: `payments_pending_on_unpayable_swept_total{outcome}` and
+  `payments_pending_on_unpayable_sweep_failed_total`. Logs:
+  `cron.sweep_pending_on_unpayable.{completed,failed,skipped_no_budget,invoice_threw}`.
+  `invoice_threw` carries the tenant and invoice ids.
+- `outcome=skipped` includes a PaymentIntent that had **already succeeded**.
+  It is not overwritten, and the webhook settles or auto-refunds it.
+- A row that keeps producing `outcome=failed` is one Stripe refused to cancel
+  (for example, mid-`processing`) or a retryable Stripe error. Each attempt
+  writes a `payment_cancel_attempt_failed` audit row, up to one per hour until
+  the 7-day cap. Check it in the Stripe Dashboard as in step 3 below.
+- `outcome=skipped_no_budget` counts runs where the refund sweep left too
+  little of the 60-second function for this sweep to start. The next hourly
+  run picks the work up.
+- Rows older than 7 days are no longer retried (bounding the audit trail);
+  they surface on this gauge and are recovered manually per the playbook.
+- Pending rows on **`issued`** invoices are out of scope for the sweep — a
+  member may still legitimately be paying them.
+
 ## On-call playbook — gauge fires > 5
 
 1. **Triage**: open Vercel Dashboard → Logs → filter by route

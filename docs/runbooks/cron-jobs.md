@@ -49,7 +49,7 @@ gone on Pro.
 |-----|----------|---------|------|----------------|
 | F5 stale-pending-count | `GET /api/internal/metrics/stale-pending-count` | `*/5 * * * *` | `Authorization: Bearer ${CRON_SECRET}` | [stale-pending-count.md](./stale-pending-count.md) |
 | F5 unprocessed-events-count | `GET /api/internal/metrics/unprocessed-events-count` | `*/5 * * * *` | `Authorization: Bearer ${CRON_SECRET}` | [unprocessed-events-count.md](./unprocessed-events-count.md) |
-| F5 stale-refund sweep | `POST /api/cron/sweep-stale-pending-refunds` | `0 3 * * *` (native Vercel) | `Authorization: Bearer ${CRON_SECRET}` | [stale-pending-refund-sweep.md](./stale-pending-refund-sweep.md) |
+| F5 stale-refund sweep + pending-on-unpayable-invoice cancel retry | `GET /api/cron/sweep-stale-pending-refunds` | `7 * * * *` (native Vercel, hourly) | `Authorization: Bearer ${CRON_SECRET}` | [stale-pending-refund-sweep.md](./stale-pending-refund-sweep.md), [stale-pending-count.md](./stale-pending-count.md#automated-recovery--pending-payments-on-no-longer-payable-invoices) |
 | F4 outbox purge | `POST /api/cron/outbox-purge` | `15 20 * * *` (native Vercel) | `Authorization: Bearer ${CRON_SECRET}` | (in `vercel.json`) |
 | F4 receipt-pdf reconcile | `POST /api/internal/cron/receipt-pdf-reconcile` | `30 3 * * *` (native Vercel) | `Authorization: Bearer ${CRON_SECRET}` | [receipt-pdf-permanently-failed.md](./receipt-pdf-permanently-failed.md) |
 | **F4 redact-expired-event-buyers** (054 Task 15) | **`POST /api/cron/invoicing/redact-expired-event-buyers`** | **`0 5 * * *`** (daily 05:00 UTC = 12:00 ICT) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F4 redact-expired-event-buyers) |
@@ -1259,7 +1259,7 @@ not at review. The table below had drifted too: it listed 36 of the 39 until
 | `/api/internal/retention/pseudonymise-eventcreate` | `0 21 * * *` | **04:00 ICT** (21:00 UTC) | GET+POST |
 | `/api/internal/retention/sweep-error-csv-blobs` | `0 22 * * *` | 22:00 UTC (05:00 ICT) | GET+POST |
 | `/api/cron/outbox-purge` | `15 20 * * *` | 20:15 UTC (native since Hobby) | GET |
-| `/api/cron/sweep-stale-pending-refunds` | `0 3 * * *` | 03:00 UTC (native since Hobby) | GET |
+| `/api/cron/sweep-stale-pending-refunds` | `7 * * * *` | hourly at :07 — stale refund sweep, then the pending-on-unpayable-invoice cancel retry | GET |
 | `/api/internal/cron/receipt-pdf-reconcile` | `*/5 * * * *` | every 5 min (≤5-min receipt-PDF recovery SLA) | GET |
 | `/api/cron/lockout-cleanup` | `45 3 * * *` | 03:45 UTC (native since Hobby) | GET |
 | `/api/cron/auth/prune-expired-invitations` | `40 4 * * *` | 04:40 UTC (11:40 ICT) — expired F1 invitations | GET+POST |

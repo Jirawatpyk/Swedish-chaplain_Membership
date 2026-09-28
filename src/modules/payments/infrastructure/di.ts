@@ -26,6 +26,8 @@ import type { ConfirmPaymentDeps } from '../application/use-cases/confirm-paymen
 import type { FailPaymentDeps } from '../application/use-cases/fail-payment';
 import type { CancelPaymentDeps } from '../application/use-cases/cancel-payment';
 import type { CancelPendingPaymentsForInvoiceDeps } from '../application/use-cases/cancel-pending-payments-for-invoice';
+import type { SweepPendingOnUnpayableDeps } from '../application/use-cases/sweep-pending-payments-on-unpayable-invoices';
+import { drizzleUnpayablePendingFinder } from './repos/drizzle-unpayable-pending-finder';
 import type { HandleCancelEventDeps } from '../application/use-cases/handle-cancel-event';
 import type { ListSucceededPaymentMethodsDeps } from '../application/use-cases/list-succeeded-payment-methods';
 import type { ListWaivedRefundTotalsByInvoiceDeps } from '../application/use-cases/list-waived-refund-totals-by-invoice';
@@ -275,6 +277,19 @@ export function makeCancelPendingPaymentsForInvoiceDeps(
     tenantSettingsRepo: makeDrizzleTenantPaymentSettingsRepo(),
     processorGateway: stripeGateway,
     audit: f5AuditAdapter,
+    clock: systemClock,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// sweepPendingPaymentsOnUnpayableInvoices — hourly retry of the void-time
+// cancel, run by the sweep-stale-pending-refunds cron route. Cross-tenant
+// finder; per-invoice cancel deps are built for that invoice's tenant.
+// ---------------------------------------------------------------------------
+export function makeSweepPendingOnUnpayableDeps(): SweepPendingOnUnpayableDeps {
+  return {
+    finder: drizzleUnpayablePendingFinder,
+    cancelDepsFor: makeCancelPendingPaymentsForInvoiceDeps,
     clock: systemClock,
   };
 }

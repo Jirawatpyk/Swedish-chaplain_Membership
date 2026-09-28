@@ -58,12 +58,20 @@ import type {
 } from '../ports';
 import { retentionFor } from '../ports/audit-port';
 
+export type CancelPendingPaymentsCause = 'invoice_voided' | 'invoice_not_payable_sweep';
+
 export interface CancelPendingPaymentsForInvoiceInput {
   readonly tenantId: string;
   readonly invoiceId: string;
   /** Who triggered it (the voiding user) — recorded as the audit actor. */
   readonly actorUserId: string;
-  readonly cause: 'invoice_voided';
+  /**
+   * `invoice_voided` — voidInvoice's post-commit call.
+   * `invoice_not_payable_sweep` — the hourly retry sweep
+   * (`sweepPendingPaymentsOnUnpayableInvoices`), for a pending attempt on any
+   * invoice that is no longer `issued` (a failed or missed void-time cancel).
+   */
+  readonly cause: CancelPendingPaymentsCause;
   readonly requestId: string | null;
 }
 
@@ -193,7 +201,7 @@ async function cancelOne(
       requestId: input.requestId,
       eventType: 'payment_canceled',
       actorUserId: input.actorUserId,
-      summary: `Payment ${fresh.id} canceled because invoice ${fresh.invoiceId} was voided`,
+      summary: `Payment ${fresh.id} canceled: invoice ${fresh.invoiceId} is no longer payable (${input.cause})`,
       payload: {
         payment_id: fresh.id,
         invoice_id: fresh.invoiceId,
@@ -216,7 +224,7 @@ async function recordAttemptFailed(
   why: string,
 ): Promise<RowOutcome> {
   await emitAttemptFailed(deps, null, input, row, kind,
-    `Payment ${row.id} left pending after invoice ${row.invoiceId} was voided: ${why}`);
+    `Payment ${row.id} left pending on no-longer-payable invoice ${row.invoiceId} (${input.cause}): ${why}`);
   return 'failed';
 }
 

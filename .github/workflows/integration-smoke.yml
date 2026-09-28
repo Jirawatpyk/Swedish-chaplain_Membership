@@ -54,6 +54,14 @@
 # added it. Move it to the nightly if it ever costs more than cross-tenant-probe
 # (~42 s).
 #
+# 2026-09-28 — `payments/sweep-pending-on-unpayable` joins: the hourly retry
+# that cancels a pending PaymentIntent left on an invoice that is no longer
+# `issued` (void-time cancel failed, or the invoice was paid another way). It
+# is the only test of the sweep's cross-tenant owner-db SQL (age window
+# measured from the later of the attempt and the invoice's last change), and a
+# regression is silent: the PaymentIntent stays live. One seed, four rows, two
+# sweeps, no Stripe call. Its CI time is recorded in the PR that added it.
+#
 # SIZED FROM MEASURED CI TIME, NOT LOCAL TIME (2026-07-28). The first version
 # of this file carried seven suites because they ran in 95 s locally; on a
 # runner the same set took 547 s, because GitHub runs in the US and Neon lives
@@ -223,4 +231,5 @@ jobs:
             tests/integration/members/broadcast-recipient-contacts-keyset.test.ts \
             tests/integration/broadcasts/audience-1n-status.test.ts \
             tests/integration/scripts/test-tenant-cleanup-completeness.test.ts \
-            tests/integration/payments/void-cancels-pending-payment.test.ts
+            tests/integration/payments/void-cancels-pending-payment.test.ts \
+            tests/integration/payments/sweep-pending-on-unpayable.test.ts

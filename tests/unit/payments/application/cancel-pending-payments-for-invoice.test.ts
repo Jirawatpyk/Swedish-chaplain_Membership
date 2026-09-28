@@ -274,4 +274,25 @@ describe('cancelPendingPaymentsForInvoice', () => {
     expect(r).toEqual({ canceled: 0, skipped: 0, failed: 1 });
     expect(auditTypes(h.audit)).toEqual(['payment_cancel_attempt_failed']);
   });
+
+  // Follow-up to the #447 review — the hourly retry sweep re-runs this
+  // use-case for pending attempts on ANY invoice that is no longer payable
+  // (not only void), as the system actor, so the audit says why.
+  it('sweep cause → payment_canceled carries cause invoice_not_payable_sweep + the given system actor', async () => {
+    const h = makeDeps([pending(1)]);
+    const r = await cancelPendingPaymentsForInvoice(h.deps, {
+      ...INPUT,
+      actorUserId: 'system-actor-uuid',
+      cause: 'invoice_not_payable_sweep',
+    });
+    expect(r).toEqual({ canceled: 1, skipped: 0, failed: 0 });
+    const call = h.audit.emit.mock.calls.find(
+      (c) => (c[1] as { eventType: string }).eventType === 'payment_canceled',
+    )!;
+    expect(call[1]).toMatchObject({
+      actorUserId: 'system-actor-uuid',
+      payload: { actor_type: 'system', cause: 'invoice_not_payable_sweep' },
+    });
+    expect((call[1] as { summary: string }).summary).not.toMatch(/was voided/);
+  });
 });
