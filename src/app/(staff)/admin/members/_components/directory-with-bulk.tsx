@@ -207,7 +207,9 @@ export function DirectoryWithBulk({
         onClearMatching={isAdmin ? handleClear : undefined}
         clearSelectionNonce={clearNonce}
       />
-      <TablePagination page={page} pageSize={pageSize} total={total} />
+      {/* 122 US5a — the AURA ActionBar sits right after the table: sticky, it
+          floats over the list while the table is on screen and takes its own
+          space at the end, before the pagination. */}
       {isAdmin && (
         <BulkActionBar
           selectedIds={effectiveIds}
@@ -216,6 +218,7 @@ export function DirectoryWithBulk({
           onClear={handleClear}
         />
       )}
+      <TablePagination page={page} pageSize={pageSize} total={total} />
     </>
   );
 }

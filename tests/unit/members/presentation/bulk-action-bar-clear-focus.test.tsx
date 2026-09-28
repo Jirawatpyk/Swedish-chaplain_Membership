@@ -9,6 +9,7 @@
  * which survives the clear — and otherwise to the `#main-content` landmark.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { useState } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
@@ -53,13 +54,18 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function bar(onClear: () => void) {
+/** A real stateful parent: Clear genuinely empties the selection. */
+function Bar({ onClear }: { onClear: () => void }) {
+  const [ids, setIds] = useState(['11111111-2222-3333-4444-555555555555']);
   return (
     <BulkActionBar
-      selectedIds={['11111111-2222-3333-4444-555555555555']}
+      selectedIds={ids}
       selectedCompanyNames={['Acme Co']}
       totalMatching={1}
-      onClear={onClear}
+      onClear={() => {
+        onClear();
+        setIds([]);
+      }}
     />
   );
 }
@@ -122,7 +128,7 @@ describe('members bulk bar — Clear keeps keyboard focus on the page', () => {
     const onClear = vi.fn();
     render(
       <NextIntlClientProvider locale="en" messages={enMessages}>
-        <main id="main-content" tabIndex={-1}>{bar(onClear)}</main>
+        <main id="main-content" tabIndex={-1}><Bar onClear={onClear} /></main>
       </NextIntlClientProvider>,
     );
     const clear = screen.getByRole('button', { name: CLEAR });

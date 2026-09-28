@@ -18,8 +18,8 @@
  *
  * B2 a11y fix:
  *   - Replaced undocumented `indeterminate` keyframe (was not defined in
- *     globals.css) with the shadcn <Progress> component which has the
- *     correct shimmer + reduced-motion support built in.
+ *     globals.css) with a Progress component with reduced-motion support
+ *     built in (AURA `Progress` since 122 US5a).
  *   - Added role="progressbar" + aria-busy + aria-valuenow/min/max for
  *     indeterminate state per ARIA 1.2 spec.
  *
@@ -33,7 +33,7 @@
 
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Progress } from '@/components/ui/progress';
+import { Progress } from '@jirawatpyk/aura-react';
 
 type Props = {
   readonly action: string;
@@ -61,32 +61,29 @@ export function BulkProgressIndicator({
 
   return (
     <div
-      className="fixed bottom-16 left-1/2 z-50 -translate-x-1/2 rounded-lg border bg-background/95 px-6 py-4 shadow-lg backdrop-blur-sm"
+      className="fixed bottom-24 left-1/2 z-50 -translate-x-1/2 rounded-[var(--aura-radius-lg)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] px-6 py-4 shadow-[var(--aura-shadow-overlay)]"
       role="status"
       aria-live="polite"
       aria-label={t('progressLabel')}
     >
       <div className="flex flex-col gap-3">
         <div className="flex flex-col text-sm">
-          <span className="text-muted-foreground">
+          <span className="text-[var(--aura-fg-secondary)]">
             {t('progressMessage', { action: t(`actions.${action}`), count: total })}
           </span>
           {elapsedSeconds > 0 && (
-            <span className="text-xs text-muted-foreground/80">
+            <span className="text-xs text-[var(--aura-fg-tertiary)]">
               {t('elapsedSeconds', { seconds: elapsedSeconds })}
             </span>
           )}
         </div>
         {/* Indeterminate progress — FR-019 is all-or-nothing; no partial
-            progress to report (see SW-3 note above). Using shadcn Progress
-            component (has shimmer + motion-reduce support built in). The
-            value prop is omitted so the native <progress> element is
-            indeterminate, honouring ARIA 1.2 progressbar semantics. */}
-        <Progress
-          aria-label={t('progressLabel')}
-          aria-busy="true"
-          className="h-1.5 w-48"
-        />
+            progress to report (see SW-3 note above). AURA Progress with
+            no value is indeterminate (ARIA 1.2 progressbar semantics) and
+            honours reduced motion. */}
+        <div className="w-48">
+          <Progress aria-label={t('progressLabel')} size="sm" />
+        </div>
       </div>
     </div>
   );

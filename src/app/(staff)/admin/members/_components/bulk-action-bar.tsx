@@ -1,11 +1,15 @@
 'use client';
 
 /**
- * T109 — Sticky-bottom bulk action toolbar (US4 FR-018/040).
+ * T109 — Bulk action bar (US4 FR-018/040).
  *
- * Appears when ≥1 row is selected. Shows "N selected" counter + action
- * menu + Clear affordance. Uses `scroll-margin-bottom` to prevent the
- * bar from obscuring focused elements (ADOPT-01 / WCAG 2.2 SC 2.4.11).
+ * 122 US5a (T504) — AURA `ActionBar`: sticky, in the page flow right after the
+ * members table, so it floats over the list while the table is on screen and
+ * takes its own space at the end (no spacer). It stays mounted with nothing
+ * selected — hidden, but its live region stays, so the next selection is
+ * announced. Shows "N selected" + the actions + Clear. The page's scroll
+ * padding tracks its height so a focused row is never hidden behind it
+ * (ADOPT-01 / WCAG 2.2 SC 2.4.11).
  *
  * Cap enforcement: if > 100 rows are selected, the action buttons are
  * disabled with a message instructing the admin to split the operation.
@@ -39,21 +43,21 @@
  * the still-alive trigger. Resetting on open covers open→cancel,
  * open→fail and open→succeed in one place.
  *
- * The trigger DOM node is still removed on success (the bar renders `null`),
- * which is why the success path needs the landmark fallback at all — fiber
- * alive, DOM node gone.
+ * The trigger DOM node is still removed on success (the idle ActionBar renders
+ * no actions), which is why the success path needs the landmark fallback at
+ * all — fiber alive, DOM node gone.
  *
  * This was pre-existing on Archive and Send-invite; Task 15 added the third
  * case and fixed all three together; Task 18 adds the fourth (un-enrol) to
  * the same shared mechanism rather than growing a second one.
  */
 
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useFixedBarScrollPadding } from '@/hooks/use-fixed-bar-scroll-padding';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { ArchiveIcon, BellIcon, FileTextIcon, FileMinusIcon, MailIcon, XIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { ActionBar, AuraProvider, Button } from '@jirawatpyk/aura-react';
+import { ArchiveIcon, BellIcon, FileTextIcon, FileMinusIcon, MailIcon } from 'lucide-react';
 import { toast } from '@/lib/toast';
 import { ArchiveConfirmDialog } from './archive-confirm-dialog';
 import { BulkProgressIndicator } from './bulk-progress-indicator';
@@ -129,38 +133,28 @@ export function BulkActionBar({
     closedViaSuccessRef,
   );
 
-  // Sticky-bar spacer (re-review N2). The spacer used to be a hardcoded
-  // `h-16` (64px), which matched the bar only while the buttons were 36px
-  // (36 + py-3 * 2 = 60). At 44px targets a single row is already 68px, and
-  // below ~400px the `flex-wrap` breaks the bar onto 3-4 rows (~180px+) —
-  // leaving the last table row AND the pagination control covered, which is
-  // exactly what this flow needs reachable ("select rows, then act").
-  // Measured rather than guessed: the height depends on wrap behaviour,
-  // locale label lengths, and whether the over-cap warning is showing, none
-  // of which a static class can track.
+  // The bar's measured height feeds the page's scroll padding below, so a
+  // focused row scrolls into view ABOVE the sticky bar. Measured rather than
+  // guessed: the height depends on wrapping, locale label lengths and whether
+  // the over-cap warning is showing.
   const barRef = useRef<HTMLDivElement | null>(null);
   const [barHeight, setBarHeight] = useState(64);
 
   useEffect(() => {
     const el = barRef.current;
-    if (!el) return;
-    // Guard for jsdom/older browsers: without ResizeObserver the spacer
-    // keeps its last measured value rather than collapsing to 0.
+    if (!el || !visible) return;
+    // Guard for jsdom/older browsers: without ResizeObserver keep the last
+    // measured value rather than collapsing to 0.
     if (typeof ResizeObserver === 'undefined') {
       setBarHeight(el.offsetHeight);
       return;
     }
     const ro = new ResizeObserver(([entry]) => {
       const h = entry?.borderBoxSize?.[0]?.blockSize ?? el.offsetHeight;
-      // Round up — a fractional height would leave a sub-pixel sliver of the
-      // last row under the bar.
       setBarHeight(Math.ceil(h));
     });
     ro.observe(el);
     return () => ro.disconnect();
-    // Re-observe on every hidden↔visible transition: the parent mounts this
-    // bar with nothing selected, so a `[]`-deps effect ran against a null ref
-    // and the spacer stayed at its 64px default however tall the bar wrapped.
   }, [visible]);
 
   // WCAG 2.2 SC 2.4.11 — keep focus / scroll-into-view above the bar.
@@ -369,199 +363,159 @@ export function BulkActionBar({
     [selectedIds, count, overCap, onClear, router, t, undoArchive],
   );
 
-  // H7: keep dialog open (with pending spinner) while archive is in-flight
-  // so the admin gets visual feedback that the action was accepted and is
-  // running. The dialog closes on completion (success or error).
+  // H7: the dialog stays open (confirm spinner) while the archive is in
+  // flight, so the admin sees it was accepted; ConfirmationDialog closes it on
+  // completion (success or error).
   const handleArchiveConfirm = useCallback(async () => {
     await executeBulk('archive');
-    setArchiveDialogOpen(false);
   }, [executeBulk]);
 
-  // Clear empties the selection, so this bar returns null and the focused
-  // Clear button goes with it: focus fell to `<body>`. Hand it to the table's
-  // select-all checkbox FIRST, while both are mounted (it survives the clear).
-  // Below `md` the table is hidden, where `.focus()` does nothing — then the
-  // `#main-content` landmark. Only the explicit Clear moves focus: a bulk
-  // action's own clear leaves focus to its dialog's `finalFocus`. The E-Blast
-  // queue's bar does the same (`queue-bulk-action-bar.tsx`, T086a V2).
-  const handleClearClick = useCallback(() => {
-    const selectAll = document.querySelector<HTMLElement>('[data-testid="members-select-all"]');
-    selectAll?.focus();
-    if (selectAll === null || document.activeElement !== selectAll) {
-      document.getElementById('main-content')?.focus({ preventScroll: true });
-    }
+  // Clear empties the selection, so the bar's buttons go and the focused Clear
+  // button with them. AURA's ActionBar returns focus to where it came from
+  // when it can (its own timer runs first); if focus is still lost after
+  // that, hand it to the members table's select-all checkbox (it survives the
+  // clear), else the `#main-content` landmark. Only the explicit Clear moves
+  // focus: a bulk action's own clear leaves focus to its dialog's
+  // `finalFocus`. The E-Blast queue's bar does the same
+  // (`queue-bulk-action-bar.tsx`, T086a V2).
+  const handleClearSelection = useCallback(() => {
     onClear();
+    setTimeout(() => {
+      setTimeout(() => {
+        const active = document.activeElement;
+        if (active && active !== document.body && active.isConnected) return;
+        const selectAll = document.querySelector<HTMLElement>(
+          '[data-members-table] [role="columnheader"].aura-table__sel input[type="checkbox"]',
+        );
+        selectAll?.focus();
+        if (selectAll === null || document.activeElement !== selectAll) {
+          document.getElementById('main-content')?.focus({ preventScroll: true });
+        }
+      }, 0);
+    }, 0);
   }, [onClear]);
 
-  if (count === 0) return null;
+  // The ActionBar's own count and Clear, in this bar's words.
+  const barStrings = useMemo(
+    () => ({
+      selectedCount: (n: number) => t('selectedCount', { count: n }),
+      clear: () => t('clear'),
+    }),
+    [t],
+  );
 
   return (
     <>
-      <div
-        ref={barRef}
-        // `pb-[env(safe-area-inset-bottom)]` keeps the action row clear of the
-        // iOS home indicator on a notched device.
-        className="fixed bottom-0 left-0 right-0 z-40 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm shadow-lg"
-        role="toolbar"
-        aria-label={t('toolbarLabel')}
-      >
-        {/* `flex-wrap` on BOTH rows (Task 15 review, UX-5). `Button` carries
-            `whitespace-nowrap`, and the five action labels are long in every
-            locale (EN "Enrol in auto-invoicing" / SV "Anmäl till
-            autofakturering" / TH "เปิดใช้ใบแจ้งหนี้อัตโนมัติ"), so without
-            wrapping the bar's min-content width far exceeds the 320px floor in
-            ux-standards.md § 14 and the buttons overflow the viewport.
-            NOTE: layout-responsive.spec.ts does not cover /admin/members and
-            never selects rows, so this bar never renders there — the sweep
-            cannot catch a regression here. */}
-        <div className="mx-auto flex max-w-screen-xl flex-wrap items-center justify-between gap-x-4 gap-y-3 px-4 py-3">
-          {/* Left: selection count */}
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium" aria-live="polite">
-              {t('selectedCount', { count })}
-            </span>
-            {overCap && (
-              <div className="flex flex-col gap-0.5" role="alert">
-                <span className="text-xs font-medium text-destructive">
+      <AuraProvider strings={barStrings}>
+        <ActionBar
+          ref={barRef}
+          label={t('toolbarLabel')}
+          selected={count}
+          onClearSelection={handleClearSelection}
+          status={
+            overCap ? (
+              <span className="flex flex-col gap-0.5" role="alert">
+                <span className="text-xs font-medium text-[var(--aura-fg-danger)]">
                   {t('overCap', { max: BULK_CAP })}
                 </span>
-                {/* I2 round-10 ui-design-specialist — surface concrete
-                    split guidance ("X of Y selected — deselect past row
-                    Z, or filter the list") instead of just a "Maximum
-                    100" error. Admins need the next step, not just the
-                    constraint. */}
-                <span className="text-xs text-muted-foreground">
-                  {t('overCapHelper', {
-                    count,
-                    total: totalMatching,
-                    max: BULK_CAP,
-                  })}
+                {/* I2 round-10 ui-design-specialist — concrete split guidance
+                    ("X of Y selected — deselect past row Z, or filter the
+                    list"), not just the "Maximum 100" constraint. */}
+                <span className="text-xs text-[var(--aura-fg-secondary)]">
+                  {t('overCapHelper', { count, total: totalMatching, max: BULK_CAP })}
                 </span>
-              </div>
-            )}
-          </div>
-
-          {/* Center: action buttons — flex-wrap so all five (worst case the long
-              Swedish "Skicka förnyelsepåminnelse" / "Anmäl till autofakturering")
-              never overflow on narrow / tablet widths. */}
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="destructive-outline"
-              size="sm"
-              disabled={executing || overCap}
-              onClick={(e) => {
-                lastTriggerRef.current = e.currentTarget;
-                // "How did THIS dialog close" — reset on OPEN so Cancel/ESC
-                // after an earlier SUCCESS still returns focus to the
-                // trigger. The fiber (and this ref) survives `return null`.
-                closedViaSuccessRef.current = false;
-                setArchiveDialogOpen(true);
-              }}
-              className="min-h-11"
-            >
-              <ArchiveIcon className="mr-1.5 h-4 w-4" />
-              {t('actions.archive')}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={executing || overCap}
-              onClick={(e) => {
-                lastTriggerRef.current = e.currentTarget;
-                // "How did THIS dialog close" — reset on OPEN so Cancel/ESC
-                // after an earlier SUCCESS still returns focus to the
-                // trigger. The fiber (and this ref) survives `return null`.
-                closedViaSuccessRef.current = false;
-                setInviteDialogOpen(true);
-              }}
-              className="min-h-11"
-            >
-              <MailIcon className="mr-1.5 h-4 w-4" />
-              {t('actions.send_portal_invite')}
-            </Button>
-            {/* 107-auto-invoice Task 15 — non-destructive (it only turns ON a
-                billing preference), so `variant="outline"` + the generic
-                ConfirmationDialog, matching the invite button rather than the
-                destructive archive one. */}
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={executing || overCap}
-              onClick={(e) => {
-                lastTriggerRef.current = e.currentTarget;
-                // "How did THIS dialog close" — reset on OPEN so Cancel/ESC
-                // after an earlier SUCCESS still returns focus to the
-                // trigger. The fiber (and this ref) survives `return null`.
-                closedViaSuccessRef.current = false;
-                setEnrolDialogOpen(true);
-              }}
-              className="min-h-11"
-            >
-              {/* FileTextIcon, NOT ReceiptTextIcon: this action drafts an
+              </span>
+            ) : undefined
+          }
+        >
+          {/* The triggers are NOT disabled while an action runs: its modal
+              dialog already blocks the bar, and a disabled trigger cannot take
+              focus back when a FAILED action closes its dialog (SC 2.4.3). */}
+          {visible && (
+            <>
+              <Button
+                variant="danger-secondary"
+                size="sm"
+                icon={<ArchiveIcon aria-hidden="true" />}
+                disabled={overCap}
+                onClick={(e) => {
+                  lastTriggerRef.current = e.currentTarget;
+                  // "How did THIS dialog close" — reset on OPEN so Cancel/ESC
+                  // after an earlier SUCCESS still returns focus to the
+                  // trigger. The fiber (and this ref) survives the idle bar.
+                  closedViaSuccessRef.current = false;
+                  setArchiveDialogOpen(true);
+                }}
+              >
+                {t('actions.archive')}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={<MailIcon aria-hidden="true" />}
+                disabled={overCap}
+                onClick={(e) => {
+                  lastTriggerRef.current = e.currentTarget;
+                  closedViaSuccessRef.current = false;
+                  setInviteDialogOpen(true);
+                }}
+              >
+                {t('actions.send_portal_invite')}
+              </Button>
+              {/* 107-auto-invoice Task 15 — non-destructive (it only turns ON
+                  a billing preference), so a secondary button + the generic
+                  ConfirmationDialog, like the invite button.
+                  FileTextIcon, NOT a receipt icon: this action drafts an
                   INVOICE (ใบแจ้งหนี้), and invoice/receipt/tax-invoice are
-                  legally distinct documents in Thai tax law — an icon that
-                  reads "receipt" on an invoice action is a real hazard here. */}
-              <FileTextIcon className="mr-1.5 h-4 w-4" />
-              {t('actions.enrol_auto_invoice')}
-            </Button>
-            {/* 107-auto-invoice Task 18 — the off switch for the button above.
-                Also `variant="outline"`, NOT destructive: it destroys no data
-                and issues no document; it only stops FUTURE drafts being
-                prepared, and any draft already in the review queue is left
-                alone (see the confirm copy). */}
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={executing || overCap}
-              onClick={(e) => {
-                lastTriggerRef.current = e.currentTarget;
-                closedViaSuccessRef.current = false;
-                setUnenrolDialogOpen(true);
-              }}
-              className="min-h-11"
-            >
-              {/* FileMinusIcon mirrors the enrol action's FileTextIcon with a
-                  "remove" affordance — same invoice≠receipt≠tax-invoice
-                  legal-distinctness reasoning. */}
-              <FileMinusIcon className="mr-1.5 h-4 w-4" />
-              {t('actions.unenrol_auto_invoice')}
-            </Button>
-            {/* #4 members-ux — send a renewal reminder (best-effort per member).
-                Uses the same finalFocus refs as the other four dialogs (audit:
-                ux — WCAG 2.4.3 focus-order consistency). */}
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={executing || overCap}
-              onClick={(e) => {
-                lastTriggerRef.current = e.currentTarget;
-                closedViaSuccessRef.current = false;
-                setReminderDialogOpen(true);
-              }}
-              className="min-h-11"
-            >
-              <BellIcon className="mr-1.5 h-4 w-4" />
-              {t('actions.send_renewal_reminder')}
-            </Button>
-          </div>
-
-          {/* Right: clear */}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleClearClick}
-            className="min-h-11"
-          >
-            <XIcon className="mr-1 h-4 w-4" />
-            {t('clear')}
-          </Button>
-        </div>
-      </div>
-
-      {/* Spacer — tracks the bar's MEASURED height (see barHeight above), so a
-          wrapped multi-row bar can never cover the last table row or the
-          pagination control. */}
-      <div style={{ height: barHeight }} aria-hidden="true" />
+                  legally distinct documents in Thai tax law. */}
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={<FileTextIcon aria-hidden="true" />}
+                disabled={overCap}
+                onClick={(e) => {
+                  lastTriggerRef.current = e.currentTarget;
+                  closedViaSuccessRef.current = false;
+                  setEnrolDialogOpen(true);
+                }}
+              >
+                {t('actions.enrol_auto_invoice')}
+              </Button>
+              {/* 107-auto-invoice Task 18 — the off switch for the button
+                  above. Not destructive: it destroys no data and issues no
+                  document; it only stops FUTURE drafts being prepared. */}
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={<FileMinusIcon aria-hidden="true" />}
+                disabled={overCap}
+                onClick={(e) => {
+                  lastTriggerRef.current = e.currentTarget;
+                  closedViaSuccessRef.current = false;
+                  setUnenrolDialogOpen(true);
+                }}
+              >
+                {t('actions.unenrol_auto_invoice')}
+              </Button>
+              {/* #4 members-ux — send a renewal reminder (best-effort per
+                  member), on the same finalFocus refs as the other four. */}
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={<BellIcon aria-hidden="true" />}
+                disabled={overCap}
+                onClick={(e) => {
+                  lastTriggerRef.current = e.currentTarget;
+                  closedViaSuccessRef.current = false;
+                  setReminderDialogOpen(true);
+                }}
+              >
+                {t('actions.send_renewal_reminder')}
+              </Button>
+            </>
+          )}
+        </ActionBar>
+      </AuraProvider>
 
       <ArchiveConfirmDialog
         open={archiveDialogOpen}

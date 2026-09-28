@@ -72,7 +72,7 @@ describe('BulkActionBar on AURA ActionBar (T504)', () => {
   it('renders no spacer: the bar is in the flow, not fixed over the page', () => {
     const { container } = renderBar(['11111111-2222-3333-4444-555555555555']);
     const spacers = Array.from(
-      container.querySelectorAll<HTMLElement>('[aria-hidden="true"]'),
+      container.querySelectorAll<HTMLElement>('div[aria-hidden="true"]'),
     ).filter((el) => el.style.height !== '');
     expect(spacers).toHaveLength(0);
     expect(screen.getByRole('region', { name: BULK.toolbarLabel }).className).not.toMatch(/\bfixed\b/);

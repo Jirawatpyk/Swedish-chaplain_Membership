@@ -608,6 +608,7 @@ export function MembersTable({
     () => ({
       selectRow: (key: unknown) =>
         t('selectRow', { company: companyById.get(String(key)) ?? String(key) }),
+      selectAllRows: t('selectAll'),
     }),
     [t, companyById],
   );
@@ -766,6 +767,8 @@ export function MembersTable({
     <div
       className="flex flex-col gap-4"
       ref={tableContainerRef}
+      // The bulk bar's Clear hands focus to this table's select-all checkbox.
+      data-members-table=""
       // Record Shift on the click that toggles a checkbox; the selection
       // callback reads it to select a range.
       onClickCapture={(e) => {
