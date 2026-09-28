@@ -141,6 +141,27 @@ describe('portal status badge', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('shows only the bounce badge when a pending invitation bounced (122 US5a)', () => {
+    // One root cause, one badge: "Invitation bounced" already says the contact
+    // was invited, and the grid cell is one line — two badges would push the
+    // required bounce warning (005 spec edge case) out of the 164px column.
+    renderTable([
+      row({
+        member_id: 'm10',
+        portal_state: 'invited',
+        primary_contact: {
+          contact_id: 'c10',
+          first_name: 'Bounced',
+          last_name: 'Invited',
+          email: 'd@example.com',
+          invite_bounced: true,
+        },
+      }),
+    ]);
+    expect(screen.getByText(messages.admin.members.detail.inviteBounced.badge)).toBeInTheDocument();
+    expect(screen.queryByText(messages.admin.members.directory.portal.invited)).not.toBeInTheDocument();
+  });
+
   it('renders neither the portal badge nor the bounce badge on an archived row', () => {
     // Regression guard for the archived-suppression rule: an archived row is
     // "out", so NO portal-related badge shows — not the PortalBadge and not the

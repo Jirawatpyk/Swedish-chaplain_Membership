@@ -121,6 +121,29 @@ describe('MembersTable on AURA DataTable (T502)', () => {
     expect(within(menu).queryByRole('menuitem', { name: 'Edit member' })).toBeNull();
   });
 
+  it('row menu has no "Edit member" on an archived row, as the member page hides it', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <MembersTable rows={[{ ...row, status: 'archived' }]} canEdit />
+      </NextIntlClientProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'More actions for Zeta Holdings' }));
+    const menu = screen.getByRole('menu');
+    expect(within(menu).getByRole('menuitem', { name: 'Open member' })).toBeInTheDocument();
+    expect(within(menu).queryByRole('menuitem', { name: 'Edit member' })).toBeNull();
+  });
+
+  it('row count and row index describe the page, never a page-3 row as "row 2 of 132"', () => {
+    // Server paging hands the table one page; AURA numbers rows from 1 on
+    // every page, so the count must be the page's too (WCAG 1.3.1).
+    render(
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <MembersTable rows={[row, { ...row, member_id: 'm-2', company_name: 'Eta AB' }]} total={131} />
+      </NextIntlClientProvider>,
+    );
+    expect(screen.getByRole('grid')).toHaveAttribute('aria-rowcount', '3');
+  });
+
   it('names each row checkbox after the company', () => {
     renderTable({ enableSelection: true, onSelectionChange: vi.fn() });
     expect(screen.getByRole('checkbox', { name: 'Select Zeta Holdings' })).toBeInTheDocument();
