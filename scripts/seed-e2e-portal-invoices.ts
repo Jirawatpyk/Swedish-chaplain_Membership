@@ -6,7 +6,9 @@
  * can assert deterministic browser behaviour:
  *
  *   • `e2e-member@swecham.test` → linked to "E2E Alpha Co" (tenant
- *     'swecham') with **3 issued invoices** (2 paid + 1 open).
+ *     'swecham') with **3 issued invoices**: SC-2026-900001/2 are 088 paid
+ *     bills (SC bill + RC tax receipt, receipt rendered) and SC-2026-900003
+ *     is an open invoice. Row shapes: `scripts/lib/e2e-portal-invoice-seeds.ts`.
  *     Gated by `E2E_MEMBER_HAS_INVOICES=1`.
  *
  *   • `e2e-member-empty@swecham.test` → linked to "E2E Echo Co"
@@ -19,11 +21,15 @@
  *     (reuses the same password hash as the main seed).
  *   - Upserts both member rows + their primary contacts.
  *   - Re-creates the 3 invoices if missing, or leaves them alone
- *     if already present (detected by (tenant_id, member_id,
- *     document_number) triple uniqueness).
+ *     if already present (looked up by document or bill number). A
+ *     paid fixture still in the legacy pre-088 combined-mode shape
+ *     (§87 number, no bill number) is deleted with its payments /
+ *     refunds / credit notes and re-seeded as an 088 paid bill.
  *
  * Running against a non-swecham tenant is refused (guards the
- * accidental prod-tenant-wipe pathway).
+ * accidental prod-tenant-wipe pathway), and so is a DATABASE_URL the
+ * shared `seed-target-guard` cannot rule out as production. It also
+ * needs FEATURE_088_TAX_AT_PAYMENT=true.
  *
  * Usage:
  *   TENANT_SLUG=swecham node --env-file=.env.local --import tsx scripts/seed-e2e-portal-invoices.ts
@@ -35,9 +41,10 @@
  *   - `seed-f4-invoice-settings.ts` having seeded
  *     tenant_invoice_settings for swecham.
  */
-import { eq, and, sql } from 'drizzle-orm';
+import { eq, and, or, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
+import { env } from '@/lib/env';
 import { asTenantContext, type TenantContext } from '@/modules/tenants';
 import { users } from '@/modules/auth/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
@@ -54,6 +61,23 @@ import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/documen
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
 import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
 import { asInvoiceLineId } from '@/modules/invoicing/domain/invoice-line';
+import { seedTargetRefusal } from './lib/seed-target-guard';
+import {
+  E2E_ISSUED_TEMPLATE_VERSION,
+  E2E_PAID_TEMPLATE_VERSION,
+  E2E_PORTAL_INVOICE_SEEDS,
+  E2E_SEED_DUE_DATE,
+  E2E_SEED_FISCAL_YEAR,
+  E2E_SEED_ISSUE_DATE,
+  E2E_SEED_PAYMENT_DATE,
+  buildE2ePortalInvoiceRow,
+  isLegacyPaidFixtureRow,
+  mainPdfBlobKey,
+  receiptPdfBlobKey,
+  splitVat,
+  type E2ePortalInvoiceSeed,
+  type SeedPdf,
+} from './lib/e2e-portal-invoice-seeds';
 
 // --- Constants ----------------------------------------------------------------
 
@@ -63,16 +87,13 @@ const E2E_MEMBER_EMAIL = 'e2e-member@swecham.test';
 const E2E_MEMBER_EMAIL_EMPTY = 'e2e-member-empty@swecham.test';
 
 /**
- * T082 — Deterministic invoice id for the ISSUED (pay-sheet-ready)
- * fixture. Pinned so E2E specs can consume `E2E_ISSUED_INVOICE_ID`
- * from `.env.local` without needing to re-scrape the seed output on
- * every re-run. Matches `SC-2026-900003` below.
- *
- * Format: a valid UUIDv4 in the `e2e-fixture` prefix namespace. The
- * `invoices.invoice_id` column is `uuid NOT NULL`; this value is
- * parseable by Postgres and reserved for fixture use.
+ * Pinned fixture ids (see `E2E_PORTAL_INVOICE_SEEDS`): SC-2026-900003 backs
+ * `E2E_ISSUED_INVOICE_ID`, SC-2026-900001 backs `E2E_PAID_ONLINE_INVOICE_ID`.
  */
-const E2E_ISSUED_INVOICE_ID = '00000000-e2e0-4fff-9ffe-000000900003';
+const fixtureId = (number: string): string =>
+  E2E_PORTAL_INVOICE_SEEDS.find((s) => s.number === number)!.invoiceId;
+const E2E_ISSUED_INVOICE_ID = fixtureId('SC-2026-900003');
+const E2E_PAID_ONLINE_INVOICE_ID = fixtureId('SC-2026-900001');
 
 // --- Guards -------------------------------------------------------------------
 
@@ -83,6 +104,34 @@ function requireSwechamTenant(): TenantContext {
     );
   }
   return asTenantContext('swecham');
+}
+
+/**
+ * The seed deletes legacy-shape fixture rows (and their payments / credit
+ * notes) and mints `@swecham.test` users, so refuse a target that cannot be
+ * ruled out as production — the shared dev-seeder guard.
+ */
+function requireDevTarget(): void {
+  const refusal = seedTargetRefusal({
+    databaseUrl: process.env.DATABASE_URL,
+    blocklistRaw: process.env.TEST_DB_HOST_BLOCKLIST,
+    nodeEnv: process.env.NODE_ENV,
+    emails: [E2E_MEMBER_EMAIL, E2E_MEMBER_EMAIL_EMPTY],
+    confirmedTarget: process.argv.includes('--confirm-target'),
+  });
+  if (refusal) throw new Error(refusal);
+}
+
+/**
+ * The paid fixtures are 088 paid bills; with the flag off the app shows their
+ * RC instead of the SC number and the `/SC-2026-90000N/` e2e lookups miss.
+ */
+function require088Flag(): void {
+  if (!env.features.f088TaxAtPayment) {
+    throw new Error(
+      'seed-e2e-portal-invoices: FEATURE_088_TAX_AT_PAYMENT is off. The paid fixtures are 088 bills — set it to true in the env file (prod and dev both run with it on).',
+    );
+  }
 }
 
 // --- Helpers ------------------------------------------------------------------
@@ -261,45 +310,45 @@ async function upsertLinkedPrimaryContact(
   });
 }
 
-interface InvoiceSeed {
-  readonly docNumber: string;
-  readonly status: 'paid' | 'issued';
-  readonly totalSatang: bigint;
-  readonly sequenceNumber: number;
+/**
+ * Render one fixture PDF + upload it to Vercel Blob. The pdf routes proxy
+ * `fetch(blobUrl)`, so a placeholder key would 404 from Blob and the route
+ * would 502 — a real render + upload lets the member download the fixtures.
+ */
+async function renderAndUpload(
+  input: Parameters<typeof reactPdfRenderAdapter.render>[0],
+  blobKey: string,
+): Promise<SeedPdf> {
+  const rendered = await reactPdfRenderAdapter.render(input);
+  await vercelBlobAdapter.uploadPdf({
+    key: blobKey,
+    body: rendered.bytes,
+    contentType: 'application/pdf',
+  });
+  return { blobKey, sha256: rendered.sha256 };
+}
+
+function fixtureDocumentNumber(prefix: 'SC' | 'RC', seed: E2ePortalInvoiceSeed): DocumentNumber {
+  const r = DocumentNumber.of(prefix, E2E_SEED_FISCAL_YEAR, seed.sequence);
+  if (!r.ok) {
+    throw new Error(`seed-e2e-portal-invoices: DocumentNumber.of failed for ${prefix} ${seed.sequence}`);
+  }
+  return r.value;
 }
 
 /**
- * Render a real PDF for the given invoice seed + upload it to Vercel
- * Blob. Returns the blob key + sha256 as stored on the invoice row
- * so the /portal/invoices/[id]/pdf route can byte-stream it back.
- *
- * This exists because the pdf route proxies `fetch(blobUrl)` — a
- * placeholder key would return 404 from Blob and the route would
- * 502. Real render + upload = member can download the seeded PDFs.
+ * Render the fixture's PDFs. A paid fixture gets the two documents a real 088
+ * paid bill has: the non-tax ใบแจ้งหนี้ (bill mode, SC number, issue date) and
+ * the §86/4 tax receipt (`receipt_combined`, RC number, dated at payment). The
+ * issued fixture keeps its original single render.
  */
-async function renderAndUploadPdf(
+async function renderFixturePdfs(
   ctx: TenantContext,
-  seed: InvoiceSeed,
-  invoiceId: string,
-): Promise<{ blobKey: string; sha256: string }> {
-  const docR = DocumentNumber.of(
-    'SC',
-    2026,
-    seed.sequenceNumber,
-  );
-  if (!docR.ok) {
-    throw new Error(
-      `seed-e2e-portal-invoices: DocumentNumber.of failed for ${seed.docNumber}`,
-    );
-  }
-  const subtotalSatang = (seed.totalSatang * 100n) / 107n;
-  const vatSatang = seed.totalSatang - subtotalSatang;
-  const rendered = await reactPdfRenderAdapter.render({
-    kind: seed.status === 'paid' ? 'receipt_combined' : 'invoice',
-    templateVersion: 1,
-    documentNumber: docR.value,
-    issueDate: '2026-04-15',
-    dueDate: '2026-05-15',
+  seed: E2ePortalInvoiceSeed,
+): Promise<{ mainPdf: SeedPdf; receiptPdf: SeedPdf | null }> {
+  const { subtotalSatang, vatSatang } = splitVat(seed.totalSatang);
+  const common = {
+    dueDate: E2E_SEED_DUE_DATE,
     tenant: {
       legal_name_th: 'หอการค้าไทย-สวีเดน',
       legal_name_en: 'Thai-Swedish Chamber of Commerce',
@@ -314,15 +363,14 @@ async function renderAndUploadPdf(
       address: '99/1 E2E Road, Bangkok',
       primary_contact_name: 'E2E Alpha',
       primary_contact_email: 'e2e-member@swecham.test',
-      // 055-member-number — snapshot now carries member_number + the formatted
-      // member_number_display (both null here = no Member No. line on the PDF).
+      // 055-member-number — both null = no Member No. line on the PDF.
       member_number: null,
       member_number_display: null,
     },
     lines: [
       {
         lineId: asInvoiceLineId(randomUUID()),
-        kind: 'membership_fee',
+        kind: 'membership_fee' as const,
         descriptionTh: 'ค่าสมาชิก ปี 2026 (E2E fixture)',
         descriptionEn: 'Membership 2026 (E2E fixture)',
         unitPrice: Money.fromSatangUnsafe(subtotalSatang),
@@ -336,157 +384,158 @@ async function renderAndUploadPdf(
     vatRate: VatRate.ofUnsafe('0.0700'),
     vat: Money.fromSatangUnsafe(vatSatang),
     total: Money.fromSatangUnsafe(seed.totalSatang),
-  });
-  const blobKey = `tenants/${ctx.slug}/invoices/${invoiceId}/v1.pdf`;
-  await vercelBlobAdapter.uploadPdf({
-    key: blobKey,
-    body: rendered.bytes,
-    contentType: 'application/pdf',
-  });
-  return { blobKey, sha256: rendered.sha256 };
+  };
+
+  if (seed.status === 'issued') {
+    const mainPdf = await renderAndUpload(
+      {
+        ...common,
+        kind: 'invoice',
+        templateVersion: E2E_ISSUED_TEMPLATE_VERSION,
+        documentNumber: fixtureDocumentNumber('SC', seed),
+        issueDate: E2E_SEED_ISSUE_DATE,
+      },
+      mainPdfBlobKey(ctx.slug, seed),
+    );
+    return { mainPdf, receiptPdf: null };
+  }
+
+  const mainPdf = await renderAndUpload(
+    {
+      ...common,
+      kind: 'invoice',
+      templateVersion: E2E_PAID_TEMPLATE_VERSION,
+      documentNumber: fixtureDocumentNumber('SC', seed),
+      issueDate: E2E_SEED_ISSUE_DATE,
+      billMode: true,
+      invoiceSubject: 'membership',
+    },
+    mainPdfBlobKey(ctx.slug, seed),
+  );
+  const receiptPdf = await renderAndUpload(
+    {
+      ...common,
+      kind: 'receipt_combined',
+      templateVersion: E2E_PAID_TEMPLATE_VERSION,
+      documentNumber: fixtureDocumentNumber('RC', seed),
+      issueDate: E2E_SEED_PAYMENT_DATE,
+      invoiceSubject: 'membership',
+    },
+    receiptPdfBlobKey(ctx.slug, seed),
+  );
+  return { mainPdf, receiptPdf };
 }
 
 /**
- * Seed 3 issued invoices for the given member. Each invoice satisfies
- * the `invoices_non_draft_has_snapshots` + `invoices_paid_has_payment`
- * CHECK constraints with placeholder snapshot + PDF fields (the
- * adapter layer populates real ones when rendering, but CHECK only
- * requires NOT NULL).
+ * Delete a paid fixture still in the legacy pre-088 shape, with its children in
+ * FK order (the same order `tests/e2e/global-setup.ts` uses to reset 900003):
+ * break the refunds ↔ credit_notes cycle, then refunds, credit notes, payments,
+ * and the invoice (its lines cascade). A renewal cycle pointing at a fixture is
+ * not ours to unlink, so that refuses instead.
+ */
+async function deleteLegacyPaidFixture(
+  tx: Parameters<Parameters<typeof runInTenant>[1]>[0],
+  ctx: TenantContext,
+  invoiceId: string,
+  number: string,
+): Promise<void> {
+  const linked = await tx.execute<{ n: number }>(
+    sql`SELECT count(*)::int AS n FROM renewal_cycles
+         WHERE tenant_id = ${ctx.slug}
+           AND (linked_invoice_id = ${invoiceId} OR anchor_invoice_id = ${invoiceId})`,
+  );
+  if ((linked[0]?.n ?? 0) > 0) {
+    throw new Error(
+      `seed-e2e-portal-invoices: ${number} (${invoiceId}) is referenced by a renewal cycle — unlink it by hand before re-seeding.`,
+    );
+  }
+  await tx.execute(
+    sql`UPDATE credit_notes SET source_refund_id = NULL
+         WHERE tenant_id = ${ctx.slug}
+           AND source_refund_id IN (SELECT id FROM refunds WHERE payment_id IN (SELECT id FROM payments WHERE invoice_id = ${invoiceId}))`,
+  );
+  await tx.execute(
+    sql`DELETE FROM refunds WHERE payment_id IN (SELECT id FROM payments WHERE invoice_id = ${invoiceId})`,
+  );
+  await tx.execute(
+    sql`DELETE FROM credit_notes WHERE tenant_id = ${ctx.slug} AND original_invoice_id = ${invoiceId}`,
+  );
+  await tx.execute(sql`DELETE FROM payments WHERE invoice_id = ${invoiceId}`);
+  await tx.execute(
+    sql`DELETE FROM invoices WHERE tenant_id = ${ctx.slug} AND invoice_id = ${invoiceId}`,
+  );
+  console.log(`  removed legacy-shape ${number} (${invoiceId}) — re-seeding as an 088 paid bill`);
+}
+
+/**
+ * Seed the e2e member's 3 invoices (`E2E_PORTAL_INVOICE_SEEDS`): two 088 paid
+ * bills with rendered receipts and one issued invoice. Idempotent: a fixture
+ * already in the right shape is left alone; a paid fixture still in the legacy
+ * pre-088 shape is replaced.
  */
 async function seedInvoicesIfMissing(
   ctx: TenantContext,
   memberId: string,
   adminUserId: string,
 ): Promise<void> {
-  // Document-number format per Domain value-object `DocumentNumber`:
-  // `{prefix}-{YYYY}-{NNNNNN}` with 6-digit zero-padded sequence.
-  // We use the high end of the sequence space (900000+) so E2E
-  // fixtures never collide with the real sequential allocator which
-  // starts at 000001 and climbs monotonically. SweCham has historically
-  // issued ~100s of invoices per year; the 900000-series is a safe
-  // namespace reservation for test rows.
-  const seeds: InvoiceSeed[] = [
-    { docNumber: 'SC-2026-900001', status: 'paid', totalSatang: 1_070_000n, sequenceNumber: 900001 },
-    { docNumber: 'SC-2026-900002', status: 'paid', totalSatang: 2_140_000n, sequenceNumber: 900002 },
-    { docNumber: 'SC-2026-900003', status: 'issued', totalSatang: 535_000n, sequenceNumber: 900003 },
-  ];
-
-  const tenantSnap = {
-    legal_name_en: 'Thai-Swedish Chamber of Commerce',
-    legal_name_th: 'หอการค้าไทย-สวีเดน',
-    tax_id: '0000000000000',
-    address: 'Bangkok',
-  };
-  const memberSnap = {
-    company_name: 'E2E Alpha Co',
-    // 0045 `invoices_snapshot_has_contact_email` — non-draft snapshots must
-    // carry string `legal_name` + `address` too (the seed ran red on this
-    // CHECK right after the 0056 one, 2026-09-07).
-    legal_name: 'E2E Alpha Co',
-    tax_id: null,
-    address: 'Bangkok (E2E fixture)',
-    // FR-038 — snapshot MUST carry the primary contact email so F4's
-    // `recordPayment` can enqueue the auto-email receipt without
-    // reaching back into the mutable members/contacts tables.
-    primary_contact_email: 'e2e-member@swecham.test',
-    primary_contact_name: 'E2E Alpha',
-  };
-
   await runInTenant(ctx, async (tx) => {
-    for (const s of seeds) {
+    for (const s of E2E_PORTAL_INVOICE_SEEDS) {
       const existing = await tx
-        .select({ invoiceId: invoices.invoiceId })
+        .select({
+          invoiceId: invoices.invoiceId,
+          status: invoices.status,
+          documentNumber: invoices.documentNumber,
+          billDocumentNumberRaw: invoices.billDocumentNumberRaw,
+        })
         .from(invoices)
         .where(
           and(
             eq(invoices.tenantId, ctx.slug),
-            eq(invoices.documentNumber, s.docNumber),
+            or(
+              eq(invoices.documentNumber, s.number),
+              eq(invoices.billDocumentNumberRaw, s.number),
+            ),
           ),
         )
         .limit(1);
-      if (existing.length > 0) {
-        const existingId = existing[0]!.invoiceId;
-        if (s.status === 'issued' && s.sequenceNumber === 900003) {
-          // T082: surface the existing UUID so the operator can copy
-          // the correct E2E_ISSUED_INVOICE_ID into .env.local even if
-          // the row was inserted before deterministic-UUID pinning
-          // landed (pre-T082 seeds used randomUUID() for every row).
-          console.log(
-            `  invoice ${s.docNumber} already present — invoice_id=${existingId}`,
-          );
-        } else {
-          console.log(`  invoice ${s.docNumber} already present — skip`);
-        }
+      const found = existing[0];
+      if (found && isLegacyPaidFixtureRow(found)) {
+        await deleteLegacyPaidFixture(tx, ctx, found.invoiceId, s.number);
+      } else if (found) {
+        console.log(`  invoice ${s.number} already present — invoice_id=${found.invoiceId}`);
         continue;
       }
 
-      const subtotal = (s.totalSatang * 100n) / 107n;
-      const vat = s.totalSatang - subtotal;
-      // T082: pin the ISSUED fixture to a deterministic UUID so the
-      // `E2E_ISSUED_INVOICE_ID` env var in .env.local stays stable
-      // across re-seeds. Paid fixtures stay on random UUIDs (they
-      // are not URL-referenced by E2E specs).
-      const invoiceId =
-        s.status === 'issued' && s.sequenceNumber === 900003
-          ? E2E_ISSUED_INVOICE_ID
-          : randomUUID();
-      // Render + upload the real PDF BEFORE inserting the row so the
-      // blob key we persist always points at a retrievable object.
-      // If upload fails, the transaction rolls back and the row is
-      // never created — no dangling DB record with a ghost key.
-      const pdf = await renderAndUploadPdf(ctx, s, invoiceId);
-      await tx.insert(invoices).values({
-        tenantId: ctx.slug,
-        invoiceId,
-        memberId,
-        planYear: 2026,
-        planId: 'regular',
-        draftByUserId: adminUserId,
-        status: s.status,
-        pdfDocKind: 'invoice',
-        fiscalYear: 2026,
-        sequenceNumber: s.sequenceNumber,
-        documentNumber: s.docNumber,
-        issueDate: '2026-04-15',
-        dueDate: '2026-05-15',
-        paidAt: s.status === 'paid' ? new Date('2026-04-18T00:00:00Z') : null,
-        paymentMethod: s.status === 'paid' ? 'bank_transfer' : null,
-        // 0056 `invoices_paid_has_receipt_status` — a paid invoice must carry a
-        // receipt PDF status; 'pending' is the async path's initial state and
-        // claims no receipt blob (the seed ran red on this CHECK, 2026-09-07).
-        receiptPdfStatus: s.status === 'paid' ? 'pending' : null,
-        subtotalSatang: subtotal,
-        vatRateSnapshot: '0.0700',
-        vatSatang: vat,
-        totalSatang: s.totalSatang,
-        proRatePolicySnapshot: 'none',
-        netDaysSnapshot: 30,
-        tenantIdentitySnapshot: tenantSnap,
-        memberIdentitySnapshot: memberSnap,
-        pdfBlobKey: pdf.blobKey,
-        pdfSha256: pdf.sha256,
-        pdfTemplateVersion: 1,
-      });
+      // Render + upload BEFORE inserting so the persisted blob keys always
+      // point at retrievable objects; a failed upload rolls the tx back.
+      const { mainPdf, receiptPdf } = await renderFixturePdfs(ctx, s);
+      await tx.insert(invoices).values(
+        buildE2ePortalInvoiceRow({
+          seed: s,
+          tenantSlug: ctx.slug,
+          memberId,
+          adminUserId,
+          mainPdf,
+          receiptPdf,
+        }),
+      );
 
-      // Seed a single membership-fee line so the detail page renders
-      // a non-empty line-items table. Matches the PDF render call
-      // above (single-line membership_fee) so downloaded bytes align
-      // with what the UI shows.
+      // A single membership-fee line, matching the rendered PDFs, so the detail
+      // page renders a non-empty line-items table.
+      const { subtotalSatang } = splitVat(s.totalSatang);
       await tx.insert(invoiceLines).values({
         tenantId: ctx.slug,
-        invoiceId,
+        invoiceId: s.invoiceId,
         kind: 'membership_fee',
         descriptionTh: 'ค่าสมาชิก ปี 2026 (E2E fixture)',
         descriptionEn: 'Membership 2026 (E2E fixture)',
-        unitPriceSatang: subtotal,
+        unitPriceSatang: subtotalSatang,
         quantity: '1.0000',
-        totalSatang: subtotal,
+        totalSatang: subtotalSatang,
         position: 1,
       });
 
-      console.log(
-        `  seeded invoice ${s.docNumber} (${s.status}) + PDF ${pdf.blobKey}`,
-      );
+      console.log(`  seeded invoice ${s.number} (${s.status}) + PDF ${mainPdf.blobKey}`);
     }
   });
 }
@@ -496,6 +545,8 @@ async function seedInvoicesIfMissing(
 async function main(): Promise<void> {
   console.log('seeding E2E portal invoice fixtures…');
   const ctx = requireSwechamTenant();
+  requireDevTarget();
+  require088Flag();
 
   // We need an admin user id for the invoice draft_by_user_id FK.
   const adminRow = await db
@@ -569,6 +620,7 @@ async function main(): Promise<void> {
   console.log(`  E2E_MEMBER_PASSWORD_EMPTY='${E2E_PASSWORD}'`);
   console.log(`  E2E_MEMBER_EMPTY=1`);
   console.log(`  E2E_ISSUED_INVOICE_ID='${issuedId}'`);
+  console.log(`  E2E_PAID_ONLINE_INVOICE_ID='${E2E_PAID_ONLINE_INVOICE_ID}'`);
   console.log('----------------------------------------');
 }
 

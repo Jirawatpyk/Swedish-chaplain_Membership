@@ -123,11 +123,14 @@ async function resetF5IssuedInvoice(): Promise<void> {
 /**
  * The paid-online F5 fixture (SC-2026-900001, used by the reconciliation and
  * refund specs) is looked up by its DOCUMENT NUMBER, not trusted from
- * `.env.local`. Unlike SC-2026-900003 its id is not pinned: every run of
- * `scripts/seed-e2e-portal-invoices.ts` mints a new one, which left
- * `E2E_PAID_ONLINE_INVOICE_ID` pointing at a deleted row on 2026-09-28 (the
- * same drift #434 fixed for 900003). Setting `process.env` here reaches every
- * worker, which forks after global setup. A miss keeps whatever the env had.
+ * `.env.local`. Seeds before the 088 re-shape minted a new id on every run,
+ * which left `E2E_PAID_ONLINE_INVOICE_ID` pointing at a deleted row on
+ * 2026-09-28 (the same drift #434 fixed for 900003); the seed now pins it
+ * (`00000000-e2e0-4fff-9ffe-000000900001`), and the lookup still covers a DB
+ * seeded either way. It is an 088 paid bill, so the SC number rides
+ * `bill_document_number_raw`; a legacy-shaped row carries it in
+ * `document_number`. Setting `process.env` here reaches every worker, which
+ * forks after global setup. A miss keeps whatever the env had.
  */
 const PAID_ONLINE_DOCUMENT_NUMBER = 'SC-2026-900001';
 
@@ -138,7 +141,9 @@ async function resolvePaidOnlineInvoice(): Promise<void> {
   try {
     const rows = await sql<Array<{ invoice_id: string }>>`
       SELECT invoice_id::text AS invoice_id FROM invoices
-      WHERE tenant_id = 'swecham' AND document_number = ${PAID_ONLINE_DOCUMENT_NUMBER}
+      WHERE tenant_id = 'swecham'
+        AND (bill_document_number_raw = ${PAID_ONLINE_DOCUMENT_NUMBER}
+             OR document_number = ${PAID_ONLINE_DOCUMENT_NUMBER})
       LIMIT 1
     `;
     const id = rows[0]?.invoice_id;
