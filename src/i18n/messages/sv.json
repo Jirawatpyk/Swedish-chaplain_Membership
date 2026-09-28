@@ -7162,6 +7162,7 @@
         "reasonAuth": "Din session har gått ut. Logga in igen.",
         "reasonMembershipTerminated": "Ditt medlemskap har avslutats. Kontakta kammaren för att återaktivera medlemskapet innan du betalar.",
         "reasonNoPrimaryContact": "Detta medlemskap saknar primär kontakt, så PromptPay kan inte användas. Kontakta kammarens personal, eller betala med kort i stället.",
+        "reasonInvoiceNotPayable": "Denna faktura kan inte längre betalas online – den kan redan vara betald, eller har ersatts eller makulerats. Ladda om sidan för att se aktuell status.",
         "reasonServer": "Vår betalningstjänst är tillfälligt otillgänglig.",
         "reasonReadOnly": "Betalningar är pausade medan systemet är i skrivskyddat läge för underhåll. Du har inte debiterats.",
         "reasonNetwork": "Nätverksfel. Kontrollera din anslutning och försök igen.",
