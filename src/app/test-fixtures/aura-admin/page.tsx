@@ -19,6 +19,8 @@ import type { RecentExportRow } from '@/components/directory/recent-exports';
 import { GenerateExportActions } from '@/components/directory/generate-export-actions';
 import type { ChangeRequestReviewFieldView, StaffChangeRequestView } from '@/lib/change-request-staff-view';
 import type { ChangeRequestQueueItem } from '@/modules/members';
+import { EmptyState } from '@/components/shell/empty-state';
+import { InboxIcon } from 'lucide-react';
 import { flattenNavItems, staffNavConfig } from '@/config/nav';
 import { renderMembersListView } from '@/app/(staff)/admin/members/page';
 import { DirectoryWithBulk } from '@/app/(staff)/admin/members/_components/directory-with-bulk';
@@ -311,14 +313,21 @@ export default async function AuraAdminPreviewPage({
             subtitle={t('subtitle')}
             actions={
               empty ? undefined : (
-                <p className="text-sm" data-testid="queue-pending-count">
+                <p className="text-sm text-[var(--aura-fg-secondary)]" data-testid="queue-pending-count">
                   {t('pendingSummary', { count: 3, oldestDays: 6 })}
                 </p>
               )
             }
           />
           <ChangeRequestQueueFilters resultCount={empty ? 0 : QUEUE.length} hasMore={false} />
-          {empty ? <MembersFilteredEmptyState /> : <ChangeRequestQueueTable items={QUEUE} />}
+          {/* The page's own empty state (default filters), as the page renders it. */}
+          {empty ? (
+            <div data-testid="queue-empty">
+              <EmptyState icon={InboxIcon} title={t('empty')} description={t('emptyHint')} bordered />
+            </div>
+          ) : (
+            <ChangeRequestQueueTable items={QUEUE} />
+          )}
         </TableContainer>
       </StaffFrame>
     );

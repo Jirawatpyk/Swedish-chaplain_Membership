@@ -226,7 +226,7 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
           // the tenant's pending fact belongs to the DEFAULT view — on a
           // filtered page it reads as a count of what is shown (UX I8)
           defaultView && (page.pendingCount ?? 0) > 0 ? (
-            <p className="text-sm" data-testid="queue-pending-count">
+            <p className="text-sm text-[var(--aura-fg-secondary)]" data-testid="queue-pending-count">
               {t('pendingSummary', {
                 count: page.pendingCount ?? 0,
                 oldestDays: page.oldestPendingAgeSeconds === null ? 0 : Math.floor(page.oldestPendingAgeSeconds / 86_400),

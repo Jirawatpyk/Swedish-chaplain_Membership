@@ -133,7 +133,8 @@ export function MembersErrorState() {
   const router = useRouter();
   return (
     // role="alert" implies aria-live="assertive". The board draws the error
-    // in the danger colours: a solid red frame and a red icon on a red disc.
+    // in the danger colours: a solid red frame and a red icon on a red disc
+    // (reaches into AURA's EmptyState classes: stand-in until AURA #82).
     <div
       role="alert"
       data-tone="danger"

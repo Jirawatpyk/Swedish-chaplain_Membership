@@ -238,7 +238,8 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
           // row beside the filters; below it the search takes its own row and
           // the filters share the next; on a phone the three filters share one
           // row (6px apart, each as wide as its words) and the needs-invite
-          // chip wraps to the next.
+          // chip wraps to the next. The search width reaches into AURA's
+          // FilterBar classes: a stand-in until AURA #83 (searchFill).
           className="[&_.aura-filterbar\_\_search]:max-w-none [&_.aura-filterbar\_\_spacer]:hidden max-lg:[&_.aura-filterbar\_\_search]:basis-full max-sm:[&_.aura-filterbar\_\_controls]:w-full max-sm:[&_.aura-filterbar\_\_controls]:gap-1.5"
           search={isSearchFocused ? sentQ : currentQ}
           onSearchChange={onSearchChange}

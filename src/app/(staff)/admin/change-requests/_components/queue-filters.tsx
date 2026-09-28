@@ -47,7 +47,6 @@
 import { useCallback, useId, useRef, useState, useTransition } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { ChevronDownIcon } from 'lucide-react';
 import { Button, DatePicker, Select, type ISODate } from '@jirawatpyk/aura-react';
 // the Domain file, not the module barrel — the barrel re-exports server-only
 // use cases (the review client imports the same way)
@@ -216,13 +215,12 @@ export function ChangeRequestQueueFilters({ resultCount, hasMore }: ChangeReques
         onClick={() => setOpenOnPhone((v) => !v)}
         className="flex min-h-12 w-full items-center justify-between gap-3 rounded-[var(--aura-card-radius)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] px-4 py-3 text-left focus-visible:outline-2 focus-visible:outline-[var(--aura-focus-ring)] sm:hidden"
       >
-        <span className="text-[15px] font-semibold">{tFilters('toggle')}</span>
-        <span className="flex min-w-0 items-center gap-1.5 text-sm text-[var(--aura-fg-secondary)]">
-          <span className="truncate">
+        <span className="text-sm font-semibold">{tFilters('toggle')}</span>
+        <span className="min-w-0 text-sm text-[var(--aura-fg-secondary)]">
+          <span className="block truncate">
             {tFilters('state')}: {tReview(`state.${stagedState(urlState)}`)}
             {urlState === 'decided' && isOutcome(urlOutcome) ? ` · ${tReview(`outcome.${urlOutcome}`)}` : null}
           </span>
-          <ChevronDownIcon aria-hidden="true" className={`size-4 shrink-0 transition-transform ${openOnPhone ? 'rotate-180' : ''}`} />
         </span>
       </button>
       {/* The controls sit in a card, the result count under it (board

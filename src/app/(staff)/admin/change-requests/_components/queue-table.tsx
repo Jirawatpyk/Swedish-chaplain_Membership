@@ -11,7 +11,6 @@
  */
 import Link from 'next/link';
 import { getLocale, getTranslations } from 'next-intl/server';
-import { AlertTriangleIcon, ReceiptTextIcon } from 'lucide-react';
 import { Badge, buttonClass } from '@jirawatpyk/aura-react/server';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 import type { ChangeRequestQueueItem } from '@/modules/members';
@@ -21,14 +20,15 @@ import {
   changeRequestStatusOf,
 } from '@/components/members/change-requests/change-request-status-badge';
 
-// On a phone each row is the board's card (`Admin-change-requests-mobile`):
+// On a phone each row is the board's card (`Admin-change-requests-mobile`)
+// (stand-in until AURA #84, a card layout for a stacked static Table):
 // the company and member number as its title, the Review button beside it,
 // then Submitted by | Fields and Submitted | Waiting in two columns, the
 // status across the foot. AURA stacks the rows in a container query named
 // `aura-tbl` below 640px; the same query lays the card out as a grid.
 const CARD = '@max-[640px]/aura-tbl:mb-3 @max-[640px]/aura-tbl:rounded-[var(--aura-card-radius)] @max-[640px]/aura-tbl:!border @max-[640px]/aura-tbl:!border-[var(--aura-border-default)] @max-[640px]/aura-tbl:bg-[var(--aura-bg-surface)] @max-[640px]/aura-tbl:!p-4 @max-[640px]/aura-tbl:!grid @max-[640px]/aura-tbl:grid-cols-2 @max-[640px]/aura-tbl:gap-x-4 @max-[640px]/aura-tbl:gap-y-3 @max-[640px]/aura-tbl:[&>*]:!mt-0';
 const AT = {
-  title: '@max-[640px]/aura-tbl:col-start-1 @max-[640px]/aura-tbl:row-start-1',
+  title: '@max-[640px]/aura-tbl:col-span-2 @max-[640px]/aura-tbl:row-start-1 @max-[640px]/aura-tbl:pe-28',
   action: '@max-[640px]/aura-tbl:col-start-2 @max-[640px]/aura-tbl:row-start-1 @max-[640px]/aura-tbl:self-start @max-[640px]/aura-tbl:justify-self-end',
   full: '@max-[640px]/aura-tbl:col-span-2',
 } as const;
@@ -49,7 +49,7 @@ export async function ChangeRequestQueueTable({
   const fmt = (d: Date) => formatLocalisedDate(d.toISOString(), locale, { dateStyle: 'medium', timeStyle: 'short' });
   return (
     // `data-queue="board"`: rows centred on their line, as on the board (AURA's
-    // static table aligns cells to the top).
+    // static table aligns cells to the top; a stand-in until AURA #81).
     // On a phone the cards stand apart, each framed, as on the mobile board.
     <div
       data-queue="board"
@@ -77,7 +77,7 @@ export async function ChangeRequestQueueTable({
               {/* No card label: the company is the card's title. */}
               <Td className={AT.title} label="">
                 <div className="font-medium">{item.row.member.companyName}</div>
-                <div className="font-mono text-xs text-[var(--aura-fg-secondary)]">
+                <div className="text-xs font-semibold">
                   #{item.row.member.memberNumber}
                   {item.row.member.archived ? ` · ${t('archivedMember')}` : null}
                 </div>
@@ -89,8 +89,7 @@ export async function ChangeRequestQueueTable({
               <Td label={t('columns.fields')}>
                 <div>{t('fieldCount', { count: r.fields.length })}</div>
                 {r.fields.some((f) => f.affectsTaxDocuments) ? (
-                  <div className="flex items-center gap-1 text-xs text-[var(--aura-fg-secondary)]">
-                    <ReceiptTextIcon className="size-3" aria-hidden="true" />
+                  <div className="text-xs text-[var(--aura-fg-secondary)]">
                     {tReview('markers.taxAffecting')}
                   </div>
                 ) : null}
@@ -100,7 +99,7 @@ export async function ChangeRequestQueueTable({
                 <span className="inline-flex flex-nowrap items-center gap-2 whitespace-nowrap">
                   <span id={`${rowId}-waiting`}>{wait.days > 0 ? t('waitingDays', { count: wait.days }) : t('waitingHours', { count: wait.hours })}</span>
                   {item.overdue ? (
-                    <Badge tone="danger" icon={<AlertTriangleIcon aria-hidden="true" />} data-testid="overdue-badge">
+                    <Badge tone="danger" data-testid="overdue-badge">
                       {t('overdue')}
                     </Badge>
                   ) : null}
@@ -118,12 +117,14 @@ export async function ChangeRequestQueueTable({
               <Td className={AT.action} label="">
                 <Link
                   href={`/admin/change-requests/${r.id}`}
-                  // Small in the table; the full-size button on a phone card,
-                  // as the mobile board draws it.
+                  // `sm` in the table (AURA's table rule); a phone card takes
+                  // the default button height, as the mobile board draws it.
+                  // Stand-in until AURA #84 (a card action slot on a stacked
+                  // static Table): AURA's own height token, no pixels.
                   className={buttonClass({
                     variant: 'secondary',
                     size: 'sm',
-                    className: '@max-[640px]/aura-tbl:h-11 @max-[640px]/aura-tbl:px-6 @max-[640px]/aura-tbl:text-[15px]',
+                    className: '@max-[640px]/aura-tbl:h-[var(--aura-button-height)]',
                   })}
                   aria-label={r.state === 'pending' ? t('reviewFor', { company: item.row.member.companyName }) : t('viewFor', { company: item.row.member.companyName })}
                   aria-describedby={`${rowId}-waiting`}

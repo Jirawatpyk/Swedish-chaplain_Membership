@@ -417,7 +417,9 @@ const WRAP_ROW = 'flex min-w-0 flex-wrap items-center gap-1.5 leading-snug';
  * The status cell is the card's pill, beside the title: on a card its two
  * badges stack so the company name keeps its width.
  */
-// Card-mode rules (AURA adds `.aura-table--stacked` below 640px). Bulk work
+// Card-mode rules (AURA adds `.aura-table--stacked` below 640px); they reach
+// into AURA's table classes, a stand-in until AURA #80 (column card options).
+// Bulk work
 // and the Edit shortcut stay on wider screens; tapping a card opens the
 // member (maintainer's decision, 28 Sep 2026).
 const PHONE_CARD = String.raw`[&_.aura-table--stacked_.aura-table\_\_sel]:hidden [&_.aura-table--stacked_.aura-table\_\_head.has-select-all]:hidden [&_.aura-table--stacked_[data-card='actions']]:hidden [&_.aura-table--stacked_.aura-table\_\_td:has([data-card-slot='activity'])]:hidden [&_.aura-table--stacked_.aura-table\_\_td:has([data-card-slot='number'])]:order-5 [&_.aura-table--stacked_.aura-table\_\_td:has([data-card-slot='plan'])]:order-6 [&_.aura-table--stacked_.aura-table\_\_td:has([data-card-slot='contact'])]:order-7 [&_.aura-table--stacked_.aura-table\_\_td:has([data-card-slot='engagement'])]:order-8`;

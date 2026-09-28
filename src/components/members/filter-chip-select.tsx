@@ -43,7 +43,7 @@ export function FilterChipSelect({
     value === allValue ? allLabel : (options.find((o) => o.value === value)?.label ?? value);
   return (
     <span
-      className={`relative inline-flex h-[var(--aura-input-height)] min-w-0 items-center rounded-[var(--aura-radius-md)] border border-[var(--aura-border-control)] bg-[var(--aura-bg-surface)] text-[13px] text-[var(--aura-fg-primary)] hover:bg-[var(--aura-bg-surface-hover)] has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-[var(--aura-focus-ring)] ${className ?? ''}`}
+      className={`relative inline-flex h-[var(--aura-input-height)] min-w-0 items-center rounded-[var(--aura-radius-md)] border border-[var(--aura-border-control)] bg-[var(--aura-bg-surface)] text-[length:var(--aura-input-font-size)] text-[var(--aura-fg-primary)] hover:bg-[var(--aura-bg-surface-hover)] has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-[var(--aura-focus-ring)] ${className ?? ''}`}
     >
       <span
         data-filter-face=""

@@ -38,8 +38,10 @@ export function RecentExports({
   readonly labels: RecentExportsLabels;
 }): React.JSX.Element {
   // 122 US5a — the board's "Recent exports" card (`Admin-directory`): a plain
-  // table (small capitals in the head, a rule between rows, no inner frame),
-  // every row centred on its line, Download with its icon. On a phone
+  // table (a rule between rows, no inner frame), every row centred on its
+  // line, Download with its icon. AURA's own head style and type sizes stay
+  // (board-parity rule). The frame and centring reach into AURA's table
+  // classes: a stand-in until AURA #81 (static Table align + frameless). On a phone
   // (`Admin-directory-mobile`) a one-line list instead: the name, the time
   // under it, and the status pill — or, once ready, "· Ready" in the time line
   // and an icon-only download. The table hides below 640px and the list above
@@ -64,7 +66,7 @@ export function RecentExports({
             <Table
               caption={labels.caption}
               captionHidden
-              className="rounded-none border-0 bg-transparent [&_.aura-tbl\_\_td]:align-middle [&_.aura-tbl\_\_td:first-child]:pl-0 [&_.aura-tbl\_\_td:last-child]:pr-0 [&_.aura-tbl\_\_th]:text-[11px] [&_.aura-tbl\_\_th]:font-medium [&_.aura-tbl\_\_th]:tracking-[0.06em] [&_.aura-tbl\_\_th]:text-[var(--aura-fg-secondary)] [&_.aura-tbl\_\_th]:uppercase [&_.aura-tbl\_\_th:first-child]:pl-0 [&_.aura-tbl\_\_th:last-child]:pr-0 [&_thead_tr]:border-b [&_thead_tr]:border-[var(--aura-border-default)]"
+              className="[&_.aura-tbl\_\_td]:align-middle [&_.aura-tbl\_\_td:first-child]:pl-0 [&_.aura-tbl\_\_td:last-child]:pr-0 [&_.aura-tbl\_\_th:first-child]:pl-0 [&_.aura-tbl\_\_th:last-child]:pr-0 [&_thead_tr]:border-b [&_thead_tr]:border-[var(--aura-border-default)]"
             >
               <THead>
                 <Tr>
@@ -79,7 +81,7 @@ export function RecentExports({
               <TBody>
                 {rows.map((row) => (
                   <Tr key={row.jobId}>
-                    <Td className="text-[15px]">{row.kindLabel}</Td>
+                    <Td>{row.kindLabel}</Td>
                     <Td>
                       <StatusPill tone={exportStatusTone(row.status)}>{row.statusLabel}</StatusPill>
                     </Td>
@@ -105,8 +107,8 @@ export function RecentExports({
             {rows.map((row) => (
               <li key={row.jobId} className="flex min-h-14 items-center gap-3 py-2.5">
                 <div className="flex min-w-0 flex-1 flex-col">
-                  <span className="text-[15px] [overflow-wrap:anywhere]">{row.kindLabel}</span>
-                  <span className="text-[13px] text-[var(--aura-fg-secondary)]">
+                  <span className="text-sm [overflow-wrap:anywhere]">{row.kindLabel}</span>
+                  <span className="text-xs text-[var(--aura-fg-secondary)]">
                     {row.downloadable ? `${row.requestedAt} · ${row.statusLabel}` : row.requestedAt}
                   </span>
                 </div>
