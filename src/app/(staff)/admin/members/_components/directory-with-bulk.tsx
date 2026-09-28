@@ -8,7 +8,7 @@
  */
 
 import { useState, useCallback, useMemo } from 'react';
-import { ReadOnlyBanner } from '@/components/shell/read-only-banner';
+import { Alert } from '@jirawatpyk/aura-react';
 import { useRouter } from 'next/navigation';
 import { toast } from '@/lib/toast';
 import {
@@ -224,13 +224,15 @@ export function DirectoryWithBulk({
 }
 
 /**
- * Subtle banner above the manager directory table. Uses an Info icon
- * + muted-background so the banner doesn't dominate but is unmissable
- * on first visit. `role="note"` is the canonical "supplemental
- * information" landmark — the banner is static admin-handoff guidance,
- * not a live-region status update (so `role="status"` would be wrong).
+ * The read-only notice above the manager directory table (board
+ * `Admin-state-members-manager`). `role="note"`: static admin-handoff
+ * guidance, not a live-region status update.
  */
 function ManagerReadOnlyBanner() {
   const t = useTranslations('admin.members.directory');
-  return <ReadOnlyBanner>{t('managerReadOnlyBanner')}</ReadOnlyBanner>;
+  return (
+    <Alert tone="info" role="note">
+      {t('managerReadOnlyBanner')}
+    </Alert>
+  );
 }

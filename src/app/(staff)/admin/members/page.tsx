@@ -13,7 +13,7 @@
  */
 
 import type { Metadata } from 'next';
-import { Suspense } from 'react';
+import { Suspense, type ReactNode } from 'react';
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import { PlusIcon } from 'lucide-react';
@@ -56,8 +56,7 @@ import {
 } from '@/modules/renewals';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
-import { Card, CardContent } from '@/components/ui/card';
-import { buttonVariants } from '@/components/ui/button';
+import { buttonClass } from '@jirawatpyk/aura-react/server';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import {
@@ -208,11 +207,47 @@ export default async function MembersListPage({
   const query = await searchParams;
   const t = await getTranslations('admin.members');
 
+  return renderMembersListView({
+    title: t('title'),
+    subtitle: t('subtitle'),
+    addMemberLabel: t('addMember'),
+    canWrite: canPerform(currentUser.role, 'members.write'),
+    canBulk: canPerform(currentUser.role, 'members.bulk'),
+    body: (
+      <MembersDirectoryBody
+        query={query}
+        isAdmin={canPerform(currentUser.role, 'members.write')}
+      />
+    ),
+  });
+}
+
+/**
+ * 122 US5a (T505) — the page frame (header + body), shared with the no-DB
+ * preview route (`/test-fixtures/aura-admin`) so the preview and the page
+ * cannot drift. The board (`Admin-members`) draws the filters and the table
+ * straight on the page, without a card.
+ */
+export function renderMembersListView({
+  title,
+  subtitle,
+  addMemberLabel,
+  canWrite,
+  canBulk,
+  body,
+}: {
+  readonly title: string;
+  readonly subtitle: string;
+  readonly addMemberLabel: string;
+  readonly canWrite: boolean;
+  readonly canBulk: boolean;
+  readonly body: ReactNode;
+}) {
   return (
     <TableContainer>
       <PageHeader
-        title={t('title')}
-        subtitle={t('subtitle')}
+        title={title}
+        subtitle={subtitle}
         actions={
           // 016 re-review D — split by destination key: the backup ZIP is a
           // 'members.bulk' egress (full-tenant PII), "Add member" is a
@@ -221,31 +256,19 @@ export default async function MembersListPage({
           // A fragment, not a wrapper row: PageHeader's actions row wraps and
           // stretches its direct children on phones; a nowrap row inside it
           // pushed "Lägg till medlem" past a 360 / 390 px screen in Swedish.
-          canPerform(currentUser.role, 'members.write') ? (
+          canWrite ? (
             <>
-              {canPerform(currentUser.role, 'members.bulk') && (
-                <ExportBackupButton />
-              )}
-              <Link
-                href="/admin/members/new"
-                className={buttonVariants()}
-              >
-                <PlusIcon className="h-3.5 w-3.5" />
-                {t('addMember')}
+              {canBulk && <ExportBackupButton />}
+              <Link href="/admin/members/new" className={buttonClass({ variant: 'primary' })}>
+                <PlusIcon aria-hidden="true" className="size-4" />
+                {addMemberLabel}
               </Link>
             </>
           ) : null
         }
       />
 
-      <Card>
-        <CardContent className="flex flex-col gap-4">
-          <MembersDirectoryBody
-            query={query}
-            isAdmin={canPerform(currentUser.role, 'members.write')}
-          />
-        </CardContent>
-      </Card>
+      <div className="flex flex-col gap-4">{body}</div>
     </TableContainer>
   );
 }

@@ -1,5 +1,6 @@
 /**
- * Shimmer skeleton for the members directory table.
+ * Loading skeleton for the members directory table (AURA pulse via
+ * `SkeletonBlock`, 122 US5a).
  *
  * Approximates the real table's common-case shape (same column count, one
  * row height, same grid). Not an exact shape match: Plan/Status/Contact cells
@@ -26,7 +27,7 @@
  * at-most a 1-column shift (the narrow select column) on first paint.
  */
 
-import { Skeleton } from '@/components/ui/skeleton';
+import { SkeletonBlock } from '@/components/shell/page-skeletons';
 
 interface MembersTableSkeletonProps {
   /**
@@ -58,17 +59,17 @@ export function MembersTableSkeleton({
   return (
     <div className="flex flex-col gap-4" aria-hidden>
       <div
-        className="grid gap-3 border-b bg-muted/40 px-4 py-3 text-xs font-medium text-muted-foreground"
+        className="grid gap-3 border-b border-[var(--aura-border-default)] bg-[var(--aura-bg-surface-hover)] px-4 py-3"
         style={{ gridTemplateColumns: gridTemplate }}
       >
         {Array.from({ length: cols }).map((_, i) => (
-          <Skeleton key={i} className="h-3 w-full" />
+          <SkeletonBlock key={i} className="h-3 w-full" />
         ))}
       </div>
       {Array.from({ length: skeletonRows }).map((_, r) => (
         <div
           key={r}
-          className="grid gap-3 border-b px-4 py-3 last:border-b-0"
+          className="grid gap-3 border-b border-[var(--aura-border-default)] px-4 py-3 last:border-b-0"
           style={{ gridTemplateColumns: gridTemplate }}
         >
           {/* 057 badge-inline — the portal badge renders INLINE after the
@@ -79,7 +80,7 @@ export function MembersTableSkeleton({
               taller, which is a smaller aggregate CLS than over-reserving two
               lines for every row (ux-standards § 2.1). */}
           {Array.from({ length: cols }).map((__, c) => (
-            <Skeleton key={c} className="h-5 w-full" />
+            <SkeletonBlock key={c} className="h-5 w-full" />
           ))}
         </div>
       ))}
