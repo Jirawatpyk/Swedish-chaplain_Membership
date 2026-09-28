@@ -8,7 +8,9 @@
  *   - QR `<img>` onError debounces transient failures via internal
  *     retry counter; escalates to `onLoadError` only after limit
  *   - Refresh CTA wires `onRefresh`
- *   - Currency fallback when `currency !== 'thb'`
+ *   - THB formatting for both `'thb'` and the real upper-case `'THB'`
+ *     the invoice page passes (compared case-insensitively)
+ *   - Currency fallback when the currency is not THB
  */
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
@@ -140,6 +142,18 @@ describe('<PromptPayPanel> — pending status', () => {
     // is locale-dependent; assert presence of the THB digits.
     const amountNode = screen.getByText(/Amount:/);
     expect(amountNode.textContent).toMatch(/53,?500/);
+  });
+
+  it('formats upper-case currency=THB (the value the invoice page passes) — never raw satang', () => {
+    renderWithIntl({
+      ...baseProps,
+      status: 'pending',
+      currency: 'THB',
+      amountSatang: 3_852_000,
+    });
+    const amountNode = screen.getByText(/Amount:/);
+    expect(amountNode.textContent).toContain('38,520.00 THB');
+    expect(amountNode.textContent).not.toContain('3852000');
   });
 
   it('falls back to raw amount + uppercase currency when currency!==thb', () => {
