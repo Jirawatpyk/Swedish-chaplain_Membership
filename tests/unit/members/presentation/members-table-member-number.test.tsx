@@ -13,7 +13,7 @@
  *   - ?sort=engagement   (no order) → Engagement <th> aria-sort="descending" (default DESC)
  */
 import { describe, expect, it, vi, beforeAll, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import { MembersTable, type MembersTableRow } from '@/components/members/members-table';
 
@@ -55,7 +55,11 @@ const messages = {
           status: 'Status',
           engagement: 'Engagement',
           lastActivity: 'Last activity',
+          actions: 'Actions',
         },
+        rowActions: 'More actions for {company}',
+        openMember: 'Open member',
+        editMember: 'Edit member',
         engagementBand: { healthy: 'H', moderate: 'M', warning: 'W', critical: 'C' },
         rowAriaLabel: 'Open {company} details',
         noPrimary: 'No primary',
@@ -110,7 +114,9 @@ const row: MembersTableRow = {
 function renderTable() {
   return render(
     <NextIntlClientProvider locale="en" messages={messages}>
-      <MembersTable rows={[row]} />
+      {/* total > 1: AURA only offers sorting when there is more than one
+          row across all pages. */}
+      <MembersTable rows={[row]} total={2} />
     </NextIntlClientProvider>,
   );
 }
@@ -133,8 +139,11 @@ describe('MembersTable member number column', () => {
 // Engagement descending); a second click flips it; the page resets to 1.
 // ---------------------------------------------------------------------------
 describe('MembersTable header sort writes the URL (T502)', () => {
+  // The header's sort control is a button inside the columnheader (the grid
+  // cell itself handles Enter / Space).
   function clickHeader(name: RegExp) {
-    fireEvent.click(screen.getByRole('columnheader', { name }));
+    const header = screen.getByRole('columnheader', { name });
+    fireEvent.click(within(header).getByRole('button'));
   }
 
   it('Member No. (inactive) → sort=memberNumber&order=asc&page=1', () => {

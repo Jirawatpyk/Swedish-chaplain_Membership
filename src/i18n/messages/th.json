@@ -1360,7 +1360,8 @@
           "risk": "ความเสี่ยง",
           "engagement": "การมีส่วนร่วม",
           "lastActivity": "กิจกรรมล่าสุด",
-          "notes": "บันทึก"
+          "notes": "บันทึก",
+          "actions": "การดำเนินการ"
         },
         "engagementBand": {
           "healthy": "ดีมาก",
@@ -1404,7 +1405,11 @@
           "unavailable": "ไม่ทราบสถานะพอร์ทัล",
           "unavailableHint": "โหลดจำนวนไม่สำเร็จ — รีเฟรชเพื่อลองใหม่"
         },
-        "tableCaption": "รายชื่อสมาชิก"
+        "tableCaption": "รายชื่อสมาชิก",
+        "rowActions": "การดำเนินการเพิ่มเติมสำหรับ {company}",
+        "openMember": "เปิดข้อมูลสมาชิก",
+        "editMember": "แก้ไขสมาชิก",
+        "rowNotSelectable": "{company} เก็บถาวรแล้ว จึงเลือกไม่ได้"
       },
       "emptyStates": {
         "zero": {

@@ -4,7 +4,7 @@
  * with screen-reader text. Mirrors the "Lapsed" badge test
  * (members-table-lapsed-badge.test.tsx) but for the NEW amber/suspended
  * state — distinct icon (PauseCircle vs TriangleAlert) + distinct colour
- * token (text-warning vs text-destructive, never colour-alone) + distinct
+ * tone (AURA warning vs danger, never colour-alone) + distinct
  * sr-only phrase.
  *
  * The badge is a SIBLING outside the InlineStatusCell button so clicking the
@@ -151,10 +151,11 @@ describe('MembersTable suspended badge', () => {
 
   it('uses an amber (warning) colour token, never destructive red, for the Suspended badge', () => {
     renderTable([baseRow({ membership_suspended: true })]);
-    const badge = screen.getByText('Suspended').closest('span[class]');
+    // 122 US5a — AURA Badge: the tone is the `aura-badge--<tone>` class.
+    const badge = screen.getByText('Suspended').closest('.aura-badge');
     expect(badge).not.toBeNull();
-    expect(badge?.className).toMatch(/text-warning/);
-    expect(badge?.className).not.toMatch(/text-destructive/);
+    expect(badge?.className).toMatch(/aura-badge--warning/);
+    expect(badge?.className).not.toMatch(/aura-badge--danger/);
   });
 
   it('suppresses the Suspended badge on an archived row even when suspended', () => {

@@ -1360,7 +1360,8 @@
           "risk": "Risk",
           "engagement": "Engagemang",
           "lastActivity": "Senaste aktivitet",
-          "notes": "Anteckningar"
+          "notes": "Anteckningar",
+          "actions": "Åtgärder"
         },
         "engagementBand": {
           "healthy": "Frisk",
@@ -1404,7 +1405,11 @@
           "unavailable": "Portalstatus ej tillgänglig",
           "unavailableHint": "Kunde inte läsa antalet — uppdatera för att försöka igen"
         },
-        "tableCaption": "Medlemsregister"
+        "tableCaption": "Medlemsregister",
+        "rowActions": "Fler åtgärder för {company}",
+        "openMember": "Öppna medlem",
+        "editMember": "Redigera medlem",
+        "rowNotSelectable": "{company} är arkiverad och kan inte markeras"
       },
       "emptyStates": {
         "zero": {

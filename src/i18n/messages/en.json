@@ -1360,7 +1360,8 @@
           "risk": "Risk",
           "engagement": "Engagement",
           "lastActivity": "Last activity",
-          "notes": "Notes"
+          "notes": "Notes",
+          "actions": "Actions"
         },
         "engagementBand": {
           "healthy": "Healthy",
@@ -1404,7 +1405,11 @@
           "unavailable": "Portal status unavailable",
           "unavailableHint": "Couldn't load the count — refresh to try again"
         },
-        "tableCaption": "Members directory"
+        "tableCaption": "Members directory",
+        "rowActions": "More actions for {company}",
+        "openMember": "Open member",
+        "editMember": "Edit member",
+        "rowNotSelectable": "{company} is archived and cannot be selected"
       },
       "emptyStates": {
         "zero": {

@@ -196,6 +196,7 @@ export function DirectoryWithBulk({
         rows={rows}
         total={total}
         enableSelection={isAdmin}
+        canEdit={isAdmin}
         onSelectionChange={isAdmin ? handleSelectionChange : undefined}
         onInlineEdit={isAdmin ? handleInlineEdit : undefined}
         onSelectAllMatching={isAdmin ? handleSelectAllMatching : undefined}
