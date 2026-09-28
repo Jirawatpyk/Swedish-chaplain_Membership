@@ -8,12 +8,24 @@
  * - Calendar: Buddhist Era for Thai, Gregorian otherwise — display only; stored
  *   dates stay ISO 8601 UTC, and product-formatted dates keep going through
  *   `@/lib/format-date-localised`.
- * - Built-in labels come from AURA's own EN/TH/SV strings, picked by `locale`.
+ * - Built-in labels come from AURA's own EN/TH/SV strings, picked by `locale`;
+ *   Thai and Swedish are passed as AURA's locale packs (5.9; 6.0 builds in
+ *   English only).
+ * - Icon names given as strings are registered once here for client
+ *   components (5.9; 6.0 needs `registerIcons`). Server components register
+ *   through `@/lib/aura-server-icons`.
  * - Density is set per portal by a nested `<AuraProvider density>` in the
  *   staff and member layouts; it inherits everything else from here.
  */
 import Link from 'next/link';
-import { AuraProvider, Toaster } from '@jirawatpyk/aura-react';
+import { AuraProvider, Toaster, registerIcons } from '@jirawatpyk/aura-react';
+import { allIcons } from '@jirawatpyk/aura-react/icons';
+import { sv } from '@jirawatpyk/aura-react/locales/sv';
+import { th } from '@jirawatpyk/aura-react/locales/th';
+
+registerIcons(allIcons);
+
+const LOCALE_PACKS = { th, sv } as const;
 
 /**
  * The toast stack starts below the tallest top bar: the member portal header
@@ -32,6 +44,7 @@ export function AuraBridge({ locale, timeZone, children }: AuraBridgeProps): Rea
   return (
     <AuraProvider
       locale={locale}
+      {...(locale === 'en' ? {} : { strings: LOCALE_PACKS[locale] })}
       calendar={locale === 'th' ? 'buddhist' : 'gregory'}
       timeZone={timeZone}
       linkComponent={Link}

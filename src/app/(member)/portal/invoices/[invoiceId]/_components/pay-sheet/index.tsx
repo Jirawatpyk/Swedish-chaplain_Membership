@@ -42,7 +42,7 @@
  * + confirmation panel + the hard-cap prompt.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { dispatchInvoicePaid } from '../optimistic-paid';
@@ -114,24 +114,6 @@ export interface PaySheetProps {
   readonly onClose?: () => void;
   /** Render prop for the trigger, so the caller controls open state. */
   readonly children?: (open: () => void) => React.ReactNode;
-}
-
-/**
- * AURA-handoff #70 stand-in: AURA's Drawer forwards neither `data-*` to its
- * panel nor a label to its close button, so this ref puts the pay sheet's
- * test ids on them and names the close button after the drawer.
- */
-function markDrawer(closeLabel: string) {
-  return (el: HTMLDivElement | null): void => {
-    if (!el) return;
-    el.setAttribute('data-testid', 'pay-sheet-content');
-    const close = el.querySelector('.aura-drawer__head button');
-    close?.setAttribute('data-testid', 'pay-sheet-close');
-    close?.setAttribute('aria-label', closeLabel);
-    // AURA's tooltip title ("Close") would otherwise read as a description
-    // after the name ("Close payment drawer, button, Close").
-    close?.setAttribute('title', closeLabel);
-  };
 }
 
 /**
@@ -214,9 +196,6 @@ export function PaySheet({
     setHasOpened(true);
   }
 
-  // Stable ref: a fresh callback each render would detach + re-run it.
-  const closeLabel = t('close');
-  const drawerRef = useMemo(() => markDrawer(closeLabel), [closeLabel]);
 
   // Parent-scope cache for the initiate response so the drawer body's
   // unmount on close / remount on reopen does not discard the Stripe
@@ -424,9 +403,9 @@ export function PaySheet({
        * top-to-bottom container across card form → 3DS → confirmation).
        * The title is "Pay invoice", the description the document number in
        * mono; Escape, the scrim and the close button all close it, and
-       * focus returns to Pay now. AURA-handoff #70 — Drawer does not yet
-       * forward `data-*` to its panel or close button, so `markDrawer` puts
-       * back the two test ids the e2e suite reads.
+       * focus returns to Pay now. The panel and the close button carry the
+       * test ids the e2e suite reads, and the close button is named after
+       * the drawer (AURA 5.9, handoff #70).
        */}
       <Drawer
         open={open}
@@ -444,7 +423,9 @@ export function PaySheet({
         // body keeps a scroll padding so a field scrolled into view (the iOS
         // soft keyboard) lands clear of its top edge (SC 2.4.11).
         className="pay-sheet [&_.aura-drawer\_\_body]:scroll-pt-4 [&_.aura-drawer\_\_head_.aura-icon-btn]:min-h-11 [&_.aura-drawer\_\_head_.aura-icon-btn]:min-w-11"
-        ref={drawerRef}
+        data-testid="pay-sheet-content"
+        closeLabel={t('close')}
+        closeProps={{ 'data-testid': 'pay-sheet-close' }}
       >
             {hasOpened && timeoutExceeded ? (
               // FR-028c (B3): 30-min hard-cap prompt replaces the
