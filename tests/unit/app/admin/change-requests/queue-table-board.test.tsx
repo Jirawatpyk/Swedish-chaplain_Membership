@@ -65,4 +65,16 @@ describe('change-request queue as on the board (US5a)', () => {
     const badge = screen.getByTestId('overdue-badge');
     expect(badge.parentElement).toHaveClass('flex-nowrap');
   });
+
+  it('pins the phone card title to the first column so Review can share its line', async () => {
+    // A title that spans two columns with no start column cannot sit beside
+    // Review (pinned to column 2 of row 1): the grid then adds implicit
+    // columns and every cell collapses to a sliver. Pinned to column 1, the
+    // two overlap and the title's end padding keeps its text clear.
+    render(await ChangeRequestQueueTable({ items: [item] }));
+    const [titleCell] = within(screen.getByTestId('queue-row')).getAllByRole('cell');
+    expect(titleCell!.className).toContain('@max-[640px]/aura-tbl:col-start-1');
+    expect(titleCell!.className).toContain('@max-[640px]/aura-tbl:col-span-2');
+  });
 });
+
