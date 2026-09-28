@@ -98,6 +98,7 @@ export async function renderChangeRequestReviewView({
   readonly canDecide: boolean;
 }) {
   const t = await getTranslations('admin.changeRequests.review');
+  const tQueue = await getTranslations('admin.changeRequests.queue');
   const locale = await getLocale();
   const fmt = (iso: string) => formatLocalisedDate(iso, locale, { dateStyle: 'medium', timeStyle: 'short' });
 
@@ -110,11 +111,20 @@ export async function renderChangeRequestReviewView({
         : member.archived
           ? { tone: 'warning' as const, text: t('archived') }
           : !canWrite
-            ? { tone: 'info' as const, text: t('readOnly') }
+            ? { tone: 'info' as const, text: t('readOnly'), title: t('readOnlyTitle') }
             : null;
 
   return (
     <DetailContainer>
+      {/* A phone has no sidebar to go back through (board
+          `Admin-change-request-mobile`). */}
+      <Link
+        href="/admin/change-requests"
+        className="inline-flex items-center gap-1 self-start text-sm font-medium text-[var(--aura-fg-accent)] sm:hidden"
+      >
+        <ArrowLeftIcon className="size-4" aria-hidden="true" />
+        {tQueue('title')}
+      </Link>
       <PageHeader
         title={t('title')}
         subtitle={t('subtitle', {
@@ -138,7 +148,7 @@ export async function renderChangeRequestReviewView({
       />
 
       {notice ? (
-        <Alert tone={notice.tone} role="status" data-testid="review-notice">
+        <Alert tone={notice.tone} role="status" {...('title' in notice ? { title: notice.title } : {})} data-testid="review-notice">
           {notice.text}
         </Alert>
       ) : null}

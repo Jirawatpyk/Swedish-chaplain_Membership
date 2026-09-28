@@ -79,7 +79,7 @@ export function ChangeRequestDecisionTable({ fields, selected, onToggle, canDeci
             // `Admin-change-request-mobile`): a card per field — the name and
             // the Approve checkbox on its first line, Current / Proposed as a
             // labelled list, the state word at its foot.
-            className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-3 text-sm max-sm:rounded-[var(--aura-card-radius)] max-sm:border max-sm:border-[var(--aura-border-default)] max-sm:bg-[var(--aura-bg-surface)] max-sm:p-4 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_9rem] sm:gap-x-4 sm:gap-y-1 sm:px-3 sm:py-3"
+            className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-3 text-sm max-sm:rounded-[var(--aura-card-radius)] max-sm:border max-sm:border-[var(--aura-border-default)] max-sm:bg-[var(--aura-bg-surface)] max-sm:p-4 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_9rem] sm:grid-rows-[auto_1fr] sm:gap-x-4 sm:gap-y-1 sm:px-3 sm:py-3"
             data-field-key={f.key}
             data-undecidable={undecidable ? 'contact_removed' : undefined}
           >
@@ -179,7 +179,7 @@ export function ChangeRequestDecisionTable({ fields, selected, onToggle, canDeci
             {!decided && canDecide ? (
               <span
                 className={cn(
-                  'col-span-2 text-xs sm:col-span-1 sm:col-start-4 sm:row-start-2',
+                  'col-span-2 self-start text-xs sm:col-span-1 sm:col-start-4 sm:row-start-2',
                   approved ? 'text-[var(--aura-fg-secondary)]' : 'text-[var(--aura-fg-danger)]',
                 )}
                 aria-hidden="true"

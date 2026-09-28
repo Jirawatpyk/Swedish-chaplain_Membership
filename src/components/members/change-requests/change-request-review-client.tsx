@@ -21,7 +21,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
-import { Button, Textarea } from '@jirawatpyk/aura-react';
+import { ActionBar, Button, Textarea } from '@jirawatpyk/aura-react';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
 import { useDialogFinalFocus } from '@/components/shell/reason-confirmation-dialog';
 import type { ChangeRequestReviewFieldView, StaffChangeRequestView } from '@/lib/change-request-staff-view';
@@ -155,9 +155,10 @@ export function ChangeRequestReviewClient({ request, fields, canDecide }: Change
   }
 
   return (
-    <div className="space-y-4 rounded-[var(--aura-card-radius)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] p-5 max-sm:p-4">
+    <div className="space-y-4 sm:rounded-[var(--aura-card-radius)] sm:border sm:border-[var(--aura-border-default)] sm:bg-[var(--aura-bg-surface)] sm:p-5">
       {/* One card holds the proposed changes and the decision bar (board
-          `Admin-change-request`). The page's primary content gets a real
+          `Admin-change-request`); on a phone each field is its own card on
+          the page (`-mobile`). The page's primary content gets a real
           heading (the h1 was the only one — PR-1 review, UX M8). */}
       <section aria-labelledby="cr-fields-heading" className="space-y-3">
         <h2 id="cr-fields-heading" className="text-base font-semibold leading-snug">
@@ -173,18 +174,25 @@ export function ChangeRequestReviewClient({ request, fields, canDecide }: Change
         />
       </section>
       {canDecide && !decided ? (
-        <div className="flex flex-col gap-2 rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-canvas)] px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-[var(--aura-fg-primary)]" aria-live="polite" data-testid="selection-summary">
-            {t.rich('selectionSummary', {
-              approved: counts.approved,
-              rejected: counts.rejected,
-              b: (chunks) => <strong>{chunks}</strong>,
-            })}
-          </p>
+        // AURA's sticky bar (boards `Admin-change-request` / `-mobile`): it
+        // stays on screen while the fields scroll, its status is a polite
+        // live region, and it sits last in the flow so it never covers a row.
+        <ActionBar
+          position="container"
+          status={
+            <span data-testid="selection-summary" className="text-[var(--aura-fg-primary)]">
+              {t.rich('selectionSummary', {
+                approved: counts.approved,
+                rejected: counts.rejected,
+                b: (chunks) => <strong>{chunks}</strong>,
+              })}
+            </span>
+          }
+        >
           <Button ref={triggerRef} type="button" onClick={() => setOpen(true)} data-testid="confirm-decision">
             {t('confirm')}
           </Button>
-        </div>
+        </ActionBar>
       ) : null}
       <ConfirmationDialog
         open={open}
