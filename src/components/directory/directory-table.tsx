@@ -70,12 +70,13 @@ export function DirectoryTable({
       ),
     },
     { key: 'tier', label: labels.tier, width: 180, render: (row) => row.tier ?? DASH },
-    { key: 'industry', label: labels.industry, width: 170, render: (row) => row.industry ?? DASH },
+    { key: 'industry', label: labels.industry, width: 170, hideBelow: 'lg', render: (row) => row.industry ?? DASH },
     { key: 'location', label: labels.location, width: 140, render: (row) => row.location ?? DASH },
     {
       key: 'hasLogo',
       label: labels.logo,
       width: 80,
+      hideBelow: 'lg',
       render: (row) =>
         row.hasLogo ? (
           <span className="inline-flex items-center gap-1">
@@ -89,8 +90,11 @@ export function DirectoryTable({
           </>
         ),
     },
-    { key: 'contactName', label: labels.contact, width: 160, render: (row) => row.contactName ?? DASH },
+    { key: 'contactName', label: labels.contact, width: 160, hideBelow: 'lg', render: (row) => row.contactName ?? DASH },
   ];
+  // Industry, Logo and Contact drop out on a table narrower than `lg` (a
+  // tablet, or a laptop beside the nav), so the rest fits without scrolling;
+  // a phone card still shows every field.
 
   return (
     <DataTable<DirectoryTableRow>
