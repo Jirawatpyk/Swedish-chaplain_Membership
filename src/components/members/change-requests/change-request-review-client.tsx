@@ -175,7 +175,11 @@ export function ChangeRequestReviewClient({ request, fields, canDecide }: Change
       {canDecide && !decided ? (
         <div className="flex flex-col gap-2 rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-canvas)] px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-[var(--aura-fg-primary)]" aria-live="polite" data-testid="selection-summary">
-            {t('selectionSummary', { approved: counts.approved, rejected: counts.rejected })}
+            {t.rich('selectionSummary', {
+              approved: counts.approved,
+              rejected: counts.rejected,
+              b: (chunks) => <strong>{chunks}</strong>,
+            })}
           </p>
           <Button ref={triggerRef} type="button" onClick={() => setOpen(true)} data-testid="confirm-decision">
             {t('confirm')}

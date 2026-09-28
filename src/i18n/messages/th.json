@@ -1205,11 +1205,12 @@
           "billing_cleared": "กำลังลบที่อยู่สำหรับออกใบกำกับ — ที่อยู่จดทะเบียนจะกลายเป็นที่อยู่ผู้ซื้อที่พิมพ์บนใบกำกับภาษี ตรวจสอบการระบุสำนักงานใหญ่ / สาขา"
         },
         "willApprove": "จะอนุมัติ",
-        "willReject": "จะปฏิเสธ"
+        "willReject": "จะปฏิเสธ",
+        "readOnlyTitle": "ดูได้อย่างเดียว"
       },
       "decision": {
         "confirm": "ยืนยันการตัดสิน",
-        "selectionSummary": "อนุมัติ {approved, plural, other {# ฟิลด์}} ปฏิเสธ {rejected, plural, other {# ฟิลด์}}",
+        "selectionSummary": "อนุมัติ <b>{approved, plural, other {# ฟิลด์}}</b> ปฏิเสธ <b>{rejected, plural, other {# ฟิลด์}}</b>",
         "fieldsHeading": "การเปลี่ยนแปลงที่เสนอ",
         "titleApproveAll": "อนุมัติทั้งหมด {count, plural, other {# ฟิลด์}}?",
         "titleMixed": "อนุมัติ {approved, plural, other {# ฟิลด์}} และปฏิเสธ {rejected, plural, other {# ฟิลด์}}?",

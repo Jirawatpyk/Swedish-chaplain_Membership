@@ -1205,11 +1205,12 @@
           "billing_cleared": "the billing address is being removed — the registered address becomes the buyer address printed on tax invoices; check the head-office / branch designation"
         },
         "willApprove": "Will be approved",
-        "willReject": "Will be rejected"
+        "willReject": "Will be rejected",
+        "readOnlyTitle": "View only"
       },
       "decision": {
         "confirm": "Confirm decision",
-        "selectionSummary": "{approved, plural, =0 {No fields} one {# field} other {# fields}} to approve, {rejected, plural, =0 {none} one {# field} other {# fields}} to reject",
+        "selectionSummary": "<b>{approved, plural, =0 {No fields} one {# field} other {# fields}}</b> to approve, <b>{rejected, plural, =0 {none} one {# field} other {# fields}}</b> to reject",
         "fieldsHeading": "Proposed changes",
         "titleApproveAll": "Approve all {count, plural, one {# field} other {# fields}}?",
         "titleMixed": "Approve {approved, plural, one {# field} other {# fields}} and reject {rejected, plural, one {# field} other {# fields}}?",

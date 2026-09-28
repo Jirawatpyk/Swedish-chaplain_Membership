@@ -1205,11 +1205,12 @@
           "billing_cleared": "faktureringsadressen tas bort — den registrerade adressen blir köparadressen på skattedokumenten; kontrollera huvudkontor-/filialangivelsen"
         },
         "willApprove": "Godkänns",
-        "willReject": "Avslås"
+        "willReject": "Avslås",
+        "readOnlyTitle": "Endast visning"
       },
       "decision": {
         "confirm": "Bekräfta beslut",
-        "selectionSummary": "{approved, plural, =0 {Inga fält} one {# fält} other {# fält}} att godkänna, {rejected, plural, =0 {inga} one {# fält} other {# fält}} att avslå",
+        "selectionSummary": "<b>{approved, plural, =0 {Inga fält} one {# fält} other {# fält}}</b> att godkänna, <b>{rejected, plural, =0 {inga} one {# fält} other {# fält}}</b> att avslå",
         "fieldsHeading": "Föreslagna ändringar",
         "titleApproveAll": "Godkänna alla {count, plural, one {# fält} other {# fält}}?",
         "titleMixed": "Godkänna {approved, plural, one {# fält} other {# fält}} och avslå {rejected, plural, one {# fält} other {# fält}}?",

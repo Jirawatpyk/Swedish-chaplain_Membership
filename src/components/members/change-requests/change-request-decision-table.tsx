@@ -19,7 +19,7 @@
  *   - below 640 px each row stacks into a card.
  */
 import { useTranslations } from 'next-intl';
-import { AlertTriangleIcon, CheckIcon, InfoIcon, ReceiptTextIcon, UserXIcon, XIcon } from 'lucide-react';
+import { CheckIcon, InfoIcon, ReceiptIcon, UserXIcon, XIcon } from 'lucide-react';
 import { Checkbox } from '@jirawatpyk/aura-react';
 import { cn } from '@/lib/utils';
 import type { ChangeRequestReviewFieldView } from '@/lib/change-request-staff-view';
@@ -50,13 +50,13 @@ export function ChangeRequestDecisionTable({ fields, selected, onToggle, canDeci
       data-testid="change-request-decision-table"
     >
       <li
-        className="hidden gap-4 px-3 py-2 text-xs font-medium text-[var(--aura-fg-secondary)] sm:grid sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_9rem]"
+        className="hidden gap-4 px-3 py-2 font-mono text-xs tracking-wider text-[var(--aura-fg-secondary)] uppercase sm:grid sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_9rem]"
         aria-hidden="true"
       >
         <span>{tDiff('field')}</span>
         <span>{tDiff('current')}</span>
         <span>{tDiff('proposed')}</span>
-        <span className="text-right">{t('columns.decision')}</span>
+        <span>{t('columns.decision')}</span>
       </li>
       {fields.map((f) => {
         const label = tDiff(`labels.${f.key}`);
@@ -74,15 +74,20 @@ export function ChangeRequestDecisionTable({ fields, selected, onToggle, canDeci
         return (
           <li
             key={f.key}
-            className="grid grid-cols-1 gap-2 px-3 py-3 text-sm sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_9rem] sm:gap-4"
+            // Desktop: one grid row per field, the decision column last with
+            // the state word under the checkbox. Phone (board
+            // `Admin-change-request-mobile`): a card per field — the name and
+            // the Approve checkbox on its first line, Current / Proposed as a
+            // labelled list, the state word at its foot.
+            className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-3 text-sm max-sm:rounded-[var(--aura-card-radius)] max-sm:border max-sm:border-[var(--aura-border-default)] max-sm:bg-[var(--aura-bg-surface)] max-sm:p-4 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_9rem] sm:gap-x-4 sm:gap-y-1 sm:px-3 sm:py-3"
             data-field-key={f.key}
             data-undecidable={undecidable ? 'contact_removed' : undefined}
           >
-            <div className="space-y-1 font-medium">
+            <div className="space-y-1 font-medium sm:row-span-2">
               <span>{label}</span>
               {f.affectsTaxDocuments ? (
-                <span className="flex items-start gap-1 text-xs font-normal text-[var(--aura-status-warning-fg)]">
-                  <ReceiptTextIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                <span className="flex items-start gap-1 text-xs font-normal text-[var(--aura-fg-secondary)]">
+                  <ReceiptIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                   <span>
                     {t('markers.taxAffecting')}
                     {f.taxHint ? <> — {t(`taxHint.${f.taxHint}`)}</> : null}
@@ -102,28 +107,31 @@ export function ChangeRequestDecisionTable({ fields, selected, onToggle, canDeci
                 </span>
               ) : null}
             </div>
-            <div className="space-y-1">
-              <span className="text-xs text-[var(--aura-fg-secondary)] sm:sr-only">{tDiff('current')}: </span>
-              <ProposedValueDisplay fieldKey={f.key} value={f.current} />
+            <div className="col-span-2 grid grid-cols-[6rem_minmax(0,1fr)] gap-x-2 gap-y-1 sm:col-span-1 sm:row-span-2 sm:block sm:space-y-1">
+              <span className="text-xs text-[var(--aura-fg-secondary)] sm:sr-only">{tDiff('current')}</span>
+              <div data-value="current" className="text-[var(--aura-fg-secondary)]">
+                <ProposedValueDisplay fieldKey={f.key} value={f.current} />
+              </div>
               {f.changedSinceSubmitted ? (
-                <div className="rounded-[var(--aura-radius-sm)] border border-[var(--aura-alert-warning-border)] bg-[var(--aura-alert-warning-bg)] p-2 text-xs text-[var(--aura-alert-warning-fg)]" data-testid="marker-changed-since-submitted">
-                  <span className="flex items-center gap-1 font-medium">
-                    <AlertTriangleIcon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                    {t('markers.changedSinceSubmitted')}
-                  </span>
-                  <div className="mt-1 text-[var(--aura-fg-primary)]">
+                <div className="col-span-2 rounded-[var(--aura-radius-sm)] border border-[var(--aura-alert-warning-border)] bg-[var(--aura-alert-warning-bg)] p-2 text-xs text-[var(--aura-alert-warning-fg)]" data-testid="marker-changed-since-submitted">
+                  <span>{t('markers.changedSinceSubmitted')}</span>
+                  <div className="mt-1 font-semibold text-[var(--aura-fg-primary)]">
                     <ProposedValueDisplay fieldKey={f.key} value={f.seen} />
                   </div>
                 </div>
               ) : null}
             </div>
-            <div>
-              <span className="text-xs text-[var(--aura-fg-secondary)] sm:sr-only">{tDiff('proposed')}: </span>
-              <ProposedValueDisplay fieldKey={f.key} value={f.proposed} />
+            <div className="col-span-2 grid grid-cols-[6rem_minmax(0,1fr)] gap-x-2 sm:col-span-1 sm:row-span-2 sm:block">
+              <span className="text-xs text-[var(--aura-fg-secondary)] sm:sr-only">{tDiff('proposed')}</span>
+              <div data-value="proposed" className="font-semibold">
+                <ProposedValueDisplay fieldKey={f.key} value={f.proposed} />
+              </div>
             </div>
             {/* The checkbox keeps AURA's 16px box but, as before AURA, takes a
-                40×32 hit area (WCAG 2.5.8): its invisible input grows past the box. */}
-            <div className="flex items-center gap-2 sm:justify-end [&_.aura-check__input]:-inset-x-3 [&_.aura-check__input]:-inset-y-2">
+                40×32 hit area (WCAG 2.5.8): its invisible input grows past the box.
+                Phone: top right of the card with the word "Approve" beside it;
+                desktop: the decision column. */}
+            <div className="col-start-2 row-start-1 flex items-center gap-2 self-start sm:col-start-4 [&_.aura-check__input]:-inset-x-3 [&_.aura-check__input]:-inset-y-2">
               {decided ? (
                 <span
                   className={cn(
@@ -157,14 +165,28 @@ export function ChangeRequestDecisionTable({ fields, selected, onToggle, canDeci
                     }}
                     data-testid={`approve-${f.key}`}
                   />
-                  {/* The row's state in words (board): the checkbox announces
-                      its own state, so this is for sighted users only. */}
-                  <span className="text-xs text-[var(--aura-fg-secondary)]" aria-hidden="true">
-                    {approved ? t('willApprove') : t('willReject')}
+                  {/* The phone card's visible "Approve" beside the box (board);
+                      the checkbox already carries "Approve <field>". */}
+                  <span className="text-sm sm:hidden" aria-hidden="true">
+                    {t('columns.decision')}
                   </span>
                 </>
               )}
             </div>
+            {/* The row's state in words (board), for sighted users: the checkbox
+                announces its own state. Under the checkbox on desktop, at the
+                card's foot on a phone; not shown to a viewer who cannot decide. */}
+            {!decided && canDecide ? (
+              <span
+                className={cn(
+                  'col-span-2 text-xs sm:col-span-1 sm:col-start-4 sm:row-start-2',
+                  approved ? 'text-[var(--aura-fg-secondary)]' : 'text-[var(--aura-fg-danger)]',
+                )}
+                aria-hidden="true"
+              >
+                {approved ? t('willApprove') : t('willReject')}
+              </span>
+            ) : null}
           </li>
         );
       })}
