@@ -348,29 +348,12 @@ export default async function InvoiceDetailPage({
   const isAdmin = canPerform(currentUser.role, 'invoicing.write');
 
   // Resend-eligibility gates — SHARED with InvoiceMoreMenu below so the
-  // failure banner + the action menu stay in lockstep (combined-mode rule,
-  // Thai RD §86/4): paid+combined hides invoice-resend (the combined receipt
-  // is the single legal document; the issue-time invoice PDF is a stale draft),
-  // and receipt-resend requires a paid invoice with a rendered receipt PDF.
-  //
-  // 064 — `pdfDocKind === 'receipt_combined'` marks an as-paid TIN event
-  // invoice whose MAIN pdf already IS the final combined §86/4+§105ทวิ
-  // document (issued straight to paid; receipt_* blob columns stay NULL).
-  // The stale-draft-hiding rule therefore applies ONLY when the main pdf is
-  // an issue-time 'invoice' — without the `!mainPdfIsFinalCombined` guard an
-  // as-paid row matched BOTH heuristics (paid + raw NULL + no receiptPdf)
-  // and rendered with NO downloadable document at all. Download + resend of
-  // the main pdf on these rows ships the real final document.
-  const mainPdfIsFinalCombined = invoice.pdfDocKind === 'receipt_combined';
-  // 092 — the receipt-availability + bill-hiding gates use the receipt-bearing
-  // status set {paid, partially_credited, credited}, not `paid` alone: a §86/10
-  // credit note does NOT cancel the §86/4 receipt (it stays downloadable +
-  // re-sendable) NOR un-hide the stale combined-mode bill. `void` excluded (its
-  // own VOID-stamped path, FR-015). Lockstep with the portal fix.
-  const isPaidCombined =
-    invoiceStatusHasReceipt(invoice.status) &&
-    invoice.receiptDocumentNumberRaw === null &&
-    !mainPdfIsFinalCombined;
+  // failure banner + the action menu stay in lockstep. Receipt-resend requires a
+  // receipt-bearing invoice (092: paid / partially_credited / credited) with a
+  // rendered receipt PDF. A paid invoice keeps its main PDF download + resend:
+  // the retired pre-088 combined-mode rule that hid the "stale" issue-time PDF
+  // of a paid invoice with no RC is gone (prod has no such rows and the 088
+  // flag is permanently on).
   const hasReceiptPdf =
     invoiceStatusHasReceipt(invoice.status) && Boolean(invoice.receiptPdf);
 
@@ -400,9 +383,7 @@ export default async function InvoiceDetailPage({
       canResend:
         variant === 'receipt'
           ? hasReceiptPdf
-          : invoice.status !== 'void' &&
-            Boolean(invoice.pdf) &&
-            !isPaidCombined,
+          : invoice.status !== 'void' && Boolean(invoice.pdf),
     }));
   })();
 
@@ -721,16 +702,12 @@ export default async function InvoiceDetailPage({
                 action row exposes only primary/destructive CTAs as
                 standalone buttons. Menu returns null when nothing to
                 show. T107 visibility rules preserved inside the menu. */}
-            {/* Combined-mode rule (Thai RD §86/4 + §105ทวิ): ONE legal document
-                with dual function. paid+combined (bill-first) → hide the
-                pre-payment invoice PDF + resend (stale drafts), show only the
-                combined receipt; paid+separate → all 4 items; issued/void →
+            {/* paid → all 4 items once the receipt has rendered; issued/void →
                 invoice PDF only. 064 as-paid TIN → the MAIN pdf IS the final
-                combined doc (no receipt blob), so the main Download/Resend stay
-                visible and the Download item carries the combined label via
-                `mainDownloadKind`. isPaidCombined + hasReceiptPdf are
-                hoisted above (shared with the FR-026 failure banner so both
-                surfaces gate identically). */}
+                combined doc (no receipt blob), so the Download item carries the
+                combined label via `mainDownloadKind`. hasReceiptPdf is hoisted
+                above (shared with the FR-026 failure banner so both surfaces
+                gate identically). */}
             {!isDraft && (
               <InvoiceMoreMenu
                 invoiceId={invoice.invoiceId}
@@ -748,12 +725,9 @@ export default async function InvoiceDetailPage({
                 {...(taxDocKind === 'tax_receipt' && invoice.billDocumentNumberRaw
                   ? { invoiceDownloadNumber: invoice.billDocumentNumberRaw }
                   : {})}
-                showDownload={Boolean(invoice.pdf) && !isPaidCombined}
+                showDownload={Boolean(invoice.pdf)}
                 showResendInvoice={
-                  isAdmin &&
-                  invoice.status !== 'void' &&
-                  Boolean(invoice.pdf) &&
-                  !isPaidCombined
+                  isAdmin && invoice.status !== 'void' && Boolean(invoice.pdf)
                 }
                 showResendReceipt={isAdmin && hasReceiptPdf}
                 showDownloadReceipt={hasReceiptPdf}
@@ -771,8 +745,6 @@ export default async function InvoiceDetailPage({
                         ? 'bill'
                         : undefined
                 }
-                // combinedModeReceipt is derived inside the menu component
-                // from (showDownloadReceipt && !showDownload).
               />
             )}
           </>

@@ -13,17 +13,9 @@
  * handler) so T107's 5-minute client-side re-enable + keyed error
  * toasts behave 1:1 with the previous standalone buttons.
  *
- * F4 receipt-surface — additions for the new receipt-PDF download path
- * (best-practice rule: combined mode = 1 download, separate mode = 2):
- *   - `showDownloadReceipt` — paid + receiptPdf rendered. In combined
- *     mode this is THE only download (one legal doc per Thai RD §86/4
- *     + §105ทวิ). In separate mode it sits alongside `showDownload`.
- *   - `combinedModeReceipt` — paid + combined-mode. Flips the label of
- *     the Download Receipt item from "Download Receipt" → "Download
- *     Tax Invoice / Receipt" so the admin sees the dual-role wording.
- *     The pre-payment invoice PDF (`showDownload`) is hidden in this
- *     state because it's a stale draft (header "ใบกำกับภาษี" only); the
- *     final combined PDF is what the customer + auditor should see.
+ * F4 receipt-surface — `showDownloadReceipt`: paid + receiptPdf rendered.
+ * It sits alongside `showDownload` (the main PDF — the SC bill on an 088
+ * bill, which stays downloadable after payment, FR-015).
  */
 import { useEffect, useRef, useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
@@ -102,15 +94,6 @@ export function InvoiceMoreMenu({
   // number, falling back to `documentNumber` when no distinct bill number is
   // threaded (all pre-088 rows). The receipt arm always uses `documentNumber`.
   const mainDownloadNumber = invoiceDownloadNumber ?? documentNumber;
-  // Derive combined-mode receipt label state from the existing prop
-  // matrix instead of exposing a separate `combinedModeReceipt` prop —
-  // they were perfectly correlated (combined-mode hides the pre-payment
-  // invoice PDF, so `showDownload === false && showDownloadReceipt`
-  // uniquely identifies the combined-paid state). 064 — as-paid rows are
-  // a THIRD state (main pdf IS the final doc, no receipt blob at all);
-  // they arrive via the explicit `mainDownloadKind` prop and never set
-  // `showDownloadReceipt`, so this derivation is undisturbed.
-  const combinedModeReceipt = showDownloadReceipt && !showDownload;
   const t = useTranslations('admin.invoices.detail');
 
   const visibleCount =
@@ -357,13 +340,7 @@ export function InvoiceMoreMenu({
             ) : (
               <Download aria-hidden="true" />
             )}
-            {/* Combined mode → label highlights the dual role of the
-                single legal document (Thai RD §86/4 + §105ทวิ).
-                Separate mode keeps the plain "Download Receipt"
-                label. */}
-            {combinedModeReceipt
-              ? t('actions.downloadCombined')
-              : t('actions.downloadReceipt')}
+            {t('actions.downloadReceipt')}
           </DropdownMenuItem>
         )}
         {showResendInvoice && (

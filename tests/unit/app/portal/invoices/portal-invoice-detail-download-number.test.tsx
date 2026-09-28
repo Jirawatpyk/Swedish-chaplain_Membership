@@ -282,6 +282,32 @@ function paidSeparateInvoice() {
   };
 }
 
+/**
+ * A PAID invoice with a §87 number and NO RC, receipt still rendering — the
+ * retired pre-088 combined-mode shape (0 rows in prod; the 088 flag is
+ * permanently on). No longer special-cased.
+ */
+function paidCombinedPendingLegacyInvoice() {
+  return {
+    ...paidSeparateInvoice(),
+    documentNumber: { raw: 'INV-2026-000011' },
+    receiptDocumentNumberRaw: null,
+    receiptPdfStatus: 'pending',
+    receiptPdf: null,
+  };
+}
+
+/** A PAID 088 bill (SC bill + RC minted at payment) whose RC PDF is still rendering. */
+function paidPending088Bill() {
+  return {
+    ...issuedUnpaid088Bill(),
+    status: 'paid',
+    receiptDocumentNumberRaw: 'RC-2026-000045',
+    receiptPdfStatus: 'pending',
+    paidAt: '2026-05-20',
+  };
+}
+
 /** A separate-mode invoice credited by a §86/10 credit note (full → 'credited'). */
 function creditedSeparateInvoice() {
   return { ...paidSeparateInvoice(), status: 'credited', creditedTotal: { satang: 107_000n } };
@@ -621,5 +647,25 @@ describe('PortalInvoiceDetailPage — Pay-now gated on a positive total (#443 re
     getInvoiceMock.mockResolvedValue({ ok: true, value: issuedWithTotal(total) });
     const html = await renderPage();
     expect(html).not.toContain('data-testid="pay-now-marker"');
+  });
+});
+
+// A paid invoice keeps its main PDF while the receipt renders — the SC bill on
+// an 088 bill (FR-015), and no special case for the retired combined-mode shape
+// (matches the list view-model's `showInvoice`).
+describe('PortalInvoiceDetailPage — paid invoice whose receipt PDF is still rendering', () => {
+  it('paid with no RC + pending → the main PDF download stays, no receipt download yet', async () => {
+    getInvoiceMock.mockResolvedValue({ ok: true, value: paidCombinedPendingLegacyInvoice() });
+    const html = await renderPage();
+    expect(html).toContain('data-testid="portal-download-invoice-marker"');
+    expect(html).not.toContain('data-testid="portal-download-receipt-marker"');
+  });
+
+  it('088 bill + pending RC → the SC bill download stays (FR-015), no receipt download yet', async () => {
+    getInvoiceMock.mockResolvedValue({ ok: true, value: paidPending088Bill() });
+    const html = await renderPage();
+    expect(html).toContain('data-testid="portal-download-invoice-marker"');
+    expect(html).toContain('data-doc="SC-2026-000045"');
+    expect(html).not.toContain('data-testid="portal-download-receipt-marker"');
   });
 });

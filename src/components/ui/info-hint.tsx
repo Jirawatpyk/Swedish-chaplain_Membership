@@ -5,9 +5,9 @@
  * affordance (UX-review follow-up F1, renewals-overdue-prior-fy-subline).
  *
  * Base UI **Popover**, deliberately NOT Tooltip: a hover/focus-only tooltip
- * is unreachable on touch devices, and the first two shipped hints (T160
- * `CombinedReceiptHint`, the renewals money-band basis hint) both carry
- * copy a phone user needs. Popover semantics:
+ * is unreachable on touch devices, and the first two shipped hints (T160's
+ * combined-receipt hint, since retired, and the renewals money-band basis
+ * hint) both carried copy a phone user needs. Popover semantics:
  *   - opens on click/tap and on Enter/Space (native `<button>` trigger —
  *     Base UI's default element, NOT a `render={<span/>}` override, which
  *     is exactly how the T160 regression lost keyboard focusability);

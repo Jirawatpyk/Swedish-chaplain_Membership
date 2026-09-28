@@ -13,7 +13,8 @@
  * navigates to the success URL. testid markers (added in round-2,
  * split in R9 to disambiguate invoice vs. receipt download semantics):
  *   - receipt-download-link  — paid + receipt PDF rendered
- *   - invoice-download-link  — paid + receipt-pending, OR unpaid invoice
+ *   - invoice-download-link  — paid + receipt-pending (never a stale
+ *                              combined-mode bill — PR #456), OR unpaid invoice
  *   - view-invoices-fallback — invoice fetch failed / forbidden / not-found
  *   - processing-back-to-portal — Round-3 M4 fix (no activeCycle)
  *

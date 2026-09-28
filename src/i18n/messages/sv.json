@@ -211,6 +211,7 @@
     "readOnlyMode": "Systemet är i skrivskyddat läge för underhåll.",
     "errorId": "Fel-ID: {id}",
     "readOnlyNothingChanged": "Ingenting ändrades. Försök igen om några minuter.",
+    "readOnlyModeBrowse": "Du kan fortfarande titta runt — ändringar är pausade tills underhållet är klart.",
     "notFoundHint": "Länken kan vara gammal, eller så har sidan flyttats.",
     "backToDashboard": "Tillbaka till översikten",
     "loadError": {
@@ -298,6 +299,7 @@
     "logoRemoveTitle": "Ta bort den här logotypen?",
     "logoRemoveDescription": "Din katalogpost visar ingen logotyp förrän du laddar upp en ny. Du kan ladda upp igen när som helst.",
     "logoRemoveConfirm": "Ta bort logotyp",
+    "logoRemoveFailed": "Det gick inte att ta bort logotypen. Försök igen.",
     "cancel": "Avbryt",
     "manage": "Hantera katalogpost",
     "invalidWebsite": "Webbplatsen måste börja med http:// eller https://",
@@ -2312,7 +2314,6 @@
         "bankAccountNo": "Siffror, med valfria bindestreck eller mellanslag."
       },
       "receiptMode": {
-        "combined": "Kombinerad faktura + kvitto",
         "separate": "Separata faktura- och kvittoströmmar"
       },
       "proRate": {
@@ -2693,8 +2694,6 @@
         "creditedSuffix": "{count, plural, one {+# kreditnota} other {+# kreditnotor}}",
         "creditedTooltip": "{count, plural, one {# kreditnota} other {# kreditnotor}} · {amount} THB krediterat",
         "creditedAria": "{count, plural, one {# kreditnota utställd} other {# kreditnotor utställda}} mot denna faktura, {amount} thailändska baht krediterat",
-        "receiptNumberCombinedTooltip": "Kombinerat läge — kvittot återanvänder fakturanumret",
-        "receiptNumberCombinedAria": "Kvitto använder fakturans dokumentnummer (kombinerat läge)",
         "tableCaption": "Lista över fakturor för de valda filtren.",
         "queueTableCaption": "Lista över utkast för automatisk förnyelse som väntar på granskning.",
         "queue": {
@@ -6039,6 +6038,7 @@
     "tierUpgrades": "Kö för medlemsnivåhöjning",
     "memberChanges": "Godkännande av medlemsändringar",
     "changeRequests": "Ändringsbegäranden",
+    "directory": "Katalog",
     "changeRequestDetail": "Granska",
     "broadcastDetail": "Detaljer",
     "proxySubmit": "Skicka in å medlems vägnar",
@@ -6294,8 +6294,6 @@
       "filters": {
         "noMatch": "Inga fakturor matchar dina filter."
       },
-      "receiptNumberCombinedTooltip": "Kombinerat läge — kvittot återanvänder fakturanumret",
-      "receiptNumberCombinedAria": "Kvitto använder fakturans dokumentnummer (kombinerat läge)",
       "toast": {
         "resendSuccess": "Kopia köad — den går till organisationens primära kontakt.",
         "resendRateLimited": "Du bad om en kopia nyligen. Vänta några minuter och försök igen.",

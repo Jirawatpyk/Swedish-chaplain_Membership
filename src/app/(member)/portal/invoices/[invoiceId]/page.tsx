@@ -439,53 +439,21 @@ export async function renderPortalInvoiceDetailView({
               {invoice.pdf ? (
                 <>
                   {(() => {
-                    // Round 6 portal-harden — combined-mode + paid: the
-                    // invoice PDF *is* the receipt (Thai RD §86/4 + §105ทวิ),
-                    // so the only legal document the member should grab is
-                    // the receipt-rendered combined PDF. Hide the pre-payment
-                    // invoice PDF in that case (it has no receipt fields).
-                    // Separate-mode + paid: surface BOTH — invoice (Tax
-                    // Invoice) and receipt (Official Receipt) are distinct
-                    // legal docs.
+                    // A paid invoice keeps its main PDF (the SC bill on an 088
+                    // bill — FR-015 — or the as-paid document) next to the
+                    // separate §86/4 receipt once rendered. The retired pre-088
+                    // combined-mode rule that hid the "stale" pre-payment PDF of
+                    // a paid invoice with no RC is gone: prod has no such rows
+                    // and the 088 flag is permanently on.
                     //
-                    // R7-L4 — `receiptDocumentNumberRaw === null` is the
-                    // canonical proxy for combined-mode on paid invoices.
-                    // The numbering mode lives on `tenant_invoice_settings`
-                    // (mutable per-tenant config); it is NOT mirrored onto
-                    // the invoice row at issuance time. For PAID invoices,
-                    // however, the proxy is unambiguous: separate-mode
-                    // allocates the RC- number at `recordPayment`, so a
-                    // paid invoice with NULL receipt-number can only be a
-                    // combined-mode invoice. Adding a redundant
-                    // `receiptNumberingMode` column would violate
-                    // Principle X — the proxy is correct, just
-                    // documented here.
-                    //
-                    // 064 — as-paid TIN event invoices persist the MAIN pdf
-                    // as the final combined document (`pdfDocKind ===
-                    // 'receipt_combined'`; receipt blob columns stay NULL,
-                    // receiptPdfStatus lands 'rendered'). Pre-fix these rows
-                    // matched `isCombinedPaid` (main download hidden) while
-                    // `showReceiptPdf` pointed at the NULL receipt blob —
-                    // the member's only button 502'd (blob_missing). The
-                    // stale-draft-hiding rule applies ONLY when the main pdf
-                    // is an issue-time 'invoice', and the receipt button is
-                    // gated on the blob it actually serves.
                     // 064 remediation S3 — generalised: 'combined' (as-paid TIN)
                     // keeps the dual-role wording; 'receipt' (β as-paid no-TIN /
                     // legacy §105 rows) flips the main download to the receipt
                     // wording; 'bill' = 088 SC- ใบแจ้งหนี้ (not a tax invoice);
                     // 'invoice' = plain label.
                     const mainPdfKind = resolveMainPdfKind(invoice);
-                    // 092 — receipt-bearing status set (not `paid` alone) so a
-                    // §86/10 credit note does NOT un-hide the stale pre-payment
-                    // bill PDF; the combined receipt stays the sole legal document.
-                    // Lockstep with the view-model's `isCombinedPaid`.
-                    const isCombinedPaid =
-                      invoiceStatusHasReceipt(invoice.status) &&
-                      invoice.receiptDocumentNumberRaw === null &&
-                      mainPdfKind !== 'combined';
-                    const showInvoicePdf = invoice.pdf !== null && !isCombinedPaid;
+                    // Same rule as the list view-model's `showInvoice`.
+                    const showInvoicePdf = invoice.pdf !== null;
                     // 090 Bug 2 — `showReceiptPdf` is hoisted to the outer scope
                     // (near receiptAsyncPending) so this cell + the <ReceiptReveal>
                     // gate share one definition.
@@ -548,18 +516,14 @@ export async function renderPortalInvoiceDetailView({
                           <PortalReceiptDownloadButton
                             invoiceId={invoice.invoiceId}
                             documentNumber={invoice.receiptDocumentNumberRaw ?? documentNumber}
-                            label={
-                              isCombinedPaid
-                                ? tList('actions.downloadCombined')
-                                : tList('actions.downloadReceipt')
-                            }
+                            label={tList('actions.downloadReceipt')}
                             ariaLabel={tList('actions.downloadReceiptAria', {
                               number: invoice.receiptDocumentNumberRaw ?? documentNumber,
                             })}
                             className={cn(
                               // 090 finding #5 — the receipt is the post-payment
                               // PRIMARY document (this branch only renders for a PAID
-                              // invoice, combined OR separate), so it is always the
+                              // invoice), so it is always the
                               // filled `default` CTA, ranking above the demoted bill
                               // PDF above.
                               buttonClass({ variant: 'primary', size: 'sm' }),

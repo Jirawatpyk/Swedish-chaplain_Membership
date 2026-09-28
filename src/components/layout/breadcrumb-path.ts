@@ -302,6 +302,9 @@ const STATIC_LABEL_KEYS = {
   // trail renders — these section roots showed as raw slugs before.
   events: 'events',
   'change-requests': 'changeRequests',
+  // `/admin/directory` — the member directory. Same wording as the sidebar
+  // (`nav.staff.directory`); the crumb showed the raw slug before.
+  directory: 'directory',
 } as const;
 
 // Verb and sub-page segments resolve by parent resource. The outer key is the

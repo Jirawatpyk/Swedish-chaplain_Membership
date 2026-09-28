@@ -15,6 +15,7 @@
  * Registered via `globalSetup` in `playwright.config.ts`.
  */
 import postgres from 'postgres';
+import { resetE2eIssuedFixture } from '../../scripts/lib/e2e-issued-fixture-reset';
 import { clearE2ERateLimits } from './helpers/rate-limit';
 import { seedF7Broadcasts } from './helpers/broadcasts-seed';
 import { seedF8Renewals } from './helpers/renewals-seed';
@@ -76,46 +77,68 @@ async function resetF5IssuedInvoice(): Promise<void> {
     // processor_events has no invoice_id column — stale rows for old
     // PaymentIntent ids are inert (each test creates a new PI). Skip.
     //
-    // admin-refund-full.spec leaves a paid→refunded→credited chain on this
-    // fixture invoice. Unwinding it has to respect a web of F5 constraints, in
-    // this exact order:
-    //
-    //  1. credit_notes.source_refund_id → refunds.id (credit_notes_source_refund_fk)
-    //     and refunds.credit_note_id → credit_notes (refunds_credit_note_tenant_fk)
-    //     form a CIRCULAR FK. Break it on the credit_notes side by nulling
-    //     source_refund_id — a plain nullable FK NOT covered by the
-    //     credit_notes immutability trigger (migration 0027 guards only
-    //     snapshot/money/pdf cols, BEFORE UPDATE). The other side
-    //     (refunds.credit_note_id) is tied to refund status by the CHECK
-    //     refunds_succeeded_iff_complete and cannot be nulled on a succeeded
-    //     refund.
-    //  2. DELETE the refunds (now unreferenced by credit_notes).
-    //  3. DELETE the credit_notes for this invoice (the immutability trigger is
-    //     BEFORE UPDATE only, so DELETE is allowed; their refund refs are gone).
-    //  4. DELETE the payments.
-    //  5. Reset the invoice — status='issued' REQUIRES credited_total_satang=0
-    //     (CHECK invoices_credited_status_matches), so zero it alongside the
-    //     payment fields, else the UPDATE violates that CHECK.
-    await sql`UPDATE credit_notes SET source_refund_id = NULL WHERE source_refund_id IN (SELECT id FROM refunds WHERE payment_id IN (SELECT id FROM payments WHERE invoice_id = ${id}))`;
-    await sql`DELETE FROM refunds WHERE payment_id IN (SELECT id FROM payments WHERE invoice_id = ${id})`;
-    await sql`DELETE FROM credit_notes WHERE original_invoice_id = ${id}`;
-    await sql`DELETE FROM payments WHERE invoice_id = ${id}`;
-    const reset = await sql`UPDATE invoices SET status='issued', credited_total_satang=0, paid_at=NULL, payment_method=NULL, payment_date=NULL, payment_reference=NULL, updated_at=NOW() WHERE invoice_id=${id} RETURNING invoice_id`;
-    // A dev-branch re-seed or cleanup can remove the fixture row. The UPDATE
-    // then matched nothing, this still logged "reset", and every pay*/payment*
+    // The fixture is an 088 bill: a run that paid it minted an RC receipt
+    // number, which migration 0235 freezes, so it cannot be flipped back to
+    // 'issued' in place. The shared reset unwinds its refunds / credit notes /
+    // payments (the admin-refund-full chain) and re-creates it as a fresh
+    // unpaid bill in one transaction — see scripts/lib/e2e-issued-fixture-reset.ts.
+    const found = await resetE2eIssuedFixture(sql, id);
+    // A dev-branch re-seed or cleanup can remove the fixture row. The old
+    // UPDATE then matched nothing, this still logged "reset", and every pay*/payment*
     // spec timed out on the portal's not-found page with no hint why (R12,
     // 2026-09-28: 37 failures on both refs). Same silent miss as #434 fixed in
     // scripts/reset-e2e-issued-invoice.ts. The caller logs this and carries on.
-    if (reset.length === 0) {
+    if (!found) {
       throw new Error(
         `fixture invoice ${id} not found — run ` +
           '`TENANT_SLUG=swecham node --env-file=.env.local --import tsx scripts/seed-e2e-portal-invoices.ts` ' +
           '(it re-creates SC-2026-900003 as 00000000-e2e0-4fff-9ffe-000000900003; point E2E_ISSUED_INVOICE_ID there), ' +
-          'then `pnpm seed:f5-e2e:reconciliation` ' +
-          'and update E2E_PAID_ONLINE_INVOICE_ID to the id it prints',
+          'then `pnpm seed:f5-e2e:reconciliation`',
       );
     }
     console.log(`[e2e global setup] reset F5 issued-invoice fixture ${id}`);
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+}
+
+/**
+ * The paid-online F5 fixture (SC-2026-900001, used by the reconciliation and
+ * refund specs) is looked up by its DOCUMENT NUMBER, not trusted from
+ * `.env.local`. Seeds before the 088 re-shape minted a new id on every run,
+ * which left `E2E_PAID_ONLINE_INVOICE_ID` pointing at a deleted row on
+ * 2026-09-28 (the same drift #434 fixed for 900003); the seed now pins it
+ * (`00000000-e2e0-4fff-9ffe-000000900001`), and the lookup still covers a DB
+ * seeded either way. It is an 088 paid bill, so the SC number rides
+ * `bill_document_number_raw`; a legacy-shaped row carries it in
+ * `document_number`. Setting `process.env` here reaches every worker, which
+ * forks after global setup. A miss keeps whatever the env had.
+ */
+const PAID_ONLINE_DOCUMENT_NUMBER = 'SC-2026-900001';
+
+async function resolvePaidOnlineInvoice(): Promise<void> {
+  const dbUrl = process.env.DATABASE_URL;
+  if (!dbUrl) return;
+  const sql = postgres(dbUrl, { ssl: 'require', max: 1 });
+  try {
+    const rows = await sql<Array<{ invoice_id: string }>>`
+      SELECT invoice_id::text AS invoice_id FROM invoices
+      WHERE tenant_id = 'swecham'
+        AND (bill_document_number_raw = ${PAID_ONLINE_DOCUMENT_NUMBER}
+             OR document_number = ${PAID_ONLINE_DOCUMENT_NUMBER})
+      LIMIT 1
+    `;
+    const id = rows[0]?.invoice_id;
+    if (!id) {
+      console.warn(
+        `[e2e global setup] ${PAID_ONLINE_DOCUMENT_NUMBER} not found — run ` +
+          '`TENANT_SLUG=swecham node --env-file=.env.local --import tsx scripts/seed-e2e-portal-invoices.ts` ' +
+          'then `pnpm seed:f5-e2e:reconciliation`',
+      );
+      return;
+    }
+    process.env.E2E_PAID_ONLINE_INVOICE_ID = id;
+    console.log(`[e2e global setup] E2E_PAID_ONLINE_INVOICE_ID = ${PAID_ONLINE_DOCUMENT_NUMBER} (${id})`);
   } finally {
     await sql.end({ timeout: 5 });
   }
@@ -138,6 +161,12 @@ async function globalSetup(): Promise<void> {
     await resetF5IssuedInvoice();
   } catch (error) {
     console.warn('[e2e global setup] F5 invoice reset failed:', String(error));
+  }
+
+  try {
+    await resolvePaidOnlineInvoice();
+  } catch (error) {
+    console.warn('[e2e global setup] paid-online invoice lookup failed:', String(error));
   }
 
   try {

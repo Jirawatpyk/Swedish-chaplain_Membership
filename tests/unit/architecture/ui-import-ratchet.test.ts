@@ -171,7 +171,6 @@ describe('UI import ratchet (spec 122)', () => {
       'src/app/(member)/portal/invoices/_components/portal-invoice-card-list.tsx',
       'src/app/(member)/portal/invoices/_components/resend-invoice-button.tsx',
       'src/app/(member)/portal/invoices/_components/receipt-status-watcher.tsx',
-      'src/app/(member)/portal/invoices/_components/combined-receipt-hint.tsx',
       'src/app/(staff)/admin/invoices/_components/invoice-filters.tsx',
       'src/app/(member)/portal/invoices/[invoiceId]/page.tsx',
       'src/app/(member)/portal/invoices/[invoiceId]/loading.tsx',

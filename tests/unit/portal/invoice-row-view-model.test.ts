@@ -4,8 +4,8 @@
  * The pure view-model is the SINGLE source of truth for the per-row
  * presentation flags rendered by the member-portal invoice desktop
  * table and the mobile card list. These boundary tests pin the EXACT
- * flag logic the view-model exposes. Most flags (`isCombinedPaid` /
- * `showInvoice` / `showReceipt` / `resendable`) were extracted verbatim
+ * flag logic the view-model exposes. Most flags (`showInvoice` /
+ * `showReceipt` / `resendable`) were extracted verbatim
  * from `page.tsx`'s former inline `<TableBody>` row map, but the
  * receipt-PDF flags are NOT all verbatim: the S1 fix narrowed
  * `receiptPending` to the 'pending' state ONLY and added a separate
@@ -18,8 +18,9 @@
  *   - displayStatus: overdue derivation (issued + past-due → 'overdue';
  *     non-issued stays put; issued-not-past-due stays 'issued')
  *   - statuses: issued / paid / void / credited / partially_credited
- *   - isCombinedPaid: paid + receiptNumber null + receiptPdfStatus
- *     'rendered' (combined) vs paid + receiptNumber set (separate)
+ *   - a paid row with a PDF always offers it: the retired pre-088
+ *     combined-mode special case (hide the "stale" bill when the RC is NULL)
+ *     is gone — prod has no such rows and the 088 flag is permanently on
  *   - showInvoice / showReceipt / receiptPending / receiptFailed across the
  *     receipt PDF state machine (null / pending / failed / rendered).
  *     receiptPending fires ONLY for the non-terminal 'pending' state;
@@ -205,12 +206,13 @@ describe('toInvoiceRowViewModel — displayStatus / overdue derivation', () => {
   });
 });
 
-describe('toInvoiceRowViewModel — combined vs separate receipt mode', () => {
-  it('combined-mode: paid + null receiptNumber + rendered → isCombinedPaid true', () => {
-    // 064 — bill-first rows always persist the receipt BLOB together with
-    // `receiptPdfStatus 'rendered'` (record-payment inline + worker paths);
-    // 'rendered' with a NULL blob only occurs on as-paid rows. The fixture
-    // carries the blob so it describes the real bill-first shape.
+describe('toInvoiceRowViewModel — a paid row with a PDF always offers it', () => {
+  // The pre-088 combined-mode special case is retired: every paid row in prod
+  // has an RC number or an as-paid `receipt_combined` main pdf (prod query
+  // 2026-09-28: 0 of 99 receipt-bearing rows with a NULL RC and an issue-time
+  // main pdf) and FEATURE_088_TAX_AT_PAYMENT is permanently on. The view-model
+  // no longer exposes `isCombinedPaid` and never hides the main PDF.
+  it('no longer exposes the combined-paid flag', () => {
     const vm = toInvoiceRowViewModel(
       buildInvoice({
         status: 'paid',
@@ -220,14 +222,29 @@ describe('toInvoiceRowViewModel — combined vs separate receipt mode', () => {
       }),
       NOW_PAST_DUE,
     );
-    expect(vm.isCombinedPaid).toBe(true);
-    // Combined-paid hides the (stale) invoice anchor.
-    expect(vm.showInvoice).toBe(false);
-    expect(vm.showReceipt).toBe(true);
-    expect(vm.receiptNumber).toBeNull();
+    expect(vm).not.toHaveProperty('isCombinedPaid');
   });
 
-  it('separate-mode: paid + receiptNumber set + rendered → isCombinedPaid false, both shown', () => {
+  it.each(['rendered', 'pending', 'failed'] as const)(
+    'paid + NULL RC (the retired combined-mode shape) + receipt %s → the main PDF is still offered',
+    (receiptPdfStatus) => {
+      const vm = toInvoiceRowViewModel(
+        buildInvoice({
+          status: 'paid',
+          receiptDocumentNumberRaw: null,
+          receiptPdfStatus,
+          receiptPdf:
+            receiptPdfStatus === 'rendered'
+              ? { blobKey: 'rk', sha256: sha(), templateVersion: 1 }
+              : null,
+        }),
+        NOW_PAST_DUE,
+      );
+      expect(vm.showInvoice).toBe(true);
+    },
+  );
+
+  it('separate-mode: paid + receiptNumber set + rendered → both shown', () => {
     const vm = toInvoiceRowViewModel(
       buildInvoice({
         status: 'paid',
@@ -237,27 +254,28 @@ describe('toInvoiceRowViewModel — combined vs separate receipt mode', () => {
       }),
       NOW_PAST_DUE,
     );
-    expect(vm.isCombinedPaid).toBe(false);
     expect(vm.showInvoice).toBe(true);
     expect(vm.showReceipt).toBe(true);
     expect(vm.receiptNumber).toBe('RCP-2026-000009');
   });
 
-  it('paid + null receiptNumber but receipt NOT yet rendered → not combined (status pending)', () => {
-    // isCombinedPaid requires receiptPdfStatus === 'rendered'; a pending
-    // receipt is not yet the combined document.
+  it('paid 088 bill (SC bill + RC minted) with a PENDING receipt → the SC bill download stays (FR-015)', () => {
     const vm = toInvoiceRowViewModel(
       buildInvoice({
         status: 'paid',
-        receiptDocumentNumberRaw: null,
+        documentNumber: null,
+        sequenceNumber: null,
+        billDocumentNumberRaw: 'SC-2026-000045',
+        receiptDocumentNumberRaw: 'RC-2026-000045',
         receiptPdfStatus: 'pending',
       }),
       NOW_PAST_DUE,
+      true,
     );
-    expect(vm.isCombinedPaid).toBe(false);
-    // PDF exists and it is not combined-paid → invoice download shown.
+    expect(vm.mainPdfKind).toBe('bill');
     expect(vm.showInvoice).toBe(true);
     expect(vm.showReceipt).toBe(false);
+    expect(vm.receiptPending).toBe(true);
   });
 });
 
@@ -265,9 +283,8 @@ describe('toInvoiceRowViewModel — §86/4 receipt stays downloadable after a cr
   // 092 fix (Thai VAT §86/10): a credit note (ใบลดหนี้) REDUCES a prior sale but
   // does NOT cancel the original §86/4 tax receipt — it stays a valid,
   // downloadable tax document both parties keep for VAT reporting, and the CN
-  // must reference it. So `showReceipt` (and the combined-mode `isCombinedPaid`
-  // stale-bill-hiding) must hold through `partially_credited` (partial credit)
-  // and `credited` (full credit), exactly as for `paid`. Pre-092 these were
+  // must reference it. So `showReceipt` must hold through `partially_credited`
+  // (partial credit) and `credited` (full credit), exactly as for `paid`. Pre-092 these were
   // gated on `status === 'paid'`, so the receipt download vanished the moment a
   // credit note was issued (the prod UAT bug). `void` is NOT included (its own
   // VOID-stamped-PDF path, FR-015 — see the void tests below). The raw receipt
@@ -291,8 +308,7 @@ describe('toInvoiceRowViewModel — §86/4 receipt stays downloadable after a cr
     expect(vm.showReceipt).toBe(true);
     expect(vm.receiptNumber).toBe('RCP-2026-0001');
     // Separate-mode → the §86/4 receipt AND the bill/tax-invoice PDF are
-    // distinct legal docs; both stay downloadable (NOT combined-paid).
-    expect(vm.isCombinedPaid).toBe(false);
+    // distinct legal docs; both stay downloadable.
     expect(vm.showInvoice).toBe(true);
     expect(vm.resendable).toBe(true);
     expect(rowHasAnyAction(vm)).toBe(true);
@@ -310,46 +326,7 @@ describe('toInvoiceRowViewModel — §86/4 receipt stays downloadable after a cr
     );
     expect(vm.showReceipt).toBe(true);
     expect(vm.receiptNumber).toBe('RCP-2026-0001');
-    expect(vm.isCombinedPaid).toBe(false);
     expect(vm.showInvoice).toBe(true);
-  });
-
-  it('credited COMBINED-mode (null receiptNumber + rendered + blob) → isCombinedPaid TRUE, stale bill stays HIDDEN, combined receipt shown', () => {
-    // Regression guard the 092 fix must NOT introduce: a combined-mode
-    // (bill-first) paid invoice hides its stale pre-payment bill PDF and shows
-    // only the combined receipt. That must SURVIVE a credit note — so
-    // `isCombinedPaid` widened alongside `showReceipt`; had only `showReceipt`
-    // widened, `isCombinedPaid` would go false on credit and the stale bill PDF
-    // would reappear.
-    const vm = toInvoiceRowViewModel(
-      buildInvoice({
-        status: 'credited',
-        receiptDocumentNumberRaw: null,
-        receiptPdfStatus: 'rendered',
-        receiptPdf: { blobKey: 'rk', sha256: sha(), templateVersion: 1 },
-        pdfDocKind: 'invoice',
-      }),
-      NOW_PAST_DUE,
-    );
-    expect(vm.isCombinedPaid).toBe(true);
-    expect(vm.showInvoice).toBe(false);
-    expect(vm.showReceipt).toBe(true);
-  });
-
-  it('partially_credited COMBINED-mode → isCombinedPaid TRUE, stale bill hidden, combined receipt shown', () => {
-    const vm = toInvoiceRowViewModel(
-      buildInvoice({
-        status: 'partially_credited',
-        receiptDocumentNumberRaw: null,
-        receiptPdfStatus: 'rendered',
-        receiptPdf: { blobKey: 'rk', sha256: sha(), templateVersion: 1 },
-        pdfDocKind: 'invoice',
-      }),
-      NOW_PAST_DUE,
-    );
-    expect(vm.isCombinedPaid).toBe(true);
-    expect(vm.showInvoice).toBe(false);
-    expect(vm.showReceipt).toBe(true);
   });
 
   it('credited AS-PAID row (receipt_combined main pdf, NULL receipt blob) → showReceipt FALSE (no blob to serve), main download stays', () => {
@@ -369,7 +346,6 @@ describe('toInvoiceRowViewModel — §86/4 receipt stays downloadable after a cr
     );
     expect(vm.mainPdfKind).toBe('combined');
     expect(vm.showReceipt).toBe(false);
-    expect(vm.isCombinedPaid).toBe(false);
     expect(vm.showInvoice).toBe(true);
   });
 });
@@ -461,8 +437,9 @@ describe('toInvoiceRowViewModel — receipt PDF state machine', () => {
     expect(vm.showReceipt).toBe(false);
     expect(vm.receiptPending).toBe(false);
     expect(vm.receiptFailed).toBe(false);
-    // Not combined (needs 'rendered'); PDF present → invoice shown.
-    expect(vm.isCombinedPaid).toBe(false);
+    // The PDF is still offered. (Unreachable in the DB — CHECK
+    // `invoices_paid_has_receipt_status`, migration 0056 — pinned here as a
+    // state-machine boundary.)
     expect(vm.showInvoice).toBe(true);
   });
 
@@ -489,9 +466,9 @@ describe('toInvoiceRowViewModel — receipt PDF state machine', () => {
     expect(vm.receiptFailed).toBe(true);
     expect(vm.receiptPending).toBe(false);
     expect(vm.showReceipt).toBe(false);
-    // A failed-receipt row is NOT combined-paid (needs 'rendered'); its
-    // issue-time PDF (default fixture) still offers the invoice download.
-    expect(vm.isCombinedPaid).toBe(false);
+    // Its PDF stays downloadable alongside the support path.
+    expect(vm.showInvoice).toBe(true);
+    expect(rowHasAnyAction(vm)).toBe(true);
   });
 
   it("receiptPdfStatus 'rendered' on a paid invoice → showReceipt true, not pending, not failed", () => {
@@ -515,12 +492,11 @@ describe('toInvoiceRowViewModel — receipt PDF state machine', () => {
     );
     expect(vm.showReceipt).toBe(false);
     expect(vm.receiptPending).toBe(false);
-    expect(vm.isCombinedPaid).toBe(false);
   });
 });
 
 describe('toInvoiceRowViewModel — showInvoice', () => {
-  it('true when a PDF exists and the row is not combined-paid', () => {
+  it('true when a PDF exists', () => {
     const vm = toInvoiceRowViewModel(buildInvoice({ status: 'issued' }), NOW_BEFORE_DUE);
     expect(vm.showInvoice).toBe(true);
   });
@@ -584,9 +560,6 @@ describe('toInvoiceRowViewModel — 064 as-paid event invoices (main PDF IS the 
       NOW_PAST_DUE,
     );
     expect(vm.mainPdfKind).toBe('combined');
-    // NOT combined-paid in the stale-draft-hiding sense: the main pdf is the
-    // final combined doc, not an issue-time pre-payment invoice.
-    expect(vm.isCombinedPaid).toBe(false);
     // Pre-fix: showInvoice false + showReceipt true → the row's ONLY visible
     // download pointed at receiptPdf (NULL) and 502'd (blob_missing).
     expect(vm.showInvoice).toBe(true);
@@ -612,30 +585,12 @@ describe('toInvoiceRowViewModel — 064 as-paid event invoices (main PDF IS the 
     // label/aria flip to the receipt wording (NOT the combined dual-role one,
     // which stays TIN-combined only).
     expect(vm.mainPdfKind).toBe('receipt');
-    expect(vm.isCombinedPaid).toBe(false);
     expect(vm.showInvoice).toBe(true);
     // Pre-fix: 'rendered' alone implied showReceipt → 502 (no receipt blob).
     expect(vm.showReceipt).toBe(false);
     // 064 remediation S3 — the display number resolves to the printed §105
     // receipt number; surfaces must NEVER fall back to the row UUID.
     expect(vm.displayNumber).toBe('RCP-2026-000777');
-  });
-
-  it('bill-first combined row (issue-time invoice main pdf + rendered receipt blob) is byte-identical', () => {
-    const vm = toInvoiceRowViewModel(
-      buildInvoice({
-        status: 'paid',
-        receiptDocumentNumberRaw: null,
-        receiptPdfStatus: 'rendered',
-        receiptPdf: { blobKey: 'rk', sha256: sha(), templateVersion: 1 },
-        pdfDocKind: 'invoice',
-      }),
-      NOW_PAST_DUE,
-    );
-    expect(vm.mainPdfKind).toBe('invoice');
-    expect(vm.isCombinedPaid).toBe(true);
-    expect(vm.showInvoice).toBe(false);
-    expect(vm.showReceipt).toBe(true);
   });
 });
 
@@ -779,9 +734,7 @@ describe('toInvoiceRowViewModel — 088 tax-at-payment disambiguation', () => {
     expect(vm.billDocumentNumber).toBe('SC-2026-000045');
     // RC number for the Receipt-No column clickable link.
     expect(vm.receiptNumber).toBe('RC-2026-000123');
-    // The bill PDF stays downloadable after payment (FR-015): receipt number is
-    // set → NOT combined-paid → showInvoice true; receipt also shown.
-    expect(vm.isCombinedPaid).toBe(false);
+    // The bill PDF stays downloadable after payment (FR-015); receipt also shown.
     expect(vm.showInvoice).toBe(true);
     expect(vm.showReceipt).toBe(true);
   });

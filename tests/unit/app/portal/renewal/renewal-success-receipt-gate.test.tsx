@@ -190,3 +190,44 @@ describe('RenewalSuccessPage — §86/4 receipt stays downloadable after a credi
     expect(html).not.toContain('data-kind="receipt"');
   });
 });
+
+// While the receipt renders, the page offers the invoice/bill PDF next to the
+// "receipt preparing" status — the SC bill on an 088 bill (FR-015). The retired
+// pre-088 combined-mode shape (NULL RC; 0 rows in prod) is not special-cased.
+describe('RenewalSuccessPage — paid, receipt still rendering', () => {
+  it('paid with no RC + pending → the invoice download + the preparing status', async () => {
+    getInvoiceMock.mockResolvedValue({
+      ok: true,
+      value: {
+        ...invoiceWith('paid'),
+        receiptDocumentNumberRaw: null,
+        receiptPdfStatus: 'pending',
+        receiptPdf: null,
+        pdfDocKind: 'invoice',
+      },
+    });
+    const html = await renderPage();
+    expect(html).toContain('data-kind="invoice"');
+    expect(html).not.toContain('data-kind="receipt"');
+    expect(html).toContain('receiptPreparing');
+  });
+
+  it('088 bill (SC + RC minted) + pending → the SC bill download stays (FR-015)', async () => {
+    getInvoiceMock.mockResolvedValue({
+      ok: true,
+      value: {
+        ...invoiceWith('paid'),
+        documentNumber: null,
+        billDocumentNumberRaw: 'SC-2026-000045',
+        receiptDocumentNumberRaw: 'RC-2026-000045',
+        receiptPdfStatus: 'pending',
+        receiptPdf: null,
+        pdfDocKind: 'invoice',
+      },
+    });
+    const html = await renderPage();
+    expect(html).toContain('data-testid="invoice-download-link"');
+    expect(html).toContain('data-kind="invoice"');
+    expect(html).toContain('receiptPreparing');
+  });
+});

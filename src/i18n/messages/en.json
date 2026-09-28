@@ -211,6 +211,7 @@
     "readOnlyMode": "The system is currently in read-only mode for maintenance.",
     "errorId": "Error ID: {id}",
     "readOnlyNothingChanged": "Nothing was changed. Try again in a few minutes.",
+    "readOnlyModeBrowse": "You can still look around — changes are paused until maintenance ends.",
     "notFoundHint": "The link may be old, or the page was moved.",
     "backToDashboard": "Back to dashboard",
     "loadError": {
@@ -298,6 +299,7 @@
     "logoRemoveTitle": "Remove this logo?",
     "logoRemoveDescription": "Your directory listing will show no logo until you upload a new one. You can re-upload at any time.",
     "logoRemoveConfirm": "Remove logo",
+    "logoRemoveFailed": "Could not remove the logo. Please try again.",
     "cancel": "Cancel",
     "manage": "Manage listing",
     "invalidWebsite": "Website must start with http:// or https://",
@@ -2312,7 +2314,6 @@
         "bankAccountNo": "Digits, with optional dashes or spaces."
       },
       "receiptMode": {
-        "combined": "Combined tax invoice + receipt",
         "separate": "Separate invoice and receipt streams"
       },
       "proRate": {
@@ -2693,8 +2694,6 @@
         "creditedSuffix": "{count, plural, one {+# CN} other {+# CN}}",
         "creditedTooltip": "{count, plural, one {# credit note} other {# credit notes}} · {amount} THB credited",
         "creditedAria": "{count, plural, one {# credit note} other {# credit notes}} issued against this invoice, {amount} Thai baht credited",
-        "receiptNumberCombinedTooltip": "Combined mode — receipt reuses the invoice number",
-        "receiptNumberCombinedAria": "Receipt uses the invoice document number (combined mode)",
         "tableCaption": "List of invoices for the selected filters.",
         "queueTableCaption": "List of auto-renewal drafts awaiting review.",
         "queue": {
@@ -6039,6 +6038,7 @@
     "tierUpgrades": "Tier upgrade queue",
     "memberChanges": "Member change approval",
     "changeRequests": "Change requests",
+    "directory": "Directory",
     "changeRequestDetail": "Review",
     "broadcastDetail": "Details",
     "proxySubmit": "Submit on behalf of member",
@@ -6294,8 +6294,6 @@
       "filters": {
         "noMatch": "No invoices match your filters."
       },
-      "receiptNumberCombinedTooltip": "Combined mode — receipt reuses the invoice number",
-      "receiptNumberCombinedAria": "Receipt uses the invoice document number (combined mode)",
       "toast": {
         "resendSuccess": "Copy queued — it goes to your organisation's primary contact.",
         "resendRateLimited": "You already asked for a copy recently. Please try again in a few minutes.",

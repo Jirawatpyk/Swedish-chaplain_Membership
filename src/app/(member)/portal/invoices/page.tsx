@@ -53,7 +53,6 @@ import {
   PortalInvoiceDownloadButton,
   PortalReceiptDownloadButton,
 } from './_components/portal-pdf-download-button';
-import { CombinedReceiptHint } from './_components/combined-receipt-hint';
 import { EmptyCell } from './_components/empty-cell';
 import { PortalInvoiceCardList } from './_components/portal-invoice-card-list';
 import { ReceiptStatusWatcher } from './_components/receipt-status-watcher';
@@ -241,7 +240,7 @@ export default async function PortalInvoicesPage({
   // per-row inserts on self-service page loads.
   //
   // 060-member-portal-d4 — per-row presentation flags (displayStatus,
-  // isCombinedPaid, showInvoice/showReceipt, receiptPending, receiptFailed,
+  // showInvoice/showReceipt, receiptPending, receiptFailed,
   // resendable) are derived ONCE here into a shared view-model so the desktop table
   // (below) and the mobile card list consume one source of truth and can
   // never drift apart. The "has any action" decision is derived on demand
@@ -425,37 +424,6 @@ export async function renderPortalInvoicesView({
                             <span className="font-mono text-sm tabular-nums">
                               {vm.receiptNumber}
                             </span>
-                          ) : vm.isCombinedPaid ? (
-                            // Combined-mode = receipt reuses invoice number.
-                            // 060-member-portal-d4 (F3) — gate on
-                            // `vm.isCombinedPaid` (paid AND receiptPdfStatus
-                            // 'rendered'), NOT the raw `r.status === 'paid'`.
-                            // A paid combined-mode invoice whose receipt is
-                            // still rendering (`receiptPdfStatus = 'pending'`)
-                            // must NOT show the "receipt = invoice number" hint
-                            // prematurely — the action cell shows "Preparing
-                            // receipt…" in that window. The card omits only
-                            // the combined-mode receipt-number HINT (em-dash +
-                            // tooltip); it STILL renders a separate-mode
-                            // receipt-number line when `vm.receiptNumber` is
-                            // present, so it shows nothing in combined-pending
-                            // — gating this table hint on `vm.isCombinedPaid`
-                            // keeps the two surfaces in lockstep. Only the
-                            // combined RECEIPT-DOWNLOAD label is gated on
-                            // `isCombinedPaid` on both surfaces.
-                            // Em-dash + InfoIcon affordance with min-h-6 hit
-                            // area for WCAG 2.2 SC 2.5.8 (R5-UX-M2).
-                            // F5R6+ — extracted to a Client Component
-                            // wrapper because Tooltip.Trigger's `render`
-                            // prop is a function; passing it from a Server
-                            // Component to a Client Component throws the
-                            // "Functions cannot be passed directly to
-                            // Client Components" error under React 19 +
-                            // Next.js 16 strict SC/CC boundaries.
-                            <CombinedReceiptHint
-                              ariaLabel={t('receiptNumberCombinedAria')}
-                              tooltipText={t('receiptNumberCombinedTooltip')}
-                            />
                           ) : (
                             <EmptyCell />
                           )}
@@ -481,11 +449,8 @@ export async function renderPortalInvoicesView({
                             // derived once into `vm` (toInvoiceRowViewModel)
                             // and shared with the mobile card list.
                             //
-                            // Combined-paid rows: the invoice PDF *is*
-                            // the receipt — hide the (now-stale) invoice
-                            // anchor + show only "Receipt" so the legal
-                            // §86/4+§105ทวิ document is what the member
-                            // grabs. Separate-paid: show both.
+                            // Paid rows show the main PDF and, once rendered,
+                            // the receipt download.
                             // R7-M5 — async receipt-PDF gate: when the
                             // receipt is mid-render (`receiptPending`),
                             // surface a compact "preparing" affordance
@@ -563,24 +528,10 @@ export async function renderPortalInvoicesView({
                                       <PortalReceiptDownloadButton
                                         invoiceId={vm.invoiceId}
                                         documentNumber={receiptRef}
-                                        label={
-                                          vm.isCombinedPaid
-                                            ? t('actions.downloadCombined')
-                                            : t('actions.downloadReceipt')
-                                        }
-                                        // 060-member-portal-d4 (F2) — branch the aria
-                                        // on `vm.isCombinedPaid` so the SR name matches
-                                        // the visible combined label ("Tax invoice /
-                                        // Receipt"). Previously hardcoded to
-                                        // `downloadReceiptAria` ("Download tax receipt
-                                        // PDF"), contradicting the combined visible
-                                        // text. Mirrors the card.
-                                        ariaLabel={t(
-                                          vm.isCombinedPaid
-                                            ? 'actions.downloadCombinedAria'
-                                            : 'actions.downloadReceiptAria',
-                                          { number: receiptRef },
-                                        )}
+                                        label={t('actions.downloadReceipt')}
+                                        ariaLabel={t('actions.downloadReceiptAria', {
+                                          number: receiptRef,
+                                        })}
                                         className={cn(
                                           buttonClass({ variant: 'ghost', size: 'sm' }),
                                           'min-h-11 px-3',
