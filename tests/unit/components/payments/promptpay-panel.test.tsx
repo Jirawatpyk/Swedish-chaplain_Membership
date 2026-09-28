@@ -8,9 +8,9 @@
  *   - QR `<img>` onError debounces transient failures via internal
  *     retry counter; escalates to `onLoadError` only after limit
  *   - Refresh CTA wires `onRefresh`
- *   - THB formatting for both `'thb'` and the real upper-case `'THB'`
- *     the invoice page passes (compared case-insensitively)
- *   - Currency fallback when the currency is not THB
+ *   - THB formatting for `'thb'`, the real upper-case `'THB'` the invoice
+ *     page passes, and any other value — PromptPay is THB-only, so the panel
+ *     never prints raw satang
  */
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
@@ -156,16 +156,25 @@ describe('<PromptPayPanel> — pending status', () => {
     expect(amountNode.textContent).not.toContain('3852000');
   });
 
-  it('falls back to raw amount + uppercase currency when currency!==thb', () => {
-    renderWithIntl({
-      ...baseProps,
-      status: 'pending',
-      currency: 'usd',
-      amountSatang: 12345,
-    });
-    const amountNode = screen.getByText(/Amount:/);
-    expect(amountNode.textContent).toContain('12345 USD');
-  });
+  // Financial-integrity review of #443 (L1): the old non-THB fallback printed
+  // the raw MINOR-unit number under a major-unit label (12345 satang →
+  // "12345 USD"), the same 100x bug class #443 fixed. PromptPay is THB-only
+  // and the PaymentIntent is created with currency 'thb', so the panel always
+  // formats the satang amount as THB — matching OrderSummary and CardForm.
+  it.each(['usd', 'THB ', '฿'])(
+    'currency=%j still formats the satang amount as THB — never raw satang',
+    (currency) => {
+      renderWithIntl({
+        ...baseProps,
+        status: 'pending',
+        currency,
+        amountSatang: 12345,
+      });
+      const amountNode = screen.getByText(/Amount:/);
+      expect(amountNode.textContent).toContain('123.45 THB');
+      expect(amountNode.textContent).not.toContain('12345');
+    },
+  );
 
   it('debounces transient QR <img> errors — first MAX_QR_LOAD_RETRIES errors do NOT escalate', () => {
     metricsMocks.qrLoadRetriesExhausted.mockClear();
