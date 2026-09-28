@@ -335,7 +335,8 @@ describe('MembersTable selection on the AURA grid (122 US5a review)', () => {
       </NextIntlClientProvider>,
     );
     fireEvent.click(screen.getAllByRole('checkbox')[1]!);
-    expect(screen.queryByText('1 selected')).toBeNull();
+    const liveRegions = [...document.querySelectorAll('[aria-live], [role="status"], [role="alert"]')];
+    expect(liveRegions.some((el) => el.textContent?.includes('1 selected'))).toBe(false);
   });
 });
 
