@@ -1004,6 +1004,114 @@ describe('initiatePayment (T055)', () => {
     },
   );
 
+  // Follow-up to the #447 review (residual race). The pre-tx status read runs
+  // outside the `payments:{tenant}:{invoice}` advisory lock. An initiate that
+  // read `issued` just before a void, but took the lock only AFTER the void's
+  // post-commit canceller had listed pending rows under that same lock, used to
+  // insert a pending PI on the voided invoice that nothing would ever cancel.
+  // The status is now re-read under the lock, on the same tx (READ COMMITTED:
+  // that statement sees the committed void), before any write or Stripe call.
+  describe('status re-check under the initiate advisory lock', () => {
+    it.each(['void', 'credited', 'paid'] as const)(
+      'issued before the lock, %s under it → invoice_not_payable; no resume, no Stripe call, no insert',
+      async (status) => {
+        const deps = makeDeps();
+        (deps.invoicingBridge.getInvoiceForPayment as ReturnType<typeof vi.fn>)
+          .mockResolvedValueOnce(ok(INVOICE_DTO))
+          .mockResolvedValueOnce(ok({ ...INVOICE_DTO, status }));
+        const result = await initiatePayment(deps, makeInput());
+        expect(result.ok).toBe(false);
+        if (result.ok) return;
+        expect(result.error).toEqual({ code: 'invoice_not_payable', currentStatus: status });
+        expect(deps.paymentsRepo.findPendingByInvoiceAndActor).not.toHaveBeenCalled();
+        expect(deps.processorGateway.createPaymentIntent).not.toHaveBeenCalled();
+        expect(deps.paymentsRepo.insert).not.toHaveBeenCalled();
+      },
+    );
+
+    it('re-reads on the initiate tx (externalTx), after acquireInitiateLock, without the actor probe', async () => {
+      const deps = makeDeps();
+      const TX = { tx: 'initiate' };
+      (deps.paymentsRepo.withTx as ReturnType<typeof vi.fn>).mockImplementationOnce(
+        async (fn: (tx: unknown) => Promise<unknown>) => fn(TX),
+      );
+      const result = await initiatePayment(deps, makeInput());
+      expect(result.ok).toBe(true);
+      const bridge = deps.invoicingBridge.getInvoiceForPayment as ReturnType<typeof vi.fn>;
+      expect(bridge).toHaveBeenCalledTimes(2);
+      const second = bridge.mock.calls[1]![0] as Record<string, unknown>;
+      expect(second).toMatchObject({
+        tenantId: TENANT_ID,
+        invoiceId: INVOICE_ID,
+        reconciliationPath: false,
+        taxAtPayment: deps.taxAtPayment,
+        externalTx: TX,
+      });
+      // The pre-tx read already emitted any cross-tenant probe audit.
+      expect(second.actor).toBeUndefined();
+      const lock = deps.paymentsRepo.acquireInitiateLock as ReturnType<typeof vi.fn>;
+      expect(lock.mock.invocationCallOrder[0]!).toBeLessThan(bridge.mock.invocationCallOrder[1]!);
+      expect(bridge.mock.invocationCallOrder[1]!).toBeLessThan(
+        (deps.paymentsRepo.findPendingByInvoiceAndActor as ReturnType<typeof vi.fn>).mock
+          .invocationCallOrder[0]!,
+      );
+    });
+
+    it('under-lock read throws/fails (read_failed) → invoice_read_failed (500), never invoice_not_payable', async () => {
+      const deps = makeDeps();
+      (deps.invoicingBridge.getInvoiceForPayment as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce(ok(INVOICE_DTO))
+        .mockResolvedValueOnce(err({ code: 'read_failed' }));
+      const result = await initiatePayment(deps, makeInput());
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toEqual({ code: 'invoice_read_failed' });
+      expect(deps.processorGateway.createPaymentIntent).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [{ code: 'not_payable', status: 'void' }, { code: 'invoice_not_payable', currentStatus: 'void' }],
+      [{ code: 'not_found' }, { code: 'invoice_not_found' }],
+      [{ code: 'forbidden' }, { code: 'forbidden_invoice' }],
+      [
+        { code: 'corrupted_total', invoiceId: INVOICE_ID },
+        { code: 'invoice_data_corrupt', invoiceId: INVOICE_ID },
+      ],
+      [{ code: 'legacy_no_tin_event_not_payable' }, { code: 'legacy_no_tin_event_not_payable' }],
+      [{ code: 'new_flow_bill_requires_flag_on' }, { code: 'new_flow_bill_requires_flag_on' }],
+    ] as const)(
+      'under-lock bridge refusal %j → %j; no second probe audit, no Stripe call, no write',
+      async (bridgeError, expected) => {
+        const deps = makeDeps();
+        (deps.invoicingBridge.getInvoiceForPayment as ReturnType<typeof vi.fn>)
+          .mockResolvedValueOnce(ok(INVOICE_DTO))
+          .mockResolvedValueOnce(err(bridgeError));
+        const result = await initiatePayment(deps, makeInput());
+        expect(result.ok).toBe(false);
+        if (result.ok) return;
+        expect(result.error).toEqual(expected);
+        // The probe audit belongs to the pre-tx read, which succeeded here.
+        expect(deps.audit.emit).not.toHaveBeenCalled();
+        expect(deps.processorGateway.createPaymentIntent).not.toHaveBeenCalled();
+        expect(deps.paymentsRepo.insert).not.toHaveBeenCalled();
+        expect(deps.paymentsRepo.updateStatus).not.toHaveBeenCalled();
+      },
+    );
+
+    it('an unknown bridge code (type system bypassed) fails closed → invoice_read_failed, never a PI', async () => {
+      const deps = makeDeps();
+      (deps.invoicingBridge.getInvoiceForPayment as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce(ok(INVOICE_DTO))
+        .mockResolvedValueOnce(err({ code: 'some_future_code' } as never));
+      const result = await initiatePayment(deps, makeInput());
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toEqual({ code: 'invoice_read_failed' });
+      expect(deps.processorGateway.createPaymentIntent).not.toHaveBeenCalled();
+      expect(deps.paymentsRepo.insert).not.toHaveBeenCalled();
+    });
+  });
+
   // W2 (audit 2026-04-25 follow-up): the `idempotencyKeyFactory` Strategy
   // port replaces the prior `devSaltIdempotencyKey: boolean` flag (Clean
   // Architecture polish — Application doesn't need to know dev-vs-prod).

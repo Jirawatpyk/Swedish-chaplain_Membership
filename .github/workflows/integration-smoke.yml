@@ -36,6 +36,15 @@
 # nightly because the moment to catch it is the PR that adds the table. Broad per-module coverage belongs in the nightly, and
 # per-PR ephemeral Neon branches are the prerequisite for anything wider.
 #
+# 2026-09-28: `payments/initiate-void-race` joins on both counts. It pins
+# that initiate re-reads the invoice UNDER its advisory lock, closing the
+# window where a void committed between initiate's pre-lock read and the lock
+# (after the void's canceller had already listed pending rows) left a live
+# PaymentIntent on a voided invoice that nothing would cancel. That is silent
+# by construction, the same class as its sibling initiate-non-issued-invoice
+# (33 s in CI). It uses the same seed plus one initiate call. Its CI time is
+# recorded in the PR that added it.
+#
 # 2026-09-28 — `payments/void-cancels-pending-payment` joins: a voided invoice's
 # still-live PaymentIntent must be canceled (the #446 financial-integrity review,
 # M-a). The regression is silent by construction: the webhook auto-refunds a
@@ -204,6 +213,7 @@ jobs:
             tests/integration/renewals/rbac-defence-in-depth.test.ts \
             tests/integration/payments/refund-vs-voided-invoice.test.ts \
             tests/integration/payments/initiate-non-issued-invoice.test.ts \
+            tests/integration/payments/initiate-void-race.test.ts \
             tests/integration/broadcasts/audit-event-type-parity.test.ts \
             tests/integration/members/contact-marketing-opt-out.test.ts \
             tests/integration/members/contact-marketing-opt-out-guard.test.ts \
