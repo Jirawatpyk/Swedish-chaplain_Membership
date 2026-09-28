@@ -53,6 +53,20 @@ The US4 boards (`Invoices`, `Invoice-paid`, `Portal-invoice-mobile`, `Portal-cre
 - Q: The `Invoices` board has no filter row. Drop the filters? → A: **No**: removing them would remove a feature. The search, status and subject filters stay, on AURA fields. They are shared with `/admin/invoices`, which renders them in AURA from US4 on (as US3 did with shared components); so does the original-receipt badge shared with the staff credit-note screens.
 - Q: What around the card form changes? → A: **Only the shell**: Stripe Elements (`<Elements>` / `<PaymentElement>`) and its SAQ-A scope are untouched (Principle IV).
 
+### Session 2026-09-28 (US4 board-parity pass)
+
+The maintainer asked for every gap in the US4 board comparison to be fixed. The fixes follow the rule "the boards win unless they contradict the product". Where a board gap was left open, this is why:
+
+- **List resend icon, no sort, shared pagination.** The invoice list keeps the resend action (removing it would remove a feature). It has no column sort, because sorting needs new server parameters, which a UI swap cannot add. It keeps the shared `TablePagination` with the same URL parameters.
+- **Phone card keeps separate download buttons.** The phone invoice card keeps a labelled button per document rather than the board's single download icon. When an invoice has both an invoice and a receipt, one icon would not say which document it downloads.
+- **Receipt stays primary once paid.** On a paid invoice the receipt download stays the primary button (090 finding #5).
+- **No "Receipt preparing…" header button.** A receipt that is still being prepared is shown by the notice (088 T066a), not by a disabled header button.
+- **Tax wording stays.** The VAT line and the "Original tax invoice" labels stay as coded (FR-010f). The bill note stays on desktop too, since it is a tax disclosure.
+- **Pay button and security footer stay in the drawer body.** The Pay button lives inside the Stripe Elements form, so neither moves into the drawer footer (SAQ-A, Principle IV).
+- **Shared items.** The list's invoice-alert title is shared with the US3 dashboard. The fifth "Account" bottom tab comes from US1.
+- **Board wording added.** The paid-invoice subtitle, the credit-note title, its "Receipt … is reduced by …" notice and contact line, and the "receipt will be ready in a moment" line on payment success are added in EN, TH and SV. Figures and document wording are unchanged.
+- **PromptPay amount stays out of this PR.** The PromptPay panel can show a raw satang figure: it compares the currency code with `'thb'` case-sensitively, but invoices carry `THB`. That is a logic bug on `main`, so it is fixed in its own PR, not in this UI swap.
+
 ## User Scenarios & Testing *(mandatory)*
 
 Every story below is one phase and one pull request. A story is done when its screens use only AURA components, match their canvas boards, and pass the per-module definition of done (FR-010).
