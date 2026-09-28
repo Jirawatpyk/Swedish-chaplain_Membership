@@ -155,8 +155,10 @@ export function ChangeRequestReviewClient({ request, fields, canDecide }: Change
   }
 
   return (
-    <div className="space-y-4">
-      {/* the page's primary content gets a real heading (the h1 was the only one — PR-1 review, UX M8) */}
+    <div className="space-y-4 rounded-[var(--aura-card-radius)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] p-5 max-sm:p-4">
+      {/* One card holds the proposed changes and the decision bar (board
+          `Admin-change-request`). The page's primary content gets a real
+          heading (the h1 was the only one — PR-1 review, UX M8). */}
       <section aria-labelledby="cr-fields-heading" className="space-y-3">
         <h2 id="cr-fields-heading" className="text-base font-semibold leading-snug">
           {t('fieldsHeading')}
@@ -167,11 +169,12 @@ export function ChangeRequestReviewClient({ request, fields, canDecide }: Change
           onToggle={(key, approved) => setSelected((prev) => ({ ...prev, [key]: approved }))}
           canDecide={canDecide && !decided}
           decided={decided}
+          className="rounded-none border-0 bg-transparent"
         />
       </section>
       {canDecide && !decided ? (
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-[var(--aura-fg-secondary)]" aria-live="polite" data-testid="selection-summary">
+        <div className="flex flex-col gap-2 rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-canvas)] px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-[var(--aura-fg-primary)]" aria-live="polite" data-testid="selection-summary">
             {t('selectionSummary', { approved: counts.approved, rejected: counts.rejected })}
           </p>
           <Button ref={triggerRef} type="button" onClick={() => setOpen(true)} data-testid="confirm-decision">

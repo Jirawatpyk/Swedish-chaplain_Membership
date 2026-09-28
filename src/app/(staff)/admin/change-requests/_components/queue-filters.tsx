@@ -184,7 +184,7 @@ export function ChangeRequestQueueFilters({ resultCount, hasMore }: ChangeReques
     <form
       method="get"
       action={pathname}
-      className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[repeat(4,minmax(0,1fr))_auto] lg:items-end"
+      className="flex flex-col gap-3"
       aria-label={tFilters('label')}
       aria-busy={pending}
       data-testid="queue-filters"
@@ -204,6 +204,9 @@ export function ChangeRequestQueueFilters({ resultCount, hasMore }: ChangeReques
       })}
       {from ? <input type="hidden" name="from" value={from} /> : null}
       {to ? <input type="hidden" name="to" value={to} /> : null}
+      {/* The controls sit in a card, the result count under it (board
+          `Admin-change-requests`). */}
+      <div className="grid gap-3 rounded-[var(--aura-card-radius)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] p-4 sm:grid-cols-2 lg:grid-cols-[repeat(4,minmax(0,1fr))_auto] lg:items-end">
       <Select
         label={tFilters('state')}
         data-testid="queue-filter-state"
@@ -250,9 +253,10 @@ export function ChangeRequestQueueFilters({ resultCount, hasMore }: ChangeReques
           </Button>
         ) : null}
       </div>
+      </div>
       {/* the applied result, announced politely — one region that lives across
           every Apply (a fresh element per navigation would not be announced) */}
-      <p role="status" aria-live="polite" className="text-sm text-[var(--aura-fg-secondary)] sm:col-span-2 lg:col-span-5" data-testid="queue-result-count">
+      <p role="status" aria-live="polite" className="text-sm text-[var(--aura-fg-secondary)]" data-testid="queue-result-count">
         {hasMore ? tFilters('resultCountMore', { count: resultCount }) : tFilters('resultCount', { count: resultCount })}
       </p>
     </form>
