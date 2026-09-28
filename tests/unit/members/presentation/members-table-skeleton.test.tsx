@@ -45,4 +45,13 @@ describe('MembersTableSkeleton has the live table shape', () => {
     const { container } = renderSkeleton(true);
     expect(container.querySelectorAll('[role="columnheader"]')).toHaveLength(9);
   });
+
+  it('keeps keyboard focus out of the hidden placeholder (R15 axe aria-hidden-focus)', () => {
+    // AURA's select-all header is tabbable; inside an aria-hidden subtree a
+    // keyboard user could land on it while screen readers are told it is gone.
+    const { getByTestId } = renderSkeleton(true);
+    const skeleton = getByTestId('members-table-skeleton');
+    expect(skeleton).toHaveAttribute('aria-hidden', 'true');
+    expect(skeleton).toHaveAttribute('inert');
+  });
 });
