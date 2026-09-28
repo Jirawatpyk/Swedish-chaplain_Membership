@@ -9,7 +9,7 @@
  * Uses the real `src/i18n/messages/en.json` so a missing key fails the test.
  */
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import messages from '@/i18n/messages/en.json';
 import { DirectoryFilters } from '@/components/members/directory-filters';
@@ -121,5 +121,45 @@ describe('active-filter chips', () => {
     expect(
       screen.getByRole('button', { name: messages.admin.members.directory.clearFilters }),
     ).toBeInTheDocument();
+  });
+});
+
+// Whole-branch review: a Clear pressed inside the search debounce must stay
+// cleared — the pending typed query must not come back when the timer fires.
+describe('clearing inside the search debounce', () => {
+  function typedQueriesAfter(clear: () => void) {
+    vi.useFakeTimers();
+    try {
+      fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'acme typed' } });
+      clear();
+      nav.replaceMock.mockClear();
+      act(() => {
+        vi.advanceTimersByTime(1000);
+      });
+      return nav.replaceMock.mock.calls.map((c) => String(c[0])).filter((u) => u.includes('q='));
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  it('removing the search chip drops the pending typed query', () => {
+    renderFilters('q=acme');
+    const typed = typedQueriesAfter(() =>
+      fireEvent.click(screen.getByRole('button', { name: /remove search: acme/i })),
+    );
+    expect(typed).toEqual([]);
+  });
+
+  it('the lone "Clear filters" (needs-invite only) drops the pending typed query', () => {
+    renderFilters('portal=needs_invite');
+    // The page's own Clear (outside the bar's chips row, where AURA adds its
+    // own once something is typed).
+    const typed = typedQueriesAfter(() => {
+      const own = screen
+        .getAllByRole('button', { name: messages.admin.members.directory.clearFilters })
+        .find((b) => !b.closest('.aura-filterbar__chips'));
+      fireEvent.click(own!);
+    });
+    expect(typed).toEqual([]);
   });
 });
