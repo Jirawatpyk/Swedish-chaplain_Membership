@@ -244,3 +244,20 @@ describe('<ChangeRequestQueueFilters> — PR-3 polish (useId · the live result 
     expect(nativeQuery(form)).toEqual({});
   });
 });
+
+describe('ChangeRequestQueueFilters — phone summary (board Admin-change-requests-mobile)', () => {
+  it('folds the filters behind a "Filters · Status: …" toggle on a phone, which opens them', () => {
+    nav.searchParams.current = new URLSearchParams();
+    render(bar());
+    const toggle = screen.getByRole('button', { name: /^Filters/ });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(toggle).toHaveTextContent('Status: Awaiting decision');
+    const panel = document.getElementById(toggle.getAttribute('aria-controls') ?? '');
+    expect(panel).not.toBeNull();
+    // Closed: hidden below 640px only (the desktop card always shows).
+    expect(panel).toHaveClass('max-sm:hidden');
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(panel).not.toHaveClass('max-sm:hidden');
+  });
+});
