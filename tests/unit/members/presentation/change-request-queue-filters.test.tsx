@@ -9,12 +9,10 @@
  * locally, the URL is patched on Apply (`router.replace`, scroll kept), and
  * Clear drops every param.
  *
- * `next/navigation` is mocked per `queue-filters-grouping.test.tsx`; the
- * shadcn `Select` is stubbed the way `escalation-task-queue.test.tsx` does it
- * (Base UI's popup does not open in jsdom — options render eagerly here so a
- * click on `role="option"` reaches `onValueChange`).
+ * `next/navigation` is mocked per `queue-filters-grouping.test.tsx`. The
+ * AURA `Select` keeps a native `<select>` beside its combobox, so the tests
+ * pick an option by changing that select (122 US5a).
  */
-import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
