@@ -58,6 +58,8 @@ A server component that needs a static AURA component imports it from **`@jirawa
 6. An enterprise-ux-designer review has signed; on money screens, a financial-integrity review as well.
 7. **No logic change.** A defect found along the way ships as its own PR, merged first.
 
+**Board parity rule (US5a, 28 Sep 2026).** AURA's component defaults (spacing, sizes, radius, type scale) win over a board's pixel values. The board wins on content, structure, order, icons and copy. When a board value is clearly better, it goes to the AURA handoff, never into a per-page override. Styling that reaches into AURA's internal classes (`.aura-table__*`, `.aura-tbl__*`, `.aura-empty*`, `.aura-filterbar__*`) is a stand-in: it gets a comment naming its handoff item and is listed under the open items below.
+
 ## Phases
 
 The phases follow the order on the canvas page "Migration plan — AURA":

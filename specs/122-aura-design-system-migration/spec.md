@@ -78,6 +78,15 @@ The US5 boards (`Admin-members*`, `Admin-state-members-*`, `Admin-member-*`, `Ad
 - **Paging stays**: 50 rows per page and the numbered `TablePagination` with the same `?page=` URL. AURA's built-in pager has only previous / next. The change-request queue keeps its "Next page" link.
 - **Kept although the boards omit them** (removing them would remove features): the inline status edit, Shift-click range selection, Ctrl / ⌘+A, "Select all N matching", the risk-band filter and the needs-invite chip.
 
+### Session 2026-09-28 (maintainer, US5a board parity)
+
+Two read-only audits compared every US5a board with the live screen and found about 158 differences. Most of them were the board's pixel values disagreeing with AURA's own component defaults.
+
+- Q: Match every pixel of the boards, or only some differences? → A: **AURA's component defaults win over a board's pixel values** (spacing, sizes, radius, type scale, table cell padding, button padding, empty-state spacing). **The board wins on content, structure, order, icons and copy.** A board value that is clearly better goes to the AURA handoff, never into a per-page override. Styling that has to reach into AURA's internal classes is a stand-in with an open handoff item.
+- Q: The members count shows twice (above the table and in the pager). Which stays? → A: The count above the table shows only while a search or filter is applied. Unfiltered, it stays in the live region for screen readers, and the pager's range says it.
+- Q: Which portal badges does the Primary contact column show? → A: Only the states that need action (Not invited, Invited, Expired). A linked contact shows none.
+- Q: The phone card has a checkbox, a ⋯ menu and seven fields; the board has neither and four fields. → A: **As the board.** No checkbox, no ⋯, no flag. Four fields: Member No., Plan (no year), Primary contact, and the engagement band. Tapping a card opens the member. Bulk actions and the Edit shortcut stay on tablet and desktop.
+
 ## User Scenarios & Testing *(mandatory)*
 
 Every story below is one phase and one pull request. A story is done when its screens use only AURA components, match their canvas boards, and pass the per-module definition of done (FR-010).
