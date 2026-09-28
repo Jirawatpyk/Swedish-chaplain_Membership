@@ -50,8 +50,10 @@ export function MembersTableSkeleton({ withSelection = false }: MembersTableSkel
       }),
     [t],
   );
+  // `inert` with `aria-hidden`: AURA's select-all header is tabbable, and a
+  // hidden placeholder must not take keyboard focus (axe aria-hidden-focus).
   return (
-    <div aria-hidden data-testid="members-table-skeleton">
+    <div aria-hidden inert data-testid="members-table-skeleton">
       <DataTable
         label={t('tableCaption')}
         rows={[]}
