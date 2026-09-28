@@ -136,6 +136,19 @@ async function openPaySheet(page: Page): Promise<void> {
 
   const sheet = page.getByTestId('pay-sheet-content');
   await expect(sheet).toBeVisible({ timeout: 5_000 });
+  // Spec 122 US4 — the AURA Drawer slides in (`aura-drawer-in-right`); a box
+  // read mid-slide is off by a fraction of a pixel (R12: width 480.00003 at
+  // 768px). Measure once its animations have finished.
+  await sheet.evaluate((el) =>
+    Promise.all(
+      el
+        .getAnimations({ subtree: true })
+        // Only animations that end: the card form's loading skeleton pulses
+        // forever, and awaiting it would hang.
+        .filter((a) => a.effect?.getComputedTiming().iterations !== Infinity)
+        .map((a) => a.finished),
+    ),
+  );
 }
 
 /**
@@ -258,20 +271,20 @@ test.describe('PaySheet viewport + mobile layout — @payment @a11y @f5', () => 
 
         const headerTopBefore = await page
           .getByTestId('pay-sheet-content')
-          .locator('[data-slot="sheet-header"]')
+          .locator('.aura-drawer__head')
           .evaluate((el) => el.getBoundingClientRect().top);
 
-        // Scroll the drawer body. `overflow-y-auto` wraps the inner panel.
+        // Scroll the drawer body. AURA's `.aura-drawer__body` is the scroller (spec 122 US4).
         await page
           .getByTestId('pay-sheet-content')
-          .locator('.overflow-y-auto')
+          .locator('.aura-drawer__body')
           .evaluate((el) => {
             el.scrollTop = 200;
           });
 
         const headerTopAfter = await page
           .getByTestId('pay-sheet-content')
-          .locator('[data-slot="sheet-header"]')
+          .locator('.aura-drawer__head')
           .evaluate((el) => el.getBoundingClientRect().top);
 
         // A sticky header's viewport-relative `top` stays constant as
@@ -298,7 +311,7 @@ test.describe('PaySheet viewport + mobile layout — @payment @a11y @f5', () => 
         // stylesheet contract is live.
         const scrollPaddingTop = await page
           .getByTestId('pay-sheet-content')
-          .locator('.overflow-y-auto')
+          .locator('.aura-drawer__body')
           .evaluate((el) => window.getComputedStyle(el).scrollPaddingTop);
 
         // Computed value is either the CSS-var resolved height or the
@@ -328,7 +341,7 @@ test.describe('PaySheet viewport + mobile layout — @payment @a11y @f5', () => 
 
         const headerBottom = await page
           .getByTestId('pay-sheet-content')
-          .locator('[data-slot="sheet-header"]')
+          .locator('.aura-drawer__head')
           .evaluate((el) => el.getBoundingClientRect().bottom);
 
         // Focus the first interactive element inside the drawer body.

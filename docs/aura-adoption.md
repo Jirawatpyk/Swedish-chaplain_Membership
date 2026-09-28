@@ -83,9 +83,14 @@ Phases 2–12 each depend on 1 and can land in any order.
 
 ## AURA gaps (the handoff doc)
 
-The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, items 52–56 (Addendum 4) in 5.6.0, items 57–62 (Addendum 5, found in US1) in 5.7.0, item 63 in 5.7.1, item 64 (Addendum 6) in 5.7.2, item 65 (Addendum 7, found in US2) in 5.7.3 and items 66–69 (Addendum 8, found in US3) in **5.8.0**, the current pin. No item is open.
+The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, items 52–56 (Addendum 4) in 5.6.0, items 57–62 (Addendum 5, found in US1) in 5.7.0, item 63 in 5.7.1, item 64 (Addendum 6) in 5.7.2, item 65 (Addendum 7, found in US2) in 5.7.3 items 66–69 (Addendum 8, found in US3) in 5.8.0 items 70–71 (Addendum 9, found in US4) in 5.9.0 and items 72–74 (Addendum 10, found adopting 5.9.0 in US4) in **5.10.0**, the current pin. No item is open. One note stays with AURA: `Menu` closes on any scroll or window resize (iOS Safari fires resize when its toolbar moves), to be checked on a real iPhone before it becomes an item.
 
-How Chamber-OS uses the Addendum 5 – 8 items (US1, US2 and US3 dropped their bridge for each):
+5.9.0 also prepares for 6.0, which builds in only English and drops icon names given as strings from the default bundle. Chamber-OS clears its dev notices without changing any output:
+- `AuraBridge` passes AURA's Thai and Swedish locale packs as `strings`.
+- Icons are registered by name once for each registry: `registerIcons(allIcons)` in `AuraBridge` for client components, and `@/lib/aura-server-icons` (imported by the root layout) for Server Components. `tests/setup.ts` registers both, since component tests render without the layout.
+- Moving to icon components (`npx aura-icons-codemod`), which would let the 6.0 bundle drop the name map, is a separate change.
+
+How Chamber-OS uses the Addendum 5 – 10 items (US1, US2, US3 and US4 dropped their bridge for each):
 
 | # | Shipped in | Used by |
 |---|---|---|
@@ -102,6 +107,11 @@ How Chamber-OS uses the Addendum 5 – 8 items (US1, US2 and US3 dropped their b
 | 67 | 5.8.0: `Table` `stackBelow` (a container query; labels from the column headers) | `ChangeRequestDiffTable`: each field a card below 640 px, values labelled "Seen" / "Proposed" |
 | 68 | 5.8.0: `Card`, `Badge`, `StatusPill`, `Alert`, `EmptyState`, `Icon`, `buttonClass()` from `/server` | Every US3 server page; the local `aura-markup.tsx` copies and their comparison test are gone |
 | 69 | 5.8.0: `Card` and `StatusPill` pass attributes to the root | Card scroll anchors (`id="renewal-prefs"`), `data-testid`, pill `data-state` / `data-outcome` |
+| 70 | 5.9.0: `Drawer` passes `data-*` / `aria-*` to its panel; `closeLabel`, `closeProps` | The pay sheet: `pay-sheet-content` / `pay-sheet-close` and a close button named "Close payment drawer"; `markDrawer` is gone |
+| 71 | 5.9.0: `Tabs` `keepMounted`, `activation="manual"`, per-tab `tabProps` | The pay sheet's Card / PromptPay tabs: Stripe `<Elements>` stays mounted, arrows only move focus (a switch re-initiates the PaymentIntent), Label-in-Name `aria-label`s and test ids; `MethodTablist` is gone |
+| 72 | 5.10.0: `Tabs` `variant="segmented"` + `fullWidth` | The same tabs in the boards' segmented look, with AURA's inset focus ring and forced-colors marks; the local `.pay-method-tabs` rule is gone |
+| 73 | 5.10.0: disabled `MenuItem`s are `aria-disabled` (reachable by the arrows), `disabledReason`, and a menu with nothing enabled takes focus | The phone card's ⋯ menu: "Email me a copy" is disabled while sending and for the 5-minute cooldown, with the reason "Just sent" (the interim toast is gone) |
+| 74 | 5.10.0: measured, no change: the segmented selected pill is 4.6:1 light / 5.8:1 dark against its track, now checked in AURA's CI | Confirmed on the pay sheet: `--aura-border-control` resolves to `#71717a` in light mode, so no dark tokens leak; the review's 2.5:1 was an estimate that assumed the dark value |
 
 How Chamber-OS uses the 5.6.0 items:
 
@@ -116,6 +126,6 @@ How Chamber-OS uses the 5.6.0 items:
 AURA also returns focus when a toast that held it closes, so the facade no longer does.
 
 When AURA ships an item:
-1. Bump the pin in a dedicated PR, or in the open phase PR that added the bridges it removes (5.7.0 – 5.7.2 rode in US1, 5.7.3 in US2 and 5.8.0 in US3 for that reason).
+1. Bump the pin in a dedicated PR, or in the open phase PR that added the bridges it removes (5.7.0 – 5.7.2 rode in US1, 5.7.3 in US2, 5.8.0 in US3, and 5.9.0 and 5.10.0 in US4 for that reason).
 2. Delete the `// AURA-handoff #NN` wrapper.
 3. Update this table.

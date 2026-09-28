@@ -226,7 +226,7 @@ Step 4 — Confirm (pattern 1 TIER 1) → streaming progress (pattern 2.2) → r
 - `src/components/ui/stepper.tsx` — wizard primitive
 - `src/components/ui/progress.tsx` / `progress-bar.tsx` — bulk progress
 - `src/components/ui/inline-alert.tsx` — in-step cascading-effect warning
-- `src/components/ui/live-region.tsx` — step / progress SR announcements
+- `src/components/shell/live-region.tsx` — step / progress SR announcements
 - `src/components/ui/status-badge.tsx` — per-row state in bulk tables
 
 ---

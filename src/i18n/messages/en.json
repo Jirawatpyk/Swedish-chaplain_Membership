@@ -6279,7 +6279,10 @@
         "receiptFailedSupport": "Receipt on the way — we're resolving it",
         "viewDetail": "View invoice",
         "emailCopy": "Email me a copy",
-        "emailCopyAria": "Email a fresh copy of invoice {number} to your address on file"
+        "emailCopyAria": "Email a fresh copy of invoice {number} to your address on file",
+        "moreActions": "More actions for {number}",
+        "menuDownloadInvoice": "Download invoice (PDF)",
+        "emailCopySent": "Just sent"
       },
       "receiptStatus": {
         "generating": "Your tax receipt is being generated",
@@ -6353,7 +6356,8 @@
           "heading": "Summary",
           "subtotal": "Subtotal",
           "vat": "VAT",
-          "total": "Total"
+          "total": "Total",
+          "vatWithRate": "VAT {rate}%"
         },
         "creditNotes": {
           "heading": "Credit Notes",
@@ -6376,7 +6380,9 @@
           "autoRefundRef": "Refund reference: {ref}",
           "replacedBy": "This bill was replaced by <link>{number}</link>",
           "replacedByIssued": "issued {date}"
-        }
+        },
+        "detailsHeading": "Details",
+        "subtitlePaid": "Paid — download the tax invoice/receipt (ใบกำกับภาษี/ใบเสร็จรับเงิน) for your records."
       }
     },
     "creditNotes": {
@@ -6384,7 +6390,7 @@
         "meta": {
           "title": "Credit Note"
         },
-        "subtitle": "A credit has been issued against your invoice.",
+        "subtitle": "A credit note (ใบลดหนี้) lowers the value of the original tax invoice. Keep it with that document for your accounts.",
         "status": {
           "issued": "Issued"
         },
@@ -6402,7 +6408,11 @@
         },
         "reason": {
           "heading": "Reason"
-        }
+        },
+        "title": "Credit note",
+        "reducesTitle": "This credit note reduces receipt {receipt} by {amount}",
+        "reducesBody": "If a refund applies, it is handled separately. This page records the credit only.",
+        "contact": "Questions about this credit note? <link>Contact the chamber</link>."
       }
     },
     "broadcasts": {
@@ -7126,7 +7136,8 @@
         "cardAriaLabel": "Card — switch payment method",
         "promptpayAriaLabel": "PromptPay — switch payment method",
         "cardPlaceholder": "Preparing secure payment form…",
-        "promptpayPlaceholder": "Preparing the PromptPay QR code…"
+        "promptpayPlaceholder": "Preparing the PromptPay QR code…",
+        "groupLabel": "Payment method"
       },
       "success": {
         "title": "Payment received",
@@ -7138,7 +7149,8 @@
         "pauseAutoClose": "Pause",
         "resumeAutoClose": "Resume",
         "autoClosePaused": "Auto-close paused",
-        "toast": "Payment received. Receipt emailed to you."
+        "toast": "Payment received. Receipt emailed to you.",
+        "receiptSoon": "Your receipt will be ready in a moment."
       },
       "processing": {
         "title": "Processing payment…",

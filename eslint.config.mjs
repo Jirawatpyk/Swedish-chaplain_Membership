@@ -264,7 +264,7 @@ const MIGRATED_PATHS = [
   'src/app/(member)/portal/timeline/**',
   'src/app/(member)/portal/preferences/**',
   'src/app/(member)/portal/not-found.tsx',
-  'src/app/(member)/portal/[...unknown]/**',
+  'src/app/(member)/portal/\\[...unknown\\]/**',
   'src/components/portal/dashboard/**',
   'src/components/portal/invoices-summary-card.tsx',
   'src/components/portal/preferred-locale-form.tsx',
@@ -284,6 +284,19 @@ const MIGRATED_PATHS = [
   'src/components/members/portal-*.tsx',
   'src/components/members/copy-button.tsx',
   'src/components/members/invite-colleague-form.tsx',
+  // US4 — the member invoices and the pay sheet. The invoice filters are
+  // shared with /admin/invoices, which renders them in AURA from US4 on.
+  'src/app/(member)/portal/invoices/*.tsx',
+  'src/app/(member)/portal/invoices/_components/**',
+  'src/app/(member)/portal/invoices/_utils/**',
+  // Brackets are a glob character class: a route segment such as
+  // `[invoiceId]` must be escaped or the entry silently matches nothing.
+  'src/app/(member)/portal/invoices/\\[invoiceId\\]/*.tsx',
+  'src/app/(member)/portal/invoices/\\[invoiceId\\]/_components/**',
+  'src/components/payments/**',
+  'src/app/(member)/portal/credit-notes/**',
+  'src/components/invoices/credit-note-original-receipt.tsx',
+  'src/app/(staff)/admin/invoices/_components/invoice-filters.tsx',
 ];
 
 /**

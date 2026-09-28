@@ -103,6 +103,30 @@ vi.mock(
   }),
 );
 
+// Spec 122 US4 (option C) — the card shows ONE labelled download and a "⋯"
+// menu (`PortalInvoiceCardMenu`, a client component with its own test) for
+// the other document and "Email me a copy". The stand-in echoes the items the
+// card hands it, so these tests assert the card's CHOICE.
+vi.mock(
+  '@/app/(member)/portal/invoices/_components/portal-invoice-card-menu',
+  () => ({
+    PortalInvoiceCardMenu: (props: {
+      label: string;
+      invoiceDownload?: { label: string; documentNumber: string };
+      resendable: boolean;
+    }) => (
+      <div data-testid="card-menu" aria-label={props.label}>
+        {props.invoiceDownload ? (
+          <span data-testid="menu-invoice" data-number={props.invoiceDownload.documentNumber}>
+            {props.invoiceDownload.label}
+          </span>
+        ) : null}
+        {props.resendable ? <span data-testid="menu-resend">resend</span> : null}
+      </div>
+    ),
+  }),
+);
+
 // 088 T066a — the pending receipt affordance is now the CLIENT
 // `<ReceiptStatusWatcher>` (aria-live announce + auto-refresh poll). Mock it
 // with a stand-in so the card test asserts the card's CHOICE to mount it
@@ -289,7 +313,7 @@ function theCard() {
 // 1. issued + pdf present
 // ===========================================================================
 describe('<PortalInvoiceCardList> — issued + pdf present', () => {
-  it('shows the Invoice download + resend, NO receipt button, with the doc-link <h2> + status badge', () => {
+  it('shows the Invoice download as the one button, "Email me a copy" in the ⋯ menu, NO receipt button, with the doc-link <h2> + status badge', () => {
     renderCardFor({ status: 'issued' });
 
     // Invoice download present with the plain "Invoice" label (NOT voided).
@@ -297,8 +321,14 @@ describe('<PortalInvoiceCardList> — issued + pdf present', () => {
     expect(invoice).toHaveTextContent('Invoice');
     expect(invoice).not.toHaveTextContent('Voided');
 
-    // Resend present (issued is resendable).
-    expect(screen.getByTestId('resend')).toBeInTheDocument();
+    // Resend sits in the ⋯ menu (issued is resendable); the invoice is the
+    // button, so the menu does not repeat it.
+    expect(screen.getByTestId('menu-resend')).toBeInTheDocument();
+    expect(screen.queryByTestId('menu-invoice')).not.toBeInTheDocument();
+    expect(screen.getByTestId('card-menu')).toHaveAttribute(
+      'aria-label',
+      'More actions for INV-2026-000001',
+    );
 
     // NO receipt button (not paid).
     expect(screen.queryByTestId('receipt-download')).not.toBeInTheDocument();
@@ -349,7 +379,7 @@ describe('<PortalInvoiceCardList> — combined-paid', () => {
 
     // Paid badge + still resendable (paid invoice with a PDF).
     expect(theCard()).toHaveTextContent('Paid');
-    expect(screen.getByTestId('resend')).toBeInTheDocument();
+    expect(screen.getByTestId('menu-resend')).toBeInTheDocument();
   });
 });
 
@@ -437,7 +467,7 @@ describe('<PortalInvoiceCardList> — β as-paid receipt (main pdf is the §105 
 // 3. separate-paid (paid + receiptDocumentNumberRaw set + rendered)
 // ===========================================================================
 describe('<PortalInvoiceCardList> — separate-paid', () => {
-  it('shows BOTH Invoice + Receipt buttons (short labels) AND the receipt-number line', () => {
+  it('the Receipt is the button, the Invoice moves into the ⋯ menu (both still downloadable), AND the receipt-number line', () => {
     renderCardFor({
       status: 'paid',
       receiptDocumentNumberRaw: 'RCP-2026-000009',
@@ -445,8 +475,14 @@ describe('<PortalInvoiceCardList> — separate-paid', () => {
       receiptPdf: { blobKey: 'rk', sha256: sha(), templateVersion: 1 },
     });
 
-    // Both downloads present; the receipt uses the SHORT separate label.
-    expect(screen.getByTestId('invoice-download')).toHaveTextContent('Invoice');
+    // Paid → the receipt is the one button (SHORT separate label); the
+    // invoice is a ⋯ menu item with its own download label + aria.
+    expect(screen.queryByTestId('invoice-download')).not.toBeInTheDocument();
+    // The menu item says what it does (SC 2.4.6), not just "Invoice".
+    const menuInvoice = screen.getByTestId('menu-invoice');
+    expect(menuInvoice).toHaveTextContent('Download invoice (PDF)');
+    expect(menuInvoice).toHaveAttribute('data-number', 'INV-2026-000001');
+    expect(screen.getByTestId('menu-resend')).toBeInTheDocument();
     const receipt = screen.getByTestId('receipt-download');
     expect(receipt).toHaveTextContent('Receipt');
     expect(receipt).not.toHaveTextContent('Tax invoice / Receipt');
@@ -505,7 +541,7 @@ describe('<PortalInvoiceCardList> — receipt-failed (graceful support path, 088
     // assert on the bare '—' here because the support copy itself legitimately
     // contains an em-dash ("Receipt on the way — we're resolving it").
     expect(screen.getByTestId('invoice-download')).toBeInTheDocument();
-    expect(screen.getByTestId('resend')).toBeInTheDocument();
+    expect(screen.getByTestId('menu-resend')).toBeInTheDocument();
   });
 });
 
@@ -513,7 +549,7 @@ describe('<PortalInvoiceCardList> — receipt-failed (graceful support path, 088
 // 6. void + pdf
 // ===========================================================================
 describe('<PortalInvoiceCardList> — void + pdf', () => {
-  it('uses the void-aware download label "Voided invoice" and HIDES resend', () => {
+  it('uses the void-aware download label "Voided invoice", HIDES resend and has no ⋯ menu', () => {
     renderCardFor({ status: 'void' });
 
     // Void-aware label on the invoice download.
@@ -526,7 +562,9 @@ describe('<PortalInvoiceCardList> — void + pdf', () => {
 
     // Resend HIDDEN (void is not resendable). Mutation-sensitive: dropping
     // the `vm.resendable ?` guard would render the resend stub here.
-    expect(screen.queryByTestId('resend')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('menu-resend')).not.toBeInTheDocument();
+    // Nothing else to offer → no ⋯ trigger at all (never a one-item-less menu).
+    expect(screen.queryByTestId('card-menu')).not.toBeInTheDocument();
 
     // Void badge.
     expect(theCard()).toHaveTextContent('Void');
@@ -547,7 +585,8 @@ describe('<PortalInvoiceCardList> — no-action row (sentinel)', () => {
     // …and NONE of the four interactive actions render.
     expect(screen.queryByTestId('invoice-download')).not.toBeInTheDocument();
     expect(screen.queryByTestId('receipt-download')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('resend')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('menu-resend')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('card-menu')).not.toBeInTheDocument();
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
 
     // Mutation-sensitive: the sentinel is a <span> (EmptyCell), not the
@@ -706,8 +745,10 @@ describe('<PortalInvoiceCardList> — 088 PAID bill (A-refined)', () => {
     expect(card).not.toHaveTextContent('Tax receipt');
     expect(card).not.toHaveTextContent('Payable record');
 
-    // FR-015 — BOTH documents stay downloadable after payment.
-    expect(screen.getByTestId('invoice-download')).toBeInTheDocument();
+    // FR-015 — BOTH documents stay downloadable after payment: the RC
+    // receipt as the button, the SC bill from the ⋯ menu (named after its OWN
+    // number, T065c).
+    expect(screen.getByTestId('menu-invoice')).toHaveAttribute('data-number', 'SC-2026-000045');
     expect(screen.getByTestId('receipt-download')).toBeInTheDocument();
   });
 });
@@ -750,21 +791,19 @@ describe('<PortalInvoiceCardList> — FR-036 mobile-first target size + wrap (T0
       receiptPdf: { blobKey: 'rk', sha256: sha(), templateVersion: 1 },
     });
 
-    // Invoice + Receipt downloads carry the ≥44px min-h-11 the card passes.
-    expect(screen.getByTestId('invoice-download').className).toContain('min-h-11');
-    expect(screen.getByTestId('receipt-download').className).toContain('min-h-11');
-    // Resend is the icon-only square — ≥44px on BOTH axes.
-    const resend = screen.getByTestId('resend');
-    expect(resend.className).toContain('min-h-11');
-    expect(resend.className).toContain('min-w-11');
+    // The one download carries the ≥44px min-h-11 the card passes and fills
+    // the row beside the ⋯ trigger (whose 44px square is pinned in the menu's
+    // own test).
+    const receipt = screen.getByTestId('receipt-download');
+    expect(receipt.className).toContain('min-h-11');
+    expect(receipt.className).toContain('flex-1');
 
     // The action group is a flex-wrap container so a 320px card never scrolls
     // horizontally — the controls wrap to a second row instead of overflowing.
     const actionGroup = theCard().querySelector('.flex-wrap');
     expect(actionGroup).not.toBeNull();
-    expect(actionGroup?.contains(screen.getByTestId('invoice-download'))).toBe(true);
-    expect(actionGroup?.contains(screen.getByTestId('receipt-download'))).toBe(true);
-    expect(actionGroup?.contains(screen.getByTestId('resend'))).toBe(true);
+    expect(actionGroup?.contains(receipt)).toBe(true);
+    expect(actionGroup?.contains(screen.getByTestId('card-menu'))).toBe(true);
   });
 });
 
@@ -798,9 +837,9 @@ describe('<PortalInvoiceCardList> — 088 A-refined header has no per-row tag (n
 // Buddhist Era is DISPLAY-ONLY on th-TH surfaces (CLAUDE.md § Conventions);
 // storage/query values stay Gregorian ISO. Guard both: the rendered card shows
 // the BE year for th and the Gregorian year for en, while the underlying
-// view-model date stays Gregorian ISO. The dates paragraph is queried in
-// isolation (`p.text-muted-foreground`) so the assertion is not confused by the
-// year inside a document number (e.g. INV-2026-000001).
+// view-model date stays Gregorian ISO. The two date values are queried in
+// isolation (their `dd` cells) so the assertion is not confused by the year
+// inside a document number (e.g. INV-2026-000001).
 // ===========================================================================
 describe('<PortalInvoiceCardList> — FR-009 locale date formatting (T063b)', () => {
   it('renders the Buddhist-Era year for th-TH while the stored issueDate stays Gregorian ISO', () => {
@@ -815,11 +854,14 @@ describe('<PortalInvoiceCardList> — FR-009 locale date formatting (T063b)', ()
     render(
       <PortalInvoiceCardList rows={[{ vm }]} locale="th" t={t} tStatus={tStatus} />,
     );
-    const datesP = theCard().querySelector('p.text-muted-foreground');
-    expect(datesP).not.toBeNull();
+    const dates = {
+      textContent: ['portal-invoice-card-issue-date', 'portal-invoice-card-due-date']
+        .map((id) => within(theCard()).getByTestId(id).textContent)
+        .join(' '),
+    };
     // th-TH → Buddhist Era: CE 2026 displays as BE 2569 (+543).
-    expect(datesP?.textContent).toContain('2569');
-    expect(datesP?.textContent).not.toContain('2026');
+    expect(dates.textContent).toContain('2569');
+    expect(dates.textContent).not.toContain('2026');
   });
 
   it('renders the Gregorian year for en (display-only locale switch, no BE offset)', () => {
@@ -830,9 +872,35 @@ describe('<PortalInvoiceCardList> — FR-009 locale date formatting (T063b)', ()
     render(
       <PortalInvoiceCardList rows={[{ vm }]} locale="en" t={t} tStatus={tStatus} />,
     );
-    const datesP = theCard().querySelector('p.text-muted-foreground');
-    expect(datesP).not.toBeNull();
-    expect(datesP?.textContent).toContain('2026');
-    expect(datesP?.textContent).not.toContain('2569');
+    const dates = {
+      textContent: ['portal-invoice-card-issue-date', 'portal-invoice-card-due-date']
+        .map((id) => within(theCard()).getByTestId(id).textContent)
+        .join(' '),
+    };
+    expect(dates.textContent).toContain('2026');
+    expect(dates.textContent).not.toContain('2569');
+  });
+});
+
+// R13 (portal-invoices-a11y:151) — at 200% text the facts grid's second column
+// was too narrow for an unbreakable amount ("21,400.00 THB"), so the page
+// scrolled sideways (SC 1.4.4 / 1.4.10). The card body is a size container and
+// the grid drops to one column below 16rem; rem-based, so enlarged text
+// triggers it as well as a narrow screen.
+describe('<PortalInvoiceCardList> — facts grid reflows at 200% text (R13)', () => {
+  it('the card body is a container and the facts grid goes to one column below 16rem', () => {
+    renderCardFor({
+      status: 'paid',
+      receiptDocumentNumberRaw: 'RCP-2026-000009',
+      receiptPdfStatus: 'rendered',
+      receiptPdf: { blobKey: 'rk', sha256: sha(), templateVersion: 1 },
+    });
+    const grid = theCard().querySelector('dl');
+    expect(grid).not.toBeNull();
+    expect(grid!.className).toContain('@max-[16rem]:grid-cols-1');
+    expect(grid!.parentElement!.className).toContain('@container');
+    // Total leaves its pinned right-hand column when the grid is one column.
+    const total = [...grid!.children].find((c) => c.textContent?.includes('Total'));
+    expect(total?.className).toContain('@max-[16rem]:col-start-auto');
   });
 });

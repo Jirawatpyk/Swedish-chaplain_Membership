@@ -14,7 +14,7 @@
  *   1. The rendered region uses role="status" (NOT role="alert").
  *   2. The destructive tone (visual affordance) is preserved.
  *   3. Title + body + retry CTA render with the supplied props.
- *   4. CTA target size meets WCAG 2.5.8 (≥44×44 px via min-h-[44px]).
+ *   4. CTA target size meets WCAG 2.5.8 (≥44×44 px via min-h-11).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
@@ -67,14 +67,14 @@ describe('<PaymentFailurePanel> — R2-CRIT-3 / R3-CR-9 regression coverage', ()
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
-  it('preserves destructive visual tone (data-tone="destructive") for affordance', () => {
+  it('preserves the danger visual tone (AURA danger alert) for affordance', () => {
     renderPanel();
     const region = screen.getByRole('status');
     // The InlineAlert primitive applies the tone via class / data-attr.
     // Either surface is acceptable proof; we assert at least one.
     const hasDestructive =
-      region.getAttribute('data-tone') === 'destructive' ||
-      region.className.includes('destructive');
+      // Spec 122 US4 — AURA's danger Alert.
+      region.classList.contains('aura-alert--danger');
     expect(hasDestructive).toBe(true);
   });
 
@@ -87,10 +87,10 @@ describe('<PaymentFailurePanel> — R2-CRIT-3 / R3-CR-9 regression coverage', ()
     expect(screen.getByText('Retry')).toBeDefined();
   });
 
-  it('CTA fires onRetry when clicked + carries min-h-[44px] for WCAG 2.5.8 target size', () => {
+  it('CTA fires onRetry when clicked + carries min-h-11 (44px) for WCAG 2.5.8 target size', () => {
     const { onRetry } = renderPanel();
     const cta = screen.getByTestId('pay-sheet-failure-retry');
-    expect(cta.className).toContain('min-h-[44px]');
+    expect(cta.className).toContain('min-h-11');
     fireEvent.click(cta);
     expect(onRetry).toHaveBeenCalledTimes(1);
   });

@@ -10,6 +10,7 @@ import { DirectoryVisibilityForm } from '@/components/directory/directory-visibi
 import { DetailContainer, FormContainer } from '@/components/layout';
 import { MemberBottomTabs } from '@/components/layout/member-bottom-tabs';
 import { MemberHeader } from '@/components/layout/member-header';
+import { BreadcrumbProvider } from '@/components/layout/breadcrumb-provider';
 import { PageHeader } from '@/components/layout/page-header';
 import { renderChangeRequestHistoryView } from '@/components/members/change-requests/change-request-history-view';
 import { PortalChangeRequestForm } from '@/components/members/change-requests/portal-change-request-form';
@@ -32,6 +33,11 @@ import { RecentActivityList } from '@/app/(member)/portal/_components/recent-act
 import { MembershipInvoiceAlert } from '@/app/(member)/portal/_components/membership-invoice-alert';
 import { BenefitsTabs } from '@/app/(member)/portal/benefits/_components/benefits-tabs';
 import PortalNotFound from '@/app/(member)/portal/not-found';
+import { renderPortalInvoicesView } from '@/app/(member)/portal/invoices/page';
+import { renderPortalInvoiceDetailView } from '@/app/(member)/portal/invoices/[invoiceId]/page';
+import { renderPortalCreditNoteView } from '@/app/(member)/portal/credit-notes/[creditNoteId]/page';
+import { toInvoiceRowViewModel } from '@/app/(member)/portal/invoices/_utils/invoice-row-view-model';
+import { PayPreview, type PayPreviewState } from './pay-preview';
 
 // Request-time evaluation so the guard runs per request (see button-matrix).
 export const dynamic = 'force-dynamic';
@@ -162,10 +168,11 @@ function MemberFrame({ path, children }: { readonly path: string; readonly child
 export default async function AuraPortalPreviewPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string }>;
+  searchParams: Promise<{ view?: string; state?: string }>;
 }) {
   if (!process.env.ALLOW_TEST_ROUTES) notFound();
-  const { view = 'home' } = await searchParams;
+  const sp = await searchParams;
+  const { view = 'home' } = sp;
 
   if (view === 'benefits') {
     // The `Benefits` / `Benefits-mobile` board data.
@@ -397,6 +404,152 @@ export default async function AuraPortalPreviewPage({
             </div>
           </Card>
         </DetailContainer>
+      </MemberFrame>
+    );
+  }
+
+  // Spec 122 US4 — the `Invoices`, `Invoice-paid` / `Portal-invoice-mobile`,
+  // `Portal-credit-note` and `Pay-*` board data, rendered through the pages'
+  // own view functions (and the real pay-sheet panels).
+  const usInvoice = (over: Record<string, unknown>) =>
+    ({
+      invoiceId: '00000000-0000-4000-8000-0000000000a1',
+      memberId: 'm1',
+      invoiceSubject: 'membership',
+      status: 'issued',
+      documentNumber: null,
+      billDocumentNumberRaw: 'SC-2026-000123',
+      receiptDocumentNumberRaw: null,
+      pdfDocKind: 'invoice',
+      pdf: { blobKey: 'k' },
+      receiptPdf: null,
+      receiptPdfStatus: null,
+      memberIdentitySnapshot: { tax_id: '0105555000001' },
+      issueDate: '2026-09-15',
+      dueDate: '2026-10-15',
+      paidAt: null,
+      voidedAt: null,
+      voidReason: null,
+      planYear: 2026,
+      subtotal: { satang: 3600000n },
+      vatRate: { raw: '0.0700' },
+      vat: { satang: 252000n },
+      total: { satang: 3852000n },
+      creditedTotal: { satang: 0n },
+      lines: [
+        {
+          lineId: 'l1',
+          descriptionEn: 'SweCham Premium Corporate Membership Fee 2026',
+          descriptionTh: 'ค่าสมาชิก SweCham Premium Corporate ปี 2026',
+          quantity: 1,
+          unitPrice: { satang: 3600000n },
+          total: { satang: 3600000n },
+        },
+      ],
+      ...over,
+    }) as unknown as Invoice;
+
+  if (view === 'invoices') {
+    const now = new Date().toISOString();
+    const list = [
+      usInvoice({}),
+      usInvoice({ invoiceId: 'i2', status: 'paid', billDocumentNumberRaw: 'SC-2026-000045', receiptDocumentNumberRaw: 'RC-2026-000031', receiptPdfStatus: 'rendered', receiptPdf: { blobKey: 'r' }, issueDate: '2026-03-12', dueDate: '2026-04-11', paidAt: '2026-03-20', total: { satang: 214000n } }),
+      usInvoice({ invoiceId: 'i3', status: 'paid', billDocumentNumberRaw: 'SC-2025-000087', receiptDocumentNumberRaw: 'RC-2025-000066', receiptPdfStatus: 'rendered', receiptPdf: { blobKey: 'r' }, issueDate: '2025-09-15', dueDate: '2025-10-15', paidAt: '2025-09-30' }),
+      usInvoice({ invoiceId: 'i4', status: 'partially_credited', billDocumentNumberRaw: 'SC-2025-000052', receiptDocumentNumberRaw: 'RC-2025-000040', receiptPdfStatus: 'rendered', receiptPdf: { blobKey: 'r' }, issueDate: '2025-06-02', dueDate: '2025-07-02', total: { satang: 428000n } }),
+      usInvoice({ invoiceId: 'i5', status: 'void', billDocumentNumberRaw: 'SC-2025-000019', issueDate: '2025-02-20', dueDate: '2025-03-22', total: { satang: 214000n } }),
+    ];
+    return (
+      <MemberFrame path="/portal/invoices">
+        {await renderPortalInvoicesView({
+          rows: list.map((i) => ({ vm: toInvoiceRowViewModel(i, now, true) })),
+          total: list.length,
+          page: 1,
+          hasActiveFilter: false,
+          userLocale: 'en',
+          f088TaxAtPayment: true,
+          alert: (
+            <MembershipInvoiceAlert
+              invoiceId="00000000-0000-4000-8000-0000000000a1"
+              documentNumber="SC-2026-000123"
+              amount="38,520.00 THB"
+              dueDate="15 Oct 2026"
+              overdue={false}
+              online="both"
+            />
+          ),
+        })}
+      </MemberFrame>
+    );
+  }
+
+  if (view === 'invoice') {
+    const state = typeof sp.state === 'string' ? sp.state : 'issued';
+    const invoice =
+      state === 'paid'
+        ? usInvoice({ status: 'paid', receiptDocumentNumberRaw: 'RC-2026-000044', receiptPdfStatus: 'rendered', receiptPdf: { blobKey: 'r' }, paidAt: '2026-09-24' })
+        : state === 'void'
+          ? usInvoice({ status: 'void', voidedAt: '2026-09-20', voidReason: 'Issued with the wrong plan.' })
+          : usInvoice({});
+    return (
+      <MemberFrame path="/portal/invoices">
+        {await renderPortalInvoiceDetailView({
+          invoice,
+          userLocale: 'en',
+          paymentSettings:
+            state === 'issued'
+              ? ({
+                  onlinePaymentEnabled: true,
+                  enabledMethods: ['card', 'promptpay'],
+                  processorAccountId: 'preview-account',
+                  // Not key-shaped on purpose (secret scanners); only drawn, never loaded.
+                  processorPublishableKey: 'preview-not-a-key',
+                } as never)
+              : null,
+          portalCreditNotes: [],
+          autoRefund: state === 'void' ? { processorRefundId: 're_preview_ABCD1234', failed: false } : null,
+          replacedBy: null,
+          replaces: [],
+          f5OnlinePayment: true,
+          f088TaxAtPayment: true,
+          tenantContactEmails: ['billing@swecham.example'],
+        })}
+      </MemberFrame>
+    );
+  }
+
+  if (view === 'credit-note') {
+    return (
+      <BreadcrumbProvider>
+      <MemberFrame path="/portal/invoices">
+        {await renderPortalCreditNoteView({
+          creditNoteId: 'cn-1',
+          locale: 'en',
+          contactEmails: ['billing@swecham.example'],
+          cn: {
+            creditNoteId: 'cn-1',
+            originalInvoiceId: 'i2',
+            documentNumber: { raw: 'CN-2026-000014' },
+            issueDate: '2026-09-23',
+            originalDocuments: {
+              receiptNumberRaw: 'RC-2026-000038',
+              related: { kind: 'bill', numberRaw: 'SC-2026-000102' },
+            },
+            creditAmount: { satang: 1000000n },
+            vat: { satang: 70000n },
+            total: { satang: 1070000n },
+            reason: 'Charged the Premium rate; the member qualifies for Large Corporate for this cycle — difference credited.',
+          } as never,
+        })}
+      </MemberFrame>
+      </BreadcrumbProvider>
+    );
+  }
+
+  if (view === 'pay') {
+    const state = (typeof sp.state === 'string' ? sp.state : 'card') as PayPreviewState;
+    return (
+      <MemberFrame path="/portal/invoices">
+        <PayPreview state={state} />
       </MemberFrame>
     );
   }

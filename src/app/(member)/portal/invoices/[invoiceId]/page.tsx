@@ -52,7 +52,7 @@ import {
 // against that invoice are, by construction, this member's.
 
 import { makeDrizzleCreditNoteRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-credit-note-repo';
-import { asInvoiceId } from '@/modules/invoicing';
+import { asInvoiceId, type CreditNote, type Invoice } from '@/modules/invoicing';
 // F5 G4 — presentation-only settings read (FR-016/FR-030 render-gate).
 // Same escape-hatch pattern as the CN repo above; the Application-
 // layer read-only loader is a Phase-9 consolidation candidate once
@@ -71,18 +71,16 @@ import { buildMembersDeps } from '@/modules/members/members-deps';
 import { env } from '@/lib/env';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { buttonVariants } from '@/components/ui/button';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { Alert, Card, buttonClass } from '@jirawatpyk/aura-react/server';
+import { Table, TBody, THead, Td, Th, Tr } from '@/components/shell/aura-table';
+import { BackLink } from '@/components/portal/back-link';
 import { cn } from '@/lib/utils';
-import { formatDate, formatSatangThb } from '../_utils/format';
+import {
+  formatDate,
+  formatLineQuantity,
+  formatSatangThb,
+  formatVatRatePoints,
+} from '../_utils/format';
 import { formatCalendarYear } from '@/lib/format-date-localised';
 import { InvoiceStatusBadge } from '../_components/invoice-status-badge';
 import { ResendInvoiceButton } from '../_components/resend-invoice-button';
@@ -101,6 +99,7 @@ import { isLegacyNoTinEventInvoice } from '../_utils/legacy-no-tin';
 import { PayNowButton } from './_components/pay-sheet/pay-now-button';
 import { OnlinePaymentDisabledCard } from './_components/online-payment-disabled-card';
 import { OptimisticPaidOverlay } from './_components/optimistic-paid-overlay';
+import { PayBar } from './_components/pay-bar';
 import { ReceiptReveal } from './_components/receipt-reveal';
 
 interface RouteParams {
@@ -130,9 +129,6 @@ export default async function PortalInvoiceDetailPage({
 }) {
   const { invoiceId } = await params;
   const { user } = await requireSession('member');
-  const t = await getTranslations('portal.invoices.detail');
-  const tList = await getTranslations('portal.invoices');
-  const tStatus = await getTranslations('admin.invoices.list.statuses');
   const userLocale = await getLocale();
 
   const tenantCtx = resolveTenantFromRequest();
@@ -173,63 +169,6 @@ export default async function PortalInvoiceDetailPage({
     notFound();
   }
 
-  // T109 — derive presentation-only overdue status. Portal detail
-  // does not fire the audit emit; the admin detail page handles the
-  // opportunistic audit on their read path.
-  const displayStatus = computeIsOverdue(invoice, new Date().toISOString())
-    ? 'overdue'
-    : invoice.status;
-
-  // R5 round-7: pre-render BOTH badge variants on the server so the
-  // <OptimisticPaidOverlay> client component can swap between them
-  // without having to re-derive the rendered output. Function children
-  // are not allowed across the server→client boundary, so we pass the
-  // pre-rendered JSX as `whenUnpaid` / `whenPaid` props.
-  const renderStatusBadge = (status: typeof displayStatus | 'paid') => (
-    <InvoiceStatusBadge status={status} label={tStatus(status)} />
-  );
-
-  // 064 remediation S3 — β as-paid no-TIN rows have a NULL invoice document
-  // number; their printed §105 number lives in receiptDocumentNumberRaw. The
-  // shared helper resolves whichever exists so the title never reads
-  // "Invoice —" on a paid, numbered receipt.
-  const documentNumber = displayDocumentNumber(invoice) ?? '—';
-  // 088 A-refined (FR-016) — the invoice is ALWAYS identified by its OWN (SC)
-  // NON-§87 bill number — paid or unpaid — so the header ("Invoice {number}")
-  // reads under the SC bill for ANY 088 bill (the shared resolver returns a
-  // non-'none' kind), never the RC on payment. The RC §86/4 tax receipt is
-  // surfaced in the "Receipt No." field below. Only the bill-vs-none distinction
-  // matters here, so the specific bill/tax_receipt value is not bound.
-  const headerNumber =
-    resolveTaxDocumentKind(invoice, env.features.f088TaxAtPayment) !== 'none'
-      ? (invoice.billDocumentNumberRaw ?? '—')
-      : documentNumber;
-  const subtotal = invoice.subtotal?.satang ?? null;
-  const vat = invoice.vat?.satang ?? null;
-  const total = invoice.total?.satang ?? null;
-
-  // 088 T066a (FR-019) — async §86/4 RC receipt-PDF state (paid only).
-  // Surfaced as prominent body sections below (room for the aria-live announce
-  // + reassurance copy, and the graceful permanent-fail support path) rather
-  // than a cramped header-actions chip.
-  const receiptAsyncPending =
-    invoice.status === 'paid' && invoice.receiptPdfStatus === 'pending';
-  const receiptAsyncFailed =
-    invoice.status === 'paid' && invoice.receiptPdfStatus === 'failed';
-  // 090 Bug 2 — hoisted so BOTH the header-actions cell (receipt download
-  // button) AND the <ReceiptReveal> watcher gate below read ONE definition of
-  // "the receipt download is available". `receiptPdf !== null` matters: 064
-  // as-paid rows land 'rendered' with a NULL receipt blob (their MAIN pdf IS
-  // the document); a receipt action on them would 502 (blob_missing).
-  // 092 — the §86/4 receipt stays a valid, downloadable tax document after a
-  // §86/10 credit note, so the status gate is the receipt-bearing set {paid,
-  // partially_credited, credited}, not `paid` alone (prod UAT bug: the receipt
-  // download disappeared once a credit note was issued). `void` is excluded.
-  const showReceiptPdf =
-    invoiceStatusHasReceipt(invoice.status) &&
-    invoice.receiptPdfStatus === 'rendered' &&
-    invoice.receiptPdf !== null;
-
   // F5 G4 T081 — load tenant payment settings to drive the Pay-now
   // render-gate (FR-016 / FR-030). The repo is read-only + RLS-scoped;
   // a null/error branch collapses to the disabled-card empty state
@@ -241,32 +180,6 @@ export default async function PortalInvoiceDetailPage({
         .getByTenantId(tenantCtx.slug)
         .catch(() => null)
     : null;
-
-  // REMOVE-WITH-064-REMEDIATION (online-payment site — master checklist at
-  // the guard in record-payment.ts). A LEGACY pre-064 issued no-TIN EVENT
-  // invoice must not surface the Pay-now button (S0 money trap) — full
-  // rationale + the predicate itself live in `../_utils/legacy-no-tin.ts`,
-  // unit-pinned so the OVER-match arm can't silently widen (drift would
-  // strip Pay-now from every TIN event invoice). Replaced by the localized
-  // "under document correction — contact staff" notice below.
-  const legacyNoTinEventInvoice = isLegacyNoTinEventInvoice(invoice);
-
-  // Financial-integrity review of #443 (L2): a null / non-positive total is not
-  // payable (initiate's F4 bridge rejects it with 409), so never mount Pay-now
-  // for it. Before this, `amountDue` coerced null to 0 and the member saw a
-  // "0.00 THB" drawer that then failed; now they get the contact-admin card.
-  // Also narrows `total` to bigint for the `amountDue` prop below.
-  const canPayOnline =
-    env.features.f5OnlinePayment &&
-    invoice.status === 'issued' &&
-    total !== null &&
-    total > 0n &&
-    !legacyNoTinEventInvoice &&
-    paymentSettings !== null &&
-    paymentSettings.onlinePaymentEnabled &&
-    paymentSettings.enabledMethods.length > 0 &&
-    paymentSettings.processorAccountId.length > 0 &&
-    paymentSettings.processorPublishableKey.length > 0;
 
   // G-1 — load any credit notes attached to this invoice so the
   // member sees + can download them. Best-effort: a repo failure
@@ -303,10 +216,208 @@ export default async function PortalInvoiceDetailPage({
   const replacedBy = supersession.ok ? supersession.value.replacedBy : null;
   const replaces = supersession.ok ? supersession.value.replaces : [];
 
+  return renderPortalInvoiceDetailView({
+    invoice,
+    userLocale,
+    paymentSettings,
+    portalCreditNotes,
+    autoRefund,
+    replacedBy,
+    replaces,
+    f5OnlinePayment: env.features.f5OnlinePayment,
+    f088TaxAtPayment: env.features.f088TaxAtPayment,
+    tenantContactEmails: env.billingContactEmails,
+  });
+}
+
+type PaymentSettings = NonNullable<
+  Awaited<ReturnType<ReturnType<typeof makeDrizzleTenantPaymentSettingsRepo>['getByTenantId']>>
+>;
+type Supersession = Extract<Awaited<ReturnType<typeof getInvoiceSupersession>>, { ok: true }>['value'];
+
+/**
+ * The detail page's markup once its data is loaded — split out (spec 122
+ * US4) so the no-DB preview route renders the page's own markup. Every
+ * derived flag (status, numbers, receipt state, the pay gate) is computed
+ * here exactly as before; the feature flags come in as arguments.
+ */
+export async function renderPortalInvoiceDetailView({
+  invoice,
+  userLocale,
+  paymentSettings,
+  portalCreditNotes,
+  autoRefund,
+  replacedBy,
+  replaces,
+  f5OnlinePayment,
+  f088TaxAtPayment,
+  tenantContactEmails,
+}: {
+  readonly invoice: Invoice;
+  readonly userLocale: string;
+  readonly paymentSettings: PaymentSettings | null;
+  readonly portalCreditNotes: ReadonlyArray<CreditNote>;
+  readonly autoRefund: { readonly processorRefundId: string | null; readonly failed: boolean } | null;
+  readonly replacedBy: Supersession['replacedBy'];
+  readonly replaces: Supersession['replaces'];
+  readonly f5OnlinePayment: boolean;
+  readonly f088TaxAtPayment: boolean;
+  readonly tenantContactEmails: readonly string[];
+}): Promise<React.ReactElement> {
+  const t = await getTranslations('portal.invoices.detail');
+  const tList = await getTranslations('portal.invoices');
+  const tStatus = await getTranslations('admin.invoices.list.statuses');
+  const tPay = await getTranslations('portal.payment');
+
+  // T109 — derive presentation-only overdue status. Portal detail
+  // does not fire the audit emit; the admin detail page handles the
+  // opportunistic audit on their read path.
+  const displayStatus = computeIsOverdue(invoice, new Date().toISOString())
+    ? 'overdue'
+    : invoice.status;
+
+  // R5 round-7: pre-render BOTH badge variants on the server so the
+  // <OptimisticPaidOverlay> client component can swap between them
+  // without having to re-derive the rendered output. Function children
+  // are not allowed across the server→client boundary, so we pass the
+  // pre-rendered JSX as `whenUnpaid` / `whenPaid` props.
+  const renderStatusBadge = (status: typeof displayStatus | 'paid') => (
+    <InvoiceStatusBadge status={status} label={tStatus(status)} />
+  );
+
+  // 064 remediation S3 — β as-paid no-TIN rows have a NULL invoice document
+  // number; their printed §105 number lives in receiptDocumentNumberRaw. The
+  // shared helper resolves whichever exists so the title never reads
+  // "Invoice —" on a paid, numbered receipt.
+  const documentNumber = displayDocumentNumber(invoice) ?? '—';
+  // 088 A-refined (FR-016) — the invoice is ALWAYS identified by its OWN (SC)
+  // NON-§87 bill number — paid or unpaid — so the header ("Invoice {number}")
+  // reads under the SC bill for ANY 088 bill (the shared resolver returns a
+  // non-'none' kind), never the RC on payment. The RC §86/4 tax receipt is
+  // surfaced in the "Receipt No." field below. Only the bill-vs-none distinction
+  // matters here, so the specific bill/tax_receipt value is not bound.
+  const headerNumber =
+    resolveTaxDocumentKind(invoice, f088TaxAtPayment) !== 'none'
+      ? (invoice.billDocumentNumberRaw ?? '—')
+      : documentNumber;
+  const subtotal = invoice.subtotal?.satang ?? null;
+  const vat = invoice.vat?.satang ?? null;
+  // "VAT 7%" as the board draws it, from the rate snapshotted on THIS
+  // invoice; without a snapshot the plain label, never a guessed rate.
+  const vatLabel = invoice.vatRate
+    ? t('totals.vatWithRate', { rate: formatVatRatePoints(invoice.vatRate.raw, userLocale) })
+    : t('totals.vat');
+  const total = invoice.total?.satang ?? null;
+  // One figure for the pay bar and the pay sheet. `issued` only moves to
+  // `paid | void` (no part payments, no credit on an unpaid invoice), so the
+  // amount due IS the total — derived once so the two can never drift.
+  const amountDueSatang = total;
+
+  // 088 T066a (FR-019) — async §86/4 RC receipt-PDF state (paid only).
+  // Surfaced as prominent body sections below (room for the aria-live announce
+  // + reassurance copy, and the graceful permanent-fail support path) rather
+  // than a cramped header-actions chip.
+  const receiptAsyncPending =
+    invoice.status === 'paid' && invoice.receiptPdfStatus === 'pending';
+  const receiptAsyncFailed =
+    invoice.status === 'paid' && invoice.receiptPdfStatus === 'failed';
+  // 090 Bug 2 — hoisted so BOTH the header-actions cell (receipt download
+  // button) AND the <ReceiptReveal> watcher gate below read ONE definition of
+  // "the receipt download is available". `receiptPdf !== null` matters: 064
+  // as-paid rows land 'rendered' with a NULL receipt blob (their MAIN pdf IS
+  // the document); a receipt action on them would 502 (blob_missing).
+  // 092 — the §86/4 receipt stays a valid, downloadable tax document after a
+  // §86/10 credit note, so the status gate is the receipt-bearing set {paid,
+  // partially_credited, credited}, not `paid` alone (prod UAT bug: the receipt
+  // download disappeared once a credit note was issued). `void` is excluded.
+  const showReceiptPdf =
+    invoiceStatusHasReceipt(invoice.status) &&
+    invoice.receiptPdfStatus === 'rendered' &&
+    invoice.receiptPdf !== null;
+
+  // REMOVE-WITH-064-REMEDIATION (online-payment site — master checklist at
+  // the guard in record-payment.ts). A LEGACY pre-064 issued no-TIN EVENT
+  // invoice must not surface the Pay-now button (S0 money trap) — full
+  // rationale + the predicate itself live in `../_utils/legacy-no-tin.ts`,
+  // unit-pinned so the OVER-match arm can't silently widen (drift would
+  // strip Pay-now from every TIN event invoice). Replaced by the localized
+  // "under document correction — contact staff" notice below.
+  const legacyNoTinEventInvoice = isLegacyNoTinEventInvoice(invoice);
+
+  // Financial-integrity review of #443 (L2, merged from main): a null /
+  // non-positive amount is not payable (initiate's F4 bridge rejects it with
+  // 409), so never mount Pay-now for it; the member gets the contact-admin
+  // card instead of a "0.00 THB" drawer that then fails.
+  const canPayOnline =
+    f5OnlinePayment &&
+    invoice.status === 'issued' &&
+    amountDueSatang !== null &&
+    amountDueSatang > 0n &&
+    !legacyNoTinEventInvoice &&
+    paymentSettings !== null &&
+    paymentSettings.onlinePaymentEnabled &&
+    paymentSettings.enabledMethods.length > 0 &&
+    paymentSettings.processorAccountId.length > 0 &&
+    paymentSettings.processorPublishableKey.length > 0;
+
+  // Spec 122 US4 — the boards' one-line subtitle, only where it is true: an
+  // unpaid 088 bill (ใบแจ้งหนี้, not a tax invoice) and a paid one whose
+  // §86/4 RC tax invoice/receipt exists or is being generated. Legacy
+  // documents keep no subtitle (their own PDF is the tax document).
+  const isBill = resolveMainPdfKind(invoice) === 'bill';
+  const subtitle =
+    isBill && invoice.status === 'issued'
+      ? tPay('summary.billNote')
+      : isBill && invoice.status === 'paid' && (showReceiptPdf || receiptAsyncPending)
+        ? t('subtitlePaid')
+        : undefined;
+
+  // Spec 122 US4 — Pay now leads the header as the one primary action (the
+  // `Pay-*` boards' backdrop); on phones the same element is the
+  // `Portal-invoice-mobile` band — amount due, due date, Pay now — fixed
+  // above the bottom tabs. One element, so one pay sheet.
+  const payBar =
+    canPayOnline && paymentSettings && amountDueSatang !== null ? (
+          <PayBar
+            invoiceId={invoice.invoiceId}
+            label={tPay('summary.amountLabel')}
+            className="portal-pay-bar flex items-center gap-3 max-md:fixed max-md:inset-x-0 max-md:bottom-[var(--aura-bottomnav-offset,0px)] max-md:z-[4] max-md:border-t max-md:border-[var(--aura-border-default)] max-md:bg-[var(--aura-bg-surface)] max-md:px-4 max-md:py-3 max-md:shadow-[var(--aura-shadow-enterprise)] [@media(max-height:560px)]:static [@media(max-height:560px)]:border-0 [@media(max-height:560px)]:p-0 [@media(max-height:560px)]:shadow-none"
+          >
+            <span className="flex min-w-0 flex-1 flex-col md:hidden">
+              <span className="text-xs text-[var(--aura-fg-secondary)]">{tPay('summary.amountLabel')}</span>
+              <span className="font-semibold tabular-nums">{formatSatangThb(amountDueSatang, userLocale)}</span>
+              <span className="text-xs text-[var(--aura-fg-secondary)]">
+                {t('fields.dueDate')}: {formatDate(invoice.dueDate, userLocale)}
+              </span>
+            </span>
+          <PayNowButton
+            invoice={{
+              id: invoice.invoiceId,
+              // 088 FR-030 — an issued 088 bill's number is its SC (headerNumber).
+              invoiceNumber: headerNumber,
+              amountDue: Number(amountDueSatang),
+              currency: 'THB',
+              status: invoice.status,
+              isBill,
+            }}
+            enabledMethods={paymentSettings.enabledMethods}
+            tenantPublishableKey={paymentSettings.processorPublishableKey}
+          />
+          </PayBar>
+    ) : null;
+
   return (
     <DetailContainer>
+      {/* Spec 122 US4 — the boards' "← Back to invoices" above the title
+          (it used to close the page as a ghost button). */}
+      <BackLink href="/portal/invoices">{t('backToList')}</BackLink>
       <PageHeader
-        title={`${t('title')} ${headerNumber}`}
+        {...(subtitle ? { subtitle } : {})}
+        title={
+          <>
+            {t('title')} <span className="font-mono">{headerNumber}</span>
+          </>
+        }
         badge={
           // 088 A-refined — the header reads under the invoice's OWN (SC) bill
           // number ("Invoice {SC}"); the StatusBadge (via OptimisticPaidOverlay)
@@ -320,154 +431,164 @@ export default async function PortalInvoiceDetailPage({
           />
         }
         actions={
-          invoice.pdf ? (
-            <>
-              {/* Resend is hidden on void — member cannot re-mail a
-                  voided invoice from self-service (an admin would need
-                  to trigger that via the cancellation-notice path). */}
-              {invoice.status !== 'void' ? (
-                <ResendInvoiceButton
-                  invoiceId={invoice.invoiceId}
-                  // 088 FR-030 — use the SC bill number for an 088 bill (the
-                  // bare `documentNumber` local resolves to '—' on an 088 bill).
-                  documentNumber={headerNumber}
-                  variant="ghost"
-                  layout="full"
-                  className="min-h-11 px-3"
-                />
+          invoice.pdf || payBar ? (
+            // Spec 122 US4 — downloads, then Email me a copy, then Pay now
+            // (the `Invoice-paid` / `Pay-*` boards); stacked full width on
+            // phones (`Portal-invoice-mobile`).
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
+              {invoice.pdf ? (
+                <>
+                  {(() => {
+                    // Round 6 portal-harden — combined-mode + paid: the
+                    // invoice PDF *is* the receipt (Thai RD §86/4 + §105ทวิ),
+                    // so the only legal document the member should grab is
+                    // the receipt-rendered combined PDF. Hide the pre-payment
+                    // invoice PDF in that case (it has no receipt fields).
+                    // Separate-mode + paid: surface BOTH — invoice (Tax
+                    // Invoice) and receipt (Official Receipt) are distinct
+                    // legal docs.
+                    //
+                    // R7-L4 — `receiptDocumentNumberRaw === null` is the
+                    // canonical proxy for combined-mode on paid invoices.
+                    // The numbering mode lives on `tenant_invoice_settings`
+                    // (mutable per-tenant config); it is NOT mirrored onto
+                    // the invoice row at issuance time. For PAID invoices,
+                    // however, the proxy is unambiguous: separate-mode
+                    // allocates the RC- number at `recordPayment`, so a
+                    // paid invoice with NULL receipt-number can only be a
+                    // combined-mode invoice. Adding a redundant
+                    // `receiptNumberingMode` column would violate
+                    // Principle X — the proxy is correct, just
+                    // documented here.
+                    //
+                    // 064 — as-paid TIN event invoices persist the MAIN pdf
+                    // as the final combined document (`pdfDocKind ===
+                    // 'receipt_combined'`; receipt blob columns stay NULL,
+                    // receiptPdfStatus lands 'rendered'). Pre-fix these rows
+                    // matched `isCombinedPaid` (main download hidden) while
+                    // `showReceiptPdf` pointed at the NULL receipt blob —
+                    // the member's only button 502'd (blob_missing). The
+                    // stale-draft-hiding rule applies ONLY when the main pdf
+                    // is an issue-time 'invoice', and the receipt button is
+                    // gated on the blob it actually serves.
+                    // 064 remediation S3 — generalised: 'combined' (as-paid TIN)
+                    // keeps the dual-role wording; 'receipt' (β as-paid no-TIN /
+                    // legacy §105 rows) flips the main download to the receipt
+                    // wording; 'bill' = 088 SC- ใบแจ้งหนี้ (not a tax invoice);
+                    // 'invoice' = plain label.
+                    const mainPdfKind = resolveMainPdfKind(invoice);
+                    // 092 — receipt-bearing status set (not `paid` alone) so a
+                    // §86/10 credit note does NOT un-hide the stale pre-payment
+                    // bill PDF; the combined receipt stays the sole legal document.
+                    // Lockstep with the view-model's `isCombinedPaid`.
+                    const isCombinedPaid =
+                      invoiceStatusHasReceipt(invoice.status) &&
+                      invoice.receiptDocumentNumberRaw === null &&
+                      mainPdfKind !== 'combined';
+                    const showInvoicePdf = invoice.pdf !== null && !isCombinedPaid;
+                    // 090 Bug 2 — `showReceiptPdf` is hoisted to the outer scope
+                    // (near receiptAsyncPending) so this cell + the <ReceiptReveal>
+                    // gate share one definition.
+                    // 088 T066a — the async receipt "generating" + graceful-fail
+                    // states moved OUT of this cramped header-actions cell into
+                    // prominent body sections below (room for the aria-live
+                    // announce + reassurance / the support path). See
+                    // `receiptAsyncPending` / `receiptAsyncFailed` at the top.
+                    // 088 T065c / FIX 4 — the MAIN download is the SC bill PDF for
+                    // ANY 088 bill (paid OR unpaid), never the RC in `documentNumber`.
+                    // Reuse the already-correct `headerNumber` (declared above:
+                    // `billDocumentNumberRaw ?? '—'` for any 088 bill, else the
+                    // resolved `documentNumber`). The prior ternary only used the SC
+                    // number on the paid `tax_receipt` branch, so an UNPAID 088 bill
+                    // fell to `documentNumber` = '—' → the download was named "—.pdf".
+                    const mainDownloadNumber = headerNumber;
+                    return (
+                      <>
+                        {showInvoicePdf && (
+                          <PortalInvoiceDownloadButton
+                            invoiceId={invoice.invoiceId}
+                            documentNumber={mainDownloadNumber}
+                            // 064 — as-paid rows: the main pdf IS the final legal
+                            // document; shared downloadLabelKeys helper (wave-4
+                            // S17) maps mainPdfKind → label/aria keys (list
+                            // namespace). The void overlay keeps THIS page's own
+                            // `void.downloadVoidedPdf` copy.
+                            label={
+                              invoice.status === 'void'
+                                ? t('void.downloadVoidedPdf')
+                                : tList(downloadLabelKeys(mainPdfKind).labelKey)
+                            }
+                            ariaLabel={`${
+                              invoice.status === 'void'
+                                ? t('void.downloadVoidedPdf')
+                                : tList(downloadLabelKeys(mainPdfKind).ariaKey, {
+                                    number: mainDownloadNumber,
+                                  })
+                            }`}
+                            className={cn(
+                              // 090 finding #5 — on a PAID separate-mode invoice the
+                              // §86/4 receipt is the document the member needs, so it
+                              // ranks as the filled `default` CTA and the (secondary)
+                              // bill/tax-invoice PDF is demoted to `outline`. Unpaid /
+                              // void keep the bill as the primary `default` CTA (no
+                              // receipt yet). `showReceiptPdf` is true only when the
+                              // receipt download actually renders alongside. Spec
+                              // 122 US4: when Pay now is on the page it is the one
+                              // primary action, so the bill download is secondary.
+                              buttonClass({
+                                variant: showReceiptPdf || payBar ? 'secondary' : 'primary',
+                                size: 'sm',
+                              }),
+                              'min-h-11 px-4 max-sm:w-full',
+                            )}
+                            data-testid="portal-download-invoice"
+                          />
+                        )}
+                        {showReceiptPdf && (
+                          <PortalReceiptDownloadButton
+                            invoiceId={invoice.invoiceId}
+                            documentNumber={invoice.receiptDocumentNumberRaw ?? documentNumber}
+                            label={
+                              isCombinedPaid
+                                ? tList('actions.downloadCombined')
+                                : tList('actions.downloadReceipt')
+                            }
+                            ariaLabel={tList('actions.downloadReceiptAria', {
+                              number: invoice.receiptDocumentNumberRaw ?? documentNumber,
+                            })}
+                            className={cn(
+                              // 090 finding #5 — the receipt is the post-payment
+                              // PRIMARY document (this branch only renders for a PAID
+                              // invoice, combined OR separate), so it is always the
+                              // filled `default` CTA, ranking above the demoted bill
+                              // PDF above.
+                              buttonClass({ variant: 'primary', size: 'sm' }),
+                              'min-h-11 px-4 max-sm:w-full',
+                            )}
+                            data-testid="portal-download-receipt"
+                          />
+                        )}
+                      </>
+                    );
+                  })()}
+                  {/* Resend is hidden on void — member cannot re-mail a
+                      voided invoice from self-service (an admin would need
+                      to trigger that via the cancellation-notice path). */}
+                  {invoice.status !== 'void' ? (
+                    <ResendInvoiceButton
+                      invoiceId={invoice.invoiceId}
+                      // 088 FR-030 — use the SC bill number for an 088 bill (the
+                      // bare `documentNumber` local resolves to '—' on an 088 bill).
+                      documentNumber={headerNumber}
+                      variant="outline"
+                      layout="full"
+                      className="min-h-11 px-4 max-sm:w-full"
+                    />
+                  ) : null}
+                </>
               ) : null}
-              {(() => {
-                // Round 6 portal-harden — combined-mode + paid: the
-                // invoice PDF *is* the receipt (Thai RD §86/4 + §105ทวิ),
-                // so the only legal document the member should grab is
-                // the receipt-rendered combined PDF. Hide the pre-payment
-                // invoice PDF in that case (it has no receipt fields).
-                // Separate-mode + paid: surface BOTH — invoice (Tax
-                // Invoice) and receipt (Official Receipt) are distinct
-                // legal docs.
-                //
-                // R7-L4 — `receiptDocumentNumberRaw === null` is the
-                // canonical proxy for combined-mode on paid invoices.
-                // The numbering mode lives on `tenant_invoice_settings`
-                // (mutable per-tenant config); it is NOT mirrored onto
-                // the invoice row at issuance time. For PAID invoices,
-                // however, the proxy is unambiguous: separate-mode
-                // allocates the RC- number at `recordPayment`, so a
-                // paid invoice with NULL receipt-number can only be a
-                // combined-mode invoice. Adding a redundant
-                // `receiptNumberingMode` column would violate
-                // Principle X — the proxy is correct, just
-                // documented here.
-                //
-                // 064 — as-paid TIN event invoices persist the MAIN pdf
-                // as the final combined document (`pdfDocKind ===
-                // 'receipt_combined'`; receipt blob columns stay NULL,
-                // receiptPdfStatus lands 'rendered'). Pre-fix these rows
-                // matched `isCombinedPaid` (main download hidden) while
-                // `showReceiptPdf` pointed at the NULL receipt blob —
-                // the member's only button 502'd (blob_missing). The
-                // stale-draft-hiding rule applies ONLY when the main pdf
-                // is an issue-time 'invoice', and the receipt button is
-                // gated on the blob it actually serves.
-                // 064 remediation S3 — generalised: 'combined' (as-paid TIN)
-                // keeps the dual-role wording; 'receipt' (β as-paid no-TIN /
-                // legacy §105 rows) flips the main download to the receipt
-                // wording; 'bill' = 088 SC- ใบแจ้งหนี้ (not a tax invoice);
-                // 'invoice' = plain label.
-                const mainPdfKind = resolveMainPdfKind(invoice);
-                // 092 — receipt-bearing status set (not `paid` alone) so a
-                // §86/10 credit note does NOT un-hide the stale pre-payment
-                // bill PDF; the combined receipt stays the sole legal document.
-                // Lockstep with the view-model's `isCombinedPaid`.
-                const isCombinedPaid =
-                  invoiceStatusHasReceipt(invoice.status) &&
-                  invoice.receiptDocumentNumberRaw === null &&
-                  mainPdfKind !== 'combined';
-                const showInvoicePdf = invoice.pdf !== null && !isCombinedPaid;
-                // 090 Bug 2 — `showReceiptPdf` is hoisted to the outer scope
-                // (near receiptAsyncPending) so this cell + the <ReceiptReveal>
-                // gate share one definition.
-                // 088 T066a — the async receipt "generating" + graceful-fail
-                // states moved OUT of this cramped header-actions cell into
-                // prominent body sections below (room for the aria-live
-                // announce + reassurance / the support path). See
-                // `receiptAsyncPending` / `receiptAsyncFailed` at the top.
-                // 088 T065c / FIX 4 — the MAIN download is the SC bill PDF for
-                // ANY 088 bill (paid OR unpaid), never the RC in `documentNumber`.
-                // Reuse the already-correct `headerNumber` (declared above:
-                // `billDocumentNumberRaw ?? '—'` for any 088 bill, else the
-                // resolved `documentNumber`). The prior ternary only used the SC
-                // number on the paid `tax_receipt` branch, so an UNPAID 088 bill
-                // fell to `documentNumber` = '—' → the download was named "—.pdf".
-                const mainDownloadNumber = headerNumber;
-                return (
-                  <>
-                    {showInvoicePdf && (
-                      <PortalInvoiceDownloadButton
-                        invoiceId={invoice.invoiceId}
-                        documentNumber={mainDownloadNumber}
-                        // 064 — as-paid rows: the main pdf IS the final legal
-                        // document; shared downloadLabelKeys helper (wave-4
-                        // S17) maps mainPdfKind → label/aria keys (list
-                        // namespace). The void overlay keeps THIS page's own
-                        // `void.downloadVoidedPdf` copy.
-                        label={
-                          invoice.status === 'void'
-                            ? t('void.downloadVoidedPdf')
-                            : tList(downloadLabelKeys(mainPdfKind).labelKey)
-                        }
-                        ariaLabel={`${
-                          invoice.status === 'void'
-                            ? t('void.downloadVoidedPdf')
-                            : tList(downloadLabelKeys(mainPdfKind).ariaKey, {
-                                number: mainDownloadNumber,
-                              })
-                        }`}
-                        className={cn(
-                          // 090 finding #5 — on a PAID separate-mode invoice the
-                          // §86/4 receipt is the document the member needs, so it
-                          // ranks as the filled `default` CTA and the (secondary)
-                          // bill/tax-invoice PDF is demoted to `outline`. Unpaid /
-                          // void keep the bill as the primary `default` CTA (no
-                          // receipt yet). `showReceiptPdf` is true only when the
-                          // receipt download actually renders alongside.
-                          buttonVariants({
-                            variant: showReceiptPdf ? 'outline' : 'default',
-                            size: 'sm',
-                          }),
-                          'min-h-11 px-4',
-                        )}
-                        data-testid="portal-download-invoice"
-                      />
-                    )}
-                    {showReceiptPdf && (
-                      <PortalReceiptDownloadButton
-                        invoiceId={invoice.invoiceId}
-                        documentNumber={invoice.receiptDocumentNumberRaw ?? documentNumber}
-                        label={
-                          isCombinedPaid
-                            ? tList('actions.downloadCombined')
-                            : tList('actions.downloadReceipt')
-                        }
-                        ariaLabel={tList('actions.downloadReceiptAria', {
-                          number: invoice.receiptDocumentNumberRaw ?? documentNumber,
-                        })}
-                        className={cn(
-                          // 090 finding #5 — the receipt is the post-payment
-                          // PRIMARY document (this branch only renders for a PAID
-                          // invoice, combined OR separate), so it is always the
-                          // filled `default` CTA, ranking above the demoted bill
-                          // PDF above.
-                          buttonVariants({ variant: 'default', size: 'sm' }),
-                          'min-h-11 px-4',
-                        )}
-                        data-testid="portal-download-receipt"
-                      />
-                    )}
-                  </>
-                );
-              })()}
-            </>
+              {payBar}
+            </div>
           ) : null
         }
       />
@@ -480,28 +601,22 @@ export default async function PortalInvoiceDetailPage({
        * fact on the page for a voided invoice — everything below
        * is archival reference. */}
       {invoice.status === 'void' && invoice.voidedAt && (
-        <section
-          aria-labelledby="invoice-void-heading"
-          className="rounded-md border border-destructive/30 bg-destructive/5 p-4"
-        >
-          <h2 id="invoice-void-heading" className="mb-3 text-sm font-medium text-destructive">
-            {t('void.title')}
-          </h2>
-          <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-[auto_1fr] sm:gap-x-6">
-            <dt className="text-muted-foreground">{t('void.voidedAt')}</dt>
-            <dd>{formatDate(invoice.voidedAt, userLocale)}</dd>
+        // Spec 122 US4 — an AURA danger alert (a standing notice, not a live
+        // region: `role="note"`). Void IS the most load-bearing fact on a
+        // voided invoice, so it leads the page.
+        <Alert tone="danger" role="note" title={t('void.title')}>
+          <dl className="m-0 grid grid-cols-1 gap-2 text-sm sm:grid-cols-[auto_1fr] sm:gap-x-6">
+            <dt className="text-[var(--aura-fg-secondary)]">{t('void.voidedAt')}</dt>
+            <dd className="m-0">{formatDate(invoice.voidedAt, userLocale)}</dd>
             {invoice.voidReason ? (
               <>
-                <dt className="text-muted-foreground">{t('void.reasonLabel')}</dt>
-                <dd className="whitespace-pre-wrap break-words">{invoice.voidReason}</dd>
+                <dt className="text-[var(--aura-fg-secondary)]">{t('void.reasonLabel')}</dt>
+                <dd className="m-0 whitespace-pre-wrap break-words">{invoice.voidReason}</dd>
               </>
             ) : null}
           </dl>
           {replacedBy && (
-            <p
-              className="mt-3 rounded-md border border-dashed border-destructive/40 px-3 py-2 text-sm text-foreground"
-              data-testid="portal-invoice-replaced-by"
-            >
+            <p className="mt-3 mb-0 text-sm" data-testid="portal-invoice-replaced-by">
               {t.rich('void.replacedBy', {
                 number: replacedBy.displayNumber,
                 link: (chunks) => (
@@ -509,14 +624,14 @@ export default async function PortalInvoiceDetailPage({
                   // affordance inside body text (WCAG 1.4.1).
                   <Link
                     href={`/portal/invoices/${replacedBy.invoiceId}`}
-                    className="rounded-xs font-mono font-medium underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                    className="font-mono font-medium underline underline-offset-2"
                   >
                     {chunks}
                   </Link>
                 ),
               })}
               {replacedBy.issueDate && (
-                <span className="text-muted-foreground">
+                <span className="text-[var(--aura-fg-secondary)]">
                   {' · '}
                   {t('void.replacedByIssued', {
                     date: formatDate(replacedBy.issueDate, userLocale),
@@ -533,64 +648,42 @@ export default async function PortalInvoiceDetailPage({
               )}
             </p>
           )}
-          <p className="mt-3 text-sm text-destructive">{t('void.notPayable')}</p>
-          {autoRefund && (
-            // Reassuring-news block. Outer <section aria-labelledby>
-            // creates a screen-reader landmark separate from the
-            // destructive void parent. INNER <div role="status"> hosts
-            // the live region — split because nesting role="status"
-            // and the section's implicit `region` role on the same
-            // element causes JAWS to drop the landmark from nav lists.
-            // Visual: thick left border (--primary) is dark-mode-safe
-            // even if a tenant's --accent token drifts close to
-            // --destructive — the border guarantees visual separation
-            // from the void block above without relying on bg contrast.
-            //
-            // F5 UX D1 — branch on `autoRefund.failed`. When the
-            // auto-refund FAILED at the processor (money NOT returned,
-            // manual reconciliation required) we must NOT assert
-            // completion: switch to the calm support-path copy (mirrors
-            // the `receiptFailed` reassurance below — "recorded, being
-            // reconciled, we'll follow up") instead of the definitive
-            // "your payment has been refunded". The not-failed path keeps
-            // the existing definitive copy (its "within 5–10 business
-            // days" hedge covers the still-settling case, which is not
-            // reliably distinguishable from succeeded — see the port
-            // docstring; do NOT over-engineer that distinction).
-            <section
-              aria-labelledby="invoice-auto-refund-heading"
-              data-testid="portal-invoice-auto-refund-notice"
-              className="mt-4 rounded-md border border-border border-l-4 border-l-primary bg-card p-3"
-            >
-              <h3 id="invoice-auto-refund-heading" className="text-sm font-medium text-foreground">
-                {t(autoRefund.failed ? 'void.autoRefundFailedHeading' : 'void.autoRefundHeading')}
-              </h3>
-              <div role="status" aria-live="polite">
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {t(autoRefund.failed ? 'void.autoRefundFailedBody' : 'void.autoRefundBody')}
-                </p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {t(autoRefund.failed ? 'void.autoRefundFailedContact' : 'void.autoRefundContact')}
-                </p>
-                {autoRefund.processorRefundId && (
-                  <p
-                    className="mt-2 font-mono text-xs text-muted-foreground"
-                    data-testid="portal-invoice-auto-refund-ref"
-                  >
-                    {t('void.autoRefundRef', {
-                      // Stripe refund IDs are stable identifiers — full
-                      // value is safe to surface (no PCI scope; no
-                      // member PII). Truncating to last 8 keeps the line
-                      // scannable on mobile + matches what most banks
-                      // ask for in support tickets.
-                      ref: autoRefund.processorRefundId.slice(-8),
-                    })}
-                  </p>
-                )}
-              </div>
-            </section>
-          )}
-        </section>
+          <p className="mt-3 mb-0 text-sm font-medium">{t('void.notPayable')}</p>
+        </Alert>
+      )}
+      {invoice.status === 'void' && invoice.voidedAt && autoRefund && (
+        // Reassuring news beside the void alert. F5 UX D1 — branch on
+        // `autoRefund.failed`: a refund that FAILED at the processor (money
+        // NOT returned, manual reconciliation) gets the calm support-path
+        // copy, never "your payment has been refunded". The live region stays
+        // the inner `role="status"` block.
+        <Alert
+          tone="info"
+          role="note"
+          data-testid="portal-invoice-auto-refund-notice"
+          title={t(autoRefund.failed ? 'void.autoRefundFailedHeading' : 'void.autoRefundHeading')}
+        >
+          <div role="status" aria-live="polite">
+            <p className="m-0 text-sm">
+              {t(autoRefund.failed ? 'void.autoRefundFailedBody' : 'void.autoRefundBody')}
+            </p>
+            <p className="mt-1 mb-0 text-sm">
+              {t(autoRefund.failed ? 'void.autoRefundFailedContact' : 'void.autoRefundContact')}
+            </p>
+            {autoRefund.processorRefundId && (
+              <p
+                className="mt-2 mb-0 font-mono text-xs text-[var(--aura-fg-secondary)]"
+                data-testid="portal-invoice-auto-refund-ref"
+              >
+                {t('void.autoRefundRef', {
+                  // Stripe refund ids are stable identifiers (no PCI scope, no
+                  // PII); the last 8 keep the line scannable on a phone.
+                  ref: autoRefund.processorRefundId.slice(-8),
+                })}
+              </p>
+            )}
+          </div>
+        </Alert>
       )}
 
       {/* 088 T066a (FR-019) + 090 Bug 2 — async §86/4 RC receipt-PDF reveal.
@@ -620,61 +713,54 @@ export default async function PortalInvoiceDetailPage({
           NOT a dead "unavailable". Informational (role=status, no aria-busy /
           spinner). The member can still download the invoice PDF above. */}
       {receiptAsyncFailed && (
-        <section
-          aria-labelledby="receipt-failed-heading"
+        <Alert
+          tone="info"
+          role="status"
           data-testid="portal-invoice-receipt-failed-notice"
-          className="rounded-md border border-border border-l-4 border-l-primary bg-card p-4"
+          title={t('receiptFailed.heading')}
         >
-          <h2
-            id="receipt-failed-heading"
-            className="text-sm font-medium text-foreground"
-          >
-            {t('receiptFailed.heading')}
-          </h2>
-          <div role="status">
-            <p className="mt-1 text-sm text-muted-foreground">
-              {t('receiptFailed.body')}
-            </p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {t('receiptFailed.contact')}
-            </p>
-          </div>
-        </section>
+          <p className="m-0 text-sm">{t('receiptFailed.body')}</p>
+          <p className="mt-1 mb-0 text-sm">{t('receiptFailed.contact')}</p>
+        </Alert>
       )}
 
-      <Card>
-        <CardContent className="grid gap-4 sm:grid-cols-2">
+      {/* Spec 122 US4 — one "Details" card, as the boards draw it: the facts,
+          the line items and the totals (figures and wording unchanged). */}
+      <Card title={t('detailsHeading')} headingLevel={2}>
+        <div className="flex flex-col gap-5">
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
           <div>
-            <p className="text-caption uppercase tracking-wide text-muted-foreground">
+            <p className="m-0 text-xs text-[var(--aura-fg-secondary)]">
               {t('fields.issueDate')}
             </p>
-            <p className="text-body">{formatDate(invoice.issueDate, userLocale)}</p>
+            <p className="m-0 text-body">{formatDate(invoice.issueDate, userLocale)}</p>
           </div>
           <div>
-            <p className="text-caption uppercase tracking-wide text-muted-foreground">
+            <p className="m-0 text-xs text-[var(--aura-fg-secondary)]">
               {t('fields.dueDate')}
             </p>
-            <p className="text-body">{formatDate(invoice.dueDate, userLocale)}</p>
+            <p className="m-0 text-body">{formatDate(invoice.dueDate, userLocale)}</p>
           </div>
-          <div>
-            <p className="text-caption uppercase tracking-wide text-muted-foreground">
-              {t('fields.paidDate')}
-            </p>
-            <p className="text-body">
-              {invoice.paidAt ? formatDate(invoice.paidAt, userLocale) : '—'}
-            </p>
-          </div>
+          {/* Only once paid — the boards leave it out of an open invoice. */}
+          {invoice.paidAt ? (
+            <div>
+              <p className="m-0 text-xs text-[var(--aura-fg-secondary)]">
+                {t('fields.paidDate')}
+              </p>
+              <p className="m-0 text-body">{formatDate(invoice.paidAt, userLocale)}</p>
+            </div>
+          ) : null}
           {replaces.length > 0 && (
             <div data-testid="portal-invoice-replaces">
-              <p className="text-caption uppercase tracking-wide text-muted-foreground">
+              <p className="m-0 text-xs text-[var(--aura-fg-secondary)]">
                 {t('fields.replaces')}
               </p>
-              <p className="text-body flex flex-wrap gap-x-3 gap-y-1">
+              <p className="m-0 text-body flex flex-wrap gap-x-3 gap-y-1">
                 {replaces.map((r) => (
                   <Link
                     key={r.invoiceId}
                     href={`/portal/invoices/${r.invoiceId}`}
-                    className="rounded-xs font-mono underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                    className="font-mono underline underline-offset-2"
                   >
                     {r.displayNumber}
                   </Link>
@@ -694,59 +780,40 @@ export default async function PortalInvoiceDetailPage({
           {invoice.receiptDocumentNumberRaw &&
             invoiceStatusHasReceipt(invoice.status) && (
             <div>
-              <p className="text-caption uppercase tracking-wide text-muted-foreground">
+              <p className="m-0 text-xs text-[var(--aura-fg-secondary)]">
                 {t('fields.receiptNumber')}
               </p>
-              <p className="text-body font-mono tabular-nums">{invoice.receiptDocumentNumberRaw}</p>
+              <p className="m-0 text-body font-mono tabular-nums">{invoice.receiptDocumentNumberRaw}</p>
             </div>
           )}
           {/* Plan year is membership-only — event-fee invoices carry no plan
               (plan_year NULL) and would render an empty value here. */}
           {invoice.planYear !== null && (
             <div>
-              <p className="text-caption uppercase tracking-wide text-muted-foreground">
+              <p className="m-0 text-xs text-[var(--aura-fg-secondary)]">
                 {t('fields.planYear')}
               </p>
               {/* Stored CE; Thai reads the plan year in BE (2026 → 2569). */}
-              <p className="text-body">
+              <p className="m-0 text-body">
                 {formatCalendarYear(invoice.planYear, userLocale)}
               </p>
             </div>
           )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <h2
-            id="invoice-lines-heading"
-            className="font-heading text-base font-medium leading-snug"
-          >
-            {t('linesHeading')}
-          </h2>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <div className="overflow-x-auto">
-            {/* aria-labelledby (not aria-label) so the table's accessible name
-                reuses the visible <h2> instead of announcing the same string
-                twice (heading + table name) — mirrors the void/auto-refund
-                sections above. */}
-            <Table aria-labelledby="invoice-lines-heading">
-              <TableHeader>
-                <TableRow>
-                  <TableHead scope="col">{t('lines.description')}</TableHead>
-                  <TableHead scope="col" className="text-right">
-                    {t('lines.quantity')}
-                  </TableHead>
-                  <TableHead scope="col" className="text-right">
-                    {t('lines.unitPrice')}
-                  </TableHead>
-                  <TableHead scope="col" className="text-right">
-                    {t('lines.lineTotal')}
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+        </div>
+          <div className="overflow-x-auto max-sm:hidden">
+            {/* The line items keep their name as the table caption (hidden:
+                the card title already heads the section). Below 640px the
+                list after the table takes over. */}
+            <Table caption={t('linesHeading')} captionHidden>
+              <THead>
+                <Tr>
+                  <Th>{t('lines.description')}</Th>
+                  <Th align="end">{t('lines.quantity')}</Th>
+                  <Th align="end">{t('lines.unitPrice')}</Th>
+                  <Th align="end">{t('lines.lineTotal')}</Th>
+                </Tr>
+              </THead>
+              <TBody>
                 {invoice.lines.map((line) => {
                   const sameText = line.descriptionTh === line.descriptionEn;
                   const primaryLang = userLocale === 'th' ? 'th' : 'en';
@@ -763,8 +830,8 @@ export default async function PortalInvoiceDetailPage({
                   const primary = userLocale === 'th' ? line.descriptionTh : line.descriptionEn;
                   const secondary = userLocale === 'th' ? line.descriptionEn : line.descriptionTh;
                   return (
-                    <TableRow key={line.lineId}>
-                      <TableCell className="align-top">
+                    <Tr key={line.lineId}>
+                      <Td className="align-top">
                         {/* Thai tax invoices require bilingual display
                             at co-equal visual weight (§86); primary
                             locale gets a subtle medium weight so the
@@ -780,53 +847,73 @@ export default async function PortalInvoiceDetailPage({
                             {secondary}
                           </span>
                         ) : null}
-                      </TableCell>
-                      <TableCell className="align-top text-right tabular-nums">
-                        {line.quantity}
-                      </TableCell>
-                      <TableCell className="align-top text-right tabular-nums">
+                      </Td>
+                      <Td numeric className="align-top" label={t('lines.quantity')}>
+                        {formatLineQuantity(line.quantity, userLocale)}
+                      </Td>
+                      <Td numeric className="align-top" label={t('lines.unitPrice')}>
                         {formatSatangThb(line.unitPrice.satang, userLocale)}
-                      </TableCell>
-                      <TableCell className="align-top text-right tabular-nums">
+                      </Td>
+                      <Td numeric className="align-top" label={t('lines.lineTotal')}>
                         {formatSatangThb(line.total.satang, userLocale)}
-                      </TableCell>
-                    </TableRow>
+                      </Td>
+                    </Tr>
                   );
                 })}
-              </TableBody>
+              </TBody>
             </Table>
           </div>
-        </CardContent>
-      </Card>
+          {/* Spec 122 US4 (`Portal-invoice-mobile`) — below 640px one row per
+              line: the description (both languages, §86), then
+              "qty × unit price" beside the line total. Same figures, same
+              formatter as the table. */}
+          <ul aria-label={t('linesHeading')} className="m-0 flex list-none flex-col gap-3 p-0 sm:hidden">
+            {invoice.lines.map((line) => {
+              const sameText = line.descriptionTh === line.descriptionEn;
+              const primary = userLocale === 'th' ? line.descriptionTh : line.descriptionEn;
+              const secondary = userLocale === 'th' ? line.descriptionEn : line.descriptionTh;
+              const secondaryLang = userLocale === 'th' ? 'en' : 'th';
+              return (
+                <li key={line.lineId} className="flex flex-col gap-1 border-b border-[var(--aura-border-default)] pb-3 last:border-b-0 last:pb-0">
+                  <span className="text-body font-medium">{primary}</span>
+                  {!sameText ? (
+                    <span lang={secondaryLang === userLocale ? undefined : secondaryLang} className="text-body">
+                      {secondary}
+                    </span>
+                  ) : null}
+                  <span className="flex items-baseline justify-between gap-3 text-sm tabular-nums">
+                    <span className="text-[var(--aura-fg-secondary)]">
+                      {formatLineQuantity(line.quantity, userLocale)} × {formatSatangThb(line.unitPrice.satang, userLocale)}
+                    </span>
+                    <span>{formatSatangThb(line.total.satang, userLocale)}</span>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
 
-      <Card>
-        <CardHeader>
-          <h2 className="font-heading text-base font-medium leading-snug">
-            {t('totals.heading')}
-          </h2>
-        </CardHeader>
         {/* dl/dt/dd preserves the semantic label-value pairing for
             screen readers; the previous `div.contents` flattening
             caused VoiceOver/NVDA to read the six cells as loose
             items with no association. */}
-        <CardContent>
-          <dl className="grid gap-2 sm:grid-cols-[1fr_auto]">
-            <dt className="text-caption uppercase tracking-wide text-muted-foreground">
-              {t('totals.subtotal')}
-            </dt>
-            <dd className="tabular-nums sm:justify-self-end">
-              {formatSatangThb(subtotal, userLocale)}
-            </dd>
-            <dt className="text-caption uppercase tracking-wide text-muted-foreground">
-              {t('totals.vat')}
-            </dt>
-            <dd className="tabular-nums sm:justify-self-end">{formatSatangThb(vat, userLocale)}</dd>
-            <dt className="text-body font-medium uppercase tracking-wide">{t('totals.total')}</dt>
-            <dd className="text-body font-medium tabular-nums sm:justify-self-end">
-              {formatSatangThb(total, userLocale)}
-            </dd>
-          </dl>
-        </CardContent>
+          <div className="flex justify-end">
+            <dl
+              aria-label={t('totals.heading')}
+              className="m-0 grid w-full grid-cols-[1fr_auto] gap-y-1.5 sm:w-[300px]"
+            >
+              <dt className="text-[var(--aura-fg-secondary)]">{t('totals.subtotal')}</dt>
+              <dd className="m-0 pl-4 text-right tabular-nums">{formatSatangThb(subtotal, userLocale)}</dd>
+              <dt className="text-[var(--aura-fg-secondary)]">{vatLabel}</dt>
+              <dd className="m-0 pl-4 text-right tabular-nums">{formatSatangThb(vat, userLocale)}</dd>
+              <dt className="border-t border-[var(--aura-border-default)] pt-1.5 font-semibold">
+                {t('totals.total')}
+              </dt>
+              <dd className="m-0 border-t border-[var(--aura-border-default)] pt-1.5 pl-4 text-right font-semibold tabular-nums">
+                {formatSatangThb(total, userLocale)}
+              </dd>
+            </dl>
+          </div>
+        </div>
       </Card>
 
       {/* F5 G4 T081 — online payment entry point. Only surfaced for
@@ -859,28 +946,13 @@ export default async function PortalInvoiceDetailPage({
           // misleadingly suggest the tenant config is the blocker). The
           // member is told the document is being corrected and to contact
           // staff; the remediation runbook voids + reissues the row.
-          <section
-            data-testid="portal-invoice-legacy-no-tin-notice"
-            className="rounded-md border border-border bg-muted/50 p-4"
-          >
-            <p className="text-sm text-muted-foreground">
-              {t('legacyNoTinNotPayable')}
-            </p>
-          </section>
+          <Alert tone="info" role="note" data-testid="portal-invoice-legacy-no-tin-notice">
+            {t('legacyNoTinNotPayable')}
+          </Alert>
         ) : canPayOnline && paymentSettings ? (
-          <PayNowButton
-            invoice={{
-              id: invoice.invoiceId,
-              // 088 FR-030 — an issued 088 bill's number is its SC (headerNumber).
-              invoiceNumber: headerNumber,
-              amountDue: Number(total),
-              currency: 'THB',
-              status: invoice.status,
-              isBill: resolveMainPdfKind(invoice) === 'bill',
-            }}
-            enabledMethods={paymentSettings.enabledMethods}
-            tenantPublishableKey={paymentSettings.processorPublishableKey}
-          />
+          // The pay bar lives in the header (see `payBar`); on phones it is
+          // fixed above the bottom tabs, so keep room for it here.
+          <div aria-hidden="true" className="h-24 md:hidden [@media(max-height:560px)]:hidden" />
         ) : (
           // FR-030 (#145) — the fallback offers a "Contact administrator" mailto.
           // Source is `env.billingContactEmails` (BILLING_CONTACT_EMAILS, a
@@ -891,39 +963,29 @@ export default async function PortalInvoiceDetailPage({
           // 088 — `invoiceNumber` uses `headerNumber` (bill-first SC number).
           <OnlinePaymentDisabledCard
             invoiceNumber={headerNumber}
-            tenantContactEmails={env.billingContactEmails}
+            tenantContactEmails={tenantContactEmails}
           />
         )
       ) : null}
 
       {portalCreditNotes.length > 0 && (
-        <Card>
-          <CardHeader>
-            <h2 className="font-heading text-base font-medium leading-snug">
-              {t('creditNotes.heading')}
-            </h2>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4">
-            <p className="text-caption text-muted-foreground">{t('creditNotes.description')}</p>
-            <ul role="list" className="flex flex-col gap-2">
+        <Card title={t('creditNotes.heading')} description={t('creditNotes.description')} headingLevel={2}>
+            <ul role="list" className="m-0 flex list-none flex-col p-0">
               {portalCreditNotes.map((pcn) => (
                 <li
                   key={pcn.creditNoteId}
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-md border px-4 py-3"
+                  className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--aura-border-default)] py-3"
                 >
                   <div className="flex flex-col gap-0.5">
                     <span className="font-mono text-sm font-medium">{pcn.documentNumber.raw}</span>
-                    <span className="text-caption text-muted-foreground tabular-nums">
+                    <span className="text-caption text-[var(--aura-fg-secondary)] tabular-nums">
                       {formatDate(pcn.issueDate, userLocale)} ·{' '}
                       {formatSatangThb(pcn.total.satang, userLocale)}
                     </span>
                   </div>
                   <Link
                     href={`/portal/credit-notes/${pcn.creditNoteId}`}
-                    className={cn(
-                      buttonVariants({ variant: 'outline', size: 'sm' }),
-                      'min-h-11 px-4',
-                    )}
+                    className={cn(buttonClass({ variant: 'secondary', size: 'sm' }), 'min-h-11 px-4')}
                     aria-label={t('creditNotes.viewAria', {
                       number: pcn.documentNumber.raw,
                     })}
@@ -933,18 +995,8 @@ export default async function PortalInvoiceDetailPage({
                 </li>
               ))}
             </ul>
-          </CardContent>
         </Card>
       )}
-
-      <div>
-        <Link
-          href="/portal/invoices"
-          className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'min-h-11 px-3')}
-        >
-          {t('backToList')}
-        </Link>
-      </div>
     </DetailContainer>
   );
 }

@@ -7,9 +7,9 @@
  *   - specs/009-online-payment — FR-002: if exactly one method is enabled,
  *     render it as a non-tab heading (no tab UI), otherwise render one
  *     tab per enabled method.
- *   - Keyboard: arrow-key navigation is inherited from the shadcn
- *     <Tabs> primitive (Base-UI Tabs → Radix-equivalent).
- *   - a11y: each <TabsTrigger> carries a localized `aria-label` whose
+ *   - Keyboard: AURA Tabs with manual activation — arrows / Home / End
+ *     move focus, click / Enter / Space selects.
+ *   - a11y: each tab carries a localized `aria-label` whose
  *     text STARTS with the visible label (e.g. "Card — switch payment
  *     method") so the accessible name CONTAINS the visible name —
  *     WCAG 2.5.3 (Label in Name) requirement for voice-control users
@@ -25,15 +25,9 @@
  * (card tab) and the PromptPay QR (Phase 4).
  */
 
+import { Tabs } from '@jirawatpyk/aura-react';
 import { useTranslations } from 'next-intl';
 import { CreditCardIcon, QrCodeIcon } from 'lucide-react';
-
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from '@/components/ui/tabs';
 
 export type PaymentMethod = 'card' | 'promptpay';
 
@@ -72,7 +66,7 @@ export function MethodTabs({
       only === 'card' ? t('cardPlaceholder') : t('promptpayPlaceholder');
     return (
       <section data-testid="pay-sheet-single-method">
-        <h3 className="text-body font-medium text-foreground">{label}</h3>
+        <h3 className="m-0 text-body font-medium text-[var(--aura-fg-primary)]">{label}</h3>
         <div className="mt-4">
           {only === 'card' ? (cardPanel ?? <p>{placeholder}</p>) : null}
           {only === 'promptpay'
@@ -83,68 +77,59 @@ export function MethodTabs({
     );
   }
 
-  const tabCount =
-    (enabledMethods.includes('card') ? 1 : 0) +
-    (enabledMethods.includes('promptpay') ? 1 : 0);
-  // Full-width TabsList with equal-width columns. Tailwind JIT cannot
-  // compose `grid-cols-${n}` at runtime so map to known literals.
-  const gridCols = tabCount === 2 ? 'grid-cols-2' : 'grid-cols-1';
+  // Spec 122 US4 (`Pay-card` / `Pay-promptpay` boards) — AURA Tabs, full-width
+  // segmented (5.10, handoff #72); the panel sits 16px under the track.
+  //  - `keepMounted`: the card panel MUST stay mounted; tearing down Stripe
+  //    <Elements> on every swap reloads the iframe (T082, commit 018b9cf).
+  //  - `activation="manual"` (WAI-ARIA APG): arrows / Home / End move focus
+  //    only; click, Enter or Space selects. Selecting a method re-initiates
+  //    the PaymentIntent (`pay-sheet-internal.tsx`), so an arrow sweep must
+  //    not spend initiate quota or reload the Stripe iframe.
+  //  - `tabProps`: the Label-in-Name aria-label and the test ids.
+  const methods = (['card', 'promptpay'] as const).filter((m) => enabledMethods.includes(m));
+  const meta = {
+    card: {
+      label: t('card'),
+      aria: t('cardAriaLabel'),
+      Icon: CreditCardIcon,
+      panel: cardPanel ?? <p>{t('cardPlaceholder')}</p>,
+      testId: 'pay-sheet-tab-card',
+    },
+    promptpay: {
+      label: t('promptpay'),
+      aria: t('promptpayAriaLabel'),
+      Icon: QrCodeIcon,
+      panel: promptPayPanel ?? <p>{t('promptpayPlaceholder')}</p>,
+      testId: 'pay-sheet-tab-promptpay',
+    },
+  } as const;
 
   return (
-    <Tabs
-      value={activeMethod}
-      onValueChange={(value) => {
-        if (value === 'card' || value === 'promptpay') {
-          onMethodChange(value);
-        }
-      }}
-      data-testid="pay-sheet-method-tabs"
-    >
-      <TabsList className={`grid w-full ${gridCols} h-11 p-1`}>
-        {enabledMethods.includes('card') && (
-          <TabsTrigger
-            value="card"
-            aria-label={t('cardAriaLabel')}
-            data-testid="pay-sheet-tab-card"
-            className="h-full gap-1.5"
-          >
-            <CreditCardIcon aria-hidden="true" className="size-4" />
-            {t('card')}
-          </TabsTrigger>
-        )}
-        {enabledMethods.includes('promptpay') && (
-          <TabsTrigger
-            value="promptpay"
-            aria-label={t('promptpayAriaLabel')}
-            data-testid="pay-sheet-tab-promptpay"
-            className="h-full gap-1.5"
-          >
-            <QrCodeIcon aria-hidden="true" className="size-4" />
-            {t('promptpay')}
-          </TabsTrigger>
-        )}
-      </TabsList>
-      {/*
-       * `keepMounted` — critical for the card panel so the Stripe
-       * <Elements> tree + PaymentElement iframe are NOT torn down
-       * when the user toggles to PromptPay and back. Without this,
-       * every tab swap re-fires the Stripe iframe load + 300ms
-       * skeleton floor + button fade-in, which reads as a visible
-       * "flash" (T082 UX feedback 2026-04-24). Base UI Tabs.Panel
-       * supports keepMounted natively — panels stay in the DOM and
-       * are hidden via `hidden` attribute when inactive.
-       */}
-      {enabledMethods.includes('card') && (
-        <TabsContent value="card" keepMounted>
-          {cardPanel ?? <p>{t('cardPlaceholder')}</p>}
-        </TabsContent>
-      )}
-      {enabledMethods.includes('promptpay') && (
-        <TabsContent value="promptpay" keepMounted>
-          {promptPayPanel ?? <p>{t('promptpayPlaceholder')}</p>}
-        </TabsContent>
-      )}
-    </Tabs>
+    <div data-testid="pay-sheet-method-tabs">
+      <Tabs
+        label={t('groupLabel')}
+        value={activeMethod}
+        onChange={(id) => {
+          const next = methods.find((m) => m === id);
+          if (next) onMethodChange(next);
+        }}
+        keepMounted
+        activation="manual"
+        variant="segmented"
+        fullWidth
+        className="[&_.aura-tabs\_\_panel]:pt-4"
+        tabs={methods.map((m) => {
+          const { label, aria, Icon, panel, testId } = meta[m];
+          return {
+            id: m,
+            label,
+            icon: <Icon aria-hidden="true" className="aura-icon size-4" />,
+            content: panel,
+            tabProps: { 'aria-label': aria, 'data-testid': testId },
+          };
+        })}
+      />
+    </div>
   );
 }
 

@@ -21,7 +21,7 @@
  */
 import { useTranslations } from 'next-intl';
 
-import { Skeleton } from '@/components/ui/skeleton';
+import { SkeletonBlock as Skeleton } from '@/components/shell/page-skeletons';
 
 export interface PaySheetSkeletonProps {
   /**
@@ -50,7 +50,7 @@ export function PaySheetSkeleton({
           first open). The shimmer rows alone are mute; a short label
           reduces perceived wait time. */}
       <p
-        className="text-caption text-muted-foreground"
+        className="text-caption text-[var(--aura-fg-secondary)]"
         data-testid={`${testIdRoot}-label`}
       >
         {t('loading')}

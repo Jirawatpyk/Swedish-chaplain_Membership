@@ -35,6 +35,7 @@ import { headers } from 'next/headers';
 import { DownloadIcon } from 'lucide-react';
 
 import { requireSession } from '@/lib/auth-session';
+import { env } from '@/lib/env';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { getCreditNote, makeGetCreditNoteDeps } from '@/modules/invoicing';
@@ -42,10 +43,8 @@ import { buildMembersDeps } from '@/modules/members/members-deps';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { PlanBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
-import { buttonVariants } from '@/components/ui/button';
+import { Alert, Badge, Card, buttonClass } from '@jirawatpyk/aura-react/server';
+import { BackLink } from '@/components/portal/back-link';
 import { formatSatangThb } from '@/lib/format-thb';
 import { formatTaxDocDate } from '@/lib/format-tax-doc-date';
 import { CreditNoteOriginalReceipt } from '@/components/invoices/credit-note-original-receipt';
@@ -67,7 +66,6 @@ export default async function PortalCreditNoteDetailPage({
   params: Promise<{ creditNoteId: string }>;
 }) {
   const { creditNoteId } = await params;
-  const t = await getTranslations('portal.creditNotes.detail');
   const locale = await getLocale();
 
   const { user } = await requireSession('member');
@@ -96,80 +94,144 @@ export default async function PortalCreditNoteDetailPage({
   if (!result.ok) notFound();
   const cn = result.value;
 
+  return renderPortalCreditNoteView({
+    cn,
+    creditNoteId,
+    locale,
+    // Same contact source as the invoice page's online-payment fallback
+    // (BILLING_CONTACT_EMAILS, falling back to SUPPORT_EMAIL).
+    contactEmails: env.billingContactEmails,
+  });
+}
+
+/**
+ * The credit note's markup once loaded — split out (spec 122 US4) so the
+ * no-DB preview route renders the page's own markup.
+ */
+export async function renderPortalCreditNoteView({
+  cn,
+  creditNoteId,
+  locale,
+  contactEmails,
+}: {
+  readonly cn: Extract<Awaited<ReturnType<typeof getCreditNote>>, { ok: true }>['value'];
+  readonly creditNoteId: string;
+  readonly locale: string;
+  readonly contactEmails: readonly string[];
+}): Promise<React.ReactElement> {
+  const t = await getTranslations('portal.creditNotes.detail');
+  const tInvoice = await getTranslations('portal.invoices.detail');
   const invoiceHref = `/portal/invoices/${cn.originalInvoiceId}`;
   const pdfHref = `/api/portal/credit-notes/${creditNoteId}/pdf`;
 
+  // Spec 122 US4 (`Portal-credit-note` board): back link, "Credit note" and
+  // the number in mono, Download PDF as the primary action, the "receipt is
+  // reduced by" notice, a Details card (facts, then the credit / VAT / total
+  // list), a Reason card and the contact line. Figures and field labels are
+  // unchanged; the notice states the credit note's own total.
+  const receiptNumber = cn.originalDocuments?.receiptNumberRaw ?? null;
+  const contactEmail = contactEmails[0] ?? null;
   return (
     <DetailContainer>
       <PlanBreadcrumbLabel segment={creditNoteId} label={cn.documentNumber.raw} />
+      <BackLink href="/portal/invoices">{tInvoice('backToList')}</BackLink>
       <PageHeader
         title={
-          <span className="flex flex-wrap items-center gap-3">
-            <span>{cn.documentNumber.raw}</span>
-            <Badge variant="default" aria-label={t('status.issued')}>
-              {t('status.issued')}
-            </Badge>
-          </span>
+          <>
+            {t('title')} <span className="font-mono">{cn.documentNumber.raw}</span>
+          </>
+        }
+        badge={
+          <Badge tone="success">
+            {t('status.issued')}
+          </Badge>
         }
         subtitle={t('subtitle')}
         actions={
-          // Back navigation handled by the portal BreadcrumbNav (see
-          // portal/layout.tsx). Action row only surfaces the feature
-          // action (Download PDF).
           <a
             href={pdfHref}
             target="_blank"
             rel="noopener noreferrer"
-            className={buttonVariants({ variant: 'outline' })}
+            className={buttonClass({ variant: 'primary' })}
             aria-label={t('actions.downloadAria', { number: cn.documentNumber.raw })}
           >
-            <DownloadIcon className="size-4" aria-hidden="true" />
+            <DownloadIcon className="aura-icon size-4" aria-hidden="true" />
             {t('actions.download')}
           </a>
         }
       />
 
-      <Card>
-        <CardContent>
-          <dl className="grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-[auto_1fr]">
-            <dt className="text-muted-foreground">{t('fields.issueDate')}</dt>
-            <dd>{formatTaxDocDate(cn.issueDate, locale)}</dd>
+      {receiptNumber ? (
+        <Alert
+          tone="info"
+          role="note"
+          title={t('reducesTitle', {
+            receipt: receiptNumber,
+            amount: formatSatangThb(cn.total.satang, locale),
+          })}
+          data-testid="portal-credit-note-reduces"
+        >
+          {t('reducesBody')}
+        </Alert>
+      ) : null}
 
-            <dt className="text-muted-foreground">{t('fields.originalReceipt')}</dt>
-            <dd>
-              {cn.originalDocuments ? (
-                <CreditNoteOriginalReceipt
-                  original={cn.originalDocuments}
-                  invoiceHref={invoiceHref}
-                  size="touch"
-                />
-              ) : (
-                <span className="text-muted-foreground">—</span>
-              )}
-            </dd>
-
-            <dt className="text-muted-foreground">{t('fields.creditAmount')}</dt>
-            <dd className="tabular-nums">{formatSatangThb(cn.creditAmount.satang, locale)}</dd>
-
-            <dt className="text-muted-foreground">{t('fields.vat')}</dt>
-            <dd className="tabular-nums">{formatSatangThb(cn.vat.satang, locale)}</dd>
-
-            <dt className="text-muted-foreground font-medium">{t('fields.total')}</dt>
-            <dd className="font-semibold tabular-nums">
-              {formatSatangThb(cn.total.satang, locale)}
-            </dd>
+      <Card title={tInvoice('detailsHeading')} headingLevel={2}>
+        <div className="flex flex-col gap-5">
+          <dl className="m-0 grid grid-cols-1 gap-x-6 gap-y-4 text-sm sm:grid-cols-3">
+            <div className="flex min-w-0 flex-col gap-0.5">
+              <dt className="text-xs text-[var(--aura-fg-secondary)]">{t('fields.issueDate')}</dt>
+              <dd className="m-0">{formatTaxDocDate(cn.issueDate, locale)}</dd>
+            </div>
+            <div className="flex min-w-0 flex-col gap-0.5">
+              <dt className="text-xs text-[var(--aura-fg-secondary)]">{t('fields.originalReceipt')}</dt>
+              <dd className="m-0">
+                {cn.originalDocuments ? (
+                  <CreditNoteOriginalReceipt
+                    original={cn.originalDocuments}
+                    invoiceHref={invoiceHref}
+                    size="touch"
+                  />
+                ) : (
+                  <span className="text-[var(--aura-fg-secondary)]">—</span>
+                )}
+              </dd>
+            </div>
           </dl>
-
-          <Separator className="my-6" />
-
-          <section aria-labelledby="cn-reason-heading" className="flex flex-col gap-2">
-            <h3 id="cn-reason-heading" className="text-sm font-medium text-muted-foreground">
-              {t('reason.heading')}
-            </h3>
-            <p className="whitespace-pre-wrap text-sm">{cn.reason}</p>
-          </section>
-        </CardContent>
+          <div className="flex justify-end">
+            <dl className="m-0 grid w-full grid-cols-[1fr_auto] gap-y-1.5 text-sm sm:w-[340px]">
+              <dt className="text-[var(--aura-fg-secondary)]">{t('fields.creditAmount')}</dt>
+              <dd className="m-0 pl-4 text-right tabular-nums">{formatSatangThb(cn.creditAmount.satang, locale)}</dd>
+              <dt className="text-[var(--aura-fg-secondary)]">{t('fields.vat')}</dt>
+              <dd className="m-0 pl-4 text-right tabular-nums">{formatSatangThb(cn.vat.satang, locale)}</dd>
+              <dt className="border-t border-[var(--aura-border-default)] pt-1.5 font-semibold">
+                {t('fields.total')}
+              </dt>
+              <dd className="m-0 border-t border-[var(--aura-border-default)] pt-1.5 pl-4 text-right font-semibold tabular-nums">
+                {formatSatangThb(cn.total.satang, locale)}
+              </dd>
+            </dl>
+          </div>
+        </div>
       </Card>
+
+      <Card title={t('reason.heading')} headingLevel={2}>
+        <p className="m-0 whitespace-pre-wrap text-sm">{cn.reason}</p>
+      </Card>
+
+      {contactEmail ? (
+        <p className="m-0 text-sm text-[var(--aura-fg-secondary)]" data-testid="portal-credit-note-contact">
+          {t.rich('contact', {
+            link: (chunks) => (
+              <a
+                href={`mailto:${contactEmail}?subject=${encodeURIComponent(cn.documentNumber.raw)}`}
+                className="text-[var(--aura-fg-accent)] underline underline-offset-2"
+              >
+                {chunks}
+              </a>
+            ),
+          })}
+        </p>
+      ) : null}
     </DetailContainer>
   );
 }

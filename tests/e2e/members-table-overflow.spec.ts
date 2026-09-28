@@ -156,4 +156,23 @@ test.describe('members directory — column overflow @a11y', () => {
       await expectNoCellBleed(page, seed!.companyName, [3, 4, 5]);
     });
   }
+
+  // The header's two actions sat in a nowrap row, so Swedish ("Lägg till
+  // medlem") pushed the page 10px past a 390px screen (R9, PR #435 relay).
+  for (const width of [360, 390]) {
+    for (const locale of LOCALES) {
+      test(`page does not scroll sideways at ${width}px in ${locale} @i18n`, async ({ page, context }) => {
+        await page.setViewportSize({ width, height: 800 });
+        await signInAsAdmin(page);
+        await setLocale(context, locale);
+        await page.goto('/admin/members');
+        await page.locator('h1').first().waitFor();
+        const { scrollWidth, innerWidth } = await page.evaluate(() => ({
+          scrollWidth: document.documentElement.scrollWidth,
+          innerWidth: window.innerWidth,
+        }));
+        expect(scrollWidth).toBeLessThanOrEqual(innerWidth);
+      });
+    }
+  }
 });

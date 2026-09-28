@@ -18,7 +18,7 @@
  * 'use client' needed any more — `InfoHint` owns the client boundary and
  * only serialisable string props cross it.
  */
-import { InfoHint } from '@/components/ui/info-hint';
+import { InfoHint } from '@/components/shell/info-hint';
 
 export interface CombinedReceiptHintProps {
   readonly ariaLabel: string;
@@ -30,7 +30,7 @@ export function CombinedReceiptHint({
   tooltipText,
 }: CombinedReceiptHintProps): React.ReactElement {
   return (
-    <span className="inline-flex min-h-6 items-center gap-1 text-sm text-muted-foreground">
+    <span className="inline-flex min-h-6 items-center gap-1 text-sm text-[var(--aura-fg-secondary)]">
       —
       <InfoHint ariaLabel={ariaLabel} triggerClassName="-my-1">
         {tooltipText}

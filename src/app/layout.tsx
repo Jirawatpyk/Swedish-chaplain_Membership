@@ -4,6 +4,7 @@ import { NextIntlClientProvider } from 'next-intl';
 import { getLocale, getMessages, getNow, getTimeZone } from 'next-intl/server';
 import { ThemeProvider } from 'next-themes';
 import { AuraBridge } from '@/components/providers/aura-bridge';
+import '@/lib/aura-server-icons';
 import { defaultLocale, isLocale } from '@/i18n/config';
 import { SkipToContent } from '@/components/shell/skip-to-content';
 import './globals.css';

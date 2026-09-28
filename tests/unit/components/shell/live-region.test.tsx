@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 
-import { LiveRegion } from '@/components/ui/live-region';
+import { LiveRegion } from '@/components/shell/live-region';
 
 describe('<LiveRegion>', () => {
   it('renders role=status with aria-live=polite by default', () => {
