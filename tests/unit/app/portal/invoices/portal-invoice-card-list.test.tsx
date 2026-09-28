@@ -510,6 +510,25 @@ describe('<PortalInvoiceCardList> — receipt-pending (088 T066a)', () => {
     expect(screen.queryByTestId('receipt-failed-support')).toBeNull();
     // Pending state offers no receipt download yet.
     expect(screen.queryByTestId('receipt-download')).not.toBeInTheDocument();
+    // Combined-mode fixture (NULL receipt number): the issue-time PDF is
+    // superseded once paid, so the stale invoice download is NOT offered while
+    // the receipt renders — lockstep with the detail page.
+    expect(screen.queryByTestId('invoice-download')).not.toBeInTheDocument();
+  });
+
+  it('a paid 088 bill (RC minted) keeps its SC bill download while the receipt renders (FR-015)', () => {
+    renderCardFor({
+      status: 'paid',
+      documentNumber: null,
+      sequenceNumber: null,
+      billDocumentNumberRaw: 'SC-2026-000045',
+      receiptDocumentNumberRaw: 'RC-2026-000045',
+      receiptPdfStatus: 'pending',
+    });
+
+    expect(screen.getByTestId('receipt-status-watcher')).toBeInTheDocument();
+    expect(screen.getByTestId('invoice-download')).toBeInTheDocument();
+    expect(screen.queryByTestId('receipt-download')).not.toBeInTheDocument();
   });
 });
 
@@ -534,13 +553,13 @@ describe('<PortalInvoiceCardList> — receipt-failed (graceful support path, 088
       document.querySelector('[aria-busy="true"]'),
     ).not.toBeInTheDocument();
 
-    // A failed-receipt paid invoice still has its issue-time PDF → invoice
-    // download + resend remain (rowHasAnyAction true, so the EmptyCell '—'
-    // sentinel branch never runs). The presence of the invoice-download +
-    // resend + the support hint proves the action group rendered — we do NOT
-    // assert on the bare '—' here because the support copy itself legitimately
-    // contains an em-dash ("Receipt on the way — we're resolving it").
-    expect(screen.getByTestId('invoice-download')).toBeInTheDocument();
+    // Combined-mode fixture (NULL receipt number): the issue-time PDF is
+    // superseded once paid, so it is NOT offered in place of the failed receipt
+    // (lockstep with the detail page). Resend + the support hint remain
+    // (rowHasAnyAction true, so the EmptyCell '—' sentinel branch never runs) —
+    // we do NOT assert on the bare '—' here because the support copy itself
+    // legitimately contains an em-dash ("Receipt on the way — we're resolving it").
+    expect(screen.queryByTestId('invoice-download')).not.toBeInTheDocument();
     expect(screen.getByTestId('menu-resend')).toBeInTheDocument();
   });
 });

@@ -243,9 +243,13 @@ describe('toInvoiceRowViewModel — combined vs separate receipt mode', () => {
     expect(vm.receiptNumber).toBe('RCP-2026-000009');
   });
 
-  it('paid + null receiptNumber but receipt NOT yet rendered → not combined (status pending)', () => {
-    // isCombinedPaid requires receiptPdfStatus === 'rendered'; a pending
-    // receipt is not yet the combined document.
+  it('paid + null receiptNumber but receipt NOT yet rendered → no combined hint yet, but the stale bill stays HIDDEN (status pending)', () => {
+    // isCombinedPaid (the combined receipt-number hint + combined download
+    // label) still requires receiptPdfStatus === 'rendered' — a pending receipt
+    // is not yet the combined document. But the issue-time PDF is superseded
+    // the moment the combined-mode invoice is PAID (the receipt reuses its §87
+    // number), so the invoice download is hidden while the receipt renders —
+    // lockstep with the portal + admin detail pages (which never offered it).
     const vm = toInvoiceRowViewModel(
       buildInvoice({
         status: 'paid',
@@ -255,9 +259,34 @@ describe('toInvoiceRowViewModel — combined vs separate receipt mode', () => {
       NOW_PAST_DUE,
     );
     expect(vm.isCombinedPaid).toBe(false);
-    // PDF exists and it is not combined-paid → invoice download shown.
+    expect(vm.showInvoice).toBe(false);
+    expect(vm.showReceipt).toBe(false);
+    // The member still gets the in-progress affordance (not the '—' sentinel).
+    expect(vm.receiptPending).toBe(true);
+    expect(rowHasAnyAction(vm)).toBe(true);
+  });
+
+  it('paid 088 bill (SC bill + RC minted) with a PENDING receipt → the SC bill download stays (FR-015)', () => {
+    // An 088 bill always has its RC §86/4 number minted in-tx at payment, so it
+    // is never combined-paid: the ใบแจ้งหนี้ stays downloadable after payment,
+    // including while the RC PDF renders (088 FR-015).
+    const vm = toInvoiceRowViewModel(
+      buildInvoice({
+        status: 'paid',
+        documentNumber: null,
+        sequenceNumber: null,
+        billDocumentNumberRaw: 'SC-2026-000045',
+        receiptDocumentNumberRaw: 'RC-2026-000045',
+        receiptPdfStatus: 'pending',
+      }),
+      NOW_PAST_DUE,
+      true,
+    );
+    expect(vm.isCombinedPaid).toBe(false);
+    expect(vm.mainPdfKind).toBe('bill');
     expect(vm.showInvoice).toBe(true);
     expect(vm.showReceipt).toBe(false);
+    expect(vm.receiptPending).toBe(true);
   });
 });
 
@@ -461,9 +490,13 @@ describe('toInvoiceRowViewModel — receipt PDF state machine', () => {
     expect(vm.showReceipt).toBe(false);
     expect(vm.receiptPending).toBe(false);
     expect(vm.receiptFailed).toBe(false);
-    // Not combined (needs 'rendered'); PDF present → invoice shown.
+    // Not combined-paid (needs 'rendered'). The default fixture is a
+    // combined-mode row (NULL receipt number), so its issue-time PDF is a stale
+    // bill once paid and stays hidden whatever the render state. (Unreachable
+    // in the DB — CHECK `invoices_paid_has_receipt_status`, migration 0056 —
+    // pinned here as a state-machine boundary.)
     expect(vm.isCombinedPaid).toBe(false);
-    expect(vm.showInvoice).toBe(true);
+    expect(vm.showInvoice).toBe(false);
   });
 
   it("receiptPdfStatus 'pending' on a paid invoice → receiptPending true, receiptFailed false", () => {
@@ -489,9 +522,13 @@ describe('toInvoiceRowViewModel — receipt PDF state machine', () => {
     expect(vm.receiptFailed).toBe(true);
     expect(vm.receiptPending).toBe(false);
     expect(vm.showReceipt).toBe(false);
-    // A failed-receipt row is NOT combined-paid (needs 'rendered'); its
-    // issue-time PDF (default fixture) still offers the invoice download.
+    // A failed-receipt row is NOT combined-paid (needs 'rendered'), but the
+    // default fixture is a combined-mode row (NULL receipt number): its
+    // issue-time PDF is superseded once paid, so it is NOT offered in place of
+    // the failed receipt — the support path is the member's affordance.
     expect(vm.isCombinedPaid).toBe(false);
+    expect(vm.showInvoice).toBe(false);
+    expect(rowHasAnyAction(vm)).toBe(true);
   });
 
   it("receiptPdfStatus 'rendered' on a paid invoice → showReceipt true, not pending, not failed", () => {
