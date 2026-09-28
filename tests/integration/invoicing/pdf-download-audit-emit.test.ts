@@ -256,7 +256,7 @@ describe('R10-T4 — PDF-download audit emit (live Neon happy path)', () => {
     expect(payload.actor_role).toBe('admin');
     expect(payload.route).toBe('get-invoice-pdf-signed-url');
     expect(payload.invoice_pdf_template_version).toBe(1);
-  }, 30_000);
+  });
 
   it('invoice_pdf_downloaded — member happy path populates actor_member_id', async () => {
     const requestId = `r10-t4-inv-member-${randomUUID()}`;
@@ -283,7 +283,7 @@ describe('R10-T4 — PDF-download audit emit (live Neon happy path)', () => {
     const payload = rows[0]!.payload;
     expect(payload.actor_member_id).toBe(memberId);
     expect(payload.actor_role).toBe('member');
-  }, 30_000);
+  });
 
   it('receipt_pdf_downloaded — paid invoice combined-mode emits with retention_years=10', async () => {
     const requestId = `r10-t4-rcpt-${randomUUID()}`;
@@ -320,5 +320,5 @@ describe('R10-T4 — PDF-download audit emit (live Neon happy path)', () => {
     expect(payload.receipt_numbering_mode).toBe('combined');
     expect(payload.receipt_document_number_raw).toBeNull();
     expect(payload.receipt_pdf_template_version).toBe(1);
-  }, 30_000);
+  });
 });

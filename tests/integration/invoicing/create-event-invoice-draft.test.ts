@@ -328,7 +328,7 @@ describe('createEventInvoiceDraft — live-Neon integration (Model B, member + n
     expect(lineRows[0]!.proRateFactor).toBeNull();
     expect(lineRows[0]!.descriptionEn).toContain('2026-09-10');
     expect(lineRows[0]!.descriptionEn).toContain('Annual Gala');
-  }, 30_000);
+  });
 
   it('matched member: persists event draft with member_id set + buyer snapshot NULL (pinned at issue) + inclusive line', async () => {
     const deps = makeCreateEventInvoiceDraftDeps(tenant.ctx.slug);
@@ -365,7 +365,7 @@ describe('createEventInvoiceDraft — live-Neon integration (Model B, member + n
       );
     expect(lineRows).toHaveLength(1);
     expect(lineRows[0]!.unitPriceSatang).toBe(200000n); // 2000 THB × 100
-  }, 30_000);
+  });
 
   it('matched ARCHIVED member: rejects with member_archived and persists no invoice (HIGH-1)', async () => {
     const deps = makeCreateEventInvoiceDraftDeps(tenant.ctx.slug);
@@ -390,7 +390,7 @@ describe('createEventInvoiceDraft — live-Neon integration (Model B, member + n
         ),
       );
     expect(rows).toHaveLength(0);
-  }, 30_000);
+  });
 
   it('duplicate guard: a second draft for the same registration → duplicate', async () => {
     const deps = makeCreateEventInvoiceDraftDeps(tenant.ctx.slug);
@@ -414,7 +414,7 @@ describe('createEventInvoiceDraft — live-Neon integration (Model B, member + n
         expect(result.error.existingInvoiceId).toBe(matchedInvoiceId);
       }
     }
-  }, 30_000);
+  });
 
   it('§86/4 doc-type model: matched company member with null tax_id → succeeds as a draft (events do NOT block; issued later as a §105 receipt — 054 Task 9)', async () => {
     // The old tax_id_required gate is REMOVED from create-event-invoice-draft.
@@ -432,7 +432,7 @@ describe('createEventInvoiceDraft — live-Neon integration (Model B, member + n
     if (!result.ok) throw new Error(`expected ok, got ${result.error.code}`);
     expect(result.value.memberId).toBe(companyNoTinMemberId);
     expect(result.value.invoiceSubject).toBe('event');
-  }, 30_000);
+  });
 
   it('cross-tenant: tenant B drafting against tenant A registration → registration_not_found + registration_cross_tenant_probe audit (Principle I — REVIEW-GATE BLOCKER)', async () => {
     // Tenant B runs the use-case (under tenant B's RLS) against tenant A's
@@ -478,5 +478,5 @@ describe('createEventInvoiceDraft — live-Neon integration (Model B, member + n
         ),
       );
     expect(leaked).toHaveLength(0);
-  }, 30_000);
+  });
 });

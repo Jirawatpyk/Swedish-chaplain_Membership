@@ -173,7 +173,7 @@ describe('Integration — cancelScheduledPlanChange audit-failed row-persists (R
         ),
     );
     expect(auditRows.length).toBe(0);
-  }, 30_000);
+  });
 
   it('R4-I9: happy-path control — audit success path persists both the cancel + the audit row', async () => {
     const tenant = await createTestTenant('test-swecham');
@@ -253,7 +253,7 @@ describe('Integration — cancelScheduledPlanChange audit-failed row-persists (R
     );
     expect(dbRows.length).toBe(1);
     expect(dbRows[0]!.status).toBe('cancelled');
-  }, 30_000);
+  });
 
   // R5-I8 — coverage parity for the `invalid_payload` audit-error
   // variant. The persist_failed branch above proves the row-persists
@@ -355,5 +355,5 @@ describe('Integration — cancelScheduledPlanChange audit-failed row-persists (R
         ),
     );
     expect(auditRows.length).toBe(0);
-  }, 30_000);
+  });
 });

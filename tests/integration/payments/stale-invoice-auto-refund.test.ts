@@ -446,7 +446,7 @@ describe('confirmPayment stale-invoice auto-refund — live Neon (T122 / A.13)',
         ),
       );
     expect(refundRows.length).toBe(0);
-  }, 30_000);
+  });
 
   it('void invoice → same auto_refunded flip (cause=invoice_voided) + durable marker', async () => {
     const mocks = makeMocks(voidSeed, 'void');
@@ -477,7 +477,7 @@ describe('confirmPayment stale-invoice auto-refund — live Neon (T122 / A.13)',
       );
     expect(paymentRow[0]?.status).toBe('auto_refunded');
     expect(paymentRow[0]?.autoRefundProcessorRefundId).toBe(voidSeed.refundId);
-  }, 30_000);
+  });
 
   it('A.13→A.11 end-to-end: later charge.refund.updated(succeeded) → auto_refund_recognized, NO false out-of-band alert', async () => {
     // 1) Auto-refund the stale-invoice payment → durable marker written.
@@ -505,7 +505,7 @@ describe('confirmPayment stale-invoice auto-refund — live Neon (T122 / A.13)',
          AND payload->>'processor_refund_id' = ${recognizeSeed.refundId}
     `);
     expect(Array.from(oobRows as unknown as Iterable<unknown>).length).toBe(0);
-  }, 30_000);
+  });
 
   it('A.13→charge.refunded (Finding 2): later charge.refunded for the auto-refund re_ id → marker recognised, NO false out-of-band alert', async () => {
     // 1) Auto-refund the stale-invoice payment → durable marker written, NO
@@ -532,7 +532,7 @@ describe('confirmPayment stale-invoice auto-refund — live Neon (T122 / A.13)',
          AND payload->>'processor_refund_id' = ${chargeRefundedSeed.refundId}
     `);
     expect(Array.from(oobRows as unknown as Iterable<unknown>).length).toBe(0);
-  }, 30_000);
+  });
 
   it('A.13→A.11 end-to-end: later charge.refund.updated(failed) → auto_refund_failed + 10y auto_refund_failed_needs_manual_reconcile audit (CRITICAL-2)', async () => {
     // 1) Auto-refund the stale-invoice payment → durable marker written.
@@ -563,5 +563,5 @@ describe('confirmPayment stale-invoice auto-refund — live Neon (T122 / A.13)',
     );
     expect(forensicRows.length).toBeGreaterThanOrEqual(1);
     expect(forensicRows[0]!.payload['refund_status']).toBe('failed');
-  }, 30_000);
+  });
 });

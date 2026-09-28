@@ -74,5 +74,5 @@ describe('T120 — tenant_invoice_settings_cross_tenant_probe (live Neon)', () =
     expect(payload.host_resolved_slug).toBe(hostResolvedSlug);
     expect(payload.deployed_slug).toBe(deployedSlug);
     expect(payload.route).toBe('PATCH /api/tenant-invoice-settings');
-  }, 30_000);
+  });
 });

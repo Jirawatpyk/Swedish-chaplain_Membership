@@ -180,7 +180,7 @@ describe('MemberRepo.findStuckErasuresInTx — live Neon reconciler candidate qu
     // deliberately NO member_erased audit for `stuck`.
 
     live = await seedMember(tenant, { erasedAt: null });
-  }, 30_000);
+  });
 
   afterAll(async () => {
     await tenant.cleanup().catch(() => {});
@@ -199,7 +199,7 @@ describe('MemberRepo.findStuckErasuresInTx — live Neon reconciler candidate qu
     expect(rows.find((r) => r.memberId === stuck)?.reason).toBe(
       'pdpa_deletion_request',
     );
-  }, 30_000);
+  });
 
   // COMP-1 review FIX #8 — under the documented concurrent-double-request edge
   // (two `member_erasure_requested` rows with different reasons), the reconciler
@@ -233,5 +233,5 @@ describe('MemberRepo.findStuckErasuresInTx — live Neon reconciler candidate qu
     expect(rows.find((r) => r.memberId === doubled)?.reason).toBe(
       'pdpa_deletion_request',
     );
-  }, 30_000);
+  });
 });

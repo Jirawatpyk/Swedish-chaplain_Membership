@@ -181,5 +181,5 @@ describe('T110 — PDF render benchmark (post-critique E6)', () => {
     expect(result.bytes.byteLength).toBeGreaterThan(1000);
     const head = Buffer.from(result.bytes.slice(0, 5)).toString('latin1');
     expect(head).toBe('%PDF-');
-  }, 30_000);
+  });
 });

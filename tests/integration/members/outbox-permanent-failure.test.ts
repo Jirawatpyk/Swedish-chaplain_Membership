@@ -197,7 +197,7 @@ describe('outbox permanent failure + admin re-send (T074, FR-012c)', () => {
     expect(auditCount?.n ?? 0).toBeGreaterThanOrEqual(1);
 
     await deleteTestUser(s.linkedUser);
-  }, 30_000);
+  });
 
   it('admin resend creates a fresh token + outbox row + audit row', async () => {
     const s = await seedContact();
@@ -283,5 +283,5 @@ describe('outbox permanent failure + admin re-send (T074, FR-012c)', () => {
     expect(auditCount?.n ?? 0).toBeGreaterThanOrEqual(1);
 
     await deleteTestUser(s.linkedUser);
-  }, 30_000);
+  });
 });

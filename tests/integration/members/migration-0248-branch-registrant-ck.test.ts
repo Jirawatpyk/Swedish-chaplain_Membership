@@ -93,7 +93,7 @@ describe('migration 0248 — members_branch_pairing_ck now requires is_vat_regis
         status: 'active',
       });
     });
-  }, 30_000);
+  });
 
   afterAll(async () => {
     await tenant.cleanup().catch(() => {});

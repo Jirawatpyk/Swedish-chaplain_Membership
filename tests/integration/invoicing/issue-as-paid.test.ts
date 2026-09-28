@@ -314,7 +314,7 @@ describe('applyIssueAsPaid — single UPDATE draft→paid (TIN / invoice_stream 
     if (thrown instanceof InvoiceApplyConflictError) {
       expect(thrown.kind).toBe('applyIssueAsPaid');
     }
-  }, 30_000);
+  });
 
   it('post-paid direct UPDATE of member_identity_snapshot → rejected by the immutability trigger', async () => {
     // Owner role bypasses RLS but NOT the BEFORE UPDATE trigger.
@@ -338,7 +338,7 @@ describe('applyIssueAsPaid — single UPDATE draft→paid (TIN / invoice_stream 
       cur = (cur as { cause?: unknown }).cause;
     }
     expect(parts.join(' | ')).toMatch(/snapshot columns are immutable/i);
-  }, 30_000);
+  });
 
   it('post-paid direct UPDATE of pdf_doc_kind → rejected by the immutability trigger (migration 0214, wave-3 S11)', async () => {
     // The §86/4 document identity of a paid row is frozen: flipping
@@ -366,7 +366,7 @@ describe('applyIssueAsPaid — single UPDATE draft→paid (TIN / invoice_stream 
       cur = (cur as { cause?: unknown }).cause;
     }
     expect(parts.join(' | ')).toMatch(/snapshot columns are immutable/i);
-  }, 30_000);
+  });
 });
 
 // =============================================================================
@@ -1780,7 +1780,7 @@ describe('applyIssueAsPaid — β no-TIN shape (receipt_stream) + conditional CH
     const row = await readInvoiceRowOwner(tenant.ctx.slug, probeEventDraft);
     expect(row!.status).toBe('draft');
     expect(row!.sequenceNumber).toBeNull();
-  }, 30_000);
+  });
 
   it('T9-3 — NEGATIVE: non-draft MEMBERSHIP row with NULL seq/docnum, even WITH receipt raw set → still 23514 (relax is subject-scoped)', async () => {
     await expectNumberingCheckViolation(() =>
@@ -1811,7 +1811,7 @@ describe('applyIssueAsPaid — β no-TIN shape (receipt_stream) + conditional CH
     expect(row!.status).toBe('draft');
     expect(row!.sequenceNumber).toBeNull();
     expect(row!.receiptDocumentNumberRaw).toBeNull();
-  }, 30_000);
+  });
 
   it('T9-4 — NEGATIVE: non-draft EVENT row with HALF-PAIR (seq SET, docnum NULL) + receipt raw set → still 23514 (no §87 sequence slot without a document number)', async () => {
     // The relaxed leg must require BOTH invoice-stream numbers NULL — a
@@ -1843,7 +1843,7 @@ describe('applyIssueAsPaid — β no-TIN shape (receipt_stream) + conditional CH
     expect(row!.status).toBe('draft');
     expect(row!.sequenceNumber).toBeNull();
     expect(row!.receiptDocumentNumberRaw).toBeNull();
-  }, 30_000);
+  });
 });
 
 // =============================================================================

@@ -216,7 +216,7 @@ describe('verifyContactEmail integration (FR-012a token consumption)', () => {
     if (!result.ok) {
       expect(result.error.code).toBe('not_yet_active');
     }
-  }, 30_000);
+  });
 
   it('rejects wrong_type when a revert token id is passed', async () => {
     // Find the revert token for this user
@@ -249,7 +249,7 @@ describe('verifyContactEmail integration (FR-012a token consumption)', () => {
     if (!result.ok) {
       expect(result.error.code).toBe('wrong_type');
     }
-  }, 30_000);
+  });
 
   it('happy path — all 6 side effects persisted atomically', async () => {
     const deps = buildMembersDeps(tenant.ctx);
@@ -314,7 +314,7 @@ describe('verifyContactEmail integration (FR-012a token consumption)', () => {
         ),
       );
     expect(activeRevertTokens.length).toBe(0);
-  }, 30_000);
+  });
 
   it('returns not_found on already-consumed token (idempotency)', async () => {
     const deps = buildMembersDeps(tenant.ctx);
@@ -336,7 +336,7 @@ describe('verifyContactEmail integration (FR-012a token consumption)', () => {
     if (!result.ok) {
       expect(result.error.code).toBe('not_found');
     }
-  }, 30_000);
+  });
 
   it('returns not_found for a non-existent token id', async () => {
     const deps = buildMembersDeps(tenant.ctx);
@@ -357,5 +357,5 @@ describe('verifyContactEmail integration (FR-012a token consumption)', () => {
     if (!result.ok) {
       expect(result.error.code).toBe('not_found');
     }
-  }, 30_000);
+  });
 });

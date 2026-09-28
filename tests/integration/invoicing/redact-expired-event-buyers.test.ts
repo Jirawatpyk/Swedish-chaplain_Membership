@@ -1722,14 +1722,14 @@ describe('redact cron — Bearer auth rejection (FIX B)', () => {
     expect(res.status).toBe(401);
     const body = (await res.json()) as { error: { code: string } };
     expect(body.error.code).toBe('unauthorized');
-  }, 30_000);
+  });
 
   it('401 + unauthorized on a WRONG Bearer token', async () => {
     const res = await callCronWithAuth('Bearer wrong-secret-deadbeef-0000000000000000');
     expect(res.status).toBe(401);
     const body = (await res.json()) as { error: { code: string } };
     expect(body.error.code).toBe('unauthorized');
-  }, 30_000);
+  });
 });
 
 /**

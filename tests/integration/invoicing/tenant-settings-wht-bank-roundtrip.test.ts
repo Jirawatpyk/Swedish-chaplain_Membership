@@ -78,7 +78,7 @@ describe('drizzleTenantSettingsRepo — WHT + seller-branch + bank round-trip (l
     expect(id.bank_swift).toBe('KASITHBK');
     expect(id.payment_instructions_th).toBe('ขีดคร่อม A/C Payee Only');
     expect(id.payment_instructions_en).toBe('Account Payee Only.');
-  }, 30_000);
+  });
 
   it('switches the seller to a branch with a 5-digit code (CHECK holds)', async () => {
     await drizzleTenantSettingsRepo.upsert(tenant.ctx.slug, {
@@ -89,7 +89,7 @@ describe('drizzleTenantSettingsRepo — WHT + seller-branch + bank round-trip (l
     const s = await drizzleTenantSettingsRepo.getForIssue(tenant.ctx.slug);
     expect(s!.identity.seller_is_head_office).toBe(false);
     expect(s!.identity.seller_branch_code).toBe('00007');
-  }, 30_000);
+  });
 
   it('clears the WHT note + bank fields when set to null (and reverts to head office)', async () => {
     await drizzleTenantSettingsRepo.upsert(tenant.ctx.slug, {
@@ -109,7 +109,7 @@ describe('drizzleTenantSettingsRepo — WHT + seller-branch + bank round-trip (l
     // unrelated fields untouched (patch is not a wide stomper)
     expect(s!.identity.legal_name_en).toBe('Test Chamber Co., Ltd.');
     expect(s!.invoiceNumberPrefix).toBe('INV');
-  }, 30_000);
+  });
 
   it('065 §5.4 — persists + reads back the statutory termination notice via the pinned snapshot', async () => {
     await drizzleTenantSettingsRepo.upsert(tenant.ctx.slug, {
@@ -135,7 +135,7 @@ describe('drizzleTenantSettingsRepo — WHT + seller-branch + bank round-trip (l
     const cleared = await drizzleTenantSettingsRepo.getForIssue(tenant.ctx.slug);
     expect(cleared!.identity.termination_notice_th).toBeNull();
     expect(cleared!.identity.termination_notice_en).toBeNull();
-  }, 30_000);
+  });
 
   it('DB CHECK rejects a branch seller with a NULL branch code (defense-in-depth)', async () => {
     await expect(
@@ -145,5 +145,5 @@ describe('drizzleTenantSettingsRepo — WHT + seller-branch + bank round-trip (l
         sellerBranchCode: null,
       }),
     ).rejects.toThrow();
-  }, 30_000);
+  });
 });

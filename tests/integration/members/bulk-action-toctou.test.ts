@@ -85,7 +85,7 @@ describe('bulk-action TOCTOU row lock (staff-review SB-1)', () => {
         updatedBy: user.userId,
       });
     });
-  }, 30_000);
+  });
 
   afterAll(async () => {
     await tenant.cleanup().catch(() => {});

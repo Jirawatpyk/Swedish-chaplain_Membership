@@ -121,7 +121,7 @@ describe('getMemberErasureStatus — live-Neon narrow read (COMP-1 US3-A)', () =
     admin = await createActiveTestUser('admin');
     tenant = await createTestTenant('test-swecham');
     await seedPlan(tenant, admin.userId);
-  }, 30_000);
+  });
 
   afterAll(async () => {
     await tenant.cleanup().catch(() => {});
@@ -138,7 +138,7 @@ describe('getMemberErasureStatus — live-Neon narrow read (COMP-1 US3-A)', () =
 
     expect(status.erasedAt).toBeNull();
     expect(status.completed).toBe(false);
-  }, 30_000);
+  });
 
   it('erased + cascades complete → { erasedAt: <Date>, completed: true }', async () => {
     const memberId = await seedMember(tenant);
@@ -163,7 +163,7 @@ describe('getMemberErasureStatus — live-Neon narrow read (COMP-1 US3-A)', () =
 
     expect(status.erasedAt).toBeInstanceOf(Date);
     expect(status.completed).toBe(true);
-  }, 30_000);
+  });
 
   it('unknown member id → { erasedAt: null, completed: false }', async () => {
     const status = await getMemberErasureStatus(
@@ -173,5 +173,5 @@ describe('getMemberErasureStatus — live-Neon narrow read (COMP-1 US3-A)', () =
 
     expect(status.erasedAt).toBeNull();
     expect(status.completed).toBe(false);
-  }, 30_000);
+  });
 });

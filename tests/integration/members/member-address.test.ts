@@ -81,7 +81,7 @@ describe('member address integration (migration 0195)', () => {
         updatedBy: user.userId,
       });
     });
-  }, 30_000);
+  });
 
   afterAll(async () => {
     await tenant.cleanup().catch(() => {});

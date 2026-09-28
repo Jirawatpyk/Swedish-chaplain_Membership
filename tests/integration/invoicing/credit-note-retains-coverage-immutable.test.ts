@@ -214,7 +214,7 @@ describe('credit_notes.retains_coverage immutability (M1 migration 0273, live Ne
     );
     expect(msg, 'expected the normal-path immutability trigger to raise on a retains_coverage flip').not.toBeNull();
     expect(msg!).toMatch(/immutable/i);
-  }, 30_000);
+  });
 
   it('UNDER the redaction GUC — flipping retains_coverage STILL RAISEs (not in the 2-col exemption)', async () => {
     const { tenant, creditNoteId } = await seedCreditNote();
@@ -228,7 +228,7 @@ describe('credit_notes.retains_coverage immutability (M1 migration 0273, live Ne
     );
     expect(msg, 'expected the GUC per-field check to raise on a retains_coverage flip').not.toBeNull();
     expect(msg!).toMatch(/immutable|only member_identity_snapshot/i);
-  }, 30_000);
+  });
 
   it('REGRESSION — the redaction cron UPDATE (member_identity_snapshot + pii_blob_purged_at only) STILL passes', async () => {
     const { tenant, creditNoteId } = await seedCreditNote();
@@ -254,7 +254,7 @@ describe('credit_notes.retains_coverage immutability (M1 migration 0273, live Ne
     expect(rows[0]?.pii_blob_purged_at).not.toBeNull();
     // The write-once coverage signal survives the redaction untouched.
     expect(rows[0]?.retains_coverage).toBe(true);
-  }, 30_000);
+  });
 
   it('0307 — flipping membership_effect RAISEs, on the normal path AND under the redaction GUC', async () => {
     const { tenant, creditNoteId } = await seedCreditNote();
@@ -276,7 +276,7 @@ describe('credit_notes.retains_coverage immutability (M1 migration 0273, live Ne
       }),
     );
     expect(underGuc, 'expected the GUC branch to raise on a membership_effect change').not.toBeNull();
-  }, 30_000);
+  });
 
   it('the immutability function retains its search_path hardening after the 0273 CREATE OR REPLACE', async () => {
     const rows = (await runInTenant(tenant.ctx, (tx) =>
@@ -285,5 +285,5 @@ describe('credit_notes.retains_coverage immutability (M1 migration 0273, live Ne
       ),
     )) as unknown as Array<{ proconfig: string[] | null }>;
     expect(rows[0]?.proconfig ?? []).toContain('search_path=pg_catalog, public');
-  }, 30_000);
+  });
 });

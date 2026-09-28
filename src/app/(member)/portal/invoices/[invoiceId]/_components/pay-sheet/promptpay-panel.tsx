@@ -77,7 +77,10 @@ export interface PromptPayPanelProps {
   readonly qrSvgUrl: string;
   /** Invoice amount in satang for amount-display. */
   readonly amountSatang: number;
-  /** Currency code (ISO 4217 lowercase). Display-only — always 'thb' for PromptPay. */
+  /**
+   * ISO 4217 currency code. Display-only — always THB for PromptPay. Matched
+   * case-insensitively: the invoice page passes upper-case `'THB'`.
+   */
   readonly currency: string;
   /**
    * QR expiry seconds. Defaults to 900 (15 min) per
@@ -245,7 +248,7 @@ export function PromptPayPanel({
 
   const amountDisplay = useMemo(
     () =>
-      currency === 'thb'
+      currency.toLowerCase() === 'thb'
         ? formatSatangThb(BigInt(Math.round(amountSatang)), locale)
         : `${amountSatang} ${currency.toUpperCase()}`,
     [amountSatang, currency, locale],

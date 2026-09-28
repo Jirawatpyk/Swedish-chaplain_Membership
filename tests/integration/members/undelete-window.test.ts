@@ -122,7 +122,7 @@ describe('undelete-member integration (T136, US7)', () => {
         updatedBy: user.userId,
       });
     });
-  }, 30_000);
+  });
 
   afterAll(async () => {
     await tenant.cleanup().catch(() => {});

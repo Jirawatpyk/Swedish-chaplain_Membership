@@ -451,7 +451,7 @@ describe('F6 CSV ↔ webhook hash-equivalence over enumerated columns (FR-027 / 
     expect(summariseRegistrations(regsA)).toEqual(summariseRegistrations(regsB));
   });
 
-  it('Audit-event taxonomy parity — same event-type sequence on both paths (modulo verb-level markers)', { timeout: 30_000 }, async () => {
+  it('Audit-event taxonomy parity — same event-type sequence on both paths (modulo verb-level markers)', async () => {
     // Aggregate audit-event-type COUNTS for each tenant (order-
     // independent — webhook emits one extra `webhook_receipt_verified`
     // per ingest, CSV emits one `csv_import_completed` for the whole

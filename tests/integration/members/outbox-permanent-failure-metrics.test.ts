@@ -111,7 +111,7 @@ describe('integration: outbox permanentFailure metric labels', () => {
       'member_invitation',
       'no_template_handler',
     );
-  }, 30_000);
+  });
 
   it("emits permanentFailure(type, 'invalid_recipient') when Resend rejects the address", async () => {
     // Valid context → buildPayload succeeds → reaches emailSender.send.
@@ -147,7 +147,7 @@ describe('integration: outbox permanentFailure metric labels', () => {
       'member_invitation',
       'invalid_recipient',
     );
-  }, 30_000);
+  });
 
   it("emits permanentFailure(type, 'max_retries') when transient send failures hit MAX_ATTEMPTS", async () => {
     // Transient send failure (non-invalid-recipient) + attempts=4 → next
@@ -181,5 +181,5 @@ describe('integration: outbox permanentFailure metric labels', () => {
       'member_invitation',
       'max_retries',
     );
-  }, 30_000);
+  });
 });

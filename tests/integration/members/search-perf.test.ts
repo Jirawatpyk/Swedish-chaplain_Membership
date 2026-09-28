@@ -193,5 +193,5 @@ describe('directory search perf — SC-002 (T060)', () => {
     const result = await directorySearch({ tenant: tenant.ctx, memberRepo: buildMembersDeps(tenant.ctx).memberRepo }, { q: 'Nordic', limit: 10 });
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.value.items.length).toBeGreaterThanOrEqual(1);
-  }, 30_000);
+  });
 });

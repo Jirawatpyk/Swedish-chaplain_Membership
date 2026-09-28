@@ -54,7 +54,7 @@ describe('member-number allocator atomicity (live Neon)', () => {
     expect(rows).toHaveLength(1);
     // last_number stores the LAST-issued value → equals what we returned.
     expect(rows[0]!.lastNumber).toBe(1);
-  }, 30_000);
+  });
 
   it('sequential allocations produce consecutive numbers with no gaps', async () => {
     // Fresh tenant so the stream starts at 1 independent of the test above.

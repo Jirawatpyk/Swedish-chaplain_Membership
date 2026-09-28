@@ -256,7 +256,7 @@ describe('MemberRepo.scrubPiiInTx', () => {
     // PII stayed scrubbed across both passes.
     expect(row.company_name).toBe('[erased]');
     expect(row.tax_id).toBeNull();
-  }, 30_000);
+  });
 
   it('NULLs PII incl. business quasi-identifiers, sentinels company_name, sets erased_at, keeps identity', async () => {
     const { memberId } = await seedMember(tenant, {
@@ -318,5 +318,5 @@ describe('MemberRepo.scrubPiiInTx', () => {
     expect(row.status).toBe('active'); // erasure does NOT change status
     expect(row.country).toBe('TH'); // 2-letter ISO, kept
     expect(row.preferred_locale).toBe('sv'); // UX setting, kept
-  }, 30_000);
+  });
 });
