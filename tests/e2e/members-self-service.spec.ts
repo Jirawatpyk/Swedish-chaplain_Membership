@@ -105,7 +105,7 @@ test.describe('US5 Member self-service portal @f3 @a11y @i18n', () => {
     await page.waitForLoadState('networkidle');
 
     // Click first member row to open detail
-    const firstRow = page.locator('table tbody tr').first().locator('a').first();
+    const firstRow = page.locator('[role="grid"] a.aura-table__row-link').first();
     if (await firstRow.isVisible({ timeout: 5_000 }).catch(() => false)) {
       await firstRow.click();
       await page.waitForLoadState('networkidle');

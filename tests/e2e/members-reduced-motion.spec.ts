@@ -21,6 +21,7 @@
 import type { Page } from '@playwright/test';
 import { expect, test, fillField } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
+import { firstMemberRowLink } from './helpers/members-grid';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
@@ -64,7 +65,7 @@ test.describe('members reduced-motion compliance @f3 @a11y', () => {
     // Use the skeleton that appears during SSR + data fetch.
     // If data loads too fast the skeleton is gone — pick the table instead.
     const skeletonOrTable = page
-      .locator('[data-testid="members-table-skeleton"], [data-slot="table"]')
+      .locator('[data-testid="members-table-skeleton"], [role="grid"]')
       .first();
     await skeletonOrTable.waitFor({ state: 'attached', timeout: 10_000 });
 
@@ -84,7 +85,7 @@ test.describe('members reduced-motion compliance @f3 @a11y', () => {
     // Navigate to the directory to get a member ID
     await page.goto('/admin/members');
     await page.waitForLoadState('networkidle');
-    const firstRowLink = page.locator('tbody tr:first-child a').first();
+    const firstRowLink = firstMemberRowLink(page);
     const href = await firstRowLink.getAttribute('href').catch(() => null);
     if (!href) {
       test.skip(true, 'No members in directory — skipping timeline reduced-motion check');

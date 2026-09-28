@@ -25,6 +25,7 @@ import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
 import { expect, test, fillField } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
+import { MEMBERS_GRID, firstMemberRowLink, firstRowCheckbox } from './helpers/members-grid';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
@@ -60,9 +61,7 @@ test.describe('F3 admin comprehensive a11y scan @f3 @a11y', () => {
   async function firstMemberId(page: Page): Promise<string | null> {
     await page.goto('/admin/members');
     await page.waitForLoadState('networkidle');
-    const href = await page
-      .locator('tbody tr:first-child a')
-      .first()
+    const href = await firstMemberRowLink(page)
       .getAttribute('href')
       .catch(() => null);
     if (!href) return null;
@@ -72,7 +71,7 @@ test.describe('F3 admin comprehensive a11y scan @f3 @a11y', () => {
   test('1. /admin/members directory — no axe violations', async ({ page }) => {
     await signIn(page);
     await page.goto('/admin/members');
-    await page.waitForSelector('[data-slot="table"]', { timeout: 10_000 });
+    await page.waitForSelector(MEMBERS_GRID, { timeout: 10_000 });
 
     const results = await new AxeBuilder({ page })
       .withTags([...AXE_TAGS])
@@ -148,16 +147,14 @@ test.describe('F3 admin comprehensive a11y scan @f3 @a11y', () => {
   }) => {
     await signIn(page);
     await page.goto('/admin/members');
-    await page.waitForSelector('[data-slot="table"]', { timeout: 10_000 });
+    await page.waitForSelector(MEMBERS_GRID, { timeout: 10_000 });
 
     // Select a row to reveal the bulk action bar
-    const firstCheckbox = page
-      .locator('tbody tr:first-child [data-slot="checkbox"]')
-      .first();
+    const firstCheckbox = firstRowCheckbox(page);
     const checkboxVisible = await firstCheckbox.isVisible({ timeout: 5_000 }).catch(() => false);
     if (checkboxVisible) {
       await firstCheckbox.click();
-      await page.getByRole('toolbar').waitFor({ state: 'visible', timeout: 5_000 });
+      await expect(page.locator('.aura-actionbar')).not.toHaveClass(/is-idle/, { timeout: 5_000 });
     }
 
     const results = await new AxeBuilder({ page })

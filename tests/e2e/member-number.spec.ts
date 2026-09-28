@@ -43,6 +43,7 @@ import AxeBuilder from '@axe-core/playwright';
 import type { BrowserContext, Page } from '@playwright/test';
 import { expect, test, fillField } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
+import { MEMBERS_GRID } from './helpers/members-grid';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
@@ -89,7 +90,7 @@ test.describe('Member-number column + portal badge @f-mn @layout @i18n', () => {
     await page.waitForLoadState('networkidle');
     // The first row link points at /admin/members/<uuid> (company-name cell).
     const hrefs = await page
-      .locator('tbody tr a[href*="/admin/members/"]')
+      .locator('[role="grid"] a.aura-table__row-link[href*="/admin/members/"]')
       .evaluateAll((els) =>
         els.map((e) => (e as HTMLAnchorElement).getAttribute('href') ?? ''),
       )
@@ -108,15 +109,15 @@ test.describe('Member-number column + portal badge @f-mn @layout @i18n', () => {
   }) => {
     await signInAdmin(page);
     await page.goto('/admin/members');
-    await page.waitForSelector('[data-slot="table"]', { timeout: 10_000 });
+    await page.waitForSelector(MEMBERS_GRID, { timeout: 10_000 });
     await page.waitForLoadState('networkidle');
 
-    // The header is a sort button (locale-stable aria-label) carrying the
-    // EN label "Member No.". Assert both: the button exists and its visible
-    // text is the EN column label.
-    const header = page.getByRole('button', { name: /sort by member number/i });
+    // 122 US5a — the AURA DataTable header: a sortable columnheader named by
+    // its EN label "Member No.", whose sort control is a button inside it.
+    const header = page.getByRole('columnheader', { name: /Member No\./ });
     await expect(header).toBeVisible({ timeout: 5_000 });
-    await expect(header).toContainText('Member No.');
+    await expect(header).toHaveAttribute('aria-sort', /none|ascending|descending/);
+    await expect(header.getByRole('button')).toContainText('Member No.');
   });
 
   // ── (1b) CLS ≤ 0.01 at 1280px on skeleton→data swap ────────────────────
@@ -145,7 +146,7 @@ test.describe('Member-number column + portal badge @f-mn @layout @i18n', () => {
     });
 
     // Wait for real data to replace skeleton.
-    await page.waitForSelector('[data-slot="table"]', { timeout: 10_000 });
+    await page.waitForSelector(MEMBERS_GRID, { timeout: 10_000 });
     await page.waitForLoadState('networkidle');
     // Small settle window for any deferred paint.
     await page.waitForTimeout(300);
@@ -166,13 +167,12 @@ test.describe('Member-number column + portal badge @f-mn @layout @i18n', () => {
     await signInAdmin(page);
     await setLocale(context, 'th');
     await page.goto('/admin/members');
-    await page.waitForSelector('[data-slot="table"]', { timeout: 10_000 });
+    await page.waitForSelector(MEMBERS_GRID, { timeout: 10_000 });
     await page.waitForLoadState('networkidle');
 
-    // Locate the sort button (locale-stable aria-label) and confirm the TH
-    // label renders. The button carries `whitespace-nowrap` — assert it
-    // occupies a single line (no wrapping) by measuring its height.
-    const thHeader = page.getByRole('button', { name: /เรียงตามหมายเลขสมาชิก/ });
+    // Locate the sort control inside the TH columnheader and confirm the TH
+    // label renders on a single line (no wrapping) by measuring its height.
+    const thHeader = page.getByRole('columnheader', { name: /เลขสมาชิก/ }).getByRole('button');
     await expect(thHeader).toBeVisible({ timeout: 5_000 });
     await expect(thHeader).toContainText('เลขสมาชิก');
 

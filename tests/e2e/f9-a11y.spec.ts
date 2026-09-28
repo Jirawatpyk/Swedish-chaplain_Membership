@@ -76,7 +76,7 @@ test.describe('@a11y T097 — F9 dashboard axe-core scan', () => {
   test('member benefit view (/admin/members/[id]/benefits)', async ({ page }) => {
     await signInAsAdmin(page);
     await page.goto('/admin/members');
-    const firstRow = page.locator('table tbody tr').first();
+    const firstRow = page.locator('[role="grid"] [role="row"]:has([role="gridcell"])').first();
     await firstRow.waitFor({ timeout: 15_000 });
     const href = await firstRow.locator('a').first().getAttribute('href');
     const memberId = href?.match(/\/admin\/members\/([0-9a-f-]+)/)?.[1];
@@ -160,7 +160,7 @@ test.describe('@a11y T097 — F9 dashboard axe-core scan', () => {
   test('admin member detail GDPR card (/admin/members/[id])', async ({ page }) => {
     await signInAsAdmin(page);
     await page.goto('/admin/members');
-    const firstRow = page.locator('table tbody tr').first();
+    const firstRow = page.locator('[role="grid"] [role="row"]:has([role="gridcell"])').first();
     await firstRow.waitFor({ timeout: 15_000 });
     const href = await firstRow.locator('a').first().getAttribute('href');
     const memberId = href?.match(/\/admin\/members\/([0-9a-f-]+)/)?.[1];

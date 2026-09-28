@@ -263,10 +263,11 @@ test.describe('@change-requests US2 — staff decides per field', () => {
     await expect(table.locator('[data-field-key="description"]')).toContainText(seeded!.proposedDescription);
 
     // de-select the description row (Space / click both toggle the checkbox)
+    // 122 US5a — an AURA checkbox: a native input (checked state, no aria-checked)
     const descriptionBox = page.getByTestId('approve-description');
-    await expect(descriptionBox).toHaveAttribute('aria-checked', 'true');
+    await expect(descriptionBox).toBeChecked();
     await descriptionBox.click();
-    await expect(descriptionBox).toHaveAttribute('aria-checked', 'false');
+    await expect(descriptionBox).not.toBeChecked();
 
     await page.getByTestId('confirm-decision').click();
     const dialog = page.getByRole('alertdialog');

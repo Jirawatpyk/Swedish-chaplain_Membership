@@ -14,6 +14,10 @@ import type { Page } from '@playwright/test';
 import { expect, test, fillField } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
 import AxeBuilder from '@axe-core/playwright';
+import { MEMBERS_GRID, bulkBar, firstRowCheckbox, gridCheckboxInputs } from './helpers/members-grid';
+import en from '../../src/i18n/messages/en.json';
+
+const CLEAR = en.admin.members.bulk.clear;
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
@@ -43,11 +47,11 @@ test.describe('members bulk actions @f3', () => {
   test.beforeEach(async ({ page }) => {
     await signIn(page);
     await page.goto('/admin/members');
-    await page.waitForSelector('[data-slot="table"]', { timeout: 10_000 });
+    await page.waitForSelector(MEMBERS_GRID, { timeout: 10_000 });
   });
 
   test('row selection checkboxes render for admin', async ({ page }) => {
-    const checkboxes = page.locator('[data-slot="checkbox"]');
+    const checkboxes = gridCheckboxInputs(page);
     // At least header checkbox + row checkboxes
     const count = await checkboxes.count();
     expect(count).toBeGreaterThan(0);
@@ -55,33 +59,32 @@ test.describe('members bulk actions @f3', () => {
 
   test('bulk action bar appears on selection', async ({ page }) => {
     // Click the first row checkbox
-    const firstRowCheckbox = page.locator('[data-slot="checkbox"]').nth(1);
-    await firstRowCheckbox.click();
-    // Bulk bar should appear
-    const toolbar = page.locator('[role="toolbar"]');
-    await expect(toolbar).toBeVisible({ timeout: 3_000 });
+    await firstRowCheckbox(page).click();
+    // Bulk bar leaves its idle (clipped) state
+    const bar = bulkBar(page);
+    await expect(bar).not.toHaveClass(/is-idle/, { timeout: 3_000 });
+    await expect(bar.getByRole('button', { name: CLEAR })).toBeVisible();
   });
 
   test('clear selection hides the bar', async ({ page }) => {
-    const firstRowCheckbox = page.locator('[data-slot="checkbox"]').nth(1);
-    await firstRowCheckbox.click();
-    const toolbar = page.locator('[role="toolbar"]');
-    await expect(toolbar).toBeVisible();
-    // Click clear
-    const clearBtn = toolbar.locator('button').last();
+    await firstRowCheckbox(page).click();
+    const bar = bulkBar(page);
+    const clearBtn = bar.getByRole('button', { name: CLEAR });
+    await expect(clearBtn).toBeVisible();
     await clearBtn.click();
-    await expect(toolbar).not.toBeVisible();
+    // The ActionBar stays mounted (its live region) but goes idle
+    await expect(bar).toHaveClass(/is-idle/);
+    await expect(clearBtn).toHaveCount(0);
   });
 
   test('@a11y axe-core scan on directory with selection', async ({ page }) => {
-    const firstRowCheckbox = page.locator('[data-slot="checkbox"]').nth(1);
-    await firstRowCheckbox.click();
-    // Wait for bulk bar
-    await page.waitForSelector('[role="toolbar"]');
+    await firstRowCheckbox(page).click();
+    // Wait for the bulk bar to leave its idle state
+    await expect(bulkBar(page)).not.toHaveClass(/is-idle/);
     const results = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
-      .include('[data-slot="table"]')
-      .include('[role="toolbar"]')
+      .include(MEMBERS_GRID)
+      .include('.aura-actionbar')
       .analyze();
     expect(results.violations).toEqual([]);
   });
@@ -100,7 +103,7 @@ test.describe('members bulk actions i18n @f3 @i18n', () => {
         { name: 'NEXT_LOCALE', value: locale, url: 'http://localhost:3100' },
       ]);
       await page.goto('/admin/members');
-      await page.waitForSelector('[data-slot="table"]', { timeout: 10_000 });
+      await page.waitForSelector(MEMBERS_GRID, { timeout: 10_000 });
       // Check no raw i18n keys (admin.members.* pattern) leak into the page
       const bodyText = await page.textContent('body');
       expect(bodyText).not.toMatch(/admin\.members\.(bulk|inlineEdit)\./);

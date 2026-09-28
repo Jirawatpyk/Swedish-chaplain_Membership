@@ -106,7 +106,7 @@ export async function firstActiveMemberId(page: Page): Promise<string> {
     page,
     'firstActiveMemberId: expected /admin/members — sign-in may have failed silently',
   ).toHaveURL(/\/admin\/members/);
-  const firstRow = page.locator('table tbody tr').first();
+  const firstRow = page.locator('[role="grid"] [role="row"]:has([role="gridcell"])').first() // AURA DataTable grid (122 US5a);
   await firstRow.waitFor({ timeout: 15_000 });
   const href = await firstRow.locator('a').first().getAttribute('href');
   if (!href) throw new Error('No active member rows — seed required');

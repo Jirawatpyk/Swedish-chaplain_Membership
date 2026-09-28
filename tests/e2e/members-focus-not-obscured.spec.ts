@@ -20,6 +20,7 @@
 import type { Page } from '@playwright/test';
 import { expect, test, fillField } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
+import { MEMBERS_GRID, firstRowCheckbox } from './helpers/members-grid';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
@@ -55,18 +56,16 @@ test.describe('members focus-not-obscured by bulk toolbar @f3 @a11y', () => {
   }) => {
     await signIn(page);
     await page.goto('/admin/members');
-    await page.waitForSelector('[data-slot="table"]', { timeout: 10_000 });
+    await page.waitForSelector(MEMBERS_GRID, { timeout: 10_000 });
 
     // Select first row to make the bulk toolbar visible
-    const firstCheckbox = page
-      .locator('tbody tr:first-child [data-slot="checkbox"]')
-      .first();
-    await firstCheckbox.click();
+    await firstRowCheckbox(page).click();
 
-    const bulkBar = page.getByRole('toolbar');
-    await expect(bulkBar).toBeVisible({ timeout: 5_000 });
+    // The AURA ActionBar leaves its idle (clipped) state
+    const bulkBar = page.locator('.aura-actionbar');
+    await expect(bulkBar).not.toHaveClass(/is-idle/, { timeout: 5_000 });
 
-    // Get bulk toolbar's top edge (it's fixed to the bottom)
+    // Get the bulk bar's top edge (sticky to the bottom of the viewport)
     const bulkBarBox = await bulkBar.boundingBox();
     if (!bulkBarBox) return;
     const bulkBarTop = bulkBarBox.y;
@@ -80,6 +79,8 @@ test.describe('members focus-not-obscured by bulk toolbar @f3 @a11y', () => {
         await page.evaluate(() => {
           const el = document.activeElement;
           if (!el || el === document.body) return null;
+          // The bar's own controls sit inside it by design.
+          if (el.closest('.aura-actionbar')) return null;
           const r = el.getBoundingClientRect();
           return { x: r.x, y: r.y, width: r.width, height: r.height };
         });

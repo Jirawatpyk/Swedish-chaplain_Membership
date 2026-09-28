@@ -48,7 +48,7 @@ test.describe('members timeline — F3 US6 @f3 @a11y @i18n', () => {
   async function firstMemberId(page: Page): Promise<string> {
     await page.goto('/admin/members');
     await page.waitForLoadState('networkidle');
-    const firstRow = page.locator('table tbody tr').first();
+    const firstRow = page.locator('[role="grid"] [role="row"]:has([role="gridcell"])').first() // AURA DataTable grid (122 US5a);
     await firstRow.waitFor({ timeout: 15_000 });
     const href = await firstRow.locator('a').first().getAttribute('href');
     if (!href) throw new Error('No member rows — seed required');
