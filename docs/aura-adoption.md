@@ -92,7 +92,7 @@ The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requ
 | #80 | `DataTable` card-mode column options (`card: 'hide' \| 'field' \| 'title' \| 'pill'`, `cardOrder`, `hideSelectionInCards`) | `PHONE_CARD` classes on `.aura-table--stacked` in `src/components/members/members-table.tsx` |
 | #81 | static `Table` `align="middle"` and a frameless variant | `.aura-tbl-wrap` / `.aura-tbl__td` overrides in `src/components/directory/recent-exports.tsx` and `src/app/(staff)/admin/change-requests/_components/queue-table.tsx` |
 | #82 | `EmptyState tone="danger"` | the danger wrapper around `MembersErrorState` in `src/components/members/empty-states.tsx` |
-| #83 | `FilterBar` `searchFill` and a visible search label | `.aura-filterbar__search` / `__spacer` overrides and an `aria-hidden` label in `src/components/members/directory-filters.tsx` and `src/components/directory/directory-search-filters.tsx` |
+| #83 | `FilterBar` `searchFill` (the search grows to fill the row) | `.aura-filterbar__search` / `__spacer` overrides in `src/components/members/directory-filters.tsx` and `src/components/directory/directory-search-filters.tsx` |
 | #84 | a card layout (title and action slots) for a stacked static `Table` | the `@max-[640px]/aura-tbl:` grid in `src/app/(staff)/admin/change-requests/_components/queue-table.tsx` | One note stays with AURA: `Menu` closes on any scroll or window resize (iOS Safari fires resize when its toolbar moves), to be checked on a real iPhone before it becomes an item.
 
 5.9.0 also prepares for 6.0, which builds in only English and drops icon names given as strings from the default bundle. Chamber-OS clears its dev notices without changing any output:
