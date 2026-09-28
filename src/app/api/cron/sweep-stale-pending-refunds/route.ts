@@ -115,7 +115,7 @@ const ROUTE_SOFT_DEADLINE_MS = 55_000;
 const PENDING_ON_UNPAYABLE_MIN_BUDGET_MS = 5_000;
 
 type PendingOnUnpayableSummary =
-  | ({ status: 'ran' } & SweepPendingOnUnpayableResult)
+  | ({ status: 'ran' } & Omit<SweepPendingOnUnpayableResult, 'erroredInvoices'>)
   | { status: 'skipped_no_budget' }
   | { status: 'failed' };
 
@@ -126,14 +126,21 @@ async function runPendingOnUnpayableSweep(
   const remaining = ROUTE_SOFT_DEADLINE_MS - (Date.now() - routeStartedMs);
   const budgetMs = Math.min(PENDING_ON_UNPAYABLE_MAX_BUDGET_MS, remaining);
   if (budgetMs < PENDING_ON_UNPAYABLE_MIN_BUDGET_MS) {
+    paymentsMetrics.pendingOnUnpayableSwept('skipped_no_budget', 1);
     logger.warn({ requestId, remainingMs: remaining }, 'cron.sweep_pending_on_unpayable.skipped_no_budget');
     return { status: 'skipped_no_budget' };
   }
   try {
-    const r = await sweepPendingPaymentsOnUnpayableInvoices(makeSweepPendingOnUnpayableDeps(), {
-      requestId,
-      budgetMs,
-    });
+    const { erroredInvoices, ...r } = await sweepPendingPaymentsOnUnpayableInvoices(
+      makeSweepPendingOnUnpayableDeps(),
+      { requestId, budgetMs },
+    );
+    for (const e of erroredInvoices) {
+      logger.error(
+        { requestId, tenantId: e.tenantId, invoiceId: e.invoiceId, errKind: e.errKind },
+        'cron.sweep_pending_on_unpayable.invoice_threw',
+      );
+    }
     paymentsMetrics.pendingOnUnpayableSwept('canceled', r.canceled);
     paymentsMetrics.pendingOnUnpayableSwept('skipped', r.skipped);
     paymentsMetrics.pendingOnUnpayableSwept('failed', r.failed);

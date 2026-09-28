@@ -8,9 +8,16 @@
  * `(tenant_id, invoice_id)` pairs; every write happens afterwards per tenant
  * through `runInTenant` in the cancel use-case.
  *
+ * The age window is measured from `GREATEST(p.initiated_at, i.updated_at)` —
+ * i.e. from whichever came LAST: the attempt, or the invoice's last write
+ * (every status transition — void, pay, credit — sets `updated_at = now()`).
+ * Measuring from `initiated_at` alone would never retry an attempt that was
+ * already 7 days old when its invoice was voided (review M2), and could
+ * race the void's own post-commit cancel for a young void on an old attempt.
+ *
  * Raw SQL keeps the payments module from importing the invoicing module's
  * Drizzle schema (Principle III); the `invoices` columns used are the stable
- * `tenant_id`, `invoice_id` and `status`.
+ * `tenant_id`, `invoice_id`, `status` and `updated_at`.
  */
 import { sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
@@ -35,10 +42,10 @@ export const drizzleUnpayablePendingFinder: UnpayablePendingFinderPort = {
          AND i.invoice_id = p.invoice_id
         WHERE p.status = 'pending'
           AND i.status <> 'issued'
-          AND p.initiated_at < now() - (${minAgeMinutes} || ' minutes')::interval
-          AND p.initiated_at > now() - (${maxAgeDays} || ' days')::interval
+          AND GREATEST(p.initiated_at, i.updated_at) < now() - (${minAgeMinutes} || ' minutes')::interval
+          AND GREATEST(p.initiated_at, i.updated_at) > now() - (${maxAgeDays} || ' days')::interval
         GROUP BY p.tenant_id, p.invoice_id
-        ORDER BY min(p.initiated_at)
+        ORDER BY min(GREATEST(p.initiated_at, i.updated_at))
         LIMIT ${limit}
       `);
     });

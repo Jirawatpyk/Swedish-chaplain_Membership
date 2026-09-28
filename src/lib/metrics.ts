@@ -1370,14 +1370,17 @@ export const paymentsMetrics = {
   /**
    * `payments_pending_on_unpayable_swept_total{outcome}` — the hourly retry
    * (in the sweep-stale-pending-refunds cron) for pending payments left on
-   * invoices that are no longer `issued`. outcome = canceled | skipped |
-   * failed (Stripe refused / retryable — retried next hour) | errored (the
-   * per-invoice cancel threw) | deferred (time budget spent). A sustained
+   * invoices that are no longer `issued`. outcome = canceled | skipped
+   * (already terminal, or the PaymentIntent had already succeeded — the
+   * webhook settles / auto-refunds it) | failed (Stripe refused / retryable —
+   * retried next hour) | errored (the per-invoice cancel threw) | deferred
+   * (time budget spent mid-batch) | skipped_no_budget (the refund sweep left
+   * under 5s, so this run did not start; counts runs, not rows). A sustained
    * `failed` or `errored` rate means a live PaymentIntent keeps surviving
    * its invoice; see docs/runbooks/stale-pending-count.md.
    */
   pendingOnUnpayableSwept(
-    outcome: 'canceled' | 'skipped' | 'failed' | 'errored' | 'deferred',
+    outcome: 'canceled' | 'skipped' | 'failed' | 'errored' | 'deferred' | 'skipped_no_budget',
     n: number,
   ): void {
     if (n <= 0) return;

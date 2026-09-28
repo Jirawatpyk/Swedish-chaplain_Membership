@@ -72,6 +72,7 @@ describe('sweepPendingPaymentsOnUnpayableInvoices', () => {
       invoicesFound: 0,
       invoicesProcessed: 0,
       invoicesErrored: 0,
+      erroredInvoices: [],
       deferred: 0,
       canceled: 0,
       skipped: 0,
@@ -122,7 +123,10 @@ describe('sweepPendingPaymentsOnUnpayableInvoices', () => {
       budgetMs: 10_000,
     });
     expect(cancelMock).toHaveBeenCalledTimes(2);
-    expect(r).toMatchObject({ invoicesProcessed: 1, invoicesErrored: 1, canceled: 1 });
+    expect(r).toMatchObject({ invoicesProcessed: 1, invoicesErrored: 1, canceled: 1, deferred: 0 });
+    // Named for the route's log line — constructor name only, never `.message`.
+    expect(r.erroredInvoices).toEqual([{ tenantId: 't1', invoiceId: 'inv-a', errKind: 'Error' }]);
+    expect(JSON.stringify(r)).not.toContain('connection reset');
   });
 
   it('stops starting invoices once the time budget is spent; the rest are deferred to the next run', async () => {

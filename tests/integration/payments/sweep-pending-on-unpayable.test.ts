@@ -4,11 +4,15 @@
  * retry).
  *
  * Proves against the REAL schema:
- *   - the owner-db finder picks a pending attempt on a VOIDED invoice that is
- *     older than 15 minutes, and skips (a) one on an ISSUED invoice, (b) one
- *     younger than 15 minutes (left to the void's own post-commit cancel) and
- *     (c) one older than the 7-day cap;
- *   - the sweep cancels exactly that row through `cancelPendingPaymentsForInvoice`
+ *   - the owner-db finder measures its 15-minute..7-day window from the LATER
+ *     of the attempt's `initiated_at` and the invoice's `updated_at` (when it
+ *     stopped being payable). It picks pending attempts on VOIDED invoices
+ *     inside that window, including an 8-day-old attempt on an invoice voided
+ *     20 minutes ago (review M2). It skips attempts on an ISSUED invoice, a
+ *     2-minute-old attempt, an old attempt whose invoice was voided 2 minutes
+ *     ago (left to the void's own post-commit cancel), and a void older than
+ *     the 7-day cap;
+ *   - the sweep cancels exactly those rows through `cancelPendingPaymentsForInvoice`
  *     (per-tenant RLS deps), auditing `payment_canceled` with actor_type
  *     'system' and cause 'invoice_not_payable_sweep';
  *   - a re-run is a no-op.
@@ -20,7 +24,7 @@
  * `void-cancels-pending-payment.test.ts`.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { ok } from '@/lib/result';
 import { db, runInTenant, type TenantTx } from '@/lib/db';
@@ -70,16 +74,21 @@ interface Row {
   readonly invoiceId: string;
   readonly paymentId: string;
   readonly pi: string;
+  /** How long ago the pending attempt was initiated. */
   readonly ageMs: number;
+  /** `null` = invoice stays `issued`; else how long ago it was voided (its `updated_at`). */
+  readonly voidedAgoMs: number | null;
 }
 
 const MIN = 60_000;
-function row(tag: string, ageMs: number): Row {
+const DAY = 24 * 60 * MIN;
+function row(tag: string, ageMs: number, voidedAgoMs: number | null): Row {
   return {
     invoiceId: randomUUID(),
     paymentId: pmtId(),
     pi: `pi_test_sw_${tag}_${randomUUID().slice(0, 8)}`,
     ageMs,
+    voidedAgoMs,
   };
 }
 
@@ -87,15 +96,32 @@ describe('sweep cancels pending payments on no-longer-payable invoices — live 
   let tenant: TestTenant;
   let user: TestUser;
   let memberId: string;
-  // Target: void, 30 min old.
-  const voidedOld = row('void_old', 30 * MIN);
+  // The window is measured from the LATER of the attempt and the invoice's
+  // last change (review M2), so each row pins one side of it.
+  // Target: attempt 30 min old, voided 30 min ago.
+  const voidedOld = row('void_old', 30 * MIN, 30 * MIN);
+  // Target (M2): attempt 8 days old, voided only 20 min ago — must still be
+  // retried; measuring from initiated_at alone would skip it forever.
+  const oldAttemptRecentVoid = row('old_attempt_recent_void', 8 * DAY, 20 * MIN);
   // Untouched: issued invoice (member may still be paying it).
-  const issuedOld = row('issued_old', 30 * MIN);
-  // Untouched: younger than the 15-minute floor.
-  const voidedYoung = row('void_young', 2 * MIN);
-  // Untouched: older than the 7-day cap.
-  const voidedAncient = row('void_ancient', 8 * 24 * 60 * MIN);
-  const ROWS = [voidedOld, issuedOld, voidedYoung, voidedAncient];
+  const issuedOld = row('issued_old', 30 * MIN, null);
+  // Untouched: attempt younger than the 15-minute floor.
+  const voidedYoung = row('void_young', 2 * MIN, 2 * MIN);
+  // Untouched: old attempt, but voided 2 min ago — the void's own
+  // post-commit cancel is still handling it.
+  const oldAttemptFreshVoid = row('old_attempt_fresh_void', 30 * MIN, 2 * MIN);
+  // Untouched: voided more than the 7-day cap ago.
+  const voidedAncient = row('void_ancient', 8 * DAY, 8 * DAY);
+  const ROWS = [
+    voidedOld,
+    oldAttemptRecentVoid,
+    issuedOld,
+    voidedYoung,
+    oldAttemptFreshVoid,
+    voidedAncient,
+  ];
+  const TARGETS = [voidedOld, oldAttemptRecentVoid];
+  const UNTOUCHED = [issuedOld, voidedYoung, oldAttemptFreshVoid, voidedAncient];
 
   async function insertInvoice(tx: TenantTx, id: string, seq: number): Promise<void> {
     await tx.insert(invoices).values({
@@ -241,21 +267,24 @@ describe('sweep cancels pending payments on no-longer-payable invoices — live 
       }
     });
 
-    // The state a committed void leaves — same columns as the real applyVoid.
-    await runInTenant(tenant.ctx, (tx) =>
-      tx
-        .update(invoices)
-        .set({
-          status: 'void',
-          voidReason: 'sweep integration test',
-          voidedByUserId: user.userId,
-          voidedAt: sql`now()`,
-          updatedAt: sql`now()`,
-        })
-        .where(
-          inArray(invoices.invoiceId, [voidedOld.invoiceId, voidedYoung.invoiceId, voidedAncient.invoiceId]),
-        ),
-    );
+    // The state a committed void leaves — same columns as the real applyVoid,
+    // back-dated per row (`updated_at` is what the finder's window reads).
+    await runInTenant(tenant.ctx, async (tx) => {
+      for (const r of ROWS) {
+        if (r.voidedAgoMs === null) continue;
+        const at = new Date(Date.now() - r.voidedAgoMs);
+        await tx
+          .update(invoices)
+          .set({
+            status: 'void',
+            voidReason: 'sweep integration test',
+            voidedByUserId: user.userId,
+            voidedAt: at,
+            updatedAt: at,
+          })
+          .where(eq(invoices.invoiceId, r.invoiceId));
+      }
+    });
   }, 120_000);
 
   afterAll(async () => {
@@ -331,16 +360,20 @@ describe('sweep cancels pending payments on no-longer-payable invoices — live 
     return r!.status;
   }
 
-  it('finds only the voided attempt inside the 15-minute..7-day window', async () => {
+  it('finds only the voided attempts inside the window, oldest first', async () => {
     const found = await makeSweepDeps([]).finder.listInvoicesWithPendingOnUnpayable({
       minAgeMinutes: 15,
       maxAgeDays: 7,
       limit: 50,
     });
-    expect(found).toEqual([{ tenantId: tenant.ctx.slug, invoiceId: voidedOld.invoiceId }]);
+    // Ordered by GREATEST(initiated_at, updated_at): 30 min ago, then 20 min ago.
+    expect(found).toEqual([
+      { tenantId: tenant.ctx.slug, invoiceId: voidedOld.invoiceId },
+      { tenantId: tenant.ctx.slug, invoiceId: oldAttemptRecentVoid.invoiceId },
+    ]);
   }, 60_000);
 
-  it('cancels that attempt with a system audit; the others stay pending; a re-run is a no-op', async () => {
+  it('cancels those attempts with a system audit; the others stay pending; a re-run is a no-op', async () => {
     const cancelCalls: string[] = [];
     const deps = makeSweepDeps(cancelCalls);
 
@@ -349,42 +382,42 @@ describe('sweep cancels pending payments on no-longer-payable invoices — live 
       budgetMs: 30_000,
     });
     expect(first).toEqual({
-      invoicesFound: 1,
-      invoicesProcessed: 1,
+      invoicesFound: 2,
+      invoicesProcessed: 2,
       invoicesErrored: 0,
       deferred: 0,
-      canceled: 1,
+      canceled: 2,
       skipped: 0,
       failed: 0,
     });
-    expect(cancelCalls).toEqual([voidedOld.pi]);
-    expect(await statusOf(voidedOld.paymentId)).toBe('canceled');
-    expect(await statusOf(issuedOld.paymentId)).toBe('pending');
-    expect(await statusOf(voidedYoung.paymentId)).toBe('pending');
-    expect(await statusOf(voidedAncient.paymentId)).toBe('pending');
+    expect(cancelCalls).toEqual(TARGETS.map((r) => r.pi));
+    for (const r of TARGETS) expect(await statusOf(r.paymentId)).toBe('canceled');
+    for (const r of UNTOUCHED) expect(await statusOf(r.paymentId)).toBe('pending');
 
-    const auditRows = await db
-      .select({ payload: auditLog.payload })
-      .from(auditLog)
-      .where(
-        and(
-          eq(auditLog.tenantId, tenant.ctx.slug),
-          sql`${auditLog.eventType} = 'payment_canceled'`,
-          sql`${auditLog.payload}->>'payment_id' = ${voidedOld.paymentId}`,
-        ),
-      );
-    expect(auditRows).toHaveLength(1);
-    expect(auditRows[0]!.payload).toMatchObject({
-      invoice_id: voidedOld.invoiceId,
-      actor_type: 'system',
-      cause: 'invoice_not_payable_sweep',
-    });
+    for (const r of TARGETS) {
+      const auditRows = await db
+        .select({ payload: auditLog.payload })
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.tenantId, tenant.ctx.slug),
+            sql`${auditLog.eventType} = 'payment_canceled'`,
+            sql`${auditLog.payload}->>'payment_id' = ${r.paymentId}`,
+          ),
+        );
+      expect(auditRows).toHaveLength(1);
+      expect(auditRows[0]!.payload).toMatchObject({
+        invoice_id: r.invoiceId,
+        actor_type: 'system',
+        cause: 'invoice_not_payable_sweep',
+      });
+    }
 
     const second = await sweepPendingPaymentsOnUnpayableInvoices(deps, {
       requestId: 'req-sweep-2',
       budgetMs: 30_000,
     });
     expect(second).toMatchObject({ invoicesFound: 0, canceled: 0 });
-    expect(cancelCalls).toHaveLength(1);
+    expect(cancelCalls).toHaveLength(2);
   }, 60_000);
 });

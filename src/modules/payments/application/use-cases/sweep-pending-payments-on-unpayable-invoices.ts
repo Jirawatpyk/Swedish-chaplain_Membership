@@ -29,9 +29,11 @@ import {
   type CancelPendingPaymentsForInvoiceDeps,
 } from './cancel-pending-payments-for-invoice';
 
-/** Leave attempts younger than this to the void's own post-commit cancel. */
+// Ages below are measured from the LATER of the attempt's creation and the
+// invoice's last write (when it stopped being payable) — see the finder.
+/** Leave anything fresher than this to the void's own post-commit cancel. */
 export const PENDING_ON_UNPAYABLE_MIN_AGE_MINUTES = 15;
-/** Stop retrying (and auditing) after this; the 24h stale-pending gauge alerts. */
+/** Stop retrying (and auditing) this long after the invoice stopped being payable; the stale-pending gauge alerts. */
 export const PENDING_ON_UNPAYABLE_MAX_AGE_DAYS = 7;
 /** Invoices per run; the rest wait for the next hourly run. */
 export const PENDING_ON_UNPAYABLE_BATCH_LIMIT = 50;
@@ -54,6 +56,15 @@ export interface SweepPendingOnUnpayableResult {
   readonly invoicesProcessed: number;
   /** Per-invoice cancel threw (DB fault) — retried next run. */
   readonly invoicesErrored: number;
+  /**
+   * Which invoices threw, with the error's constructor name only (a Postgres
+   * `.message` can carry SQL) — for the caller to log. Not part of the counts.
+   */
+  readonly erroredInvoices: ReadonlyArray<{
+    readonly tenantId: string;
+    readonly invoiceId: string;
+    readonly errKind: string;
+  }>;
   /** Not started because the time budget ran out — retried next run. */
   readonly deferred: number;
   readonly canceled: number;
@@ -73,7 +84,7 @@ export async function sweepPendingPaymentsOnUnpayableInvoices(
   });
 
   let invoicesProcessed = 0;
-  let invoicesErrored = 0;
+  const erroredInvoices: Array<{ tenantId: string; invoiceId: string; errKind: string }> = [];
   let canceled = 0;
   let skipped = 0;
   let failed = 0;
@@ -92,17 +103,22 @@ export async function sweepPendingPaymentsOnUnpayableInvoices(
       canceled += r.canceled;
       skipped += r.skipped;
       failed += r.failed;
-    } catch {
+    } catch (e) {
       // One invoice's DB fault must not stop the rest; it is retried next run.
-      invoicesErrored += 1;
+      erroredInvoices.push({
+        tenantId,
+        invoiceId,
+        errKind: e instanceof Error ? e.constructor.name : 'unknown',
+      });
     }
   }
 
   return {
     invoicesFound: pairs.length,
     invoicesProcessed,
-    invoicesErrored,
-    deferred: pairs.length - invoicesProcessed - invoicesErrored,
+    invoicesErrored: erroredInvoices.length,
+    erroredInvoices,
+    deferred: pairs.length - invoicesProcessed - erroredInvoices.length,
     canceled,
     skipped,
     failed,
