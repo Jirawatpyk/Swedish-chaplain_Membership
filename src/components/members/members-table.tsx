@@ -354,12 +354,14 @@ function InlineStatusCell({
       onClick={handleToggle}
       disabled={saving}
       title={t('toggleStatus', { current: currentLabel })}
-      className="group inline-flex min-h-6 min-w-[60px] cursor-pointer items-center gap-1 rounded-[var(--aura-radius-sm)] px-1 py-0.5 transition-colors hover:bg-[var(--aura-bg-surface-hover)] focus-visible:outline-2 focus-visible:outline-[var(--aura-focus-ring)] disabled:cursor-wait disabled:opacity-60"
+      className="group inline-flex min-h-6 min-w-[60px] cursor-pointer items-center gap-1 rounded-[var(--aura-radius-sm)] px-1 py-0.5 in-[.aura-table--stacked]:px-0 transition-colors hover:bg-[var(--aura-bg-surface-hover)] focus-visible:outline-2 focus-visible:outline-[var(--aura-focus-ring)] disabled:cursor-wait disabled:opacity-60"
       aria-label={t('toggleStatus', { current: currentLabel })}
     >
       <StatusBadge status={optimistic} />
+      {/* Hover / focus hint only; on a phone card (no hover) it would hold
+          empty room and push the pill off the card's edge. */}
       <PencilIcon
-        className="size-3 text-[var(--aura-fg-tertiary)] opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+        className="size-3 text-[var(--aura-fg-tertiary)] opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 in-[.aura-table--stacked]:hidden"
         aria-hidden="true"
       />
       <span className="sr-only" aria-live="polite">
