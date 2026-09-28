@@ -32,6 +32,8 @@ const labels = {
   hasLogo: 'Has logo',
   yes: 'Yes',
   no: 'No',
+  listedPill: 'Listed',
+  notListedPill: 'Not listed',
   emptyTitle: 'No members found',
   empty: 'Try adjusting your search or filters.',
 };
@@ -77,6 +79,20 @@ describe('DirectoryTable on AURA DataTable (T506)', () => {
     expect(no).toHaveClass('is-outline');
   });
 
+  it('orders the columns as the board: Company, Tier, Industry, Location, Listed, Logo, Contact', () => {
+    render(<DirectoryTable rows={rows} labels={labels} />);
+    const headers = screen.getAllByRole('columnheader').map((h) => h.textContent?.trim());
+    expect(headers).toEqual(['Company', 'Tier', 'Industry', 'Location', 'Listed', 'Logo', 'Contact']);
+  });
+
+  it('a phone card says "Listed" / "Not listed" as a status pill with its icon (board Admin-directory-mobile)', () => {
+    render(<DirectoryTable rows={rows} labels={labels} />);
+    expect(screen.getByText('Listed', { selector: '.aura-pill *' }).closest('.aura-pill')).toHaveClass(
+      'aura-pill--ready',
+    );
+    expect(screen.getByText('Not listed').closest('.aura-pill')).toHaveClass('aura-pill--neutral');
+  });
+
   it('shows the empty state when there are no rows', () => {
     render(<DirectoryTable rows={[]} labels={labels} />);
     expect(screen.getByText(labels.emptyTitle)).toBeInTheDocument();
@@ -120,8 +136,44 @@ describe('RecentExports on AURA (T506)', () => {
     );
     expect(screen.getByText('Ready').closest('.aura-pill')).toHaveClass('aura-pill--ready');
     expect(screen.getByText('Generating…').closest('.aura-pill')).toHaveClass('aura-pill--progress');
-    expect(
-      screen.getByRole('link', { name: 'Download — Directory JSON, 20 Sep 2026, 16:40' }),
-    ).toHaveAttribute('href', '/api/admin/directory/exports/j-1/download');
+    const [tableLink] = screen.getAllByRole('link', { name: 'Download — Directory JSON, 20 Sep 2026, 16:40' });
+    expect(tableLink).toHaveAttribute('href', '/api/admin/directory/exports/j-1/download');
+  });
+
+  it('the board layouts: a table with an icon on Download, and a one-line list on a phone', () => {
+    render(
+      <RecentExports
+        labels={exportLabels}
+        rows={[
+          {
+            jobId: 'j-1',
+            kindLabel: 'Directory JSON',
+            status: 'ready',
+            statusLabel: 'Ready',
+            downloadable: true,
+            requestedAt: '20 Sep 2026, 16:40',
+          },
+          {
+            jobId: 'j-2',
+            kindLabel: 'Directory E-Book (PDF)',
+            status: 'processing',
+            statusLabel: 'Generating…',
+            downloadable: false,
+            requestedAt: '24 Sep 2026, 10:12',
+          },
+        ]}
+      />,
+    );
+    const links = screen.getAllByRole('link', { name: 'Download — Directory JSON, 20 Sep 2026, 16:40' });
+    // One in the table (text + icon), one icon-only in the phone list.
+    expect(links).toHaveLength(2);
+    expect(links[0]).toHaveTextContent('Download');
+    expect(links[0]?.querySelector('svg')).not.toBeNull();
+    expect(links[1]).not.toHaveTextContent('Download');
+    const list = screen.getByRole('list');
+    expect(within(list).getAllByRole('listitem')).toHaveLength(2);
+    // A ready export says its state in the line under the name; the rest keep the pill.
+    expect(within(list).getByText(/20 Sep 2026, 16:40 · Ready/)).toBeInTheDocument();
+    expect(within(list).getByText('Generating…').closest('.aura-pill')).not.toBeNull();
   });
 });
