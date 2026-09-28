@@ -17,13 +17,13 @@
  * compact "Status All ▾" trigger (`FilterChipSelect`).
  */
 
-import { useCallback, useMemo, useRef, useState, useTransition } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { AuraProvider, Button, FilterBar, Tag } from '@jirawatpyk/aura-react';
 import { FilterChipSelect } from './filter-chip-select';
 import { formatCalendarYear } from '@/lib/format-date-localised';
-import { MailWarningIcon } from 'lucide-react';
+import { MailIcon } from 'lucide-react';
 
 const DEBOUNCE_MS = 300;
 
@@ -150,6 +150,7 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
   // focused we hand back exactly what it sent (`sentQ`) — a lagging or
   // trimmed URL can then never revert what the admin is typing. Unfocused
   // (back/forward, a shared link), the URL wins.
+  const isPhone = useIsBelowSm();
   const [sentQ, setSentQ] = useState(currentQ);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const onSearchChange = (value: string) => {
@@ -230,6 +231,11 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
         if (isSearchInput(e.target)) setIsSearchFocused(false);
       }}
     >
+      {/* A phone labels the search visibly (board `Admin-members-mobile`);
+          the box keeps the same words as its accessible name. */}
+      <p className="mb-1.5 text-sm font-medium sm:hidden" aria-hidden="true">
+        {t('searchSrLabel')}
+      </p>
       <AuraProvider strings={barStrings}>
         <FilterBar
           key={barKey}
@@ -245,7 +251,8 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
           onSearchChange={onSearchChange}
           searchDelay={DEBOUNCE_MS}
           searchLabel={t('searchSrLabel')}
-          searchPlaceholder={t('searchPlaceholder')}
+          // The full hint is cut off in a phone-width box; the board's short one fits.
+          searchPlaceholder={isPhone ? t('searchPlaceholderShort') : t('searchPlaceholder')}
           filters={activeChips}
           {...(hasAnyFilter ? { onClearAll: clearAll } : {})}
         >
@@ -290,7 +297,7 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
 
           {showChip && (
             <Tag
-              icon={<MailWarningIcon aria-hidden="true" />}
+              icon={<MailIcon aria-hidden="true" />}
               selected={portalActive}
               onClick={onPortalToggle}
               // Disable only when the count is unavailable AND the filter is
@@ -327,4 +334,18 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
       </AuraProvider>
     </div>
   );
+}
+
+/** Below Tailwind's `sm` (640px). False on the server and first paint: only a placeholder follows it. */
+function useIsBelowSm(): boolean {
+  const [below, setBelow] = useState(false);
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return;
+    const mql = window.matchMedia('(max-width: 639px)');
+    const sync = () => setBelow(mql.matches);
+    sync();
+    mql.addEventListener('change', sync);
+    return () => mql.removeEventListener('change', sync);
+  }, []);
+  return below;
 }

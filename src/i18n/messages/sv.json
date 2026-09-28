@@ -1414,7 +1414,8 @@
         "rowActions": "Fler åtgärder för {company}",
         "openMember": "Öppna medlem",
         "editMember": "Redigera medlem",
-        "rowNotSelectable": "{company} är arkiverad och kan inte markeras"
+        "rowNotSelectable": "{company} är arkiverad och kan inte markeras",
+        "searchPlaceholderShort": "Företag, kontakt, e-post eller medlemsnr"
       },
       "emptyStates": {
         "zero": {

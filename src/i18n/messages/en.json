@@ -1414,7 +1414,8 @@
         "rowActions": "More actions for {company}",
         "openMember": "Open member",
         "editMember": "Edit member",
-        "rowNotSelectable": "{company} is archived and cannot be selected"
+        "rowNotSelectable": "{company} is archived and cannot be selected",
+        "searchPlaceholderShort": "Company, contact, email or member no."
       },
       "emptyStates": {
         "zero": {

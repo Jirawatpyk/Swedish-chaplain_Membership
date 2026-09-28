@@ -1414,7 +1414,8 @@
         "rowActions": "การดำเนินการเพิ่มเติมสำหรับ {company}",
         "openMember": "เปิดข้อมูลสมาชิก",
         "editMember": "แก้ไขข้อมูลสมาชิก",
-        "rowNotSelectable": "{company} ถูกเก็บถาวรแล้ว จึงเลือกไม่ได้"
+        "rowNotSelectable": "{company} ถูกเก็บถาวรแล้ว จึงเลือกไม่ได้",
+        "searchPlaceholderShort": "บริษัท ผู้ติดต่อ อีเมล หรือเลขสมาชิก"
       },
       "emptyStates": {
         "zero": {
