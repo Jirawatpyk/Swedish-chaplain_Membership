@@ -478,8 +478,9 @@ describe('<PortalInvoiceCardList> — separate-paid', () => {
     // Paid → the receipt is the one button (SHORT separate label); the
     // invoice is a ⋯ menu item with its own download label + aria.
     expect(screen.queryByTestId('invoice-download')).not.toBeInTheDocument();
+    // The menu item says what it does (SC 2.4.6), not just "Invoice".
     const menuInvoice = screen.getByTestId('menu-invoice');
-    expect(menuInvoice).toHaveTextContent('Invoice');
+    expect(menuInvoice).toHaveTextContent('Download invoice (PDF)');
     expect(menuInvoice).toHaveAttribute('data-number', 'INV-2026-000001');
     expect(screen.getByTestId('menu-resend')).toBeInTheDocument();
     const receipt = screen.getByTestId('receipt-download');

@@ -14,7 +14,7 @@
 
 ## Phase 1: Setup
 
-- [x] T001 [US0] Add `@jirawatpyk/aura-react@5.5.0` and `@jirawatpyk/aura-tokens@5.5.0` (bumped to 5.6.0 on 2026-09-26 when handoff items 52–56 shipped, to 5.7.0 – 5.7.2 in US1 when 57–64 shipped, and to 5.7.3 in US2 when 65 shipped) as exact pins in `package.json` and `pnpm-lock.yaml`. Remove `react-day-picker`, delete `src/components/ui/calendar.tsx` and `src/components/ui/scroll-area.tsx` (0 importers), and confirm `pnpm typecheck` and `pnpm test` are green.
+- [x] T001 [US0] Add `@jirawatpyk/aura-react@5.5.0` and `@jirawatpyk/aura-tokens@5.5.0` (bumped to 5.6.0 on 2026-09-26 when handoff items 52–56 shipped, to 5.7.0 – 5.7.2 in US1 when 57–64 shipped, to 5.7.3 in US2 when 65 shipped, to 5.8.0 in US3 when 66–69 shipped, and to 5.9.0 in US4 when 70–71 shipped) as exact pins in `package.json` and `pnpm-lock.yaml`. Remove `react-day-picker`, delete `src/components/ui/calendar.tsx` and `src/components/ui/scroll-area.tsx` (0 importers), and confirm `pnpm typecheck` and `pnpm test` are green.
 - [x] T002 [US0] Generate the brand theme with `npx aura-theme --brand "#10487A" --out src/styles/aura-theme.css`. The CLI must exit 0 (all contrast checks pass). Commit the output, with a header comment naming the regenerate command.
 
 ---
@@ -172,6 +172,8 @@ Goal: the member invoice list, invoice detail, credit note and the card / Prompt
 - [x] T408 [US4] Every US4 path joins `MIGRATED_PATHS`; preview views for the list, detail (issued / paid / void), credit note and pay states on `src/app/test-fixtures/aura-portal`. RED: `ui-import-ratchet.test.ts`.
 - [x] T409 [US4] Strings only where a swap or a board forces them (board wording per spec Clarifications, 2026-09-28), in EN/TH/SV; document and money wording untouched; i18n-translation-reviewer on any change.
 - [x] T410 [US4] (queued task, rides this PR as its own commit) `/admin/members` header actions wrap on phones: Swedish scrolled 10 px sideways at 360 / 390 px. RED: `members-page-header-actions.test.tsx`; e2e in `members-table-overflow.spec.ts`.
+- [x] T412 [US4] AURA 5.9.0 ships handoff #70–#71: the pin moves to 5.9.0 in this PR. The pay sheet uses `Drawer` `data-testid` / `closeLabel` / `closeProps` (`markDrawer` deleted) and `Tabs` `keepMounted` / `activation="manual"` / `tabProps` (`MethodTablist` deleted; the boards' segmented look is `.pay-method-tabs` in `globals.css`). 5.9's 6.0 dev notices are cleared without changing output: TH / SV locale packs in `AuraBridge`, and `registerIcons(allIcons)` once per registry (`AuraBridge`, `@/lib/aura-server-icons`, `tests/setup.ts`). RED: the existing pay-sheet and method-tabs tests stay green on the native components.
+- [x] T413 [US4] (maintainer, after the board comparison) The shared invoice filters: below 1024 px the search takes its own row and the filters share the next one evenly. The phone invoice card: one labelled download (invoice unpaid, receipt paid) plus a "⋯" menu with the other document and "Email me a copy" (spec Clarifications, 2026-09-28). RED: `invoice-filters-props` (row layout), `portal-invoice-card-list` (option C), `portal-invoice-card-menu`.
 - [ ] T411 [US4] Exit: gates, build + bundle budgets, board screenshots (390 / 1440, light / dark, EN / TH / SV) through the preview route, financial-integrity, enterprise-ux, mobile-a11y, PCI SAQ-A and whole-branch reviews, then the **full e2e checkpoint** on the maintainer's machine, compared with main by test title.
 
 ## Later phases (one PR each; tasks written when the phase starts)

@@ -312,7 +312,10 @@ export function PortalInvoiceCardList({
                         label={t('actions.moreActions', { number: primaryNumber })}
                         invoiceDownload={
                           vm.showReceipt && vm.showInvoice
-                            ? { documentNumber: mainDownloadNumber, label: invoiceLabel }
+                            ? {
+                                documentNumber: mainDownloadNumber,
+                                label: t('actions.menuDownloadInvoice'),
+                              }
                             : undefined
                         }
                         resendable={vm.resendable}

@@ -41,7 +41,7 @@ function renderMenu(props: Partial<Parameters<typeof PortalInvoiceCardMenu>[0]> 
       <PortalInvoiceCardMenu
         invoiceId="inv-1"
         label="More actions for SC-2026-000045"
-        invoiceDownload={{ documentNumber: 'SC-2026-000045', label: 'Invoice' }}
+        invoiceDownload={{ documentNumber: 'SC-2026-000045', label: 'Download invoice (PDF)' }}
         resendable
         {...props}
       />
@@ -58,19 +58,21 @@ describe('<PortalInvoiceCardMenu>', () => {
     renderMenu();
     const trigger = screen.getByRole('button', { name: 'More actions for SC-2026-000045' });
     expect(trigger).toHaveAttribute('aria-haspopup', 'menu');
+    // The same secondary button as the download beside it, square at 44px.
+    expect(trigger.className).toContain('aura-btn--secondary');
     expect(trigger.className).toContain('min-h-11');
     expect(trigger.className).toContain('min-w-11');
 
     openMenu();
     const items = screen.getAllByRole('menuitem').map((el) => el.textContent?.trim());
-    expect(items).toEqual(['Invoice', 'Email me a copy']);
+    expect(items).toEqual(['Download invoice (PDF)', 'Email me a copy']);
   });
 
   it('choosing the invoice downloads the same PDF the button downloads', async () => {
     renderMenu();
     openMenu();
     await act(async () => {
-      fireEvent.click(screen.getByRole('menuitem', { name: /Invoice/ }));
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Download invoice (PDF)' }));
     });
     expect(downloadPdf).toHaveBeenCalledTimes(1);
     expect(downloadPdf).toHaveBeenCalledWith(
@@ -83,7 +85,7 @@ describe('<PortalInvoiceCardMenu>', () => {
     expect(toastMock.dismiss).toHaveBeenCalledWith('loading-id');
   });
 
-  it('choosing "Email me a copy" resends once, then the item stays unavailable for the cooldown', async () => {
+  it('choosing "Email me a copy" resends once; during the cooldown the item stays reachable and explains instead of sending', async () => {
     fetchMock.mockResolvedValue(new Response(null, { status: 202 }));
     vi.stubGlobal('fetch', fetchMock);
     renderMenu();
@@ -98,8 +100,16 @@ describe('<PortalInvoiceCardMenu>', () => {
     );
     expect(toastMock.success).toHaveBeenCalledWith(en.portal.invoices.toast.resendSuccess);
 
+    // Still enabled: a disabled item is skipped by the arrow keys and, as
+    // the only item, would leave keyboard focus stranded on the trigger.
     openMenu();
-    expect(screen.getByRole('menuitem', { name: 'Email me a copy' })).toBeDisabled();
+    const again = screen.getByRole('menuitem', { name: 'Email me a copy' });
+    expect(again).not.toBeDisabled();
+    await act(async () => {
+      fireEvent.click(again);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(toastMock.warning).toHaveBeenCalledWith(en.portal.invoices.toast.resendRateLimited);
   });
 
   it('with only the resend to offer, the menu holds just "Email me a copy"', () => {

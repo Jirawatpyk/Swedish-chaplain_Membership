@@ -6280,7 +6280,8 @@
         "viewDetail": "View invoice",
         "emailCopy": "Email me a copy",
         "emailCopyAria": "Email a fresh copy of invoice {number} to your address on file",
-        "moreActions": "More actions for {number}"
+        "moreActions": "More actions for {number}",
+        "menuDownloadInvoice": "Download invoice (PDF)"
       },
       "receiptStatus": {
         "generating": "Your tax receipt is being generated",

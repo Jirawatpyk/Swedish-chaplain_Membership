@@ -744,9 +744,17 @@ summary,
     background: var(--aura-bg-surface);
     box-shadow: inset 0 0 0 1px var(--aura-border-control), var(--aura-shadow-enterprise);
   }
+  /* Inset, so the list's overflow clipping cannot cut the ring (AURA's own
+     tab ring is inset too). */
   .pay-method-tabs .aura-tab:focus-visible {
-    outline-offset: 1px;
+    outline-offset: -3px;
     border-radius: var(--aura-radius-full);
+  }
+  /* High contrast drops box-shadows; mark the selected tab with a border. */
+  @media (forced-colors: active) {
+    .pay-method-tabs .aura-tab.is-active {
+      border: 2px solid Highlight;
+    }
   }
   .pay-method-tabs .aura-tabs__panel {
     padding-top: 16px;

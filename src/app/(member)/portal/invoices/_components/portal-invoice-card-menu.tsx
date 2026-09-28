@@ -9,13 +9,18 @@
  * run the same download and resend as the buttons (`usePortalPdfDownload`,
  * `useResendInvoice`): same URLs, same toasts, same 5-minute cooldown.
  *
- * The card renders the menu only when it has an item, so there is never an
- * empty or one-button-in-disguise menu (a void invoice has none).
+ * The card renders the menu only when it has an item (a void invoice has
+ * none). Items are never disabled: a disabled item is skipped by the arrow
+ * keys and, as the only item (an unpaid invoice's "Email me a copy"), would
+ * leave keyboard focus stranded on the trigger. During the resend cooldown the
+ * item explains instead of sending.
  */
-import { DropdownMenu, IconButton, type MenuItem } from '@jirawatpyk/aura-react';
+import { DropdownMenu, type MenuItem } from '@jirawatpyk/aura-react';
+import { buttonClass } from '@jirawatpyk/aura-react/server';
 import { IconDownload, IconEllipsis, IconMail } from '@jirawatpyk/aura-react/icons';
 import { useTranslations } from 'next-intl';
 
+import { toast } from '@/lib/toast';
 import { usePortalPdfDownload } from './portal-pdf-download-button';
 import { useResendInvoice } from './resend-invoice-button';
 
@@ -28,7 +33,7 @@ export interface PortalInvoiceCardMenuProps {
     | {
         /** The document's own number, for the fallback filename. */
         readonly documentNumber: string;
-        /** The same short label the button would carry ("Invoice"). */
+        /** What the item does, e.g. "Download invoice (PDF)". */
         readonly label: string;
       }
     | undefined;
@@ -47,7 +52,7 @@ export function PortalInvoiceCardMenu({
     documentNumber: invoiceDownload?.documentNumber ?? invoiceId,
     variant: 'invoice',
   });
-  const { isPending, recentlySent, resend } = useResendInvoice(invoiceId);
+  const { recentlySent, resend } = useResendInvoice(invoiceId);
 
   const items: MenuItem[] = [];
   if (invoiceDownload) {
@@ -61,9 +66,13 @@ export function PortalInvoiceCardMenu({
     items.push({
       label: t('actions.emailCopy'),
       icon: <IconMail />,
-      // Sending, or sent within the cooldown: shown but not selectable.
-      disabled: isPending || recentlySent,
-      onSelect: resend,
+      // Sent within the cooldown: say so (the same copy as the server's own
+      // rate-limit answer) rather than sending again. While a send is in
+      // flight the hook ignores the press.
+      onSelect: () => {
+        if (recentlySent) toast.warning(t('toast.resendRateLimited'));
+        else resend();
+      },
     });
   }
 
@@ -72,12 +81,20 @@ export function PortalInvoiceCardMenu({
       label={label}
       items={items}
       trigger={
-        <IconButton
+        // The same secondary button as the download beside it, square at
+        // 44px; the label is its name and its tooltip.
+        <button
           type="button"
-          icon={<IconEllipsis />}
-          label={label}
-          className="min-h-11 min-w-11 border border-[var(--aura-border-default)]"
-        />
+          aria-label={label}
+          title={label}
+          className={buttonClass({
+            variant: 'secondary',
+            size: 'sm',
+            className: 'min-h-11 min-w-11 px-0',
+          })}
+        >
+          <IconEllipsis />
+        </button>
       }
     />
   );
