@@ -145,4 +145,10 @@ describe('DirectoryPage — pagination', () => {
     expect(screen.getByText('Showing 101–131 of 131')).toBeInTheDocument();
     expect(screen.getByText('Company 131')).toBeInTheDocument();
   });
+
+  it('keeps the "Members" heading for screen readers but hides it on a phone (board Admin-directory-mobile)', async () => {
+    await renderPage({});
+    const heading = screen.getByRole('heading', { level: 2, name: enMessages.admin.directory.resultsHeading });
+    expect(heading).toHaveClass('max-sm:sr-only');
+  });
 });
