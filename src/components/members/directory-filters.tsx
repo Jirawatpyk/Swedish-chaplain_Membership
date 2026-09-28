@@ -232,7 +232,8 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
       }}
     >
       {/* A phone labels the search visibly (board `Admin-members-mobile`);
-          the box keeps the same words as its accessible name. */}
+          the box keeps the same words as its accessible name. A stand-in for
+          a FilterBar search label (AURA #83). */}
       <p className="mb-1.5 text-sm font-medium sm:hidden" aria-hidden="true">
         {t('searchSrLabel')}
       </p>
