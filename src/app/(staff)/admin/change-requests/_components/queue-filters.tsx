@@ -6,10 +6,10 @@
  * URL is the source of truth (the page validates `?state=&outcome=&from=&to=`
  * and applies the tenant-day bounds); the four controls STAGE locally and the
  * URL is patched on Apply — the `credit-note-filters` / member-page invoice
- * filter shape, so typing a date never churns the router. The state and
- * outcome controls are the shadcn `Select` (Base UI) like every other admin
- * filter (renewals `tier-filter-select`, broadcasts `queue-filters`): the
- * queue used to be the one surface on a native `<select>` (PR-2 review).
+ * filter shape, so typing a date never churns the router. 122 US5a (T507):
+ * AURA `Select`s and `DatePicker`s (board `Admin-change-requests`), each an
+ * AURA field with its visible label; the dates take the tenant's day
+ * (`Asia/Bangkok`) for "today".
  *
  * The outcome control exists only while the STAGED state is `decided` — the
  * only state that has an outcome — and leaving `decided` resets the staged
@@ -23,11 +23,8 @@
  * would destroy the button the admin just pressed and drop focus to `<body>`
  * (the re-review's N1).
  *
- * A11y (the UX review of this bar): a Base UI trigger renders a `<button>`,
- * whose accessible name comes from its CONTENT — here the selected value, not
- * the field's purpose — so each trigger carries `aria-label` ("Status" /
- * "Outcome"); the visible `<Label htmlFor>` stays for the click target and
- * the visual. Apply / Clear are never `disabled` while pending (a focused
+ * A11y (the UX review of this bar): each combobox is named by its visible
+ * label. Apply / Clear are never `disabled` while pending (a focused
  * button that turns disabled drops focus to `<body>`); `aria-busy` + a
  * re-entry guard do that job, and Clear hands focus to Apply before it
  * unmounts itself.
@@ -42,21 +39,15 @@
  * drift from it; the value is framework-supplied and same-origin by
  * construction, so there is no redirect surface here (PR-3 review SEC-6,
  * which read the earlier docblock's hardcoded `/admin/change-requests` as the
- * code). Its named controls — the two date inputs plus hidden `state` /
- * `outcome` / scope inputs mirroring what `apply()` writes — make a
- * pre-hydration Enter submit the same query natively (N4). The one
- * difference: a native submit sends an
- * EMPTY `from=` / `to=` for a blank date input; the page's zod drops an
- * invalid date on its own (`.catch(undefined)`), so the view is the same and
- * the next client-side Apply writes the canonical URL.
+ * code). Its named controls — hidden `state` / `outcome` / scope / date
+ * inputs mirroring what `apply()` writes (the DatePickers show a formatted
+ * day, so they carry no name) — make a pre-hydration Enter submit the same
+ * query natively (N4).
  */
-import { useCallback, useId, useRef, useState, useTransition } from 'react';
+import { useCallback, useRef, useState, useTransition } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, TranslatedSelectValue } from '@/components/ui/select';
+import { Button, DatePicker, Select, type ISODate } from '@jirawatpyk/aura-react';
 // the Domain file, not the module barrel — the barrel re-exports server-only
 // use cases (the review client imports the same way)
 import {
@@ -104,7 +95,6 @@ export interface ChangeRequestQueueFiltersProps {
 }
 
 export function ChangeRequestQueueFilters({ resultCount, hasMore }: ChangeRequestQueueFiltersProps) {
-  const ids = useId();
   const tFilters = useTranslations('admin.changeRequests.filters');
   const tReview = useTranslations('admin.changeRequests.review');
   const router = useRouter();
@@ -194,7 +184,7 @@ export function ChangeRequestQueueFilters({ resultCount, hasMore }: ChangeReques
     <form
       method="get"
       action={pathname}
-      className="grid gap-3 rounded-md border p-3 sm:grid-cols-2 lg:grid-cols-[repeat(4,minmax(0,1fr))_auto] lg:items-end"
+      className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[repeat(4,minmax(0,1fr))_auto] lg:items-end"
       aria-label={tFilters('label')}
       aria-busy={pending}
       data-testid="queue-filters"
@@ -205,61 +195,53 @@ export function ChangeRequestQueueFilters({ resultCount, hasMore }: ChangeReques
     >
       {/* the native (pre-hydration) submit carries exactly what apply() writes —
           the pending default writes no state, an outcome only under decided,
-          the scope params as they stand; never the cursor */}
+          the scope params as they stand, the ISO dates; never the cursor */}
       {state !== DEFAULT_STATE ? <input type="hidden" name="state" value={state} /> : null}
       {state === 'decided' && outcome !== ANY_OUTCOME ? <input type="hidden" name="outcome" value={outcome} /> : null}
       {SCOPE_PARAMS.map((keep) => {
         const v = params.get(keep);
         return v ? <input key={keep} type="hidden" name={keep} value={v} /> : null;
       })}
-      <div className="flex flex-col">
-        <Label htmlFor={`${ids}-state`}>{tFilters('state')}</Label>
-        <Select value={state} onValueChange={onStateChange}>
-          <SelectTrigger id={`${ids}-state`} className="w-full" aria-label={tFilters('state')}>
-            <TranslatedSelectValue translate={(v) => (isState(v) ? tReview(`state.${v}`) : null)} />
-          </SelectTrigger>
-          <SelectContent>
-            {CHANGE_REQUEST_STATES.map((s) => (
-              <SelectItem key={s} value={s}>
-                {tReview(`state.${s}`)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+      {from ? <input type="hidden" name="from" value={from} /> : null}
+      {to ? <input type="hidden" name="to" value={to} /> : null}
+      <Select
+        label={tFilters('state')}
+        data-testid="queue-filter-state"
+        value={state}
+        onChange={(e) => onStateChange(e.target.value)}
+        options={CHANGE_REQUEST_STATES.map((s) => ({ value: s, label: tReview(`state.${s}`) }))}
+      />
       {state === 'decided' ? (
-        <div className="flex flex-col">
-          <Label htmlFor={`${ids}-outcome`}>{tFilters('outcome')}</Label>
-          <Select value={outcome} onValueChange={(v) => setOutcome(stagedOutcome(v))}>
-            <SelectTrigger id={`${ids}-outcome`} className="w-full" aria-label={tFilters('outcome')}>
-              <TranslatedSelectValue translate={(v) => (isOutcome(v) ? tReview(`outcome.${v}`) : tFilters('anyOutcome'))} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ANY_OUTCOME}>{tFilters('anyOutcome')}</SelectItem>
-              {CHANGE_REQUEST_OUTCOMES.map((o) => (
-                <SelectItem key={o} value={o}>
-                  {tReview(`outcome.${o}`)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        <Select
+          label={tFilters('outcome')}
+          data-testid="queue-filter-outcome"
+          value={outcome}
+          onChange={(e) => setOutcome(stagedOutcome(e.target.value))}
+          options={[
+            { value: ANY_OUTCOME, label: tFilters('anyOutcome') },
+            ...CHANGE_REQUEST_OUTCOMES.map((o) => ({ value: o, label: tReview(`outcome.${o}`) })),
+          ]}
+        />
       ) : null}
-      <div className="flex flex-col">
-        <Label htmlFor={`${ids}-from`}>{tFilters('from')}</Label>
-        <Input id={`${ids}-from`} name="from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-      </div>
-      <div className="flex flex-col">
-        <Label htmlFor={`${ids}-to`}>{tFilters('to')}</Label>
-        <Input id={`${ids}-to`} name="to" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
-      </div>
+      <DatePicker
+        label={tFilters('from')}
+        timeZone="Asia/Bangkok"
+        value={from ? (from as ISODate) : null}
+        onChange={(v) => setFrom(v ?? '')}
+      />
+      <DatePicker
+        label={tFilters('to')}
+        timeZone="Asia/Bangkok"
+        value={to ? (to as ISODate) : null}
+        onChange={(v) => setTo(v ?? '')}
+      />
       {/* the buttons keep the last (auto) column whether or not the outcome
           control is in the row, so choosing "Decided" does not shove them;
           on a phone they fill the row like the sibling filter bars */}
       <div className={`grid gap-2 sm:flex sm:items-center lg:col-start-5 ${hasFilters ? 'grid-cols-2' : ''}`}>
         {/* `aria-busy` alone has no styling anywhere in the app — the dim is the
             visible "working" signal the old `disabled` used to give (re-review N2) */}
-        <Button ref={applyRef} type="submit" variant="outline" aria-busy={pending} className="aria-busy:opacity-70">
+        <Button ref={applyRef} type="submit" aria-busy={pending} className="aria-busy:opacity-70">
           {tFilters('apply')}
         </Button>
         {hasFilters ? (
@@ -270,7 +252,7 @@ export function ChangeRequestQueueFilters({ resultCount, hasMore }: ChangeReques
       </div>
       {/* the applied result, announced politely — one region that lives across
           every Apply (a fresh element per navigation would not be announced) */}
-      <p role="status" aria-live="polite" className="text-sm text-muted-foreground sm:col-span-2 lg:col-span-5" data-testid="queue-result-count">
+      <p role="status" aria-live="polite" className="text-sm text-[var(--aura-fg-secondary)] sm:col-span-2 lg:col-span-5" data-testid="queue-result-count">
         {hasMore ? tFilters('resultCountMore', { count: resultCount }) : tFilters('resultCount', { count: resultCount })}
       </p>
     </form>

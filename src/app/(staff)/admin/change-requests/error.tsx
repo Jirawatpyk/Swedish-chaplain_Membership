@@ -2,11 +2,9 @@
 
 import { useEffect } from 'react';
 import { useTranslations } from 'next-intl';
-import { AlertCircleIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
+import { RouteErrorPanel } from '@/components/shell/route-error-panel';
 
 /**
  * F114 — segment-scoped error boundary for `/admin/change-requests` (the
@@ -15,8 +13,6 @@ import { PageHeader } from '@/components/layout/page-header';
  * (sidebar + top nav) intact. Same TableContainer as page.tsx (check:layout).
  */
 export default function ChangeRequestsQueueError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
-  const t = useTranslations('errors');
-  const tButtons = useTranslations('buttons');
   const tQueue = useTranslations('admin.changeRequests.queue');
 
   useEffect(() => {
@@ -26,18 +22,7 @@ export default function ChangeRequestsQueueError({ error, reset }: { error: Erro
   return (
     <TableContainer>
       <PageHeader title={tQueue('title')} />
-      <Card>
-        <CardHeader className="flex flex-row items-start gap-3">
-          <AlertCircleIcon className="size-6 text-destructive" aria-hidden />
-          <div>
-            <CardTitle>{t('generic')}</CardTitle>
-            <CardDescription>{error.digest ? t('errorId', { id: error.digest }) : null}</CardDescription>
-          </div>
-        </CardHeader>
-        <CardContent className="flex gap-2">
-          <Button onClick={reset}>{tButtons('retry')}</Button>
-        </CardContent>
-      </Card>
+      <RouteErrorPanel digest={error.digest} onRetry={reset} />
     </TableContainer>
   );
 }

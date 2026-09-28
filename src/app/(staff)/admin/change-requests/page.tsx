@@ -41,10 +41,8 @@ import {
   asMemberId,
   listChangeRequestQueue,
 } from '@/modules/members';
-import { Badge } from '@/components/ui/badge';
-import { buttonVariants } from '@/components/ui/button';
-import { InlineAlert } from '@/components/ui/inline-alert';
-import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Alert, Badge, buttonClass } from '@jirawatpyk/aura-react/server';
+import { Table, TBody, THead, Td, Th, Tr } from '@/components/shell/aura-table';
 import { EmptyState } from '@/components/shell/empty-state';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
@@ -244,9 +242,9 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
         }
       />
       {deepLinkNotice ? (
-        <InlineAlert tone="info" role="status" data-testid="deep-link-notice">
+        <Alert tone="info" role="status" data-testid="deep-link-notice">
           {deepLinkNotice}
-        </InlineAlert>
+        </Alert>
       ) : null}
 
       <ChangeRequestQueueFilters resultCount={page.items.length} hasMore={page.nextCursor !== null} />
@@ -255,7 +253,7 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
           {q.memberId ? (
             <p className="text-sm" data-testid="queue-member-chip">
               {tFilters('memberChip', { company: memberChip ?? '' })}{' '}
-              <Link href={hrefWithout('memberId')} className="inline-flex items-center gap-1 text-primary underline underline-offset-4 hover:no-underline">
+              <Link href={hrefWithout('memberId')} className="inline-flex items-center gap-1 text-[var(--aura-fg-accent)] underline underline-offset-4 hover:no-underline">
                 <XIcon className="size-3" aria-hidden="true" />
                 {tFilters('removeMember')}
               </Link>
@@ -264,7 +262,7 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
           {q.submitter ? (
             <p className="text-sm" data-testid="queue-submitter-chip">
               {tFilters('submitterChip')}{' '}
-              <Link href={hrefWithout('submitter')} className="inline-flex items-center gap-1 text-primary underline underline-offset-4 hover:no-underline">
+              <Link href={hrefWithout('submitter')} className="inline-flex items-center gap-1 text-[var(--aura-fg-accent)] underline underline-offset-4 hover:no-underline">
                 <XIcon className="size-3" aria-hidden="true" />
                 {tFilters('removeSubmitter')}
               </Link>
@@ -280,86 +278,90 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
           </div>
         )
       ) : (
-        <Table data-testid="queue-table">
-          <TableCaption className="sr-only">{t('tableCaption')}</TableCaption>
-          <TableHeader>
-            <TableRow>
-              <TableHead>{t('columns.member')}</TableHead>
-              <TableHead>{t('columns.submitter')}</TableHead>
-              <TableHead>{t('columns.fields')}</TableHead>
-              <TableHead>{t('columns.submitted')}</TableHead>
-              <TableHead>{t('columns.waiting')}</TableHead>
-              <TableHead>{t('columns.status')}</TableHead>
-              <TableHead>
+        // 122 US5a (T507) — AURA table (board `Admin-change-requests`), rows as
+        // cards below 640px. A static table, not DataTable: no sort, no
+        // selection, and every row keeps its test id / request id / overdue
+        // flag.
+        <Table data-testid="queue-table" caption={t('tableCaption')} captionHidden stackBelow="sm">
+          <THead>
+            <Tr>
+              <Th>{t('columns.member')}</Th>
+              <Th>{t('columns.submitter')}</Th>
+              <Th>{t('columns.fields')}</Th>
+              <Th>{t('columns.submitted')}</Th>
+              <Th>{t('columns.waiting')}</Th>
+              <Th>{t('columns.status')}</Th>
+              <Th align="end">
                 <span className="sr-only">{t('columns.actions')}</span>
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
+              </Th>
+            </Tr>
+          </THead>
+          <TBody>
             {page.items.map((item) => {
               const r = item.row.request;
               const wait = waitingParts(item.waitingSeconds);
               const rowId = `cr-row-${r.id}`;
               return (
-                <TableRow key={r.id} data-testid="queue-row" data-request-id={r.id} data-overdue={item.overdue ? 'true' : undefined}>
-                  <TableCell>
+                <Tr key={r.id} data-testid="queue-row" data-request-id={r.id} data-overdue={item.overdue ? 'true' : undefined}>
+                  <Td>
                     <div className="font-medium">{item.row.member.companyName}</div>
-                    <div className="text-caption text-muted-foreground">
+                    <div className="font-mono text-xs text-[var(--aura-fg-secondary)]">
                       #{item.row.member.memberNumber}
                       {item.row.member.archived ? ` · ${t('archivedMember')}` : null}
                     </div>
-                  </TableCell>
-                  <TableCell>
+                  </Td>
+                  <Td>
                     <div>{item.row.submitter.displayName}</div>
-                    <div className="text-caption text-muted-foreground">{tReview(`roles.${r.submitterRoleAtSubmission}`)}</div>
-                  </TableCell>
-                  <TableCell>
+                    <div className="text-xs text-[var(--aura-fg-secondary)]">{tReview(`roles.${r.submitterRoleAtSubmission}`)}</div>
+                  </Td>
+                  <Td>
                     <div>{t('fieldCount', { count: r.fields.length })}</div>
                     {r.fields.some((f) => f.affectsTaxDocuments) ? (
-                      <div className="flex items-center gap-1 text-caption text-muted-foreground">
+                      <div className="flex items-center gap-1 text-xs text-[var(--aura-fg-secondary)]">
                         <ReceiptTextIcon className="size-3" aria-hidden="true" />
                         {tReview('markers.taxAffecting')}
                       </div>
                     ) : null}
-                  </TableCell>
-                  <TableCell>{fmt(r.submittedAt)}</TableCell>
-                  <TableCell>
-                    <span id={`${rowId}-waiting`}>{wait.days > 0 ? t('waitingDays', { count: wait.days }) : t('waitingHours', { count: wait.hours })}</span>
-                    {item.overdue ? (
-                      <Badge variant="destructive" className="ml-2" data-testid="overdue-badge">
-                        <AlertTriangleIcon className="mr-1 size-3" aria-hidden="true" />
-                        {t('overdue')}
-                      </Badge>
-                    ) : null}
-                  </TableCell>
-                  <TableCell>
+                  </Td>
+                  <Td>{fmt(r.submittedAt)}</Td>
+                  <Td>
+                    <span className="inline-flex flex-wrap items-center gap-2">
+                      <span id={`${rowId}-waiting`}>{wait.days > 0 ? t('waitingDays', { count: wait.days }) : t('waitingHours', { count: wait.hours })}</span>
+                      {item.overdue ? (
+                        <Badge tone="danger" icon={<AlertTriangleIcon aria-hidden="true" />} data-testid="overdue-badge">
+                          {t('overdue')}
+                        </Badge>
+                      ) : null}
+                    </span>
+                  </Td>
+                  <Td>
                     <ChangeRequestStatusBadge status={changeRequestStatusOf(r)} audience="staff" />
                     {r.decidedAt && item.row.decidedBy ? (
-                      <div className="mt-1 text-caption text-muted-foreground">
+                      <div className="mt-1 text-xs text-[var(--aura-fg-secondary)]">
                         {tReview('decidedBy', { name: item.row.decidedBy.displayName || tReview('unknownReviewer'), decidedAt: fmt(r.decidedAt) })}
                         {item.row.decidedBy.deactivated ? ` ${tReview('deactivated')}` : null}
                       </div>
                     ) : null}
-                  </TableCell>
-                  <TableCell className="text-right">
+                  </Td>
+                  <Td align="end">
                     <Link
                       href={`/admin/change-requests/${r.id}`}
-                      className={`${buttonVariants({ variant: 'outline', size: 'sm' })} inline-flex h-9 items-center`}
+                      className={buttonClass({ variant: 'secondary', size: 'sm' })}
                       aria-label={r.state === 'pending' ? t('reviewFor', { company: item.row.member.companyName }) : t('viewFor', { company: item.row.member.companyName })}
                       aria-describedby={`${rowId}-waiting`}
                     >
                       {r.state === 'pending' ? t('open') : t('view')}
                     </Link>
-                  </TableCell>
-                </TableRow>
+                  </Td>
+                </Tr>
               );
             })}
-          </TableBody>
+          </TBody>
         </Table>
       )}
       {nextHref ? (
         <div className="flex justify-center">
-          <Link href={nextHref} className={buttonVariants({ variant: 'outline' })} data-testid="queue-next">
+          <Link href={nextHref} className={buttonClass({ variant: 'secondary' })} data-testid="queue-next">
             {t('nextPage')}
           </Link>
         </div>
