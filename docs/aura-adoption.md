@@ -83,7 +83,16 @@ Phases 2–12 each depend on 1 and can land in any order.
 
 ## AURA gaps (the handoff doc)
 
-The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, items 52–56 (Addendum 4) in 5.6.0, items 57–62 (Addendum 5, found in US1) in 5.7.0, item 63 in 5.7.1, item 64 (Addendum 6) in 5.7.2, item 65 (Addendum 7, found in US2) in 5.7.3 items 66–69 (Addendum 8, found in US3) in 5.8.0 items 70–71 (Addendum 9, found in US4) in 5.9.0 and items 72–74 (Addendum 10, found adopting 5.9.0 in US4) in **5.10.0**, the current pin. No item is open. One note stays with AURA: `Menu` closes on any scroll or window resize (iOS Safari fires resize when its toolbar moves), to be checked on a real iPhone before it becomes an item.
+The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, items 52–56 (Addendum 4) in 5.6.0, items 57–62 (Addendum 5, found in US1) in 5.7.0, item 63 in 5.7.1, item 64 (Addendum 6) in 5.7.2, item 65 (Addendum 7, found in US2) in 5.7.3 items 66–69 (Addendum 8, found in US3) in 5.8.0 items 70–71 (Addendum 9, found in US4) in 5.9.0 and items 72–74 (Addendum 10, found adopting 5.9.0 in US4) in **5.10.0**, the current pin. Four items found in US5a (Addendum 11, #75–#78) are open; each has a local stand-in, listed below. One note stays with AURA: `Menu` closes on any scroll or window resize (iOS Safari fires resize when its toolbar moves), to be checked on a real iPhone before it becomes an item.
+
+Open from US5a (Addendum 11), each with its Chamber-OS stand-in:
+
+| # | Gap | Stand-in until AURA ships it |
+|---|---|---|
+| 75 | `DataTable` names each row checkbox from the row key (a UUID here) | `MembersTable` scopes `<AuraProvider strings>` with `selectRow(key)` looking the company name up by key ("Select Siam Nordic Trading Co., Ltd.") |
+| 76 | `Checkbox` replaces a passed `aria-describedby` with its own | `ChangeRequestDecisionTable` uses the `description` prop for the "contact removed" note instead |
+| 77 | `DataTable` selection checkbox is a 16px target (WCAG 2.5.8 asks 24px) | `MembersTable` grows the invisible input 4px past the box (`.aura-table__sel .aura-check__input { inset: -4px }`), measured 24×24 in `members-target-size-2-2.spec.ts` |
+| 78 | `DataTable` rows are a fixed height, so a cell holding two badges or a long name is clipped rather than wrapped | Grid cells are one line (truncated, the full text in `title`); phone cards wrap, and the card's two status badges stack |
 
 5.9.0 also prepares for 6.0, which builds in only English and drops icon names given as strings from the default bundle. Chamber-OS clears its dev notices without changing any output:
 - `AuraBridge` passes AURA's Thai and Swedish locale packs as `strings`.
