@@ -161,7 +161,9 @@ export function PortalInvoiceCardList({
             {/* Spec 122 US4 — an AURA card per invoice (the `Invoices-mobile`
                 board's stacked rows), hairline divider above the total. */}
             <Card>
-              <div className="flex flex-col gap-3">
+              {/* A size container, so the facts grid below can reflow to one
+                  column when the card is too narrow for it (R13: 200% text). */}
+              <div className="@container flex flex-col gap-3">
                 {/* Header: doc-number link + document-kind badge (left) +
                     status badge (right). */}
                 <div className="flex items-start justify-between gap-3">
@@ -201,12 +203,14 @@ export function PortalInvoiceCardList({
                     2-column grid under the header: Issued, Due, then Receipt No.
                     and Total. Each value stays on one line ("15 ต.ค. 2569").
                     Total always sits in the right-hand column so it lines up
-                    card to card. Receipt No. is separate-mode only, as before:
+                    card to card. Below 16rem of card width the grid is one
+                    column: rem-based, so 200% text reflows it too instead of
+                    pushing an unbreakable amount past the screen (R13). Receipt No. is separate-mode only, as before:
                     combined mode omits it (the combined download is in the
                     action row). 088 A-refined (FR-016) — on a real tax_receipt
                     row the RC is a link to the detail whose aria-label names the
                     document; legacy separate-mode rows keep plain text. */}
-                <dl className="m-0 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-[var(--aura-border-default)] pt-3">
+                <dl className="m-0 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-[var(--aura-border-default)] pt-3 @max-[16rem]:grid-cols-1">
                   <div className="flex min-w-0 flex-col gap-0.5">
                     <dt className="text-xs text-[var(--aura-fg-secondary)]">{t('columns.issueDate')}</dt>
                     <dd data-testid="portal-invoice-card-issue-date" className="m-0 whitespace-nowrap text-sm">
@@ -237,7 +241,7 @@ export function PortalInvoiceCardList({
                       </dd>
                     </div>
                   ) : null}
-                  <div className="col-start-2 flex min-w-0 flex-col gap-0.5">
+                  <div className="col-start-2 flex min-w-0 flex-col gap-0.5 @max-[16rem]:col-start-auto">
                     <dt className="text-xs text-[var(--aura-fg-secondary)]">{t('columns.total')}</dt>
                     <dd className="m-0 whitespace-nowrap text-sm font-semibold tabular-nums">
                       {formatSatangThb(vm.total?.satang ?? null, locale)}

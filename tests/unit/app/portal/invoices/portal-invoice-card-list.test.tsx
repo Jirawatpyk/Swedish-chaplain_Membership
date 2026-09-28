@@ -881,3 +881,26 @@ describe('<PortalInvoiceCardList> — FR-009 locale date formatting (T063b)', ()
     expect(dates.textContent).not.toContain('2569');
   });
 });
+
+// R13 (portal-invoices-a11y:151) — at 200% text the facts grid's second column
+// was too narrow for an unbreakable amount ("21,400.00 THB"), so the page
+// scrolled sideways (SC 1.4.4 / 1.4.10). The card body is a size container and
+// the grid drops to one column below 16rem; rem-based, so enlarged text
+// triggers it as well as a narrow screen.
+describe('<PortalInvoiceCardList> — facts grid reflows at 200% text (R13)', () => {
+  it('the card body is a container and the facts grid goes to one column below 16rem', () => {
+    renderCardFor({
+      status: 'paid',
+      receiptDocumentNumberRaw: 'RCP-2026-000009',
+      receiptPdfStatus: 'rendered',
+      receiptPdf: { blobKey: 'rk', sha256: sha(), templateVersion: 1 },
+    });
+    const grid = theCard().querySelector('dl');
+    expect(grid).not.toBeNull();
+    expect(grid!.className).toContain('@max-[16rem]:grid-cols-1');
+    expect(grid!.parentElement!.className).toContain('@container');
+    // Total leaves its pinned right-hand column when the grid is one column.
+    const total = [...grid!.children].find((c) => c.textContent?.includes('Total'));
+    expect(total?.className).toContain('@max-[16rem]:col-start-auto');
+  });
+});
