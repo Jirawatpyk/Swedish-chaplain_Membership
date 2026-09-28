@@ -16,6 +16,7 @@ import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import type { ChangeRequestReviewFieldView, StaffChangeRequestView } from '@/lib/change-request-staff-view';
 import { ChangeRequestReviewClient } from '@/components/members/change-requests/change-request-review-client';
+import { DECISION_REASON_MAX_LENGTH } from '@/modules/members/domain/change-request/change-request';
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
 vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
@@ -100,5 +101,19 @@ describe('change-request review on AURA (T508)', () => {
     expect(reason.closest('.aura-field')?.querySelector('label')).toHaveTextContent(DECISION.reasonLabel);
     const note = within(dialog).getByTestId('decision-note');
     expect(note.closest('.aura-field')?.querySelector('label')).toHaveTextContent(DECISION.noteLabel);
+  });
+
+  it('the reason keeps its counter, invalid state and an alert when too long, as before AURA', () => {
+    renderClient();
+    fireEvent.click(screen.getByTestId('confirm-decision'));
+    const dialog = screen.getByRole('alertdialog');
+    const reason = within(dialog).getByTestId('decision-reason');
+    expect(reason.getAttribute('aria-describedby')?.split(' ')).toContain('decision-reason-counter');
+    // One row is rejected, so a reason is required: whitespace alone is invalid.
+    fireEvent.change(reason, { target: { value: '   ' } });
+    expect(reason).toHaveAttribute('aria-invalid', 'true');
+    fireEvent.change(reason, { target: { value: 'x'.repeat(DECISION_REASON_MAX_LENGTH + 1) } });
+    const tooLong = DECISION.errors.tooLong.replace('{max}', String(DECISION_REASON_MAX_LENGTH));
+    expect(within(dialog).getAllByRole('alert').some((a) => a.textContent?.includes(tooLong))).toBe(true);
   });
 });
