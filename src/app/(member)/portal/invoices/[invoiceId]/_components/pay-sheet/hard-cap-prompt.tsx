@@ -25,7 +25,7 @@ import { useEffect, useRef } from 'react';
 import { useTranslations } from 'next-intl';
 import { ClockIcon } from 'lucide-react';
 
-import { Button } from '@/components/ui/button';
+import { Button } from '@jirawatpyk/aura-react';
 import { useCountdownAutoDismiss } from '@/hooks/use-countdown-auto-dismiss';
 
 const COUNTDOWN_SECONDS = 60;
@@ -76,24 +76,25 @@ export function HardCapPrompt({ onContinue, onCancel }: HardCapPromptProps) {
     >
       <ClockIcon
         aria-hidden="true"
-        className="size-12 text-muted-foreground"
+        className="size-12 text-[var(--aura-fg-secondary)]"
       />
       <h3
         id="pay-sheet-hard-cap-title"
-        className="text-h3 font-semibold text-foreground"
+        className="text-h3 font-semibold text-[var(--aura-fg-primary)]"
       >
         {t('title')}
       </h3>
       <p
         id="pay-sheet-hard-cap-body"
-        className="text-body text-muted-foreground"
+        className="text-body text-[var(--aura-fg-secondary)]"
       >
         {t('body')}
       </p>
       <Button
         ref={continueButtonRef}
         type="button"
-        variant="default"
+        variant="primary"
+        fullWidth
         onClick={() => {
           interruptCountdown();
           onContinue();
@@ -105,7 +106,7 @@ export function HardCapPrompt({ onContinue, onCancel }: HardCapPromptProps) {
         {t('continue')}
       </Button>
       <p
-        className="text-caption text-muted-foreground"
+        className="text-caption text-[var(--aura-fg-secondary)]"
         aria-hidden="true"
         data-testid="pay-sheet-hard-cap-countdown"
       >

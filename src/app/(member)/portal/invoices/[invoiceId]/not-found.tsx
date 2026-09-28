@@ -26,7 +26,7 @@ import { ArrowLeft } from 'lucide-react';
 import { getTranslations } from 'next-intl/server';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { buttonVariants } from '@/components/ui/button';
+import { buttonClass } from '@jirawatpyk/aura-react/server';
 
 export default async function PortalInvoiceNotFound(): Promise<React.ReactElement> {
   const t = await getTranslations('portal.invoices');
@@ -37,14 +37,14 @@ export default async function PortalInvoiceNotFound(): Promise<React.ReactElemen
       <PageHeader title={t('title')} />
       <div
         data-testid="portal-invoice-not-found"
-        className="rounded-md border p-8 text-center"
+        className="rounded-[var(--aura-card-radius)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] p-8 text-center"
       >
-        <p className="text-sm text-muted-foreground">{tErrors('notFound')}</p>
+        <p className="m-0 text-sm text-[var(--aura-fg-secondary)]">{tErrors('notFound')}</p>
         <Link
           href="/portal/invoices"
-          className={`${buttonVariants({ variant: 'outline', size: 'sm' })} mt-4 inline-flex items-center`}
+          className={buttonClass({ variant: 'secondary', size: 'sm', className: 'mt-4' })}
         >
-          <ArrowLeft className="mr-1 h-4 w-4" aria-hidden="true" />
+          <ArrowLeft className="aura-icon size-4" aria-hidden="true" />
           {t('title')}
         </Link>
       </div>

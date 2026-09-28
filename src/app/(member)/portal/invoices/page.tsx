@@ -31,18 +31,12 @@ import { buildMembersDeps } from '@/modules/members/members-deps';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { TablePagination } from '@/components/layout/table-pagination';
-import { Card, CardContent } from '@/components/ui/card';
-import { buttonVariants } from '@/components/ui/button';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { Suspense } from 'react';
+import { Card, buttonClass } from '@jirawatpyk/aura-react/server';
+import { Table, TBody, THead, Td, Th, Tr } from '@/components/shell/aura-table';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
+import { MembershipInvoiceAlertSection } from '../_components/membership-invoice-alert-section';
 import { formatDate, formatSatangThb } from './_utils/format';
 import { InvoiceStatusBadge } from './_components/invoice-status-badge';
 import {
@@ -125,12 +119,6 @@ export default async function PortalInvoicesPage({
 }) {
   const { user } = await requireSession('member');
   const t = await getTranslations('portal.invoices');
-  const tStatus = await getTranslations('admin.invoices.list.statuses');
-  // 088 (T065 / FR-016) — the SC-bill ↔ RC-tax-receipt disambiguation labels
-  // live in the shared admin.invoices.tax088 namespace (reused by the portal,
-  // mirroring the existing tStatus reuse above). Only surfaced when the
-  // tax-at-payment flag is on.
-  const tTax088 = await getTranslations('admin.invoices.tax088');
   const f088TaxAtPayment = env.features.f088TaxAtPayment;
   const userLocale = await getLocale();
 
@@ -147,9 +135,7 @@ export default async function PortalInvoicesPage({
     <DetailContainer>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
       <Card>
-        <CardContent className="py-12 text-center">
-          <p className="text-muted-foreground">{message}</p>
-        </CardContent>
+        <p className="m-0 py-8 text-center text-[var(--aura-fg-secondary)]">{message}</p>
       </Card>
     </DetailContainer>
   );
@@ -273,11 +259,61 @@ export default async function PortalInvoicesPage({
     statusFilter !== 'all' ||
     subjectFilter !== undefined;
 
+  return renderPortalInvoicesView({
+    rows,
+    total,
+    page,
+    hasActiveFilter,
+    userLocale,
+    f088TaxAtPayment,
+    // Spec 122 US4 — the `Invoices` board opens with the unpaid-membership
+    // alert (US3's section: same outstanding read, same access gating).
+    alert: (
+      <Suspense fallback={null}>
+        <MembershipInvoiceAlertSection tenantId={tenantCtx.slug} memberId={member.memberId} />
+      </Suspense>
+    ),
+  });
+}
+
+/**
+ * The list's markup once its data is loaded — split out (spec 122 US4) so
+ * the no-DB preview route renders the page's own markup. Every per-row
+ * decision still comes from the shared view model.
+ */
+export async function renderPortalInvoicesView({
+  rows,
+  total,
+  page,
+  hasActiveFilter,
+  userLocale,
+  f088TaxAtPayment,
+  alert,
+}: {
+  readonly rows: ReadonlyArray<{ readonly vm: ReturnType<typeof toInvoiceRowViewModel> }>;
+  readonly total: number;
+  readonly page: number;
+  readonly hasActiveFilter: boolean;
+  readonly userLocale: string;
+  readonly f088TaxAtPayment: boolean;
+  readonly alert: React.ReactNode;
+}): Promise<React.ReactElement> {
+  const t = await getTranslations('portal.invoices');
+  const tStatus = await getTranslations('admin.invoices.list.statuses');
+  // 088 (T065 / FR-016) — the SC-bill ↔ RC-tax-receipt disambiguation labels
+  // live in the shared admin.invoices.tax088 namespace (reused by the portal,
+  // mirroring the tStatus reuse above). Only surfaced when the tax-at-payment
+  // flag is on.
+  const tTax088 = await getTranslations('admin.invoices.tax088');
   return (
     <DetailContainer>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
-      <Card>
-        <CardContent className="flex flex-col gap-4">
+      {alert}
+      {/* Below 1024px, where the rows turn into cards, the card frame drops
+          away: those rows are cards of their own (the `Invoices-mobile`
+          board), not cards in a card. */}
+      <Card className="max-lg:border-0 max-lg:bg-transparent max-lg:shadow-none max-lg:[&_.aura-card\_\_body]:p-0">
+        <div className="flex flex-col gap-4">
           {/* Reuse the admin InvoiceFilters client component for UI parity
               (same shadcn Select, same debounced search, same X-clear
               affordance), but configured for self-service:
@@ -295,80 +331,63 @@ export default async function PortalInvoicesPage({
           />
           {rows.length === 0 ? (
             <div className="py-12 text-center">
-              <p className="text-muted-foreground">
+              <p className="m-0 text-[var(--aura-fg-secondary)]">
                 {hasActiveFilter ? t('filters.noMatch') : t('empty')}
               </p>
             </div>
           ) : (
             <>
-              {/* 060-member-portal-d4 — dual-render. The 7-column desktop
-                  table is hidden below `md` (768px); the mobile card list
-                  (`PortalInvoiceCardList`) takes over `< md`. Both consume
-                  the SAME per-row view-model (`rows[].vm`) so they can never
+              {/* 060-member-portal-d4 — dual-render. Both forms consume the
+                  SAME per-row view-model (`rows[].vm`) so they can never
                   drift apart. Filters + pagination + empty/no-match states
                   live ABOVE this branch and render ONCE for both form
-                  factors. */}
-              {/* R8-M1-ux — dual-tone inset shadow signals horizontal
-                  scroll on the table (parity with admin table U-I4). The
-                  portal list has 7 columns; without the cue, members miss
-                  the right-edge Total + Actions silently. */}
-              <div className="hidden overflow-x-auto shadow-[inset_-12px_0_8px_-12px_rgba(0,0,0,0.08)] md:block dark:shadow-[inset_-12px_0_8px_-12px_rgba(255,255,255,0.10)]">
-                <Table aria-label={t('title')}>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead
-                        scope="col"
-                        className="text-xs uppercase tracking-wide text-muted-foreground"
-                      >
+                  factors. Spec 122 US4 (UX review M3): the 7-column table
+                  (~1,100px with three actions) starts at `lg`; below it the
+                  card list (`PortalInvoiceCardList`) takes over, so tablets
+                  no longer get a sideways-scrolling table. Where the table
+                  still overflows (1024–1150px) its scroller is a named,
+                  focusable region so a keyboard can pan it (SC 2.1.1). */}
+              <div
+                role="region"
+                aria-label={t('title')}
+                tabIndex={0}
+                className="hidden overflow-x-auto rounded-[var(--aura-radius-sm)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)] lg:block"
+              >
+                <Table caption={t('title')} captionHidden className="[&_td]:align-middle">
+                  <THead>
+                    <Tr>
+                      <Th>
                         {t('columns.documentNumber')}
-                      </TableHead>
-                      <TableHead
-                        scope="col"
-                        className="text-xs uppercase tracking-wide text-muted-foreground whitespace-nowrap"
-                      >
+                      </Th>
+                      <Th className="whitespace-nowrap">
                         {t('columns.receiptNumber')}
-                      </TableHead>
-                      <TableHead
-                        scope="col"
-                        className="text-xs uppercase tracking-wide text-muted-foreground"
-                      >
+                      </Th>
+                      <Th>
                         {t('columns.status')}
-                      </TableHead>
-                      <TableHead
-                        scope="col"
-                        className="text-xs uppercase tracking-wide text-muted-foreground"
-                      >
+                      </Th>
+                      <Th>
                         {t('columns.issueDate')}
-                      </TableHead>
-                      <TableHead
-                        scope="col"
-                        className="text-xs uppercase tracking-wide text-muted-foreground"
-                      >
+                      </Th>
+                      <Th>
                         {t('columns.dueDate')}
-                      </TableHead>
-                      <TableHead
-                        scope="col"
-                        className="text-right text-xs uppercase tracking-wide text-muted-foreground"
-                      >
+                      </Th>
+                      <Th align="end">
                         {t('columns.total')}
-                      </TableHead>
-                      <TableHead
-                        scope="col"
-                        className="text-right text-xs uppercase tracking-wide text-muted-foreground"
-                      >
+                      </Th>
+                      <Th align="end">
                         {t('columns.actions')}
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
+                      </Th>
+                    </Tr>
+                  </THead>
+                  <TBody>
                     {/* 060-member-portal-d4 — the row map reads ONLY `vm.*`
                         (the shared view-model) for every action/label/hint/
                         sentinel decision; the raw repo row is no longer
                         destructured here so the table can never drift from the
                         mobile card. */}
                     {rows.map(({ vm }) => (
-                      <TableRow key={vm.invoiceId}>
-                        <TableCell className="align-middle text-xs">
+                      <Tr key={vm.invoiceId}>
+                        <Td mono className="whitespace-nowrap">
                           {/* 088 A-refined (FR-016) — the row identity is
                               `primaryNumber` = the invoice's OWN (SC) number for a
                               real 088 bill (paid AND unpaid), the §87 number for
@@ -378,7 +397,7 @@ export default async function PortalInvoicesPage({
                               No. column. No per-row document-kind tag. */}
                           <Link
                             href={`/portal/invoices/${vm.invoiceId}`}
-                            className="font-mono underline underline-offset-4 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2"
+                            className="font-mono text-[var(--aura-fg-primary)] underline underline-offset-4 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2"
                             // 064 remediation S3 — displayNumber (via
                             // primaryNumber) resolves β rows to their printed
                             // §105 number so the cell never shows an
@@ -387,8 +406,8 @@ export default async function PortalInvoicesPage({
                           >
                             {vm.primaryNumber ?? '—'}
                           </Link>
-                        </TableCell>
-                        <TableCell className="align-middle whitespace-nowrap">
+                        </Td>
+                        <Td className="whitespace-nowrap">
                           {vm.taxDocumentKind === 'tax_receipt' && vm.receiptNumber ? (
                             // 088 A-refined (FR-016) — the RC §86/4 tax receipt
                             // lives on the SAME invoice row → a clickable link to
@@ -398,7 +417,7 @@ export default async function PortalInvoicesPage({
                             <Link
                               href={`/portal/invoices/${vm.invoiceId}`}
                               aria-label={tTax088('seeReceiptLink', { number: vm.receiptNumber })}
-                              className="font-mono text-sm tabular-nums underline underline-offset-4 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2"
+                              className="font-mono text-sm tabular-nums text-[var(--aura-fg-primary)] underline underline-offset-4 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2"
                             >
                               {vm.receiptNumber}
                             </Link>
@@ -440,23 +459,23 @@ export default async function PortalInvoicesPage({
                           ) : (
                             <EmptyCell />
                           )}
-                        </TableCell>
-                        <TableCell className="align-middle">
+                        </Td>
+                        <Td>
                           <InvoiceStatusBadge
                             status={vm.displayStatus}
                             label={tStatus(vm.displayStatus)}
                           />
-                        </TableCell>
-                        <TableCell className="align-middle">
+                        </Td>
+                        <Td className="whitespace-nowrap">
                           {formatDate(vm.issueDate, userLocale)}
-                        </TableCell>
-                        <TableCell className="align-middle">
+                        </Td>
+                        <Td className="whitespace-nowrap">
                           {formatDate(vm.dueDate, userLocale)}
-                        </TableCell>
-                        <TableCell className="align-middle text-right tabular-nums">
+                        </Td>
+                        <Td numeric>
                           {formatSatangThb(vm.total?.satang ?? null, userLocale)}
-                        </TableCell>
-                        <TableCell className="align-middle text-right">
+                        </Td>
+                        <Td align="end">
                           {(() => {
                             // 060-member-portal-d4 — per-row flags are now
                             // derived once into `vm` (toInvoiceRowViewModel)
@@ -523,7 +542,7 @@ export default async function PortalInvoicesPage({
                                       },
                                     )}
                                     className={cn(
-                                      buttonVariants({ variant: 'ghost', size: 'sm' }),
+                                      buttonClass({ variant: 'ghost', size: 'sm' }),
                                       'min-h-11 px-3',
                                     )}
                                   />
@@ -563,7 +582,7 @@ export default async function PortalInvoicesPage({
                                           { number: receiptRef },
                                         )}
                                         className={cn(
-                                          buttonVariants({ variant: 'ghost', size: 'sm' }),
+                                          buttonClass({ variant: 'ghost', size: 'sm' }),
                                           'min-h-11 px-3',
                                         )}
                                       />
@@ -596,13 +615,13 @@ export default async function PortalInvoicesPage({
                               </div>
                             );
                           })()}
-                        </TableCell>
-                      </TableRow>
+                        </Td>
+                      </Tr>
                     ))}
-                  </TableBody>
+                  </TBody>
                 </Table>
               </div>
-              {/* Mobile card list (`< md`). Consumes the same `rows[].vm`
+              {/* Mobile card list (`< lg`). Consumes the same `rows[].vm`
                   the table consumes — no recomputed flags. */}
               <PortalInvoiceCardList
                 rows={rows}
@@ -614,7 +633,7 @@ export default async function PortalInvoicesPage({
                 // disambiguation only when both this prop is present AND the VM's
                 // taxDocumentKind is non-'none' (byte-identical legacy otherwise).
                 {...(f088TaxAtPayment ? { tTax088 } : {})}
-                className="md:hidden"
+                className="lg:hidden"
               />
               <TablePagination
                 page={page}
@@ -624,7 +643,7 @@ export default async function PortalInvoicesPage({
               />
             </>
           )}
-        </CardContent>
+        </div>
       </Card>
       <span className="sr-only">{t('loaded')}</span>
     </DetailContainer>

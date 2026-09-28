@@ -104,6 +104,9 @@ import { beforeAll, afterEach, afterAll, vi } from 'vitest';
 // Testing Library convention and replace the looser `.toBeTruthy`
 // pattern that passes for any non-null DOM reference.
 import '@testing-library/jest-dom/vitest';
+import { registerIcons } from '@jirawatpyk/aura-react';
+import { registerIcons as registerServerIcons } from '@jirawatpyk/aura-react/server';
+import { allIcons } from '@jirawatpyk/aura-react/icons';
 
 // Spec 122 T006 — an AURA development warning (`[AURA] …`: a Select with no
 // accessible name, …) is a misuse that would otherwise only reach the console.
@@ -114,6 +117,12 @@ console.warn = (...args: unknown[]) => {
   if (typeof args[0] === 'string' && args[0].startsWith('[AURA]')) throw new Error(args[0]);
   consoleWarn(...args);
 };
+
+// AURA 5.9 — the app registers AURA's icons by name at startup (`AuraBridge`
+// for client components, `@/lib/aura-server-icons` for Server Components);
+// component tests render without either, so register both registries here.
+registerIcons(allIcons);
+registerServerIcons(allIcons);
 
 // Fixed clock for deterministic TTL tests. Individual tests can override
 // by calling `vi.setSystemTime(...)` themselves.

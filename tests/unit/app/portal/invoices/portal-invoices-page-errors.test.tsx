@@ -94,6 +94,14 @@ vi.mock('@/app/(staff)/admin/invoices/_components/invoice-filters', () => ({
   InvoiceFilters: () => null,
 }));
 
+// Spec 122 US4 — the unpaid-membership alert section (US3's, its own
+// Suspense + reads) renders as a marker carrying the props it was given.
+vi.mock('@/app/(member)/portal/_components/membership-invoice-alert-section', () => ({
+  MembershipInvoiceAlertSection: ({ tenantId, memberId }: { tenantId: string; memberId: string }) => (
+    <div data-marker="invoice-alert" data-tenant={tenantId} data-member={memberId} />
+  ),
+}));
+
 import PortalInvoicesPage from '@/app/(member)/portal/invoices/page';
 
 async function renderPage(
@@ -243,5 +251,19 @@ describe('PortalInvoicesPage — empty vs no-match empty-state copy', () => {
     expect(html).toContain(en.portal.invoices.empty);
     expect(html).not.toContain(en.portal.invoices.filters.noMatch);
     expect(html).not.toContain('MISSING_KEY:');
+  });
+});
+
+describe('PortalInvoicesPage — the unpaid-membership alert on top (spec 122 US4, `Invoices` board)', () => {
+  it("renders US3's alert section for the signed-in member, above the list", async () => {
+    const html = await renderPage();
+    expect(html).toContain('data-marker="invoice-alert"');
+    expect(html).toContain('data-member="m1"');
+    expect(html.indexOf('data-marker="invoice-alert"')).toBeLessThan(html.indexOf(en.portal.invoices.empty));
+  });
+
+  it('shows no alert when the member is not linked', async () => {
+    findByLinkedUserIdMock.mockResolvedValue({ ok: false, error: { code: 'repo.not_found' } });
+    expect(await renderPage()).not.toContain('data-marker="invoice-alert"');
   });
 });

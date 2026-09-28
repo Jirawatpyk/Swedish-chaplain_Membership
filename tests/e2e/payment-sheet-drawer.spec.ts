@@ -101,6 +101,19 @@ test.describe('PaySheet drawer interactions @f5 @e2e (T147)', () => {
     await page.goto(`/portal/invoices/${ISSUED_INVOICE_ID}?pay=1`);
     const sheet = page.locator('[data-testid="pay-sheet-content"]');
     await sheet.waitFor({ state: 'visible', timeout: 10_000 });
+    // Spec 122 US4 — the AURA Drawer slides in from the right; read its box
+    // once the entrance animation has finished (R12: left 9.55 mid-slide,
+    // 0 after).
+    await sheet.evaluate((el) =>
+      Promise.all(
+      el
+        .getAnimations({ subtree: true })
+        // Only animations that end: the card form's loading skeleton pulses
+        // forever, and awaiting it would hang.
+        .filter((a) => a.effect?.getComputedTiming().iterations !== Infinity)
+        .map((a) => a.finished),
+    ),
+    );
 
     // At < sm, the drawer must occupy the full viewport width (or close
     // to it — allow a few px tolerance for body scrollbars / iframe

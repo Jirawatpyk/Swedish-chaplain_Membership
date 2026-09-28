@@ -17,17 +17,17 @@ export function SecurityFooter() {
   return (
     <footer
       data-testid="pay-sheet-security-footer"
-      className="mt-6 space-y-3 border-t border-border pt-4"
+      className="mt-6 space-y-3 border-t border-[var(--aura-border-default)] pt-4"
     >
-      <div className="flex items-center gap-2 text-caption text-muted-foreground">
+      <div className="flex items-center gap-2 text-caption text-[var(--aura-fg-secondary)]">
         <LockIcon aria-hidden="true" className="size-3.5 shrink-0" />
         <span>{t('encrypted')}</span>
       </div>
-      <div className="flex items-center gap-2 text-caption text-muted-foreground">
+      <div className="flex items-center gap-2 text-caption text-[var(--aura-fg-secondary)]">
         <ShieldCheckIcon aria-hidden="true" className="size-3.5 shrink-0" />
         <span>{t('stripeBadge')}</span>
       </div>
-      <p className="text-caption text-muted-foreground">{t('cards')}</p>
+      <p className="text-caption text-[var(--aura-fg-secondary)]">{t('cards')}</p>
       {/*
        * review-20260428-102639.md W1 closure — PDPA §23 / GDPR Art. 13
        * disclosure at point of collection. PromptPay sends member email
@@ -35,14 +35,14 @@ export function SecurityFooter() {
        * § 2`. Visible on every pay-sheet open so the disclosure is
        * contemporaneous with consent (not buried in a privacy policy).
        */}
-      <p className="text-caption text-muted-foreground">
+      <p className="text-caption text-[var(--aura-fg-secondary)]">
         {t.rich('privacyDisclosure', {
           stripeLink: (chunks) => (
             <a
               href="https://stripe.com/privacy"
               target="_blank"
               rel="noopener noreferrer"
-              className="underline hover:text-foreground"
+              className="underline hover:text-[var(--aura-fg-primary)]"
             >
               {chunks}
             </a>

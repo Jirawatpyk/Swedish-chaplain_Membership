@@ -35,7 +35,7 @@ import {
   PlayIcon,
 } from 'lucide-react';
 
-import { buttonVariants } from '@/components/ui/button';
+import { buttonClass } from '@jirawatpyk/aura-react/server';
 import { cn } from '@/lib/utils';
 import { downloadPdf } from '@/lib/download-pdf-client';
 import { useCountdownAutoDismiss } from '@/hooks/use-countdown-auto-dismiss';
@@ -201,20 +201,26 @@ export function ConfirmationPanel({
       tabIndex={-1}
       aria-labelledby="pay-sheet-confirmation-title"
       data-testid="pay-sheet-confirmation-panel"
-      className="flex flex-col items-center gap-4 text-center focus:outline-none"
+      // Spec 122 US4 (`Pay-success` board): centred in the drawer, a tick in
+      // a filled success circle, the summary and the receipt line, Download
+      // receipt, a full-width Close, then Pause beside the countdown.
+      className="flex min-h-[calc(100dvh-9rem)] flex-col items-center justify-center gap-4 text-center focus:outline-none"
     >
-      <CheckCircle2Icon
-        aria-hidden="true"
-        className="size-12 text-primary motion-safe:animate-in motion-safe:zoom-in-50 motion-safe:duration-200"
-        data-testid="pay-sheet-confirmation-icon"
-      />
+      <span className="flex size-16 items-center justify-center rounded-full bg-[var(--aura-status-ready-bg)] text-[var(--aura-status-ready-fg)] motion-safe:animate-in motion-safe:zoom-in-50 motion-safe:duration-200">
+        <CheckCircle2Icon
+          aria-hidden="true"
+          className="size-7"
+          data-testid="pay-sheet-confirmation-icon"
+        />
+      </span>
       <h3
         id="pay-sheet-confirmation-title"
-        className="text-h3 font-semibold text-foreground"
+        className="text-h3 font-semibold text-[var(--aura-fg-primary)]"
       >
         {t('title')}
       </h3>
-      <p className="text-body text-muted-foreground">{summary}</p>
+      <p className="m-0 text-body text-[var(--aura-fg-secondary)]">{summary}</p>
+      <p className="m-0 text-caption text-[var(--aura-fg-secondary)]">{t('receiptSoon')}</p>
       {/*
        * Option A layout (T082 UX feedback 2026-04-24): primary
        * Download CTA takes the full drawer body width; the Close
@@ -232,7 +238,7 @@ export function ConfirmationPanel({
         disabled={downloading}
         onClick={handleDownloadReceipt}
         className={cn(
-          buttonVariants({ variant: 'default' }),
+          buttonClass({ variant: 'primary', fullWidth: true }),
           // WCAG 2.5.5 / SC 2.5.8 — mobile tap target ≥ 44×44 px
           // (G-Review Finding #5).
           'min-h-[44px] w-full px-4',
@@ -260,12 +266,8 @@ export function ConfirmationPanel({
           interruptAutoClose();
           onClose();
         }}
-        // Text-link styling: underline on hover, same min tap target
-        // on mobile even though it looks like a link. Muted-foreground
-        // keeps it subtler than the primary CTA but still WCAG 2.1 AA
-        // contrast (4.5:1 on card background).
         // T164: hide on print — close button has no meaning on paper.
-        className="min-h-[44px] text-caption text-muted-foreground hover:text-foreground hover:underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:rounded print:hidden"
+        className={cn(buttonClass({ variant: 'secondary', fullWidth: true }), 'min-h-[44px] w-full px-4 print:hidden')}
         data-testid="pay-sheet-confirmation-close"
       >
         {t('close')}
@@ -282,15 +284,6 @@ export function ConfirmationPanel({
        * state and the timer is frozen by `interruptAutoClose`.
        */}
       <div className="flex items-center gap-3 print:hidden">
-        <p
-          className="text-caption text-muted-foreground"
-          aria-hidden="true"
-          data-testid="pay-sheet-confirmation-countdown"
-        >
-          {paused
-            ? t('autoClosePaused')
-            : t('autoCloseCountdown', { seconds: remaining })}
-        </p>
         <button
           type="button"
           onClick={paused ? handleResume : handlePause}
@@ -298,7 +291,10 @@ export function ConfirmationPanel({
           // but a `::before` overlay extends the tap target to ~44px tall to
           // match the codebase 44px convention (WCAG 2.5.5) without adding
           // vertical space; primary keyboard targets remain Download / Close.
-          className="relative inline-flex min-h-[24px] min-w-[24px] items-center gap-1 rounded text-caption text-muted-foreground before:absolute before:inset-x-0 before:-inset-y-2.5 before:content-[''] hover:text-foreground hover:underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className={cn(
+            buttonClass({ variant: 'secondary', size: 'sm' }),
+            "relative min-h-9 gap-1 px-3 before:absolute before:inset-x-0 before:-inset-y-1 before:content-['']",
+          )}
           data-testid={paused ? 'pay-sheet-confirmation-resume' : 'pay-sheet-confirmation-pause'}
         >
           {paused ? (
@@ -308,6 +304,15 @@ export function ConfirmationPanel({
           )}
           {paused ? t('resumeAutoClose') : t('pauseAutoClose')}
         </button>
+        <p
+          className="text-caption text-[var(--aura-fg-secondary)]"
+          aria-hidden="true"
+          data-testid="pay-sheet-confirmation-countdown"
+        >
+          {paused
+            ? t('autoClosePaused')
+            : t('autoCloseCountdown', { seconds: remaining })}
+        </p>
       </div>
       <p
         className="sr-only print:hidden"

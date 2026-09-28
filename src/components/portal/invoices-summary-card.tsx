@@ -36,11 +36,12 @@ import {
   type Invoice,
 } from '@/modules/invoicing';
 import { buildMembersDeps } from '@/modules/members/members-deps';
-import { Card, StatusPill, buttonClass, type StatusTone } from '@jirawatpyk/aura-react/server';
+import { Card, StatusPill, buttonClass } from '@jirawatpyk/aura-react/server';
 import { cn } from '@/lib/utils';
 import {
   formatDate,
   formatSatangThb,
+  invoiceStatusTone,
 } from '@/app/(member)/portal/invoices/_utils/format';
 import {
   PortalInvoiceDownloadButton,
@@ -187,10 +188,6 @@ export function InvoicesSummaryView({
   readonly tStatus: InvoiceStatusT;
   readonly userLocale: string;
 }) {
-  // The board's pills: paid ready, issued in progress, overdue blocked, the
-  // rest neutral (void, draft…). Status TEXT stays the admin catalogue's label.
-  const pillTone = (status: string): StatusTone =>
-    status === 'paid' ? 'ready' : status === 'issued' ? 'progress' : status === 'overdue' ? 'blocked' : 'neutral';
 
   return (
     // AURA card (spec 122 US3, `Main` board): heading and description on top,
@@ -228,7 +225,7 @@ export function InvoicesSummaryView({
                     ? `${issued} · ${t('summary.receiptRef', { number: r.receiptDocumentNumberRaw })}`
                     : issued;
               const metaNarrow = unpaid && due ? due : issued;
-              const pill = <StatusPill tone={pillTone(r.status)}>{tStatus(r.status)}</StatusPill>;
+              const pill = <StatusPill tone={invoiceStatusTone(r.status)}>{tStatus(r.status)}</StatusPill>;
               const amount = formatSatangThb(r.total?.satang ?? null, userLocale);
               return (
               <li

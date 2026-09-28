@@ -6,7 +6,7 @@
  *   - C1: `formatSatangThb` in `invoices-summary-card.tsx` did NOT
  *         handle negative satang (credit note totals) — the detail
  *         page had an `abs` branch that the summary card copy lost.
- *   - I1: `formatSatangThb` + `formatDate` + `statusBadgeVariant`
+ *   - I1: `formatSatangThb` + `formatDate` + the status styling
  *         lived in three places (list page, detail page, summary
  *         card) — Reusable Components principle (CLAUDE.md global
  *         instructions + Constitution § Code Quality).
@@ -25,14 +25,7 @@
 export { formatSatangThb } from '@/lib/format-thb';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 import type { InvoiceStatus } from '@/modules/invoicing';
-import {
-  AlertTriangle,
-  Ban,
-  CheckCircle2,
-  Clock,
-  FileText,
-  type LucideIcon,
-} from 'lucide-react';
+import type { StatusTone } from '@jirawatpyk/aura-react/server';
 
 /**
  * Presentation status surfaced to an invoice row/badge — the stored
@@ -61,77 +54,42 @@ export function formatDate(iso: string | null, locale: string): string {
   });
 }
 
-export type InvoiceStatusBadgeVariant =
-  | 'default'
-  | 'secondary'
-  | 'outline'
-  | 'destructive';
-
 /**
- * Map an invoice status enum to a shadcn Badge variant. Colour alone
- * is not a sufficient a11y signal (review Sugg #2 — deuteranopia);
- * callers MUST pair the badge with a `lucide-react` status icon —
- * see `statusIconName` below.
+ * The VAT rate snapshotted on an invoice (`VatRate.raw`, always `x.xxxx`)
+ * as a locale number of percent points: "0.0700" → "7", "0.0750" → "7.5"
+ * (SV "7,5"). Integer maths on the 4-dp string, so no float drift. The
+ * `Invoice-paid` board reads "VAT 7%"; a §80/1(5) zero-rated invoice reads
+ * its own 0, so the rate always comes from the invoice, never a constant.
  */
-export function statusBadgeVariant(
-  status: InvoiceRowDisplayStatus,
-): InvoiceStatusBadgeVariant {
-  switch (status) {
-    case 'paid':
-      return 'default';
-    case 'issued':
-      return 'secondary';
-    case 'overdue':
-      return 'destructive';
-    default:
-      return 'outline';
-  }
+export function formatVatRatePoints(raw: string, locale: string): string {
+  const basisPoints = Number(raw.replace('.', ''));
+  return new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(basisPoints / 100);
 }
 
 /**
- * lucide-react icon name per invoice status. Callers import the icon
- * component directly (tree-shaking friendly) and render at ~14px
- * inside the Badge with `aria-hidden` since the text label is
- * already present.
+ * An invoice line's quantity for display. It is stored as a 4-dp numeric
+ * ("1.0000"), so it reads "1", "2.5" (SV "2,5"). Display only: the line total
+ * is computed and stored upstream, never from this string.
  */
-export type InvoiceStatusIconName =
-  | 'CheckCircle2'
-  | 'Clock'
-  | 'AlertTriangle'
-  | 'FileText'
-  | 'Ban';
-
-export function statusIconName(
-  status: InvoiceRowDisplayStatus,
-): InvoiceStatusIconName {
-  switch (status) {
-    case 'paid':
-      return 'CheckCircle2';
-    case 'issued':
-      return 'Clock';
-    case 'overdue':
-      return 'AlertTriangle';
-    case 'void':
-      return 'Ban';
-    default:
-      return 'FileText';
-  }
+export function formatLineQuantity(quantity: string, locale: string): string {
+  return new Intl.NumberFormat(locale, { maximumFractionDigits: 4 }).format(Number(quantity));
 }
 
 /**
- * Maps each {@link InvoiceStatusIconName} to its `lucide-react` component.
- * Single source of truth — every portal invoice surface (list table,
- * mobile card list, summary card, detail page) resolves its status icon
- * through `STATUS_ICON_MAP[statusIconName(status)]` (see
- * `InvoiceStatusBadge`) instead of redeclaring this map, so the status →
- * icon pairing can never drift between surfaces. The map index (not a
- * function-call wrapper) is used so `react-hooks/static-components` sees a
- * stable component reference at the JSX render site.
+ * The AURA status-pill tone per invoice status (spec 122 US4, `Invoices`
+ * board): paid ready, issued in progress, overdue blocked, and the rest
+ * (void, draft, credited) neutral. The pill carries its own icon beside the
+ * word, so colour is never the only signal.
  */
-export const STATUS_ICON_MAP: Record<InvoiceStatusIconName, LucideIcon> = {
-  CheckCircle2,
-  Clock,
-  AlertTriangle,
-  FileText,
-  Ban,
-};
+export function invoiceStatusTone(status: InvoiceRowDisplayStatus): StatusTone {
+  switch (status) {
+    case 'paid':
+      return 'ready';
+    case 'issued':
+      return 'progress';
+    case 'overdue':
+      return 'blocked';
+    default:
+      return 'neutral';
+  }
+}

@@ -67,11 +67,19 @@ describe('<StatusPanel kind="processing">', () => {
   it('Cancel button has ≥44px tap target (WCAG 2.5.5)', () => {
     renderWithIntl('processing', () => {});
     const btn = screen.getByTestId('pay-sheet-processing-cancel');
-    expect(btn.className).toMatch(/min-h-\[44px\]/);
+    expect(btn.className).toMatch(/min-h-11/);
   });
 });
 
 describe('<StatusPanel kind="three-d-secure">', () => {
+  it('shows a lock while the bank challenge is open; processing shows the spinner (`Pay-3ds` board)', () => {
+    const { container, unmount } = renderWithIntl('three-d-secure', () => {});
+    expect(container.querySelector('.motion-safe\\:animate-spin')).toBeNull();
+    unmount();
+    const processing = renderWithIntl('processing', () => {});
+    expect(processing.container.querySelector('.motion-safe\\:animate-spin')).not.toBeNull();
+  });
+
   it('renders an aria-live region with role="status" + 3DS testid', () => {
     renderWithIntl('three-d-secure', () => {});
     const panel = screen.getByTestId('pay-sheet-3ds-panel');
@@ -99,6 +107,6 @@ describe('<StatusPanel kind="three-d-secure">', () => {
   it('3DS Cancel button has ≥44px tap target (WCAG 2.5.5)', () => {
     renderWithIntl('three-d-secure', () => {});
     const btn = screen.getByTestId('pay-sheet-3ds-cancel');
-    expect(btn.className).toMatch(/min-h-\[44px\]/);
+    expect(btn.className).toMatch(/min-h-11/);
   });
 });

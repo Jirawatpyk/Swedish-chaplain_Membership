@@ -60,13 +60,13 @@ describe('<PaySheetSkeleton>', () => {
     const root = container.querySelector(
       '[data-testid="pay-sheet-card-skeleton"]',
     );
-    const skeletons = root?.querySelectorAll('[data-slot="skeleton"]');
+    const skeletons = root?.querySelectorAll('[data-slot="skeleton-block"]');
     expect(skeletons?.length).toBe(4);
   });
 
   it('relies on the shared <Skeleton> primitive (.skeleton-shimmer class) — does not add redundant motion utilities', () => {
     const { container } = renderWithIntl();
-    const skeletons = container.querySelectorAll('[data-slot="skeleton"]');
+    const skeletons = container.querySelectorAll('[data-slot="skeleton-block"]');
     // Contract § 2.2 rule 1: motion-reduce fallback is handled inside the
     // primitive via the .skeleton-shimmer CSS class. A wrapper layering
     // `motion-reduce:animate-pulse` would be a spec violation.

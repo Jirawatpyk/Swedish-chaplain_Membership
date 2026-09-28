@@ -45,6 +45,28 @@ A read-only audit compared every screen built so far (US1 shell, US2 auth, US3 p
 - Q: Page-title size, title line height, page padding and the portal column differ from the boards on every page — change the shared tokens, or only on migrated pages? → A: **The shared tokens**, so pages not yet migrated take the board sizes too: page title 36 px (portal) / 32 px (staff) from 1024 px, 30 px (portal) / 26 px (staff) below 640 px, line height 1.2 (Thai keeps its taller line height), a 1200 px portal content column with 40 / 64 px top / bottom padding, and staff page padding 28 px (18 px on phones). This supersedes "without its layout changing" in FR-002 for these tokens only.
 - Q: US1 and US2 are merged; where do their fixes go? → A: **In the US3 pull request** (#435), checked against the boards before pushing.
 
+### Session 2026-09-27 (maintainer, US4 start)
+
+The US4 boards (`Invoices`, `Invoice-paid`, `Portal-invoice-mobile`, `Portal-credit-note`, `Pay-*`) were read before the tasks were written. The rule from the previous session holds: the boards win unless they contradict the product.
+
+- Q: The plan says the pay sheet is a phone sheet at up to 92 dvh with a Stepper; the boards draw something else. Which? → A: **The boards**: the pay sheet is an AURA `Drawer` on the right, 480 px wide from 640 px and full width and full height below it (AURA's 92 dvh bottom-sheet rule belongs to `Dialog`, not `Drawer`). No US4 board draws a Stepper, so there is none. The existing viewport e2e already asserts the full-height sheet.
+- Q: The `Invoices` board has no filter row. Drop the filters? → A: **No**: removing them would remove a feature. The search, status and subject filters stay, on AURA fields. They are shared with `/admin/invoices`, which renders them in AURA from US4 on (as US3 did with shared components); so does the original-receipt badge shared with the staff credit-note screens.
+- Q: What around the card form changes? → A: **Only the shell**: Stripe Elements (`<Elements>` / `<PaymentElement>`) and its SAQ-A scope are untouched (Principle IV).
+
+### Session 2026-09-28 (US4 board-parity pass)
+
+The maintainer asked for every gap in the US4 board comparison to be fixed. The invoice filters then got one more change: below 1024 px the search takes its own row and the filters share the next one evenly (from 1024 px it is one row, as before). The fixes follow the rule "the boards win unless they contradict the product". Where a board gap was left open, this is why:
+
+- **List resend, no sort, shared pagination.** The invoice list keeps the resend action (removing it would remove a feature); on phone cards it sits in the "⋯" menu. It has no column sort, because sorting needs new server parameters, which a UI swap cannot add. It keeps the shared `TablePagination` with the same URL parameters.
+- **Phone card: one labelled download plus a "⋯" menu** (the maintainer chose this from a side-by-side mockup). The board's single download icon cannot say which document it downloads when an invoice has both. So the card shows one labelled button, the invoice while unpaid and the receipt once paid (as on the detail page). A "More actions for {number}" menu beside it holds the other document and "Email me a copy". The menu appears only when it has an item, so a void invoice has none. Both documents stay downloadable (FR-015), and the menu items run the same download and resend as the buttons.
+- **Receipt stays primary once paid.** On a paid invoice the receipt download stays the primary button (090 finding #5).
+- **No "Receipt preparing…" header button.** A receipt that is still being prepared is shown by the notice (088 T066a), not by a disabled header button.
+- **Tax wording stays.** The VAT line and the "Original tax invoice" labels stay as coded (FR-010f). The bill note stays on desktop too, since it is a tax disclosure.
+- **Pay button and security footer stay in the drawer body.** The Pay button lives inside the Stripe Elements form, so neither moves into the drawer footer (SAQ-A, Principle IV).
+- **Shared items.** The list's invoice-alert title is shared with the US3 dashboard. The fifth "Account" bottom tab comes from US1.
+- **Board wording added.** The paid-invoice subtitle, the credit-note title, its "this credit note reduces receipt … by …" notice and contact line, and the "receipt will be ready in a moment" line on payment success are added in EN, TH and SV. The board says "Receipt … is reduced by …", but the original document keeps its total, so the credit note is the subject. The refund line does not promise a refund, because a credit note issued from a refund follows money already returned. Figures and document wording are unchanged.
+- **PromptPay amount stays out of this PR.** The PromptPay panel can show a raw satang figure: it compares the currency code with `'thb'` case-sensitively, but invoices carry `THB`. That was a logic bug on `main`, so it was fixed in its own PR (#443), not in this UI swap; the branch picks it up through a merge of `main`.
+
 ## User Scenarios & Testing *(mandatory)*
 
 Every story below is one phase and one pull request. A story is done when its screens use only AURA components, match their canvas boards, and pass the per-module definition of done (FR-010).
@@ -111,7 +133,7 @@ Members see their dashboard, benefits, company profile, change requests and acco
 
 ### User Story 4 - Member invoices and payment (Priority: P2)
 
-Invoice list, invoice detail, receipts, credit notes and the card/PromptPay pay sheet use AURA tables with totals rows, the stepper and a phone sheet at up to 92% of the screen height. Amounts, document numbers, VAT lines and document wording are unchanged.
+Invoice list, invoice detail, receipts, credit notes and the card/PromptPay pay sheet use AURA tables, status pills and alerts, and the pay sheet is an AURA drawer on the right (full screen on phones) around the unchanged Stripe Elements (Clarifications, US4 start). Amounts, document numbers, VAT lines and document wording are unchanged.
 
 **Independent Test**: open an unpaid bill, pay it in the test environment, download the receipt, open a credit note — every figure matches the pre-migration screen.
 
