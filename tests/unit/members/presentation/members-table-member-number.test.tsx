@@ -114,9 +114,8 @@ const row: MembersTableRow = {
 function renderTable() {
   return render(
     <NextIntlClientProvider locale="en" messages={messages}>
-      {/* total > 1: AURA only offers sorting when there is more than one
-          row across all pages. */}
-      <MembersTable rows={[row]} total={2} />
+      {/* Two rows: AURA only offers sorting when the page has more than one. */}
+      <MembersTable rows={[row, { ...row, member_id: 'm-2', member_number_display: 'SCCM-0043', company_name: 'Eta AB' }]} total={2} />
     </NextIntlClientProvider>,
   );
 }

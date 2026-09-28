@@ -431,7 +431,9 @@ function RowMenu({ row, canEdit }: { row: MembersTableRow; canEdit: boolean }) {
   const items: MenuItem[] = [
     { label: t('openMember'), href: `/admin/members/${row.member_id}` },
   ];
-  if (canEdit) {
+  // An archived member is not edited from here, as on its own page (the Edit
+  // button there is hidden for archived members).
+  if (canEdit && row.status !== 'archived') {
     items.push({
       label: t('editMember'),
       icon: <PencilIcon aria-hidden="true" />,
@@ -669,20 +671,25 @@ export function MembersTable({
           if (!c) return <span className="text-[var(--aura-fg-secondary)]">{t('noPrimary')}</span>;
           const fullName = `${c.first_name} ${c.last_name}`.trim();
           const archived = row.status === 'archived';
+          // Edge Case "Invitation email bounce" (spec §613-620) — hidden when
+          // the invitation also expired or the contact is already active (one
+          // root cause, one recovery), and on archived rows.
+          const bounced =
+            c.invite_bounced &&
+            row.portal_state !== 'invite_expired' &&
+            row.portal_state !== 'active' &&
+            !archived;
           return (
             <span className={ONE_ROW}>
               <span className={ONE_LINE} title={fullName}>
                 {fullName}
               </span>
-              {/* No portal-related badge on an archived row (Task 7). */}
-              <PortalBadge state={archived ? null : row.portal_state} />
-              {/* Edge Case "Invitation email bounce" (spec §613-620) — hidden
-                  when the invitation also expired or the contact is already
-                  active (one root cause, one recovery), and on archived rows. */}
-              {c.invite_bounced &&
-              row.portal_state !== 'invite_expired' &&
-              row.portal_state !== 'active' &&
-              !archived ? (
+              {/* No portal-related badge on an archived row (Task 7), and the
+                  bounce badge stands in for it (it already says the contact
+                  was invited): one badge keeps the required warning inside
+                  the one-line cell. */}
+              <PortalBadge state={archived || bounced ? null : row.portal_state} />
+              {bounced ? (
                 <Badge tone="danger" icon={<TriangleAlert aria-hidden="true" />}>
                   <span aria-hidden="true">{tContact('inviteBounced.badge')}</span>
                   <span className="sr-only">{tContact('inviteBounced.badgeAria')}</span>
@@ -857,9 +864,10 @@ export function MembersTable({
           columns={columns}
           rowKey="member_id"
           manual
-          // Rows across all pages: AURA offers sorting only when there is more
-          // than one, and sets aria-rowcount from it.
-          totalRows={total ?? rows.length}
+          // No `totalRows`: without a `pageSize` AURA numbers rows from 1 on
+          // every page, so aria-rowcount must be the page's count too (a
+          // page-3 row read as "row 2 of 132" otherwise). Sorting needs more
+          // than one row on the page.
           sort={sort}
           onSortChange={handleSortChange}
           getRowHref={(row) => `/admin/members/${row.member_id}`}
