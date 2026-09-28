@@ -111,11 +111,47 @@ async function resetF5IssuedInvoice(): Promise<void> {
         `fixture invoice ${id} not found — run ` +
           '`TENANT_SLUG=swecham node --env-file=.env.local --import tsx scripts/seed-e2e-portal-invoices.ts` ' +
           '(it re-creates SC-2026-900003 as 00000000-e2e0-4fff-9ffe-000000900003; point E2E_ISSUED_INVOICE_ID there), ' +
-          'then `pnpm seed:f5-e2e:reconciliation` ' +
-          'and update E2E_PAID_ONLINE_INVOICE_ID to the id it prints',
+          'then `pnpm seed:f5-e2e:reconciliation`',
       );
     }
     console.log(`[e2e global setup] reset F5 issued-invoice fixture ${id}`);
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+}
+
+/**
+ * The paid-online F5 fixture (SC-2026-900001, used by the reconciliation and
+ * refund specs) is looked up by its DOCUMENT NUMBER, not trusted from
+ * `.env.local`. Unlike SC-2026-900003 its id is not pinned: every run of
+ * `scripts/seed-e2e-portal-invoices.ts` mints a new one, which left
+ * `E2E_PAID_ONLINE_INVOICE_ID` pointing at a deleted row on 2026-09-28 (the
+ * same drift #434 fixed for 900003). Setting `process.env` here reaches every
+ * worker, which forks after global setup. A miss keeps whatever the env had.
+ */
+const PAID_ONLINE_DOCUMENT_NUMBER = 'SC-2026-900001';
+
+async function resolvePaidOnlineInvoice(): Promise<void> {
+  const dbUrl = process.env.DATABASE_URL;
+  if (!dbUrl) return;
+  const sql = postgres(dbUrl, { ssl: 'require', max: 1 });
+  try {
+    const rows = await sql<Array<{ invoice_id: string }>>`
+      SELECT invoice_id::text AS invoice_id FROM invoices
+      WHERE tenant_id = 'swecham' AND document_number = ${PAID_ONLINE_DOCUMENT_NUMBER}
+      LIMIT 1
+    `;
+    const id = rows[0]?.invoice_id;
+    if (!id) {
+      console.warn(
+        `[e2e global setup] ${PAID_ONLINE_DOCUMENT_NUMBER} not found — run ` +
+          '`TENANT_SLUG=swecham node --env-file=.env.local --import tsx scripts/seed-e2e-portal-invoices.ts` ' +
+          'then `pnpm seed:f5-e2e:reconciliation`',
+      );
+      return;
+    }
+    process.env.E2E_PAID_ONLINE_INVOICE_ID = id;
+    console.log(`[e2e global setup] E2E_PAID_ONLINE_INVOICE_ID = ${PAID_ONLINE_DOCUMENT_NUMBER} (${id})`);
   } finally {
     await sql.end({ timeout: 5 });
   }
@@ -138,6 +174,12 @@ async function globalSetup(): Promise<void> {
     await resetF5IssuedInvoice();
   } catch (error) {
     console.warn('[e2e global setup] F5 invoice reset failed:', String(error));
+  }
+
+  try {
+    await resolvePaidOnlineInvoice();
+  } catch (error) {
+    console.warn('[e2e global setup] paid-online invoice lookup failed:', String(error));
   }
 
   try {
