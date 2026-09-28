@@ -1,6 +1,10 @@
 /**
  * ADMIN-4 (055-member-number) — MembersTable renders a member-number column
- * with a formatted display value and a sortable header button.
+ * with a formatted display value and a sortable column header.
+ *
+ * 122 US5a (T502) — the table is AURA `DataTable` (a div grid): cells are
+ * `role="gridcell"`, and a click on a sortable `columnheader` writes the same
+ * `?sort=&order=&page=1` URL as the old header buttons did.
  *
  * FIX-C (code-review round-2) — guard aria-sort on the <th> (columnheader):
  *   - ?sort=memberNumber&order=asc  → Member No. <th> aria-sort="ascending"
@@ -9,7 +13,7 @@
  *   - ?sort=engagement   (no order) → Engagement <th> aria-sort="descending" (default DESC)
  */
 import { describe, expect, it, vi, beforeAll, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import { MembersTable, type MembersTableRow } from '@/components/members/members-table';
 
@@ -29,9 +33,10 @@ vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 // Mutable ref so individual tests can override the search-params without
 // re-calling vi.mock (same pattern as pay-sheet.test.tsx / pay-now-button.test.tsx).
 const searchParamsMock = { current: new URLSearchParams() };
+const pushMock = vi.fn();
 
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: pushMock }),
   usePathname: () => '/admin/members',
   useSearchParams: () => searchParamsMock.current,
 }));
@@ -111,13 +116,65 @@ function renderTable() {
 }
 
 describe('MembersTable member number column', () => {
-  it('renders the formatted member number and a sort header', () => {
+  it('renders the formatted member number under a sortable header', () => {
     searchParamsMock.current = new URLSearchParams();
     renderTable();
     expect(screen.getByText('SCCM-0042')).toBeInTheDocument();
+    // A sortable header that is not the active sort announces aria-sort="none".
     expect(
-      screen.getByRole('button', { name: 'Sort by member number' }),
-    ).toBeInTheDocument();
+      screen.getByRole('columnheader', { name: /Member No\./i }),
+    ).toHaveAttribute('aria-sort', 'none');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 122 US5a (T502) — header clicks keep the old URL contract: a column that is
+// not the active sort starts at its server default (Member No. ascending,
+// Engagement descending); a second click flips it; the page resets to 1.
+// ---------------------------------------------------------------------------
+describe('MembersTable header sort writes the URL (T502)', () => {
+  function clickHeader(name: RegExp) {
+    fireEvent.click(screen.getByRole('columnheader', { name }));
+  }
+
+  it('Member No. (inactive) → sort=memberNumber&order=asc&page=1', () => {
+    pushMock.mockClear();
+    searchParamsMock.current = new URLSearchParams('q=nordic&page=3');
+    renderTable();
+    clickHeader(/Member No\./i);
+    expect(pushMock).toHaveBeenCalledWith(
+      '/admin/members?q=nordic&page=1&sort=memberNumber&order=asc',
+    );
+  });
+
+  it('Member No. (active asc) → order=desc', () => {
+    pushMock.mockClear();
+    searchParamsMock.current = new URLSearchParams('sort=memberNumber&order=asc');
+    renderTable();
+    clickHeader(/Member No\./i);
+    expect(pushMock).toHaveBeenCalledWith(
+      '/admin/members?sort=memberNumber&order=desc&page=1',
+    );
+  });
+
+  it('Member No. (active desc) → back to asc, never unsorted', () => {
+    pushMock.mockClear();
+    searchParamsMock.current = new URLSearchParams('sort=memberNumber&order=desc');
+    renderTable();
+    clickHeader(/Member No\./i);
+    expect(pushMock).toHaveBeenCalledWith(
+      '/admin/members?sort=memberNumber&order=asc&page=1',
+    );
+  });
+
+  it('Engagement (inactive) → sort=engagement&order=desc&page=1', () => {
+    pushMock.mockClear();
+    searchParamsMock.current = new URLSearchParams('sort=memberNumber&order=asc');
+    renderTable();
+    clickHeader(/Engagement/i);
+    expect(pushMock).toHaveBeenCalledWith(
+      '/admin/members?sort=engagement&order=desc&page=1',
+    );
   });
 });
 
@@ -134,7 +191,7 @@ describe('MembersTable compact layout (056)', () => {
     // via aria-label/title — i18n-iso-countries registers EN eagerly, so the
     // TH flag resolves to "Thailand". We assert the flag element sits in the
     // same cell as the company name (the visible flag emoji is aria-hidden).
-    const companyCell = screen.getByText('Zeta Holdings').closest('td');
+    const companyCell = screen.getByText('Zeta Holdings').closest('[role="gridcell"]');
     expect(companyCell).not.toBeNull();
     // The flag wrapper carries the resolved country name as its title.
     const flag = companyCell!.querySelector('[title="Thailand"]');
@@ -171,11 +228,9 @@ describe('MembersTable compact layout (056)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// FIX-C: aria-sort on the <th> (columnheader) — guards the relocation from
-// FIX-3 and the per-column default logic from FIX-A.
-//
-// The `role=columnheader` is the <th> rendered by TanStack Table's TableHead.
-// We pick it by its accessible name (the text content of the header cell).
+// FIX-C: aria-sort on the columnheader — guards the per-column default logic
+// from FIX-A. The columnheader is AURA DataTable's header cell; we pick it by
+// its accessible name (the text content of the header cell).
 // ---------------------------------------------------------------------------
 describe('MembersTable aria-sort on <th> (FIX-C)', () => {
   it('?sort=memberNumber&order=asc → Member No. <th> has aria-sort="ascending"', () => {
@@ -206,12 +261,12 @@ describe('MembersTable aria-sort on <th> (FIX-C)', () => {
     expect(th).toHaveAttribute('aria-sort', 'descending');
   });
 
-  it('no sort params → neither column carries aria-sort', () => {
+  it('no sort params → neither column is announced as sorted', () => {
     searchParamsMock.current = new URLSearchParams();
     renderTable();
     const memberNoTh = screen.getByRole('columnheader', { name: /Member No\./i });
     const engagementTh = screen.getByRole('columnheader', { name: /Engagement/i });
-    expect(memberNoTh).not.toHaveAttribute('aria-sort');
-    expect(engagementTh).not.toHaveAttribute('aria-sort');
+    expect(memberNoTh).toHaveAttribute('aria-sort', 'none');
+    expect(engagementTh).toHaveAttribute('aria-sort', 'none');
   });
 });
