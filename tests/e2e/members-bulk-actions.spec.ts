@@ -57,7 +57,8 @@ test.describe('members bulk actions @f3', () => {
     expect(count).toBeGreaterThan(0);
   });
 
-  test('bulk action bar appears on selection', async ({ page }) => {
+  test('bulk action bar appears on selection', async ({ page, isMobile }) => {
+    test.skip(isMobile === true, 'bulk selection is desktop-only by design: phone cards carry no checkbox (spec 122 Clarifications, 2026-09-28)');
     // Click the first row checkbox
     await firstRowCheckbox(page).click();
     // Bulk bar leaves its idle (clipped) state
@@ -66,7 +67,8 @@ test.describe('members bulk actions @f3', () => {
     await expect(bar.getByRole('button', { name: CLEAR })).toBeVisible();
   });
 
-  test('clear selection hides the bar', async ({ page }) => {
+  test('clear selection hides the bar', async ({ page, isMobile }) => {
+    test.skip(isMobile === true, 'bulk selection is desktop-only by design: phone cards carry no checkbox (spec 122 Clarifications, 2026-09-28)');
     await firstRowCheckbox(page).click();
     const bar = bulkBar(page);
     const clearBtn = bar.getByRole('button', { name: CLEAR });
@@ -77,7 +79,8 @@ test.describe('members bulk actions @f3', () => {
     await expect(clearBtn).toHaveCount(0);
   });
 
-  test('@a11y axe-core scan on directory with selection', async ({ page }) => {
+  test('@a11y axe-core scan on directory with selection', async ({ page, isMobile }) => {
+    test.skip(isMobile === true, 'bulk selection is desktop-only by design: phone cards carry no checkbox (spec 122 Clarifications, 2026-09-28)');
     await firstRowCheckbox(page).click();
     // Wait for the bulk bar to leave its idle state
     await expect(bulkBar(page)).not.toHaveClass(/is-idle/);
@@ -87,6 +90,14 @@ test.describe('members bulk actions @f3', () => {
       .include('.aura-actionbar')
       .analyze();
     expect(results.violations).toEqual([]);
+  });
+
+  test('phone cards offer no row selection and no bulk bar', async ({ page, isMobile }) => {
+    test.skip(isMobile !== true, 'phone cards only; the desktop tests above cover selection');
+    // Maintainer, 28 Sep: bulk work stays on wider screens; the card is the
+    // board's (no checkbox, no ⋯ menu).
+    await expect(firstRowCheckbox(page)).toBeHidden();
+    await expect(bulkBar(page)).toHaveClass(/is-idle/);
   });
 });
 

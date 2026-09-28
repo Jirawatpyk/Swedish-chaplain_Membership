@@ -144,7 +144,9 @@ test.describe('F3 admin comprehensive a11y scan @f3 @a11y', () => {
 
   test('6. /admin/members directory with bulk bar open — no axe violations', async ({
     page,
+    isMobile,
   }) => {
+    test.skip(isMobile === true, 'bulk selection is desktop-only by design: phone cards carry no checkbox (spec 122 Clarifications, 2026-09-28)');
     await signIn(page);
     await page.goto('/admin/members');
     await page.waitForSelector(MEMBERS_GRID, { timeout: 10_000 });

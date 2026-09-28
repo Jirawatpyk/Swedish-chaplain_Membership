@@ -106,11 +106,21 @@ test.describe('Member-number column + portal badge @f-mn @layout @i18n', () => {
 
   test('1a. /admin/members — member-number column header is visible after data loads', async ({
     page,
+    isMobile,
   }) => {
     await signInAdmin(page);
     await page.goto('/admin/members');
     await page.waitForSelector(MEMBERS_GRID, { timeout: 10_000 });
     await page.waitForLoadState('networkidle');
+
+    if (isMobile) {
+      // Phone cards have no column headers: the number is a card field
+      // (board Admin-members-mobile), labelled "Member No.".
+      const number = page.locator('[role="grid"] [data-card-slot="number"]').first();
+      await expect(number).toBeVisible({ timeout: 5_000 });
+      await expect(number).toHaveText(/^[A-Z]+-\d{4,}$/);
+      return;
+    }
 
     // 122 US5a — the AURA DataTable header: a sortable columnheader named by
     // its EN label "Member No.", whose sort control is a button inside it.

@@ -56,10 +56,14 @@ const adminCopy = en.admin.changeRequests;
 /** 122 US5a — below 640px the queue folds its filters behind a "Filters · Status: …" toggle; open it first. */
 async function openQueueFiltersOnPhone(page: Page): Promise<void> {
   const toggle = page.getByRole('button', { name: new RegExp(`^${adminCopy.filters.toggle}`) });
-  if (await toggle.isVisible()) {
-    await toggle.click();
-    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-  }
+  if (!(await toggle.isVisible())) return;
+  // A tap before hydration is lost, and hydration can reset the panel: open
+  // it until the Status field is really there (R16 flake on mobile-chrome;
+  // the pattern #466 used for the staff nav drawer).
+  await expect(async () => {
+    if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
+    await expect(page.getByRole('combobox', { name: 'Status' })).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 15_000 });
 }
 
 test.describe.configure({ timeout: 180_000 });
@@ -612,6 +616,16 @@ test.describe('@change-requests US4 — history is complete and visible', () => 
     // locator failed on that instant once (2026-09-15).
     await expect(page.getByTestId('queue-table')).toHaveCount(1, { timeout: 30_000 });
     await expect(page.getByTestId('queue-table')).toBeVisible();
+    // The phone card keeps its two-column shape with Review inside it: a
+    // title spanning columns without a start column once grew implicit
+    // columns and shrank every cell to a letter wide (US5a audit).
+    const card = page.getByTestId('queue-row').first();
+    const cardBox = await card.boundingBox();
+    const reviewBox = await card.getByRole('link').first().boundingBox();
+    expect(cardBox && reviewBox).toBeTruthy();
+    expect(cardBox!.height).toBeLessThan(400);
+    expect(reviewBox!.x).toBeGreaterThanOrEqual(cardBox!.x);
+    expect(reviewBox!.x + reviewBox!.width).toBeLessThanOrEqual(cardBox!.x + cardBox!.width + 1);
     await openQueueFiltersOnPhone(page);
     // Apply is a same-page navigation: the pressed button keeps focus — the bar
     // is never remounted on a filter change (UX re-review N1 / R2)

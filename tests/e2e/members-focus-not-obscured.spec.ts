@@ -53,7 +53,9 @@ test.describe('members focus-not-obscured by bulk toolbar @f3 @a11y', () => {
 
   test('focused elements not fully obscured by sticky bulk toolbar', async ({
     page,
+    isMobile,
   }) => {
+    test.skip(isMobile === true, 'bulk selection is desktop-only by design: phone cards carry no checkbox (spec 122 Clarifications, 2026-09-28)');
     await signIn(page);
     await page.goto('/admin/members');
     await page.waitForSelector(MEMBERS_GRID, { timeout: 10_000 });

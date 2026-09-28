@@ -57,6 +57,10 @@ test.describe('members WCAG 2.2 SC 2.5.8 target sizes @f3 @a11y', () => {
     page: Page,
     selector: string,
   ): Promise<{ width: number; height: number }> {
+    // The Suspense fallback is itself an AURA grid with a select column
+    // (inert, aria-hidden): measure only once it has given way to the real
+    // table, or a slow full-file run reads the skeleton's input (R16 flake).
+    await expect(page.getByTestId('members-table-skeleton')).toHaveCount(0, { timeout: 10_000 });
     const el = page.locator(selector).first();
     await el.waitFor({ state: 'attached', timeout: 10_000 });
     const box = await el.boundingBox();
@@ -110,7 +114,9 @@ test.describe('members WCAG 2.2 SC 2.5.8 target sizes @f3 @a11y', () => {
 
   test('bulk action bar buttons meet 24×24 minimum target size when visible', async ({
     page,
+    isMobile,
   }) => {
+    test.skip(isMobile === true, 'bulk selection is desktop-only by design: phone cards carry no checkbox (spec 122 Clarifications, 2026-09-28)');
     await signIn(page);
     await page.goto('/admin/members');
     await page.waitForSelector(MEMBERS_GRID, { timeout: 10_000 });
