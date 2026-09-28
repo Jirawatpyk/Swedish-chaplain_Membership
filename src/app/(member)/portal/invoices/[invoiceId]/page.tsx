@@ -75,7 +75,12 @@ import { Alert, Card, buttonClass } from '@jirawatpyk/aura-react/server';
 import { Table, TBody, THead, Td, Th, Tr } from '@/components/shell/aura-table';
 import { BackLink } from '@/components/portal/back-link';
 import { cn } from '@/lib/utils';
-import { formatDate, formatSatangThb, formatVatRatePoints } from '../_utils/format';
+import {
+  formatDate,
+  formatLineQuantity,
+  formatSatangThb,
+  formatVatRatePoints,
+} from '../_utils/format';
 import { formatCalendarYear } from '@/lib/format-date-localised';
 import { InvoiceStatusBadge } from '../_components/invoice-status-badge';
 import { ResendInvoiceButton } from '../_components/resend-invoice-button';
@@ -844,7 +849,7 @@ export async function renderPortalInvoiceDetailView({
                         ) : null}
                       </Td>
                       <Td numeric className="align-top" label={t('lines.quantity')}>
-                        {line.quantity}
+                        {formatLineQuantity(line.quantity, userLocale)}
                       </Td>
                       <Td numeric className="align-top" label={t('lines.unitPrice')}>
                         {formatSatangThb(line.unitPrice.satang, userLocale)}
@@ -878,7 +883,7 @@ export async function renderPortalInvoiceDetailView({
                   ) : null}
                   <span className="flex items-baseline justify-between gap-3 text-sm tabular-nums">
                     <span className="text-[var(--aura-fg-secondary)]">
-                      {line.quantity} × {formatSatangThb(line.unitPrice.satang, userLocale)}
+                      {formatLineQuantity(line.quantity, userLocale)} × {formatSatangThb(line.unitPrice.satang, userLocale)}
                     </span>
                     <span>{formatSatangThb(line.total.satang, userLocale)}</span>
                   </span>

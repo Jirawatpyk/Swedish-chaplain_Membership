@@ -67,6 +67,15 @@ export function formatVatRatePoints(raw: string, locale: string): string {
 }
 
 /**
+ * An invoice line's quantity for display. It is stored as a 4-dp numeric
+ * ("1.0000"), so it reads "1", "2.5" (SV "2,5"). Display only: the line total
+ * is computed and stored upstream, never from this string.
+ */
+export function formatLineQuantity(quantity: string, locale: string): string {
+  return new Intl.NumberFormat(locale, { maximumFractionDigits: 4 }).format(Number(quantity));
+}
+
+/**
  * The AURA status-pill tone per invoice status (spec 122 US4, `Invoices`
  * board): paid ready, issued in progress, overdue blocked, and the rest
  * (void, draft, credited) neutral. The pill carries its own icon beside the
