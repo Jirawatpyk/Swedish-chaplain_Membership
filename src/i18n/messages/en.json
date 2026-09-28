@@ -6039,6 +6039,7 @@
     "tierUpgrades": "Tier upgrade queue",
     "memberChanges": "Member change approval",
     "changeRequests": "Change requests",
+    "directory": "Directory",
     "changeRequestDetail": "Review",
     "broadcastDetail": "Details",
     "proxySubmit": "Submit on behalf of member",
