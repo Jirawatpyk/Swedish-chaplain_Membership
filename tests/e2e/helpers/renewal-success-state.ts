@@ -68,11 +68,16 @@ export async function setCycleStatusForSuccessE2E(
            AND cycle_id = ${cycleId}::uuid
       `;
     } else {
+      // Undo the 'completed' branch's link to the issued-invoice fixture: left
+      // in place, it outlives the test and the fixture reset (global setup)
+      // has to detach it before it can re-create the invoice.
+      const fixtureId = process.env.E2E_ISSUED_INVOICE_ID ?? null;
       await sql`
         UPDATE renewal_cycles
            SET status = ${status},
                closed_at = NULL,
-               closed_reason = NULL
+               closed_reason = NULL,
+               linked_invoice_id = NULLIF(linked_invoice_id, ${fixtureId}::uuid)
          WHERE tenant_id = ${TENANT_ID}
            AND cycle_id = ${cycleId}::uuid
       `;
