@@ -10,6 +10,9 @@
  * are the platform's, and a phone opens its own picker. The face is
  * `aria-hidden` decoration; the focus ring follows the select. A little
  * less side padding on a phone keeps the three on one row down to 375px.
+ *
+ * A stand-in until AURA #79 (a compact FilterBar trigger) ships; swap to it
+ * and delete this file then (docs/aura-adoption.md).
  */
 import { ChevronDownIcon } from 'lucide-react';
 
