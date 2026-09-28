@@ -5,8 +5,9 @@
  * Clear empties the selection, so the bar's buttons go away with it and the
  * focused Clear button used to drop focus to `<body>`. AURA's ActionBar
  * (122 US5a, T504) returns focus to where it came from when it can; when it
- * cannot, the bar hands focus to the members table's select-all checkbox —
- * which survives the clear — and otherwise to the `#main-content` landmark.
+ * cannot, the bar hands focus to the members table's select-all header cell
+ * — it survives the clear, and it is a grid cell, so the arrow keys work from
+ * there — and otherwise to the `#main-content` landmark.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useState } from 'react';
@@ -102,7 +103,7 @@ describe('members bulk bar — Clear keeps keyboard focus on the page', () => {
     expect(selectAll).toHaveFocus();
   });
 
-  it('in the REAL directory composition, Clear leaves focus on the select-all checkbox', async () => {
+  it('in the REAL directory composition, Clear leaves focus on the select-all header cell', async () => {
     render(
       <NextIntlClientProvider locale="en" messages={enMessages}>
         <main id="main-content" tabIndex={-1}>
@@ -119,9 +120,11 @@ describe('members bulk bar — Clear keeps keyboard focus on the page', () => {
     clear.focus();
     fireEvent.click(clear);
     expect(screen.queryByRole('button', { name: CLEAR })).toBeNull();
-    await waitFor(() =>
-      expect(within(screen.getByRole('grid')).getByRole('checkbox', { name: SELECT_ALL })).toHaveFocus(),
-    );
+    await waitFor(() => {
+      const selectAllCell = within(screen.getByRole('grid')).getAllByRole('columnheader')[0];
+      expect(selectAllCell).toHaveAttribute('data-rc', '0:0');
+      expect(selectAllCell).toHaveFocus();
+    });
   });
 
   it('with no members table on the page, focus goes to #main-content', async () => {
