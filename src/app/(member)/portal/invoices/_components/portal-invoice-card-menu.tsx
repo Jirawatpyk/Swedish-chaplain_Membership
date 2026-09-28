@@ -10,17 +10,16 @@
  * `useResendInvoice`): same URLs, same toasts, same 5-minute cooldown.
  *
  * The card renders the menu only when it has an item (a void invoice has
- * none). Items are never disabled: a disabled item is skipped by the arrow
- * keys and, as the only item (an unpaid invoice's "Email me a copy"), would
- * leave keyboard focus stranded on the trigger. During the resend cooldown the
- * item explains instead of sending.
+ * none). While a copy is being sent, and for the 5-minute cooldown after,
+ * "Email me a copy" is disabled with a reason: since AURA 5.10 (handoff #73) a
+ * disabled item stays in the arrow-key order and reads its reason as its
+ * description, and a menu with nothing enabled still takes focus.
  */
 import { DropdownMenu, type MenuItem } from '@jirawatpyk/aura-react';
 import { buttonClass } from '@jirawatpyk/aura-react/server';
 import { IconDownload, IconEllipsis, IconMail } from '@jirawatpyk/aura-react/icons';
 import { useTranslations } from 'next-intl';
 
-import { toast } from '@/lib/toast';
 import { usePortalPdfDownload } from './portal-pdf-download-button';
 import { useResendInvoice } from './resend-invoice-button';
 
@@ -52,7 +51,7 @@ export function PortalInvoiceCardMenu({
     documentNumber: invoiceDownload?.documentNumber ?? invoiceId,
     variant: 'invoice',
   });
-  const { recentlySent, resend } = useResendInvoice(invoiceId);
+  const { isPending, recentlySent, resend } = useResendInvoice(invoiceId);
 
   const items: MenuItem[] = [];
   if (invoiceDownload) {
@@ -66,13 +65,9 @@ export function PortalInvoiceCardMenu({
     items.push({
       label: t('actions.emailCopy'),
       icon: <IconMail />,
-      // Sent within the cooldown: say so (the same copy as the server's own
-      // rate-limit answer) rather than sending again. While a send is in
-      // flight the hook ignores the press.
-      onSelect: () => {
-        if (recentlySent) toast.warning(t('toast.resendRateLimited'));
-        else resend();
-      },
+      disabled: isPending || recentlySent,
+      ...(recentlySent ? { disabledReason: t('actions.emailCopySent') } : {}),
+      onSelect: resend,
     });
   }
 

@@ -85,7 +85,7 @@ describe('<PortalInvoiceCardMenu>', () => {
     expect(toastMock.dismiss).toHaveBeenCalledWith('loading-id');
   });
 
-  it('choosing "Email me a copy" resends once; during the cooldown the item stays reachable and explains instead of sending', async () => {
+  it('choosing "Email me a copy" resends once; during the cooldown the item stays reachable, dimmed, and says why', async () => {
     fetchMock.mockResolvedValue(new Response(null, { status: 202 }));
     vi.stubGlobal('fetch', fetchMock);
     renderMenu();
@@ -100,16 +100,18 @@ describe('<PortalInvoiceCardMenu>', () => {
     );
     expect(toastMock.success).toHaveBeenCalledWith(en.portal.invoices.toast.resendSuccess);
 
-    // Still enabled: a disabled item is skipped by the arrow keys and, as
-    // the only item, would leave keyboard focus stranded on the trigger.
+    // AURA 5.10 (handoff #73): a disabled item stays in the arrow-key order
+    // (aria-disabled, not `disabled`) and reads its reason as its description.
     openMenu();
-    const again = screen.getByRole('menuitem', { name: 'Email me a copy' });
+    const again = screen.getByRole('menuitem', { name: /Email me a copy/ });
+    expect(again).toHaveAttribute('aria-disabled', 'true');
     expect(again).not.toBeDisabled();
+    expect(again).toHaveAccessibleDescription(en.portal.invoices.actions.emailCopySent);
     await act(async () => {
       fireEvent.click(again);
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(toastMock.warning).toHaveBeenCalledWith(en.portal.invoices.toast.resendRateLimited);
+    expect(screen.getByRole('menu')).toBeInTheDocument();
   });
 
   it('with only the resend to offer, the menu holds just "Email me a copy"', () => {

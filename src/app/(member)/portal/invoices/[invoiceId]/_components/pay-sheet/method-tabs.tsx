@@ -77,8 +77,8 @@ export function MethodTabs({
     );
   }
 
-  // Spec 122 US4 (`Pay-card` / `Pay-promptpay` boards) — AURA Tabs on the
-  // segmented look (`.pay-method-tabs` in globals.css).
+  // Spec 122 US4 (`Pay-card` / `Pay-promptpay` boards) — AURA Tabs, full-width
+  // segmented (5.10, handoff #72); the panel sits 16px under the track.
   //  - `keepMounted`: the card panel MUST stay mounted; tearing down Stripe
   //    <Elements> on every swap reloads the iframe (T082, commit 018b9cf).
   //  - `activation="manual"` (WAI-ARIA APG): arrows / Home / End move focus
@@ -115,7 +115,9 @@ export function MethodTabs({
         }}
         keepMounted
         activation="manual"
-        className="pay-method-tabs"
+        variant="segmented"
+        fullWidth
+        className="[&_.aura-tabs\_\_panel]:pt-4"
         tabs={methods.map((m) => {
           const { label, aria, Icon, panel, testId } = meta[m];
           return {

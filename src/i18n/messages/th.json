@@ -6281,7 +6281,8 @@
         "emailCopy": "ส่งสำเนาไปที่อีเมล",
         "emailCopyAria": "ส่งสำเนาใบแจ้งหนี้ {number} ไปที่อีเมลที่บันทึกไว้",
         "moreActions": "การดำเนินการเพิ่มเติมสำหรับ {number}",
-        "menuDownloadInvoice": "ดาวน์โหลดใบแจ้งหนี้ (PDF)"
+        "menuDownloadInvoice": "ดาวน์โหลดใบแจ้งหนี้ (PDF)",
+        "emailCopySent": "เพิ่งส่งไป"
       },
       "receiptStatus": {
         "generating": "กำลังสร้างใบเสร็จภาษีของคุณ",

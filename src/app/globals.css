@@ -718,47 +718,6 @@ summary,
   .aura-drawer--nav .staff-nav .aura-nav__header {
     padding-inline-end: 48px;
   }
-
-  /* Spec 122 US4 — the pay sheet's method tabs as `Pay-card` / `Pay-promptpay`
-     draw them: AURA Tabs on AURA's segmented-control look (a full-width pill
-     track, the selected tab a raised pill), 44px tabs, 16px to the panel. */
-  .pay-method-tabs .aura-tabs__list {
-    gap: 2px;
-    padding: 2px;
-    border: 1px solid var(--aura-border-default);
-    border-radius: var(--aura-radius-full);
-    background: var(--aura-bg-surface-hover);
-  }
-  .pay-method-tabs .aura-tab {
-    flex: 1 1 0;
-    justify-content: center;
-    gap: 6px;
-    min-width: 0;
-    height: auto;
-    min-height: 44px;
-    margin-bottom: 0;
-    border: 0;
-    border-radius: var(--aura-radius-full);
-  }
-  .pay-method-tabs .aura-tab.is-active {
-    background: var(--aura-bg-surface);
-    box-shadow: inset 0 0 0 1px var(--aura-border-control), var(--aura-shadow-enterprise);
-  }
-  /* Inset, so the list's overflow clipping cannot cut the ring (AURA's own
-     tab ring is inset too). */
-  .pay-method-tabs .aura-tab:focus-visible {
-    outline-offset: -3px;
-    border-radius: var(--aura-radius-full);
-  }
-  /* High contrast drops box-shadows; mark the selected tab with a border. */
-  @media (forced-colors: active) {
-    .pay-method-tabs .aura-tab.is-active {
-      border: 2px solid Highlight;
-    }
-  }
-  .pay-method-tabs .aura-tabs__panel {
-    padding-top: 16px;
-  }
   /* The staff bar's side padding and the menu button, per board: 24px on the
      tablet board, 8 / 12px and a 60px bar with a 44px menu button on phones;
      the menu icon is 16px on both (AppShell hard-codes 20). */

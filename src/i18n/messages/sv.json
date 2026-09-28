@@ -6281,7 +6281,8 @@
         "emailCopy": "Mejla mig en kopia",
         "emailCopyAria": "Mejla en ny kopia av faktura {number} till din registrerade adress",
         "moreActions": "Fler åtgärder för {number}",
-        "menuDownloadInvoice": "Ladda ner faktura (PDF)"
+        "menuDownloadInvoice": "Ladda ner faktura (PDF)",
+        "emailCopySent": "Nyss skickad"
       },
       "receiptStatus": {
         "generating": "Ditt skattekvitto genereras",
