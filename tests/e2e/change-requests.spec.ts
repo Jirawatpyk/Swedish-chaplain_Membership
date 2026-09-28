@@ -435,12 +435,19 @@ test.describe('@change-requests US3 — member sees the rejection, resubmits, di
     // handler is not attached yet and the click no-ops (the precedent in
     // admin-pending-reactivation.spec.ts); the acknowledge POST is idempotent
     // (a second call keeps the first stamp), so re-clicking is safe.
+    // Only an ENABLED button is clicked, and never without a bound: the button
+    // is disabled while the POST is in flight — the first one also compiles the
+    // route in dev (4.8 s measured) — and an unbounded click on it waits until
+    // it unmounts and never returns, so the retry loop stalls on a dismiss
+    // that has in fact succeeded.
     await page.goto('/portal/profile');
     await expect(async () => {
       const dismiss = page.getByTestId('dismiss-decision');
-      if ((await dismiss.count()) > 0) await dismiss.click();
-      await expect(page.getByTestId('decision-outcome-banner')).toHaveCount(0, { timeout: 3_000 });
-    }).toPass({ timeout: 20_000 });
+      if ((await dismiss.count()) > 0 && (await dismiss.isEnabled())) {
+        await dismiss.click({ timeout: 2_000 }).catch(() => {});
+      }
+      await expect(page.getByTestId('decision-outcome-banner')).toHaveCount(0, { timeout: 10_000 });
+    }).toPass({ timeout: 45_000 });
     // the dismiss ends with `router.refresh()`; reloading while that RSC
     // fetch is in flight surfaces as a WebKit "Load failed" pageerror
     await page.waitForLoadState('networkidle');
@@ -562,7 +569,9 @@ test.describe('@change-requests US4 — history is complete and visible', () => 
     await signIn(page, MEMBER_EMAIL!, MEMBER_PASSWORD!);
     await skipUnlessFlagOn(page);
     await page.goto('/portal/profile');
-    await page.getByTestId('profile-history-link').click();
+    // the link renders twice — a card on desktop, a list row on phones — and
+    // only one of them is shown at any width
+    await page.getByTestId('profile-history-link').filter({ visible: true }).click();
     await page.waitForURL('**/portal/change-requests');
     await expect(page.getByRole('heading', { level: 1, name: copy.history.title })).toBeVisible();
     const items = page.getByTestId('history-item');
@@ -829,7 +838,17 @@ test.describe('@change-requests US6 — tenant switch, dashboard count, nav badg
     const dashboardCount = Number((await attentionRow.getByText(/^\d+$/).innerText()).trim());
     expect(dashboardCount).toBe(SEEDED_PENDING);
     // The nav badge is part of the link's accessible name ("Change requests N pending").
+    // Below the desktop breakpoint the staff navigation lives in a drawer that
+    // is closed until "Open navigation" is pressed; the click is retried
+    // because in dev it can land before the shell hydrates.
     const nav = page.getByRole('navigation', { name: en.nav.staff.ariaLabel });
+    const openNav = page.getByRole('button', { name: 'Open navigation' });
+    if (await openNav.isVisible()) {
+      await expect(async () => {
+        if (!(await nav.isVisible())) await openNav.click({ timeout: 2_000 });
+        await expect(nav).toBeVisible({ timeout: 1_000 });
+      }).toPass({ timeout: 15_000 });
+    }
     const badge = nav.getByRole('link', { name: /^Change requests \d+ pending$/ });
     await expect(badge).toBeVisible();
     const badgeName = (await badge.getAttribute('aria-label')) ?? (await badge.textContent()) ?? '';

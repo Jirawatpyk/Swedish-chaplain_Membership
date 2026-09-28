@@ -12,11 +12,12 @@
  */
 import { describe, expect, it } from 'vitest';
 import { isKnownTemplateVersion } from '@/modules/invoicing/infrastructure/pdf/template-registry';
+import { memberIdentitySnapshotSchema } from '@/modules/invoicing/domain/value-objects/member-identity-snapshot';
 import {
   E2E_PAID_TEMPLATE_VERSION,
   E2E_PORTAL_INVOICE_SEEDS,
   buildE2ePortalInvoiceRow,
-  isLegacyFixtureRow,
+  fixtureNeedsReseed,
   mainPdfBlobKey,
   receiptPdfBlobKey,
   type E2ePortalInvoiceSeed,
@@ -155,13 +156,51 @@ describe('buildE2ePortalInvoiceRow — the issued fixture is an unpaid 088 bill'
   });
 });
 
-describe('isLegacyFixtureRow', () => {
-  it('flags any old-shape fixture (§87 number, no bill number) for replacement — paid or issued', () => {
-    expect(isLegacyFixtureRow({ documentNumber: 'SC-2026-900001', billDocumentNumberRaw: null })).toBe(true);
-    expect(isLegacyFixtureRow({ documentNumber: 'SC-2026-900003', billDocumentNumberRaw: null })).toBe(true);
+/*
+ * Every later document on a fixture (receipt at payment, credit note, void)
+ * re-renders from the STORED snapshots. The tenant snapshot used to be
+ * `{ legal_name_*, tax_id, address }`, so paying SC-2026-900003 in the app
+ * crashed the receipt render on `tenant.address_th.split` (pdf_render_failed).
+ * The jsonb column is untyped, so only these cases catch a wrong shape.
+ */
+describe('buildE2ePortalInvoiceRow — stored snapshots are the shapes the renderer reads', () => {
+  it.each(E2E_PORTAL_INVOICE_SEEDS.map((s) => s.number))('%s stores a full tenant identity snapshot', (n) => {
+    const snapshot = build(seed(n)).tenantIdentitySnapshot as Record<string, unknown>;
+    for (const key of ['legal_name_th', 'legal_name_en', 'tax_id', 'address_th', 'address_en']) {
+      expect(typeof snapshot[key], key).toBe('string');
+      expect((snapshot[key] as string).length, key).toBeGreaterThan(0);
+    }
+    expect(snapshot.logo_blob_key).toBeNull();
+    expect(snapshot).not.toHaveProperty('address');
   });
 
-  it('leaves an 088-shaped fixture alone', () => {
-    expect(isLegacyFixtureRow({ documentNumber: null, billDocumentNumberRaw: 'SC-2026-900001' })).toBe(false);
+  it('stores a member snapshot the read boundary accepts', () => {
+    const snapshot = build(seed('SC-2026-900003')).memberIdentitySnapshot;
+    expect(memberIdentitySnapshotSchema.safeParse(snapshot).success).toBe(true);
+  });
+});
+
+describe('fixtureNeedsReseed', () => {
+  const good = buildE2ePortalInvoiceRow({
+    seed: seed('SC-2026-900001'),
+    tenantSlug: TENANT,
+    memberId: MEMBER_ID,
+    adminUserId: ADMIN_ID,
+    mainPdf: { blobKey: 'k', sha256: SHA },
+    receiptPdf: { blobKey: 'r', sha256: RECEIPT_SHA },
+  }).tenantIdentitySnapshot;
+
+  it('flags any old-shape fixture (§87 number, no bill number) for replacement — paid or issued', () => {
+    expect(fixtureNeedsReseed({ documentNumber: 'SC-2026-900001', billDocumentNumberRaw: null, tenantIdentitySnapshot: good })).toBe(true);
+    expect(fixtureNeedsReseed({ documentNumber: 'SC-2026-900003', billDocumentNumberRaw: null, tenantIdentitySnapshot: good })).toBe(true);
+  });
+
+  it('flags an 088 bill still carrying the old `{ address }` tenant snapshot', () => {
+    const old = { legal_name_en: 'x', legal_name_th: 'x', tax_id: '0000000000000', address: 'Bangkok' };
+    expect(fixtureNeedsReseed({ documentNumber: null, billDocumentNumberRaw: 'SC-2026-900003', tenantIdentitySnapshot: old })).toBe(true);
+  });
+
+  it('leaves an 088-shaped fixture with a full snapshot alone', () => {
+    expect(fixtureNeedsReseed({ documentNumber: null, billDocumentNumberRaw: 'SC-2026-900001', tenantIdentitySnapshot: good })).toBe(false);
   });
 });

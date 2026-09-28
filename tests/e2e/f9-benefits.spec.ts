@@ -17,7 +17,7 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { signInAsAdmin } from './helpers/admin-session';
-import { signInAsMember } from './helpers/member-session';
+import { goodStandingMemberCredentials, signInAsMember } from './helpers/member-session';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL;
@@ -64,8 +64,13 @@ test.describe('F9 — member benefit usage dashboard (US4) @f9', () => {
     await expect(page.getByRole('link', { name: /back to member/i })).toBeVisible();
   });
 
+  // Signs in as the good-standing persona: the renewals seed lapses the
+  // default e2e-member, and a lapsed member is sent from /portal/benefits back
+  // to /portal (see goodStandingMemberCredentials).
   test('member sees their OWN benefits at /portal/benefits', async ({ page }) => {
-    await signInAsMember(page);
+    const member = goodStandingMemberCredentials();
+    test.skip(!member, 'Set E2E_MEMBER_EMAIL_EMPTY + E2E_MEMBER_PASSWORD_EMPTY');
+    await signInAsMember(page, member!);
     await page.goto('/portal/benefits');
 
     await expect(

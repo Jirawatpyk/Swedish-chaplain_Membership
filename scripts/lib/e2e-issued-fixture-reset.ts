@@ -12,6 +12,11 @@
  * copy is inserted with the same id, bill number, bill PDF and snapshots. The
  * RC minted by the test run is simply gone (dev fixture only).
  *
+ * A renewal cycle may point at the fixture (`renewal-success-state.ts` links
+ * completed cycles to it) and `renewal_cycles_linked_invoice_fk` is NO ACTION,
+ * so those cycles are detached before the DELETE and re-linked after the
+ * INSERT (`planCycleRelink`).
+ *
  * No `@/` imports: Playwright's global setup loads this file directly.
  */
 import type postgres from 'postgres';
@@ -66,6 +71,41 @@ export function buildIssuedFixtureResetRow(
   return { ...fresh, ...ISSUED_RESET, updated_at: now };
 }
 
+/** A renewal cycle's link columns, as the reset reads and writes them. */
+export interface CycleLink {
+  readonly cycle_id: string;
+  readonly status: string;
+  readonly linked_invoice_id: string | null;
+  readonly anchor_invoice_id: string | null;
+}
+
+/**
+ * How to take cycles off the fixture for the DELETE and put them back after
+ * the INSERT (the invoice id is pinned, so the restore links the same row).
+ * A completed cycle cannot lose its link (CHECK
+ * `renewal_cycles_completed_requires_invoice_check`), so it is parked as
+ * `cancelled` — it already has `closed_at`, which both terminal states need.
+ * Pure, so it is unit-tested.
+ */
+export function planCycleRelink(
+  cycles: readonly CycleLink[],
+  invoiceId: string,
+): { detach: CycleLink[]; restore: CycleLink[] } {
+  const detach = cycles.map((c) => ({
+    cycle_id: c.cycle_id,
+    status: c.status === 'completed' ? 'cancelled' : c.status,
+    linked_invoice_id: c.linked_invoice_id === invoiceId ? null : c.linked_invoice_id,
+    anchor_invoice_id: c.anchor_invoice_id === invoiceId ? null : c.anchor_invoice_id,
+  }));
+  const restore = cycles.map((c) => ({
+    cycle_id: c.cycle_id,
+    status: c.status,
+    linked_invoice_id: c.linked_invoice_id,
+    anchor_invoice_id: c.anchor_invoice_id,
+  }));
+  return { detach, restore };
+}
+
 /**
  * Re-create the fixture as an unpaid issued bill. Returns false when the row
  * does not exist (a re-seed or cleanup removed it) so the caller can say so.
@@ -86,6 +126,18 @@ export async function resetE2eIssuedFixture(
       ).map((c) => c.column_name);
     const invoiceColumns = await columns('invoices');
     const lineColumns = await columns('invoice_lines');
+    const cycles = await tx<CycleLink[]>`
+      SELECT cycle_id, status, linked_invoice_id, anchor_invoice_id FROM renewal_cycles
+       WHERE tenant_id = ${row.tenant_id}
+         AND (linked_invoice_id = ${invoiceId} OR anchor_invoice_id = ${invoiceId})
+         FOR UPDATE`;
+    const relink = planCycleRelink(cycles, invoiceId);
+    const writeCycle = (c: CycleLink) => tx`
+      UPDATE renewal_cycles
+         SET status = ${c.status}, linked_invoice_id = ${c.linked_invoice_id},
+             anchor_invoice_id = ${c.anchor_invoice_id}
+       WHERE tenant_id = ${row.tenant_id} AND cycle_id = ${c.cycle_id}`;
+    for (const c of relink.detach) await writeCycle(c);
 
     // Unwind the children in FK order (refunds ↔ credit_notes are circular:
     // break it on the credit_notes side first), then drop the invoice — its
@@ -103,6 +155,7 @@ export async function resetE2eIssuedFixture(
       for (const column of lineColumns) if (column in line) copy[column] = line[column];
       await tx`INSERT INTO invoice_lines ${tx(copy, Object.keys(copy))}`;
     }
+    for (const c of relink.restore) await writeCycle(c);
     return true;
   });
 }

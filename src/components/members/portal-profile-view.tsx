@@ -352,6 +352,7 @@ export async function renderPortalProfileView({
                   <Link
                     href={link.href}
                     className="flex min-h-14 items-center gap-3 px-4 py-3 text-[var(--aura-fg-primary)] no-underline"
+                    {...link.testId}
                   >
                     <span className="flex min-w-0 flex-1 flex-col">
                       <span className="font-semibold">{link.title}</span>
