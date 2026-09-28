@@ -53,6 +53,8 @@ vi.mock('@/lib/tenant-context', () => ({
 vi.mock('@/lib/request-id', () => ({
   requestIdFromHeaders: () => null,
 }));
+// Mutable per case: the main PDF kind (088 bill vs legacy invoice).
+let mainPdfKind = 'invoice';
 // #443 review L2 — the Pay-now gate is only reachable with F5 ON and live
 // payment settings; both are module-level mutables reset in beforeEach so the
 // download-number / hierarchy cases keep their F5-OFF baseline.
@@ -140,45 +142,34 @@ vi.mock('@/components/layout/page-header', () => ({
   // Render title + actions so the invoice-download marker (inside `actions`)
   // reaches the output; `badge` is intentionally dropped (it only mounts the
   // OptimisticPaidOverlay client component, irrelevant to this assertion).
-  PageHeader: ({ title, actions }: { title?: unknown; actions?: unknown }) => (
-    <div>
+  PageHeader: ({ title, subtitle, actions }: { title?: unknown; subtitle?: unknown; actions?: unknown }) => (
+    <div data-marker="page-header">
       <span>{title as ReactElement}</span>
+      {subtitle ? <p data-marker="subtitle">{subtitle as ReactElement}</p> : null}
       <span>{actions as ReactElement}</span>
     </div>
   ),
 }));
-vi.mock('@/components/ui/card', () => ({
-  Card: ({ children }: { children?: unknown }) => children as ReactElement,
-  CardContent: ({ children }: { children?: unknown }) => children as ReactElement,
-  CardHeader: ({ children }: { children?: unknown }) => children as ReactElement,
-}));
-vi.mock('@/components/ui/button', () => ({
-  // 090 finding #5 — echo the chosen `variant` so a test can assert the
-  // paid-invoice download hierarchy (receipt `default` primary, bill `outline`).
-  buttonVariants: (opts?: { variant?: string }) => opts?.variant ?? 'default',
-}));
-vi.mock('@/components/ui/table', () => ({
-  Table: ({ children }: { children?: unknown }) => children as ReactElement,
-  TableBody: ({ children }: { children?: unknown }) => children as ReactElement,
-  TableCell: ({ children }: { children?: unknown }) => children as ReactElement,
-  TableHead: ({ children }: { children?: unknown }) => children as ReactElement,
-  TableHeader: ({ children }: { children?: unknown }) => children as ReactElement,
-  TableRow: ({ children }: { children?: unknown }) => children as ReactElement,
-}));
 vi.mock('@/lib/utils', () => ({ cn: (...c: unknown[]) => c.filter(Boolean).join(' ') }));
-vi.mock('@/app/(member)/portal/invoices/_utils/format', () => ({
-  formatDate: (v: string | null) => v ?? '—',
-  formatSatangThb: (v: bigint | null) => (v === null ? '—' : String(v)),
-}));
+vi.mock('@/app/(member)/portal/invoices/_utils/format', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/app/(member)/portal/invoices/_utils/format')>();
+  return {
+    formatDate: (v: string | null) => v ?? '—',
+    formatSatangThb: (v: bigint | null) => (v === null ? '—' : String(v)),
+    formatVatRatePoints: actual.formatVatRatePoints,
+    formatLineQuantity: actual.formatLineQuantity,
+  };
+});
 vi.mock('@/app/(member)/portal/invoices/_utils/invoice-row-view-model', async (importOriginal) => {
-  // The pure presentation helpers are used for real (they import only type-level
-  // + barrel symbols, and the barrel is mocked above) so this suite exercises the
-  // SAME main-pdf / stale-combined-bill predicates the list view-model uses.
+  // `isStaleCombinedBill` runs for real (pure; the barrel it imports is mocked
+  // above) so this suite exercises the SAME stale-combined-bill predicate the
+  // list view-model uses.
   const actual =
     await importOriginal<typeof import('@/app/(member)/portal/invoices/_utils/invoice-row-view-model')>();
   return {
-    ...actual,
     downloadLabelKeys: () => ({ labelKey: 'actions.downloadInvoice', ariaKey: 'actions.downloadInvoiceAria' }),
+    resolveMainPdfKind: () => mainPdfKind,
+    isStaleCombinedBill: actual.isStaleCombinedBill,
   };
 });
 vi.mock('@/app/(member)/portal/invoices/_utils/legacy-no-tin', () => ({
@@ -223,11 +214,14 @@ vi.mock('@/app/(member)/portal/invoices/_components/portal-pdf-download-button',
 vi.mock('@/app/(member)/portal/invoices/_components/receipt-status-watcher', () => ({
   ReceiptStatusWatcher: () => null,
 }));
+const payNowProps = vi.fn();
 vi.mock('@/app/(member)/portal/invoices/[invoiceId]/_components/pay-sheet/pay-now-button', () => ({
-  // Echo the amount the page hands the pay sheet (#443 review L2).
-  PayNowButton: ({ invoice }: { invoice: { amountDue: number } }) => (
-    <span data-testid="pay-now-marker" data-amount={String(invoice.amountDue)} />
-  ),
+  // Record the props, and echo the amount the page hands the pay sheet
+  // (#443 review L2).
+  PayNowButton: (props: { invoice: { amountDue: number } }) => {
+    payNowProps(props);
+    return <span data-testid="pay-now-marker" data-amount={String(props.invoice.amountDue)} />;
+  },
 }));
 vi.mock('@/app/(member)/portal/invoices/[invoiceId]/_components/online-payment-disabled-card', () => ({
   OnlinePaymentDisabledCard: () => null,
@@ -364,14 +358,14 @@ describe('PortalInvoiceDetailPage — paid-invoice download hierarchy (090 findi
     // Both downloads render.
     expect(html).toContain('data-testid="portal-download-invoice-marker"');
     expect(html).toContain('data-testid="portal-download-receipt-marker"');
-    // The receipt is the filled/primary CTA; the bill is demoted to outline.
-    // (buttonVariants is mocked to echo the variant into the className.)
+    // The receipt is the AURA primary CTA; the bill is demoted to secondary
+    // (spec 122 US4: AURA buttonClass, the real one).
     const receiptMarker = /data-testid="portal-download-receipt-marker"[^>]*data-cls="([^"]*)"/.exec(html);
     const invoiceMarker = /data-testid="portal-download-invoice-marker"[^>]*data-cls="([^"]*)"/.exec(html);
-    expect(receiptMarker?.[1]).toContain('default');
-    expect(invoiceMarker?.[1]).toContain('outline');
-    // The demoted bill must NOT also be a filled `default` CTA.
-    expect(invoiceMarker?.[1]).not.toContain('default');
+    expect(receiptMarker?.[1]).toContain('aura-btn--primary');
+    expect(invoiceMarker?.[1]).toContain('aura-btn--secondary');
+    // The demoted bill must NOT also be a primary CTA.
+    expect(invoiceMarker?.[1]).not.toContain('aura-btn--primary');
   });
 });
 
@@ -452,6 +446,174 @@ describe('PortalInvoiceDetailPage — void auto-refund banner: failed vs settlin
     expect(html).not.toContain('void.autoRefundBody');
     // The refund reference line still renders (useful in a support ticket).
     expect(html).toContain('void.autoRefundRef');
+  });
+});
+
+describe('PortalInvoiceDetailPage — AURA layout (spec 122 US4, `Invoice-paid` / `Portal-invoice-mobile` boards)', () => {
+  it('opens with the back link, before the title', async () => {
+    getInvoiceMock.mockResolvedValue({ ok: true, value: paidSeparateInvoice() });
+    const html = await renderPage();
+    expect(html.indexOf('backToList')).toBeGreaterThan(-1);
+    expect(html.indexOf('backToList')).toBeLessThan(html.indexOf('INV-2026-000010'));
+  });
+
+  it('one Details card holds the dates, the line items and the totals', async () => {
+    getInvoiceMock.mockResolvedValue({ ok: true, value: paidSeparateInvoice() });
+    const html = await renderPage();
+    const cards = html.split('class="aura-card"').length - 1;
+    expect(cards).toBe(1);
+    const card = html.slice(html.indexOf('class="aura-card"'));
+    for (const key of ['fields.issueDate', 'lines.description', 'totals.subtotal', 'totals.vat', 'totals.total']) {
+      expect(card).toContain(key);
+    }
+  });
+
+  it('the void notice is an AURA danger alert; the auto-refund news an info alert beside it', async () => {
+    getInvoiceMock.mockResolvedValue({ ok: true, value: voidedInvoice() });
+    autoRefundResult = { processorRefundId: 're_test_ABCD1234', failed: false };
+    const html = await renderPage();
+    expect(html).toMatch(/class="aura-alert aura-alert--danger[^"]*"[^>]*>(?:(?!aura-alert ).)*void\.title/s);
+    expect(html).toMatch(/data-testid="portal-invoice-auto-refund-notice" class="aura-alert aura-alert--info"/);
+  });
+
+  it('an issued invoice puts Pay now in the header (the one primary action), a band fixed above the tabs on phones', async () => {
+    getInvoiceMock.mockResolvedValue({ ok: true, value: issuedUnpaid088Bill() });
+    envFeatures.f5OnlinePayment = true;
+    paymentSettingsResult = {
+      onlinePaymentEnabled: true,
+      enabledMethods: ['card'],
+      processorAccountId: 'acct_1',
+      processorPublishableKey: 'pk_test_1',
+    };
+    const html = await renderPage();
+    const header = html.slice(html.indexOf('data-marker="page-header"'), html.indexOf('detailsHeading'));
+    const bar = /<section[^>]*data-testid="portal-invoice-pay-bar"[^>]*>/.exec(header)?.[0] ?? '';
+    expect(bar).toContain('max-md:fixed');
+    expect(bar).not.toMatch(/(^|\s)sticky(\s|")/);
+    expect(html).toContain('summary.amountLabel');
+    // With Pay now on the page the bill download steps down to secondary.
+    expect(html).not.toMatch(/data-testid="portal-download-invoice"[^>]*aura-btn--primary|aura-btn--primary[^"]*"[^>]*data-testid="portal-download-invoice"/);
+  });
+
+  it('an unpaid 088 bill reads the bill note as its subtitle; a paid one with its RC the paid line; legacy none', async () => {
+    try {
+      mainPdfKind = 'bill';
+      getInvoiceMock.mockResolvedValue({ ok: true, value: issuedUnpaid088Bill() });
+      expect(await renderPage()).toMatch(/data-marker="subtitle">summary\.billNote</);
+      getInvoiceMock.mockResolvedValue({ ok: true, value: { ...paidSeparateInvoice(), receiptPdfStatus: 'pending' } });
+      expect(await renderPage()).toMatch(/data-marker="subtitle">subtitlePaid</);
+      mainPdfKind = 'invoice';
+      expect(await renderPage()).not.toContain('data-marker="subtitle"');
+    } finally {
+      mainPdfKind = 'invoice';
+    }
+  });
+
+  it('the VAT row names the rate stored on the invoice (board "VAT 7%"), never a hard-coded 7', async () => {
+    const intl = await import('next-intl/server');
+    const echo = (key: string, values?: Record<string, unknown>) =>
+      values ? `${key}(${String(values.rate)})` : key;
+    vi.mocked(intl.getTranslations).mockResolvedValue(echo as never);
+    try {
+      getInvoiceMock.mockResolvedValue({
+        ok: true,
+        value: { ...issuedUnpaid088Bill(), vatRate: { raw: '0.0700' } },
+      });
+      expect(await renderPage()).toContain('>totals.vatWithRate(7)<');
+
+      // A §80/1(5) zero-rated invoice reads its own 0%.
+      getInvoiceMock.mockResolvedValue({
+        ok: true,
+        value: {
+          ...issuedUnpaid088Bill(),
+          vatRate: { raw: '0.0000' },
+          vat: { satang: 0n },
+          total: { satang: 100_000n },
+        },
+      });
+      expect(await renderPage()).toContain('>totals.vatWithRate(0)<');
+
+      // No rate snapshot: the plain label, no guessed rate.
+      getInvoiceMock.mockResolvedValue({ ok: true, value: issuedUnpaid088Bill() });
+      const html = await renderPage();
+      expect(html).toContain('>totals.vat<');
+      expect(html).not.toContain('vatWithRate');
+    } finally {
+      vi.mocked(intl.getTranslations).mockResolvedValue(((key: string) => key) as never);
+    }
+  });
+
+  it('an unpaid invoice has no "Paid" fact', async () => {
+    getInvoiceMock.mockResolvedValue({ ok: true, value: issuedUnpaid088Bill() });
+    expect(await renderPage()).not.toContain('fields.paidDate');
+  });
+
+  it('below 640px each line is one row: description, then "qty × unit price" beside the line total', async () => {
+    getInvoiceMock.mockResolvedValue({
+      ok: true,
+      value: {
+        ...issuedUnpaid088Bill(),
+        lines: [
+          {
+            lineId: 'l1',
+            descriptionEn: 'Membership fee',
+            descriptionTh: 'ค่าสมาชิก',
+            quantity: 2,
+            unitPrice: { satang: 150_000n },
+            total: { satang: 300_000n },
+          },
+        ],
+      },
+    });
+    const html = await renderPage();
+    const list = html.slice(html.indexOf('<ul aria-label="linesHeading"'));
+    expect(list).toMatch(/sm:hidden/);
+    expect(list).toContain('ค่าสมาชิก');
+    expect(list).toContain('2 × 150000');
+    expect(list).toContain('>300000<');
+  });
+
+  it('the quantity reads as a plain number (the stored 4-dp "1.0000" reads "1"), in the table and the phone row', async () => {
+    getInvoiceMock.mockResolvedValue({
+      ok: true,
+      value: {
+        ...issuedUnpaid088Bill(),
+        lines: [
+          {
+            lineId: 'l1',
+            descriptionEn: 'Membership fee',
+            descriptionTh: 'ค่าสมาชิก',
+            quantity: '1.0000',
+            unitPrice: { satang: 500_000n },
+            total: { satang: 500_000n },
+          },
+        ],
+      },
+    });
+    const html = await renderPage();
+    expect(html).not.toContain('1.0000');
+    const list = html.slice(html.indexOf('<ul aria-label="linesHeading"'));
+    expect(list).toContain('1 × 500000');
+  });
+
+  it('the bar amount is the Total row and the amount handed to the pay sheet (one figure)', async () => {
+    getInvoiceMock.mockResolvedValue({ ok: true, value: issuedUnpaid088Bill() });
+    envFeatures.f5OnlinePayment = true;
+    paymentSettingsResult = {
+      onlinePaymentEnabled: true,
+      enabledMethods: ['card'],
+      processorAccountId: 'acct_1',
+      processorPublishableKey: 'pk_test_1',
+    };
+    payNowProps.mockClear();
+    const html = await renderPage();
+    const bar = html.slice(html.indexOf('data-testid="portal-invoice-pay-bar"'));
+    const totalRow = /totals\.total<\/dt><dd[^>]*>([^<]+)<\/dd>/.exec(html)?.[1];
+    expect(totalRow).toBeTruthy();
+    expect(bar).toContain(`>${totalRow}<`);
+    expect(payNowProps).toHaveBeenCalledWith(
+      expect.objectContaining({ invoice: expect.objectContaining({ amountDue: 107_000 }) }),
+    );
   });
 });
 

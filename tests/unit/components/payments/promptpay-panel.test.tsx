@@ -210,6 +210,18 @@ describe('<PromptPayPanel> — pending status', () => {
   });
 });
 
+describe('<PromptPayPanel> — board parity (spec 122 US4)', () => {
+  it('shows the waiting pill for the whole life of the QR (`Pay-promptpay` board)', () => {
+    renderWithIntl({ ...baseProps, status: 'pending' });
+    expect(screen.getByTestId('pay-sheet-promptpay-waiting')).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  it('keeps the do-not-transfer warning once the QR has expired (`Pay-qr-expired` board)', () => {
+    renderWithIntl({ ...baseProps, status: 'expired' });
+    expect(screen.getByTestId('pay-sheet-promptpay-warning')).toBeInTheDocument();
+  });
+});
+
 describe('<PromptPayPanel> — expired status', () => {
   it('renders expired panel with role=alert + aria-live=assertive', () => {
     renderWithIntl({ ...baseProps, status: 'expired' });

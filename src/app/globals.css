@@ -291,6 +291,13 @@ html:has(.chamber-shell) {
 html:has(.aura-actionbar--viewport) {
   scroll-padding-bottom: calc(var(--aura-bottomnav-offset, 0px) + 5.5rem);
 }
+/* Spec 122 US4 — the invoice page's sticky amount-due bar (~7rem) rides
+   above the bottom nav on phones; keep a focused control clear of it. */
+@media (max-width: 767.98px) and (min-height: 560.02px) {
+  html:has(.portal-pay-bar:not([hidden])) {
+    scroll-padding-bottom: calc(var(--aura-bottomnav-offset, 0px) + 7.5rem);
+  }
+}
 
 body {
   font-family: var(--font-sans);

@@ -138,6 +138,7 @@ describe('UI import ratchet (spec 122)', () => {
       'src/app/(member)/portal/timeline/page.tsx',
       'src/app/(member)/portal/benefits/page.tsx',
       'src/app/(member)/portal/not-found.tsx',
+      'src/app/(member)/portal/[...unknown]/page.tsx',
       'src/components/portal/dashboard/stat-card.tsx',
       'src/components/portal/contact-language-form.tsx',
       'src/components/benefits/benefit-usage-card.tsx',
@@ -162,6 +163,39 @@ describe('UI import ratchet (spec 122)', () => {
       expect(
         await ratchetHits(legacy, 'src/components/members/change-requests/change-request-review-client.tsx'),
       ).toEqual([]);
+    });
+  });
+
+  describe('the US4 member invoices are on AURA (the real MIGRATED_PATHS)', () => {
+    const legacy = "import { Button } from '@/components/ui/button';\nexport const B = Button;\n";
+
+    it.each([
+      'src/app/(member)/portal/invoices/page.tsx',
+      'src/app/(member)/portal/invoices/loading.tsx',
+      'src/app/(member)/portal/invoices/error.tsx',
+      'src/app/(member)/portal/invoices/_components/portal-invoice-card-list.tsx',
+      'src/app/(member)/portal/invoices/_components/resend-invoice-button.tsx',
+      'src/app/(member)/portal/invoices/_components/receipt-status-watcher.tsx',
+      'src/app/(member)/portal/invoices/_components/combined-receipt-hint.tsx',
+      'src/app/(staff)/admin/invoices/_components/invoice-filters.tsx',
+      'src/app/(member)/portal/invoices/[invoiceId]/page.tsx',
+      'src/app/(member)/portal/invoices/[invoiceId]/loading.tsx',
+      'src/app/(member)/portal/invoices/[invoiceId]/not-found.tsx',
+      'src/app/(member)/portal/invoices/[invoiceId]/_components/online-payment-disabled-card.tsx',
+      'src/components/shell/live-region.tsx',
+      'src/app/(member)/portal/credit-notes/[creditNoteId]/page.tsx',
+      'src/app/(member)/portal/credit-notes/[creditNoteId]/loading.tsx',
+      'src/components/invoices/credit-note-original-receipt.tsx',
+      'src/app/(member)/portal/invoices/[invoiceId]/_components/pay-sheet/index.tsx',
+      'src/app/(member)/portal/invoices/[invoiceId]/_components/pay-sheet/method-tabs.tsx',
+      'src/app/(member)/portal/invoices/[invoiceId]/_components/pay-sheet/payment-failure-panel.tsx',
+      'src/components/payments/pay-sheet-skeleton.tsx',
+    ])('%s cannot import the legacy kit', async (path) => {
+      expect(await ratchetHits(legacy, path)).toHaveLength(1);
+    });
+
+    it('control: the rest of the staff invoice screens keep the legacy kit until US8', async () => {
+      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/invoices/page.tsx')).toEqual([]);
     });
   });
 });

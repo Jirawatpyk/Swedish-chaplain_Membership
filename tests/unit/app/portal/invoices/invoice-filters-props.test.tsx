@@ -14,14 +14,10 @@
  * These tests pin BOTH the admin defaults (so admin behaviour is unchanged)
  * and the portal subset (no draft option + no chip).
  *
- * Harness note: the status `<Select>` is a Base UI Select whose options live
- * in a `<Portal>` that only mounts on open — and jsdom can't drive Base UI's
- * pointer-based open. So we mock `@/components/ui/select` with lightweight
- * eager-render stubs (SelectContent → div, SelectItem → role="option") to
- * read the options the component *maps* directly, without portal/popup
- * gymnastics. The trigger + the chip are the real component output.
+ * Harness note: AURA's Select (spec 122 US4) keeps a native `<select>` with
+ * real `<option>`s behind its combobox, so the options the component maps
+ * are read straight from the DOM (`optionValues`).
  */
-import type { ReactNode } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
@@ -40,30 +36,6 @@ vi.mock('next/navigation', () => ({
   usePathname: () => '/portal/invoices',
 }));
 
-// Eager-render Select stubs so the mapped <SelectItem>s land in the DOM
-// without opening Base UI's portal popup (which jsdom can't drive).
-vi.mock('@/components/ui/select', () => ({
-  Select: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  SelectContent: ({ children }: { children: ReactNode }) => (
-    <div>{children}</div>
-  ),
-  SelectItem: ({
-    value,
-    children,
-  }: {
-    value: string;
-    children: ReactNode;
-  }) => (
-    <div role="option" aria-selected={false} data-value={value}>
-      {children}
-    </div>
-  ),
-  SelectTrigger: ({ children }: { children: ReactNode }) => (
-    <div>{children}</div>
-  ),
-  TranslatedSelectValue: () => null,
-}));
-
 import { InvoiceFilters } from '@/app/(staff)/admin/invoices/_components/invoice-filters';
 
 function renderFilters(props?: Parameters<typeof InvoiceFilters>[0]) {
@@ -74,11 +46,12 @@ function renderFilters(props?: Parameters<typeof InvoiceFilters>[0]) {
   );
 }
 
-/** Collect the `data-value` of every rendered status/subject option. */
+/**
+ * Collect the value of every status / subject option. AURA's Select keeps a
+ * native `<select>` with real `<option>`s behind its combobox (spec 122 US4).
+ */
 function optionValues(): string[] {
-  return screen
-    .getAllByRole('option')
-    .map((el) => el.getAttribute('data-value') ?? '');
+  return Array.from(document.querySelectorAll('option')).map((el) => el.value);
 }
 
 describe('<InvoiceFilters> — admin defaults (unchanged)', () => {
@@ -187,5 +160,25 @@ describe('<InvoiceFilters> — member portal config', () => {
     expect(
       screen.queryByRole('button', { name: 'Clear filters' }),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe('<InvoiceFilters> — row layout (spec 122 US4)', () => {
+  beforeEach(() => {
+    searchParamsStub = new URLSearchParams();
+  });
+
+  it('below 1024px the search takes its own row and the filters share the next one evenly; from 1024px it is one row', () => {
+    renderFilters({ statusOptions: ['issued', 'paid'], showPaidOnlineChip: false });
+    const bar = document.querySelector('.aura-filterbar');
+    expect(bar).not.toBeNull();
+    for (const token of [
+      'max-lg:[&_.aura-filterbar\\_\\_search]:basis-full',
+      'max-lg:[&_.aura-filterbar\\_\\_search]:max-w-none',
+      'max-lg:[&_.aura-filterbar\\_\\_controls]:basis-full',
+      'max-lg:[&_.aura-filterbar\\_\\_controls>.aura-field]:flex-[1_1_8rem]',
+    ]) {
+      expect(bar!.className).toContain(token);
+    }
   });
 });

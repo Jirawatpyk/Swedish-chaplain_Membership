@@ -28,7 +28,7 @@ import { Download, Loader2 } from 'lucide-react';
 import { downloadPdf, type PdfDownloadToasts } from '@/lib/download-pdf-client';
 import { cn } from '@/lib/utils';
 
-type Variant = 'invoice' | 'receipt';
+export type Variant = 'invoice' | 'receipt';
 
 interface BaseProps {
   readonly invoiceId: string;
@@ -56,16 +56,20 @@ interface PortalPdfDownloadButtonProps extends BaseProps {
   readonly variant: Variant;
 }
 
-function PortalPdfDownloadButton({
+/**
+ * The fetch + blob download with its toasts, shared by the button below and
+ * the phone card's "⋯" menu (spec 122 US4), so both run the same request with
+ * the same feedback.
+ */
+export function usePortalPdfDownload({
   invoiceId,
   documentNumber,
   variant,
-  label,
-  ariaLabel,
-  className,
-  iconOnly = false,
-  'data-testid': testId,
-}: PortalPdfDownloadButtonProps) {
+}: {
+  readonly invoiceId: string;
+  readonly documentNumber: string;
+  readonly variant: Variant;
+}): { readonly loading: boolean; readonly download: () => Promise<void> } {
   const t = useTranslations('portal.invoices.toast');
   const [loading, setLoading] = useState(false);
 
@@ -107,7 +111,7 @@ function PortalPdfDownloadButton({
           rateLimited: t('invoiceRateLimited'),
         };
 
-  const handleClick = async () => {
+  const download = async () => {
     setLoading(true);
     const loadingId = toast.loading(t('downloadInProgress'));
     try {
@@ -124,10 +128,25 @@ function PortalPdfDownloadButton({
     }
   };
 
+  return { loading, download };
+}
+
+function PortalPdfDownloadButton({
+  invoiceId,
+  documentNumber,
+  variant,
+  label,
+  ariaLabel,
+  className,
+  iconOnly = false,
+  'data-testid': testId,
+}: PortalPdfDownloadButtonProps) {
+  const { loading, download } = usePortalPdfDownload({ invoiceId, documentNumber, variant });
+
   return (
     <button
       type="button"
-      onClick={handleClick}
+      onClick={download}
       disabled={loading}
       aria-label={ariaLabel ?? label}
       {...(iconOnly ? { title: label } : {})}

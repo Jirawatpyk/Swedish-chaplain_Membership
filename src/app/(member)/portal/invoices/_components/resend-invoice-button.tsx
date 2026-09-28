@@ -17,8 +17,9 @@ import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
 import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
 import { isReadOnlyResponse } from '@/lib/http/read-only-refusal';
-import { Mail, Loader2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Icon, IconButton } from '@jirawatpyk/aura-react';
+import { buttonClass } from '@jirawatpyk/aura-react/server';
+import { cn } from '@/lib/utils';
 
 export interface ResendInvoiceButtonProps {
   readonly invoiceId: string;
@@ -31,13 +32,15 @@ export interface ResendInvoiceButtonProps {
   readonly className?: string;
 }
 
-export function ResendInvoiceButton({
-  invoiceId,
-  documentNumber,
-  variant = 'ghost',
-  layout = 'full',
-  className,
-}: ResendInvoiceButtonProps) {
+/**
+ * The resend request with its toasts and the 5-minute cooldown, shared by the
+ * button below and the phone card's "⋯" menu (spec 122 US4).
+ */
+export function useResendInvoice(invoiceId: string): {
+  readonly isPending: boolean;
+  readonly recentlySent: boolean;
+  readonly resend: () => void;
+} {
   const t = useTranslations('portal.invoices');
   const readOnlyToast = useReadOnlyToast();
   const [isPending, startTransition] = useTransition();
@@ -54,7 +57,10 @@ export function ResendInvoiceButton({
     [],
   );
 
-  const handleClick = () => {
+  const resend = () => {
+    // The buttons are `aria-disabled`, not `disabled` (focus must survive
+    // a press), so a busy or cooling-down click lands here and stops.
+    if (isPending || recentlySent) return;
     startTransition(async () => {
       try {
         const res = await fetch(`/api/portal/invoices/${invoiceId}/resend`, {
@@ -111,29 +117,63 @@ export function ResendInvoiceButton({
     });
   };
 
+  return { isPending, recentlySent, resend };
+}
+
+export function ResendInvoiceButton({
+  invoiceId,
+  documentNumber,
+  variant = 'ghost',
+  layout = 'full',
+  className,
+}: ResendInvoiceButtonProps) {
+  const t = useTranslations('portal.invoices');
+  const { isPending, recentlySent, resend: handleClick } = useResendInvoice(invoiceId);
+
   const disabled = isPending || recentlySent;
 
+  const label = t('actions.emailCopyAria', { number: documentNumber });
+  // AURA dims only `:disabled` buttons (and `a[aria-disabled]`), so the
+  // aria-disabled state gets the same look here.
+  const dimmed = cn('aria-disabled:cursor-not-allowed aria-disabled:opacity-[var(--aura-disabled-opacity)]', className);
+  // Spec 122 US4 — the compact form is an AURA IconButton (its label is the
+  // accessible name and the tooltip); the full form an AURA Button whose
+  // `loading` shows the spinner. `outline` (list rows) maps to AURA's
+  // secondary, `ghost` stays ghost. Both are `aria-disabled` while busy or
+  // cooling down, never `disabled`: a real `disabled` drops keyboard focus to
+  // <body> the instant Enter lands (UX review M4, SC 2.4.3).
+  if (layout === 'compact') {
+    return (
+      <IconButton
+        type="button"
+        icon={isPending ? 'loader-circle' : 'mail'}
+        label={label}
+        onClick={handleClick}
+        aria-disabled={disabled || undefined}
+        aria-busy={isPending || undefined}
+        className={dimmed}
+      />
+    );
+  }
+  // A plain button in AURA's button classes, not `<Button>`: AURA's Button
+  // writes its own `aria-disabled` (from `loading`) over the caller's, which
+  // erased the 5-minute cooldown state (whole-branch review M2).
   return (
-    <Button
+    <button
       type="button"
-      variant={variant}
-      size="sm"
       onClick={handleClick}
-      disabled={disabled}
-      aria-label={t('actions.emailCopyAria', { number: documentNumber })}
-      className={className}
+      aria-disabled={disabled || undefined}
+      aria-busy={isPending || undefined}
+      aria-label={label}
+      className={buttonClass({
+        variant: variant === 'outline' ? 'secondary' : 'ghost',
+        size: 'sm',
+        loading: isPending,
+        className: dimmed,
+      })}
     >
-      {isPending ? (
-        // Round 6 (R5-UX-M2 parity) — `motion-safe:` prefix so users
-        // with `prefers-reduced-motion: reduce` don't see a continuously
-        // spinning icon.
-        <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden="true" />
-      ) : (
-        <Mail className="size-4" aria-hidden="true" />
-      )}
-      {layout === 'full' ? (
-        <span className="ml-2">{t('actions.emailCopy')}</span>
-      ) : null}
-    </Button>
+      <Icon name={isPending ? 'loader-circle' : 'mail'} {...(isPending ? { className: 'aura-spin' } : {})} />
+      {t('actions.emailCopy')}
+    </button>
   );
 }

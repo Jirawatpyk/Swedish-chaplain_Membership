@@ -32,7 +32,7 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/shell/empty-state';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { InlineAlert, InlineAlertDescription } from '@/components/ui/inline-alert';
-import { LiveRegion } from '@/components/ui/live-region';
+import { LiveRegion } from '@/components/shell/live-region';
 
 // Client-safe sub-barrel — see `tier-filter-select.tsx` for rationale.
 import {

@@ -5,11 +5,10 @@
  *
  * Layout (FR-028h)
  * ----------------
- *   - Right-aligned <Sheet> on ≥ 640 px viewports
- *     (`sm:max-w-[480px] sm:h-auto`).
- *   - Full-screen on < 640 px viewports (`w-full h-full`).
- *   - Sticky header with <SheetTitle> (bilingual "Pay {invoiceNumber}")
- *     plus a close button whose tap target is ≥ 44 × 44 px (WCAG 2.5.5).
+ *   - An AURA `Drawer` on the right, 480 px from 640 px (`size="md"`),
+ *     full width and full height below (spec 122 US4, `Pay-*` boards).
+ *   - Header: "Pay invoice" with the document number in mono under it,
+ *     and a close button whose box is ≥ 44 × 44 px (WCAG 2.5.5).
  *
  * Deep-linking (FR-025c)
  * ----------------------
@@ -28,9 +27,11 @@
  * PCI constraint (F5 PCI Group-G must-do)
  * ---------------------------------------
  * All payment state — most critically the Stripe `clientSecret` — lives
- * ONLY inside <PaySheetInternal>'s ephemeral React state. On drawer
- * close we unmount the internal subtree (because `{open && ...}`), which
- * guarantees the state tree is torn down. We do NOT write payment state
+ * ONLY in ephemeral React state: <PaySheetInternal>'s, plus the
+ * `cachedInitiate` this shell keeps so a reopen reuses the same
+ * PaymentIntent. AURA's Drawer renders nothing while closed, so closing
+ * unmounts <PaySheetInternal> (and the Stripe iframe) every time; the
+ * cache, not the drawer, is what survives. We do NOT write payment state
  * to any browser persistence store (localStorage, sessionStorage,
  * cookies, IndexedDB). A grep of this directory MUST return zero
  * references to `localStorage` or `sessionStorage`.
@@ -46,15 +47,7 @@ import dynamic from 'next/dynamic';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { dispatchInvoicePaid } from '../optimistic-paid';
 import { useTranslations } from 'next-intl';
-import { XIcon } from 'lucide-react';
-
-import { Button } from '@/components/ui/button';
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet';
+import { Drawer } from '@jirawatpyk/aura-react';
 import { useIdleWarningSuppression } from '@/hooks/use-idle-warning-suppression';
 
 import { HardCapPrompt } from './hard-cap-prompt';
@@ -62,8 +55,8 @@ import { HardCapPrompt } from './hard-cap-prompt';
 import type { PaymentMethod } from './method-tabs';
 
 // Lazy boundary (refactored 2026-04-25 — code-quality audit closeout).
-// Only the Stripe-SDK-heavy <PaySheetInternal> is lazy; the Sheet shell
-// renders eagerly so Base UI Dialog observes a real `open: false → true`
+// Only the Stripe-SDK-heavy <PaySheetInternal> is lazy; the drawer shell
+// renders eagerly so it observes a real `open: false → true`
 // transition on first click and plays its slide-in animation.
 //
 // Loading fallback: invisible spacer reserving the rough vertical
@@ -77,7 +70,7 @@ import type { PaymentMethod } from './method-tabs';
 //       card zone" — confusing layout shift.
 //   (b) `loading: () => null` — works in the fast path (chunk pre-warmed
 //       below renders in <50 ms) but leaves the drawer body empty on
-//       slow networks, and the SheetTitle in the sticky header has no
+//       slow networks, and the drawer title in the sticky header has no
 //       body to anchor against → minor CLS when content arrives.
 //
 // The spacer keeps body height stable from the first paint, prevents
@@ -121,6 +114,25 @@ export interface PaySheetProps {
   readonly onClose?: () => void;
   /** Render prop for the trigger, so the caller controls open state. */
   readonly children?: (open: () => void) => React.ReactNode;
+}
+
+/**
+ * AURA's Drawer hands focus back to whatever was focused when it opened —
+ * Pay now, normally. Two paths leave that target gone or wrong (UX review
+ * M1, SC 2.4.3): a `?pay=1` open remembered `<body>`, and a settled payment
+ * unmounted Pay now under the confirmation panel. After the drawer's own
+ * restore runs, land on Pay now if it is still there, else the layout's
+ * `<main id="main-content" tabIndex={-1}>`.
+ */
+function settleFocusAfterClose(): void {
+  setTimeout(() => {
+    const active = document.activeElement;
+    if (active && active !== document.body && active.isConnected) return;
+    const target =
+      document.querySelector<HTMLElement>('[data-testid="pay-now-button"]') ??
+      document.getElementById('main-content');
+    target?.focus();
+  }, 0);
 }
 
 export function PaySheet({
@@ -169,10 +181,12 @@ export function PaySheet({
   // PaymentIntent. If we gate its mount on `{open && ...}` then every
   // close→reopen cycle remounts it, which re-fires the initiate fetch
   // and quickly exhausts the rate-limit budget (10 req / 5 min). The
-  // correct pattern is: lazy-mount on FIRST open, then keep mounted for
-  // the life of the invoice page. The drawer's own `open` prop hides it
-  // visually; PaymentIntent clientSecret stays in React state only
-  // (ephemeral, no persistence) — PCI SAQ-A constraint preserved.
+  // pattern is: lazy-load on FIRST open (`hasOpened`) and keep the
+  // initiate response in `cachedInitiate` below for the life of the invoice
+  // page. AURA's Drawer renders nothing while closed, so each close still
+  // unmounts the body; the cache is what spares the reopen a new initiate.
+  // PaymentIntent clientSecret stays in React state only (ephemeral, no
+  // persistence) — PCI SAQ-A constraint preserved.
   // Derive-during-render pattern (React docs: "Adjusting some state when
   // a prop changes") — once `open` flips true we latch `hasOpened`.
   // React batches the setState during render so no cascading effect
@@ -182,8 +196,9 @@ export function PaySheet({
     setHasOpened(true);
   }
 
-  // Parent-scope cache for the initiate response so Radix Sheet's
-  // Portal mount/unmount on close/reopen does not discard the Stripe
+
+  // Parent-scope cache for the initiate response so the drawer body's
+  // unmount on close / remount on reopen does not discard the Stripe
   // clientSecret + trigger a fresh POST /api/payments/initiate every
   // cycle. Stored in React state (ephemeral) — NEVER persisted to
   // localStorage / sessionStorage / cookies / IndexedDB (PCI SAQ-A).
@@ -359,6 +374,7 @@ export function PaySheet({
     }
     if (!next) {
       onClose?.();
+      settleFocusAfterClose();
       // R5 round-7 (2026-04-26): the close-handler `router.refresh()`
       // was removed. Optimistic UI overlay
       // (`dispatchInvoicePaid()` + <OptimisticPaidOverlay>) handles
@@ -381,101 +397,42 @@ export function PaySheet({
     if (isControlled) onOpenChange?.(false);
     else setUncontrolledOpen(false);
     onClose?.();
+    settleFocusAfterClose();
   };
 
   return (
     <>
       {children?.(() => handleOpenChange(true))}
-      <Sheet open={open} onOpenChange={handleOpenChange}>
-        <SheetContent
-          side="right"
-          showCloseButton={false}
-          // T082 empirical E2E discovery (2026-04-24): shadcn
-          // `<SheetContent side="right">` ships with default variants
-          // `data-[side=right]:w-3/4` (75 %) + `data-[side=right]:sm:max-w-[var(--modal-max-width-md)]`
-          // (= 32 rem = 512 px). Both Tailwind class overrides AND
-          // matching `data-[side=right]:` prefix overrides failed to
-          // defeat the primitive cascade reliably — the drawer
-          // rendered at 612 px on a 320 px iPhone viewport, which
-          // violates FR-028h. Override via a scoped CSS variable:
-          // `--modal-max-width-md` pins the sm-and-up max-width, and
-          // a compound `data-[side=right]:` utility pins the mobile
-          // width to 100 %. Inline style is a belt-and-braces
-          // guarantee against future primitive changes.
-          style={{
-            // `--modal-max-width-md: 30rem` (= 480 px) pins the sm-and-up
-            // max-width via the CSS var the primitive reads.
-            ['--modal-max-width-md' as string]: '30rem',
-            // FR-028h (revised 2026-04-24): drawer pinned top-to-bottom
-            // (100vh) on both mobile and desktop — Stripe Dashboard /
-            // Linear side-panel pattern. Rationale: the payment flow has
-            // multiple states (card form → 3DS → confirmation) with
-            // different natural heights; auto-height would cause the
-            // drawer to jump as state transitions. Full-viewport height
-            // gives a stable container and lets the sticky header +
-            // scrollable body work as designed.
-            //   < 640 px  → 100% × 100vh (full-screen)
-            //   ≥ 640 px  → width from --modal-max-width-md (≤ 480 px) × 100vh
-            // `100vh` (viewport-relative) avoids Radix Portal containing-
-            // block resolving to body.scrollHeight under mobile emulation
-            // (T082 empirical E2E discovery #4, 2026-04-24).
-            width: '100%',
-            height: '100vh',
-          }}
-          // Smooth slide-in (T082 UX feedback 2026-04-24): the default
-          // Sheet primitive slides in only 2.5rem (40 px) which reads as
-          // an abrupt "pop". Override to slide the full drawer width from
-          // off-screen right — matches Stripe Dashboard / Linear pattern.
-          // `ease-out` + 300 ms duration feels more deliberate than the
-          // default linear 200 ms. Tailwind v4 `!` is a suffix, not prefix.
-          //
-          // FR-028g reduced-motion fallback: `motion-reduce:duration-0`
-          // collapses the slide to instant + opacity-only (the primitive's
-          // own `data-ending-style:opacity-0` / `data-starting-style:opacity-0`
-          // continues to run even at duration-0 so the sheet fades
-          // without sliding).
-          className="duration-300! ease-out data-[side=right]:data-starting-style:translate-x-full! data-[side=right]:data-ending-style:translate-x-full! motion-reduce:duration-0!"
-          data-testid="pay-sheet-content"
-        >
-          <SheetHeader className="sticky top-0 z-10 flex flex-row items-start justify-between bg-popover border-b">
-            <div className="min-w-0">
-              <SheetTitle className="text-h4">{t('title')}</SheetTitle>
-              <p className="text-caption text-muted-foreground truncate">
-                {t('subtitle', { invoiceNumber: invoice.invoiceNumber })}
-              </p>
-            </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              aria-label={t('close')}
-              onClick={() => handleOpenChange(false)}
-              // WCAG 2.5.5 — ≥ 44×44 px tap target on mobile.
-              className="min-h-[44px] min-w-[44px] shrink-0"
-              data-testid="pay-sheet-close"
-            >
-              <XIcon className="size-5" />
-            </Button>
-          </SheetHeader>
-          {/*
-           * WCAG 2.4.11 (Focus Not Obscured) — G-Review Finding #8.
-           * The sticky header overlaps native scroll-into-view when
-           * the iOS soft keyboard pushes a focused Stripe input under
-           * the header. `scroll-padding-top` offsets the scroll
-           * anchor by the header height so the focused field remains
-           * visible above the chrome.
-           */}
-          <div
-            // shadcn `<SheetContent>` applies `gap-4` (16 px) between
-            // flex children, so the header↔body gap is already 16 px
-            // before we add ANY body padding. Keep `px-4 pb-4` for side
-            // + bottom, but DROP padding-top to avoid the 32 px "tab
-            // floating" double-gap (user UX feedback 2026-04-24). SC
-            // 2.4.11 Focus-Not-Obscured is satisfied via
-            // `scroll-padding-top` below for soft-keyboard scroll.
-            className="overflow-y-auto px-4 pb-4"
-            style={{ scrollPaddingTop: 'var(--pay-sheet-header-height, 64px)' }}
-          >
+      {/*
+       * Spec 122 US4 (`Pay-*` boards) — an AURA Drawer on the right: 480px
+       * from 640px, full width and full height below (FR-028h: the same
+       * top-to-bottom container across card form → 3DS → confirmation).
+       * The title is "Pay invoice", the description the document number in
+       * mono; Escape, the scrim and the close button all close it, and
+       * focus returns to Pay now. The panel and the close button carry the
+       * test ids the e2e suite reads, and the close button is named after
+       * the drawer (AURA 5.9, handoff #70).
+       */}
+      <Drawer
+        open={open}
+        onClose={() => handleOpenChange(false)}
+        side="right"
+        size="md"
+        title={t('title')}
+        description={
+          <span className="block truncate font-mono text-xs">
+            {t('subtitle', { invoiceNumber: invoice.invoiceNumber })}
+          </span>
+        }
+        // The close button keeps a 44px box (WCAG 2.5.5), as the phone
+        // boards draw it; AURA's own is 32px with a 44px touch halo. The
+        // body keeps a scroll padding so a field scrolled into view (the iOS
+        // soft keyboard) lands clear of its top edge (SC 2.4.11).
+        className="pay-sheet [&_.aura-drawer\_\_body]:scroll-pt-4 [&_.aura-drawer\_\_head_.aura-icon-btn]:min-h-11 [&_.aura-drawer\_\_head_.aura-icon-btn]:min-w-11"
+        data-testid="pay-sheet-content"
+        closeLabel={t('close')}
+        closeProps={{ 'data-testid': 'pay-sheet-close' }}
+      >
             {hasOpened && timeoutExceeded ? (
               // FR-028c (B3): 30-min hard-cap prompt replaces the
               // pay-sheet body so the user MUST decide — continue
@@ -550,9 +507,7 @@ export function PaySheet({
                 }
               />
             ) : null}
-          </div>
-        </SheetContent>
-      </Sheet>
+      </Drawer>
     </>
   );
 }

@@ -12,7 +12,7 @@ import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { ArrowUpRightIcon } from 'lucide-react';
 import type { CreditNoteOriginalDocuments } from '@/modules/invoicing';
-import { Badge } from '@/components/ui/badge';
+import { Badge } from '@jirawatpyk/aura-react/server';
 
 export function CreditNoteOriginalReceipt({
   original,
@@ -30,7 +30,7 @@ export function CreditNoteOriginalReceipt({
 }) {
   const t = useTranslations('shared.creditNoteOriginal');
   if (original.receiptNumberRaw === null) {
-    return <span className="text-muted-foreground">—</span>;
+    return <span className="text-[var(--aura-fg-secondary)]">—</span>;
   }
   const related = original.related;
   const relatedLabel =
@@ -49,8 +49,8 @@ export function CreditNoteOriginalReceipt({
           href={invoiceHref}
           className={
             size === 'touch'
-              ? 'inline-flex min-h-11 items-center gap-1 text-sm text-muted-foreground underline-offset-2 hover:underline'
-              : 'inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:underline'
+              ? 'inline-flex min-h-11 items-center gap-1 text-sm text-[var(--aura-fg-accent)] no-underline underline-offset-2 hover:underline'
+              : 'inline-flex items-center gap-1 text-xs text-[var(--aura-fg-secondary)] underline-offset-2 hover:underline'
           }
         >
           {relatedLabel}

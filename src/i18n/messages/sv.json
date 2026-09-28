@@ -6279,7 +6279,10 @@
         "receiptFailedSupport": "Kvittot är på väg — vi löser det",
         "viewDetail": "Visa faktura",
         "emailCopy": "Mejla mig en kopia",
-        "emailCopyAria": "Mejla en ny kopia av faktura {number} till din registrerade adress"
+        "emailCopyAria": "Mejla en ny kopia av faktura {number} till din registrerade adress",
+        "moreActions": "Fler åtgärder för {number}",
+        "menuDownloadInvoice": "Ladda ner faktura (PDF)",
+        "emailCopySent": "Nyss skickad"
       },
       "receiptStatus": {
         "generating": "Ditt skattekvitto genereras",
@@ -6353,7 +6356,8 @@
           "heading": "Sammanfattning",
           "subtotal": "Delsumma",
           "vat": "Moms",
-          "total": "Totalt"
+          "total": "Totalt",
+          "vatWithRate": "Moms {rate} %"
         },
         "creditNotes": {
           "heading": "Kreditnotor",
@@ -6376,7 +6380,9 @@
           "autoRefundRef": "Återbetalningsreferens: {ref}",
           "replacedBy": "Den här fakturan har ersatts av <link>{number}</link>",
           "replacedByIssued": "utfärdad {date}"
-        }
+        },
+        "detailsHeading": "Uppgifter",
+        "subtitlePaid": "Betald — ladda ner skattefakturan/kvittot (ใบกำกับภาษี/ใบเสร็จรับเงิน) för din bokföring."
       }
     },
     "creditNotes": {
@@ -6384,7 +6390,7 @@
         "meta": {
           "title": "Kreditnota"
         },
-        "subtitle": "En kreditnota har utfärdats mot din faktura.",
+        "subtitle": "En kreditnota (ใบลดหนี้) sänker värdet på den ursprungliga skattefakturan. Spara den tillsammans med den för din bokföring.",
         "status": {
           "issued": "Utfärdad"
         },
@@ -6402,7 +6408,11 @@
         },
         "reason": {
           "heading": "Anledning"
-        }
+        },
+        "title": "Kreditnota",
+        "reducesTitle": "Den här kreditnotan minskar kvitto {receipt} med {amount}",
+        "reducesBody": "Om en återbetalning gäller hanteras den separat. Den här sidan visar endast krediteringen.",
+        "contact": "Frågor om den här kreditnotan? <link>Kontakta kammaren</link>."
       }
     },
     "broadcasts": {
@@ -7126,7 +7136,8 @@
         "cardAriaLabel": "Kort — byt betalningsmetod",
         "promptpayAriaLabel": "PromptPay — byt betalningsmetod",
         "cardPlaceholder": "Förbereder säkert betalningsformulär…",
-        "promptpayPlaceholder": "Förbereder PromptPay-QR-kod…"
+        "promptpayPlaceholder": "Förbereder PromptPay-QR-kod…",
+        "groupLabel": "Betalningsmetod"
       },
       "success": {
         "title": "Betalningen mottagen",
@@ -7138,7 +7149,8 @@
         "pauseAutoClose": "Pausa",
         "resumeAutoClose": "Återuppta",
         "autoClosePaused": "Automatisk stängning pausad",
-        "toast": "Betalningen mottagen. Kvittot har skickats till din e-post."
+        "toast": "Betalningen mottagen. Kvittot har skickats till din e-post.",
+        "receiptSoon": "Ditt kvitto är klart om en liten stund."
       },
       "processing": {
         "title": "Behandlar betalning…",
