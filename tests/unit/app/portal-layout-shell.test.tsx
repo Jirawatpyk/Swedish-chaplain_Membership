@@ -49,11 +49,12 @@ describe('portal layout shell wiring (057)', () => {
 describe('portal layout — read-only banner wiring (portal error states follow-up)', () => {
   it('renders ReadOnlyModeBanner on every portal page, after the header and outside <main>', () => {
     expect(portalLayoutSrc).toContain("from './_components/read-only-mode-banner'");
-    const banner = portalLayoutSrc.indexOf('<ReadOnlyModeBanner');
+    // The rendered elements, not their mentions in comments.
+    const banner = portalLayoutSrc.indexOf('<ReadOnlyModeBanner />');
     expect(banner).toBeGreaterThan(portalLayoutSrc.indexOf('</header>'));
     // Before the acknowledgement banner and <main>, so "Skip to main content"
     // passes it like the other shell banner (SC 2.4.1).
-    expect(banner).toBeLessThan(portalLayoutSrc.indexOf('<MarketingAcknowledgementBanner'));
-    expect(banner).toBeLessThan(portalLayoutSrc.indexOf('<main'));
+    expect(banner).toBeLessThan(portalLayoutSrc.indexOf('<MarketingAcknowledgementBanner />'));
+    expect(banner).toBeLessThan(portalLayoutSrc.indexOf('<main className'));
   });
 });
