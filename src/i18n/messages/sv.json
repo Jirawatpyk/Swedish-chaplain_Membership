@@ -1198,7 +1198,9 @@
           "buyer_contact": "köparens kontaktperson på skattedokument",
           "billing_country": "ett faktureringsland utanför Thailand för köparen — bedöm momshanteringen och kontrollera huvudkontor/filial",
           "billing_cleared": "faktureringsadressen tas bort — den registrerade adressen blir köparadressen på skattedokumenten; kontrollera huvudkontor-/filialangivelsen"
-        }
+        },
+        "willApprove": "Godkänns",
+        "willReject": "Avslås"
       },
       "decision": {
         "confirm": "Bekräfta beslut",

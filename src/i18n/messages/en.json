@@ -1198,7 +1198,9 @@
           "buyer_contact": "the buyer's contact person printed on tax documents",
           "billing_country": "a non-Thai billing country for the buyer — judge the VAT treatment and check the head-office / branch designation",
           "billing_cleared": "the billing address is being removed — the registered address becomes the buyer address printed on tax invoices; check the head-office / branch designation"
-        }
+        },
+        "willApprove": "Will be approved",
+        "willReject": "Will be rejected"
       },
       "decision": {
         "confirm": "Confirm decision",

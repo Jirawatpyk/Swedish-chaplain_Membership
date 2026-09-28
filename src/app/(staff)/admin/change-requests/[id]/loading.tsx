@@ -9,7 +9,6 @@
  * (check:layout), CLS 0.
  */
 import { getTranslations } from 'next-intl/server';
-import { Skeleton } from '@/components/ui/skeleton';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { PageSkeletonShell, SkeletonBlock } from '@/components/shell/page-skeletons';
@@ -23,22 +22,22 @@ export default async function Loading() {
         <PageHeader
           title={t('title')}
           subtitle={<SkeletonBlock className="h-4 w-full max-w-md" />}
-          badge={<Skeleton className="h-5 w-24 rounded-full" />}
-          actions={<Skeleton className="h-9 w-32" />}
+          badge={<SkeletonBlock className="h-5 w-24 rounded-full" />}
+          actions={<SkeletonBlock className="h-9 w-32" />}
         />
-        <div className="divide-y divide-border rounded-md border" aria-hidden="true">
+        <div className="divide-y divide-[var(--aura-border-default)] rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)]" aria-hidden="true">
           {Array.from({ length: 5 }, (_, i) => (
-            <div key={i} className="grid grid-cols-1 gap-2 px-3 py-3 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_5rem] sm:gap-4">
-              <Skeleton className="h-5 w-32" />
-              <Skeleton className="h-5 w-40" />
-              <Skeleton className="h-5 w-40" />
-              <Skeleton className="h-5 w-5 sm:justify-self-end" />
+            <div key={i} className="grid grid-cols-1 gap-2 px-3 py-3 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_9rem] sm:gap-4">
+              <SkeletonBlock className="h-5 w-32" />
+              <SkeletonBlock className="h-5 w-40" />
+              <SkeletonBlock className="h-5 w-40" />
+              <SkeletonBlock className="h-5 w-5 sm:justify-self-end" />
             </div>
           ))}
         </div>
         <div className="flex items-center justify-between" aria-hidden="true">
-          <Skeleton className="h-5 w-48" />
-          <Skeleton className="h-9 w-40" />
+          <SkeletonBlock className="h-5 w-48" />
+          <SkeletonBlock className="h-9 w-40" />
         </div>
       </DetailContainer>
     </PageSkeletonShell>

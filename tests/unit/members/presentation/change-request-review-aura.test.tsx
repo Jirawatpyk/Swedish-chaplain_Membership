@@ -56,7 +56,7 @@ const base = {
 
 const fields = [
   { ...base, key: 'phone', seen: '+66812345678', proposed: '+66899999999', current: '+66812345678', undecidable: null },
-  { ...base, key: 'email', seen: 'a@x.test', proposed: 'b@x.test', current: 'a@x.test', undecidable: 'contact_removed' },
+  { ...base, key: 'role_title', seen: 'CFO', proposed: 'CEO', current: 'CFO', undecidable: 'contact_removed' },
 ] as unknown as ChangeRequestReviewFieldView[];
 
 function renderClient() {
@@ -68,7 +68,7 @@ function renderClient() {
 }
 
 const phoneLabel = enMessages.portal.changeRequests.diff.labels.phone;
-const emailLabel = enMessages.portal.changeRequests.diff.labels.email;
+const roleLabel = enMessages.portal.changeRequests.diff.labels.role_title;
 const approveName = (field: string) => REVIEW.approveCheckbox.replace('{field}', field);
 
 describe('change-request review on AURA (T508)', () => {
@@ -84,11 +84,11 @@ describe('change-request review on AURA (T508)', () => {
 
   it('a contact-removed row is reachable but inert and explained', () => {
     renderClient();
-    const email = screen.getByRole('checkbox', { name: approveName(emailLabel) });
+    const email = screen.getByRole('checkbox', { name: approveName(roleLabel) });
     expect(email).toHaveAttribute('aria-disabled', 'true');
     expect(email).not.toBeDisabled();
-    expect(email.getAttribute('aria-describedby')).toContain('decide-email-why');
-    const row = email.closest('[data-field-key="email"]') as HTMLElement;
+    expect(email).toHaveAccessibleDescription(REVIEW.markers.contactRemoved);
+    const row = email.closest('[data-field-key="role_title"]') as HTMLElement;
     expect(within(row).getByText(REVIEW.willReject)).toBeInTheDocument();
   });
 
