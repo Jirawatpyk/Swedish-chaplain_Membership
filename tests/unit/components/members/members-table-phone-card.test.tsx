@@ -69,4 +69,18 @@ describe('members phone card as on the board (US5a)', () => {
       expect(container.querySelector(`[data-card-slot="${slot}"]`)).not.toBeNull();
     }
   });
+
+  it('puts the status pill flush right on a card: the hover-only pencil takes no room there', () => {
+    // The pencil shows only on hover / focus, but it kept its width on a card,
+    // pushing the pill ~20px off the edge and out of line with Suspended.
+    render(
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <MembersTable rows={[row]} total={1} enableSelection canEdit onInlineEdit={vi.fn()} />
+      </NextIntlClientProvider>,
+    );
+    const toggle = screen.getByRole('button', { name: /Active/ });
+    expect(toggle).toHaveClass('in-[.aura-table--stacked]:px-0');
+    expect(toggle.querySelector('svg.lucide-pencil')).toHaveClass('in-[.aura-table--stacked]:hidden');
+  });
 });
+
