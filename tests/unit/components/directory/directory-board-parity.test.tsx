@@ -1,7 +1,8 @@
 /**
  * 122 US5a — the staff directory as the `Admin-directory` boards draw it: an
- * open-book icon on "Generate E-Book" and a visible "Search" label over the
- * search box (its accessible name stays "Search directory").
+ * open-book icon on "Generate E-Book". The search box carries no separate
+ * visible label: its search icon and hint already say what it is, and its
+ * accessible name is "Search directory" (maintainer, 28 Sep).
  */
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
@@ -32,9 +33,9 @@ describe('directory as on the board (US5a)', () => {
     expect(ebook.querySelector('svg.lucide-book-open')).not.toBeNull();
   });
 
-  it('labels the search box visibly, keeping its accessible name', () => {
+  it('names the search box without a duplicate visible label over it', () => {
     withIntl(<DirectorySearchFilters />);
-    expect(screen.getByText(messages.admin.directory.search.fieldLabel)).toBeVisible();
     expect(screen.getByRole('searchbox', { name: messages.admin.directory.search.label })).toBeInTheDocument();
+    expect(screen.queryByText('Search', { exact: true })).toBeNull();
   });
 });

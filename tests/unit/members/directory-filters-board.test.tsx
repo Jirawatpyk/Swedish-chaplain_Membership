@@ -1,7 +1,8 @@
 /**
  * 122 US5a — the members filters as the `Admin-members` boards draw them:
- * the needs-invite chip carries a plain envelope, and a phone shows a visible
- * "Search members" label over a shorter placeholder that fits the box.
+ * the needs-invite chip carries a plain envelope, and a phone gets a shorter
+ * placeholder that fits the box. No separate visible label over the search:
+ * its icon and hint already say what it is (maintainer, 28 Sep).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
@@ -47,11 +48,11 @@ describe('members filters as on the board (US5a)', () => {
     expect(chip.querySelector('svg.lucide-mail')).not.toBeNull();
   });
 
-  it('labels the search visibly on a phone only', () => {
+  it('names the search box without a duplicate visible label over it', () => {
     phone(true);
     renderFilters();
-    const label = screen.getByText(D.searchSrLabel);
-    expect(label).toHaveClass('sm:hidden');
+    expect(screen.getByRole('searchbox', { name: D.searchSrLabel })).toBeInTheDocument();
+    expect(screen.queryByText(D.searchSrLabel)).toBeNull();
   });
 
   it('uses the short placeholder on a phone and the full one on wider screens', () => {
