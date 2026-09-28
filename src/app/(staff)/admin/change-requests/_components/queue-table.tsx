@@ -4,6 +4,10 @@
  * table, not DataTable: no sort, no selection, and every row keeps its test
  * id / request id / overdue flag. Its own server component so the no-DB
  * preview route renders the same markup (T509).
+ *
+ * Every cell passes its card `label`: AURA reads the labels from `THead`,
+ * which a server component hands over as a client reference it cannot
+ * inspect, so without them the phone cards lose their field names.
  */
 import Link from 'next/link';
 import { getLocale, getTranslations } from 'next-intl/server';
@@ -53,18 +57,18 @@ export async function ChangeRequestQueueTable({
           const rowId = `cr-row-${r.id}`;
           return (
             <Tr key={r.id} data-testid="queue-row" data-request-id={r.id} data-overdue={item.overdue ? 'true' : undefined}>
-              <Td>
+              <Td label={t('columns.member')}>
                 <div className="font-medium">{item.row.member.companyName}</div>
                 <div className="font-mono text-xs text-[var(--aura-fg-secondary)]">
                   #{item.row.member.memberNumber}
                   {item.row.member.archived ? ` · ${t('archivedMember')}` : null}
                 </div>
               </Td>
-              <Td>
+              <Td label={t('columns.submitter')}>
                 <div>{item.row.submitter.displayName}</div>
                 <div className="text-xs text-[var(--aura-fg-secondary)]">{tReview(`roles.${r.submitterRoleAtSubmission}`)}</div>
               </Td>
-              <Td>
+              <Td label={t('columns.fields')}>
                 <div>{t('fieldCount', { count: r.fields.length })}</div>
                 {r.fields.some((f) => f.affectsTaxDocuments) ? (
                   <div className="flex items-center gap-1 text-xs text-[var(--aura-fg-secondary)]">
@@ -73,8 +77,8 @@ export async function ChangeRequestQueueTable({
                   </div>
                 ) : null}
               </Td>
-              <Td>{fmt(r.submittedAt)}</Td>
-              <Td>
+              <Td label={t('columns.submitted')}>{fmt(r.submittedAt)}</Td>
+              <Td label={t('columns.waiting')}>
                 <span className="inline-flex flex-wrap items-center gap-2">
                   <span id={`${rowId}-waiting`}>{wait.days > 0 ? t('waitingDays', { count: wait.days }) : t('waitingHours', { count: wait.hours })}</span>
                   {item.overdue ? (
@@ -84,7 +88,7 @@ export async function ChangeRequestQueueTable({
                   ) : null}
                 </span>
               </Td>
-              <Td>
+              <Td label={t('columns.status')}>
                 <ChangeRequestStatusBadge status={changeRequestStatusOf(r)} audience="staff" />
                 {r.decidedAt && item.row.decidedBy ? (
                   <div className="mt-1 text-xs text-[var(--aura-fg-secondary)]">

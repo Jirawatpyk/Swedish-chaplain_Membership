@@ -121,7 +121,9 @@ export function ChangeRequestDecisionTable({ fields, selected, onToggle, canDeci
               <span className="text-xs text-[var(--aura-fg-secondary)] sm:sr-only">{tDiff('proposed')}: </span>
               <ProposedValueDisplay fieldKey={f.key} value={f.proposed} />
             </div>
-            <div className="flex items-center gap-2 sm:justify-end">
+            {/* The checkbox keeps AURA's 16px box but, as before AURA, takes a
+                40×32 hit area (WCAG 2.5.8): its invisible input grows past the box. */}
+            <div className="flex items-center gap-2 sm:justify-end [&_.aura-check__input]:-inset-x-3 [&_.aura-check__input]:-inset-y-2">
               {decided ? (
                 <span
                   className={cn(

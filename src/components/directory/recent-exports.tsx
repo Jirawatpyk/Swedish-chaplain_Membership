@@ -37,7 +37,9 @@ export function RecentExports({
   readonly labels: RecentExportsLabels;
 }): React.JSX.Element {
   // 122 US5a (T506) — the board's "Recent exports" card: an AURA table with
-  // the status as a StatusPill, rows as cards below 640px.
+  // the status as a StatusPill, rows as cards below 640px. Each cell names
+  // its card label: AURA cannot read `THead` handed over from a server
+  // component, so the labels would otherwise be missing on phones.
   return (
     <section
       aria-labelledby="recent-exports-heading"
@@ -63,11 +65,15 @@ export function RecentExports({
           <TBody>
             {rows.map((row) => (
               <Tr key={row.jobId}>
-                <Td className="font-medium">{row.kindLabel}</Td>
-                <Td>
+                <Td className="font-medium" label={labels.kindLabel}>
+                  {row.kindLabel}
+                </Td>
+                <Td label={labels.statusLabel}>
                   <StatusPill tone={exportStatusTone(row.status)}>{row.statusLabel}</StatusPill>
                 </Td>
-                <Td className="text-[var(--aura-fg-secondary)]">{row.requestedAt}</Td>
+                <Td className="text-[var(--aura-fg-secondary)]" label={labels.requestedLabel}>
+                  {row.requestedAt}
+                </Td>
                 <Td align="end">
                   {row.downloadable ? (
                     <a
