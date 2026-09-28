@@ -75,7 +75,7 @@ import { Alert, Card, buttonClass } from '@jirawatpyk/aura-react/server';
 import { Table, TBody, THead, Td, Th, Tr } from '@/components/shell/aura-table';
 import { BackLink } from '@/components/portal/back-link';
 import { cn } from '@/lib/utils';
-import { formatDate, formatSatangThb } from '../_utils/format';
+import { formatDate, formatSatangThb, formatVatRatePoints } from '../_utils/format';
 import { formatCalendarYear } from '@/lib/format-date-localised';
 import { InvoiceStatusBadge } from '../_components/invoice-status-badge';
 import { ResendInvoiceButton } from '../_components/resend-invoice-button';
@@ -297,6 +297,11 @@ export async function renderPortalInvoiceDetailView({
       : documentNumber;
   const subtotal = invoice.subtotal?.satang ?? null;
   const vat = invoice.vat?.satang ?? null;
+  // "VAT 7%" as the board draws it, from the rate snapshotted on THIS
+  // invoice; without a snapshot the plain label, never a guessed rate.
+  const vatLabel = invoice.vatRate
+    ? t('totals.vatWithRate', { rate: formatVatRatePoints(invoice.vatRate.raw, userLocale) })
+    : t('totals.vat');
   const total = invoice.total?.satang ?? null;
   // One figure for the pay bar and the pay sheet. `issued` only moves to
   // `paid | void` (no part payments, no credit on an unpaid invoice), so the
@@ -893,7 +898,7 @@ export async function renderPortalInvoiceDetailView({
             >
               <dt className="text-[var(--aura-fg-secondary)]">{t('totals.subtotal')}</dt>
               <dd className="m-0 pl-4 text-right tabular-nums">{formatSatangThb(subtotal, userLocale)}</dd>
-              <dt className="text-[var(--aura-fg-secondary)]">{t('totals.vat')}</dt>
+              <dt className="text-[var(--aura-fg-secondary)]">{vatLabel}</dt>
               <dd className="m-0 pl-4 text-right tabular-nums">{formatSatangThb(vat, userLocale)}</dd>
               <dt className="border-t border-[var(--aura-border-default)] pt-1.5 font-semibold">
                 {t('totals.total')}

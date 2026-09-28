@@ -55,6 +55,18 @@ export function formatDate(iso: string | null, locale: string): string {
 }
 
 /**
+ * The VAT rate snapshotted on an invoice (`VatRate.raw`, always `x.xxxx`)
+ * as a locale number of percent points: "0.0700" → "7", "0.0750" → "7.5"
+ * (SV "7,5"). Integer maths on the 4-dp string, so no float drift. The
+ * `Invoice-paid` board reads "VAT 7%"; a §80/1(5) zero-rated invoice reads
+ * its own 0, so the rate always comes from the invoice, never a constant.
+ */
+export function formatVatRatePoints(raw: string, locale: string): string {
+  const basisPoints = Number(raw.replace('.', ''));
+  return new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(basisPoints / 100);
+}
+
+/**
  * The AURA status-pill tone per invoice status (spec 122 US4, `Invoices`
  * board): paid ready, issued in progress, overdue blocked, and the rest
  * (void, draft, credited) neutral. The pill carries its own icon beside the

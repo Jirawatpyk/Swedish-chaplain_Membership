@@ -6356,7 +6356,8 @@
           "heading": "Summary",
           "subtotal": "Subtotal",
           "vat": "VAT",
-          "total": "Total"
+          "total": "Total",
+          "vatWithRate": "VAT {rate}%"
         },
         "creditNotes": {
           "heading": "Credit Notes",

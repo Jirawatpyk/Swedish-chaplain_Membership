@@ -432,6 +432,7 @@ export default async function AuraPortalPreviewPage({
       voidReason: null,
       planYear: 2026,
       subtotal: { satang: 3600000n },
+      vatRate: { raw: '0.0700' },
       vat: { satang: 252000n },
       total: { satang: 3852000n },
       creditedTotal: { satang: 0n },

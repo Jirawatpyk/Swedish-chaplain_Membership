@@ -151,9 +151,11 @@ vi.mock('@/components/layout/page-header', () => ({
   ),
 }));
 vi.mock('@/lib/utils', () => ({ cn: (...c: unknown[]) => c.filter(Boolean).join(' ') }));
-vi.mock('@/app/(member)/portal/invoices/_utils/format', () => ({
+vi.mock('@/app/(member)/portal/invoices/_utils/format', async (importOriginal) => ({
   formatDate: (v: string | null) => v ?? '—',
   formatSatangThb: (v: bigint | null) => (v === null ? '—' : String(v)),
+  formatVatRatePoints: (await importOriginal<typeof import('@/app/(member)/portal/invoices/_utils/format')>())
+    .formatVatRatePoints,
 }));
 vi.mock('@/app/(member)/portal/invoices/_utils/invoice-row-view-model', () => ({
   downloadLabelKeys: () => ({ labelKey: 'actions.downloadInvoice', ariaKey: 'actions.downloadInvoiceAria' }),

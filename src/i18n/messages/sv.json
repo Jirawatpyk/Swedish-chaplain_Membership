@@ -6356,7 +6356,8 @@
           "heading": "Sammanfattning",
           "subtotal": "Delsumma",
           "vat": "Moms",
-          "total": "Totalt"
+          "total": "Totalt",
+          "vatWithRate": "Moms {rate} %"
         },
         "creditNotes": {
           "heading": "Kreditnotor",
