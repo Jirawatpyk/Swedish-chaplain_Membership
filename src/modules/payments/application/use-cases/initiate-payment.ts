@@ -450,6 +450,11 @@ async function initiatePaymentBody(
   // sits above the pending-row resume, so a PI left pending on a since-
   // voided invoice is not handed back either. The bridge itself stays
   // permissive: webhook reconciliation reads non-issued rows to refund them.
+  //
+  // Scope: this closes MINTING and RESUMING only. A card clientSecret the
+  // PaySheet already cached before the void never comes back through here —
+  // voidInvoice does not cancel pending PIs — so that path still ends in the
+  // webhook's stale-invoice auto-refund. Tracked as a separate follow-up.
   if (invoice.status !== 'issued') {
     return err({ code: 'invoice_not_payable', currentStatus: invoice.status });
   }
