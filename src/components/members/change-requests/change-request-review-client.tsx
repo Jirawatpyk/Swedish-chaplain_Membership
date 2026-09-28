@@ -225,6 +225,10 @@ export function ChangeRequestReviewClient({ request, fields, canDecide }: Change
               placeholder={t('reasonPlaceholder')}
               rows={4}
               data-testid="decision-reason"
+              // The counter describes the field, and whitespace alone is not a
+              // reason (as before AURA; `error` only covers the length cap).
+              aria-describedby="decision-reason-counter"
+              aria-invalid={reasonRequired && reasonTrimmed.length === 0 && reason.length > 0}
             />
             <p
               id="decision-reason-counter"
@@ -237,6 +241,10 @@ export function ChangeRequestReviewClient({ request, fields, canDecide }: Change
             >
               {reason.length} / {DECISION_REASON_MAX_LENGTH}
             </p>
+            {/* AURA's field error is plain text; announce going over the cap. */}
+            <p role="alert" className="sr-only">
+              {reasonOverCap ? t('errors.tooLong', { max: DECISION_REASON_MAX_LENGTH }) : null}
+            </p>
           </div>
           <Textarea
             id="decision-note"
@@ -248,6 +256,9 @@ export function ChangeRequestReviewClient({ request, fields, canDecide }: Change
             rows={2}
             data-testid="decision-note"
           />
+          <p role="alert" className="sr-only">
+            {noteOverCap ? t('errors.tooLong', { max: DECISION_NOTE_MAX_LENGTH }) : null}
+          </p>
         </div>
       </ConfirmationDialog>
     </div>
