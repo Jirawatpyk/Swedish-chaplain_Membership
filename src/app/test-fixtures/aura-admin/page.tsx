@@ -10,6 +10,7 @@ import type { MembersTableRow } from '@/components/members/members-table';
 import {
   MembersAllInvitedEmptyState,
   MembersErrorState,
+  MembersStateCard,
   MembersFilteredEmptyState,
   MembersZeroState,
 } from '@/components/members/empty-states';
@@ -357,20 +358,20 @@ export default async function AuraAdminPreviewPage({
   const isAdmin = state !== 'manager';
   const body =
     state === 'error' ? (
-      <>
+      <MembersStateCard>
         <DirectoryFilters plans={PLANS} portalInviteCount={7} />
         <MembersErrorState />
-      </>
+      </MembersStateCard>
     ) : state === 'filtered' ? (
-      <>
+      <MembersStateCard>
         <DirectoryFilters plans={PLANS} portalInviteCount={7} />
         <MembersFilteredEmptyState />
-      </>
+      </MembersStateCard>
     ) : state === 'all-invited' ? (
-      <>
+      <MembersStateCard>
         <DirectoryFilters plans={PLANS} portalInviteCount={0} />
         <MembersAllInvitedEmptyState />
-      </>
+      </MembersStateCard>
     ) : state === 'empty' ? (
       <>
         <DirectoryFilters plans={PLANS} portalInviteCount={0} />

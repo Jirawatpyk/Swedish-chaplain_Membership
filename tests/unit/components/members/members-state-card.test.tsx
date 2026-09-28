@@ -38,7 +38,10 @@ describe('members state card (US5a)', () => {
 
   it('draws the error state in the danger colours', () => {
     renderIntl(<MembersErrorState />);
-    const empty = screen.getByRole('alert').querySelector('.aura-empty');
-    expect(empty).toHaveAttribute('data-tone', 'danger');
+    // AURA's EmptyState takes no tone; the alert wrapper carries it and
+    // restyles the frame and icon disc.
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveAttribute('data-tone', 'danger');
+    expect(alert.querySelector('.aura-empty')).not.toBeNull();
   });
 });

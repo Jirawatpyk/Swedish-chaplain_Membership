@@ -70,6 +70,7 @@ import {
   MembersFilteredEmptyState,
   MembersAllInvitedEmptyState,
   MembersErrorState,
+  MembersStateCard,
 } from '@/components/members/empty-states';
 import { DirectoryWithBulk } from './_components/directory-with-bulk';
 import { ExportBackupButton } from './_components/export-backup-button';
@@ -401,29 +402,33 @@ export async function MembersDirectoryBody({
 
   if (!result.ok) {
     return (
-      <>
+      <MembersStateCard>
         <DirectoryFilters plans={planOptions} portalInviteCount={portalInviteCount} />
         <MembersErrorState />
-      </>
+      </MembersStateCard>
     );
   }
 
   if (result.value.items.length === 0) {
+    // Task 11 — the needs-invite chip filtered to zero rows gets its own
+    // "everyone has been invited" state (design doc §3.6/§3.7), distinct from
+    // the generic "no members match these filters" state used by every other
+    // filter combination. `hasFilters` (which folds in portalNeedsInvite)
+    // still gates the zero-members onboarding screen. A filtered-to-nothing
+    // list frames the filters and the state in one card (122 US5a, board
+    // `Admin-state-members-filtered`).
+    if (portalNeedsInvite || hasFilters) {
+      return (
+        <MembersStateCard>
+          <DirectoryFilters plans={planOptions} portalInviteCount={portalInviteCount} />
+          {portalNeedsInvite ? <MembersAllInvitedEmptyState /> : <MembersFilteredEmptyState />}
+        </MembersStateCard>
+      );
+    }
     return (
       <>
         <DirectoryFilters plans={planOptions} portalInviteCount={portalInviteCount} />
-        {/* Task 11 — the needs-invite chip filtered to zero rows gets its own
-            "everyone has been invited" state (design doc §3.6/§3.7), distinct
-            from the generic "no members match these filters" state used by
-            every other filter combination. `hasFilters` (which folds in
-            portalNeedsInvite) still gates the zero-members onboarding screen. */}
-        {portalNeedsInvite ? (
-          <MembersAllInvitedEmptyState />
-        ) : hasFilters ? (
-          <MembersFilteredEmptyState />
-        ) : (
-          <MembersZeroState canAddMember={isAdmin} />
-        )}
+        <MembersZeroState canAddMember={isAdmin} />
       </>
     );
   }

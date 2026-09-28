@@ -20,10 +20,26 @@
  * `-filtered`, `-error`); the live-region role sits on a wrapper.
  */
 
+import type { ReactNode } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Button, EmptyState } from '@jirawatpyk/aura-react';
 import { BuildingIcon, MailCheckIcon, SearchXIcon } from 'lucide-react';
+
+/**
+ * The state boards (`Admin-state-members-filtered`, `-error`) frame the
+ * filters and the empty / error state in one card.
+ */
+export function MembersStateCard({ children }: { readonly children: ReactNode }) {
+  return (
+    <div
+      data-members-state-card=""
+      className="flex flex-col gap-4 rounded-[var(--aura-card-radius)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] p-6 max-sm:p-4"
+    >
+      {children}
+    </div>
+  );
+}
 
 export function MembersZeroState({
   canAddMember,
@@ -116,8 +132,13 @@ export function MembersErrorState() {
   const t = useTranslations('admin.members.emptyStates.error');
   const router = useRouter();
   return (
-    // role="alert" implies aria-live="assertive".
-    <div role="alert">
+    // role="alert" implies aria-live="assertive". The board draws the error
+    // in the danger colours: a solid red frame and a red icon on a red disc.
+    <div
+      role="alert"
+      data-tone="danger"
+      className="[&_.aura-empty]:border-solid [&_.aura-empty]:border-[var(--aura-border-danger)] [&_.aura-empty\_\_icon]:bg-[var(--aura-alert-danger-bg)] [&_.aura-empty\_\_icon]:text-[var(--aura-fg-danger)]"
+    >
       <EmptyState
         bordered
         headingLevel={2}
