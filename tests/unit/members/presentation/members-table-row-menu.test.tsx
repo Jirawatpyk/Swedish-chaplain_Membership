@@ -144,6 +144,14 @@ describe('MembersTable on AURA DataTable (T502)', () => {
     expect(screen.getByRole('grid')).toHaveAttribute('aria-rowcount', '3');
   });
 
+  it('rows grow to fit and the company name wraps in full (AURA 5.11 rowHeight="auto")', () => {
+    renderTable();
+    const row = screen.getAllByRole('row').find((r) => r.querySelector('[role="gridcell"]'));
+    expect(row).toHaveClass('aura-table__row--auto');
+    const name = screen.getByText('Zeta Holdings');
+    expect(name.className).not.toMatch(/\btruncate\b/);
+  });
+
   it('names each row checkbox after the company', () => {
     renderTable({ enableSelection: true, onSelectionChange: vi.fn() });
     expect(screen.getByRole('checkbox', { name: 'Select Zeta Holdings' })).toBeInTheDocument();
