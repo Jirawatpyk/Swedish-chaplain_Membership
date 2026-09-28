@@ -9,7 +9,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
-import { BookIcon, FileJsonIcon } from 'lucide-react';
+import { BookOpenIcon, FileJsonIcon } from 'lucide-react';
 import { Button } from '@jirawatpyk/aura-react';
 
 type ExportKind = 'directory_ebook' | 'directory_json';
@@ -48,7 +48,7 @@ export function GenerateExportActions(): React.JSX.Element {
     <>
       <Button
         variant="secondary"
-        icon={<BookIcon aria-hidden="true" />}
+        icon={<BookOpenIcon aria-hidden="true" />}
         loading={pendingKind === 'directory_ebook'}
         disabled={isPending}
         onClick={() => generate('directory_ebook')}

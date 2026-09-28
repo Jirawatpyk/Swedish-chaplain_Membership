@@ -321,7 +321,8 @@
         "label": "ค้นหาทำเนียบ",
         "placeholder": "ค้นหาด้วยชื่อบริษัท อุตสาหกรรม หรือคำอธิบาย",
         "listedOnly": "เฉพาะที่เผยแพร่",
-        "clear": "ล้าง"
+        "clear": "ล้าง",
+        "fieldLabel": "ค้นหา"
       },
       "resultCount": "{count, plural, =0 {ไม่พบสมาชิก} other {สมาชิก # ราย}}",
       "table": {

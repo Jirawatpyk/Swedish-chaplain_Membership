@@ -181,8 +181,14 @@ export async function renderDirectoryView({
     <TableContainer>
       {header}
 
-      {/* 122 US5a (T506) — the board's "Members" card. */}
-      <Card title={t('resultsHeading')} headingLevel={2}>
+      {/* 122 US5a (T506) — the board's "Members" card; on a phone the member
+          cards sit on the page with no frame around them (board
+          `Admin-directory-mobile`). */}
+      <Card
+        title={t('resultsHeading')}
+        headingLevel={2}
+        className="max-sm:border-0 max-sm:bg-transparent max-sm:p-0 max-sm:shadow-none"
+      >
         <div className="flex flex-col gap-4">
           <DirectorySearchFilters />
 

@@ -79,6 +79,12 @@ export function DirectorySearchFilters(): React.JSX.Element {
         if (isSearchInput(e.target)) setIsSearchFocused(false);
       }}
     >
+      {/* The board's visible "Search" over the box; the box keeps its own
+          accessible name ("Search directory"), which starts with this word
+          (WCAG 2.5.3). A stand-in for a FilterBar search label (AURA #83). */}
+      <p className="mb-1.5 text-sm font-medium" aria-hidden="true">
+        {t('fieldLabel')}
+      </p>
       <AuraProvider strings={barStrings}>
         <FilterBar
           key={barKey}

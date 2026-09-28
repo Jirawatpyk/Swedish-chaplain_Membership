@@ -321,7 +321,8 @@
         "label": "Search directory",
         "placeholder": "Search by company, industry, or description",
         "listedOnly": "Listed only",
-        "clear": "Clear"
+        "clear": "Clear",
+        "fieldLabel": "Search"
       },
       "resultCount": "{count, plural, =0 {No members} one {# member} other {# members}}",
       "table": {
