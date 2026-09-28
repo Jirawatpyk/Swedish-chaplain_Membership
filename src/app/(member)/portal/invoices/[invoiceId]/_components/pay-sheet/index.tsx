@@ -196,7 +196,8 @@ export function PaySheet({
   // failure). When the drawer is dismissed WHILE a PaymentIntent is
   // still pending (kind: 'card-form' | 'initiating' | 'requires-action'),
   // we fire POST /api/payments/{id}/cancel so the stale intent does
-  // NOT linger for Stripe's ~1-hour auto-expiry (FR-025c / W2).
+  // NOT linger (FR-025c / W2). Card PaymentIntents do NOT auto-expire at
+  // Stripe — an uncancelled one stays confirmable indefinitely.
   // Transitions to terminal are signalled by PaySheetInternal via
   // `onPaymentSettled`.
   const [paymentSettled, setPaymentSettled] = useState<boolean>(false);
@@ -307,7 +308,9 @@ export function PaySheet({
       body: JSON.stringify({ reason }),
       keepalive: true,
     }).catch(() => {
-      // Stripe's 1-hour PI auto-expiry is the backstop.
+      // Best-effort. There is no Stripe-side expiry for a card PaymentIntent;
+      // the server-side backstops are the void-time cancel (#446 review M-a)
+      // and confirm-payment's stale-invoice auto-refund.
     });
     cachedInitiateRef.current = null;
     setCachedInitiate(null);
@@ -327,8 +330,11 @@ export function PaySheet({
   // PaymentIntent is only cancelled when (a) the containing PaySheet
   // unmounts (member navigates away from the invoice detail page), or
   // (b) the member explicitly clicks "Cancel payment" inside the
-  // drawer. Stripe's own 1-hour PaymentIntent auto-expiry catches any
-  // remaining edge case (browser tab abruptly closed, etc).
+  // drawer. Card PaymentIntents do NOT auto-expire at Stripe, so an edge case
+  // (tab closed abruptly, keepalive dropped) leaves the intent live. What stops
+  // it capturing money for an invoice that is no longer payable is server-side:
+  // voiding the invoice cancels its pending PaymentIntents (#446 review M-a),
+  // and confirm-payment auto-refunds a capture on a non-issued invoice.
   useEffect(() => {
     return () => {
       // R3 UX H-3 (2026-04-28): noted that this fires on EVERY page
