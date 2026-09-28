@@ -16,6 +16,19 @@
 # So: only the invariants that must never regress silently, and only the ones
 # that stay cheap in CI.
 #
+# 2026-09-28 — `members/contact-marketing-opt-out` moves to the nightly
+# rotation. The two money suites below (#446 initiate-non-issued-invoice,
+# 33 s; #447 void-cancels-pending-payment, 42 s) took this job past its
+# soft budget: #447's run measured 1127 s against 1080 s, and with both
+# suites on main the projection was about 1160 s. This suite was the
+# heaviest at 306 s in CI, so removing it brings the job to roughly
+# 850 s. It keeps its coverage elsewhere: the nightly sweep runs every
+# `members` suite on Wednesdays (nightly-integration-sweep.yml), and the
+# per-module pre-push gate runs it on any push that touches
+# src/modules/members. The opt-out invariants that must hold on every PR
+# stay here in contact-marketing-opt-out-guard, contact-marketing-routes
+# and marketing-opt-out-dispatch.
+#
 # 2026-09-28 — `payments/initiate-non-issued-invoice` joins on both counts. It
 # pins that a voided invoice can never mint a Stripe PaymentIntent (the
 # #443 financial-integrity review, M1): the regression is silent by
@@ -223,7 +236,6 @@ jobs:
             tests/integration/payments/initiate-non-issued-invoice.test.ts \
             tests/integration/payments/initiate-void-race.test.ts \
             tests/integration/broadcasts/audit-event-type-parity.test.ts \
-            tests/integration/members/contact-marketing-opt-out.test.ts \
             tests/integration/members/contact-marketing-opt-out-guard.test.ts \
             tests/integration/members/contact-marketing-routes.test.ts \
             tests/integration/broadcasts/marketing-opt-out-dispatch.test.ts \
