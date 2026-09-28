@@ -356,6 +356,11 @@ describe('buildBreadcrumbStaticLabels (real en.json breadcrumb copy)', () => {
     expect(labelsFor(pathname)).toEqual(labels);
   });
 
+  it('/admin/directory renders the sidebar label, not the raw slug', () => {
+    expect(labelsFor('/admin/directory')).toEqual([enMessages.nav.staff.directory]);
+    expect(buildBreadcrumbStaticLabels(t, '/admin/directory').directory).toBe(t('directory'));
+  });
+
   describe('template editor — /admin/broadcasts/templates/<id>/edit', () => {
     const path = `/admin/broadcasts/templates/${OTHER}/edit`;
     const parse = (dynamicLabels: ReadonlyMap<string, string> = new Map()) =>
