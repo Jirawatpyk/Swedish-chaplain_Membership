@@ -385,6 +385,7 @@ describe('sweep cancels pending payments on no-longer-payable invoices — live 
       invoicesFound: 2,
       invoicesProcessed: 2,
       invoicesErrored: 0,
+      erroredInvoices: [],
       deferred: 0,
       canceled: 2,
       skipped: 0,
