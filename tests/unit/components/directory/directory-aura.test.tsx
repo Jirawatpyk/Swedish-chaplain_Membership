@@ -87,9 +87,8 @@ describe('DirectoryTable on AURA DataTable (T506)', () => {
 
   it('a phone card says "Listed" / "Not listed" as a status pill with its icon (board Admin-directory-mobile)', () => {
     render(<DirectoryTable rows={rows} labels={labels} />);
-    expect(screen.getByText('Listed', { selector: '.aura-pill *' }).closest('.aura-pill')).toHaveClass(
-      'aura-pill--ready',
-    );
+    const listed = screen.getAllByText('Listed').find((el) => el.closest('.aura-pill'));
+    expect(listed?.closest('.aura-pill')).toHaveClass('aura-pill--ready');
     expect(screen.getByText('Not listed').closest('.aura-pill')).toHaveClass('aura-pill--neutral');
   });
 
@@ -134,8 +133,9 @@ describe('RecentExports on AURA (T506)', () => {
         ]}
       />,
     );
+    // The table's pills (the phone list repeats them below 640px).
     expect(screen.getByText('Ready').closest('.aura-pill')).toHaveClass('aura-pill--ready');
-    expect(screen.getByText('Generating…').closest('.aura-pill')).toHaveClass('aura-pill--progress');
+    expect(screen.getAllByText('Generating…')[0]?.closest('.aura-pill')).toHaveClass('aura-pill--progress');
     const [tableLink] = screen.getAllByRole('link', { name: 'Download — Directory JSON, 20 Sep 2026, 16:40' });
     expect(tableLink).toHaveAttribute('href', '/api/admin/directory/exports/j-1/download');
   });
