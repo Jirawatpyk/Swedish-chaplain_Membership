@@ -417,6 +417,10 @@ const WRAP_ROW = 'flex min-w-0 flex-wrap items-center gap-1.5 leading-snug';
  * The status cell is the card's pill, beside the title: on a card its two
  * badges stack so the company name keeps its width.
  */
+// Card-mode rules (AURA adds `.aura-table--stacked` below 640px). Bulk work
+// and the Edit shortcut stay on wider screens; tapping a card opens the
+// member (maintainer's decision, 28 Sep 2026).
+const PHONE_CARD = String.raw`[&_.aura-table--stacked_.aura-table\_\_sel]:hidden [&_.aura-table--stacked_.aura-table\_\_head.has-select-all]:hidden [&_.aura-table--stacked_[data-card='actions']]:hidden [&_.aura-table--stacked_.aura-table\_\_td:has([data-card-slot='activity'])]:hidden [&_.aura-table--stacked_.aura-table\_\_td:has([data-card-slot='number'])]:order-5 [&_.aura-table--stacked_.aura-table\_\_td:has([data-card-slot='plan'])]:order-6 [&_.aura-table--stacked_.aura-table\_\_td:has([data-card-slot='contact'])]:order-7 [&_.aura-table--stacked_.aura-table\_\_td:has([data-card-slot='engagement'])]:order-8`;
 const STATUS_ROW = `${WRAP_ROW} in-[.aura-table--stacked]:flex-col in-[.aura-table--stacked]:items-end in-[.aura-table--stacked]:gap-1`;
 
 /**
@@ -632,7 +636,7 @@ export function MembersTable({
         render: (row) => (
           <span className="flex min-w-0 items-center gap-2">
             {row.country && (
-              <span className="shrink-0">
+              <span data-card-slot="flag" className="shrink-0 in-[.aura-table--stacked]:hidden">
                 <CountryDisplay code={row.country} variant="flag-only" />
               </span>
             )}
@@ -648,6 +652,7 @@ export function MembersTable({
         mono: true,
         ...MEMBERS_COLUMN_SIZES.member_number_display,
         sortable: true,
+        render: (row) => <span data-card-slot="number">{row.member_number_display}</span>,
       },
       {
         // Name plus the portal / bounce badge; the badge wraps under a long
@@ -657,7 +662,12 @@ export function MembersTable({
         ...MEMBERS_COLUMN_SIZES.primary_contact,
         render: (row) => {
           const c = row.primary_contact;
-          if (!c) return <span className="text-[var(--aura-fg-secondary)]">{t('noPrimary')}</span>;
+          if (!c)
+            return (
+              <span data-card-slot="contact" className="text-[var(--aura-fg-secondary)]">
+                {t('noPrimary')}
+              </span>
+            );
           const fullName = `${c.first_name} ${c.last_name}`.trim();
           const archived = row.status === 'archived';
           // Edge Case "Invitation email bounce" (spec §613-620) — hidden when
@@ -669,7 +679,7 @@ export function MembersTable({
             row.portal_state !== 'active' &&
             !archived;
           return (
-            <span className={WRAP_ROW}>
+            <span data-card-slot="contact" className={WRAP_ROW}>
               <span className={WRAP_TEXT} title={fullName}>
                 {fullName}
               </span>
@@ -693,10 +703,11 @@ export function MembersTable({
         label: t('columns.plan'),
         ...MEMBERS_COLUMN_SIZES.plan_display_name,
         render: (row) => (
-          <span title={row.plan_id} className={WRAP_TEXT}>
+          <span data-card-slot="plan" title={row.plan_id} className={WRAP_TEXT}>
             {row.plan_display_name ?? row.plan_id}
-            {/* " · 2026" never starts a line on its own. */}
-            <span className="whitespace-nowrap">
+            {/* " · 2026" never starts a line on its own; a phone card shows
+                the plan alone, as on the board. */}
+            <span className="whitespace-nowrap in-[.aura-table--stacked]:hidden">
               <span aria-hidden="true"> · </span>
               {row.plan_year}
             </span>
@@ -744,10 +755,16 @@ export function MembersTable({
         sortable: true,
         render: (row) => {
           const eng = row.engagement;
-          if (eng === null) return <span className="text-[var(--aura-fg-secondary)]">—</span>;
+          if (eng === null)
+            return (
+              <span data-card-slot="engagement" className="text-[var(--aura-fg-secondary)]">
+                —
+              </span>
+            );
+          // A phone card shows the band alone, as on the board.
           return (
-            <span className="inline-flex items-center gap-1.5">
-              <span className="font-medium tabular-nums">{eng.score}</span>
+            <span data-card-slot="engagement" className="inline-flex items-center gap-1.5">
+              <span className="font-medium tabular-nums in-[.aura-table--stacked]:hidden">{eng.score}</span>
               <Badge tone={ENGAGEMENT_TONE[eng.band]}>{t(`engagementBand.${eng.band}`)}</Badge>
             </span>
           );
@@ -759,10 +776,19 @@ export function MembersTable({
         ...MEMBERS_COLUMN_SIZES.last_activity_at,
         render: (row) => {
           const v = row.last_activity_at;
-          if (!v) return <span className="text-[var(--aura-fg-secondary)]">—</span>;
+          if (!v)
+            return (
+              <span data-card-slot="activity" className="text-[var(--aura-fg-secondary)]">
+                —
+              </span>
+            );
           // `<RelativeTime>` renders a stable absolute date during SSR and
           // first paint, then the relative string after hydration.
-          return <RelativeTime iso={v} title={v.replace('T', ' ').slice(0, 16)} locale={locale} />;
+          return (
+            <span data-card-slot="activity">
+              <RelativeTime iso={v} title={v.replace('T', ' ').slice(0, 16)} locale={locale} />
+            </span>
+          );
         },
       },
       {
@@ -781,8 +807,10 @@ export function MembersTable({
   return (
     <div
       // The selection checkboxes take a 24×24 target from AURA 5.11 itself
-      // (WCAG 2.5.8 AA, ADOPT-01).
-      className="flex flex-col gap-4"
+      // (WCAG 2.5.8 AA, ADOPT-01). A phone card is the board's
+      // (`Admin-members-mobile`): no checkbox, no ⋯ menu, no Last activity,
+      // and the fields in the board's order.
+      className={`flex flex-col gap-4 ${PHONE_CARD}`}
       ref={tableContainerRef}
       // The bulk bar's Clear hands focus to this table's select-all checkbox.
       data-members-table=""
@@ -799,7 +827,10 @@ export function MembersTable({
           "N of M" when the full filtered total is known. Visible only while
           filtered, as on the board: unfiltered, the pagination range below
           already says it. */}
-      <div className="self-end text-xs text-[var(--aura-fg-secondary)]" role="status">
+      <div
+        className={filtered ? 'self-end text-xs text-[var(--aura-fg-secondary)]' : 'sr-only'}
+        role="status"
+      >
         <span className={filtered ? undefined : 'sr-only'}>
           {total !== undefined
             ? t('resultsCountOfTotal', { count: rows.length, total })

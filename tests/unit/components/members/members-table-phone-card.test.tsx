@@ -50,7 +50,7 @@ describe('members phone card as on the board (US5a)', () => {
   it('drops the checkbox, the ⋯ menu and Last activity on a card', () => {
     const { container } = renderTable();
     const wrapper = container.querySelector('[data-members-table]');
-    expect(wrapper?.className).toContain('[&_.aura-table--stacked_.aura-table__sel]:hidden');
+    expect(wrapper?.className).toContain(String.raw`[&_.aura-table--stacked_.aura-table\_\_sel]:hidden`);
     expect(wrapper?.className).toContain("[&_.aura-table--stacked_[data-card='actions']]:hidden");
     expect(container.querySelector('[data-card-slot="activity"]')).not.toBeNull();
   });
