@@ -6377,7 +6377,8 @@
           "replacedBy": "Den här fakturan har ersatts av <link>{number}</link>",
           "replacedByIssued": "utfärdad {date}"
         },
-        "detailsHeading": "Uppgifter"
+        "detailsHeading": "Uppgifter",
+        "subtitlePaid": "Betald — ladda ner skattefakturan/kvittot (ใบกำกับภาษี/ใบเสร็จรับเงิน) för din bokföring."
       }
     },
     "creditNotes": {
@@ -6385,7 +6386,7 @@
         "meta": {
           "title": "Kreditnota"
         },
-        "subtitle": "En kreditnota har utfärdats mot din faktura.",
+        "subtitle": "En kreditnota (ใบลดหนี้) sänker beloppet på ett skattekvitto. Spara den tillsammans med kvittot för din bokföring.",
         "status": {
           "issued": "Utfärdad"
         },
@@ -6403,7 +6404,11 @@
         },
         "reason": {
           "heading": "Anledning"
-        }
+        },
+        "title": "Kreditnota",
+        "reducesTitle": "Kvitto {receipt} minskas med {amount}",
+        "reducesBody": "Om du har pengar att få tillbaka ordnar kammaren återbetalningen separat.",
+        "contact": "Frågor om den här kreditnotan? <link>Kontakta kammaren</link>."
       }
     },
     "broadcasts": {

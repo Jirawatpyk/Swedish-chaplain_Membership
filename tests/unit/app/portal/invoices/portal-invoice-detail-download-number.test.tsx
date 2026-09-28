@@ -53,6 +53,8 @@ vi.mock('@/lib/tenant-context', () => ({
 vi.mock('@/lib/request-id', () => ({
   requestIdFromHeaders: () => null,
 }));
+// Mutable per case: the main PDF kind (088 bill vs legacy invoice).
+let mainPdfKind = 'invoice';
 // Mutable so the pay-bar case can turn online payment on (default off).
 let f5OnlinePayment = false;
 let paymentSettingsResult: unknown = null;
@@ -143,9 +145,10 @@ vi.mock('@/components/layout/page-header', () => ({
   // Render title + actions so the invoice-download marker (inside `actions`)
   // reaches the output; `badge` is intentionally dropped (it only mounts the
   // OptimisticPaidOverlay client component, irrelevant to this assertion).
-  PageHeader: ({ title, actions }: { title?: unknown; actions?: unknown }) => (
-    <div>
+  PageHeader: ({ title, subtitle, actions }: { title?: unknown; subtitle?: unknown; actions?: unknown }) => (
+    <div data-marker="page-header">
       <span>{title as ReactElement}</span>
+      {subtitle ? <p data-marker="subtitle">{subtitle as ReactElement}</p> : null}
       <span>{actions as ReactElement}</span>
     </div>
   ),
@@ -157,7 +160,7 @@ vi.mock('@/app/(member)/portal/invoices/_utils/format', () => ({
 }));
 vi.mock('@/app/(member)/portal/invoices/_utils/invoice-row-view-model', () => ({
   downloadLabelKeys: () => ({ labelKey: 'actions.downloadInvoice', ariaKey: 'actions.downloadInvoiceAria' }),
-  resolveMainPdfKind: () => 'invoice',
+  resolveMainPdfKind: () => mainPdfKind,
 }));
 vi.mock('@/app/(member)/portal/invoices/_utils/legacy-no-tin', () => ({
   isLegacyNoTinEventInvoice: () => false,
@@ -434,7 +437,7 @@ describe('PortalInvoiceDetailPage — AURA layout (spec 122 US4, `Invoice-paid` 
     expect(html).toMatch(/data-testid="portal-invoice-auto-refund-notice" class="aura-alert aura-alert--info"/);
   });
 
-  it('an issued invoice gets the amount-due bar holding Pay now (sticky above the tabs on phones)', async () => {
+  it('an issued invoice puts Pay now in the header (the one primary action), a band fixed above the tabs on phones', async () => {
     getInvoiceMock.mockResolvedValue({ ok: true, value: issuedUnpaid088Bill() });
     f5OnlinePayment = true;
     paymentSettingsResult = {
@@ -444,9 +447,57 @@ describe('PortalInvoiceDetailPage — AURA layout (spec 122 US4, `Invoice-paid` 
       processorPublishableKey: 'pk_test_1',
     };
     const html = await renderPage();
-    const bar = /<section[^>]*data-testid="portal-invoice-pay-bar"[^>]*>/.exec(html)?.[0] ?? '';
-    expect(bar).toContain('sticky');
+    const header = html.slice(html.indexOf('data-marker="page-header"'), html.indexOf('detailsHeading'));
+    const bar = /<section[^>]*data-testid="portal-invoice-pay-bar"[^>]*>/.exec(header)?.[0] ?? '';
+    expect(bar).toContain('max-md:fixed');
+    expect(bar).not.toMatch(/(^|\s)sticky(\s|")/);
     expect(html).toContain('summary.amountLabel');
+    // With Pay now on the page the bill download steps down to secondary.
+    expect(html).not.toMatch(/data-testid="portal-download-invoice"[^>]*aura-btn--primary|aura-btn--primary[^"]*"[^>]*data-testid="portal-download-invoice"/);
+  });
+
+  it('an unpaid 088 bill reads the bill note as its subtitle; a paid one with its RC the paid line; legacy none', async () => {
+    try {
+      mainPdfKind = 'bill';
+      getInvoiceMock.mockResolvedValue({ ok: true, value: issuedUnpaid088Bill() });
+      expect(await renderPage()).toMatch(/data-marker="subtitle">summary\.billNote</);
+      getInvoiceMock.mockResolvedValue({ ok: true, value: { ...paidSeparateInvoice(), receiptPdfStatus: 'pending' } });
+      expect(await renderPage()).toMatch(/data-marker="subtitle">subtitlePaid</);
+      mainPdfKind = 'invoice';
+      expect(await renderPage()).not.toContain('data-marker="subtitle"');
+    } finally {
+      mainPdfKind = 'invoice';
+    }
+  });
+
+  it('an unpaid invoice has no "Paid" fact', async () => {
+    getInvoiceMock.mockResolvedValue({ ok: true, value: issuedUnpaid088Bill() });
+    expect(await renderPage()).not.toContain('fields.paidDate');
+  });
+
+  it('below 640px each line is one row: description, then "qty × unit price" beside the line total', async () => {
+    getInvoiceMock.mockResolvedValue({
+      ok: true,
+      value: {
+        ...issuedUnpaid088Bill(),
+        lines: [
+          {
+            lineId: 'l1',
+            descriptionEn: 'Membership fee',
+            descriptionTh: 'ค่าสมาชิก',
+            quantity: 2,
+            unitPrice: { satang: 150_000n },
+            total: { satang: 300_000n },
+          },
+        ],
+      },
+    });
+    const html = await renderPage();
+    const list = html.slice(html.indexOf('<ul aria-label="linesHeading"'));
+    expect(list).toMatch(/sm:hidden/);
+    expect(list).toContain('ค่าสมาชิก');
+    expect(list).toContain('2 × 150000');
+    expect(list).toContain('>300000<');
   });
 
   it('the bar amount is the Total row and the amount handed to the pay sheet (one figure)', async () => {

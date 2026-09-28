@@ -344,12 +344,59 @@ export async function renderPortalInvoiceDetailView({
     paymentSettings.processorAccountId.length > 0 &&
     paymentSettings.processorPublishableKey.length > 0;
 
+  // Spec 122 US4 — the boards' one-line subtitle, only where it is true: an
+  // unpaid 088 bill (ใบแจ้งหนี้, not a tax invoice) and a paid one whose
+  // §86/4 RC tax invoice/receipt exists or is being generated. Legacy
+  // documents keep no subtitle (their own PDF is the tax document).
+  const isBill = resolveMainPdfKind(invoice) === 'bill';
+  const subtitle =
+    isBill && invoice.status === 'issued'
+      ? tPay('summary.billNote')
+      : isBill && invoice.status === 'paid' && (showReceiptPdf || receiptAsyncPending)
+        ? t('subtitlePaid')
+        : undefined;
+
+  // Spec 122 US4 — Pay now leads the header as the one primary action (the
+  // `Pay-*` boards' backdrop); on phones the same element is the
+  // `Portal-invoice-mobile` band — amount due, due date, Pay now — fixed
+  // above the bottom tabs. One element, so one pay sheet.
+  const payBar =
+    canPayOnline && paymentSettings ? (
+          <PayBar
+            invoiceId={invoice.invoiceId}
+            label={tPay('summary.amountLabel')}
+            className="portal-pay-bar flex items-center gap-3 max-md:fixed max-md:inset-x-0 max-md:bottom-[var(--aura-bottomnav-offset,0px)] max-md:z-[4] max-md:border-t max-md:border-[var(--aura-border-default)] max-md:bg-[var(--aura-bg-surface)] max-md:px-4 max-md:py-3 max-md:shadow-[var(--aura-shadow-enterprise)] [@media(max-height:560px)]:static [@media(max-height:560px)]:border-0 [@media(max-height:560px)]:p-0 [@media(max-height:560px)]:shadow-none"
+          >
+            <span className="flex min-w-0 flex-1 flex-col md:hidden">
+              <span className="text-xs text-[var(--aura-fg-secondary)]">{tPay('summary.amountLabel')}</span>
+              <span className="font-semibold tabular-nums">{formatSatangThb(amountDueSatang, userLocale)}</span>
+              <span className="text-xs text-[var(--aura-fg-secondary)]">
+                {t('fields.dueDate')}: {formatDate(invoice.dueDate, userLocale)}
+              </span>
+            </span>
+          <PayNowButton
+            invoice={{
+              id: invoice.invoiceId,
+              // 088 FR-030 — an issued 088 bill's number is its SC (headerNumber).
+              invoiceNumber: headerNumber,
+              amountDue: amountDueSatang !== null ? Number(amountDueSatang) : 0,
+              currency: 'THB',
+              status: invoice.status,
+              isBill,
+            }}
+            enabledMethods={paymentSettings.enabledMethods}
+            tenantPublishableKey={paymentSettings.processorPublishableKey}
+          />
+          </PayBar>
+    ) : null;
+
   return (
     <DetailContainer>
       {/* Spec 122 US4 — the boards' "← Back to invoices" above the title
           (it used to close the page as a ghost button). */}
       <BackLink href="/portal/invoices">{t('backToList')}</BackLink>
       <PageHeader
+        {...(subtitle ? { subtitle } : {})}
         title={
           <>
             {t('title')} <span className="font-mono">{headerNumber}</span>
@@ -368,154 +415,164 @@ export async function renderPortalInvoiceDetailView({
           />
         }
         actions={
-          invoice.pdf ? (
-            <>
-              {/* Resend is hidden on void — member cannot re-mail a
-                  voided invoice from self-service (an admin would need
-                  to trigger that via the cancellation-notice path). */}
-              {invoice.status !== 'void' ? (
-                <ResendInvoiceButton
-                  invoiceId={invoice.invoiceId}
-                  // 088 FR-030 — use the SC bill number for an 088 bill (the
-                  // bare `documentNumber` local resolves to '—' on an 088 bill).
-                  documentNumber={headerNumber}
-                  variant="ghost"
-                  layout="full"
-                  className="min-h-11 px-3"
-                />
+          invoice.pdf || payBar ? (
+            // Spec 122 US4 — downloads, then Email me a copy, then Pay now
+            // (the `Invoice-paid` / `Pay-*` boards); stacked full width on
+            // phones (`Portal-invoice-mobile`).
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
+              {invoice.pdf ? (
+                <>
+                  {(() => {
+                    // Round 6 portal-harden — combined-mode + paid: the
+                    // invoice PDF *is* the receipt (Thai RD §86/4 + §105ทวิ),
+                    // so the only legal document the member should grab is
+                    // the receipt-rendered combined PDF. Hide the pre-payment
+                    // invoice PDF in that case (it has no receipt fields).
+                    // Separate-mode + paid: surface BOTH — invoice (Tax
+                    // Invoice) and receipt (Official Receipt) are distinct
+                    // legal docs.
+                    //
+                    // R7-L4 — `receiptDocumentNumberRaw === null` is the
+                    // canonical proxy for combined-mode on paid invoices.
+                    // The numbering mode lives on `tenant_invoice_settings`
+                    // (mutable per-tenant config); it is NOT mirrored onto
+                    // the invoice row at issuance time. For PAID invoices,
+                    // however, the proxy is unambiguous: separate-mode
+                    // allocates the RC- number at `recordPayment`, so a
+                    // paid invoice with NULL receipt-number can only be a
+                    // combined-mode invoice. Adding a redundant
+                    // `receiptNumberingMode` column would violate
+                    // Principle X — the proxy is correct, just
+                    // documented here.
+                    //
+                    // 064 — as-paid TIN event invoices persist the MAIN pdf
+                    // as the final combined document (`pdfDocKind ===
+                    // 'receipt_combined'`; receipt blob columns stay NULL,
+                    // receiptPdfStatus lands 'rendered'). Pre-fix these rows
+                    // matched `isCombinedPaid` (main download hidden) while
+                    // `showReceiptPdf` pointed at the NULL receipt blob —
+                    // the member's only button 502'd (blob_missing). The
+                    // stale-draft-hiding rule applies ONLY when the main pdf
+                    // is an issue-time 'invoice', and the receipt button is
+                    // gated on the blob it actually serves.
+                    // 064 remediation S3 — generalised: 'combined' (as-paid TIN)
+                    // keeps the dual-role wording; 'receipt' (β as-paid no-TIN /
+                    // legacy §105 rows) flips the main download to the receipt
+                    // wording; 'bill' = 088 SC- ใบแจ้งหนี้ (not a tax invoice);
+                    // 'invoice' = plain label.
+                    const mainPdfKind = resolveMainPdfKind(invoice);
+                    // 092 — receipt-bearing status set (not `paid` alone) so a
+                    // §86/10 credit note does NOT un-hide the stale pre-payment
+                    // bill PDF; the combined receipt stays the sole legal document.
+                    // Lockstep with the view-model's `isCombinedPaid`.
+                    const isCombinedPaid =
+                      invoiceStatusHasReceipt(invoice.status) &&
+                      invoice.receiptDocumentNumberRaw === null &&
+                      mainPdfKind !== 'combined';
+                    const showInvoicePdf = invoice.pdf !== null && !isCombinedPaid;
+                    // 090 Bug 2 — `showReceiptPdf` is hoisted to the outer scope
+                    // (near receiptAsyncPending) so this cell + the <ReceiptReveal>
+                    // gate share one definition.
+                    // 088 T066a — the async receipt "generating" + graceful-fail
+                    // states moved OUT of this cramped header-actions cell into
+                    // prominent body sections below (room for the aria-live
+                    // announce + reassurance / the support path). See
+                    // `receiptAsyncPending` / `receiptAsyncFailed` at the top.
+                    // 088 T065c / FIX 4 — the MAIN download is the SC bill PDF for
+                    // ANY 088 bill (paid OR unpaid), never the RC in `documentNumber`.
+                    // Reuse the already-correct `headerNumber` (declared above:
+                    // `billDocumentNumberRaw ?? '—'` for any 088 bill, else the
+                    // resolved `documentNumber`). The prior ternary only used the SC
+                    // number on the paid `tax_receipt` branch, so an UNPAID 088 bill
+                    // fell to `documentNumber` = '—' → the download was named "—.pdf".
+                    const mainDownloadNumber = headerNumber;
+                    return (
+                      <>
+                        {showInvoicePdf && (
+                          <PortalInvoiceDownloadButton
+                            invoiceId={invoice.invoiceId}
+                            documentNumber={mainDownloadNumber}
+                            // 064 — as-paid rows: the main pdf IS the final legal
+                            // document; shared downloadLabelKeys helper (wave-4
+                            // S17) maps mainPdfKind → label/aria keys (list
+                            // namespace). The void overlay keeps THIS page's own
+                            // `void.downloadVoidedPdf` copy.
+                            label={
+                              invoice.status === 'void'
+                                ? t('void.downloadVoidedPdf')
+                                : tList(downloadLabelKeys(mainPdfKind).labelKey)
+                            }
+                            ariaLabel={`${
+                              invoice.status === 'void'
+                                ? t('void.downloadVoidedPdf')
+                                : tList(downloadLabelKeys(mainPdfKind).ariaKey, {
+                                    number: mainDownloadNumber,
+                                  })
+                            }`}
+                            className={cn(
+                              // 090 finding #5 — on a PAID separate-mode invoice the
+                              // §86/4 receipt is the document the member needs, so it
+                              // ranks as the filled `default` CTA and the (secondary)
+                              // bill/tax-invoice PDF is demoted to `outline`. Unpaid /
+                              // void keep the bill as the primary `default` CTA (no
+                              // receipt yet). `showReceiptPdf` is true only when the
+                              // receipt download actually renders alongside. Spec
+                              // 122 US4: when Pay now is on the page it is the one
+                              // primary action, so the bill download is secondary.
+                              buttonClass({
+                                variant: showReceiptPdf || payBar ? 'secondary' : 'primary',
+                                size: 'sm',
+                              }),
+                              'min-h-11 px-4 max-sm:w-full',
+                            )}
+                            data-testid="portal-download-invoice"
+                          />
+                        )}
+                        {showReceiptPdf && (
+                          <PortalReceiptDownloadButton
+                            invoiceId={invoice.invoiceId}
+                            documentNumber={invoice.receiptDocumentNumberRaw ?? documentNumber}
+                            label={
+                              isCombinedPaid
+                                ? tList('actions.downloadCombined')
+                                : tList('actions.downloadReceipt')
+                            }
+                            ariaLabel={tList('actions.downloadReceiptAria', {
+                              number: invoice.receiptDocumentNumberRaw ?? documentNumber,
+                            })}
+                            className={cn(
+                              // 090 finding #5 — the receipt is the post-payment
+                              // PRIMARY document (this branch only renders for a PAID
+                              // invoice, combined OR separate), so it is always the
+                              // filled `default` CTA, ranking above the demoted bill
+                              // PDF above.
+                              buttonClass({ variant: 'primary', size: 'sm' }),
+                              'min-h-11 px-4 max-sm:w-full',
+                            )}
+                            data-testid="portal-download-receipt"
+                          />
+                        )}
+                      </>
+                    );
+                  })()}
+                  {/* Resend is hidden on void — member cannot re-mail a
+                      voided invoice from self-service (an admin would need
+                      to trigger that via the cancellation-notice path). */}
+                  {invoice.status !== 'void' ? (
+                    <ResendInvoiceButton
+                      invoiceId={invoice.invoiceId}
+                      // 088 FR-030 — use the SC bill number for an 088 bill (the
+                      // bare `documentNumber` local resolves to '—' on an 088 bill).
+                      documentNumber={headerNumber}
+                      variant="outline"
+                      layout="full"
+                      className="min-h-11 px-4 max-sm:w-full"
+                    />
+                  ) : null}
+                </>
               ) : null}
-              {(() => {
-                // Round 6 portal-harden — combined-mode + paid: the
-                // invoice PDF *is* the receipt (Thai RD §86/4 + §105ทวิ),
-                // so the only legal document the member should grab is
-                // the receipt-rendered combined PDF. Hide the pre-payment
-                // invoice PDF in that case (it has no receipt fields).
-                // Separate-mode + paid: surface BOTH — invoice (Tax
-                // Invoice) and receipt (Official Receipt) are distinct
-                // legal docs.
-                //
-                // R7-L4 — `receiptDocumentNumberRaw === null` is the
-                // canonical proxy for combined-mode on paid invoices.
-                // The numbering mode lives on `tenant_invoice_settings`
-                // (mutable per-tenant config); it is NOT mirrored onto
-                // the invoice row at issuance time. For PAID invoices,
-                // however, the proxy is unambiguous: separate-mode
-                // allocates the RC- number at `recordPayment`, so a
-                // paid invoice with NULL receipt-number can only be a
-                // combined-mode invoice. Adding a redundant
-                // `receiptNumberingMode` column would violate
-                // Principle X — the proxy is correct, just
-                // documented here.
-                //
-                // 064 — as-paid TIN event invoices persist the MAIN pdf
-                // as the final combined document (`pdfDocKind ===
-                // 'receipt_combined'`; receipt blob columns stay NULL,
-                // receiptPdfStatus lands 'rendered'). Pre-fix these rows
-                // matched `isCombinedPaid` (main download hidden) while
-                // `showReceiptPdf` pointed at the NULL receipt blob —
-                // the member's only button 502'd (blob_missing). The
-                // stale-draft-hiding rule applies ONLY when the main pdf
-                // is an issue-time 'invoice', and the receipt button is
-                // gated on the blob it actually serves.
-                // 064 remediation S3 — generalised: 'combined' (as-paid TIN)
-                // keeps the dual-role wording; 'receipt' (β as-paid no-TIN /
-                // legacy §105 rows) flips the main download to the receipt
-                // wording; 'bill' = 088 SC- ใบแจ้งหนี้ (not a tax invoice);
-                // 'invoice' = plain label.
-                const mainPdfKind = resolveMainPdfKind(invoice);
-                // 092 — receipt-bearing status set (not `paid` alone) so a
-                // §86/10 credit note does NOT un-hide the stale pre-payment
-                // bill PDF; the combined receipt stays the sole legal document.
-                // Lockstep with the view-model's `isCombinedPaid`.
-                const isCombinedPaid =
-                  invoiceStatusHasReceipt(invoice.status) &&
-                  invoice.receiptDocumentNumberRaw === null &&
-                  mainPdfKind !== 'combined';
-                const showInvoicePdf = invoice.pdf !== null && !isCombinedPaid;
-                // 090 Bug 2 — `showReceiptPdf` is hoisted to the outer scope
-                // (near receiptAsyncPending) so this cell + the <ReceiptReveal>
-                // gate share one definition.
-                // 088 T066a — the async receipt "generating" + graceful-fail
-                // states moved OUT of this cramped header-actions cell into
-                // prominent body sections below (room for the aria-live
-                // announce + reassurance / the support path). See
-                // `receiptAsyncPending` / `receiptAsyncFailed` at the top.
-                // 088 T065c / FIX 4 — the MAIN download is the SC bill PDF for
-                // ANY 088 bill (paid OR unpaid), never the RC in `documentNumber`.
-                // Reuse the already-correct `headerNumber` (declared above:
-                // `billDocumentNumberRaw ?? '—'` for any 088 bill, else the
-                // resolved `documentNumber`). The prior ternary only used the SC
-                // number on the paid `tax_receipt` branch, so an UNPAID 088 bill
-                // fell to `documentNumber` = '—' → the download was named "—.pdf".
-                const mainDownloadNumber = headerNumber;
-                return (
-                  <>
-                    {showInvoicePdf && (
-                      <PortalInvoiceDownloadButton
-                        invoiceId={invoice.invoiceId}
-                        documentNumber={mainDownloadNumber}
-                        // 064 — as-paid rows: the main pdf IS the final legal
-                        // document; shared downloadLabelKeys helper (wave-4
-                        // S17) maps mainPdfKind → label/aria keys (list
-                        // namespace). The void overlay keeps THIS page's own
-                        // `void.downloadVoidedPdf` copy.
-                        label={
-                          invoice.status === 'void'
-                            ? t('void.downloadVoidedPdf')
-                            : tList(downloadLabelKeys(mainPdfKind).labelKey)
-                        }
-                        ariaLabel={`${
-                          invoice.status === 'void'
-                            ? t('void.downloadVoidedPdf')
-                            : tList(downloadLabelKeys(mainPdfKind).ariaKey, {
-                                number: mainDownloadNumber,
-                              })
-                        }`}
-                        className={cn(
-                          // 090 finding #5 — on a PAID separate-mode invoice the
-                          // §86/4 receipt is the document the member needs, so it
-                          // ranks as the filled `default` CTA and the (secondary)
-                          // bill/tax-invoice PDF is demoted to `outline`. Unpaid /
-                          // void keep the bill as the primary `default` CTA (no
-                          // receipt yet). `showReceiptPdf` is true only when the
-                          // receipt download actually renders alongside.
-                          buttonClass({
-                            variant: showReceiptPdf ? 'secondary' : 'primary',
-                            size: 'sm',
-                          }),
-                          'min-h-11 px-4',
-                        )}
-                        data-testid="portal-download-invoice"
-                      />
-                    )}
-                    {showReceiptPdf && (
-                      <PortalReceiptDownloadButton
-                        invoiceId={invoice.invoiceId}
-                        documentNumber={invoice.receiptDocumentNumberRaw ?? documentNumber}
-                        label={
-                          isCombinedPaid
-                            ? tList('actions.downloadCombined')
-                            : tList('actions.downloadReceipt')
-                        }
-                        ariaLabel={tList('actions.downloadReceiptAria', {
-                          number: invoice.receiptDocumentNumberRaw ?? documentNumber,
-                        })}
-                        className={cn(
-                          // 090 finding #5 — the receipt is the post-payment
-                          // PRIMARY document (this branch only renders for a PAID
-                          // invoice, combined OR separate), so it is always the
-                          // filled `default` CTA, ranking above the demoted bill
-                          // PDF above.
-                          buttonClass({ variant: 'primary', size: 'sm' }),
-                          'min-h-11 px-4',
-                        )}
-                        data-testid="portal-download-receipt"
-                      />
-                    )}
-                  </>
-                );
-              })()}
-            </>
+              {payBar}
+            </div>
           ) : null
         }
       />
@@ -668,14 +725,15 @@ export async function renderPortalInvoiceDetailView({
             </p>
             <p className="m-0 text-body">{formatDate(invoice.dueDate, userLocale)}</p>
           </div>
-          <div>
-            <p className="m-0 text-xs text-[var(--aura-fg-secondary)]">
-              {t('fields.paidDate')}
-            </p>
-            <p className="m-0 text-body">
-              {invoice.paidAt ? formatDate(invoice.paidAt, userLocale) : '—'}
-            </p>
-          </div>
+          {/* Only once paid — the boards leave it out of an open invoice. */}
+          {invoice.paidAt ? (
+            <div>
+              <p className="m-0 text-xs text-[var(--aura-fg-secondary)]">
+                {t('fields.paidDate')}
+              </p>
+              <p className="m-0 text-body">{formatDate(invoice.paidAt, userLocale)}</p>
+            </div>
+          ) : null}
           {replaces.length > 0 && (
             <div data-testid="portal-invoice-replaces">
               <p className="m-0 text-xs text-[var(--aura-fg-secondary)]">
@@ -726,11 +784,11 @@ export async function renderPortalInvoiceDetailView({
             </div>
           )}
         </div>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto max-sm:hidden">
             {/* The line items keep their name as the table caption (hidden:
-                the card title already heads the section). Below 640px each
-                line stacks as a card with its column labels. */}
-            <Table caption={t('linesHeading')} captionHidden stackBelow="sm">
+                the card title already heads the section). Below 640px the
+                list after the table takes over. */}
+            <Table caption={t('linesHeading')} captionHidden>
               <THead>
                 <Tr>
                   <Th>{t('lines.description')}</Th>
@@ -789,6 +847,34 @@ export async function renderPortalInvoiceDetailView({
               </TBody>
             </Table>
           </div>
+          {/* Spec 122 US4 (`Portal-invoice-mobile`) — below 640px one row per
+              line: the description (both languages, §86), then
+              "qty × unit price" beside the line total. Same figures, same
+              formatter as the table. */}
+          <ul aria-label={t('linesHeading')} className="m-0 flex list-none flex-col gap-3 p-0 sm:hidden">
+            {invoice.lines.map((line) => {
+              const sameText = line.descriptionTh === line.descriptionEn;
+              const primary = userLocale === 'th' ? line.descriptionTh : line.descriptionEn;
+              const secondary = userLocale === 'th' ? line.descriptionEn : line.descriptionTh;
+              const secondaryLang = userLocale === 'th' ? 'en' : 'th';
+              return (
+                <li key={line.lineId} className="flex flex-col gap-1 border-b border-[var(--aura-border-default)] pb-3 last:border-b-0 last:pb-0">
+                  <span className="text-body font-medium">{primary}</span>
+                  {!sameText ? (
+                    <span lang={secondaryLang === userLocale ? undefined : secondaryLang} className="text-body">
+                      {secondary}
+                    </span>
+                  ) : null}
+                  <span className="flex items-baseline justify-between gap-3 text-sm tabular-nums">
+                    <span className="text-[var(--aura-fg-secondary)]">
+                      {line.quantity} × {formatSatangThb(line.unitPrice.satang, userLocale)}
+                    </span>
+                    <span>{formatSatangThb(line.total.satang, userLocale)}</span>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
 
         {/* dl/dt/dd preserves the semantic label-value pairing for
             screen readers; the previous `div.contents` flattening
@@ -848,35 +934,9 @@ export async function renderPortalInvoiceDetailView({
             {t('legacyNoTinNotPayable')}
           </Alert>
         ) : canPayOnline && paymentSettings ? (
-          // Spec 122 US4 (`Portal-invoice-mobile`) — the amount due and Pay
-          // now in one bar: sticky above the bottom tabs on phones, a plain
-          // card row from 768px.
-          <PayBar
-            invoiceId={invoice.invoiceId}
-            label={tPay('summary.amountLabel')}
-            className="portal-pay-bar sticky bottom-[var(--aura-bottomnav-offset,0px)] z-[4] flex items-center gap-3 rounded-[var(--aura-card-radius)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] p-4 shadow-[var(--aura-shadow-enterprise)] md:static md:shadow-none [@media(max-height:560px)]:static"
-          >
-            <span className="flex min-w-0 flex-1 flex-col">
-              <span className="text-xs text-[var(--aura-fg-secondary)]">{tPay('summary.amountLabel')}</span>
-              <span className="font-semibold tabular-nums">{formatSatangThb(amountDueSatang, userLocale)}</span>
-              <span className="text-xs text-[var(--aura-fg-secondary)]">
-                {t('fields.dueDate')}: {formatDate(invoice.dueDate, userLocale)}
-              </span>
-            </span>
-          <PayNowButton
-            invoice={{
-              id: invoice.invoiceId,
-              // 088 FR-030 — an issued 088 bill's number is its SC (headerNumber).
-              invoiceNumber: headerNumber,
-              amountDue: amountDueSatang !== null ? Number(amountDueSatang) : 0,
-              currency: 'THB',
-              status: invoice.status,
-              isBill: resolveMainPdfKind(invoice) === 'bill',
-            }}
-            enabledMethods={paymentSettings.enabledMethods}
-            tenantPublishableKey={paymentSettings.processorPublishableKey}
-          />
-          </PayBar>
+          // The pay bar lives in the header (see `payBar`); on phones it is
+          // fixed above the bottom tabs, so keep room for it here.
+          <div aria-hidden="true" className="h-24 md:hidden [@media(max-height:560px)]:hidden" />
         ) : (
           // FR-030 (#145) — the fallback offers a "Contact administrator" mailto.
           // Source is `env.billingContactEmails` (BILLING_CONTACT_EMAILS, a

@@ -420,7 +420,7 @@ export default async function AuraPortalPreviewPage({
       documentNumber: null,
       billDocumentNumberRaw: 'SC-2026-000123',
       receiptDocumentNumberRaw: null,
-      pdfDocKind: 'bill',
+      pdfDocKind: 'invoice',
       pdf: { blobKey: 'k' },
       receiptPdf: null,
       receiptPdfStatus: null,
@@ -523,6 +523,7 @@ export default async function AuraPortalPreviewPage({
         {await renderPortalCreditNoteView({
           creditNoteId: 'cn-1',
           locale: 'en',
+          contactEmails: ['billing@swecham.example'],
           cn: {
             creditNoteId: 'cn-1',
             originalInvoiceId: 'i2',

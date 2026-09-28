@@ -35,6 +35,7 @@ import { headers } from 'next/headers';
 import { DownloadIcon } from 'lucide-react';
 
 import { requireSession } from '@/lib/auth-session';
+import { env } from '@/lib/env';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { getCreditNote, makeGetCreditNoteDeps } from '@/modules/invoicing';
@@ -42,7 +43,7 @@ import { buildMembersDeps } from '@/modules/members/members-deps';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { PlanBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
-import { Badge, Card, buttonClass } from '@jirawatpyk/aura-react/server';
+import { Alert, Badge, Card, buttonClass } from '@jirawatpyk/aura-react/server';
 import { BackLink } from '@/components/portal/back-link';
 import { formatSatangThb } from '@/lib/format-thb';
 import { formatTaxDocDate } from '@/lib/format-tax-doc-date';
@@ -93,7 +94,14 @@ export default async function PortalCreditNoteDetailPage({
   if (!result.ok) notFound();
   const cn = result.value;
 
-  return renderPortalCreditNoteView({ cn, creditNoteId, locale });
+  return renderPortalCreditNoteView({
+    cn,
+    creditNoteId,
+    locale,
+    // Same contact source as the invoice page's online-payment fallback
+    // (BILLING_CONTACT_EMAILS, falling back to SUPPORT_EMAIL).
+    contactEmails: env.billingContactEmails,
+  });
 }
 
 /**
@@ -104,25 +112,35 @@ export async function renderPortalCreditNoteView({
   cn,
   creditNoteId,
   locale,
+  contactEmails,
 }: {
   readonly cn: Extract<Awaited<ReturnType<typeof getCreditNote>>, { ok: true }>['value'];
   readonly creditNoteId: string;
   readonly locale: string;
+  readonly contactEmails: readonly string[];
 }): Promise<React.ReactElement> {
   const t = await getTranslations('portal.creditNotes.detail');
   const tInvoice = await getTranslations('portal.invoices.detail');
   const invoiceHref = `/portal/invoices/${cn.originalInvoiceId}`;
   const pdfHref = `/api/portal/credit-notes/${creditNoteId}/pdf`;
 
-  // Spec 122 US4 (`Portal-credit-note` board): back link, the number in
-  // mono, Download PDF as the primary action, a Details card (facts, then the
-  // credit / VAT / total list) and a Reason card. Figures and labels unchanged.
+  // Spec 122 US4 (`Portal-credit-note` board): back link, "Credit note" and
+  // the number in mono, Download PDF as the primary action, the "receipt is
+  // reduced by" notice, a Details card (facts, then the credit / VAT / total
+  // list), a Reason card and the contact line. Figures and field labels are
+  // unchanged; the notice states the credit note's own total.
+  const receiptNumber = cn.originalDocuments?.receiptNumberRaw ?? null;
+  const contactEmail = contactEmails[0] ?? null;
   return (
     <DetailContainer>
       <PlanBreadcrumbLabel segment={creditNoteId} label={cn.documentNumber.raw} />
       <BackLink href="/portal/invoices">{tInvoice('backToList')}</BackLink>
       <PageHeader
-        title={<span className="font-mono">{cn.documentNumber.raw}</span>}
+        title={
+          <>
+            {t('title')} <span className="font-mono">{cn.documentNumber.raw}</span>
+          </>
+        }
         badge={
           <Badge tone="success">
             {t('status.issued')}
@@ -142,6 +160,20 @@ export async function renderPortalCreditNoteView({
           </a>
         }
       />
+
+      {receiptNumber ? (
+        <Alert
+          tone="info"
+          role="note"
+          title={t('reducesTitle', {
+            receipt: receiptNumber,
+            amount: formatSatangThb(cn.total.satang, locale),
+          })}
+          data-testid="portal-credit-note-reduces"
+        >
+          {t('reducesBody')}
+        </Alert>
+      ) : null}
 
       <Card title={tInvoice('detailsHeading')} headingLevel={2}>
         <div className="flex flex-col gap-5">
@@ -185,6 +217,21 @@ export async function renderPortalCreditNoteView({
       <Card title={t('reason.heading')} headingLevel={2}>
         <p className="m-0 whitespace-pre-wrap text-sm">{cn.reason}</p>
       </Card>
+
+      {contactEmail ? (
+        <p className="m-0 text-sm text-[var(--aura-fg-secondary)]" data-testid="portal-credit-note-contact">
+          {t.rich('contact', {
+            link: (chunks) => (
+              <a
+                href={`mailto:${contactEmail}?subject=${encodeURIComponent(cn.documentNumber.raw)}`}
+                className="text-[var(--aura-fg-accent)] underline underline-offset-2"
+              >
+                {chunks}
+              </a>
+            ),
+          })}
+        </p>
+      ) : null}
     </DetailContainer>
   );
 }

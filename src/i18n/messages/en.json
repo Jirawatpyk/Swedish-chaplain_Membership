@@ -6377,7 +6377,8 @@
           "replacedBy": "This bill was replaced by <link>{number}</link>",
           "replacedByIssued": "issued {date}"
         },
-        "detailsHeading": "Details"
+        "detailsHeading": "Details",
+        "subtitlePaid": "Paid — download the tax invoice/receipt (ใบกำกับภาษี/ใบเสร็จรับเงิน) for your records."
       }
     },
     "creditNotes": {
@@ -6385,7 +6386,7 @@
         "meta": {
           "title": "Credit Note"
         },
-        "subtitle": "A credit has been issued against your invoice.",
+        "subtitle": "A credit note (ใบลดหนี้) lowers the amount of a tax receipt. Keep it with the receipt for your accounts.",
         "status": {
           "issued": "Issued"
         },
@@ -6403,7 +6404,11 @@
         },
         "reason": {
           "heading": "Reason"
-        }
+        },
+        "title": "Credit note",
+        "reducesTitle": "Receipt {receipt} is reduced by {amount}",
+        "reducesBody": "If money is due back to you, the chamber arranges the refund separately.",
+        "contact": "Questions about this credit note? <link>Contact the chamber</link>."
       }
     },
     "broadcasts": {
