@@ -305,6 +305,7 @@ const MIGRATED_PATHS = [
   'src/app/(staff)/admin/members/_components/**',
   'src/components/members/members-table.tsx',
   'src/components/members/members-table-skeleton.tsx',
+  'src/components/members/members-table-columns.ts',
   'src/components/members/directory-filters.tsx',
   'src/components/members/empty-states.tsx',
   'src/app/(staff)/admin/directory/**',

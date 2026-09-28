@@ -373,8 +373,9 @@ export function BulkActionBar({
   // Clear empties the selection, so the bar's buttons go and the focused Clear
   // button with them. AURA's ActionBar returns focus to where it came from
   // when it can (its own timer runs first); if focus is still lost after
-  // that, hand it to the members table's select-all checkbox (it survives the
-  // clear), else the `#main-content` landmark. Only the explicit Clear moves
+  // that, hand it to the members table's select-all header cell (it survives
+  // the clear, and as a grid cell the arrow keys work from it), else the
+  // `#main-content` landmark. Only the explicit Clear moves
   // focus: a bulk action's own clear leaves focus to its dialog's
   // `finalFocus`. The E-Blast queue's bar does the same
   // (`queue-bulk-action-bar.tsx`, T086a V2).
@@ -384,9 +385,7 @@ export function BulkActionBar({
       setTimeout(() => {
         const active = document.activeElement;
         if (active && active !== document.body && active.isConnected) return;
-        const selectAll = document.querySelector<HTMLElement>(
-          '[data-members-table] [role="columnheader"].aura-table__sel input[type="checkbox"]',
-        );
+        const selectAll = document.querySelector<HTMLElement>('[data-members-table] [data-rc="0:0"]');
         selectAll?.focus();
         if (selectAll === null || document.activeElement !== selectAll) {
           document.getElementById('main-content')?.focus({ preventScroll: true });

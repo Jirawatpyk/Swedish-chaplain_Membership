@@ -56,6 +56,7 @@ import type { PortalState } from '@/modules/members';
 // C4 round-10 ui-design-specialist — flag emoji + localised country name.
 // 056-members-table-compact — the flag now leads the Company cell.
 import { CountryDisplay } from './country-display';
+import { MEMBERS_COLUMN_SIZES } from './members-table-columns';
 
 export type MembersTableRow = {
   readonly member_id: string;
@@ -632,10 +633,11 @@ export function MembersTable({
     () => [
       {
         // 056-members-table-compact — the flag leads the Company cell (country
-        // is edited on the detail page). The name wraps in full, no ellipsis.
+        // is edited on the detail page). The flexible column: one line in the
+        // grid (the link text stays whole for screen readers), in full on a card.
         key: 'company_name',
         label: t('columns.company'),
-        minWidth: 130,
+        ...MEMBERS_COLUMN_SIZES.company_name,
         render: (row) => (
           <span className="flex min-w-0 items-center gap-2">
             {row.country && (
@@ -653,7 +655,7 @@ export function MembersTable({
         key: 'member_number_display',
         label: t('columns.memberNumber'),
         mono: true,
-        width: 100,
+        ...MEMBERS_COLUMN_SIZES.member_number_display,
         sortable: true,
       },
       {
@@ -661,8 +663,7 @@ export function MembersTable({
         // truncates; a phone card wraps).
         key: 'primary_contact',
         label: t('columns.primaryContact'),
-        width: 170,
-        hideBelow: 'lg',
+        ...MEMBERS_COLUMN_SIZES.primary_contact,
         render: (row) => {
           const c = row.primary_contact;
           if (!c) return <span className="text-[var(--aura-fg-secondary)]">{t('noPrimary')}</span>;
@@ -695,8 +696,7 @@ export function MembersTable({
         // 056-members-table-compact — merged "Plan · Year" cell.
         key: 'plan_display_name',
         label: t('columns.plan'),
-        width: 150,
-        hideBelow: 'lg',
+        ...MEMBERS_COLUMN_SIZES.plan_display_name,
         render: (row) => (
           <span title={row.plan_id} className={ONE_LINE}>
             {row.plan_display_name ?? row.plan_id}
@@ -708,7 +708,7 @@ export function MembersTable({
       {
         key: 'status',
         label: t('columns.status'),
-        width: 176,
+        ...MEMBERS_COLUMN_SIZES.status,
         // Sits beside the title on a phone card.
         pill: true,
         // #4 — the Lapsed / Suspended badge is a SIBLING of the status toggle,
@@ -742,7 +742,7 @@ export function MembersTable({
         // server-side; numeric score + text band (FR-035). Unscored → "—".
         key: 'engagement',
         label: t('columns.engagement'),
-        width: 120,
+        ...MEMBERS_COLUMN_SIZES.engagement,
         sortable: true,
         render: (row) => {
           const eng = row.engagement;
@@ -758,9 +758,7 @@ export function MembersTable({
       {
         key: 'last_activity_at',
         label: t('columns.lastActivity'),
-        width: 132,
-        // Dropped first on a narrow desktop so the row menu stays in view.
-        hideBelow: 1100,
+        ...MEMBERS_COLUMN_SIZES.last_activity_at,
         render: (row) => {
           const v = row.last_activity_at;
           if (!v) return <span className="text-[var(--aura-fg-secondary)]">—</span>;
@@ -774,7 +772,7 @@ export function MembersTable({
         // An empty label: AURA names the header "Actions" for screen readers
         // only, as the board draws no heading over the menu.
         label: '',
-        width: 48,
+        ...MEMBERS_COLUMN_SIZES.actions,
         actions: true,
         render: (row) => <RowMenu row={row} canEdit={canEdit} />,
       },
@@ -792,9 +790,12 @@ export function MembersTable({
       // The bulk bar's Clear hands focus to this table's select-all checkbox.
       data-members-table=""
       // Record Shift on the click that toggles a checkbox; the selection
-      // callback reads it to select a range.
+      // callback reads it to select a range. Only a click in the selection
+      // column counts: a Shift-click on a row link would otherwise leave the
+      // flag set for a later keyboard toggle (AURA toggles on Space, no click).
       onClickCapture={(e) => {
-        shiftClickRef.current = e.shiftKey;
+        const target = e.target as Element;
+        shiftClickRef.current = e.shiftKey && target.closest('.aura-table__sel') !== null;
       }}
     >
       {/* Result count — visible, as on the board ("Showing 2 of 131
@@ -805,16 +806,6 @@ export function MembersTable({
           ? t('resultsCountOfTotal', { count: rows.length, total })
           : t('resultsCount', { count: rows.length })}
       </div>
-      {enableSelection && (matchingActive || selectedCount > 0) && (
-        <div className="sr-only" aria-live="polite" aria-atomic="true">
-          {/* Announce the EFFECTIVE count: the cross-page matching total when
-              "select all matching" is active (what the bulk action will touch),
-              else the visible-page selection. */}
-          {t('selectedCount', {
-            count: matchingActive ? (matchingCount ?? selectedCount) : selectedCount,
-          })}
-        </div>
-      )}
       {/* #2 cross-page "Select all N matching". Two states:
           (a) OFFER — whole visible page selected + more matching rows exist
               beyond it: clicking asks the parent to fetch the matching ids

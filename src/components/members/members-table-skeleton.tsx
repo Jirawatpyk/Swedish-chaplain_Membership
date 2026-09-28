@@ -1,89 +1,67 @@
-/**
- * Loading skeleton for the members directory table (AURA pulse via
- * `SkeletonBlock`, 122 US5a).
- *
- * Approximates the real table's common-case shape (same column count, one
- * row height, same grid). Not an exact shape match: Plan/Status/Contact cells
- * can each wrap one line taller than this skeleton reserves (long plan name,
- * a stacked Lapsed/Suspended badge, or — since 057 badge-inline — a wrapped
- * portal/bounce badge row), so some rows settle one line taller once the real
- * data lands. See the inline comment below for why that tradeoff (smaller
- * aggregate CLS than over-reserving two lines for every row) is accepted.
- *
- * Round-10 ui-design-specialist C1 fix (2026-05-14): the skeleton
- * previously hard-coded 8 columns but the real table emits 9 (no
- * selection, manager view) or 10 (with selection, admin view). The
- * pre-fix layout shifted by 1-2 columns on every directory load.
- * `withSelection` matches the table's `enableSelection` prop — when
- * the page-level `loading.tsx` runs before auth resolves we cannot
- * know the role, so the page passes the role-derived value through.
- *
- * 056-members-table-compact: the directory was reduced to a lean 8-column
- * layout (Member No. · Company[flag+name] · Plan·Year · Contact · Status ·
- * Engagement · Last Activity, plus the optional leading select column).
- * The real table now emits 7 (no selection, manager view) or 8 (with
- * selection, admin view). Default is 7 (no selection — manager +
- * first-paint baseline) so a non-admin always sees CLS 0; admins see
- * at-most a 1-column shift (the narrow select column) on first paint.
- */
+'use client';
 
-import { SkeletonBlock } from '@/components/shell/page-skeletons';
+/**
+ * Loading skeleton for the members table (122 US5a).
+ *
+ * AURA's own `DataTable` in its loading state, with the real table's columns
+ * (same keys, sizes, narrow-table hiding and phone-card breakpoint from
+ * `members-table-columns`), so the grid that replaces it lands in the same
+ * place: CLS 0 (ux-standards § 2.1). `withSelection` adds the checkbox
+ * column the admin table has; the route-level `loading.tsx` runs before the
+ * role is known and leaves it off, the page's own Suspense passes the role.
+ *
+ * 15 skeleton rows fill most laptop viewports, so the pagination below
+ * moves only below the fold when the page's 50 rows arrive.
+ */
+import { useMemo } from 'react';
+import { useTranslations } from 'next-intl';
+import { DataTable, type DataTableColumn } from '@jirawatpyk/aura-react';
+import { MEMBERS_COLUMN_ORDER, MEMBERS_COLUMN_SIZES } from './members-table-columns';
+
+const LABEL_KEYS = {
+  company_name: 'columns.company',
+  member_number_display: 'columns.memberNumber',
+  primary_contact: 'columns.primaryContact',
+  plan_display_name: 'columns.plan',
+  status: 'columns.status',
+  engagement: 'columns.engagement',
+  last_activity_at: 'columns.lastActivity',
+  actions: null,
+} as const satisfies Record<(typeof MEMBERS_COLUMN_ORDER)[number], string | null>;
 
 interface MembersTableSkeletonProps {
-  /**
-   * Whether the real table will render the leading select-checkbox
-   * column (admin view with bulk actions enabled). Defaults to `false`
-   * so the skeleton matches manager + non-admin baselines.
-   */
+  /** The admin table's leading checkbox column. Default `false` (manager, and first paint before the role is known). */
   readonly withSelection?: boolean;
 }
 
-export function MembersTableSkeleton({
-  withSelection = false,
-}: MembersTableSkeletonProps = {}) {
-  const cols = withSelection ? 8 : 7;
-  // Render enough shimmer rows to fill a typical viewport (was 8): a real page
-  // holds up to PAGE_SIZE (50) rows, so a short skeleton let the content below
-  // the table (pagination) jump up during load and back down when data landed —
-  // a visible CLS. 15 rows fills most laptop viewports so that shift happens
-  // below the fold (where it no longer counts toward CLS) without rendering all
-  // 50 heavy shimmer rows.
-  const skeletonRows = 15;
-  // Build a grid template where the select column (when present) is
-  // narrow to match the real `size: 40` checkbox column — visual
-  // alignment is closer to the live table than uniform fractions.
-  const gridTemplate = withSelection
-    ? '40px repeat(7, minmax(0, 1fr))'
-    : 'repeat(7, minmax(0, 1fr))';
-
+export function MembersTableSkeleton({ withSelection = false }: MembersTableSkeletonProps = {}) {
+  const t = useTranslations('admin.members.directory');
+  const columns = useMemo<DataTableColumn[]>(
+    () =>
+      MEMBERS_COLUMN_ORDER.map((key) => {
+        const labelKey = LABEL_KEYS[key];
+        return {
+          key,
+          label: labelKey === null ? '' : t(labelKey),
+          ...MEMBERS_COLUMN_SIZES[key],
+          ...(key === 'actions' ? { actions: true } : {}),
+          ...(key === 'status' ? { pill: true } : {}),
+        };
+      }),
+    [t],
+  );
   return (
-    <div className="flex flex-col gap-4" aria-hidden>
-      <div
-        className="grid gap-3 border-b border-[var(--aura-border-default)] bg-[var(--aura-bg-surface-hover)] px-4 py-3"
-        style={{ gridTemplateColumns: gridTemplate }}
-      >
-        {Array.from({ length: cols }).map((_, i) => (
-          <SkeletonBlock key={i} className="h-3 w-full" />
-        ))}
-      </div>
-      {Array.from({ length: skeletonRows }).map((_, r) => (
-        <div
-          key={r}
-          className="grid gap-3 border-b border-[var(--aura-border-default)] px-4 py-3 last:border-b-0"
-          style={{ gridTemplateColumns: gridTemplate }}
-        >
-          {/* 057 badge-inline — the portal badge renders INLINE after the
-              contact name (wrapping only when the column is too narrow), so the
-              common row is a single line again. A one-line shimmer matches the
-              majority of rows; the minority that wrap (long plan name, or a
-              Lapsed/Suspended badge stacked in the Status cell) settle one line
-              taller, which is a smaller aggregate CLS than over-reserving two
-              lines for every row (ux-standards § 2.1). */}
-          {Array.from({ length: cols }).map((__, c) => (
-            <SkeletonBlock key={c} className="h-5 w-full" />
-          ))}
-        </div>
-      ))}
+    <div aria-hidden>
+      <DataTable
+        label={t('tableCaption')}
+        rows={[]}
+        columns={columns}
+        rowKey="member_id"
+        loading
+        skeletonRows={15}
+        selectable={withSelection}
+        stackBelow={640}
+      />
     </div>
   );
 }
