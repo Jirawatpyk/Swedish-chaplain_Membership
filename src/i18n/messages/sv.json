@@ -1318,7 +1318,6 @@
         "searchPlaceholder": "Sök på företag, kontakt, e-post eller medlemsnummer",
         "searchSrLabel": "Sök medlemmar",
         "clearFilters": "Rensa filter",
-        "activeFilters": "Aktiva filter",
         "removeFilter": "Ta bort {filter}",
         "filterChip": {
           "search": "Sök: {q}",
@@ -1350,8 +1349,6 @@
         },
         "resultsCount": "{count, plural, =0 {Inga medlemmar} one {# medlem} other {# medlemmar}}",
         "resultsCountOfTotal": "Visar {count} av {total, plural, one {# medlem} other {# medlemmar}}",
-        "sortByEngagement": "Sortera efter engagemang",
-        "sortByMemberNumber": "Sortera efter medlemsnummer",
         "columns": {
           "memberNumber": "Medlemsnr",
           "company": "Företag",
@@ -1375,7 +1372,6 @@
         "riskNotComputed": "Ingen poäng än",
         "riskNotComputedAria": "Riskpoäng inte beräknad ännu",
         "riskNotComputedTooltip": "Riskpoängen beräknas efter 30 dagars aktivitet. Nyligen tillagda medlemmar får poäng när data har samlats in.",
-        "rowAriaLabel": "Öppna {company} detaljer",
         "noPrimary": "Ingen primär kontakt",
         "loadMore": "Ladda fler",
         "selectAll": "Markera alla rader",

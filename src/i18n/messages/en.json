@@ -1318,7 +1318,6 @@
         "searchPlaceholder": "Search by company, contact name, email, or member number",
         "searchSrLabel": "Search members",
         "clearFilters": "Clear filters",
-        "activeFilters": "Active filters",
         "removeFilter": "Remove {filter}",
         "filterChip": {
           "search": "Search: {q}",
@@ -1350,8 +1349,6 @@
         },
         "resultsCount": "{count, plural, =0 {No members} one {# member} other {# members}}",
         "resultsCountOfTotal": "Showing {count} of {total, plural, one {# member} other {# members}}",
-        "sortByEngagement": "Sort by engagement",
-        "sortByMemberNumber": "Sort by member number",
         "columns": {
           "memberNumber": "Member No.",
           "company": "Company",
@@ -1375,7 +1372,6 @@
         "riskNotComputed": "Not yet scored",
         "riskNotComputedAria": "Risk score not yet computed",
         "riskNotComputedTooltip": "Risk score is computed after the first 30 days of activity. Newly-added members will see a score once they accumulate enough data.",
-        "rowAriaLabel": "Open {company} details",
         "noPrimary": "No primary contact",
         "loadMore": "Load more",
         "selectAll": "Select all rows",

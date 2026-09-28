@@ -1200,7 +1200,7 @@
           "billing_cleared": "กำลังลบที่อยู่สำหรับออกใบกำกับ — ที่อยู่จดทะเบียนจะกลายเป็นที่อยู่ผู้ซื้อที่พิมพ์บนใบกำกับภาษี ตรวจสอบการระบุสำนักงานใหญ่ / สาขา"
         },
         "willApprove": "จะอนุมัติ",
-        "willReject": "จะไม่อนุมัติ"
+        "willReject": "จะปฏิเสธ"
       },
       "decision": {
         "confirm": "ยืนยันการตัดสิน",
@@ -1318,7 +1318,6 @@
         "searchPlaceholder": "ค้นหาด้วยชื่อบริษัท ผู้ติดต่อ อีเมล หรือหมายเลขสมาชิก",
         "searchSrLabel": "ค้นหาสมาชิก",
         "clearFilters": "ล้างตัวกรอง",
-        "activeFilters": "ตัวกรองที่ใช้อยู่",
         "removeFilter": "เอา {filter} ออก",
         "filterChip": {
           "search": "ค้นหา: {q}",
@@ -1350,8 +1349,6 @@
         },
         "resultsCount": "{count, plural, =0 {ไม่มีสมาชิก} other {# ราย}}",
         "resultsCountOfTotal": "แสดง {count} จาก {total} ราย",
-        "sortByEngagement": "เรียงตามการมีส่วนร่วม",
-        "sortByMemberNumber": "เรียงตามหมายเลขสมาชิก",
         "columns": {
           "memberNumber": "เลขสมาชิก",
           "company": "บริษัท",
@@ -1375,7 +1372,6 @@
         "riskNotComputed": "ยังไม่มีคะแนน",
         "riskNotComputedAria": "ยังไม่ได้คำนวณคะแนนความเสี่ยง",
         "riskNotComputedTooltip": "คะแนนความเสี่ยงคำนวณหลังจากสมาชิกมีกิจกรรม 30 วัน สมาชิกที่เพิ่งเพิ่มเข้ามาจะเริ่มมีคะแนนเมื่อข้อมูลครบ",
-        "rowAriaLabel": "เปิดรายละเอียด {company}",
         "noPrimary": "ไม่มีผู้ติดต่อหลัก",
         "loadMore": "โหลดเพิ่ม",
         "selectAll": "เลือกทุกแถว",
@@ -1410,8 +1406,8 @@
         "tableCaption": "รายชื่อสมาชิก",
         "rowActions": "การดำเนินการเพิ่มเติมสำหรับ {company}",
         "openMember": "เปิดข้อมูลสมาชิก",
-        "editMember": "แก้ไขสมาชิก",
-        "rowNotSelectable": "{company} เก็บถาวรแล้ว จึงเลือกไม่ได้"
+        "editMember": "แก้ไขข้อมูลสมาชิก",
+        "rowNotSelectable": "{company} ถูกเก็บถาวรแล้ว จึงเลือกไม่ได้"
       },
       "emptyStates": {
         "zero": {
