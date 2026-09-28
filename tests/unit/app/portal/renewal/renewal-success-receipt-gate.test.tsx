@@ -190,3 +190,46 @@ describe('RenewalSuccessPage — §86/4 receipt stays downloadable after a credi
     expect(html).not.toContain('data-kind="receipt"');
   });
 });
+
+// PR #456 follow-up — a LEGACY combined-mode invoice's issue-time PDF is
+// superseded at PAYMENT (the combined receipt reuses its §87 number), so the
+// success page must not offer it while the receipt is still rendering (shared
+// `isStaleCombinedBill`, lockstep with the portal list + detail). An 088 bill is
+// never stale-combined (its RC is minted at payment) → its SC bill stays (FR-015).
+describe('RenewalSuccessPage — paid, receipt still rendering', () => {
+  it('legacy combined-mode (NULL RC) + pending → NO stale invoice download; the preparing status still shows', async () => {
+    getInvoiceMock.mockResolvedValue({
+      ok: true,
+      value: {
+        ...invoiceWith('paid'),
+        receiptDocumentNumberRaw: null,
+        receiptPdfStatus: 'pending',
+        receiptPdf: null,
+        pdfDocKind: 'invoice',
+      },
+    });
+    const html = await renderPage();
+    expect(html).not.toContain('data-kind="invoice"');
+    expect(html).not.toContain('data-kind="receipt"');
+    expect(html).toContain('receiptPreparing');
+  });
+
+  it('088 bill (SC + RC minted) + pending → the SC bill download stays (FR-015)', async () => {
+    getInvoiceMock.mockResolvedValue({
+      ok: true,
+      value: {
+        ...invoiceWith('paid'),
+        documentNumber: null,
+        billDocumentNumberRaw: 'SC-2026-000045',
+        receiptDocumentNumberRaw: 'RC-2026-000045',
+        receiptPdfStatus: 'pending',
+        receiptPdf: null,
+        pdfDocKind: 'invoice',
+      },
+    });
+    const html = await renderPage();
+    expect(html).toContain('data-testid="invoice-download-link"');
+    expect(html).toContain('data-kind="invoice"');
+    expect(html).toContain('receiptPreparing');
+  });
+});

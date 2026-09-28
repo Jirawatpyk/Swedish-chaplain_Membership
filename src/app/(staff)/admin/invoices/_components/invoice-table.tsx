@@ -163,6 +163,19 @@ export type InvoicesTableRow = {
    */
   readonly receiptPdfStatus: 'pending' | 'rendered' | 'failed' | null;
   /**
+   * Combined-mode paid invoice whose MAIN pdf is the issue-time pre-payment
+   * document: the combined §86/4 + §105ทวิ receipt reuses its §87 number
+   * (NULL `receiptDocumentNumberRaw`), so the issue-time PDF is a stale draft
+   * from the moment of PAYMENT — not from when the receipt renders — and the
+   * Invoice download is hidden (also while the receipt is pending / failed).
+   * Computed in page.tsx (`invoiceStatusHasReceipt(status) && RC null &&
+   * pdfDocKind !== 'receipt_combined'`) — the same rule as the admin detail
+   * `isPaidCombined` and the portal `isStaleCombinedBill` (PR #456). Never true
+   * for an 088 bill (its RC is minted at payment → the SC bill stays, FR-015).
+   * Server-computed because the row carries no raw `pdfDocKind`.
+   */
+  readonly staleCombinedBill: boolean;
+  /**
    * 064 remediation S7 — the MAIN pdf IS a §105 receipt (`pdfDocKind
    * 'receipt_separate'`: a β as-paid no-TIN event row, or a legacy issued
    * no-TIN row). The main download button then wears the Receipt label +
@@ -545,9 +558,11 @@ export function InvoicesTable({
                   </span>
                 ) : r.hasReceiptPdf ? (
                   // Combined-mode (receipt reuses the invoice number per
-                  // Thai RD §86/4 + §105ทวิ). Gate on the SAME condition as
-                  // the action cell's `isCombinedPaid` (= `hasReceiptPdf &&
-                  // !receiptDocumentNumberRaw`). 092 — `hasReceiptPdf` is now
+                  // Thai RD §86/4 + §105ทวิ). Gate on `hasReceiptPdf &&
+                  // !receiptDocumentNumberRaw` — the rendered-receipt
+                  // counterpart of the action cell's `staleCombinedBill` (which
+                  // hides the stale bill from PAYMENT; this hint waits for the
+                  // receipt to exist — PR #456 follow-up). 092 — `hasReceiptPdf` is now
                   // `invoiceStatusHasReceipt(status) && receiptPdf !== null`
                   // (paid / partially_credited / credited + rendered), so the
                   // redundant `&& r.status === 'paid'` re-check was dropped:
@@ -559,9 +574,9 @@ export function InvoicesTable({
                   // still rendering (`receiptPdfStatus = 'pending'`) showed
                   // the "receipt = invoice number" hint PREMATURELY while
                   // the action cell correctly showed "Preparing receipt…".
-                  // Now this cell and the action cell both gate on the
-                  // receipt PDF being PRESENT (`hasReceiptPdf` = paid +
-                  // receiptPdf !== null), which is the admin's own
+                  // Now this cell gates on the receipt PDF being PRESENT
+                  // (`hasReceiptPdf` = paid + receiptPdf !== null), which is
+                  // the admin's own
                   // rendered-receipt signal. This is the same INTENT as
                   // the member-portal fix (060-member-portal-d4) — don't
                   // surface receipt-derived UI until the receipt has
@@ -760,14 +775,15 @@ export function InvoicesTable({
                   // — that flag describes the tenant's CURRENT mode;
                   // an invoice paid before a mode flip keeps its own
                   // immutable snapshot. Read the row, not the setting.
-                  // 092 — `hasReceiptPdf` now carries the receipt-bearing status
-                  // set (paid / partially_credited / credited); the redundant
-                  // `&& r.status === 'paid'` was dropped so a credited combined-
-                  // mode row keeps its stale bill hidden (lockstep with the
-                  // portal view-model + admin detail `isPaidCombined`).
-                  const isCombinedPaid =
-                    r.hasReceiptPdf && !r.receiptDocumentNumberRaw;
-                  const showInvoice = r.hasPdf && !isCombinedPaid;
+                  // PR #456 follow-up — the stale bill is hidden from PAYMENT,
+                  // not from receipt render (pre-fix this gated on
+                  // `hasReceiptPdf`, so the stale bill showed while the receipt
+                  // was pending / failed). `staleCombinedBill` is server-computed
+                  // with the receipt-bearing status set (092) — lockstep with
+                  // the admin detail `isPaidCombined` + portal
+                  // `isStaleCombinedBill`. The Receipt-No. combined hint still
+                  // waits for the rendered receipt (`hasReceiptPdf`).
+                  const showInvoice = r.hasPdf && !r.staleCombinedBill;
                   // 088 T066b (FR-019) — async receipt-PDF resilience. The
                   // former single "preparing…" affordance conflated pending +
                   // failed, so a permanent render failure showed a perpetual
