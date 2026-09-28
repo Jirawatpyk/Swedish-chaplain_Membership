@@ -32,25 +32,22 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => nav.searchParams.current,
 }));
 
-vi.mock('@/components/ui/select', async () => {
-  const React = await import('react');
-  const SelectCtx = React.createContext<{ value: string; onValueChange: (v: string) => void }>({ value: '', onValueChange: () => {} });
-  return {
-    Select: ({ value, onValueChange, children }: { value: string; onValueChange: (v: string) => void; children: ReactNode }) =>
-      React.createElement(SelectCtx.Provider, { value: { value, onValueChange } }, children),
-    SelectTrigger: ({ children, ...rest }: { children: ReactNode } & Record<string, unknown>) =>
-      React.createElement('button', { type: 'button', role: 'combobox', ...rest }, children),
-    SelectContent: ({ children }: { children: ReactNode }) => React.createElement(React.Fragment, null, children),
-    SelectItem: ({ value, children }: { value: string; children: ReactNode }) => {
-      const { onValueChange } = React.useContext(SelectCtx);
-      return React.createElement('div', { role: 'option', tabIndex: 0, onClick: () => onValueChange(value) }, children);
-    },
-    TranslatedSelectValue: ({ translate }: { translate: (v: string) => ReactNode }) => {
-      const { value } = React.useContext(SelectCtx);
-      return React.createElement('span', null, translate(value));
-    },
-  };
-});
+/** AURA Select keeps a real <select> under its listbox: drive that, like the timeline filters' tests. */
+function pick(testId: string, value: string) {
+  fireEvent.change(screen.getByTestId(testId), { target: { value } });
+}
+
+/** An AURA DatePicker takes a typed ISO date on blur. */
+function typeDate(label: string, value: string) {
+  const input = screen.getByLabelText(label);
+  fireEvent.change(input, { target: { value } });
+  fireEvent.blur(input);
+}
+
+/** The staged date the form will submit (the DatePicker shows it formatted; the hidden input carries the ISO day). */
+function stagedDate(name: 'from' | 'to'): string {
+  return document.querySelector<HTMLInputElement>(`input[type="hidden"][name="${name}"]`)?.value ?? '';
+}
 
 const MEMBER = '11111111-1111-4111-8111-111111111111';
 const SUBMITTER = '22222222-2222-4222-8222-222222222222';
@@ -87,47 +84,47 @@ beforeEach(() => {
 });
 
 describe('<ChangeRequestQueueFilters>', () => {
-  it('renders the state filter as a shadcn Select (combobox) labelled Status, defaulting to the pending view; no outcome control and no Clear on the default view', () => {
+  it('renders the state filter as an AURA Select (combobox) labelled Status, defaulting to the pending view; no outcome control and no Clear on the default view', () => {
     renderBar();
     const state = screen.getByRole('combobox', { name: 'Status' });
     expect(state).toHaveTextContent('Awaiting decision');
+    // 122 US5a (T507) — an AURA field with a visible label, like the dates
+    expect(state.closest('.aura-field')?.querySelector('label')).toHaveTextContent('Status');
     expect(screen.queryByRole('combobox', { name: 'Outcome' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Clear filters' })).toBeNull();
-    // no native select anywhere in the bar
-    expect(document.querySelector('select')).toBeNull();
   });
 
   it('shows the outcome Select only once the STAGED state is "decided" (before Apply), and hides it again when the state leaves "decided"', () => {
     renderBar();
-    fireEvent.click(screen.getByRole('option', { name: 'Decided' }));
+    pick('queue-filter-state', 'decided');
     const outcome = screen.getByRole('combobox', { name: 'Outcome' });
     expect(outcome).toHaveTextContent('Any outcome');
     expect(nav.replaceMock).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('option', { name: 'Withdrawn' }));
+    pick('queue-filter-state', 'withdrawn');
     expect(screen.queryByRole('combobox', { name: 'Outcome' })).toBeNull();
   });
 
   it('leaving "decided" RESETS the staged outcome — a return to "decided" offers "Any outcome" again, never a choice the admin did not re-make (UX L2)', () => {
     renderBar('state=decided&outcome=rejected');
     expect(screen.getByRole('combobox', { name: 'Outcome' })).toHaveTextContent('Not approved');
-    fireEvent.click(screen.getByRole('option', { name: 'Withdrawn' }));
-    fireEvent.click(screen.getByRole('option', { name: 'Decided' }));
+    pick('queue-filter-state', 'withdrawn');
+    pick('queue-filter-state', 'decided');
     expect(screen.getByRole('combobox', { name: 'Outcome' })).toHaveTextContent('Any outcome');
   });
 
-  it('the triggers carry their own aria-label (a Base UI trigger is a button — `<label for>` does not name it) and the buttons are never disabled while pending', () => {
+  it('each combobox is named by its visible label and the buttons are never disabled while pending', () => {
     renderBar('state=decided');
-    expect(screen.getByRole('combobox', { name: 'Status' })).toHaveAttribute('aria-label', 'Status');
-    expect(screen.getByRole('combobox', { name: 'Outcome' })).toHaveAttribute('aria-label', 'Outcome');
+    expect(screen.getByRole('combobox', { name: 'Status' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Outcome' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Apply' })).not.toBeDisabled();
     expect(screen.getByRole('button', { name: 'Clear filters' })).not.toBeDisabled();
   });
 
   it('Apply writes state + outcome to the URL via router.replace (scroll kept), keeps the member / submitter scoping and drops the cursor', () => {
     renderBar(`memberId=${MEMBER}&submitter=${SUBMITTER}&cursor=abc`);
-    fireEvent.click(screen.getByRole('option', { name: 'Decided' }));
-    fireEvent.click(screen.getByRole('option', { name: 'Not approved' }));
-    fireEvent.change(screen.getByLabelText('Submitted from'), { target: { value: '2026-09-01' } });
+    pick('queue-filter-state', 'decided');
+    pick('queue-filter-outcome', 'rejected');
+    typeDate('Submitted from', '2026-09-01');
     fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
     expect(nav.replaceMock).toHaveBeenCalledTimes(1);
     const [href, opts] = nav.replaceMock.mock.calls[0]!;
@@ -140,7 +137,7 @@ describe('<ChangeRequestQueueFilters>', () => {
   it('an outcome staged under "decided" is NOT written when the state is switched away before Apply; the pending default writes no state param', () => {
     renderBar('state=decided&outcome=rejected');
     expect(screen.getByRole('combobox', { name: 'Outcome' })).toHaveTextContent('Not approved');
-    fireEvent.click(screen.getByRole('option', { name: 'Awaiting decision' }));
+    pick('queue-filter-state', 'pending');
     fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
     expect(nav.replaceMock).toHaveBeenCalledWith('/admin/change-requests', { scroll: false });
   });
@@ -148,7 +145,7 @@ describe('<ChangeRequestQueueFilters>', () => {
   it('Clear appears once any filter is in the URL and drops every param; once the URL is empty the controls re-stage and focus is still on Apply (UX H1 / N1 — the same instance, never a remount)', () => {
     const { rerender } = renderBar('state=withdrawn&from=2026-01-01&to=2026-02-01');
     expect(screen.getByRole('combobox', { name: 'Status' })).toHaveTextContent('Withdrawn');
-    expect(screen.getByLabelText('Submitted up to and including')).toHaveValue('2026-02-01');
+    expect(stagedDate('to')).toBe('2026-02-01');
     const clearButton = screen.getByRole('button', { name: 'Clear filters' });
     clearButton.focus();
     fireEvent.click(clearButton);
@@ -158,7 +155,7 @@ describe('<ChangeRequestQueueFilters>', () => {
     navigateTo(rerender, '');
     expect(screen.queryByRole('button', { name: 'Clear filters' })).toBeNull();
     expect(screen.getByRole('combobox', { name: 'Status' })).toHaveTextContent('Awaiting decision');
-    expect(screen.getByLabelText('Submitted up to and including')).toHaveValue('');
+    expect(stagedDate('to')).toBe('');
     // the very same button element — a remount would have dropped focus to <body>
     expect(screen.getByRole('button', { name: 'Apply' })).toBe(applyButton);
     expect(applyButton).toHaveFocus();
@@ -169,14 +166,15 @@ describe('<ChangeRequestQueueFilters>', () => {
     ['a non-date', 'from=yesterday'],
   ])('a date the page would refuse (its zod drops the whole query) — %s — is never echoed as a staged filter and surfaces no Clear (UX R1)', (_label, query) => {
     renderBar(query);
+    expect(stagedDate('from')).toBe('');
+    expect(stagedDate('to')).toBe('');
     expect(screen.getByLabelText('Submitted from')).toHaveValue('');
-    expect(screen.getByLabelText('Submitted up to and including')).toHaveValue('');
     expect(screen.queryByRole('button', { name: 'Clear filters' })).toBeNull();
   });
 
   it('Apply keeps focus on the pressed button across the navigation, and a URL change under the instance (Back / Forward, a chip link) re-stages the controls (UX L1)', () => {
     const { rerender } = renderBar();
-    fireEvent.click(screen.getByRole('option', { name: 'Decided' }));
+    pick('queue-filter-state', 'decided');
     const applyButton = screen.getByRole('button', { name: 'Apply' });
     applyButton.focus();
     fireEvent.click(applyButton);
@@ -187,7 +185,7 @@ describe('<ChangeRequestQueueFilters>', () => {
     navigateTo(rerender, 'state=withdrawn&to=2026-03-31');
     expect(screen.getByRole('combobox', { name: 'Status' })).toHaveTextContent('Withdrawn');
     expect(screen.queryByRole('combobox', { name: 'Outcome' })).toBeNull();
-    expect(screen.getByLabelText('Submitted up to and including')).toHaveValue('2026-03-31');
+    expect(stagedDate('to')).toBe('2026-03-31');
   });
 });
 
@@ -197,10 +195,8 @@ describe('<ChangeRequestQueueFilters> — PR-3 polish (useId · the live result 
     expect(container.querySelector('#cr-filter-state')).toBeNull();
     expect(container.querySelector('#cr-filter-outcome')).toBeNull();
     for (const name of ['Status', 'Outcome']) {
-      const trigger = screen.getByRole('combobox', { name });
-      expect(trigger.id).not.toBe('');
-      const label = container.querySelector(`label[for="${trigger.id}"]`);
-      expect(label?.textContent).toBe(name);
+      // AURA names the combobox by its visible label (aria-labelledby)
+      expect(screen.getByRole('combobox', { name })).toBeInTheDocument();
     }
     expect(screen.getByLabelText('Submitted from').id).not.toBe('');
   });
@@ -239,7 +235,7 @@ describe('<ChangeRequestQueueFilters> — PR-3 polish (useId · the live result 
 
   it('the default view submits NO state param natively either, and an outcome staged away from "decided" is not carried', () => {
     renderBar('state=decided&outcome=rejected');
-    fireEvent.click(screen.getByRole('option', { name: 'Awaiting decision' }));
+    pick('queue-filter-state', 'pending');
     const form = screen.getByRole('form', { name: 'Filter change requests' }) as HTMLFormElement;
     expect(nativeQuery(form)).toEqual({});
   });
