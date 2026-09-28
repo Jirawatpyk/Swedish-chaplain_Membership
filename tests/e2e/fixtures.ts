@@ -24,8 +24,12 @@
  * `expect` is re-exported from `@playwright/test` unchanged so
  * specs only need to swap one import line.
  */
-import { test as base, type Locator, type Page } from '@playwright/test';
+import { test as base, type Locator, type Page, type Request } from '@playwright/test';
 import { clearE2ERateLimits } from './helpers/rate-limit';
+import {
+  isCancelledNavigationError,
+  isCancelledRscRequest,
+} from './helpers/cancelled-navigation-noise';
 
 export const test = base.extend<{
   autoClearRateLimits: void;
@@ -94,6 +98,14 @@ export const test = base.extend<{
    * attached for visibility but excluded from the auto-fail set.
    * A real app URL never contains `__nextjs`, so the filter can't
    * mask a genuine client error.
+   *
+   * Cancelled-navigation carve-out (WebKit): when a test moves on while
+   * Next's `?_rsc=` fetch for the previous route is in flight, the browser
+   * cancels it and WebKit reports `TypeError: Load failed` as a pageerror
+   * (Chromium's AbortError is swallowed by Next). A "Load failed" is excluded
+   * ONLY when a cancelled RSC request happened within 2 s of it — see
+   * `helpers/cancelled-navigation-noise.ts`. Any other "Load failed" (an app
+   * fetch that really failed) still fails the test.
    */
   // The Playwright fixture callback parameter is conventionally named
   // `use` but we use `runTest` here to avoid the `react-hooks/rules-of-hooks`
@@ -101,14 +113,24 @@ export const test = base.extend<{
   // `use()` hook).
   page: async ({ page }, runTest, testInfo) => {
     const errors: Error[] = [];
+    const errorAt: number[] = [];
+    const cancelledRscAt: number[] = [];
     const handler = (error: Error): void => {
       errors.push(error);
+      errorAt.push(Date.now());
+    };
+    const onRequestFailed = (request: Request): void => {
+      if (isCancelledRscRequest(request.url(), request.failure()?.errorText ?? '')) {
+        cancelledRscAt.push(Date.now());
+      }
     };
     page.on('pageerror', handler);
+    page.on('requestfailed', onRequestFailed);
     try {
       await runTest(page);
     } finally {
       page.off('pageerror', handler);
+      page.off('requestfailed', onRequestFailed);
       if (errors.length > 0) {
         await testInfo.attach('page-errors.txt', {
           body: errors
@@ -118,7 +140,21 @@ export const test = base.extend<{
         });
         // Exclude Next.js dev-overlay internals (dev-only, WebKit access-control
         // noise) from the fail set — see the carve-out note above.
-        const appErrors = errors.filter((e) => !e.message.includes('__nextjs'));
+        // Exclude WebKit's "Load failed" for an RSC fetch the test's own
+        // navigation cancelled — see the carve-out note above.
+        const cancelledNav = errors.filter((e, i) =>
+          isCancelledNavigationError(e, errorAt[i]!, cancelledRscAt),
+        );
+        const appErrors = errors.filter(
+          (e) => !e.message.includes('__nextjs') && !cancelledNav.includes(e),
+        );
+        if (cancelledNav.length > 0) {
+          // Visible, not silent: the report shows how often the carve-out fired.
+          testInfo.annotations.push({
+            type: 'ignored-pageerror',
+            description: `${cancelledNav.length} × "Load failed" from a cancelled ?_rsc= fetch (test navigation)`,
+          });
+        }
 
         // Blanket opt-out: skip the auto-fail for EVERY app error.
         const blanketIgnore = process.env.E2E_PAGEERROR_IGNORE === 'true';
