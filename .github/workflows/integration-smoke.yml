@@ -16,6 +16,15 @@
 # So: only the invariants that must never regress silently, and only the ones
 # that stay cheap in CI.
 #
+# 2026-09-28 — `payments/initiate-non-issued-invoice` joins on both counts. It
+# pins that a voided invoice can never mint a Stripe PaymentIntent (the
+# #443 financial-integrity review, M1): the regression is silent by
+# construction, since the webhook auto-refunds, so the only symptom is members'
+# money held for days plus lost Stripe fees. The suite is one tenant seed and
+# two initiate calls that stop at the status guard before any write. Its CI
+# time is recorded in the PR that added it; move it to the nightly if it ever
+# costs more than cross-tenant-probe (~42 s).
+#
 # 2026-09-27 — `scripts/test-tenant-cleanup-completeness` joins on both counts.
 # It writes nothing and issues two catalogue queries (1.4 s locally, ~2 s in CI),
 # and the regression it catches is silent BY CONSTRUCTION: when a feature adds a
@@ -185,6 +194,7 @@ jobs:
             tests/integration/payments/cross-tenant-probe.test.ts \
             tests/integration/renewals/rbac-defence-in-depth.test.ts \
             tests/integration/payments/refund-vs-voided-invoice.test.ts \
+            tests/integration/payments/initiate-non-issued-invoice.test.ts \
             tests/integration/broadcasts/audit-event-type-parity.test.ts \
             tests/integration/members/contact-marketing-opt-out.test.ts \
             tests/integration/members/contact-marketing-opt-out-guard.test.ts \

@@ -440,7 +440,22 @@ async function initiatePaymentBody(
   // member follows through). Reject explicitly so the route returns
   // a typed error and the UI can route to "already paid" UX instead
   // of trying to render a card form against a settled invoice.
-  if (invoice.status === 'paid') {
+  //
+  // Financial-integrity review of #443 (M1): the same hole existed for
+  // EVERY non-issued status, not just `paid`. A member paying from a page
+  // left open across a void-on-reissue (or POSTing a `credited` invoice id)
+  // got a live PI; Stripe captured, and confirm-payment's stale-invoice
+  // guard auto-refunded days later — money held, Stripe fees lost. Only
+  // `issued` is payable, matching the webhook's `inPayableStatus`. This
+  // sits above the pending-row resume, so a PI left pending on a since-
+  // voided invoice is not handed back either. The bridge itself stays
+  // permissive: webhook reconciliation reads non-issued rows to refund them.
+  //
+  // Scope: this closes MINTING and RESUMING only. A card clientSecret the
+  // PaySheet already cached before the void never comes back through here —
+  // voidInvoice does not cancel pending PIs — so that path still ends in the
+  // webhook's stale-invoice auto-refund. Tracked as a separate follow-up.
+  if (invoice.status !== 'issued') {
     return err({ code: 'invoice_not_payable', currentStatus: invoice.status });
   }
 

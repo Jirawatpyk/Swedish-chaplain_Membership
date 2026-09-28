@@ -973,6 +973,37 @@ describe('initiatePayment (T055)', () => {
     expect(deps.processorGateway.createPaymentIntent).not.toHaveBeenCalled();
   });
 
+  // Financial-integrity review of #443 (M1): the bridge returns `ok` for
+  // every status with a positive total, so gating only on `paid` let a
+  // voided / credited invoice mint a fresh PaymentIntent — e.g. a member
+  // paying from a page left open across a void-on-reissue. Stripe captured
+  // the money and the webhook's stale-invoice guard auto-refunded it days
+  // later. Only `issued` is payable; refuse everything else BEFORE any
+  // write or Stripe call.
+  it.each(['void', 'credited', 'partially_credited', 'draft'] as const)(
+    'invoice status=%s (bridge returns ok) — invoice_not_payable, no Stripe call / no insert',
+    async (status) => {
+      const deps = makeDeps();
+      (deps.invoicingBridge.getInvoiceForPayment as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+        ok({
+          id: 'inv_not_issued',
+          status,
+          totalSatang: asSatang(535_000n),
+          memberId: 'mem_test',
+          tenantId: 'tnt_abc',
+        }),
+      );
+      const result = await initiatePayment(deps, makeInput());
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe('invoice_not_payable');
+      if (result.error.code !== 'invoice_not_payable') return;
+      expect(result.error.currentStatus).toBe(status);
+      expect(deps.processorGateway.createPaymentIntent).not.toHaveBeenCalled();
+      expect(deps.paymentsRepo.insert).not.toHaveBeenCalled();
+    },
+  );
+
   // W2 (audit 2026-04-25 follow-up): the `idempotencyKeyFactory` Strategy
   // port replaces the prior `devSaltIdempotencyKey: boolean` flag (Clean
   // Architecture polish — Application doesn't need to know dev-vs-prod).

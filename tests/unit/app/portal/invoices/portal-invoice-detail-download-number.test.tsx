@@ -53,6 +53,11 @@ vi.mock('@/lib/tenant-context', () => ({
 vi.mock('@/lib/request-id', () => ({
   requestIdFromHeaders: () => null,
 }));
+// #443 review L2 — the Pay-now gate is only reachable with F5 ON and live
+// payment settings; both are module-level mutables reset in beforeEach so the
+// download-number / hierarchy cases keep their F5-OFF baseline.
+const envFeatures = vi.hoisted(() => ({ f088TaxAtPayment: true, f5OnlinePayment: false }));
+let paymentSettingsResult: unknown = null;
 vi.mock('@/lib/env', () => ({
   // `bootstrap.adminEmail` is read by the issued-invoice OnlinePaymentDisabledCard
   // branch (env-proxy mailto, #145). The mock predated that read (mock drift),
@@ -60,7 +65,7 @@ vi.mock('@/lib/env', () => ({
   // (reading 'adminEmail')` before its assertions ran. Completing the shape
   // (null → the "no email configured" degrade) is unrelated to the 090 fixes.
   env: {
-    features: { f088TaxAtPayment: true, f5OnlinePayment: false },
+    features: envFeatures,
     bootstrap: { adminEmail: null },
   },
 }));
@@ -108,7 +113,7 @@ vi.mock('@/modules/invoicing/infrastructure/repos/drizzle-credit-note-repo', () 
   }),
 }));
 vi.mock('@/modules/payments/infrastructure/repos/drizzle-tenant-payment-settings-repo', () => ({
-  makeDrizzleTenantPaymentSettingsRepo: () => ({ getByTenantId: async () => null }),
+  makeDrizzleTenantPaymentSettingsRepo: () => ({ getByTenantId: async () => paymentSettingsResult }),
 }));
 // F5 UX D1 — the void auto-refund banner keys its copy on the shape returned
 // here. A module-level mutable lets each test drive the `findStaleInvoiceAutoRefund`
@@ -212,7 +217,10 @@ vi.mock('@/app/(member)/portal/invoices/_components/receipt-status-watcher', () 
   ReceiptStatusWatcher: () => null,
 }));
 vi.mock('@/app/(member)/portal/invoices/[invoiceId]/_components/pay-sheet/pay-now-button', () => ({
-  PayNowButton: () => null,
+  // Echo the amount the page hands the pay sheet (#443 review L2).
+  PayNowButton: ({ invoice }: { invoice: { amountDue: number } }) => (
+    <span data-testid="pay-now-marker" data-amount={String(invoice.amountDue)} />
+  ),
 }));
 vi.mock('@/app/(member)/portal/invoices/[invoiceId]/_components/online-payment-disabled-card', () => ({
   OnlinePaymentDisabledCard: () => null,
@@ -299,6 +307,8 @@ async function renderPage(): Promise<string> {
 beforeEach(() => {
   getInvoiceMock.mockReset();
   autoRefundResult = null;
+  envFeatures.f5OnlinePayment = false;
+  paymentSettingsResult = null;
 });
 
 describe('PortalInvoiceDetailPage — main-download number for an unpaid 088 bill (088 FIX 4)', () => {
@@ -408,5 +418,47 @@ describe('PortalInvoiceDetailPage — void auto-refund banner: failed vs settlin
     expect(html).not.toContain('void.autoRefundBody');
     // The refund reference line still renders (useful in a support ticket).
     expect(html).toContain('void.autoRefundRef');
+  });
+});
+
+// Financial-integrity review of #443 (L2): the page coerced a NULL `total` to
+// `amountDue: 0`, so an issued invoice with no total snapshot showed a Pay-now
+// drawer reading "0.00 THB" that then 409'd at initiate. Pay-now must only
+// mount for a positive total, and must hand the pay sheet the exact satang
+// total the server will charge.
+describe('PortalInvoiceDetailPage — Pay-now gated on a positive total (#443 review L2)', () => {
+  beforeEach(() => {
+    envFeatures.f5OnlinePayment = true;
+    paymentSettingsResult = {
+      onlinePaymentEnabled: true,
+      enabledMethods: ['card', 'promptpay'],
+      processorAccountId: 'acct_test_1',
+      processorPublishableKey: 'pk_test_1',
+    };
+  });
+
+  function issuedWithTotal(total: { satang: bigint } | null) {
+    return {
+      ...issuedUnpaid088Bill(),
+      subtotal: total === null ? null : { satang: 100_000n },
+      vat: total === null ? null : { satang: 7_000n },
+      total,
+    };
+  }
+
+  it('positive total → Pay-now mounts with amountDue equal to the satang total', async () => {
+    getInvoiceMock.mockResolvedValue({ ok: true, value: issuedWithTotal({ satang: 107_000n }) });
+    const html = await renderPage();
+    expect(html).toContain('data-testid="pay-now-marker"');
+    expect(html).toContain('data-amount="107000"');
+  });
+
+  it.each([
+    ['null', null],
+    ['zero', { satang: 0n }],
+  ] as const)('%s total → no Pay-now (never a "0.00 THB" drawer)', async (_label, total) => {
+    getInvoiceMock.mockResolvedValue({ ok: true, value: issuedWithTotal(total) });
+    const html = await renderPage();
+    expect(html).not.toContain('data-testid="pay-now-marker"');
   });
 });

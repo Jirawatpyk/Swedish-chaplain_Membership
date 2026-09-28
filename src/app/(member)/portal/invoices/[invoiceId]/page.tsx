@@ -251,9 +251,16 @@ export default async function PortalInvoiceDetailPage({
   // "under document correction — contact staff" notice below.
   const legacyNoTinEventInvoice = isLegacyNoTinEventInvoice(invoice);
 
+  // Financial-integrity review of #443 (L2): a null / non-positive total is not
+  // payable (initiate's F4 bridge rejects it with 409), so never mount Pay-now
+  // for it. Before this, `amountDue` coerced null to 0 and the member saw a
+  // "0.00 THB" drawer that then failed; now they get the contact-admin card.
+  // Also narrows `total` to bigint for the `amountDue` prop below.
   const canPayOnline =
     env.features.f5OnlinePayment &&
     invoice.status === 'issued' &&
+    total !== null &&
+    total > 0n &&
     !legacyNoTinEventInvoice &&
     paymentSettings !== null &&
     paymentSettings.onlinePaymentEnabled &&
@@ -866,7 +873,7 @@ export default async function PortalInvoiceDetailPage({
               id: invoice.invoiceId,
               // 088 FR-030 — an issued 088 bill's number is its SC (headerNumber).
               invoiceNumber: headerNumber,
-              amountDue: total !== null ? Number(total) : 0,
+              amountDue: Number(total),
               currency: 'THB',
               status: invoice.status,
               isBill: resolveMainPdfKind(invoice) === 'bill',
