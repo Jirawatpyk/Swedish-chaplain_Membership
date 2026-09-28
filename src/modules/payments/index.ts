@@ -73,6 +73,12 @@ export {
   type CancelPaymentDeps,
 } from './application/use-cases/cancel-payment';
 export {
+  cancelPendingPaymentsForInvoice,
+  type CancelPendingPaymentsForInvoiceInput,
+  type CancelPendingPaymentsForInvoiceResult,
+  type CancelPendingPaymentsForInvoiceDeps,
+} from './application/use-cases/cancel-pending-payments-for-invoice';
+export {
   handleCancelEvent,
   type HandleCancelEventInput,
   type HandleCancelEventOutcome,
@@ -166,6 +172,7 @@ export {
   makeConfirmPaymentDeps,
   makeFailPaymentDeps,
   makeCancelPaymentDeps,
+  makeCancelPendingPaymentsForInvoiceDeps,
   makeHandleCancelEventDeps,
   makeListSucceededPaymentMethodsDeps,
   makeLoadInvoicePaymentActivityDeps,

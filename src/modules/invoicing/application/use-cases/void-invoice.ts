@@ -94,6 +94,7 @@ import type { ClockPort } from '../ports/clock-port';
 import type { EmailOutboxPort } from '../ports/email-outbox-port';
 import type { RecipientLocalePort } from '../ports/recipient-locale-port';
 import type { PendingRefundGuardPort } from '../ports/pending-refund-guard-port';
+import type { PendingPaymentCancellerPort } from '../ports/pending-payment-canceller-port';
 import {
   auditAutoEmailSkippedNoRecipient,
   resolveMoneyRecipient,
@@ -240,6 +241,13 @@ export interface VoidInvoiceDeps {
     tx: unknown,
     args: { readonly tenantId: string; readonly invoiceId: string },
   ) => Promise<void>;
+  /**
+   * #446 review M-a — OPTIONAL F5 seam: cancel the invoice's still-live
+   * PaymentIntents once the void has COMMITTED (see the port docblock for why
+   * post-commit and why best-effort). `undefined` → no cancellation, exactly
+   * the pre-M-a behaviour (tests / unwired callers).
+   */
+  readonly pendingPaymentCanceller?: PendingPaymentCancellerPort;
 }
 
 // `sanitiseErrorReason` moved to `../lib/sanitise-error-reason` so
@@ -815,6 +823,35 @@ export async function voidInvoice(
           'voidInvoice: phase 2 audit emit failed; sync-gap signal preserved only via logger.error above',
         );
       }
+    }
+  }
+
+  // #446 review M-a — the invoice is now COMMITTED as void; cancel whatever
+  // PaymentIntent is still live for it so a PaySheet that cached a card
+  // clientSecret before the void cannot capture money for a voided invoice.
+  // Post-commit on purpose (payment-row locks must never nest under the
+  // invoice lock) and best-effort: a failure here is metric + log only — the
+  // void stands, and the webhook's stale-invoice auto-refund still catches an
+  // attempt that later captures. Runs AFTER Phase 2: the cancellation email
+  // was enqueued in Phase 1 pinned to the VOID-stamped PDF's sha, and the
+  // outbox dispatcher permanently fails a row whose blob sha does not match
+  // yet — so a Stripe round-trip (up to ~30 s on SDK retries) placed before
+  // the blob upload would widen that window. Closing the payment window a
+  // second later costs nothing: the webhook auto-refund is still the net.
+  if (deps.pendingPaymentCanceller) {
+    try {
+      await deps.pendingPaymentCanceller.cancelPendingPaymentsForVoidedInvoice({
+        tenantId: input.tenantId,
+        invoiceId,
+        actorUserId: input.actorUserId,
+        requestId: input.requestId ?? null,
+      });
+    } catch (e) {
+      invoicingMetrics.voidPendingPaymentCancelFailed(input.tenantId);
+      logger.error(
+        { err: errKind(e), invoiceId, tenantId: input.tenantId },
+        'voidInvoice: post-commit pending-payment cancellation failed (void stands; webhook auto-refund remains the net)',
+      );
     }
   }
 

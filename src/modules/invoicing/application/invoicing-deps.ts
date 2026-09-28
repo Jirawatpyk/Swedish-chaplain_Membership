@@ -62,6 +62,8 @@ import {
   loadInvoicePaymentActivity,
   makeLoadInvoicePaymentActivityDeps,
   computeRemainingRefundable,
+  cancelPendingPaymentsForInvoice,
+  makeCancelPendingPaymentsForInvoiceDeps,
 } from '@/modules/payments';
 import type { PreviewInvoiceDraftDeps } from './use-cases/preview-invoice-draft';
 import type { DeleteInvoiceDraftDeps } from './use-cases/delete-invoice-draft';
@@ -72,6 +74,7 @@ import type { UpdateInvoiceDraftDeps } from './use-cases/update-invoice-draft';
 import type { IssueCreditNoteDeps } from './use-cases/issue-credit-note';
 import type { VoidInvoiceDeps } from './use-cases/void-invoice';
 import type { PendingRefundGuardPort } from './ports/pending-refund-guard-port';
+import type { PendingPaymentCancellerPort } from './ports/pending-payment-canceller-port';
 import type { OnlinePaymentRefundGuardPort } from './ports/online-payment-refund-guard-port';
 import type { IssueMembershipBillDeps } from './use-cases/issue-membership-bill';
 import type { GetCreditNoteDeps } from './use-cases/get-credit-note';
@@ -439,6 +442,27 @@ function makePendingRefundGuard(): PendingRefundGuardPort {
 }
 
 /**
+ * #446 review M-a — the invoicing-side `PendingPaymentCancellerPort`, wired to
+ * the F5 `cancelPendingPaymentsForInvoice` use-case through the public barrel
+ * (Principle III). The use-case is itself best-effort (per-row failures are
+ * audited, never thrown); `voidInvoice` still wraps this call so an unexpected
+ * throw (e.g. the pending-rows read failing) can never undo a committed void.
+ */
+function makePendingPaymentCanceller(): PendingPaymentCancellerPort {
+  return {
+    cancelPendingPaymentsForVoidedInvoice: async ({ tenantId: tid, invoiceId, actorUserId, requestId }) => {
+      await cancelPendingPaymentsForInvoice(makeCancelPendingPaymentsForInvoiceDeps(tid), {
+        tenantId: tid,
+        invoiceId,
+        actorUserId,
+        requestId,
+        cause: 'invoice_voided',
+      });
+    },
+  };
+}
+
+/**
  * The invoicing-side `OnlinePaymentRefundGuardPort`, wired through the payments
  * barrel. Uses `computeRemainingRefundable` — the SAME arithmetic the admin
  * invoice page uses to decide whether to show Issue refund — so the guard fires
@@ -535,6 +559,10 @@ export function makeVoidInvoiceDeps(
     // `requireStatus:'issued'` (an unpaid bill → no payment → guard reads 0),
     // so void-on-reissue is never blocked.
     pendingRefundGuard: makePendingRefundGuard(),
+    // #446 review M-a — post-commit cancel of the voided invoice's live
+    // PaymentIntents. Also reaches void-on-reissue (makeIssueMembershipBillDeps
+    // builds its voidDeps through this factory).
+    pendingPaymentCanceller: makePendingPaymentCanceller(),
     ...(onMembershipInvoiceVoidedInTx !== undefined
       ? { onMembershipInvoiceVoidedInTx }
       : {}),
