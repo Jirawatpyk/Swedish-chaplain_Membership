@@ -11,7 +11,7 @@
 // 122 US5a (T506) — AURA FilterBar (board `Admin-directory`): the search and
 // the "Listed only" checkbox; the URL (`q`, `listed`, `page`) is unchanged.
 
-import { useCallback, useMemo, useState, useTransition } from 'react';
+import { useCallback, useMemo, useRef, useState, useTransition } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { AuraProvider, Button, Checkbox, FilterBar } from '@jirawatpyk/aura-react';
@@ -54,15 +54,24 @@ export function DirectorySearchFilters(): React.JSX.Element {
     el instanceof HTMLInputElement && el.type === 'search';
 
   const hasAny = currentQ !== '' || listedOnly;
+  // Clear remounts the FilterBar: it keeps the typed text and its own
+  // debounce timer, so a query typed just before Clear would otherwise come
+  // back when the timer fires. The new search box takes focus (Clear itself
+  // unmounts).
+  const [barKey, setBarKey] = useState(0);
+  const barWrapRef = useRef<HTMLDivElement>(null);
   const clearAll = () => {
     setSentQ('');
+    setBarKey((k) => k + 1);
     pushUrl({ q: null, listed: null });
+    setTimeout(() => barWrapRef.current?.querySelector<HTMLInputElement>('input[type="search"]')?.focus(), 0);
   };
 
   const barStrings = useMemo(() => ({ clearFilters: t('clear') }), [t]);
 
   return (
     <div
+      ref={barWrapRef}
       onFocus={(e) => {
         if (isSearchInput(e.target)) setIsSearchFocused(true);
       }}
@@ -72,6 +81,7 @@ export function DirectorySearchFilters(): React.JSX.Element {
     >
       <AuraProvider strings={barStrings}>
         <FilterBar
+          key={barKey}
           label={t('label')}
           search={isSearchFocused ? sentQ : currentQ}
           onSearchChange={(value) => {

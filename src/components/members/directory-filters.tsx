@@ -81,6 +81,16 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
   // filters): the search input is always rendered.
   const focusSearch = () =>
     barRef.current?.querySelector<HTMLInputElement>('input[type="search"]')?.focus();
+  // A clear that drops the search remounts the FilterBar: it keeps the typed
+  // text and its own debounce timer, so a query typed just before the clear
+  // would otherwise come back when the timer fires. The new bar's search box
+  // takes focus once it has mounted.
+  const [barKey, setBarKey] = useState(0);
+  const resetSearch = () => {
+    setSentQ('');
+    setBarKey((k) => k + 1);
+    setTimeout(focusSearch, 0);
+  };
 
   const currentQ = searchParams.get('q') ?? '';
   const currentStatus = searchParams.get('status') ?? 'all';
@@ -154,7 +164,7 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
     currentRisk !== 'all' ||
     portalActive;
   const clearAll = () => {
-    setSentQ('');
+    resetSearch();
     pushUrl({
       q: null,
       status: null,
@@ -163,21 +173,16 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
       risk_band: null,
       portal: null,
     });
-    // Clear filters unmounts itself; keep focus on the page.
-    focusSearch();
   };
 
   // Removing a chip unmounts it, so the × also moves focus to the search
   // input. Each chip reuses the same `pushUrl({ key: null })` clear the
   // controls use, so there is no new URL wiring.
-  const removeChip = useCallback(
-    (id: ChipId) => {
-      if (id === 'q') setSentQ('');
-      pushUrl(CHIP_CLEARS[id]);
-      barRef.current?.querySelector<HTMLInputElement>('input[type="search"]')?.focus();
-    },
-    [pushUrl],
-  );
+  const removeChip = (id: ChipId) => {
+    pushUrl(CHIP_CLEARS[id]);
+    if (id === 'q') resetSearch();
+    else focusSearch();
+  };
 
   // Active-filter chips (ux-standards §9.4) — a consolidated, dismissible
   // summary of the applied filters.
@@ -225,6 +230,7 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
     >
       <AuraProvider strings={barStrings}>
         <FilterBar
+          key={barKey}
           ref={barRef}
           // Below 1024px the search takes its own row and the selects share the
           // next one (board `Admin-members-tablet`); from 1024px one row.
