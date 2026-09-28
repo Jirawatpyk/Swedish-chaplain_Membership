@@ -39,7 +39,6 @@ import {
 } from '@jirawatpyk/aura-react';
 import {
   ArchiveIcon,
-  CheckIcon,
   MailWarning,
   PauseCircle,
   PencilIcon,
@@ -151,6 +150,12 @@ type Props = {
    * how a filter change narrowed the set, not just the current page size.
    */
   readonly total?: number | undefined;
+  /**
+   * A search or filter is applied. The count above the table shows only then
+   * (board `Admin-members-tablet`); unfiltered, the pagination range below
+   * says the same, so the count stays for screen readers only.
+   */
+  readonly filtered?: boolean | undefined;
   // #2 select-all-matching. When the whole visible page is selected and more
   // matching rows exist across pages, the table offers "Select all N matching";
   // clicking it calls `onSelectAllMatching` and the PARENT fetches the matching
@@ -368,18 +373,14 @@ function InlineStatusCell({
  * Short visible label + sr-only sentence, so a long label never widens the
  * cell. Every state pairs an icon and text with its colour, so nothing is
  * encoded by colour alone (WCAG 1.4.1).
+ *
+ * 122 US5a: only the states that need action carry a badge. A linked contact
+ * needs nothing, so it shows none and the column stays quiet (maintainer
+ * decision, 28 Sep 2026; the board shows no badges at all).
  */
 function PortalBadge({ state }: { state: MembersTableRow['portal_state'] }) {
   const t = useTranslations('admin.members.directory');
-  if (state === null || state === 'unknown') return null;
-  if (state === 'active') {
-    return (
-      <Badge tone="success" icon={<CheckIcon aria-hidden="true" />}>
-        <span aria-hidden="true">{t('portal.linked')}</span>
-        <span className="sr-only">{t('portal.linkedSr')}</span>
-      </Badge>
-    );
-  }
+  if (state === null || state === 'unknown' || state === 'active') return null;
   if (state === 'not_invited') {
     return (
       <Badge variant="outline">
@@ -450,6 +451,7 @@ function RowMenu({ row, canEdit }: { row: MembersTableRow; canEdit: boolean }) {
 export function MembersTable({
   rows,
   total,
+  filtered = false,
   enableSelection = false,
   canEdit = false,
   onSelectionChange,
@@ -793,13 +795,16 @@ export function MembersTable({
         shiftClickRef.current = e.shiftKey && target.closest('.aura-table__sel') !== null;
       }}
     >
-      {/* Result count — visible, as on the board ("Showing 2 of 131
-          members"), and a live region, so ANY filter change is announced;
-          "N of M" when the full filtered total is known. */}
+      {/* Result count — a live region, so ANY filter change is announced;
+          "N of M" when the full filtered total is known. Visible only while
+          filtered, as on the board: unfiltered, the pagination range below
+          already says it. */}
       <div className="self-end text-xs text-[var(--aura-fg-secondary)]" role="status">
-        {total !== undefined
-          ? t('resultsCountOfTotal', { count: rows.length, total })
-          : t('resultsCount', { count: rows.length })}
+        <span className={filtered ? undefined : 'sr-only'}>
+          {total !== undefined
+            ? t('resultsCountOfTotal', { count: rows.length, total })
+            : t('resultsCount', { count: rows.length })}
+        </span>
       </div>
       {/* #2 cross-page "Select all N matching". Two states:
           (a) OFFER — whole visible page selected + more matching rows exist

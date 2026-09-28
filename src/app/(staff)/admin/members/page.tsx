@@ -525,6 +525,7 @@ export async function MembersDirectoryBody({
           pageSize={PAGE_SIZE}
           total={result.value.total}
           isAdmin={isAdmin}
+          filtered={hasFilters}
         />
       </Suspense>
     </>

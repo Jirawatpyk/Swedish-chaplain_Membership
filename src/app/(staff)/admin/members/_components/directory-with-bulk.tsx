@@ -26,6 +26,8 @@ type Props = {
   readonly pageSize: number;
   readonly total: number;
   readonly isAdmin: boolean;
+  /** A search or filter is applied (the count above the table shows only then). */
+  readonly filtered?: boolean;
 };
 
 export function DirectoryWithBulk({
@@ -34,6 +36,7 @@ export function DirectoryWithBulk({
   pageSize,
   total,
   isAdmin,
+  filtered = false,
 }: Props) {
   const t = useTranslations('admin.members.inlineEdit');
   const tDir = useTranslations('admin.members.directory');
@@ -195,6 +198,7 @@ export function DirectoryWithBulk({
       <MembersTable
         rows={rows}
         total={total}
+        filtered={filtered}
         enableSelection={isAdmin}
         canEdit={isAdmin}
         onSelectionChange={isAdmin ? handleSelectionChange : undefined}
