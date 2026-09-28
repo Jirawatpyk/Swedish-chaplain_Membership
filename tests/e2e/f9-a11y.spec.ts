@@ -114,11 +114,11 @@ test.describe('@a11y T097 — F9 dashboard axe-core scan', () => {
     await expect(
       page.getByRole('heading', { name: 'Member directory', level: 1 }),
     ).toBeVisible();
-    // Scope to the directory table by its caption — the page also renders a
-    // "Recently generated exports" table once any export job exists, which makes
-    // a bare getByRole('table') ambiguous (strict-mode violation).
+    // Scope to the directory grid by its label (spec 122 US5a: an AURA
+    // DataTable, role="grid") — the page also renders a "Recently generated
+    // exports" table once any export job exists.
     await expect(
-      page.getByRole('table', { name: /members and their directory/i }),
+      page.getByRole('grid', { name: /members and their directory/i }),
     ).toBeVisible({ timeout: 15_000 });
     await expectNoAxeViolations(page, '/admin/directory');
   });

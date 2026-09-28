@@ -51,7 +51,7 @@ export function MembersTableSkeleton({ withSelection = false }: MembersTableSkel
     [t],
   );
   return (
-    <div aria-hidden>
+    <div aria-hidden data-testid="members-table-skeleton">
       <DataTable
         label={t('tableCaption')}
         rows={[]}

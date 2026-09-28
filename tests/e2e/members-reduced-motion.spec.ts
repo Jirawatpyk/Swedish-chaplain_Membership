@@ -69,11 +69,15 @@ test.describe('members reduced-motion compliance @f3 @a11y', () => {
       .first();
     await skeletonOrTable.waitFor({ state: 'attached', timeout: 10_000 });
 
-    // Any element on the page should have animation-duration ≤ "0s" or none.
-    const animationDuration: string = await skeletonOrTable.evaluate(
-      (el) => window.getComputedStyle(el).animationDuration,
+    // The element and every pulse block inside it (AURA `.aura-skel`) must be
+    // still: no animation name, or a zero duration.
+    const moving: number = await skeletonOrTable.evaluate((el) =>
+      [el, ...el.querySelectorAll('.aura-skel')].filter((node) => {
+        const style = window.getComputedStyle(node);
+        return style.animationName !== 'none' && !/^(0s,?\s*)+$/.test(style.animationDuration);
+      }).length,
     );
-    expect(animationDuration).toMatch(/^(0s|none|\s*)$/);
+    expect(moving).toBe(0);
   });
 
   test('(ii) timeline page renders instantly — no staggered animation', async ({

@@ -25,6 +25,7 @@ import { signInAsAdmin } from './helpers/admin-session';
 import { signInAsManager } from './helpers/manager-session';
 import { signInAsMember } from './helpers/member-sign-in';
 import { clearE2ERateLimits } from './helpers/rate-limit';
+import { firstMemberRowLink } from './helpers/members-grid';
 
 // Reset Upstash auth-rate-limit between tests — prevents per-IP brute-
 // force budget exhaustion across admin + manager + member sign-ins.
@@ -41,13 +42,10 @@ async function openAnyMemberDetail(
   page: import('@playwright/test').Page,
 ): Promise<void> {
   await page.goto('/admin/members');
-  // Scope the locator to the data table — `getByRole('link')` alone
+  // Scope the locator to the members grid — `getByRole('link')` alone
   // would match sidebar + breadcrumb links first, giving a flaky
-  // navigation to a non-member URL.
-  const firstRow = page
-    .getByRole('table')
-    .getByRole('link')
-    .first();
+  // navigation to a non-member URL (spec 122 US5a: an AURA grid).
+  const firstRow = firstMemberRowLink(page);
   // The URL changes as soon as the client navigation starts, before the
   // detail page's RSC payload has loaded. AS2's next `page.goto` then
   // cancelled that fetch, which WebKit reports as a "Load failed"
