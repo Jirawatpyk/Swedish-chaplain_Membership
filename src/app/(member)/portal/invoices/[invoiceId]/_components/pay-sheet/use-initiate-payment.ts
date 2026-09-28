@@ -239,6 +239,18 @@ export function useInitiatePayment(opts: UseInitiatePaymentOptions): void {
             // rather than only for the new code.
             reason = t('retry.reasonNoPrimaryContact');
             permanent = true;
+          } else if (response.status === 409 && bodyCode === 'invoice_not_payable') {
+            // #446 review L-a. Initiate refuses every invoice that is no longer
+            // `issued` with this code (voided on reissue, credited, already
+            // paid). It fell through to `retry.genericReason` next to a Retry
+            // button, so a member on a page left open across a void retried
+            // into the same 409 until the rate limit. PERMANENT (no Retry
+            // CTA); the copy asks the member to reload rather than the drawer
+            // calling router.refresh() — a second refresh call-site is exactly
+            // what the single-refresh contract (pay-sheet-state-revalidation
+            // H1: concurrent RSC re-fetches dropped the session) forbids.
+            reason = t('retry.reasonInvoiceNotPayable');
+            permanent = true;
           } else if (response.status === 429) {
             const retryAfter = response.headers.get('Retry-After');
             const seconds = retryAfter

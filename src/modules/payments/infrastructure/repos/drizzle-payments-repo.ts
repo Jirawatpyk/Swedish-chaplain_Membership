@@ -423,6 +423,32 @@ export function makeDrizzlePaymentsRepo(tenantId: string): PaymentsRepo {
       return runInTenant(ctx, query);
     },
 
+    async listPendingByInvoice(
+      tenantIdArg: string,
+      invoiceId: string,
+      txUnknown?: unknown,
+    ): Promise<readonly Payment[]> {
+      const query = async (tx: TenantTx): Promise<readonly Payment[]> => {
+        const rows = await tx
+          .select()
+          .from(payments)
+          .where(
+            and(
+              eq(payments.tenantId, tenantIdArg),
+              eq(payments.invoiceId, invoiceId),
+              eq(payments.status, 'pending'),
+            ),
+          )
+          .orderBy(asc(payments.createdAt));
+        return rows.map((row) => toDomain(row as PaymentRow));
+      };
+
+      if (txUnknown !== undefined) {
+        return query(txUnknown as TenantTx);
+      }
+      return runInTenant(ctx, query);
+    },
+
     async listSiblingStatusesForInvariant(
       txUnknown,
       tenantIdArg: string,

@@ -78,10 +78,14 @@ export interface PromptPayPanelProps {
   /** Invoice amount in satang for amount-display. */
   readonly amountSatang: number;
   /**
-   * ISO 4217 currency code. Display-only — always THB for PromptPay. Matched
-   * case-insensitively: the invoice page passes upper-case `'THB'`.
+   * ISO 4217 currency code. Reserved — NOT read. PromptPay is THB-only and the
+   * PaymentIntent is created with `currency: 'thb'` (initiate-payment.ts), so
+   * the amount always formats as THB via `formatSatangThb`, matching
+   * `OrderSummary` / `CardForm`. Branching on this value is how the panel came
+   * to print raw satang twice (#443: `'THB'` vs `'thb'`; its review L1: any
+   * other value printed minor units under a major-unit label).
    */
-  readonly currency: string;
+  readonly currency?: string;
   /**
    * QR expiry seconds. Defaults to 900 (15 min) per
    * `tenant_payment_settings.promptpay_qr_expiry_seconds` MVP value.
@@ -150,7 +154,6 @@ export function formatCountdown(remainingSeconds: number): {
 export function PromptPayPanel({
   qrSvgUrl,
   amountSatang,
-  currency,
   expirySeconds = 900,
   onRefresh,
   onLoadError,
@@ -247,11 +250,8 @@ export function PromptPayPanel({
   }, [status, t]);
 
   const amountDisplay = useMemo(
-    () =>
-      currency.toLowerCase() === 'thb'
-        ? formatSatangThb(BigInt(Math.round(amountSatang)), locale)
-        : `${amountSatang} ${currency.toUpperCase()}`,
-    [amountSatang, currency, locale],
+    () => formatSatangThb(BigInt(Math.round(amountSatang)), locale),
+    [amountSatang, locale],
   );
 
   const showExpired =

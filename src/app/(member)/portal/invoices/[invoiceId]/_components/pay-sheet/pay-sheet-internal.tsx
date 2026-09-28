@@ -200,8 +200,8 @@ export interface CachedInitiate {
    * close-with-stale-cleanup path (FR-025c / W2): when the user
    * dismisses the drawer without paying, we call
    * POST /api/payments/{paymentDbId}/cancel server-side to cancel
-   * the Stripe PaymentIntent so it does NOT linger until Stripe's
-   * own ~1-hour auto-expiry.
+   * the Stripe PaymentIntent so it does NOT linger — card
+   * PaymentIntents have no Stripe-side auto-expiry.
    */
   readonly paymentDbId: string;
 }

@@ -55,8 +55,10 @@ vi.mock('@/lib/request-id', () => ({
 }));
 // Mutable per case: the main PDF kind (088 bill vs legacy invoice).
 let mainPdfKind = 'invoice';
-// Mutable so the pay-bar case can turn online payment on (default off).
-let f5OnlinePayment = false;
+// #443 review L2 — the Pay-now gate is only reachable with F5 ON and live
+// payment settings; both are module-level mutables reset in beforeEach so the
+// download-number / hierarchy cases keep their F5-OFF baseline.
+const envFeatures = vi.hoisted(() => ({ f088TaxAtPayment: true, f5OnlinePayment: false }));
 let paymentSettingsResult: unknown = null;
 vi.mock('@/lib/env', () => ({
   // `bootstrap.adminEmail` is read by the issued-invoice OnlinePaymentDisabledCard
@@ -65,12 +67,7 @@ vi.mock('@/lib/env', () => ({
   // (reading 'adminEmail')` before its assertions ran. Completing the shape
   // (null → the "no email configured" degrade) is unrelated to the 090 fixes.
   env: {
-    features: {
-      f088TaxAtPayment: true,
-      get f5OnlinePayment() {
-        return f5OnlinePayment;
-      },
-    },
+    features: envFeatures,
     bootstrap: { adminEmail: null },
   },
 }));
@@ -206,9 +203,11 @@ vi.mock('@/app/(member)/portal/invoices/_components/receipt-status-watcher', () 
 }));
 const payNowProps = vi.fn();
 vi.mock('@/app/(member)/portal/invoices/[invoiceId]/_components/pay-sheet/pay-now-button', () => ({
-  PayNowButton: (props: unknown) => {
+  // Record the props, and echo the amount the page hands the pay sheet
+  // (#443 review L2).
+  PayNowButton: (props: { invoice: { amountDue: number } }) => {
     payNowProps(props);
-    return null;
+    return <span data-testid="pay-now-marker" data-amount={String(props.invoice.amountDue)} />;
   },
 }));
 vi.mock('@/app/(member)/portal/invoices/[invoiceId]/_components/online-payment-disabled-card', () => ({
@@ -296,7 +295,7 @@ async function renderPage(): Promise<string> {
 beforeEach(() => {
   getInvoiceMock.mockReset();
   autoRefundResult = null;
-  f5OnlinePayment = false;
+  envFeatures.f5OnlinePayment = false;
   paymentSettingsResult = null;
 });
 
@@ -439,7 +438,7 @@ describe('PortalInvoiceDetailPage — AURA layout (spec 122 US4, `Invoice-paid` 
 
   it('an issued invoice puts Pay now in the header (the one primary action), a band fixed above the tabs on phones', async () => {
     getInvoiceMock.mockResolvedValue({ ok: true, value: issuedUnpaid088Bill() });
-    f5OnlinePayment = true;
+    envFeatures.f5OnlinePayment = true;
     paymentSettingsResult = {
       onlinePaymentEnabled: true,
       enabledMethods: ['card'],
@@ -502,7 +501,7 @@ describe('PortalInvoiceDetailPage — AURA layout (spec 122 US4, `Invoice-paid` 
 
   it('the bar amount is the Total row and the amount handed to the pay sheet (one figure)', async () => {
     getInvoiceMock.mockResolvedValue({ ok: true, value: issuedUnpaid088Bill() });
-    f5OnlinePayment = true;
+    envFeatures.f5OnlinePayment = true;
     paymentSettingsResult = {
       onlinePaymentEnabled: true,
       enabledMethods: ['card'],
@@ -518,5 +517,47 @@ describe('PortalInvoiceDetailPage — AURA layout (spec 122 US4, `Invoice-paid` 
     expect(payNowProps).toHaveBeenCalledWith(
       expect.objectContaining({ invoice: expect.objectContaining({ amountDue: 107_000 }) }),
     );
+  });
+});
+
+// Financial-integrity review of #443 (L2): the page coerced a NULL `total` to
+// `amountDue: 0`, so an issued invoice with no total snapshot showed a Pay-now
+// drawer reading "0.00 THB" that then 409'd at initiate. Pay-now must only
+// mount for a positive total, and must hand the pay sheet the exact satang
+// total the server will charge.
+describe('PortalInvoiceDetailPage — Pay-now gated on a positive total (#443 review L2)', () => {
+  beforeEach(() => {
+    envFeatures.f5OnlinePayment = true;
+    paymentSettingsResult = {
+      onlinePaymentEnabled: true,
+      enabledMethods: ['card', 'promptpay'],
+      processorAccountId: 'acct_test_1',
+      processorPublishableKey: 'pk_test_1',
+    };
+  });
+
+  function issuedWithTotal(total: { satang: bigint } | null) {
+    return {
+      ...issuedUnpaid088Bill(),
+      subtotal: total === null ? null : { satang: 100_000n },
+      vat: total === null ? null : { satang: 7_000n },
+      total,
+    };
+  }
+
+  it('positive total → Pay-now mounts with amountDue equal to the satang total', async () => {
+    getInvoiceMock.mockResolvedValue({ ok: true, value: issuedWithTotal({ satang: 107_000n }) });
+    const html = await renderPage();
+    expect(html).toContain('data-testid="pay-now-marker"');
+    expect(html).toContain('data-amount="107000"');
+  });
+
+  it.each([
+    ['null', null],
+    ['zero', { satang: 0n }],
+  ] as const)('%s total → no Pay-now (never a "0.00 THB" drawer)', async (_label, total) => {
+    getInvoiceMock.mockResolvedValue({ ok: true, value: issuedWithTotal(total) });
+    const html = await renderPage();
+    expect(html).not.toContain('data-testid="pay-now-marker"');
   });
 });

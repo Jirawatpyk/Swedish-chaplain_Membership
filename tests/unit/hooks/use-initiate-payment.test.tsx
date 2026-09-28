@@ -161,3 +161,45 @@ describe('useInitiatePayment — read-only 503', () => {
     }
   });
 });
+
+/**
+ * Follow-up to the #446 financial-integrity review (L-a) — 409
+ * `invoice_not_payable` is PERMANENT.
+ *
+ * Initiate answers 409 `invoice_not_payable` for every invoice that is no longer
+ * `issued` (voided on reissue, credited, already paid) — and since #446, for
+ * every non-issued status. It fell through to `retry.genericReason` with a
+ * Retry button, so a member on a page left open across a void retried into the
+ * same 409 until the rate limit. Same static idiom as the blocks above, for the
+ * reason given at the top.
+ *
+ * Deliberately NO auto `router.refresh()`: the PaySheet keeps exactly one
+ * refresh call-site (pay-sheet-state-revalidation H1 — concurrent RSC
+ * re-fetches dropped the auth session), so the copy asks the member to reload.
+ */
+describe('useInitiatePayment — 409 invoice_not_payable is permanent (#446 review L-a)', () => {
+  it('maps the 409 body code to its own reason and marks it PERMANENT (no Retry CTA)', () => {
+    const arm = source.match(
+      /response\.status === 409 && bodyCode === 'invoice_not_payable'\)\s*\{([\s\S]*?)\}\s*else if/,
+    );
+    expect(arm, 'expected a dedicated 409 invoice_not_payable arm').toBeTruthy();
+    expect(arm![1]).toContain("t('retry.reasonInvoiceNotPayable')");
+    expect(arm![1]).toMatch(/permanent = true/);
+    // Ahead of the generic fallthrough.
+    expect(source.indexOf("bodyCode === 'invoice_not_payable'")).toBeLessThan(
+      source.indexOf("t('retry.genericReason')"),
+    );
+  });
+
+  it('the reason key exists in every locale and tells the member what happened and what to do', () => {
+    for (const locale of ['en', 'th', 'sv'] as const) {
+      const messages = JSON.parse(
+        readFileSync(resolve(process.cwd(), `src/i18n/messages/${locale}.json`), 'utf8'),
+      ) as { portal: { payment: { retry: Record<string, string> } } };
+      const value: string | undefined = messages.portal.payment.retry.reasonInvoiceNotPayable;
+      expect(value, `${locale} is missing the key`).toBeTruthy();
+      if (value === undefined) return;
+      expect(value.length).toBeGreaterThan(20);
+    }
+  });
+});

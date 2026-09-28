@@ -27,6 +27,7 @@ function makeStubRepo(
     markAutoRefunded: vi.fn(),
     attachAutoRefundMarkerIfAbsent: vi.fn(),
     findPendingByInvoiceAndActor: vi.fn(),
+    listPendingByInvoice: vi.fn().mockResolvedValue([]),
     listSiblingStatusesForInvariant: vi.fn(),
     nextAttemptSeq: vi.fn(),
     listSucceededMethodByInvoiceIds: vi.fn().mockResolvedValue(new Map()),

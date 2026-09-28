@@ -334,9 +334,15 @@ export async function renderPortalInvoiceDetailView({
   // "under document correction — contact staff" notice below.
   const legacyNoTinEventInvoice = isLegacyNoTinEventInvoice(invoice);
 
+  // Financial-integrity review of #443 (L2, merged from main): a null /
+  // non-positive amount is not payable (initiate's F4 bridge rejects it with
+  // 409), so never mount Pay-now for it; the member gets the contact-admin
+  // card instead of a "0.00 THB" drawer that then fails.
   const canPayOnline =
     f5OnlinePayment &&
     invoice.status === 'issued' &&
+    amountDueSatang !== null &&
+    amountDueSatang > 0n &&
     !legacyNoTinEventInvoice &&
     paymentSettings !== null &&
     paymentSettings.onlinePaymentEnabled &&
@@ -361,7 +367,7 @@ export async function renderPortalInvoiceDetailView({
   // `Portal-invoice-mobile` band — amount due, due date, Pay now — fixed
   // above the bottom tabs. One element, so one pay sheet.
   const payBar =
-    canPayOnline && paymentSettings ? (
+    canPayOnline && paymentSettings && amountDueSatang !== null ? (
           <PayBar
             invoiceId={invoice.invoiceId}
             label={tPay('summary.amountLabel')}
@@ -379,7 +385,7 @@ export async function renderPortalInvoiceDetailView({
               id: invoice.invoiceId,
               // 088 FR-030 — an issued 088 bill's number is its SC (headerNumber).
               invoiceNumber: headerNumber,
-              amountDue: amountDueSatang !== null ? Number(amountDueSatang) : 0,
+              amountDue: Number(amountDueSatang),
               currency: 'THB',
               status: invoice.status,
               isBill,

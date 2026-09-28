@@ -25,6 +25,7 @@ import type { ProcessWebhookEventDeps } from '../application/use-cases/process-w
 import type { ConfirmPaymentDeps } from '../application/use-cases/confirm-payment';
 import type { FailPaymentDeps } from '../application/use-cases/fail-payment';
 import type { CancelPaymentDeps } from '../application/use-cases/cancel-payment';
+import type { CancelPendingPaymentsForInvoiceDeps } from '../application/use-cases/cancel-pending-payments-for-invoice';
 import type { HandleCancelEventDeps } from '../application/use-cases/handle-cancel-event';
 import type { ListSucceededPaymentMethodsDeps } from '../application/use-cases/list-succeeded-payment-methods';
 import type { ListWaivedRefundTotalsByInvoiceDeps } from '../application/use-cases/list-waived-refund-totals-by-invoice';
@@ -252,6 +253,23 @@ export function makeFailPaymentDeps(tenantId: string): FailPaymentDeps {
 // T065 — cancelPayment composition.
 // ---------------------------------------------------------------------------
 export function makeCancelPaymentDeps(tenantId: string): CancelPaymentDeps {
+  return {
+    paymentsRepo: makeDrizzlePaymentsRepo(tenantId),
+    tenantSettingsRepo: makeDrizzleTenantPaymentSettingsRepo(),
+    processorGateway: stripeGateway,
+    audit: f5AuditAdapter,
+    clock: systemClock,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// cancelPendingPaymentsForInvoice — F4 voidInvoice's post-commit canceller
+// (wired into invoicing-deps via the barrel). Same collaborators as the
+// member cancel; no RBAC dep because the caller is the void, not a member.
+// ---------------------------------------------------------------------------
+export function makeCancelPendingPaymentsForInvoiceDeps(
+  tenantId: string,
+): CancelPendingPaymentsForInvoiceDeps {
   return {
     paymentsRepo: makeDrizzlePaymentsRepo(tenantId),
     tenantSettingsRepo: makeDrizzleTenantPaymentSettingsRepo(),

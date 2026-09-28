@@ -235,6 +235,19 @@ export interface PaymentsRepo {
   ): Promise<Payment | null>;
 
   /**
+   * Every `pending` payment for an invoice, across ALL actors, oldest first.
+   * Used by `cancelPendingPaymentsForInvoice` after an invoice is voided: a
+   * void must cancel whatever attempt is still live at Stripe regardless of
+   * which member started it. Read-only (no lock) — the caller re-locks each
+   * row by id before mutating it. Optional `tx` mirrors the resume lookup.
+   */
+  listPendingByInvoice(
+    tenantId: string,
+    invoiceId: string,
+    tx?: unknown,
+  ): Promise<readonly Payment[]>;
+
+  /**
    * Count existing payments in the succeeded lineage for (tenant,invoice)
    * EXCLUDING `excludePaymentId` — input to the one-succeeded-per-invoice
    * invariant check (`enforceOneSucceededPerInvoice`).

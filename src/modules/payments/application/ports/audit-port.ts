@@ -226,7 +226,14 @@ export interface F5AuditPayloadByType {
   payment_canceled: {
     payment_id: string;
     invoice_id: string;
-    actor_type: 'member' | 'webhook' | 'admin';
+    /**
+     * `'system'` — canceled as a side effect of another operation rather than
+     * by a person or Stripe: today only `cancelPendingPaymentsForInvoice` after
+     * an invoice is voided, which also sets `cause`. `actorUserId` on the row
+     * is still the person who voided.
+     */
+    actor_type: 'member' | 'webhook' | 'admin' | 'system';
+    cause?: 'invoice_voided';
   };
   /**
    * F5R1-E4 — distinct event type for cancel attempts that failed at
@@ -240,7 +247,8 @@ export interface F5AuditPayloadByType {
   payment_cancel_attempt_failed: {
     payment_id: string;
     invoice_id: string;
-    actor_type: 'member' | 'webhook' | 'admin';
+    actor_type: 'member' | 'webhook' | 'admin' | 'system';
+    cause?: 'invoice_voided';
     processor_error_kind: 'retryable' | 'permanent' | 'idempotency_conflict';
   };
   payment_method_switched: {
