@@ -41,6 +41,7 @@ import { err, ok, type Result } from '@/lib/result';
 import type {
   AuditPort,
   ClockPort,
+  GetInvoiceForPaymentBridgeError,
   InvoicingBridgePort,
   PaymentsRepo,
   ProcessorGatewayError,
@@ -452,9 +453,10 @@ async function initiatePaymentBody(
   // permissive: webhook reconciliation reads non-issued rows to refund them.
   //
   // Scope: this closes MINTING and RESUMING only. A card clientSecret the
-  // PaySheet already cached before the void never comes back through here —
-  // voidInvoice does not cancel pending PIs — so that path still ends in the
-  // webhook's stale-invoice auto-refund. Tracked as a separate follow-up.
+  // PaySheet cached before a void never comes back through here; that path is
+  // closed by voidInvoice cancelling the invoice's pending PIs (#447). This
+  // pre-tx read is the cheap fast path — the authoritative check is the
+  // re-read under the advisory lock inside the tx below.
   if (invoice.status !== 'issued') {
     return err({ code: 'invoice_not_payable', currentStatus: invoice.status });
   }
@@ -503,6 +505,30 @@ async function initiatePaymentBody(
     // dedupes the PI itself, but we'd emit duplicate audit + metric).
     // The lock auto-releases at tx end.
     await deps.paymentsRepo.acquireInitiateLock(tx, input.tenantId, input.invoiceId);
+
+    // Re-check payability UNDER the lock (follow-up to the #447 review).
+    // The status above was read outside this lock. A void that commits in
+    // between runs its post-commit canceller (`cancelPendingPaymentsForInvoice`),
+    // which lists pending rows under this SAME advisory lock — so if it listed
+    // before we got here, the row we are about to insert would be a live PI on
+    // a voided invoice that nothing ever cancels. `runInTenant` is READ
+    // COMMITTED, so this read, issued after the lock was granted, sees any void
+    // that committed before it. Nothing above this line has written, so the
+    // `return err` below commits nothing. No `actor`: the pre-tx read already
+    // emitted any cross-tenant probe audit.
+    const lockedInvoice = await deps.invoicingBridge.getInvoiceForPayment({
+      tenantId: input.tenantId,
+      invoiceId: input.invoiceId,
+      taxAtPayment: deps.taxAtPayment,
+      reconciliationPath: false,
+      externalTx: tx,
+    });
+    if (!lockedInvoice.ok) {
+      return err(underLockRefusal(lockedInvoice.error));
+    }
+    if (lockedInvoice.value.status !== 'issued') {
+      return err({ code: 'invoice_not_payable', currentStatus: lockedInvoice.value.status });
+    }
     // Resume check FIRST — if a pending attempt by this actor exists,
     // return it verbatim (same clientSecret path). Reliability F-01
     // idempotency: member clicks "Pay" twice → one intent.
@@ -797,4 +823,34 @@ async function initiatePaymentBody(
       resumed: false,
     });
   });
+}
+
+/**
+ * Maps a bridge refusal from the UNDER-LOCK re-read to the same error the
+ * pre-tx read would have produced — minus the probe audit, which that read
+ * already emitted. Exhaustive: a new bridge code breaks the build here.
+ */
+function underLockRefusal(e: GetInvoiceForPaymentBridgeError): InitiatePaymentError {
+  switch (e.code) {
+    case 'not_found':
+      return { code: 'invoice_not_found' };
+    case 'forbidden':
+      return { code: 'forbidden_invoice' };
+    case 'not_payable':
+      return { code: 'invoice_not_payable', currentStatus: e.status };
+    case 'corrupted_total':
+      return { code: 'invoice_data_corrupt', invoiceId: e.invoiceId };
+    case 'legacy_no_tin_event_not_payable':
+      return { code: 'legacy_no_tin_event_not_payable' };
+    case 'new_flow_bill_requires_flag_on':
+      return { code: 'new_flow_bill_requires_flag_on' };
+    case 'read_failed':
+      // TRANSIENT — a DB hiccup, never "your invoice cannot be paid".
+      return { code: 'invoice_read_failed' };
+    default: {
+      const unreachable: never = e;
+      void unreachable;
+      return { code: 'invoice_read_failed' };
+    }
+  }
 }

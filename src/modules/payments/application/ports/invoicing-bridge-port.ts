@@ -153,8 +153,13 @@ export interface InvoicingBridgePort {
      * `getInvoiceStatus` already fixed. This closes the last of the three.
      *
      * The connection already carries `SET LOCAL app.current_tenant`, so the
-     * read stays tenant-scoped. Omit it for standalone reads (the self-pay
-     * `initiate-payment` path is not inside a tx and passes nothing).
+     * read stays tenant-scoped. Omit it for standalone reads.
+     *
+     * `initiate-payment` reads twice: once standalone (the pre-tx fast path,
+     * nothing passed) and once with its tx right after taking the
+     * `payments:{tenant}:{invoice}` advisory lock, so a void that committed
+     * before the lock was granted is seen (READ COMMITTED) and no pending PI
+     * is inserted on a voided invoice.
      */
     readonly externalTx?: unknown;
   }): Promise<Result<InvoiceForPaymentDTO, GetInvoiceForPaymentBridgeError>>;
