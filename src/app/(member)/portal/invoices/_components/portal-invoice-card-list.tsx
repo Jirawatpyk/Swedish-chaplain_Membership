@@ -179,53 +179,53 @@ export function PortalInvoiceCardList({
                   />
                 </div>
 
-                {/* Dates — reuse the existing column labels as inline labels.
-                    Each date stays on one line ("15 ต.ค. 2569"); the row may
-                    still wrap between the two. */}
-                <p className="m-0 text-sm text-[var(--aura-fg-secondary)]">
-                  {t('columns.issueDate')}{' '}
-                  <span className="whitespace-nowrap">{formatDate(vm.issueDate, locale)}</span> ·{' '}
-                  {t('columns.dueDate')}{' '}
-                  <span className="whitespace-nowrap">{formatDate(vm.dueDate, locale)}</span>
-                </p>
-
-                {/* Receipt number — separate-mode only. Combined-mode (em-dash
-                    + tooltip hint on the table) is omitted on the card; the
-                    combined Receipt download still appears in the action row.
-                    088 A-refined (FR-016) — on a real 088 tax_receipt row the RC
-                    §86/4 tax receipt becomes a clickable link to the detail (same
-                    target as the header link) + a small ใบกำกับภาษี/Tax receipt
-                    affordance; aria-label names the doc. Legacy separate-mode rows
-                    keep the plain-text receipt number. */}
-                {vm.receiptNumber ? (
-                  <p className="m-0 text-sm text-[var(--aura-fg-secondary)]">
-                    {t('columns.receiptNumber')}{' '}
-                    {tTax088 && vm.taxDocumentKind === 'tax_receipt' ? (
-                      // 088 A-refined (FR-016) — the RC §86/4 tax receipt lives on
-                      // the SAME invoice → a clickable link to the detail (same
-                      // target as the header link). aria-label names the doc; the
-                      // "Receipt No." field label conveys the ใบกำกับภาษี meaning.
-                      <Link
-                        href={`/portal/invoices/${vm.invoiceId}`}
-                        aria-label={tTax088('seeReceiptLink', { number: vm.receiptNumber })}
-                        className="font-mono tabular-nums text-[var(--aura-fg-primary)] underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2"
-                      >
-                        {vm.receiptNumber}
-                      </Link>
-                    ) : (
-                      <span className="font-mono tabular-nums text-[var(--aura-fg-primary)]">
-                        {vm.receiptNumber}
-                      </span>
-                    )}
-                  </p>
-                ) : null}
-
-                <hr className="m-0 border-0 border-t border-[var(--aura-border-default)]" />
-
-                {/* Total — prominent. */}
-                <p className="m-0 text-base font-semibold tabular-nums">
-                  {formatSatangThb(vm.total?.satang ?? null, locale)}
-                </p>
+                {/* Spec 122 US4 (`Invoices-mobile` board) — the facts as a
+                    2-column grid under the header: Issued, Due, then Receipt No.
+                    and Total. Each value stays on one line ("15 ต.ค. 2569").
+                    Total always sits in the right-hand column so it lines up
+                    card to card. Receipt No. is separate-mode only, as before:
+                    combined mode omits it (the combined download is in the
+                    action row). 088 A-refined (FR-016) — on a real tax_receipt
+                    row the RC is a link to the detail whose aria-label names the
+                    document; legacy separate-mode rows keep plain text. */}
+                <dl className="m-0 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-[var(--aura-border-default)] pt-3">
+                  <div className="flex min-w-0 flex-col gap-0.5">
+                    <dt className="text-xs text-[var(--aura-fg-secondary)]">{t('columns.issueDate')}</dt>
+                    <dd data-testid="portal-invoice-card-issue-date" className="m-0 whitespace-nowrap text-sm">
+                      {formatDate(vm.issueDate, locale)}
+                    </dd>
+                  </div>
+                  <div className="flex min-w-0 flex-col gap-0.5">
+                    <dt className="text-xs text-[var(--aura-fg-secondary)]">{t('columns.dueDate')}</dt>
+                    <dd data-testid="portal-invoice-card-due-date" className="m-0 whitespace-nowrap text-sm">
+                      {formatDate(vm.dueDate, locale)}
+                    </dd>
+                  </div>
+                  {vm.receiptNumber ? (
+                    <div className="flex min-w-0 flex-col gap-0.5">
+                      <dt className="text-xs text-[var(--aura-fg-secondary)]">{t('columns.receiptNumber')}</dt>
+                      <dd className="m-0 truncate font-mono text-sm tabular-nums text-[var(--aura-fg-primary)]">
+                        {tTax088 && vm.taxDocumentKind === 'tax_receipt' ? (
+                          <Link
+                            href={`/portal/invoices/${vm.invoiceId}`}
+                            aria-label={tTax088('seeReceiptLink', { number: vm.receiptNumber })}
+                            className="underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2"
+                          >
+                            {vm.receiptNumber}
+                          </Link>
+                        ) : (
+                          vm.receiptNumber
+                        )}
+                      </dd>
+                    </div>
+                  ) : null}
+                  <div className="col-start-2 flex min-w-0 flex-col gap-0.5">
+                    <dt className="text-xs text-[var(--aura-fg-secondary)]">{t('columns.total')}</dt>
+                    <dd className="m-0 whitespace-nowrap text-sm font-semibold tabular-nums">
+                      {formatSatangThb(vm.total?.satang ?? null, locale)}
+                    </dd>
+                  </div>
+                </dl>
 
                 {/* Actions — SAME conditional set + flag-gating as the table
                     cell, driven by vm.* flags; the button `variant` differs

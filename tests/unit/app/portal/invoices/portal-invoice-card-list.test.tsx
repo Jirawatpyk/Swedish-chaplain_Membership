@@ -798,9 +798,9 @@ describe('<PortalInvoiceCardList> — 088 A-refined header has no per-row tag (n
 // Buddhist Era is DISPLAY-ONLY on th-TH surfaces (CLAUDE.md § Conventions);
 // storage/query values stay Gregorian ISO. Guard both: the rendered card shows
 // the BE year for th and the Gregorian year for en, while the underlying
-// view-model date stays Gregorian ISO. The dates paragraph is queried in
-// isolation (the first `p` in the card) so the assertion is not confused by the
-// year inside a document number (e.g. INV-2026-000001).
+// view-model date stays Gregorian ISO. The two date values are queried in
+// isolation (their `dd` cells) so the assertion is not confused by the year
+// inside a document number (e.g. INV-2026-000001).
 // ===========================================================================
 describe('<PortalInvoiceCardList> — FR-009 locale date formatting (T063b)', () => {
   it('renders the Buddhist-Era year for th-TH while the stored issueDate stays Gregorian ISO', () => {
@@ -815,11 +815,14 @@ describe('<PortalInvoiceCardList> — FR-009 locale date formatting (T063b)', ()
     render(
       <PortalInvoiceCardList rows={[{ vm }]} locale="th" t={t} tStatus={tStatus} />,
     );
-    const datesP = theCard().querySelector('p');
-    expect(datesP).not.toBeNull();
+    const dates = {
+      textContent: ['portal-invoice-card-issue-date', 'portal-invoice-card-due-date']
+        .map((id) => within(theCard()).getByTestId(id).textContent)
+        .join(' '),
+    };
     // th-TH → Buddhist Era: CE 2026 displays as BE 2569 (+543).
-    expect(datesP?.textContent).toContain('2569');
-    expect(datesP?.textContent).not.toContain('2026');
+    expect(dates.textContent).toContain('2569');
+    expect(dates.textContent).not.toContain('2026');
   });
 
   it('renders the Gregorian year for en (display-only locale switch, no BE offset)', () => {
@@ -830,9 +833,12 @@ describe('<PortalInvoiceCardList> — FR-009 locale date formatting (T063b)', ()
     render(
       <PortalInvoiceCardList rows={[{ vm }]} locale="en" t={t} tStatus={tStatus} />,
     );
-    const datesP = theCard().querySelector('p');
-    expect(datesP).not.toBeNull();
-    expect(datesP?.textContent).toContain('2026');
-    expect(datesP?.textContent).not.toContain('2569');
+    const dates = {
+      textContent: ['portal-invoice-card-issue-date', 'portal-invoice-card-due-date']
+        .map((id) => within(theCard()).getByTestId(id).textContent)
+        .join(' '),
+    };
+    expect(dates.textContent).toContain('2026');
+    expect(dates.textContent).not.toContain('2569');
   });
 });
