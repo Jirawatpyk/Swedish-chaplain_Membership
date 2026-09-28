@@ -10,6 +10,7 @@ import { requireSession } from '@/lib/auth-session';
 import { isStaffRole } from '@/modules/auth';
 import { enforcePortalPageAccess } from '@/lib/portal-page-access';
 import { MarketingAcknowledgementBanner } from './_components/marketing-acknowledgement-banner';
+import { ReadOnlyModeBanner } from './_components/read-only-mode-banner';
 
 /**
  * Member shell layout (T144 / T024).
@@ -72,6 +73,10 @@ export default async function MemberLayout({ children }: { children: ReactNode }
             user={{ displayName: user.displayName, email: user.email, role: user.role }}
           />
         </header>
+        {/* The READ_ONLY_MODE freeze, said on every page before a submit is
+            refused. Advisory only (see the component); null while writable.
+            Outside <main> like the banner below, so the skip link passes it. */}
+        <ReadOnlyModeBanner />
         {/* F7 Q15 — E-Blast sending-terms acknowledgement banner (not consent).
             Server component returns null when ineligible (member already
             acknowledged, plan has no eblast quota, or feature flag off).

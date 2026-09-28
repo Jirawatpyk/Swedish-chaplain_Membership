@@ -80,13 +80,13 @@ export function DirectoryLogoControl({
           const code = await readErrorCode(res);
           if (code === 'member_not_found' || code === 'no_member_profile')
             toast.error(t('logoProfileMissing'));
-          else toast.error(t('logoFailed'));
+          else toast.error(t('logoRemoveFailed'));
           return;
         }
         toast.success(t('logoRemoved'));
         router.refresh();
       } catch {
-        toast.error(t('logoFailed'));
+        toast.error(t('logoRemoveFailed'));
       } finally {
         setPendingAction(null);
       }

@@ -211,6 +211,7 @@
     "readOnlyMode": "Systemet är i skrivskyddat läge för underhåll.",
     "errorId": "Fel-ID: {id}",
     "readOnlyNothingChanged": "Ingenting ändrades. Försök igen om några minuter.",
+    "readOnlyModeBrowse": "Du kan fortfarande titta runt — ändringar är pausade tills underhållet är klart.",
     "notFoundHint": "Länken kan vara gammal, eller så har sidan flyttats.",
     "backToDashboard": "Tillbaka till översikten",
     "loadError": {
@@ -298,6 +299,7 @@
     "logoRemoveTitle": "Ta bort den här logotypen?",
     "logoRemoveDescription": "Din katalogpost visar ingen logotyp förrän du laddar upp en ny. Du kan ladda upp igen när som helst.",
     "logoRemoveConfirm": "Ta bort logotyp",
+    "logoRemoveFailed": "Det gick inte att ta bort logotypen. Försök igen.",
     "cancel": "Avbryt",
     "manage": "Hantera katalogpost",
     "invalidWebsite": "Webbplatsen måste börja med http:// eller https://",

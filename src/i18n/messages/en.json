@@ -211,6 +211,7 @@
     "readOnlyMode": "The system is currently in read-only mode for maintenance.",
     "errorId": "Error ID: {id}",
     "readOnlyNothingChanged": "Nothing was changed. Try again in a few minutes.",
+    "readOnlyModeBrowse": "You can still look around — changes are paused until maintenance ends.",
     "notFoundHint": "The link may be old, or the page was moved.",
     "backToDashboard": "Back to dashboard",
     "loadError": {
@@ -298,6 +299,7 @@
     "logoRemoveTitle": "Remove this logo?",
     "logoRemoveDescription": "Your directory listing will show no logo until you upload a new one. You can re-upload at any time.",
     "logoRemoveConfirm": "Remove logo",
+    "logoRemoveFailed": "Could not remove the logo. Please try again.",
     "cancel": "Cancel",
     "manage": "Manage listing",
     "invalidWebsite": "Website must start with http:// or https://",
