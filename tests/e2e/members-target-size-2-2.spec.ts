@@ -69,10 +69,11 @@ test.describe('members WCAG 2.2 SC 2.5.8 target sizes @f3 @a11y', () => {
     await page.goto('/admin/members');
     await page.waitForSelector(MEMBERS_GRID, { timeout: 10_000 });
 
-    // Header checkbox (select-all) — AURA's clickable label around the box
+    // Header checkbox (select-all) — the hit area is AURA's invisible input,
+    // grown to 24×24 around the 16px box (members-table.tsx)
     const headerSize = await measureTargetSize(
       page,
-      '[role="grid"] [role="columnheader"] label.aura-check',
+      '[role="grid"] [role="columnheader"] input[type="checkbox"]',
     );
     expect(headerSize.width).toBeGreaterThanOrEqual(MIN_TARGET_PX);
     expect(headerSize.height).toBeGreaterThanOrEqual(MIN_TARGET_PX);
@@ -80,7 +81,7 @@ test.describe('members WCAG 2.2 SC 2.5.8 target sizes @f3 @a11y', () => {
     // First row checkbox
     const rowSize = await measureTargetSize(
       page,
-      '[role="grid"] [role="row"]:has([role="gridcell"]) label.aura-check',
+      '[role="grid"] [role="row"]:has([role="gridcell"]) input[type="checkbox"]',
     );
     expect(rowSize.width).toBeGreaterThanOrEqual(MIN_TARGET_PX);
     expect(rowSize.height).toBeGreaterThanOrEqual(MIN_TARGET_PX);

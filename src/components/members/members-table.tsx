@@ -405,6 +405,21 @@ const ENGAGEMENT_TONE: Readonly<Record<EngagementBand, 'success' | 'neutral' | '
 };
 
 /**
+ * AURA DataTable rows have a fixed height, so in the grid every cell is one
+ * line (truncated, the full text in its `title`); on a phone card
+ * (`.aura-table--stacked`) the same text may wrap.
+ */
+const ONE_LINE =
+  'block min-w-0 truncate in-[.aura-table--stacked]:overflow-visible in-[.aura-table--stacked]:whitespace-normal';
+const ONE_ROW =
+  'flex h-full min-w-0 flex-nowrap items-center gap-1.5 leading-normal in-[.aura-table--stacked]:h-auto in-[.aura-table--stacked]:flex-wrap';
+/**
+ * The status cell is the card's pill, beside the title: on a card its two
+ * badges stack so the company name keeps its width.
+ */
+const STATUS_ROW = `${ONE_ROW} in-[.aura-table--stacked]:flex-col in-[.aura-table--stacked]:items-end in-[.aura-table--stacked]:gap-1`;
+
+/**
  * 122 US5a — the "⋯" row menu. Only destinations that already exist (spec
  * Clarifications, Session 2026-09-28 US5 start): the member page, and its
  * edit page for members.write.
@@ -620,14 +635,15 @@ export function MembersTable({
         // is edited on the detail page). The name wraps in full, no ellipsis.
         key: 'company_name',
         label: t('columns.company'),
+        minWidth: 130,
         render: (row) => (
-          <span className="flex items-start gap-2">
+          <span className="flex min-w-0 items-center gap-2">
             {row.country && (
-              <span className="shrink-0 pt-0.5">
+              <span className="shrink-0">
                 <CountryDisplay code={row.country} variant="flag-only" />
               </span>
             )}
-            <span className="font-medium break-words whitespace-normal" title={row.company_name}>
+            <span className={`font-medium ${ONE_LINE}`} title={row.company_name}>
               {row.company_name}
             </span>
           </span>
@@ -637,15 +653,15 @@ export function MembersTable({
         key: 'member_number_display',
         label: t('columns.memberNumber'),
         mono: true,
-        width: 116,
+        width: 100,
         sortable: true,
       },
       {
-        // Name plus the portal / bounce badges, wrapping onto a second line
-        // only when the column is too narrow.
+        // Name plus the portal / bounce badges on one line (the name
+        // truncates; a phone card wraps).
         key: 'primary_contact',
         label: t('columns.primaryContact'),
-        width: 210,
+        width: 170,
         hideBelow: 'lg',
         render: (row) => {
           const c = row.primary_contact;
@@ -653,8 +669,8 @@ export function MembersTable({
           const fullName = `${c.first_name} ${c.last_name}`.trim();
           const archived = row.status === 'archived';
           return (
-            <span className="flex flex-wrap items-start gap-x-2 gap-y-1">
-              <span className="min-w-0 break-words whitespace-normal" title={fullName}>
+            <span className={ONE_ROW}>
+              <span className={ONE_LINE} title={fullName}>
                 {fullName}
               </span>
               {/* No portal-related badge on an archived row (Task 7). */}
@@ -679,10 +695,10 @@ export function MembersTable({
         // 056-members-table-compact — merged "Plan · Year" cell.
         key: 'plan_display_name',
         label: t('columns.plan'),
-        width: 190,
+        width: 150,
         hideBelow: 'lg',
         render: (row) => (
-          <span title={row.plan_id} className="break-words whitespace-normal">
+          <span title={row.plan_id} className={ONE_LINE}>
             {row.plan_display_name ?? row.plan_id}
             <span aria-hidden="true"> · </span>
             {row.plan_year}
@@ -692,14 +708,14 @@ export function MembersTable({
       {
         key: 'status',
         label: t('columns.status'),
-        width: 150,
+        width: 176,
         // Sits beside the title on a phone card.
         pill: true,
         // #4 — the Lapsed / Suspended badge is a SIBLING of the status toggle,
         // never inside it (it would fire the toggle and pollute its name). It
         // is hidden on archived rows, and Lapsed wins if both are somehow set.
         render: (row) => (
-          <span className="flex flex-col items-start gap-1">
+          <span className={STATUS_ROW}>
             {enableSelection ? (
               <InlineStatusCell memberId={row.member_id} status={row.status} onSave={onInlineEdit} />
             ) : (
@@ -726,7 +742,7 @@ export function MembersTable({
         // server-side; numeric score + text band (FR-035). Unscored → "—".
         key: 'engagement',
         label: t('columns.engagement'),
-        width: 150,
+        width: 120,
         sortable: true,
         render: (row) => {
           const eng = row.engagement;
@@ -743,7 +759,8 @@ export function MembersTable({
         key: 'last_activity_at',
         label: t('columns.lastActivity'),
         width: 132,
-        hideBelow: 'lg',
+        // Dropped first on a narrow desktop so the row menu stays in view.
+        hideBelow: 1100,
         render: (row) => {
           const v = row.last_activity_at;
           if (!v) return <span className="text-[var(--aura-fg-secondary)]">—</span>;
@@ -754,8 +771,10 @@ export function MembersTable({
       },
       {
         key: 'actions',
-        label: t('columns.actions'),
-        width: 64,
+        // An empty label: AURA names the header "Actions" for screen readers
+        // only, as the board draws no heading over the menu.
+        label: '',
+        width: 48,
         actions: true,
         render: (row) => <RowMenu row={row} canEdit={canEdit} />,
       },
@@ -765,7 +784,10 @@ export function MembersTable({
 
   return (
     <div
-      className="flex flex-col gap-4"
+      // The row checkboxes keep AURA's 16px box but take a 24×24 hit area
+      // (WCAG 2.5.8 AA, ADOPT-01; the old table's checkbox was 24px): the
+      // invisible input grows 4px past the box on every side.
+      className="flex flex-col gap-4 [&_.aura-table\_\_sel_.aura-check\_\_input]:-inset-1"
       ref={tableContainerRef}
       // The bulk bar's Clear hands focus to this table's select-all checkbox.
       data-members-table=""

@@ -1363,8 +1363,7 @@
           "risk": "Risk",
           "engagement": "Engagemang",
           "lastActivity": "Senaste aktivitet",
-          "notes": "Anteckningar",
-          "actions": "Åtgärder"
+          "notes": "Anteckningar"
         },
         "engagementBand": {
           "healthy": "Frisk",

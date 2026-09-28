@@ -1363,8 +1363,7 @@
           "risk": "ความเสี่ยง",
           "engagement": "การมีส่วนร่วม",
           "lastActivity": "กิจกรรมล่าสุด",
-          "notes": "บันทึก",
-          "actions": "การดำเนินการ"
+          "notes": "บันทึก"
         },
         "engagementBand": {
           "healthy": "ดีมาก",

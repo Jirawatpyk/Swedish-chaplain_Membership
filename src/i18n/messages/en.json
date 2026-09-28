@@ -1363,8 +1363,7 @@
           "risk": "Risk",
           "engagement": "Engagement",
           "lastActivity": "Last activity",
-          "notes": "Notes",
-          "actions": "Actions"
+          "notes": "Notes"
         },
         "engagementBand": {
           "healthy": "Healthy",
