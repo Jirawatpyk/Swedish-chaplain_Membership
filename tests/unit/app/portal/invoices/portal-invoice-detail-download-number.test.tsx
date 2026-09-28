@@ -293,8 +293,8 @@ function paidSeparateInvoice() {
 /**
  * A LEGACY combined-mode invoice, PAID, whose combined receipt is still
  * rendering: §87 number in `documentNumber`, NO RC (the combined receipt reuses
- * the invoice number), `receiptPdfStatus 'pending'`. Mirrors the e2e seed rows
- * SC-2026-900001/2.
+ * the invoice number), `receiptPdfStatus 'pending'`. The shape the e2e seed
+ * rows SC-2026-900001/2 had before they became 088 paid bills; prod has none.
  */
 function paidCombinedPendingLegacyInvoice() {
   return {

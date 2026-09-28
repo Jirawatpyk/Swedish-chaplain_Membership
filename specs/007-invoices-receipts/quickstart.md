@@ -56,7 +56,9 @@ node --env-file=.env.local --import tsx scripts/seed-e2e-user.ts
 # 9. Seed F4 member-portal E2E fixtures (unlocks tests/e2e/portal-invoices.spec.ts)
 node --env-file=.env.local --import tsx scripts/seed-e2e-portal-invoices.ts
 # Creates "E2E Alpha Co" (3 invoices: 2 paid + 1 open) + "E2E Echo Co" (0 invoices / empty-state).
-# 900000-series sequence reserved; idempotent.
+# The 2 paid invoices (SC-2026-900001/2) are 088 paid bills (SC bill + RC tax receipt, receipt
+# rendered) — needs FEATURE_088_TAX_AT_PAYMENT=true and TEST_DB_HOST_BLOCKLIST (or --confirm-target).
+# 900000-series sequence reserved; idempotent (replaces legacy-shaped paid fixtures).
 
 # 10. Seed F4 admin-mutation E2E fixtures (T115s — unlocks invoice-pay + credit-note fixmes)
 node --env-file=.env.local --import tsx scripts/seed-f4-e2e-admin-fixtures.ts

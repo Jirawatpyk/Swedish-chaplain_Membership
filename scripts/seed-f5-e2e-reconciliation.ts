@@ -42,7 +42,7 @@
  *   # or:
  *   node --env-file=.env.local --import tsx scripts/seed-f5-e2e-reconciliation.ts
  */
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, or, sql } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
 import { asTenantContext, type TenantContext } from '@/modules/tenants';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
@@ -129,7 +129,12 @@ async function findInvoiceByDocNumber(
       .where(
         and(
           eq(invoices.tenantId, ctx.slug),
-          eq(invoices.documentNumber, docNumber),
+          // The paid fixtures are 088 bills: their SC number rides
+          // bill_document_number_raw, not the §87 document_number.
+          or(
+            eq(invoices.documentNumber, docNumber),
+            eq(invoices.billDocumentNumberRaw, docNumber),
+          ),
         ),
       )
       .limit(1);
