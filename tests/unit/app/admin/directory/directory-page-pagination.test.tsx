@@ -148,7 +148,8 @@ describe('DirectoryPage — pagination', () => {
 
   it('keeps the "Members" heading for screen readers but hides it on a phone (board Admin-directory-mobile)', async () => {
     await renderPage({});
-    const heading = screen.getByRole('heading', { level: 2, name: enMessages.admin.directory.resultsHeading });
+    // The page's translator is mocked to return the key.
+    const heading = screen.getByRole('heading', { level: 2, name: 'resultsHeading' });
     expect(heading).toHaveClass('max-sm:sr-only');
   });
 });

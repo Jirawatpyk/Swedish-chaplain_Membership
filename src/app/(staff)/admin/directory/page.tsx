@@ -182,14 +182,18 @@ export async function renderDirectoryView({
       {header}
 
       {/* 122 US5a (T506) — the board's "Members" card; on a phone the member
-          cards sit on the page with no frame around them (board
-          `Admin-directory-mobile`). */}
+          cards sit on the page with no frame and no visible heading (board
+          `Admin-directory-mobile`). The heading is ours, not the Card's
+          title, so a phone can keep it for screen readers only; it matches
+          the Card title's weight and size. */}
       <Card
-        title={t('resultsHeading')}
-        headingLevel={2}
+        aria-labelledby="directory-members-heading"
         className="max-sm:border-0 max-sm:bg-transparent max-sm:p-0 max-sm:shadow-none"
       >
         <div className="flex flex-col gap-4">
+          <h2 id="directory-members-heading" className="text-base font-semibold max-sm:sr-only">
+            {t('resultsHeading')}
+          </h2>
           <DirectorySearchFilters />
 
           <p role="status" className="sr-only">
