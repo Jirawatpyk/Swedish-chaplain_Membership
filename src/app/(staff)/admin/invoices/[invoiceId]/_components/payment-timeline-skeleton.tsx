@@ -15,7 +15,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 export async function PaymentTimelineSkeleton() {
   const t = await getTranslations('admin.paymentReconciliation.timeline');
   return (
-    <Card aria-busy="true" aria-label={t('loading')}>
+    // `role="status"`: aria-label is not permitted on a role-less element
+    // (axe aria-prohibited-attr), and status is what this region is.
+    <Card role="status" aria-busy="true" aria-label={t('loading')}>
       <CardContent className="flex flex-col gap-3 py-6">
         {/* R2 F-6: <Skeleton> primitive already applies skeleton-shimmer
             internally — passing it here duplicates the class on the
