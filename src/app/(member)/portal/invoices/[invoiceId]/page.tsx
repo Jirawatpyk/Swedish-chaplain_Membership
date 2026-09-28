@@ -92,6 +92,7 @@ import {
 } from '../_components/portal-pdf-download-button';
 import {
   downloadLabelKeys,
+  isStaleCombinedBill,
   resolveMainPdfKind,
 } from '../_utils/invoice-row-view-model';
 // REMOVE-WITH-064-REMEDIATION — legacy no-TIN event pay-gate predicate
@@ -378,11 +379,13 @@ export default async function PortalInvoiceDetailPage({
                 // 092 — receipt-bearing status set (not `paid` alone) so a
                 // §86/10 credit note does NOT un-hide the stale pre-payment
                 // bill PDF; the combined receipt stays the sole legal document.
-                // Lockstep with the view-model's `isCombinedPaid`.
-                const isCombinedPaid =
-                  invoiceStatusHasReceipt(invoice.status) &&
-                  invoice.receiptDocumentNumberRaw === null &&
-                  mainPdfKind !== 'combined';
+                // `isStaleCombinedBill` is the SAME predicate the list
+                // view-model's `showInvoice` reads, so the two surfaces agree
+                // while the receipt is still `pending` / `failed` (the stale
+                // bill is hidden from payment, not from render). An 088 bill is
+                // never stale-combined (RC minted at payment) → its SC bill
+                // stays downloadable throughout (FR-015).
+                const isCombinedPaid = isStaleCombinedBill(invoice);
                 const showInvoicePdf = invoice.pdf !== null && !isCombinedPaid;
                 // 090 Bug 2 — `showReceiptPdf` is hoisted to the outer scope
                 // (near receiptAsyncPending) so this cell + the <ReceiptReveal>

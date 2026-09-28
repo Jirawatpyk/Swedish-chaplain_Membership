@@ -170,10 +170,17 @@ vi.mock('@/app/(member)/portal/invoices/_utils/format', () => ({
   formatDate: (v: string | null) => v ?? '—',
   formatSatangThb: (v: bigint | null) => (v === null ? '—' : String(v)),
 }));
-vi.mock('@/app/(member)/portal/invoices/_utils/invoice-row-view-model', () => ({
-  downloadLabelKeys: () => ({ labelKey: 'actions.downloadInvoice', ariaKey: 'actions.downloadInvoiceAria' }),
-  resolveMainPdfKind: () => 'invoice',
-}));
+vi.mock('@/app/(member)/portal/invoices/_utils/invoice-row-view-model', async (importOriginal) => {
+  // The pure presentation helpers are used for real (they import only type-level
+  // + barrel symbols, and the barrel is mocked above) so this suite exercises the
+  // SAME main-pdf / stale-combined-bill predicates the list view-model uses.
+  const actual =
+    await importOriginal<typeof import('@/app/(member)/portal/invoices/_utils/invoice-row-view-model')>();
+  return {
+    ...actual,
+    downloadLabelKeys: () => ({ labelKey: 'actions.downloadInvoice', ariaKey: 'actions.downloadInvoiceAria' }),
+  };
+});
 vi.mock('@/app/(member)/portal/invoices/_utils/legacy-no-tin', () => ({
   isLegacyNoTinEventInvoice: () => false,
 }));
@@ -286,6 +293,33 @@ function paidSeparateInvoice() {
     total: { satang: 107_000n },
     creditedTotal: { satang: 0n },
     lines: [],
+  };
+}
+
+/**
+ * A LEGACY combined-mode invoice, PAID, whose combined receipt is still
+ * rendering: §87 number in `documentNumber`, NO RC (the combined receipt reuses
+ * the invoice number), `receiptPdfStatus 'pending'`. Mirrors the e2e seed rows
+ * SC-2026-900001/2.
+ */
+function paidCombinedPendingLegacyInvoice() {
+  return {
+    ...paidSeparateInvoice(),
+    documentNumber: { raw: 'INV-2026-000011' },
+    receiptDocumentNumberRaw: null,
+    receiptPdfStatus: 'pending',
+    receiptPdf: null,
+  };
+}
+
+/** A PAID 088 bill (SC bill + RC minted at payment) whose RC PDF is still rendering. */
+function paidPending088Bill() {
+  return {
+    ...issuedUnpaid088Bill(),
+    status: 'paid',
+    receiptDocumentNumberRaw: 'RC-2026-000045',
+    receiptPdfStatus: 'pending',
+    paidAt: '2026-05-20',
   };
 }
 
@@ -460,5 +494,29 @@ describe('PortalInvoiceDetailPage — Pay-now gated on a positive total (#443 re
     getInvoiceMock.mockResolvedValue({ ok: true, value: issuedWithTotal(total) });
     const html = await renderPage();
     expect(html).not.toContain('data-testid="pay-now-marker"');
+  });
+});
+
+// Local review on dev data (spec 122 US4): the detail page and the list
+// disagreed on a PAID invoice whose receipt PDF is still rendering. The rule
+// both surfaces now share (`isStaleCombinedBill`): a LEGACY combined-mode
+// invoice's issue-time PDF is superseded once paid (the combined receipt reuses
+// its §87 number), so it is never re-offered — not even while the receipt
+// renders. An 088 bill is never combined (its RC is minted at payment), so its
+// SC bill stays downloadable throughout (088 FR-015).
+describe('PortalInvoiceDetailPage — paid invoice whose receipt PDF is still rendering', () => {
+  it('legacy combined-mode + pending → no stale invoice download and no receipt download yet', async () => {
+    getInvoiceMock.mockResolvedValue({ ok: true, value: paidCombinedPendingLegacyInvoice() });
+    const html = await renderPage();
+    expect(html).not.toContain('data-testid="portal-download-invoice-marker"');
+    expect(html).not.toContain('data-testid="portal-download-receipt-marker"');
+  });
+
+  it('088 bill + pending RC → the SC bill download stays (FR-015), no receipt download yet', async () => {
+    getInvoiceMock.mockResolvedValue({ ok: true, value: paidPending088Bill() });
+    const html = await renderPage();
+    expect(html).toContain('data-testid="portal-download-invoice-marker"');
+    expect(html).toContain('data-doc="SC-2026-000045"');
+    expect(html).not.toContain('data-testid="portal-download-receipt-marker"');
   });
 });
