@@ -136,6 +136,19 @@ async function openPaySheet(page: Page): Promise<void> {
 
   const sheet = page.getByTestId('pay-sheet-content');
   await expect(sheet).toBeVisible({ timeout: 5_000 });
+  // Spec 122 US4 — the AURA Drawer slides in (`aura-drawer-in-right`); a box
+  // read mid-slide is off by a fraction of a pixel (R12: width 480.00003 at
+  // 768px). Measure once its animations have finished.
+  await sheet.evaluate((el) =>
+    Promise.all(
+      el
+        .getAnimations({ subtree: true })
+        // Only animations that end: the card form's loading skeleton pulses
+        // forever, and awaiting it would hang.
+        .filter((a) => a.effect?.getComputedTiming().iterations !== Infinity)
+        .map((a) => a.finished),
+    ),
+  );
 }
 
 /**
