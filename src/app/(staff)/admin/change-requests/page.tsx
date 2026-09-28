@@ -26,7 +26,7 @@ import { headers } from 'next/headers';
 import { notFound, redirect } from 'next/navigation';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { z } from 'zod';
-import { AlertTriangleIcon, InboxIcon, ReceiptTextIcon, XIcon } from 'lucide-react';
+import { InboxIcon, XIcon } from 'lucide-react';
 import { env } from '@/lib/env';
 import { requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
@@ -41,13 +41,12 @@ import {
   asMemberId,
   listChangeRequestQueue,
 } from '@/modules/members';
-import { Alert, Badge, buttonClass } from '@jirawatpyk/aura-react/server';
-import { Table, TBody, THead, Td, Th, Tr } from '@/components/shell/aura-table';
+import { Alert, buttonClass } from '@jirawatpyk/aura-react/server';
 import { EmptyState } from '@/components/shell/empty-state';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { ChangeRequestStatusBadge, changeRequestStatusOf } from '@/components/members/change-requests/change-request-status-badge';
 import { ChangeRequestQueueFilters } from './_components/queue-filters';
+import { ChangeRequestQueueTable } from './_components/queue-table';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PAGE = 50;
@@ -96,11 +95,6 @@ function one(v: string | string[] | undefined): string | undefined {
  */
 function oneRaw(v: string | string[] | undefined): string | undefined {
   return Array.isArray(v) ? v[0] : v;
-}
-
-/** Whole days / hours for the waiting column — the exact seconds are not what a reviewer scans for. */
-function waitingParts(seconds: number): { days: number; hours: number } {
-  return { days: Math.floor(seconds / 86_400), hours: Math.floor((seconds % 86_400) / 3600) };
 }
 
 export default async function ChangeRequestsQueuePage({ searchParams }: PageProps) {
@@ -278,86 +272,7 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
           </div>
         )
       ) : (
-        // 122 US5a (T507) — AURA table (board `Admin-change-requests`), rows as
-        // cards below 640px. A static table, not DataTable: no sort, no
-        // selection, and every row keeps its test id / request id / overdue
-        // flag.
-        <Table data-testid="queue-table" caption={t('tableCaption')} captionHidden stackBelow="sm">
-          <THead>
-            <Tr>
-              <Th>{t('columns.member')}</Th>
-              <Th>{t('columns.submitter')}</Th>
-              <Th>{t('columns.fields')}</Th>
-              <Th>{t('columns.submitted')}</Th>
-              <Th>{t('columns.waiting')}</Th>
-              <Th>{t('columns.status')}</Th>
-              <Th align="end">
-                <span className="sr-only">{t('columns.actions')}</span>
-              </Th>
-            </Tr>
-          </THead>
-          <TBody>
-            {page.items.map((item) => {
-              const r = item.row.request;
-              const wait = waitingParts(item.waitingSeconds);
-              const rowId = `cr-row-${r.id}`;
-              return (
-                <Tr key={r.id} data-testid="queue-row" data-request-id={r.id} data-overdue={item.overdue ? 'true' : undefined}>
-                  <Td>
-                    <div className="font-medium">{item.row.member.companyName}</div>
-                    <div className="font-mono text-xs text-[var(--aura-fg-secondary)]">
-                      #{item.row.member.memberNumber}
-                      {item.row.member.archived ? ` · ${t('archivedMember')}` : null}
-                    </div>
-                  </Td>
-                  <Td>
-                    <div>{item.row.submitter.displayName}</div>
-                    <div className="text-xs text-[var(--aura-fg-secondary)]">{tReview(`roles.${r.submitterRoleAtSubmission}`)}</div>
-                  </Td>
-                  <Td>
-                    <div>{t('fieldCount', { count: r.fields.length })}</div>
-                    {r.fields.some((f) => f.affectsTaxDocuments) ? (
-                      <div className="flex items-center gap-1 text-xs text-[var(--aura-fg-secondary)]">
-                        <ReceiptTextIcon className="size-3" aria-hidden="true" />
-                        {tReview('markers.taxAffecting')}
-                      </div>
-                    ) : null}
-                  </Td>
-                  <Td>{fmt(r.submittedAt)}</Td>
-                  <Td>
-                    <span className="inline-flex flex-wrap items-center gap-2">
-                      <span id={`${rowId}-waiting`}>{wait.days > 0 ? t('waitingDays', { count: wait.days }) : t('waitingHours', { count: wait.hours })}</span>
-                      {item.overdue ? (
-                        <Badge tone="danger" icon={<AlertTriangleIcon aria-hidden="true" />} data-testid="overdue-badge">
-                          {t('overdue')}
-                        </Badge>
-                      ) : null}
-                    </span>
-                  </Td>
-                  <Td>
-                    <ChangeRequestStatusBadge status={changeRequestStatusOf(r)} audience="staff" />
-                    {r.decidedAt && item.row.decidedBy ? (
-                      <div className="mt-1 text-xs text-[var(--aura-fg-secondary)]">
-                        {tReview('decidedBy', { name: item.row.decidedBy.displayName || tReview('unknownReviewer'), decidedAt: fmt(r.decidedAt) })}
-                        {item.row.decidedBy.deactivated ? ` ${tReview('deactivated')}` : null}
-                      </div>
-                    ) : null}
-                  </Td>
-                  <Td align="end">
-                    <Link
-                      href={`/admin/change-requests/${r.id}`}
-                      className={buttonClass({ variant: 'secondary', size: 'sm' })}
-                      aria-label={r.state === 'pending' ? t('reviewFor', { company: item.row.member.companyName }) : t('viewFor', { company: item.row.member.companyName })}
-                      aria-describedby={`${rowId}-waiting`}
-                    >
-                      {r.state === 'pending' ? t('open') : t('view')}
-                    </Link>
-                  </Td>
-                </Tr>
-              );
-            })}
-          </TBody>
-        </Table>
+        <ChangeRequestQueueTable items={page.items} />
       )}
       {nextHref ? (
         <div className="flex justify-center">

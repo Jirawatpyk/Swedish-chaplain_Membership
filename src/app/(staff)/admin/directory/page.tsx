@@ -64,7 +64,6 @@ export default async function DirectoryPage({
 
   const params = await searchParams;
   const t = await getTranslations('admin.directory');
-  const tExports = await getTranslations('admin.directory.exports');
   const tKind = await getTranslations('admin.directory.exports.kind');
   const tStatus = await getTranslations('admin.directory.exports.status');
   const locale = await getLocale();
@@ -147,6 +146,37 @@ export default async function DirectoryPage({
       }))
     : [];
 
+  return renderDirectoryView({
+    header,
+    rows,
+    exportRows,
+    page: result.value.page,
+    pageSize: result.value.pageSize,
+    total: result.value.total,
+  });
+}
+
+/**
+ * 122 US5a (T509) — the directory body, shared with the no-DB preview route
+ * (`/test-fixtures/aura-admin?view=directory`) so the two cannot drift.
+ */
+export async function renderDirectoryView({
+  header,
+  rows,
+  exportRows,
+  page,
+  pageSize,
+  total,
+}: {
+  readonly header: React.ReactNode;
+  readonly rows: readonly DirectoryTableRow[];
+  readonly exportRows: readonly RecentExportRow[];
+  readonly page: number;
+  readonly pageSize: number;
+  readonly total: number;
+}): Promise<React.JSX.Element> {
+  const t = await getTranslations('admin.directory');
+  const tExports = await getTranslations('admin.directory.exports');
   return (
     <TableContainer>
       {header}
@@ -157,7 +187,7 @@ export default async function DirectoryPage({
           <DirectorySearchFilters />
 
           <p role="status" className="sr-only">
-            {t('resultCount', { count: result.value.total })}
+            {t('resultCount', { count: total })}
           </p>
 
           <DirectoryTable
@@ -181,9 +211,9 @@ export default async function DirectoryPage({
 
           {/* The sr-only status above already announces the count. */}
           <TablePagination
-            page={result.value.page}
-            pageSize={result.value.pageSize}
-            total={result.value.total}
+            page={page}
+            pageSize={pageSize}
+            total={total}
             baseHref="/admin/directory"
             live={false}
           />

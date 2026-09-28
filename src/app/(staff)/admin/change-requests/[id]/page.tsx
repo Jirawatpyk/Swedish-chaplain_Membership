@@ -21,7 +21,12 @@ import { requestIdFromHeaders } from '@/lib/request-id';
 import { logger } from '@/lib/logger';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 import { asMembersUserId, buildChangeRequestDeps } from '@/lib/members-change-request-deps';
-import { serialiseChangeRequestForStaff, serialiseReviewField } from '@/lib/change-request-staff-view';
+import {
+  serialiseChangeRequestForStaff,
+  serialiseReviewField,
+  type ChangeRequestReviewFieldView,
+  type StaffChangeRequestView,
+} from '@/lib/change-request-staff-view';
 import { getChangeRequestReview, type ChangeRequestId } from '@/modules/members';
 import { Alert, Card, buttonClass } from '@jirawatpyk/aura-react/server';
 import { ChangeRequestStatusBadge, changeRequestStatusOf } from '@/components/members/change-requests/change-request-status-badge';
@@ -66,8 +71,32 @@ export default async function ChangeRequestReviewPage({ params }: PageProps) {
   }
 
   const review = result.value;
-  const request = serialiseChangeRequestForStaff(review.row);
-  const fields = review.fields.map(serialiseReviewField);
+  return renderChangeRequestReviewView({
+    request: serialiseChangeRequestForStaff(review.row),
+    fields: review.fields.map(serialiseReviewField),
+    member: review.member,
+    canWrite,
+    canDecide: review.canDecide,
+  });
+}
+
+/**
+ * 122 US5a (T509) — the review body, shared with the no-DB preview route
+ * (`/test-fixtures/aura-admin?view=change-request`) so the two cannot drift.
+ */
+export async function renderChangeRequestReviewView({
+  request,
+  fields,
+  member,
+  canWrite,
+  canDecide,
+}: {
+  readonly request: StaffChangeRequestView;
+  readonly fields: readonly ChangeRequestReviewFieldView[];
+  readonly member: { readonly companyName: string; readonly erasing: boolean; readonly archived: boolean };
+  readonly canWrite: boolean;
+  readonly canDecide: boolean;
+}) {
   const t = await getTranslations('admin.changeRequests.review');
   const locale = await getLocale();
   const fmt = (iso: string) => formatLocalisedDate(iso, locale, { dateStyle: 'medium', timeStyle: 'short' });
@@ -76,9 +105,9 @@ export default async function ChangeRequestReviewPage({ params }: PageProps) {
   const notice =
     request.state !== 'pending'
       ? { tone: 'info' as const, text: t('notPending') }
-      : review.member.erasing
+      : member.erasing
         ? { tone: 'danger' as const, text: t('erasing') }
-        : review.member.archived
+        : member.archived
           ? { tone: 'warning' as const, text: t('archived') }
           : !canWrite
             ? { tone: 'info' as const, text: t('readOnly') }
@@ -89,7 +118,7 @@ export default async function ChangeRequestReviewPage({ params }: PageProps) {
       <PageHeader
         title={t('title')}
         subtitle={t('subtitle', {
-          company: review.member.companyName,
+          company: member.companyName,
           submitter: request.submittedBy.displayName,
           role: t(`roles.${request.submittedBy.roleAtSubmission}`),
           submittedAt: fmt(request.submittedAt),
@@ -149,7 +178,7 @@ export default async function ChangeRequestReviewPage({ params }: PageProps) {
         </Card>
       ) : null}
 
-      <ChangeRequestReviewClient request={request} fields={fields} canDecide={review.canDecide} />
+      <ChangeRequestReviewClient request={request} fields={fields} canDecide={canDecide} />
     </DetailContainer>
   );
 }
