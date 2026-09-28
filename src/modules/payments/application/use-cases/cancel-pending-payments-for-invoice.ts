@@ -34,10 +34,10 @@
  * lock `initiatePayment` holds across its Stripe create + insert, so an
  * initiate that was mid-flight when the void committed finishes first and its
  * row is listed (and canceled) rather than slipping in after an empty read.
- * The residual window — an initiate that read the invoice as `issued` before
- * the void but takes the lock only after this read — closes only when
- * initiate re-checks the status under that lock (#446 adds the non-issued
- * guard; see the PR notes).
+ * An initiate that read the invoice as `issued` before the void but takes the
+ * lock only after this read is refused by its own re-read of the invoice
+ * status under that lock (`initiatePayment`, step 5), so it cannot insert a
+ * pending row after this listing.
  *
  * Best-effort: Stripe refusals and lost races are recorded per row
  * (`payment_cancel_attempt_failed`) and never turned into an error result. A

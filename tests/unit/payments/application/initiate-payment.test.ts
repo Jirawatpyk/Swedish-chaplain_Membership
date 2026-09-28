@@ -1044,6 +1044,7 @@ describe('initiatePayment (T055)', () => {
         tenantId: TENANT_ID,
         invoiceId: INVOICE_ID,
         reconciliationPath: false,
+        taxAtPayment: deps.taxAtPayment,
         externalTx: TX,
       });
       // The pre-tx read already emitted any cross-tenant probe audit.
@@ -1068,16 +1069,46 @@ describe('initiatePayment (T055)', () => {
       expect(deps.processorGateway.createPaymentIntent).not.toHaveBeenCalled();
     });
 
-    it('under-lock bridge refusal (not_payable) → invoice_not_payable with the bridge status', async () => {
+    it.each([
+      [{ code: 'not_payable', status: 'void' }, { code: 'invoice_not_payable', currentStatus: 'void' }],
+      [{ code: 'not_found' }, { code: 'invoice_not_found' }],
+      [{ code: 'forbidden' }, { code: 'forbidden_invoice' }],
+      [
+        { code: 'corrupted_total', invoiceId: INVOICE_ID },
+        { code: 'invoice_data_corrupt', invoiceId: INVOICE_ID },
+      ],
+      [{ code: 'legacy_no_tin_event_not_payable' }, { code: 'legacy_no_tin_event_not_payable' }],
+      [{ code: 'new_flow_bill_requires_flag_on' }, { code: 'new_flow_bill_requires_flag_on' }],
+    ] as const)(
+      'under-lock bridge refusal %j → %j; no second probe audit, no Stripe call, no write',
+      async (bridgeError, expected) => {
+        const deps = makeDeps();
+        (deps.invoicingBridge.getInvoiceForPayment as ReturnType<typeof vi.fn>)
+          .mockResolvedValueOnce(ok(INVOICE_DTO))
+          .mockResolvedValueOnce(err(bridgeError));
+        const result = await initiatePayment(deps, makeInput());
+        expect(result.ok).toBe(false);
+        if (result.ok) return;
+        expect(result.error).toEqual(expected);
+        // The probe audit belongs to the pre-tx read, which succeeded here.
+        expect(deps.audit.emit).not.toHaveBeenCalled();
+        expect(deps.processorGateway.createPaymentIntent).not.toHaveBeenCalled();
+        expect(deps.paymentsRepo.insert).not.toHaveBeenCalled();
+        expect(deps.paymentsRepo.updateStatus).not.toHaveBeenCalled();
+      },
+    );
+
+    it('an unknown bridge code (type system bypassed) fails closed → invoice_read_failed, never a PI', async () => {
       const deps = makeDeps();
       (deps.invoicingBridge.getInvoiceForPayment as ReturnType<typeof vi.fn>)
         .mockResolvedValueOnce(ok(INVOICE_DTO))
-        .mockResolvedValueOnce(err({ code: 'not_payable', status: 'void' }));
+        .mockResolvedValueOnce(err({ code: 'some_future_code' } as never));
       const result = await initiatePayment(deps, makeInput());
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.error).toEqual({ code: 'invoice_not_payable', currentStatus: 'void' });
+      expect(result.error).toEqual({ code: 'invoice_read_failed' });
       expect(deps.processorGateway.createPaymentIntent).not.toHaveBeenCalled();
+      expect(deps.paymentsRepo.insert).not.toHaveBeenCalled();
     });
   });
 

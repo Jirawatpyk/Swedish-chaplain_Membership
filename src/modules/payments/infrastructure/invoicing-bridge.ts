@@ -247,8 +247,10 @@ export const invoicingBridge: InvoicingBridgePort = {
           tenantId: input.tenantId,
           invoiceId: input.invoiceId,
           // Bounded: which caller shape hit it. `true` = webhook confirm,
-          // `false` = self-pay initiate. Distinguishes a tenant-mismatch
-          // composition bug (initiate) from a mid-tx abort (confirm) without
+          // `false` = self-pay initiate — whose pre-tx read has no
+          // externalTx and whose re-read under the advisory lock does, so
+          // read it together with `hasExternalTx`. Distinguishes a
+          // tenant-mismatch composition bug from a mid-tx abort without
           // logging the actor.
           reconciliationPath: input.reconciliationPath,
           hasExternalTx: input.externalTx !== undefined,
