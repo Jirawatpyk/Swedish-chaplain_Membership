@@ -16,7 +16,7 @@ import {
   E2E_PAID_TEMPLATE_VERSION,
   E2E_PORTAL_INVOICE_SEEDS,
   buildE2ePortalInvoiceRow,
-  isLegacyPaidFixtureRow,
+  isLegacyFixtureRow,
   mainPdfBlobKey,
   receiptPdfBlobKey,
   type E2ePortalInvoiceSeed,
@@ -126,34 +126,42 @@ describe('buildE2ePortalInvoiceRow — paid fixtures are real 088 paid bills', (
   });
 });
 
-describe('buildE2ePortalInvoiceRow — the issued fixture is unchanged', () => {
-  it('SC-2026-900003 keeps its §87 number and no payment / receipt fields', () => {
-    const row = build(seed('SC-2026-900003'));
+describe('buildE2ePortalInvoiceRow — the issued fixture is an unpaid 088 bill', () => {
+  // With FEATURE_088_TAX_AT_PAYMENT on, paying a legacy §87-numbered invoice is
+  // refused (`legacy_invoice_needs_reissue`), so the pay-sheet fixture must be a
+  // real 088 bill for the pay specs to pay it.
+  it('SC-2026-900003 carries the SC bill number and no §87 number, RC, payment or receipt', () => {
+    const s = seed('SC-2026-900003');
+    const row = build(s);
     expect(row.status).toBe('issued');
-    expect(row.documentNumber).toBe('SC-2026-900003');
-    expect(row.sequenceNumber).toBe(900003);
-    expect(row.billDocumentNumberRaw).toBeNull();
+    expect(row.billDocumentNumberRaw).toBe('SC-2026-900003');
+    expect(row.documentNumber).toBeNull();
+    expect(row.sequenceNumber).toBeNull();
     expect(row.receiptDocumentNumberRaw).toBeNull();
     expect(row.receiptPdfStatus).toBeNull();
     expect(row.paidAt).toBeNull();
     expect(row.paymentMethod).toBeNull();
-    expect(row.pdfTemplateVersion).toBe(1);
+    expect(row.pdfDocKind).toBe('invoice');
+    expect(row.invoiceId).toBe(s.invoiceId);
+  });
+
+  it('renders the bill at the same template version + production key scheme as the paid fixtures', () => {
+    const s = seed('SC-2026-900003');
+    const row = build(s);
+    expect(row.pdfTemplateVersion).toBe(E2E_PAID_TEMPLATE_VERSION);
+    expect(mainPdfBlobKey(TENANT, s)).toBe(
+      `invoicing/swecham/2026/${s.invoiceId}_v${E2E_PAID_TEMPLATE_VERSION}.pdf`,
+    );
   });
 });
 
-describe('isLegacyPaidFixtureRow', () => {
-  it('flags an old-shape paid fixture (§87 number, no bill number) for replacement', () => {
-    expect(
-      isLegacyPaidFixtureRow({ status: 'paid', documentNumber: 'SC-2026-900001', billDocumentNumberRaw: null }),
-    ).toBe(true);
+describe('isLegacyFixtureRow', () => {
+  it('flags any old-shape fixture (§87 number, no bill number) for replacement — paid or issued', () => {
+    expect(isLegacyFixtureRow({ documentNumber: 'SC-2026-900001', billDocumentNumberRaw: null })).toBe(true);
+    expect(isLegacyFixtureRow({ documentNumber: 'SC-2026-900003', billDocumentNumberRaw: null })).toBe(true);
   });
 
-  it('leaves a new-shape paid fixture and the issued fixture alone', () => {
-    expect(
-      isLegacyPaidFixtureRow({ status: 'paid', documentNumber: null, billDocumentNumberRaw: 'SC-2026-900001' }),
-    ).toBe(false);
-    expect(
-      isLegacyPaidFixtureRow({ status: 'issued', documentNumber: 'SC-2026-900003', billDocumentNumberRaw: null }),
-    ).toBe(false);
+  it('leaves an 088-shaped fixture alone', () => {
+    expect(isLegacyFixtureRow({ documentNumber: null, billDocumentNumberRaw: 'SC-2026-900001' })).toBe(false);
   });
 });
