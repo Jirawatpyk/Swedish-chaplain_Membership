@@ -8,7 +8,6 @@
  */
 
 import { useState, useCallback, useMemo } from 'react';
-import { Alert } from '@jirawatpyk/aura-react';
 import { useRouter } from 'next/navigation';
 import { toast } from '@/lib/toast';
 import {
@@ -189,12 +188,6 @@ export function DirectoryWithBulk({
 
   return (
     <>
-      {/* C3 round-10 ui-design-specialist — manager banner. Without it
-          the table looked identical to admin's first paint (same chevron
-          hover hint + same status badge styling) so managers repeatedly
-          tried to double-click cells and got nothing. Banner makes the
-          read-only constraint explicit + points to the resolution path. */}
-      {!isAdmin && <ManagerReadOnlyBanner />}
       <MembersTable
         rows={rows}
         total={total}
@@ -227,16 +220,3 @@ export function DirectoryWithBulk({
   );
 }
 
-/**
- * The read-only notice above the manager directory table (board
- * `Admin-state-members-manager`). `role="note"`: static admin-handoff
- * guidance, not a live-region status update.
- */
-function ManagerReadOnlyBanner() {
-  const t = useTranslations('admin.members.directory');
-  return (
-    <Alert tone="info" role="note">
-      {t('managerReadOnlyBanner')}
-    </Alert>
-  );
-}

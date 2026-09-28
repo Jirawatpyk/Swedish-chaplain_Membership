@@ -20,7 +20,7 @@ function filenameFromDisposition(header: string | null): string {
   return match?.[1] ?? FILENAME_FALLBACK;
 }
 
-export function ExportBackupButton() {
+export function ExportBackupButton({ className }: { readonly className?: string } = {}) {
   const t = useTranslations('admin.members');
   const [busy, setBusy] = useState(false);
 
@@ -65,6 +65,7 @@ export function ExportBackupButton() {
       loading={busy}
       disabled={busy}
       onClick={handleClick}
+      {...(className ? { className } : {})}
     >
       {t('exportBackup')}
     </Button>

@@ -382,10 +382,7 @@ export default async function AuraAdminPreviewPage({
         <MembersAllInvitedEmptyState />
       </MembersStateCard>
     ) : state === 'empty' ? (
-      <>
-        <DirectoryFilters plans={PLANS} portalInviteCount={0} />
-        <MembersZeroState canAddMember />
-      </>
+      <MembersZeroState canAddMember />
     ) : (
       <>
         <DirectoryFilters plans={PLANS} portalInviteCount={7} />
@@ -400,6 +397,7 @@ export default async function AuraAdminPreviewPage({
         addMemberLabel: t('addMember'),
         canWrite: isAdmin,
         canBulk: isAdmin,
+        ...(isAdmin ? {} : { readOnlyNotice: t('directory.managerReadOnlyBanner') }),
         body,
       })}
     </StaffFrame>

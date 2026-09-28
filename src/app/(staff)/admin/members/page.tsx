@@ -56,7 +56,7 @@ import {
 } from '@/modules/renewals';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
-import { buttonClass } from '@jirawatpyk/aura-react/server';
+import { Alert, buttonClass } from '@jirawatpyk/aura-react/server';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import {
@@ -214,6 +214,7 @@ export default async function MembersListPage({
     addMemberLabel: t('addMember'),
     canWrite: canPerform(currentUser.role, 'members.write'),
     canBulk: canPerform(currentUser.role, 'members.bulk'),
+    ...(canPerform(currentUser.role, 'members.write') ? {} : { readOnlyNotice: t('directory.managerReadOnlyBanner') }),
     body: (
       <MembersDirectoryBody
         query={query}
@@ -235,6 +236,7 @@ export function renderMembersListView({
   addMemberLabel,
   canWrite,
   canBulk,
+  readOnlyNotice,
   body,
 }: {
   readonly title: string;
@@ -242,6 +244,8 @@ export function renderMembersListView({
   readonly addMemberLabel: string;
   readonly canWrite: boolean;
   readonly canBulk: boolean;
+  /** The manager's read-only notice, above the filters (board `Admin-state-members-manager`). */
+  readonly readOnlyNotice?: string;
   readonly body: ReactNode;
 }) {
   return (
@@ -259,7 +263,9 @@ export function renderMembersListView({
           // pushed "Lägg till medlem" past a 360 / 390 px screen in Swedish.
           canWrite ? (
             <>
-              {canBulk && <ExportBackupButton />}
+              {/* A phone has no room for a full-tenant backup download
+                  (board `Admin-members-mobile`); it stays on larger screens. */}
+              {canBulk && <ExportBackupButton className="max-sm:hidden" />}
               <Link href="/admin/members/new" className={buttonClass({ variant: 'primary' })}>
                 <PlusIcon aria-hidden="true" className="size-4" />
                 {addMemberLabel}
@@ -269,7 +275,15 @@ export function renderMembersListView({
         }
       />
 
-      <div className="flex flex-col gap-4">{body}</div>
+      <div className="flex flex-col gap-4">
+        {/* `role="note"`: standing guidance, not a live status update. */}
+        {readOnlyNotice ? (
+          <Alert tone="info" role="note">
+            {readOnlyNotice}
+          </Alert>
+        ) : null}
+        {body}
+      </div>
     </TableContainer>
   );
 }
@@ -425,12 +439,9 @@ export async function MembersDirectoryBody({
         </MembersStateCard>
       );
     }
-    return (
-      <>
-        <DirectoryFilters plans={planOptions} portalInviteCount={portalInviteCount} />
-        <MembersZeroState canAddMember={isAdmin} />
-      </>
-    );
+    // No members yet: nothing to filter, so no toolbar (board
+    // `Admin-state-members-empty`).
+    return <MembersZeroState canAddMember={isAdmin} />;
   }
 
   // 055-member-number — resolve the per-tenant prefix ONCE (RLS-safe shared
