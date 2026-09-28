@@ -193,6 +193,7 @@ function baseRow(overrides: Partial<InvoicesTableRow>): InvoicesTableRow {
     receiptPdfStatus: null,
     buyerSubtitle: null,
     mainDownloadIsReceipt: false,
+    staleCombinedBill: false,
     ...overrides,
   };
 }
@@ -503,8 +504,9 @@ describe('<InvoicesTable> receipt-number combined-hint gate', () => {
  * `invoiceStatusHasReceipt(status) && receiptPdf !== null`, so a credited /
  * partially_credited invoice with a rendered receipt blob arrives with
  * `hasReceiptPdf: true`. The client trusts that flag: the receipt download +
- * the combined-mode hint + `isCombinedPaid` (stale-bill-hiding) all key off
- * `hasReceiptPdf`, NOT a raw `status === 'paid'` re-check (dropped in 092).
+ * the combined-mode hint key off `hasReceiptPdf`, NOT a raw `status === 'paid'`
+ * re-check (dropped in 092). Stale-bill hiding reads the server-computed
+ * `staleCombinedBill` (same receipt-bearing status set — PR #456 follow-up).
  * Thai VAT §86/10: a credit note reduces the sale but does not cancel the
  * receipt, so admin staff must keep downloading it (e.g. to re-send).
  */
@@ -548,13 +550,16 @@ describe('<InvoicesTable> — receipt stays downloadable after a credit note (09
         receiptDocumentNumberRaw: null,
         receiptPdfStatus: 'rendered',
         hasPdf: true,
+        // Server-computed in page.tsx (invoiceStatusHasReceipt + NULL RC + main
+        // pdf not 'receipt_combined') — true for a credited combined-mode row.
+        staleCombinedBill: true,
       }),
     ]);
     // Combined-mode hint present (the receipt reuses the invoice number).
     expect(screen.getByLabelText('Combined mode')).toBeInTheDocument();
     // Receipt download present…
     expect(screen.getByTestId('row-download-receipt')).toBeInTheDocument();
-    // …and the stale pre-payment bill download is HIDDEN (isCombinedPaid true).
+    // …and the stale pre-payment bill download is HIDDEN (staleCombinedBill).
     expect(screen.queryByTestId('row-download-invoice')).toBeNull();
   });
 
@@ -689,6 +694,67 @@ describe('<InvoicesTable> receipt async-resilience (088 T066b)', () => {
     expect(screen.getByTestId('row-download-receipt')).toBeInTheDocument();
     expect(screen.queryByTestId('row-receipt-generating')).toBeNull();
     expect(screen.queryByTestId('row-receipt-render-failed')).toBeNull();
+  });
+
+  // PR #456 follow-up — lockstep with the admin detail page (`isPaidCombined`)
+  // and the portal (`isStaleCombinedBill`): a LEGACY combined-mode invoice's
+  // issue-time PDF is superseded at PAYMENT (the combined receipt reuses its §87
+  // number), not when the receipt finishes rendering. Pre-fix the row gated on
+  // `hasReceiptPdf`, so the stale bill download showed while the receipt was
+  // still pending / failed.
+  it('paid COMBINED-mode + pending → shimmer only; the stale bill download is HIDDEN; no combined hint yet', () => {
+    renderTable([
+      baseRow({
+        status: 'paid',
+        hasPdf: true,
+        hasReceiptPdf: false,
+        receiptDocumentNumberRaw: null,
+        receiptPdfStatus: 'pending',
+        staleCombinedBill: true,
+      }),
+    ]);
+    expect(screen.getByTestId('row-receipt-generating')).toBeInTheDocument();
+    expect(screen.queryByTestId('row-download-invoice')).toBeNull();
+    expect(screen.queryByTestId('row-download-receipt')).toBeNull();
+    // The combined hint still waits for the rendered receipt.
+    expect(screen.queryByLabelText('Combined mode')).toBeNull();
+  });
+
+  it('paid COMBINED-mode + failed → alert link only; the stale bill download is HIDDEN', () => {
+    renderTable([
+      baseRow({
+        status: 'paid',
+        hasPdf: true,
+        hasReceiptPdf: false,
+        receiptDocumentNumberRaw: null,
+        receiptPdfStatus: 'failed',
+        staleCombinedBill: true,
+      }),
+    ]);
+    expect(screen.getByTestId('row-receipt-render-failed')).toBeInTheDocument();
+    expect(screen.queryByTestId('row-download-invoice')).toBeNull();
+  });
+
+  it('paid 088 bill + pending RC → the SC bill download stays (088 FR-015)', () => {
+    renderTable([
+      baseRow({
+        status: 'paid',
+        documentNumber: 'SC-2026-000045',
+        billDocumentNumberRaw: 'SC-2026-000045',
+        receiptDocumentNumberRaw: 'RC-2026-000123',
+        taxDocumentKind: 'tax_receipt',
+        mainDownloadIsBill: true,
+        hasPdf: true,
+        hasReceiptPdf: false,
+        receiptPdfStatus: 'pending',
+        staleCombinedBill: false,
+      }),
+    ]);
+    expect(screen.getByTestId('row-receipt-generating')).toBeInTheDocument();
+    expect(screen.getByTestId('row-download-invoice')).toHaveAttribute(
+      'aria-label',
+      'Download bill SC-2026-000045',
+    );
   });
 
   it('failed receipt with NO invoice pdf still surfaces the alert (row does not collapse to em-dash)', () => {
