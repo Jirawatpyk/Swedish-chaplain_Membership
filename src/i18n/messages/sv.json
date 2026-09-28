@@ -2312,7 +2312,6 @@
         "bankAccountNo": "Siffror, med valfria bindestreck eller mellanslag."
       },
       "receiptMode": {
-        "combined": "Kombinerad faktura + kvitto",
         "separate": "Separata faktura- och kvittoströmmar"
       },
       "proRate": {
@@ -2693,8 +2692,6 @@
         "creditedSuffix": "{count, plural, one {+# kreditnota} other {+# kreditnotor}}",
         "creditedTooltip": "{count, plural, one {# kreditnota} other {# kreditnotor}} · {amount} THB krediterat",
         "creditedAria": "{count, plural, one {# kreditnota utställd} other {# kreditnotor utställda}} mot denna faktura, {amount} thailändska baht krediterat",
-        "receiptNumberCombinedTooltip": "Kombinerat läge — kvittot återanvänder fakturanumret",
-        "receiptNumberCombinedAria": "Kvitto använder fakturans dokumentnummer (kombinerat läge)",
         "tableCaption": "Lista över fakturor för de valda filtren.",
         "queueTableCaption": "Lista över utkast för automatisk förnyelse som väntar på granskning.",
         "queue": {
@@ -6295,8 +6292,6 @@
       "filters": {
         "noMatch": "Inga fakturor matchar dina filter."
       },
-      "receiptNumberCombinedTooltip": "Kombinerat läge — kvittot återanvänder fakturanumret",
-      "receiptNumberCombinedAria": "Kvitto använder fakturans dokumentnummer (kombinerat läge)",
       "toast": {
         "resendSuccess": "Kopia köad — den går till organisationens primära kontakt.",
         "resendRateLimited": "Du bad om en kopia nyligen. Vänta några minuter och försök igen.",

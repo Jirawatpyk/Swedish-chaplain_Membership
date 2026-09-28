@@ -13,9 +13,8 @@
  *
  *   - Receipt No. sits right after Number so the bookkeeper can scan
  *     both §87 document numbers (invoice + receipt) without crossing
- *     the Member column. Shows `receiptDocumentNumberRaw` for paid+
- *     separate-mode rows; em-dash for combined-mode (reuses invoice
- *     number) and for unpaid rows.
+ *     the Member column. Shows `receiptDocumentNumberRaw` when the row
+ *     has one; em-dash otherwise (e.g. unpaid rows).
  *   - All columns use `whitespace-nowrap` so dates / numbers / badges
  *     stay on one line. Column widths rely on auto-layout (no w-px)
  *     so slack distributes proportionally across columns instead of
@@ -31,7 +30,7 @@ import Link from 'next/link';
 import { useTranslations, useLocale } from 'next-intl';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 import { toast } from '@/lib/toast';
-import { AlertCircleIcon, InfoIcon, Loader2 } from 'lucide-react';
+import { AlertCircleIcon, Loader2 } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -150,8 +149,7 @@ export type InvoicesTableRow = {
    * non-null `receiptPdf` IS the admin's "receipt has rendered" signal
    * (the async worker only writes the blob once the PDF exists), so this
    * flag doubles as the rendered-receipt gate. The Actions cell uses it
-   * to decide whether to render the "Receipt" download link, and the
-   * Receipt-No. cell uses it to gate the combined-mode hint.
+   * to decide whether to render the "Receipt" download link.
    */
   readonly hasReceiptPdf: boolean;
   /**
@@ -162,19 +160,6 @@ export type InvoicesTableRow = {
    * signal that the §86/4 + §105ทวิ legal doc is on its way.
    */
   readonly receiptPdfStatus: 'pending' | 'rendered' | 'failed' | null;
-  /**
-   * Combined-mode paid invoice whose MAIN pdf is the issue-time pre-payment
-   * document: the combined §86/4 + §105ทวิ receipt reuses its §87 number
-   * (NULL `receiptDocumentNumberRaw`), so the issue-time PDF is a stale draft
-   * from the moment of PAYMENT — not from when the receipt renders — and the
-   * Invoice download is hidden (also while the receipt is pending / failed).
-   * Computed in page.tsx (`invoiceStatusHasReceipt(status) && RC null &&
-   * pdfDocKind !== 'receipt_combined'`) — the same rule as the admin detail
-   * `isPaidCombined` and the portal `isStaleCombinedBill` (PR #456). Never true
-   * for an 088 bill (its RC is minted at payment → the SC bill stays, FR-015).
-   * Server-computed because the row carries no raw `pdfDocKind`.
-   */
-  readonly staleCombinedBill: boolean;
   /**
    * 064 remediation S7 — the MAIN pdf IS a §105 receipt (`pdfDocKind
    * 'receipt_separate'`: a β as-paid no-TIN event row, or a legacy issued
@@ -272,8 +257,7 @@ const headCls = 'text-xs uppercase tracking-wide text-muted-foreground';
 // Shared base for the Number-column open-detail link (both the real-number
 // row and the draft placeholder row). `inline-flex min-h-6 items-center`
 // guarantees a ≥24px vertical hit target (WCAG 2.5.8) — the ~20px `text-sm`
-// line-box alone is short of it — matching the combined-mode receipt span's
-// `min-h-6` elsewhere in this file. The real-number branch appends
+// line-box alone is short of it. The real-number branch appends
 // `font-medium`; the draft branch stays normal-weight `text-foreground`
 // (see the Number-cell comment for why it is neither italic nor muted).
 const numberLinkBase =
@@ -556,53 +540,6 @@ export function InvoicesTable({
                   <span className="font-mono text-sm tabular-nums">
                     {r.receiptDocumentNumberRaw}
                   </span>
-                ) : r.hasReceiptPdf ? (
-                  // Combined-mode (receipt reuses the invoice number per
-                  // Thai RD §86/4 + §105ทวิ). Gate on `hasReceiptPdf &&
-                  // !receiptDocumentNumberRaw` — the rendered-receipt
-                  // counterpart of the action cell's `staleCombinedBill` (which
-                  // hides the stale bill from PAYMENT; this hint waits for the
-                  // receipt to exist — PR #456 follow-up). 092 — `hasReceiptPdf` is now
-                  // `invoiceStatusHasReceipt(status) && receiptPdf !== null`
-                  // (paid / partially_credited / credited + rendered), so the
-                  // redundant `&& r.status === 'paid'` re-check was dropped:
-                  // `hasReceiptPdf` already carries the receipt-bearing status.
-                  // The `receiptDocumentNumberRaw` falsy branch above already
-                  // supplies the `&& !receiptDocumentNumberRaw` clause.
-                  // Previously this gated on the raw `r.status === 'paid'`,
-                  // so a paid combined-mode invoice whose receipt PDF was
-                  // still rendering (`receiptPdfStatus = 'pending'`) showed
-                  // the "receipt = invoice number" hint PREMATURELY while
-                  // the action cell correctly showed "Preparing receipt…".
-                  // Now this cell gates on the receipt PDF being PRESENT
-                  // (`hasReceiptPdf` = paid + receiptPdf !== null), which is
-                  // the admin's own
-                  // rendered-receipt signal. This is the same INTENT as
-                  // the member-portal fix (060-member-portal-d4) — don't
-                  // surface receipt-derived UI until the receipt has
-                  // rendered — but a DIFFERENT mechanism: admin reads
-                  // `hasReceiptPdf` (PDF blob present) while the portal VM
-                  // reads `receiptPdfStatus === 'rendered'`. The two
-                  // predicates are not identical and can momentarily
-                  // disagree during the async render window; they merely
-                  // share the goal of gating on a rendered receipt. The
-                  // hover-only tooltip was removed: its `<span>` trigger
-                  // was not keyboard-focusable and not touch-reachable
-                  // (base-ui tooltips are hover/focus only), so the hint
-                  // never surfaced on touch or keyboard — only desktop
-                  // mouse. The `aria-label` already conveys the full
-                  // combined-mode explanation to assistive tech, so SR
-                  // users keep complete coverage; we drop the redundant
-                  // dead-on-touch tooltip rather than inject a
-                  // non-actionable tab stop. Mirrors the members table's
-                  // dead edit-hint tooltip removal.
-                  <span
-                    className="inline-flex min-h-6 items-center gap-1 text-sm text-muted-foreground"
-                    aria-label={t('receiptNumberCombinedAria')}
-                  >
-                    —
-                    <InfoIcon className="size-3.5" aria-hidden="true" />
-                  </span>
                 ) : (
                   <span className="text-sm text-muted-foreground">—</span>
                 )}
@@ -756,34 +693,18 @@ export function InvoicesTable({
                 )}
               </TableCell>
               <TableCell className="align-middle whitespace-nowrap text-right">
-                {/* Action mix mirrors the invoice-detail "⋯" menu
-                    (Thai RD §86/4 + §105ทวิ combined-mode rule):
-                      - paid + combined  → Receipt only (the dual-role
-                        PDF; pre-payment invoice is a stale draft)
-                      - paid + separate  → Invoice + Receipt (two
-                        distinct §87 legal docs)
-                      - issued / void    → Invoice only
+                {/* Action mix mirrors the invoice-detail "⋯" menu:
+                      - paid  → Invoice (the SC bill on an 088 bill,
+                        FR-015) + Receipt once rendered
+                      - issued / void → Invoice only
                     Plain <a download> — PDF endpoint returns binary
                     bytes; Next.js <Link> would misinterpret as RSC
                     payload. */}
                 {(() => {
-                  // `receiptDocumentNumberRaw === null` is the SINGLE
-                  // source of truth for "this paid invoice uses one
-                  // legal document for both invoice + receipt" (Thai
-                  // RD §86/4 + §105ทวิ). Do NOT infer from
-                  // `tenant_invoice_settings.receipt_numbering_mode`
-                  // — that flag describes the tenant's CURRENT mode;
-                  // an invoice paid before a mode flip keeps its own
-                  // immutable snapshot. Read the row, not the setting.
-                  // PR #456 follow-up — the stale bill is hidden from PAYMENT,
-                  // not from receipt render (pre-fix this gated on
-                  // `hasReceiptPdf`, so the stale bill showed while the receipt
-                  // was pending / failed). `staleCombinedBill` is server-computed
-                  // with the receipt-bearing status set (092) — lockstep with
-                  // the admin detail `isPaidCombined` + portal
-                  // `isStaleCombinedBill`. The Receipt-No. combined hint still
-                  // waits for the rendered receipt (`hasReceiptPdf`).
-                  const showInvoice = r.hasPdf && !r.staleCombinedBill;
+                  // The retired pre-088 combined-mode rule (hide the issue-time
+                  // PDF of a paid invoice with no RC) is gone: prod has no such
+                  // rows and the 088 flag is permanently on.
+                  const showInvoice = r.hasPdf;
                   // 088 T066b (FR-019) — async receipt-PDF resilience. The
                   // former single "preparing…" affordance conflated pending +
                   // failed, so a permanent render failure showed a perpetual

@@ -10,7 +10,7 @@
  * view-model (`InvoiceRowViewModel`, see `_utils/invoice-row-view-model.ts`)
  * that the table consumes. It NEVER recomputes the presentation flags
  * (`displayStatus`, `showInvoice`, `showReceipt`, `receiptPending`,
- * `receiptFailed`, `resendable`, `isCombinedPaid`) — so the card + table
+ * `receiptFailed`, `resendable`) — so the card + table
  * can never drift apart. Formatting (date / money / badge variant / status icon) and the
  * action buttons are reused verbatim from the same helpers the table uses.
  *
@@ -22,11 +22,6 @@
  *   │ Receipt No. RCP-…      Total 50,000.00 THB  │  Receipt No. ONLY in separate-mode
  *   │ [ ⤓ Receipt                        ] [ ⋯ ]  │  one download ≥44px + menu: the other doc, Email me a copy
  *   └───────────────────────────────────────────┘
- *
- * Combined-mode receipt (em-dash + tooltip hint the table shows in its
- * receipt cell) is INTENTIONALLY omitted from the card — on mobile the
- * absence of a receipt line is the cleaner signal; the combined Receipt
- * download still surfaces in the action row exactly as on the table.
  *
  * a11y:
  *   - `<ul role="list">` of `<li>` (cards in a list = list items). Each
@@ -205,9 +200,8 @@ export function PortalInvoiceCardList({
                     Total always sits in the right-hand column so it lines up
                     card to card. Below 16rem of card width the grid is one
                     column: rem-based, so 200% text reflows it too instead of
-                    pushing an unbreakable amount past the screen (R13). Receipt No. is separate-mode only, as before:
-                    combined mode omits it (the combined download is in the
-                    action row). 088 A-refined (FR-016) — on a real tax_receipt
+                    pushing an unbreakable amount past the screen (R13). Receipt No. shows only
+                    when the row has a receipt number. 088 A-refined (FR-016) — on a real tax_receipt
                     row the RC is a link to the detail whose aria-label names the
                     document; legacy separate-mode rows keep plain text. */}
                 <dl className="m-0 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-[var(--aura-border-default)] pt-3 @max-[16rem]:grid-cols-1">
@@ -272,29 +266,13 @@ export function PortalInvoiceCardList({
                       <PortalReceiptDownloadButton
                         invoiceId={vm.invoiceId}
                         documentNumber={receiptRef}
-                        // Combined-mode label is the SHORT verb-less
-                        // `actions.downloadCombined` ("Tax invoice / Receipt");
-                        // the download icon carries "download". Separate-mode
-                        // keeps the short "Receipt"; the full aria label is
-                        // preserved for SR users.
-                        label={
-                          vm.isCombinedPaid
-                            ? t('actions.downloadCombined')
-                            : t('actions.downloadReceipt')
-                        }
-                        ariaLabel={t(
-                          vm.isCombinedPaid
-                            ? 'actions.downloadCombinedAria'
-                            : 'actions.downloadReceiptAria',
-                          { number: receiptRef },
-                        )}
+                        // The short "Receipt" label (the download icon carries
+                        // "download"); the full aria label is kept for SR users.
+                        label={t('actions.downloadReceipt')}
+                        ariaLabel={t('actions.downloadReceiptAria', { number: receiptRef })}
                         className={cn(
                           buttonClass({ variant: 'secondary', size: 'sm' }),
                           'min-h-11 flex-1 px-3',
-                          // The combined label WRAPS to 2 lines inside a 320px
-                          // card instead of clipping; `min-h-11` keeps the
-                          // ≥44px tap target.
-                          vm.isCombinedPaid && 'h-auto whitespace-normal',
                         )}
                       />
                     ) : vm.showInvoice ? (

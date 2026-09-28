@@ -206,9 +206,8 @@ const paidSeparateRow = buildInvoice({
   receiptDocumentNumberRaw: 'RC-2026-000001',
 });
 
-// Combined-mode paid: receipt reuses the invoice number (receiptDocumentNumberRaw
-// NULL) + rendered blob + pdfDocKind 'invoice' → vm.isCombinedPaid true, so the
-// main invoice PDF is hidden and only the combined receipt button shows.
+// Paid with no RC number (the retired pre-088 combined-mode shape — 0 rows in
+// prod): no longer special-cased, so the invoice PDF stays next to the receipt.
 const combinedPaidRow = buildInvoice({
   status: 'paid',
   paidAt: '2026-04-05T00:00:00Z',
@@ -287,9 +286,9 @@ describe('<InvoicesSummaryCard> — row layout + variant (090 UX findings #1/#3/
     expect(receipt).toHaveClass('aura-icon-btn');
   });
 
-  it('finding #3 — a combined-mode paid row shows only the receipt download (the stale invoice PDF is hidden)', async () => {
+  it('a paid row with no RC number keeps BOTH downloads (the combined-mode hiding is retired)', async () => {
     await renderCardDom([combinedPaidRow]);
     expect(screen.getByTestId('receipt-download')).toHaveClass('aura-icon-btn');
-    expect(screen.queryByTestId('invoice-download')).toBeNull();
+    expect(screen.getByTestId('invoice-download')).toHaveClass('aura-icon-btn');
   });
 });

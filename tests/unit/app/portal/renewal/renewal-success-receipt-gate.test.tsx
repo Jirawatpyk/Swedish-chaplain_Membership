@@ -191,13 +191,11 @@ describe('RenewalSuccessPage — §86/4 receipt stays downloadable after a credi
   });
 });
 
-// PR #456 follow-up — a LEGACY combined-mode invoice's issue-time PDF is
-// superseded at PAYMENT (the combined receipt reuses its §87 number), so the
-// success page must not offer it while the receipt is still rendering (shared
-// `isStaleCombinedBill`, lockstep with the portal list + detail). An 088 bill is
-// never stale-combined (its RC is minted at payment) → its SC bill stays (FR-015).
+// While the receipt renders, the page offers the invoice/bill PDF next to the
+// "receipt preparing" status — the SC bill on an 088 bill (FR-015). The retired
+// pre-088 combined-mode shape (NULL RC; 0 rows in prod) is not special-cased.
 describe('RenewalSuccessPage — paid, receipt still rendering', () => {
-  it('legacy combined-mode (NULL RC) + pending → NO stale invoice download; the preparing status still shows', async () => {
+  it('paid with no RC + pending → the invoice download + the preparing status', async () => {
     getInvoiceMock.mockResolvedValue({
       ok: true,
       value: {
@@ -209,7 +207,7 @@ describe('RenewalSuccessPage — paid, receipt still rendering', () => {
       },
     });
     const html = await renderPage();
-    expect(html).not.toContain('data-kind="invoice"');
+    expect(html).toContain('data-kind="invoice"');
     expect(html).not.toContain('data-kind="receipt"');
     expect(html).toContain('receiptPreparing');
   });

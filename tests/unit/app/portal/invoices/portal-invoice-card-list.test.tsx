@@ -347,14 +347,12 @@ describe('<PortalInvoiceCardList> — issued + pdf present', () => {
 });
 
 // ===========================================================================
-// 2. combined-paid (paid + rendered + receiptDocumentNumberRaw null)
+// 2. paid + rendered receipt + NO RC number — the retired pre-088 combined-mode
+//    shape (0 rows in prod; the 088 flag is permanently on). It is no longer
+//    special-cased: plain Receipt button + the invoice in the ⋯ menu.
 // ===========================================================================
-describe('<PortalInvoiceCardList> — combined-paid', () => {
-  it('shows the combined "Tax invoice / Receipt" download, NO separate invoice anchor, and OMITS the receipt-number line', () => {
-    // 064 — bill-first rows persist the receipt BLOB together with
-    // 'rendered'; the fixture carries it so this stays the bill-first
-    // combined shape (an as-paid row — 'rendered' + NULL blob — is the
-    // separate case below).
+describe('<PortalInvoiceCardList> — paid row with no RC number', () => {
+  it('keeps the invoice (in the ⋯ menu) and labels the receipt plainly — no combined wording', () => {
     renderCardFor({
       status: 'paid',
       receiptDocumentNumberRaw: null,
@@ -362,24 +360,12 @@ describe('<PortalInvoiceCardList> — combined-paid', () => {
       receiptPdf: { blobKey: 'rk', sha256: sha(), templateVersion: 1 },
     });
 
-    // Combined-paid hides the (stale) invoice anchor → no invoice button…
-    expect(screen.queryByTestId('invoice-download')).not.toBeInTheDocument();
-    // …and shows ONLY the receipt button carrying the COMBINED label.
+    expect(screen.getByTestId('menu-invoice')).toBeInTheDocument();
     const receipt = screen.getByTestId('receipt-download');
-    expect(receipt).toHaveTextContent('Tax invoice / Receipt');
-    // Combined aria preserved for SR users (the long form).
-    expect(receipt).toHaveAttribute(
-      'aria-label',
-      'Download combined Tax Invoice / Official Receipt PDF for INV-2026-000001',
-    );
-
-    // The card OMITS the receipt-number line in combined mode (vm.receiptNumber
-    // is null). Mutation-sensitive: a leaked "Receipt No." line fails here.
+    expect(receipt).toHaveTextContent('Receipt');
+    expect(receipt).not.toHaveTextContent('Tax invoice / Receipt');
+    // No receipt number → no Receipt No. line.
     expect(theCard()).not.toHaveTextContent('Receipt No.');
-
-    // Paid badge + still resendable (paid invoice with a PDF).
-    expect(theCard()).toHaveTextContent('Paid');
-    expect(screen.getByTestId('menu-resend')).toBeInTheDocument();
   });
 });
 
@@ -508,12 +494,9 @@ describe('<PortalInvoiceCardList> — receipt-pending (088 T066a)', () => {
 
     // NOT the terminal graceful-fail affordance (mutation guard vs case 5).
     expect(screen.queryByTestId('receipt-failed-support')).toBeNull();
-    // Pending state offers no receipt download yet.
+    // Pending state offers no receipt download yet; the invoice PDF stays.
     expect(screen.queryByTestId('receipt-download')).not.toBeInTheDocument();
-    // Combined-mode fixture (NULL receipt number): the issue-time PDF is
-    // superseded once paid, so the stale invoice download is NOT offered while
-    // the receipt renders — lockstep with the detail page.
-    expect(screen.queryByTestId('invoice-download')).not.toBeInTheDocument();
+    expect(screen.getByTestId('invoice-download')).toBeInTheDocument();
   });
 
   it('a paid 088 bill (RC minted) keeps its SC bill download while the receipt renders (FR-015)', () => {
@@ -553,13 +536,11 @@ describe('<PortalInvoiceCardList> — receipt-failed (graceful support path, 088
       document.querySelector('[aria-busy="true"]'),
     ).not.toBeInTheDocument();
 
-    // Combined-mode fixture (NULL receipt number): the issue-time PDF is
-    // superseded once paid, so it is NOT offered in place of the failed receipt
-    // (lockstep with the detail page). Resend + the support hint remain
-    // (rowHasAnyAction true, so the EmptyCell '—' sentinel branch never runs) —
-    // we do NOT assert on the bare '—' here because the support copy itself
-    // legitimately contains an em-dash ("Receipt on the way — we're resolving it").
-    expect(screen.queryByTestId('invoice-download')).not.toBeInTheDocument();
+    // The invoice PDF + resend + the support hint remain (rowHasAnyAction true,
+    // so the EmptyCell '—' sentinel branch never runs) — we do NOT assert on the
+    // bare '—' here because the support copy itself legitimately contains an
+    // em-dash ("Receipt on the way — we're resolving it").
+    expect(screen.getByTestId('invoice-download')).toBeInTheDocument();
     expect(screen.getByTestId('menu-resend')).toBeInTheDocument();
   });
 });

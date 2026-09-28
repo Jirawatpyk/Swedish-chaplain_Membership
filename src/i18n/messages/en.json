@@ -2312,7 +2312,6 @@
         "bankAccountNo": "Digits, with optional dashes or spaces."
       },
       "receiptMode": {
-        "combined": "Combined tax invoice + receipt",
         "separate": "Separate invoice and receipt streams"
       },
       "proRate": {
@@ -2693,8 +2692,6 @@
         "creditedSuffix": "{count, plural, one {+# CN} other {+# CN}}",
         "creditedTooltip": "{count, plural, one {# credit note} other {# credit notes}} · {amount} THB credited",
         "creditedAria": "{count, plural, one {# credit note} other {# credit notes}} issued against this invoice, {amount} Thai baht credited",
-        "receiptNumberCombinedTooltip": "Combined mode — receipt reuses the invoice number",
-        "receiptNumberCombinedAria": "Receipt uses the invoice document number (combined mode)",
         "tableCaption": "List of invoices for the selected filters.",
         "queueTableCaption": "List of auto-renewal drafts awaiting review.",
         "queue": {
@@ -6295,8 +6292,6 @@
       "filters": {
         "noMatch": "No invoices match your filters."
       },
-      "receiptNumberCombinedTooltip": "Combined mode — receipt reuses the invoice number",
-      "receiptNumberCombinedAria": "Receipt uses the invoice document number (combined mode)",
       "toast": {
         "resendSuccess": "Copy queued — it goes to your organisation's primary contact.",
         "resendRateLimited": "You already asked for a copy recently. Please try again in a few minutes.",

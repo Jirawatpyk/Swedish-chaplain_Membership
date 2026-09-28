@@ -848,12 +848,9 @@ export async function recordPayment(
     //     document at different points in time, not two distinct
     //     §87 sequence allocations.
     //
-    // UI surfaces enforce the convention:
-    //   - Admin invoice-detail menu HIDES "Download Invoice" when
-    //     `isPaidCombined` (the pre-payment version is a stale draft);
-    //     only the combined-receipt PDF is exposed for download.
-    //   - Separate-mode keeps BOTH downloads because the two docs
-    //     have distinct §87 sequence numbers and must be filed apart.
+    // The UI no longer special-cases this legacy path (flag-off only; prod
+    // runs with FEATURE_088_TAX_AT_PAYMENT permanently on and has no such
+    // rows): every surface offers the main PDF plus the receipt once rendered.
     const receiptBlobKey = `invoicing/${input.tenantId}/${loaded.fiscalYear}/${loaded.invoiceId}_receipt_v${deps.currentTemplateVersion}.pdf`;
     const tenantLogo = deps.asyncReceiptPdf
       ? null
