@@ -28,7 +28,9 @@ import {
 // `aura-tbl` below 640px; the same query lays the card out as a grid.
 const CARD = '@max-[640px]/aura-tbl:mb-3 @max-[640px]/aura-tbl:rounded-[var(--aura-card-radius)] @max-[640px]/aura-tbl:!border @max-[640px]/aura-tbl:!border-[var(--aura-border-default)] @max-[640px]/aura-tbl:bg-[var(--aura-bg-surface)] @max-[640px]/aura-tbl:!p-4 @max-[640px]/aura-tbl:!grid @max-[640px]/aura-tbl:grid-cols-2 @max-[640px]/aura-tbl:gap-x-4 @max-[640px]/aura-tbl:gap-y-3 @max-[640px]/aura-tbl:[&>*]:!mt-0';
 const AT = {
-  title: '@max-[640px]/aura-tbl:col-span-2 @max-[640px]/aura-tbl:row-start-1 @max-[640px]/aura-tbl:pe-28',
+  // Pinned to column 1: an unpinned two-column span cannot sit beside the
+  // action and makes the grid grow implicit columns.
+  title: '@max-[640px]/aura-tbl:col-start-1 @max-[640px]/aura-tbl:col-span-2 @max-[640px]/aura-tbl:row-start-1 @max-[640px]/aura-tbl:pe-28',
   action: '@max-[640px]/aura-tbl:col-start-2 @max-[640px]/aura-tbl:row-start-1 @max-[640px]/aura-tbl:self-start @max-[640px]/aura-tbl:justify-self-end',
   full: '@max-[640px]/aura-tbl:col-span-2',
 } as const;
