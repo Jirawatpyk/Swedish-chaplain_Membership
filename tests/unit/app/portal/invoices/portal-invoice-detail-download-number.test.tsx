@@ -535,6 +535,29 @@ describe('PortalInvoiceDetailPage — AURA layout (spec 122 US4, `Invoice-paid` 
     expect(list).toContain('>300000<');
   });
 
+  it('the quantity reads as a plain number (the stored 4-dp "1.0000" reads "1"), in the table and the phone row', async () => {
+    getInvoiceMock.mockResolvedValue({
+      ok: true,
+      value: {
+        ...issuedUnpaid088Bill(),
+        lines: [
+          {
+            lineId: 'l1',
+            descriptionEn: 'Membership fee',
+            descriptionTh: 'ค่าสมาชิก',
+            quantity: '1.0000',
+            unitPrice: { satang: 500_000n },
+            total: { satang: 500_000n },
+          },
+        ],
+      },
+    });
+    const html = await renderPage();
+    expect(html).not.toContain('1.0000');
+    const list = html.slice(html.indexOf('<ul aria-label="linesHeading"'));
+    expect(list).toContain('1 × 500000');
+  });
+
   it('the bar amount is the Total row and the amount handed to the pay sheet (one figure)', async () => {
     getInvoiceMock.mockResolvedValue({ ok: true, value: issuedUnpaid088Bill() });
     envFeatures.f5OnlinePayment = true;
