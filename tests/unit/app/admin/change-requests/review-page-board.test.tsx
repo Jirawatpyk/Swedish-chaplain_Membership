@@ -100,4 +100,12 @@ describe('change-request review page as on the board (US5a)', () => {
     expect(bar).not.toBeNull();
     expect(bar?.querySelector('[role="status"]')?.querySelector('[data-testid="selection-summary"]')).not.toBeNull();
   });
+
+  it('gives Member record the same button size as the other page headers', async () => {
+    await renderView(true);
+    const record = screen.getByRole('link', { name: enMessages.admin.changeRequests.review.backToMember });
+    expect(record).toHaveClass('aura-btn');
+    expect(record).not.toHaveClass('aura-btn--sm');
+  });
 });
+
