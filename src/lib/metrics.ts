@@ -1368,6 +1368,42 @@ export const paymentsMetrics = {
   },
 
   /**
+   * `payments_pending_on_unpayable_swept_total{outcome}` — the hourly retry
+   * (in the sweep-stale-pending-refunds cron) for pending payments left on
+   * invoices that are no longer `issued`. outcome = canceled | skipped |
+   * failed (Stripe refused / retryable — retried next hour) | errored (the
+   * per-invoice cancel threw) | deferred (time budget spent). A sustained
+   * `failed` or `errored` rate means a live PaymentIntent keeps surviving
+   * its invoice; see docs/runbooks/stale-pending-count.md.
+   */
+  pendingOnUnpayableSwept(
+    outcome: 'canceled' | 'skipped' | 'failed' | 'errored' | 'deferred',
+    n: number,
+  ): void {
+    if (n <= 0) return;
+    safeMetric(() => {
+      counter(
+        'payments_pending_on_unpayable_swept_total',
+        'Hourly sweep of pending payments on no-longer-payable invoices, by outcome',
+      ).add(n, { outcome });
+    });
+  },
+
+  /**
+   * `payments_pending_on_unpayable_sweep_failed_total` — the whole sweep
+   * threw (finder query failed / timed out). The refund sweep in the same
+   * route is unaffected. Alert on `> 0` for 3 consecutive hours.
+   */
+  pendingOnUnpayableSweepFailed(): void {
+    safeMetric(() => {
+      counter(
+        'payments_pending_on_unpayable_sweep_failed_total',
+        'Hourly sweep of pending payments on no-longer-payable invoices threw',
+      ).add(1);
+    });
+  },
+
+  /**
    * `webhook.signature_rejected_total` — abuse / misconfiguration canary.
    * NO tenant label (rejected pre-verification, before tenant resolution).
    */

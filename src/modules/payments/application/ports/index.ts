@@ -6,6 +6,7 @@
  * public API). Use-cases + composition-root factories import from here.
  */
 export type { PaymentsRepo } from './payments-repo';
+export type { UnpayablePendingFinderPort } from './unpayable-pending-finder-port';
 export type { RefundsRepo, RefundStatus, RefundRow } from './refunds-repo';
 export type { TenantPaymentSettingsRepo } from './tenant-payment-settings-repo';
 export type { ProcessorEventsRepo } from './processor-events-repo';

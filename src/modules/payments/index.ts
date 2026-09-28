@@ -77,7 +77,17 @@ export {
   type CancelPendingPaymentsForInvoiceInput,
   type CancelPendingPaymentsForInvoiceResult,
   type CancelPendingPaymentsForInvoiceDeps,
+  type CancelPendingPaymentsCause,
 } from './application/use-cases/cancel-pending-payments-for-invoice';
+export {
+  sweepPendingPaymentsOnUnpayableInvoices,
+  PENDING_ON_UNPAYABLE_MIN_AGE_MINUTES,
+  PENDING_ON_UNPAYABLE_MAX_AGE_DAYS,
+  PENDING_ON_UNPAYABLE_BATCH_LIMIT,
+  type SweepPendingOnUnpayableDeps,
+  type SweepPendingOnUnpayableInput,
+  type SweepPendingOnUnpayableResult,
+} from './application/use-cases/sweep-pending-payments-on-unpayable-invoices';
 export {
   handleCancelEvent,
   type HandleCancelEventInput,
@@ -173,6 +183,7 @@ export {
   makeFailPaymentDeps,
   makeCancelPaymentDeps,
   makeCancelPendingPaymentsForInvoiceDeps,
+  makeSweepPendingOnUnpayableDeps,
   makeHandleCancelEventDeps,
   makeListSucceededPaymentMethodsDeps,
   makeLoadInvoicePaymentActivityDeps,

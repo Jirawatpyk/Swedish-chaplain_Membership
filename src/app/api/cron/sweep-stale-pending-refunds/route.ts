@@ -55,6 +55,20 @@
  * already in `failed` status and won't match `WHERE status='pending'`.
  *
  * Runbook: `docs/runbooks/stale-pending-refund-sweep.md`
+ *
+ * ## Second job: pending payments on no-longer-payable invoices
+ *
+ * After the refund sweep, the same run calls
+ * `sweepPendingPaymentsOnUnpayableInvoices` — the retry for a void-time
+ * PaymentIntent cancel that failed (Stripe retryable, DB fault, missing
+ * settings) and left a `pending` attempt, whose cached card clientSecret
+ * could still capture, on an invoice that is no longer `issued`. It rides
+ * this hourly cron instead of taking a Vercel cron slot (39/40 used). It has
+ * its own try/catch, time budget, log keys (`cron.sweep_pending_on_unpayable.*`)
+ * and metrics, so neither job can fail the other; the response carries its
+ * summary as `pendingOnUnpayable`. Its safety (advisory lock + row lock +
+ * status CAS per invoice) lives in the use-case, so dual-firing is a no-op.
+ * Runbook: `docs/runbooks/stale-pending-count.md`.
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { db } from '@/lib/db';
@@ -71,6 +85,9 @@ import { eq } from 'drizzle-orm';
 import {
   sweepStalePendingRefunds,
   makeSweepStalePendingRefundsDeps,
+  sweepPendingPaymentsOnUnpayableInvoices,
+  makeSweepPendingOnUnpayableDeps,
+  type SweepPendingOnUnpayableResult,
 } from '@/modules/payments';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
@@ -90,7 +107,57 @@ export const maxDuration = 60;
 
 const DEFAULT_OLDER_THAN_HOURS = 24;
 
+// Budget for the pending-on-unpayable sweep: at most 20s, and never past
+// ~55s of the 60s function (the in-flight invoice's Stripe cancel is the
+// tail). Below 5s left it is skipped — the next hourly run picks it up.
+const PENDING_ON_UNPAYABLE_MAX_BUDGET_MS = 20_000;
+const ROUTE_SOFT_DEADLINE_MS = 55_000;
+const PENDING_ON_UNPAYABLE_MIN_BUDGET_MS = 5_000;
+
+type PendingOnUnpayableSummary =
+  | ({ status: 'ran' } & SweepPendingOnUnpayableResult)
+  | { status: 'skipped_no_budget' }
+  | { status: 'failed' };
+
+async function runPendingOnUnpayableSweep(
+  requestId: string | null,
+  routeStartedMs: number,
+): Promise<PendingOnUnpayableSummary> {
+  const remaining = ROUTE_SOFT_DEADLINE_MS - (Date.now() - routeStartedMs);
+  const budgetMs = Math.min(PENDING_ON_UNPAYABLE_MAX_BUDGET_MS, remaining);
+  if (budgetMs < PENDING_ON_UNPAYABLE_MIN_BUDGET_MS) {
+    logger.warn({ requestId, remainingMs: remaining }, 'cron.sweep_pending_on_unpayable.skipped_no_budget');
+    return { status: 'skipped_no_budget' };
+  }
+  try {
+    const r = await sweepPendingPaymentsOnUnpayableInvoices(makeSweepPendingOnUnpayableDeps(), {
+      requestId,
+      budgetMs,
+    });
+    paymentsMetrics.pendingOnUnpayableSwept('canceled', r.canceled);
+    paymentsMetrics.pendingOnUnpayableSwept('skipped', r.skipped);
+    paymentsMetrics.pendingOnUnpayableSwept('failed', r.failed);
+    paymentsMetrics.pendingOnUnpayableSwept('errored', r.invoicesErrored);
+    paymentsMetrics.pendingOnUnpayableSwept('deferred', r.deferred);
+    const noteworthy = r.canceled + r.failed + r.invoicesErrored + r.deferred > 0;
+    (noteworthy ? logger.warn.bind(logger) : logger.info.bind(logger))(
+      { requestId, ...r },
+      'cron.sweep_pending_on_unpayable.completed',
+    );
+    return { status: 'ran', ...r };
+  } catch (e) {
+    // constructor.name only — Postgres errors can carry SQL in `.message`.
+    paymentsMetrics.pendingOnUnpayableSweepFailed();
+    logger.error(
+      { requestId, errKind: e instanceof Error ? e.constructor.name : 'unknown' },
+      'cron.sweep_pending_on_unpayable.failed',
+    );
+    return { status: 'failed' };
+  }
+}
+
 export async function GET(request: NextRequest): Promise<NextResponse> {
+  const routeStartedMs = Date.now();
   const requestId = requestIdFromHeaders(request.headers);
 
   // F5R1-E10 fix — use the zod-validated `env.cron.secret` instead of
@@ -139,6 +206,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       { requestId, errKind: e instanceof Error ? e.constructor.name : 'unknown' },
       'cron.sweep_stale_pending_refunds.tenant_list_failed',
     );
+    // The refund sweep cannot run, but the pending-on-unpayable sweep does not
+    // depend on the tenant list — still give it its hourly chance.
+    await runPendingOnUnpayableSweep(requestId, routeStartedMs);
     return NextResponse.json({ error: 'tenant_list_failed' }, { status: 500 });
   }
 
@@ -210,6 +280,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     'cron.sweep_stale_pending_refunds.completed',
   );
 
+  const pendingOnUnpayable = await runPendingOnUnpayableSweep(requestId, routeStartedMs);
+
   return NextResponse.json(
     {
       ok: true,
@@ -220,6 +292,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       totalSkipped,
       totalEscalated,
       olderThanHours,
+      pendingOnUnpayable,
     },
     { status: 200 },
   );
