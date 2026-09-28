@@ -51,26 +51,31 @@ export function PayPreview({ state }: { readonly state: PayPreviewState }) {
         onClose={() => undefined}
       />
     );
-  } else if (state === 'failed' || state === 'failed-permanent') {
-    body = (
-      <PaymentFailurePanel
-        reason={t('retry.reasonCardDeclined')}
-        ctaLabel={t('retry.cta')}
-        onRetry={() => undefined}
-        testId="pay-sheet-retry-panel"
-        ctaTestId="pay-sheet-retry-cta"
-        permanent={state === 'failed-permanent'}
-      />
-    );
   } else {
+    // As `pay-sheet-internal` composes it: the summary and the tabs stay on
+    // screen for a card failure (the failure panel replaces the card form).
+    const failed = state === 'failed' || state === 'failed-permanent';
     body = (
-      <div className="flex flex-col gap-5">
+      <div className="space-y-4">
         <OrderSummary invoiceNumber="SC-2026-000123" amountDue={amountSatang} isBill />
         <MethodTabs
           enabledMethods={['card', 'promptpay']}
           activeMethod={method}
           onMethodChange={setMethod}
-          cardPanel={<PaySheetSkeleton variant="card" />}
+          cardPanel={
+            failed ? (
+              <PaymentFailurePanel
+                reason={t('retry.reasonCardDeclined')}
+                ctaLabel={t('retry.cta')}
+                onRetry={() => undefined}
+                testId="pay-sheet-retry-panel"
+                ctaTestId="pay-sheet-retry-cta"
+                permanent={state === 'failed-permanent'}
+              />
+            ) : (
+              <PaySheetSkeleton variant="card" />
+            )
+          }
           promptPayPanel={
             <PromptPayPanel
               qrSvgUrl={QR}

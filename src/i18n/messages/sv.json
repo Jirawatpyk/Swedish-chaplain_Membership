@@ -7145,7 +7145,8 @@
         "pauseAutoClose": "Pausa",
         "resumeAutoClose": "Återuppta",
         "autoClosePaused": "Automatisk stängning pausad",
-        "toast": "Betalningen mottagen. Kvittot har skickats till din e-post."
+        "toast": "Betalningen mottagen. Kvittot har skickats till din e-post.",
+        "receiptSoon": "Ditt skattekvitto är klart om en liten stund."
       },
       "processing": {
         "title": "Behandlar betalning…",

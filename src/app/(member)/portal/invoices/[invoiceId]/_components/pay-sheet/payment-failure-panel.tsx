@@ -77,13 +77,15 @@ export function PaymentFailurePanel({
     >
       <p className="m-0">{t('body', { reason })}</p>
       {permanent ? null : (
+        // Spec 122 US4 (`Pay-failed` board): a compact retry with its icon.
         <Button
           type="button"
           variant="primary"
+          size="sm"
+          icon="rotate-ccw"
           onClick={onRetry}
-          fullWidth
           // WCAG 2.5.5 / SC 2.5.8 — ≥ 44×44 px on mobile.
-          className="mt-4 min-h-[44px]"
+          className="mt-3 min-h-11 px-4"
           data-testid={ctaTestId}
         >
           {ctaLabel}

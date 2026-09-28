@@ -64,9 +64,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
+import { QrCodeIcon } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 
-import { Button } from '@jirawatpyk/aura-react';
+import { Alert, Button, Icon } from '@jirawatpyk/aura-react';
 import { formatSatangThb } from '@/lib/format-thb';
 import { paymentsMetrics } from '@/lib/metrics';
 import { useCountdownAutoDismiss } from '@/hooks/use-countdown-auto-dismiss';
@@ -253,35 +254,49 @@ export function PromptPayPanel({
   const showExpired =
     status === 'expired' || (status === 'pending' && remaining === 0);
 
+  // Spec 122 US4 (`Pay-qr-expired` board): the expired message sits inside
+  // the QR frame over a faded code, and the do-not-transfer warning stays.
+  const warning = (
+    <Alert tone="warning" role="note" data-testid="pay-sheet-promptpay-warning">
+      {t('warning')}
+    </Alert>
+  );
+
   if (showExpired) {
     return (
-      <section
-        data-testid="pay-sheet-promptpay-expired"
-        role="alert"
-        aria-live="assertive"
-        aria-atomic="true"
-        className="space-y-4 rounded-[var(--aura-radius-md)] border border-[var(--aura-alert-danger-border)] bg-[var(--aura-alert-danger-bg)] p-4"
-      >
-        <div>
-          <h3 className="text-body font-medium text-[var(--aura-fg-primary)]">
-            {t('expired')}
-          </h3>
-          <p className="text-caption text-[var(--aura-fg-secondary)] mt-1">
-            {t('expiredBody')}
-          </p>
-        </div>
-        <Button
-          type="button"
-          variant="primary"
-          onClick={onRefresh}
-          icon="rotate-ccw"
-          fullWidth
-          className="min-h-[44px]"
-          data-testid="pay-sheet-promptpay-refresh"
+      <div className="space-y-4">
+        <section
+          data-testid="pay-sheet-promptpay-expired"
+          role="alert"
+          aria-live="assertive"
+          aria-atomic="true"
+          className="relative mx-auto grid aspect-square w-[220px] place-items-center overflow-hidden rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] p-3"
         >
-          {t('refresh')}
-        </Button>
-      </section>
+          <QrCodeIcon
+            aria-hidden="true"
+            strokeWidth={1}
+            className="absolute inset-3 size-[calc(100%-1.5rem)] text-[var(--aura-fg-primary)] opacity-10"
+          />
+          <div className="relative flex flex-col items-center gap-2 text-center">
+            <h3 className="m-0 text-body font-semibold text-[var(--aura-fg-primary)]">
+              {t('expired')}
+            </h3>
+            <p className="m-0 text-caption text-[var(--aura-fg-secondary)]">{t('expiredBody')}</p>
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              onClick={onRefresh}
+              icon="rotate-ccw"
+              className="mt-1 min-h-11"
+              data-testid="pay-sheet-promptpay-refresh"
+            >
+              {t('refresh')}
+            </Button>
+          </div>
+        </section>
+        {warning}
+      </div>
     );
   }
 
@@ -319,7 +334,7 @@ export function PromptPayPanel({
           onError={handleQrLoadError}
         />
         <p className="text-body text-[var(--aura-fg-primary)]">{t('instructions')}</p>
-        <p className="text-caption text-[var(--aura-fg-secondary)]">
+        <p className="m-0 text-lg font-semibold tabular-nums text-[var(--aura-fg-primary)]">
           {t('amount', { amount: amountDisplay })}
         </p>
       </div>
@@ -329,9 +344,10 @@ export function PromptPayPanel({
         * sibling SR-only `<div>` below (FR-028j refined). */}
       <div
         aria-hidden="true"
-        className="text-center text-caption text-[var(--aura-fg-secondary)] tabular-nums"
+        className="flex items-center justify-center gap-1.5 text-caption text-[var(--aura-fg-secondary)] tabular-nums"
         data-testid="pay-sheet-promptpay-countdown"
       >
+        <Icon name="clock" className="size-3.5" />
         {t('countdown', { minutes, seconds })}
       </div>
       <div
@@ -343,40 +359,34 @@ export function PromptPayPanel({
         {srAnnouncement}
       </div>
 
-      {status === 'waiting-confirmation' ? (
-        // Visible-only block for sighted users; SR announcement is
-        // delivered through the persistent sr-only live region above
-        // (R2 F-4 fix — avoids the NVDA/VO mount-bug).
-        <div
-          aria-hidden="true"
-          className="flex items-center justify-center gap-2 text-caption text-[var(--aura-fg-secondary)]"
-          data-testid="pay-sheet-promptpay-waiting"
+      {/* Spec 122 US4 (`Pay-promptpay` board): the waiting pill shows for the
+          whole life of the QR — the page is waiting for the bank either
+          way. Visible only; the SR announcement for the confirmation step
+          rides on the persistent live region above (R2 F-4). */}
+      <div
+        aria-hidden="true"
+        className="mx-auto flex w-fit items-center gap-2 rounded-full bg-[var(--aura-alert-info-bg)] px-3 py-1 text-caption text-[var(--aura-alert-info-fg)]"
+        data-testid="pay-sheet-promptpay-waiting"
+      >
+        <Icon name="loader-circle" className="size-3.5 motion-safe:animate-spin" />
+        {t('waiting')}
+      </div>
+
+      {warning}
+
+      <div className="flex justify-center">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={onRefresh}
+          icon="rotate-ccw"
+          className="min-h-11"
+          data-testid="pay-sheet-promptpay-refresh"
         >
-          <span
-            className="inline-block size-2 rounded-full bg-[var(--aura-button-primary-bg)] motion-safe:animate-pulse motion-reduce:animate-none"
-          />
-          {t('waiting')}
-        </div>
-      ) : null}
-
-      <p
-        className="rounded-md bg-[var(--aura-bg-surface-hover)] p-3 text-caption text-[var(--aura-fg-secondary)]"
-        data-testid="pay-sheet-promptpay-warning"
-      >
-        {t('warning')}
-      </p>
-
-      <Button
-        type="button"
-        variant="secondary"
-        onClick={onRefresh}
-        icon="rotate-ccw"
-        fullWidth
-        className="min-h-[44px]"
-        data-testid="pay-sheet-promptpay-refresh"
-      >
-        {t('refresh')}
-      </Button>
+          {t('refresh')}
+        </Button>
+      </div>
     </section>
   );
 }

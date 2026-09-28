@@ -63,22 +63,31 @@ export function StatusPanel({ kind, onCancel }: StatusPanelProps) {
       role="status"
       aria-live="polite"
       data-testid={cfg.panelTestId}
-      // Spec 122 US4 (`Pay-processing` / `Pay-3ds` boards): a centred
-      // spinner, the title and the reassurance line.
-      className="flex flex-col items-center gap-3.5 px-2 py-12 text-center"
+      // Spec 122 US4 (`Pay-processing` / `Pay-3ds` boards): the status sits
+      // in the middle of the drawer — a spinner while the charge settles, a
+      // lock while the bank's challenge is open — then the title, the
+      // reassurance line and, for 3-D Secure, a compact Cancel payment.
+      className="flex min-h-[calc(100dvh-9rem)] flex-col items-center justify-center gap-3.5 px-2 py-8 text-center"
     >
-      <span className="flex size-16 items-center justify-center rounded-full bg-[var(--aura-bg-surface-hover)] text-[var(--aura-fg-secondary)]">
-        <Icon name="loader-circle" size="lg" className="motion-safe:animate-spin" />
-      </span>
+      {kind === 'three-d-secure' ? (
+        <span className="flex size-16 items-center justify-center rounded-full bg-[var(--aura-alert-info-bg)] text-[var(--aura-alert-info-fg)]">
+          <Icon name="lock" size="lg" />
+        </span>
+      ) : (
+        <span className="flex size-16 items-center justify-center rounded-full bg-[var(--aura-bg-surface-hover)] text-[var(--aura-fg-secondary)]">
+          <Icon name="loader-circle" size="lg" className="motion-safe:animate-spin" />
+        </span>
+      )}
       <h3 className="m-0 text-lg font-semibold text-[var(--aura-fg-primary)]">{t('title')}</h3>
       <p className="m-0 max-w-[340px] text-[var(--aura-fg-secondary)]">{t('body')}</p>
       {onCancel ? (
         <Button
           type="button"
-          variant="ghost"
+          variant="secondary"
+          size="sm"
           onClick={onCancel}
           // WCAG 2.5.5 / SC 2.5.8 — ≥ 44×44 px on mobile (G-Review #7).
-          className="min-h-[44px] w-full"
+          className="min-h-11 px-4"
           data-testid={cfg.cancelTestId}
         >
           {t('cancel')}

@@ -47,6 +47,7 @@ const messages = {
         resumeAutoClose: 'Resume',
         autoClosePaused: 'Auto-close paused',
         toast: 'Payment received. Receipt emailed to you.',
+        receiptSoon: 'Your tax receipt will be ready in a moment.',
       },
     },
     // 090 finding #2 — the fetch+blob receipt download reads these toast keys.
@@ -86,6 +87,11 @@ function renderPanel(
 }
 
 describe('<ConfirmationPanel>', () => {
+  it('says the tax receipt follows in a moment, under the summary (`Pay-success` board)', () => {
+    renderPanel();
+    expect(screen.getByText('Your tax receipt will be ready in a moment.')).toBeInTheDocument();
+  });
+
   beforeEach(() => {
     vi.useFakeTimers();
     vi.mocked(toast.success).mockClear();
@@ -312,15 +318,11 @@ describe('<ConfirmationPanel>', () => {
       expect(link.className).toMatch(/w-full/);
     });
 
-    it('Close is a subdued text-link (AURA secondary text + hover underline)', () => {
+    it('Close is a full-width secondary button under Download (`Pay-success` board)', () => {
       renderPanel();
       const close = screen.getByTestId('pay-sheet-confirmation-close');
-      // Not a shadcn Button with `bg-*` — it's a <button> styled as
-      // a link. Verify the muted-foreground + hover underline utilities
-      // (visual hierarchy: Close recedes behind the primary Download).
       expect(close.tagName.toLowerCase()).toBe('button');
-      expect(close.className).toContain('text-[var(--aura-fg-secondary)]');
-      expect(close.className).toMatch(/hover:underline/);
+      expect(close).toHaveClass('aura-btn--secondary', 'w-full');
     });
 
     it('Close keeps ≥44px tap target for mobile (WCAG SC 2.5.5)', () => {

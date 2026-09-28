@@ -11,7 +11,6 @@
  */
 
 import { useLocale, useTranslations } from 'next-intl';
-import { FileTextIcon } from 'lucide-react';
 
 import { formatSatangThb } from '@/lib/format-thb';
 
@@ -48,55 +47,48 @@ export function OrderSummary({
   // the F4 canonical formatter used across the invoice surfaces.
   const formattedAmount = formatSatangThb(BigInt(Math.round(amountDue)), locale);
 
+  // Spec 122 US4 (`Pay-*` boards): a quiet band listing the invoice and the
+  // amount due; on phones (`Pay-card-mobile`) only the amount due, since the
+  // drawer header already carries the number. The bill note sits under the
+  // band.
   return (
-    <section
-      aria-labelledby="pay-sheet-summary-heading"
-      data-testid="pay-sheet-summary"
-      // Spec 122 US4 (`Pay-*` boards): a quiet band on the drawer surface.
-      className="rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface-hover)] px-3.5 py-3"
-    >
-      <h3
-        id="pay-sheet-summary-heading"
-        className="m-0 text-caption font-medium text-[var(--aura-fg-secondary)]"
+    <>
+      <section
+        aria-labelledby="pay-sheet-summary-heading"
+        data-testid="pay-sheet-summary"
+        className="rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface-hover)] px-3.5 py-3"
       >
-        {t('heading')}
-      </h3>
-      <div className="mt-3 flex items-start justify-between gap-4">
-        <div className="flex items-center gap-2 min-w-0">
-          <FileTextIcon
-            aria-hidden="true"
-            className="size-4 shrink-0 text-[var(--aura-fg-secondary)]"
-          />
-          <div className="min-w-0">
-            <p className="m-0 text-caption text-[var(--aura-fg-secondary)]">
-              {t('invoiceLabel')}
-            </p>
-            <p className="m-0 truncate font-mono text-body font-medium text-[var(--aura-fg-primary)]">
-              {invoiceNumber}
-            </p>
-          </div>
-        </div>
-        <div className="text-right">
-          <p className="m-0 text-caption text-[var(--aura-fg-secondary)]">
+        <h3
+          id="pay-sheet-summary-heading"
+          className="m-0 mb-2 text-caption font-semibold text-[var(--aura-fg-primary)] max-sm:sr-only"
+        >
+          {t('heading')}
+        </h3>
+        <dl className="m-0 grid grid-cols-[1fr_auto] items-baseline gap-x-4">
+          <dt className="py-1.5 text-sm text-[var(--aura-fg-secondary)] max-sm:hidden">{t('invoiceLabel')}</dt>
+          <dd className="m-0 truncate py-1.5 text-right font-mono text-sm text-[var(--aura-fg-primary)] max-sm:hidden">
+            {invoiceNumber}
+          </dd>
+          <dt className="border-t border-[var(--aura-border-default)] pt-2 text-sm font-semibold text-[var(--aura-fg-primary)] max-sm:border-t-0 max-sm:pt-0 max-sm:font-normal max-sm:text-[var(--aura-fg-secondary)]">
             {t('amountLabel')}
-          </p>
-          <p
-            className="m-0 text-lg font-semibold text-[var(--aura-fg-primary)] tabular-nums"
+          </dt>
+          <dd
+            className="m-0 border-t border-[var(--aura-border-default)] pt-2 text-right text-lg font-semibold tabular-nums text-[var(--aura-fg-primary)] max-sm:border-t-0 max-sm:pt-0"
             data-testid="pay-sheet-summary-amount"
           >
             {formattedAmount}
-          </p>
-        </div>
-      </div>
+          </dd>
+        </dl>
+      </section>
       {isBill ? (
         <p
-          className="mt-3 mb-0 text-caption text-[var(--aura-fg-secondary)]"
+          className="m-0 text-caption text-[var(--aura-fg-secondary)]"
           data-testid="pay-sheet-summary-bill-note"
         >
           {t('billNote')}
         </p>
       ) : null}
-    </section>
+    </>
   );
 }
 

@@ -7145,7 +7145,8 @@
         "pauseAutoClose": "Pause",
         "resumeAutoClose": "Resume",
         "autoClosePaused": "Auto-close paused",
-        "toast": "Payment received. Receipt emailed to you."
+        "toast": "Payment received. Receipt emailed to you.",
+        "receiptSoon": "Your tax receipt will be ready in a moment."
       },
       "processing": {
         "title": "Processing payment…",
