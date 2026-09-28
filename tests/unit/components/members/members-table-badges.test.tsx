@@ -1,8 +1,9 @@
 /**
  * 122 US5a — the members table's badges as the `Admin-members` board draws
  * them: an unscored member reads "Not yet scored" (outline) instead of a
- * dash, Critical and Suspended are solid danger (Suspended with a ban
- * sign), Lapsed is a neutral status pill, and Archived carries one icon.
+ * dash, Critical is solid danger, and Archived carries one icon. (The
+ * board's Suspended / Lapsed tones contradict the suspension design, which
+ * keeps Suspended amber and Lapsed red, so those stay as they are.)
  */
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
@@ -56,17 +57,7 @@ describe('members table badges as on the board (US5a)', () => {
     expect(badge).toHaveClass('aura-badge--danger', 'is-solid');
   });
 
-  it('shows Suspended as a solid danger badge with a ban sign', () => {
-    renderRows([{ ...base, membership_suspended: true }]);
-    const badge = screen.getByText(D.membershipSuspended).closest('.aura-badge');
-    expect(badge).toHaveClass('aura-badge--danger', 'is-solid');
-    expect(badge?.querySelector('svg.lucide-ban')).not.toBeNull();
-  });
 
-  it('shows Lapsed as a neutral status pill', () => {
-    renderRows([{ ...base, status: 'inactive', membership_lapsed: true }]);
-    expect(screen.getByText(D.membershipLapsed).closest('.aura-pill')).toHaveClass('aura-pill--neutral');
-  });
 
   it('gives Archived one icon', () => {
     renderRows([{ ...base, status: 'archived' }]);

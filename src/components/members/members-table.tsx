@@ -40,8 +40,8 @@ import {
 import {
   ArchiveIcon,
   MailWarning,
-  PauseCircle,
   PencilIcon,
+  PauseCircle,
   TriangleAlert,
 } from 'lucide-react';
 import { RelativeTime } from '@/components/shell/relative-time';
@@ -262,15 +262,13 @@ function StatusBadge({ status }: { status: MembersTableRow['status'] }) {
   const t = useTranslations('admin.members.directory');
   const label = t(`filters.status.${status}`);
   // Board tones: Active = ready; Inactive and Archived are neutral. Archived
-  // keeps its icon so the state scans at a glance in a 50-row page.
+  // takes the archive box in place of the pill's circle, so the state scans
+  // at a glance in a 50-row page with one icon.
   if (status === 'archived') {
     return (
-      <StatusPill tone="neutral">
-        <span className="inline-flex items-center gap-1">
-          <ArchiveIcon aria-hidden="true" className="size-3" />
-          {label}
-        </span>
-      </StatusPill>
+      <Badge tone="neutral" icon={<ArchiveIcon aria-hidden="true" />}>
+        {label}
+      </Badge>
     );
   }
   return <StatusPill tone={status === 'active' ? 'ready' : 'neutral'}>{label}</StatusPill>;
@@ -732,6 +730,9 @@ export function MembersTable({
             ) : (
               <StatusBadge status={row.status} />
             )}
+            {/* Lapsed red, Suspended amber: the suspension design
+                (2026-07-13, § Members directory) keeps them apart, so the
+                board's tones for these two do not apply. */}
             {row.membership_lapsed && row.status !== 'archived' ? (
               <Badge tone="danger" icon={<TriangleAlert aria-hidden="true" />}>
                 {/* visible label is aria-hidden so a SR user hears ONLY the
@@ -750,7 +751,8 @@ export function MembersTable({
       },
       {
         // F9 (T034) — positive-framed inverse of the F8 risk score, projected
-        // server-side; numeric score + text band (FR-035). Unscored → "—".
+        // server-side; numeric score + text band (FR-035). Unscored → "Not yet
+        // scored" in an outline badge (board).
         key: 'engagement',
         label: t('columns.engagement'),
         ...MEMBERS_COLUMN_SIZES.engagement,
@@ -759,15 +761,20 @@ export function MembersTable({
           const eng = row.engagement;
           if (eng === null)
             return (
-              <span data-card-slot="engagement" className="text-[var(--aura-fg-secondary)]">
-                —
+              <span data-card-slot="engagement">
+                <Badge tone="neutral" variant="outline">
+                  {t('riskNotComputed')}
+                </Badge>
               </span>
             );
           // A phone card shows the band alone, as on the board.
           return (
             <span data-card-slot="engagement" className="inline-flex items-center gap-1.5">
               <span className="font-medium tabular-nums in-[.aura-table--stacked]:hidden">{eng.score}</span>
-              <Badge tone={ENGAGEMENT_TONE[eng.band]}>{t(`engagementBand.${eng.band}`)}</Badge>
+              {/* Critical is the one band drawn solid (board). */}
+              <Badge tone={ENGAGEMENT_TONE[eng.band]} {...(eng.band === 'critical' ? { variant: 'solid' as const } : {})}>
+                {t(`engagementBand.${eng.band}`)}
+              </Badge>
             </span>
           );
         },
