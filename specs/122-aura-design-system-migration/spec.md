@@ -65,7 +65,7 @@ The maintainer asked for every gap in the US4 board comparison to be fixed. The 
 - **Pay button and security footer stay in the drawer body.** The Pay button lives inside the Stripe Elements form, so neither moves into the drawer footer (SAQ-A, Principle IV).
 - **Shared items.** The list's invoice-alert title is shared with the US3 dashboard. The fifth "Account" bottom tab comes from US1.
 - **Board wording added.** The paid-invoice subtitle, the credit-note title, its "this credit note reduces receipt … by …" notice and contact line, and the "receipt will be ready in a moment" line on payment success are added in EN, TH and SV. The board says "Receipt … is reduced by …", but the original document keeps its total, so the credit note is the subject. The refund line does not promise a refund, because a credit note issued from a refund follows money already returned. Figures and document wording are unchanged.
-- **PromptPay amount stays out of this PR.** The PromptPay panel can show a raw satang figure: it compares the currency code with `'thb'` case-sensitively, but invoices carry `THB`. That is a logic bug on `main`, so it is fixed in its own PR, not in this UI swap.
+- **PromptPay amount stays out of this PR.** The PromptPay panel can show a raw satang figure: it compares the currency code with `'thb'` case-sensitively, but invoices carry `THB`. That was a logic bug on `main`, so it was fixed in its own PR (#443), not in this UI swap; the branch picks it up through a merge of `main`.
 
 ## User Scenarios & Testing *(mandatory)*
 
