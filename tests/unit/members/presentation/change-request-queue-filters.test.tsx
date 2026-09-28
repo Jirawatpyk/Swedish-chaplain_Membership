@@ -32,9 +32,15 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => nav.searchParams.current,
 }));
 
-/** AURA Select keeps a real <select> under its listbox: drive that, like the timeline filters' tests. */
+/**
+ * AURA Select keeps a real <select> under its listbox: drive that, like the
+ * timeline filters' tests. The test id sits on the combobox button; the
+ * native select is its sibling.
+ */
 function pick(testId: string, value: string) {
-  fireEvent.change(screen.getByTestId(testId), { target: { value } });
+  const native = screen.getByTestId(testId).closest('.aura-select')?.querySelector('select');
+  if (!native) throw new Error(`no native select beside ${testId}`);
+  fireEvent.change(native, { target: { value } });
 }
 
 /** An AURA DatePicker takes a typed ISO date on blur. */
