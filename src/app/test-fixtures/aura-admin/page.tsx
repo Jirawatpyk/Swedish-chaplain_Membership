@@ -3,31 +3,19 @@ import { getTranslations } from 'next-intl/server';
 
 import { PageHeader } from '@/components/layout/page-header';
 import { StaffShell } from '@/components/layout/staff-shell';
-import { TableContainer } from '@/components/layout';
 import { AuraDensity } from '@/components/providers/aura-bridge';
-import { DirectoryFilters, type PlanOption } from '@/components/members/directory-filters';
+import type { PlanOption } from '@/components/members/directory-filters';
 import type { MembersTableRow } from '@/components/members/members-table';
-import {
-  MembersAllInvitedEmptyState,
-  MembersErrorState,
-  MembersStateCard,
-  MembersFilteredEmptyState,
-  MembersZeroState,
-} from '@/components/members/empty-states';
 import type { DirectoryTableRow } from '@/components/directory/directory-table';
 import type { RecentExportRow } from '@/components/directory/recent-exports';
 import { GenerateExportActions } from '@/components/directory/generate-export-actions';
 import type { ChangeRequestReviewFieldView, StaffChangeRequestView } from '@/lib/change-request-staff-view';
 import type { ChangeRequestQueueItem } from '@/modules/members';
-import { EmptyState } from '@/components/shell/empty-state';
-import { InboxIcon } from 'lucide-react';
 import { flattenNavItems, staffNavConfig } from '@/config/nav';
-import { renderMembersListView } from '@/app/(staff)/admin/members/page';
-import { DirectoryWithBulk } from '@/app/(staff)/admin/members/_components/directory-with-bulk';
+import { renderMembersDirectoryBody, renderMembersListView } from '@/app/(staff)/admin/members/page';
 import { renderDirectoryView } from '@/app/(staff)/admin/directory/page';
-import { ChangeRequestQueueFilters } from '@/app/(staff)/admin/change-requests/_components/queue-filters';
-import { ChangeRequestQueueTable } from '@/app/(staff)/admin/change-requests/_components/queue-table';
 import { renderChangeRequestReviewView } from '@/app/(staff)/admin/change-requests/[id]/page';
+import { renderChangeRequestQueueView } from '@/app/(staff)/admin/change-requests/page';
 
 // Request-time evaluation so the guard runs per request (see button-matrix).
 export const dynamic = 'force-dynamic';
@@ -303,32 +291,20 @@ export default async function AuraAdminPreviewPage({
   }
 
   if (view === 'change-requests') {
-    const t = await getTranslations('admin.changeRequests.queue');
     const empty = state === 'empty';
     return (
       <StaffFrame path="/admin/change-requests">
-        <TableContainer>
-          <PageHeader
-            title={t('title')}
-            subtitle={t('subtitle')}
-            actions={
-              empty ? undefined : (
-                <p className="text-sm text-[var(--aura-fg-secondary)]" data-testid="queue-pending-count">
-                  {t('pendingSummary', { count: 3, oldestDays: 6 })}
-                </p>
-              )
-            }
-          />
-          <ChangeRequestQueueFilters resultCount={empty ? 0 : QUEUE.length} hasMore={false} timeZone="Asia/Bangkok" />
-          {/* The page's own empty state (default filters), as the page renders it. */}
-          {empty ? (
-            <div data-testid="queue-empty">
-              <EmptyState icon={InboxIcon} title={t('empty')} description={t('emptyHint')} bordered />
-            </div>
-          ) : (
-            <ChangeRequestQueueTable items={QUEUE} />
-          )}
-        </TableContainer>
+        {await renderChangeRequestQueueView({
+          items: empty ? [] : QUEUE,
+          hasMore: false,
+          nextHref: null,
+          pendingSummary: empty ? null : { count: 3, oldestDays: 6 },
+          deepLinkNotice: null,
+          filtered: false,
+          memberChip: null,
+          submitterChip: null,
+          timeZone: 'Asia/Bangkok',
+        })}
       </StaffFrame>
     );
   }
@@ -365,30 +341,17 @@ export default async function AuraAdminPreviewPage({
   // Members (default view), with the state boards.
   const t = await getTranslations('admin.members');
   const isAdmin = state !== 'manager';
-  const body =
-    state === 'error' ? (
-      <MembersStateCard>
-        <DirectoryFilters plans={PLANS} portalInviteCount={7} />
-        <MembersErrorState />
-      </MembersStateCard>
-    ) : state === 'filtered' ? (
-      <MembersStateCard>
-        <DirectoryFilters plans={PLANS} portalInviteCount={7} />
-        <MembersFilteredEmptyState />
-      </MembersStateCard>
-    ) : state === 'all-invited' ? (
-      <MembersStateCard>
-        <DirectoryFilters plans={PLANS} portalInviteCount={0} />
-        <MembersAllInvitedEmptyState />
-      </MembersStateCard>
-    ) : state === 'empty' ? (
-      <MembersZeroState canAddMember />
-    ) : (
-      <>
-        <DirectoryFilters plans={PLANS} portalInviteCount={7} />
-        <DirectoryWithBulk rows={MEMBERS} page={1} pageSize={50} total={131} isAdmin={isAdmin} />
-      </>
-    );
+  // The page's own body for each state (renderMembersDirectoryBody), with
+  // sample rows.
+  const body = renderMembersDirectoryBody({
+    plans: PLANS,
+    portalInviteCount: state === 'all-invited' ? 0 : 7,
+    isAdmin,
+    state:
+      state === 'error' || state === 'filtered' || state === 'all-invited' || state === 'empty'
+        ? { kind: state }
+        : { kind: 'list', rows: MEMBERS, page: 1, pageSize: 50, total: 131, filtered: false },
+  });
   return (
     <StaffFrame path="/admin/members">
       {renderMembersListView({

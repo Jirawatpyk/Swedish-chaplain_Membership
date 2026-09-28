@@ -415,12 +415,7 @@ export async function MembersDirectoryBody({
     : [];
 
   if (!result.ok) {
-    return (
-      <MembersStateCard>
-        <DirectoryFilters plans={planOptions} portalInviteCount={portalInviteCount} />
-        <MembersErrorState />
-      </MembersStateCard>
-    );
+    return renderMembersDirectoryBody({ plans: planOptions, portalInviteCount, isAdmin, state: { kind: 'error' } });
   }
 
   if (result.value.items.length === 0) {
@@ -431,17 +426,12 @@ export async function MembersDirectoryBody({
     // still gates the zero-members onboarding screen. A filtered-to-nothing
     // list frames the filters and the state in one card (122 US5a, board
     // `Admin-state-members-filtered`).
-    if (portalNeedsInvite || hasFilters) {
-      return (
-        <MembersStateCard>
-          <DirectoryFilters plans={planOptions} portalInviteCount={portalInviteCount} />
-          {portalNeedsInvite ? <MembersAllInvitedEmptyState /> : <MembersFilteredEmptyState />}
-        </MembersStateCard>
-      );
-    }
-    // No members yet: nothing to filter, so no toolbar (board
-    // `Admin-state-members-empty`).
-    return <MembersZeroState canAddMember={isAdmin} />;
+    return renderMembersDirectoryBody({
+      plans: planOptions,
+      portalInviteCount,
+      isAdmin,
+      state: { kind: portalNeedsInvite ? 'all-invited' : hasFilters ? 'filtered' : 'empty' },
+    });
   }
 
   // 055-member-number — resolve the per-tenant prefix ONCE (RLS-safe shared
@@ -522,28 +512,95 @@ export async function MembersDirectoryBody({
     };
   });
 
-  // Round-2 review I-3 + round-3 review S-1: Suspense boundary around the
-  // client component that calls useSearchParams — prevents the whole route
-  // from bailing out of server rendering. Fallback renders the same
-  // shimmer skeleton as /members loading.tsx to avoid CLS during
-  // hydration transitions.
-  return (
-    <>
-      <DirectoryFilters plans={planOptions} portalInviteCount={portalInviteCount} />
-      {/* C1 round-10 — pass `withSelection={isAdmin}` so the
-          shimmer-skeleton column count matches the real table for the
-          current role. 056-members-table-compact: admin 8 cols incl.
-          checkbox; manager 7. */}
-      <Suspense fallback={<MembersTableSkeleton withSelection={isAdmin} />}>
-        <DirectoryWithBulk
-          rows={rows}
-          page={page}
-          pageSize={PAGE_SIZE}
-          total={result.value.total}
-          isAdmin={isAdmin}
-          filtered={hasFilters}
-        />
-      </Suspense>
-    </>
-  );
+  return renderMembersDirectoryBody({
+    plans: planOptions,
+    portalInviteCount,
+    isAdmin,
+    state: { kind: 'list', rows, page, pageSize: PAGE_SIZE, total: result.value.total, filtered: hasFilters },
+  });
+}
+
+/** What the members body shows; the page decides, this renders it. */
+export type MembersDirectoryBodyState =
+  | { readonly kind: 'error' }
+  | { readonly kind: 'filtered' }
+  | { readonly kind: 'all-invited' }
+  | { readonly kind: 'empty' }
+  | {
+      readonly kind: 'list';
+      readonly rows: MembersTableRow[];
+      readonly page: number;
+      readonly pageSize: number;
+      readonly total: number;
+      readonly filtered: boolean;
+    };
+
+/**
+ * 122 US5a — the members body for each state, shared with the no-DB preview
+ * route (`/test-fixtures/aura-admin`) so the preview's screenshots show the
+ * page's own layout, not a copy (US5a review, 29 Sep).
+ */
+export function renderMembersDirectoryBody({
+  plans,
+  portalInviteCount,
+  isAdmin,
+  state,
+}: {
+  readonly plans: PlanOption[];
+  readonly portalInviteCount: number | null;
+  readonly isAdmin: boolean;
+  readonly state: MembersDirectoryBodyState;
+}): ReactNode {
+  const filters = <DirectoryFilters plans={plans} portalInviteCount={portalInviteCount} />;
+  switch (state.kind) {
+    case 'error':
+      return (
+        <MembersStateCard>
+          {filters}
+          <MembersErrorState />
+        </MembersStateCard>
+      );
+    // Task 11 — the needs-invite chip filtered to zero rows gets its own
+    // "everyone has been invited" state (design doc §3.6/§3.7); any other
+    // filter combination gets "no members match". A filtered-to-nothing list
+    // frames the filters and the state in one card (board
+    // `Admin-state-members-filtered`).
+    case 'all-invited':
+    case 'filtered':
+      return (
+        <MembersStateCard>
+          {filters}
+          {state.kind === 'all-invited' ? <MembersAllInvitedEmptyState /> : <MembersFilteredEmptyState />}
+        </MembersStateCard>
+      );
+    // No members yet: nothing to filter, so no toolbar (board
+    // `Admin-state-members-empty`).
+    case 'empty':
+      return <MembersZeroState canAddMember={isAdmin} />;
+    case 'list':
+      // Round-2 review I-3 + round-3 review S-1: Suspense boundary around the
+      // client component that calls useSearchParams — prevents the whole
+      // route from bailing out of server rendering. The fallback is the same
+      // skeleton as /members loading.tsx, with the current role's columns.
+      return (
+        <>
+          {filters}
+          <Suspense fallback={<MembersTableSkeleton withSelection={isAdmin} />}>
+            <DirectoryWithBulk
+              rows={state.rows}
+              page={state.page}
+              pageSize={state.pageSize}
+              total={state.total}
+              isAdmin={isAdmin}
+              filtered={state.filtered}
+            />
+          </Suspense>
+        </>
+      );
+    default: {
+      const unknownState: never = state;
+      void unknownState;
+      return null;
+    }
+  }
 }

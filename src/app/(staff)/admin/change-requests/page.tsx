@@ -40,6 +40,7 @@ import {
   CHANGE_REQUEST_STATES,
   asMemberId,
   listChangeRequestQueue,
+  type ChangeRequestQueueItem,
 } from '@/modules/members';
 import { Alert, buttonClass } from '@jirawatpyk/aura-react/server';
 import { EmptyState } from '@/components/shell/empty-state';
@@ -217,20 +218,64 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
     return `/admin/change-requests?${params.toString()}`;
   })();
 
+  return renderChangeRequestQueueView({
+    items: page.items,
+    hasMore: page.nextCursor !== null,
+    nextHref,
+    // the tenant's pending fact belongs to the DEFAULT view — on a filtered
+    // page it reads as a count of what is shown (UX I8)
+    pendingSummary:
+      defaultView && (page.pendingCount ?? 0) > 0
+        ? {
+            count: page.pendingCount ?? 0,
+            oldestDays: page.oldestPendingAgeSeconds === null ? 0 : Math.floor(page.oldestPendingAgeSeconds / 86_400),
+          }
+        : null,
+    deepLinkNotice,
+    filtered,
+    memberChip: q.memberId ? { company: memberChip ?? '', removeHref: hrefWithout('memberId') } : null,
+    submitterChip: q.submitter ? { removeHref: hrefWithout('submitter') } : null,
+    timeZone: env.tenant.timezone,
+  });
+}
+
+/**
+ * 122 US5a — the queue body, shared with the no-DB preview route
+ * (`/test-fixtures/aura-admin?view=change-requests`) so the two cannot drift
+ * (the preview's copy drifted once; US5a review, 29 Sep).
+ */
+export async function renderChangeRequestQueueView({
+  items,
+  hasMore,
+  nextHref,
+  pendingSummary,
+  deepLinkNotice,
+  filtered,
+  memberChip,
+  submitterChip,
+  timeZone,
+}: {
+  readonly items: readonly ChangeRequestQueueItem[];
+  readonly hasMore: boolean;
+  readonly nextHref: string | null;
+  readonly pendingSummary: { readonly count: number; readonly oldestDays: number } | null;
+  readonly deepLinkNotice: string | null;
+  readonly filtered: boolean;
+  readonly memberChip: { readonly company: string; readonly removeHref: string } | null;
+  readonly submitterChip: { readonly removeHref: string } | null;
+  readonly timeZone: string;
+}) {
+  const t = await getTranslations('admin.changeRequests.queue');
+  const tFilters = await getTranslations('admin.changeRequests.filters');
   return (
     <TableContainer>
       <PageHeader
         title={t('title')}
         subtitle={t('subtitle')}
         actions={
-          // the tenant's pending fact belongs to the DEFAULT view — on a
-          // filtered page it reads as a count of what is shown (UX I8)
-          defaultView && (page.pendingCount ?? 0) > 0 ? (
+          pendingSummary ? (
             <p className="text-sm text-[var(--aura-fg-secondary)]" data-testid="queue-pending-count">
-              {t('pendingSummary', {
-                count: page.pendingCount ?? 0,
-                oldestDays: page.oldestPendingAgeSeconds === null ? 0 : Math.floor(page.oldestPendingAgeSeconds / 86_400),
-              })}
+              {t('pendingSummary', pendingSummary)}
             </p>
           ) : undefined
         }
@@ -241,22 +286,22 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
         </Alert>
       ) : null}
 
-      <ChangeRequestQueueFilters resultCount={page.items.length} hasMore={page.nextCursor !== null} timeZone={env.tenant.timezone} />
-      {q.memberId || q.submitter ? (
+      <ChangeRequestQueueFilters resultCount={items.length} hasMore={hasMore} timeZone={timeZone} />
+      {memberChip || submitterChip ? (
         <div className="space-y-1">
-          {q.memberId ? (
+          {memberChip ? (
             <p className="text-sm" data-testid="queue-member-chip">
-              {tFilters('memberChip', { company: memberChip ?? '' })}{' '}
-              <Link href={hrefWithout('memberId')} className="inline-flex items-center gap-1 text-[var(--aura-fg-accent)] underline underline-offset-4 hover:no-underline">
+              {tFilters('memberChip', { company: memberChip.company })}{' '}
+              <Link href={memberChip.removeHref} className="inline-flex items-center gap-1 text-[var(--aura-fg-accent)] underline underline-offset-4 hover:no-underline">
                 <XIcon className="size-3" aria-hidden="true" />
                 {tFilters('removeMember')}
               </Link>
             </p>
           ) : null}
-          {q.submitter ? (
+          {submitterChip ? (
             <p className="text-sm" data-testid="queue-submitter-chip">
               {tFilters('submitterChip')}{' '}
-              <Link href={hrefWithout('submitter')} className="inline-flex items-center gap-1 text-[var(--aura-fg-accent)] underline underline-offset-4 hover:no-underline">
+              <Link href={submitterChip.removeHref} className="inline-flex items-center gap-1 text-[var(--aura-fg-accent)] underline underline-offset-4 hover:no-underline">
                 <XIcon className="size-3" aria-hidden="true" />
                 {tFilters('removeSubmitter')}
               </Link>
@@ -265,14 +310,14 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
         </div>
       ) : null}
 
-      {page.items.length === 0 ? (
+      {items.length === 0 ? (
         deepLinkNotice ? null : (
           <div data-testid="queue-empty">
             <EmptyState icon={InboxIcon} title={filtered ? t('emptyFiltered') : t('empty')} {...(filtered ? {} : { description: t('emptyHint') })} bordered />
           </div>
         )
       ) : (
-        <ChangeRequestQueueTable items={page.items} />
+        <ChangeRequestQueueTable items={items} />
       )}
       {nextHref ? (
         <div className="flex justify-center">
