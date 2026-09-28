@@ -140,7 +140,7 @@ export async function renderChangeRequestReviewView({
           </span>
         }
         actions={
-          <Link href={`/admin/members/${request.memberId}`} className={buttonClass({ variant: 'secondary', size: 'sm' })}>
+          <Link href={`/admin/members/${request.memberId}`} className={buttonClass({ variant: 'secondary' })}>
             <ArrowLeftIcon className="size-4" aria-hidden="true" />
             {t('backToMember')}
           </Link>
