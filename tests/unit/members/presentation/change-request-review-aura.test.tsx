@@ -117,3 +117,28 @@ describe('change-request review on AURA (T508)', () => {
     expect(within(dialog).getAllByRole('alert').some((a) => a.textContent?.includes(tooLong))).toBe(true);
   });
 });
+
+describe('change-request review — board content (US5a parity)', () => {
+  it('bolds the counts in the selection summary', () => {
+    renderClient();
+    const summary = screen.getByTestId('selection-summary');
+    expect(summary.querySelectorAll('strong').length).toBe(2);
+  });
+
+  it('a viewer who cannot decide sees no "Will be approved / rejected" words', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <ChangeRequestReviewClient request={request} fields={fields} canDecide={false} />
+      </NextIntlClientProvider>,
+    );
+    expect(screen.queryByText(REVIEW.willApprove)).toBeNull();
+    expect(screen.queryByText(REVIEW.willReject)).toBeNull();
+  });
+
+  it('shows the current value muted and the proposed value in semibold', () => {
+    renderClient();
+    const row = document.querySelector('[data-field-key="phone"]') as HTMLElement;
+    expect(row.querySelector('[data-value="current"]')).toHaveClass('text-[var(--aura-fg-secondary)]');
+    expect(row.querySelector('[data-value="proposed"]')).toHaveClass('font-semibold');
+  });
+});
