@@ -239,7 +239,7 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
           // the filters share the next; on a phone the three filters share one
           // row (6px apart, each as wide as its words) and the needs-invite
           // chip wraps to the next.
-          className="[&_.aura-filterbar\_\_search]:max-w-none max-lg:[&_.aura-filterbar\_\_search]:basis-full max-sm:[&_.aura-filterbar\_\_controls]:w-full max-sm:[&_.aura-filterbar\_\_controls]:gap-1.5"
+          className="[&_.aura-filterbar\_\_search]:max-w-none [&_.aura-filterbar\_\_spacer]:hidden max-lg:[&_.aura-filterbar\_\_search]:basis-full max-sm:[&_.aura-filterbar\_\_controls]:w-full max-sm:[&_.aura-filterbar\_\_controls]:gap-1.5"
           search={isSearchFocused ? sentQ : currentQ}
           onSearchChange={onSearchChange}
           searchDelay={DEBOUNCE_MS}

@@ -83,6 +83,8 @@ export function DirectorySearchFilters(): React.JSX.Element {
         <FilterBar
           key={barKey}
           label={t('label')}
+          // The search fills the row beside "Listed only", as on the board.
+          className="[&_.aura-filterbar\_\_search]:max-w-none [&_.aura-filterbar\_\_spacer]:hidden"
           search={isSearchFocused ? sentQ : currentQ}
           onSearchChange={(value) => {
             setSentQ(value);

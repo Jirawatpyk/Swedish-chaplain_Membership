@@ -204,6 +204,8 @@ export async function renderDirectoryView({
               hasLogo: t('table.hasLogo'),
               yes: t('table.yes'),
               no: t('table.no'),
+              listedPill: t('table.listedPill'),
+              notListedPill: t('table.notListedPill'),
               emptyTitle: t('table.emptyTitle'),
               empty: t('table.empty'),
             }}

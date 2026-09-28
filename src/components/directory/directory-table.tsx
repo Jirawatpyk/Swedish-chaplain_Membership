@@ -6,10 +6,11 @@
  * with a text badge (not colour alone — WCAG 1.4.1).
  *
  * 122 US5a (T506) — AURA `DataTable` (board `Admin-directory`): the company is
- * the row link and the phone card title; "Listed" sits beside it on a card.
+ * the row link (in the link colour) and the phone card title; the columns
+ * follow the board's order, and "Listed" sits beside the title on a card.
  */
 import { CheckIcon } from 'lucide-react';
-import { Badge, DataTable, type DataTableColumn } from '@jirawatpyk/aura-react';
+import { Badge, DataTable, StatusPill, type DataTableColumn } from '@jirawatpyk/aura-react';
 import { EmptyState } from '@/components/shell/empty-state';
 
 export interface DirectoryTableRow {
@@ -35,6 +36,9 @@ export interface DirectoryTableLabels {
   readonly hasLogo: string;
   readonly yes: string;
   readonly no: string;
+  /** The phone card's pill ("Listed" / "Not listed"), board `Admin-directory-mobile`. */
+  readonly listedPill: string;
+  readonly notListedPill: string;
   readonly emptyTitle: string;
   readonly empty: string;
 }
@@ -57,32 +61,46 @@ export function DirectoryTable({
       key: 'companyName',
       label: labels.company,
       render: (row) => (
-        <span className="font-medium whitespace-normal [overflow-wrap:anywhere]">{row.companyName}</span>
+        <span className="font-medium whitespace-normal text-[var(--aura-fg-accent)] [overflow-wrap:anywhere]">
+          {row.companyName}
+        </span>
       ),
     },
+    { key: 'tier', label: labels.tier, width: 170, render: (row) => row.tier ?? DASH },
+    { key: 'industry', label: labels.industry, width: 160, hideBelow: 'lg', render: (row) => row.industry ?? DASH },
+    { key: 'location', label: labels.location, width: 130, render: (row) => row.location ?? DASH },
     {
       key: 'listed',
       label: labels.listed,
-      width: 100,
+      width: 90,
       pill: true,
+      // The table says Yes / No; a phone card, where the column name is not
+      // beside it, says "Listed" / "Not listed" with the pill's icon (boards
+      // `Admin-directory` and `-mobile`).
       render: (row) => (
-        <Badge {...(row.listed ? { tone: 'success' as const } : { variant: 'outline' as const })}>
-          {row.listed ? labels.yes : labels.no}
-        </Badge>
+        <>
+          <span className="in-[.aura-table--stacked]:hidden">
+            <Badge {...(row.listed ? { tone: 'success' as const } : { variant: 'outline' as const })}>
+              {row.listed ? labels.yes : labels.no}
+            </Badge>
+          </span>
+          <span className="hidden in-[.aura-table--stacked]:inline-flex">
+            <StatusPill tone={row.listed ? 'ready' : 'neutral'}>
+              {row.listed ? labels.listedPill : labels.notListedPill}
+            </StatusPill>
+          </span>
+        </>
       ),
     },
-    { key: 'tier', label: labels.tier, width: 180, render: (row) => row.tier ?? DASH },
-    { key: 'industry', label: labels.industry, width: 170, hideBelow: 'lg', render: (row) => row.industry ?? DASH },
-    { key: 'location', label: labels.location, width: 140, render: (row) => row.location ?? DASH },
     {
       key: 'hasLogo',
       label: labels.logo,
-      width: 80,
+      width: 64,
       hideBelow: 'lg',
       render: (row) =>
         row.hasLogo ? (
-          <span className="inline-flex items-center gap-1">
-            <CheckIcon className="size-4" aria-hidden />
+          <span className="flex items-center gap-1">
+            <CheckIcon className="block size-4" aria-hidden />
             <span className="sr-only">{labels.hasLogo}</span>
           </span>
         ) : (
@@ -92,7 +110,7 @@ export function DirectoryTable({
           </>
         ),
     },
-    { key: 'contactName', label: labels.contact, width: 160, hideBelow: 'lg', render: (row) => row.contactName ?? DASH },
+    { key: 'contactName', label: labels.contact, width: 150, hideBelow: 'lg', render: (row) => row.contactName ?? DASH },
   ];
   // Industry, Logo and Contact drop out on a table narrower than `lg` (a
   // tablet, or a laptop beside the nav), so the rest fits without scrolling;

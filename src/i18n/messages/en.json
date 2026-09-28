@@ -337,7 +337,9 @@
         "yes": "Yes",
         "no": "No",
         "emptyTitle": "No members found",
-        "empty": "Try adjusting your search or filters."
+        "empty": "Try adjusting your search or filters.",
+        "listedPill": "Listed",
+        "notListedPill": "Not listed"
       },
       "generate": {
         "heading": "Generate",

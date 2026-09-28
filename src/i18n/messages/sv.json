@@ -337,7 +337,9 @@
         "yes": "Ja",
         "no": "Nej",
         "emptyTitle": "Inga medlemmar hittades",
-        "empty": "Justera sökningen eller filtren."
+        "empty": "Justera sökningen eller filtren.",
+        "listedPill": "Listad",
+        "notListedPill": "Inte listad"
       },
       "generate": {
         "heading": "Skapa",
