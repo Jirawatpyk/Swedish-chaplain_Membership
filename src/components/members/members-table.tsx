@@ -397,6 +397,7 @@ function InlineStatusCell({
   onSave?: Props['onInlineEdit'];
 }) {
   const t = useTranslations('admin.members.inlineEdit');
+  const tDirectory = useTranslations('admin.members.directory');
   const [saving, setSaving] = useState(false);
   // P8 round-10 — pair "saving" announcement with a "saved" flash so
   // SR users hear closure on the inline-edit transaction, not just the
@@ -456,14 +457,17 @@ function InlineStatusCell({
     return <StatusBadge status={status} />;
   }
 
+  // Same translated label the StatusBadge shows, not the raw status code.
+  const currentLabel = tDirectory(`filters.status.${optimistic}`);
+
   return (
     <button
       type="button"
       onClick={handleToggle}
       disabled={saving}
-      title={t('toggleStatus', { current: optimistic })}
+      title={t('toggleStatus', { current: currentLabel })}
       className="group inline-flex min-h-[28px] min-w-[60px] cursor-pointer items-center gap-1 rounded-md px-1 py-0.5 transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring disabled:cursor-wait disabled:opacity-60"
-      aria-label={t('toggleStatus', { current: optimistic })}
+      aria-label={t('toggleStatus', { current: currentLabel })}
     >
       <StatusBadge status={optimistic} />
       <PencilIcon
