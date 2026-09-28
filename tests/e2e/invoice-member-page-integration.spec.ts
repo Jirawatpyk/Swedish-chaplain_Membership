@@ -20,7 +20,9 @@
  * for managers. These assertions cover spec AS1 + AS3 structurally;
  * AS2 + AS4 are marked `test.fixme` pinned to T115.
  */
-import { expect, fillField, test } from './fixtures';
+import { expect, test } from './fixtures';
+import { signInAsAdmin } from './helpers/admin-session';
+import { signInAsManager } from './helpers/manager-session';
 import { signInAsMember } from './helpers/member-sign-in';
 import { clearE2ERateLimits } from './helpers/rate-limit';
 
@@ -35,24 +37,6 @@ const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
 const MANAGER_EMAIL = process.env.E2E_MANAGER_EMAIL;
 const MANAGER_PASSWORD = process.env.E2E_MANAGER_PASSWORD;
 
-async function signInAdmin(page: import('@playwright/test').Page): Promise<void> {
-  await page.goto('/admin/sign-in');
-  await fillField(page.getByLabel(/email/i), ADMIN_EMAIL!);
-  await fillField(page.getByRole('textbox', { name: /^password$/i }), ADMIN_PASSWORD!);
-  await page.getByRole('button', { name: /sign in/i }).click();
-  // F5R6+ fix — exclude /admin/sign-in (regex substring match bug).
-  await page.waitForURL(/\/admin(\/(?!sign-in)|$)/, { timeout: 10_000 });
-}
-
-async function signInManager(page: import('@playwright/test').Page): Promise<void> {
-  await page.goto('/admin/sign-in');
-  await fillField(page.getByLabel(/email/i), MANAGER_EMAIL!);
-  await fillField(page.getByRole('textbox', { name: /^password$/i }), MANAGER_PASSWORD!);
-  await page.getByRole('button', { name: /sign in/i }).click();
-  // F5R6+ fix — exclude /admin/sign-in (regex substring match bug).
-  await page.waitForURL(/\/admin(\/(?!sign-in)|$)/, { timeout: 10_000 });
-}
-
 async function openAnyMemberDetail(
   page: import('@playwright/test').Page,
 ): Promise<void> {
@@ -64,8 +48,24 @@ async function openAnyMemberDetail(
     .getByRole('table')
     .getByRole('link')
     .first();
+  // The URL changes as soon as the client navigation starts, before the
+  // detail page's RSC payload has loaded. AS2's next `page.goto` then
+  // cancelled that fetch, which WebKit reports as a "Load failed"
+  // pageerror (measured: the `?_rsc=` request died ~30 ms after the URL
+  // changed, in 4 of 4 replays). Wait for it to finish; the catch keeps a
+  // prefetch-served navigation (no fetch at all) from failing the test.
+  const detailLoaded = page
+    .waitForEvent('requestfinished', {
+      predicate: (req) => {
+        const url = new URL(req.url());
+        return url.searchParams.has('_rsc') && /^\/admin\/members\/[0-9a-f-]{36}$/.test(url.pathname);
+      },
+      timeout: 15_000,
+    })
+    .catch(() => undefined);
   await firstRow.click();
   await page.waitForURL(/\/admin\/members\/[0-9a-f-]{36}$/, { timeout: 10_000 });
+  await detailLoaded;
 }
 
 test.describe('@us7 F3 × F4 integration on admin member page', () => {
@@ -77,7 +77,7 @@ test.describe('@us7 F3 × F4 integration on admin member page', () => {
   test('AS1 admin: Invoices section renders on member detail page', async ({
     page,
   }) => {
-    await signInAdmin(page);
+    await signInAsAdmin(page);
     await openAnyMemberDetail(page);
     // 056 fix #1 — the section title is a real <h2> (was a CardTitle <div>),
     // inside a <section aria-labelledby> region. Match the h2 heading
@@ -93,7 +93,7 @@ test.describe('@us7 F3 × F4 integration on admin member page', () => {
       !MANAGER_EMAIL || !MANAGER_PASSWORD,
       'Set E2E_MANAGER_EMAIL + E2E_MANAGER_PASSWORD',
     );
-    await signInManager(page);
+    await signInAsManager(page);
     await openAnyMemberDetail(page);
 
     // Locate the Invoices section via its accessible region (the <section
@@ -139,7 +139,7 @@ test.describe('@us7 F3 × F4 integration on admin member page', () => {
     // (which already pins the localised copy for the 6 F4 event
     // types). E2E pins the wire-up + the route loads under admin
     // role. Auth-level + nav contract per FR-018.
-    await signInAdmin(page);
+    await signInAsAdmin(page);
     await openAnyMemberDetail(page);
     // Click "View timeline" or navigate to timeline route directly.
     const currentUrl = page.url();
