@@ -104,6 +104,10 @@ function seedZeroRows(): void {
   });
 }
 
+// A filtered search that matched nothing: the toolbar (and so the chip) stays.
+// An unfiltered zero-member directory shows no toolbar at all.
+const FILTERED = { q: 'nordic' };
+
 function seedSearchError(): void {
   directorySearchWithCount.mockResolvedValue({
     ok: false,
@@ -133,7 +137,7 @@ describe('MembersDirectoryBody — needs-invite chip count degrade path', () => 
       new Error('db down'),
     );
 
-    const result = await MembersDirectoryBody({ query: {}, isAdmin: true });
+    const result = await MembersDirectoryBody({ query: FILTERED, isAdmin: true });
     const treeJson = JSON.stringify(result);
 
     expect(treeJson).toContain('"portalInviteCount":null');
@@ -150,7 +154,7 @@ describe('MembersDirectoryBody — needs-invite chip count degrade path', () => 
       error: { code: 'unexpected' },
     });
 
-    const result = await MembersDirectoryBody({ query: {}, isAdmin: true });
+    const result = await MembersDirectoryBody({ query: FILTERED, isAdmin: true });
 
     expect(JSON.stringify(result)).toContain('"portalInviteCount":null');
   });
@@ -162,7 +166,7 @@ describe('MembersDirectoryBody — needs-invite chip count degrade path', () => 
       value: 12,
     });
 
-    const result = await MembersDirectoryBody({ query: {}, isAdmin: true });
+    const result = await MembersDirectoryBody({ query: FILTERED, isAdmin: true });
 
     expect(JSON.stringify(result)).toContain('"portalInviteCount":12');
   });
@@ -265,5 +269,16 @@ describe('MembersDirectoryBody — ?portal=needs_invite reaches the search filte
 
     expect(countMembersNeedingPortalInviteMock).not.toHaveBeenCalled();
     expect(JSON.stringify(result)).toContain('"portalInviteCount":null');
+  });
+});
+
+describe('MembersDirectoryBody — zero members (board Admin-state-members-empty)', () => {
+  it('shows no filter toolbar when the tenant has no members and nothing is filtered', async () => {
+    seedZeroRows();
+    countMembersNeedingPortalInviteMock.mockResolvedValue({ ok: true, value: 0 });
+
+    const result = await MembersDirectoryBody({ query: {}, isAdmin: true });
+
+    expect(JSON.stringify(result)).not.toContain('"portalInviteCount"');
   });
 });
