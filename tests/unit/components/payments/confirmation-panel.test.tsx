@@ -47,7 +47,7 @@ const messages = {
         resumeAutoClose: 'Resume',
         autoClosePaused: 'Auto-close paused',
         toast: 'Payment received. Receipt emailed to you.',
-        receiptSoon: 'Your tax receipt will be ready in a moment.',
+        receiptSoon: 'Your receipt will be ready in a moment.',
       },
     },
     // 090 finding #2 — the fetch+blob receipt download reads these toast keys.
@@ -89,7 +89,7 @@ function renderPanel(
 describe('<ConfirmationPanel>', () => {
   it('says the tax receipt follows in a moment, under the summary (`Pay-success` board)', () => {
     renderPanel();
-    expect(screen.getByText('Your tax receipt will be ready in a moment.')).toBeInTheDocument();
+    expect(screen.getByText('Your receipt will be ready in a moment.')).toBeInTheDocument();
   });
 
   beforeEach(() => {

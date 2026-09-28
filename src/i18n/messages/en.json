@@ -6386,7 +6386,7 @@
         "meta": {
           "title": "Credit Note"
         },
-        "subtitle": "A credit note (ใบลดหนี้) lowers the amount of a tax receipt. Keep it with the receipt for your accounts.",
+        "subtitle": "A credit note (ใบลดหนี้) lowers the value of the original tax invoice. Keep it with that document for your accounts.",
         "status": {
           "issued": "Issued"
         },
@@ -6406,8 +6406,8 @@
           "heading": "Reason"
         },
         "title": "Credit note",
-        "reducesTitle": "Receipt {receipt} is reduced by {amount}",
-        "reducesBody": "If money is due back to you, the chamber arranges the refund separately.",
+        "reducesTitle": "This credit note reduces receipt {receipt} by {amount}",
+        "reducesBody": "If a refund applies, it is handled separately. This page records the credit only.",
         "contact": "Questions about this credit note? <link>Contact the chamber</link>."
       }
     },
@@ -7146,7 +7146,7 @@
         "resumeAutoClose": "Resume",
         "autoClosePaused": "Auto-close paused",
         "toast": "Payment received. Receipt emailed to you.",
-        "receiptSoon": "Your tax receipt will be ready in a moment."
+        "receiptSoon": "Your receipt will be ready in a moment."
       },
       "processing": {
         "title": "Processing payment…",

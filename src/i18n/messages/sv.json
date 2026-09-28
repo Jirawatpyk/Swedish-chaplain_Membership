@@ -6386,7 +6386,7 @@
         "meta": {
           "title": "Kreditnota"
         },
-        "subtitle": "En kreditnota (ใบลดหนี้) sänker beloppet på ett skattekvitto. Spara den tillsammans med kvittot för din bokföring.",
+        "subtitle": "En kreditnota (ใบลดหนี้) sänker värdet på den ursprungliga skattefakturan. Spara den tillsammans med den för din bokföring.",
         "status": {
           "issued": "Utfärdad"
         },
@@ -6406,8 +6406,8 @@
           "heading": "Anledning"
         },
         "title": "Kreditnota",
-        "reducesTitle": "Kvitto {receipt} minskas med {amount}",
-        "reducesBody": "Om du har pengar att få tillbaka ordnar kammaren återbetalningen separat.",
+        "reducesTitle": "Den här kreditnotan minskar kvitto {receipt} med {amount}",
+        "reducesBody": "Om en återbetalning gäller hanteras den separat. Den här sidan visar endast krediteringen.",
         "contact": "Frågor om den här kreditnotan? <link>Kontakta kammaren</link>."
       }
     },
@@ -7146,7 +7146,7 @@
         "resumeAutoClose": "Återuppta",
         "autoClosePaused": "Automatisk stängning pausad",
         "toast": "Betalningen mottagen. Kvittot har skickats till din e-post.",
-        "receiptSoon": "Ditt skattekvitto är klart om en liten stund."
+        "receiptSoon": "Ditt kvitto är klart om en liten stund."
       },
       "processing": {
         "title": "Behandlar betalning…",

@@ -95,7 +95,7 @@ describe('Portal credit note — AURA layout (spec 122 US4)', () => {
     expect(html).toMatch(/<h1>portal\.creditNotes\.detail\.title <span class="font-mono">CN-2026-000014<\/span><\/h1>/);
   });
 
-  it('with an original receipt, a notice states that receipt is reduced by the credit note total', async () => {
+  it('with an original receipt, a notice states the credit note reduces that receipt by its total', async () => {
     originalDocuments = { receiptNumberRaw: 'RC-2026-000038', related: null };
     try {
       const html = await renderPage();
