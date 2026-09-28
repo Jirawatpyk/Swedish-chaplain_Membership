@@ -143,8 +143,8 @@ describe('portal status badge', () => {
 
   it('shows only the bounce badge when a pending invitation bounced (122 US5a)', () => {
     // One root cause, one badge: "Invitation bounced" already says the contact
-    // was invited, and the grid cell is one line — two badges would push the
-    // required bounce warning (005 spec edge case) out of the 164px column.
+    // was invited, so it stands in for "Invited" (the same rule that hides the
+    // bounce badge once the invitation expired).
     renderTable([
       row({
         member_id: 'm10',
