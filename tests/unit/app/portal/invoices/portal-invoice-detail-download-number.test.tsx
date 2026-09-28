@@ -469,6 +469,40 @@ describe('PortalInvoiceDetailPage — AURA layout (spec 122 US4, `Invoice-paid` 
     }
   });
 
+  it('the VAT row names the rate stored on the invoice (board "VAT 7%"), never a hard-coded 7', async () => {
+    const intl = await import('next-intl/server');
+    const echo = (key: string, values?: Record<string, unknown>) =>
+      values ? `${key}(${String(values.rate)})` : key;
+    vi.mocked(intl.getTranslations).mockResolvedValue(echo as never);
+    try {
+      getInvoiceMock.mockResolvedValue({
+        ok: true,
+        value: { ...issuedUnpaid088Bill(), vatRate: { raw: '0.0700' } },
+      });
+      expect(await renderPage()).toContain('>totals.vatWithRate(7)<');
+
+      // A §80/1(5) zero-rated invoice reads its own 0%.
+      getInvoiceMock.mockResolvedValue({
+        ok: true,
+        value: {
+          ...issuedUnpaid088Bill(),
+          vatRate: { raw: '0.0000' },
+          vat: { satang: 0n },
+          total: { satang: 100_000n },
+        },
+      });
+      expect(await renderPage()).toContain('>totals.vatWithRate(0)<');
+
+      // No rate snapshot: the plain label, no guessed rate.
+      getInvoiceMock.mockResolvedValue({ ok: true, value: issuedUnpaid088Bill() });
+      const html = await renderPage();
+      expect(html).toContain('>totals.vat<');
+      expect(html).not.toContain('vatWithRate');
+    } finally {
+      vi.mocked(intl.getTranslations).mockResolvedValue(((key: string) => key) as never);
+    }
+  });
+
   it('an unpaid invoice has no "Paid" fact', async () => {
     getInvoiceMock.mockResolvedValue({ ok: true, value: issuedUnpaid088Bill() });
     expect(await renderPage()).not.toContain('fields.paidDate');
