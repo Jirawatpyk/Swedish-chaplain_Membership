@@ -1376,7 +1376,6 @@
         "loadMore": "Load more",
         "selectAll": "Select all rows",
         "selectRow": "Select {company}",
-        "selectedCount": "{count, plural, one {# row selected} other {# rows selected}}",
         "allPageSelected": "All {count} on this page selected.",
         "selectAllMatching": "Select all {count} matching",
         "matchingSelected": "All {count} matching members selected.",

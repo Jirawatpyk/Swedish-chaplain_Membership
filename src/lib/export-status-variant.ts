@@ -1,40 +1,18 @@
 /**
- * Shared `ExportStatus → Badge variant` mapping (M4).
- *
- * Text already encodes meaning (WCAG 1.4.1); the variant is a redundant visual
- * cue: ready/delivered = actionable (default), failed/expired = attention
- * (destructive), in-flight = neutral (secondary). Keyed by the full
- * `ExportStatus` union via `satisfies`, so adding a status is a compile error
- * here (no silent fall-through to a neutral badge).
- *
- * Extracted from the F9 directory + data-export panels, which had identical
- * copies of this map.
+ * Shared `ExportStatus → AURA StatusPill tone` mapping for the F9 directory
+ * and data-export panels. The pill's text carries the meaning (WCAG 1.4.1);
+ * the tone is a redundant visual cue. (The legacy Badge-variant map went with
+ * the last shadcn consumer, 122 US5a.)
  */
 import type { ExportStatus } from '@/modules/insights';
-
-/** Narrowed subset of the Badge component's variant union used by export rows. */
-export type BadgeVariant = 'default' | 'secondary' | 'destructive' | 'outline';
-
-export const STATUS_VARIANT = {
-  requested: 'secondary',
-  processing: 'secondary',
-  ready: 'default',
-  delivered: 'default',
-  expired: 'destructive',
-  failed: 'destructive',
-} as const satisfies Record<ExportStatus, BadgeVariant>;
-
-/** Maps an export status to its Badge variant. */
-export function exportStatusVariant(status: ExportStatus): BadgeVariant {
-  return STATUS_VARIANT[status];
-}
 
 /**
  * Spec 122 US3 — the same statuses as AURA StatusPill tones, for the AURA
  * panels (the `Portal-account` boards): in flight = progress ("Preparing"),
  * ready/delivered = ready, failed = blocked, and expired = neutral — a link
- * that timed out is the normal end of an export, not a failure. Same
- * `satisfies` guard as the map above.
+ * that timed out is the normal end of an export, not a failure. Keyed by the
+ * full `ExportStatus` union via `satisfies`, so a new status is a compile
+ * error here, never a silent fall-through.
  */
 export type ExportStatusTone = 'neutral' | 'progress' | 'ready' | 'blocked';
 

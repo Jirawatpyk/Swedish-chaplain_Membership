@@ -1376,7 +1376,6 @@
         "loadMore": "โหลดเพิ่ม",
         "selectAll": "เลือกทุกแถว",
         "selectRow": "เลือก {company}",
-        "selectedCount": "เลือกแล้ว {count} แถว",
         "allPageSelected": "เลือกครบ {count} รายการในหน้านี้แล้ว",
         "selectAllMatching": "เลือกทั้งหมด {count} รายการที่ตรงเงื่อนไข",
         "matchingSelected": "เลือกสมาชิกที่ตรงเงื่อนไขครบ {count} รายการแล้ว",

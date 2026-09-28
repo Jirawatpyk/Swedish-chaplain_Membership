@@ -15,10 +15,10 @@
  * disabled with a message instructing the admin to split the operation.
  *
  * Focus-on-close (107-auto-invoice Task 15 review, UX-1). EVERY successful
- * bulk action removes this bar from the DOM: `executeBulk` calls
- * `onClear()` → the parent clears `selectedIds` → `count === 0` → this
- * component renders `null`. All FOUR trigger buttons vanish, and Base UI's
- * default focus-return (the original trigger) drops focus to `<body>` — a
+ * bulk action removes the bar's actions from the DOM: `executeBulk` calls
+ * `onClear()` → the parent clears `selectedIds` → `count === 0` → the idle
+ * ActionBar renders no actions. All FOUR trigger buttons vanish, and the
+ * dialog's default focus-return (the original trigger) drops focus to `<body>` — a
  * keyboard or screen-reader user must re-Tab from the top of the page after
  * every bulk action. Fixed with ONE shared `finalFocus` for all four dialogs,
  * built from `useDialogFinalFocus` (REUSED verbatim from
@@ -34,10 +34,9 @@
  * returns to the trigger. WCAG 2.1 AA SC 2.4.3.
  *
  * The reset MUST live in the onClick, not at the top of `executeBulk`
- * (re-review N1). This component returns `null` when nothing is selected,
- * but the PARENT renders it as `{isAdmin && <BulkActionBar/>}` with a
- * constant `isAdmin` — so returning `null` does NOT unmount the fiber and
- * every ref survives. Resetting only in `executeBulk` left the flag stuck
+ * (re-review N1). The bar stays mounted when nothing is selected (the PARENT
+ * renders it as `{isAdmin && <BulkActionBar/>}` with a constant `isAdmin`),
+ * so the fiber and every ref survive a clear. Resetting only in `executeBulk` left the flag stuck
  * `true` after the first successful action (Cancel/ESC never call
  * `executeBulk`), and the next ESC threw focus to the landmark instead of
  * the still-alive trigger. Resetting on open covers open→cancel,

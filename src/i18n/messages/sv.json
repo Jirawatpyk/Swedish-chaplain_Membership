@@ -1376,7 +1376,6 @@
         "loadMore": "Ladda fler",
         "selectAll": "Markera alla rader",
         "selectRow": "Markera {company}",
-        "selectedCount": "{count, plural, one {# rad vald} other {# rader valda}}",
         "allPageSelected": "Alla {count} på denna sida markerade.",
         "selectAllMatching": "Markera alla {count} matchande",
         "matchingSelected": "Alla {count} matchande medlemmar markerade.",
