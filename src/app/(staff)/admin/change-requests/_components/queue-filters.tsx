@@ -44,9 +44,10 @@
  * day, so they carry no name) — make a pre-hydration Enter submit the same
  * query natively (N4).
  */
-import { useCallback, useRef, useState, useTransition } from 'react';
+import { useCallback, useId, useRef, useState, useTransition } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { ChevronDownIcon } from 'lucide-react';
 import { Button, DatePicker, Select, type ISODate } from '@jirawatpyk/aura-react';
 // the Domain file, not the module barrel — the barrel re-exports server-only
 // use cases (the review client imports the same way)
@@ -102,6 +103,10 @@ export function ChangeRequestQueueFilters({ resultCount, hasMore }: ChangeReques
   const params = useSearchParams();
   const [pending, startTransition] = useTransition();
   const applyRef = useRef<HTMLButtonElement>(null);
+  // Phones fold the controls behind a "Filters · Status: …" row (board
+  // `Admin-change-requests-mobile`); the card always shows from 640px.
+  const [openOnPhone, setOpenOnPhone] = useState(false);
+  const panelId = useId();
 
   const urlState = params.get('state');
   const urlOutcome = params.get('outcome');
@@ -204,10 +209,29 @@ export function ChangeRequestQueueFilters({ resultCount, hasMore }: ChangeReques
       })}
       {from ? <input type="hidden" name="from" value={from} /> : null}
       {to ? <input type="hidden" name="to" value={to} /> : null}
+      <button
+        type="button"
+        aria-expanded={openOnPhone}
+        aria-controls={panelId}
+        onClick={() => setOpenOnPhone((v) => !v)}
+        className="flex min-h-12 w-full items-center justify-between gap-3 rounded-[var(--aura-card-radius)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] px-4 py-3 text-left focus-visible:outline-2 focus-visible:outline-[var(--aura-focus-ring)] sm:hidden"
+      >
+        <span className="text-[15px] font-semibold">{tFilters('toggle')}</span>
+        <span className="flex min-w-0 items-center gap-1.5 text-sm text-[var(--aura-fg-secondary)]">
+          <span className="truncate">
+            {tFilters('state')}: {tReview(`state.${stagedState(urlState)}`)}
+            {urlState === 'decided' && isOutcome(urlOutcome) ? ` · ${tReview(`outcome.${urlOutcome}`)}` : null}
+          </span>
+          <ChevronDownIcon aria-hidden="true" className={`size-4 shrink-0 transition-transform ${openOnPhone ? 'rotate-180' : ''}`} />
+        </span>
+      </button>
       {/* The controls sit in a card, the result count under it (board
           `Admin-change-requests`). From 1024px they sit in one row at their
           own widths with Apply right after the dates, as on the board. */}
-      <div className="grid gap-3 rounded-[var(--aura-card-radius)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] p-4 sm:grid-cols-2 lg:flex lg:flex-wrap lg:items-end lg:[&>.aura-field]:w-56">
+      <div
+        id={panelId}
+        className={`grid gap-3 rounded-[var(--aura-card-radius)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] p-4 sm:grid-cols-2 lg:flex lg:flex-wrap lg:items-end lg:[&>.aura-field]:w-56 ${openOnPhone ? '' : 'max-sm:hidden'}`}
+      >
       <Select
         label={tFilters('state')}
         data-testid="queue-filter-state"

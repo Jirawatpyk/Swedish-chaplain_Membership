@@ -53,6 +53,15 @@ const MANAGER_PASSWORD = process.env.E2E_MANAGER_PASSWORD;
 const copy = en.portal.changeRequests;
 const adminCopy = en.admin.changeRequests;
 
+/** 122 US5a — below 640px the queue folds its filters behind a "Filters · Status: …" toggle; open it first. */
+async function openQueueFiltersOnPhone(page: Page): Promise<void> {
+  const toggle = page.getByRole('button', { name: new RegExp(`^${adminCopy.filters.toggle}`) });
+  if (await toggle.isVisible()) {
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  }
+}
+
 test.describe.configure({ timeout: 180_000 });
 
 async function signIn(page: Page, email: string, password: string): Promise<void> {
@@ -578,6 +587,7 @@ test.describe('@change-requests US4 — history is complete and visible', () => 
     // The bar renders on every view, rows or not — the Outcome trigger only
     // under `decided`, so the two accessible names are read there first.
     await page.goto('/admin/change-requests?state=decided');
+    await openQueueFiltersOnPhone(page);
     // the filter triggers are Base UI buttons: `<label for>` names a native
     // select, not a button, so each trigger carries its own aria-label. This
     // is a smoke check of the rendered name against the copy — Playwright's
@@ -593,6 +603,7 @@ test.describe('@change-requests US4 — history is complete and visible', () => 
     // locator failed on that instant once (2026-09-15).
     await expect(page.getByTestId('queue-table')).toHaveCount(1, { timeout: 30_000 });
     await expect(page.getByTestId('queue-table')).toBeVisible();
+    await openQueueFiltersOnPhone(page);
     // Apply is a same-page navigation: the pressed button keeps focus — the bar
     // is never remounted on a filter change (UX re-review N1 / R2)
     const applyButton = page.getByRole('button', { name: adminCopy.filters.apply });

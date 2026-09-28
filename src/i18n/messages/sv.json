@@ -1121,7 +1121,8 @@
           "removeSubmitter": "Visa allas begäranden",
           "unknownMember": "en medlem som inte kunde hittas",
           "resultCount": "{count, plural, =0 {Inga begäranden att visa} one {Visar # begäran} other {Visar # begäranden}}",
-          "resultCountMore": "Visar de första {count} begärandena – fler på nästa sida"
+          "resultCountMore": "Visar de första {count} begärandena – fler på nästa sida",
+          "toggle": "Filter"
         },
       "queue": {
           "emptyFiltered": "Inga ändringsbegäranden matchar dessa filter.",
