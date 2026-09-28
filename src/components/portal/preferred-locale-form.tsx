@@ -108,6 +108,7 @@ export function PreferredLocaleForm({
   if (state === 'loading') {
     return (
       <div
+        role="status"
         className="space-y-2"
         aria-busy="true"
         aria-label={t('loading')}

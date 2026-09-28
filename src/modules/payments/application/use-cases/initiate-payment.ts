@@ -22,7 +22,11 @@
  *      `not_payable` to typed errors. For forbidden (cross-tenant) the F4
  *      bridge already emits `invoice_cross_tenant_probe`; we ALSO emit
  *      `payment_cross_tenant_probe` for F5-side forensic visibility.
- *   5. withTx → nextAttemptSeq → findPendingByInvoiceAndActor.
+ *   5. withTx → advisory lock `payments:{tenant}:{invoice}` → RE-READ the
+ *      invoice through the bridge on this tx (`externalTx`) and refuse unless
+ *      still `issued` (closes the initiate/void race — a void's pending-PI
+ *      canceller takes the same lock) → nextAttemptSeq →
+ *      findPendingByInvoiceAndActor.
  *      - Resume hit: return the existing payment WITHOUT re-auditing (the
  *        first `payment_initiated` row already exists). Stripe SDK
  *        `retrievePaymentIntent` fetches the live clientSecret.
@@ -41,6 +45,7 @@ import { err, ok, type Result } from '@/lib/result';
 import type {
   AuditPort,
   ClockPort,
+  GetInvoiceForPaymentBridgeError,
   InvoicingBridgePort,
   PaymentsRepo,
   ProcessorGatewayError,
@@ -386,48 +391,10 @@ async function initiatePaymentBody(
         },
         retentionYears: retentionFor('payment_cross_tenant_probe'),
       });
-      return err({
-        code: e.code === 'not_found' ? 'invoice_not_found' : 'forbidden_invoice',
-      });
     }
-    // F5R3v3 H-1 (2026-05-16) — surface bridge data-corruption as a
-    // typed 422 INSTEAD of feeding a zero-amount PI to Stripe. Bridge
-    // already logger.error'd + bumped the counter; this branch just
-    // routes to the typed-error path so the route handler can render
-    // a deterministic "invoice data corrupt — contact admin" UX
-    // without a Stripe round-trip.
-    if (e.code === 'corrupted_total') {
-      return err({ code: 'invoice_data_corrupt', invoiceId: e.invoiceId });
-    }
-    // REMOVE-WITH-064-REMEDIATION (online-payment site — master checklist
-    // at the guard in record-payment.ts) — short-circuit BEFORE any DB
-    // write or Stripe round-trip; see the error-union member for rationale.
-    if (e.code === 'legacy_no_tin_event_not_payable') {
-      return err({ code: 'legacy_no_tin_event_not_payable' });
-    }
-    // 088 SEC-MED — new-flow bill paid after a flag rollback. Short-circuit
-    // BEFORE any DB write or Stripe round-trip (no PI created); see the
-    // error-union member for rationale.
-    if (e.code === 'new_flow_bill_requires_flag_on') {
-      return err({ code: 'new_flow_bill_requires_flag_on' });
-    }
-    // I4 (Task 7 remediation) — the F4 payability read THREW (Neon down).
-    // TRANSIENT, and emphatically NOT `invoice_not_payable`: telling a member
-    // their invoice cannot be paid because a database read hiccuped is a lie
-    // that sends them to support. The bridge already emitted the metric and
-    // the bounded log line; the route maps this to the same 500 the escaping
-    // throw produced before, so the member-visible outcome is unchanged and
-    // only the observability improves.
-    //
-    // This call site was previously "safe" only by accident — it read
-    // `e.status` off the union, so adding `read_failed` broke the build here.
-    // That is the hardening working: the compiler found the second call site
-    // the review never named.
-    if (e.code === 'read_failed') {
-      return err({ code: 'invoice_read_failed' });
-    }
-    // not_payable
-    return err({ code: 'invoice_not_payable', currentStatus: e.status });
+    // Every refusal (including not_found / forbidden, after their probe audit)
+    // maps through the same function the under-lock re-read uses.
+    return err(bridgeRefusal(e));
   }
   const invoice = invoiceResult.value;
 
@@ -452,9 +419,10 @@ async function initiatePaymentBody(
   // permissive: webhook reconciliation reads non-issued rows to refund them.
   //
   // Scope: this closes MINTING and RESUMING only. A card clientSecret the
-  // PaySheet already cached before the void never comes back through here —
-  // voidInvoice does not cancel pending PIs — so that path still ends in the
-  // webhook's stale-invoice auto-refund. Tracked as a separate follow-up.
+  // PaySheet cached before a void never comes back through here; that path is
+  // closed by voidInvoice cancelling the invoice's pending PIs (#447). This
+  // pre-tx read is the cheap fast path — the authoritative check is the
+  // re-read under the advisory lock inside the tx below.
   if (invoice.status !== 'issued') {
     return err({ code: 'invoice_not_payable', currentStatus: invoice.status });
   }
@@ -503,14 +471,39 @@ async function initiatePaymentBody(
     // dedupes the PI itself, but we'd emit duplicate audit + metric).
     // The lock auto-releases at tx end.
     await deps.paymentsRepo.acquireInitiateLock(tx, input.tenantId, input.invoiceId);
+
+    // Re-check payability UNDER the lock (follow-up to the #447 review).
+    // The status above was read outside this lock. A void that commits in
+    // between runs its post-commit canceller (`cancelPendingPaymentsForInvoice`),
+    // which lists pending rows under this SAME advisory lock — so if it listed
+    // before we got here, the row we are about to insert would be a live PI on
+    // a voided invoice that nothing ever cancels. `runInTenant` is READ
+    // COMMITTED, so this read, issued after the lock was granted, sees any void
+    // that committed before it. Nothing above this line has written, so the
+    // `return err` below commits nothing. No `actor`: the pre-tx read already
+    // emitted any cross-tenant probe audit.
+    const lockedInvoice = await deps.invoicingBridge.getInvoiceForPayment({
+      tenantId: input.tenantId,
+      invoiceId: input.invoiceId,
+      taxAtPayment: deps.taxAtPayment,
+      reconciliationPath: false,
+      externalTx: tx,
+    });
+    if (!lockedInvoice.ok) {
+      return err(bridgeRefusal(lockedInvoice.error));
+    }
+    if (lockedInvoice.value.status !== 'issued') {
+      return err({ code: 'invoice_not_payable', currentStatus: lockedInvoice.value.status });
+    }
     // Resume check FIRST — if a pending attempt by this actor exists,
     // return it verbatim (same clientSecret path). Reliability F-01
     // idempotency: member clicks "Pay" twice → one intent.
     //
     // Reliability D-01 (Group E1, 2026-04-24): pass `tx` so the lookup
-    // runs inside the same serializable snapshot as the subsequent
-    // INSERT — prevents TOCTOU where two concurrent calls both miss
-    // the pending row and both attempt to insert.
+    // runs inside the same tx (under the advisory lock) as the subsequent
+    // INSERT — the lock, not the isolation level (READ COMMITTED), prevents
+    // the TOCTOU where two concurrent calls both miss the pending row and
+    // both attempt to insert.
     const pending = await deps.paymentsRepo.findPendingByInvoiceAndActor(
       input.tenantId,
       input.invoiceId,
@@ -797,4 +790,53 @@ async function initiatePaymentBody(
       resumed: false,
     });
   });
+}
+
+/**
+ * Maps an F4 bridge refusal to the initiate error. Shared by the pre-tx read
+ * and the re-read under the advisory lock, so the two cannot drift. The
+ * cross-tenant probe audit for not_found / forbidden is emitted by the pre-tx
+ * caller only. Exhaustive: a new bridge code breaks the build here.
+ */
+function bridgeRefusal(e: GetInvoiceForPaymentBridgeError): InitiatePaymentError {
+  switch (e.code) {
+    case 'not_found':
+      return { code: 'invoice_not_found' };
+    case 'forbidden':
+      return { code: 'forbidden_invoice' };
+    case 'not_payable':
+      return { code: 'invoice_not_payable', currentStatus: e.status };
+    case 'corrupted_total':
+      // F5R3v3 H-1 (2026-05-16) — surface bridge data-corruption as a typed
+      // 422 INSTEAD of feeding a zero-amount PI to Stripe. The bridge already
+      // logger.error'd + bumped the counter; the route renders a
+      // deterministic "invoice data corrupt — contact admin" UX without a
+      // Stripe round-trip.
+      return { code: 'invoice_data_corrupt', invoiceId: e.invoiceId };
+    case 'legacy_no_tin_event_not_payable':
+      // REMOVE-WITH-064-REMEDIATION (online-payment site — master checklist
+      // at the guard in record-payment.ts) — short-circuit BEFORE any DB
+      // write or Stripe round-trip; see the error-union member for rationale.
+      return { code: 'legacy_no_tin_event_not_payable' };
+    case 'new_flow_bill_requires_flag_on':
+      // 088 SEC-MED — new-flow bill paid after a flag rollback. Short-circuit
+      // BEFORE any DB write or Stripe round-trip (no PI created); see the
+      // error-union member for rationale.
+      return { code: 'new_flow_bill_requires_flag_on' };
+    case 'read_failed':
+      // I4 (Task 7 remediation) — the F4 payability read THREW (Neon down).
+      // TRANSIENT, and emphatically NOT `invoice_not_payable`: telling a
+      // member their invoice cannot be paid because a database read
+      // hiccuped is a lie that sends them to support. The bridge already
+      // emitted the metric and the bounded log line; the route maps this to
+      // a 500.
+      return { code: 'invoice_read_failed' };
+    default: {
+      // `e` is `never` here (compile-time exhaustiveness). Fail closed to the
+      // transient 500 if a new code ever slips past the type system.
+      const unreachable: never = e;
+      void unreachable;
+      return { code: 'invoice_read_failed' };
+    }
+  }
 }
