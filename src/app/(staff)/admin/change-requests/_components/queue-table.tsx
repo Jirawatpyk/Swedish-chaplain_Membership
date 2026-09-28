@@ -79,7 +79,8 @@ export async function ChangeRequestQueueTable({
               {/* No card label: the company is the card's title. */}
               <Td className={AT.title} label="">
                 <div className="font-medium">{item.row.member.companyName}</div>
-                <div className="text-xs font-semibold">
+                {/* Muted in the table, bold in the phone card's title (boards). */}
+                <div className="text-xs text-[var(--aura-fg-secondary)] @max-[640px]/aura-tbl:font-semibold @max-[640px]/aura-tbl:text-[var(--aura-fg-primary)]">
                   #{item.row.member.memberNumber}
                   {item.row.member.archived ? ` · ${t('archivedMember')}` : null}
                 </div>

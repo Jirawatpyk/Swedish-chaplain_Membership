@@ -803,7 +803,8 @@ export function MembersTable({
       {
         key: 'actions',
         // An empty label: AURA names the header "Actions" for screen readers
-        // only, as the board draws no heading over the menu.
+        // only. The board shows the word, but the 48px menu column cannot hold
+        // it without taking width from the columns that wrap.
         label: '',
         ...MEMBERS_COLUMN_SIZES.actions,
         actions: true,

@@ -83,30 +83,34 @@ export function ChangeRequestDecisionTable({ fields, selected, onToggle, canDeci
             data-field-key={f.key}
             data-undecidable={undecidable ? 'contact_removed' : undefined}
           >
-            <div className="space-y-1 font-medium sm:row-span-2">
-              <span>{label}</span>
-              {f.affectsTaxDocuments ? (
-                <span className="flex items-start gap-1 text-xs font-normal text-[var(--aura-fg-secondary)]">
-                  <ReceiptIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                  <span>
-                    {t('markers.taxAffecting')}
-                    {f.taxHint ? <> — {t(`taxHint.${f.taxHint}`)}</> : null}
+            <div className="font-medium">{label}</div>
+            {/* The markers take their own line under the name and Approve on a
+                phone card, and sit under the name in the desktop row (boards). */}
+            {f.affectsTaxDocuments || undecidable || f.alreadyCurrent ? (
+              <div className="col-span-2 space-y-1 sm:col-span-1 sm:col-start-1 sm:row-start-2">
+                {f.affectsTaxDocuments ? (
+                  <span className="flex items-start gap-1 text-xs font-normal text-[var(--aura-fg-secondary)]">
+                    <ReceiptIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                    <span>
+                      {t('markers.taxAffecting')}
+                      {f.taxHint ? <> — {t(`taxHint.${f.taxHint}`)}</> : null}
+                    </span>
                   </span>
-                </span>
-              ) : null}
-              {undecidable ? (
-                <span id={`decide-${f.key}-why`} className="flex items-center gap-1 text-xs font-normal text-[var(--aura-fg-danger)]" data-testid="marker-contact-removed">
-                  <UserXIcon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                  {t('markers.contactRemoved')}
-                </span>
-              ) : null}
-              {f.alreadyCurrent ? (
-                <span className="flex items-center gap-1 text-xs font-normal text-[var(--aura-fg-secondary)]" data-testid="marker-already-current">
-                  <InfoIcon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                  {t('markers.alreadyCurrent')}
-                </span>
-              ) : null}
-            </div>
+                ) : null}
+                {undecidable ? (
+                  <span id={`decide-${f.key}-why`} className="flex items-center gap-1 text-xs font-normal text-[var(--aura-fg-danger)]" data-testid="marker-contact-removed">
+                    <UserXIcon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                    {t('markers.contactRemoved')}
+                  </span>
+                ) : null}
+                {f.alreadyCurrent ? (
+                  <span className="flex items-center gap-1 text-xs font-normal text-[var(--aura-fg-secondary)]" data-testid="marker-already-current">
+                    <InfoIcon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                    {t('markers.alreadyCurrent')}
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
             <div className="col-span-2 grid grid-cols-[6rem_minmax(0,1fr)] gap-x-2 gap-y-1 sm:col-span-1 sm:row-span-2 sm:block sm:space-y-1">
               <span className="text-xs text-[var(--aura-fg-secondary)] sm:sr-only">{tDiff('current')}</span>
               <div data-value="current" className="text-[var(--aura-fg-secondary)]">
