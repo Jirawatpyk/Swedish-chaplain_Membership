@@ -60,6 +60,7 @@ export function MembersTableSkeleton({ withSelection = false }: MembersTableSkel
         loading
         skeletonRows={15}
         selectable={withSelection}
+        rowHeight="auto"
         stackBelow={640}
       />
     </div>

@@ -56,7 +56,9 @@ export function DirectoryTable({
     {
       key: 'companyName',
       label: labels.company,
-      render: (row) => <span className="font-medium">{row.companyName}</span>,
+      render: (row) => (
+        <span className="font-medium whitespace-normal [overflow-wrap:anywhere]">{row.companyName}</span>
+      ),
     },
     {
       key: 'listed',
@@ -104,6 +106,8 @@ export function DirectoryTable({
       rowKey="memberId"
       manual
       getRowHref={(row) => `/admin/members/${row.memberId}`}
+      // Rows grow to fit (AURA 5.11): a long company name wraps in full.
+      rowHeight="auto"
       stackBelow={640}
     />
   );

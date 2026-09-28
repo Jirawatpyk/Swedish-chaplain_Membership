@@ -406,19 +406,17 @@ const ENGAGEMENT_TONE: Readonly<Record<EngagementBand, 'success' | 'neutral' | '
 };
 
 /**
- * AURA DataTable rows have a fixed height, so in the grid every cell is one
- * line (truncated, the full text in its `title`); on a phone card
- * (`.aura-table--stacked`) the same text may wrap.
+ * The grid's rows grow to fit (AURA 5.11 `rowHeight="auto"`), so text wraps in
+ * full rather than truncating: a long company name or a name beside its badges
+ * takes a second line (maintainer's choice, 28 Sep).
  */
-const ONE_LINE =
-  'block min-w-0 truncate in-[.aura-table--stacked]:overflow-visible in-[.aura-table--stacked]:whitespace-normal';
-const ONE_ROW =
-  'flex h-full min-w-0 flex-nowrap items-center gap-1.5 leading-normal in-[.aura-table--stacked]:h-auto in-[.aura-table--stacked]:flex-wrap';
+const WRAP_TEXT = 'min-w-0 whitespace-normal leading-snug [overflow-wrap:anywhere]';
+const WRAP_ROW = 'flex min-w-0 flex-wrap items-center gap-1.5 leading-snug';
 /**
  * The status cell is the card's pill, beside the title: on a card its two
  * badges stack so the company name keeps its width.
  */
-const STATUS_ROW = `${ONE_ROW} in-[.aura-table--stacked]:flex-col in-[.aura-table--stacked]:items-end in-[.aura-table--stacked]:gap-1`;
+const STATUS_ROW = `${WRAP_ROW} in-[.aura-table--stacked]:flex-col in-[.aura-table--stacked]:items-end in-[.aura-table--stacked]:gap-1`;
 
 /**
  * 122 US5a — the "⋯" row menu. Only destinations that already exist (spec
@@ -616,27 +614,16 @@ export function MembersTable({
   // this page" is simply the full filtered total exceeding the rows shown here.
   const hasMoreMatching = enableSelection && total !== undefined && total > rows.length;
 
-  // AURA names a row checkbox from the row KEY (a UUID here); name it after the
-  // company instead, as the old table did. Scoped to this table only.
-  const companyById = useMemo(
-    () => new Map(rows.map((r) => [r.member_id, r.company_name])),
-    [rows],
-  );
-  const tableStrings = useMemo(
-    () => ({
-      selectRow: (key: unknown) =>
-        t('selectRow', { company: companyById.get(String(key)) ?? String(key) }),
-      selectAllRows: t('selectAll'),
-    }),
-    [t, companyById],
-  );
+  // The header checkbox in this page's words ("Select all"); the row
+  // checkboxes are named after the company through `rowSelectLabel` (AURA 5.11).
+  const tableStrings = useMemo(() => ({ selectAllRows: t('selectAll') }), [t]);
 
   const columns = useMemo<DataTableColumn<MembersTableRow>[]>(
     () => [
       {
         // 056-members-table-compact — the flag leads the Company cell (country
-        // is edited on the detail page). The flexible column: one line in the
-        // grid (the link text stays whole for screen readers), in full on a card.
+        // is edited on the detail page). The flexible column; the name wraps
+        // in full, no ellipsis (the row grows).
         key: 'company_name',
         label: t('columns.company'),
         ...MEMBERS_COLUMN_SIZES.company_name,
@@ -647,7 +634,7 @@ export function MembersTable({
                 <CountryDisplay code={row.country} variant="flag-only" />
               </span>
             )}
-            <span className={`font-medium ${ONE_LINE}`} title={row.company_name}>
+            <span className={`font-medium ${WRAP_TEXT}`} title={row.company_name}>
               {row.company_name}
             </span>
           </span>
@@ -661,8 +648,8 @@ export function MembersTable({
         sortable: true,
       },
       {
-        // Name plus the portal / bounce badges on one line (the name
-        // truncates; a phone card wraps).
+        // Name plus the portal / bounce badge; the badge wraps under a long
+        // name.
         key: 'primary_contact',
         label: t('columns.primaryContact'),
         ...MEMBERS_COLUMN_SIZES.primary_contact,
@@ -680,14 +667,13 @@ export function MembersTable({
             row.portal_state !== 'active' &&
             !archived;
           return (
-            <span className={ONE_ROW}>
-              <span className={ONE_LINE} title={fullName}>
+            <span className={WRAP_ROW}>
+              <span className={WRAP_TEXT} title={fullName}>
                 {fullName}
               </span>
               {/* No portal-related badge on an archived row (Task 7), and the
-                  bounce badge stands in for it (it already says the contact
-                  was invited): one badge keeps the required warning inside
-                  the one-line cell. */}
+                  bounce badge stands in for it: it already says the contact
+                  was invited (one root cause, one badge). */}
               <PortalBadge state={archived || bounced ? null : row.portal_state} />
               {bounced ? (
                 <Badge tone="danger" icon={<TriangleAlert aria-hidden="true" />}>
@@ -705,10 +691,13 @@ export function MembersTable({
         label: t('columns.plan'),
         ...MEMBERS_COLUMN_SIZES.plan_display_name,
         render: (row) => (
-          <span title={row.plan_id} className={ONE_LINE}>
+          <span title={row.plan_id} className={WRAP_TEXT}>
             {row.plan_display_name ?? row.plan_id}
-            <span aria-hidden="true"> · </span>
-            {row.plan_year}
+            {/* " · 2026" never starts a line on its own. */}
+            <span className="whitespace-nowrap">
+              <span aria-hidden="true"> · </span>
+              {row.plan_year}
+            </span>
           </span>
         ),
       },
@@ -789,10 +778,9 @@ export function MembersTable({
 
   return (
     <div
-      // The row checkboxes keep AURA's 16px box but take a 24×24 hit area
-      // (WCAG 2.5.8 AA, ADOPT-01; the old table's checkbox was 24px): the
-      // invisible input grows 4px past the box on every side.
-      className="flex flex-col gap-4 [&_.aura-table\_\_sel_.aura-check\_\_input]:-inset-1"
+      // The selection checkboxes take a 24×24 target from AURA 5.11 itself
+      // (WCAG 2.5.8 AA, ADOPT-01).
+      className="flex flex-col gap-4"
       ref={tableContainerRef}
       // The bulk bar's Clear hands focus to this table's select-all checkbox.
       data-members-table=""
@@ -871,6 +859,9 @@ export function MembersTable({
           sort={sort}
           onSortChange={handleSortChange}
           getRowHref={(row) => `/admin/members/${row.member_id}`}
+          // Rows grow to fit wrapped text (a long name, a name beside its
+          // badges); cells stay vertically centred.
+          rowHeight="auto"
           stackBelow={640}
           {...(enableSelection
             ? {
@@ -878,6 +869,8 @@ export function MembersTable({
                 selected,
                 onSelectionChange: handleSelectionChange,
                 isRowSelectable: isMemberRowSelectable,
+                rowSelectLabel: (row: MembersTableRow) =>
+                  t('selectRow', { company: row.company_name }),
                 rowSelectDisabledLabel: (row: MembersTableRow) =>
                   t('rowNotSelectable', { company: row.company_name }),
               }

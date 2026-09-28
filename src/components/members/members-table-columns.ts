@@ -4,8 +4,9 @@
  * (CLS 0, ux-standards § 2.1). Plain data: the skeleton imports it without
  * the table.
  *
- * Fitted to a ~1,120px table (1440px window): Company is the flexible column;
- * Last activity goes first on a narrower table so the row menu stays in view.
+ * Fitted to a ~1,120px table (1440px window): Company is the flexible column
+ * and every cell wraps (AURA 5.11 auto rows); Last activity goes first on a
+ * narrower table so the row menu stays in view.
  */
 import type { DataTableColumn } from '@jirawatpyk/aura-react';
 
@@ -16,7 +17,8 @@ export const MEMBERS_COLUMN_SIZES = {
   member_number_display: { width: 92 },
   primary_contact: { width: 164, hideBelow: 'lg' },
   plan_display_name: { width: 150, hideBelow: 'lg' },
-  status: { width: 176 },
+  // Its two badges wrap onto a second line (auto rows), so it can stay narrow.
+  status: { width: 140 },
   engagement: { width: 116 },
   last_activity_at: { width: 132, hideBelow: 1100 },
   actions: { width: 48 },
