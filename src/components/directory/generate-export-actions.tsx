@@ -9,8 +9,8 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
-import { BookIcon, FileJsonIcon, Loader2Icon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { BookIcon, FileJsonIcon } from 'lucide-react';
+import { Button } from '@jirawatpyk/aura-react';
 
 type ExportKind = 'directory_ebook' | 'directory_json';
 
@@ -45,33 +45,25 @@ export function GenerateExportActions(): React.JSX.Element {
   }
 
   return (
-    <div className="flex flex-wrap gap-2">
+    <>
       <Button
-        type="button"
-        variant="outline"
+        variant="secondary"
+        icon={<BookIcon aria-hidden="true" />}
+        loading={pendingKind === 'directory_ebook'}
         disabled={isPending}
         onClick={() => generate('directory_ebook')}
       >
-        {pendingKind === 'directory_ebook' ? (
-          <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden />
-        ) : (
-          <BookIcon className="size-4" aria-hidden />
-        )}
         {t('ebook')}
       </Button>
       <Button
-        type="button"
-        variant="outline"
+        variant="secondary"
+        icon={<FileJsonIcon aria-hidden="true" />}
+        loading={pendingKind === 'directory_json'}
         disabled={isPending}
         onClick={() => generate('directory_json')}
       >
-        {pendingKind === 'directory_json' ? (
-          <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden />
-        ) : (
-          <FileJsonIcon className="size-4" aria-hidden />
-        )}
         {t('json')}
       </Button>
-    </div>
+    </>
   );
 }

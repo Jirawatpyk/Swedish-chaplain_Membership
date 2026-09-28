@@ -364,7 +364,8 @@
           "failed": "Failed"
         },
         "download": "Download"
-      }
+      },
+      "resultsHeading": "Members"
     },
     "audit": {
       "title": "Audit log",

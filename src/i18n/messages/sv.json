@@ -364,7 +364,8 @@
           "failed": "Misslyckades"
         },
         "download": "Ladda ner"
-      }
+      },
+      "resultsHeading": "Medlemmar"
     },
     "audit": {
       "title": "Granskningslogg",

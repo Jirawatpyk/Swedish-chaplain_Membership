@@ -5,19 +5,10 @@
  * The download link points at the staff prepare-and-redirect route, which mints
  * a fresh single-use token before redirecting to the private proxy.
  */
-import { Badge } from '@/components/ui/badge';
-import { buttonVariants } from '@/components/ui/button';
-import {
-  Table,
-  TableBody,
-  TableCaption,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { StatusPill, buttonClass } from '@jirawatpyk/aura-react/server';
+import { Table, TBody, THead, Td, Th, Tr } from '@/components/shell/aura-table';
 import type { ExportStatus } from '@/modules/insights';
-import { exportStatusVariant } from '@/lib/export-status-variant';
+import { exportStatusTone } from '@/lib/export-status-variant';
 
 export interface RecentExportRow {
   readonly jobId: string;
@@ -45,50 +36,54 @@ export function RecentExports({
   readonly rows: readonly RecentExportRow[];
   readonly labels: RecentExportsLabels;
 }): React.JSX.Element {
+  // 122 US5a (T506) — the board's "Recent exports" card: an AURA table with
+  // the status as a StatusPill, rows as cards below 640px.
   return (
-    <section aria-labelledby="recent-exports-heading" className="space-y-3">
-      <h2 id="recent-exports-heading" className="text-sm font-semibold">
+    <section
+      aria-labelledby="recent-exports-heading"
+      className="flex flex-col gap-4 rounded-[var(--aura-card-radius)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] p-5 max-sm:p-4"
+    >
+      <h2 id="recent-exports-heading" className="m-0 text-base font-semibold">
         {labels.heading}
       </h2>
       {rows.length === 0 ? (
-        <p className="rounded-md border py-6 text-center text-sm text-muted-foreground">
-          {labels.empty}
-        </p>
+        <p className="py-6 text-center text-sm text-[var(--aura-fg-secondary)]">{labels.empty}</p>
       ) : (
-        <Table>
-          <TableCaption className="sr-only">{labels.caption}</TableCaption>
-          <TableHeader>
-            <TableRow>
-              <TableHead scope="col">{labels.kindLabel}</TableHead>
-              <TableHead scope="col">{labels.statusLabel}</TableHead>
-              <TableHead scope="col">{labels.requestedLabel}</TableHead>
-              <TableHead scope="col" className="sr-only">{labels.download}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
+        <Table caption={labels.caption} captionHidden stackBelow="sm">
+          <THead>
+            <Tr>
+              <Th>{labels.kindLabel}</Th>
+              <Th>{labels.statusLabel}</Th>
+              <Th>{labels.requestedLabel}</Th>
+              <Th align="end">
+                <span className="sr-only">{labels.download}</span>
+              </Th>
+            </Tr>
+          </THead>
+          <TBody>
             {rows.map((row) => (
-              <TableRow key={row.jobId}>
-                <TableCell className="font-medium">{row.kindLabel}</TableCell>
-                <TableCell>
-                  <Badge variant={exportStatusVariant(row.status)}>{row.statusLabel}</Badge>
-                </TableCell>
-                <TableCell className="text-muted-foreground">{row.requestedAt}</TableCell>
-                <TableCell className="text-right">
+              <Tr key={row.jobId}>
+                <Td className="font-medium">{row.kindLabel}</Td>
+                <Td>
+                  <StatusPill tone={exportStatusTone(row.status)}>{row.statusLabel}</StatusPill>
+                </Td>
+                <Td className="text-[var(--aura-fg-secondary)]">{row.requestedAt}</Td>
+                <Td align="end">
                   {row.downloadable ? (
                     <a
                       href={`/api/admin/directory/exports/${row.jobId}/download`}
                       // H2: contextual label so SR users hear which export each
                       // "Download" link targets (WCAG 2.4.6), not "Download" ×N.
                       aria-label={`${labels.download} — ${row.kindLabel}, ${row.requestedAt}`}
-                      className={buttonVariants({ variant: 'outline', size: 'sm' })}
+                      className={buttonClass({ variant: 'secondary', size: 'sm' })}
                     >
                       {labels.download}
                     </a>
                   ) : null}
-                </TableCell>
-              </TableRow>
+                </Td>
+              </Tr>
             ))}
-          </TableBody>
+          </TBody>
         </Table>
       )}
     </section>

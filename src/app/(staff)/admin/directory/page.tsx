@@ -13,7 +13,7 @@ import type { Metadata } from 'next';
 import { randomUUID } from 'node:crypto';
 import { notFound } from 'next/navigation';
 import { getLocale, getTranslations } from 'next-intl/server';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card } from '@jirawatpyk/aura-react/server';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { TablePagination } from '@/components/layout/table-pagination';
@@ -151,8 +151,9 @@ export default async function DirectoryPage({
     <TableContainer>
       {header}
 
-      <Card>
-        <CardContent className="flex flex-col gap-4">
+      {/* 122 US5a (T506) — the board's "Members" card. */}
+      <Card title={t('resultsHeading')} headingLevel={2}>
+        <div className="flex flex-col gap-4">
           <DirectorySearchFilters />
 
           <p role="status" className="sr-only">
@@ -186,7 +187,7 @@ export default async function DirectoryPage({
             baseHref="/admin/directory"
             live={false}
           />
-        </CardContent>
+        </div>
       </Card>
 
       <RecentExports

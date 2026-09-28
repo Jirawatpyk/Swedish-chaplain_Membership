@@ -7,14 +7,14 @@
  * 300 ms; the "listed only" checkbox commits immediately. Any change resets
  * `page` so pagination restarts. Mirrors the `<AuditFilters>` pattern.
  */
-import { useCallback, useRef, useTransition } from 'react';
+
+// 122 US5a (T506) — AURA FilterBar (board `Admin-directory`): the search and
+// the "Listed only" checkbox; the URL (`q`, `listed`, `page`) is unchanged.
+
+import { useCallback, useMemo, useState, useTransition } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { XIcon } from 'lucide-react';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { FilterBar } from '@/components/ui/filter-bar';
+import { AuraProvider, Button, Checkbox, FilterBar } from '@jirawatpyk/aura-react';
 
 const DEBOUNCE_MS = 300;
 
@@ -24,7 +24,6 @@ export function DirectorySearchFilters(): React.JSX.Element {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [, startTransition] = useTransition();
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const currentQ = searchParams.get('q') ?? '';
   const listedOnly = searchParams.get('listed') === 'true';
@@ -45,47 +44,57 @@ export function DirectorySearchFilters(): React.JSX.Element {
     [searchParams, router, pathname],
   );
 
-  const onQ = (value: string) => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => pushUrl({ q: value.trim() || null }), DEBOUNCE_MS);
-  };
+  // The FilterBar keeps the typed draft; it rewrites the box from `search`
+  // only when `search` differs from what it last sent. The URL carries the
+  // TRIMMED query, so while the box is focused hand back exactly what it sent;
+  // unfocused (back/forward, a shared link), the URL wins.
+  const [sentQ, setSentQ] = useState(currentQ);
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const isSearchInput = (el: EventTarget) =>
+    el instanceof HTMLInputElement && el.type === 'search';
 
   const hasAny = currentQ !== '' || listedOnly;
+  const clearAll = () => {
+    setSentQ('');
+    pushUrl({ q: null, listed: null });
+  };
+
+  const barStrings = useMemo(() => ({ clearFilters: t('clear') }), [t]);
 
   return (
-    <FilterBar aria-label={t('label')}>
-      <Input
-        key={`q-${currentQ}`}
-        defaultValue={currentQ}
-        onChange={(e) => onQ(e.target.value)}
-        placeholder={t('placeholder')}
-        aria-label={t('label')}
-        autoComplete="off"
-        className="sm:flex-1"
-      />
-      <label className="flex items-center gap-2 text-sm">
-        <Checkbox
-          checked={listedOnly}
-          onCheckedChange={(c) => pushUrl({ listed: c === true ? 'true' : null })}
-          aria-label={t('listedOnly')}
-        />
-        {t('listedOnly')}
-      </label>
-      {hasAny && (
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={() => {
-            if (debounceRef.current) clearTimeout(debounceRef.current);
-            pushUrl({ q: null, listed: null });
+    <div
+      onFocus={(e) => {
+        if (isSearchInput(e.target)) setIsSearchFocused(true);
+      }}
+      onBlur={(e) => {
+        if (isSearchInput(e.target)) setIsSearchFocused(false);
+      }}
+    >
+      <AuraProvider strings={barStrings}>
+        <FilterBar
+          label={t('label')}
+          search={isSearchFocused ? sentQ : currentQ}
+          onSearchChange={(value) => {
+            setSentQ(value);
+            pushUrl({ q: value.trim() || null });
           }}
-          className="whitespace-nowrap"
+          searchDelay={DEBOUNCE_MS}
+          searchLabel={t('label')}
+          searchPlaceholder={t('placeholder')}
         >
-          <XIcon className="size-4" aria-hidden />
-          {t('clear')}
-        </Button>
-      )}
-    </FilterBar>
+          <Checkbox
+            checked={listedOnly}
+            onChange={(checked) => pushUrl({ listed: checked ? 'true' : null })}
+          >
+            {t('listedOnly')}
+          </Checkbox>
+          {hasAny && (
+            <Button variant="ghost" size="sm" icon="x" onClick={clearAll}>
+              {t('clear')}
+            </Button>
+          )}
+        </FilterBar>
+      </AuraProvider>
+    </div>
   );
 }
