@@ -631,31 +631,6 @@ export async function voidInvoice(
   if (!phase1.ok) return err(phase1.error);
   const { voided, targetA, targetB, emailDelivery } = phase1.value;
 
-  // #446 review M-a — the invoice is now COMMITTED as void; cancel whatever
-  // PaymentIntent is still live for it so a PaySheet that cached a card
-  // clientSecret before the void cannot capture money for a voided invoice.
-  // Post-commit on purpose (payment-row locks must never nest under the
-  // invoice lock) and best-effort: a failure here is metric + log only — the
-  // void stands, and the webhook's stale-invoice auto-refund still catches an
-  // attempt that later captures. Runs before the Phase-2 PDF work so a slow
-  // blob upload never delays closing the payment window.
-  if (deps.pendingPaymentCanceller) {
-    try {
-      await deps.pendingPaymentCanceller.cancelPendingPaymentsForVoidedInvoice({
-        tenantId: input.tenantId,
-        invoiceId,
-        actorUserId: input.actorUserId,
-        requestId: input.requestId ?? null,
-      });
-    } catch (e) {
-      invoicingMetrics.voidPendingPaymentCancelFailed(input.tenantId);
-      logger.error(
-        { err: errKind(e), invoiceId, tenantId: input.tenantId },
-        'voidInvoice: post-commit pending-payment cancellation failed (void stands; webhook auto-refund remains the net)',
-      );
-    }
-  }
-
   // Phase 2 — post-commit Blob overwrite + sha sync, PER TARGET. Best-effort:
   // on failure the invoice is ALREADY committed as void in the DB. State after
   // a target fails:
@@ -848,6 +823,35 @@ export async function voidInvoice(
           'voidInvoice: phase 2 audit emit failed; sync-gap signal preserved only via logger.error above',
         );
       }
+    }
+  }
+
+  // #446 review M-a — the invoice is now COMMITTED as void; cancel whatever
+  // PaymentIntent is still live for it so a PaySheet that cached a card
+  // clientSecret before the void cannot capture money for a voided invoice.
+  // Post-commit on purpose (payment-row locks must never nest under the
+  // invoice lock) and best-effort: a failure here is metric + log only — the
+  // void stands, and the webhook's stale-invoice auto-refund still catches an
+  // attempt that later captures. Runs AFTER Phase 2: the cancellation email
+  // was enqueued in Phase 1 pinned to the VOID-stamped PDF's sha, and the
+  // outbox dispatcher permanently fails a row whose blob sha does not match
+  // yet — so a Stripe round-trip (up to ~30 s on SDK retries) placed before
+  // the blob upload would widen that window. Closing the payment window a
+  // second later costs nothing: the webhook auto-refund is still the net.
+  if (deps.pendingPaymentCanceller) {
+    try {
+      await deps.pendingPaymentCanceller.cancelPendingPaymentsForVoidedInvoice({
+        tenantId: input.tenantId,
+        invoiceId,
+        actorUserId: input.actorUserId,
+        requestId: input.requestId ?? null,
+      });
+    } catch (e) {
+      invoicingMetrics.voidPendingPaymentCancelFailed(input.tenantId);
+      logger.error(
+        { err: errKind(e), invoiceId, tenantId: input.tenantId },
+        'voidInvoice: post-commit pending-payment cancellation failed (void stands; webhook auto-refund remains the net)',
+      );
     }
   }
 

@@ -70,7 +70,8 @@ function makeDeps(rows: Payment[]) {
   const audit = { emit: vi.fn(async (_tx: unknown, _event: unknown) => undefined) };
   const paymentsRepo = {
     withTx: vi.fn(async <T>(fn: (tx: unknown) => Promise<T>) => fn({ tx: true })),
-    listPendingByInvoice: vi.fn(async () => rows),
+    acquireInitiateLock: vi.fn(async (_tx: unknown, _t: string, _i: string) => undefined),
+    listPendingByInvoice: vi.fn(async (_t: string, _i: string, _tx?: unknown) => rows),
     lockForUpdate: vi.fn(async (_tx: unknown, id: string) => byId.get(id) ?? null),
     updateStatus: vi.fn(async (_tx: unknown, u: { paymentId: string; nextStatus: string }) => {
       const cur = byId.get(u.paymentId)!;
@@ -120,7 +121,16 @@ describe('cancelPendingPaymentsForInvoice', () => {
     expect(h.processorGateway.cancelPaymentIntent).not.toHaveBeenCalled();
     expect(h.tenantSettingsRepo.getByTenantId).not.toHaveBeenCalled();
     expect(h.audit.emit).not.toHaveBeenCalled();
-    expect(h.paymentsRepo.listPendingByInvoice).toHaveBeenCalledWith(TENANT_ID, INVOICE_ID);
+    expect(h.paymentsRepo.listPendingByInvoice).toHaveBeenCalledWith(TENANT_ID, INVOICE_ID, { tx: true });
+  });
+
+  it('lists pending rows under initiate\'s advisory lock, in the same tx (an in-flight initiate commits first)', async () => {
+    const h = makeDeps([]);
+    await cancelPendingPaymentsForInvoice(h.deps, INPUT);
+    expect(h.paymentsRepo.acquireInitiateLock).toHaveBeenCalledWith({ tx: true }, TENANT_ID, INVOICE_ID);
+    expect(h.paymentsRepo.acquireInitiateLock.mock.invocationCallOrder[0]!).toBeLessThan(
+      h.paymentsRepo.listPendingByInvoice.mock.invocationCallOrder[0]!,
+    );
   });
 
   it('two pending rows → both canceled at Stripe (tenant account) then locally, one payment_canceled each', async () => {
@@ -240,5 +250,28 @@ describe('cancelPendingPaymentsForInvoice', () => {
       'payment_cancel_attempt_failed',
       'payment_cancel_attempt_failed',
     ]);
+  });
+
+  it('card PaymentIntent still processing (Stripe refuses cancel, permanent) → row stays pending, attempt_failed, counted failed', async () => {
+    const h = makeDeps([pending(1)]);
+    h.processorGateway.cancelPaymentIntent.mockResolvedValueOnce(
+      err({ kind: 'permanent', code: 'payment_intent_unexpected_state', reason: 'processing' }),
+    );
+    const r = await cancelPendingPaymentsForInvoice(h.deps, INPUT);
+    expect(r).toEqual({ canceled: 0, skipped: 0, failed: 1 });
+    expect(h.byId.get('pmt_1')!.status).toBe('pending');
+    expect(h.paymentsRepo.updateStatus).not.toHaveBeenCalled();
+    expect(auditTypes(h.audit)).toEqual(['payment_cancel_attempt_failed']);
+  });
+
+  it('Phase B lock miss after a successful Stripe cancel → forensic attempt_failed, counted failed', async () => {
+    const h = makeDeps([pending(1)]);
+    h.processorGateway.cancelPaymentIntent.mockImplementationOnce(async () => {
+      h.byId.delete('pmt_1');
+      return ok(undefined);
+    });
+    const r = await cancelPendingPaymentsForInvoice(h.deps, INPUT);
+    expect(r).toEqual({ canceled: 0, skipped: 0, failed: 1 });
+    expect(auditTypes(h.audit)).toEqual(['payment_cancel_attempt_failed']);
   });
 });

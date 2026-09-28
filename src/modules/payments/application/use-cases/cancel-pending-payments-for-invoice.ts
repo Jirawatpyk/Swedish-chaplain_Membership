@@ -30,10 +30,21 @@
  * payment → invoice; taking payment locks while void holds the invoice lock
  * would invert that order, which is why the caller runs this post-commit.
  *
- * Best-effort by contract: it NEVER throws for a per-row failure and never
- * returns an error. A row it cannot cancel stays `pending`; if that attempt is
- * later captured, the webhook's stale-invoice auto-refund remains the net.
- * `payment_intent_already_succeeded` is left entirely to that path.
+ * The pending-row read takes the SAME `payments:{tenant}:{invoice}` advisory
+ * lock `initiatePayment` holds across its Stripe create + insert, so an
+ * initiate that was mid-flight when the void committed finishes first and its
+ * row is listed (and canceled) rather than slipping in after an empty read.
+ * The residual window — an initiate that read the invoice as `issued` before
+ * the void but takes the lock only after this read — closes only when
+ * initiate re-checks the status under that lock (#446 adds the non-issued
+ * guard; see the PR notes).
+ *
+ * Best-effort: Stripe refusals and lost races are recorded per row
+ * (`payment_cancel_attempt_failed`) and never turned into an error result. A
+ * DB fault (lock / read / write) does propagate — the caller (`voidInvoice`)
+ * swallows it with a metric, and the void stands. A row left `pending` that
+ * is later captured is still caught by the webhook's stale-invoice
+ * auto-refund; `payment_intent_already_succeeded` is left entirely to it.
  */
 import { canTransition } from '../../domain/policies/payment-status-transitions';
 import { commitTx, runTxDecided } from '../settlement/tx-decision';
@@ -79,7 +90,12 @@ export async function cancelPendingPaymentsForInvoice(
   deps: CancelPendingPaymentsForInvoiceDeps,
   input: CancelPendingPaymentsForInvoiceInput,
 ): Promise<CancelPendingPaymentsForInvoiceResult> {
-  const rows = await deps.paymentsRepo.listPendingByInvoice(input.tenantId, input.invoiceId);
+  // Read under initiate's advisory lock (see docblock). Read-only; released
+  // at commit before any per-row lock or Stripe call.
+  const { value: rows } = await runTxDecided<readonly Payment[]>(deps.paymentsRepo, async (tx) => {
+    await deps.paymentsRepo.acquireInitiateLock(tx, input.tenantId, input.invoiceId);
+    return commitTx(await deps.paymentsRepo.listPendingByInvoice(input.tenantId, input.invoiceId, tx));
+  });
   const result = { canceled: 0, skipped: 0, failed: 0 };
   if (rows.length === 0) return result;
 
@@ -140,8 +156,13 @@ async function cancelOne(
   // ---------------- Phase B: re-lock + commit + audit ----------------
   const phaseB = await runTxDecided<{ readonly outcome: RowOutcome }>(deps.paymentsRepo, async (tx) => {
     const fresh = await deps.paymentsRepo.lockForUpdate(tx, current.id, input.tenantId);
-    // Nothing written on either early exit.
-    if (fresh === null) return commitTx({ outcome: 'failed' });
+    if (fresh === null) {
+      // Phase A saw the row; Stripe has already canceled the intent. The row's
+      // absence is the only signal ops will get — leave a forensic trail.
+      await emitAttemptFailed(deps, tx, input, current, 'permanent',
+        `Phase B lock miss after Stripe cancel for payment ${current.id} — reconcile against the Stripe Dashboard`);
+      return commitTx({ outcome: 'failed' });
+    }
     // payment_intent.canceled webhook landed first — its own audit row stands.
     if (fresh.status === 'canceled') return commitTx({ outcome: 'canceled' });
 

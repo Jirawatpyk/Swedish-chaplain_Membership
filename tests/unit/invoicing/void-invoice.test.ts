@@ -1085,6 +1085,32 @@ describe('voidInvoice — cancels pending PaymentIntents after the void commits 
     expect(order.indexOf('cancel')).toBeGreaterThan(order.indexOf('tx:commit'));
   });
 
+  it('runs AFTER the Phase-2 blob upload (the VOID-stamped PDF lands before the Stripe round-trip)', async () => {
+    const order: string[] = [];
+    const { deps } = withCanceller(makeIssuedMembership(), async () => {
+      order.push('cancel');
+    });
+    (deps.blob.uploadPdf as ReturnType<typeof vi.fn>).mockImplementation(
+      async ({ key }: { key: string }) => {
+        order.push('upload');
+        return { key, url: `https://blob.test/${key}` };
+      },
+    );
+    const r = await voidInvoice(deps, INPUT);
+    expect(r.ok).toBe(true);
+    expect(order).toContain('upload');
+    expect(order.at(-1)).toBe('cancel');
+  });
+
+  it('a throwing canceller does not skip Phase 2 (blob upload still ran)', async () => {
+    const { deps } = withCanceller(makeIssuedMembership(), async () => {
+      throw new Error('stripe down');
+    });
+    const r = await voidInvoice(deps, INPUT);
+    expect(r.ok).toBe(true);
+    expect(deps.blob.uploadPdf).toHaveBeenCalled();
+  });
+
   it('void-on-reissue (requireStatus issued) also cancels', async () => {
     const loaded = makeIssuedBill();
     const { deps, cancel } = withCanceller(loaded);
