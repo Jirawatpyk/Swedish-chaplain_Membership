@@ -65,14 +65,14 @@ function renderTable(rows: MembersTableRow[], total?: number) {
 }
 
 describe('portal status badge', () => {
-  it('renders the portal label for each state', () => {
+  it('badges only the states that need action; a linked contact shows none (US5a)', () => {
     renderTable([
       row({ member_id: 'm1', portal_state: 'active' }),
       row({ member_id: 'm2', portal_state: 'invited' }),
       row({ member_id: 'm3', portal_state: 'invite_expired' }),
       row({ member_id: 'm4', portal_state: 'not_invited' }),
     ]);
-    expect(screen.getByText('Portal')).toBeInTheDocument();
+    expect(screen.queryByText('Portal')).not.toBeInTheDocument();
     expect(screen.getByText('Invited')).toBeInTheDocument();
     expect(screen.getByText('Expired')).toBeInTheDocument();
     expect(screen.getByText('Not invited')).toBeInTheDocument();
@@ -87,6 +87,20 @@ describe('portal status badge', () => {
   it('announces "Showing N of M members" in the live region when the total is given', () => {
     renderTable([row({ member_id: 'm1' }), row({ member_id: 'm2' })], 131);
     expect(screen.getByText('Showing 2 of 131 members')).toBeInTheDocument();
+  });
+
+  it('shows the count only while filtered; unfiltered, the pagination range says it (US5a)', () => {
+    const { unmount } = renderTable([row({ member_id: 'm1' }), row({ member_id: 'm2' })], 131);
+    const unfiltered = screen.getByText('Showing 2 of 131 members');
+    expect(unfiltered.closest('[role="status"]')).not.toBeNull();
+    expect(unfiltered).toHaveClass('sr-only');
+    unmount();
+    render(
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <MembersTable rows={[row({ member_id: 'm1' }), row({ member_id: 'm2' })]} total={2} filtered />
+      </NextIntlClientProvider>,
+    );
+    expect(screen.getByText('Showing 2 of 2 members')).not.toHaveClass('sr-only');
   });
 
   it('falls back to the page-only result count when no total is given', () => {
