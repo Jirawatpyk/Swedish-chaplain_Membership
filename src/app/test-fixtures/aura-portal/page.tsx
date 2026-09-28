@@ -486,7 +486,7 @@ export default async function AuraPortalPreviewPage({
     const state = typeof sp.state === 'string' ? sp.state : 'issued';
     const invoice =
       state === 'paid'
-        ? usInvoice({ status: 'paid', receiptDocumentNumberRaw: 'RC-2026-000044', receiptPdfStatus: 'pending', paidAt: '2026-09-24' })
+        ? usInvoice({ status: 'paid', receiptDocumentNumberRaw: 'RC-2026-000044', receiptPdfStatus: 'rendered', receiptPdf: { blobKey: 'r' }, paidAt: '2026-09-24' })
         : state === 'void'
           ? usInvoice({ status: 'void', voidedAt: '2026-09-20', voidReason: 'Issued with the wrong plan.' })
           : usInvoice({});

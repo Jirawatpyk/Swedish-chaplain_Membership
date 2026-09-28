@@ -35,10 +35,13 @@ export function PayPreview({ state }: { readonly state: PayPreviewState }) {
   let body: React.ReactNode;
   if (state === 'processing' || state === '3ds') {
     body = (
-      <StatusPanel
-        kind={state === '3ds' ? 'three-d-secure' : 'processing'}
-        onCancel={() => undefined}
-      />
+      // As `pay-sheet-internal.tsx` renders them: Cancel on the 3-D Secure
+      // step only, none while processing.
+      state === '3ds' ? (
+        <StatusPanel kind="three-d-secure" onCancel={() => undefined} />
+      ) : (
+        <StatusPanel kind="processing" />
+      )
     );
   } else if (state === 'success') {
     body = (
@@ -98,7 +101,11 @@ export function PayPreview({ state }: { readonly state: PayPreviewState }) {
       onClose={() => undefined}
       size="md"
       title={t('drawer.title')}
-      description={<span className="block truncate font-mono text-xs">SC-2026-000123</span>}
+      description={
+        <span className="block truncate font-mono text-xs">
+          {t('drawer.subtitle', { invoiceNumber: 'SC-2026-000123' })}
+        </span>
+      }
       className="pay-sheet [&_.aura-drawer\_\_head_.aura-icon-btn]:min-h-11 [&_.aura-drawer\_\_head_.aura-icon-btn]:min-w-11"
     >
       {body}
