@@ -159,5 +159,5 @@ describe('member_number DB backstops — T-MN-02 (live Neon)', () => {
     } finally {
       await otherTenant.cleanup().catch(() => {});
     }
-  }, 30_000);
+  });
 });

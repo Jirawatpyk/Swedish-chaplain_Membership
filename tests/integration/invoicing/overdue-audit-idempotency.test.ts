@@ -94,7 +94,7 @@ describe('T109 — overdue audit emit idempotency (live Neon)', () => {
     expect(payload.member_id).toBe(memberId);
     expect(payload.due_date).toBe('2026-04-01');
     expect(payload.detected_bangkok_date).toBe(todayBkk);
-  }, 30_000);
+  });
 
   it('different invoices on the same day both emit (scoping is per-invoice)', async () => {
     const invoiceA = randomUUID();
@@ -126,5 +126,5 @@ describe('T109 — overdue audit emit idempotency (live Neon)', () => {
     });
     expect(a).toBe(true);
     expect(b).toBe(true);
-  }, 30_000);
+  });
 });

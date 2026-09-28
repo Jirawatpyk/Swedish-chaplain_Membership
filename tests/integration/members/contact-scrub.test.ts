@@ -199,5 +199,5 @@ describe('ContactRepo.scrubPiiForMemberInTx', () => {
     expect(row.role_title).toBeNull();
     expect(row.removed_at).not.toBeNull();
     expect(row.is_primary).toBe(false);
-  }, 30_000);
+  });
 });

@@ -42,7 +42,7 @@ describe('member-settings prefix reader (live Neon)', () => {
       drizzleMemberSettingsRepo.getPrefix(tx, asTenantId(tenant.ctx.slug)),
     );
     expect(prefix).toBe('M');
-  }, 30_000);
+  });
 
   it('returns the seeded prefix when a settings row exists', async () => {
     const ctx = asTenantContext(tenant.ctx.slug);
@@ -57,7 +57,7 @@ describe('member-settings prefix reader (live Neon)', () => {
       drizzleMemberSettingsRepo.getPrefix(tx, asTenantId(tenant.ctx.slug)),
     );
     expect(prefix).toBe('SCCM');
-  }, 30_000);
+  });
 
   it('resolveMemberNumberPrefix applies runInTenant internally (RLS-safe, no caller wrapper)', async () => {
     // FIX-3: every other test mocks the resolver. This proves the SHARED helper
@@ -80,5 +80,5 @@ describe('member-settings prefix reader (live Neon)', () => {
     // No runInTenant wrapper here — the helper owns it.
     const prefix = await resolveMemberNumberPrefix(ctx, drizzleMemberSettingsRepo);
     expect(prefix).toBe('SCCM');
-  }, 30_000);
+  });
 });

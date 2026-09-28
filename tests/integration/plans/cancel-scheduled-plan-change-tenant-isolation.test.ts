@@ -122,7 +122,7 @@ describe('Integration — cancelScheduledPlanChange tenant isolation (R2-C5)', (
       );
     });
     expect(matching.length).toBe(0);
-  }, 30_000);
+  });
 
   it('returns not_found when no row exists at all (RLS+findPendingForCycle null-path)', async () => {
     const pair = await createTwoTestTenants();

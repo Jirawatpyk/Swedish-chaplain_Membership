@@ -126,7 +126,7 @@ describe('eraseMember — attestation payload + cross-tenant isolation (COMP-1 U
     admin = await createActiveTestUser('admin');
     tenantA = await createTestTenant('test-swecham');
     await seedPlan(tenantA, admin.userId);
-  }, 30_000);
+  });
 
   afterAll(async () => {
     await tenantA.cleanup().catch(() => {});
@@ -172,7 +172,7 @@ describe('eraseMember — attestation payload + cross-tenant isolation (COMP-1 U
       verification_method: 'official_document',
       note: 'DPO-2026-014',
     });
-  }, 30_000);
+  });
 
   it('Case 2: cross-tenant erase returns not_found and leaves tenant A intact (Principle I)', async () => {
     // Victim member lives in tenant A.
@@ -210,5 +210,5 @@ describe('eraseMember — attestation payload + cross-tenant isolation (COMP-1 U
     } finally {
       await tenantB.cleanup().catch(() => {});
     }
-  }, 30_000);
+  });
 });

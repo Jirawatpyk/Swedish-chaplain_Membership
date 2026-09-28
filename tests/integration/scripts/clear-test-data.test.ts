@@ -171,7 +171,7 @@ describe('clearTestData script', () => {
         ? remaining.length
         : (remaining as { rows?: unknown[] }).rows?.length ?? 0,
     ).toBe(0);
-  }, 30_000);
+  });
 
   it('DOES NOT delete production-shaped users (non-test prefix)', async () => {
     // Seed a production-shaped email (no test- prefix, not .test TLD).
@@ -197,7 +197,7 @@ describe('clearTestData script', () => {
       ? remaining.length
       : (remaining as { rows?: unknown[] }).rows?.length ?? 0;
     expect(count).toBe(1);
-  }, 30_000);
+  });
 
   // 068 cluster E — the test-USER orphan pass must purge F8 renewal_cycles in
   // a NON-`test-%` tenant that link a test-user-orphaned invoice/member, or the
@@ -926,5 +926,5 @@ describe('clearTestData script', () => {
     expect(second.e2eMembers).toBe(0);
     expect(second.e2eContacts).toBe(0);
     expect(second.testUsers).toBe(0);
-  }, 30_000);
+  });
 });

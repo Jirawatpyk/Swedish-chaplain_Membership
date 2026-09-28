@@ -129,7 +129,7 @@ describe('updateBroadcastsAcknowledgedAtInTx — concurrent ack race fix (Round 
     user = await createActiveTestUser('admin');
     tenant = await createTestTenant('test');
     await seedPlan(tenant.ctx.slug, user.userId);
-  }, 30_000);
+  });
 
   afterAll(async () => {
     await tenant.cleanup().catch(() => {});

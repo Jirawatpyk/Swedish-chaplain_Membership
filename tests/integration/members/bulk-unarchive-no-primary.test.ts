@@ -70,7 +70,7 @@ describe('bulk unarchive — no live primary → refused, member stays archived 
         },
       });
     });
-  }, 30_000);
+  });
 
   afterAll(async () => {
     await tenant.cleanup();
@@ -162,5 +162,5 @@ describe('bulk unarchive — no live primary → refused, member stays archived 
 
     expect(result.ok, JSON.stringify(result)).toBe(true);
     expect(await statusOf(memberId)).toBe('active');
-  }, 30_000);
+  });
 });

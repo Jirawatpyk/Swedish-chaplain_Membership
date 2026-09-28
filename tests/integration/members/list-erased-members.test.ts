@@ -159,7 +159,7 @@ describe('listErasedMembers — live-Neon keyset list (COMP-1 US3-D)', () => {
     });
     // Full result fit within the page → no further cursor.
     expect(page.nextCursor).toBeNull();
-  }, 30_000);
+  });
 
   it('paginates by keyset: limit:1 → page 1 + cursor → page 2', async () => {
     const page1 = await listErasedMembers(tenantA.ctx, { limit: 1 });
@@ -181,7 +181,7 @@ describe('listErasedMembers — live-Neon keyset list (COMP-1 US3-D)', () => {
     });
     expect(page3.rows).toHaveLength(0);
     expect(page3.nextCursor).toBeNull();
-  }, 30_000);
+  });
 
   it('does NOT return another tenant’s erased member', async () => {
     const page = await listErasedMembers(tenantA.ctx, { limit: 100 });
@@ -190,5 +190,5 @@ describe('listErasedMembers — live-Neon keyset list (COMP-1 US3-D)', () => {
     expect(ids).toHaveLength(2);
     expect(ids).toContain(newerMember.memberId);
     expect(ids).toContain(olderMember.memberId);
-  }, 30_000);
+  });
 });

@@ -177,7 +177,7 @@ describe('primary-contact partial-index race (T075)', () => {
       cur = (cur as { cause?: unknown }).cause;
     }
     expect(parts.join(' | ')).toMatch(/duplicate key|unique|constraint/i);
-  }, 30_000);
+  });
 
   it('promotePrimary happy path demotes old primary then promotes target', async () => {
     const s = await seedMember();
@@ -229,7 +229,7 @@ describe('primary-contact partial-index race (T075)', () => {
         ),
     );
     expect(final.length).toBe(1);
-  }, 30_000);
+  });
 
   // ── 108 T030 (US2 / FR-010, FR-011, SC-002) ───────────────────────────────
 
@@ -255,7 +255,7 @@ describe('primary-contact partial-index race (T075)', () => {
         .where(eq(contacts.contactId, s.primaryId)),
     );
     expect(row).toEqual({ isPrimary: true, removedAt: null });
-  }, 30_000);
+  });
 
   it('removeInTx still removes a secondary and reports wasPrimary=false', async () => {
     const s = await seedMember();
@@ -266,7 +266,7 @@ describe('primary-contact partial-index race (T075)', () => {
     if (!result.ok) return;
     expect(result.value.wasPrimary).toBe(false);
     expect(result.value.contact.removedAt).not.toBeNull();
-  }, 30_000);
+  });
 
   it('promote(Y) vs remove(Y) ×100: every member ends with exactly one live primary and exactly one call is refused — SC-002', async () => {
     // 50 members × (promote Y ‖ remove Y) = 100 concurrent use-case calls,
@@ -442,5 +442,5 @@ describe('primary-contact partial-index race (T075)', () => {
       old_primary_contact_id: null,
       new_primary_contact_id: bId,
     });
-  }, 30_000);
+  });
 });

@@ -171,7 +171,7 @@ describe('findPendingInvitationsForMember (C6 round-10)', () => {
     adminUser = await createActiveTestUser('admin');
     tenant = await createTestTenant('test');
     await seedPlan(tenant.ctx.slug, adminUser.userId);
-  }, 30_000);
+  });
 
   afterAll(async () => {
     await tenant.cleanup().catch(() => {});

@@ -130,7 +130,7 @@ describe('listMemberLinkedUserIds — live-Neon read (COMP-1 US3-D)', () => {
     linkedUser = await createActiveTestUser('member');
     tenant = await createTestTenant('test-swecham');
     await seedPlan(tenant, admin.userId);
-  }, 30_000);
+  });
 
   afterAll(async () => {
     await tenant.cleanup().catch(() => {});
@@ -147,7 +147,7 @@ describe('listMemberLinkedUserIds — live-Neon read (COMP-1 US3-D)', () => {
     );
 
     expect(ids).toEqual([linkedUser.userId]);
-  }, 30_000);
+  });
 
   it('returns [] for a member with no linked login', async () => {
     const memberId = await seedMember(tenant, null);
@@ -158,5 +158,5 @@ describe('listMemberLinkedUserIds — live-Neon read (COMP-1 US3-D)', () => {
     );
 
     expect(ids).toEqual([]);
-  }, 30_000);
+  });
 });

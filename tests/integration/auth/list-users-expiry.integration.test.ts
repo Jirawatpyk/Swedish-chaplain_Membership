@@ -82,7 +82,7 @@ describe('UserRepo.listWithFilter — invitation expiry projection (Staff Invita
       await db.delete(users).where(eq(users.id, admin.userId)).catch(() => {});
       admin = undefined;
     }
-  }, 30_000);
+  });
 
   async function getAdmin(): Promise<TestUser> {
     admin ??= await createActiveTestUser('admin');
@@ -108,7 +108,7 @@ describe('UserRepo.listWithFilter — invitation expiry projection (Staff Invita
     const rows = await userRepo.listWithFilter({ q: email }, 10, 0);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.invitationExpiresAt?.getTime()).toBe(expiresAt.getTime());
-  }, 30_000);
+  });
 
   it('active user with no invitation: invitationExpiresAt is null', async () => {
     const sfx = randomUUID().slice(0, 8);
@@ -119,7 +119,7 @@ describe('UserRepo.listWithFilter — invitation expiry projection (Staff Invita
     const rows = await userRepo.listWithFilter({ q: email }, 10, 0);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.invitationExpiresAt).toBeNull();
-  }, 30_000);
+  });
 
   it('consumed_at IS NULL filtering: a user whose only invitation is consumed gets null', async () => {
     const inviter = await getAdmin();
@@ -143,7 +143,7 @@ describe('UserRepo.listWithFilter — invitation expiry projection (Staff Invita
     const rows = await userRepo.listWithFilter({ q: email }, 10, 0);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.invitationExpiresAt).toBeNull();
-  }, 30_000);
+  });
 
   it('latest wins: two non-consumed invitations (post-resend shape) return the NEWER expiresAt', async () => {
     const inviter = await getAdmin();
@@ -174,5 +174,5 @@ describe('UserRepo.listWithFilter — invitation expiry projection (Staff Invita
     expect(rows).toHaveLength(1);
     expect(rows[0]?.invitationExpiresAt?.getTime()).toBe(newerExpiresAt.getTime());
     expect(rows[0]?.invitationExpiresAt?.getTime()).not.toBe(olderExpiresAt.getTime());
-  }, 30_000);
+  });
 });

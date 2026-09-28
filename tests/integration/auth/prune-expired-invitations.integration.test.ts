@@ -124,7 +124,7 @@ describe('pruneExpiredInvitations — integration (Staff Invitation Lifecycle Ta
 
   afterAll(async () => {
     await db.delete(users).where(eq(users.id, admin.userId)).catch(() => {});
-  }, 30_000);
+  });
 
   it('prunes ONLY the pending user with no live invitation (grace window + RA-4 two-token safety), audits it once, and drops its cross-tenant queued outbox rows', async () => {
     const sfx = randomUUID().slice(0, 8);

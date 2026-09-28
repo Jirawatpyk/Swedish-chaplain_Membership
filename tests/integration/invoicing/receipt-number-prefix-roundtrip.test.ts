@@ -52,7 +52,7 @@ describe('drizzleTenantSettingsRepo — receipt_number_prefix round-trip (live N
     expect(settings).not.toBeNull();
     expect(settings!.receiptNumberPrefix).toBe('RC');
     expect(settings!.receiptNumberingMode).toBe('separate');
-  }, 30_000);
+  });
 
   it('updates receipt_number_prefix without stomping other fields', async () => {
     // Mirror real-world API usage — the PATCH form sends the full
@@ -70,7 +70,7 @@ describe('drizzleTenantSettingsRepo — receipt_number_prefix round-trip (live N
     expect(settings!.receiptNumberingMode).toBe('separate');
     expect(settings!.invoiceNumberPrefix).toBe('INV');
     expect(settings!.creditNoteNumberPrefix).toBe('CN');
-  }, 30_000);
+  });
 
   it('clears receipt_number_prefix when explicitly set to null', async () => {
     await drizzleTenantSettingsRepo.upsert(tenant.ctx.slug, {
@@ -82,5 +82,5 @@ describe('drizzleTenantSettingsRepo — receipt_number_prefix round-trip (live N
     const settings = await drizzleTenantSettingsRepo.getForIssue(tenant.ctx.slug);
     expect(settings!.receiptNumberPrefix).toBeNull();
     expect(settings!.receiptNumberingMode).toBe('combined');
-  }, 30_000);
+  });
 });

@@ -162,7 +162,7 @@ describe('eraseMember — cross-tenant isolation (Principle I)', () => {
     tenantB = tenants.b;
     // Victim member lives in tenant B; plan must exist in B for the FK.
     await seedPlan(tenantB, admin.userId);
-  }, 30_000);
+  });
 
   afterAll(async () => {
     await tenantA.cleanup().catch(() => {});
@@ -209,5 +209,5 @@ describe('eraseMember — cross-tenant isolation (Principle I)', () => {
     expect(afterContacts[0]?.first_name).toBe(contactFirstName);
     expect(afterContacts[0]?.first_name).not.toBe('[erased]');
     expect(afterContacts[0]?.removed_at).toBeNull();
-  }, 30_000);
+  });
 });

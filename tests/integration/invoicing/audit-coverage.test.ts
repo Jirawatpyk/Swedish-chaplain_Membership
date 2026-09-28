@@ -188,7 +188,7 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
     for (const t of MVP_AUDIT_TYPES_EMITTED) {
       expect(dbEnum.has(t), `missing '${t}' in audit_event_type enum`).toBe(true);
     }
-  }, 30_000);
+  });
 
   it('audit_log composite PK + append-only trigger allow F4 event types', async () => {
     // Sanity probe: insert one of each MVP type directly + verify
@@ -220,7 +220,7 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
     for (const t of MVP_AUDIT_TYPES_EMITTED) {
       expect(foundTypes.has(t), `audit_log missing '${t}' row`).toBe(true);
     }
-  }, 30_000);
+  });
 
   it('F4AuditEventType TS union documents all 27 registered types', async () => {
     // This asserts the compile-time union matches what the DB enum
@@ -285,7 +285,7 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
     for (const t of allF4Types) {
       expect(dbEnum.has(t), `TS union declares '${t}' but DB enum lacks it`).toBe(true);
     }
-  }, 30_000);
+  });
 
   // ---------------------------------------------------------------------------
   // T113a behavioral coverage — every F4 mutating use-case emits its event
@@ -350,7 +350,7 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       );
     expect(rows, 'invoice_draft_updated audit row did not land').toHaveLength(1);
     expect((rows[0]!.payload as Record<string, unknown>).invoice_id).toBe(draftId);
-  }, 30_000);
+  });
 
   it('T122 — issueInvoice PDF-render failure emits `pdf_render_failed` audit', async () => {
     const draftId = randomUUID();
@@ -478,7 +478,7 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
     expect(payload.invoice_id).toBe(draftId);
     expect(payload.render_kind).toBe('invoice');
     expect(typeof payload.reason).toBe('string');
-  }, 30_000);
+  });
 
   it('T113a — deleteInvoiceDraft emits `invoice_draft_deleted`', async () => {
     const draftId = randomUUID();
@@ -528,7 +528,7 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       );
     expect(rows, 'invoice_draft_deleted audit row did not land').toHaveLength(1);
     expect((rows[0]!.payload as Record<string, unknown>).invoice_id).toBe(draftId);
-  }, 30_000);
+  });
 
   it('T113a inventory — every F4AuditEventType is behaviorally covered somewhere', () => {
     // Declarative cross-reference: asserts the human has plumbed every

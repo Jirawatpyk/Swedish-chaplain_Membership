@@ -94,7 +94,7 @@ describe('create-member integration (T041, US1)', () => {
         updatedBy: user.userId,
       });
     });
-  }, 30_000);
+  });
 
   afterAll(async () => {
     await tenant.cleanup().catch(() => {});

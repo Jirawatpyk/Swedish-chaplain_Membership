@@ -123,7 +123,7 @@ describe('integration: outbox dispatcher L2 stuck-rows detection', () => {
       outboxMetrics.stuckRows as ReturnType<typeof vi.fn>
     ).mock.calls[0]!;
     expect(callArg).toBeGreaterThanOrEqual(2);
-  }, 30_000);
+  });
 
   it('does NOT emit stuckRows when seeded rows are within the 30-min window', async () => {
     // Seed a row whose next_retry_at is 5 min in the FUTURE — not
@@ -159,5 +159,5 @@ describe('integration: outbox dispatcher L2 stuck-rows detection', () => {
     if (process.env.CI) {
       expect(outboxMetrics.stuckRows).not.toHaveBeenCalled();
     }
-  }, 30_000);
+  });
 });

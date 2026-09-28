@@ -90,7 +90,7 @@ describe('affected-members-count — SC-008 (T076)', () => {
     );
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.value.count).toBe(0);
-  }, 30_000);
+  });
 
   it('counts only active+inactive (archived excluded) for the target plan', async () => {
     const deps = buildMembersDeps(tenant.ctx);
@@ -127,7 +127,7 @@ describe('affected-members-count — SC-008 (T076)', () => {
     );
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.value.count).toBe(4); // 5 - 1 archived
-  }, 30_000);
+  });
 
   // SC-008 perf gate — only runs when RUN_PERF=1 so we don't seed 500
   // rows on every CI tick. Skip is observable in the test report.

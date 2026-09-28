@@ -95,7 +95,7 @@ describe('Integration — scheduled_plan_changes partial-unique invariant', () =
     expect(rowsAfter.length).toBe(2);
     const pendingCount = rowsAfter.filter((r) => r.status === 'pending').length;
     expect(pendingCount).toBe(1);
-  }, 30_000);
+  });
 
   it('partial unique rejects a second concurrent pending insert if supersede is skipped', async () => {
     const pair = await createTwoTestTenants();
@@ -164,7 +164,7 @@ describe('Integration — scheduled_plan_changes partial-unique invariant', () =
       combinedMessage.toLowerCase().includes('duplicate key') ||
       combinedMessage.toLowerCase().includes('unique');
     expect(matchedByCode || matchedByMessage).toBe(true);
-  }, 30_000);
+  });
 
   it('RLS+FORCE blocks tenantB from observing tenantA pending rows (cross-tenant probe)', async () => {
     const pair = await createTwoTestTenants();
@@ -213,5 +213,5 @@ describe('Integration — scheduled_plan_changes partial-unique invariant', () =
       memberId,
     );
     expect(tenantBList.length).toBe(0);
-  }, 30_000);
+  });
 });

@@ -92,7 +92,7 @@ function makeRequest(body: unknown): NextRequest {
 describe('integration: bulk action rate limit route (T101 / round-2 C-1)', () => {
   afterEach(() => vi.clearAllMocks());
 
-  it('429 + audit emission when rate-limited at route layer', { timeout: 30_000 }, async () => {
+  it('429 + audit emission when rate-limited at route layer', async () => {
     requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     rateLimitCheckMock.mockResolvedValueOnce({
       success: false,
@@ -131,7 +131,7 @@ describe('integration: bulk action rate limit route (T101 / round-2 C-1)', () =>
     expect(bulkActionMock).not.toHaveBeenCalled();
   });
 
-  it('rate limit check uses correct key shape (bulk:tenant:actor)', { timeout: 30_000 }, async () => {
+  it('rate limit check uses correct key shape (bulk:tenant:actor)', async () => {
     requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     rateLimitCheckMock.mockResolvedValueOnce({
       success: false,
@@ -154,7 +154,7 @@ describe('integration: bulk action rate limit route (T101 / round-2 C-1)', () =>
     );
   });
 
-  it('round-2 I-5: audit write failure does not mask the 429 response', { timeout: 30_000 }, async () => {
+  it('round-2 I-5: audit write failure does not mask the 429 response', async () => {
     requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     rateLimitCheckMock.mockResolvedValueOnce({
       success: false,

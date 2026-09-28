@@ -175,7 +175,7 @@ describe('invoices_tenant_receipt_raw_uniq — 0213 receipt-number backstop (liv
     expect(`${constraint ?? ''} ${messages.join(' | ')}`).toMatch(
       /invoices_tenant_receipt_raw_uniq/,
     );
-  }, 30_000);
+  });
 
   it('the SAME receipt raw in a DIFFERENT tenant commits fine (per-tenant numbering scope)', async () => {
     // Must NOT throw — tenant B legitimately runs its own receipt stream.
@@ -187,5 +187,5 @@ describe('invoices_tenant_receipt_raw_uniq — 0213 receipt-number backstop (liv
       DUP_RAW,
     );
     expect(invoiceId).toBeTruthy();
-  }, 30_000);
+  });
 });
