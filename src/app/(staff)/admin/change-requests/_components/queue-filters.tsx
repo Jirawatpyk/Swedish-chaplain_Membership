@@ -205,8 +205,9 @@ export function ChangeRequestQueueFilters({ resultCount, hasMore }: ChangeReques
       {from ? <input type="hidden" name="from" value={from} /> : null}
       {to ? <input type="hidden" name="to" value={to} /> : null}
       {/* The controls sit in a card, the result count under it (board
-          `Admin-change-requests`). */}
-      <div className="grid gap-3 rounded-[var(--aura-card-radius)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] p-4 sm:grid-cols-2 lg:grid-cols-[repeat(4,minmax(0,1fr))_auto] lg:items-end">
+          `Admin-change-requests`). From 1024px they sit in one row at their
+          own widths with Apply right after the dates, as on the board. */}
+      <div className="grid gap-3 rounded-[var(--aura-card-radius)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] p-4 sm:grid-cols-2 lg:flex lg:flex-wrap lg:items-end lg:[&>.aura-field]:w-56">
       <Select
         label={tFilters('state')}
         data-testid="queue-filter-state"
@@ -238,10 +239,9 @@ export function ChangeRequestQueueFilters({ resultCount, hasMore }: ChangeReques
         value={to ? (to as ISODate) : null}
         onChange={(v) => setTo(v ?? '')}
       />
-      {/* the buttons keep the last (auto) column whether or not the outcome
-          control is in the row, so choosing "Decided" does not shove them;
-          on a phone they fill the row like the sibling filter bars */}
-      <div className={`grid gap-2 sm:flex sm:items-center lg:col-start-5 ${hasFilters ? 'grid-cols-2' : ''}`}>
+      {/* the buttons follow the last date; on a phone they fill the row like
+          the sibling filter bars */}
+      <div className={`grid gap-2 sm:flex sm:items-center ${hasFilters ? 'grid-cols-2' : ''}`}>
         {/* `aria-busy` alone has no styling anywhere in the app — the dim is the
             visible "working" signal the old `disabled` used to give (re-review N2) */}
         <Button ref={applyRef} type="submit" aria-busy={pending} className="aria-busy:opacity-70">
