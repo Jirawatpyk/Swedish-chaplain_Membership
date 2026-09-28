@@ -83,7 +83,15 @@ Phases 2–12 each depend on 1 and can land in any order.
 
 ## AURA gaps (the handoff doc)
 
-The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, items 52–56 (Addendum 4) in 5.6.0, items 57–62 (Addendum 5, found in US1) in 5.7.0, item 63 in 5.7.1, item 64 (Addendum 6) in 5.7.2, item 65 (Addendum 7, found in US2) in 5.7.3 items 66–69 (Addendum 8, found in US3) in 5.8.0 and items 70–71 (Addendum 9, found in US4) in **5.9.0**, the current pin. No item is open.
+The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, items 52–56 (Addendum 4) in 5.6.0, items 57–62 (Addendum 5, found in US1) in 5.7.0, item 63 in 5.7.1, item 64 (Addendum 6) in 5.7.2, item 65 (Addendum 7, found in US2) in 5.7.3 items 66–69 (Addendum 8, found in US3) in 5.8.0 and items 70–71 (Addendum 9, found in US4) in **5.9.0**, the current pin. Three items found while adopting 5.9.0 in US4 (Addendum 10) are open:
+
+| # | Gap | Local stand-in until it ships |
+|---|---|---|
+| 72 | `Tabs` has no segmented (pill) variant; the `Pay-*` boards draw one | `.pay-method-tabs` in `globals.css` restyles `.aura-tabs__list` / `.aura-tab`, with an inset focus ring and a forced-colors `Highlight` border on the selected tab |
+| 73 | A disabled `DropdownMenu` item is skipped by the arrow keys, and a menu whose items are all disabled leaves focus on the trigger (Escape and arrows do nothing) | The phone card's ⋯ menu (`portal-invoice-card-menu.tsx`) never disables an item; during the resend cooldown "Email me a copy" shows a toast instead of sending |
+| 74 | The segmented selected pill's boundary is about 2.5:1 against its track in light mode (SC 1.4.11 asks 3:1) | None: AURA's tokens as they are |
+
+Addendum 10 also notes, without raising it yet, that `Menu` closes on any scroll or window resize (iOS Safari fires resize when its toolbar moves); it is to be checked on a real iPhone first.
 
 5.9.0 also prepares for 6.0, which builds in only English and drops icon names given as strings from the default bundle. Chamber-OS clears its dev notices without changing any output:
 - `AuraBridge` passes AURA's Thai and Swedish locale packs as `strings`.
