@@ -87,11 +87,11 @@ describe('change-request review page as on the board (US5a)', () => {
     expect(notice).toHaveTextContent(REVIEW.readOnly);
   });
 
-  it('gives a phone a back link to the queue', async () => {
+  it('draws no back link of its own: the shell already links back to the queue below 1024px', async () => {
+    // The staff shell's BreadcrumbBackLink (staff-shell.tsx) shows "← Change
+    // requests" on a phone; a second one on the page doubled it.
     await renderView(true);
-    const back = screen.getByRole('link', { name: enMessages.admin.changeRequests.queue.title });
-    expect(back).toHaveAttribute('href', '/admin/change-requests');
-    expect(back).toHaveClass('sm:hidden');
+    expect(screen.queryByRole('link', { name: enMessages.admin.changeRequests.queue.title })).toBeNull();
   });
 
   it('puts the summary and Confirm in AURA’s sticky ActionBar', async () => {
