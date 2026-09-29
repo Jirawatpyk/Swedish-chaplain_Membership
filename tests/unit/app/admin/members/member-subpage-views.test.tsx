@@ -105,6 +105,11 @@ describe('renderMemberBenefitsView (T558)', () => {
     for (const link of screen.getAllByRole('link', { name: BN.staffActions.sendReminder })) {
       expect(link).toHaveAttribute('href', 'mailto:erik@example.com?subject=x');
     }
+    // The phone copy keeps its own width, as the phone board draws it (the
+    // page header stretches its action children on a phone).
+    const phone = screen.getAllByRole('link', { name: BN.staffActions.sendReminder })
+      .find((l) => l.className.includes('sm:hidden') && !l.className.includes('max-sm:hidden'));
+    expect(phone?.className).toContain('flex-none!');
   });
 
   // Board `Admin-member-benefits`: "Included benefits" is an h3 and each
