@@ -34,4 +34,13 @@ describe('SectionLinks', () => {
     expect(screen.getByRole('link', { name: 'Overview' })).not.toHaveAttribute('aria-current');
     expect(document.activeElement).toBe(document.getElementById('invoices'));
   });
+
+  // AURA 5.14 (handoff #104, #107): links to sections of this page mark the
+  // current one `aria-current="location"`, and the strip sticks under the
+  // shell bar at AURA's measured height rather than a fixed 56px.
+  it('marks the current section as a location and sticks under the shell bar', () => {
+    const { container } = render(<SectionLinks label="On this page" links={links} />);
+    expect(screen.getByRole('link', { name: 'Overview' })).toHaveAttribute('aria-current', 'location');
+    expect(container.firstElementChild?.className).toContain('top-[var(--aura-shell-bar-height)]');
+  });
 });
