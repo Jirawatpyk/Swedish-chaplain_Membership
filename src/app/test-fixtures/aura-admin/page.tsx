@@ -16,6 +16,17 @@ import { renderMembersDirectoryBody, renderMembersListView } from '@/app/(staff)
 import { renderDirectoryView } from '@/app/(staff)/admin/directory/page';
 import { renderChangeRequestReviewView } from '@/app/(staff)/admin/change-requests/[id]/page';
 import { renderChangeRequestQueueView } from '@/app/(staff)/admin/change-requests/page';
+import type { Contact, Member } from '@/modules/members';
+import type { TimelineItemProps } from '@/components/members/timeline-event-item';
+import { RenewalHealthCard } from '@/components/members/renewal-health-card';
+import { BenefitUsageCard } from '@/components/benefits/benefit-usage-card';
+import { renderMemberDetailView } from '@/app/(staff)/admin/members/[memberId]/_components/member-detail-view';
+import { MemberSummaryStrip } from '@/app/(staff)/admin/members/[memberId]/_components/member-summary-strip';
+import { MemberInvoicesCard } from '@/app/(staff)/admin/members/[memberId]/_components/member-invoices-section';
+import { TimelinePreviewCard } from '@/app/(staff)/admin/members/[memberId]/_components/timeline-preview-section';
+import { MemberDataExportCard } from '@/app/(staff)/admin/members/[memberId]/_components/member-data-export-section';
+import { renderMemberTimelineView } from '@/app/(staff)/admin/members/[memberId]/_components/member-timeline-view';
+import { renderMemberBenefitsView } from '@/app/(staff)/admin/members/[memberId]/_components/member-benefits-view';
 
 // Request-time evaluation so the guard runs per request (see button-matrix).
 export const dynamic = 'force-dynamic';
@@ -31,6 +42,9 @@ export const dynamic = 'force-dynamic';
  *   ?view=directory
  *   ?view=change-requests&state=default|empty
  *   ?view=change-request&state=pending|manager|decided
+ *   ?view=member&state=default|manager|archived|erased|no-primary   (US5b-1)
+ *   ?view=member-timeline
+ *   ?view=member-benefits
  *
  * The bodies render through the pages' own view functions and client
  * components with fixture data. Nothing here can succeed: an action reaches
@@ -261,6 +275,72 @@ function StaffFrame({ path, children }: { readonly path: string; readonly childr
   );
 }
 
+
+// ── US5b-1: the member detail (`Admin-member-detail*` boards) ────────────────
+const MEMBER_ID = '00000000-0000-4000-8000-000000000003';
+const MEMBER = {
+  memberId: MEMBER_ID,
+  companyName: 'Siam Nordic Trading Co., Ltd.',
+  status: 'active',
+  planId: 'premium-corporate',
+  planYear: 2026,
+  memberNumber: 3,
+  country: 'TH',
+  legalEntityType: 'Company Limited',
+  taxId: '0105561234567',
+  website: 'https://siamnordic.example',
+  foundedYear: 2008,
+  turnoverThb: 184_000_000,
+  registeredCapitalThb: 20_000_000,
+  registrationDate: new Date('2021-03-01T00:00:00Z'),
+  registrationFeePaid: true,
+  lastActivityAt: new Date(Date.now() - 2 * DAY),
+  archivedAt: null,
+  autoInvoiceEnrolledAt: new Date('2026-01-10T00:00:00Z'),
+  addressLine1: '99/1 Sukhumvit Road',
+  addressLine2: 'Floor 12, Nordic Tower',
+  subDistrict: 'Khlong Toei Nuea',
+  city: 'Watthana',
+  province: 'Bangkok',
+  postalCode: '10110',
+  billingAddressLine1: null,
+  description: null,
+  notes: null,
+} as unknown as Member;
+const MEMBER_CONTACTS = [
+  {
+    contactId: 'c-erik',
+    firstName: 'Erik',
+    lastName: 'Johansson',
+    email: 'erik.johansson@siamnordic.example',
+    phone: '+66 81 234 5678',
+    roleTitle: 'Managing Director',
+    preferredLanguage: 'en',
+    isPrimary: true,
+    linkedUserId: 'u-erik',
+    inviteBouncedAt: null,
+    removedAt: null,
+  },
+  {
+    contactId: 'c-ploy',
+    firstName: 'Ploy',
+    lastName: 'Srisuk',
+    email: 'ploy.srisuk@siamnordic.example',
+    phone: '+66 89 765 4321',
+    roleTitle: 'Office Manager',
+    preferredLanguage: 'th',
+    isPrimary: false,
+    linkedUserId: 'u-ploy',
+    inviteBouncedAt: null,
+    removedAt: null,
+  },
+] as unknown as Contact[];
+const MEMBER_EVENTS: TimelineItemProps[] = [
+  { id: 't1', timestamp: ago(2), source: 'payment', eventType: 'succeeded', actorKind: 'member', actorDisplayName: null, payload: { document_number: 'SC-2026-000045', payment_method: 'card' } },
+  { id: 't2', timestamp: ago(9), source: 'invoice', eventType: 'issued', actorKind: 'staff', actorDisplayName: 'Malin Berg', payload: { document_number: 'SC-2026-000123' } },
+  { id: 't3', timestamp: ago(12), source: 'renewal', eventType: 'reminded', actorKind: 'system', actorDisplayName: null, payload: null },
+];
+
 export default async function AuraAdminPreviewPage({
   searchParams,
 }: {
@@ -268,6 +348,130 @@ export default async function AuraAdminPreviewPage({
 }) {
   if (!process.env.ALLOW_TEST_ROUTES) notFound();
   const { view = 'members', state = 'default' } = await searchParams;
+
+  if (view === 'member') {
+    const manager = state === 'manager';
+    const archived = state === 'archived';
+    const erased = state === 'erased';
+    const member = (archived
+      ? { ...MEMBER, status: 'archived', archivedAt: new Date(Date.now() - 12 * DAY) }
+      : MEMBER) as Member;
+    const contacts = state === 'no-primary' ? MEMBER_CONTACTS.filter((c) => !c.isPrimary) : MEMBER_CONTACTS;
+    const invoiceRows = [
+      { invoiceId: 'i1', number: 'SC-2026-000123', status: 'issued' as const, statusLabel: 'Issued', issued: '15 Sep 2026', due: '15 Oct 2026', paid: null, total: '฿38,520.00', remaining: '฿38,520.00', owing: true },
+      { invoiceId: 'i2', number: 'SC-2026-000045', status: 'paid' as const, statusLabel: 'Paid', issued: '12 Mar 2026', due: '11 Apr 2026', paid: '20 Mar 2026', total: '฿2,140.00', remaining: '฿0.00', owing: false },
+      { invoiceId: 'i3', number: 'SC-2025-000087', status: 'paid' as const, statusLabel: 'Paid', issued: '15 Sep 2025', due: '15 Oct 2025', paid: '30 Sep 2025', total: '฿38,520.00', remaining: '฿0.00', owing: false },
+    ];
+    return (
+      <StaffFrame path={`/admin/members/${MEMBER_ID}`}>
+        {await renderMemberDetailView({
+          member,
+          contacts,
+          planDisplayName: 'Premium Corporate',
+          memberNumberDisplay: 'TSCC-0003',
+          legalEntityLabel: 'Company Limited',
+          websiteHref: 'https://siamnordic.example',
+          windowStatus: archived ? { state: 'within_window', daysRemaining: 78 } : null,
+          erasure: erased ? { erasedAt: new Date(Date.now() - 3 * DAY), completed: true } : { erasedAt: null, completed: false },
+          moneyEmailUndeliverable: state === 'no-primary',
+          pendingInvitations: new Map([['c-ploy', { expiresAt: new Date(Date.now() + 3 * DAY), daysUntilExpiry: 3, expired: false }]]),
+          marketingStates: new Map([['c-erik', 'on'], ['c-ploy', 'on']]),
+          verificationPending: new Set(),
+          can: { write: !manager, marketing: !manager },
+          features: { f9Dashboard: true, f7Broadcasts: true },
+          locale: 'en',
+          slots: {
+            strip: (
+              <MemberSummaryStrip
+                outstanding={{ state: 'ok', sumSatang: 3852000n, count: 1, earliestDueIso: '2026-10-15', partial: false }}
+                expiry={{ state: 'ok', expiryIso: '2026-12-31', daysRemaining: 98 }}
+                primaryContact={state === 'no-primary' ? null : { name: 'Erik Johansson', portal: 'linked' }}
+                engagement={{ band: 'healthy', lastActivityIso: ago(2) }}
+                now={new Date()}
+              />
+            ),
+            renewal: (
+              <RenewalHealthCard
+                headingId="member-renewal-health-heading"
+                status="awaiting_payment"
+                expiryIso="2026-12-31T16:59:59Z"
+                daysRemaining={98}
+                engagementScore={82}
+                engagementBand="healthy"
+                viewHref="/admin/renewals"
+                canRenew={!manager}
+                memberId={MEMBER_ID}
+              />
+            ),
+            benefits: (
+              <BenefitUsageCard
+                headingId="member-benefits-preview-heading"
+                locale="en"
+                membershipYear={2026}
+                elapsedYearPct={73}
+                quantifiable={[
+                  { key: 'eblast', used: 4, entitlement: 6, lastUsedAt: ago(40) },
+                  { key: 'cultural_tickets', used: 1, entitlement: 2, lastUsedAt: ago(90) },
+                ]}
+                active={[{ key: 'directory_listing' }]}
+                aggregateConsumedPct={62}
+                underUseWarning={false}
+                staffSubjectName="Siam Nordic Trading Co., Ltd."
+                compact
+                previewHref={`/admin/members/${MEMBER_ID}/benefits`}
+                className="h-full flex flex-col"
+              />
+            ),
+            invoices: (
+              <MemberInvoicesCard memberId={MEMBER_ID} total={3} rows={invoiceRows} canMutate={!manager} hasFilter={false} showFilters />
+            ),
+            timeline: <TimelinePreviewCard memberId={MEMBER_ID} events={MEMBER_EVENTS} loadFailed={false} />,
+            changeRequests: null,
+            dataExport: manager || erased ? null : <MemberDataExportCard memberId={MEMBER_ID} contacts={contacts} jobs={[]} />,
+          },
+        })}
+      </StaffFrame>
+    );
+  }
+
+  if (view === 'member-timeline') {
+    return (
+      <StaffFrame path={`/admin/members/${MEMBER_ID}/timeline`}>
+        {await renderMemberTimelineView({
+          member: { memberId: MEMBER_ID, companyName: 'Siam Nordic Trading Co., Ltd.' },
+          initialEvents: MEMBER_EVENTS,
+          initialCursor: null,
+          totalEvents: 64,
+          hasFilter: false,
+          filterKey: 'preview',
+        })}
+      </StaffFrame>
+    );
+  }
+
+  if (view === 'member-benefits') {
+    return (
+      <StaffFrame path={`/admin/members/${MEMBER_ID}/benefits`}>
+        {await renderMemberBenefitsView({
+          member: { memberId: MEMBER_ID, companyName: 'Siam Nordic Trading Co., Ltd.' },
+          usage: {
+            membershipYear: 2026,
+            elapsedYearPct: 73,
+            quantifiable: [
+              { key: 'eblast', used: 1, entitlement: 6, lastUsedAt: ago(80) },
+              { key: 'cultural_tickets', used: 0, entitlement: 2, lastUsedAt: null },
+            ],
+            active: [{ key: 'all_employee_event_discount' }, { key: 'directory_listing' }, { key: 'member_to_member' }],
+            aggregateConsumedPct: 8,
+            underUseWarning: true,
+          },
+          suspended: false,
+          reminderHref: 'mailto:erik.johansson@siamnordic.example?subject=preview',
+          locale: 'en',
+        })}
+      </StaffFrame>
+    );
+  }
 
   if (view === 'directory') {
     const t = await getTranslations('admin.directory');

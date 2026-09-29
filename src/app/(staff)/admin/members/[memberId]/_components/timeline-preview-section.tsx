@@ -57,8 +57,6 @@ export async function TimelinePreviewSection({
   actorUserId,
   actorRole,
 }: Props) {
-  const t = await getTranslations('admin.members.detail');
-  const tTimeline = await getTranslations('admin.members.timeline');
 
   const h = await headers();
   const tenant = resolveTenantFromHeaders(h);
@@ -113,6 +111,24 @@ export async function TimelinePreviewSection({
     );
   }
 
+  return <TimelinePreviewCard memberId={memberId} events={events} loadFailed={loadFailed} />;
+}
+
+/**
+ * The preview card once its events are read — split out so the no-DB preview
+ * route renders the same markup (spec 122 US5b-1).
+ */
+export async function TimelinePreviewCard({
+  memberId,
+  events,
+  loadFailed,
+}: {
+  readonly memberId: string;
+  readonly events: readonly TimelineItemProps[];
+  readonly loadFailed: boolean;
+}) {
+  const t = await getTranslations('admin.members.detail');
+  const tTimeline = await getTranslations('admin.members.timeline');
   // Spec 122 US3: an AURA card — its h2 title (056 fix #1: reachable via SR
   // heading navigation under the page h1) and the "view all" link as its action.
   return (

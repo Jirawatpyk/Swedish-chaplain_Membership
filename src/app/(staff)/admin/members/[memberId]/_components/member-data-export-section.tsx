@@ -31,9 +31,25 @@ export async function MemberDataExportSection({
   /** The member's contacts, incl. removed ones (a former contact keeps the right of access). */
   readonly contacts: readonly Contact[];
 }): Promise<React.JSX.Element> {
+  const jobs = await listMemberDataExports(tenant, memberId);
+  return <MemberDataExportCard memberId={memberId} contacts={contacts} jobs={jobs} />;
+}
+
+/**
+ * The export card once the member's jobs are read — split out so the no-DB
+ * preview route renders the same markup (spec 122 US5b-1).
+ */
+export async function MemberDataExportCard({
+  memberId,
+  contacts,
+  jobs,
+}: {
+  readonly memberId: string;
+  readonly contacts: readonly Contact[];
+  readonly jobs: Awaited<ReturnType<typeof listMemberDataExports>>;
+}): Promise<React.JSX.Element> {
   const t = await getTranslations('dataExport');
   const locale = await getLocale();
-  const jobs = await listMemberDataExports(tenant, memberId);
   const base = `/api/admin/members/${memberId}/data-export`;
   const nameOf = new Map(
     contacts.map((c) => [String(c.contactId), `${c.firstName} ${c.lastName}`.trim()]),

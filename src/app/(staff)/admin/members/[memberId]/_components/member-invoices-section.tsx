@@ -166,6 +166,39 @@ export async function MemberInvoicesSection({
       owing: remaining !== null && remaining > 0n && inv.status !== 'paid',
     };
   });
+  return (
+    <MemberInvoicesCard
+      memberId={memberId}
+      total={total}
+      rows={tableRows}
+      canMutate={canMutate}
+      hasFilter={hasFilter}
+      showFilters={allYearsResult.ok && allYearsResult.value.total > 0}
+    />
+  );
+}
+
+/**
+ * The invoices card once its rows are loaded and formatted — split out so the
+ * no-DB preview route renders the same markup (spec 122 US5b-1).
+ */
+export async function MemberInvoicesCard({
+  memberId,
+  total,
+  rows: tableRows,
+  canMutate,
+  hasFilter,
+  showFilters,
+}: {
+  readonly memberId: string;
+  readonly total: number;
+  readonly rows: readonly MemberInvoiceRow[];
+  readonly canMutate: boolean;
+  readonly hasFilter: boolean;
+  /** G-U7F — only when the member has any invoice at all. */
+  readonly showFilters: boolean;
+}): Promise<React.ReactElement> {
+  const t = await getTranslations('admin.members.invoices');
   const newInvoiceHref = `/admin/invoices/new?memberId=${encodeURIComponent(memberId)}`;
 
   // Spec 122 US5b-1 — an AURA Card as the `Admin-member-detail` board draws
@@ -197,8 +230,8 @@ export async function MemberInvoicesSection({
       <div data-testid="member-invoices-content">
         {/* G-U7F — only when the unfiltered set is non-empty: with ZERO
             invoices there is nothing to filter. */}
-        {allYearsResult.ok && allYearsResult.value.total > 0 && <MemberInvoicesFilters />}
-        {rows.length === 0 ? (
+        {showFilters && <MemberInvoicesFilters />}
+        {tableRows.length === 0 ? (
           <EmptyState
             size="sm"
             title={hasFilter ? t('emptyFiltered') : t('empty')}
