@@ -131,3 +131,37 @@ describe('US3 portal benefits', () => {
     expect(src('src/components/benefits/portal-benefits-panel.tsx')).toMatch(/aura-text-h2[^"]*tabular-nums/);
   });
 });
+
+describe('US3 portal profile, directory and change requests', () => {
+  it.each([
+    'src/app/(member)/portal/profile/loading.tsx',
+    'src/app/(member)/portal/profile/directory/loading.tsx',
+    'src/app/(member)/portal/change-requests/loading.tsx',
+    'src/components/members/portal-profile-view.tsx',
+    'src/components/portal/back-link.tsx',
+  ])('%s takes AURA’s Card / Icon (or the shared skeleton card), not their classes by hand', (file) => {
+    expect(src(file)).not.toMatch(HAND_AURA_CLASS);
+  });
+
+  it.each([
+    'src/components/members/portal-profile-view.tsx',
+    'src/components/portal/back-link.tsx',
+    'src/components/members/change-requests/change-request-history-view.tsx',
+    'src/components/members/change-requests/pending-request-banner.tsx',
+    'src/components/members/change-requests/portal-change-request-form.tsx',
+    'src/components/members/portal-marketing-toggle.tsx',
+    'src/components/directory/directory-logo-control.tsx',
+    'src/components/directory/directory-listing-preview.tsx',
+  ])('%s sizes its text on the type scale, not in raw px', (file) => {
+    expect(src(file)).not.toMatch(RAW_TEXT_PX);
+  });
+
+  it('the plain change-request diff is AURA’s frameless Table, with no globals.css override', () => {
+    expect(src('src/components/members/change-requests/change-request-diff-table.tsx')).toMatch(/<Table stackBelow="sm" bordered=\{false\}>/);
+    expect(src('src/app/globals.css')).not.toMatch(/cr-diff--plain/);
+  });
+
+  it('the directory checkboxes keep AURA’s own touch rows (44px on coarse pointers)', () => {
+    expect(src('src/components/directory/directory-visibility-form.tsx')).not.toMatch(/aura-check/);
+  });
+});
