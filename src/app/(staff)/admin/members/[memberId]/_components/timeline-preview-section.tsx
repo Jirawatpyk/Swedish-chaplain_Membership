@@ -30,7 +30,7 @@ import { getTranslations } from 'next-intl/server';
 import { headers } from 'next/headers';
 import { ClockIcon } from 'lucide-react';
 import { Card, buttonClass } from '@jirawatpyk/aura-react/server';
-import { SkeletonBlock as Skeleton } from '@/components/shell/page-skeletons';
+import { SectionCardSkeleton } from './section-card-skeleton';
 import { logger } from '@/lib/logger';
 import { canPerform } from '@/lib/rbac';
 import { errKind, rootCause } from '@/lib/log-id';
@@ -122,7 +122,7 @@ export async function TimelinePreviewSection({
       headingLevel={2}
       actions={
         <Link href={`/admin/members/${memberId}/timeline`} className={buttonClass({ variant: 'secondary' })}>
-          <ClockIcon className="aura-icon size-4" aria-hidden="true" />
+          <ClockIcon className="size-4" aria-hidden="true" />
           {t('timelinePreview.viewAll')}
         </Link>
       }
@@ -149,37 +149,10 @@ export async function TimelinePreviewSection({
 }
 
 /**
- * Skeleton matching the 3-row timeline shape — used as the Suspense
- * fallback at the call site for CLS-stable layout.
- *
- * AURA card markup + the shell's SkeletonBlock (spec 122 US3; reduced-motion
- * handled by the shared skeleton class).
+ * Skeleton matching the 3-row timeline card — used as the Suspense fallback
+ * at the call site for CLS-stable layout (the shared AURA section skeleton,
+ * spec 122 US5b-1).
  */
 export function TimelinePreviewSkeleton() {
-  return (
-    <div className="aura-card" aria-busy="true" aria-hidden="true">
-      <div className="aura-card__head">
-        <Skeleton className="h-5 w-32" />
-        <Skeleton className="h-11 w-28" />
-      </div>
-      <div className="aura-card__body">
-        <ul className="flex flex-col gap-3">
-          {Array.from({ length: PREVIEW_LIMIT }).map((_, i) => (
-            <li
-              key={i}
-              className="relative border-l-2 border-[var(--aura-border-default)] pl-6 py-3"
-            >
-              {/* Matches the real TimelineEventItem marker (24px circle at
-                  -left-[13px]) so the skeleton→content swap is CLS-free. */}
-              <span className="absolute -left-[13px] top-4 size-6 rounded-full border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)]" />
-              <div className="flex flex-col gap-1.5">
-                <Skeleton className="h-4 w-2/3" />
-                <Skeleton className="h-3 w-1/3" />
-              </div>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </div>
-  );
+  return <SectionCardSkeleton rows={PREVIEW_LIMIT} action />;
 }

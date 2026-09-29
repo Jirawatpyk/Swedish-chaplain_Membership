@@ -27,12 +27,7 @@
  */
 import type { TenantContext } from '@/modules/tenants';
 import { loadMemberRenewalHealth } from '../_lib/member-renewal-health';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-} from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
+import { SectionCardSkeleton } from './section-card-skeleton';
 import { RenewalHealthCard } from '@/components/members/renewal-health-card';
 
 export async function MemberRenewalHealthSection({
@@ -78,27 +73,9 @@ export async function MemberRenewalHealthSection({
 }
 
 /**
- * Suspense fallback matching the card shape (title + view link + a 3-cell
- * dl) for CLS-stable layout. Uses the canonical <Skeleton> (shimmer +
- * reduced-motion) per ux-standards § 2.1.
+ * Suspense fallback matching the card shape (title + view link + three rows)
+ * for CLS-stable layout — the shared AURA section skeleton (spec 122 US5b-1).
  */
 export function MemberRenewalHealthSkeleton(): React.JSX.Element {
-  return (
-    <Card aria-busy="true" aria-hidden="true" className="h-full">
-      <CardHeader className="flex flex-row items-center justify-between gap-2">
-        <Skeleton className="h-5 w-40" />
-        <Skeleton className="h-8 w-28" />
-      </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-1 gap-x-8 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="flex flex-col gap-1.5">
-              <Skeleton className="h-3 w-16" />
-              <Skeleton className="h-5 w-24" />
-            </div>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
-  );
+  return <SectionCardSkeleton rows={3} action className="h-full" />;
 }

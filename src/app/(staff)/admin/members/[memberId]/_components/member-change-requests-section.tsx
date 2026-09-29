@@ -18,10 +18,7 @@ import Link from 'next/link';
 import { headers } from 'next/headers';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { FileClockIcon } from 'lucide-react';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { InlineAlert } from '@/components/ui/inline-alert';
-import { buttonVariants } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Alert, Card, EmptyState, buttonClass } from '@jirawatpyk/aura-react/server';
 import { logger } from '@/lib/logger';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 import { requestIdFromHeaders } from '@/lib/request-id';
@@ -31,6 +28,7 @@ import { asMemberId, listMemberChangeRequests, type ChangeRequestQueueItem } fro
 import type { TenantContext } from '@/modules/tenants';
 import { ChangeRequestDiffTable } from '@/components/members/change-requests/change-request-diff-table';
 import { ChangeRequestStatusBadge, changeRequestStatusOf } from '@/components/members/change-requests/change-request-status-badge';
+import { SectionCardSkeleton } from './section-card-skeleton';
 
 const SECTION_LIMIT = 10;
 
@@ -62,92 +60,85 @@ export async function MemberChangeRequestsSection({ tenant, memberId }: Props) {
 
   const fmt = (d: Date) => formatLocalisedDate(d.toISOString(), locale, { dateStyle: 'medium', timeStyle: 'short' });
 
+  // Spec 122 US5b-1 — an AURA Card; the full history stays (Clarifications,
+  // Session 2026-09-29), each request a framed row with its diff.
   return (
-    <section aria-labelledby="member-change-requests-heading" data-testid="member-change-requests-section">
-      <Card>
-        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
-          <h2 id="member-change-requests-heading" className="font-heading text-base font-medium leading-snug">
-            {t('title')}
-          </h2>
-          <Link href={`/admin/change-requests?memberId=${encodeURIComponent(memberId)}`} className={buttonVariants({ variant: 'outline' })}>
-            <FileClockIcon className="size-4" aria-hidden="true" />
-            {t('viewQueue')}
-          </Link>
-        </CardHeader>
-        <CardContent>
-          {loadFailed ? (
-            // `status`, not `alert`: the page rendered, one section did not —
-            // no interruption of whatever the admin is reading (UX I9)
-            <InlineAlert tone="destructive" role="status" data-testid="member-change-requests-unavailable">
-              <p className="text-sm">{t('loadFailed')}</p>
-            </InlineAlert>
-          ) : items.length === 0 ? (
-            <div className="py-6 text-center">
-              <p className="text-sm text-muted-foreground">{t('empty')}</p>
-            </div>
-          ) : (
-            <ul className="flex flex-col gap-4">
-              {items.map(({ row }) => {
-                const r = row.request;
-                return (
-                  <li key={r.id} className="rounded-md border p-3" data-testid="member-change-request" data-request-id={r.id}>
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="space-y-1 text-sm">
-                        <p className="font-medium">
-                          {t('submittedBy', { name: row.submitter.displayName, role: tReview(`roles.${r.submitterRoleAtSubmission}`) })}
-                        </p>
-                        <p className="text-caption text-muted-foreground">
-                          {t('submittedOn', { submittedAt: fmt(r.submittedAt) })}
-                          {r.decidedAt && row.decidedBy
-                            ? ` · ${tReview('decidedBy', { name: row.decidedBy.displayName || tReview('unknownReviewer'), decidedAt: fmt(r.decidedAt) })}${row.decidedBy.deactivated ? ` ${tReview('deactivated')}` : ''}`
-                            : null}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <ChangeRequestStatusBadge status={changeRequestStatusOf(r)} audience="staff" />
-                        <Link href={`/admin/change-requests/${r.id}`} className={buttonVariants({ variant: 'outline', size: 'sm' })}>
-                          {r.state === 'pending' ? t('review') : t('open')}
-                        </Link>
-                      </div>
-                    </div>
-                    <div className="mt-3">
-                      <ChangeRequestDiffTable fields={r.fields.map(serialiseField)} showOutcome={r.state === 'decided'} />
-                    </div>
-                    {r.decisionReason ? (
-                      <div className="mt-3 rounded-md bg-muted/40 p-3 text-sm">
-                        <p className="font-medium">{tReview('decisionReason')}</p>
-                        <p className="whitespace-pre-wrap break-words">{r.decisionReason}</p>
-                      </div>
-                    ) : null}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
-    </section>
+    <Card
+      as="section"
+      data-testid="member-change-requests-section"
+      title={t('title')}
+      titleId="member-change-requests-heading"
+      headingLevel={2}
+      actions={
+        <Link
+          href={`/admin/change-requests?memberId=${encodeURIComponent(memberId)}`}
+          className={buttonClass({ variant: 'secondary', size: 'sm' })}
+        >
+          <FileClockIcon className="size-4" aria-hidden="true" />
+          {t('viewQueue')}
+        </Link>
+      }
+    >
+      {loadFailed ? (
+        // `status`, not `alert`: the page rendered, one section did not —
+        // no interruption of whatever the admin is reading (UX I9)
+        <Alert tone="danger" role="status" data-testid="member-change-requests-unavailable">
+          {t('loadFailed')}
+        </Alert>
+      ) : items.length === 0 ? (
+        <EmptyState size="sm" title={t('empty')} />
+      ) : (
+        <ul className="flex flex-col gap-4">
+          {items.map(({ row }) => {
+            const r = row.request;
+            return (
+              <li
+                key={r.id}
+                className="rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)] p-3"
+                data-testid="member-change-request"
+                data-request-id={r.id}
+              >
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="space-y-1 text-sm">
+                    <p className="font-medium">
+                      {t('submittedBy', { name: row.submitter.displayName, role: tReview(`roles.${r.submitterRoleAtSubmission}`) })}
+                    </p>
+                    <p className="text-xs text-[var(--aura-fg-secondary)]">
+                      {t('submittedOn', { submittedAt: fmt(r.submittedAt) })}
+                      {r.decidedAt && row.decidedBy
+                        ? ` · ${tReview('decidedBy', { name: row.decidedBy.displayName || tReview('unknownReviewer'), decidedAt: fmt(r.decidedAt) })}${row.decidedBy.deactivated ? ` ${tReview('deactivated')}` : ''}`
+                        : null}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <ChangeRequestStatusBadge status={changeRequestStatusOf(r)} audience="staff" />
+                    <Link
+                      href={`/admin/change-requests/${r.id}`}
+                      className={buttonClass({ variant: 'secondary', size: 'sm' })}
+                    >
+                      {r.state === 'pending' ? t('review') : t('open')}
+                    </Link>
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <ChangeRequestDiffTable fields={r.fields.map(serialiseField)} showOutcome={r.state === 'decided'} />
+                </div>
+                {r.decisionReason ? (
+                  <div className="mt-3 rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface-hover)] p-3 text-sm">
+                    <p className="font-medium">{tReview('decisionReason')}</p>
+                    <p className="whitespace-pre-wrap break-words">{r.decisionReason}</p>
+                  </div>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Card>
   );
 }
 
 /** Suspense fallback matching the section's card shape (CLS-stable). */
 export function MemberChangeRequestsSkeleton() {
-  return (
-    <Card aria-hidden="true">
-      <CardHeader className="flex flex-row items-center justify-between">
-        <Skeleton className="h-5 w-40" />
-        <Skeleton className="h-9 w-28" />
-      </CardHeader>
-      <CardContent>
-        <div className="flex flex-col gap-3">
-          {Array.from({ length: 2 }, (_, i) => (
-            <div key={i} className="rounded-md border p-3">
-              <Skeleton className="mb-2 h-4 w-1/2" />
-              <Skeleton className="h-12 w-full" />
-            </div>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
-  );
+  return <SectionCardSkeleton rows={2} action />;
 }
