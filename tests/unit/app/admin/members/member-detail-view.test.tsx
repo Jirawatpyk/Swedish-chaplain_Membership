@@ -12,7 +12,7 @@
  *   and every link lands on a section with that id.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { NextIntlClientProvider, createFormatter, createTranslator } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
@@ -30,11 +30,15 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 // The dialogs are their own tasks (T554 / T555); here only their triggers matter.
+// A controlled copy (`showTrigger={false}`, opened from the phone menu)
+// renders no trigger.
 vi.mock('@/components/members/erase-member-button', () => ({
-  EraseMemberButton: () => <button type="button">Erase (GDPR/PDPA)…</button>,
+  EraseMemberButton: (p: { showTrigger?: boolean }) =>
+    p.showTrigger === false ? null : <button type="button">Erase (GDPR/PDPA)…</button>,
 }));
 vi.mock('@/components/members/archive-member-button', () => ({
-  ArchiveMemberButton: () => <button type="button">Archive member</button>,
+  ArchiveMemberButton: (p: { showTrigger?: boolean }) =>
+    p.showTrigger === false ? null : <button type="button">Archive member</button>,
 }));
 vi.mock('@/components/members/contact-form-dialog', () => ({ ContactFormDialog: () => null }));
 vi.mock('@/app/(staff)/admin/members/[memberId]/_components/add-contact-button', () => ({ AddContactButton: () => null }));
@@ -151,13 +155,43 @@ describe('renderMemberDetailView — header (T553)', () => {
   it('a writer gets Benefits, Erase, Archive and Edit, in that order', async () => {
     await renderView();
     const header = screen.getByRole('heading', { level: 1 }).closest('header')!;
-    const actions = [...header.querySelectorAll('a, button')];
+    const actions = [...header.querySelectorAll('a, button')].filter((a) => a.textContent?.trim());
     expect(actions.map((a) => a.textContent?.trim())).toEqual([
       enMessages.admin.members.detail.sections.benefits,
       'Erase (GDPR/PDPA)…',
       'Archive member',
       enMessages.admin.members.detail.editCta,
     ]);
+  });
+
+  // Board `Admin-member-detail-mobile` (maintainer, 29 Sep): on a phone the
+  // header is Edit, Benefits and ⋯; Erase and Archive live in the menu. From
+  // sm up they stay visible buttons.
+  it('on a phone, Erase and Archive move into a ⋯ menu', async () => {
+    await renderView();
+    const D = enMessages.admin.members;
+    const header = screen.getByRole('heading', { level: 1 }).closest('header')!;
+    expect(within(header).getByText('Erase (GDPR/PDPA)…').closest('[class*="max-sm:hidden"]')).not.toBeNull();
+    const more = within(header).getByRole('button', { name: D.detail.headerMoreActions });
+    expect(more.closest('[class*="sm:hidden"]')).not.toBeNull();
+    fireEvent.click(more);
+    const menu = screen.getByRole('menu');
+    expect(within(menu).getAllByRole('menuitem').map((i) => i.textContent?.trim())).toEqual([
+      D.erase.eraseCta,
+      D.archive.archiveCta,
+    ]);
+  });
+
+  it('the phone menu follows the same gates: Erase only when archived, none for a reader', async () => {
+    const D = enMessages.admin.members;
+    await renderView({ member: { ...member, status: 'archived' } as Member });
+    fireEvent.click(screen.getByRole('button', { name: D.detail.headerMoreActions }));
+    expect(within(screen.getByRole('menu')).getAllByRole('menuitem').map((i) => i.textContent?.trim())).toEqual([
+      D.erase.eraseCta,
+    ]);
+    document.body.innerHTML = '';
+    await renderView({ can: { write: false, marketing: false } });
+    expect(screen.queryByRole('button', { name: D.detail.headerMoreActions })).toBeNull();
   });
 
   it('an archived member keeps Erase but loses Archive and Edit', async () => {

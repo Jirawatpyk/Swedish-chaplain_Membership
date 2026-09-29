@@ -83,6 +83,28 @@ describe('ArchiveMemberButton (T555)', () => {
   });
 });
 
+// 122 US5b-1 (maintainer, 29 Sep): the phone header opens these from its ⋯
+// menu, so each can be opened by its caller with no trigger of its own.
+describe('Archive / Erase opened by a caller', () => {
+  it('ArchiveMemberButton: open without a trigger, Cancel reports the close', () => {
+    const onOpenChange = vi.fn();
+    wrap(<ArchiveMemberButton memberId="m-1" companyName="Siam Nordic" showTrigger={false} open onOpenChange={onOpenChange} />);
+    expect(screen.queryByRole('button', { name: AR.archiveCta })).toBeNull();
+    const dialog = screen.getByRole('alertdialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: AR.cancel }));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it('EraseMemberButton: open without a trigger, Cancel reports the close', () => {
+    const onOpenChange = vi.fn();
+    wrap(<EraseMemberButton memberId="m-1" companyName="Siam Nordic" memberNumberDisplay="TSCC-0003" showTrigger={false} open onOpenChange={onOpenChange} />);
+    expect(screen.queryByRole('button', { name: ER.eraseCta })).toBeNull();
+    const dialog = screen.getByRole('alertdialog', { name: ER.dialogTitle });
+    fireEvent.click(within(dialog).getByRole('button', { name: ER.cancel }));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+});
+
 describe('EraseMemberButton (T555)', () => {
   function openErase() {
     wrap(<EraseMemberButton memberId="m-1" companyName="Siam Nordic" memberNumberDisplay="TSCC-0003" />);
