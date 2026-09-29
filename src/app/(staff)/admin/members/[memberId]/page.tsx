@@ -2,37 +2,27 @@
  * T067 — /admin/members/[memberId] detail page (US2 deep-link).
  *
  * Server component — runs the `getMember` use case which emits
- * `member_cross_tenant_probe` on 404 per FR-022. Renders member metadata
- * + contacts grouped primary/secondary + FR-030 copy-to-clipboard
- * affordances on member_id / email / tax_id.
- *
- * Audit timeline lands in US6 (B.4+).
+ * `member_cross_tenant_probe` on 404 per FR-022, loads what the header,
+ * the company card and the contacts need, and hands them to
+ * `renderMemberDetailView` (spec 122 US5b-1), which the no-DB preview route
+ * renders too. The sections that read their own data (strip, renewal,
+ * benefits, invoices, timeline, change requests, data export) go in as
+ * Suspense-wrapped slots.
  */
 
 import type { Metadata } from 'next';
-import { cache } from 'react';
-import Link from 'next/link';
+import { cache, Suspense } from 'react';
 import { notFound } from 'next/navigation';
-import { getTranslations, getFormatter, getLocale } from 'next-intl/server';
-import {
-  ArrowLeftIcon,
-  ExternalLinkIcon,
-  HelpCircleIcon,
-  MailWarningIcon,
-  PackageOpenIcon,
-  PencilIcon,
-  UserPlusIcon,
-} from 'lucide-react';
+import { headers } from 'next/headers';
+import { getTranslations, getLocale } from 'next-intl/server';
 import { canPerform, requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
-import { formatCalendarYear, formatLocalisedDate } from '@/lib/format-date-localised';
 import { isInvitationExpired } from '@/lib/invitation-expiry';
 import { safeExternalHref } from '@/lib/safe-url';
-import { headers } from 'next/headers';
 import {
   getMember,
   archiveWindowStatus,
@@ -46,43 +36,23 @@ import { buildMembersDeps } from '@/modules/members/members-deps';
 // Pass A · Section 3 — F7 marketing-suppression read (cross-context via the
 // broadcasts public barrel; the Drizzle repo wraps queries in runInTenant).
 import { makeDrizzleMarketingUnsubscribesRepo } from '@/modules/broadcasts';
-// S1 — extracted resolver owns the parse + projection + degraded branching.
-import { resolveContactSubscriptions } from './_lib/resolve-contact-subscriptions';
-// DV-11 — per-contact email-verification resolver + button.
-import { resolveContactVerification } from './_lib/resolve-contact-verification';
-import { ResendVerificationButton } from '@/components/members/resend-verification-button';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-} from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button, buttonVariants } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
-import { DetailContainer } from '@/components/layout';
-import { PageHeader } from '@/components/layout/page-header';
-import { DynamicBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
-import { CopyButton } from '@/components/members/copy-button';
-import { DetailField } from '@/components/members/detail-field';
-import { MemberNumberField } from '@/components/members/member-number-field';
-import { CountryDisplay } from '@/components/members/country-display';
-import { resolveLegalEntityTypeLabel } from '@/components/members/resolve-legal-entity-type-label';
-import { InvitePortalButton } from '@/components/members/invite-portal-button';
-import { ResendBouncedInviteButton } from '@/components/members/resend-bounced-invite-button';
-import { ArchivedBanner } from '@/components/members/archived-banner';
-import { NoPrimaryContactBanner } from '@/components/members/no-primary-contact-banner';
 import {
   getMemberMoneyRecipientStatus,
   makeMemberMoneyRecipientStatusDeps,
 } from '@/modules/invoicing';
-import { ArchiveMemberButton } from '@/components/members/archive-member-button';
-import { EraseMemberButton } from '@/components/members/erase-member-button';
-import { ErasedBanner } from '@/components/members/erased-banner';
-import { ContactFormDialog } from '@/components/members/contact-form-dialog';
-import { ContactActions } from '@/components/members/contact-actions';
-import { MarketingStateBadge } from '@/components/members/marketing-state-badge';
-import { MarketingSwitch } from '@/components/members/marketing-switch';
-import { Suspense } from 'react';
+import { resolveLegalEntityTypeLabel } from '@/components/members/resolve-legal-entity-type-label';
+// S1 — extracted resolver owns the parse + projection + degraded branching.
+import { resolveContactSubscriptions } from './_lib/resolve-contact-subscriptions';
+// DV-11 — per-contact email-verification resolver.
+import { resolveContactVerification } from './_lib/resolve-contact-verification';
+import type { PendingInvitation } from './_components/contact-block';
+import { renderMemberDetailView } from './_components/member-detail-view';
+import { MemberNotFound } from './_components/member-not-found';
+import type { SummaryPortalState } from './_components/member-summary-strip';
+import {
+  MemberSummaryStripSection,
+  MemberSummaryStripSkeleton,
+} from './_components/member-summary-strip-section';
 import { MemberInvoicesSection } from './_components/member-invoices-section';
 import { MemberInvoicesSkeleton } from './_components/member-invoices-skeleton';
 import { MemberDataExportSection } from './_components/member-data-export-section';
@@ -101,11 +71,6 @@ import {
   TimelinePreviewSection,
   TimelinePreviewSkeleton,
 } from './_components/timeline-preview-section';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -186,376 +151,6 @@ export async function generateMetadata({
   };
 }
 
-/**
- * 056 fix #1 — section heading rendered as a real `<h2>` (not a CardTitle
- * `<div>`) so every content group is reachable via SR heading navigation
- * under the page `<h1>`. Carries the CardTitle font classes so the visual
- * is unchanged. The `id` is wired to the wrapping `<section aria-labelledby>`.
- */
-function SectionHeading({
-  id,
-  children,
-  className,
-}: {
-  id: string;
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <h2
-      id={id}
-      className={`font-heading text-base font-medium leading-snug ${className ?? ''}`}
-    >
-      {children}
-    </h2>
-  );
-}
-
-/**
- * 056 — small uppercase subgroup label inside the Company card (Organisation
- * / Membership). Renders as a `<p>` not a heading: these are visual grouping
- * dividers WITHIN the Company section, not standalone sections, so promoting
- * them to `<h3>` would add noise to the heading tree (the Company `<h2>`
- * already names the section).
- */
-function SubGroupLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="text-caption font-medium uppercase tracking-wide text-muted-foreground">
-      {children}
-    </p>
-  );
-}
-
-/**
- * H1: StatusBadge now resolves the localised label via the existing
- * `admin.members.directory.filters.status.*` i18n keys rather than
- * rendering the raw enum value ("active" / "inactive" / "archived").
- *
- * This is a Server Component (no 'use client' on the parent page), so
- * `useTranslations` is replaced with the `t` function passed from the
- * page-level `getTranslations` call via prop. We accept a `tStatus`
- * parameter so we don't need a second `getTranslations` call.
- */
-function StatusBadge({
-  status,
-  label,
-}: {
-  status: 'active' | 'inactive' | 'archived';
-  label: string;
-}) {
-  return (
-    <Badge
-      variant={
-        status === 'active'
-          ? 'default'
-          : status === 'inactive'
-            ? 'secondary'
-            : 'outline'
-      }
-    >
-      {label}
-    </Badge>
-  );
-}
-
-type PendingInvitation = {
-  /**
-   * Migration 0017 narrowed chamber_app's `invitations` visibility to
-   * just user_id / consumed_at / expires_at (the `id` column is the
-   * raw 7-day token and is owner-role only). The UI therefore knows
-   * only the expiry — sufficient for the inline "Expires in N days"
-   * badge.
-   */
-  readonly expiresAt: Date;
-  /**
-   * Round-11 review fix — precomputed at the page-level (single
-   * `Date.now()` call per request) instead of inside ContactBlock,
-   * which the react-hooks/purity lint flagged as impure-during-render.
-   * Server component still renders once per request so `Date.now()`
-   * is conceptually pure here, but the precompute makes the rule
-   * happy and centralises the "now" instant for any future
-   * snapshot-style consistency requirement.
-   */
-  readonly daysUntilExpiry: number;
-  /**
-   * Cluster 3 (2026-07-12) — true when `expiresAt <= now` at page-render
-   * time. An expired-but-unconsumed invitation now surfaces (the repo
-   * dropped its `expires_at > NOW()` filter) so the UI can show an
-   * "Invitation expired" badge + a re-invite affordance instead of a
-   * false "Portal linked" dead-end.
-   *
-   * This flag and the directory's portal badge (`derivePortalState`) now share
-   * ONE boundary implementation — `isInvitationExpired` (`@/lib/invitation-expiry`)
-   * — so they cannot drift. That helper's `<=` boundary is pinned by
-   * tests/unit/lib/invitation-expiry.test.ts.
-   */
-  readonly expired: boolean;
-};
-
-export function ContactBlock({
-  contact,
-  memberId,
-  pendingInvitation,
-  marketingState,
-  canWrite,
-  canMarketing,
-  verificationPending,
-  locale,
-  t,
-}: {
-  contact: Contact;
-  memberId: string;
-  pendingInvitation?: PendingInvitation | undefined;
-  /**
-   * 108 PR-D (FR-031 / FR-031a) — the DISPLAYED marketing state, derived by
-   * the page via `deriveMarketingState` (suppression > opt-out > on;
-   * `'unavailable'` when the suppression read was degraded). Replaces the
-   * pre-108 two-state "Subscribed" badge so this page and the Marketing
-   * audience page always agree. Always a text label (never colour alone).
-   */
-  marketingState: MarketingState;
-  /** S1-P1-10: false for the read-only manager — hides Invite/Promote/Remove. */
-  canWrite: boolean;
-  /**
-   * 108 PR-D (FR-030 / FR-034) — `contacts.marketing` holder: renders the
-   * switch. Independent of `canWrite`: the marketing role holds this but
-   * not `contacts.write`, and a manager holds neither (badge only).
-   */
-  canMarketing: boolean;
-  /** DV-11 — true when the linked user's email is unverified → show the
-   *  "Re-send verification email" button. */
-  verificationPending: boolean;
-  /**
-   * FIX 5 (056 polish) — active locale passed from the page-level
-   * `getLocale()` call so the pending-invitation badge title renders
-   * BE year for th-TH users instead of raw ค.ศ. ISO date.
-   */
-  locale: string;
-  t: Awaited<ReturnType<typeof getTranslations<'admin.members.detail'>>>;
-}) {
-  // "Invite to portal" is only shown when the contact has an email and
-  // is not already linked to an F1 portal account (FR-012 / T056).
-  const canInvite = Boolean(contact.email) && !contact.linkedUserId;
-  // Round-11 review fix — `daysUntilExpiry` is precomputed at the page
-  // level (single `Date.now()` per request) and passed in via the
-  // `pendingInvitation` prop.
-  const daysUntilExpiry = pendingInvitation?.daysUntilExpiry ?? null;
-  // Rendered as a plain flat row (no border, no bg) inside the outer
-  // Contacts Card. Multiple contacts are separated by <Separator />
-  // elements in the parent CardContent — no nested cards, no visual
-  // card-in-card anti-pattern.
-  return (
-    <div>
-      <div className="mb-3 flex flex-row items-start justify-between gap-4">
-        {/* Round-11 review fix — badges moved OUT of the <h3> so the
-            heading text reads cleanly to screen readers (was producing
-            "John Smith Primary Portal linked Expires in 5 days" as a
-            single heading-tree node on VoiceOver). Heading + badge
-            cluster live in adjacent flex containers, separated by
-            `gap-2`. The badge cluster ships its own aria-label so SRs
-            still hear the state info after the heading. */}
-        <div className="flex flex-wrap items-center gap-2">
-          <h3 className="text-base font-semibold">
-            {`${contact.firstName} ${contact.lastName}`.trim()}
-          </h3>
-          {/* `role="group"` — a bare <div> is `generic`, on which `aria-label`
-              is ARIA-prohibited (axe `aria-prohibited-attr`, a hard violation
-              once the cluster is empty). `empty:hidden` drops the labelled
-              group for a contact with no badge at all. */}
-          <div
-            role="group"
-            className="flex flex-wrap items-center gap-2 empty:hidden [&:not(:empty)]:border-e [&:not(:empty)]:pe-2"
-            aria-label={t('sections.contactStatusBadges')}
-          >
-            {contact.isPrimary && (
-              <>
-                <Badge variant="default">{t('sections.primary')}</Badge>
-                {/* 108 FR-031 — the descriptor says WHAT primary means for
-                    money email; the phrase "billing contact" is never used. */}
-                <span className="text-xs text-muted-foreground">
-                  {t('marketing.primaryDescriptor')}
-                </span>
-              </>
-            )}
-            {contact.linkedUserId && !pendingInvitation && (
-              <Badge variant="secondary">{t('portal.linked')}</Badge>
-            )}
-            {/* C6 round-10 ui-design-specialist — inline pending-
-                invitation badge replaces "Portal linked" when the
-                user row exists but `consumed_at` is NULL. Cluster 3
-                (2026-07-12) splits this into a live vs expired variant. */}
-            {pendingInvitation && !pendingInvitation.expired && daysUntilExpiry !== null && (
-              <Badge
-                variant="outline"
-                className="gap-1 border-amber-600 text-amber-900 dark:border-amber-500 dark:text-amber-100"
-                title={t('pendingInvitations.expiresAt', {
-                  // FIX 5 — use the shared Buddhist-aware helper so th-TH
-                  // users see พ.ศ. (BE) in the hover tooltip, not raw ค.ศ.
-                  date: formatLocalisedDate(
-                    pendingInvitation.expiresAt.toISOString(),
-                    locale,
-                    { dateStyle: 'medium' },
-                  ),
-                })}
-              >
-                <MailWarningIcon
-                  aria-hidden="true"
-                  className="size-3"
-                />
-                <span>
-                  {t('pendingInvitations.expiresInDays', {
-                    days: daysUntilExpiry,
-                  })}
-                </span>
-              </Badge>
-            )}
-            {/* Cluster 3 (2026-07-12) — an invitation that expired
-                unaccepted (still consumed_at IS NULL, past expires_at).
-                Destructive styling signals the dead-end; the sibling
-                "Re-send invitation" button (below) is the recovery. */}
-            {pendingInvitation && pendingInvitation.expired && (
-              <Badge
-                variant="outline"
-                className="gap-1 border-destructive text-destructive dark:border-red-400 dark:text-red-400"
-                aria-label={t('pendingInvitations.expiredAria')}
-              >
-                <MailWarningIcon
-                  aria-hidden="true"
-                  className="size-3"
-                />
-                <span>{t('pendingInvitations.expired')}</span>
-              </Badge>
-            )}
-            {/* F3 spec § Edge Cases — "Invite bounced" warning badge.
-                Shown when invite_bounced_at is set (the invitation email
-                bounced and was never delivered). Sits alongside a LIVE
-                pending-invitation badge.
-
-                Cluster 3 review (2026-07-12) — suppressed when the pending
-                invite has ALSO expired: the red "Invitation expired" badge
-                above already signals the dead-end and the shared "Re-send
-                invitation" button below is the single recovery, so showing
-                a second near-identical red "Invite bounced" badge for the
-                same root cause is redundant (a11y double-badge finding).
-
-                Task 10 (staff-invitation-lifecycle) — invite_bounced_at is
-                only meaningful while a user is still linked. A staff
-                Revoke/Prune hard-deletes the pending user, which
-                `ON DELETE SET NULL`s contacts.linked_user_id; without this
-                check a bounce recorded before the revoke would leave this
-                badge stuck forever (resendBouncedInvite requires
-                linkedUserId, so it can never clear the flag). Self-heals
-                the read the moment the FK nulls out. */}
-            {contact.inviteBouncedAt &&
-              contact.linkedUserId &&
-              !(pendingInvitation && pendingInvitation.expired) && (
-              <Badge
-                variant="outline"
-                className="gap-1 border-destructive text-destructive dark:border-red-400 dark:text-red-400"
-                aria-label={t('inviteBounced.badgeAria')}
-              >
-                <MailWarningIcon
-                  aria-hidden="true"
-                  className="size-3"
-                />
-                <span>{t('inviteBounced.badge')}</span>
-              </Badge>
-            )}
-          </div>
-          {/* 108 PR-D (FR-031 / FR-030 / FR-034) — the marketing PAIR: the
-              five-state badge (was the two-state E-Blast subscription badge)
-              plus, for `contacts.marketing` holders, its switch. Grouped
-              together and OUTSIDE the status-badge cluster so an interactive
-              control is never announced as a "status badge" (review M9), and
-              OUTSIDE the `canWrite` cluster (marketing holds this right
-              without `contacts.write`). Only for contacts that HAVE an email
-              (no email = no E-Blast target). */}
-          {contact.email && (
-            <span className="inline-flex items-center gap-2">
-              <MarketingStateBadge state={marketingState} />
-              {canMarketing && (
-                <MarketingSwitch
-                  contactId={contact.contactId}
-                  contactName={`${contact.firstName} ${contact.lastName}`.trim()}
-                  state={marketingState}
-                  size="sm"
-                />
-              )}
-            </span>
-          )}
-        </div>
-        {/* S1-P1-10: write affordances hidden for the read-only manager. */}
-        {canWrite && (
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            {canInvite && (
-              <InvitePortalButton memberId={memberId} contactId={contact.contactId} />
-            )}
-            {/* F3 spec § Edge Cases + Cluster 3 — "Re-send invitation" button.
-                Shown when the contact has a linked (pending) user AND the
-                invitation is in a dead-end: it either BOUNCED
-                (`inviteBouncedAt`) OR expired unaccepted
-                (`pendingInvitation.expired`). The route re-issues the
-                invitation email (owner role) for the still-pending user; the
-                in-tx `status==='pending'` re-check keeps it safe. */}
-            {contact.linkedUserId &&
-              (contact.inviteBouncedAt ||
-                (pendingInvitation && pendingInvitation.expired)) && (
-                <ResendBouncedInviteButton memberId={memberId} contactId={contact.contactId} />
-              )}
-            {/* DV-11 — re-send verification email when the linked contact's
-                email is still unverified (e.g. mid email-change).
-                Fix 6: outer {canWrite && (…)} block already guards this
-                section; redundant inner canWrite && removed for consistency
-                with the sibling ResendBouncedInviteButton. */}
-            {contact.linkedUserId && verificationPending && (
-              <ResendVerificationButton memberId={memberId} contactId={contact.contactId} />
-            )}
-            <ContactActions
-              memberId={memberId}
-              isPrimary={contact.isPrimary}
-              contact={{
-                contactId: contact.contactId,
-                firstName: contact.firstName,
-                lastName: contact.lastName,
-                // `contact.email` is a non-null branded Email on the domain
-                // aggregate; pass it straight through (the dialog widens it to
-                // a plain string for the RHF form value).
-                email: contact.email,
-                phone: contact.phone ?? null,
-                roleTitle: contact.roleTitle ?? null,
-                preferredLanguage: contact.preferredLanguage,
-                // Drives email editability in the edit dialog: unlinked
-                // (imported) contacts get an in-place email edit; a linked
-                // PRIMARY stays read-only (sign-in identity, changed via the
-                // member Edit page / FR-012a); a linked SECONDARY is editable
-                // here (no other edit path) and routes through the same
-                // FR-012a atomic flow.
-                linkedUserId: contact.linkedUserId ?? null,
-                isPrimary: contact.isPrimary,
-              }}
-            />
-          </div>
-        )}
-      </div>
-      <dl className="grid grid-cols-1 gap-x-8 gap-y-1 md:grid-cols-2">
-        <DetailField
-          label={t('fields.email')}
-          value={contact.email}
-          extra={
-            <CopyButton value={contact.email} label={t('copy.copyEmail')} />
-          }
-        />
-        <DetailField label={t('fields.phone')} value={contact.phone} />
-        <DetailField label={t('fields.roleTitle')} value={contact.roleTitle} />
-        <DetailField
-          label={t('fields.preferredLanguage')}
-          value={contact.preferredLanguage.toUpperCase()}
-        />
-      </dl>
-    </div>
-  );
-}
-
 export default async function MemberDetailPage({
   params,
   searchParams,
@@ -606,16 +201,10 @@ export default async function MemberDetailPage({
     { actorUserId: session.user.id, requestId },
     deps,
   );
-  const t = await getTranslations('admin.members.detail');
   // 056 fix #5 — free-text legal-entity-type → localised label map.
   const tLegalTypes = await getTranslations(
     'admin.members.detail.legalEntityTypes',
   );
-  // H1: status label for StatusBadge — reuse existing directory filter keys
-  // rather than duplicating active/inactive/archived strings in a new namespace.
-  const tDir = await getTranslations('admin.members.directory');
-  // H2: locale-aware number formatter (respects active locale for digit grouping).
-  const format = await getFormatter();
   // 056 fix #2 — active locale for the shared Buddhist-aware date helper
   // (`formatLocalisedDate` maps th → th-TH-u-ca-buddhist). NO raw .toISOString()
   // in display; storage stays Gregorian ISO.
@@ -623,27 +212,7 @@ export default async function MemberDetailPage({
 
   if (!result.ok) {
     if (result.error.type === 'not_found') {
-      return (
-        <DetailContainer>
-          <Card>
-            <CardContent className="flex flex-col items-center gap-4 p-10 text-center">
-              <h2 className="text-h2 text-xl font-semibold">
-                {t('notFound.title')}
-              </h2>
-              <p className="text-sm text-muted-foreground">
-                {t('notFound.description')}
-              </p>
-              <Link
-                href="/admin/members"
-                className={buttonVariants({ variant: 'outline' })}
-              >
-                <ArrowLeftIcon className="size-4" />
-                {t('notFound.cta')}
-              </Link>
-            </CardContent>
-          </Card>
-        </DetailContainer>
-      );
+      return <MemberNotFound />;
     }
     // Generic server error — log with full context for ops, throw a
     // sanitised message so the route-level error.tsx boundary and any
@@ -657,9 +226,6 @@ export default async function MemberDetailPage({
 
   const { member, contacts } = result.value;
   const primary = contacts.find((c) => c.isPrimary && c.removedAt === null);
-  const secondary = contacts.filter(
-    (c) => !c.isPrimary && c.removedAt === null,
-  );
 
   // These reads are independent (all inputs are available after getMember)
   // and each hits Singapore — running them sequentially cost serial RTTs.
@@ -802,11 +368,6 @@ export default async function MemberDetailPage({
   // FR-030 / FR-034 — the switch is for `contacts.marketing` holders only.
   const canMarketing = canPerform(session.user.role, 'contacts.marketing');
 
-  // DV-11 — per-contact verification-pending flag for the visible-gate on the
-  // "Re-send verification email" button.
-  const verificationPendingFor = (contactId: string): boolean =>
-    verificationResult.pending.has(contactId);
-
   const planDisplayName = planLookup.ok
     ? planLookup.value.planNameEn
     : member.planId;
@@ -816,7 +377,7 @@ export default async function MemberDetailPage({
   // Only render the website as a clickable link when it is a safe http(s) URL.
   // zod `.url()` accepts `javascript:`/`data:`, and the portal self-update
   // PATCH stores `website` as a plain string — so a hostile value can reach
-  // this staff-facing sink. When unsafe, the raw value shows as text below.
+  // this staff-facing sink. When unsafe, the raw value shows as text.
   const websiteHref = safeExternalHref(member.website);
 
   const windowStatus =
@@ -832,16 +393,10 @@ export default async function MemberDetailPage({
   // path can never disagree about what counts as deliverable. The page's own
   // `primary` lookup answers a DIFFERENT question — which contact to DISPLAY —
   // and a primary contact with an empty `email` is a fine thing to display and
-  // a completely undeliverable address. Using one for the other is what let the
-  // banner stay silent while every receipt and credit note was being skipped.
-  // Presentation calls use cases only (Principle III), so the adapter is not
-  // named here.
-  //
-  // The archived / erased exclusions moved INTO the use case (round-5 #2) so
-  // all three banner sites share them — the invoice and credit-note pages had
-  // no such gate and fired on every document an erased member ever had. A
-  // failed read is logged (inside the use case, with `errKind`) and the banner
-  // hidden — it is not a claim about the member's contacts.
+  // a completely undeliverable address. The archived / erased exclusions live
+  // in the use case (round-5 #2) so all three banner sites share them. A failed
+  // read is logged (inside the use case, with `errKind`) and the banner hidden
+  // — it is not a claim about the member's contacts.
   let moneyEmailUndeliverable = false;
   {
     const recipientStatus = await getMemberMoneyRecipientStatus(
@@ -857,621 +412,97 @@ export default async function MemberDetailPage({
       );
     }
   }
-  // Post-erase state (COMP-1 US3-A S5): the modify affordances — Erase, Archive,
-  // Edit, add-contact, Renew — are gated on write-role AND not-yet-erased. Named
-  // once so the four call sites stay in lock-step (Archive/Edit/add-contact
-  // additionally require status !== 'archived'; the GDPR-export section keeps its
-  // own admin-only + !isErased gate).
-  const canModify = canWrite && !isErased;
-  // Cluster 4 (2026-07-12) — the "Renew / reactivate" affordance (lapsed
-  // comeback) must be HIDDEN for archived members. `adminRenewLapsedMember`
-  // rejects an archived member server-side (`member_archived`, 068 cluster C):
-  // an archived member must be RESTORED first (the Archive/Undelete affordance
-  // handles that), then renewed. Same status gate the Archive/Edit/add-contact
-  // affordances already use (`canModify && status !== 'archived'`).
-  const canRenew = canModify && member.status !== 'archived';
+
+  // Post-erase state (COMP-1 US3-A S5): Renew needs write access and a
+  // not-yet-erased member. Cluster 4 (2026-07-12) — and never an archived
+  // member: `adminRenewLapsedMember` rejects one server-side
+  // (`member_archived`); it must be restored first.
+  const canRenew = canWrite && !isErased && member.status !== 'archived';
 
   const legalEntityLabel = resolveLegalEntityTypeLabel(
     member.legalEntityType,
     tLegalTypes,
   );
 
-  // Compute once so the JSX below can conditionally switch between a 2-col
-  // grid (Renewal + Benefits side-by-side) and full-width Renewal alone.
-  // Benefits only shows when the F9 flag is on AND the actor is admin/manager.
-  // 016 re-review D — the preview mirrors the benefits page's own admission
-  // ('members.read'; OFF leg legacySessionOnly = admin ∪ manager, byte-
-  // identical to the old pair literal), so the tile shows exactly when the
-  // destination page would admit.
+  // 016 re-review D — each section's gate mirrors the page or API it leads to:
+  // benefits 'members.read' (F9), invoices 'invoicing.read' (manager keeps it,
+  // marketing is excluded per the D3 finance carve-out), data export
+  // 'members.bulk' (F9, hidden once erased — no PII left to export).
+  const canReadInvoices = canPerform(session.user.role, 'invoicing.read');
   const showBenefitsPreview =
-    env.features.f9Dashboard &&
-    canPerform(session.user.role, 'members.read');
+    env.features.f9Dashboard && canPerform(session.user.role, 'members.read');
+  const showDataExport =
+    env.features.f9Dashboard && canPerform(session.user.role, 'members.bulk') && !isErased;
 
-  return (
-    <DetailContainer>
-      <DynamicBreadcrumbLabel segment={memberId} label={member.companyName} />
-      <PageHeader
-        title={member.companyName}
-        /* 056 layout C — surface status + member number ABOVE the fold in the
-           header badge slot (justified duplication of the values also shown in
-           the Company grid). */
-        badge={
-          <div className="flex flex-wrap items-center gap-2">
-            <StatusBadge
-              status={member.status}
-              label={tDir(`filters.status.${member.status}`)}
-            />
-            <Badge variant="outline" className="font-mono">
-              {memberNumberDisplay}
-            </Badge>
-            {/* 107-auto-invoice Task 15 — read-only enrolment indicator. This
-                flag is what causes the member to be billed automatically with
-                no human in the loop, so it belongs above the fold rather than
-                buried in the Company grid. Enrolment is written from the
-                Members directory bulk bar; there is no un-enrol path yet, so
-                this is deliberately NOT an interactive control. */}
-            {member.autoInvoiceEnrolledAt != null && (
-              <Badge variant="secondary">
-                {t('autoInvoiceEnrolledBadge')}
-              </Badge>
-            )}
-          </div>
-        }
-        /* C2 round-10 ui-design-specialist — previous subtitle was the
-           generic directory blurb ("Manage chamber members…") which made
-           every member detail page look identical. Now: "{Plan} · Year
-           {year}" — the two attributes admins actually want to see
-           below the company name. Switches to "…  · Archived" when the
-           member is archived. */
-        subtitle={
-          member.status === 'archived'
-            ? t('subtitleArchived', {
-                plan: planDisplayName,
-                year: formatCalendarYear(member.planYear, locale),
-              })
-            : t('subtitle', {
-                plan: planDisplayName,
-                year: formatCalendarYear(member.planYear, locale),
-              })
-        }
-        actions={
-          <>
-            {/* "Back to members" button removed per ux-standards.md § 11/19
-              * — the global BreadcrumbNav (admin/layout.tsx) already exposes
-              * back navigation. The "Recent activity" action was also removed
-              * (056 layout C) — it duplicated the Timeline card's "View all";
-              * the Timeline card stays. */}
-            {/* Pass A · Section 2 — link to the (previously orphaned)
-              * benefits page. F9-gated, mirroring the benefits feature flag.
-              * Staff-only is implicit (whole route requires a staff session). */}
-            {env.features.f9Dashboard && (
-              <Link
-                href={`/admin/members/${member.memberId}/benefits`}
-                className={buttonVariants({ variant: 'outline' })}
-              >
-                <PackageOpenIcon className="size-4" />
-                {t('sections.benefits')}
-              </Link>
-            )}
-            {/* COMP-1 US3-A — write affordances all hidden once erased (post-
-                erase state S5). Erase sits LEFT of Archive/Edit (most
-                destructive, leftmost; Fitts's Law keeps Edit rightmost). The
-                Erase trigger is shown for any non-erased member INCLUDING
-                archived ones (UX M2) — erasure is orthogonal to archive; only
-                Archive/Edit keep the `status !== 'archived'` gate. */}
-            {canModify && (
-              <>
-                <EraseMemberButton
-                  memberId={member.memberId}
-                  companyName={member.companyName}
-                  memberNumberDisplay={memberNumberDisplay}
-                />
-                {member.status !== 'archived' && (
-                  <>
-                    <ArchiveMemberButton
-                      memberId={member.memberId}
-                      companyName={member.companyName}
-                    />
-                    <Link
-                      href={`/admin/members/${member.memberId}/edit`}
-                      className={buttonVariants()}
-                    >
-                      <PencilIcon className="size-4" />
-                      {t('editCta')}
-                    </Link>
-                  </>
-                )}
-              </>
-            )}
-          </>
-        }
-      />
+  const portalOf = (c: Contact): SummaryPortalState => {
+    if (!c.linkedUserId) return 'not_invited';
+    const pending = pendingInvitationsByContactId.get(c.contactId);
+    if (!pending) return 'linked';
+    return pending.expired ? 'expired' : 'invited';
+  };
+  const summaryCells = 2 + (canReadInvoices ? 1 : 0) + (env.features.f9Dashboard ? 1 : 0);
 
-      {isErased && erasureStatus.erasedAt && (
-        <ErasedBanner
-          erasedAtIso={erasureStatus.erasedAt.toISOString()}
-          completed={erasureStatus.completed}
-        />
-      )}
-
-      {!isErased &&
-        member.status === 'archived' &&
-        member.archivedAt &&
-        windowStatus &&
-        (windowStatus.state === 'within_window' ||
-          windowStatus.state === 'window_expired') && (
-          <ArchivedBanner
+  return renderMemberDetailView({
+    member,
+    contacts,
+    planDisplayName,
+    memberNumberDisplay,
+    legalEntityLabel,
+    websiteHref,
+    windowStatus,
+    erasure: { erasedAt: erasureStatus.erasedAt, completed: erasureStatus.completed },
+    moneyEmailUndeliverable,
+    pendingInvitations: pendingInvitationsByContactId,
+    marketingStates: new Map(contacts.map((c) => [c.contactId, marketingStateFor(c)])),
+    verificationPending: verificationResult.pending,
+    can: { write: canWrite, marketing: canMarketing },
+    features: { f9Dashboard: env.features.f9Dashboard, f7Broadcasts: env.features.f7Broadcasts },
+    locale,
+    slots: {
+      // Each section reads its own data in its own Suspense boundary, so no
+      // read blocks the header, the company card or the contacts.
+      strip: (
+        <Suspense fallback={<MemberSummaryStripSkeleton cells={summaryCells} />}>
+          <MemberSummaryStripSection
+            tenant={tenant}
             memberId={member.memberId}
-            archivedAtIso={member.archivedAt.toISOString()}
-            windowStatus={windowStatus}
+            canReadInvoices={canReadInvoices}
+            primaryContact={
+              primary
+                ? { name: `${primary.firstName} ${primary.lastName}`.trim(), portal: portalOf(primary) }
+                : null
+            }
+            lastActivityIso={member.lastActivityAt ? member.lastActivityAt.toISOString() : null}
           />
-        )}
-
-      {/* 108 FR-003 — money emails are being skipped for this member. The
-          archived / erased exclusions live in `moneyEmailUndeliverable`. */}
-      {moneyEmailUndeliverable && <NoPrimaryContactBanner memberId={member.memberId} />}
-        <section aria-labelledby="member-company-heading">
-        <Card>
-          <CardHeader>
-            <SectionHeading id="member-company-heading">
-              {t('sections.company')}
-            </SectionHeading>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-6">
-            {/* 056 layout C — subgroup ORGANISATION (who the member is). */}
-            <div className="flex flex-col gap-2">
-              <SubGroupLabel>{t('sections.organisation')}</SubGroupLabel>
-              <dl className="grid grid-cols-1 gap-x-8 gap-y-1 md:grid-cols-2 lg:grid-cols-3">
-                <DetailField
-                  label={t('fields.country')}
-                  /* C4 round-10 — flag + localised name instead of raw "TH". */
-                  value={null}
-                  extra={<CountryDisplay code={member.country} />}
-                />
-                <DetailField
-                  label={t('fields.legalEntityType')}
-                  value={legalEntityLabel}
-                />
-                <DetailField
-                  label={t('fields.taxId')}
-                  value={member.taxId}
-                  mono
-                  {...(member.taxId
-                    ? {
-                        extra: (
-                          <CopyButton
-                            value={member.taxId}
-                            label={t('copy.copyTaxId')}
-                          />
-                        ),
-                      }
-                    : {})}
-                />
-                {/* 056 fix #4 — website as a real external link, not plain text.
-                    066 fix — only a safe http(s) URL becomes an anchor
-                    (`websiteHref`); an unsafe scheme (e.g. javascript:) falls
-                    back to plain text via `value` so it can never be clicked.
-                    value=null so the link (or the "—" fallback) is the sole
-                    content; `extra` carries the anchor when a website exists. */}
-                <DetailField
-                  label={t('fields.website')}
-                  value={websiteHref ? null : member.website || null}
-                  {...(websiteHref
-                    ? {
-                        extra: (
-                          <a
-                            href={websiteHref}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            aria-label={t('fields.websiteExternal')}
-                            className="inline-flex items-center gap-1 rounded-sm text-sm font-medium text-foreground underline underline-offset-4 hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                          >
-                            <span className="truncate">{member.website}</span>
-                            <ExternalLinkIcon
-                              aria-hidden="true"
-                              className="size-3.5 shrink-0"
-                            />
-                          </a>
-                        ),
-                      }
-                    : {})}
-                />
-                <DetailField
-                  label={t('fields.foundedYear')}
-                  value={member.foundedYear}
-                />
-                {/* 056 fix #3 — turnover as THB currency (grouping + symbol). */}
-                <DetailField
-                  label={t('fields.turnoverThb')}
-                  value={
-                    member.turnoverThb !== null
-                      ? format.number(member.turnoverThb, {
-                          style: 'currency',
-                          currency: 'THB',
-                        })
-                      : null
-                  }
-                />
-                {/* 059 / PR-A — registered capital. PR-B added the column, the
-                    form field and the API serialiser, but never this page, so
-                    the value an admin typed simply never appeared anywhere. Sits
-                    beside turnover deliberately: they are the pair an admin
-                    compares, and TSCC's data has capital on 113 members versus
-                    turnover on 78. */}
-                <DetailField
-                  label={t('fields.registeredCapitalThb')}
-                  value={
-                    member.registeredCapitalThb !== null
-                      ? format.number(member.registeredCapitalThb, {
-                          style: 'currency',
-                          currency: 'THB',
-                        })
-                      : null
-                  }
-                />
-              </dl>
-            </div>
-
-            {/* 056 layout C — subgroup MEMBERSHIP (the chamber relationship). */}
-            <div className="flex flex-col gap-2 border-t pt-4">
-              <SubGroupLabel>{t('sections.membership')}</SubGroupLabel>
-              <dl className="grid grid-cols-1 gap-x-8 gap-y-1 md:grid-cols-2 lg:grid-cols-3">
-                <DetailField label={t('fields.plan')} value={planDisplayName} />
-                <DetailField
-                  label={t('fields.planYear')}
-                  value={formatCalendarYear(member.planYear, locale)}
-                />
-                {/* 056 fix #2 — Buddhist-aware localised date (no raw .toISOString()). */}
-                <DetailField
-                  label={t('fields.registrationDate')}
-                  value={formatLocalisedDate(
-                    member.registrationDate.toISOString(),
-                    locale,
-                    { dateStyle: 'medium' },
-                  )}
-                />
-                <DetailField
-                  label={t('fields.registrationFeePaid')}
-                  value={
-                    member.registrationFeePaid
-                      ? t('fields.registrationFeePaidYes')
-                      : t('fields.registrationFeePaidNo')
-                  }
-                />
-                <DetailField
-                  label={t('fields.lastActivityAt')}
-                  value={
-                    member.lastActivityAt
-                      ? formatLocalisedDate(
-                          member.lastActivityAt.toISOString(),
-                          locale,
-                          {
-                            dateStyle: 'medium',
-                            timeStyle: 'short',
-                          },
-                        )
-                      : null
-                  }
-                />
-                {/* 056 fix #9 — only show archivedAt in the grid when the
-                    ArchivedBanner is NOT rendered (banner already shows the
-                    date). Banner renders for within_window / window_expired. */}
-                {member.status === 'archived' &&
-                  windowStatus === null &&
-                  member.archivedAt && (
-                    <DetailField
-                      label={t('fields.archivedAt')}
-                      value={formatLocalisedDate(
-                        member.archivedAt.toISOString(),
-                        locale,
-                        { dateStyle: 'medium', timeStyle: 'short' },
-                      )}
-                    />
-                  )}
-              </dl>
-            </div>
-
-            {/* 056 layout C — Technical collapse: the raw UUIDs scan as noise
-                in the grid, so tuck them behind a <details>. The member number
-                (human-readable) stays in the header chip; the copy-to-clipboard
-                UUID affordances (FR-030) move here. */}
-            <details className="border-t pt-4">
-              <summary className="cursor-pointer text-caption font-medium uppercase tracking-wide text-muted-foreground marker:text-muted-foreground">
-                {t('sections.technical')}
-              </summary>
-              <dl className="mt-3 grid grid-cols-1 gap-x-8 gap-y-1 md:grid-cols-2 lg:grid-cols-3">
-                <MemberNumberField formatted={memberNumberDisplay} />
-                <DetailField
-                  label={t('fields.memberId')}
-                  value={member.memberId}
-                  mono
-                  extra={
-                    <CopyButton
-                      value={member.memberId}
-                      label={t('copy.copyMemberId')}
-                    />
-                  }
-                />
-                <DetailField
-                  label={t('fields.planId')}
-                  value={member.planId}
-                  mono
-                />
-              </dl>
-            </details>
-            {(() => {
-              // 059 / PR-A — sub-district (แขวง/ตำบล) LEADS the locality line.
-              // Thai addresses run sub-district → district → province → postal
-              // code, which is the order `composeBuyerAddress` already uses on
-              // the tax document. PR-B added the column, the postcode-driven
-              // picker and the API serialiser but never this page, so the value
-              // was captured and then invisible — and the address shown here did
-              // not match the one printed on the member's own invoice.
-              const cityLine = [
-                member.subDistrict,
-                member.city,
-                member.province,
-                member.postalCode,
-              ]
-                .filter((p) => p && p.trim().length > 0)
-                .join(' ');
-              const addressLines = [
-                member.addressLine1,
-                member.addressLine2,
-                cityLine,
-              ].filter((l): l is string => Boolean(l && l.trim().length > 0));
-              return addressLines.length > 0 ? (
-                <dl className="mt-4 border-t pt-4">
-                  <dt className="text-xs text-muted-foreground mb-1">
-                    {t('fields.address')}
-                  </dt>
-                  <dd className="text-sm whitespace-pre-wrap">
-                    {addressLines.join('\n')}
-                  </dd>
-                </dl>
-              ) : null;
-            })()}
-            {(() => {
-              // member-billing-address (0284) — read-only billing block,
-              // shown ONLY when set ("set" ⟺ line1 present). Same line
-              // composition order as the company address above (and as
-              // composeBuyerAddress freezes onto the tax document) + the
-              // billing group's OWN country code on the last line — it may
-              // differ from the member's country and is exactly what the
-              // §86/4 buyer block will carry on the next issued document.
-              if (!member.billingAddressLine1) return null;
-              const billingCityLine = [
-                member.billingSubDistrict,
-                member.billingCity,
-                member.billingProvince,
-                member.billingPostalCode,
-              ]
-                .filter((p) => p && p.trim().length > 0)
-                .join(' ');
-              const billingLines = [
-                member.billingAddressLine1,
-                member.billingAddressLine2,
-                billingCityLine,
-                member.billingCountry,
-              ].filter((l): l is string => Boolean(l && l.trim().length > 0));
-              return (
-                <dl className="mt-4 border-t pt-4">
-                  <dt className="text-xs text-muted-foreground mb-1">
-                    {t('fields.billingAddress')}
-                  </dt>
-                  <dd className="text-sm whitespace-pre-wrap">
-                    {billingLines.join('\n')}
-                  </dd>
-                </dl>
-              );
-            })()}
-            {member.description && (
-              /* <dl> wrapper (not <div>) so the <dt>/<dd> have a list parent —
-                 WCAG 2.1 AA 1.3.1 (a11y scan fix: axe `dlitem`). */
-              <dl className="mt-4 border-t pt-4">
-                <dt className="text-xs text-muted-foreground mb-1">
-                  {t('fields.description')}
-                </dt>
-                <dd className="text-sm whitespace-pre-wrap">
-                  {member.description}
-                </dd>
-              </dl>
-            )}
-            {member.notes && (
-              <dl className="mt-4 border-t pt-4">
-                <dt className="text-xs text-muted-foreground mb-1">
-                  {t('fields.notes')}
-                </dt>
-                <dd className="text-sm whitespace-pre-wrap">{member.notes}</dd>
-              </dl>
-            )}
-          </CardContent>
-        </Card>
-        </section>
-
-        {/* Compact-summary 2-col row: Renewal & Health (left) + Benefits
-            Preview (right) on lg+, reflowing to a single column below lg.
-            `items-start` keeps the two cards top-aligned.
-            When Benefits is NOT shown (F9 flag off or non-admin/manager),
-            `showBenefitsPreview` is false and we omit the grid wrapper so
-            Renewal & Health spans the full page width instead of being
-            stranded at half-width with an empty right column. */}
-        {showBenefitsPreview ? (
-          <div className="grid grid-cols-1 items-stretch gap-[var(--page-section-gap)] lg:grid-cols-2">
-            {/* Pass A · Section 1 — Renewal & Health (F8 cycle status +
-                expiry + at-risk band, with the F9 engagement score MERGED
-                in). Own Suspense boundary so the F8/F9 reads never block
-                the company/contacts paint. */}
-            <Suspense fallback={<MemberRenewalHealthSkeleton />}>
-              <MemberRenewalHealthSection tenant={tenant} memberId={member.memberId} canRenew={canRenew} />
-            </Suspense>
-
-            {/* Pass A · Section 2 — inline benefits quota preview (E-Blast /
-                cultural-ticket usage at a glance) with a "Full benefits →"
-                link to the dedicated benefits page. F9-gated; admin/manager
-                only (requireSession('staff') already excludes 'member').
-                Own Suspense boundary so the benefit read never blocks paint. */}
-            <Suspense fallback={<MemberBenefitsPreviewSkeleton />}>
-              <MemberBenefitsPreviewSection
-                tenant={tenant}
-                memberId={member.memberId}
-                companyName={member.companyName}
-              />
-            </Suspense>
-          </div>
-        ) : (
-          /* Benefits not available: Renewal & Health renders full-width.
-             `canRenew` is passed explicitly (was defaulting to false) so the
-             Renew action no longer depends on the F9 dashboard flag — same
-             `canRenew` gate (canModify && status !== 'archived') as the 2-col
-             branch above (Cluster 4: never renew an archived member). */
-          <Suspense fallback={<MemberRenewalHealthSkeleton />}>
-            <MemberRenewalHealthSection tenant={tenant} memberId={member.memberId} canRenew={canRenew} />
-          </Suspense>
-        )}
-
-        {/* Contacts — full-width below the compact 2-col row. Single Card
-            groups primary + secondary contacts under one heading, matching
-            the Company section pattern. Individual contacts render as flat
-            rows inside CardContent (ContactBlock), not as nested cards. */}
-        <section aria-labelledby="member-contacts-heading">
-          <Card>
-            <CardHeader className="flex flex-row items-center gap-2">
-              <SectionHeading id="member-contacts-heading">
-                {t('sections.contacts')}
-              </SectionHeading>
-              {/* T097 — Emergency primary contact transfer helper. Clicking
-                  the icon opens a Popover (not a hover Tooltip — we need
-                  tap-discoverable on mobile) that explains the two-step
-                  procedure per spec Edge Cases: add the new person as a
-                  secondary contact, then promote them.
-                  056 fix #8 — trigger raised to a 44×44 tap target (was 24×24)
-                  per WCAG 2.5.8; the icon stays 16px. */}
-              <Popover>
-                <PopoverTrigger
-                  aria-label={t('emergencyPrimary.ariaLabel')}
-                  className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <HelpCircleIcon className="size-4" aria-hidden="true" />
-                </PopoverTrigger>
-                <PopoverContent className="max-w-sm text-sm" sideOffset={4}>
-                  <p className="font-medium">{t('emergencyPrimary.title')}</p>
-                  <p className="mt-2 text-muted-foreground">
-                    {t('emergencyPrimary.body')}
-                  </p>
-                </PopoverContent>
-              </Popover>
-              {/* 108 PR-D (US4 s8) — deep link into the Marketing audience filtered
-                  to this member (`member_id` is a parsed param there); every staff
-                  role on this page holds `contacts.read`. Gated like the page it
-                  links to (F7 flag), and a ≥ 24-px target (WCAG 2.5.8). */}
-              {env.features.f7Broadcasts && (
-                <Link
-                  href={`/admin/marketing/audience?member_id=${encodeURIComponent(memberId)}&eligible=0`}
-                  className="ms-auto inline-flex min-h-6 items-center text-sm font-medium text-primary underline-offset-4 hover:underline"
-                >
-                  {t('marketing.audienceLink')}
-                </Link>
-              )}
-              {canModify && member.status !== 'archived' && (
-                <ContactFormDialog
-                  memberId={member.memberId}
-                  mode="add"
-                  trigger={
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="ml-auto gap-2"
-                    >
-                      <UserPlusIcon className="size-4" aria-hidden="true" />
-                      {t('contactActions.add')}
-                    </Button>
-                  }
-                />
-              )}
-            </CardHeader>
-            <CardContent className="flex flex-col gap-6">
-              {primary ? (
-                <ContactBlock
-                  contact={primary}
-                  memberId={member.memberId}
-                  pendingInvitation={pendingInvitationsByContactId.get(
-                    primary.contactId,
-                  )}
-                  marketingState={marketingStateFor(primary)}
-                  canWrite={canWrite}
-                  canMarketing={canMarketing}
-                  verificationPending={verificationPendingFor(primary.contactId)}
-                  locale={locale}
-                  t={t}
-                />
-              ) : null}
-
-              {secondary.length > 0 && (
-                <>
-                  <Separator />
-                  <h3 className="text-sm font-medium text-muted-foreground">
-                    {t('sections.secondary')}
-                  </h3>
-                  {secondary.map((c, i) => (
-                    <div key={c.contactId} className="flex flex-col gap-6">
-                      {i > 0 ? <Separator /> : null}
-                      <ContactBlock
-                        contact={c}
-                        memberId={member.memberId}
-                        pendingInvitation={pendingInvitationsByContactId.get(
-                          c.contactId,
-                        )}
-                        marketingState={marketingStateFor(c)}
-                        canWrite={canWrite}
-                        canMarketing={canMarketing}
-                        verificationPending={verificationPendingFor(c.contactId)}
-                        locale={locale}
-                        t={t}
-                      />
-                    </div>
-                  ))}
-                </>
-              )}
-
-              {/* 056 fix #6 — empty state when there is no primary AND no
-                  secondary contact (previously the card body rendered empty). */}
-              {!primary && secondary.length === 0 && (
-                <p className="py-2 text-sm text-muted-foreground">
-                  {t('sections.contactsEmpty')}
-                </p>
-              )}
-            </CardContent>
-          </Card>
-        </section>
-
-        {/* US7 AS1 — Invoice history on member page. Wrapped in its
-            own Suspense boundary so member metadata + contacts paint
-            first and an invoice-fetch failure stays isolated to this
-            section (parent page's `getMember` call is unaffected). */}
-        {/* 016 re-review D — finance read: follows 'invoicing.read' (manager
-            keeps it, marketing is excluded per D3 finance carve-out; OFF leg
-            legacySessionOnly = admin ∪ manager, byte-identical). */}
-        {canPerform(session.user.role, 'invoicing.read') && (
-          <Suspense fallback={<MemberInvoicesSkeleton />}>
-            <MemberInvoicesSection
-              tenant={tenant}
-              memberId={member.memberId}
-              role={session.user.role}
-              statusFilter={invStatus}
-              fiscalYearFilter={invYear}
-              searchFilter={invQ}
-            />
-          </Suspense>
-        )}
-
-        {/* I7 round-10 ui-design-specialist — inline 3-event timeline
-            preview. Saves a round-trip through /timeline for the
-            common "what happened recently" check. Own Suspense
-            boundary mirrors the invoices pattern: the audit-log query
-            is independent of getMember + contacts and can't block the
-            main paint. */}
+        </Suspense>
+      ),
+      renewal: (
+        <Suspense fallback={<MemberRenewalHealthSkeleton />}>
+          <MemberRenewalHealthSection tenant={tenant} memberId={member.memberId} canRenew={canRenew} />
+        </Suspense>
+      ),
+      benefits: showBenefitsPreview ? (
+        <Suspense fallback={<MemberBenefitsPreviewSkeleton />}>
+          <MemberBenefitsPreviewSection
+            tenant={tenant}
+            memberId={member.memberId}
+            companyName={member.companyName}
+          />
+        </Suspense>
+      ) : null,
+      invoices: canReadInvoices ? (
+        <Suspense fallback={<MemberInvoicesSkeleton />}>
+          <MemberInvoicesSection
+            tenant={tenant}
+            memberId={member.memberId}
+            role={session.user.role}
+            statusFilter={invStatus}
+            fiscalYearFilter={invYear}
+            searchFilter={invQ}
+          />
+        </Suspense>
+      ) : null,
+      timeline: (
         <Suspense fallback={<TimelinePreviewSkeleton />}>
           <TimelinePreviewSection
             memberId={member.memberId}
@@ -1479,34 +510,19 @@ export default async function MemberDetailPage({
             actorRole={session.user.role}
           />
         </Suspense>
-
-        {/* F114 US4 (FR-026) — the member's change-request history: every
-            state, newest first, per-field outcomes, the reviewer with the
-            deactivated marker. `members.read` (the page guard) suffices —
-            deciding is the review page's `members.write`. Hidden while the
-            platform flag is off (FR-039: no request state shown when dark). */}
-        {env.features.memberChangeApproval && (
-          <Suspense fallback={<MemberChangeRequestsSkeleton />}>
-            <MemberChangeRequestsSection tenant={tenant} memberId={member.memberId} />
-          </Suspense>
-        )}
-
-        {/* F9 US6 (FR-031) — admin on-behalf GDPR data export. Admin-only
-            (GDPR export is an admin/DPO action; the read-only manager is
-            excluded, mirroring requestDataExport). F9-flag-gated. Hidden once
-            the member is erased (COMP-1 US3-A post-erase state S5) — there is no
-            PII left to export, and offering it would mislead the DPO. */}
-        {/* 016 re-review D — the export section drives the members.bulk-gated
-            data-export API; mirror that key so the tile shows exactly when the
-            API would admit. */}
-        {env.features.f9Dashboard &&
-          canPerform(session.user.role, 'members.bulk') &&
-          !isErased && (
-          <Suspense fallback={<MemberDataExportSkeleton />}>
-            <MemberDataExportSection tenant={tenant} memberId={member.memberId} contacts={contacts} />
-          </Suspense>
-        )}
-
-    </DetailContainer>
-  );
+      ),
+      // F114 US4 (FR-026) — the member's change-request history; hidden while
+      // the platform flag is off (FR-039: no request state shown when dark).
+      changeRequests: env.features.memberChangeApproval ? (
+        <Suspense fallback={<MemberChangeRequestsSkeleton />}>
+          <MemberChangeRequestsSection tenant={tenant} memberId={member.memberId} />
+        </Suspense>
+      ) : null,
+      dataExport: showDataExport ? (
+        <Suspense fallback={<MemberDataExportSkeleton />}>
+          <MemberDataExportSection tenant={tenant} memberId={member.memberId} contacts={contacts} />
+        </Suspense>
+      ) : null,
+    },
+  });
 }

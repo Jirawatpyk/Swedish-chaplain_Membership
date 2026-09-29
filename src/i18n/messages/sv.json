@@ -1663,6 +1663,15 @@
           "engagement": "Engagemang",
           "lastActivity": "Senaste aktivitet {when}",
           "lastActivityShort": "Aktiv {when}"
+        },
+        "sectionLinks": {
+          "label": "På den här sidan",
+          "overview": "Översikt",
+          "contacts": "Kontakter",
+          "invoices": "Fakturor",
+          "changeRequests": "Ändringsbegäranden",
+          "timeline": "Tidslinje",
+          "dataExport": "Dataexport"
         }
       },
       "timeline": {

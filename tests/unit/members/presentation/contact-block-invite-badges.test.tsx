@@ -85,7 +85,7 @@ vi.mock('@/components/members/copy-button', () => ({
   CopyButton: () => <button data-testid="copy-btn">copy</button>,
 }));
 
-import { ContactBlock } from '@/app/(staff)/admin/members/[memberId]/page';
+import { ContactBlock } from '@/app/(staff)/admin/members/[memberId]/_components/contact-block';
 
 type ContactBlockProps = Parameters<typeof ContactBlock>[0];
 

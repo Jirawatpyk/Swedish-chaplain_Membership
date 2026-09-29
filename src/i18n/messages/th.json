@@ -1663,6 +1663,15 @@
           "engagement": "การมีส่วนร่วม",
           "lastActivity": "กิจกรรมล่าสุด {when}",
           "lastActivityShort": "ใช้งาน {when}"
+        },
+        "sectionLinks": {
+          "label": "ในหน้านี้",
+          "overview": "ภาพรวม",
+          "contacts": "ผู้ติดต่อ",
+          "invoices": "ใบแจ้งหนี้",
+          "changeRequests": "คำขอแก้ไขข้อมูล",
+          "timeline": "ไทม์ไลน์",
+          "dataExport": "ส่งออกข้อมูล"
         }
       },
       "timeline": {
