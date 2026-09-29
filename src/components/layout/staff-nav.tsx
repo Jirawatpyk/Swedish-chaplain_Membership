@@ -62,7 +62,7 @@ function badgeNode(item: RenderedNavItem, t: Translate): ReactNode {
   const count = item.badgeCount;
   if (item.badge === undefined || typeof count !== 'number' || count <= 0) return undefined;
   return (
-    <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--aura-status-progress-bg)] px-1.5 text-[11px] font-semibold tabular-nums text-[var(--aura-status-progress-fg)]">
+    <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--aura-status-progress-bg)] px-1.5 aura-text-pill-label font-semibold tabular-nums text-[var(--aura-status-progress-fg)]">
       {' '}
       {count}
       <span className="sr-only"> {t(item.badge.labelKey, { count })}</span>
@@ -131,7 +131,8 @@ function writeSidebarCookie(expanded: boolean) {
 /**
  * The labelled "Collapse sidebar" row at the bottom of the board, in place of
  * AURA's icon-only toggle (the same AURA strings, so it still reads "Expand
- * sidebar" in the rail). It reuses AURA's nav-item styling.
+ * sidebar" in the rail). It reuses AURA's nav-item styling: a stand-in until
+ * AURA #95 (SideNav action rows that do not select).
  */
 function RailToggle({ collapsed, onToggle }: { readonly collapsed: boolean; readonly onToggle: () => void }) {
   const t = useTranslations('nav.staff');
@@ -140,8 +141,7 @@ function RailToggle({ collapsed, onToggle }: { readonly collapsed: boolean; read
   return (
     <button type="button" className="aura-nav__item w-full" aria-label={label} onClick={onToggle}>
       <span className="aura-icon" aria-hidden>
-        {/* 20px in the rail, as the collapsed boards draw it. */}
-        <Icon className={collapsed ? 'size-5' : 'size-4'} />
+        <Icon className="size-4" />
       </span>
       {collapsed ? null : <span className="aura-nav__label">{label}</span>}
     </button>
@@ -151,7 +151,7 @@ function RailToggle({ collapsed, onToggle }: { readonly collapsed: boolean; read
 /**
  * The phone drawer's last row, as `Admin-nav-mobile` draws it: the drawer
  * has no collapse toggle, so its footer signs out (the same call as the
- * account menu).
+ * account menu). AURA's nav-item classes: a stand-in until AURA #95.
  */
 function DrawerSignOut() {
   const t = useTranslations('shell.userMenu');

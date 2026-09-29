@@ -89,7 +89,7 @@ export function LocaleSwitcher({
           className={cn(
             // Spec 122 — the pill on the `topbar()` boards: the language CODE
             // (EN / TH / SV) is legible whatever the current UI language.
-            'inline-flex h-9 items-center gap-1.5 rounded-full border border-[var(--aura-border-control)] bg-[var(--aura-bg-surface)] pr-2.5 pl-3.5 text-[13px] font-medium text-[var(--aura-fg-primary)] hover:bg-[var(--aura-bg-surface-hover)] pointer-coarse:h-11',
+            'inline-flex h-9 items-center gap-1.5 rounded-full border border-[var(--aura-border-control)] bg-[var(--aura-bg-surface)] pr-2.5 pl-3.5 text-[var(--aura-fg-primary)] hover:bg-[var(--aura-bg-surface-hover)] pointer-coarse:h-11',
             AURA_FOCUS_RING,
             className,
           )}
@@ -100,7 +100,9 @@ export function LocaleSwitcher({
           <span className="sr-only">
             {t('label')} ({localeLabels[activeLocale]})
           </span>
-          <span>{activeLocale.toUpperCase()}</span>
+          {/* AURA's type class on the text: preflight's `font: inherit` on a
+              <button> outranks AURA's token layer. */}
+          <span className="aura-text-label">{activeLocale.toUpperCase()}</span>
           <ChevronDownIcon className="size-4" aria-hidden />
         </button>
       }

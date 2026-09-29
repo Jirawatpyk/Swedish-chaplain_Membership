@@ -57,6 +57,9 @@ export function BreadcrumbNav({ pathname }: { readonly pathname?: string | undef
   // AURA's breadcrumb markup (`aura-crumbs`), drawn here rather than with
   // AURA `Breadcrumb` for the organisational segments and the data-slots the
   // e2e breadcrumb spec selects on.
+  // AURA's crumb classes on our own trail, not AURA's `Breadcrumb`: the trail
+  // collapses on narrow widths and each item carries its e2e data-slot (#58).
+  // A stand-in until AURA #94 (Breadcrumb collapse + per-item attributes).
   return (
     <nav aria-label={tLayout('breadcrumbAriaLabel')} data-slot="breadcrumb" className="aura-crumbs">
       {/* Keys compose `href` + `idx` because a non-route segment
@@ -84,7 +87,7 @@ export function BreadcrumbBackLink({ pathname }: { readonly pathname?: string | 
         href={target.href}
         data-slot="breadcrumb-back"
         className={cn(
-          'inline-flex min-h-11 items-center gap-1.5 rounded-[var(--aura-radius-sm)] text-[13px] font-medium text-[var(--aura-fg-accent)] no-underline hover:underline',
+          'inline-flex min-h-11 items-center gap-1.5 aura-text-label rounded-[var(--aura-radius-sm)] text-[var(--aura-fg-accent)] no-underline hover:underline',
           AURA_FOCUS_RING,
         )}
       >
@@ -95,6 +98,7 @@ export function BreadcrumbBackLink({ pathname }: { readonly pathname?: string | 
   );
 }
 
+// AURA's crumb element classes: a stand-in until AURA #94.
 function Crumb({ segment, isLast }: { segment: BreadcrumbSegment; isLast: boolean }) {
   return (
     <li data-slot="breadcrumb-item">

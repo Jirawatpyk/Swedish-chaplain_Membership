@@ -63,16 +63,19 @@ export function StaffTopBar({ tenantName, user, extras, currentPath }: StaffTopB
         // strict-aria-ignore-next-line — key names, not text (ARIA spec syntax)
         aria-keyshortcuts="Meta+K Control+K"
         className={cn(
-          'hidden h-9 pointer-coarse:h-11 w-[360px] min-w-0 shrink items-center gap-2 rounded-[var(--aura-radius-md)] border border-[var(--aura-border-control)] bg-[var(--aura-bg-input)] pr-2 pl-3 text-left text-[13px] text-[var(--aura-fg-tertiary)] xl:flex',
+          'hidden h-9 pointer-coarse:h-11 w-[360px] min-w-0 shrink items-center gap-2 rounded-[var(--aura-radius-md)] border border-[var(--aura-border-control)] bg-[var(--aura-bg-input)] pr-2 pl-3 text-left text-[var(--aura-fg-tertiary)] xl:flex',
           AURA_FOCUS_RING,
         )}
       >
         <SearchIcon className="size-4 shrink-0" aria-hidden />
-        {/* The name is the visible text + what the button does (WCAG 2.5.3). */}
-        <span className="min-w-0 flex-1 truncate">{t('placeholder')}</span>
+        {/* The name is the visible text + what the button does (WCAG 2.5.3).
+            AURA's type class goes on the text, not the <button>: preflight's
+            `font: inherit` on buttons outranks AURA's token layer. */}
+        <span className="aura-text-table-cell min-w-0 flex-1 truncate">{t('placeholder')}</span>
         <span className="sr-only"> — {t('open')}</span>
-        <kbd aria-hidden className="rounded-[var(--aura-radius-xs)] border border-[var(--aura-border-default)] px-1.5 font-mono text-[11px] leading-5 text-[var(--aura-fg-secondary)]">
-          ⌘K
+        <kbd aria-hidden className="rounded-[var(--aura-radius-xs)] border border-[var(--aura-border-default)] px-1.5 leading-5 text-[var(--aura-fg-secondary)]">
+          {/* inside: preflight sets a <kbd>'s size to 1em over AURA's token layer */}
+          <span className="aura-text-pill-label font-mono">⌘K</span>
         </kbd>
       </button>
       <IconButton

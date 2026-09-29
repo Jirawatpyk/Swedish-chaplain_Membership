@@ -54,9 +54,11 @@ export function EmptyState({
   announce = true,
 }: EmptyStateProps) {
   // Spec 122 US1 — AURA's EmptyState markup (its classes, so its spacing,
-  // tint and dashed edge), drawn here rather than imported: this is a server
-  // component, and server files never import AURA (docs/aura-adoption.md).
-  // The title stays a <p>, not AURA's heading, so no page's outline changes.
+  // tint and dashed edge), drawn here rather than AURA's `EmptyState`: that
+  // always renders its title as a heading (h2–h6) and always lives in the
+  // outline, where this title stays a <p> so no page's outline changes, and
+  // `announce` makes the status role optional. A stand-in until AURA #86
+  // (EmptyState title that is not a heading).
   return (
     <div
       data-testid={dataTestId}

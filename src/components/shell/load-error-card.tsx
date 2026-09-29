@@ -29,6 +29,7 @@
  */
 import type { ReactNode } from 'react';
 import { AlertTriangle } from 'lucide-react';
+import { Card } from '@jirawatpyk/aura-react/server';
 
 export function LoadErrorCard({
   message,
@@ -73,17 +74,13 @@ export function LoadErrorCard({
       </div>
     );
   }
-  // Spec 122 US1 — AURA's Card surface by its classes: this file renders in
-  // server trees too, and server files never import AURA (docs/aura-adoption.md).
+  // Spec 122 — AURA's Card from `/server` (stateless, so it renders in server
+  // and client trees alike; handoff #68).
   return (
-    <div className="aura-card">
-      <div
-        role={role}
-        aria-live={ariaLive}
-        className="aura-card__body flex flex-col items-center gap-4 py-12 text-center"
-      >
+    <Card as="div">
+      <div role={role} aria-live={ariaLive} className="flex flex-col items-center gap-4 py-12 text-center">
         {content}
       </div>
-    </div>
+    </Card>
   );
 }

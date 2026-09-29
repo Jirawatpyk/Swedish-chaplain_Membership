@@ -100,7 +100,7 @@ The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requ
 | #93 | `Card` that drops its frame below a breakpoint, for a list whose rows become cards of their own | the `max-lg:border-0 bg-transparent shadow-none` card in `src/app/(member)/portal/invoices/page.tsx` |
 | #94 | `Breadcrumb` that collapses to an ellipsis trail on narrow widths and passes attributes to each item | the own `aura-crumbs` markup in `src/components/layout/breadcrumb-nav.tsx` |
 | #95 | `SideNav` action rows that run a callback without selecting (a labelled collapse toggle, sign-out) | `RailToggle` and `DrawerSignOut` in `src/components/layout/staff-nav.tsx` |
-| #96 | `SideNav` group whose closed chevron points right (the board's icon), down when open | `.staff-nav .aura-nav__chevron` in `src/app/globals.css` |
+| #96 | `SideNav` group whose closed chevron points right (the board's icon), down when open; a header whose brand, dot and badge keep one row | `.staff-nav .aura-nav__chevron` and the 6px `.aura-nav__header` end padding in `src/app/globals.css` |
 | #97 | `AppShell` whose content area has no padding of its own, so the page containers own it | `.chamber-shell .aura-shell__content` and the bottom-nav offset in `src/app/globals.css` |
 | #98 | `DataTable` selection callback that reports how the change was made (Shift-click range) | `closest('.aura-table__sel')` in `src/components/members/members-table.tsx` |
 | #99 | `Checkbox` hit area larger than its box, for dense decision rows (WCAG 2.5.8) | `[&_.aura-check__input]` insets in `src/components/members/change-requests/change-request-decision-table.tsx` |
