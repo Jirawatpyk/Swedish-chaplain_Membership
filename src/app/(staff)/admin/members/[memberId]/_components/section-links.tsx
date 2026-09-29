@@ -6,9 +6,10 @@
  * row becomes in-page links and every card stays on the page).
  *
  * AURA `Tabs` with an `href` on every tab renders a `nav` of links with the
- * current one marked. Sticky under AURA's shell bar (its 56 px minimum
- * height; the bar has no height token), scrolling sideways on a phone. The
- * page lists only the sections this viewer has.
+ * current one marked `aria-current="location"` (links to sections of this
+ * page, AURA 5.14). Sticky under AURA's shell bar at its measured height
+ * (`--aura-shell-bar-height`), scrolling sideways on a phone. The page lists
+ * only the sections this viewer has.
  *
  * "Current" is the last section whose top has passed under the bar, or the
  * last section once the page is scrolled to its end (a short final section
@@ -72,12 +73,13 @@ export function SectionLinks({ label, links }: { readonly label: string; readonl
 
   return (
     <div
-      className="sticky top-14 z-[5] -mx-[var(--page-padding-x)] bg-[var(--aura-bg-canvas)] px-[var(--page-padding-x)]"
+      className="sticky top-[var(--aura-shell-bar-height)] z-[5] -mx-[var(--page-padding-x)] bg-[var(--aura-bg-canvas)] px-[var(--page-padding-x)]"
       onClick={onClick}
     >
       <Tabs
         label={label}
         value={current}
+        current="location"
         tabs={links.map((l) => ({ id: l.id, label: l.label, href: `#${l.id}` }))}
       />
     </div>
