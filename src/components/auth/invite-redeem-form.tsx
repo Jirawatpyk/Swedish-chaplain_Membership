@@ -240,7 +240,7 @@ export function InviteRedeemForm({ token, email, tenantName = 'SweCham', privacy
       </div>
 
       {privacyNoticeHref ? (
-        <p className="m-0 text-[13px] text-[var(--aura-fg-secondary)]">
+        <p className="m-0 aura-text-table-cell text-[var(--aura-fg-secondary)]">
           {t.rich('privacyLine', {
             tenantDisplayName: tenantName,
             link: (chunks) => (

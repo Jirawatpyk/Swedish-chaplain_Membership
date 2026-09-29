@@ -55,7 +55,7 @@ export function AuthFrame({ title, description, portalLabel, tenantName, variant
           <BrandRow tenantName={tenantName} size="compact" />
         </div>
         <div className={`flex w-full flex-col lg:max-w-[400px] ${variant === 'sign-in' ? 'gap-6' : 'gap-5'}`}>
-          {title ? <AuthTitle title={title} description={description} size={variant === 'sign-in' ? 'lg' : 'default'} /> : null}
+          {title ? <AuthTitle title={title} description={description} /> : null}
           {children}
         </div>
       </div>
@@ -78,7 +78,7 @@ function BrandRow({ tenantName, size }: { readonly tenantName: string; readonly 
         <BrandMark variant="mark" className="size-full" />
       </span>
       <span
-        className={`font-[family-name:var(--font-display)] font-semibold ${panel ? 'text-[26px]' : 'text-[22px] leading-none tracking-[-0.01em]'}`}
+        className={`font-[family-name:var(--font-display)] font-semibold aura-text-h2 ${panel ? '' : 'leading-none tracking-[-0.01em]'}`}
       >
         {tenantName}
       </span>

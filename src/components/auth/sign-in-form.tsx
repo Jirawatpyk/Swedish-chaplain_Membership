@@ -177,7 +177,7 @@ export function SignInForm({ portal, returnTo }: SignInFormProps) {
         <a
           // `?from=staff` only picks where the reset page's "Back to sign in" goes.
           href={portal === 'staff' ? '/forgot-password?from=staff' : '/forgot-password'}
-          className="inline-flex min-h-11 items-center self-end text-[13px] font-medium text-[var(--aura-fg-accent)] no-underline hover:text-[var(--aura-fg-primary)] hover:underline"
+          className="inline-flex min-h-11 items-center self-end aura-text-label text-[var(--aura-fg-accent)] no-underline hover:text-[var(--aura-fg-primary)] hover:underline"
         >
           {t('forgotPassword')}
         </a>

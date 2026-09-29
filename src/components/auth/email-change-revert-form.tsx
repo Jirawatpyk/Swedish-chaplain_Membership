@@ -177,7 +177,7 @@ export function EmailChangeRevertForm({ token }: { token: string }) {
           <a
             href={portalSignInPath('member')}
             className={cn(
-              'inline-flex min-h-11 items-center gap-1.5 self-start rounded-[var(--aura-radius-sm)] text-[13px] font-medium text-[var(--aura-fg-accent)] no-underline hover:underline',
+              'inline-flex min-h-11 items-center gap-1.5 self-start rounded-[var(--aura-radius-sm)] aura-text-label text-[var(--aura-fg-accent)] no-underline hover:underline',
               AURA_FOCUS_RING,
             )}
           >

@@ -86,6 +86,6 @@ describe('US2 auth', () => {
   });
 
   it('the auth page title is the app’s shared h1 step, like every other page title', () => {
-    expect(src('src/components/auth/auth-title.tsx')).toMatch(/\btext-h1\b/);
+    expect(src('src/components/auth/auth-title.tsx')).toContain('text-(length:--font-size-h1)');
   });
 });

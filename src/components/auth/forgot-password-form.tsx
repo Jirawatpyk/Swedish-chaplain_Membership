@@ -156,7 +156,7 @@ export function ForgotPasswordForm({ signInHref }: { readonly signInHref: string
   }, [getValues, sendRequest]);
 
   const linkClass = cn(
-    'inline-flex min-h-11 items-center gap-1.5 self-start rounded-[var(--aura-radius-sm)] text-[13px] font-medium text-[var(--aura-fg-accent)] no-underline hover:underline sm:min-h-0',
+    'inline-flex min-h-11 items-center gap-1.5 self-start rounded-[var(--aura-radius-sm)] aura-text-label text-[var(--aura-fg-accent)] no-underline hover:underline sm:min-h-0',
     AURA_FOCUS_RING,
   );
   const backToSignIn = (
@@ -177,7 +177,7 @@ export function ForgotPasswordForm({ signInHref }: { readonly signInHref: string
         </div>
         {/* Gated on errorMsg alone: a failed RESEND happens while submitted===true. */}
         {errorMsg ? <Alert tone="danger">{errorMsg}</Alert> : null}
-        <div className="flex flex-wrap items-center gap-2 text-[13px]">
+        <div className="flex flex-wrap items-center gap-2 aura-text-table-cell">
           <span>{t('didntGetIt')}</span>
           <Button
             type="button"
@@ -194,7 +194,9 @@ export function ForgotPasswordForm({ signInHref }: { readonly signInHref: string
         <p className="text-xs text-[var(--aura-fg-secondary)]">{t('deliveryHint')}</p>
         <div className="flex flex-col sm:flex-row sm:flex-wrap sm:gap-x-5">
           <button type="button" className={cn(linkClass, 'cursor-pointer border-0 bg-transparent p-0')} onClick={() => setSubmitted(false)}>
-            {t('useDifferentEmail')}
+            {/* the type class again on the text: preflight's `font: inherit`
+                on a <button> outranks AURA's token layer */}
+            <span className="aura-text-label">{t('useDifferentEmail')}</span>
           </button>
           {backToSignIn}
         </div>
