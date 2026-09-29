@@ -213,3 +213,37 @@ describe('US3 portal timeline and not-found', () => {
     expect(src('src/app/(member)/portal/not-found.tsx')).not.toMatch(/\bp-8\b/);
   });
 });
+
+describe('US4 portal invoices and pay sheet', () => {
+  const PAY = 'src/app/(member)/portal/invoices/[invoiceId]/_components/pay-sheet';
+  it.each([
+    'src/app/(member)/portal/credit-notes/[creditNoteId]/page.tsx',
+    'src/app/(member)/portal/invoices/[invoiceId]/not-found.tsx',
+    `${PAY}/method-tabs.tsx`,
+  ])('%s takes AURA’s Icon, not its class by hand', (file) => {
+    expect(src(file)).not.toMatch(HAND_AURA_CLASS);
+    expect(src(file)).not.toMatch(/className="aura-icon/);
+  });
+
+  it('the method tabs keep AURA’s panel spacing', () => {
+    expect(src(`${PAY}/method-tabs.tsx`)).not.toMatch(/aura-tabs/);
+  });
+
+  it.each([`${PAY}/index.tsx`, 'src/app/test-fixtures/aura-portal/pay-preview.tsx'])(
+    '%s keeps AURA’s drawer close button (32px, a 44px touch halo)',
+    (file) => {
+      expect(src(file)).not.toMatch(/aura-icon-btn/);
+    },
+  );
+
+  it.each([`${PAY}/card-form.tsx`, `${PAY}/hard-cap-prompt.tsx`, `${PAY}/confirmation-panel.tsx`])(
+    '%s leaves AURA’s 44px md buttons at their own height (no raw px)',
+    (file) => {
+      expect(src(file)).not.toMatch(/min-h-\[44px\]/);
+    },
+  );
+
+  it('the invoices card drops only a no-op body padding reach', () => {
+    expect(src('src/app/(member)/portal/invoices/page.tsx')).not.toMatch(/aura-card\\_\\_body/);
+  });
+});
