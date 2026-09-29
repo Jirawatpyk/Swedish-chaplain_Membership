@@ -3,9 +3,10 @@
  * it (maintainer's decision, 28 Sep 2026): no checkbox, no ⋯ menu, no flag,
  * and four fields in the board's order — Member No., Plan (no year), Primary
  * contact, and the engagement band (no score); Last activity drops out. The
- * table on wider screens is unchanged. Card mode is AURA's
- * `.aura-table--stacked`, a container query jsdom cannot trigger, so these
- * tests pin the card-only rules the table carries.
+ * table on wider screens is unchanged. The card parts are AURA DataTable's
+ * column options (`card`, `cardOrder`, `hideSelectionInCards`, handoff #80,
+ * 5.13.0). Card mode itself is a container query jsdom cannot trigger, so
+ * these tests pin the attributes AURA's card rules key on.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
@@ -46,13 +47,22 @@ function renderTable() {
 
 const CARD_HIDDEN = 'in-[.aura-table--stacked]:hidden';
 
+/** The grid cell holding a card slot. */
+function cellOf(container: HTMLElement, slot: string): HTMLElement {
+  const cell = container.querySelector(`[data-card-slot="${slot}"]`)?.closest<HTMLElement>('[role="gridcell"]');
+  if (!cell) throw new Error(`no cell for ${slot}`);
+  return cell;
+}
+
 describe('members phone card as on the board (US5a)', () => {
-  it('drops the checkbox, the ⋯ menu and Last activity on a card', () => {
+  it('drops the checkbox, the ⋯ menu and Last activity on a card, through AURA options', () => {
     const { container } = renderTable();
-    const wrapper = container.querySelector('[data-members-table]');
-    expect(wrapper?.className).toContain(String.raw`[&_.aura-table--stacked_.aura-table\_\_sel]:hidden`);
-    expect(wrapper?.className).toContain("[&_.aura-table--stacked_[data-card='actions']]:hidden");
-    expect(container.querySelector('[data-card-slot="activity"]')).not.toBeNull();
+    expect(container.querySelector('.aura-table')).toHaveClass('aura-table--cards-nosel');
+    expect(cellOf(container, 'activity')).toHaveAttribute('data-card', 'hide');
+    const menu = screen.getByRole('button', { name: /More actions for Siam Nordic/ });
+    expect(menu.closest('[role="gridcell"]')).toHaveAttribute('data-card', 'hide');
+    // No reach into AURA's card classes is left.
+    expect(container.querySelector('[data-members-table]')?.className).not.toContain('aura-table--stacked_');
   });
 
   it('hides the flag, the plan year and the engagement score on a card, keeping the band', () => {
@@ -65,9 +75,13 @@ describe('members phone card as on the board (US5a)', () => {
 
   it('orders the card fields as the board: Member No., Plan, Primary contact, engagement', () => {
     const { container } = renderTable();
-    for (const slot of ['number', 'plan', 'contact', 'engagement']) {
-      expect(container.querySelector(`[data-card-slot="${slot}"]`)).not.toBeNull();
-    }
+    const order = ['number', 'plan', 'contact', 'engagement'].map((slot) => {
+      const cell = cellOf(container, slot);
+      expect(cell).toHaveAttribute('data-card', 'field');
+      return Number(cell.style.getPropertyValue('--aura-card-order'));
+    });
+    expect(order.every((n) => n > 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
   });
 
   it('puts the status pill flush right on a card: the hover-only pencil takes no room there', () => {
