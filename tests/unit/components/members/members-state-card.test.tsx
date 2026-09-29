@@ -38,10 +38,9 @@ describe('members state card (US5a)', () => {
 
   it('draws the error state in the danger colours', () => {
     renderIntl(<MembersErrorState />);
-    // AURA's EmptyState takes no tone; the alert wrapper carries it and
-    // restyles the frame and icon disc.
+    // AURA 5.13 (handoff #82): EmptyState's own danger tone, on the alert
+    // itself — no wrapper restyling AURA's classes.
     const alert = screen.getByRole('alert');
-    expect(alert).toHaveAttribute('data-tone', 'danger');
-    expect(alert.querySelector('.aura-empty')).not.toBeNull();
+    expect(alert).toHaveClass('aura-empty', 'is-danger', 'is-bordered');
   });
 });
