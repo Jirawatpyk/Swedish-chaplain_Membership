@@ -12,6 +12,7 @@ import { readFileSync } from 'node:fs';
 import { render } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { LoadErrorCard } from '@/components/shell/load-error-card';
+import { SecurityUpdateBanner } from '@/components/auth/security-update-banner';
 
 const src = (path: string): string => readFileSync(path, 'utf8').replace(/\r\n/g, '\n');
 const RAW_TEXT_PX = /\btext-\[\d+px\]/;
@@ -59,5 +60,32 @@ describe('US1 shell', () => {
       expect(css).toMatch(/html:has\(\.chamber-viewport-actionbar\)/);
       expect(src('src/app/(staff)/admin/members/_components/bulk-action-bar.tsx')).toContain('chamber-viewport-actionbar');
     });
+  });
+});
+
+describe('US2 auth', () => {
+  it('the security-update banner is AURA’s info Alert, without a second live region', () => {
+    // render() flushes the mount effect that fills the live region
+    const { container, getByText } = render(<SecurityUpdateBanner message="Your password was changed." />);
+    getByText('Your password was changed.');
+    expect(container.querySelector('.aura-alert.aura-alert--info .aura-alert__text')).not.toBeNull();
+    expect(container.querySelectorAll('[role="status"], [role="alert"]')).toHaveLength(1);
+    expect(src('src/components/auth/security-update-banner.tsx')).not.toMatch(/aura-alert/);
+  });
+
+  it.each([
+    'src/components/auth/auth-title.tsx',
+    'src/components/auth/auth-frame.tsx',
+    'src/components/auth/sign-in-form.tsx',
+    'src/components/auth/forgot-password-form.tsx',
+    'src/components/auth/reset-password-form.tsx',
+    'src/components/auth/invite-redeem-form.tsx',
+    'src/components/auth/email-change-revert-form.tsx',
+  ])('%s sizes its text on the type scale, not in raw px', (file) => {
+    expect(src(file)).not.toMatch(RAW_TEXT_PX);
+  });
+
+  it('the auth page title is the app’s shared h1 step, like every other page title', () => {
+    expect(src('src/components/auth/auth-title.tsx')).toMatch(/\btext-h1\b/);
   });
 });
