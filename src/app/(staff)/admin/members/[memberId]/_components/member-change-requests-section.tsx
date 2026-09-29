@@ -64,7 +64,10 @@ const loadMemberChangeRequests = cache(async (tenant: TenantContext, memberId: s
 /**
  * Spec 122 US5b-1 (board `Admin-member-detail-mobile`, UX review M9) — a
  * request awaiting review, flagged above the figures with "Review". Nothing
- * when none is pending or the read failed (the section says that).
+ * when none is pending or the read failed (the section says that). It looks
+ * only at the newest SECTION_LIMIT requests the section shows: a pending one
+ * older than those is not flagged here, and the change-request queue still
+ * lists it.
  */
 export async function MemberPendingChangeRequestAlert({ tenant, memberId }: Props) {
   const { items } = await loadMemberChangeRequests(tenant, memberId);

@@ -1546,7 +1546,6 @@
           "primary": "Primary contact",
           "secondary": "Other contacts",
           "plan": "Plan",
-          "audit": "Recent activity",
           "contactStatusBadges": "Contact status",
           "benefits": "Benefits"
         },
@@ -1711,8 +1710,6 @@
         "emptyCta": "Create first invoice",
         "newInvoice": "New invoice",
         "filters": {
-          "statusAria": "Filter invoices by status",
-          "yearAria": "Filter invoices by fiscal year",
           "search": "Search document number…",
           "fiscalYear": "Year",
           "status": {
@@ -1751,7 +1748,6 @@
           "recordPayment": "Record payment…",
           "issueCreditNote": "Issue credit note",
           "void": "Void",
-          "voidAriaLabel": "Void invoice {number}",
           "disabledForManager": "Managers have read-only access. Ask an administrator.",
           "menuFor": "Actions for {number}"
         }

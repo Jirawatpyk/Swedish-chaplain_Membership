@@ -1546,7 +1546,6 @@
           "primary": "Primär kontakt",
           "secondary": "Övriga kontakter",
           "plan": "Paket",
-          "audit": "Senaste aktivitet",
           "contactStatusBadges": "Kontaktstatus",
           "benefits": "Förmåner"
         },
@@ -1711,8 +1710,6 @@
         "emptyCta": "Skapa första fakturan",
         "newInvoice": "Ny faktura",
         "filters": {
-          "statusAria": "Filtrera fakturor efter status",
-          "yearAria": "Filtrera fakturor efter räkenskapsår",
           "search": "Sök dokumentnummer…",
           "fiscalYear": "År",
           "status": {
@@ -1751,7 +1748,6 @@
           "recordPayment": "Bokför betalning…",
           "issueCreditNote": "Utfärda kreditnota",
           "void": "Annullera",
-          "voidAriaLabel": "Annullera faktura {number}",
           "disabledForManager": "Chefer har läsbehörighet. Kontakta en administratör.",
           "menuFor": "Åtgärder för {number}"
         }

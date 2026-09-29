@@ -18,6 +18,8 @@ import type { TimelineItemProps } from '@/components/members/timeline-event-item
 
 export interface MemberTimelineViewProps {
   readonly member: { readonly memberId: string; readonly companyName: string };
+  /** The route's `[memberId]` as typed, for the breadcrumb match (a UUID may arrive in upper case). */
+  readonly routeSegment?: string;
   readonly initialEvents: readonly TimelineItemProps[];
   readonly initialCursor: string | null;
   readonly totalEvents: number;
@@ -28,6 +30,7 @@ export interface MemberTimelineViewProps {
 
 export async function renderMemberTimelineView({
   member,
+  routeSegment,
   initialEvents,
   initialCursor,
   totalEvents,
@@ -38,7 +41,7 @@ export async function renderMemberTimelineView({
   const tPage = await getTranslations('timeline.page');
   return (
     <DetailContainer>
-      <DynamicBreadcrumbLabel segment={member.memberId} label={member.companyName} />
+      <DynamicBreadcrumbLabel segment={routeSegment ?? member.memberId} label={member.companyName} />
       <PageHeader
         title={t('title')}
         subtitle={t('subtitle')}

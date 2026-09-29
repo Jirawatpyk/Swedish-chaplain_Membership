@@ -133,6 +133,7 @@ export default async function MemberBenefitsPage({ params }: PageProps) {
         )}`;
 
   return renderMemberBenefitsView({
+    routeSegment: memberId,
     member: { memberId: member.memberId, companyName: member.companyName },
     usage,
     suspended: membershipAccess.access === 'suspended',

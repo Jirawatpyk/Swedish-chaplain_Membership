@@ -19,6 +19,8 @@ type BenefitUsage = Extract<Awaited<ReturnType<typeof computeBenefitUsage>>, { o
 
 export interface MemberBenefitsViewProps {
   readonly member: { readonly memberId: string; readonly companyName: string };
+  /** The route's `[memberId]` as typed, for the breadcrumb match (a UUID may arrive in upper case). */
+  readonly routeSegment?: string;
   readonly usage: Pick<
     BenefitUsage,
     'membershipYear' | 'elapsedYearPct' | 'quantifiable' | 'active' | 'aggregateConsumedPct' | 'underUseWarning'
@@ -32,6 +34,7 @@ export interface MemberBenefitsViewProps {
 
 export async function renderMemberBenefitsView({
   member,
+  routeSegment,
   usage,
   suspended,
   reminderHref,
@@ -40,7 +43,7 @@ export async function renderMemberBenefitsView({
   const t = await getTranslations('admin.members.benefits');
   return (
     <DetailContainer>
-      <DynamicBreadcrumbLabel segment={member.memberId} label={member.companyName} />
+      <DynamicBreadcrumbLabel segment={routeSegment ?? member.memberId} label={member.companyName} />
       <PageHeader
         title={t('title')}
         subtitle={member.companyName}

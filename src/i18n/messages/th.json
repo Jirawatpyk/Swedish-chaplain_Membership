@@ -1546,7 +1546,6 @@
           "primary": "ผู้ติดต่อหลัก",
           "secondary": "ผู้ติดต่ออื่น",
           "plan": "แพ็กเกจ",
-          "audit": "กิจกรรมล่าสุด",
           "contactStatusBadges": "สถานะผู้ติดต่อ",
           "benefits": "สิทธิประโยชน์"
         },
@@ -1711,8 +1710,6 @@
         "emptyCta": "สร้างใบแจ้งหนี้ใบแรก",
         "newInvoice": "ใบแจ้งหนี้ใหม่",
         "filters": {
-          "statusAria": "กรองใบแจ้งหนี้ตามสถานะ",
-          "yearAria": "กรองใบแจ้งหนี้ตามปีภาษี",
           "search": "ค้นหาเลขที่เอกสาร…",
           "fiscalYear": "ปี",
           "status": {
@@ -1751,7 +1748,6 @@
           "recordPayment": "บันทึกการชำระ…",
           "issueCreditNote": "ออกใบลดหนี้",
           "void": "ยกเลิก",
-          "voidAriaLabel": "ยกเลิกใบแจ้งหนี้ {number}",
           "disabledForManager": "ผู้จัดการดูได้อย่างเดียว กรุณาติดต่อผู้ดูแลระบบ",
           "menuFor": "การดำเนินการสำหรับ {number}"
         }

@@ -149,6 +149,7 @@ export default async function MemberTimelinePage({ params, searchParams }: PageP
   const filterKey = timelineFilterKey(filterArgs);
 
   return renderMemberTimelineView({
+    routeSegment: memberId,
     member: { memberId: member.memberId, companyName: member.companyName },
     initialEvents,
     initialCursor,

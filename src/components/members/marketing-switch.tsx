@@ -124,7 +124,9 @@ export function MarketingSwitch({
     state !== 'off_by_contact' && state !== 'unsubscribed' && state !== 'unavailable';
 
   async function send(next: 'on' | 'off', opts: { readonly offerUndo: boolean }): Promise<void> {
-    if (inFlight.current) return;
+    // Also while the refresh that brings the server truth is settling, as the
+    // disabled switch did before (the Undo runs after it has settled).
+    if (inFlight.current || (isRefreshing && opts.offerUndo)) return;
     inFlight.current = true;
     setBusy(true);
     setOptimistic(next);

@@ -56,6 +56,8 @@ export interface MemberDetailSlots {
 
 export interface MemberDetailViewProps {
   readonly member: Member;
+  /** The route's `[memberId]` as typed, for the breadcrumb match (a UUID may arrive in upper case). */
+  readonly routeSegment?: string;
   readonly contacts: readonly Contact[];
   readonly planDisplayName: string;
   readonly memberNumberDisplay: string;
@@ -96,6 +98,7 @@ function TextBlock({ label, lines }: { readonly label: string; readonly lines: r
 
 export async function renderMemberDetailView({
   member,
+  routeSegment,
   contacts,
   planDisplayName,
   memberNumberDisplay,
@@ -171,7 +174,7 @@ export async function renderMemberDetailView({
 
   return (
     <DetailContainer>
-      <DynamicBreadcrumbLabel segment={member.memberId} label={member.companyName} />
+      <DynamicBreadcrumbLabel segment={routeSegment ?? member.memberId} label={member.companyName} />
       <PageHeader
         title={member.companyName}
         eyebrow={

@@ -447,6 +447,7 @@ export default async function MemberDetailPage({
   const summaryCells = 2 + (canReadInvoices ? 1 : 0) + (env.features.f9Dashboard ? 1 : 0);
 
   return renderMemberDetailView({
+    routeSegment: memberId,
     member,
     contacts,
     planDisplayName,
