@@ -35,7 +35,7 @@
  *     non-interrupting (FR-028j)
  *   - expired-state region uses `aria-live="assertive"` so SR users hear
  *     the expiry the moment it lands
- *   - refresh button has `min-h-[44px] min-w-[44px]` (WCAG 2.5.5)
+ *   - refresh button has `min-h-11` (44px, WCAG 2.5.5; handoff #100)
  *
  * App-switching state persistence (T093 / spec § Edge Cases P6)
  * -------------------------------------------------------------

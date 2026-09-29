@@ -622,7 +622,7 @@ export default async function AuraPortalPreviewPage({
           <div className="flex flex-col">
             <RecentActivityList events={EVENTS.slice(0, 4)} />
             <div className="border-t border-[var(--aura-border-default)] pt-3">
-              <Link href="/portal/timeline" className="text-[13px] font-medium text-[var(--aura-fg-accent)] no-underline">
+              <Link href="/portal/timeline" className="aura-text-label text-[var(--aura-fg-accent)] no-underline">
                 {tActivity('viewAll')}
               </Link>
             </div>
