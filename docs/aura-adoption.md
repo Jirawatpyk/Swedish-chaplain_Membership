@@ -91,7 +91,7 @@ The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requ
 |---|---|---|
 | #85 | a stacked static `Table` whose rows stand apart as separate framed cards (5.13 stacks them in one frame, divided by rules) | the per-row `CARD` frame, the frameless wrap and the Review button's card height below 640px in `src/app/(staff)/admin/change-requests/_components/queue-table.tsx` |
 
-Addendum 16 (items 101–107, found in US5b-1, the member detail page) is open too:
+Addendum 16 (items 101–108, found in US5b-1, the member detail page) is open too:
 
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
@@ -102,6 +102,7 @@ Addendum 16 (items 101–107, found in US5b-1, the member detail page) is open t
 | #105 | `Combobox` takes no typed value and no option groups | US5b-2 keeps the three address comboboxes on the old kit (`NOT_YET_ON_AURA`) |
 | #106 | no warning text token (`--aura-status-warning-fg` is chip ink, near-black in dark mode) | `--aura-alert-warning-fg` in `member-invoices-table.tsx` |
 | #107 | `Tabs` link mode marks `aria-current="page"`, not `location`, for in-page anchors | none — the section links accept `page` |
+| #108 | stacked `DataTable` cards keep a column's `align: 'end'` | `StartOnCard` (`block max-[639px]:text-start`) around Total and Remaining in `member-invoices-table.tsx` |
 
 One note stays with AURA: `Menu` closes on any scroll or window resize (iOS Safari fires resize when its toolbar moves), to be checked on a real iPhone before it becomes an item.
 
