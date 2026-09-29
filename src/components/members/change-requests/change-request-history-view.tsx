@@ -49,20 +49,20 @@ export async function renderChangeRequestHistoryView({ items, nextCursor, isFirs
             <li key={r.id}>
               {/* An AURA card per request (spec 122 US3): the submission time as
                   its h2 with who and when under it, the status pill to its
-                  right — above it on phones (h2 first in the DOM), which
-                  AURA's Card head cannot order. */}
+                  right — above it on phones (h2 first in the DOM). The block
+                  sits in AURA's free Card head (#87, 5.15), which adds no
+                  heading of its own. */}
               <Card
                 as="section"
                 data-testid="history-item"
                 data-request-id={r.id}
                 aria-labelledby={`history-${r.id}-heading`}
-              >
-                <div className="flex flex-col gap-4">
+                header={
                   <div className="flex flex-col-reverse gap-1.5 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                     <div className="flex min-w-0 flex-col gap-0.5">
-                      {/* AURA's card title on our own h2: a stand-in until AURA #87 (a free Card head) */}
-                      <h2 id={`history-${r.id}-heading`} className="aura-card__title">
-                        {t('submittedOn', { submittedAt: fmt(r.submittedAt) })}
+                      {/* AURA's card-title type on the inner text: preflight resets a heading's font */}
+                      <h2 id={`history-${r.id}-heading`}>
+                        <span className="aura-text-h3 block">{t('submittedOn', { submittedAt: fmt(r.submittedAt) })}</span>
                       </h2>
                       <p className="aura-text-table-cell text-[var(--aura-fg-secondary)] max-sm:text-xs">
                         {r.submittedBy.isMe ? t('submittedByYou') : t('submittedBy', { name: r.submittedBy.displayName })}
@@ -74,6 +74,9 @@ export async function renderChangeRequestHistoryView({ items, nextCursor, isFirs
                       <ChangeRequestStatusBadge status={changeRequestStatusOf(r)} audience="portal" />
                     </span>
                   </div>
+                }
+              >
+                <div className="flex flex-col gap-4">
                   <ChangeRequestDiffTable fields={r.fields} showOutcome={r.state === 'decided'} variant="plain" />
                   {r.decisionReason ? (
                     <div

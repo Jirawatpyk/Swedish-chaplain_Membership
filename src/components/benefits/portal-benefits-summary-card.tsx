@@ -132,7 +132,10 @@ export function PortalBenefitsSummaryCard({
  * AURA's Progress with a second, striped segment for reserved E-Blasts (the
  * `Main` board): the same `aura-progress` markup and classes, so it matches
  * the bars beside it; `aria-valuetext` says all three counts. AURA's
- * `Progress` draws one bar: a stand-in until AURA #89 (reserved segment).
+ * `Progress` draws the reserved segment (`secondaryValue`, #89, 5.15) but
+ * reads its shown `valueLabel` ("2 of 6 used") as the value text, which drops
+ * the reserved and remaining counts: a stand-in until AURA #111 (a value text
+ * apart from the shown label).
  */
 function ReservedProgress({
   label,
@@ -153,7 +156,7 @@ function ReservedProgress({
 }) {
   const pct = (n: number) => `${total > 0 ? Math.min(100, Math.max(0, (n / total) * 100)) : 0}%`;
   const usedPct = pct(used);
-  // stand-in until AURA #89 (Progress reserved segment): AURA's markup by hand
+  // stand-in until AURA #111 (Progress value text apart from its label): AURA's markup by hand
   return (
     <div className="aura-progress">
       <div className="aura-progress__head">
@@ -169,15 +172,11 @@ function ReservedProgress({
         aria-valuenow={used}
         aria-valuetext={valueText}
       >
-        {/* stand-in until AURA #89: the used and reserved bars */}
+        {/* stand-in until AURA #111: the used bar and AURA's reserved segment */}
         <span className="aura-progress__bar" style={{ width: usedPct }} />
         <span
-          className="aura-progress__bar rounded-none opacity-60"
-          style={{
-            left: usedPct,
-            width: pct(Math.min(reserved, total - used)),
-            background: 'repeating-linear-gradient(45deg, var(--aura-fg-accent) 0 3px, transparent 3px 6px)',
-          }}
+          className="aura-progress__bar aura-progress__bar--reserved"
+          style={{ left: usedPct, width: pct(Math.min(reserved, total - used)) }}
         />
       </div>
       <p className="aura-progress__hint">{hint}</p>

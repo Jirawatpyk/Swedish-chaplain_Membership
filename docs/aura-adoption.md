@@ -87,10 +87,12 @@ Phases 2–12 each depend on 1 and can land in any order.
 
 ## AURA gaps (the handoff doc)
 
-The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, items 52–56 (Addendum 4) in 5.6.0, items 57–62 (Addendum 5, found in US1) in 5.7.0, item 63 in 5.7.1, item 64 (Addendum 6) in 5.7.2, item 65 (Addendum 7, found in US2) in 5.7.3, items 66–69 (Addendum 8, found in US3) in 5.8.0, items 70–71 (Addendum 9, found in US4) in 5.9.0, items 72–74 (Addendum 10, found adopting 5.9.0 in US4) in 5.10.0, items 75–78 (Addendum 11, found in US5a) in 5.11.0, item 79 (Addendum 12) in 5.12.0 and items 80–84 (Addendum 13) in 5.13.0, and items 85–100 (Addenda 14–15) in 5.14.0–5.16.0 — **5.16.0** is the current pin. Items 85–100 (Addenda 14–15, found adopting 5.13.0 and applying the parity rule to US1–US5a) shipped in 5.14.0 (86, 88, 91, 97), 5.15.0 (85, 87, 89, 90, 92–94, 99, 100) and 5.16.0 (95, 96, 98), and are adopted below (T512). No item is open:
+The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, items 52–56 (Addendum 4) in 5.6.0, items 57–62 (Addendum 5, found in US1) in 5.7.0, item 63 in 5.7.1, item 64 (Addendum 6) in 5.7.2, item 65 (Addendum 7, found in US2) in 5.7.3, items 66–69 (Addendum 8, found in US3) in 5.8.0, items 70–71 (Addendum 9, found in US4) in 5.9.0, items 72–74 (Addendum 10, found adopting 5.9.0 in US4) in 5.10.0, items 75–78 (Addendum 11, found in US5a) in 5.11.0, item 79 (Addendum 12) in 5.12.0 and items 80–84 (Addendum 13) in 5.13.0, and items 85–100 (Addenda 14–15) in 5.14.0–5.16.0 — **5.16.0** is the current pin. Items 85–100 (Addenda 14–15, found adopting 5.13.0 and applying the parity rule to US1–US5a) shipped in 5.14.0 (86, 88, 91, 97), 5.15.0 (85, 87, 89, 90, 92–94, 99, 100) and 5.16.0 (95, 96, 98), and are adopted below (T512). Two gaps found adopting them are open (Addendum 18):
 
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
+| #110 | `Stat` passes no attributes (`data-*`, `aria-hidden`) to its root, has no slot for a status line under the value, and `href` makes the whole tile one link; the board links the label only | `portal/dashboard/stat-card.tsx` and `StatSkeleton` keep AURA's Stat markup by hand |
+| #111 | `Progress` reads its shown `valueLabel` as the value text, so a bar with `secondaryValue` can't say "2 used, 1 reserved, 3 remaining of 6" while showing "2 of 6 used" | `portal-benefits-summary-card.tsx` `ReservedProgress` keeps AURA's Progress markup by hand, with AURA's `aura-progress__bar--reserved` stripe |
 
 One note stays with AURA: `Menu` closes on any scroll or window resize (iOS Safari fires resize when its toolbar moves), to be checked on a real iPhone before it becomes an item.
 
@@ -134,8 +136,8 @@ How Chamber-OS uses the Addendum 5 – 15 items (US1 to US5a and T512 dropped th
 | 85 | 5.15.0: static `Table` `stackStyle="cards"` | The change-request queue's phone cards stand apart, each framed; the per-row `CARD` classes, the frameless wrap and the Review height reach are gone |
 | 86 | 5.14.0: `EmptyState` `headingLevel={false}` | `shell/empty-state.tsx` renders AURA's `EmptyState` (title a `<p>`, the status role only with `announce`); the hand-built `aura-empty` markup is gone |
 | 87 | 5.15.0: `Card` `header` | Loading cards (`AuraCardSkeleton`) and the change-request history card (pill above the h2 on phones) put their head in `header` |
-| 88 | 5.14.0: `Stat` from `/server`, `headingLevel` | The portal dashboard's stat tiles and their skeleton |
-| 89 | 5.15.0: `Progress` `secondaryValue` | The home benefits card's reserved E-Blasts, striped after the used ones |
+| 88 | 5.14.0: `Stat` from `/server`, `headingLevel` | Not yet: the portal dashboard's stat tiles need #110 |
+| 89 | 5.15.0: `Progress` `secondaryValue` | The home benefits card's reserved E-Blasts take AURA's reserved stripe; the component waits on #111 |
 | 90 | 5.15.0: underline `Tabs` `fullWidth="below-lg"` | The benefits tabs share the width on phones and tablets |
 | 91 | 5.14.0: Drawer body scroll padding | The pay sheet's local `scroll-pt-4` is gone |
 | 92 | 5.15.0: `FilterBar` `controlsLayout="fill"`, `stackBelow="lg"` | The invoice filters (search on its own row below 1024px) and the timeline filters (equal columns) |

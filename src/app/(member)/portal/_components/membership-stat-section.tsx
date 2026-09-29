@@ -222,8 +222,9 @@ export async function MembershipStatSection({
 
 /**
  * Skeleton in the shape of a stat tile while the async section streams in.
- * AURA's Stat surface by its class: a stand-in until AURA #88 (Stat from
- * /server, whose `loading` draws this).
+ * AURA's Stat surface by its class. AURA's `Stat loading` draws its label
+ * and takes no `aria-hidden`, where this placeholder is hidden and has no
+ * label yet: a stand-in until AURA #110 (Stat attributes).
  */
 export function StatSkeleton(): React.JSX.Element {
   return (

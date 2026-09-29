@@ -22,9 +22,10 @@ import { cn } from '@/lib/utils';
  * a CardTitle div, so the dashboard outline is h1 (PageHeader) → h2.
  *
  * Spec 122 US3: AURA `Stat` markup (the `Main` / `Home-mobile` boards), drawn
- * with AURA's classes because this is a server component and `Stat` is not in
- * `@jirawatpyk/aura-react/server` (and its label is never a heading): a
- * stand-in until AURA #88 (Stat from /server, label `headingLevel`).
+ * with AURA's classes. AURA 5.14 ships `Stat` in `/server` with a heading
+ * label (item 88), but it passes no `data-*` attributes through, has no slot
+ * for the status line, and its `href` makes the whole tile one link where the
+ * board links the heading only: a stand-in until AURA #110.
  * The label keeps its h2; `data-testid` / `data-variant` stay for the e2e.
  *
  * The variant set is intentionally identical to the route-layer `StatVariant`
@@ -128,7 +129,7 @@ export function StatCard({
   const showStatus = variant !== 'neutral' && Boolean(variantLabel);
   const Icon = icon ?? (variant === 'neutral' ? Info : VARIANT_ICON[variant]);
 
-  // stand-in until AURA #88 (Stat from /server): AURA's Stat markup by hand
+  // stand-in until AURA #110 (Stat attributes, status slot, heading link): AURA's Stat markup by hand
   return (
     <div
       data-testid="stat-card"
@@ -149,7 +150,7 @@ export function StatCard({
             label
           )}
         </h2>
-        {/* stand-in until AURA #88 */}
+        {/* stand-in until AURA #110 */}
         {HeadIcon ? (
           <span className="aura-stat__icon">
             <AuraIcon name={<HeadIcon focusable="false" />} size={16} />
