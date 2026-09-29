@@ -106,4 +106,20 @@ describe('renderMemberBenefitsView (T558)', () => {
       'mailto:erik@example.com?subject=x',
     );
   });
+
+  // Board `Admin-member-benefits`: "Included benefits" is an h3 and each
+  // benefit an outline badge.
+  it('lists included benefits under an h3 as outline badges', async () => {
+    const { container } = await mount(
+      renderMemberBenefitsView({
+        member: { memberId: 'm-1', companyName: 'Siam Nordic' },
+        usage: { ...usage, active: [{ key: 'm2m_benefits' }] } as never,
+        suspended: false,
+        reminderHref: undefined,
+        locale: 'en',
+      }),
+    );
+    expect(screen.getByRole('heading', { level: 3, name: enMessages.benefits.card.activeHeading })).toBeInTheDocument();
+    expect(container.querySelector('.aura-badge[class*="outline"]')).not.toBeNull();
+  });
 });

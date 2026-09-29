@@ -256,6 +256,16 @@ describe('renderMemberDetailView — sections and "On this page" (T553)', () => 
     expect(screen.getByRole('link', { name: /^siamnordic\.example/ })).toHaveAttribute('href', 'https://siamnordic.example');
   });
 
+  // Board `Admin-member-detail`: Address and "Billing address (tax
+  // documents)" are groups of their own; an unset billing address reads "—".
+  it('shows the billing address group with a dash when none is set', async () => {
+    await renderView();
+    const D = enMessages.admin.members.detail;
+    const heading = screen.getByRole('heading', { level: 3, name: D.fields.billingAddress });
+    expect(heading.parentElement).toHaveTextContent('—');
+    expect(screen.getByRole('heading', { level: 3, name: D.fields.address })).toBeInTheDocument();
+  });
+
   // UX review M6 (2.5.3 Label in Name): the link's name starts with the
   // address it shows; "opens in a new tab" follows for screen readers.
   it('the website link is named by the address it shows', async () => {

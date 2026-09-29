@@ -21,10 +21,11 @@ const { PendingChangeRequestAlert } = await import(
 const CR = enMessages.admin.members.changeRequests;
 
 describe('PendingChangeRequestAlert', () => {
-  it('an info alert saying a request awaits review, with Review to that request', async () => {
-    render((await PendingChangeRequestAlert({ requestId: 'cr-9' })) as ReactElement);
+  it('an info alert titled for the pending request, naming who sent it, with Review', async () => {
+    render((await PendingChangeRequestAlert({ requestId: 'cr-9', submitterName: 'Erik Johansson', submitterRole: 'Primary contact' })) as ReactElement);
     const alert = screen.getByRole('status');
     expect(alert).toHaveTextContent(CR.pendingAlert);
+    expect(alert).toHaveTextContent('Submitted by Erik Johansson (Primary contact)');
     expect(screen.getByRole('link', { name: CR.review })).toHaveAttribute('href', '/admin/change-requests/cr-9');
   });
 });

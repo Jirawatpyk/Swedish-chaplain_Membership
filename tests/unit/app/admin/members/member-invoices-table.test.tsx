@@ -70,8 +70,8 @@ describe('MemberInvoicesTable (T556)', () => {
     expect(headers.slice(0, 7)).toEqual(['Number', 'Status', 'Issued', 'Due', 'Paid', 'Total', 'Remaining']);
     expect(grid).toHaveTextContent('SC-2026-000123');
     expect(grid).toHaveTextContent('38,520.00 THB');
-    // The dash is read as words, not as "dash" (G-U7P).
-    expect(screen.getByText(labels.notPaid)).toHaveClass('sr-only');
+    // The board prints "Not paid yet" in the Paid column (G-U7P: words, not a dash).
+    expect(within(grid).getByText(labels.notPaid)).not.toHaveClass('sr-only');
   });
 
   it('a writer, issued invoice: View, Record payment and Void — the links as before', () => {
@@ -115,5 +115,13 @@ describe('MemberInvoicesTable (T556)', () => {
     render(<MemberInvoicesTable rows={[issued]} labels={labels} canMutate />);
     const figure = screen.getAllByText('38,520.00 THB').find((el) => el.className.includes('font-medium'));
     expect(figure?.className).toContain('--aura-alert-warning-fg');
+  });
+
+  // Board `Admin-member-detail-mobile`: a phone card shows Due, Total and
+  // Remaining, the figures left-aligned under their labels.
+  it('phone cards leave out Issued and Paid, and start-align the figures', () => {
+    const { container } = render(<MemberInvoicesTable rows={[issued]} labels={labels} canMutate />);
+    const total = within(container).getAllByText('38,520.00 THB')[0]!;
+    expect(total.closest('[class*="max-[639px]:text-start"]')).not.toBeNull();
   });
 });

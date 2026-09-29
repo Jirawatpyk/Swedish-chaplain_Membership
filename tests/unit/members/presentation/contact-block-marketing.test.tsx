@@ -184,4 +184,16 @@ describe('ContactBlock — marketing surface (108 PR-D)', () => {
     expect(markup).toContain(`${en.fields.preferredLanguage}: Thai`);
     expect(markup).not.toContain(': TH<');
   });
+
+  // Board `Admin-member-detail`: the badges sit on the name's line; the money
+  // descriptor is its own line, so the badge group holds badges only.
+  it('primary contact: the descriptor is not inside the status-badge group', () => {
+    const markup = renderBlock({ contact: makeContact({ isPrimary: true }) });
+    const el = document.createElement('div');
+    el.innerHTML = markup;
+    const group = el.querySelector('[role="group"]')!;
+    expect(group.textContent).toContain(en.sections.primary);
+    expect(group.textContent).not.toContain(en.marketing.primaryDescriptor);
+    expect(el.textContent).toContain(en.marketing.primaryDescriptor);
+  });
 });
