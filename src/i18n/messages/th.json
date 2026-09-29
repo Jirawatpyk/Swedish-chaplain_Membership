@@ -1653,6 +1653,7 @@
           "label": "สรุปข้อมูลสมาชิก",
           "outstanding": "ยอดค้างชำระ",
           "outstandingNote": "ค้างชำระ {count} ใบ · ครบกำหนด {date}",
+          "outstandingOverdueNote": "ค้างชำระ {count} ใบ · เกินกำหนดตั้งแต่ {date}",
           "outstandingCount": "ค้างชำระ {count} ใบ",
           "outstandingNone": "ไม่มียอดค้างชำระ",
           "outstandingPartial": "นับเฉพาะใบแจ้งหนี้ค้างชำระ 100 ใบแรก",

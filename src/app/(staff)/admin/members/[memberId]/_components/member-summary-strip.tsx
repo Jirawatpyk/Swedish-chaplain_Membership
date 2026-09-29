@@ -18,6 +18,7 @@ import type { ReactNode } from 'react';
 import { formatSatangThb } from '@/lib/format-thb';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 import { formatRelativeTime } from '@/lib/relative-time';
+import { bangkokLocalDate } from '@/lib/fiscal-year';
 import type { EngagementBand } from '@/modules/insights';
 import type { MemberOutstanding } from '../_lib/member-outstanding';
 
@@ -96,7 +97,14 @@ export async function MemberSummaryStrip({
           : outstanding.partial
             ? t('outstandingPartial')
             : outstanding.earliestDueIso !== null
-              ? t('outstandingNote', { count: outstanding.count, date: date(outstanding.earliestDueIso) })
+              ? t(
+                  // Past due once the Bangkok day is after the due date — the
+                  // portal's rule (`deriveOutstandingStat`).
+                  outstanding.earliestDueIso < bangkokLocalDate(now.toISOString())
+                    ? 'outstandingOverdueNote'
+                    : 'outstandingNote',
+                  { count: outstanding.count, date: date(outstanding.earliestDueIso) },
+                )
               : t('outstandingCount', { count: outstanding.count });
     cells.push(
       <Cell

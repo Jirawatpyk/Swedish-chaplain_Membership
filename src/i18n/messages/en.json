@@ -1653,6 +1653,7 @@
           "label": "Member summary",
           "outstanding": "Outstanding",
           "outstandingNote": "{count, plural, one {# unpaid} other {# unpaid}} · due {date}",
+          "outstandingOverdueNote": "{count, plural, one {# unpaid} other {# unpaid}} · overdue since {date}",
           "outstandingCount": "{count, plural, one {# unpaid} other {# unpaid}}",
           "outstandingNone": "Nothing unpaid",
           "outstandingPartial": "First 100 unpaid invoices only",

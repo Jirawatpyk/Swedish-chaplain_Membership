@@ -78,9 +78,9 @@ describe('MemberSummaryStrip (T552)', () => {
     // NOW is 24 Sep 2026 in Bangkok; the 23rd is past, the 24th is not.
     await renderStrip({ outstanding: { state: 'ok', sumSatang: 100n, count: 2, earliestDueIso: '2026-09-23', partial: false } });
     const c = cell(S.outstanding);
-    expect(c).toHaveTextContent('2 unpaid · overdue since 23 Sep 2026');
+    expect(c).toHaveTextContent(/2 unpaid · overdue since 23 Sept? 2026/);
     await renderStrip({ outstanding: { state: 'ok', sumSatang: 100n, count: 2, earliestDueIso: '2026-09-24', partial: false } });
-    expect(screen.getAllByText(/2 unpaid · due 24 Sep 2026/)).toHaveLength(1);
+    expect(screen.getAllByText(/2 unpaid · due 24 Sept? 2026/)).toHaveLength(1);
   });
 
   it('Outstanding: nothing unpaid reads as zero with its own note', async () => {
