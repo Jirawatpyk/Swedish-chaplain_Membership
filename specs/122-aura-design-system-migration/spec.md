@@ -72,7 +72,7 @@ The maintainer asked for every gap in the US4 board comparison to be fixed. The 
 The US5 boards (`Admin-members*`, `Admin-state-members-*`, `Admin-member-*`, `Admin-directory*`, `Admin-change-request*`) were read before the tasks were written. The rule "the boards win unless they contradict the product" holds.
 
 - Q: US5 is about 75 files, and AURA's `DataTable` is a div grid, so every table locator in the members e2e specs changes. One PR or two? → A: **Two.** **US5a**: the members list (DataTable, filters, bulk bar), the directory, and change requests (queue and review). **US5b**: member detail, timeline, benefits, the new / edit forms and every member dialog. This supersedes "one PR per phase" for US5 only.
-- Q: The member-detail board has a figures strip and a tab row; the page is one scroll of cards. Which? → A: **The strip, plus section links.** The strip (Outstanding, Membership expires, Primary contact, Engagement) uses only data the page already loads. The tab row becomes in-page links to each card, and every card stays on the page, so nothing is hidden behind a tab.
+- Q: The member-detail board has a figures strip and a tab row; the page is one scroll of cards. Which? → A: **The strip, plus section links.** The strip (Outstanding, Membership expires, Primary contact, Engagement) uses only data the page already loads, except Outstanding (Session 2026-09-29). The tab row becomes in-page links to each card, and every card stays on the page, so nothing is hidden behind a tab.
 - Q: The members board has a "⋯" actions column; the list has no per-row actions. Add it? → A: **Yes, existing destinations only**: "Open member", and "Edit member" when the viewer may edit members.
 - **Bulk actions keep the product's set** (archive, portal invite, auto-invoice on / off, renewal reminder). The board's "Change plan" has no backend, so it is not added. The bar is AURA's `ActionBar`, sticky, right after the table (not above it as on the board): it floats over the list while the table is on screen, so the actions stay in reach down a 50-row page, and it takes its own space at the end, replacing the fixed full-width bar and its spacer.
 - **Paging stays**: 50 rows per page and the numbered `TablePagination` with the same `?page=` URL. AURA's built-in pager has only previous / next. The change-request queue keeps its "Next page" link.
@@ -86,6 +86,18 @@ Two read-only audits compared every US5a board with the live screen and found ab
 - Q: The members count shows twice (above the table and in the pager). Which stays? → A: The count above the table shows only while a search or filter is applied. Unfiltered, it stays in the live region for screen readers, and the pager's range says it.
 - Q: Which portal badges does the Primary contact column show? → A: Only the states that need action (Not invited, Invited, Expired). A linked contact shows none.
 - Q: The phone card has a checkbox, a ⋯ menu and seven fields; the board has neither and four fields. → A: **As the board.** No checkbox, no ⋯, no flag. Four fields: Member No., Plan (no year), Primary contact, and the engagement band. Tapping a card opens the member. Bulk actions and the Edit shortcut stay on tablet and desktop.
+
+### Session 2026-09-29 (maintainer, US5b start)
+
+The US5b boards (`Admin-member-detail`, `-timeline`, `-benefits`, `-new`, `-edit`, each with `-mobile`, and `Admin-member-plan-change`) were read before the tasks were written. No dialog opened from the member detail page has a board; the canvas draws only the plan-change confirmation.
+
+- Q: US5b is about 12,000 lines (the detail page 1,500, the form sections 2,600, the dialogs 2,500). One PR or two? → A: **Two.** **US5b-1**: member detail, timeline, benefits and every dialog or banner opened from the detail page (contacts, archive, erase, restore primary, renew lapsed). **US5b-2**: the new / edit forms, the plan-change, bundle-warning, override-reason and soft-duplicate dialogs, and the notification-language card.
+- Q: The detail page does not load the member's outstanding balance (its invoice list follows the page's status filter). Where does the strip's Outstanding come from? → A: **The existing member invoice read**, asked for issued invoices only (the one unpaid state: a credit follows payment), up to 100: the sum, the count and the earliest due date. It says "partial" beyond 100 and is shown only to roles that may read invoices. No new backend.
+- Q: AURA's `Combobox` has no option groups and no typed value outside its list; the member form's country field groups TH and SE as "Suggested", and province / district / sub-district take a typed name. → A: **Country moves to AURA** with TH and SE listed first and no group heading (as the directory's country field). **The three address fields stay on the old combobox** (`NOT_YET_ON_AURA`) with an AURA handoff for typed values and groups, and move when it ships (US5b-2).
+- **Dialogs with no board** use AURA's `Dialog` / `ConfirmationDialog` defaults and keep their content, copy and behaviour.
+- **Kept although the board omits them** (removing them would remove features): the erased, archived and no-primary-contact banners; the technical details (member number, IDs), copy buttons and flag; the marketing badge and switch per contact and the marketing-audience link; the invite and re-send buttons and badges; the member invoice filters (the same `invStatus` / `invYear` / `invQ` URL); the renew action and at-risk band; the full change-request history; the per-contact data-export scope.
+- **Invoice row actions** (view, record payment, credit note, void) move into the board's "⋯" menu; for a manager they are disabled with the reason in the item, as the tooltip said before.
+- **Section links** list only the sections present for the viewer's role and the feature flags. **On a phone**, as the board: erase, archive and data export move into the header's "⋯" menu, and a pending change request shows as an info alert above the strip.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -165,7 +177,7 @@ Invoice list, invoice detail, receipts, credit notes and the card/PromptPay pay 
 
 ### User Story 5 - Members administration (Priority: P2)
 
-Members list (server-paged, sorted, filtered), member detail, create/edit, directory, change-request review and bulk actions use AURA's data table in server mode, filter bar and bulk action bar. Two pull requests (Session 2026-09-28, US5 start): US5a covers the list, directory and change requests; US5b covers member detail, timeline, benefits, the forms and the member dialogs.
+Members list (server-paged, sorted, filtered), member detail, create/edit, directory, change-request review and bulk actions use AURA's data table in server mode, filter bar and bulk action bar. Two pull requests (Session 2026-09-28, US5 start): US5a covers the list, directory and change requests; US5b covers member detail, timeline, benefits, the forms and the member dialogs. US5b is itself two pull requests (Session 2026-09-29): US5b-1 the detail page with its sub-pages and dialogs, US5b-2 the forms and their dialogs.
 
 **Independent Test**: page, sort, filter and bulk-act on the members list with the same results and URLs as before.
 
