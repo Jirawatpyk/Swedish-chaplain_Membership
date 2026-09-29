@@ -98,12 +98,15 @@ export function findReaches(file: string, source: string): Reach[] {
   return reaches;
 }
 
-/** The item numbers in the adoption doc's open-items table (`| Item | AURA gap | …`). */
-export function openItems(doc: string): Set<number> {
+/**
+ * The item numbers in the adoption doc's open-items table (`| Item | AURA gap | …`), or null when the table
+ * is missing. The table may be empty (every item shipped); a missing table means the parse is not looking.
+ */
+export function openItems(doc: string): Set<number> | null {
   const lines = doc.split(/\r?\n/);
   const head = lines.findIndex((l) => /^\|\s*Item\s*\|\s*AURA gap\s*\|/.test(l));
+  if (head < 0) return null;
   const items = new Set<number>();
-  if (head < 0) return items;
   for (const l of lines.slice(head + 2)) {
     const m = /^\|\s*#(\d+)\s*\|/.exec(l);
     if (!m) break;
@@ -131,7 +134,8 @@ function walk(dir: string, out: string[] = []): string[] {
 const globs = MIGRATED_PATHS.map((g: string) => ({ glob: g, re: globToRegExp(g) }));
 const allSrc = walk(join(ROOT, 'src'));
 const scanned = [...new Set([...allSrc.filter((f) => globs.some((g) => g.re.test(f))), ...EXTRA_FILES])].sort();
-const open = openItems(readFileSync(join(ROOT, 'docs/aura-adoption.md'), 'utf8'));
+const openOrNull = openItems(readFileSync(join(ROOT, 'docs/aura-adoption.md'), 'utf8'));
+const open: ReadonlySet<number> = openOrNull ?? new Set();
 const reaches = scanned.flatMap((f) => findReaches(f, readFileSync(join(ROOT, f), 'utf8')));
 
 describe('AURA internal-class ratchet (spec 122 parity rule)', () => {
@@ -140,14 +144,15 @@ describe('AURA internal-class ratchet (spec 122 parity rule)', () => {
     expect(globs.filter((g) => !allSrc.some((f) => g.re.test(f))).map((g) => g.glob)).toEqual([]);
   });
 
-  it('the scan finds files, reaches and open items (positive control)', () => {
+  it('the scan finds files, reaches and the open-items table (positive control)', () => {
     expect(scanned.length).toBeGreaterThan(100);
     expect(reaches.length).toBeGreaterThan(0);
-    expect(open.size).toBeGreaterThan(0);
-    // the worked example: the change-request queue's #85 stand-in is scanned and labelled
-    const queue = reaches.filter((r) => r.file.endsWith('admin/change-requests/_components/queue-table.tsx'));
-    expect(queue.some((r) => r.item === 85)).toBe(true);
-    expect(queue.every((r) => r.item !== undefined)).toBe(true);
+    // the table must be found; it may be empty once every item has shipped
+    expect(openOrNull).not.toBeNull();
+    // the worked example: the members table's stacked-card parts are scanned and labelled app content
+    const members = reaches.filter((r) => r.file.endsWith('src/components/members/members-table.tsx'));
+    expect(members.length).toBeGreaterThan(0);
+    expect(members.every((r) => r.item === null)).toBe(true);
   });
 
   it('every reach is labelled, and every label names an open item', () => {
@@ -177,7 +182,9 @@ describe('AURA internal-class ratchet (spec 122 parity rule)', () => {
         expect(findReaches('f.tsx', crlf(src))).toEqual(findReaches('f.tsx', src));
       }
       const doc = '| Item | AURA gap | Chamber-OS stand-in |\n|---|---|---|\n| #85 | a | b |\n| #86 | c | d |\n\nafter\n';
-      expect([...openItems(crlf(doc))]).toEqual([85, 86]);
+      expect([...(openItems(crlf(doc)) ?? [])]).toEqual([85, 86]);
+      expect(openItems('no table here\n')).toBeNull();
+      expect([...(openItems('| Item | AURA gap | Chamber-OS stand-in |\n|---|---|---|\n\nafter\n') ?? [0])]).toEqual([]);
     });
     it('ignores reaches inside comments and AURA public classes', () => {
       expect(findReaches('f.css', '/* `.aura-skel` keeps its tone */\n.x { color: var(--aura-fg-primary); }\n')).toEqual([]);

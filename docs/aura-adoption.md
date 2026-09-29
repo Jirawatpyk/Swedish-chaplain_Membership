@@ -87,26 +87,10 @@ Phases 2–12 each depend on 1 and can land in any order.
 
 ## AURA gaps (the handoff doc)
 
-The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, items 52–56 (Addendum 4) in 5.6.0, items 57–62 (Addendum 5, found in US1) in 5.7.0, item 63 in 5.7.1, item 64 (Addendum 6) in 5.7.2, item 65 (Addendum 7, found in US2) in 5.7.3, items 66–69 (Addendum 8, found in US3) in 5.8.0, items 70–71 (Addendum 9, found in US4) in 5.9.0, items 72–74 (Addendum 10, found adopting 5.9.0 in US4) in 5.10.0, items 75–78 (Addendum 11, found in US5a) in 5.11.0, item 79 (Addendum 12) in 5.12.0 and items 80–84 (Addendum 13) in **5.13.0**, the current pin. Open items: #85, found adopting 5.13.0, and #86–#100 (Addendum 15), found applying the parity rule to US1–US5a:
+The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, items 52–56 (Addendum 4) in 5.6.0, items 57–62 (Addendum 5, found in US1) in 5.7.0, item 63 in 5.7.1, item 64 (Addendum 6) in 5.7.2, item 65 (Addendum 7, found in US2) in 5.7.3, items 66–69 (Addendum 8, found in US3) in 5.8.0, items 70–71 (Addendum 9, found in US4) in 5.9.0, items 72–74 (Addendum 10, found adopting 5.9.0 in US4) in 5.10.0, items 75–78 (Addendum 11, found in US5a) in 5.11.0, item 79 (Addendum 12) in 5.12.0 and items 80–84 (Addendum 13) in 5.13.0, and items 85–100 (Addenda 14–15) in 5.14.0–5.16.0 — **5.16.0** is the current pin. Items 85–100 (Addenda 14–15, found adopting 5.13.0 and applying the parity rule to US1–US5a) shipped in 5.14.0 (86, 88, 91, 97), 5.15.0 (85, 87, 89, 90, 92–94, 99, 100) and 5.16.0 (95, 96, 98), and are adopted below (T512). No item is open:
 
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
-| #85 | a stacked static `Table` whose rows stand apart as separate framed cards (5.13 stacks them in one frame, divided by rules) | the per-row `CARD` frame, the frameless wrap and the Review button's card height below 640px in `src/app/(staff)/admin/change-requests/_components/queue-table.tsx` |
-| #86 | `EmptyState` whose title is not a heading (a `<p>`, so the page outline is unchanged) and whose `role="status"` is optional | the `aura-empty` markup in `src/components/shell/empty-state.tsx`, which the benefits panels render |
-| #87 | `Card` head with free content: a loading head whose bars are not a heading, and a status placed above the title on phones | `AuraCardSkeleton` (`src/components/shell/aura-card-skeleton.tsx`), used by the portal `loading.tsx` files and the benefit / timeline skeletons; the `aura-card__title` h2 in `change-request-history-view.tsx` |
-| #88 | `Stat` from `/server`, with its label as a heading (`headingLevel`) | the `aura-stat` markup in `src/components/portal/dashboard/stat-card.tsx` and the membership stat skeleton |
-| #89 | `Progress` with a second, reserved segment (striped) beside the used one | `ReservedProgress` in `src/components/benefits/portal-benefits-summary-card.tsx` |
-| #90 | underline `Tabs` whose tabs share the width, below a breakpoint (`fullWidth` exists only for `variant="segmented"`) | the `max-lg:[&_.aura-tabs__list>*]:flex-1` wrapper in `src/app/(member)/portal/benefits/_components/benefits-tabs.tsx` |
-| #91 | `Drawer` body scroll padding, so a focused control is never under the sticky head (WCAG 2.4.11) | `[&_.aura-drawer__body]:scroll-pt-4` on the pay sheet (`pay-sheet/index.tsx`) |
-| #92 | `FilterBar` whose controls share the row evenly, and that stacks the search on its own row below a chosen breakpoint (`lg`) | the `.aura-filterbar__search` / `__controls` rules in `src/app/(staff)/admin/invoices/_components/invoice-filters.tsx` and `src/components/members/timeline-filters.tsx` |
-| #93 | `Card` that drops its frame below a breakpoint, for a list whose rows become cards of their own | the `max-lg:border-0 bg-transparent shadow-none` card in `src/app/(member)/portal/invoices/page.tsx` |
-| #94 | `Breadcrumb` that collapses to an ellipsis trail on narrow widths and passes attributes to each item | the own `aura-crumbs` markup in `src/components/layout/breadcrumb-nav.tsx` |
-| #95 | `SideNav` action rows that run a callback without selecting (a labelled collapse toggle, sign-out) | `RailToggle` and `DrawerSignOut` in `src/components/layout/staff-nav.tsx` |
-| #96 | `SideNav` group whose closed chevron points right (the board's icon), down when open; a header whose brand, dot and badge keep one row | `.staff-nav .aura-nav__chevron` and the 6px `.aura-nav__header` end padding in `src/app/globals.css` |
-| #97 | `AppShell` whose content area has no padding of its own, so the page containers own it | `.chamber-shell .aura-shell__content` and the bottom-nav offset in `src/app/globals.css` |
-| #98 | `DataTable` selection callback that reports how the change was made (Shift-click range) | `closest('.aura-table__sel')` in `src/components/members/members-table.tsx` |
-| #99 | `Checkbox` hit area larger than its box, for dense decision rows (WCAG 2.5.8) | `[&_.aura-check__input]` insets in `src/components/members/change-requests/change-request-decision-table.tsx` |
-| #100 | a small `Button` (and the Drawer / menu icon trigger) whose box is 44px tall on phones, not only its touch halo (WCAG 2.5.5, ux-standards § 9.1) | `min-h-11` with the matching padding on the `size="sm"` buttons of the portal invoices (`page.tsx`, `portal-invoice-card-list.tsx`, `portal-invoice-card-menu.tsx`, `receipt-status-watcher.tsx`), the invoice detail and its pay sheet panels, and the pay sheet's `closeProps` (no reach into AURA's classes) |
 
 One note stays with AURA: `Menu` closes on any scroll or window resize (iOS Safari fires resize when its toolbar moves), to be checked on a real iPhone before it becomes an item.
 
@@ -115,7 +99,7 @@ One note stays with AURA: `Menu` closes on any scroll or window resize (iOS Safa
 - Icons are registered by name once for each registry: `registerIcons(allIcons)` in `AuraBridge` for client components, and `@/lib/aura-server-icons` (imported by the root layout) for Server Components. `tests/setup.ts` registers both, since component tests render without the layout.
 - Moving to icon components (`npx aura-icons-codemod`), which would let the 6.0 bundle drop the name map, is a separate change.
 
-How Chamber-OS uses the Addendum 5 – 13 items (US1 to US5a dropped their bridge for each):
+How Chamber-OS uses the Addendum 5 – 15 items (US1 to US5a and T512 dropped their bridge for each):
 
 | # | Shipped in | Used by |
 |---|---|---|
@@ -147,6 +131,22 @@ How Chamber-OS uses the Addendum 5 – 13 items (US1 to US5a dropped their bridg
 | 82 | 5.13.0: `EmptyState tone="danger"` (with `role` passed through) | `MembersErrorState`; the danger wrapper is gone |
 | 83 | 5.13.0: `FilterBar` `searchGrow` | The members and directory filter bars, at AURA's own breakpoint (the search takes its own row below 768px); the `.aura-filterbar` overrides are gone |
 | 84 | 5.13.0: `Td` / `Th` `card="title" \| "action"` on a stacked static `Table` | The change-request queue's phone card: company and member number as the title, Review beside it; the container-query grid is gone |
+| 85 | 5.15.0: static `Table` `stackStyle="cards"` | The change-request queue's phone cards stand apart, each framed; the per-row `CARD` classes, the frameless wrap and the Review height reach are gone |
+| 86 | 5.14.0: `EmptyState` `headingLevel={false}` | `shell/empty-state.tsx` renders AURA's `EmptyState` (title a `<p>`, the status role only with `announce`); the hand-built `aura-empty` markup is gone |
+| 87 | 5.15.0: `Card` `header` | Loading cards (`AuraCardSkeleton`) and the change-request history card (pill above the h2 on phones) put their head in `header` |
+| 88 | 5.14.0: `Stat` from `/server`, `headingLevel` | The portal dashboard's stat tiles and their skeleton |
+| 89 | 5.15.0: `Progress` `secondaryValue` | The home benefits card's reserved E-Blasts, striped after the used ones |
+| 90 | 5.15.0: underline `Tabs` `fullWidth="below-lg"` | The benefits tabs share the width on phones and tablets |
+| 91 | 5.14.0: Drawer body scroll padding | The pay sheet's local `scroll-pt-4` is gone |
+| 92 | 5.15.0: `FilterBar` `controlsLayout="fill"`, `stackBelow="lg"` | The invoice filters (search on its own row below 1024px) and the timeline filters (equal columns) |
+| 93 | 5.15.0: `Card` `flushBelow="lg"` | The portal invoices list drops its frame where the rows become cards |
+| 94 | 5.15.0: `Breadcrumb` `collapseBelow`, `itemProps` | `BreadcrumbNav` |
+| 95 | 5.16.0: `SideNav` action rows, `collapseToggle="row"` | The staff rail's labelled Collapse row and the phone drawer's Sign out |
+| 96 | 5.16.0: `SideNav` `chevron="right"`; 8px header end padding | The staff nav's closed Settings group; the local chevron and header rules are gone |
+| 97 | 5.14.0: `AppShell` `contentPadding={false}` | The staff and member frames; the page containers keep the padding |
+| 98 | 5.16.0: `DataTable` `rangeSelect`, `onSelectionChange(keys, change)` | The members table's Shift-click range; the click-capture flag is gone |
+| 99 | 5.15.0: `Checkbox` `hitArea` | The change-request decision rows' 40 × 32 target |
+| 100 | 5.15.0: `touchHeight` on `Button` / `IconButton` (and Drawer `closeProps`) | The portal invoice and pay-sheet small buttons and the pay-sheet close: 44px on phones |
 
 How Chamber-OS uses the 5.6.0 items:
 
