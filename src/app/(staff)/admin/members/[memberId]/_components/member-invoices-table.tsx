@@ -12,6 +12,7 @@
  * (paid / partly credited). For a manager, read-only on finance, the mutating
  * items stay listed but disabled with the reason, as the tooltip said.
  */
+import { useMemo } from 'react';
 import { DataTable, DropdownMenu, IconButton, StatusPill, type DataTableColumn, type MenuItem } from '@jirawatpyk/aura-react';
 import type { InvoiceStatus } from '@/modules/invoicing';
 
@@ -98,7 +99,9 @@ export function MemberInvoicesTable({
   readonly labels: MemberInvoicesTableLabels;
   readonly canMutate: boolean;
 }) {
-  const columns: DataTableColumn<MemberInvoiceRow>[] = [
+  // Memoised: a fresh `columns` array on every render remounts each cell, and
+  // the row menu closed on the same click that opened it (R18).
+  const columns: DataTableColumn<MemberInvoiceRow>[] = useMemo(() => [
     { key: 'number', label: labels.number, mono: true, card: 'title' },
     {
       key: 'status',
@@ -147,7 +150,7 @@ export function MemberInvoicesTable({
         );
       },
     },
-  ];
+  ], [labels, canMutate]);
 
   return (
     <DataTable<MemberInvoiceRow>
