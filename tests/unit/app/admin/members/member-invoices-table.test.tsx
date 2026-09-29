@@ -109,19 +109,21 @@ describe('MemberInvoicesTable (T556)', () => {
   });
 
   // UX review H1: the chip-ink token (--aura-status-warning-fg) is near-black
-  // in dark mode (1.13:1 on the surface); the owed figure takes the warning
-  // text colour that reads on the page in both themes.
+  // in dark mode (1.13:1 on the surface); the owed figure takes AURA's warning
+  // text token (5.14, handoff #106), ≥6.8:1 in both themes.
   it('an owed Remaining figure takes the warning text colour', () => {
     render(<MemberInvoicesTable rows={[issued]} labels={labels} canMutate />);
     const figure = screen.getAllByText('38,520.00 THB').find((el) => el.className.includes('font-medium'));
-    expect(figure?.className).toContain('--aura-alert-warning-fg');
+    expect(figure?.className).toContain('--aura-fg-warning');
   });
 
   // Board `Admin-member-detail-mobile`: a phone card shows Due, Total and
-  // Remaining, the figures left-aligned under their labels.
-  it('phone cards leave out Issued and Paid, and start-align the figures', () => {
+  // Remaining, the figures left-aligned under their labels. AURA starts an
+  // end-aligned column under its label in the cards (5.14, handoff #108), so
+  // the figure needs no wrapper of ours.
+  it('phone cards leave out Issued and Paid, and leave figure alignment to AURA', () => {
     const { container } = render(<MemberInvoicesTable rows={[issued]} labels={labels} canMutate />);
     const total = within(container).getAllByText('38,520.00 THB')[0]!;
-    expect(total.closest('[class*="max-[639px]:text-start"]')).not.toBeNull();
+    expect(total.closest('[class*="max-[639px]:text-start"]')).toBeNull();
   });
 });
