@@ -133,25 +133,20 @@ export function MembersErrorState() {
   const router = useRouter();
   return (
     // role="alert" implies aria-live="assertive". The board draws the error
-    // in the danger colours: a solid red frame and a red icon on a red disc
-    // (reaches into AURA's EmptyState classes: stand-in until AURA #82).
-    <div
+    // in the danger colours: AURA's EmptyState danger tone (5.13, #82).
+    <EmptyState
       role="alert"
-      data-tone="danger"
-      className="[&_.aura-empty]:border-solid [&_.aura-empty]:border-[var(--aura-border-danger)] [&_.aura-empty\_\_icon]:bg-[var(--aura-alert-danger-bg)] [&_.aura-empty\_\_icon]:text-[var(--aura-fg-danger)]"
-    >
-      <EmptyState
-        bordered
-        headingLevel={2}
-        icon="triangle-alert"
-        title={t('title')}
-        description={t('description')}
-        action={
-          <Button variant="secondary" size="sm" icon="rotate-ccw" onClick={() => router.refresh()}>
-            {t('cta')}
-          </Button>
-        }
-      />
-    </div>
+      tone="danger"
+      bordered
+      headingLevel={2}
+      icon="triangle-alert"
+      title={t('title')}
+      description={t('description')}
+      action={
+        <Button variant="secondary" size="sm" icon="rotate-ccw" onClick={() => router.refresh()}>
+          {t('cta')}
+        </Button>
+      }
+    />
   );
 }
