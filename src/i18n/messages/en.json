@@ -1256,6 +1256,7 @@
           "submittedBy": "Submitted by {name} ({role})",
           "submittedOn": "Submitted {submittedAt}",
           "review": "Review",
+          "pendingAlert": "A change request is awaiting review.",
           "open": "Open"
         },
       "title": "Members",

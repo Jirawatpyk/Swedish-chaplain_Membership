@@ -48,6 +48,8 @@ export interface MemberDetailSlots {
   readonly timeline: ReactNode;
   /** `null` — the member-change-approval flag is off. */
   readonly changeRequests: ReactNode | null;
+  /** A request awaiting review, flagged above the figures (`null` without F114). */
+  readonly pendingChangeRequest: ReactNode | null;
   /** `null` — F9 off, no `members.bulk`, or the member is erased. */
   readonly dataExport: ReactNode | null;
 }
@@ -251,6 +253,7 @@ export async function renderMemberDetailView({
       {/* 108 FR-003 — money emails are being skipped for this member. */}
       {moneyEmailUndeliverable && <NoPrimaryContactBanner memberId={member.memberId} />}
 
+      {slots.pendingChangeRequest}
       {slots.strip}
       <SectionLinks label={t('sectionLinks.label')} links={links} />
 

@@ -25,6 +25,7 @@ import { MemberSummaryStrip } from '@/app/(staff)/admin/members/[memberId]/_comp
 import { MemberInvoicesCard } from '@/app/(staff)/admin/members/[memberId]/_components/member-invoices-section';
 import { TimelinePreviewCard } from '@/app/(staff)/admin/members/[memberId]/_components/timeline-preview-section';
 import { MemberDataExportCard } from '@/app/(staff)/admin/members/[memberId]/_components/member-data-export-section';
+import { PendingChangeRequestAlert } from '@/app/(staff)/admin/members/[memberId]/_components/member-change-requests-section';
 import { renderMemberTimelineView } from '@/app/(staff)/admin/members/[memberId]/_components/member-timeline-view';
 import { renderMemberBenefitsView } from '@/app/(staff)/admin/members/[memberId]/_components/member-benefits-view';
 
@@ -381,6 +382,7 @@ export default async function AuraAdminPreviewPage({
           features: { f9Dashboard: true, f7Broadcasts: true },
           locale: 'en',
           slots: {
+            pendingChangeRequest: state === 'default' ? await PendingChangeRequestAlert({ requestId: 'cr-1' }) : null,
             strip: (
               <MemberSummaryStrip
                 outstanding={{ state: 'ok', sumSatang: 3852000n, count: 1, earliestDueIso: '2026-10-15', partial: false }}

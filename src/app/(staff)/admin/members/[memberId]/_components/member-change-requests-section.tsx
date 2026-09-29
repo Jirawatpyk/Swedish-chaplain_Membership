@@ -14,6 +14,7 @@
  * admin "no requests" when the read errored. Rendered only while the
  * platform flag is on (FR-039: no request state shown while dark).
  */
+import { cache } from 'react';
 import Link from 'next/link';
 import { headers } from 'next/headers';
 import { getLocale, getTranslations } from 'next-intl/server';
@@ -37,13 +38,13 @@ interface Props {
   readonly memberId: string;
 }
 
-export async function MemberChangeRequestsSection({ tenant, memberId }: Props) {
-  const t = await getTranslations('admin.members.changeRequests');
-  const tReview = await getTranslations('admin.changeRequests.review');
-  const locale = await getLocale();
+/**
+ * One read per render, shared by the pending alert above the figures and the
+ * section below (React `cache`).
+ */
+const loadMemberChangeRequests = cache(async (tenant: TenantContext, memberId: string) => {
   const h = await headers();
   const requestId = requestIdFromHeaders(h);
-
   let items: readonly ChangeRequestQueueItem[] = [];
   let loadFailed = false;
   try {
@@ -57,6 +58,43 @@ export async function MemberChangeRequestsSection({ tenant, memberId }: Props) {
     loadFailed = true;
     logger.error({ errorId: 'M114.admin.member_section.threw', requestId, tenantId: tenant.slug, memberId, err: e instanceof Error ? e.name : String(e) }, 'member change-requests section: threw');
   }
+  return { items, loadFailed };
+});
+
+/**
+ * Spec 122 US5b-1 (board `Admin-member-detail-mobile`, UX review M9) — a
+ * request awaiting review, flagged above the figures with "Review". Nothing
+ * when none is pending or the read failed (the section says that).
+ */
+export async function MemberPendingChangeRequestAlert({ tenant, memberId }: Props) {
+  const { items } = await loadMemberChangeRequests(tenant, memberId);
+  const pending = items.find(({ row }) => row.request.state === 'pending');
+  return pending ? <PendingChangeRequestAlert requestId={pending.row.request.id} /> : null;
+}
+
+/** The alert itself — presentation only, so the no-DB preview renders it too. */
+export async function PendingChangeRequestAlert({ requestId }: { readonly requestId: string }) {
+  const t = await getTranslations('admin.members.changeRequests');
+  return (
+    <Alert
+      tone="info"
+      role="status"
+      action={
+        <Link href={`/admin/change-requests/${requestId}`} className={buttonClass({ variant: 'secondary', size: 'sm' })}>
+          {t('review')}
+        </Link>
+      }
+    >
+      {t('pendingAlert')}
+    </Alert>
+  );
+}
+
+export async function MemberChangeRequestsSection({ tenant, memberId }: Props) {
+  const t = await getTranslations('admin.members.changeRequests');
+  const tReview = await getTranslations('admin.changeRequests.review');
+  const locale = await getLocale();
+  const { items, loadFailed } = await loadMemberChangeRequests(tenant, memberId);
 
   const fmt = (d: Date) => formatLocalisedDate(d.toISOString(), locale, { dateStyle: 'medium', timeStyle: 'short' });
 
@@ -117,6 +155,8 @@ export async function MemberChangeRequestsSection({ tenant, memberId }: Props) {
                       className={buttonClass({ variant: 'secondary', size: 'sm' })}
                     >
                       {r.state === 'pending' ? t('review') : t('open')}
+                      {/* Each row has one: the date tells them apart (UX review M7). */}
+                      <span className="sr-only">{`, ${t('submittedOn', { submittedAt: fmt(r.submittedAt) })}`}</span>
                     </Link>
                   </div>
                 </div>

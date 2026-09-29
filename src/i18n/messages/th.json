@@ -1256,6 +1256,7 @@
           "submittedBy": "ส่งโดย {name} ({role})",
           "submittedOn": "ส่งเมื่อ {submittedAt}",
           "review": "พิจารณา",
+          "pendingAlert": "มีคำขอแก้ไขข้อมูลรอตรวจสอบ",
           "open": "เปิด"
         },
       "title": "สมาชิก",

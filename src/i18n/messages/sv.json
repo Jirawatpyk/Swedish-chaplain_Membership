@@ -1256,6 +1256,7 @@
           "submittedBy": "Skickad av {name} ({role})",
           "submittedOn": "Skickad {submittedAt}",
           "review": "Granska",
+          "pendingAlert": "En ändringsbegäran väntar på granskning.",
           "open": "Öppna"
         },
       "title": "Medlemmar",

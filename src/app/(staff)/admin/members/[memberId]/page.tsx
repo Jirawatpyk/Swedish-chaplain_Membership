@@ -58,7 +58,11 @@ import { MemberInvoicesSkeleton } from './_components/member-invoices-skeleton';
 import { MemberDataExportSection } from './_components/member-data-export-section';
 import { MemberDataExportSkeleton } from './_components/member-data-export-skeleton';
 // F114 US4 — the member's change-request history section (FR-026).
-import { MemberChangeRequestsSection, MemberChangeRequestsSkeleton } from './_components/member-change-requests-section';
+import {
+  MemberChangeRequestsSection,
+  MemberChangeRequestsSkeleton,
+  MemberPendingChangeRequestAlert,
+} from './_components/member-change-requests-section';
 import {
   MemberRenewalHealthSection,
   MemberRenewalHealthSkeleton,
@@ -513,6 +517,11 @@ export default async function MemberDetailPage({
       ),
       // F114 US4 (FR-026) — the member's change-request history; hidden while
       // the platform flag is off (FR-039: no request state shown when dark).
+      pendingChangeRequest: env.features.memberChangeApproval ? (
+        <Suspense fallback={null}>
+          <MemberPendingChangeRequestAlert tenant={tenant} memberId={member.memberId} />
+        </Suspense>
+      ) : null,
       changeRequests: env.features.memberChangeApproval ? (
         <Suspense fallback={<MemberChangeRequestsSkeleton />}>
           <MemberChangeRequestsSection tenant={tenant} memberId={member.memberId} />
