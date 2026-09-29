@@ -58,7 +58,7 @@ A server component that needs a static AURA component imports it from **`@jirawa
 6. An enterprise-ux-designer review has signed; on money screens, a financial-integrity review as well.
 7. **No logic change.** A defect found along the way ships as its own PR, merged first.
 
-**Board parity rule (US5a, 28 Sep 2026).** AURA's component defaults (spacing, sizes, radius, type scale) win over a board's pixel values. The board wins on content, structure, order, icons and copy. When a board value is clearly better, it goes to the AURA handoff, never into a per-page override. Styling that reaches into AURA's internal classes (`.aura-table__*`, `.aura-tbl__*`, `.aura-empty*`, `.aura-filterbar__*`) is a stand-in: it gets a comment naming its handoff item and is listed under the open items below.
+**Board parity rule (US5a, 28 Sep 2026).** AURA's component defaults (spacing, sizes, radius, type scale) win over a board's pixel values. The board wins on content, structure, order, icons and copy. When a board value is clearly better, it goes to the AURA handoff, never into a per-page override. Styling that reaches into AURA's internal classes (`.aura-table__*`, `.aura-tbl__*`, `.aura-empty*`, `.aura-filterbar__*`, `.aura-card__*`, `.aura-alert*`, `.aura-stat*`, `.aura-progress*`, `.aura-nav*`, `.aura-shell*`, `.aura-bottomnav*`, a hand-applied `aura-icon`) is a stand-in: it gets a `stand-in until AURA #NN` comment naming an item open below. A reach AURA's owner agreed is app content (e.g. hiding part of a cell only on a stacked phone card) is labelled `AURA app content: <why>` instead. `tests/unit/architecture/aura-internal-class-ratchet.test.ts` enforces both over every `MIGRATED_PATHS` entry and `globals.css`, and fails on a label naming an item that is no longer open: when AURA ships an item, its stand-ins are swapped in the same PR that bumps the pin.
 
 ## Phases
 
@@ -85,11 +85,25 @@ Phases 2–12 each depend on 1 and can land in any order.
 
 ## AURA gaps (the handoff doc)
 
-The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, items 52–56 (Addendum 4) in 5.6.0, items 57–62 (Addendum 5, found in US1) in 5.7.0, item 63 in 5.7.1, item 64 (Addendum 6) in 5.7.2, item 65 (Addendum 7, found in US2) in 5.7.3, items 66–69 (Addendum 8, found in US3) in 5.8.0, items 70–71 (Addendum 9, found in US4) in 5.9.0, items 72–74 (Addendum 10, found adopting 5.9.0 in US4) in 5.10.0, items 75–78 (Addendum 11, found in US5a) in 5.11.0, item 79 (Addendum 12) in 5.12.0 and items 80–84 (Addendum 13) in **5.13.0**, the current pin. One item is open, found adopting 5.13.0:
+The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, items 52–56 (Addendum 4) in 5.6.0, items 57–62 (Addendum 5, found in US1) in 5.7.0, item 63 in 5.7.1, item 64 (Addendum 6) in 5.7.2, item 65 (Addendum 7, found in US2) in 5.7.3, items 66–69 (Addendum 8, found in US3) in 5.8.0, items 70–71 (Addendum 9, found in US4) in 5.9.0, items 72–74 (Addendum 10, found adopting 5.9.0 in US4) in 5.10.0, items 75–78 (Addendum 11, found in US5a) in 5.11.0, item 79 (Addendum 12) in 5.12.0 and items 80–84 (Addendum 13) in **5.13.0**, the current pin. Open items: #85, found adopting 5.13.0, and #86–#99 (Addendum 15), found applying the parity rule to US1–US5a:
 
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
 | #85 | a stacked static `Table` whose rows stand apart as separate framed cards (5.13 stacks them in one frame, divided by rules) | the per-row `CARD` frame, the frameless wrap and the Review button's card height below 640px in `src/app/(staff)/admin/change-requests/_components/queue-table.tsx` |
+| #86 | `EmptyState` whose title is not a heading (a `<p>`, so the page outline is unchanged) and whose `role="status"` is optional | the `aura-empty` markup in `src/components/shell/empty-state.tsx`, which the benefits panels render |
+| #87 | `Card` head that is not a heading: a loading card whose head holds skeleton bars | the hand-written `aura-card__head` in the portal `loading.tsx` files, `benefit-usage-skeleton.tsx` and `timeline-skeleton.tsx` |
+| #88 | `Stat` from `/server`, with its label as a heading (`headingLevel`) | the `aura-stat` markup in `src/components/portal/dashboard/stat-card.tsx` and the membership stat skeleton |
+| #89 | `Progress` with a second, reserved segment (striped) beside the used one | `ReservedProgress` in `src/components/benefits/portal-benefits-summary-card.tsx` |
+| #90 | underline `Tabs` whose tabs share the width, below a breakpoint (`fullWidth` exists only for `variant="segmented"`) | the `max-lg:[&_.aura-tabs__list>*]:flex-1` wrapper in `src/app/(member)/portal/benefits/_components/benefits-tabs.tsx` |
+| #91 | `Drawer` body scroll padding, so a focused control is never under the sticky head (WCAG 2.4.11) | `[&_.aura-drawer__body]:scroll-pt-4` on the pay sheet (`pay-sheet/index.tsx`) |
+| #92 | `FilterBar` whose controls share the row evenly, and that stacks the search on its own row below a chosen breakpoint (`lg`) | the `.aura-filterbar__search` / `__controls` rules in `src/app/(staff)/admin/invoices/_components/invoice-filters.tsx` and `src/components/members/timeline-filters.tsx` |
+| #93 | `Card` that drops its frame below a breakpoint, for a list whose rows become cards of their own | the `max-lg:border-0 bg-transparent shadow-none` card in `src/app/(member)/portal/invoices/page.tsx` |
+| #94 | `Breadcrumb` that collapses to an ellipsis trail on narrow widths and passes attributes to each item | the own `aura-crumbs` markup in `src/components/layout/breadcrumb-nav.tsx` |
+| #95 | `SideNav` action rows that run a callback without selecting (a labelled collapse toggle, sign-out) | `RailToggle` and `DrawerSignOut` in `src/components/layout/staff-nav.tsx` |
+| #96 | `SideNav` group whose closed chevron points right (the board's icon), down when open | `.staff-nav .aura-nav__chevron` in `src/app/globals.css` |
+| #97 | `AppShell` whose content area has no padding of its own, so the page containers own it | `.chamber-shell .aura-shell__content` and the bottom-nav offset in `src/app/globals.css` |
+| #98 | `DataTable` selection callback that reports how the change was made (Shift-click range) | `closest('.aura-table__sel')` in `src/components/members/members-table.tsx` |
+| #99 | `Checkbox` hit area larger than its box, for dense decision rows (WCAG 2.5.8) | `[&_.aura-check__input]` insets in `src/components/members/change-requests/change-request-decision-table.tsx` |
 
 One note stays with AURA: `Menu` closes on any scroll or window resize (iOS Safari fires resize when its toolbar moves), to be checked on a real iPhone before it becomes an item.
 
