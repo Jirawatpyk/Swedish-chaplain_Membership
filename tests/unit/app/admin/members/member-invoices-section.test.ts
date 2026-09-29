@@ -27,9 +27,10 @@ const invoice = {
   total: { satang: 3852000n },
   creditedTotal: { satang: 100000n },
 };
+let rows: Record<string, unknown>[] = [invoice];
 vi.mock('@/modules/invoicing', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/modules/invoicing')>()),
-  listInvoicesByMember: async () => ({ ok: true, value: { rows: [invoice], total: 1 } }),
+  listInvoicesByMember: async () => ({ ok: true, value: { rows, total: rows.length } }),
   makeListInvoicesByMemberDeps: () => ({}),
 }));
 
@@ -57,5 +58,41 @@ describe('MemberInvoicesSection money form (T556)', () => {
     render((await MemberInvoicesCard({ memberId: 'm-1', total: 3, rows: [], canMutate: true, hasFilter: false, showFilters: false })) as ReactElement);
     expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent(/^Invoices$/);
     expect(screen.getByRole('link', { name: /New invoice/ })).toHaveClass('aura-btn--primary');
+  });
+});
+
+// Financial-integrity review M1 — `issued` is the only unpaid state
+// (`canTransition`: issued → paid | void; credit notes need paid), so only an
+// issued row is owed, matching the figures strip's Outstanding.
+describe('MemberInvoicesSection owing flag', () => {
+  const owingFor = async (row: Record<string, unknown>): Promise<boolean> => {
+    rows = [row];
+    try {
+      const el = (await MemberInvoicesSection({
+        tenant: { slug: 't1' } as never,
+        memberId: 'm-1',
+        role: 'admin',
+      })) as ReactElement<{ rows: { owing: boolean }[] }>;
+      return el.props.rows[0]!.owing;
+    } finally {
+      rows = [invoice];
+    }
+  };
+  const unpaid = { paidAt: null, creditedTotal: { satang: 0n } };
+
+  it('a void bill is not owed', async () => {
+    expect(await owingFor({ ...invoice, ...unpaid, status: 'void', total: { satang: 535000n } })).toBe(false);
+  });
+
+  it('a partially credited (paid) invoice is not owed', async () => {
+    expect(await owingFor(invoice)).toBe(false);
+  });
+
+  it('a paid invoice is not owed', async () => {
+    expect(await owingFor({ ...invoice, status: 'paid', creditedTotal: { satang: 0n } })).toBe(false);
+  });
+
+  it('an issued invoice is owed', async () => {
+    expect(await owingFor({ ...invoice, ...unpaid, status: 'issued' })).toBe(true);
   });
 });
