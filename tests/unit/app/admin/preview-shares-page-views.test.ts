@@ -21,4 +21,10 @@ describe('aura-admin preview renders the pages’ own views', () => {
     expect(preview).not.toContain('<MembersStateCard');
     expect(preview).not.toContain('<DirectoryWithBulk');
   });
+
+  it('frames the review at its detail path, so the shell draws the phone back link as on the real page', () => {
+    // At the queue's path the shell has no parent to link back to, and the
+    // phone screenshot showed no "← Change requests" (local review, 29 Sep).
+    expect(preview).toContain('<StaffFrame path={`/admin/change-requests/${request.id}`}>');
+  });
 });
