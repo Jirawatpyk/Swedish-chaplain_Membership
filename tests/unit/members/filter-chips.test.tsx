@@ -167,11 +167,15 @@ describe('clearing inside the search debounce', () => {
 describe('filter triggers as on the board (US5a)', () => {
   it('each filter is an AURA FilterSelect reading "<name> <value>", named after the filter (#79)', () => {
     const { container } = renderFilters('status=active');
-    const face = (name: string) =>
-      screen.getByRole('combobox', { name }).closest('.aura-filterselect')?.querySelector('.aura-filterselect__face');
-    expect(face('Status')).toHaveTextContent(/^Status\s*Active$/);
-    expect(face('Plan')).toHaveTextContent(/^Plan\s*All$/);
-    expect(face('Risk band')).toHaveTextContent(/^Risk band\s*All$/);
+    // The visible face; AURA also keeps the full option ("All plans") for
+    // screen readers beside the short word.
+    const face = (name: string) => {
+      const el = screen.getByRole('combobox', { name }).closest('.aura-filterselect');
+      return ['name', 'value'].map((part) => el?.querySelector(`.aura-filterselect__${part}`)?.textContent).join(' ');
+    };
+    expect(face('Status')).toBe('Status Active');
+    expect(face('Plan')).toBe('Plan All');
+    expect(face('Risk band')).toBe('Risk band All');
     expect(container.querySelector('[data-filter-face]')).toBeNull();
   });
 

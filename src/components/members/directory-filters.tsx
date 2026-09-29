@@ -14,14 +14,13 @@
  * 122 US5a (T503) — AURA `FilterBar` (board `Admin-members`): the search and
  * the selects in one bar, the applied filters as removable tags below it with
  * "Clear filters". The URL contract is unchanged. Each select is the board's
- * compact "Status All ▾" trigger (`FilterChipSelect`).
+ * compact "Status All ▾" trigger: AURA `FilterSelect` (handoff #79, 5.12.0).
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
-import { AuraProvider, Button, FilterBar, Tag } from '@jirawatpyk/aura-react';
-import { FilterChipSelect } from './filter-chip-select';
+import { AuraProvider, Button, FilterBar, FilterSelect, Tag } from '@jirawatpyk/aura-react';
 import { formatCalendarYear } from '@/lib/format-date-localised';
 import { MailIcon } from 'lucide-react';
 
@@ -235,13 +234,10 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
         <FilterBar
           key={barKey}
           ref={barRef}
-          // As on the `Admin-members` boards: from 1024px the search fills the
-          // row beside the filters; below it the search takes its own row and
-          // the filters share the next; on a phone the three filters share one
-          // row (6px apart, each as wide as its words) and the needs-invite
-          // chip wraps to the next. The search width reaches into AURA's
-          // FilterBar classes: a stand-in until AURA #83 (searchFill).
-          className="[&_.aura-filterbar\_\_search]:max-w-none [&_.aura-filterbar\_\_spacer]:hidden max-lg:[&_.aura-filterbar\_\_search]:basis-full max-sm:[&_.aura-filterbar\_\_controls]:w-full max-sm:[&_.aura-filterbar\_\_controls]:gap-1.5"
+          // As on the `Admin-members` boards: the search fills the row beside
+          // the filters, and takes its own row on a phone, where the three
+          // filters share the next (AURA's own breakpoint and gaps).
+          searchGrow
           search={isSearchFocused ? sentQ : currentQ}
           onSearchChange={onSearchChange}
           searchDelay={DEBOUNCE_MS}
@@ -251,7 +247,7 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
           filters={activeChips}
           {...(hasAnyFilter ? { onClearAll: clearAll } : {})}
         >
-          <FilterChipSelect
+          <FilterSelect
             label={t('filters.status.label')}
             allLabel={t('filters.allShort')}
             value={currentStatus}
@@ -263,7 +259,7 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
           />
 
           {plans.length > 0 && (
-            <FilterChipSelect
+            <FilterSelect
               label={t('filters.plan.label')}
               allLabel={t('filters.allShort')}
               value={currentPlan}
@@ -279,7 +275,7 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
           {/* I1 round-10 ui-design-specialist — quick filter on the
               F8-derived risk band, so renewal triage can scan "at-risk" and
               "critical" members in one click. */}
-          <FilterChipSelect
+          <FilterSelect
             label={t('filters.risk.label')}
             allLabel={t('filters.allShort')}
             value={currentRisk}
