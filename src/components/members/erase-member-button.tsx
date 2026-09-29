@@ -25,7 +25,7 @@ import { useState, useTransition, useCallback, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { ShieldXIcon } from 'lucide-react';
-import { Alert, Button, Checkbox, Dialog, RadioGroup, Select, TextField, Textarea, buttonClass } from '@jirawatpyk/aura-react';
+import { Alert, Button, Checkbox, Dialog, RadioGroup, Select, TextField, Textarea } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
 // TYPE-ONLY import — erased by SWC, so it pulls ZERO runtime code from the
 // barrel. The runtime `VERIFICATION_METHODS` value CANNOT be imported here: the
@@ -199,22 +199,18 @@ export function EraseMemberButton({
             <Button variant="secondary" data-autofocus disabled={loading} onClick={() => handleOpenChange(false)}>
               {t('cancel')}
             </Button>
-            {/* A plain button with AURA's classes: AURA's Button replaces a
-                passed aria-disabled with its own loading flag, and this gate
-                must stay focusable and announced while blocked (AURA handoff). */}
-            <button
-              type="button"
-              className={buttonClass({ variant: 'danger', loading })}
-              aria-busy={loading || undefined}
-              aria-disabled={!canConfirm || loading || undefined}
+            {/* The gate stays focusable and announced while blocked: AURA's
+                Button keeps a passed aria-disabled and ignores clicks then
+                (5.14, handoff 102); handleConfirm re-checks the gate too. */}
+            <Button
+              variant="danger"
+              loading={loading}
+              aria-disabled={!canConfirm || undefined}
               aria-describedby={!canConfirm ? 'erase-gate-checklist' : undefined}
-              onClick={() => {
-                if (!canConfirm || loading) return;
-                void handleConfirm();
-              }}
+              onClick={() => void handleConfirm()}
             >
               {loading ? t('erasingInProgress') : t('confirmCta')}
-            </button>
+            </Button>
           </>
         }
       >

@@ -18,7 +18,7 @@ import { useTranslations, useLocale } from 'next-intl';
 import { toast } from '@/lib/toast';
 import { ArchiveRestoreIcon } from 'lucide-react';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
-import { Alert, Button, Tooltip, buttonClass } from '@jirawatpyk/aura-react';
+import { Alert, Button, Tooltip } from '@jirawatpyk/aura-react';
 import {
   RestorePrimaryDialog,
   type DesignatableContact,
@@ -240,18 +240,13 @@ export function ArchivedBanner({
         ) : (
           // Past the window: a focusable, aria-disabled button whose tooltip
           // says why (a native `disabled` one is neither focusable nor read).
-          // A plain button with AURA's classes — AURA's Button replaces a
-          // passed aria-disabled with its own loading flag.
+          // AURA's Button keeps the passed aria-disabled and ignores clicks
+          // (5.14, handoff 102).
           <Tooltip content={t('windowExpiredTooltip')}>
-            <button
-              type="button"
-              aria-disabled="true"
-              className={buttonClass({ variant: 'secondary', size: 'sm' })}
-              onClick={(e) => e.preventDefault()}
-            >
+            <Button variant="secondary" size="sm" aria-disabled="true">
               <ArchiveRestoreIcon className="size-4" aria-hidden="true" />
               {t('undeleteCta')}
-            </button>
+            </Button>
           </Tooltip>
         )
       }
