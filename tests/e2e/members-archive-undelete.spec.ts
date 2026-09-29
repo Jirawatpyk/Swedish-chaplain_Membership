@@ -53,7 +53,7 @@ test.describe('members archive/undelete — F3 US7 @f3 @a11y @i18n', () => {
     // Filter to active members only so the Archive CTA is visible.
     await page.goto('/admin/members?status=active');
     await page.waitForLoadState('networkidle');
-    const firstRow = page.locator('table tbody tr').first();
+    const firstRow = page.locator('[role="grid"] [role="row"]:has([role="gridcell"])').first() // AURA DataTable grid (122 US5a);
     await firstRow.waitFor({ timeout: 15_000 });
     const href = await firstRow.locator('a').first().getAttribute('href');
     if (!href) throw new Error('No active member rows — seed required');

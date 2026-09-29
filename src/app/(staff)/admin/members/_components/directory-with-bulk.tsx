@@ -8,7 +8,6 @@
  */
 
 import { useState, useCallback, useMemo } from 'react';
-import { ReadOnlyBanner } from '@/components/shell/read-only-banner';
 import { useRouter } from 'next/navigation';
 import { toast } from '@/lib/toast';
 import {
@@ -26,6 +25,8 @@ type Props = {
   readonly pageSize: number;
   readonly total: number;
   readonly isAdmin: boolean;
+  /** A search or filter is applied (the count above the table shows only then). */
+  readonly filtered?: boolean;
 };
 
 export function DirectoryWithBulk({
@@ -34,6 +35,7 @@ export function DirectoryWithBulk({
   pageSize,
   total,
   isAdmin,
+  filtered = false,
 }: Props) {
   const t = useTranslations('admin.members.inlineEdit');
   const tDir = useTranslations('admin.members.directory');
@@ -186,16 +188,12 @@ export function DirectoryWithBulk({
 
   return (
     <>
-      {/* C3 round-10 ui-design-specialist — manager banner. Without it
-          the table looked identical to admin's first paint (same chevron
-          hover hint + same status badge styling) so managers repeatedly
-          tried to double-click cells and got nothing. Banner makes the
-          read-only constraint explicit + points to the resolution path. */}
-      {!isAdmin && <ManagerReadOnlyBanner />}
       <MembersTable
         rows={rows}
         total={total}
+        filtered={filtered}
         enableSelection={isAdmin}
+        canEdit={isAdmin}
         onSelectionChange={isAdmin ? handleSelectionChange : undefined}
         onInlineEdit={isAdmin ? handleInlineEdit : undefined}
         onSelectAllMatching={isAdmin ? handleSelectAllMatching : undefined}
@@ -206,7 +204,9 @@ export function DirectoryWithBulk({
         onClearMatching={isAdmin ? handleClear : undefined}
         clearSelectionNonce={clearNonce}
       />
-      <TablePagination page={page} pageSize={pageSize} total={total} />
+      {/* 122 US5a — the AURA ActionBar sits right after the table: sticky, it
+          floats over the list while the table is on screen and takes its own
+          space at the end, before the pagination. */}
       {isAdmin && (
         <BulkActionBar
           selectedIds={effectiveIds}
@@ -215,18 +215,8 @@ export function DirectoryWithBulk({
           onClear={handleClear}
         />
       )}
+      <TablePagination page={page} pageSize={pageSize} total={total} />
     </>
   );
 }
 
-/**
- * Subtle banner above the manager directory table. Uses an Info icon
- * + muted-background so the banner doesn't dominate but is unmissable
- * on first visit. `role="note"` is the canonical "supplemental
- * information" landmark — the banner is static admin-handoff guidance,
- * not a live-region status update (so `role="status"` would be wrong).
- */
-function ManagerReadOnlyBanner() {
-  const t = useTranslations('admin.members.directory');
-  return <ReadOnlyBanner>{t('managerReadOnlyBanner')}</ReadOnlyBanner>;
-}

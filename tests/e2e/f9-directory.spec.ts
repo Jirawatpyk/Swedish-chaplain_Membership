@@ -47,13 +47,14 @@ test.describe('F9 — member directory (US5) @f9', () => {
     await page.goto('/admin/directory');
 
     await expect(page.getByRole('heading', { name: 'Member directory', level: 1 })).toBeVisible();
-    await expect(page.getByRole('table', { name: /members and their directory/i })).toBeVisible();
+    await expect(page.getByRole('grid', { name: /members and their directory/i })).toBeVisible();
     // Generate controls (FR-026/027).
     await expect(page.getByRole('button', { name: /generate e-book/i })).toBeVisible();
     await expect(page.getByRole('button', { name: /export data \(json\)/i })).toBeVisible();
 
     // Keyword search (FR-024) commits to the URL (debounced).
-    const search = page.getByRole('textbox', { name: /search directory/i });
+    // 122 US5a — AURA FilterBar's search input (type="search" → searchbox)
+    const search = page.getByRole('searchbox', { name: /search directory/i });
     await expect(search).toBeVisible();
     // pressSequentially (real per-key events), NOT fill(): webkit + React can
     // drop the synthetic onChange from a one-shot fill(), so the 300ms-debounced
@@ -64,7 +65,7 @@ test.describe('F9 — member directory (US5) @f9', () => {
     await page.waitForURL(/q=a/, { timeout: 15_000 });
     // Re-renders without crashing — a results table or the empty state.
     await expect(
-      page.getByRole('table', { name: /members and their directory/i }).or(page.getByText(/no members found/i)),
+      page.getByRole('grid', { name: /members and their directory/i }).or(page.getByText(/no members found/i)),
     ).toBeVisible();
   });
 
@@ -85,7 +86,7 @@ test.describe('F9 — member directory (US5) @f9', () => {
     await signInAsManager(page);
     await page.goto('/admin/directory');
     await expect(page.getByRole('heading', { name: 'Member directory', level: 1 })).toBeVisible();
-    await expect(page.getByRole('table', { name: /members and their directory/i })).toBeVisible();
+    await expect(page.getByRole('grid', { name: /members and their directory/i })).toBeVisible();
   });
 
   test('member is denied the directory (redirected off /admin/directory)', async ({ page }) => {

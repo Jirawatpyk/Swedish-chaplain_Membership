@@ -25,6 +25,7 @@
 import type { Page } from '@playwright/test';
 import { expect, test, fillField } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
+import { firstMemberRowLink } from './helpers/members-grid';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
@@ -58,7 +59,7 @@ test.describe('F3 admin route page titles @f3 @a11y', () => {
   async function firstMemberId(page: Page): Promise<string | null> {
     await page.goto('/admin/members');
     await page.waitForLoadState('networkidle');
-    const firstRowLink = page.locator('tbody tr:first-child a').first();
+    const firstRowLink = firstMemberRowLink(page);
     const href = await firstRowLink.getAttribute('href').catch(() => null);
     if (!href) return null;
     const match = href.match(/\/admin\/members\/([0-9a-f-]+)/);

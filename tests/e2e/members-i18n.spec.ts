@@ -21,6 +21,7 @@ import AxeBuilder from '@axe-core/playwright';
 import type { BrowserContext, Page } from '@playwright/test';
 import { expect, test, fillField } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
+import { MEMBERS_GRID, firstMemberRowLink } from './helpers/members-grid';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
@@ -76,7 +77,7 @@ test.describe('F3 members i18n locale coverage @f3 @i18n', () => {
       await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!);
       await setLocale(context, locale);
       await page.goto('/admin/members');
-      await page.waitForSelector('[data-slot="table"]', { timeout: 10_000 });
+      await page.waitForSelector(MEMBERS_GRID, { timeout: 10_000 });
 
       const bodyText: string = await page.evaluate(
         () => document.body.innerText,
@@ -115,7 +116,7 @@ test.describe('F3 members i18n locale coverage @f3 @i18n', () => {
       await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!);
       await setLocale(context, locale);
       await page.goto('/admin/members');
-      await page.waitForSelector('[data-slot="table"]', { timeout: 10_000 });
+      await page.waitForSelector(MEMBERS_GRID, { timeout: 10_000 });
 
       const results = await new AxeBuilder({ page })
         .withTags([...AXE_TAGS])
@@ -134,7 +135,7 @@ test.describe('F3 members i18n locale coverage @f3 @i18n', () => {
     // Find first member that has a date_of_birth visible on detail page
     await page.goto('/admin/members');
     await page.waitForLoadState('networkidle');
-    const firstRowLink = page.locator('tbody tr:first-child a').first();
+    const firstRowLink = firstMemberRowLink(page);
     const href = await firstRowLink.getAttribute('href').catch(() => null);
     if (!href) {
       test.skip(true, 'No members seeded — skipping BE year check');

@@ -10,7 +10,7 @@
  * handleRowSelectionChange was mapping with rows[Number(idx)] — UUID
  * strings cast to NaN, always returning undefined → empty selection.
  */
-import { describe, expect, it, vi, beforeAll } from 'vitest';
+import { describe, expect, it, vi, beforeAll, onTestFinished } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import type { MembersTableRow } from '@/components/members/members-table';
@@ -299,6 +299,50 @@ describe('MembersTable selection (T108 regression)', () => {
 
     const checkboxes = screen.queryAllByRole('checkbox');
     expect(checkboxes).toHaveLength(0);
+  });
+});
+
+describe('MembersTable selection on the AURA grid (122 US5a review)', () => {
+  const threeRows: MembersTableRow[] = [
+    testRows[0]!,
+    { ...testRows[1]!, member_id: 'bbbb-2222', company_name: 'Volvo AB' },
+    { ...testRows[1]!, member_id: 'cccc-3333', company_name: 'IKEA Thailand' },
+  ];
+
+  it('a Shift-click outside a checkbox never turns a later keyboard toggle into a range', async () => {
+    const selectionSpy = vi.fn();
+    // A desktop-width grid: jsdom measures 0px, a phone card, where AURA
+    // takes no selection keys (`hideSelectionInCards`).
+    const rect = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockReturnValue({ width: 1280, height: 600, top: 0, left: 0, right: 1280, bottom: 600, x: 0, y: 0 } as DOMRect);
+    onTestFinished(() => rect.mockRestore());
+    const { MembersTable } = await import('@/components/members/members-table');
+    render(
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <MembersTable rows={threeRows} enableSelection onSelectionChange={selectionSpy} />
+      </NextIntlClientProvider>,
+    );
+    fireEvent.click(screen.getAllByRole('checkbox')[1]!); // Fogmaker, no Shift
+    // Shift-click the IKEA row link (opens a new window), then Space on its
+    // selection cell — AURA toggles that without a click event.
+    fireEvent.click(screen.getByRole('link', { name: /IKEA Thailand/ }), { shiftKey: true });
+    const ikeaSel = document.querySelector('[data-rc="3:0"]') as HTMLElement;
+    fireEvent.keyDown(ikeaSel, { key: ' ' });
+    const last = selectionSpy.mock.calls.at(-1)?.[0] as string[];
+    expect([...last].sort()).toEqual(['aaaa-1111-bbbb-2222', 'cccc-3333']);
+  });
+
+  it('the table does not announce the selection itself — the bulk bar does', async () => {
+    const { MembersTable } = await import('@/components/members/members-table');
+    render(
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <MembersTable rows={threeRows} enableSelection onSelectionChange={vi.fn()} />
+      </NextIntlClientProvider>,
+    );
+    fireEvent.click(screen.getAllByRole('checkbox')[1]!);
+    const liveRegions = [...document.querySelectorAll('[aria-live], [role="status"], [role="alert"]')];
+    expect(liveRegions.some((el) => el.textContent?.includes('1 selected'))).toBe(false);
   });
 });
 

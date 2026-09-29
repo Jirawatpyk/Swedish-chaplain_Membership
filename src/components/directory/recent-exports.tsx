@@ -5,19 +5,11 @@
  * The download link points at the staff prepare-and-redirect route, which mints
  * a fresh single-use token before redirecting to the private proxy.
  */
-import { Badge } from '@/components/ui/badge';
-import { buttonVariants } from '@/components/ui/button';
-import {
-  Table,
-  TableBody,
-  TableCaption,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { DownloadIcon } from 'lucide-react';
+import { StatusPill, buttonClass } from '@jirawatpyk/aura-react/server';
+import { Table, TBody, THead, Td, Th, Tr } from '@/components/shell/aura-table';
 import type { ExportStatus } from '@/modules/insights';
-import { exportStatusVariant } from '@/lib/export-status-variant';
+import { exportStatusTone } from '@/lib/export-status-variant';
 
 export interface RecentExportRow {
   readonly jobId: string;
@@ -45,51 +37,95 @@ export function RecentExports({
   readonly rows: readonly RecentExportRow[];
   readonly labels: RecentExportsLabels;
 }): React.JSX.Element {
+  // 122 US5a — the board's "Recent exports" card (`Admin-directory`): a plain
+  // table (a rule between rows, no inner frame), every row centred on its
+  // line, Download with its icon. AURA's own head style and type sizes stay
+  // (board-parity rule); the frame and centring are AURA's `bordered={false}`
+  // and `align="middle"` (handoff #81, 5.13.0). On a phone
+  // (`Admin-directory-mobile`) a one-line list instead: the name, the time
+  // under it, and the status pill — or, once ready, "· Ready" in the time line
+  // and an icon-only download. The table hides below 640px and the list above
+  // it, so assistive tech meets only the one on screen.
+  const downloadHref = (row: RecentExportRow) => `/api/admin/directory/exports/${row.jobId}/download`;
+  // H2: contextual label so SR users hear which export each "Download" link
+  // targets (WCAG 2.4.6), not "Download" ×N.
+  const downloadLabel = (row: RecentExportRow) => `${labels.download} — ${row.kindLabel}, ${row.requestedAt}`;
   return (
-    <section aria-labelledby="recent-exports-heading" className="space-y-3">
-      <h2 id="recent-exports-heading" className="text-sm font-semibold">
+    <section
+      aria-labelledby="recent-exports-heading"
+      className="flex flex-col gap-4 rounded-[var(--aura-card-radius)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] p-5 max-sm:p-4"
+    >
+      <h2 id="recent-exports-heading" className="m-0 text-base font-semibold">
         {labels.heading}
       </h2>
       {rows.length === 0 ? (
-        <p className="rounded-md border py-6 text-center text-sm text-muted-foreground">
-          {labels.empty}
-        </p>
+        <p className="py-6 text-center text-sm text-[var(--aura-fg-secondary)]">{labels.empty}</p>
       ) : (
-        <Table>
-          <TableCaption className="sr-only">{labels.caption}</TableCaption>
-          <TableHeader>
-            <TableRow>
-              <TableHead scope="col">{labels.kindLabel}</TableHead>
-              <TableHead scope="col">{labels.statusLabel}</TableHead>
-              <TableHead scope="col">{labels.requestedLabel}</TableHead>
-              <TableHead scope="col" className="sr-only">{labels.download}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
+        <>
+          <div className="max-sm:hidden">
+            <Table caption={labels.caption} captionHidden align="middle" bordered={false}>
+              <THead>
+                <Tr>
+                  <Th>{labels.kindLabel}</Th>
+                  <Th>{labels.statusLabel}</Th>
+                  <Th>{labels.requestedLabel}</Th>
+                  <Th align="end">
+                    <span className="sr-only">{labels.download}</span>
+                  </Th>
+                </Tr>
+              </THead>
+              <TBody>
+                {rows.map((row) => (
+                  <Tr key={row.jobId}>
+                    <Td>{row.kindLabel}</Td>
+                    <Td>
+                      <StatusPill tone={exportStatusTone(row.status)}>{row.statusLabel}</StatusPill>
+                    </Td>
+                    <Td className="text-[var(--aura-fg-secondary)]">{row.requestedAt}</Td>
+                    <Td align="end">
+                      {row.downloadable ? (
+                        <a
+                          href={downloadHref(row)}
+                          aria-label={downloadLabel(row)}
+                          className={buttonClass({ variant: 'secondary', size: 'sm' })}
+                        >
+                          <DownloadIcon aria-hidden="true" className="size-4" />
+                          {labels.download}
+                        </a>
+                      ) : null}
+                    </Td>
+                  </Tr>
+                ))}
+              </TBody>
+            </Table>
+          </div>
+          <ul className="m-0 flex list-none flex-col divide-y divide-[var(--aura-border-default)] border-t border-[var(--aura-border-default)] p-0 sm:hidden">
             {rows.map((row) => (
-              <TableRow key={row.jobId}>
-                <TableCell className="font-medium">{row.kindLabel}</TableCell>
-                <TableCell>
-                  <Badge variant={exportStatusVariant(row.status)}>{row.statusLabel}</Badge>
-                </TableCell>
-                <TableCell className="text-muted-foreground">{row.requestedAt}</TableCell>
-                <TableCell className="text-right">
-                  {row.downloadable ? (
-                    <a
-                      href={`/api/admin/directory/exports/${row.jobId}/download`}
-                      // H2: contextual label so SR users hear which export each
-                      // "Download" link targets (WCAG 2.4.6), not "Download" ×N.
-                      aria-label={`${labels.download} — ${row.kindLabel}, ${row.requestedAt}`}
-                      className={buttonVariants({ variant: 'outline', size: 'sm' })}
-                    >
-                      {labels.download}
-                    </a>
-                  ) : null}
-                </TableCell>
-              </TableRow>
+              <li key={row.jobId} className="flex min-h-14 items-center gap-3 py-2.5">
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <span className="text-sm [overflow-wrap:anywhere]">{row.kindLabel}</span>
+                  <span className="text-xs text-[var(--aura-fg-secondary)]">
+                    {row.downloadable ? `${row.requestedAt} · ${row.statusLabel}` : row.requestedAt}
+                  </span>
+                </div>
+                {row.downloadable ? (
+                  <a
+                    href={downloadHref(row)}
+                    aria-label={downloadLabel(row)}
+                    title={labels.download}
+                    className={buttonClass({ variant: 'ghost', size: 'sm', className: 'size-11 shrink-0 px-0' })}
+                  >
+                    <DownloadIcon aria-hidden="true" className="size-5" />
+                  </a>
+                ) : (
+                  <StatusPill tone={exportStatusTone(row.status)} className="shrink-0">
+                    {row.statusLabel}
+                  </StatusPill>
+                )}
+              </li>
             ))}
-          </TableBody>
-        </Table>
+          </ul>
+        </>
       )}
     </section>
   );

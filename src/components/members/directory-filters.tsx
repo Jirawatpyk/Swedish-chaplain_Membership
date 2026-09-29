@@ -5,26 +5,24 @@
  *
  * URL is the source of truth (bookmarkable). Filters:
  *   - Search (q): debounced 300ms text input
- *   - Status: Select dropdown (All / Active / Inactive / Archived)
- *   - Plan: Select dropdown (All plans / dynamic list from F2)
- *   - Clear: resets all filters + pagination
+ *   - Status: select (All / Active / Inactive / Archived)
+ *   - Plan: select (All plans / dynamic list from F2)
+ *   - Risk band: select
+ *   - Needs portal invite: toggle chip with the count
+ *   - Clear filters: resets all filters + pagination
+ *
+ * 122 US5a (T503) — AURA `FilterBar` (board `Admin-members`): the search and
+ * the selects in one bar, the applied filters as removable tags below it with
+ * "Clear filters". The URL contract is unchanged. Each select is the board's
+ * compact "Status All ▾" trigger: AURA `FilterSelect` (handoff #79, 5.12.0).
  */
 
-import { useCallback, useRef, useState, useTransition } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
+import { AuraProvider, Button, FilterBar, FilterSelect, Tag } from '@jirawatpyk/aura-react';
 import { formatCalendarYear } from '@/lib/format-date-localised';
-import { MailWarningIcon, SearchIcon, XIcon } from 'lucide-react';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { FilterBar } from '@/components/ui/filter-bar';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  TranslatedSelectValue,
-} from '@/components/ui/select';
+import { MailIcon } from 'lucide-react';
 
 const DEBOUNCE_MS = 300;
 
@@ -44,6 +42,16 @@ const RISK_LABEL_KEYS: Record<string, string> = {
   warning: 'filters.risk.warning',
   'at-risk': 'filters.risk.at-risk',
   critical: 'filters.risk.critical',
+};
+
+type ChipId = 'q' | 'status' | 'plan' | 'risk';
+
+/** The URL params each active-filter chip clears (plan also drops its year). */
+const CHIP_CLEARS: Readonly<Record<ChipId, Record<string, null>>> = {
+  q: { q: null },
+  status: { status: null },
+  plan: { plan_id: null, plan_year: null },
+  risk: { risk_band: null },
 };
 
 export type PlanOption = {
@@ -68,10 +76,22 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [, startTransition] = useTransition();
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Stable focus target for when the chip unmounts on its own toggle-off (see
-  // `onPortalToggle`). The search input is always rendered.
-  const searchInputRef = useRef<HTMLInputElement>(null);
+  const barRef = useRef<HTMLDivElement>(null);
+  // Stable focus target for when a control unmounts on its own click (the
+  // needs-invite chip toggled off at zero, a removed filter tag, Clear
+  // filters): the search input is always rendered.
+  const focusSearch = () =>
+    barRef.current?.querySelector<HTMLInputElement>('input[type="search"]')?.focus();
+  // A clear that drops the search remounts the FilterBar: it keeps the typed
+  // text and its own debounce timer, so a query typed just before the clear
+  // would otherwise come back when the timer fires. The new bar's search box
+  // takes focus once it has mounted.
+  const [barKey, setBarKey] = useState(0);
+  const resetSearch = () => {
+    setSentQ('');
+    setBarKey((k) => k + 1);
+    setTimeout(focusSearch, 0);
+  };
 
   const currentQ = searchParams.get('q') ?? '';
   const currentStatus = searchParams.get('status') ?? 'all';
@@ -83,48 +103,12 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
 
   const portalActive = searchParams.get('portal') === 'needs_invite';
   // The chip is visible when there is work to show, the filter is on, or the
-  // count could not be read (unavailable). A `chipWasVisible` latch used to
-  // live here to "keep the chip mounted for the render it was clicked off" —
-  // it was removed because it can't work: React's adjust-state-during-render
-  // collapses the would-be one extra frame before commit, so the latch was
-  // provably always equal to this expression and never painted a difference.
-  // Focus on toggle-off is handled imperatively in `onPortalToggle` instead.
+  // count could not be read (unavailable). Focus on toggle-off is handled
+  // imperatively in `onPortalToggle`.
   const showChip =
     portalActive ||
     portalInviteCount === null ||
     (portalInviteCount ?? 0) > 0;
-
-  // Toggle the needs-invite filter. When turning it OFF at count 0, the chip
-  // unmounts in the same commit that processes the navigation — so move focus
-  // to the always-present search input FIRST, or it falls back to <body> (a
-  // focus-loss class axe never catches). `pushUrl` handles the URL + reset.
-  function onPortalToggle() {
-    const willUnmount = portalActive && portalInviteCount === 0;
-    if (willUnmount) searchInputRef.current?.focus();
-    pushUrl({ portal: portalActive ? null : 'needs_invite' });
-  }
-
-  // The search box is a CONTROLLED input (Base UI's FieldControl warns on
-  // uncontrolled defaultValue being mutated — the previous `key={currentQ}` +
-  // manual `ref.value =` approaches both fought it and dropped focus mid-type).
-  // `searchValue` holds what the user typed; the debounce below syncs it to
-  // the URL. We reconcile FROM the URL only when the input is NOT focused
-  // (browser back/forward, a shared link, the Clear button) — never mid-type,
-  // so fast typing can't be reverted to an in-flight debounced value.
-  //
-  // This reconcile is the React "adjust state when a prop changes" pattern,
-  // done DURING RENDER (guarded by the `syncedQ` tracker) rather than in an
-  // effect — so there is no cascading re-render and no `key`-based remount
-  // (the remount was the original focus-drop bug). Focus is tracked as state
-  // via onFocus/onBlur so the render stays pure (no `document.activeElement`
-  // read during render, which would be non-deterministic and SSR-unsafe).
-  const [searchValue, setSearchValue] = useState(currentQ);
-  const [isSearchFocused, setIsSearchFocused] = useState(false);
-  const [syncedQ, setSyncedQ] = useState(currentQ);
-  if (currentQ !== syncedQ) {
-    setSyncedQ(currentQ);
-    if (!isSearchFocused) setSearchValue(currentQ);
-  }
 
   const pushUrl = useCallback(
     (patch: Record<string, string | null>) => {
@@ -149,25 +133,40 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
     [searchParams, router, pathname],
   );
 
+  // Toggle the needs-invite filter. When turning it OFF at count 0, the chip
+  // unmounts in the same commit that processes the navigation — so move focus
+  // to the always-present search input FIRST, or it falls back to <body> (a
+  // focus-loss class axe never catches).
+  function onPortalToggle() {
+    const willUnmount = portalActive && portalInviteCount === 0;
+    if (willUnmount) focusSearch();
+    pushUrl({ portal: portalActive ? null : 'needs_invite' });
+  }
+
+  // Search. AURA's FilterBar keeps the typed draft and debounces it; it
+  // rewrites the box from `search` only when `search` differs from the last
+  // value it sent. The URL carries the TRIMMED query, so while the box is
+  // focused we hand back exactly what it sent (`sentQ`) — a lagging or
+  // trimmed URL can then never revert what the admin is typing. Unfocused
+  // (back/forward, a shared link), the URL wins.
+  const isPhone = useIsBelowSm();
+  const [sentQ, setSentQ] = useState(currentQ);
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
   const onSearchChange = (value: string) => {
-    setSearchValue(value); // controlled — reflect the keystroke immediately
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      pushUrl({ q: value.trim() || null });
-    }, DEBOUNCE_MS);
+    setSentQ(value);
+    pushUrl({ q: value.trim() || null });
   };
+  const isSearchInput = (el: EventTarget) =>
+    el instanceof HTMLInputElement && el.type === 'search';
 
   const hasAnyFilter =
     Boolean(currentQ) ||
     currentStatus !== 'all' ||
     currentPlan !== 'all' ||
     currentRisk !== 'all' ||
-    // Without this the Clear button never renders when the chip is the only
-    // active filter — and clearAll() below becomes unreachable.
     portalActive;
   const clearAll = () => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    setSearchValue('');
+    resetSearch();
     pushUrl({
       q: null,
       status: null,
@@ -178,247 +177,166 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
     });
   };
 
-  // Active-filter chips (ux-standards §9.4) — a consolidated, dismissible summary
-  // of the filters currently hidden inside the Selects (q / status / plan / risk).
-  // The needs-invite chip stays its own toggle above; it is NOT duplicated here.
-  // Each chip reuses the same `pushUrl({ key: null })` clear the Selects use, so
-  // there is no new URL wiring.
-  const activeChips: { key: string; label: string; onRemove: () => void }[] = [];
-  if (currentQ) {
-    activeChips.push({
-      key: 'q',
-      label: t('filterChip.search', { q: currentQ }),
-      onRemove: () => {
-        setSearchValue('');
-        pushUrl({ q: null });
-      },
-    });
-  }
+  // Removing a chip unmounts it, so the × also moves focus to the search
+  // input. Each chip reuses the same `pushUrl({ key: null })` clear the
+  // controls use, so there is no new URL wiring.
+  const removeChip = (id: ChipId) => {
+    pushUrl(CHIP_CLEARS[id]);
+    if (id === 'q') resetSearch();
+    else focusSearch();
+  };
+
+  // Active-filter chips (ux-standards §9.4) — a consolidated, dismissible
+  // summary of the applied filters.
+  const chipLabels: Array<{ id: ChipId; label: string }> = [];
+  if (currentQ) chipLabels.push({ id: 'q', label: t('filterChip.search', { q: currentQ }) });
   if (currentStatus !== 'all') {
     const vk = STATUS_LABEL_KEYS[currentStatus];
-    activeChips.push({
-      key: 'status',
-      label: t('filterChip.status', { value: vk ? t(vk) : currentStatus }),
-      onRemove: () => pushUrl({ status: null }),
-    });
+    chipLabels.push({ id: 'status', label: t('filterChip.status', { value: vk ? t(vk) : currentStatus }) });
   }
   if (currentPlan !== 'all') {
     const plan = plans.find((p) => p.id === currentPlan);
-    activeChips.push({
-      key: 'plan',
+    chipLabels.push({
+      id: 'plan',
       label: currentPlanYear
         ? t('filterChip.planYear', {
             value: plan?.label ?? currentPlan,
             year: formatCalendarYear(Number(currentPlanYear), locale),
           })
         : t('filterChip.plan', { value: plan?.label ?? currentPlan }),
-      onRemove: () => pushUrl({ plan_id: null, plan_year: null }),
     });
   }
   if (currentRisk !== 'all') {
     const vk = RISK_LABEL_KEYS[currentRisk];
-    activeChips.push({
-      key: 'risk',
-      label: t('filterChip.risk', { value: vk ? t(vk) : currentRisk }),
-      onRemove: () => pushUrl({ risk_band: null }),
-    });
+    chipLabels.push({ id: 'risk', label: t('filterChip.risk', { value: vk ? t(vk) : currentRisk }) });
   }
+  const activeChips = chipLabels.map((c) => ({ ...c, onRemove: () => removeChip(c.id) }));
+
+  // The bar's own "Clear filters" and chip × labels, in this page's words.
+  const barStrings = useMemo(
+    () => ({
+      clearFilters: t('clearFilters'),
+      remove: (label: string) => t('removeFilter', { filter: label }),
+    }),
+    [t],
+  );
 
   return (
-    <div className="flex flex-col gap-2">
-    <FilterBar>
-      <div className="relative sm:flex-1 min-w-0">
-        <SearchIcon
-          className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground"
-          aria-hidden
-        />
-        <Input
-          ref={searchInputRef}
-          type="search"
-          value={searchValue}
-          onChange={(e) => onSearchChange(e.target.value)}
-          onFocus={() => setIsSearchFocused(true)}
-          onBlur={() => setIsSearchFocused(false)}
-          placeholder={t('searchPlaceholder')}
-          aria-label={t('searchSrLabel')}
-          autoComplete="off"
-          className="pl-9"
-        />
-      </div>
-
-      <Select
-        value={currentStatus}
-        onValueChange={(v) => pushUrl({ status: v === 'all' ? null : v })}
-      >
-        <SelectTrigger className="sm:w-36" aria-label={t('filters.status.label')}>
-          <TranslatedSelectValue
-            placeholder={t('filters.status.label')}
-            translate={(v) => {
-              const key = STATUS_LABEL_KEYS[v || 'all'];
-              return key ? t(key) : v;
-            }}
-          />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">{t('filters.status.all')}</SelectItem>
-          {STATUS_VALUES.map((s) => (
-            <SelectItem key={s} value={s}>
-              {t(`filters.status.${s}`)}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
-      {plans.length > 0 && (
-        <Select
-          value={currentPlan}
-          // A new plan pick drops a year that belonged to the previous plan.
-          onValueChange={(v) =>
-            pushUrl({ plan_id: v === 'all' ? null : v, plan_year: null })
-          }
+    <div
+      onFocus={(e) => {
+        if (isSearchInput(e.target)) setIsSearchFocused(true);
+      }}
+      onBlur={(e) => {
+        if (isSearchInput(e.target)) setIsSearchFocused(false);
+      }}
+    >
+      <AuraProvider strings={barStrings}>
+        <FilterBar
+          key={barKey}
+          ref={barRef}
+          // As on the `Admin-members` boards: the search fills the row beside
+          // the filters, and takes its own row on a phone, where the three
+          // filters share the next (AURA's own breakpoint and gaps).
+          searchGrow
+          search={isSearchFocused ? sentQ : currentQ}
+          onSearchChange={onSearchChange}
+          searchDelay={DEBOUNCE_MS}
+          searchLabel={t('searchSrLabel')}
+          // The full hint is cut off in a phone-width box; the board's short one fits.
+          searchPlaceholder={isPhone ? t('searchPlaceholderShort') : t('searchPlaceholder')}
+          filters={activeChips}
+          {...(hasAnyFilter ? { onClearAll: clearAll } : {})}
         >
-          <SelectTrigger className="sm:w-56" aria-label={t('filters.plan.label')}>
-            <TranslatedSelectValue
-              placeholder={t('filters.plan.label')}
-              translate={(v) => {
-                if (!v || v === 'all') return t('filters.plan.all');
-                const plan = plans.find((p) => p.id === v);
-                return plan?.label ?? v;
-              }}
+          <FilterSelect
+            label={t('filters.status.label')}
+            allLabel={t('filters.allShort')}
+            value={currentStatus}
+            onChange={(v) => pushUrl({ status: v === 'all' ? null : v })}
+            options={[
+              { value: 'all', label: t('filters.status.all') },
+              ...STATUS_VALUES.map((s) => ({ value: s, label: t(`filters.status.${s}`) })),
+            ]}
+          />
+
+          {plans.length > 0 && (
+            <FilterSelect
+              label={t('filters.plan.label')}
+              allLabel={t('filters.allShort')}
+              value={currentPlan}
+              // A new plan pick drops a year that belonged to the previous plan.
+              onChange={(v) => pushUrl({ plan_id: v === 'all' ? null : v, plan_year: null })}
+              options={[
+                { value: 'all', label: t('filters.plan.all') },
+                ...plans.map((p) => ({ value: p.id, label: p.label })),
+              ]}
             />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{t('filters.plan.all')}</SelectItem>
-            {plans.map((p) => (
-              <SelectItem key={p.id} value={p.id}>
-                {p.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      )}
+          )}
 
-      {/* I1 round-10 ui-design-specialist — quick filter on F8-derived
-          at-risk band. One of the marquee F3 smart features per docs/
-          smart-chamber-features.md; until now it was visible in the
-          column only. With this filter, admins doing renewal triage
-          can scan all "at-risk" + "critical" members in one click. */}
-      <Select
-        value={currentRisk}
-        onValueChange={(v) => pushUrl({ risk_band: v === 'all' ? null : v })}
-      >
-        <SelectTrigger
-          className="sm:w-44"
-          aria-label={t('filters.risk.label')}
-        >
-          <TranslatedSelectValue
-            placeholder={t('filters.risk.label')}
-            translate={(v) => {
-              const key = RISK_LABEL_KEYS[v || 'all'];
-              return key ? t(key) : v;
-            }}
+          {/* I1 round-10 ui-design-specialist — quick filter on the
+              F8-derived risk band, so renewal triage can scan "at-risk" and
+              "critical" members in one click. */}
+          <FilterSelect
+            label={t('filters.risk.label')}
+            allLabel={t('filters.allShort')}
+            value={currentRisk}
+            onChange={(v) => pushUrl({ risk_band: v === 'all' ? null : v })}
+            options={[
+              { value: 'all', label: t('filters.risk.all') },
+              ...RISK_BANDS.map((b) => ({ value: b, label: t(`filters.risk.${b}`) })),
+            ]}
           />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">{t('filters.risk.all')}</SelectItem>
-          {RISK_BANDS.map((b) => (
-            <SelectItem key={b} value={b}>
-              {t(`filters.risk.${b}`)}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
 
-      {showChip && (
-        <Button
-          type="button"
-          variant={portalActive ? 'secondary' : 'outline'}
-          size="sm"
-          aria-pressed={portalActive}
-          // Disable only when the count is unavailable AND the filter is OFF —
-          // i.e. the user would be entering the filter blind. When the filter is
-          // already ON, a failed count must NOT trap them in the filtered view:
-          // keep the chip clickable so they can always toggle it back off.
-          disabled={portalInviteCount === null && !portalActive}
-          // Toggles through `onPortalToggle` → `pushUrl` (strips cursor/page,
-          // scroll:false) and moves focus off the chip before it can unmount.
-          onClick={onPortalToggle}
-          aria-label={
-            portalInviteCount === null
-              ? t('portalChip.unavailable')
-              : t('portalChip.aria', { count: portalInviteCount ?? 0 })
-          }
-          // Hover hint on the unavailable state so it reads as a transient read
-          // failure ("refresh to try again"), not a permanent empty count.
-          {...(portalInviteCount === null
-            ? { title: t('portalChip.unavailableHint') }
-            : {})}
-          className="whitespace-nowrap"
-        >
-          <MailWarningIcon className="size-4" aria-hidden />
-          {/* Visible text must echo the accessible name (WCAG 2.5.3 Label in
-              Name): when the count is unavailable, show the SAME "unavailable"
-              copy the aria-label uses, not the generic label with no number. */}
-          <span aria-hidden="true">
-            {portalInviteCount === null
-              ? t('portalChip.unavailable')
-              : `${t('portalChip.label')} · ${portalInviteCount}`}
-          </span>
-        </Button>
-      )}
-
-      {hasAnyFilter && (
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={clearAll}
-          className="whitespace-nowrap"
-        >
-          <XIcon className="size-4" />
-          {t('clearFilters')}
-        </Button>
-      )}
-    </FilterBar>
-
-    {activeChips.length > 0 && (
-      <div
-        role="group"
-        aria-label={t('activeFilters')}
-        className="flex flex-wrap items-center gap-2"
-      >
-        {activeChips.map((chip) => (
-          <span
-            key={chip.key}
-            className="inline-flex items-center gap-1 rounded-md border bg-secondary py-0.5 pl-2 pr-1 text-xs text-secondary-foreground"
-          >
-            <span className="max-w-[24ch] truncate" title={chip.label}>
-              {chip.label}
-            </span>
-            <button
-              type="button"
-              // Removing a chip unmounts it; move focus to the always-present
-              // search input first so it never drops to <body> (mirrors
-              // `onPortalToggle`'s focus handling). Also cancel any in-flight
-              // debounced keystroke so removing the search chip can't be
-              // re-pushed ~300ms later (harmless no-op for the other chips).
-              onClick={() => {
-                if (debounceRef.current) clearTimeout(debounceRef.current);
-                chip.onRemove();
-                searchInputRef.current?.focus();
-              }}
-              aria-label={t('removeFilter', { filter: chip.label })}
-              // `-my-1 p-1.5` gives a 24×24 hit target (WCAG 2.5.8 baseline)
-              // around the 12px icon WITHOUT growing the chip's height. Kept in
-              // lock-step with the invoices filter chips (same pattern).
-              className="-my-1 rounded-sm p-1.5 hover:bg-secondary-foreground/10 focus-visible:outline-2 focus-visible:outline-ring"
+          {showChip && (
+            <Tag
+              icon={<MailIcon aria-hidden="true" />}
+              selected={portalActive}
+              onClick={onPortalToggle}
+              // Disable only when the count is unavailable AND the filter is
+              // OFF — the user would be entering the filter blind. When the
+              // filter is already ON, a failed count must NOT trap them in the
+              // filtered view: the chip stays clickable so they can toggle off.
+              disabled={portalInviteCount === null && !portalActive}
+              aria-label={
+                portalInviteCount === null
+                  ? t('portalChip.unavailable')
+                  : t('portalChip.aria', { count: portalInviteCount ?? 0 })
+              }
+              // Hover hint on the unavailable state so it reads as a transient
+              // read failure ("refresh to try again"), not an empty count.
+              {...(portalInviteCount === null ? { title: t('portalChip.unavailableHint') } : {})}
             >
-              <XIcon className="size-3" aria-hidden />
-            </button>
-          </span>
-        ))}
-      </div>
-    )}
+              {/* Visible text echoes the accessible name (WCAG 2.5.3 Label in
+                  Name): when the count is unavailable, the SAME copy. */}
+              {portalInviteCount === null
+                ? t('portalChip.unavailable')
+                : `${t('portalChip.label')} · ${portalInviteCount}`}
+            </Tag>
+          )}
+
+          {/* The needs-invite toggle is not repeated as a chip below (one
+              control, one name), so when it is the ONLY filter applied the
+              bar's own "Clear filters" (chips row) is absent: offer it here. */}
+          {portalActive && activeChips.length === 0 && (
+            <Button variant="ghost" size="sm" icon="x" onClick={clearAll}>
+              {t('clearFilters')}
+            </Button>
+          )}
+        </FilterBar>
+      </AuraProvider>
     </div>
   );
+}
+
+/** Below Tailwind's `sm` (640px). False on the server and first paint: only a placeholder follows it. */
+function useIsBelowSm(): boolean {
+  const [below, setBelow] = useState(false);
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return;
+    const mql = window.matchMedia('(max-width: 639px)');
+    const sync = () => setBelow(mql.matches);
+    sync();
+    mql.addEventListener('change', sync);
+    return () => mql.removeEventListener('change', sync);
+  }, []);
+  return below;
 }

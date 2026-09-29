@@ -65,14 +65,14 @@ function renderTable(rows: MembersTableRow[], total?: number) {
 }
 
 describe('portal status badge', () => {
-  it('renders the portal label for each state', () => {
+  it('badges only the states that need action; a linked contact shows none (US5a)', () => {
     renderTable([
       row({ member_id: 'm1', portal_state: 'active' }),
       row({ member_id: 'm2', portal_state: 'invited' }),
       row({ member_id: 'm3', portal_state: 'invite_expired' }),
       row({ member_id: 'm4', portal_state: 'not_invited' }),
     ]);
-    expect(screen.getByText('Portal')).toBeInTheDocument();
+    expect(screen.queryByText('Portal')).not.toBeInTheDocument();
     expect(screen.getByText('Invited')).toBeInTheDocument();
     expect(screen.getByText('Expired')).toBeInTheDocument();
     expect(screen.getByText('Not invited')).toBeInTheDocument();
@@ -87,6 +87,20 @@ describe('portal status badge', () => {
   it('announces "Showing N of M members" in the live region when the total is given', () => {
     renderTable([row({ member_id: 'm1' }), row({ member_id: 'm2' })], 131);
     expect(screen.getByText('Showing 2 of 131 members')).toBeInTheDocument();
+  });
+
+  it('shows the count only while filtered; unfiltered, the pagination range says it (US5a)', () => {
+    const { unmount } = renderTable([row({ member_id: 'm1' }), row({ member_id: 'm2' })], 131);
+    const unfiltered = screen.getByText('Showing 2 of 131 members');
+    expect(unfiltered.closest('[role="status"]')).not.toBeNull();
+    expect(unfiltered).toHaveClass('sr-only');
+    unmount();
+    render(
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <MembersTable rows={[row({ member_id: 'm1' }), row({ member_id: 'm2' })]} total={2} filtered />
+      </NextIntlClientProvider>,
+    );
+    expect(screen.getByText('Showing 2 of 2 members')).not.toHaveClass('sr-only');
   });
 
   it('falls back to the page-only result count when no total is given', () => {
@@ -139,6 +153,27 @@ describe('portal status badge', () => {
     expect(
       screen.queryByText(messages.admin.members.detail.inviteBounced.badge),
     ).not.toBeInTheDocument();
+  });
+
+  it('shows only the bounce badge when a pending invitation bounced (122 US5a)', () => {
+    // One root cause, one badge: "Invitation bounced" already says the contact
+    // was invited, so it stands in for "Invited" (the same rule that hides the
+    // bounce badge once the invitation expired).
+    renderTable([
+      row({
+        member_id: 'm10',
+        portal_state: 'invited',
+        primary_contact: {
+          contact_id: 'c10',
+          first_name: 'Bounced',
+          last_name: 'Invited',
+          email: 'd@example.com',
+          invite_bounced: true,
+        },
+      }),
+    ]);
+    expect(screen.getByText(messages.admin.members.detail.inviteBounced.badge)).toBeInTheDocument();
+    expect(screen.queryByText(messages.admin.members.directory.portal.invited)).not.toBeInTheDocument();
   });
 
   it('renders neither the portal badge nor the bounce badge on an archived row', () => {

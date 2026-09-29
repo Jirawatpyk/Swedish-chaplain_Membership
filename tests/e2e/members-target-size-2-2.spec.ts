@@ -20,6 +20,7 @@
 import type { Page } from '@playwright/test';
 import { expect, test, fillField } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
+import { MEMBERS_GRID, firstMemberRowLink, firstRowCheckbox } from './helpers/members-grid';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
@@ -56,6 +57,10 @@ test.describe('members WCAG 2.2 SC 2.5.8 target sizes @f3 @a11y', () => {
     page: Page,
     selector: string,
   ): Promise<{ width: number; height: number }> {
+    // The Suspense fallback is itself an AURA grid with a select column
+    // (inert, aria-hidden): measure only once it has given way to the real
+    // table, or a slow full-file run reads the skeleton's input (R16 flake).
+    await expect(page.getByTestId('members-table-skeleton')).toHaveCount(0, { timeout: 10_000 });
     const el = page.locator(selector).first();
     await el.waitFor({ state: 'attached', timeout: 10_000 });
     const box = await el.boundingBox();
@@ -66,12 +71,13 @@ test.describe('members WCAG 2.2 SC 2.5.8 target sizes @f3 @a11y', () => {
   test('row checkboxes meet 24×24 minimum target size', async ({ page }) => {
     await signIn(page);
     await page.goto('/admin/members');
-    await page.waitForSelector('[data-slot="table"]', { timeout: 10_000 });
+    await page.waitForSelector(MEMBERS_GRID, { timeout: 10_000 });
 
-    // Header checkbox (select-all)
+    // Header checkbox (select-all) — the hit area is AURA's invisible input,
+    // grown to 24×24 around the 16px box (members-table.tsx)
     const headerSize = await measureTargetSize(
       page,
-      'thead [data-slot="checkbox"]',
+      '[role="grid"] [role="columnheader"] input[type="checkbox"]',
     );
     expect(headerSize.width).toBeGreaterThanOrEqual(MIN_TARGET_PX);
     expect(headerSize.height).toBeGreaterThanOrEqual(MIN_TARGET_PX);
@@ -79,7 +85,7 @@ test.describe('members WCAG 2.2 SC 2.5.8 target sizes @f3 @a11y', () => {
     // First row checkbox
     const rowSize = await measureTargetSize(
       page,
-      'tbody tr:first-child [data-slot="checkbox"]',
+      '[role="grid"] [role="row"]:has([role="gridcell"]) input[type="checkbox"]',
     );
     expect(rowSize.width).toBeGreaterThanOrEqual(MIN_TARGET_PX);
     expect(rowSize.height).toBeGreaterThanOrEqual(MIN_TARGET_PX);
@@ -88,7 +94,7 @@ test.describe('members WCAG 2.2 SC 2.5.8 target sizes @f3 @a11y', () => {
   test('load-more button meets 24×24 minimum target size', async ({ page }) => {
     await signIn(page);
     await page.goto('/admin/members');
-    await page.waitForSelector('[data-slot="table"]', { timeout: 10_000 });
+    await page.waitForSelector(MEMBERS_GRID, { timeout: 10_000 });
 
     const loadMoreBtn = page.getByRole('button', { name: /load more/i });
     const visible = await loadMoreBtn.isVisible();
@@ -108,21 +114,21 @@ test.describe('members WCAG 2.2 SC 2.5.8 target sizes @f3 @a11y', () => {
 
   test('bulk action bar buttons meet 24×24 minimum target size when visible', async ({
     page,
+    isMobile,
   }) => {
+    test.skip(isMobile === true, 'bulk selection is desktop-only by design: phone cards carry no checkbox (spec 122 Clarifications, 2026-09-28)');
     await signIn(page);
     await page.goto('/admin/members');
-    await page.waitForSelector('[data-slot="table"]', { timeout: 10_000 });
+    await page.waitForSelector(MEMBERS_GRID, { timeout: 10_000 });
 
     // Select first row to reveal bulk bar
-    const firstRowCheckbox = page
-      .locator('tbody tr:first-child [data-slot="checkbox"]')
-      .first();
-    await firstRowCheckbox.click();
+    await firstRowCheckbox(page).click();
 
-    const bulkBar = page.getByRole('toolbar');
-    await expect(bulkBar).toBeVisible({ timeout: 5_000 });
+    // The AURA ActionBar leaves its idle (clipped) state
+    const bulkBar = page.locator('.aura-actionbar');
+    await expect(bulkBar).not.toHaveClass(/is-idle/, { timeout: 5_000 });
 
-    // All buttons inside the toolbar
+    // All buttons inside the bar
     const buttons = bulkBar.getByRole('button');
     const count = await buttons.count();
     for (let i = 0; i < count; i++) {
@@ -141,9 +147,7 @@ test.describe('members WCAG 2.2 SC 2.5.8 target sizes @f3 @a11y', () => {
     // Navigate to first active member
     await page.goto('/admin/members?status=active');
     await page.waitForLoadState('networkidle');
-    const firstRowLink = page
-      .locator('tbody tr:first-child a')
-      .first();
+    const firstRowLink = firstMemberRowLink(page);
     await firstRowLink.waitFor({ timeout: 10_000 });
     const href = await firstRowLink.getAttribute('href');
     if (!href) return;

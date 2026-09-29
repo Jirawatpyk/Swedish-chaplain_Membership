@@ -1,21 +1,17 @@
+'use client';
+
 /**
- * F9 US5 (T083) — staff directory results table (FR-024). Presentational server
- * component: receives display-ready rows + localised labels. Listing status is
- * encoded with a text badge (not colour alone — WCAG 1.4.1).
+ * F9 US5 (T083) — staff directory results table (FR-024). Presentational:
+ * receives display-ready rows + localised labels. Listing status is encoded
+ * with a text badge (not colour alone — WCAG 1.4.1).
+ *
+ * 122 US5a (T506) — AURA `DataTable` (board `Admin-directory`): the company is
+ * the row link (in the link colour) and the phone card title; the columns
+ * follow the board's order, and "Listed" sits beside the title on a card.
  */
-import Link from 'next/link';
 import { CheckIcon } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { Badge, DataTable, StatusPill, type DataTableColumn } from '@jirawatpyk/aura-react';
 import { EmptyState } from '@/components/shell/empty-state';
-import {
-  Table,
-  TableBody,
-  TableCaption,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 
 export interface DirectoryTableRow {
   readonly memberId: string;
@@ -40,6 +36,9 @@ export interface DirectoryTableLabels {
   readonly hasLogo: string;
   readonly yes: string;
   readonly no: string;
+  /** The phone card's pill ("Listed" / "Not listed"), board `Admin-directory-mobile`. */
+  readonly listedPill: string;
+  readonly notListedPill: string;
   readonly emptyTitle: string;
   readonly empty: string;
 }
@@ -57,56 +56,77 @@ export function DirectoryTable({
     return <EmptyState title={labels.emptyTitle} description={labels.empty} />;
   }
 
+  const columns: DataTableColumn<DirectoryTableRow>[] = [
+    {
+      key: 'companyName',
+      label: labels.company,
+      render: (row) => (
+        <span className="font-medium whitespace-normal text-[var(--aura-fg-accent)] [overflow-wrap:anywhere]">
+          {row.companyName}
+        </span>
+      ),
+    },
+    { key: 'tier', label: labels.tier, width: 170, render: (row) => row.tier ?? DASH },
+    { key: 'industry', label: labels.industry, width: 160, hideBelow: 'lg', render: (row) => row.industry ?? DASH },
+    { key: 'location', label: labels.location, width: 130, render: (row) => row.location ?? DASH },
+    {
+      key: 'listed',
+      label: labels.listed,
+      width: 90,
+      pill: true,
+      // The table says Yes / No; a phone card, where the column name is not
+      // beside it, says "Listed" / "Not listed" with the pill's icon (boards
+      // `Admin-directory` and `-mobile`).
+      render: (row) => (
+        <>
+          <span className="in-[.aura-table--stacked]:hidden">
+            <Badge {...(row.listed ? { tone: 'success' as const } : { variant: 'outline' as const })}>
+              {row.listed ? labels.yes : labels.no}
+            </Badge>
+          </span>
+          <span className="hidden in-[.aura-table--stacked]:inline-flex">
+            <StatusPill tone={row.listed ? 'ready' : 'neutral'}>
+              {row.listed ? labels.listedPill : labels.notListedPill}
+            </StatusPill>
+          </span>
+        </>
+      ),
+    },
+    {
+      key: 'hasLogo',
+      label: labels.logo,
+      width: 64,
+      hideBelow: 'lg',
+      render: (row) =>
+        row.hasLogo ? (
+          <span className="flex items-center gap-1">
+            <CheckIcon className="block size-4" aria-hidden />
+            <span className="sr-only">{labels.hasLogo}</span>
+          </span>
+        ) : (
+          <>
+            <span aria-hidden>{DASH}</span>
+            <span className="sr-only">{labels.no}</span>
+          </>
+        ),
+    },
+    { key: 'contactName', label: labels.contact, width: 150, hideBelow: 'lg', render: (row) => row.contactName ?? DASH },
+  ];
+  // Industry, Logo and Contact drop out on a table narrower than `lg` (a
+  // tablet, or a laptop beside the nav), so the rest fits without scrolling;
+  // a phone card still shows every field.
+
   return (
-    <Table>
-      <TableCaption className="sr-only">{labels.caption}</TableCaption>
-      <TableHeader>
-        <TableRow>
-          <TableHead scope="col">{labels.company}</TableHead>
-          <TableHead scope="col">{labels.tier}</TableHead>
-          <TableHead scope="col">{labels.industry}</TableHead>
-          <TableHead scope="col">{labels.location}</TableHead>
-          <TableHead scope="col">{labels.listed}</TableHead>
-          <TableHead scope="col">{labels.logo}</TableHead>
-          <TableHead scope="col">{labels.contact}</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {rows.map((row) => (
-          <TableRow key={row.memberId}>
-            <TableCell className="font-medium">
-              <Link
-                href={`/admin/members/${row.memberId}`}
-                className="rounded-sm underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                {row.companyName}
-              </Link>
-            </TableCell>
-            <TableCell>{row.tier ?? DASH}</TableCell>
-            <TableCell>{row.industry ?? DASH}</TableCell>
-            <TableCell>{row.location ?? DASH}</TableCell>
-            <TableCell>
-              <Badge variant={row.listed ? 'default' : 'outline'}>
-                {row.listed ? labels.yes : labels.no}
-              </Badge>
-            </TableCell>
-            <TableCell>
-              {row.hasLogo ? (
-                <span className="inline-flex items-center gap-1 text-sm">
-                  <CheckIcon className="size-4" aria-hidden />
-                  <span className="sr-only">{labels.hasLogo}</span>
-                </span>
-              ) : (
-                <>
-                  <span aria-hidden>{DASH}</span>
-                  <span className="sr-only">{labels.no}</span>
-                </>
-              )}
-            </TableCell>
-            <TableCell>{row.contactName ?? DASH}</TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+    <DataTable<DirectoryTableRow>
+      label={labels.caption}
+      rows={rows}
+      columns={columns}
+      rowKey="memberId"
+      manual
+      getRowHref={(row) => `/admin/members/${row.memberId}`}
+      // Rows grow to fit (AURA 5.11): a long company name wraps in full.
+      rowHeight="auto"
+      stackBelow={640}
+    />
   );
 }

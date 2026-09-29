@@ -82,13 +82,12 @@ async function setLocale(context: BrowserContext, locale: Locale): Promise<void>
  * Status" test so Task 7's `sv`/`th` + Contact-column extension isn't a
  * copy-paste of the per-cell measurement three times over.
  *
- * Admin session → `enableSelection` is on, so the rendered column order is:
- * select(0), Member No.(1), Company(2), Plan(3), Contact(4), Status(5),
- * Engagement(6), Last activity(7) — verified against `members-table.tsx`'s
- * `columns` array. Company + Contact's name already wrap (`break-words
- * whitespace-normal` + a `max-w`) so the column indices under test are the
- * ones with `whitespace-nowrap` (fixed-width Badge) content: Plan, Contact
- * (badge row), and Status.
+ * Admin session → `enableSelection` is on, so the grid's cells (122 US5a:
+ * AURA DataTable, `role="gridcell"`) are: select(0), Company(1), Member
+ * No.(2), Contact(3), Plan(4), Status(5), Engagement(6), Last activity(7),
+ * actions(8) — verified against `members-table.tsx`'s `columns` array. The
+ * cells under test hold badge rows next to text: Contact (portal + bounce
+ * badges), Plan and Status.
  */
 async function expectNoCellBleed(
   page: Page,
@@ -99,7 +98,7 @@ async function expectNoCellBleed(
   await expect(row).toBeVisible();
 
   for (const columnIndex of columnIndices) {
-    const cell = row.getByRole('cell').nth(columnIndex);
+    const cell = row.getByRole('gridcell').nth(columnIndex);
     const bleed = await cell.evaluate((td) => {
       const cellRight = td.getBoundingClientRect().right;
       let worst = 0;
@@ -152,7 +151,7 @@ test.describe('members directory — column overflow @a11y', () => {
       await page.goto(`/admin/members?q=${encodeURIComponent(seed!.companyName)}`);
       await page.waitForLoadState('networkidle');
 
-      // Plan(3), Contact(4, portal + bounce badge row), Status(5).
+      // Contact(3, portal + bounce badge row), Plan(4), Status(5).
       await expectNoCellBleed(page, seed!.companyName, [3, 4, 5]);
     });
   }

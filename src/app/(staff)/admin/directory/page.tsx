@@ -13,7 +13,7 @@ import type { Metadata } from 'next';
 import { randomUUID } from 'node:crypto';
 import { notFound } from 'next/navigation';
 import { getLocale, getTranslations } from 'next-intl/server';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card } from '@jirawatpyk/aura-react/server';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { TablePagination } from '@/components/layout/table-pagination';
@@ -64,7 +64,6 @@ export default async function DirectoryPage({
 
   const params = await searchParams;
   const t = await getTranslations('admin.directory');
-  const tExports = await getTranslations('admin.directory.exports');
   const tKind = await getTranslations('admin.directory.exports.kind');
   const tStatus = await getTranslations('admin.directory.exports.status');
   const locale = await getLocale();
@@ -147,16 +146,58 @@ export default async function DirectoryPage({
       }))
     : [];
 
+  return renderDirectoryView({
+    header,
+    rows,
+    exportRows,
+    page: result.value.page,
+    pageSize: result.value.pageSize,
+    total: result.value.total,
+  });
+}
+
+/**
+ * 122 US5a (T509) — the directory body, shared with the no-DB preview route
+ * (`/test-fixtures/aura-admin?view=directory`) so the two cannot drift.
+ */
+export async function renderDirectoryView({
+  header,
+  rows,
+  exportRows,
+  page,
+  pageSize,
+  total,
+}: {
+  readonly header: React.ReactNode;
+  readonly rows: readonly DirectoryTableRow[];
+  readonly exportRows: readonly RecentExportRow[];
+  readonly page: number;
+  readonly pageSize: number;
+  readonly total: number;
+}): Promise<React.JSX.Element> {
+  const t = await getTranslations('admin.directory');
+  const tExports = await getTranslations('admin.directory.exports');
   return (
     <TableContainer>
       {header}
 
-      <Card>
-        <CardContent className="flex flex-col gap-4">
+      {/* 122 US5a (T506) — the board's "Members" card; on a phone the member
+          cards sit on the page with no frame and no visible heading (board
+          `Admin-directory-mobile`). The heading is ours, not the Card's
+          title, so a phone can keep it for screen readers only; it matches
+          the Card title's weight and size. */}
+      <Card
+        aria-labelledby="directory-members-heading"
+        className="max-sm:border-0 max-sm:bg-transparent max-sm:p-0 max-sm:shadow-none"
+      >
+        <div className="flex flex-col gap-4">
+          <h2 id="directory-members-heading" className="text-base font-semibold max-sm:sr-only">
+            {t('resultsHeading')}
+          </h2>
           <DirectorySearchFilters />
 
           <p role="status" className="sr-only">
-            {t('resultCount', { count: result.value.total })}
+            {t('resultCount', { count: total })}
           </p>
 
           <DirectoryTable
@@ -173,6 +214,8 @@ export default async function DirectoryPage({
               hasLogo: t('table.hasLogo'),
               yes: t('table.yes'),
               no: t('table.no'),
+              listedPill: t('table.listedPill'),
+              notListedPill: t('table.notListedPill'),
               emptyTitle: t('table.emptyTitle'),
               empty: t('table.empty'),
             }}
@@ -180,13 +223,13 @@ export default async function DirectoryPage({
 
           {/* The sr-only status above already announces the count. */}
           <TablePagination
-            page={result.value.page}
-            pageSize={result.value.pageSize}
-            total={result.value.total}
+            page={page}
+            pageSize={pageSize}
+            total={total}
             baseHref="/admin/directory"
             live={false}
           />
-        </CardContent>
+        </div>
       </Card>
 
       <RecentExports

@@ -21,9 +21,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+import { ActionBar, Button, Textarea } from '@jirawatpyk/aura-react';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
 import { useDialogFinalFocus } from '@/components/shell/reason-confirmation-dialog';
 import type { ChangeRequestReviewFieldView, StaffChangeRequestView } from '@/lib/change-request-staff-view';
@@ -157,10 +155,13 @@ export function ChangeRequestReviewClient({ request, fields, canDecide }: Change
   }
 
   return (
-    <div className="space-y-4">
-      {/* the page's primary content gets a real heading (the h1 was the only one — PR-1 review, UX M8) */}
+    <div className="space-y-4 sm:rounded-[var(--aura-card-radius)] sm:border sm:border-[var(--aura-border-default)] sm:bg-[var(--aura-bg-surface)] sm:p-5">
+      {/* One card holds the proposed changes and the decision bar (board
+          `Admin-change-request`); on a phone each field is its own card on
+          the page (`-mobile`). The page's primary content gets a real
+          heading (the h1 was the only one — PR-1 review, UX M8). */}
       <section aria-labelledby="cr-fields-heading" className="space-y-3">
-        <h2 id="cr-fields-heading" className="font-heading text-base font-medium leading-snug">
+        <h2 id="cr-fields-heading" className="text-base font-semibold leading-snug">
           {t('fieldsHeading')}
         </h2>
         <ChangeRequestDecisionTable
@@ -169,17 +170,29 @@ export function ChangeRequestReviewClient({ request, fields, canDecide }: Change
           onToggle={(key, approved) => setSelected((prev) => ({ ...prev, [key]: approved }))}
           canDecide={canDecide && !decided}
           decided={decided}
+          className="rounded-none border-0 bg-transparent"
         />
       </section>
       {canDecide && !decided ? (
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-muted-foreground" aria-live="polite" data-testid="selection-summary">
-            {t('selectionSummary', { approved: counts.approved, rejected: counts.rejected })}
-          </p>
-          <Button ref={triggerRef} type="button" className="h-9" onClick={() => setOpen(true)} data-testid="confirm-decision">
+        // AURA's sticky bar (boards `Admin-change-request` / `-mobile`): it
+        // stays on screen while the fields scroll, its status is a polite
+        // live region, and it sits last in the flow so it never covers a row.
+        <ActionBar
+          position="container"
+          status={
+            <span data-testid="selection-summary" className="text-[var(--aura-fg-primary)]">
+              {t.rich('selectionSummary', {
+                approved: counts.approved,
+                rejected: counts.rejected,
+                b: (chunks) => <strong>{chunks}</strong>,
+              })}
+            </span>
+          }
+        >
+          <Button ref={triggerRef} type="button" onClick={() => setOpen(true)} data-testid="confirm-decision">
             {t('confirm')}
           </Button>
-        </div>
+        </ActionBar>
       ) : null}
       <ConfirmationDialog
         open={open}
@@ -206,61 +219,61 @@ export function ChangeRequestReviewClient({ request, fields, canDecide }: Change
         <div className="space-y-4">
           <div ref={dialogErrorRef} role="alert" aria-atomic="true" data-testid="decision-error-region">
             {dialogError ? (
-              <p className="rounded-md border border-destructive/30 bg-destructive-surface px-3 py-2 text-sm text-destructive" data-testid="decision-error">
+              <p
+                className="rounded-[var(--aura-radius-md)] border border-[var(--aura-alert-danger-border)] bg-[var(--aura-alert-danger-bg)] px-3 py-2 text-sm text-[var(--aura-alert-danger-fg)]"
+                data-testid="decision-error"
+              >
                 {dialogError}
               </p>
             ) : null}
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="decision-reason">
-              {t('reasonLabel')}
-              {reasonRequired ? <span aria-hidden="true"> *</span> : null}
-            </Label>
+          <div className="space-y-1">
             <Textarea
               id="decision-reason"
               ref={reasonRef}
+              label={t('reasonLabel')}
+              required={reasonRequired}
+              hint={reasonRequired ? t('reasonHelpRequired') : t('reasonHelpOptional')}
+              error={reasonOverCap ? t('errors.tooLong', { max: DECISION_REASON_MAX_LENGTH }) : undefined}
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               placeholder={t('reasonPlaceholder')}
               rows={4}
-              required={reasonRequired}
-              aria-required={reasonRequired}
-              aria-describedby="decision-reason-help decision-reason-counter"
-              aria-invalid={reasonOverCap || (reasonRequired && reasonTrimmed.length === 0 && reason.length > 0)}
               data-testid="decision-reason"
+              // The counter describes the field, and whitespace alone is not a
+              // reason (as before AURA; `error` only covers the length cap).
+              aria-describedby="decision-reason-counter"
+              aria-invalid={reasonRequired && reasonTrimmed.length === 0 && reason.length > 0}
             />
-            <p id="decision-reason-help" className="text-xs text-muted-foreground">
-              {reasonRequired ? t('reasonHelpRequired') : t('reasonHelpOptional')}
-            </p>
-            <p id="decision-reason-counter" aria-live="polite" className={reasonOverCap ? 'text-xs font-semibold text-destructive' : 'text-xs text-muted-foreground'}>
+            <p
+              id="decision-reason-counter"
+              aria-live="polite"
+              className={
+                reasonOverCap
+                  ? 'text-xs font-semibold text-[var(--aura-fg-danger)]'
+                  : 'text-xs text-[var(--aura-fg-secondary)]'
+              }
+            >
               {reason.length} / {DECISION_REASON_MAX_LENGTH}
             </p>
-            {reasonOverCap ? (
-              <p className="text-xs text-destructive" role="alert">
-                {t('errors.tooLong', { max: DECISION_REASON_MAX_LENGTH })}
-              </p>
-            ) : null}
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="decision-note">{t('noteLabel')}</Label>
-            <Textarea
-              id="decision-note"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              rows={2}
-              aria-describedby="decision-note-help"
-              aria-invalid={noteOverCap}
-              data-testid="decision-note"
-            />
-            <p id="decision-note-help" className="text-xs text-muted-foreground">
-              {t('noteHelp', { max: DECISION_NOTE_MAX_LENGTH })}
+            {/* AURA's field error is plain text; announce going over the cap. */}
+            <p role="alert" className="sr-only">
+              {reasonOverCap ? t('errors.tooLong', { max: DECISION_REASON_MAX_LENGTH }) : null}
             </p>
-            {noteOverCap ? (
-              <p className="text-xs text-destructive" role="alert">
-                {t('errors.tooLong', { max: DECISION_NOTE_MAX_LENGTH })}
-              </p>
-            ) : null}
           </div>
+          <Textarea
+            id="decision-note"
+            label={t('noteLabel')}
+            hint={t('noteHelp', { max: DECISION_NOTE_MAX_LENGTH })}
+            error={noteOverCap ? t('errors.tooLong', { max: DECISION_NOTE_MAX_LENGTH }) : undefined}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            rows={2}
+            data-testid="decision-note"
+          />
+          <p role="alert" className="sr-only">
+            {noteOverCap ? t('errors.tooLong', { max: DECISION_NOTE_MAX_LENGTH }) : null}
+          </p>
         </div>
       </ConfirmationDialog>
     </div>

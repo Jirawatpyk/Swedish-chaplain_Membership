@@ -58,6 +58,8 @@ A server component that needs a static AURA component imports it from **`@jirawa
 6. An enterprise-ux-designer review has signed; on money screens, a financial-integrity review as well.
 7. **No logic change.** A defect found along the way ships as its own PR, merged first.
 
+**Board parity rule (US5a, 28 Sep 2026).** AURA's component defaults (spacing, sizes, radius, type scale) win over a board's pixel values. The board wins on content, structure, order, icons and copy. When a board value is clearly better, it goes to the AURA handoff, never into a per-page override. Styling that reaches into AURA's internal classes (`.aura-table__*`, `.aura-tbl__*`, `.aura-empty*`, `.aura-filterbar__*`) is a stand-in: it gets a comment naming its handoff item and is listed under the open items below.
+
 ## Phases
 
 The phases follow the order on the canvas page "Migration plan — AURA":
@@ -83,14 +85,20 @@ Phases 2–12 each depend on 1 and can land in any order.
 
 ## AURA gaps (the handoff doc)
 
-The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, items 52–56 (Addendum 4) in 5.6.0, items 57–62 (Addendum 5, found in US1) in 5.7.0, item 63 in 5.7.1, item 64 (Addendum 6) in 5.7.2, item 65 (Addendum 7, found in US2) in 5.7.3 items 66–69 (Addendum 8, found in US3) in 5.8.0 items 70–71 (Addendum 9, found in US4) in 5.9.0 and items 72–74 (Addendum 10, found adopting 5.9.0 in US4) in **5.10.0**, the current pin. No item is open. One note stays with AURA: `Menu` closes on any scroll or window resize (iOS Safari fires resize when its toolbar moves), to be checked on a real iPhone before it becomes an item.
+The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, items 52–56 (Addendum 4) in 5.6.0, items 57–62 (Addendum 5, found in US1) in 5.7.0, item 63 in 5.7.1, item 64 (Addendum 6) in 5.7.2, item 65 (Addendum 7, found in US2) in 5.7.3, items 66–69 (Addendum 8, found in US3) in 5.8.0, items 70–71 (Addendum 9, found in US4) in 5.9.0, items 72–74 (Addendum 10, found adopting 5.9.0 in US4) in 5.10.0, items 75–78 (Addendum 11, found in US5a) in 5.11.0, item 79 (Addendum 12) in 5.12.0 and items 80–84 (Addendum 13) in **5.13.0**, the current pin. One item is open, found adopting 5.13.0:
+
+| Item | AURA gap | Chamber-OS stand-in |
+|---|---|---|
+| #85 | a stacked static `Table` whose rows stand apart as separate framed cards (5.13 stacks them in one frame, divided by rules) | the per-row `CARD` frame, the frameless wrap and the Review button's card height below 640px in `src/app/(staff)/admin/change-requests/_components/queue-table.tsx` |
+
+One note stays with AURA: `Menu` closes on any scroll or window resize (iOS Safari fires resize when its toolbar moves), to be checked on a real iPhone before it becomes an item.
 
 5.9.0 also prepares for 6.0, which builds in only English and drops icon names given as strings from the default bundle. Chamber-OS clears its dev notices without changing any output:
 - `AuraBridge` passes AURA's Thai and Swedish locale packs as `strings`.
 - Icons are registered by name once for each registry: `registerIcons(allIcons)` in `AuraBridge` for client components, and `@/lib/aura-server-icons` (imported by the root layout) for Server Components. `tests/setup.ts` registers both, since component tests render without the layout.
 - Moving to icon components (`npx aura-icons-codemod`), which would let the 6.0 bundle drop the name map, is a separate change.
 
-How Chamber-OS uses the Addendum 5 – 10 items (US1, US2, US3 and US4 dropped their bridge for each):
+How Chamber-OS uses the Addendum 5 – 13 items (US1 to US5a dropped their bridge for each):
 
 | # | Shipped in | Used by |
 |---|---|---|
@@ -112,6 +120,16 @@ How Chamber-OS uses the Addendum 5 – 10 items (US1, US2, US3 and US4 dropped t
 | 72 | 5.10.0: `Tabs` `variant="segmented"` + `fullWidth` | The same tabs in the boards' segmented look, with AURA's inset focus ring and forced-colors marks; the local `.pay-method-tabs` rule is gone |
 | 73 | 5.10.0: disabled `MenuItem`s are `aria-disabled` (reachable by the arrows), `disabledReason`, and a menu with nothing enabled takes focus | The phone card's ⋯ menu: "Email me a copy" is disabled while sending and for the 5-minute cooldown, with the reason "Just sent" (the interim toast is gone) |
 | 74 | 5.10.0: measured, no change: the segmented selected pill is 4.6:1 light / 5.8:1 dark against its track, now checked in AURA's CI | Confirmed on the pay sheet: `--aura-border-control` resolves to `#71717a` in light mode, so no dark tokens leak; the review's 2.5:1 was an estimate that assumed the dark value |
+| 75 | 5.11.0: `DataTable` `rowSelectLabel(row)` | `MembersTable` names each row checkbox "Select <company>"; the scoped key → name lookup is gone |
+| 76 | 5.11.0: `Checkbox` keeps a passed `aria-describedby` and appends its description | The portal directory's contact toggles (`directory-visibility-form.tsx`) now announce their "whose data" hint, which 5.10 silently dropped; the change-request decision rows keep their `description` note |
+| 77 | 5.11.0: 24×24 selection targets in `DataTable` (grid and cards) | The members table's `inset: -4px` override is gone; `members-target-size-2-2.spec.ts` still measures 24×24 |
+| 78 | 5.11.0: `DataTable` `rowHeight="auto"` | The members and directory tables: names and badges wrap in full and rows grow (maintainer's choice, 28 Sep); the one-line truncation is gone |
+| 79 | 5.12.0: `FilterSelect` (a compact "Status All ▾" trigger; AURA's list on a phone) | The members filters; `FilterChipSelect` is deleted |
+| 80 | 5.13.0: `DataTable` column `card` / `cardOrder`, `hideSelectionInCards` | The members phone card (no checkbox, no ⋯ menu, no Last activity; the board's field order), shared with its skeleton through `MEMBERS_COLUMN_CARD`; the `PHONE_CARD` classes are gone |
+| 81 | 5.13.0: static `Table` `align="middle"` and `bordered={false}` | Recent exports (frameless, centred) and the change-request queue (centred); the `.aura-tbl-wrap` / `.aura-tbl__td` overrides are gone there |
+| 82 | 5.13.0: `EmptyState tone="danger"` (with `role` passed through) | `MembersErrorState`; the danger wrapper is gone |
+| 83 | 5.13.0: `FilterBar` `searchGrow` | The members and directory filter bars, at AURA's own breakpoint (the search takes its own row below 768px); the `.aura-filterbar` overrides are gone |
+| 84 | 5.13.0: `Td` / `Th` `card="title" \| "action"` on a stacked static `Table` | The change-request queue's phone card: company and member number as the title, Review beside it; the container-query grid is gone |
 
 How Chamber-OS uses the 5.6.0 items:
 

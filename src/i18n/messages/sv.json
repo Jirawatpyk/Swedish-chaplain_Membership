@@ -337,7 +337,9 @@
         "yes": "Ja",
         "no": "Nej",
         "emptyTitle": "Inga medlemmar hittades",
-        "empty": "Justera sökningen eller filtren."
+        "empty": "Justera sökningen eller filtren.",
+        "listedPill": "Listad",
+        "notListedPill": "Inte listad"
       },
       "generate": {
         "heading": "Skapa",
@@ -366,7 +368,8 @@
           "failed": "Misslyckades"
         },
         "download": "Ladda ner"
-      }
+      },
+      "resultsHeading": "Medlemmar"
     },
     "audit": {
       "title": "Granskningslogg",
@@ -1118,7 +1121,8 @@
           "removeSubmitter": "Visa allas begäranden",
           "unknownMember": "en medlem som inte kunde hittas",
           "resultCount": "{count, plural, =0 {Inga begäranden att visa} one {Visar # begäran} other {Visar # begäranden}}",
-          "resultCountMore": "Visar de första {count} begärandena – fler på nästa sida"
+          "resultCountMore": "Visar de första {count} begärandena – fler på nästa sida",
+          "toggle": "Filter"
         },
       "queue": {
           "emptyFiltered": "Inga ändringsbegäranden matchar dessa filter.",
@@ -1199,11 +1203,14 @@
           "buyer_contact": "köparens kontaktperson på skattedokument",
           "billing_country": "ett faktureringsland utanför Thailand för köparen — bedöm momshanteringen och kontrollera huvudkontor/filial",
           "billing_cleared": "faktureringsadressen tas bort — den registrerade adressen blir köparadressen på skattedokumenten; kontrollera huvudkontor-/filialangivelsen"
-        }
+        },
+        "willApprove": "Godkänns",
+        "willReject": "Avslås",
+        "readOnlyTitle": "Endast visning"
       },
       "decision": {
         "confirm": "Bekräfta beslut",
-        "selectionSummary": "{approved, plural, =0 {Inga fält} one {# fält} other {# fält}} att godkänna, {rejected, plural, =0 {inga} one {# fält} other {# fält}} att avslå",
+        "selectionSummary": "<b>{approved, plural, =0 {Inga fält} one {# fält} other {# fält}}</b> att godkänna, <b>{rejected, plural, =0 {inga} one {# fält} other {# fält}}</b> att avslå",
         "fieldsHeading": "Föreslagna ändringar",
         "titleApproveAll": "Godkänna alla {count, plural, one {# fält} other {# fält}}?",
         "titleMixed": "Godkänna {approved, plural, one {# fält} other {# fält}} och avslå {rejected, plural, one {# fält} other {# fält}}?",
@@ -1317,7 +1324,6 @@
         "searchPlaceholder": "Sök på företag, kontakt, e-post eller medlemsnummer",
         "searchSrLabel": "Sök medlemmar",
         "clearFilters": "Rensa filter",
-        "activeFilters": "Aktiva filter",
         "removeFilter": "Ta bort {filter}",
         "filterChip": {
           "search": "Sök: {q}",
@@ -1345,12 +1351,11 @@
             "warning": "Varning",
             "at-risk": "I riskzon",
             "critical": "Kritisk"
-          }
+          },
+          "allShort": "Alla"
         },
         "resultsCount": "{count, plural, =0 {Inga medlemmar} one {# medlem} other {# medlemmar}}",
         "resultsCountOfTotal": "Visar {count} av {total, plural, one {# medlem} other {# medlemmar}}",
-        "sortByEngagement": "Sortera efter engagemang",
-        "sortByMemberNumber": "Sortera efter medlemsnummer",
         "columns": {
           "memberNumber": "Medlemsnr",
           "company": "Företag",
@@ -1374,12 +1379,10 @@
         "riskNotComputed": "Ingen poäng än",
         "riskNotComputedAria": "Riskpoäng inte beräknad ännu",
         "riskNotComputedTooltip": "Riskpoängen beräknas efter 30 dagars aktivitet. Nyligen tillagda medlemmar får poäng när data har samlats in.",
-        "rowAriaLabel": "Öppna {company} detaljer",
         "noPrimary": "Ingen primär kontakt",
         "loadMore": "Ladda fler",
         "selectAll": "Markera alla rader",
         "selectRow": "Markera {company}",
-        "selectedCount": "{count, plural, one {# rad vald} other {# rader valda}}",
         "allPageSelected": "Alla {count} på denna sida markerade.",
         "selectAllMatching": "Markera alla {count} matchande",
         "matchingSelected": "Alla {count} matchande medlemmar markerade.",
@@ -1406,7 +1409,12 @@
           "unavailable": "Portalstatus ej tillgänglig",
           "unavailableHint": "Kunde inte läsa antalet — uppdatera för att försöka igen"
         },
-        "tableCaption": "Medlemsregister"
+        "tableCaption": "Medlemsregister",
+        "rowActions": "Fler åtgärder för {company}",
+        "openMember": "Öppna medlem",
+        "editMember": "Redigera medlem",
+        "rowNotSelectable": "{company} är arkiverad och kan inte markeras",
+        "searchPlaceholderShort": "Företag, kontakt, e-post eller medlemsnr"
       },
       "emptyStates": {
         "zero": {

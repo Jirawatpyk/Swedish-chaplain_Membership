@@ -6,7 +6,7 @@
  * Walks the member directory table with keyboard-only navigation
  * while the sticky bulk-action toolbar is visible, and verifies that
  * the focused element's bounding box is not fully occluded by the
- * toolbar's bounding box (ADOPT-01 WCAG 2.2 SC 2.4.11).
+ * toolbar's bounding box, both measured after each Tab (ADOPT-01 WCAG 2.2 SC 2.4.11).
  *
  * The test:
  *   1. Signs in and navigates to /admin/members
@@ -20,6 +20,7 @@
 import type { Page } from '@playwright/test';
 import { expect, test, fillField } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
+import { MEMBERS_GRID, firstRowCheckbox } from './helpers/members-grid';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
@@ -52,25 +53,25 @@ test.describe('members focus-not-obscured by bulk toolbar @f3 @a11y', () => {
 
   test('focused elements not fully obscured by sticky bulk toolbar', async ({
     page,
+    isMobile,
   }) => {
+    test.skip(isMobile === true, 'bulk selection is desktop-only by design: phone cards carry no checkbox (spec 122 Clarifications, 2026-09-28)');
     await signIn(page);
     await page.goto('/admin/members');
-    await page.waitForSelector('[data-slot="table"]', { timeout: 10_000 });
+    await page.waitForSelector(MEMBERS_GRID, { timeout: 10_000 });
 
     // Select first row to make the bulk toolbar visible
-    const firstCheckbox = page
-      .locator('tbody tr:first-child [data-slot="checkbox"]')
-      .first();
-    await firstCheckbox.click();
+    await firstRowCheckbox(page).click();
 
-    const bulkBar = page.getByRole('toolbar');
-    await expect(bulkBar).toBeVisible({ timeout: 5_000 });
+    // The AURA ActionBar leaves its idle (clipped) state
+    const bulkBar = page.locator('.aura-actionbar');
+    await expect(bulkBar).not.toHaveClass(/is-idle/, { timeout: 5_000 });
 
-    // Get bulk toolbar's top edge (it's fixed to the bottom)
-    const bulkBarBox = await bulkBar.boundingBox();
-    if (!bulkBarBox) return;
-    const bulkBarTop = bulkBarBox.y;
-
+    // The ActionBar is sticky, not fixed: it rides at the bottom of the
+    // viewport only while the list runs past it, then settles in the page flow
+    // above the pagination. Tabbing scrolls the page, so its box is measured
+    // after every Tab, never once up front (R15: a stale box read the
+    // pagination below the settled bar as covered).
     // Tab through a few elements and check none are fully behind the toolbar
     const MAX_TABS = 10;
     for (let i = 0; i < MAX_TABS; i++) {
@@ -80,12 +81,17 @@ test.describe('members focus-not-obscured by bulk toolbar @f3 @a11y', () => {
         await page.evaluate(() => {
           const el = document.activeElement;
           if (!el || el === document.body) return null;
+          // The bar's own controls sit inside it by design.
+          if (el.closest('.aura-actionbar')) return null;
           const r = el.getBoundingClientRect();
           return { x: r.x, y: r.y, width: r.width, height: r.height };
         });
 
       if (!focusedBox) continue;
 
+      const bulkBarBox = await bulkBar.boundingBox();
+      if (!bulkBarBox) continue;
+      const bulkBarTop = bulkBarBox.y;
       const focusedBottom = focusedBox.y + focusedBox.height;
 
       // WCAG 2.2 SC 2.4.11: at least some part of the focused element must

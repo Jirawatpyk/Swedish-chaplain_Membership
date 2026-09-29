@@ -9,9 +9,9 @@
 
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { DownloadIcon, Loader2Icon } from 'lucide-react';
+import { DownloadIcon } from 'lucide-react';
 import { toast } from '@/lib/toast';
-import { buttonVariants } from '@/components/ui/button';
+import { Button } from '@jirawatpyk/aura-react';
 
 const FILENAME_FALLBACK = 'members-backup.zip';
 
@@ -20,7 +20,7 @@ function filenameFromDisposition(header: string | null): string {
   return match?.[1] ?? FILENAME_FALLBACK;
 }
 
-export function ExportBackupButton() {
+export function ExportBackupButton({ className }: { readonly className?: string } = {}) {
   const t = useTranslations('admin.members');
   const [busy, setBusy] = useState(false);
 
@@ -59,18 +59,15 @@ export function ExportBackupButton() {
   }
 
   return (
-    <button
-      type="button"
-      onClick={handleClick}
+    <Button
+      variant="secondary"
+      icon={<DownloadIcon aria-hidden="true" />}
+      loading={busy}
       disabled={busy}
-      className={buttonVariants({ variant: 'outline' })}
+      onClick={handleClick}
+      {...(className ? { className } : {})}
     >
-      {busy ? (
-        <Loader2Icon className="h-3.5 w-3.5 motion-safe:animate-spin" aria-hidden />
-      ) : (
-        <DownloadIcon className="h-3.5 w-3.5" aria-hidden />
-      )}
       {t('exportBackup')}
-    </button>
+    </Button>
   );
 }

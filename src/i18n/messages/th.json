@@ -337,7 +337,9 @@
         "yes": "ใช่",
         "no": "ไม่",
         "emptyTitle": "ไม่พบสมาชิก",
-        "empty": "ลองปรับการค้นหาหรือตัวกรอง"
+        "empty": "ลองปรับการค้นหาหรือตัวกรอง",
+        "listedPill": "เผยแพร่",
+        "notListedPill": "ไม่เผยแพร่"
       },
       "generate": {
         "heading": "สร้างเอกสาร",
@@ -366,7 +368,8 @@
           "failed": "ล้มเหลว"
         },
         "download": "ดาวน์โหลด"
-      }
+      },
+      "resultsHeading": "สมาชิก"
     },
     "audit": {
       "title": "บันทึกการตรวจสอบ",
@@ -1118,7 +1121,8 @@
           "removeSubmitter": "แสดงคำขอของทุกคน",
           "unknownMember": "สมาชิกที่ไม่พบ",
           "resultCount": "{count, plural, =0 {ไม่มีคำขอที่จะแสดง} other {กำลังแสดงคำขอ # รายการ}}",
-          "resultCountMore": "กำลังแสดงคำขอ {count} รายการแรก — มีเพิ่มเติมในหน้าถัดไป"
+          "resultCountMore": "กำลังแสดงคำขอ {count} รายการแรก — มีเพิ่มเติมในหน้าถัดไป",
+          "toggle": "ตัวกรอง"
         },
       "queue": {
           "emptyFiltered": "ไม่มีคำขอแก้ไขข้อมูลที่ตรงกับตัวกรองนี้",
@@ -1199,11 +1203,14 @@
           "buyer_contact": "ผู้ติดต่อของผู้ซื้อที่พิมพ์บนเอกสารภาษี",
           "billing_country": "ที่อยู่เรียกเก็บเงินของผู้ซื้ออยู่นอกประเทศไทย — โปรดพิจารณาการคิด VAT และตรวจสอบสำนักงานใหญ่ / สาขา",
           "billing_cleared": "กำลังลบที่อยู่สำหรับออกใบกำกับ — ที่อยู่จดทะเบียนจะกลายเป็นที่อยู่ผู้ซื้อที่พิมพ์บนใบกำกับภาษี ตรวจสอบการระบุสำนักงานใหญ่ / สาขา"
-        }
+        },
+        "willApprove": "จะอนุมัติ",
+        "willReject": "จะปฏิเสธ",
+        "readOnlyTitle": "ดูได้อย่างเดียว"
       },
       "decision": {
         "confirm": "ยืนยันการตัดสิน",
-        "selectionSummary": "อนุมัติ {approved, plural, other {# ฟิลด์}} ปฏิเสธ {rejected, plural, other {# ฟิลด์}}",
+        "selectionSummary": "อนุมัติ <b>{approved, plural, other {# ฟิลด์}}</b> ปฏิเสธ <b>{rejected, plural, other {# ฟิลด์}}</b>",
         "fieldsHeading": "การเปลี่ยนแปลงที่เสนอ",
         "titleApproveAll": "อนุมัติทั้งหมด {count, plural, other {# ฟิลด์}}?",
         "titleMixed": "อนุมัติ {approved, plural, other {# ฟิลด์}} และปฏิเสธ {rejected, plural, other {# ฟิลด์}}?",
@@ -1317,7 +1324,6 @@
         "searchPlaceholder": "ค้นหาด้วยชื่อบริษัท ผู้ติดต่อ อีเมล หรือหมายเลขสมาชิก",
         "searchSrLabel": "ค้นหาสมาชิก",
         "clearFilters": "ล้างตัวกรอง",
-        "activeFilters": "ตัวกรองที่ใช้อยู่",
         "removeFilter": "เอา {filter} ออก",
         "filterChip": {
           "search": "ค้นหา: {q}",
@@ -1345,12 +1351,11 @@
             "warning": "เฝ้าระวัง",
             "at-risk": "เสี่ยง",
             "critical": "วิกฤต"
-          }
+          },
+          "allShort": "ทั้งหมด"
         },
         "resultsCount": "{count, plural, =0 {ไม่มีสมาชิก} other {# ราย}}",
         "resultsCountOfTotal": "แสดง {count} จาก {total} ราย",
-        "sortByEngagement": "เรียงตามการมีส่วนร่วม",
-        "sortByMemberNumber": "เรียงตามหมายเลขสมาชิก",
         "columns": {
           "memberNumber": "เลขสมาชิก",
           "company": "บริษัท",
@@ -1374,12 +1379,10 @@
         "riskNotComputed": "ยังไม่มีคะแนน",
         "riskNotComputedAria": "ยังไม่ได้คำนวณคะแนนความเสี่ยง",
         "riskNotComputedTooltip": "คะแนนความเสี่ยงคำนวณหลังจากสมาชิกมีกิจกรรม 30 วัน สมาชิกที่เพิ่งเพิ่มเข้ามาจะเริ่มมีคะแนนเมื่อข้อมูลครบ",
-        "rowAriaLabel": "เปิดรายละเอียด {company}",
         "noPrimary": "ไม่มีผู้ติดต่อหลัก",
         "loadMore": "โหลดเพิ่ม",
         "selectAll": "เลือกทุกแถว",
         "selectRow": "เลือก {company}",
-        "selectedCount": "เลือกแล้ว {count} แถว",
         "allPageSelected": "เลือกครบ {count} รายการในหน้านี้แล้ว",
         "selectAllMatching": "เลือกทั้งหมด {count} รายการที่ตรงเงื่อนไข",
         "matchingSelected": "เลือกสมาชิกที่ตรงเงื่อนไขครบ {count} รายการแล้ว",
@@ -1406,7 +1409,12 @@
           "unavailable": "ไม่ทราบสถานะพอร์ทัล",
           "unavailableHint": "โหลดจำนวนไม่สำเร็จ — รีเฟรชเพื่อลองใหม่"
         },
-        "tableCaption": "รายชื่อสมาชิก"
+        "tableCaption": "รายชื่อสมาชิก",
+        "rowActions": "การดำเนินการเพิ่มเติมสำหรับ {company}",
+        "openMember": "เปิดข้อมูลสมาชิก",
+        "editMember": "แก้ไขข้อมูลสมาชิก",
+        "rowNotSelectable": "{company} ถูกเก็บถาวรแล้ว จึงเลือกไม่ได้",
+        "searchPlaceholderShort": "บริษัท ผู้ติดต่อ อีเมล หรือเลขสมาชิก"
       },
       "emptyStates": {
         "zero": {

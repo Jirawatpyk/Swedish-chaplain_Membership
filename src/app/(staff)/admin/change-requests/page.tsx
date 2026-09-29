@@ -26,7 +26,7 @@ import { headers } from 'next/headers';
 import { notFound, redirect } from 'next/navigation';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { z } from 'zod';
-import { AlertTriangleIcon, InboxIcon, ReceiptTextIcon, XIcon } from 'lucide-react';
+import { InboxIcon, XIcon } from 'lucide-react';
 import { env } from '@/lib/env';
 import { requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
@@ -40,16 +40,14 @@ import {
   CHANGE_REQUEST_STATES,
   asMemberId,
   listChangeRequestQueue,
+  type ChangeRequestQueueItem,
 } from '@/modules/members';
-import { Badge } from '@/components/ui/badge';
-import { buttonVariants } from '@/components/ui/button';
-import { InlineAlert } from '@/components/ui/inline-alert';
-import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Alert, buttonClass } from '@jirawatpyk/aura-react/server';
 import { EmptyState } from '@/components/shell/empty-state';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { ChangeRequestStatusBadge, changeRequestStatusOf } from '@/components/members/change-requests/change-request-status-badge';
 import { ChangeRequestQueueFilters } from './_components/queue-filters';
+import { ChangeRequestQueueTable } from './_components/queue-table';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PAGE = 50;
@@ -98,11 +96,6 @@ function one(v: string | string[] | undefined): string | undefined {
  */
 function oneRaw(v: string | string[] | undefined): string | undefined {
   return Array.isArray(v) ? v[0] : v;
-}
-
-/** Whole days / hours for the waiting column — the exact seconds are not what a reviewer scans for. */
-function waitingParts(seconds: number): { days: number; hours: number } {
-  return { days: Math.floor(seconds / 86_400), hours: Math.floor((seconds % 86_400) / 3600) };
 }
 
 export default async function ChangeRequestsQueuePage({ searchParams }: PageProps) {
@@ -225,46 +218,90 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
     return `/admin/change-requests?${params.toString()}`;
   })();
 
+  return renderChangeRequestQueueView({
+    items: page.items,
+    hasMore: page.nextCursor !== null,
+    nextHref,
+    // the tenant's pending fact belongs to the DEFAULT view — on a filtered
+    // page it reads as a count of what is shown (UX I8)
+    pendingSummary:
+      defaultView && (page.pendingCount ?? 0) > 0
+        ? {
+            count: page.pendingCount ?? 0,
+            oldestDays: page.oldestPendingAgeSeconds === null ? 0 : Math.floor(page.oldestPendingAgeSeconds / 86_400),
+          }
+        : null,
+    deepLinkNotice,
+    filtered,
+    memberChip: q.memberId ? { company: memberChip ?? '', removeHref: hrefWithout('memberId') } : null,
+    submitterChip: q.submitter ? { removeHref: hrefWithout('submitter') } : null,
+    timeZone: env.tenant.timezone,
+  });
+}
+
+/**
+ * 122 US5a — the queue body, shared with the no-DB preview route
+ * (`/test-fixtures/aura-admin?view=change-requests`) so the two cannot drift
+ * (the preview's copy drifted once; US5a review, 29 Sep).
+ */
+export async function renderChangeRequestQueueView({
+  items,
+  hasMore,
+  nextHref,
+  pendingSummary,
+  deepLinkNotice,
+  filtered,
+  memberChip,
+  submitterChip,
+  timeZone,
+}: {
+  readonly items: readonly ChangeRequestQueueItem[];
+  readonly hasMore: boolean;
+  readonly nextHref: string | null;
+  readonly pendingSummary: { readonly count: number; readonly oldestDays: number } | null;
+  readonly deepLinkNotice: string | null;
+  readonly filtered: boolean;
+  readonly memberChip: { readonly company: string; readonly removeHref: string } | null;
+  readonly submitterChip: { readonly removeHref: string } | null;
+  readonly timeZone: string;
+}) {
+  const t = await getTranslations('admin.changeRequests.queue');
+  const tFilters = await getTranslations('admin.changeRequests.filters');
   return (
     <TableContainer>
       <PageHeader
         title={t('title')}
         subtitle={t('subtitle')}
         actions={
-          // the tenant's pending fact belongs to the DEFAULT view — on a
-          // filtered page it reads as a count of what is shown (UX I8)
-          defaultView && (page.pendingCount ?? 0) > 0 ? (
-            <p className="text-sm" data-testid="queue-pending-count">
-              {t('pendingSummary', {
-                count: page.pendingCount ?? 0,
-                oldestDays: page.oldestPendingAgeSeconds === null ? 0 : Math.floor(page.oldestPendingAgeSeconds / 86_400),
-              })}
+          pendingSummary ? (
+            <p className="text-sm text-[var(--aura-fg-secondary)]" data-testid="queue-pending-count">
+              {t('pendingSummary', pendingSummary)}
             </p>
           ) : undefined
         }
       />
       {deepLinkNotice ? (
-        <InlineAlert tone="info" role="status" data-testid="deep-link-notice">
+        <Alert tone="info" role="status" data-testid="deep-link-notice">
           {deepLinkNotice}
-        </InlineAlert>
+        </Alert>
       ) : null}
 
-      <ChangeRequestQueueFilters resultCount={page.items.length} hasMore={page.nextCursor !== null} />
-      {q.memberId || q.submitter ? (
+      <ChangeRequestQueueFilters resultCount={items.length} hasMore={hasMore} timeZone={timeZone} />
+      {memberChip || submitterChip ? (
         <div className="space-y-1">
-          {q.memberId ? (
+          {memberChip ? (
             <p className="text-sm" data-testid="queue-member-chip">
-              {tFilters('memberChip', { company: memberChip ?? '' })}{' '}
-              <Link href={hrefWithout('memberId')} className="inline-flex items-center gap-1 text-primary underline underline-offset-4 hover:no-underline">
+              {tFilters('memberChip', { company: memberChip.company })}{' '}
+              <Link href={memberChip.removeHref} className="inline-flex items-center gap-1 text-[var(--aura-fg-accent)] underline underline-offset-4 hover:no-underline">
                 <XIcon className="size-3" aria-hidden="true" />
                 {tFilters('removeMember')}
               </Link>
             </p>
           ) : null}
-          {q.submitter ? (
+          {submitterChip ? (
             <p className="text-sm" data-testid="queue-submitter-chip">
               {tFilters('submitterChip')}{' '}
-              <Link href={hrefWithout('submitter')} className="inline-flex items-center gap-1 text-primary underline underline-offset-4 hover:no-underline">
+              <Link href={submitterChip.removeHref} className="inline-flex items-center gap-1 text-[var(--aura-fg-accent)] underline underline-offset-4 hover:no-underline">
                 <XIcon className="size-3" aria-hidden="true" />
                 {tFilters('removeSubmitter')}
               </Link>
@@ -273,93 +310,18 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
         </div>
       ) : null}
 
-      {page.items.length === 0 ? (
+      {items.length === 0 ? (
         deepLinkNotice ? null : (
           <div data-testid="queue-empty">
             <EmptyState icon={InboxIcon} title={filtered ? t('emptyFiltered') : t('empty')} {...(filtered ? {} : { description: t('emptyHint') })} bordered />
           </div>
         )
       ) : (
-        <Table data-testid="queue-table">
-          <TableCaption className="sr-only">{t('tableCaption')}</TableCaption>
-          <TableHeader>
-            <TableRow>
-              <TableHead>{t('columns.member')}</TableHead>
-              <TableHead>{t('columns.submitter')}</TableHead>
-              <TableHead>{t('columns.fields')}</TableHead>
-              <TableHead>{t('columns.submitted')}</TableHead>
-              <TableHead>{t('columns.waiting')}</TableHead>
-              <TableHead>{t('columns.status')}</TableHead>
-              <TableHead>
-                <span className="sr-only">{t('columns.actions')}</span>
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {page.items.map((item) => {
-              const r = item.row.request;
-              const wait = waitingParts(item.waitingSeconds);
-              const rowId = `cr-row-${r.id}`;
-              return (
-                <TableRow key={r.id} data-testid="queue-row" data-request-id={r.id} data-overdue={item.overdue ? 'true' : undefined}>
-                  <TableCell>
-                    <div className="font-medium">{item.row.member.companyName}</div>
-                    <div className="text-caption text-muted-foreground">
-                      #{item.row.member.memberNumber}
-                      {item.row.member.archived ? ` · ${t('archivedMember')}` : null}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div>{item.row.submitter.displayName}</div>
-                    <div className="text-caption text-muted-foreground">{tReview(`roles.${r.submitterRoleAtSubmission}`)}</div>
-                  </TableCell>
-                  <TableCell>
-                    <div>{t('fieldCount', { count: r.fields.length })}</div>
-                    {r.fields.some((f) => f.affectsTaxDocuments) ? (
-                      <div className="flex items-center gap-1 text-caption text-muted-foreground">
-                        <ReceiptTextIcon className="size-3" aria-hidden="true" />
-                        {tReview('markers.taxAffecting')}
-                      </div>
-                    ) : null}
-                  </TableCell>
-                  <TableCell>{fmt(r.submittedAt)}</TableCell>
-                  <TableCell>
-                    <span id={`${rowId}-waiting`}>{wait.days > 0 ? t('waitingDays', { count: wait.days }) : t('waitingHours', { count: wait.hours })}</span>
-                    {item.overdue ? (
-                      <Badge variant="destructive" className="ml-2" data-testid="overdue-badge">
-                        <AlertTriangleIcon className="mr-1 size-3" aria-hidden="true" />
-                        {t('overdue')}
-                      </Badge>
-                    ) : null}
-                  </TableCell>
-                  <TableCell>
-                    <ChangeRequestStatusBadge status={changeRequestStatusOf(r)} audience="staff" />
-                    {r.decidedAt && item.row.decidedBy ? (
-                      <div className="mt-1 text-caption text-muted-foreground">
-                        {tReview('decidedBy', { name: item.row.decidedBy.displayName || tReview('unknownReviewer'), decidedAt: fmt(r.decidedAt) })}
-                        {item.row.decidedBy.deactivated ? ` ${tReview('deactivated')}` : null}
-                      </div>
-                    ) : null}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Link
-                      href={`/admin/change-requests/${r.id}`}
-                      className={`${buttonVariants({ variant: 'outline', size: 'sm' })} inline-flex h-9 items-center`}
-                      aria-label={r.state === 'pending' ? t('reviewFor', { company: item.row.member.companyName }) : t('viewFor', { company: item.row.member.companyName })}
-                      aria-describedby={`${rowId}-waiting`}
-                    >
-                      {r.state === 'pending' ? t('open') : t('view')}
-                    </Link>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
+        <ChangeRequestQueueTable items={items} />
       )}
       {nextHref ? (
         <div className="flex justify-center">
-          <Link href={nextHref} className={buttonVariants({ variant: 'outline' })} data-testid="queue-next">
+          <Link href={nextHref} className={buttonClass({ variant: 'secondary' })} data-testid="queue-next">
             {t('nextPage')}
           </Link>
         </div>

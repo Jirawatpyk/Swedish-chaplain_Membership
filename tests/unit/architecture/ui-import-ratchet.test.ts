@@ -97,7 +97,7 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('except the reason dialog, which moves with its callers (US5 / US12)', async () => {
+    it('except the reason dialog, which moves with the E-Blast review (US12)', async () => {
       expect(await ratchetHits(legacy, 'src/components/shell/reason-confirmation-dialog.tsx')).toEqual([]);
     });
   });
@@ -159,11 +159,6 @@ describe('UI import ratchet (spec 122)', () => {
       ).toEqual([]);
     });
 
-    it('control: the staff change-request review keeps the legacy kit until US5', async () => {
-      expect(
-        await ratchetHits(legacy, 'src/components/members/change-requests/change-request-review-client.tsx'),
-      ).toEqual([]);
-    });
   });
 
   describe('the US4 member invoices are on AURA (the real MIGRATED_PATHS)', () => {
@@ -195,6 +190,40 @@ describe('UI import ratchet (spec 122)', () => {
 
     it('control: the rest of the staff invoice screens keep the legacy kit until US8', async () => {
       expect(await ratchetHits(legacy, 'src/app/(staff)/admin/invoices/page.tsx')).toEqual([]);
+    });
+  });
+
+  describe('the US5a members list, directory and change requests are on AURA (the real MIGRATED_PATHS)', () => {
+    const legacy = "import { Button } from '@/components/ui/button';\nexport const B = Button;\n";
+
+    it.each([
+      'src/app/(staff)/admin/members/page.tsx',
+      'src/app/(staff)/admin/members/loading.tsx',
+      'src/app/(staff)/admin/members/_components/bulk-action-bar.tsx',
+      'src/app/(staff)/admin/members/_components/archive-confirm-dialog.tsx',
+      'src/app/(staff)/admin/members/_components/bulk-progress-indicator.tsx',
+      'src/components/members/members-table.tsx',
+      'src/components/members/members-table-skeleton.tsx',
+      'src/components/members/directory-filters.tsx',
+      'src/components/members/empty-states.tsx',
+      'src/app/(staff)/admin/directory/page.tsx',
+      'src/app/(staff)/admin/directory/error.tsx',
+      'src/components/directory/directory-table.tsx',
+      'src/components/directory/recent-exports.tsx',
+      'src/app/(staff)/admin/change-requests/page.tsx',
+      'src/app/(staff)/admin/change-requests/_components/queue-filters.tsx',
+      'src/app/(staff)/admin/change-requests/[id]/page.tsx',
+      'src/app/(staff)/admin/change-requests/[id]/not-found.tsx',
+      'src/components/members/change-requests/change-request-review-client.tsx',
+      'src/components/members/change-requests/change-request-decision-table.tsx',
+      'src/app/test-fixtures/aura-admin/page.tsx',
+    ])('%s cannot import the legacy kit', async (path) => {
+      expect(await ratchetHits(legacy, path)).toHaveLength(1);
+    });
+
+    it('control: the member detail and its forms keep the legacy kit until US5b', async () => {
+      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/members/[memberId]/page.tsx')).toEqual([]);
+      expect(await ratchetHits(legacy, 'src/components/members/member-form/member-form.tsx')).toEqual([]);
     });
   });
 });

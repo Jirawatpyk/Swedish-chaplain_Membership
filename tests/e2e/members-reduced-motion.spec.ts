@@ -21,6 +21,7 @@
 import type { Page } from '@playwright/test';
 import { expect, test, fillField } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
+import { firstMemberRowLink } from './helpers/members-grid';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
@@ -64,15 +65,19 @@ test.describe('members reduced-motion compliance @f3 @a11y', () => {
     // Use the skeleton that appears during SSR + data fetch.
     // If data loads too fast the skeleton is gone — pick the table instead.
     const skeletonOrTable = page
-      .locator('[data-testid="members-table-skeleton"], [data-slot="table"]')
+      .locator('[data-testid="members-table-skeleton"], [role="grid"]')
       .first();
     await skeletonOrTable.waitFor({ state: 'attached', timeout: 10_000 });
 
-    // Any element on the page should have animation-duration ≤ "0s" or none.
-    const animationDuration: string = await skeletonOrTable.evaluate(
-      (el) => window.getComputedStyle(el).animationDuration,
+    // The element and every pulse block inside it (AURA `.aura-skel`) must be
+    // still: no animation name, or a zero duration.
+    const moving: number = await skeletonOrTable.evaluate((el) =>
+      [el, ...el.querySelectorAll('.aura-skel')].filter((node) => {
+        const style = window.getComputedStyle(node);
+        return style.animationName !== 'none' && !/^(0s,?\s*)+$/.test(style.animationDuration);
+      }).length,
     );
-    expect(animationDuration).toMatch(/^(0s|none|\s*)$/);
+    expect(moving).toBe(0);
   });
 
   test('(ii) timeline page renders instantly — no staggered animation', async ({
@@ -84,7 +89,7 @@ test.describe('members reduced-motion compliance @f3 @a11y', () => {
     // Navigate to the directory to get a member ID
     await page.goto('/admin/members');
     await page.waitForLoadState('networkidle');
-    const firstRowLink = page.locator('tbody tr:first-child a').first();
+    const firstRowLink = firstMemberRowLink(page);
     const href = await firstRowLink.getAttribute('href').catch(() => null);
     if (!href) {
       test.skip(true, 'No members in directory — skipping timeline reduced-motion check');

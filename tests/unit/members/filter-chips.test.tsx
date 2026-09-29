@@ -9,7 +9,7 @@
  * Uses the real `src/i18n/messages/en.json` so a missing key fails the test.
  */
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import messages from '@/i18n/messages/en.json';
 import { DirectoryFilters } from '@/components/members/directory-filters';
@@ -105,5 +105,84 @@ describe('active-filter chips', () => {
     fireEvent.click(screen.getByRole('button', { name: /clear/i }));
     const url = nav.replaceMock.mock.calls[0]?.[0] as string;
     expect(url).not.toContain('plan_year=');
+  });
+
+  // 122 US5a (T503) — the bar is AURA FilterBar: the chips are AURA tags in
+  // its chips row, the clear-all reads "Clear filters" (the board), and each
+  // chip's × is named "Remove <chip>".
+  it('renders the filters as an AURA FilterBar with tag chips', () => {
+    const { container } = renderFilters('status=active&risk_band=at-risk');
+    const bar = container.querySelector('.aura-filterbar');
+    expect(bar).not.toBeNull();
+    const chips = Array.from(bar!.querySelectorAll('.aura-filterbar__chips .aura-tag')).map(
+      (el) => el.textContent,
+    );
+    expect(chips).toEqual(['Status: Active', 'Risk: At-risk']);
+    expect(
+      screen.getByRole('button', { name: messages.admin.members.directory.clearFilters }),
+    ).toBeInTheDocument();
+  });
+});
+
+// Whole-branch review: a Clear pressed inside the search debounce must stay
+// cleared — the pending typed query must not come back when the timer fires.
+describe('clearing inside the search debounce', () => {
+  function typedQueriesAfter(clear: () => void) {
+    vi.useFakeTimers();
+    try {
+      fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'acme typed' } });
+      clear();
+      nav.replaceMock.mockClear();
+      act(() => {
+        vi.advanceTimersByTime(1000);
+      });
+      return nav.replaceMock.mock.calls.map((c) => String(c[0])).filter((u) => u.includes('q='));
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  it('removing the search chip drops the pending typed query', () => {
+    renderFilters('q=acme');
+    const typed = typedQueriesAfter(() =>
+      fireEvent.click(screen.getByRole('button', { name: /remove search: acme/i })),
+    );
+    expect(typed).toEqual([]);
+  });
+
+  it('the lone "Clear filters" (needs-invite only) drops the pending typed query', () => {
+    renderFilters('portal=needs_invite');
+    // The page's own Clear (outside the bar's chips row, where AURA adds its
+    // own once something is typed).
+    const typed = typedQueriesAfter(() => {
+      const own = screen
+        .getAllByRole('button', { name: messages.admin.members.directory.clearFilters })
+        .find((b) => !b.closest('.aura-filterbar__chips'));
+      fireEvent.click(own!);
+    });
+    expect(typed).toEqual([]);
+  });
+});
+
+describe('filter triggers as on the board (US5a)', () => {
+  it('each filter is an AURA FilterSelect reading "<name> <value>", named after the filter (#79)', () => {
+    const { container } = renderFilters('status=active');
+    // The visible face; AURA also keeps the full option ("All plans") for
+    // screen readers beside the short word.
+    const face = (name: string) => {
+      const el = screen.getByRole('combobox', { name }).closest('.aura-filterselect');
+      return ['name', 'value'].map((part) => el?.querySelector(`.aura-filterselect__${part}`)?.textContent).join(' ');
+    };
+    expect(face('Status')).toBe('Status Active');
+    expect(face('Plan')).toBe('Plan All');
+    expect(face('Risk band')).toBe('Risk band All');
+    expect(container.querySelector('[data-filter-face]')).toBeNull();
+  });
+
+  it('the search fills the row through AURA searchGrow (#83), not its classes', () => {
+    const { container } = renderFilters();
+    const bar = container.querySelector('.aura-filterbar');
+    expect(bar).toHaveClass('aura-filterbar--grow');
+    expect(bar?.className).not.toContain('[&_.aura-filterbar');
   });
 });

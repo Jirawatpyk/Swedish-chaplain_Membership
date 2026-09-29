@@ -76,7 +76,7 @@ test.describe('@a11y T097 — F9 dashboard axe-core scan', () => {
   test('member benefit view (/admin/members/[id]/benefits)', async ({ page }) => {
     await signInAsAdmin(page);
     await page.goto('/admin/members');
-    const firstRow = page.locator('table tbody tr').first();
+    const firstRow = page.locator('[role="grid"] [role="row"]:has([role="gridcell"])').first();
     await firstRow.waitFor({ timeout: 15_000 });
     const href = await firstRow.locator('a').first().getAttribute('href');
     const memberId = href?.match(/\/admin\/members\/([0-9a-f-]+)/)?.[1];
@@ -114,11 +114,11 @@ test.describe('@a11y T097 — F9 dashboard axe-core scan', () => {
     await expect(
       page.getByRole('heading', { name: 'Member directory', level: 1 }),
     ).toBeVisible();
-    // Scope to the directory table by its caption — the page also renders a
-    // "Recently generated exports" table once any export job exists, which makes
-    // a bare getByRole('table') ambiguous (strict-mode violation).
+    // Scope to the directory grid by its label (spec 122 US5a: an AURA
+    // DataTable, role="grid") — the page also renders a "Recently generated
+    // exports" table once any export job exists.
     await expect(
-      page.getByRole('table', { name: /members and their directory/i }),
+      page.getByRole('grid', { name: /members and their directory/i }),
     ).toBeVisible({ timeout: 15_000 });
     await expectNoAxeViolations(page, '/admin/directory');
   });
@@ -160,7 +160,7 @@ test.describe('@a11y T097 — F9 dashboard axe-core scan', () => {
   test('admin member detail GDPR card (/admin/members/[id])', async ({ page }) => {
     await signInAsAdmin(page);
     await page.goto('/admin/members');
-    const firstRow = page.locator('table tbody tr').first();
+    const firstRow = page.locator('[role="grid"] [role="row"]:has([role="gridcell"])').first();
     await firstRow.waitFor({ timeout: 15_000 });
     const href = await firstRow.locator('a').first().getAttribute('href');
     const memberId = href?.match(/\/admin\/members\/([0-9a-f-]+)/)?.[1];

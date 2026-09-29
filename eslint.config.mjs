@@ -297,6 +297,22 @@ const MIGRATED_PATHS = [
   'src/app/(member)/portal/credit-notes/**',
   'src/components/invoices/credit-note-original-receipt.tsx',
   'src/app/(staff)/admin/invoices/_components/invoice-filters.tsx',
+  // US5a — the members list (table, filters, bulk bar), the directory and the
+  // change-request queue and review. The member detail, its forms and dialogs
+  // are US5b.
+  'src/app/(staff)/admin/members/page.tsx',
+  'src/app/(staff)/admin/members/loading.tsx',
+  'src/app/(staff)/admin/members/_components/**',
+  'src/components/members/members-table.tsx',
+  'src/components/members/members-table-skeleton.tsx',
+  'src/components/members/members-table-columns.ts',
+  'src/components/members/directory-filters.tsx',
+  'src/components/members/empty-states.tsx',
+  'src/app/(staff)/admin/directory/**',
+  'src/components/directory/**',
+  'src/app/(staff)/admin/change-requests/**',
+  'src/components/members/change-requests/**',
+  'src/app/test-fixtures/aura-admin/**',
 ];
 
 /**
@@ -305,7 +321,7 @@ const MIGRATED_PATHS = [
  */
 const NOT_YET_ON_AURA = [
   // The reason + typed-phrase dialog: its callers are the E-Blast review
-  // (US12) and the change-request decision (US5); it moves with the first.
+  // (US12); US5 uses only its `useDialogFinalFocus` hook.
   'src/components/shell/reason-confirmation-dialog.tsx',
   'src/components/shell/typed-phrase-field.tsx',
   // The benefits page's E-Blast tab: the broadcast list moves with US12.

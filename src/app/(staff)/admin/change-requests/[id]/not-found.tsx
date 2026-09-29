@@ -8,7 +8,7 @@ import { ArrowLeftIcon } from 'lucide-react';
 import { getTranslations } from 'next-intl/server';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { buttonVariants } from '@/components/ui/button';
+import { EmptyState, buttonClass } from '@jirawatpyk/aura-react/server';
 
 export default async function ChangeRequestNotFound(): Promise<React.ReactElement> {
   const t = await getTranslations('admin.changeRequests.review');
@@ -16,12 +16,19 @@ export default async function ChangeRequestNotFound(): Promise<React.ReactElemen
   return (
     <DetailContainer>
       <PageHeader title={t('title')} />
-      <div data-testid="admin-change-request-not-found" className="rounded-md border p-8 text-center">
-        <p className="text-sm text-muted-foreground">{tErrors('notFound')}</p>
-        <Link href="/admin/members" className={`${buttonVariants({ variant: 'outline', size: 'sm' })} mt-4 inline-flex items-center`}>
-          <ArrowLeftIcon className="mr-1 h-4 w-4" aria-hidden="true" />
-          {t('backToMembers')}
-        </Link>
+      <div data-testid="admin-change-request-not-found">
+        <EmptyState
+          bordered
+          headingLevel={2}
+          icon="search"
+          title={tErrors('notFound')}
+          action={
+            <Link href="/admin/members" className={buttonClass({ variant: 'secondary', size: 'sm' })}>
+              <ArrowLeftIcon className="size-4" aria-hidden="true" />
+              {t('backToMembers')}
+            </Link>
+          }
+        />
       </div>
     </DetailContainer>
   );

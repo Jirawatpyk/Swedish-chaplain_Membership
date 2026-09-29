@@ -53,6 +53,19 @@ const MANAGER_PASSWORD = process.env.E2E_MANAGER_PASSWORD;
 const copy = en.portal.changeRequests;
 const adminCopy = en.admin.changeRequests;
 
+/** 122 US5a — below 640px the queue folds its filters behind a "Filters · Status: …" toggle; open it first. */
+async function openQueueFiltersOnPhone(page: Page): Promise<void> {
+  const toggle = page.getByRole('button', { name: new RegExp(`^${adminCopy.filters.toggle}`) });
+  if (!(await toggle.isVisible())) return;
+  // A tap before hydration is lost, and hydration can reset the panel: open
+  // it until the Status field is really there (R16 flake on mobile-chrome;
+  // the pattern #466 used for the staff nav drawer).
+  await expect(async () => {
+    if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
+    await expect(page.getByRole('combobox', { name: 'Status' })).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 15_000 });
+}
+
 test.describe.configure({ timeout: 180_000 });
 
 async function signIn(page: Page, email: string, password: string): Promise<void> {
@@ -263,10 +276,11 @@ test.describe('@change-requests US2 — staff decides per field', () => {
     await expect(table.locator('[data-field-key="description"]')).toContainText(seeded!.proposedDescription);
 
     // de-select the description row (Space / click both toggle the checkbox)
+    // 122 US5a — an AURA checkbox: a native input (checked state, no aria-checked)
     const descriptionBox = page.getByTestId('approve-description');
-    await expect(descriptionBox).toHaveAttribute('aria-checked', 'true');
+    await expect(descriptionBox).toBeChecked();
     await descriptionBox.click();
-    await expect(descriptionBox).toHaveAttribute('aria-checked', 'false');
+    await expect(descriptionBox).not.toBeChecked();
 
     await page.getByTestId('confirm-decision').click();
     const dialog = page.getByRole('alertdialog');
@@ -586,6 +600,7 @@ test.describe('@change-requests US4 — history is complete and visible', () => 
     // The bar renders on every view, rows or not — the Outcome trigger only
     // under `decided`, so the two accessible names are read there first.
     await page.goto('/admin/change-requests?state=decided');
+    await openQueueFiltersOnPhone(page);
     // the filter triggers are Base UI buttons: `<label for>` names a native
     // select, not a button, so each trigger carries its own aria-label. This
     // is a smoke check of the rendered name against the copy — Playwright's
@@ -601,6 +616,17 @@ test.describe('@change-requests US4 — history is complete and visible', () => 
     // locator failed on that instant once (2026-09-15).
     await expect(page.getByTestId('queue-table')).toHaveCount(1, { timeout: 30_000 });
     await expect(page.getByTestId('queue-table')).toBeVisible();
+    // The phone card keeps its two-column shape with Review inside it: a
+    // title spanning columns without a start column once grew implicit
+    // columns and shrank every cell to a letter wide (US5a audit).
+    const card = page.getByTestId('queue-row').first();
+    const cardBox = await card.boundingBox();
+    const reviewBox = await card.getByRole('link').first().boundingBox();
+    expect(cardBox && reviewBox).toBeTruthy();
+    expect(cardBox!.height).toBeLessThan(400);
+    expect(reviewBox!.x).toBeGreaterThanOrEqual(cardBox!.x);
+    expect(reviewBox!.x + reviewBox!.width).toBeLessThanOrEqual(cardBox!.x + cardBox!.width + 1);
+    await openQueueFiltersOnPhone(page);
     // Apply is a same-page navigation: the pressed button keeps focus — the bar
     // is never remounted on a filter change (UX re-review N1 / R2)
     const applyButton = page.getByRole('button', { name: adminCopy.filters.apply });

@@ -21,12 +21,15 @@ import { requestIdFromHeaders } from '@/lib/request-id';
 import { logger } from '@/lib/logger';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 import { asMembersUserId, buildChangeRequestDeps } from '@/lib/members-change-request-deps';
-import { serialiseChangeRequestForStaff, serialiseReviewField } from '@/lib/change-request-staff-view';
+import {
+  serialiseChangeRequestForStaff,
+  serialiseReviewField,
+  type ChangeRequestReviewFieldView,
+  type StaffChangeRequestView,
+} from '@/lib/change-request-staff-view';
 import { getChangeRequestReview, type ChangeRequestId } from '@/modules/members';
-import { Badge } from '@/components/ui/badge';
-import { buttonVariants } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { InlineAlert } from '@/components/ui/inline-alert';
+import { Alert, Card, buttonClass } from '@jirawatpyk/aura-react/server';
+import { ChangeRequestStatusBadge, changeRequestStatusOf } from '@/components/members/change-requests/change-request-status-badge';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { ChangeRequestReviewClient } from '@/components/members/change-requests/change-request-review-client';
@@ -68,65 +71,98 @@ export default async function ChangeRequestReviewPage({ params }: PageProps) {
   }
 
   const review = result.value;
-  const request = serialiseChangeRequestForStaff(review.row);
-  const fields = review.fields.map(serialiseReviewField);
+  return renderChangeRequestReviewView({
+    request: serialiseChangeRequestForStaff(review.row),
+    fields: review.fields.map(serialiseReviewField),
+    member: review.member,
+    canWrite,
+    canDecide: review.canDecide,
+  });
+}
+
+/**
+ * 122 US5a (T509) — the review body, shared with the no-DB preview route
+ * (`/test-fixtures/aura-admin?view=change-request`) so the two cannot drift.
+ */
+export async function renderChangeRequestReviewView({
+  request,
+  fields,
+  member,
+  canWrite,
+  canDecide,
+}: {
+  readonly request: StaffChangeRequestView;
+  readonly fields: readonly ChangeRequestReviewFieldView[];
+  readonly member: { readonly companyName: string; readonly erasing: boolean; readonly archived: boolean };
+  readonly canWrite: boolean;
+  readonly canDecide: boolean;
+}) {
   const t = await getTranslations('admin.changeRequests.review');
   const locale = await getLocale();
   const fmt = (iso: string) => formatLocalisedDate(iso, locale, { dateStyle: 'medium', timeStyle: 'short' });
 
+  // AURA Alert tones; a standing notice is a status, never an interruption.
   const notice =
     request.state !== 'pending'
-      ? { tone: 'neutral' as const, text: t('notPending') }
-      : review.member.erasing
-        ? { tone: 'destructive' as const, text: t('erasing') }
-        : review.member.archived
+      ? { tone: 'info' as const, text: t('notPending') }
+      : member.erasing
+        ? { tone: 'danger' as const, text: t('erasing') }
+        : member.archived
           ? { tone: 'warning' as const, text: t('archived') }
           : !canWrite
-            ? { tone: 'info' as const, text: t('readOnly') }
+            ? { tone: 'info' as const, text: t('readOnly'), title: t('readOnlyTitle') }
             : null;
 
   return (
     <DetailContainer>
+      {/* No back link here: below 1024px the staff shell's BreadcrumbBackLink
+          already reads "← Change requests" (board `Admin-change-request-mobile`). */}
       <PageHeader
         title={t('title')}
         subtitle={t('subtitle', {
-          company: review.member.companyName,
+          company: member.companyName,
           submitter: request.submittedBy.displayName,
           role: t(`roles.${request.submittedBy.roleAtSubmission}`),
           submittedAt: fmt(request.submittedAt),
         })}
         badge={
-          <Badge variant={request.state === 'pending' ? 'secondary' : 'outline'} data-testid="change-request-state">
-            {request.state === 'decided' && request.outcome ? t(`outcome.${request.outcome}`) : t(`state.${request.state}`)}
-          </Badge>
+          // 122 US5a (T508) — the status pill the queue shows (board: "Awaiting decision")
+          <span data-testid="change-request-state">
+            <ChangeRequestStatusBadge status={changeRequestStatusOf(request)} audience="staff" />
+          </span>
         }
         actions={
-          <Link href={`/admin/members/${request.memberId}`} className={`${buttonVariants({ variant: 'outline', size: 'sm' })} inline-flex items-center`}>
-            <ArrowLeftIcon className="mr-1 h-4 w-4" aria-hidden="true" />
+          <Link href={`/admin/members/${request.memberId}`} className={buttonClass({ variant: 'secondary' })}>
+            <ArrowLeftIcon className="size-4" aria-hidden="true" />
             {t('backToMember')}
           </Link>
         }
       />
 
       {notice ? (
-        <InlineAlert tone={notice.tone} role="status" data-testid="review-notice">
+        <Alert tone={notice.tone} role="status" {...('title' in notice ? { title: notice.title } : {})} data-testid="review-notice">
           {notice.text}
-        </InlineAlert>
+        </Alert>
       ) : null}
 
       {request.state === 'decided' && request.decidedAt ? (
-        <Card data-testid="decision-summary">
-          <CardHeader>
-            <CardTitle className="text-base">
+        <Card
+          data-testid="decision-summary"
+          headingLevel={2}
+          title={
+            <>
               {t('decidedBy', {
                 name: request.decidedBy?.displayName || t('unknownReviewer'),
                 decidedAt: fmt(request.decidedAt),
               })}
-              {request.decidedBy?.deactivated ? <span className="ml-1 text-muted-foreground">{t('deactivated')}</span> : null}
-            </CardTitle>
-          </CardHeader>
+              {request.decidedBy?.deactivated ? (
+                <span className="ml-1 font-normal text-[var(--aura-fg-secondary)]">{t('deactivated')}</span>
+              ) : null}
+            </>
+          }
+        >
           {request.decisionReason || request.decisionNote ? (
-            <CardContent className="space-y-2 text-sm">
+            <div className="space-y-2 text-sm">
               {request.decisionReason ? (
                 <p>
                   <span className="font-medium">{t('decisionReason')}: </span>
@@ -139,12 +175,12 @@ export default async function ChangeRequestReviewPage({ params }: PageProps) {
                   <span className="whitespace-pre-wrap">{request.decisionNote}</span>
                 </p>
               ) : null}
-            </CardContent>
+            </div>
           ) : null}
         </Card>
       ) : null}
 
-      <ChangeRequestReviewClient request={request} fields={fields} canDecide={review.canDecide} />
+      <ChangeRequestReviewClient request={request} fields={fields} canDecide={canDecide} />
     </DetailContainer>
   );
 }

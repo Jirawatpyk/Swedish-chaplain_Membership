@@ -1,0 +1,80 @@
+/**
+ * 122 US5a (US5a review, 29 Sep) — the queue page body is one view function,
+ * `renderChangeRequestQueueView`, that the page and the no-DB preview route
+ * both render, so the preview's screenshots show the page's real layout (the
+ * preview used to carry a copy, which drifted once).
+ */
+import { describe, expect, it, vi } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import type { ReactElement } from 'react';
+import { NextIntlClientProvider, createTranslator } from 'next-intl';
+import enMessages from '@/i18n/messages/en.json';
+
+vi.mock('next-intl/server', () => ({
+  getTranslations: async (namespace: string) => createTranslator({ locale: 'en', messages: enMessages, namespace: namespace as never }),
+  getLocale: async () => 'en',
+}));
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ replace: vi.fn(), push: vi.fn(), refresh: vi.fn() }),
+  usePathname: () => '/admin/change-requests',
+  useSearchParams: () => new URLSearchParams(),
+  notFound: vi.fn(),
+  redirect: vi.fn(),
+}));
+vi.mock('next/headers', () => ({ headers: vi.fn() }));
+vi.mock('@/lib/env', () => ({ env: { features: { memberChangeApproval: true }, tenant: { timezone: 'Asia/Bangkok' } } }));
+vi.mock('@/lib/rbac', () => ({ requirePagePermission: vi.fn() }));
+vi.mock('@/lib/logger', () => ({ logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() } }));
+vi.mock('@/lib/members-change-request-deps', () => ({ asMembersUserId: vi.fn(), buildChangeRequestDeps: vi.fn() }));
+vi.mock('@/modules/members', async () => {
+  const domain = await import('@/modules/members/domain/change-request/change-request');
+  return {
+    CHANGE_REQUEST_STATES: domain.CHANGE_REQUEST_STATES,
+    CHANGE_REQUEST_OUTCOMES: domain.CHANGE_REQUEST_OUTCOMES,
+    listChangeRequestQueue: vi.fn(),
+    asMemberId: vi.fn(),
+  };
+});
+
+const { renderChangeRequestQueueView } = await import('@/app/(staff)/admin/change-requests/page');
+
+const Q = enMessages.admin.changeRequests.queue;
+
+async function renderView(props: Parameters<typeof renderChangeRequestQueueView>[0]) {
+  const tree = await renderChangeRequestQueueView(props);
+  return render(
+    <NextIntlClientProvider locale="en" messages={enMessages} timeZone="Asia/Bangkok">
+      {tree as ReactElement}
+    </NextIntlClientProvider>,
+  );
+}
+
+const base = {
+  items: [],
+  hasMore: false,
+  nextHref: null,
+  pendingSummary: null,
+  deepLinkNotice: null,
+  filtered: false,
+  memberChip: null,
+  submitterChip: null,
+  timeZone: 'Asia/Bangkok',
+} as const;
+
+describe('renderChangeRequestQueueView', () => {
+  it('shows the queue’s own empty state on the default view', async () => {
+    await renderView(base);
+    expect(screen.getByTestId('queue-empty')).toHaveTextContent(Q.empty);
+    expect(screen.getByTestId('queue-empty')).toHaveTextContent(Q.emptyHint);
+  });
+
+  it('says nothing matched when filtered', async () => {
+    await renderView({ ...base, filtered: true });
+    expect(screen.getByTestId('queue-empty')).toHaveTextContent(Q.emptyFiltered);
+  });
+
+  it('shows the pending summary only when the page passes one', async () => {
+    await renderView({ ...base, pendingSummary: { count: 3, oldestDays: 6 } });
+    expect(screen.getByTestId('queue-pending-count')).toBeInTheDocument();
+  });
+});

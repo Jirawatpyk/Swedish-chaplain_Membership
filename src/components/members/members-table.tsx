@@ -3,68 +3,48 @@
 /**
  * T065 + T108 + T112 — Members directory table.
  *
- * TanStack Table v8 headless + shadcn Table visual primitives. Rows link
- * to the detail page.
+ * 122 US5a (T502) — AURA `DataTable` in server mode (`manual`, no built-in
+ * pager: the parent renders the numbered `TablePagination`). The rows are
+ * already the server's current page, sorted by the server; a header click
+ * writes the same `?sort=&order=&page=1` URL the old header buttons wrote.
  *
- * 056-members-table-compact — Lean 8-column layout (was 12; the wide set
- * overflowed the page). Final columns:
- *   ☑ select │ Member No. │ Company (flag + name) │ Plan · Year │
- *   Contact (name only) │ Status │ Engagement │ Last Activity
- * Country moved into the Company cell as a leading flag (edited on the
- * member detail page). Plan + Year are merged with a middot. The Risk
- * column was dropped (Engagement is the positive-framed inverse of the
- * same F8 signal). Notes moved to the detail page. Inline edit now serves
- * Status only — the country/notes inline cells were removed.
+ * Columns (board `Admin-members`): Company (flag + name, the row link and the
+ * phone card title) │ Member No. │ Primary contact │ Plan · Year │ Status │
+ * Engagement │ Last activity │ "⋯" row menu. Contact, plan and last activity
+ * hide below `lg`; below 640 px the rows become cards (`stackBelow`). Company
+ * leads (the board draws Member No. first) because AURA uses the first column
+ * as both the row link and the card title.
  *
- * T108 (US4): Row-selection state via TanStack Table enableRowSelection +
- * Shift+Click range + Space toggle + Ctrl+A page-select + "Select all N
- * matching" (FR-040). Selection is hidden for non-admin roles.
+ * T108 (US4): admin-only selection — archived rows are not selectable,
+ * Shift+Click selects a range, Ctrl/Cmd+A selects the page, and "Select all
+ * N matching" hands the cross-page selection to the parent (FR-040).
  *
- * T112 (US4): Inline-edit Status cell with aria-live save/rollback
- * announcements + 24×24 min target size (ADOPT-01 / WCAG 2.2 SC 2.5.8).
- *
- * Pagination is numbered/offset at the server level (the parent renders
- * `TablePagination`). When the whole visible page is selected and more rows
- * match beyond it (`total > rows.length`), this component surfaces the
- * "Select all N matching" banner; the parent fetches the matching ids and
- * drives the cross-page bulk selection.
+ * T112 (US4): the Status cell is an inline toggle with aria-live save
+ * announcements and a 10-second Undo.
  */
 
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
-import Link from 'next/link';
 import { useTranslations, useLocale } from 'next-intl';
-import { RelativeTime } from '@/components/shell/relative-time';
 import {
-  useReactTable,
-  getCoreRowModel,
-  getFilteredRowModel,
-  flexRender,
-  createColumnHelper,
-  type HeaderContext,
-  type RowSelectionState,
-} from '@tanstack/react-table';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
+  AuraProvider,
+  Badge,
+  DataTable,
+  DropdownMenu,
+  IconButton,
+  StatusPill,
+  type DataTableColumn,
+  type DataTableSort,
+  type MenuItem,
+} from '@jirawatpyk/aura-react';
 import {
   ArchiveIcon,
-  ArrowDownIcon,
-  ArrowUpDownIcon,
-  ArrowUpIcon,
-  CheckIcon,
   MailWarning,
-  PauseCircle,
   PencilIcon,
+  PauseCircle,
   TriangleAlert,
 } from 'lucide-react';
+import { RelativeTime } from '@/components/shell/relative-time';
 import { toast } from '@/lib/toast';
 // Type-only import (erased at compile time → no runtime/client-bundle coupling
 // to the insights server graph). The engagement value is projected server-side.
@@ -75,6 +55,7 @@ import type { PortalState } from '@/modules/members';
 // C4 round-10 ui-design-specialist — flag emoji + localised country name.
 // 056-members-table-compact — the flag now leads the Company cell.
 import { CountryDisplay } from './country-display';
+import { MEMBERS_COLUMN_CARD, MEMBERS_COLUMN_SIZES } from './members-table-columns';
 
 export type MembersTableRow = {
   readonly member_id: string;
@@ -169,6 +150,12 @@ type Props = {
    * how a filter change narrowed the set, not just the current page size.
    */
   readonly total?: number | undefined;
+  /**
+   * A search or filter is applied. The count above the table shows only then
+   * (board `Admin-members-tablet`); unfiltered, the pagination range below
+   * says the same, so the count stays for screen readers only.
+   */
+  readonly filtered?: boolean | undefined;
   // #2 select-all-matching. When the whole visible page is selected and more
   // matching rows exist across pages, the table offers "Select all N matching";
   // clicking it calls `onSelectAllMatching` and the PARENT fetches the matching
@@ -187,13 +174,18 @@ type Props = {
   /** Clear the cross-page matching selection. */
   readonly onClearMatching?: (() => void) | undefined;
   /**
-   * Bumped by the parent's Clear to command a full reset of this table's
-   * (uncontrolled) TanStack row-selection — the parent can't reach the checkbox
-   * state otherwise, so without this Clear leaves the page rows checked.
+   * Bumped by the parent's Clear to command a full reset of this table's own
+   * row selection — the parent can't reach the checkbox state otherwise, so
+   * without this Clear leaves the page rows checked.
    */
   readonly clearSelectionNonce?: number | undefined;
   /** Admin-only: enable multi-row selection + inline edit. */
   readonly enableSelection?: boolean | undefined;
+  /**
+   * 122 US5a — the row menu offers "Edit member" (members.write). "Open
+   * member" is always there.
+   */
+  readonly canEdit?: boolean | undefined;
   /** Callback when selection changes — used by BulkActionBar. */
   readonly onSelectionChange?: ((selectedIds: string[]) => void) | undefined;
   /**
@@ -212,178 +204,74 @@ type Props = {
 /**
  * BUG-013: archived (soft-deleted) rows are not a valid target for either bulk
  * action, so they are non-selectable. Single source of truth for BOTH the
- * TanStack `enableRowSelection` predicate and the shift-range selection loop
- * (which writes rowSelection directly, bypassing TanStack's gate) so the two
- * paths cannot disagree about what is selectable.
+ * table's `isRowSelectable` predicate and the Shift-range and Ctrl/Cmd+A
+ * selections (which write the selection directly) so the paths cannot
+ * disagree about what is selectable.
  */
 function isMemberRowSelectable(row: MembersTableRow): boolean {
   return row.status !== 'archived';
 }
 
-const columnHelper = createColumnHelper<MembersTableRow>();
+type SortKey = 'memberNumber' | 'engagement';
+
+/** Table column key ↔ the `?sort=` value, for the two sortable columns. */
+const SORT_KEY_BY_COLUMN: Readonly<Record<string, SortKey>> = {
+  member_number_display: 'memberNumber',
+  engagement: 'engagement',
+};
+const COLUMN_BY_SORT_KEY: Readonly<Record<SortKey, string>> = {
+  memberNumber: 'member_number_display',
+  engagement: 'engagement',
+};
 
 /**
- * Select-all header checkbox. Module-level so its identity is stable across
- * the `columns` rebuilds (see the `select` column) — the checked and
- * indeterminate state is read live from `table` on every render.
- */
-function SelectAllHeader({ table }: HeaderContext<MembersTableRow, unknown>) {
-  const t = useTranslations('admin.members.directory');
-  return (
-    <Checkbox
-      checked={table.getIsAllPageRowsSelected()}
-      // Base UI exposes indeterminate as its own prop (sets
-      // aria-checked="mixed") — show it when SOME but not ALL page
-      // rows are selected so the header reflects a partial selection.
-      indeterminate={
-        table.getIsSomePageRowsSelected() && !table.getIsAllPageRowsSelected()
-      }
-      onCheckedChange={(checked) => table.toggleAllPageRowsSelected(!!checked)}
-      // The bulk bar's Clear hands focus here (the bar unmounts with the
-      // selection it clears — `bulk-action-bar.tsx`).
-      data-testid="members-select-all"
-      aria-label={t('selectAll')}
-      className="min-h-[24px] min-w-[24px]"
-    />
-  );
-}
-
-/**
- * Per-column server-default sort order — single source of truth for the arrow
- * icon, the `<th>` aria-sort, AND the server default. Must match
+ * Per-column server-default sort order — single source of truth for the
+ * announced sort state AND the server default. Must match
  * drizzle-member-repo.ts:
  *   memberNumber: ASC NULLS LAST (the else-branch when order !== 'desc')
  *   engagement:   DESC (healthiest first; engagement DESC = risk ASC)
  * When `?sort=<col>` is present but `&order=` is absent (bookmarked /
  * hand-edited / deep-link URL), the server uses these defaults.
  */
-const COLUMN_DEFAULT_ORDER: Record<string, 'asc' | 'desc'> = {
+const COLUMN_DEFAULT_ORDER: Readonly<Record<SortKey, 'asc' | 'desc'>> = {
   memberNumber: 'asc',
   engagement: 'desc',
 };
 
 /**
  * Resolve the effective sort order for a sort key: the explicit `?order=` when
- * valid, else the column's server default. Shared by the two sort-header
- * components (arrow icon) and `ariaSortFor` (the `<th>` aria-sort) so the icon,
- * the announced sort state, and the server's actual ordering can never drift.
+ * valid, else the column's server default — so the header's aria-sort and the
+ * server's actual ordering can never drift.
  */
-function effectiveOrder(
-  sortKey: string,
-  urlOrder: string | null,
-): 'asc' | 'desc' {
+function effectiveOrder(sortKey: SortKey, urlOrder: string | null): 'asc' | 'desc' {
   if (urlOrder === 'asc' || urlOrder === 'desc') return urlOrder;
-  return COLUMN_DEFAULT_ORDER[sortKey] ?? 'asc';
-}
-
-/** Server-side sort control for the member-number column (toggles
- *  `?sort=memberNumber&order=asc|desc`, resetting to page 1). */
-function MemberNumberSortHeader() {
-  const t = useTranslations('admin.members.directory');
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const active = searchParams.get('sort') === 'memberNumber';
-  const order = searchParams.get('order');
-  const nextOrder = active && order === 'asc' ? 'desc' : 'asc';
-
-  function onSort() {
-    const params = new URLSearchParams(searchParams.toString());
-    params.set('sort', 'memberNumber');
-    params.set('order', nextOrder);
-    params.set('page', '1');
-    router.push(`${pathname}?${params.toString()}`);
-  }
-
-  // When active but `?order=` is absent, the server defaults to the column
-  // default (memberNumber → ASC). The shared `effectiveOrder` helper resolves
-  // it so the UP/DOWN arrow stays consistent with the data order and aria-sort.
-  const Icon = !active
-    ? ArrowUpDownIcon
-    : effectiveOrder('memberNumber', order) === 'asc'
-      ? ArrowUpIcon
-      : ArrowDownIcon;
-  // `aria-sort` is NOT placed here: ARIA only allows `aria-sort` on a
-  // `role=columnheader` element (the `<th>`/TableHead). The header cell
-  // owns it (see MembersTable header render) — putting it on this button
-  // is a WCAG 1.3.1 / 4.1.2 violation (axe `aria-allowed-attr`).
-  return (
-    <button
-      type="button"
-      onClick={onSort}
-      className="inline-flex items-center gap-1 whitespace-nowrap hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-      aria-label={t('sortByMemberNumber')}
-    >
-      {t('columns.memberNumber')}
-      <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-    </button>
-  );
+  return COLUMN_DEFAULT_ORDER[sortKey];
 }
 
 /**
- * F9 (FR-007a) — server-side sort control for the engagement column. Toggles
- * the `?sort=engagement&order=desc|asc` URL params (resetting to page 1); the
- * server re-orders by the inverted F8 risk score. Own client hooks so the
- * columns `useMemo` stays keyed only on `enableSelection`.
+ * The order a header click asks for — the same rule the old header buttons
+ * used: Member No. goes asc unless it is already asc; Engagement goes desc
+ * unless it is already desc.
  */
-function EngagementSortHeader() {
-  const t = useTranslations('admin.members.directory');
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const active = searchParams.get('sort') === 'engagement';
-  const order = searchParams.get('order');
-  const nextOrder = active && order === 'desc' ? 'asc' : 'desc';
-
-  function onSort() {
-    const params = new URLSearchParams(searchParams.toString());
-    params.set('sort', 'engagement');
-    params.set('order', nextOrder);
-    params.set('page', '1');
-    router.push(`${pathname}?${params.toString()}`);
-  }
-
-  // When active but `?order=` is absent, the server defaults to the column
-  // default (engagement → DESC = healthiest first). The shared `effectiveOrder`
-  // helper resolves it so the UP/DOWN arrow stays consistent.
-  const Icon = !active
-    ? ArrowUpDownIcon
-    : effectiveOrder('engagement', order) === 'asc'
-      ? ArrowUpIcon
-      : ArrowDownIcon;
-  // `aria-sort` lives on the `<th>` (columnheader), not this button — see
-  // MemberNumberSortHeader for the same WCAG 1.3.1 / 4.1.2 rationale.
-  return (
-    <button
-      type="button"
-      onClick={onSort}
-      className="inline-flex items-center gap-1 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-      aria-label={t('sortByEngagement')}
-    >
-      {t('columns.engagement')}
-      <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-    </button>
-  );
+function nextOrderFor(sortKey: SortKey, active: boolean, urlOrder: string | null): 'asc' | 'desc' {
+  if (sortKey === 'memberNumber') return active && urlOrder === 'asc' ? 'desc' : 'asc';
+  return active && urlOrder === 'desc' ? 'asc' : 'desc';
 }
 
 function StatusBadge({ status }: { status: MembersTableRow['status'] }) {
   const t = useTranslations('admin.members.directory');
   const label = t(`filters.status.${status}`);
-  // P10 round-10 ui-design-specialist — archived was visually identical
-  // to a generic neutral chip (outline variant only, no icon). Surface
-  // an ArchiveIcon prefix + secondary variant so the archive state is
-  // scan-able at a glance in a 50-row directory.
+  // Board tones: Active = ready; Inactive and Archived are neutral. Archived
+  // takes the archive box in place of the pill's circle, so the state scans
+  // at a glance in a 50-row page with one icon.
   if (status === 'archived') {
     return (
-      <Badge variant="secondary" className="gap-1">
-        <ArchiveIcon aria-hidden="true" className="size-3" />
-        <span>{label}</span>
+      <Badge tone="neutral" icon={<ArchiveIcon aria-hidden="true" />}>
+        {label}
       </Badge>
     );
   }
-  const variant: 'default' | 'secondary' =
-    status === 'active' ? 'default' : 'secondary';
-  return <Badge variant={variant}>{label}</Badge>;
+  return <StatusPill tone={status === 'active' ? 'ready' : 'neutral'}>{label}</StatusPill>;
 }
 
 /** T112 — Inline-editable status cell. */
@@ -466,12 +354,14 @@ function InlineStatusCell({
       onClick={handleToggle}
       disabled={saving}
       title={t('toggleStatus', { current: currentLabel })}
-      className="group inline-flex min-h-[28px] min-w-[60px] cursor-pointer items-center gap-1 rounded-md px-1 py-0.5 transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring disabled:cursor-wait disabled:opacity-60"
+      className="group inline-flex min-h-6 min-w-[60px] cursor-pointer items-center gap-1 rounded-[var(--aura-radius-sm)] px-1 py-0.5 in-[.aura-table--stacked]:px-0 transition-colors hover:bg-[var(--aura-bg-surface-hover)] focus-visible:outline-2 focus-visible:outline-[var(--aura-focus-ring)] disabled:cursor-wait disabled:opacity-60"
       aria-label={t('toggleStatus', { current: currentLabel })}
     >
       <StatusBadge status={optimistic} />
+      {/* Hover / focus hint only; on a phone card (no hover) it would hold
+          empty room and push the pill off the card's edge. */}
       <PencilIcon
-        className="h-3 w-3 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
+        className="size-3 text-[var(--aura-fg-tertiary)] opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 in-[.aura-table--stacked]:hidden"
         aria-hidden="true"
       />
       <span className="sr-only" aria-live="polite">
@@ -484,30 +374,20 @@ function InlineStatusCell({
 /**
  * Portal-state badge for the Contact cell (design doc 2026-07-23 §3.5).
  *
- * Short visible label + sr-only sentence — `Badge` is overflow-hidden,
- * nowrap and shrink-0, so a long label cannot wrap and would paint over the
- * next column. Every state pairs an icon and text with its colour, so nothing
- * is encoded by colour alone (WCAG 1.4.1).
+ * Short visible label + sr-only sentence, so a long label never widens the
+ * cell. Every state pairs an icon and text with its colour, so nothing is
+ * encoded by colour alone (WCAG 1.4.1).
  *
- * `active` uses `secondary`, not `default`: the solid primary token would make
- * the most common and least actionable state the loudest thing on a 50-row
- * page, and it is the same token as the detail page's "Primary" contact badge.
+ * 122 US5a: only the states that need action carry a badge. A linked contact
+ * needs nothing, so it shows none and the column stays quiet (maintainer
+ * decision, 28 Sep 2026; the board shows no badges at all).
  */
 function PortalBadge({ state }: { state: MembersTableRow['portal_state'] }) {
   const t = useTranslations('admin.members.directory');
-  if (state === null || state === 'unknown') return null;
-  if (state === 'active') {
-    return (
-      <Badge variant="secondary" className="gap-1">
-        <CheckIcon aria-hidden="true" className="size-3" />
-        <span aria-hidden="true">{t('portal.linked')}</span>
-        <span className="sr-only">{t('portal.linkedSr')}</span>
-      </Badge>
-    );
-  }
+  if (state === null || state === 'unknown' || state === 'active') return null;
   if (state === 'not_invited') {
     return (
-      <Badge variant="outline" className="text-muted-foreground">
+      <Badge variant="outline">
         <span aria-hidden="true">{t('portal.notInvited')}</span>
         <span className="sr-only">{t('portal.notInvitedSr')}</span>
       </Badge>
@@ -515,25 +395,69 @@ function PortalBadge({ state }: { state: MembersTableRow['portal_state'] }) {
   }
   const expired = state === 'invite_expired';
   return (
-    <Badge
-      variant="outline"
-      className={
-        expired
-          ? 'gap-1 border-destructive/40 text-destructive'
-          : 'gap-1 border-warning/40 text-warning'
-      }
-    >
-      <MailWarning aria-hidden="true" className="size-3" />
+    <Badge tone={expired ? 'danger' : 'warning'} icon={<MailWarning aria-hidden="true" />}>
       <span aria-hidden="true">{t(expired ? 'portal.expired' : 'portal.invited')}</span>
       <span className="sr-only">{t(expired ? 'portal.expiredSr' : 'portal.invitedSr')}</span>
     </Badge>
   );
 }
 
+/** Engagement band → badge tone (the board's risk column: healthy is good). */
+const ENGAGEMENT_TONE: Readonly<Record<EngagementBand, 'success' | 'neutral' | 'warning' | 'danger'>> = {
+  healthy: 'success',
+  moderate: 'neutral',
+  warning: 'warning',
+  critical: 'danger',
+};
+
+/**
+ * The grid's rows grow to fit (AURA 5.11 `rowHeight="auto"`), so text wraps in
+ * full rather than truncating: a long company name or a name beside its badges
+ * takes a second line (maintainer's choice, 28 Sep).
+ */
+const WRAP_TEXT = 'min-w-0 whitespace-normal leading-snug [overflow-wrap:anywhere]';
+const WRAP_ROW = 'flex min-w-0 flex-wrap items-center gap-1.5 leading-snug';
+/**
+ * The status cell is the card's pill, beside the title: on a card its two
+ * badges stack so the company name keeps its width.
+ */
+const STATUS_ROW = `${WRAP_ROW} in-[.aura-table--stacked]:flex-col in-[.aura-table--stacked]:items-end in-[.aura-table--stacked]:gap-1`;
+
+/**
+ * 122 US5a — the "⋯" row menu. Only destinations that already exist (spec
+ * Clarifications, Session 2026-09-28 US5 start): the member page, and its
+ * edit page for members.write.
+ */
+function RowMenu({ row, canEdit }: { row: MembersTableRow; canEdit: boolean }) {
+  const t = useTranslations('admin.members.directory');
+  const label = t('rowActions', { company: row.company_name });
+  const items: MenuItem[] = [
+    { label: t('openMember'), href: `/admin/members/${row.member_id}` },
+  ];
+  // An archived member is not edited from here, as on its own page (the Edit
+  // button there is hidden for archived members).
+  if (canEdit && row.status !== 'archived') {
+    items.push({
+      label: t('editMember'),
+      icon: <PencilIcon aria-hidden="true" />,
+      href: `/admin/members/${row.member_id}/edit`,
+    });
+  }
+  return (
+    <DropdownMenu
+      label={label}
+      items={items}
+      trigger={<IconButton icon="ellipsis" label={label} size="sm" />}
+    />
+  );
+}
+
 export function MembersTable({
   rows,
   total,
+  filtered = false,
   enableSelection = false,
+  canEdit = false,
   onSelectionChange,
   onInlineEdit,
   onSelectAllMatching,
@@ -547,9 +471,12 @@ export function MembersTable({
   const t = useTranslations('admin.members.directory');
   const tContact = useTranslations('admin.members.detail');
   const locale = useLocale();
+  const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
-  const lastSelectedRef = useRef<number | null>(null);
+  const [selected, setSelected] = useState<string[]>([]);
+  const lastToggledRef = useRef<string | null>(null);
+  const shiftClickRef = useRef(false);
   const tableContainerRef = useRef<HTMLDivElement>(null);
   // #2 focus management — the offer/active banner is a DOM-swapping ternary, so
   // clicking a control unmounts it and focus would drop to <body> (this repo's
@@ -568,404 +495,83 @@ export function MembersTable({
     prevMatchingActiveRef.current = matchingActive;
   }, [matchingActive]);
 
-  // WCAG 1.3.1 / 4.1.2 — `aria-sort` belongs on the `role=columnheader`
-  // (the `<th>`/TableHead), not on the inner sort button. Derive the
-  // sorted column + direction once from the URL and stamp it on the
-  // matching header cell below. The two sortable columns (`member_number`,
-  // `engagement`) map 1:1 to the `?sort=` value via this table.
-  const activeSort = searchParams.get('sort');
-  const activeOrder = searchParams.get('order');
+  // ── Sort: the URL is the source of truth ────────────────────────────────
+  const urlSort = searchParams.get('sort');
+  const urlOrder = searchParams.get('order');
+  const activeSortKey: SortKey | null =
+    urlSort === 'memberNumber' || urlSort === 'engagement' ? urlSort : null;
+  const sort: DataTableSort | null = activeSortKey
+    ? { key: COLUMN_BY_SORT_KEY[activeSortKey], dir: effectiveOrder(activeSortKey, urlOrder) }
+    : null;
 
-  const ariaSortFor = (
-    columnId: string,
-  ): 'ascending' | 'descending' | undefined => {
-    const sortKeyByColumnId: Record<string, string> = {
-      member_number: 'memberNumber',
-      engagement: 'engagement',
-    };
-    const sortKey = sortKeyByColumnId[columnId];
-    if (!sortKey || activeSort !== sortKey) return undefined;
-    // Shared helper: explicit `?order=` when valid, else the server's per-column
-    // default — so the `<th>` aria-sort matches the header arrow + the server.
-    return effectiveOrder(sortKey, activeOrder) === 'asc'
-      ? 'ascending'
-      : 'descending';
-  };
-
-  const handleRowSelectionChange = useCallback(
-    (updater: RowSelectionState | ((old: RowSelectionState) => RowSelectionState)) => {
-      const next = typeof updater === 'function' ? updater(rowSelection) : updater;
-      setRowSelection(next);
-      if (onSelectionChange) {
-        // With getRowId set to member_id, keys in RowSelectionState
-        // ARE member_ids directly (not numeric indices).
-        const selectedIds = Object.keys(next).filter((k) => next[k]);
-        onSelectionChange(selectedIds);
-      }
+  const handleSortChange = useCallback(
+    (next: DataTableSort | null) => {
+      // AURA cycles asc → desc → unsorted; the URL contract never unsorts, so
+      // only WHICH header was clicked matters (a null means the active one).
+      const column = next?.key ?? (activeSortKey ? COLUMN_BY_SORT_KEY[activeSortKey] : null);
+      const sortKey = column ? SORT_KEY_BY_COLUMN[column] : undefined;
+      if (!sortKey) return;
+      const params = new URLSearchParams(searchParams.toString());
+      params.set('sort', sortKey);
+      params.set('order', nextOrderFor(sortKey, activeSortKey === sortKey, urlOrder));
+      params.set('page', '1');
+      router.push(`${pathname}?${params.toString()}`);
     },
-    [rowSelection, onSelectionChange],
+    [activeSortKey, urlOrder, searchParams, router, pathname],
   );
 
-  // Round-6 W-2: memoize columns so TanStack Table v8 doesn't
-  // trigger a full table reconciliation on every render.
-  const columns = useMemo(() => [
-    ...(enableSelection
-      ? [
-          columnHelper.display({
-            id: 'select',
-            // A STABLE component, never an inline arrow: `columns` is rebuilt
-            // on every selection change, and `flexRender` renders a function
-            // header with `createElement`, so a fresh arrow each time REMOUNTS
-            // the checkbox — the node the bulk bar's Clear had just focused
-            // was discarded by the reset and focus fell to <body>.
-            header: SelectAllHeader,
-            cell: ({ row }) => (
-              <Checkbox
-                checked={row.getIsSelected()}
-                // BUG-013: disabled for archived rows (enableRowSelection
-                // returns false → getCanSelect() is false).
-                disabled={!row.getCanSelect()}
-                onCheckedChange={(checked) => row.toggleSelected(!!checked)}
-                onClick={(e: React.MouseEvent) => {
-                  // Shift+Click range selection (FR-040)
-                  if (e.shiftKey && lastSelectedRef.current !== null) {
-                    // Apply the CLICKED row's resulting state across the range —
-                    // `preventDefault` below blocks the default toggle, so its
-                    // current state is pre-click; the intended new state is its
-                    // inverse. This lets a shift-click DESELECT a range (click a
-                    // selected row) as well as select one, matching standard
-                    // shift-click semantics instead of only-ever-adding.
-                    const targetState = !row.getIsSelected();
-                    const start = Math.min(lastSelectedRef.current, row.index);
-                    const end = Math.max(lastSelectedRef.current, row.index);
-                    const next = { ...rowSelection };
-                    for (let i = start; i <= end; i++) {
-                      // getRowId uses member_id, so key by member_id. Skip
-                      // archived rows to match enableRowSelection (BUG-013):
-                      // shift-range writes rowSelection directly, so without
-                      // this guard it could select a non-selectable row.
-                      const rangeRow = rows[i];
-                      if (rangeRow && isMemberRowSelectable(rangeRow)) {
-                        next[rangeRow.member_id] = targetState;
-                      }
-                    }
-                    handleRowSelectionChange(next);
-                    e.preventDefault();
-                    return;
-                  }
-                  lastSelectedRef.current = row.index;
-                }}
-                aria-label={t('selectRow', {
-                  company: row.original.company_name,
-                })}
-                className="min-h-[24px] min-w-[24px]"
-              />
-            ),
-            size: 40,
-          }),
-        ]
-      : []),
-    columnHelper.display({
-      id: 'member_number',
-      header: () => <MemberNumberSortHeader />,
-      cell: (info) => (
-        <span className="whitespace-nowrap tabular-nums text-sm">
-          {info.row.original.member_number_display}
-        </span>
-      ),
-      size: 90,
-    }),
-    // 056-members-table-compact — Company cell leads with the country flag
-    // (the standalone Country column was removed; country is edited on the
-    // detail page). Null country → no flag, just the name. The flag carries
-    // the localised country name via its hover `title` + SR `aria-label`
-    // (CountryDisplay variant="flag-only"), so a11y is intact.
-    columnHelper.accessor('company_name', {
-      size: 220,
-      header: () => t('columns.company'),
-      cell: (info) => {
-        const country = info.row.original.country;
-        const name = info.getValue();
-        return (
-          // `flex` (not inline-flex) so the name WRAPS instead of forcing the
-          // cell — and the table — wider than the viewport. The name shows in
-          // FULL (wraps to as many lines as needed, no ellipsis); `max-w`
-          // bounds the column width so a long legal name grows DOWN, not across.
-          <span className="flex items-start gap-2">
-            {country && (
-              <span className="shrink-0 pt-0.5">
-                <CountryDisplay code={country} variant="flag-only" />
-              </span>
-            )}
-            <span
-              className="max-w-[26ch] font-medium break-words whitespace-normal"
-              title={name}
-            >
-              {name}
-            </span>
-          </span>
-        );
-      },
-    }),
-    // 056-members-table-compact — merged "Plan · Year" cell (the standalone
-    // Year column was removed). Middot separator is a locale-neutral literal.
-    // Widened 150→185 (user request, 2026-07-23): after the 057 overflow fix
-    // long plan names wrap instead of overflowing, so a wider column keeps the
-    // common "<plan name> · <year>" on one line and reduces two-line rows.
-    columnHelper.accessor('plan_display_name', {
-      size: 185,
-      header: () => t('columns.plan'),
-      cell: (info) => {
-        const displayName = info.getValue();
-        const row = info.row.original;
-        const label = displayName ?? row.plan_id;
-        return (
-          // 057 overflow fix — `whitespace-normal break-words` replaces
-          // `whitespace-nowrap`. Under `table-fixed` + <colgroup>, nowrap
-          // content wider than the 150px column PAINTS OVER the next column
-          // (td is overflow:visible). Wrapping keeps a long plan name inside
-          // its column; short names still render on one line, so row density
-          // is unchanged for the common case. `break-words` covers a single
-          // long token with no spaces.
-          <span
-            title={row.plan_id}
-            className="text-sm whitespace-normal break-words"
-          >
-            {label}
-            <span aria-hidden="true"> · </span>
-            {row.plan_year}
-          </span>
-        );
-      },
-    }),
-    // 056-members-table-compact — Contact shows the name only (the email
-    // second line was dropped to keep the column compact).
-    columnHelper.accessor('primary_contact', {
-      // Widened 175→205 (user request, 2026-07-23): the cell holds the contact
-      // name plus the portal/bounce badges inline, so the extra width keeps the
-      // common "name + one badge" case on a single line before it wraps.
-      size: 205,
-      header: () => t('columns.primaryContact'),
-      cell: (info) => {
-        const c = info.getValue();
-        if (!c) return <span className="text-muted-foreground">{t('noPrimary')}</span>;
-        const fullName = `${c.first_name} ${c.last_name}`.trim();
-        return (
-          // 057 badge-inline (user request 2026-07-23): the portal + bounce
-          // badges flow INLINE after the contact name on the SAME line, and
-          // wrap to a new line only when the column is too narrow. Name and
-          // badges are siblings of ONE `flex flex-wrap` container (not a
-          // stacked name-row + badge-row), so the common "name + one short
-          // badge" case stays a single line and keeps the row compact.
-          // `flex-wrap` is required because Badge is `shrink-0` — without it a
-          // long name + badge would overflow the 175px column instead of
-          // wrapping. The name span keeps its own `max-w`/`break-words`, so a
-          // very long name wraps within itself and pushes the badges down.
-          // `items-start` (not `items-center`): when a long name wraps to two
-          // lines, `items-center` would vertically centre the one-line badges
-          // against the whole two-line name block, reading oddly. `items-start`
-          // sits the badges on the name's first line, which is correct for the
-          // wrapped case and unchanged for the common single-line case.
-          <span className="flex flex-wrap items-start gap-x-2 gap-y-1">
-            <span
-              className="min-w-0 max-w-[18ch] break-words whitespace-normal"
-              title={fullName}
-            >
-              {fullName}
-            </span>
-            <PortalBadge
-              state={
-                // Suppress ALL portal badges on archived rows — mirrors the
-                // Lapsed/Suspended badge suppression on the Status cell below.
-                info.row.original.status === 'archived'
-                  ? null
-                  : info.row.original.portal_state
-              }
-            />
-            {/* Edge Case "Invitation email bounce" (spec §613-620) — surface a
-                row-level bounce signal in the directory, not only on the detail
-                page. Copy lives under admin.members.detail.inviteBounced.
-                Bounce badge suppressed when the invitation ALSO expired or
-                the contact is already active — one root cause, one recovery
-                (mirrors admin/members/[memberId]/page.tsx:415-417). Also
-                suppressed on archived rows — mirrors the PortalBadge suppression
-                above and the Status cell's Lapsed/Suspended suppression: "no
-                portal-related badge shows on an archived row" (Task 7). */}
-            {c.invite_bounced &&
-            info.row.original.portal_state !== 'invite_expired' &&
-            info.row.original.portal_state !== 'active' &&
-            info.row.original.status !== 'archived' ? (
-              <Badge
-                variant="outline"
-                className="shrink-0 gap-1 border-destructive/40 text-destructive"
-              >
-                <TriangleAlert aria-hidden="true" className="size-3" />
-                <span aria-hidden="true">{tContact('inviteBounced.badge')}</span>
-                <span className="sr-only">
-                  {tContact('inviteBounced.badgeAria')}
-                </span>
-              </Badge>
-            ) : null}
-          </span>
-        );
-      },
-    }),
-    columnHelper.accessor('status', {
-      size: 130,
-      header: () => t('columns.status'),
-      // #4 — the Lapsed badge is a SIBLING of the status control, OUTSIDE the
-      // InlineStatusCell <button>. Inside the button it would fire the status
-      // toggle on click and pollute the button's accessible name.
-      cell: (info) => (
-        // 057 overflow fix — the status control plus a Lapsed/Suspended badge
-        // exceeds the 130px column when laid out horizontally and paints over
-        // the Engagement column. `flex-col` stacks the badge onto its own
-        // line instead. See the #4 comment above for why the badge must stay
-        // a sibling of InlineStatusCell, not a child.
-        <span className="flex flex-col items-start gap-1">
-          {enableSelection ? (
-            <InlineStatusCell
-              memberId={info.row.original.member_id}
-              status={info.getValue()}
-              onSave={onInlineEdit}
-            />
-          ) : (
-            <StatusBadge status={info.getValue()} />
-          )}
-          {/* 067 #4 review-fix — suppress the lapsed badge for archived
-              members. The badge surfaces "active-looking but lapsed"
-              awareness; on an archived row (only visible via ?show_archived=1)
-              it is redundant next to the Archived status badge — archived
-              already means out. Task 16: Lapsed (red/terminated) takes
-              priority over Suspended (amber) when both are somehow true —
-              they're mutually exclusive by construction
-              (deriveMembershipAccess), but the render still needs a
-              deterministic single choice. */}
-          {info.row.original.membership_lapsed && info.getValue() !== 'archived' ? (
-            <Badge
-              variant="outline"
-              className="gap-1 border-destructive/40 text-destructive"
-            >
-              <TriangleAlert aria-hidden="true" className="size-3" />
-              {/* visible label is aria-hidden so a SR user hears ONLY the full
-                  sr-only phrase below, not "Lapsed Membership lapsed …" twice. */}
-              <span aria-hidden="true">{t('membershipLapsed')}</span>
-              <span className="sr-only">{t('membershipLapsedSr')}</span>
-            </Badge>
-          ) : info.row.original.membership_suspended && info.getValue() !== 'archived' ? (
-            <Badge
-              variant="outline"
-              className="gap-1 border-warning/40 text-warning"
-            >
-              <PauseCircle aria-hidden="true" className="size-3" />
-              {/* Non-colour-alone encoding: distinct icon (PauseCircle vs
-                  TriangleAlert) + distinct visible label + distinct sr-only
-                  phrase from the Lapsed badge above, on top of the amber vs
-                  red colour token. */}
-              <span aria-hidden="true">{t('membershipSuspended')}</span>
-              <span className="sr-only">{t('membershipSuspendedSr')}</span>
-            </Badge>
-          ) : null}
-        </span>
-      ),
-    }),
-    // 056-members-table-compact — the standalone Risk column was removed.
-    // Engagement (below) is the positive-framed inverse of the same F8 risk
-    // signal, so the raw Risk column was redundant.
-    // F9 (T034) — Engagement Score column: positive-framed inverse of the F8
-    // risk score, projected on read. Non-colour encoding (numeric score + text
-    // band label, FR-035). Server-side sortable via `?sort=engagement&order=`
-    // (FR-007a); nulls render "—" (and sort last server-side).
-    columnHelper.accessor('engagement', {
-      size: 130,
-      header: () => <EngagementSortHeader />,
-      cell: (info) => {
-        // G1: engagement is PROJECTED SERVER-SIDE in the page row-mapping via
-        // the canonical `projectEngagementScore` (@/modules/insights) — this
-        // client cell just renders the result (numeric score + non-colour text
-        // band, FR-035). null = unscored → "—" (sorts last server-side).
-        const eng = info.getValue();
-        if (eng === null) return <span className="text-muted-foreground">—</span>;
-        return (
-          <span className="inline-flex items-center gap-1.5">
-            <span className="tabular-nums font-medium">{eng.score}</span>
-            <span className="text-caption text-muted-foreground">
-              {t(`engagementBand.${eng.band}`)}
-            </span>
-          </span>
-        );
-      },
-    }),
-    columnHelper.accessor('last_activity_at', {
-      size: 150,
-      header: () => t('columns.lastActivity'),
-      cell: (info) => {
-        const v = info.getValue();
-        if (!v) return <span className="text-muted-foreground">—</span>;
-        // Root-cause hydration fix: `<RelativeTime>` renders a stable
-        // absolute date during SSR + first paint, then flips to the
-        // "X seconds ago" relative-time string after `useEffect` runs
-        // (client-only). Replaces the previous `suppressHydrationWarning`
-        // pattern which only silenced the warning while still rendering
-        // wrong text on first paint.
-        return (
-          <RelativeTime
-            iso={v}
-            title={v.replace('T', ' ').slice(0, 16)}
-            locale={locale}
-          />
-        );
-      },
-    }),
-    // 056-members-table-compact — the Notes column was removed; notes are
-    // edited on the member detail page.
-  ], [enableSelection, onInlineEdit, t, tContact, locale, rows, rowSelection, handleRowSelectionChange]);
+  // ── Selection (admin only) ──────────────────────────────────────────────
+  const selectableIds = useMemo(
+    () => rows.filter(isMemberRowSelectable).map((r) => r.member_id),
+    [rows],
+  );
 
-  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Table v8 hook
-  const table = useReactTable({
-    data: rows as MembersTableRow[],
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    // BUG-013: archived (soft-deleted) rows are not a valid target for either
-    // bulk action (archive rejects already-archived; send-portal-invite makes
-    // no sense for a removed member), so make them non-selectable. TanStack
-    // then disables their checkbox, excludes them from select-all, and blocks
-    // programmatic selection. Managers keep no selection at all.
-    enableRowSelection: enableSelection
-      ? (row) => isMemberRowSelectable(row.original)
-      : false,
-    onRowSelectionChange: handleRowSelectionChange,
-    state: {
-      rowSelection,
+  const commitSelection = useCallback(
+    (next: string[]) => {
+      setSelected(next);
+      onSelectionChange?.(next);
     },
-    getRowId: (row) => row.member_id,
-  });
+    [onSelectionChange],
+  );
 
-  const selectedCount = Object.keys(rowSelection).filter(
-    (k) => rowSelection[k],
-  ).length;
+  const handleSelectionChange = useCallback(
+    (keys: Array<string | number>) => {
+      const next = keys.map(String);
+      const before = new Set(selected);
+      const added = next.filter((k) => !before.has(k));
+      const removed = selected.filter((k) => !next.includes(k));
+      const toggled = added.length + removed.length === 1 ? (added[0] ?? removed[0]) : undefined;
+      const shift = shiftClickRef.current;
+      shiftClickRef.current = false;
+      // Shift+Click range selection (FR-040): apply the clicked row's new state
+      // across the range from the last row clicked without Shift — so a
+      // shift-click can DESELECT a range as well as select one. Archived rows in
+      // the range stay unselected (BUG-013).
+      if (shift && toggled && lastToggledRef.current && lastToggledRef.current !== toggled) {
+        const ids = rows.map((r) => r.member_id);
+        const a = ids.indexOf(lastToggledRef.current);
+        const b = ids.indexOf(toggled);
+        if (a !== -1 && b !== -1) {
+          const on = added.length === 1;
+          const result = new Set(selected);
+          for (const row of rows.slice(Math.min(a, b), Math.max(a, b) + 1)) {
+            if (!isMemberRowSelectable(row)) continue;
+            if (on) result.add(row.member_id);
+            else result.delete(row.member_id);
+          }
+          commitSelection(ids.filter((id) => result.has(id)));
+          return;
+        }
+      }
+      if (toggled) lastToggledRef.current = toggled;
+      commitSelection(next);
+    },
+    [selected, rows, commitSelection],
+  );
 
-  // BUG-013 follow-up: derive "whole page selected" from the table's own
-  // all-selected state, which respects enableRowSelection (archived rows are
-  // non-selectable). `selectedCount === rows.length` would never hold once an
-  // archived row is on the page, hiding the "Select all N matching" banner and
-  // contradicting the header select-all checkbox (which also uses this).
-  const allPageSelected =
-    enableSelection && rows.length > 0 && table.getIsAllPageRowsSelected();
-  // #2 — numbered/offset pagination has no cursor; "more matching exist beyond
-  // this page" is simply the full filtered total exceeding the rows shown here.
-  const hasMoreMatching =
-    enableSelection && total !== undefined && total > rows.length;
-
-  // Round-6 W-3: store table in a ref so the Ctrl+A effect has a stable
-  // dependency (table object is rebuilt every render by useReactTable).
-  const tableRef = useRef(table);
-  tableRef.current = table;
-
-  // Staff-review SW-4: Ctrl+A / Cmd+A within the table selects all rows
-  // on the current page (FR-040). Scoped to the table container so the
-  // shortcut doesn't conflict with browser-wide text selection outside.
+  // Staff-review SW-4: Ctrl+A / Cmd+A within the table selects every
+  // selectable row on the current page (FR-040). Scoped to the table container
+  // so the shortcut doesn't take over browser-wide text selection elsewhere.
   useEffect(() => {
     if (!enableSelection) return;
     const onKey = (e: KeyboardEvent) => {
@@ -973,70 +579,286 @@ export function MembersTable({
         const active = document.activeElement;
         if (
           tableContainerRef.current &&
-          (tableContainerRef.current.contains(active) ||
-            active === document.body)
+          (tableContainerRef.current.contains(active) || active === document.body)
         ) {
           e.preventDefault();
-          tableRef.current.toggleAllPageRowsSelected(true);
+          commitSelection(selectableIds);
         }
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [enableSelection]);
+  }, [enableSelection, commitSelection, selectableIds]);
 
-  // Full row-selection reset commanded by the parent's Clear (bulk bar or the
-  // "select all matching" banner) via `clearSelectionNonce`. The table owns
-  // rowSelection UNCONTROLLED, so the parent can't uncheck the boxes directly —
-  // resetting here also fires `onSelectionChange([])`, so the parent mirror
-  // follows to zero. Guarded on a nonce CHANGE (not mount) so it fires only on
-  // an actual Clear.
+  // Full selection reset commanded by the parent's Clear (bulk bar or the
+  // "select all matching" banner) via `clearSelectionNonce`: the checkboxes
+  // clear during render (React's "adjust state when a prop changes" pattern),
+  // then the effect tells the parent, so its mirror follows to zero. Guarded
+  // on a nonce CHANGE (not mount) so it fires only on an actual Clear.
+  const [clearNonceSeen, setClearNonceSeen] = useState(clearSelectionNonce);
+  if (clearSelectionNonce !== clearNonceSeen) {
+    setClearNonceSeen(clearSelectionNonce);
+    setSelected([]);
+  }
   const prevClearNonceRef = useRef(clearSelectionNonce);
   useEffect(() => {
     if (clearSelectionNonce !== prevClearNonceRef.current) {
       prevClearNonceRef.current = clearSelectionNonce;
-      tableRef.current.resetRowSelection();
+      lastToggledRef.current = null;
+      onSelectionChange?.([]);
     }
-  }, [clearSelectionNonce]);
+  }, [clearSelectionNonce, onSelectionChange]);
+
+  const selectedCount = selected.length;
+  // BUG-013 follow-up: "whole page selected" means every SELECTABLE row, so a
+  // page mixing archived and active rows can still offer the cross-page set.
+  const allPageSelected =
+    enableSelection &&
+    selectableIds.length > 0 &&
+    selectableIds.every((id) => selected.includes(id));
+  // #2 — numbered/offset pagination has no cursor; "more matching exist beyond
+  // this page" is simply the full filtered total exceeding the rows shown here.
+  const hasMoreMatching = enableSelection && total !== undefined && total > rows.length;
+
+  // The header checkbox in this page's words ("Select all"); the row
+  // checkboxes are named after the company through `rowSelectLabel` (AURA 5.11).
+  const tableStrings = useMemo(() => ({ selectAllRows: t('selectAll') }), [t]);
+
+  const columns = useMemo<DataTableColumn<MembersTableRow>[]>(
+    () => [
+      {
+        // 056-members-table-compact — the flag leads the Company cell (country
+        // is edited on the detail page). The flexible column; the name wraps
+        // in full, no ellipsis (the row grows).
+        key: 'company_name',
+        label: t('columns.company'),
+        ...MEMBERS_COLUMN_SIZES.company_name,
+        render: (row) => (
+          <span className="flex min-w-0 items-center gap-2">
+            {row.country && (
+              <span data-card-slot="flag" className="shrink-0 in-[.aura-table--stacked]:hidden">
+                <CountryDisplay code={row.country} variant="flag-only" />
+              </span>
+            )}
+            <span className={`font-medium ${WRAP_TEXT}`} title={row.company_name}>
+              {row.company_name}
+            </span>
+          </span>
+        ),
+      },
+      {
+        key: 'member_number_display',
+        label: t('columns.memberNumber'),
+        mono: true,
+        ...MEMBERS_COLUMN_SIZES.member_number_display,
+        sortable: true,
+        ...MEMBERS_COLUMN_CARD.member_number_display,
+        render: (row) => <span data-card-slot="number">{row.member_number_display}</span>,
+      },
+      {
+        // Name plus the portal / bounce badge; the badge wraps under a long
+        // name.
+        key: 'primary_contact',
+        label: t('columns.primaryContact'),
+        ...MEMBERS_COLUMN_SIZES.primary_contact,
+        ...MEMBERS_COLUMN_CARD.primary_contact,
+        render: (row) => {
+          const c = row.primary_contact;
+          if (!c)
+            return (
+              <span data-card-slot="contact" className="text-[var(--aura-fg-secondary)]">
+                {t('noPrimary')}
+              </span>
+            );
+          const fullName = `${c.first_name} ${c.last_name}`.trim();
+          const archived = row.status === 'archived';
+          // Edge Case "Invitation email bounce" (spec §613-620) — hidden when
+          // the invitation also expired or the contact is already active (one
+          // root cause, one recovery), and on archived rows.
+          const bounced =
+            c.invite_bounced &&
+            row.portal_state !== 'invite_expired' &&
+            row.portal_state !== 'active' &&
+            !archived;
+          return (
+            <span data-card-slot="contact" className={WRAP_ROW}>
+              <span className={WRAP_TEXT} title={fullName}>
+                {fullName}
+              </span>
+              {/* No portal-related badge on an archived row (Task 7), and the
+                  bounce badge stands in for it: it already says the contact
+                  was invited (one root cause, one badge). */}
+              <PortalBadge state={archived || bounced ? null : row.portal_state} />
+              {bounced ? (
+                <Badge tone="danger" icon={<TriangleAlert aria-hidden="true" />}>
+                  <span aria-hidden="true">{tContact('inviteBounced.badge')}</span>
+                  <span className="sr-only">{tContact('inviteBounced.badgeAria')}</span>
+                </Badge>
+              ) : null}
+            </span>
+          );
+        },
+      },
+      {
+        // 056-members-table-compact — merged "Plan · Year" cell.
+        key: 'plan_display_name',
+        label: t('columns.plan'),
+        ...MEMBERS_COLUMN_SIZES.plan_display_name,
+        ...MEMBERS_COLUMN_CARD.plan_display_name,
+        render: (row) => (
+          <span data-card-slot="plan" title={row.plan_id} className={WRAP_TEXT}>
+            {row.plan_display_name ?? row.plan_id}
+            {/* " · 2026" never starts a line on its own; a phone card shows
+                the plan alone, as on the board. */}
+            <span className="whitespace-nowrap in-[.aura-table--stacked]:hidden">
+              <span aria-hidden="true"> · </span>
+              {row.plan_year}
+            </span>
+          </span>
+        ),
+      },
+      {
+        key: 'status',
+        label: t('columns.status'),
+        ...MEMBERS_COLUMN_SIZES.status,
+        // Sits beside the title on a phone card.
+        pill: true,
+        // #4 — the Lapsed / Suspended badge is a SIBLING of the status toggle,
+        // never inside it (it would fire the toggle and pollute its name). It
+        // is hidden on archived rows, and Lapsed wins if both are somehow set.
+        render: (row) => (
+          <span className={STATUS_ROW}>
+            {enableSelection ? (
+              <InlineStatusCell memberId={row.member_id} status={row.status} onSave={onInlineEdit} />
+            ) : (
+              <StatusBadge status={row.status} />
+            )}
+            {/* Lapsed red, Suspended amber: the suspension design
+                (2026-07-13, § Members directory) keeps them apart, so the
+                board's tones for these two do not apply. */}
+            {row.membership_lapsed && row.status !== 'archived' ? (
+              <Badge tone="danger" icon={<TriangleAlert aria-hidden="true" />}>
+                {/* visible label is aria-hidden so a SR user hears ONLY the
+                    full sr-only phrase, not "Lapsed Membership lapsed …". */}
+                <span aria-hidden="true">{t('membershipLapsed')}</span>
+                <span className="sr-only">{t('membershipLapsedSr')}</span>
+              </Badge>
+            ) : row.membership_suspended && row.status !== 'archived' ? (
+              <Badge tone="warning" icon={<PauseCircle aria-hidden="true" />}>
+                <span aria-hidden="true">{t('membershipSuspended')}</span>
+                <span className="sr-only">{t('membershipSuspendedSr')}</span>
+              </Badge>
+            ) : null}
+          </span>
+        ),
+      },
+      {
+        // F9 (T034) — positive-framed inverse of the F8 risk score, projected
+        // server-side; numeric score + text band (FR-035). Unscored → "Not yet
+        // scored" in an outline badge (board).
+        key: 'engagement',
+        label: t('columns.engagement'),
+        ...MEMBERS_COLUMN_SIZES.engagement,
+        sortable: true,
+        ...MEMBERS_COLUMN_CARD.engagement,
+        render: (row) => {
+          const eng = row.engagement;
+          if (eng === null)
+            return (
+              <span data-card-slot="engagement">
+                <Badge tone="neutral" variant="outline">
+                  {t('riskNotComputed')}
+                </Badge>
+              </span>
+            );
+          // A phone card shows the band alone, as on the board.
+          return (
+            <span data-card-slot="engagement" className="inline-flex items-center gap-1.5">
+              <span className="font-medium tabular-nums in-[.aura-table--stacked]:hidden">{eng.score}</span>
+              {/* Critical is the one band drawn solid (board). */}
+              <Badge tone={ENGAGEMENT_TONE[eng.band]} {...(eng.band === 'critical' ? { variant: 'solid' as const } : {})}>
+                {t(`engagementBand.${eng.band}`)}
+              </Badge>
+            </span>
+          );
+        },
+      },
+      {
+        key: 'last_activity_at',
+        label: t('columns.lastActivity'),
+        ...MEMBERS_COLUMN_SIZES.last_activity_at,
+        ...MEMBERS_COLUMN_CARD.last_activity_at,
+        render: (row) => {
+          const v = row.last_activity_at;
+          if (!v)
+            return (
+              <span data-card-slot="activity" className="text-[var(--aura-fg-secondary)]">
+                —
+              </span>
+            );
+          // `<RelativeTime>` renders a stable absolute date during SSR and
+          // first paint, then the relative string after hydration.
+          return (
+            <span data-card-slot="activity">
+              <RelativeTime iso={v} title={v.replace('T', ' ').slice(0, 16)} locale={locale} />
+            </span>
+          );
+        },
+      },
+      {
+        key: 'actions',
+        // An empty label: AURA names the header "Actions" for screen readers
+        // only. The board shows the word, but the 48px menu column cannot hold
+        // it without taking width from the columns that wrap.
+        label: '',
+        ...MEMBERS_COLUMN_SIZES.actions,
+        actions: true,
+        ...MEMBERS_COLUMN_CARD.actions,
+        render: (row) => <RowMenu row={row} canEdit={canEdit} />,
+      },
+    ],
+    [t, tContact, locale, enableSelection, onInlineEdit, canEdit],
+  );
 
   return (
-    <div className="flex flex-col gap-4" ref={tableContainerRef}>
-      {/* Result-count live region — announces the row count on ANY filter
-          change (not only the selection count above), so screen-reader users
-          hear the table update after e.g. toggling the needs-invite chip. When
-          the full filtered total is known it announces "N of M" for context. */}
-      <div className="sr-only" role="status">
-        {total !== undefined
-          ? t('resultsCountOfTotal', { count: rows.length, total })
-          : t('resultsCount', { count: rows.length })}
+    <div
+      // The selection checkboxes take a 24×24 target from AURA 5.11 itself
+      // (WCAG 2.5.8 AA, ADOPT-01).
+      className="flex flex-col gap-4"
+      ref={tableContainerRef}
+      // The bulk bar's Clear hands focus to this table's select-all checkbox.
+      data-members-table=""
+      // Record Shift on the click that toggles a checkbox; the selection
+      // callback reads it to select a range. Only a click in the selection
+      // column counts: a Shift-click on a row link would otherwise leave the
+      // flag set for a later keyboard toggle (AURA toggles on Space, no click).
+      onClickCapture={(e) => {
+        const target = e.target as Element;
+        shiftClickRef.current = e.shiftKey && target.closest('.aura-table__sel') !== null;
+      }}
+    >
+      {/* Result count — a live region, so ANY filter change is announced;
+          "N of M" when the full filtered total is known. Visible only while
+          filtered, as on the board: unfiltered, the pagination range below
+          already says it. */}
+      <div
+        className={filtered ? 'self-end text-xs text-[var(--aura-fg-secondary)]' : 'sr-only'}
+        role="status"
+      >
+        <span className={filtered ? undefined : 'sr-only'}>
+          {total !== undefined
+            ? t('resultsCountOfTotal', { count: rows.length, total })
+            : t('resultsCount', { count: rows.length })}
+        </span>
       </div>
-      {enableSelection && (matchingActive || selectedCount > 0) && (
-        <div
-          className="sr-only"
-          aria-live="polite"
-          aria-atomic="true"
-        >
-          {/* Announce the EFFECTIVE count: the cross-page matching total when
-              "select all matching" is active (what the bulk action will touch),
-              else the visible-page selection — so SR users don't hear the page
-              count while the visible banner shows the matching count. */}
-          {t('selectedCount', {
-            count: matchingActive ? (matchingCount ?? selectedCount) : selectedCount,
-          })}
-        </div>
-      )}
       {/* #2 cross-page "Select all N matching". Two states:
           (a) OFFER — whole visible page selected + more matching rows exist
               beyond it: clicking asks the parent to fetch the matching ids
-              (capped at BULK_CAP) so a bulk action reaches the whole filtered
-              set, not just this page.
+              (capped at BULK_CAP).
           (b) ACTIVE — the parent holds the cross-page selection: show the count
-              (capped copy when the set was clamped to BULK_CAP) + a Clear. */}
+              (capped copy when clamped to BULK_CAP) + a Clear. */}
       {matchingActive ? (
-        <div
-          className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-accent bg-accent/40 px-4 py-2 text-sm"
-          role="status"
-        >
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-[var(--aura-radius-md)] border border-[var(--aura-fg-accent)] bg-[var(--aura-bg-selected)] px-4 py-2 text-sm" role="status">
           <span>
             {matchingCapped
               ? t('matchingSelectedCapped', {
@@ -1049,7 +871,7 @@ export function MembersTable({
             <button
               ref={clearMatchingBtnRef}
               type="button"
-              className="font-medium underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-ring"
+              className="font-medium text-[var(--aura-fg-accent)] underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-[var(--aura-focus-ring)]"
               onClick={onClearMatching}
             >
               {t('clearMatching')}
@@ -1060,15 +882,12 @@ export function MembersTable({
         allPageSelected &&
         hasMoreMatching &&
         onSelectAllMatching && (
-          <div
-            className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-accent bg-accent/40 px-4 py-2 text-sm"
-            role="status"
-          >
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-[var(--aura-radius-md)] border border-[var(--aura-fg-accent)] bg-[var(--aura-bg-selected)] px-4 py-2 text-sm" role="status">
             <span>{t('allPageSelected', { count: selectedCount })}</span>
             <button
               ref={selectAllMatchingBtnRef}
               type="button"
-              className="font-medium underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-ring"
+              className="font-medium text-[var(--aura-fg-accent)] underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-[var(--aura-focus-ring)]"
               onClick={onSelectAllMatching}
             >
               {t('selectAllMatching', { count: total ?? 0 })}
@@ -1076,108 +895,43 @@ export function MembersTable({
           </div>
         )
       )}
-      {/* WCAG 1.3.1 — visually-hidden caption identifies the table for
-          screen reader users who navigate table landmarks. */}
-      {/* `table-fixed` + an explicit <colgroup> pin the column widths to the
-          header, NOT the cell content. Without this the default
-          `table-layout: auto` recomputes every column's width from the current
-          rows, so the header visibly SHIFTS each time a search changes the data.
-          Widths come from the column defs' `size` (px).
-          `minWidth: getTotalSize()` is REQUIRED: under `table-fixed`, if the
-          column widths sum to more than the table's rendered width, the browser
-          SHRINKS every column to fit rather than overflowing — squeezing the
-          `whitespace-nowrap` cells (which have no ellipsis) into overlap. Pinning
-          the table's min-width to the column total keeps each column at its
-          intended size and lets the `overflow-x-auto` wrapper (ui/table.tsx)
-          engage on viewports narrower than the total, so the header stays
-          aligned AND narrow viewports scroll instead of clipping. */}
-      <Table
-        aria-label={t('tableCaption')}
-        className="table-fixed"
-        style={{ minWidth: table.getTotalSize() }}
-      >
-        <caption className="sr-only">{t('tableCaption')}</caption>
-        <colgroup>
-          {table.getVisibleLeafColumns().map((col) => (
-            <col key={col.id} style={{ width: `${col.getSize()}px` }} />
-          ))}
-        </colgroup>
-        <TableHeader>
-          {table.getHeaderGroups().map((headerGroup) => (
-            <TableRow key={headerGroup.id}>
-              {headerGroup.headers.map((header) => {
-                const ariaSort = ariaSortFor(header.column.id);
-                return (
-                <TableHead
-                  key={header.id}
-                  scope="col"
-                  className="text-xs uppercase tracking-wide text-muted-foreground"
-                  {...(ariaSort ? { 'aria-sort': ariaSort } : {})}
-                >
-                    {header.isPlaceholder
-                      ? null
-                      : flexRender(
-                          header.column.columnDef.header,
-                          header.getContext(),
-                        )}
-                  </TableHead>
-                );
-              })}
-              </TableRow>
-            ))}
-          </TableHeader>
-          <TableBody>
-            {table.getRowModel().rows.map((row) => {
-              const m = row.original;
-              return (
-                <TableRow
-                  key={row.id}
-                  data-state={row.getIsSelected() ? 'selected' : undefined}
-                  className={`hover:bg-accent/40 focus-within:bg-accent/40 ${
-                    row.getIsSelected() ? 'bg-accent/20' : ''
-                  }`}
-                >
-                  {row.getVisibleCells().map((cell, idx) => (
-                    <TableCell key={cell.id} className="align-middle">
-                      {/* Company name column is the row link.
-                          No selection: member_number=0, company=1
-                          With selection: select=0, member_number=1, company=2 */}
-                      {!enableSelection && idx === 1 ? (
-                        <Link
-                          href={`/admin/members/${m.member_id}`}
-                          aria-label={t('rowAriaLabel', { company: m.company_name })}
-                          className="cursor-pointer focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
-                        >
-                          {flexRender(
-                            cell.column.columnDef.cell,
-                            cell.getContext(),
-                          )}
-                        </Link>
-                      ) : enableSelection && idx === 2 ? (
-                        <Link
-                          href={`/admin/members/${m.member_id}`}
-                          aria-label={t('rowAriaLabel', { company: m.company_name })}
-                          className="cursor-pointer focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
-                        >
-                          {flexRender(
-                            cell.column.columnDef.cell,
-                            cell.getContext(),
-                          )}
-                        </Link>
-                      ) : (
-                        flexRender(cell.column.columnDef.cell, cell.getContext())
-                      )}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              );
-            })}
-        </TableBody>
-      </Table>
-
+      <AuraProvider strings={tableStrings}>
+        <DataTable<MembersTableRow>
+          label={t('tableCaption')}
+          rows={rows}
+          columns={columns}
+          rowKey="member_id"
+          manual
+          // No `totalRows`: without a `pageSize` AURA numbers rows from 1 on
+          // every page, so aria-rowcount must be the page's count too (a
+          // page-3 row read as "row 2 of 132" otherwise). Sorting needs more
+          // than one row on the page.
+          sort={sort}
+          onSortChange={handleSortChange}
+          getRowHref={(row) => `/admin/members/${row.member_id}`}
+          // Rows grow to fit wrapped text (a long name, a name beside its
+          // badges); cells stay vertically centred.
+          rowHeight="auto"
+          // A phone card is the board's (`Admin-members-mobile`): no checkbox,
+          // no ⋯ menu, no Last activity, and the fields in the board's order
+          // (AURA column `card` / `cardOrder`, handoff #80, 5.13.0). Bulk work
+          // stays on wider screens (maintainer's decision, 28 Sep 2026).
+          stackBelow={640}
+          hideSelectionInCards
+          {...(enableSelection
+            ? {
+                selectable: true,
+                selected,
+                onSelectionChange: handleSelectionChange,
+                isRowSelectable: isMemberRowSelectable,
+                rowSelectLabel: (row: MembersTableRow) =>
+                  t('selectRow', { company: row.company_name }),
+                rowSelectDisabledLabel: (row: MembersTableRow) =>
+                  t('rowNotSelectable', { company: row.company_name }),
+              }
+            : {})}
+        />
+      </AuraProvider>
     </div>
   );
 }
-
-/** Export for BulkActionBar to read the current selection count. */
-export { type RowSelectionState };

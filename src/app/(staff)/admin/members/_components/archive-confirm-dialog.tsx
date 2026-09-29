@@ -9,29 +9,17 @@
  *
  * Lists up to 5 company names; truncates the rest with "…and N more".
  *
- * B1 a11y fix: converted from Dialog → AlertDialog so the destructive
- * confirmation is announced with the correct ARIA role and focus is
- * correctly managed. autoFocus on Cancel per ux-standards § 6.2.
- * H7 a11y fix: Loader2 spinner + disabled state while action is pending.
+ * B1 a11y fix: an alertdialog, so the destructive confirmation is announced
+ * with the correct ARIA role; focus starts on Cancel per ux-standards § 6.2.
+ * H7 a11y fix: spinner + disabled state while the action is pending.
+ * 122 US5a (T504): on the shared AURA ConfirmationDialog.
  */
 
 import { useState, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
-import { Loader2Icon } from 'lucide-react';
+import { TextField } from '@jirawatpyk/aura-react';
 import { ARCHIVE_TYPED_PHRASE_THRESHOLD } from '@/lib/members-bulk-constants';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { buttonVariants } from '@/components/ui/button';
+import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
 
 const TYPED_PHRASE_THRESHOLD = ARCHIVE_TYPED_PHRASE_THRESHOLD;
 
@@ -40,15 +28,15 @@ type Props = {
   readonly onOpenChange: (open: boolean) => void;
   readonly companyNames: string[];
   readonly count: number;
-  readonly onConfirm: () => void;
-  /** H7: whether the archive action is in-flight (shows loader, disables action). */
+  readonly onConfirm: () => void | Promise<void>;
+  /** H7: whether the archive action is in-flight (disables the action). */
   readonly pending?: boolean;
   /**
    * 107-auto-invoice Task 15 review (UX-1) — focus-return target on close.
    * Required here (unlike most `ConfirmationDialog` callers, where it is an
    * optional escape hatch) because this dialog's trigger lives in
-   * `BulkActionBar`, which unmounts ENTIRELY on every successful archive
-   * (`onClear()` → `count === 0` → `return null`). Base UI's default
+   * `BulkActionBar`, whose actions all disappear on every successful archive
+   * (`onClear()` → nothing selected → the ActionBar goes idle). The default
    * focus-return would target the vanished trigger and drop focus to
    * `<body>`. Build via `useDialogFinalFocus`; see the BulkActionBar module
    * header. WCAG 2.1 AA SC 2.4.3.
@@ -70,11 +58,10 @@ export function ArchiveConfirmDialog({
   const requiresPhrase = count > TYPED_PHRASE_THRESHOLD;
   const expectedPhrase = t('archivePhrase', { count });
 
-  // Round-2 review I-1: reset phrase in BOTH directions (open AND close).
-  // Prior impl only reset on open, which left a stale phrase after Cancel
-  // that auto-confirmed the next open if admin re-used the dialog.
-  // H7: guard against dismissal while action is in-flight (pending=true) —
-  // the Escape key or backdrop click must not close the dialog mid-archive.
+  // Round-2 review I-1: reset the phrase in BOTH directions (open AND close),
+  // so a stale phrase after Cancel can't auto-confirm the next open.
+  // H7: the dialog refuses Escape / the scrim while the archive is in flight
+  // (ConfirmationDialog stops dismissal while its confirm is running).
   const handleOpenChange = useCallback(
     (next: boolean) => {
       if (!next && pending) return; // block close while pending
@@ -84,77 +71,50 @@ export function ArchiveConfirmDialog({
     [onOpenChange, pending],
   );
 
-  const canConfirm = requiresPhrase
-    ? typedPhrase.trim() === expectedPhrase
-    : true;
+  const canConfirm = requiresPhrase ? typedPhrase.trim() === expectedPhrase : true;
 
   const displayedNames = companyNames.slice(0, 5);
   const remainingCount = count - displayedNames.length;
 
   return (
-    <AlertDialog open={open} onOpenChange={handleOpenChange}>
-      <AlertDialogContent finalFocus={finalFocus}>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{t('archiveTitle', { count })}</AlertDialogTitle>
-          <AlertDialogDescription>
-            {t('archiveDescription')}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-
-        <div className="flex flex-col gap-3">
-          {/* Company name list */}
-          <ul className="list-disc pl-5 text-sm" aria-label={t('affectedMembers')}>
-            {displayedNames.map((name) => (
-              <li key={name}>{name}</li>
-            ))}
-            {remainingCount > 0 && (
-              <li className="text-muted-foreground">
-                {t('andMore', { count: remainingCount })}
-              </li>
-            )}
-          </ul>
-
-          {/* Typed-phrase confirmation for > 5 rows */}
-          {requiresPhrase && (
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="archive-confirm-phrase">
-                {t('typeToConfirm', { phrase: expectedPhrase })}
-              </Label>
-              <Input
-                id="archive-confirm-phrase"
-                type="text"
-                value={typedPhrase}
-                onChange={(e) => setTypedPhrase(e.target.value)}
-                placeholder={expectedPhrase}
-                autoComplete="off"
-              />
-            </div>
+    // AURA `Dialog role="alertdialog"` through ConfirmationDialog: focus
+    // starts on Cancel (ux-standards § 6.2), the confirm shows a spinner while
+    // the archive runs (H7).
+    <ConfirmationDialog
+      open={open}
+      onOpenChange={handleOpenChange}
+      title={t('archiveTitle', { count })}
+      description={t('archiveDescription')}
+      confirmLabel={t('confirmArchive', { count })}
+      cancelLabel={t('cancel')}
+      destructive
+      confirmDisabled={!canConfirm || pending}
+      onConfirm={onConfirm}
+      {...(finalFocus ? { finalFocus } : {})}
+    >
+      <div className="flex flex-col gap-3">
+        <ul className="list-disc pl-5 text-sm" aria-label={t('affectedMembers')}>
+          {displayedNames.map((name) => (
+            <li key={name}>{name}</li>
+          ))}
+          {remainingCount > 0 && (
+            <li className="text-[var(--aura-fg-secondary)]">
+              {t('andMore', { count: remainingCount })}
+            </li>
           )}
-        </div>
+        </ul>
 
-        <AlertDialogFooter>
-          {/* B1: autoFocus on Cancel per ux-standards § 6.2 — destructive
-              action defaults focus to the safe choice. */}
-          <AlertDialogCancel autoFocus disabled={pending} onClick={() => handleOpenChange(false)}>
-            {t('cancel')}
-          </AlertDialogCancel>
-          {/* H7: spinner + disabled while action is in-flight. */}
-          <AlertDialogAction
-            className={buttonVariants({ variant: 'destructive' })}
-            disabled={!canConfirm || pending}
-            aria-busy={pending}
-            onClick={(e) => {
-              e.preventDefault();
-              onConfirm();
-            }}
-          >
-            {pending && (
-              <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" />
-            )}
-            {t('confirmArchive', { count })}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+        {/* Typed-phrase confirmation for > 5 rows */}
+        {requiresPhrase && (
+          <TextField
+            label={t('typeToConfirm', { phrase: expectedPhrase })}
+            value={typedPhrase}
+            onChange={(e) => setTypedPhrase(e.target.value)}
+            placeholder={expectedPhrase}
+            autoComplete="off"
+          />
+        )}
+      </div>
+    </ConfirmationDialog>
   );
 }

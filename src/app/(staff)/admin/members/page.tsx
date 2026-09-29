@@ -13,7 +13,7 @@
  */
 
 import type { Metadata } from 'next';
-import { Suspense } from 'react';
+import { Suspense, type ReactNode } from 'react';
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import { PlusIcon } from 'lucide-react';
@@ -56,8 +56,7 @@ import {
 } from '@/modules/renewals';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
-import { Card, CardContent } from '@/components/ui/card';
-import { buttonVariants } from '@/components/ui/button';
+import { Alert, buttonClass } from '@jirawatpyk/aura-react/server';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import {
@@ -71,6 +70,7 @@ import {
   MembersFilteredEmptyState,
   MembersAllInvitedEmptyState,
   MembersErrorState,
+  MembersStateCard,
 } from '@/components/members/empty-states';
 import { DirectoryWithBulk } from './_components/directory-with-bulk';
 import { ExportBackupButton } from './_components/export-backup-button';
@@ -208,11 +208,51 @@ export default async function MembersListPage({
   const query = await searchParams;
   const t = await getTranslations('admin.members');
 
+  return renderMembersListView({
+    title: t('title'),
+    subtitle: t('subtitle'),
+    addMemberLabel: t('addMember'),
+    canWrite: canPerform(currentUser.role, 'members.write'),
+    canBulk: canPerform(currentUser.role, 'members.bulk'),
+    ...(canPerform(currentUser.role, 'members.write') ? {} : { readOnlyNotice: t('directory.managerReadOnlyBanner') }),
+    body: (
+      <MembersDirectoryBody
+        query={query}
+        isAdmin={canPerform(currentUser.role, 'members.write')}
+      />
+    ),
+  });
+}
+
+/**
+ * 122 US5a (T505) — the page frame (header + body), shared with the no-DB
+ * preview route (`/test-fixtures/aura-admin`) so the preview and the page
+ * cannot drift. The board (`Admin-members`) draws the filters and the table
+ * straight on the page, without a card.
+ */
+export function renderMembersListView({
+  title,
+  subtitle,
+  addMemberLabel,
+  canWrite,
+  canBulk,
+  readOnlyNotice,
+  body,
+}: {
+  readonly title: string;
+  readonly subtitle: string;
+  readonly addMemberLabel: string;
+  readonly canWrite: boolean;
+  readonly canBulk: boolean;
+  /** The manager's read-only notice, above the filters (board `Admin-state-members-manager`). */
+  readonly readOnlyNotice?: string;
+  readonly body: ReactNode;
+}) {
   return (
     <TableContainer>
       <PageHeader
-        title={t('title')}
-        subtitle={t('subtitle')}
+        title={title}
+        subtitle={subtitle}
         actions={
           // 016 re-review D — split by destination key: the backup ZIP is a
           // 'members.bulk' egress (full-tenant PII), "Add member" is a
@@ -221,31 +261,29 @@ export default async function MembersListPage({
           // A fragment, not a wrapper row: PageHeader's actions row wraps and
           // stretches its direct children on phones; a nowrap row inside it
           // pushed "Lägg till medlem" past a 360 / 390 px screen in Swedish.
-          canPerform(currentUser.role, 'members.write') ? (
+          canWrite ? (
             <>
-              {canPerform(currentUser.role, 'members.bulk') && (
-                <ExportBackupButton />
-              )}
-              <Link
-                href="/admin/members/new"
-                className={buttonVariants()}
-              >
-                <PlusIcon className="h-3.5 w-3.5" />
-                {t('addMember')}
+              {/* A phone has no room for a full-tenant backup download
+                  (board `Admin-members-mobile`); it stays on larger screens. */}
+              {canBulk && <ExportBackupButton className="max-sm:hidden" />}
+              <Link href="/admin/members/new" className={buttonClass({ variant: 'primary' })}>
+                <PlusIcon aria-hidden="true" className="size-4" />
+                {addMemberLabel}
               </Link>
             </>
           ) : null
         }
       />
 
-      <Card>
-        <CardContent className="flex flex-col gap-4">
-          <MembersDirectoryBody
-            query={query}
-            isAdmin={canPerform(currentUser.role, 'members.write')}
-          />
-        </CardContent>
-      </Card>
+      <div className="flex flex-col gap-4">
+        {/* `role="note"`: standing guidance, not a live status update. */}
+        {readOnlyNotice ? (
+          <Alert tone="info" role="note">
+            {readOnlyNotice}
+          </Alert>
+        ) : null}
+        {body}
+      </div>
     </TableContainer>
   );
 }
@@ -377,32 +415,23 @@ export async function MembersDirectoryBody({
     : [];
 
   if (!result.ok) {
-    return (
-      <>
-        <DirectoryFilters plans={planOptions} portalInviteCount={portalInviteCount} />
-        <MembersErrorState />
-      </>
-    );
+    return renderMembersDirectoryBody({ plans: planOptions, portalInviteCount, isAdmin, state: { kind: 'error' } });
   }
 
   if (result.value.items.length === 0) {
-    return (
-      <>
-        <DirectoryFilters plans={planOptions} portalInviteCount={portalInviteCount} />
-        {/* Task 11 — the needs-invite chip filtered to zero rows gets its own
-            "everyone has been invited" state (design doc §3.6/§3.7), distinct
-            from the generic "no members match these filters" state used by
-            every other filter combination. `hasFilters` (which folds in
-            portalNeedsInvite) still gates the zero-members onboarding screen. */}
-        {portalNeedsInvite ? (
-          <MembersAllInvitedEmptyState />
-        ) : hasFilters ? (
-          <MembersFilteredEmptyState />
-        ) : (
-          <MembersZeroState canAddMember={isAdmin} />
-        )}
-      </>
-    );
+    // Task 11 — the needs-invite chip filtered to zero rows gets its own
+    // "everyone has been invited" state (design doc §3.6/§3.7), distinct from
+    // the generic "no members match these filters" state used by every other
+    // filter combination. `hasFilters` (which folds in portalNeedsInvite)
+    // still gates the zero-members onboarding screen. A filtered-to-nothing
+    // list frames the filters and the state in one card (122 US5a, board
+    // `Admin-state-members-filtered`).
+    return renderMembersDirectoryBody({
+      plans: planOptions,
+      portalInviteCount,
+      isAdmin,
+      state: { kind: portalNeedsInvite ? 'all-invited' : hasFilters ? 'filtered' : 'empty' },
+    });
   }
 
   // 055-member-number — resolve the per-tenant prefix ONCE (RLS-safe shared
@@ -483,27 +512,95 @@ export async function MembersDirectoryBody({
     };
   });
 
-  // Round-2 review I-3 + round-3 review S-1: Suspense boundary around the
-  // client component that calls useSearchParams — prevents the whole route
-  // from bailing out of server rendering. Fallback renders the same
-  // shimmer skeleton as /members loading.tsx to avoid CLS during
-  // hydration transitions.
-  return (
-    <>
-      <DirectoryFilters plans={planOptions} portalInviteCount={portalInviteCount} />
-      {/* C1 round-10 — pass `withSelection={isAdmin}` so the
-          shimmer-skeleton column count matches the real table for the
-          current role. 056-members-table-compact: admin 8 cols incl.
-          checkbox; manager 7. */}
-      <Suspense fallback={<MembersTableSkeleton withSelection={isAdmin} />}>
-        <DirectoryWithBulk
-          rows={rows}
-          page={page}
-          pageSize={PAGE_SIZE}
-          total={result.value.total}
-          isAdmin={isAdmin}
-        />
-      </Suspense>
-    </>
-  );
+  return renderMembersDirectoryBody({
+    plans: planOptions,
+    portalInviteCount,
+    isAdmin,
+    state: { kind: 'list', rows, page, pageSize: PAGE_SIZE, total: result.value.total, filtered: hasFilters },
+  });
+}
+
+/** What the members body shows; the page decides, this renders it. */
+export type MembersDirectoryBodyState =
+  | { readonly kind: 'error' }
+  | { readonly kind: 'filtered' }
+  | { readonly kind: 'all-invited' }
+  | { readonly kind: 'empty' }
+  | {
+      readonly kind: 'list';
+      readonly rows: MembersTableRow[];
+      readonly page: number;
+      readonly pageSize: number;
+      readonly total: number;
+      readonly filtered: boolean;
+    };
+
+/**
+ * 122 US5a — the members body for each state, shared with the no-DB preview
+ * route (`/test-fixtures/aura-admin`) so the preview's screenshots show the
+ * page's own layout, not a copy (US5a review, 29 Sep).
+ */
+export function renderMembersDirectoryBody({
+  plans,
+  portalInviteCount,
+  isAdmin,
+  state,
+}: {
+  readonly plans: PlanOption[];
+  readonly portalInviteCount: number | null;
+  readonly isAdmin: boolean;
+  readonly state: MembersDirectoryBodyState;
+}): ReactNode {
+  const filters = <DirectoryFilters plans={plans} portalInviteCount={portalInviteCount} />;
+  switch (state.kind) {
+    case 'error':
+      return (
+        <MembersStateCard>
+          {filters}
+          <MembersErrorState />
+        </MembersStateCard>
+      );
+    // Task 11 — the needs-invite chip filtered to zero rows gets its own
+    // "everyone has been invited" state (design doc §3.6/§3.7); any other
+    // filter combination gets "no members match". A filtered-to-nothing list
+    // frames the filters and the state in one card (board
+    // `Admin-state-members-filtered`).
+    case 'all-invited':
+    case 'filtered':
+      return (
+        <MembersStateCard>
+          {filters}
+          {state.kind === 'all-invited' ? <MembersAllInvitedEmptyState /> : <MembersFilteredEmptyState />}
+        </MembersStateCard>
+      );
+    // No members yet: nothing to filter, so no toolbar (board
+    // `Admin-state-members-empty`).
+    case 'empty':
+      return <MembersZeroState canAddMember={isAdmin} />;
+    case 'list':
+      // Round-2 review I-3 + round-3 review S-1: Suspense boundary around the
+      // client component that calls useSearchParams — prevents the whole
+      // route from bailing out of server rendering. The fallback is the same
+      // skeleton as /members loading.tsx, with the current role's columns.
+      return (
+        <>
+          {filters}
+          <Suspense fallback={<MembersTableSkeleton withSelection={isAdmin} />}>
+            <DirectoryWithBulk
+              rows={state.rows}
+              page={state.page}
+              pageSize={state.pageSize}
+              total={state.total}
+              isAdmin={isAdmin}
+              filtered={state.filtered}
+            />
+          </Suspense>
+        </>
+      );
+    default: {
+      const unknownState: never = state;
+      void unknownState;
+      return null;
+    }
+  }
 }
