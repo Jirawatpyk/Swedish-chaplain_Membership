@@ -87,6 +87,11 @@ Two read-only audits compared every US5a board with the live screen and found ab
 - Q: Which portal badges does the Primary contact column show? → A: Only the states that need action (Not invited, Invited, Expired). A linked contact shows none.
 - Q: The phone card has a checkbox, a ⋯ menu and seven fields; the board has neither and four fields. → A: **As the board.** No checkbox, no ⋯, no flag. Four fields: Member No., Plan (no year), Primary contact, and the engagement band. Tapping a card opens the member. Bulk actions and the Edit shortcut stay on tablet and desktop.
 
+### Session 2026-09-29 (maintainer, US1–US4 parity cleanup, T511)
+
+- Q: US1–US4 overrides that carry only a board pixel value on an AURA component (the tab panel gap, the data-export rows and header, the change-request diff sizes, the staff rail, the phone bar, the bottom nav), with no AURA prop to replace them: keep them as stand-ins, or AURA's default? → A: **AURA's default**, each change stated on the parity page. Only an override that carries structure or accessibility stays, as a labelled stand-in with a handoff item.
+- Q: Guard against new unlabelled reaches? → A: **A ratchet test** over every `MIGRATED_PATHS` entry (US1 onward, US5a included, and each later phase as it joins) and `globals.css`: a reach needs `stand-in until AURA #NN` naming an item still open in `docs/aura-adoption.md`, or `AURA app content:`; the test has positive controls and reads CRLF sources like LF ones.
+
 ## User Scenarios & Testing *(mandatory)*
 
 Every story below is one phase and one pull request. A story is done when its screens use only AURA components, match their canvas boards, and pass the per-module definition of done (FR-010).
