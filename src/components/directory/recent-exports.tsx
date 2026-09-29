@@ -40,8 +40,8 @@ export function RecentExports({
   // 122 US5a — the board's "Recent exports" card (`Admin-directory`): a plain
   // table (a rule between rows, no inner frame), every row centred on its
   // line, Download with its icon. AURA's own head style and type sizes stay
-  // (board-parity rule). The frame and centring reach into AURA's table
-  // classes: a stand-in until AURA #81 (static Table align + frameless). On a phone
+  // (board-parity rule); the frame and centring are AURA's `bordered={false}`
+  // and `align="middle"` (handoff #81, 5.13.0). On a phone
   // (`Admin-directory-mobile`) a one-line list instead: the name, the time
   // under it, and the status pill — or, once ready, "· Ready" in the time line
   // and an icon-only download. The table hides below 640px and the list above
@@ -62,12 +62,8 @@ export function RecentExports({
         <p className="py-6 text-center text-sm text-[var(--aura-fg-secondary)]">{labels.empty}</p>
       ) : (
         <>
-          <div className="max-sm:hidden [&_.aura-tbl-wrap]:rounded-none [&_.aura-tbl-wrap]:border-0 [&_.aura-tbl-wrap]:bg-transparent [&_thead_th]:bg-transparent">
-            <Table
-              caption={labels.caption}
-              captionHidden
-              className="[&_.aura-tbl\_\_td]:align-middle [&_.aura-tbl\_\_td:first-child]:pl-0 [&_.aura-tbl\_\_td:last-child]:pr-0 [&_.aura-tbl\_\_th:first-child]:pl-0 [&_.aura-tbl\_\_th:last-child]:pr-0 [&_thead_tr]:border-b [&_thead_tr]:border-[var(--aura-border-default)]"
-            >
+          <div className="max-sm:hidden">
+            <Table caption={labels.caption} captionHidden align="middle" bordered={false}>
               <THead>
                 <Tr>
                   <Th>{labels.kindLabel}</Th>
