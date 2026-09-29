@@ -165,3 +165,34 @@ describe('US3 portal profile, directory and change requests', () => {
     expect(src('src/components/directory/directory-visibility-form.tsx')).not.toMatch(/aura-check/);
   });
 });
+
+describe('US3 portal account', () => {
+  it.each([
+    'src/app/(member)/portal/account/loading.tsx',
+    'src/components/data-export/data-export-panel.tsx',
+  ])('%s takes AURA’s Card / Icon (or the shared skeleton card), not their classes by hand', (file) => {
+    expect(src(file)).not.toMatch(HAND_AURA_CLASS);
+  });
+
+  it.each([
+    'src/components/portal/portal-account-view.tsx',
+    'src/components/members/invite-colleague-form.tsx',
+    'src/components/data-export/data-export-panel.tsx',
+  ])('%s sizes its text on the type scale, not in raw px', (file) => {
+    expect(src(file)).not.toMatch(RAW_TEXT_PX);
+  });
+
+  it('the recent-exports table is AURA’s frameless, centred Table (5.13), with no reach into its classes', () => {
+    const s = src('src/components/data-export/data-export-panel.tsx');
+    expect(s).toMatch(/<Table[^>]*bordered=\{false\}/);
+    expect(s).toMatch(/<Table[^>]*align="middle"/);
+    expect(s).not.toMatch(/\[&_\.aura-|\[&_td\]|\[&_thead_th\]/);
+  });
+
+  it.each(['src/components/portal/preferred-locale-form.tsx', 'src/components/portal/contact-language-form.tsx'])(
+    '%s keeps AURA’s own 44px touch rows',
+    (file) => {
+      expect(src(file)).not.toMatch(/aura-choice/);
+    },
+  );
+});
