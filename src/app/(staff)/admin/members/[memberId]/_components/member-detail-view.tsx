@@ -404,11 +404,15 @@ export async function renderMemberDetailView({
             title={t('sections.contacts')}
             titleId="member-contacts-heading"
             headingLevel={2}
-            actions={
-              <div className="flex flex-wrap items-center gap-2">
+            // Only Add contact beside the title: AURA's card head does not
+            // wrap, so more would squeeze the title on a phone.
+            actions={canModify && notArchived ? <AddContactButton memberId={member.memberId} /> : undefined}
+          >
+            <div className="flex flex-col gap-6">
+              <div className="-mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
                 {/* T097 — the two-step emergency primary transfer, as a
                     popover so it reaches touch users. */}
-                <InfoHint ariaLabel={t('emergencyPrimary.ariaLabel')}>
+                <InfoHint ariaLabel={t('emergencyPrimary.ariaLabel')} triggerClassName="-my-1">
                   <strong className="block">{t('emergencyPrimary.title')}</strong>
                   {t('emergencyPrimary.body')}
                 </InfoHint>
@@ -422,11 +426,7 @@ export async function renderMemberDetailView({
                     {t('marketing.audienceLink')}
                   </Link>
                 )}
-                {canModify && notArchived && <AddContactButton memberId={member.memberId} />}
               </div>
-            }
-          >
-            <div className="flex flex-col gap-6">
               {primary ? contactBlock(primary) : null}
               {secondary.length > 0 && (
                 <div className="flex flex-col gap-6 border-t border-[var(--aura-border-default)] pt-6">
