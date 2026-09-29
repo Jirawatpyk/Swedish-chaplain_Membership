@@ -123,11 +123,15 @@ export function ContactActions({ memberId, contact, isPrimary }: Props) {
             {t('promote')}
             <span className="sr-only">{`, ${contactName}`}</span>
           </button>
-          <DropdownMenu
-            label={t('moreActions', { name: contactName })}
-            trigger={<IconButton icon="ellipsis" size="sm" label={t('moreActions', { name: contactName })} />}
-            items={[{ label: t('remove'), icon: 'trash-2', tone: 'danger', onSelect: () => setRemoveOpen(true) }]}
-          />
+          {/* On a phone the ⋯ sits at the contact row's top right, beside the
+              name (board `Admin-member-detail-mobile`); the row is `relative`. */}
+          <span className="max-sm:absolute max-sm:end-0 max-sm:top-0">
+            <DropdownMenu
+              label={t('moreActions', { name: contactName })}
+              trigger={<IconButton icon="ellipsis" size="sm" label={t('moreActions', { name: contactName })} />}
+              items={[{ label: t('remove'), icon: 'trash-2', tone: 'danger', onSelect: () => setRemoveOpen(true) }]}
+            />
+          </span>
 
           <ConfirmationDialog
             open={promoteOpen}

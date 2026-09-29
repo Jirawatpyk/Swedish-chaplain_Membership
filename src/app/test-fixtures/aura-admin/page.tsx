@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation';
-import { getTranslations } from 'next-intl/server';
+import { getLocale, getTranslations } from 'next-intl/server';
 
 import { PageHeader } from '@/components/layout/page-header';
 import { StaffShell } from '@/components/layout/staff-shell';
@@ -380,9 +380,9 @@ export default async function AuraAdminPreviewPage({
           verificationPending: new Set(),
           can: { write: !manager, marketing: !manager },
           features: { f9Dashboard: true, f7Broadcasts: true },
-          locale: 'en',
+          locale: await getLocale(),
           slots: {
-            pendingChangeRequest: state === 'default' ? await PendingChangeRequestAlert({ requestId: 'cr-1', submitterName: 'Erik Johansson', submitterRole: 'Primary contact' }) : null,
+            pendingChangeRequest: state === 'default' ? await PendingChangeRequestAlert({ requestId: 'cr-1', submitterName: 'Erik Johansson', submitterRole: (await getTranslations('admin.changeRequests.review'))('roles.primary') }) : null,
             strip: (
               <MemberSummaryStrip
                 outstanding={{ state: 'ok', sumSatang: 3852000n, count: 1, earliestDueIso: '2026-10-15', partial: false }}

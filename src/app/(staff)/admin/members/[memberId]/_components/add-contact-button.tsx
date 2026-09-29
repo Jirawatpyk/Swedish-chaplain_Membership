@@ -20,7 +20,8 @@ export function AddContactButton({ memberId }: { readonly memberId: string }) {
       trigger={
         <button type="button" className={buttonClass({ variant: 'secondary', size: 'sm' })}>
           <PlusIcon className="size-4" aria-hidden="true" />
-          {t('add')}
+          {/* An icon button on a phone (board `Admin-member-detail-mobile`); the word stays its name. */}
+          <span className="max-sm:sr-only">{t('add')}</span>
         </button>
       }
     />

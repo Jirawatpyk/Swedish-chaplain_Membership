@@ -65,6 +65,8 @@ function languageName(code: string, locale: string): string {
   }
 }
 
+const LINK_CLASS = 'min-w-0 break-all font-medium text-[var(--aura-fg-accent)] underline-offset-4 hover:underline';
+
 export function ContactBlock({
   contact,
   memberId,
@@ -113,13 +115,23 @@ export function ContactBlock({
   // level (single `Date.now()` per request) and passed in via the
   // `pendingInvitation` prop.
   const daysUntilExpiry = pendingInvitation?.daysUntilExpiry ?? null;
+  const language = languageName(contact.preferredLanguage, locale);
+  // The ⋯ (remove) exists only for a non-primary contact a writer can edit;
+  // on a phone it sits at the top right, so the name column leaves it room.
+  const hasCornerMenu = canWrite && !contact.isPrimary;
   // Rendered as a plain flat row (no border, no bg) inside the outer
   // Contacts Card. Multiple contacts are separated by <Separator />
   // elements in the parent CardContent — no nested cards, no visual
   // card-in-card anti-pattern.
+  //
+  // Below 640px the row is the `Admin-member-detail-mobile` board's compact
+  // form: the header row dissolves (`contents`) so the actions can follow
+  // the details, "Role · Language" sits under the name and the Role and
+  // Language fields drop out, and email and phone are links whose labels
+  // stay for screen readers.
   return (
-    <div>
-      <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+    <div className="relative max-sm:flex max-sm:flex-col max-sm:gap-3">
+      <div className="max-sm:contents sm:mb-3 sm:flex sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         {/* Round-11 review fix — badges moved OUT of the <h3> so the
             heading text reads cleanly to screen readers (was producing
             "John Smith Primary Portal linked Expires in 5 days" as a
@@ -127,12 +139,19 @@ export function ContactBlock({
             cluster live in adjacent flex containers, separated by
             `gap-2`. The badge cluster ships its own aria-label so SRs
             still hear the state info after the heading. */}
-        <div className="flex min-w-0 flex-col gap-1">
+        <div className={`flex min-w-0 flex-col gap-1${hasCornerMenu ? ' max-sm:pe-10' : ''}`}>
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <ContactAvatar name={`${contact.firstName} ${contact.lastName}`.trim()} />
-            <h3 className="text-base font-semibold">
-              {`${contact.firstName} ${contact.lastName}`.trim()}
-            </h3>
+            {/* On a phone "Role · Language" sits under the name, beside the
+                avatar (board `Admin-member-detail-mobile`). */}
+            <div className="flex min-w-0 flex-col">
+              <h3 className="text-base font-semibold">
+                {`${contact.firstName} ${contact.lastName}`.trim()}
+              </h3>
+              <p className="text-xs text-[var(--aura-fg-secondary)] sm:hidden">
+                {[contact.roleTitle, language].filter(Boolean).join(' · ')}
+              </p>
+            </div>
             {/* `role="group"` — a bare <div> is `generic`, on which `aria-label`
                 is ARIA-prohibited (axe `aria-prohibited-attr`, a hard violation
                 once the cluster is empty). `empty:hidden` drops the labelled
@@ -254,7 +273,7 @@ export function ContactBlock({
         </div>
         {/* S1-P1-10: write affordances hidden for the read-only manager. */}
         {canWrite && (
-          <div className="flex flex-wrap items-center justify-start gap-2 sm:shrink-0 sm:justify-end">
+          <div className="flex flex-wrap items-center justify-start gap-2 max-sm:order-last sm:shrink-0 sm:justify-end">
             {canInvite && (
               <InvitePortalButton memberId={memberId} contactId={contact.contactId} />
             )}
@@ -308,16 +327,34 @@ export function ContactBlock({
       <dl className="grid grid-cols-1 gap-x-8 gap-y-1 sm:grid-cols-2">
         <DetailField
           label={t('fields.email')}
-          value={contact.email}
+          labelClassName="max-sm:sr-only"
+          value={null}
           extra={
-            <CopyButton value={contact.email} label={t('copy.copyEmail')} />
+            <>
+              <a href={`mailto:${contact.email}`} className={LINK_CLASS}>
+                {contact.email}
+              </a>
+              <CopyButton value={contact.email} label={t('copy.copyEmail')} />
+            </>
           }
         />
-        <DetailField label={t('fields.phone')} value={contact.phone} />
-        <DetailField label={t('fields.roleTitle')} value={contact.roleTitle} />
+        <DetailField
+          label={t('fields.phone')}
+          labelClassName="max-sm:sr-only"
+          value={null}
+          extra={
+            contact.phone ? (
+              <a href={`tel:${contact.phone.replace(/[^\d+]/g, '')}`} className={LINK_CLASS}>
+                {contact.phone}
+              </a>
+            ) : undefined
+          }
+        />
+        <DetailField label={t('fields.roleTitle')} value={contact.roleTitle} className="max-sm:hidden" />
         <DetailField
           label={t('fields.preferredLanguage')}
-          value={languageName(contact.preferredLanguage, locale)}
+          value={language}
+          className="max-sm:hidden"
         />
       </dl>
     </div>
