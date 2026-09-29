@@ -110,7 +110,7 @@ Addendum 17 is open:
 
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
-| #109 | the read-only input rule (`.aura-input:has(.aura-input__control:read-only:not(select))`) also matches a custom `Select`'s `<button>` trigger, so every Select gets `--aura-bg-input-disabled` and its placeholder reads 4.47:1 | none, by the maintainer's call (29 Sep): the `members-erase` @a11y e2e case stays red until AURA fixes it |
+| #109 | the read-only input rule (`.aura-input:has(.aura-input__control:read-only:not(select))`) also matches a custom `Select`'s `<button>` trigger, so every Select gets `--aura-bg-input-disabled` and its placeholder reads 4.47:1 | none, by the maintainer's call (29 Sep). The `members-erase` @a11y e2e case passes once the scan waits for the dialog's fade-in (R18 follow-up): its red was a mid-fade sample, not this bug. A Select with a placeholder on a tinted surface would still fail. |
 
 One note stays with AURA: `Menu` closes on any scroll or window resize (iOS Safari fires resize when its toolbar moves), to be checked on a real iPhone before it becomes an item.
 
