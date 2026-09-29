@@ -228,9 +228,11 @@ const PAGE_ROOT_MESSAGE =
  * Spec 122 — directories already on AURA. Any `@/components/ui/*` import
  * inside them fails lint (`eslint.ui-ratchet.mjs`). A phase PR adds its paths
  * here in the same PR that removes their last legacy import; the list only
- * grows, and is deleted at US13 when the ban goes global.
+ * grows, and is deleted at US13 when the ban goes global. The AURA
+ * internal-class ratchet (tests/unit/architecture/aura-internal-class-ratchet.test.ts)
+ * scans the same list, so a new phase joins it here too.
  */
-const MIGRATED_PATHS = [
+export const MIGRATED_PATHS = [
   // US1 — the shell.
   'src/components/layout/**',
   'src/components/shell/**',
