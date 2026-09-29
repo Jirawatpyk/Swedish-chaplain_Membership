@@ -203,24 +203,23 @@ export async function MemberInvoicesCard({
   return (
     <Card
       as="section"
-      title={
-        <span className="flex flex-wrap items-baseline gap-2">
-          {t('title')}
-          <span className="text-xs font-normal text-[var(--aura-fg-secondary)]">{t('count', { count: total })}</span>
-        </span>
-      }
+      title={t('title')}
       titleId="member-invoices-heading"
       headingLevel={2}
       actions={
-        // "New invoice" shows whenever the member already has invoices; the
-        // empty state carries its own, so the page never shows two. Admin
-        // only — managers are read-only on finance (Principle V).
-        canMutate && total > 0 ? (
-          <Link href={newInvoiceHref} className={buttonClass({ variant: 'secondary', size: 'sm' })}>
-            <PlusIcon className="size-4" aria-hidden="true" />
-            {t('newInvoice')}
-          </Link>
-        ) : undefined
+        // The count beside the heading, not in it. "New invoice" shows
+        // whenever the member already has invoices; the empty state carries
+        // its own, so the page never shows two. Admin only — managers are
+        // read-only on finance (Principle V).
+        <span className="flex items-center gap-3">
+          <span className="text-xs text-[var(--aura-fg-secondary)]">{t('count', { count: total })}</span>
+          {canMutate && total > 0 ? (
+            <Link href={newInvoiceHref} className={buttonClass({ size: 'sm' })}>
+              <PlusIcon className="size-4" aria-hidden="true" />
+              {t('newInvoice')}
+            </Link>
+          ) : null}
+        </span>
       }
     >
       <div data-testid="member-invoices-content">

@@ -20,6 +20,7 @@ import { ResendVerificationButton } from '@/components/members/resend-verificati
 import { ContactActions } from '@/components/members/contact-actions';
 import { MarketingStateBadge } from '@/components/members/marketing-state-badge';
 import { MarketingSwitch } from '@/components/members/marketing-switch';
+import { ContactAvatar } from './contact-avatar';
 
 export type PendingInvitation = {
   /**
@@ -127,6 +128,7 @@ export function ContactBlock({
             `gap-2`. The badge cluster ships its own aria-label so SRs
             still hear the state info after the heading. */}
         <div className="flex flex-wrap items-center gap-2">
+          <ContactAvatar name={`${contact.firstName} ${contact.lastName}`.trim()} />
           <h3 className="text-base font-semibold">
             {`${contact.firstName} ${contact.lastName}`.trim()}
           </h3>

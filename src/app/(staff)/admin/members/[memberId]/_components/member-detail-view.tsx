@@ -78,9 +78,10 @@ export interface MemberDetailViewProps {
 /** Anchored sections clear the sticky shell bar and the links (56 + 44 px). */
 const ANCHOR = 'scroll-mt-28';
 
+/** A group inside the company card: an h3 under the card's h2, as the board has it. */
 function SubGroupLabel({ children }: { readonly children: ReactNode }) {
   return (
-    <p className="text-xs font-medium uppercase tracking-wide text-[var(--aura-fg-secondary)]">{children}</p>
+    <h3 className="text-xs font-medium uppercase tracking-wide text-[var(--aura-fg-secondary)]">{children}</h3>
   );
 }
 
@@ -224,7 +225,8 @@ export async function renderMemberDetailView({
                 {notArchived && (
                   <>
                     <ArchiveMemberButton memberId={member.memberId} companyName={member.companyName} />
-                    <Link href={`/admin/members/${member.memberId}/edit`} className={buttonClass()}>
+                    {/* Edit leads on a phone, as the mobile board has it. */}
+                    <Link href={`/admin/members/${member.memberId}/edit`} className={`${buttonClass()} max-sm:order-first`}>
                       <PencilIcon className="size-4" aria-hidden="true" />
                       {t('editCta')}
                     </Link>
