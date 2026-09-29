@@ -165,14 +165,20 @@ describe('clearing inside the search debounce', () => {
 });
 
 describe('filter triggers as on the board (US5a)', () => {
-  it('each filter reads "<name> <value>" in one compact button over a named native select', () => {
-    renderFilters('status=active');
+  it('each filter is an AURA FilterSelect reading "<name> <value>", named after the filter (#79)', () => {
+    const { container } = renderFilters('status=active');
     const face = (name: string) =>
-      screen.getByRole('combobox', { name }).parentElement?.querySelector('[data-filter-face]');
+      screen.getByRole('combobox', { name }).closest('.aura-filterselect')?.querySelector('.aura-filterselect__face');
     expect(face('Status')).toHaveTextContent(/^Status\s*Active$/);
     expect(face('Plan')).toHaveTextContent(/^Plan\s*All$/);
     expect(face('Risk band')).toHaveTextContent(/^Risk band\s*All$/);
-    // The face is decoration; the select carries the name and the value.
-    expect(face('Status')).toHaveAttribute('aria-hidden', 'true');
+    expect(container.querySelector('[data-filter-face]')).toBeNull();
+  });
+
+  it('the search fills the row through AURA searchGrow (#83), not its classes', () => {
+    const { container } = renderFilters();
+    const bar = container.querySelector('.aura-filterbar');
+    expect(bar).toHaveClass('aura-filterbar--grow');
+    expect(bar?.className).not.toContain('[&_.aura-filterbar');
   });
 });

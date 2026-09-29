@@ -38,4 +38,11 @@ describe('directory as on the board (US5a)', () => {
     expect(screen.getByRole('searchbox', { name: messages.admin.directory.search.label })).toBeInTheDocument();
     expect(screen.queryByText('Search', { exact: true })).toBeNull();
   });
+
+  it('the search fills the row beside "Listed only" through AURA searchGrow (#83)', () => {
+    const { container } = withIntl(<DirectorySearchFilters />);
+    const bar = container.querySelector('.aura-filterbar');
+    expect(bar).toHaveClass('aura-filterbar--grow');
+    expect(bar?.className).not.toContain('[&_.aura-filterbar');
+  });
 });
