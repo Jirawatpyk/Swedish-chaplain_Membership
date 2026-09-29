@@ -1647,6 +1647,22 @@
           "title": "Ingen primär kontakt — betalningsmejl skickas inte",
           "body": "Fakturor, kvitton, annulleringsbesked och kreditnotor för den här medlemmen köas till ingen förrän en kontakt är markerad som primär. Lägg till eller befordra en kontakt för att återuppta dem.",
           "cta": "Öppna medlemmen för att åtgärda"
+        },
+        "summary": {
+          "label": "Medlemsöversikt",
+          "outstanding": "Utestående",
+          "outstandingNote": "{count, plural, one {# obetald} other {# obetalda}} · förfaller {date}",
+          "outstandingCount": "{count, plural, one {# obetald} other {# obetalda}}",
+          "outstandingNone": "Inget obetalt",
+          "outstandingPartial": "Endast de första 100 obetalda fakturorna",
+          "unavailable": "Inte tillgängligt",
+          "expires": "Medlemskapet löper ut",
+          "expiresShort": "Löper ut",
+          "daysLeft": "{days, plural, one {# dag kvar} other {# dagar kvar}}",
+          "primaryContact": "Primär kontakt",
+          "engagement": "Engagemang",
+          "lastActivity": "Senaste aktivitet {when}",
+          "lastActivityShort": "Aktiv {when}"
         }
       },
       "timeline": {

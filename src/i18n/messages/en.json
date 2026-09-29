@@ -1647,6 +1647,22 @@
           "title": "No primary contact — payment emails are not being sent",
           "body": "Invoices, receipts, void notices and credit notes for this member are queued to nobody until a contact is marked as primary. Add or promote a contact to resume them.",
           "cta": "Open the member to fix it"
+        },
+        "summary": {
+          "label": "Member summary",
+          "outstanding": "Outstanding",
+          "outstandingNote": "{count, plural, one {# unpaid} other {# unpaid}} · due {date}",
+          "outstandingCount": "{count, plural, one {# unpaid} other {# unpaid}}",
+          "outstandingNone": "Nothing unpaid",
+          "outstandingPartial": "First 100 unpaid invoices only",
+          "unavailable": "Unavailable",
+          "expires": "Membership expires",
+          "expiresShort": "Expires",
+          "daysLeft": "{days, plural, one {# day left} other {# days left}}",
+          "primaryContact": "Primary contact",
+          "engagement": "Engagement",
+          "lastActivity": "Last activity {when}",
+          "lastActivityShort": "Active {when}"
         }
       },
       "timeline": {
