@@ -271,8 +271,8 @@ export function PortalInvoiceCardList({
                         label={t('actions.downloadReceipt')}
                         ariaLabel={t('actions.downloadReceiptAria', { number: receiptRef })}
                         className={cn(
-                          buttonClass({ variant: 'secondary', size: 'sm' }),
-                          'min-h-11 flex-1 px-3',
+                          buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true }),
+                          'flex-1',
                         )}
                       />
                     ) : vm.showInvoice ? (
@@ -282,8 +282,8 @@ export function PortalInvoiceCardList({
                         label={invoiceLabel}
                         ariaLabel={invoiceAria}
                         className={cn(
-                          buttonClass({ variant: 'secondary', size: 'sm' }),
-                          'min-h-11 flex-1 px-3',
+                          buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true }),
+                          'flex-1',
                           vm.mainPdfKind === 'combined' && 'h-auto whitespace-normal',
                         )}
                       />

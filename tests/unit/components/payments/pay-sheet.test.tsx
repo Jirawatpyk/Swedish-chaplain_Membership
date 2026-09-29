@@ -150,7 +150,8 @@ describe('<PaySheet>', () => {
     const closeBtn = screen.getByTestId('pay-sheet-close');
     expect(closeBtn.getAttribute('aria-label')).toBe('Close payment drawer');
     // sized through AURA's closeProps (5.9, handoff #70), not a reach into its classes
-    expect(closeBtn.className).toContain('min-h-11');
+    // AURA #100 (5.15): 44px on phones through closeProps.touchHeight
+    expect(closeBtn).toHaveClass('aura-icon-btn--touch');
     expect(screen.getByTestId('pay-sheet-content').className).not.toContain('aura-icon-btn');
   });
 

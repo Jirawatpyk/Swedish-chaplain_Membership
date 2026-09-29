@@ -154,7 +154,7 @@ export function ReceiptStatusWatcher({
       aria-busy="true"
       data-testid="receipt-status-watcher"
       className={cn(
-        buttonClass({ variant: 'secondary', size: 'sm' }),
+        buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true }),
         // 088 B3 (revised) — the VISIBLE label is now the SHORT "Generating…"
         // chip, so it stays one compact line in BOTH the desktop invoice-table
         // actions cell (the full sentence + whitespace-normal previously wrapped
@@ -162,7 +162,7 @@ export function ReceiptStatusWatcher({
         // "Generating…") AND the 320px portal card (short label doesn't clip, so
         // the whitespace-normal wrap workaround is no longer needed). The full
         // sentence + reassurance ride in the sr-only span → SR parity unchanged.
-        'min-h-11 gap-1 px-3 cursor-progress',
+        'gap-1 cursor-progress',
         className,
       )}
     >

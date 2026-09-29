@@ -85,7 +85,8 @@ export function PaymentFailurePanel({
           icon="rotate-ccw"
           onClick={onRetry}
           // WCAG 2.5.5 / SC 2.5.8 — ≥ 44×44 px on mobile.
-          className="mt-3 min-h-11 px-4"
+          touchHeight
+          className="mt-3"
           data-testid={ctaTestId}
         >
           {ctaLabel}

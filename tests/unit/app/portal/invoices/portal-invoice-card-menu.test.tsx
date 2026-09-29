@@ -60,8 +60,7 @@ describe('<PortalInvoiceCardMenu>', () => {
     expect(trigger).toHaveAttribute('aria-haspopup', 'menu');
     // The same secondary button as the download beside it, square at 44px.
     expect(trigger.className).toContain('aura-btn--secondary');
-    expect(trigger.className).toContain('min-h-11');
-    expect(trigger.className).toContain('min-w-11');
+    expect(trigger).toHaveClass('aura-btn--touch', 'aspect-square');
 
     openMenu();
     const items = screen.getAllByRole('menuitem').map((el) => el.textContent?.trim());

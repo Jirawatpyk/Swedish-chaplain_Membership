@@ -172,13 +172,8 @@ describe('<InvoiceFilters> — row layout (spec 122 US4)', () => {
     renderFilters({ statusOptions: ['issued', 'paid'], showPaidOnlineChip: false });
     const bar = document.querySelector('.aura-filterbar');
     expect(bar).not.toBeNull();
-    for (const token of [
-      'max-lg:[&_.aura-filterbar\\_\\_search]:basis-full',
-      'max-lg:[&_.aura-filterbar\\_\\_search]:max-w-none',
-      'max-lg:[&_.aura-filterbar\\_\\_controls]:basis-full',
-      'max-lg:[&_.aura-filterbar\\_\\_controls>.aura-field]:flex-[1_1_8rem]',
-    ]) {
-      expect(bar!.className).toContain(token);
-    }
+    // AURA #92 (5.15): FilterBar's own props, no reach into its parts
+    expect(bar).toHaveClass('aura-filterbar--fill', 'aura-filterbar--stack-lg');
+    expect(bar!.className).not.toContain('[&_.aura-filterbar');
   });
 });
