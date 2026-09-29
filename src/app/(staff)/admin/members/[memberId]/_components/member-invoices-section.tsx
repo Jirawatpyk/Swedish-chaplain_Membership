@@ -24,7 +24,7 @@
  *   - `member`  — never reaches this surface (admin route).
  */
 import Link from 'next/link';
-import { getTranslations, getFormatter, getLocale } from 'next-intl/server';
+import { getTranslations, getLocale } from 'next-intl/server';
 import { canPerform } from '@/lib/rbac';
 import type { Role } from '@/modules/auth/domain/role';
 import { PlusIcon } from 'lucide-react';
@@ -39,6 +39,7 @@ import { MemberInvoicesFilters } from './member-invoices-filters';
 import { MemberInvoicesTable, type MemberInvoiceRow } from './member-invoices-table';
 import { resolveMemberInvoiceDisplayNumber } from './resolve-invoice-display-number';
 import { formatDatePreset } from '@/lib/format-date-localised';
+import { formatSatangThb } from '@/lib/format-thb';
 
 interface MemberInvoicesSectionProps {
   readonly tenant: TenantContext;
@@ -74,7 +75,6 @@ export async function MemberInvoicesSection({
   searchFilter,
 }: MemberInvoicesSectionProps): Promise<React.ReactElement> {
   const t = await getTranslations('admin.members.invoices');
-  const format = await getFormatter();
   const locale = await getLocale();
 
   // G-U7F — fetch the unfiltered count once so we know whether to
@@ -136,13 +136,9 @@ export async function MemberInvoicesSection({
   // outside the first version of the page gate's scan radius).
   const canMutate = canPerform(role, 'invoicing.write');
 
+  // The board's form ("38,520.00 THB"), the same as the figures strip above.
   const formatBaht = (satang: bigint | null): string =>
-    satang === null
-      ? '—'
-      : format.number(Number(satang) / 100, {
-          style: 'currency',
-          currency: 'THB',
-        });
+    satang === null ? '—' : formatSatangThb(satang, locale);
 
   const formatDate = (iso: string | null): string =>
     iso === null ? '—' : formatDatePreset(iso, locale, 'dateMedium2Digit');

@@ -358,9 +358,9 @@ export default async function AuraAdminPreviewPage({
       : MEMBER) as Member;
     const contacts = state === 'no-primary' ? MEMBER_CONTACTS.filter((c) => !c.isPrimary) : MEMBER_CONTACTS;
     const invoiceRows = [
-      { invoiceId: 'i1', number: 'SC-2026-000123', status: 'issued' as const, statusLabel: 'Issued', issued: '15 Sep 2026', due: '15 Oct 2026', paid: null, total: '฿38,520.00', remaining: '฿38,520.00', owing: true },
-      { invoiceId: 'i2', number: 'SC-2026-000045', status: 'paid' as const, statusLabel: 'Paid', issued: '12 Mar 2026', due: '11 Apr 2026', paid: '20 Mar 2026', total: '฿2,140.00', remaining: '฿0.00', owing: false },
-      { invoiceId: 'i3', number: 'SC-2025-000087', status: 'paid' as const, statusLabel: 'Paid', issued: '15 Sep 2025', due: '15 Oct 2025', paid: '30 Sep 2025', total: '฿38,520.00', remaining: '฿0.00', owing: false },
+      { invoiceId: 'i1', number: 'SC-2026-000123', status: 'issued' as const, statusLabel: 'Issued', issued: '15 Sep 2026', due: '15 Oct 2026', paid: null, total: '38,520.00 THB', remaining: '38,520.00 THB', owing: true },
+      { invoiceId: 'i2', number: 'SC-2026-000045', status: 'paid' as const, statusLabel: 'Paid', issued: '12 Mar 2026', due: '11 Apr 2026', paid: '20 Mar 2026', total: '2,140.00 THB', remaining: '0.00 THB', owing: false },
+      { invoiceId: 'i3', number: 'SC-2025-000087', status: 'paid' as const, statusLabel: 'Paid', issued: '15 Sep 2025', due: '15 Oct 2025', paid: '30 Sep 2025', total: '38,520.00 THB', remaining: '0.00 THB', owing: false },
     ];
     return (
       <StaffFrame path={`/admin/members/${MEMBER_ID}`}>

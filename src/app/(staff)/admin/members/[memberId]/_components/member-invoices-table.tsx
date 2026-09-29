@@ -27,7 +27,7 @@ export interface MemberInvoiceRow {
   readonly paid: string | null;
   readonly total: string;
   readonly remaining: string;
-  /** Something is still owed on an unpaid invoice: the Remaining figure is flagged. */
+  /** Flags the Remaining figure: set when it is above zero on a row that is not paid. */
   readonly owing: boolean;
   // DataTable reads rows as records.
   readonly [key: string]: unknown;

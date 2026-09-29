@@ -42,8 +42,8 @@ const issued: MemberInvoiceRow = {
   issued: '15 Sep 2026',
   due: '15 Oct 2026',
   paid: null,
-  total: '฿38,520.00',
-  remaining: '฿38,520.00',
+  total: '38,520.00 THB',
+  remaining: '38,520.00 THB',
   owing: true,
 };
 const paid: MemberInvoiceRow = {
@@ -53,7 +53,7 @@ const paid: MemberInvoiceRow = {
   status: 'paid',
   statusLabel: 'Paid',
   paid: '20 Mar 2026',
-  remaining: '฿0.00',
+  remaining: '0.00 THB',
   owing: false,
 };
 
@@ -69,7 +69,7 @@ describe('MemberInvoicesTable (T556)', () => {
     const headers = within(grid).getAllByRole('columnheader').map((h) => h.textContent?.trim());
     expect(headers.slice(0, 7)).toEqual(['Number', 'Status', 'Issued', 'Due', 'Paid', 'Total', 'Remaining']);
     expect(grid).toHaveTextContent('SC-2026-000123');
-    expect(grid).toHaveTextContent('฿38,520.00');
+    expect(grid).toHaveTextContent('38,520.00 THB');
     // The dash is read as words, not as "dash" (G-U7P).
     expect(screen.getByText(labels.notPaid)).toHaveClass('sr-only');
   });
