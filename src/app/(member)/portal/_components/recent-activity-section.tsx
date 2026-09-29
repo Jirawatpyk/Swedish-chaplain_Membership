@@ -10,8 +10,9 @@ import { toTimelineItemProps } from '@/lib/timeline-presenter';
 import { asMemberId, timelineList } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { ArrowRight } from 'lucide-react';
-import { Card, buttonClass } from '@jirawatpyk/aura-react/server';
+import { Card, Icon, buttonClass } from '@jirawatpyk/aura-react/server';
 import { SkeletonBlock } from '@/components/shell/page-skeletons';
+import { AuraCardSkeleton } from '@/components/shell/aura-card-skeleton';
 import { RecentActivityList } from './recent-activity-list';
 
 /**
@@ -104,7 +105,7 @@ export async function RecentActivitySection({
           <div className="border-t border-[var(--aura-border-default)] pt-3">
             <Link href="/portal/timeline" className={VIEW_ALL_LINK}>
               {t('viewAll')}
-              <ArrowRight size={16} className="aura-icon" aria-hidden="true" />
+              <Icon name={<ArrowRight />} size={16} />
             </Link>
           </div>
         </div>
@@ -113,22 +114,19 @@ export async function RecentActivitySection({
   );
 }
 
-/** The board's 13px text link in AURA's link colour, a 44px target on phones. */
+/** The board's text link: AURA's 13px label in its link colour, a 44px target on phones. */
 const VIEW_ALL_LINK =
-  'inline-flex min-h-11 items-center gap-1.5 text-[13px] font-medium text-[var(--aura-fg-accent)] no-underline hover:text-[var(--aura-fg-primary)] hover:underline sm:min-h-0';
+  'inline-flex min-h-11 items-center gap-1.5 aura-text-label text-[var(--aura-fg-accent)] no-underline hover:text-[var(--aura-fg-primary)] hover:underline sm:min-h-0';
 
 export function RecentActivitySkeleton(): React.JSX.Element {
   return (
-    <div aria-busy="true" aria-hidden="true" className="aura-card">
-      <div className="aura-card__head">
-        <SkeletonBlock className="h-5 w-40" />
-      </div>
-      <div className="aura-card__body flex flex-col gap-3">
+    <AuraCardSkeleton title={<SkeletonBlock className="h-5 w-40" />}>
+      <div className="flex flex-col gap-3">
         {Array.from({ length: 3 }).map((_, i) => (
           <SkeletonBlock key={i} className="h-10 w-full" />
         ))}
       </div>
-    </div>
+    </AuraCardSkeleton>
   );
 }
 

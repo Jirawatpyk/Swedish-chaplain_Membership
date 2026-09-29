@@ -220,7 +220,11 @@ export async function MembershipStatSection({
   );
 }
 
-/** Skeleton in the shape of a stat tile while the async section streams in. */
+/**
+ * Skeleton in the shape of a stat tile while the async section streams in.
+ * AURA's Stat surface by its class: a stand-in until AURA #88 (Stat from
+ * /server, whose `loading` draws this).
+ */
 export function StatSkeleton(): React.JSX.Element {
   return (
     <div aria-busy="true" aria-hidden="true" className="aura-stat h-full gap-2">

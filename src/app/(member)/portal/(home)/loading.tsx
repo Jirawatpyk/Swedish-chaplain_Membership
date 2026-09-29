@@ -5,6 +5,7 @@ import {
   PageSkeletonShell,
   SkeletonBlock,
 } from '@/components/shell/page-skeletons';
+import { AuraCardSkeleton } from '@/components/shell/aura-card-skeleton';
 import { StatSkeleton } from '../_components/membership-stat-section';
 import { RecentActivitySkeleton } from '../_components/recent-activity-section';
 
@@ -52,30 +53,22 @@ export default async function Loading() {
         {/* 2-col: invoices summary | benefits quota */}
         <div className="grid grid-cols-1 gap-[var(--page-section-gap)] lg:grid-cols-2">
           {/* Invoices summary card skeleton (AURA card, spec 122 US3) */}
-          <div aria-busy="true" aria-hidden="true" className="aura-card">
-            <div className="aura-card__head flex-col items-start gap-1">
-              <SkeletonBlock className="h-5 w-36" />
-              <SkeletonBlock className="h-3 w-56" />
-            </div>
-            <div className="aura-card__body flex flex-col gap-3">
+          <AuraCardSkeleton title={<SkeletonBlock className="h-5 w-36" />} description={<SkeletonBlock className="h-3 w-56" />}>
+            <div className="flex flex-col gap-3">
               {Array.from({ length: 3 }).map((_, i) => (
                 <SkeletonBlock key={i} className="h-10 w-full" />
               ))}
             </div>
-          </div>
+          </AuraCardSkeleton>
 
           {/* Benefits quota card skeleton */}
-          <div aria-busy="true" aria-hidden="true" className="aura-card">
-            <div className="aura-card__head flex-col items-start gap-1">
-              <SkeletonBlock className="h-5 w-32" />
-              <SkeletonBlock className="h-3 w-48" />
-            </div>
-            <div className="aura-card__body flex flex-col gap-3">
+          <AuraCardSkeleton title={<SkeletonBlock className="h-5 w-32" />} description={<SkeletonBlock className="h-3 w-48" />}>
+            <div className="flex flex-col gap-3">
               {Array.from({ length: 4 }).map((_, i) => (
                 <SkeletonBlock key={i} className="h-4 w-full" />
               ))}
             </div>
-          </div>
+          </AuraCardSkeleton>
         </div>
 
         {/* Recent-activity card */}

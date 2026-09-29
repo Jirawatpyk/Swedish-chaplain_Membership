@@ -36,7 +36,7 @@ import {
   type Invoice,
 } from '@/modules/invoicing';
 import { buildMembersDeps } from '@/modules/members/members-deps';
-import { Card, StatusPill, buttonClass } from '@jirawatpyk/aura-react/server';
+import { Card, Icon, StatusPill, buttonClass } from '@jirawatpyk/aura-react/server';
 import { cn } from '@/lib/utils';
 import {
   formatDate,
@@ -301,10 +301,10 @@ export function InvoicesSummaryView({
           <div className="border-t border-[var(--aura-border-default)] pt-3">
             <Link
               href="/portal/invoices"
-              className="inline-flex min-h-11 items-center gap-1.5 text-[13px] font-medium text-[var(--aura-fg-accent)] no-underline hover:text-[var(--aura-fg-primary)] hover:underline sm:min-h-0"
+              className="inline-flex min-h-11 items-center gap-1.5 aura-text-label text-[var(--aura-fg-accent)] no-underline hover:text-[var(--aura-fg-primary)] hover:underline sm:min-h-0"
             >
               {t('summary.viewAll')}
-              <ArrowRight aria-hidden="true" size={16} className="aura-icon" />
+              <Icon name={<ArrowRight />} size={16} />
             </Link>
           </div>
           </>

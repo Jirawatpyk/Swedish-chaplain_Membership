@@ -2,7 +2,7 @@ import { Suspense } from 'react';
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
 import { PackageOpen } from 'lucide-react';
-import { Badge, StatusPill, buttonClass } from '@jirawatpyk/aura-react/server';
+import { Badge, Card, StatusPill, buttonClass } from '@jirawatpyk/aura-react/server';
 import { EmptyState } from '@/components/shell/empty-state';
 import { SkeletonBlock } from '@/components/shell/page-skeletons';
 import { DetailContainer } from '@/components/layout';
@@ -179,13 +179,13 @@ export default async function MemberPortalHomePage() {
 /** Placeholder for the 2-col benefits quota panel while it streams. */
 function BenefitsPanelSkeleton(): React.JSX.Element {
   return (
-    <div aria-busy="true" aria-hidden="true" className="aura-card">
-      <div className="aura-card__body flex flex-col gap-4">
+    <Card as="div" aria-busy="true" aria-hidden="true">
+      <div className="flex flex-col gap-4">
         <SkeletonBlock className="h-5 w-40" />
         <SkeletonBlock className="h-3 w-full" />
         <SkeletonBlock className="h-3 w-5/6" />
         <SkeletonBlock className="h-3 w-2/3" />
       </div>
-    </div>
+    </Card>
   );
 }

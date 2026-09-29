@@ -15,7 +15,7 @@ import Link from 'next/link';
 import { ArrowRight, CalendarDays, Mail, type LucideIcon } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { Progress } from '@jirawatpyk/aura-react';
-import { Card, buttonClass } from '@jirawatpyk/aura-react/server';
+import { Card, Icon as AuraIcon, buttonClass } from '@jirawatpyk/aura-react/server';
 import { formatCalendarYear, getDateFormatLocale } from '@/lib/format-date-localised';
 import { cn } from '@/lib/utils';
 import type { BenefitUsageItem } from './benefit-usage-card';
@@ -106,7 +106,7 @@ export function PortalBenefitsSummaryCard({
                     href={b.actionHref}
                     className={cn(buttonClass({ variant: 'secondary' }), 'shrink-0 self-start no-underline sm:w-[148px] sm:self-auto')}
                   >
-                    {Icon ? <Icon className="aura-icon size-4" aria-hidden /> : null}
+                    {Icon ? <AuraIcon name={<Icon />} size={16} /> : null}
                     {t(`benefit.action.${b.key}`)}
                   </Link>
                 ) : null}
@@ -117,10 +117,10 @@ export function PortalBenefitsSummaryCard({
         <div className="border-t border-[var(--aura-border-default)] pt-3">
           <Link
             href={fullHref}
-            className="inline-flex min-h-11 items-center gap-1.5 text-[13px] font-medium text-[var(--aura-fg-accent)] no-underline hover:text-[var(--aura-fg-primary)] hover:underline sm:min-h-0"
+            className="inline-flex min-h-11 items-center gap-1.5 aura-text-label text-[var(--aura-fg-accent)] no-underline hover:text-[var(--aura-fg-primary)] hover:underline sm:min-h-0"
           >
             {t('card.fullBenefits')}
-            <ArrowRight aria-hidden="true" size={16} className="aura-icon" />
+            <AuraIcon name={<ArrowRight />} size={16} />
           </Link>
         </div>
       </div>
@@ -131,7 +131,8 @@ export function PortalBenefitsSummaryCard({
 /**
  * AURA's Progress with a second, striped segment for reserved E-Blasts (the
  * `Main` board): the same `aura-progress` markup and classes, so it matches
- * the bars beside it; `aria-valuetext` says all three counts.
+ * the bars beside it; `aria-valuetext` says all three counts. AURA's
+ * `Progress` draws one bar: a stand-in until AURA #89 (reserved segment).
  */
 function ReservedProgress({
   label,
@@ -152,6 +153,7 @@ function ReservedProgress({
 }) {
   const pct = (n: number) => `${total > 0 ? Math.min(100, Math.max(0, (n / total) * 100)) : 0}%`;
   const usedPct = pct(used);
+  // stand-in until AURA #89 (Progress reserved segment): AURA's markup by hand
   return (
     <div className="aura-progress">
       <div className="aura-progress__head">
@@ -167,6 +169,7 @@ function ReservedProgress({
         aria-valuenow={used}
         aria-valuetext={valueText}
       >
+        {/* stand-in until AURA #89: the used and reserved bars */}
         <span className="aura-progress__bar" style={{ width: usedPct }} />
         <span
           className="aura-progress__bar rounded-none opacity-60"

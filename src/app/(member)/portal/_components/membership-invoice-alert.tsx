@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { ArrowRight } from 'lucide-react';
-import { Alert, buttonClass } from '@jirawatpyk/aura-react/server';
+import { Alert, Icon, buttonClass } from '@jirawatpyk/aura-react/server';
 import { cn } from '@/lib/utils';
 
 /**
@@ -54,7 +54,7 @@ export function MembershipInvoiceAlert({
           )}
         >
           {online ? t('payNow') : t('viewInvoice')}
-          <ArrowRight aria-hidden className="aura-icon size-4" />
+          <Icon name={<ArrowRight />} size={16} />
         </Link>
       </div>
     </Alert>

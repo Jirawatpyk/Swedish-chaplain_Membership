@@ -6,7 +6,7 @@ import {
   XCircle,
   type LucideIcon,
 } from 'lucide-react';
-import { buttonClass } from '@jirawatpyk/aura-react/server';
+import { Icon as AuraIcon, buttonClass } from '@jirawatpyk/aura-react/server';
 import { cn } from '@/lib/utils';
 
 /**
@@ -23,7 +23,8 @@ import { cn } from '@/lib/utils';
  *
  * Spec 122 US3: AURA `Stat` markup (the `Main` / `Home-mobile` boards), drawn
  * with AURA's classes because this is a server component and `Stat` is not in
- * `@jirawatpyk/aura-react/server`.
+ * `@jirawatpyk/aura-react/server` (and its label is never a heading): a
+ * stand-in until AURA #88 (Stat from /server, label `headingLevel`).
  * The label keeps its h2; `data-testid` / `data-variant` stay for the e2e.
  *
  * The variant set is intentionally identical to the route-layer `StatVariant`
@@ -127,6 +128,7 @@ export function StatCard({
   const showStatus = variant !== 'neutral' && Boolean(variantLabel);
   const Icon = icon ?? (variant === 'neutral' ? Info : VARIANT_ICON[variant]);
 
+  // stand-in until AURA #88 (Stat from /server): AURA's Stat markup by hand
   return (
     <div
       data-testid="stat-card"
@@ -147,9 +149,10 @@ export function StatCard({
             label
           )}
         </h2>
+        {/* stand-in until AURA #88 */}
         {HeadIcon ? (
           <span className="aura-stat__icon">
-            <HeadIcon size={16} className="aura-icon" aria-hidden="true" focusable="false" />
+            <AuraIcon name={<HeadIcon focusable="false" />} size={16} />
           </span>
         ) : null}
       </div>
@@ -165,7 +168,7 @@ export function StatCard({
             <span
               data-testid="stat-card-status"
               className={cn(
-                'inline-flex items-center gap-1.5 text-[13px] font-medium',
+                'inline-flex items-center gap-1.5 aura-text-label',
                 VARIANT_STATUS_CLASS[variant as Exclude<StatCardVariant, 'neutral'>],
               )}
             >
