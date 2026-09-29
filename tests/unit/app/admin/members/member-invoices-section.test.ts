@@ -46,4 +46,16 @@ describe('MemberInvoicesSection money form (T556)', () => {
     })) as ReactElement<{ rows: { total: string; remaining: string }[] }>;
     expect(el.props.rows[0]).toMatchObject({ total: '38,520.00 THB', remaining: '37,520.00 THB' });
   });
+
+  // UX review (board): the h2 is "Invoices"; the count sits beside it, not
+  // inside it (it read "Invoices 1 invoice").
+  it('the card heading is the title alone; New invoice is the primary action', async () => {
+    const { render, screen } = await import('@testing-library/react');
+    const { MemberInvoicesCard } = await import(
+      '@/app/(staff)/admin/members/[memberId]/_components/member-invoices-section'
+    );
+    render((await MemberInvoicesCard({ memberId: 'm-1', total: 3, rows: [], canMutate: true, hasFilter: false, showFilters: false })) as ReactElement);
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent(/^Invoices$/);
+    expect(screen.getByRole('link', { name: /New invoice/ })).toHaveClass('aura-btn--primary');
+  });
 });

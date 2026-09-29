@@ -237,6 +237,15 @@ describe('renderMemberDetailView — sections and "On this page" (T553)', () => 
     expect(alert.compareDocumentPosition(strip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  // UX review (board): Organisation and Membership are h3 under the company
+  // card's h2, so heading navigation reaches them.
+  it('the company card groups are h3 headings', async () => {
+    await renderView();
+    const D = enMessages.admin.members.detail;
+    expect(screen.getByRole('heading', { level: 3, name: D.sections.organisation })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 3, name: D.sections.membership })).toBeInTheDocument();
+  });
+
   // UX review M6 (2.5.3 Label in Name): the link's name starts with the
   // address it shows; "opens in a new tab" follows for screen readers.
   it('the website link is named by the address it shows', async () => {
