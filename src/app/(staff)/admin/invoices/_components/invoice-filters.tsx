@@ -509,6 +509,7 @@ export function InvoiceFilters({
   // share the next one evenly, so their edges line up with the search (AURA
   // does the search row only below 768px, which left 768–1023px ragged). From
   // 1024px it is AURA's one row: search, then the fixed-width filters.
+  // A stand-in until AURA #92 (FilterBar controls sharing the row, stack breakpoint).
   const bar = (children: React.ReactNode) => (
     <FilterBar
       key={searchResetKey}

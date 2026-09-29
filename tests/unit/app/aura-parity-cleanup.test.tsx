@@ -230,7 +230,7 @@ describe('US4 portal invoices and pay sheet', () => {
   });
 
   it.each([`${PAY}/index.tsx`, 'src/app/test-fixtures/aura-portal/pay-preview.tsx'])(
-    '%s keeps AURA’s drawer close button (32px, a 44px touch halo)',
+    '%s sizes the drawer close button through AURA’s closeProps, not its classes',
     (file) => {
       expect(src(file)).not.toMatch(/aura-icon-btn/);
     },

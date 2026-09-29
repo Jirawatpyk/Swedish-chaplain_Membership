@@ -310,8 +310,9 @@ export async function renderPortalInvoicesView({
       {alert}
       {/* Below 1024px, where the rows turn into cards, the card frame drops
           away: those rows are cards of their own (the `Invoices-mobile`
-          board), not cards in a card. */}
-      <Card className="max-lg:border-0 max-lg:bg-transparent max-lg:shadow-none max-lg:[&_.aura-card\_\_body]:p-0">
+          board), not cards in a card.
+          A stand-in until AURA #93 (Card frameless below a breakpoint). */}
+      <Card className="max-lg:border-0 max-lg:bg-transparent max-lg:shadow-none">
         <div className="flex flex-col gap-4">
           {/* Reuse the admin InvoiceFilters client component for UI parity
               (same shadcn Select, same debounced search, same X-clear

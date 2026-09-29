@@ -149,7 +149,9 @@ describe('<PaySheet>', () => {
     renderPaySheet();
     const closeBtn = screen.getByTestId('pay-sheet-close');
     expect(closeBtn.getAttribute('aria-label')).toBe('Close payment drawer');
-    expect(screen.getByTestId('pay-sheet-content').className).toContain('min-h-11');
+    // sized through AURA's closeProps (5.9, handoff #70), not a reach into its classes
+    expect(closeBtn.className).toContain('min-h-11');
+    expect(screen.getByTestId('pay-sheet-content').className).not.toContain('aura-icon-btn');
   });
 
   it('is an AURA drawer on the right, 480px (full screen below 640px), titled with the document number (FR-028h, `Pay-*` boards)', () => {

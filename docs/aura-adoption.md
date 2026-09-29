@@ -85,7 +85,7 @@ Phases 2–12 each depend on 1 and can land in any order.
 
 ## AURA gaps (the handoff doc)
 
-The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, items 52–56 (Addendum 4) in 5.6.0, items 57–62 (Addendum 5, found in US1) in 5.7.0, item 63 in 5.7.1, item 64 (Addendum 6) in 5.7.2, item 65 (Addendum 7, found in US2) in 5.7.3, items 66–69 (Addendum 8, found in US3) in 5.8.0, items 70–71 (Addendum 9, found in US4) in 5.9.0, items 72–74 (Addendum 10, found adopting 5.9.0 in US4) in 5.10.0, items 75–78 (Addendum 11, found in US5a) in 5.11.0, item 79 (Addendum 12) in 5.12.0 and items 80–84 (Addendum 13) in **5.13.0**, the current pin. Open items: #85, found adopting 5.13.0, and #86–#99 (Addendum 15), found applying the parity rule to US1–US5a:
+The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, items 52–56 (Addendum 4) in 5.6.0, items 57–62 (Addendum 5, found in US1) in 5.7.0, item 63 in 5.7.1, item 64 (Addendum 6) in 5.7.2, item 65 (Addendum 7, found in US2) in 5.7.3, items 66–69 (Addendum 8, found in US3) in 5.8.0, items 70–71 (Addendum 9, found in US4) in 5.9.0, items 72–74 (Addendum 10, found adopting 5.9.0 in US4) in 5.10.0, items 75–78 (Addendum 11, found in US5a) in 5.11.0, item 79 (Addendum 12) in 5.12.0 and items 80–84 (Addendum 13) in **5.13.0**, the current pin. Open items: #85, found adopting 5.13.0, and #86–#100 (Addendum 15), found applying the parity rule to US1–US5a:
 
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
@@ -104,6 +104,7 @@ The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requ
 | #97 | `AppShell` whose content area has no padding of its own, so the page containers own it | `.chamber-shell .aura-shell__content` and the bottom-nav offset in `src/app/globals.css` |
 | #98 | `DataTable` selection callback that reports how the change was made (Shift-click range) | `closest('.aura-table__sel')` in `src/components/members/members-table.tsx` |
 | #99 | `Checkbox` hit area larger than its box, for dense decision rows (WCAG 2.5.8) | `[&_.aura-check__input]` insets in `src/components/members/change-requests/change-request-decision-table.tsx` |
+| #100 | a small `Button` (and the Drawer / menu icon trigger) whose box is 44px tall on phones, not only its touch halo (WCAG 2.5.5, ux-standards § 9.1) | `min-h-11` with the matching padding on the `size="sm"` buttons of the portal invoices (`page.tsx`, `portal-invoice-card-list.tsx`, `portal-invoice-card-menu.tsx`, `receipt-status-watcher.tsx`), the invoice detail and its pay sheet panels, and the pay sheet's `closeProps` (no reach into AURA's classes) |
 
 One note stays with AURA: `Menu` closes on any scroll or window resize (iOS Safari fires resize when its toolbar moves), to be checked on a real iPhone before it becomes an item.
 

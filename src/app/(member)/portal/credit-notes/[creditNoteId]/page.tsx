@@ -43,7 +43,7 @@ import { buildMembersDeps } from '@/modules/members/members-deps';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { PlanBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
-import { Alert, Badge, Card, buttonClass } from '@jirawatpyk/aura-react/server';
+import { Alert, Badge, Card, Icon, buttonClass } from '@jirawatpyk/aura-react/server';
 import { BackLink } from '@/components/portal/back-link';
 import { formatSatangThb } from '@/lib/format-thb';
 import { formatTaxDocDate } from '@/lib/format-tax-doc-date';
@@ -155,7 +155,7 @@ export async function renderPortalCreditNoteView({
             className={buttonClass({ variant: 'primary' })}
             aria-label={t('actions.downloadAria', { number: cn.documentNumber.raw })}
           >
-            <DownloadIcon className="aura-icon size-4" aria-hidden="true" />
+            <Icon name={<DownloadIcon />} size={16} />
             {t('actions.download')}
           </a>
         }

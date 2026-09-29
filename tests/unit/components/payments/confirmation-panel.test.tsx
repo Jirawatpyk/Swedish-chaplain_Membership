@@ -200,7 +200,9 @@ describe('<ConfirmationPanel>', () => {
   it('download receipt button has ≥44px tap target (G-Review #5)', () => {
     renderPanel();
     const btn = screen.getByTestId('pay-sheet-download-receipt');
-    expect(btn.className).toMatch(/min-h-\[44px\]/);
+    // AURA's md button is 44px tall (no raw px override, parity rule)
+    expect(btn).toHaveClass('aura-btn');
+    expect(btn).not.toHaveClass('aura-btn--sm');
   });
 
   it('clicking "Download receipt" invokes onDownload and does NOT auto-close', async () => {
@@ -315,20 +317,22 @@ describe('<ConfirmationPanel>', () => {
     it('Download receipt takes full drawer width (primary CTA)', () => {
       renderPanel();
       const link = screen.getByTestId('pay-sheet-download-receipt');
-      expect(link.className).toMatch(/w-full/);
+      expect(link).toHaveClass('aura-btn--full');
     });
 
     it('Close is a full-width secondary button under Download (`Pay-success` board)', () => {
       renderPanel();
       const close = screen.getByTestId('pay-sheet-confirmation-close');
       expect(close.tagName.toLowerCase()).toBe('button');
-      expect(close).toHaveClass('aura-btn--secondary', 'w-full');
+      expect(close).toHaveClass('aura-btn--secondary', 'aura-btn--full');
     });
 
-    it('Close keeps ≥44px tap target for mobile (WCAG SC 2.5.5)', () => {
+    it('Close keeps ≥44px tap target for mobile (WCAG SC 2.5.5): AURA’s md button, not a raw px override', () => {
       renderPanel();
       const close = screen.getByTestId('pay-sheet-confirmation-close');
-      expect(close.className).toMatch(/min-h-\[44px\]/);
+      expect(close).toHaveClass('aura-btn', 'aura-btn--full');
+      expect(close).not.toHaveClass('aura-btn--sm');
+      expect(close.className).not.toMatch(/min-h-\[44px\]/);
     });
   });
 

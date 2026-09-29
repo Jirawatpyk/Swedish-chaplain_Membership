@@ -106,7 +106,8 @@ export function PayPreview({ state }: { readonly state: PayPreviewState }) {
           {t('drawer.subtitle', { invoiceNumber: 'SC-2026-000123' })}
         </span>
       }
-      className="pay-sheet [&_.aura-drawer\_\_head_.aura-icon-btn]:min-h-11 [&_.aura-drawer\_\_head_.aura-icon-btn]:min-w-11"
+      className="pay-sheet"
+      closeProps={{ className: 'min-h-11 min-w-11' }}
     >
       {body}
     </Drawer>
