@@ -397,7 +397,9 @@ export function ContactFormDialog({
             <Button variant="secondary" onClick={() => setOpen(false)} disabled={submitting}>
               {t('cancel')}
             </Button>
-            <Button type="submit" form={formId} loading={submitting} disabled={submitting}>
+            {/* `loading` alone: AURA marks it aria-disabled and ignores clicks,
+                and focus stays on it (a native disabled drops it to <body>). */}
+            <Button type="submit" form={formId} loading={submitting}>
               {submitting ? t('submitting') : t('submit')}
             </Button>
           </>

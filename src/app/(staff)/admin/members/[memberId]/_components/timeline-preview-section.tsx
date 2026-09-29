@@ -28,7 +28,7 @@
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import { headers } from 'next/headers';
-import { ClockIcon } from 'lucide-react';
+import { ArrowRightIcon } from 'lucide-react';
 import { Card, buttonClass } from '@jirawatpyk/aura-react/server';
 import { SectionCardSkeleton } from './section-card-skeleton';
 import { logger } from '@/lib/logger';
@@ -133,13 +133,14 @@ export async function TimelinePreviewCard({
   // heading navigation under the page h1) and the "view all" link as its action.
   return (
     <Card
-      title={t('sections.audit')}
+      // The board's "Timeline", the name its "On this page" link uses.
+      title={t('sectionLinks.timeline')}
       titleId="member-timeline-preview-heading"
       headingLevel={2}
       actions={
-        <Link href={`/admin/members/${memberId}/timeline`} className={buttonClass({ variant: 'secondary' })}>
-          <ClockIcon className="size-4" aria-hidden="true" />
+        <Link href={`/admin/members/${memberId}/timeline`} className={buttonClass({ variant: 'ghost', size: 'sm' })}>
           {t('timelinePreview.viewAll')}
+          <ArrowRightIcon className="size-4" aria-hidden="true" />
         </Link>
       }
     >

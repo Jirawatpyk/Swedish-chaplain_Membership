@@ -57,7 +57,7 @@ function Cell({
       className="flex min-w-0 flex-col gap-0.5 border-[var(--aura-border-default)] px-5 py-3.5 max-sm:[&:nth-child(even)]:border-s max-sm:[&:nth-child(n+3)]:border-t sm:[&:not(:first-child)]:border-s"
     >
       <dt className="text-xs text-[var(--aura-fg-secondary)]">{label}</dt>
-      <dd className="truncate font-semibold tabular-nums">{value}</dd>
+      <dd className="font-semibold tabular-nums break-words">{value}</dd>
       {note ? <dd className="text-xs text-[var(--aura-fg-secondary)]">{note}</dd> : null}
     </div>
   );

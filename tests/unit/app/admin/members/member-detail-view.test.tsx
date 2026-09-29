@@ -231,7 +231,7 @@ describe('renderMemberDetailView — sections and "On this page" (T553)', () => 
   // address it shows; "opens in a new tab" follows for screen readers.
   it('the website link is named by the address it shows', async () => {
     await renderView();
-    const link = screen.getByRole('link', { name: /^siamnordic\.example/ });
+    const link = screen.getByRole('link', { name: /^https:\/\/siamnordic\.example/ });
     expect(link).toHaveAttribute('href', 'https://siamnordic.example');
     expect(link).toHaveAccessibleName(expect.stringContaining(enMessages.admin.members.detail.fields.websiteExternal));
   });

@@ -290,10 +290,11 @@ export async function renderMemberDetailView({
                               href={websiteHref}
                               target="_blank"
                               rel="noopener noreferrer"
-                              aria-label={t('fields.websiteExternal')}
                               className="inline-flex min-w-0 items-center gap-1 text-sm font-medium underline underline-offset-4 hover:no-underline"
                             >
+                              {/* Named by the address it shows (2.5.3), then the new-tab note. */}
                               <span className="truncate">{member.website}</span>
+                              <span className="sr-only">{` (${t('fields.websiteExternal')})`}</span>
                               <ExternalLinkIcon aria-hidden="true" className="size-3.5 shrink-0" />
                             </a>
                           ),

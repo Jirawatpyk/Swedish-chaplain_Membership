@@ -124,8 +124,8 @@ export function RenewalHealthCard({
   ) : null;
 
   // Spec 122 US5b-1 — an AURA Card as the `Admin-member-detail` board draws
-  // it: the title with Renew (lapsed only) and "View renewal" beside it, then
-  // Status / Expiry / Engagement as a list.
+  // it: the title with "View renewal" beside it, then Status / Expiry /
+  // Engagement as a list, and Renew (lapsed only) under them.
   return (
     <Card
       as="section"
@@ -134,17 +134,14 @@ export function RenewalHealthCard({
       titleId={headingId}
       headingLevel={2}
       actions={
-        <div className="flex flex-wrap items-center gap-2">
-          {canRenew && memberId !== undefined && !readFailed && isLapsed(status) && (
-            <RenewLapsedMemberDialog memberId={memberId} />
-          )}
-          <Link href={viewHref} className={buttonClass({ variant: 'ghost', size: 'sm' })}>
-            {t('viewRenewal')}
-            <ArrowRightIcon className="size-3.5" aria-hidden="true" />
-          </Link>
-        </div>
+        <Link href={viewHref} className={buttonClass({ variant: 'ghost', size: 'sm' })}>
+          {t('viewRenewal')}
+          <ArrowRightIcon className="size-3.5" aria-hidden="true" />
+        </Link>
       }
     >
+      {/* Renew sits in the body, not the head: AURA's card head does not wrap,
+          and two actions there squeeze the title on a phone (UX review M11). */}
       {readFailed ? (
         // Cluster 7 (G18) — the read errored: a DISTINCT "unavailable" state,
         // never the empty state. The engagement score is read independently,
@@ -194,6 +191,11 @@ export function RenewalHealthCard({
             </div>
           )}
         </dl>
+      )}
+      {canRenew && memberId !== undefined && !readFailed && isLapsed(status) && (
+        <div className="mt-4">
+          <RenewLapsedMemberDialog memberId={memberId} />
+        </div>
       )}
     </Card>
   );
