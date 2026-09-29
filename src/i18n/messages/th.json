@@ -1658,13 +1658,13 @@
           "outstandingNone": "ไม่มียอดค้างชำระ",
           "outstandingPartial": "นับเฉพาะใบแจ้งหนี้ค้างชำระ 100 ใบแรก",
           "unavailable": "ไม่สามารถแสดงได้",
-          "expires": "สมาชิกภาพหมดอายุ",
-          "expiresShort": "หมดอายุ",
+          "expires": "วันหมดอายุสมาชิก",
+          "expiresShort": "วันหมดอายุ",
           "daysLeft": "เหลือ {days} วัน",
           "primaryContact": "ผู้ติดต่อหลัก",
           "engagement": "การมีส่วนร่วม",
           "lastActivity": "กิจกรรมล่าสุด {when}",
-          "lastActivityShort": "ใช้งาน {when}"
+          "lastActivityShort": "ล่าสุด {when}"
         },
         "sectionLinks": {
           "label": "ในหน้านี้",

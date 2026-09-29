@@ -1653,7 +1653,7 @@
           "label": "Medlemsöversikt",
           "outstanding": "Utestående",
           "outstandingNote": "{count, plural, one {# obetald} other {# obetalda}} · förfaller {date}",
-          "outstandingOverdueNote": "{count, plural, one {# obetald} other {# obetalda}} · förfallen sedan {date}",
+          "outstandingOverdueNote": "{count, plural, one {# obetald} other {# obetalda}} · förföll {date}",
           "outstandingCount": "{count, plural, one {# obetald} other {# obetalda}}",
           "outstandingNone": "Inget obetalt",
           "outstandingPartial": "Endast de första 100 obetalda fakturorna",
