@@ -168,6 +168,19 @@ test.describe('members erase — COMP-1 US3-A @f3 @a11y @i18n', () => {
     // Open the erase dialog and scan again.
     await openMemberHeaderAction(page, /erase.*GDPR\/PDPA|erase \(gdpr/i);
     await page.getByRole('alertdialog').waitFor({ timeout: 5_000 });
+    // Let the dialog's entry animation finish first: axe samples colours as
+    // painted, and mid-fade the Select placeholder reads as #797980 on #ebebeb
+    // (3.62:1) — a false contrast failure (R18). Document-wide, since the fade
+    // can sit on the dialog layer; only finite animations, as a looping one
+    // never resolves.
+    await page.evaluate(() =>
+      Promise.all(
+        document
+          .getAnimations()
+          .filter((a) => a.effect?.getComputedTiming().iterations !== Infinity)
+          .map((a) => a.finished),
+      ),
+    );
 
     results = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
