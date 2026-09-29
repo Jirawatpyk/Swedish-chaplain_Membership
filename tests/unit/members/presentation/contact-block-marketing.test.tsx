@@ -176,4 +176,12 @@ describe('ContactBlock — marketing surface (108 PR-D)', () => {
     expect(markup).toContain(en.sections.primary);
     expect(markup).toContain('data-state="off_by_contact"');
   });
+
+  // 122 US5b-1 UX review: the board names the language ("Thai"), where the
+  // page printed the code ("TH", read out letter by letter).
+  it('the preferred language reads as its name, not its code', () => {
+    const markup = renderBlock({ contact: makeContact({ preferredLanguage: 'th' }) });
+    expect(markup).toContain(`${en.fields.preferredLanguage}: Thai`);
+    expect(markup).not.toContain(': TH<');
+  });
 });

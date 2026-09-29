@@ -107,4 +107,13 @@ describe('MemberInvoicesTable (T556)', () => {
       expect(item).toHaveTextContent(labels.disabledForManager);
     }
   });
+
+  // UX review H1: the chip-ink token (--aura-status-warning-fg) is near-black
+  // in dark mode (1.13:1 on the surface); the owed figure takes the warning
+  // text colour that reads on the page in both themes.
+  it('an owed Remaining figure takes the warning text colour', () => {
+    render(<MemberInvoicesTable rows={[issued]} labels={labels} canMutate />);
+    const figure = screen.getAllByText('38,520.00 THB').find((el) => el.className.includes('font-medium'));
+    expect(figure?.className).toContain('--aura-alert-warning-fg');
+  });
 });

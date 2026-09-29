@@ -92,4 +92,12 @@ describe('ContactActions (T554)', () => {
       expect(fetchMock).toHaveBeenCalledWith('/api/members/m-1/contacts/c-2/promote-primary', { method: 'POST' }),
     );
   });
+
+  // UX review M7: several contacts each have an Edit and a Make primary, so
+  // each button carries the contact's name after its visible text (2.5.3).
+  it('Edit and Make primary are named for their contact', () => {
+    renderActions(false);
+    expect(screen.getByRole('button', { name: `${A.edit}, Ploy Srisuk` })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: `${A.promote}, Ploy Srisuk` })).toBeInTheDocument();
+  });
 });
