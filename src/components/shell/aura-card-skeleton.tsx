@@ -11,7 +11,7 @@
  *
  * Server-safe: no hooks, no `'use client'`.
  */
-import type { ReactNode } from 'react';
+import type { HTMLAttributes, ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 
 export function AuraCardSkeleton({
@@ -20,7 +20,8 @@ export function AuraCardSkeleton({
   actions,
   children,
   className,
-}: {
+  ...rest
+}: Omit<HTMLAttributes<HTMLDivElement>, 'title'> & {
   /** Bars in the title's place. */
   readonly title?: ReactNode;
   /** Bars in the description's place, under the title. */
@@ -31,7 +32,7 @@ export function AuraCardSkeleton({
 }) {
   // stand-in until AURA #87 (Card loading head): AURA's Card markup, by hand
   return (
-    <div aria-busy="true" aria-hidden="true" className={cn('aura-card', className)}>
+    <div {...rest} className={cn('aura-card', className)}>
       {title || actions ? (
         <div className="aura-card__head">
           <div className="aura-card__heading">

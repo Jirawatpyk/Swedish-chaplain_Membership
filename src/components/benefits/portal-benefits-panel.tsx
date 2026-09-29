@@ -17,7 +17,8 @@ import Link from 'next/link';
 import { CalendarDays, Check, Mail, PackageOpen, type LucideIcon } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { Progress } from '@jirawatpyk/aura-react';
-import { Card, buttonClass } from '@jirawatpyk/aura-react/server';
+import { Card, Icon as AuraIcon, buttonClass } from '@jirawatpyk/aura-react/server';
+import { EmptyState } from '@/components/shell/empty-state';
 import { formatCalendarYear, getDateFormatLocale } from '@/lib/format-date-localised';
 import { cn } from '@/lib/utils';
 import type { BenefitUsageItem } from './benefit-usage-card';
@@ -62,13 +63,14 @@ export function PortalBenefitsPanel({
 
   if (quantifiable.length === 0 && active.length === 0) {
     return (
-      <div className="aura-empty" data-testid="benefit-usage-card">
-        <span className="aura-empty__icon" aria-hidden>
-          <PackageOpen className="size-6" />
-        </span>
-        <p className="aura-empty__title">{t('card.emptyTitle')}</p>
-        <p className="aura-empty__text">{t('card.empty')}</p>
-      </div>
+      <EmptyState
+        data-testid="benefit-usage-card"
+        icon={PackageOpen}
+        title={t('card.emptyTitle')}
+        description={t('card.empty')}
+        bordered={false}
+        announce={false}
+      />
     );
   }
 
@@ -99,7 +101,7 @@ export function PortalBenefitsPanel({
                 <Card title={name} description={t(`benefit.description.${b.key}`)} headingLevel={3} className="w-full">
                   <div className="flex flex-col gap-5">
                     <p className="flex items-baseline gap-2">
-                      <span className="text-[26px] leading-[1.2] font-semibold tabular-nums sm:text-[28px]">{b.used}</span>
+                      <span className="aura-text-h2 leading-[1.2] font-semibold tabular-nums">{b.used}</span>
                       <span className="text-sm text-[var(--aura-fg-secondary)]">{t('card.ofTotalUsed', { total: b.entitlement })}</span>
                     </p>
                     <Progress
@@ -114,7 +116,7 @@ export function PortalBenefitsPanel({
                         href={b.actionHref}
                         className={cn(buttonClass({ variant: 'secondary' }), 'no-underline max-sm:w-full sm:self-start')}
                       >
-                        {Icon ? <Icon className="aura-icon size-4" aria-hidden /> : null}
+                        {Icon ? <AuraIcon name={<Icon />} size={16} /> : null}
                         {t(`benefit.action.${b.key}`)}
                       </Link>
                     ) : null}
@@ -145,7 +147,7 @@ export function PortalBenefitsPanel({
                 >
                   <Check className="size-4" />
                 </span>
-                <span className="self-center text-[13px] font-medium">{t(`active.${a.key}`)}</span>
+                <span className="self-center aura-text-label">{t(`active.${a.key}`)}</span>
               </li>
             ))}
           </ul>

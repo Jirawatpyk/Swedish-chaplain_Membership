@@ -12,7 +12,7 @@
 import Link from 'next/link';
 import { ArrowRight } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { Alert } from '@jirawatpyk/aura-react';
+import { Alert, Icon } from '@jirawatpyk/aura-react';
 
 export interface UnderUseWarningProps {
   /** Fraction of the membership year elapsed, 0–100. */
@@ -56,7 +56,7 @@ export function UnderUseWarning({
           className="inline-flex min-h-11 items-center gap-1 font-medium text-[var(--aura-fg-accent)] no-underline hover:text-[var(--aura-fg-primary)] hover:underline"
         >
           {t('action')}
-          <ArrowRight aria-hidden="true" size={14} className="aura-icon" />
+          <Icon name={<ArrowRight />} size={14} />
         </Link>
       )}
     </Alert>

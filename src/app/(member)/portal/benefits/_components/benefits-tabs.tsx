@@ -87,7 +87,9 @@ export function BenefitsTabs(props: BenefitsTabsProps): React.ReactElement {
   }
 
   return (
-    // On phones the two tabs share the width, as `Benefits-mobile` draws them.
+    // On phones the two tabs share the width, as `Benefits-mobile` draws them
+    // (AURA's `fullWidth` is for segmented tabs only). A stand-in until
+    // AURA #90 (underline Tabs sharing the width below a breakpoint).
     <div aria-busy={isPending || undefined} className="max-lg:[&_.aura-tabs\_\_list>*]:flex-1 max-lg:[&_.aura-tabs\_\_list>*]:justify-center">
       <Tabs tabs={tabs} label={t('ariaLabel')} value={active} onChange={onValueChange} />
     </div>

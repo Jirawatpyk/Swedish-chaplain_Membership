@@ -10,6 +10,7 @@
  * card-only body and avoid a duplicated/misplaced title block below the tabs.
  */
 import { SkeletonBlock as Skeleton } from '@/components/shell/page-skeletons';
+import { AuraCardSkeleton } from '@/components/shell/aura-card-skeleton';
 
 export function BenefitUsageSkeleton({
   withPageTitle = true,
@@ -19,12 +20,8 @@ export function BenefitUsageSkeleton({
   // AURA card shape (spec 122 US3), mirroring the real card's head
   // (<h2> title + the liveNote caption) and body so the swap has no CLS.
   const card = (
-    <div className="aura-card">
-      <div className="aura-card__head flex-col items-start gap-1">
-        <Skeleton className="h-5 w-48" />
-        <Skeleton className="h-3 w-56" />
-      </div>
-      <div className="aura-card__body flex flex-col gap-5">
+    <AuraCardSkeleton title={<Skeleton className="h-5 w-48" />} description={<Skeleton className="h-3 w-56" />}>
+      <div className="flex flex-col gap-5">
         {[0, 1].map((i) => (
           <div key={i} className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
@@ -36,7 +33,7 @@ export function BenefitUsageSkeleton({
           </div>
         ))}
       </div>
-    </div>
+    </AuraCardSkeleton>
   );
 
   if (!withPageTitle) return card;

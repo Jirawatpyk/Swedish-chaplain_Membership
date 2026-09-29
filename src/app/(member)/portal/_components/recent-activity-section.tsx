@@ -120,7 +120,7 @@ const VIEW_ALL_LINK =
 
 export function RecentActivitySkeleton(): React.JSX.Element {
   return (
-    <AuraCardSkeleton title={<SkeletonBlock className="h-5 w-40" />}>
+    <AuraCardSkeleton aria-busy="true" aria-hidden="true" title={<SkeletonBlock className="h-5 w-40" />}>
       <div className="flex flex-col gap-3">
         {Array.from({ length: 3 }).map((_, i) => (
           <SkeletonBlock key={i} className="h-10 w-full" />

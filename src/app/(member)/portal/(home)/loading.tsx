@@ -53,7 +53,7 @@ export default async function Loading() {
         {/* 2-col: invoices summary | benefits quota */}
         <div className="grid grid-cols-1 gap-[var(--page-section-gap)] lg:grid-cols-2">
           {/* Invoices summary card skeleton (AURA card, spec 122 US3) */}
-          <AuraCardSkeleton title={<SkeletonBlock className="h-5 w-36" />} description={<SkeletonBlock className="h-3 w-56" />}>
+          <AuraCardSkeleton aria-busy="true" aria-hidden="true" title={<SkeletonBlock className="h-5 w-36" />} description={<SkeletonBlock className="h-3 w-56" />}>
             <div className="flex flex-col gap-3">
               {Array.from({ length: 3 }).map((_, i) => (
                 <SkeletonBlock key={i} className="h-10 w-full" />
@@ -62,7 +62,7 @@ export default async function Loading() {
           </AuraCardSkeleton>
 
           {/* Benefits quota card skeleton */}
-          <AuraCardSkeleton title={<SkeletonBlock className="h-5 w-32" />} description={<SkeletonBlock className="h-3 w-48" />}>
+          <AuraCardSkeleton aria-busy="true" aria-hidden="true" title={<SkeletonBlock className="h-5 w-32" />} description={<SkeletonBlock className="h-3 w-48" />}>
             <div className="flex flex-col gap-3">
               {Array.from({ length: 4 }).map((_, i) => (
                 <SkeletonBlock key={i} className="h-4 w-full" />

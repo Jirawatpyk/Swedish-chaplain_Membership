@@ -22,7 +22,8 @@ import { ArrowRight, PackageOpen, PauseCircle } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { formatCalendarYear, getDateFormatLocale } from '@/lib/format-date-localised';
 import { Badge, Progress, Separator } from '@jirawatpyk/aura-react';
-import { Card } from '@jirawatpyk/aura-react/server';
+import { Card, Icon } from '@jirawatpyk/aura-react/server';
+import { EmptyState } from '@/components/shell/empty-state';
 import { UnderUseWarning } from './under-use-warning';
 
 export interface BenefitUsageItem {
@@ -168,7 +169,7 @@ export function BenefitUsageCard({
             className="inline-flex min-h-11 items-center gap-1.5 text-sm font-medium text-[var(--aura-fg-accent)] no-underline hover:text-[var(--aura-fg-primary)] hover:underline"
           >
             {t('card.fullBenefits')}
-            <ArrowRight aria-hidden="true" size={16} className="aura-icon" />
+            <Icon name={<ArrowRight />} size={16} />
           </Link>
         ) : undefined
       }
@@ -188,13 +189,13 @@ export function BenefitUsageCard({
         )}
 
         {!hasContent && (
-          <div className="aura-empty">
-            <span className="aura-empty__icon" aria-hidden>
-              <PackageOpen className="size-6" />
-            </span>
-            <p className="aura-empty__title">{t('card.emptyTitle')}</p>
-            <p className="aura-empty__text">{t('card.empty')}</p>
-          </div>
+          <EmptyState
+            icon={PackageOpen}
+            title={t('card.emptyTitle')}
+            description={t('card.empty')}
+            bordered={false}
+            announce={false}
+          />
         )}
 
         {quantifiable.length > 0 && (
@@ -208,7 +209,7 @@ export function BenefitUsageCard({
                   showValue
                   valueLabel={t('card.usedOf', { used: b.used, total: b.entitlement })}
                 />
-                <div className="flex items-center justify-between gap-2 text-[13px] text-[var(--aura-fg-secondary)]">
+                <div className="flex items-center justify-between gap-2 aura-text-table-cell text-[var(--aura-fg-secondary)]">
                   <span>
                     {b.lastUsedAt === null
                       ? t('card.neverUsed')
@@ -222,7 +223,7 @@ export function BenefitUsageCard({
                       {/* The label names the benefit ("Compose E-Blast", "View
                           events"), so tabbing through links is unambiguous (R I-8). */}
                       {t(`benefit.action.${b.key}`)}
-                      <ArrowRight aria-hidden="true" size={14} className="aura-icon" />
+                      <Icon name={<ArrowRight />} size={14} />
                     </Link>
                   )}
                 </div>
@@ -234,7 +235,7 @@ export function BenefitUsageCard({
         {!compact && active.length > 0 && (
           <div className="flex flex-col gap-2">
             <Separator />
-            <p className="text-[13px] font-medium text-[var(--aura-fg-secondary)]">
+            <p className="aura-text-label text-[var(--aura-fg-secondary)]">
               {t('card.activeHeading')}
             </p>
             <ul className="flex flex-wrap gap-2">
