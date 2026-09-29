@@ -298,7 +298,8 @@ export async function renderMemberDetailView({
                               className="inline-flex min-w-0 items-center gap-1 text-sm font-medium underline underline-offset-4 hover:no-underline"
                             >
                               {/* Named by the address it shows (2.5.3), then the new-tab note. */}
-                              <span className="truncate">{member.website}</span>
+                              {/* The host and path, as the board shows it; the href keeps the scheme. */}
+                              <span className="truncate">{member.website?.replace(/^https?:\/\//i, '').replace(/\/$/, '')}</span>
                               <span className="sr-only">{` (${t('fields.websiteExternal')})`}</span>
                               <ExternalLinkIcon aria-hidden="true" className="size-3.5 shrink-0" />
                             </a>
@@ -311,7 +312,7 @@ export async function renderMemberDetailView({
                     label={t('fields.turnoverThb')}
                     value={
                       member.turnoverThb !== null
-                        ? format.number(member.turnoverThb, { style: 'currency', currency: 'THB' })
+                        ? format.number(member.turnoverThb, { maximumFractionDigits: 2 })
                         : null
                     }
                   />
@@ -319,7 +320,7 @@ export async function renderMemberDetailView({
                     label={t('fields.registeredCapitalThb')}
                     value={
                       member.registeredCapitalThb !== null
-                        ? format.number(member.registeredCapitalThb, { style: 'currency', currency: 'THB' })
+                        ? format.number(member.registeredCapitalThb, { maximumFractionDigits: 2 })
                         : null
                     }
                   />
