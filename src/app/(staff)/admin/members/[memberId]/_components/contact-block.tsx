@@ -127,7 +127,7 @@ export function ContactBlock({
             cluster live in adjacent flex containers, separated by
             `gap-2`. The badge cluster ships its own aria-label so SRs
             still hear the state info after the heading. */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <ContactAvatar name={`${contact.firstName} ${contact.lastName}`.trim()} />
           <h3 className="text-base font-semibold">
             {`${contact.firstName} ${contact.lastName}`.trim()}
@@ -255,7 +255,7 @@ export function ContactBlock({
         </div>
         {/* S1-P1-10: write affordances hidden for the read-only manager. */}
         {canWrite && (
-          <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
+          <div className="flex flex-wrap items-center justify-start gap-2 sm:shrink-0 sm:justify-end">
             {canInvite && (
               <InvitePortalButton memberId={memberId} contactId={contact.contactId} />
             )}

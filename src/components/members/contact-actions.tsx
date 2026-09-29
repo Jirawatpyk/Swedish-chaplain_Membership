@@ -94,7 +94,7 @@ export function ContactActions({ memberId, contact, isPrimary }: Props) {
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
       <ContactFormDialog
         memberId={memberId}
         mode="edit"
