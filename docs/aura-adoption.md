@@ -106,11 +106,11 @@ Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped i
 | 107 | 5.14.0: `Tabs` `current="location"` | the section links (`aria-current="location"`) |
 | 108 | 5.14.0: stacked `DataTable` cards start `align: 'end'` values under their label | the invoice phone cards (`StartOnCard` is gone) |
 
-Addendum 17 is open:
+Addendum 17 (item 109) shipped in 5.16.1, which PR #472 (T512) adopts; this branch stays on 5.16.0:
 
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
-| #109 | the read-only input rule (`.aura-input:has(.aura-input__control:read-only:not(select))`) also matches a custom `Select`'s `<button>` trigger, so every Select gets `--aura-bg-input-disabled` and its placeholder reads 4.47:1 | none, by the maintainer's call (29 Sep). The `members-erase` @a11y e2e case passes once the scan waits for the dialog's fade-in (R18 follow-up): its red was a mid-fade sample, not this bug. A Select with a placeholder on a tinted surface would still fail. |
+| #109 | the read-only input rule (`.aura-input:has(.aura-input__control:read-only:not(select))`) also matches a custom `Select`'s `<button>` trigger, so every Select gets `--aura-bg-input-disabled` (`#fafafa`) instead of white | none (maintainer's call, 29 Sep). The placeholder is `#71717a` on `#fafafa`, 4.63:1, so it still passes AA; the 4.47:1 first reported was an arithmetic slip. The `members-erase` @a11y red was a mid-fade axe sample, fixed by waiting for the dialog's entry animation (`7d0b9eefa`). |
 
 One note stays with AURA: `Menu` closes on any scroll or window resize (iOS Safari fires resize when its toolbar moves), to be checked on a real iPhone before it becomes an item.
 
