@@ -23,8 +23,10 @@ import {
 // On a phone each row is the board's card (`Admin-change-requests-mobile`):
 // the company and member number as its title with Review beside it, the other
 // cells two to a line below (AURA 5.13 Td card slots, #84). The board draws
-// the cards apart, each framed: our own frame on each stacked row (CARD), in
-// the container query AURA stacks the rows in (`aura-tbl`, below 640px).
+// the cards apart, each framed, where AURA stacks them in one divided frame:
+// our own frame on each stacked row (CARD), in the container query AURA
+// stacks the rows in (`aura-tbl`, below 640px). A stand-in until AURA #85
+// (separate cards for a stacked static Table).
 const CARD = '@max-[640px]/aura-tbl:mb-3 @max-[640px]/aura-tbl:rounded-[var(--aura-card-radius)] @max-[640px]/aura-tbl:!border @max-[640px]/aura-tbl:!border-[var(--aura-border-default)] @max-[640px]/aura-tbl:bg-[var(--aura-bg-surface)] @max-[640px]/aura-tbl:!p-4';
 
 /** Whole days / hours for the waiting column — the exact seconds are not what a reviewer scans for. */
@@ -43,7 +45,7 @@ export async function ChangeRequestQueueTable({
   const fmt = (d: Date) => formatLocalisedDate(d.toISOString(), locale, { dateStyle: 'medium', timeStyle: 'short' });
   return (
     // On a phone the cards stand apart, so the list itself loses its frame
-    // (the table keeps it from 640px).
+    // (the table keeps it from 640px); part of the #85 stand-in.
     <div data-queue="board" className="max-sm:[&_.aura-tbl-wrap]:rounded-none max-sm:[&_.aura-tbl-wrap]:border-0 max-sm:[&_.aura-tbl-wrap]:bg-transparent">
     <Table data-testid="queue-table" caption={t('tableCaption')} captionHidden stackBelow="sm" align="middle">
       <THead>
@@ -110,8 +112,8 @@ export async function ChangeRequestQueueTable({
                   href={`/admin/change-requests/${r.id}`}
                   // `sm` in the table (AURA's table rule); a phone card takes
                   // the default button height, as the mobile board draws it.
-                  // Stand-in until AURA #84 (a card action slot on a stacked
-                  // static Table): AURA's own height token, no pixels.
+                  // AURA's own height token, no pixels; it keys on AURA's
+                  // stacking container, part of the #85 stand-in.
                   className={buttonClass({
                     variant: 'secondary',
                     size: 'sm',

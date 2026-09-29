@@ -85,22 +85,20 @@ Phases 2–12 each depend on 1 and can land in any order.
 
 ## AURA gaps (the handoff doc)
 
-The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, items 52–56 (Addendum 4) in 5.6.0, items 57–62 (Addendum 5, found in US1) in 5.7.0, item 63 in 5.7.1, item 64 (Addendum 6) in 5.7.2, item 65 (Addendum 7, found in US2) in 5.7.3 items 66–69 (Addendum 8, found in US3) in 5.8.0 items 70–71 (Addendum 9, found in US4) in 5.9.0, items 72–74 (Addendum 10, found adopting 5.9.0 in US4) in 5.10.0 and items 75–78 (Addendum 11, found in US5a) in **5.11.0**, the current pin. Six items are open, all found matching the US5a boards. #79 (Addendum 12) is a compact `FilterBar` trigger that reads "Status All ▾"; its stand-in is `FilterChipSelect` (`src/components/members/filter-chip-select.tsx`), a face drawn with AURA tokens over a transparent native `<select>`. #80–#84 (Addendum 13) replace styling that reaches into AURA's internal classes; each stand-in carries a comment naming its item. Swap to AURA's API and delete the stand-in when each ships:
+The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, items 52–56 (Addendum 4) in 5.6.0, items 57–62 (Addendum 5, found in US1) in 5.7.0, item 63 in 5.7.1, item 64 (Addendum 6) in 5.7.2, item 65 (Addendum 7, found in US2) in 5.7.3, items 66–69 (Addendum 8, found in US3) in 5.8.0, items 70–71 (Addendum 9, found in US4) in 5.9.0, items 72–74 (Addendum 10, found adopting 5.9.0 in US4) in 5.10.0, items 75–78 (Addendum 11, found in US5a) in 5.11.0, item 79 (Addendum 12) in 5.12.0 and items 80–84 (Addendum 13) in **5.13.0**, the current pin. One item is open, found adopting 5.13.0:
 
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
-| #80 | `DataTable` card-mode column options (`card: 'hide' \| 'field' \| 'title' \| 'pill'`, `cardOrder`, `hideSelectionInCards`) | `PHONE_CARD` classes on `.aura-table--stacked` in `src/components/members/members-table.tsx` |
-| #81 | static `Table` `align="middle"` and a frameless variant | `.aura-tbl-wrap` / `.aura-tbl__td` overrides in `src/components/directory/recent-exports.tsx` and `src/app/(staff)/admin/change-requests/_components/queue-table.tsx` |
-| #82 | `EmptyState tone="danger"` | the danger wrapper around `MembersErrorState` in `src/components/members/empty-states.tsx` |
-| #83 | `FilterBar` `searchFill` (the search grows to fill the row) | `.aura-filterbar__search` / `__spacer` overrides in `src/components/members/directory-filters.tsx` and `src/components/directory/directory-search-filters.tsx` |
-| #84 | a card layout (title and action slots) for a stacked static `Table` | the `@max-[640px]/aura-tbl:` grid in `src/app/(staff)/admin/change-requests/_components/queue-table.tsx` | One note stays with AURA: `Menu` closes on any scroll or window resize (iOS Safari fires resize when its toolbar moves), to be checked on a real iPhone before it becomes an item.
+| #85 | a stacked static `Table` whose rows stand apart as separate framed cards (5.13 stacks them in one frame, divided by rules) | the per-row `CARD` frame, the frameless wrap and the Review button's card height below 640px in `src/app/(staff)/admin/change-requests/_components/queue-table.tsx` |
+
+One note stays with AURA: `Menu` closes on any scroll or window resize (iOS Safari fires resize when its toolbar moves), to be checked on a real iPhone before it becomes an item.
 
 5.9.0 also prepares for 6.0, which builds in only English and drops icon names given as strings from the default bundle. Chamber-OS clears its dev notices without changing any output:
 - `AuraBridge` passes AURA's Thai and Swedish locale packs as `strings`.
 - Icons are registered by name once for each registry: `registerIcons(allIcons)` in `AuraBridge` for client components, and `@/lib/aura-server-icons` (imported by the root layout) for Server Components. `tests/setup.ts` registers both, since component tests render without the layout.
 - Moving to icon components (`npx aura-icons-codemod`), which would let the 6.0 bundle drop the name map, is a separate change.
 
-How Chamber-OS uses the Addendum 5 – 11 items (US1 to US5a dropped their bridge for each):
+How Chamber-OS uses the Addendum 5 – 13 items (US1 to US5a dropped their bridge for each):
 
 | # | Shipped in | Used by |
 |---|---|---|
@@ -126,6 +124,12 @@ How Chamber-OS uses the Addendum 5 – 11 items (US1 to US5a dropped their bridg
 | 76 | 5.11.0: `Checkbox` keeps a passed `aria-describedby` and appends its description | The portal directory's contact toggles (`directory-visibility-form.tsx`) now announce their "whose data" hint, which 5.10 silently dropped; the change-request decision rows keep their `description` note |
 | 77 | 5.11.0: 24×24 selection targets in `DataTable` (grid and cards) | The members table's `inset: -4px` override is gone; `members-target-size-2-2.spec.ts` still measures 24×24 |
 | 78 | 5.11.0: `DataTable` `rowHeight="auto"` | The members and directory tables: names and badges wrap in full and rows grow (maintainer's choice, 28 Sep); the one-line truncation is gone |
+| 79 | 5.12.0: `FilterSelect` (a compact "Status All ▾" trigger; AURA's list on a phone) | The members filters; `FilterChipSelect` is deleted |
+| 80 | 5.13.0: `DataTable` column `card` / `cardOrder`, `hideSelectionInCards` | The members phone card (no checkbox, no ⋯ menu, no Last activity; the board's field order), shared with its skeleton through `MEMBERS_COLUMN_CARD`; the `PHONE_CARD` classes are gone |
+| 81 | 5.13.0: static `Table` `align="middle"` and `bordered={false}` | Recent exports (frameless, centred) and the change-request queue (centred); the `.aura-tbl-wrap` / `.aura-tbl__td` overrides are gone there |
+| 82 | 5.13.0: `EmptyState tone="danger"` (with `role` passed through) | `MembersErrorState`; the danger wrapper is gone |
+| 83 | 5.13.0: `FilterBar` `searchGrow` | The members and directory filter bars, at AURA's own breakpoint (the search takes its own row below 768px); the `.aura-filterbar` overrides are gone |
+| 84 | 5.13.0: `Td` / `Th` `card="title" \| "action"` on a stacked static `Table` | The change-request queue's phone card: company and member number as the title, Review beside it; the container-query grid is gone |
 
 How Chamber-OS uses the 5.6.0 items:
 
