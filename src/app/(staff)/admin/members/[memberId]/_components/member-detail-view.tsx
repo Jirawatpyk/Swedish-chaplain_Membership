@@ -17,7 +17,7 @@
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { getFormatter, getTranslations } from 'next-intl/server';
-import { ArchiveIcon, ChartColumnIcon, ExternalLinkIcon, PencilIcon, PlusIcon } from 'lucide-react';
+import { ArchiveIcon, ChartColumnIcon, ExternalLinkIcon, PencilIcon } from 'lucide-react';
 import { Badge, Card, StatusPill, buttonClass } from '@jirawatpyk/aura-react/server';
 import { formatCalendarYear, formatLocalisedDate } from '@/lib/format-date-localised';
 import type { archiveWindowStatus, Contact, MarketingState, Member } from '@/modules/members';
@@ -34,7 +34,7 @@ import { NoPrimaryContactBanner } from '@/components/members/no-primary-contact-
 import { ArchiveMemberButton } from '@/components/members/archive-member-button';
 import { EraseMemberButton } from '@/components/members/erase-member-button';
 import { ErasedBanner } from '@/components/members/erased-banner';
-import { ContactFormDialog } from '@/components/members/contact-form-dialog';
+import { AddContactButton } from './add-contact-button';
 import { ContactBlock, type PendingInvitation } from './contact-block';
 import { SectionLinks, type SectionLink } from './section-links';
 
@@ -422,18 +422,7 @@ export async function renderMemberDetailView({
                     {t('marketing.audienceLink')}
                   </Link>
                 )}
-                {canModify && notArchived && (
-                  <ContactFormDialog
-                    memberId={member.memberId}
-                    mode="add"
-                    trigger={
-                      <button type="button" className={buttonClass({ variant: 'secondary', size: 'sm' })}>
-                        <PlusIcon className="size-4" aria-hidden="true" />
-                        {t('contactActions.add')}
-                      </button>
-                    }
-                  />
-                )}
+                {canModify && notArchived && <AddContactButton memberId={member.memberId} />}
               </div>
             }
           >

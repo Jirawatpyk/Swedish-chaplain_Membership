@@ -461,7 +461,7 @@ export default async function AuraAdminPreviewPage({
               { key: 'eblast', used: 1, entitlement: 6, lastUsedAt: ago(80) },
               { key: 'cultural_tickets', used: 0, entitlement: 2, lastUsedAt: null },
             ],
-            active: [{ key: 'all_employee_event_discount' }, { key: 'directory_listing' }, { key: 'member_to_member' }],
+            active: [{ key: 'all_employee_event_discount' }, { key: 'directory_listing' }, { key: 'm2m_benefits' }],
             aggregateConsumedPct: 8,
             underUseWarning: true,
           },

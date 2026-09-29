@@ -37,6 +37,7 @@ vi.mock('@/components/members/archive-member-button', () => ({
   ArchiveMemberButton: () => <button type="button">Archive member</button>,
 }));
 vi.mock('@/components/members/contact-form-dialog', () => ({ ContactFormDialog: () => null }));
+vi.mock('@/app/(staff)/admin/members/[memberId]/_components/add-contact-button', () => ({ AddContactButton: () => null }));
 vi.mock('@/components/members/contact-actions', () => ({ ContactActions: () => null }));
 vi.mock('@/components/members/marketing-switch', () => ({ MarketingSwitch: () => null }));
 vi.mock('@/components/members/archived-banner', () => ({ ArchivedBanner: () => <div>archived-banner</div> }));
