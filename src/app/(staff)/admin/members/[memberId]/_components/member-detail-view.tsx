@@ -272,7 +272,7 @@ export async function renderMemberDetailView({
             <div className="flex flex-col gap-6">
               <div className="flex flex-col gap-2">
                 <SubGroupLabel>{t('sections.organisation')}</SubGroupLabel>
-                <dl className="grid grid-cols-1 gap-x-8 gap-y-1 md:grid-cols-2 xl:grid-cols-3">
+                <dl className="grid grid-cols-2 gap-x-4 gap-y-1 md:gap-x-8 xl:grid-cols-3">
                   <DetailField label={t('fields.country')} value={null} extra={<CountryDisplay code={member.country} />} />
                   <DetailField label={t('fields.legalEntityType')} value={legalEntityLabel} />
                   <DetailField
@@ -329,7 +329,7 @@ export async function renderMemberDetailView({
 
               <div className="flex flex-col gap-2 border-t border-[var(--aura-border-default)] pt-4">
                 <SubGroupLabel>{t('sections.membership')}</SubGroupLabel>
-                <dl className="grid grid-cols-1 gap-x-8 gap-y-1 md:grid-cols-2 xl:grid-cols-3">
+                <dl className="grid grid-cols-2 gap-x-4 gap-y-1 md:gap-x-8 xl:grid-cols-3">
                   <DetailField label={t('fields.plan')} value={planDisplayName} />
                   <DetailField label={t('fields.planYear')} value={year} />
                   <DetailField
