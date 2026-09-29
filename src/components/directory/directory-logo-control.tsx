@@ -112,7 +112,7 @@ export function DirectoryLogoControl({
           <img src={currentLogoUrl} alt={t('logoCurrent')} className="max-h-full max-w-full object-contain" />
         </div>
       ) : null}
-      <p id="dir-logo-hint" className="text-[13px] text-[var(--aura-fg-secondary)] max-sm:text-xs">
+      <p id="dir-logo-hint" className="aura-text-table-cell text-[var(--aura-fg-secondary)] max-sm:text-xs">
         {t('logoHint')}
       </p>
       <input

@@ -147,7 +147,7 @@ export function PendingRequestBanner({ request }: PendingRequestBannerProps) {
           </Button>
           {/* The page header's primary button reads "Edit your request" while one
               is pending; this line points there rather than repeating it. */}
-          <p className="text-xs text-[var(--aura-fg-secondary)] sm:text-[13px]">
+          <p className="aura-text-table-cell text-[var(--aura-fg-secondary)] max-sm:text-xs">
             {t.rich('editHint', { strong: (chunks) => <strong className="font-semibold text-[var(--aura-fg-primary)]">{chunks}</strong> })}
           </p>
         </div>

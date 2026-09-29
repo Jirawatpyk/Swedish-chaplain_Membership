@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { InboxIcon } from 'lucide-react';
-import { buttonClass } from '@jirawatpyk/aura-react/server';
+import { Card, buttonClass } from '@jirawatpyk/aura-react/server';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { EmptyState } from '@/components/shell/empty-state';
@@ -49,20 +49,22 @@ export async function renderChangeRequestHistoryView({ items, nextCursor, isFirs
             <li key={r.id}>
               {/* An AURA card per request (spec 122 US3): the submission time as
                   its h2 with who and when under it, the status pill to its
-                  right — above it on phones (h2 first in the DOM). */}
-              <section
-                className="aura-card"
+                  right — above it on phones (h2 first in the DOM), which
+                  AURA's Card head cannot order. */}
+              <Card
+                as="section"
                 data-testid="history-item"
                 data-request-id={r.id}
                 aria-labelledby={`history-${r.id}-heading`}
               >
-                <div className="aura-card__body flex flex-col gap-4">
+                <div className="flex flex-col gap-4">
                   <div className="flex flex-col-reverse gap-1.5 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                     <div className="flex min-w-0 flex-col gap-0.5">
+                      {/* AURA's card title on our own h2: a stand-in until AURA #87 (a free Card head) */}
                       <h2 id={`history-${r.id}-heading`} className="aura-card__title">
                         {t('submittedOn', { submittedAt: fmt(r.submittedAt) })}
                       </h2>
-                      <p className="text-xs text-[var(--aura-fg-secondary)] sm:text-[13px]">
+                      <p className="aura-text-table-cell text-[var(--aura-fg-secondary)] max-sm:text-xs">
                         {r.submittedBy.isMe ? t('submittedByYou') : t('submittedBy', { name: r.submittedBy.displayName })}
                         {r.decidedAt ? ` · ${t('decidedOn', { decidedAt: fmtDay(r.decidedAt) })}` : null}
                         {r.state === 'withdrawn' && r.withdrawnAt ? ` · ${t('withdrawnOn', { withdrawnAt: fmtDay(r.withdrawnAt) })}` : null}
@@ -83,14 +85,14 @@ export async function renderChangeRequestHistoryView({ items, nextCursor, isFirs
                     </div>
                   ) : null}
                 </div>
-              </section>
+              </Card>
             </li>
           ))}
         </ul>
       )}
       {items.length > 0 ? (
         // FR-029: a colleague's own-contact changes are never listed; say so.
-        <p className="text-[13px] text-[var(--aura-fg-secondary)]">{t('colleagueNote')}</p>
+        <p className="aura-text-table-cell text-[var(--aura-fg-secondary)]">{t('colleagueNote')}</p>
       ) : null}
       {nextCursor ? (
         <div className="flex justify-center">

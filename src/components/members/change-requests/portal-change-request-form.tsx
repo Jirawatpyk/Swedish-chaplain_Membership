@@ -569,7 +569,7 @@ export function PortalChangeRequestForm({
 
             <Card title={t('billingAddressSection')} titleId="cr-billing-heading" headingLevel={2}>
               {/* The board's hint: a paragraph of the body, 12px above the fields. */}
-              <p className="mb-3 text-[13px] text-[var(--aura-fg-secondary)]">{t('billingAddressHint')}</p>
+              <p className="mb-3 aura-text-table-cell text-[var(--aura-fg-secondary)]">{t('billingAddressHint')}</p>
               <div className="grid gap-x-5 gap-y-4 sm:grid-cols-2">
                 {field('billLine1', t('fields.line1'), { required: billTouched })}
                 {field('billLine2', t('fields.line2'))}

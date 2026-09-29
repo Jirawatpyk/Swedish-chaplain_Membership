@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { ChevronRightIcon, ExternalLinkIcon, PencilIcon } from 'lucide-react';
-import { Alert, Badge, Card, StatusPill, buttonClass } from '@jirawatpyk/aura-react/server';
+import { Alert, Badge, Card, Icon, StatusPill, buttonClass } from '@jirawatpyk/aura-react/server';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { CopyButton } from '@/components/members/copy-button';
@@ -120,7 +120,7 @@ export async function renderPortalProfileView({
         }
         actions={
           <Link href="/portal/edit" className={buttonClass()}>
-            <PencilIcon className="aura-icon size-4" aria-hidden />
+            <Icon name={<PencilIcon />} size={16} />
             {/* While a request waits, the edit page amends it (the board's label). */}
             {pendingRequest ? tPending('editLink') : t('editButton')}
           </Link>
@@ -185,7 +185,7 @@ export async function renderPortalProfileView({
                       className="inline-flex min-w-0 items-center gap-1 text-sm text-[var(--aura-fg-accent)] no-underline hover:text-[var(--aura-fg-primary)] hover:underline"
                     >
                       <span className="truncate">{m.website}</span>
-                      <ExternalLinkIcon className="aura-icon size-3.5 shrink-0" aria-hidden />
+                      <Icon name={<ExternalLinkIcon />} size={14} />
                     </a>
                   }
                 />
@@ -283,7 +283,7 @@ export async function renderPortalProfileView({
                       ) : null}
                     </div>
                     {contact.roleTitle ? (
-                      <p className="text-[13px] text-[var(--aura-fg-secondary)] md:order-last md:text-sm">{contact.roleTitle}</p>
+                      <p className="aura-text-table-cell text-[var(--aura-fg-secondary)] md:order-last md:text-sm">{contact.roleTitle}</p>
                     ) : (
                       <span className="max-md:hidden md:order-last" aria-hidden />
                     )}
@@ -345,7 +345,7 @@ export async function renderPortalProfileView({
               </Card>
             ))}
           </div>
-          <nav aria-label={t('moreAboutProfile')} className="aura-card md:hidden">
+          <Card as="nav" aria-label={t('moreAboutProfile')} className="md:hidden">
             <ul className="flex flex-col">
               {moreLinks.map((link, i) => (
                 <li key={link.href} className={i > 0 ? 'border-t border-[var(--aura-border-default)]' : undefined}>
@@ -358,12 +358,12 @@ export async function renderPortalProfileView({
                       <span className="font-semibold">{link.title}</span>
                       <span className="text-xs text-[var(--aura-fg-secondary)]">{link.subtitle}</span>
                     </span>
-                    <ChevronRightIcon className="aura-icon size-4 shrink-0 text-[var(--aura-fg-secondary)]" aria-hidden />
+                    <Icon name={<ChevronRightIcon />} size={16} className="text-[var(--aura-fg-secondary)]" />
                   </Link>
                 </li>
               ))}
             </ul>
-          </nav>
+          </Card>
         </>
       ) : null}
     </DetailContainer>

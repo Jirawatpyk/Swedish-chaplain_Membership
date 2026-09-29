@@ -153,7 +153,7 @@ export function PortalMarketingToggle({
         // from the hint (review M7).
         <div className="flex flex-col gap-1">
           <span className="text-sm font-medium">{t('label')}</span>
-          <span id={stateId} className="text-[13px] text-[var(--aura-fg-secondary)]">
+          <span id={stateId} className="aura-text-table-cell text-[var(--aura-fg-secondary)]">
             {t(`state.${state}`)}
           </span>
         </div>

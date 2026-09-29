@@ -105,8 +105,9 @@ export function DirectoryListingPreview({
   return (
     <aside className="flex min-w-0 flex-col gap-2.5" aria-labelledby="dir-preview-heading" data-testid="directory-listing-preview">
       <div className="flex min-h-6 items-center justify-between gap-2">
-        <h2 id="dir-preview-heading" className="m-0 font-mono text-[11px] font-normal tracking-[0.04em] text-[var(--aura-fg-tertiary)] uppercase">
-          {t('previewLabel')}
+        {/* AURA's mono caption on the text: preflight resets a heading's size over AURA's token layer */}
+        <h2 id="dir-preview-heading" className="m-0 font-normal text-[var(--aura-fg-tertiary)]">
+          <span className="aura-text-mono tracking-[0.04em] uppercase">{t('previewLabel')}</span>
         </h2>
         <span aria-live="polite">{dirty ? <Badge variant="outline">{t('previewUnsaved')}</Badge> : null}</span>
       </div>
@@ -116,7 +117,7 @@ export function DirectoryListingPreview({
         ) : published === null ? (
           <p className="text-sm text-[var(--aura-fg-secondary)]">{t('previewEmpty')}</p>
         ) : (
-          <div className="flex flex-col gap-3 text-[13px]">
+          <div className="flex flex-col gap-3 aura-text-table-cell">
             <div className="flex items-center gap-3">
               {published.logoUrl ? (
                 <span className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-[var(--aura-radius-lg)] border border-[var(--aura-border-default)] bg-white p-1">
