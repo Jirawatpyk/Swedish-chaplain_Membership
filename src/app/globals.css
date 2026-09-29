@@ -620,9 +620,10 @@ summary,
   /* Spec 122 — the staff nav as `Admin-members` draws it: the Settings group
      points right while closed and down when open (AURA draws down / up), and
      the header's end padding is 6px so the brand, its dot and the Staff badge
-     keep one row in EN (AURA's padding wraps the badge). A stand-in until
-     AURA #96 (SideNav closed-group chevron and one-row header). The rail,
-     drawer, staff bar and bottom nav keep AURA's own sizes (parity rule). */
+     keep one row in EN (AURA's padding wraps the badge).
+     A stand-in until AURA #96 (SideNav closed-group chevron, one-row header).
+     The rail, drawer, staff bar and bottom nav keep AURA's own sizes (parity
+     rule). */
   .staff-nav .aura-nav__chevron {
     transform: rotate(-90deg);
   }

@@ -111,6 +111,7 @@ function Crumb({ segment, isLast }: { segment: BreadcrumbSegment; isLast: boolea
       ) : (
         // An organisational segment (NON_ROUTE_BY_PARENT): its href was
         // rewritten to the parent's, so a link would duplicate that one.
+        // stand-in until AURA #94: AURA's crumb classes on our own trail
         <span className="aura-crumbs__text">{segment.label}</span>
       )}
       {isLast ? null : <ChevronRightIcon className="aura-crumbs__sep size-3" aria-hidden />}

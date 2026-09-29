@@ -131,8 +131,8 @@ function writeSidebarCookie(expanded: boolean) {
 /**
  * The labelled "Collapse sidebar" row at the bottom of the board, in place of
  * AURA's icon-only toggle (the same AURA strings, so it still reads "Expand
- * sidebar" in the rail). It reuses AURA's nav-item styling: a stand-in until
- * AURA #95 (SideNav action rows that do not select).
+ * sidebar" in the rail). It reuses AURA's nav-item styling:
+ * a stand-in until AURA #95 (SideNav action rows that do not select).
  */
 function RailToggle({ collapsed, onToggle }: { readonly collapsed: boolean; readonly onToggle: () => void }) {
   const t = useTranslations('nav.staff');

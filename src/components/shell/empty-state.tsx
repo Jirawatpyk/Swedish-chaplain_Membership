@@ -57,8 +57,8 @@ export function EmptyState({
   // tint and dashed edge), drawn here rather than AURA's `EmptyState`: that
   // always renders its title as a heading (h2–h6) and always lives in the
   // outline, where this title stays a <p> so no page's outline changes, and
-  // `announce` makes the status role optional. A stand-in until AURA #86
-  // (EmptyState title that is not a heading).
+  // `announce` makes the status role optional.
+  // A stand-in until AURA #86 (EmptyState title that is not a heading).
   return (
     <div
       data-testid={dataTestId}
@@ -70,6 +70,7 @@ export function EmptyState({
           <Icon className={cn('size-6', iconClassName)} aria-hidden />
         </span>
       ) : null}
+      {/* stand-in until AURA #86: AURA's empty-state classes by hand */}
       <p className="aura-empty__title">{title}</p>
       {description ? <p className="aura-empty__text">{description}</p> : null}
       {action ? <div className="aura-empty__action">{action}</div> : null}
