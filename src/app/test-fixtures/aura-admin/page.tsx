@@ -325,8 +325,10 @@ export default async function AuraAdminPreviewPage({
       ? REVIEW_FIELDS.map((f) => ({ ...f, outcome: f.key === 'billing_address' ? 'rejected' : 'approved' }) as ChangeRequestReviewFieldView)
       : REVIEW_FIELDS;
     const canWrite = state !== 'manager';
+    // The real route's path: the shell's breadcrumb and phone back link
+    // ("← Change requests") come from it.
     return (
-      <StaffFrame path="/admin/change-requests">
+      <StaffFrame path={`/admin/change-requests/${request.id}`}>
         {await renderChangeRequestReviewView({
           request,
           fields,
