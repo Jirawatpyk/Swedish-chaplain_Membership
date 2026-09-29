@@ -16,16 +16,9 @@ import { useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations, useLocale } from 'next-intl';
 import { toast } from '@/lib/toast';
-import { ArchiveRestoreIcon, AlertTriangleIcon } from 'lucide-react';
+import { ArchiveRestoreIcon } from 'lucide-react';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
-import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+import { Alert, Button, Tooltip, buttonClass } from '@jirawatpyk/aura-react';
 import {
   RestorePrimaryDialog,
   type DesignatableContact,
@@ -226,62 +219,47 @@ export function ArchivedBanner({
 
   return (
     <>
-    <Card className="border-destructive/40 bg-destructive/5 p-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex gap-3">
-          <AlertTriangleIcon
-            className="mt-0.5 size-5 shrink-0 text-destructive"
-            aria-hidden="true"
-          />
-          <div>
-            <p className="text-sm font-semibold">
-              {t('bannerTitle', { date: isoDate })}
-            </p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {windowStatus.state === 'within_window'
-                ? t('withinWindow', {
-                    daysRemaining: windowStatus.daysRemaining,
-                  })
-                : t('windowExpired', {
-                    daysSinceArchive: windowStatus.daysSinceArchive,
-                  })}
-            </p>
-          </div>
-        </div>
-
-        <div className="flex shrink-0 items-center">
-          {canUndelete ? (
-            <Button
-              ref={restoreButtonRef}
-              variant="outline"
-              size="sm"
-              onClick={() => void handleUndelete()}
-              disabled={disabled}
-              aria-label={t('undeleteCta')}
+    {/* Spec 122 US5b-1 — an AURA danger Alert with Restore as its action. A
+        note, not a live region: it is part of the page's first render. */}
+    <Alert
+      tone="danger"
+      role="note"
+      title={t('bannerTitle', { date: isoDate })}
+      action={
+        canUndelete ? (
+          <Button
+            ref={restoreButtonRef}
+            variant="secondary"
+            size="sm"
+            onClick={() => void handleUndelete()}
+            disabled={disabled}
+          >
+            <ArchiveRestoreIcon className="size-4" aria-hidden="true" />
+            {t('undeleteCta')}
+          </Button>
+        ) : (
+          // Past the window: a focusable, aria-disabled button whose tooltip
+          // says why (a native `disabled` one is neither focusable nor read).
+          // A plain button with AURA's classes — AURA's Button replaces a
+          // passed aria-disabled with its own loading flag.
+          <Tooltip content={t('windowExpiredTooltip')}>
+            <button
+              type="button"
+              aria-disabled="true"
+              className={buttonClass({ variant: 'secondary', size: 'sm' })}
+              onClick={(e) => e.preventDefault()}
             >
-              <ArchiveRestoreIcon className="size-4" />
+              <ArchiveRestoreIcon className="size-4" aria-hidden="true" />
               {t('undeleteCta')}
-            </Button>
-          ) : (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger className="inline-flex">
-                  <span
-                    aria-disabled="true"
-                    className="inline-flex h-9 items-center gap-1.5 rounded-md border border-input bg-transparent px-3 text-sm text-muted-foreground opacity-50"
-                    aria-label={t('undeleteCta')}
-                  >
-                    <ArchiveRestoreIcon className="size-4" aria-hidden="true" />
-                    {t('undeleteCta')}
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent>{t('windowExpiredTooltip')}</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          )}
-        </div>
-      </div>
-    </Card>
+            </button>
+          </Tooltip>
+        )
+      }
+    >
+      {windowStatus.state === 'within_window'
+        ? t('withinWindow', { daysRemaining: windowStatus.daysRemaining })
+        : t('windowExpired', { daysSinceArchive: windowStatus.daysSinceArchive })}
+    </Alert>
     <RestorePrimaryDialog
       open={designateOpen}
       onOpenChange={(next) => {

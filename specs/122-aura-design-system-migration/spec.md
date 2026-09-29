@@ -97,7 +97,7 @@ The US5b boards (`Admin-member-detail`, `-timeline`, `-benefits`, `-new`, `-edit
 - **Dialogs with no board** use AURA's `Dialog` / `ConfirmationDialog` defaults and keep their content, copy and behaviour.
 - **Kept although the board omits them** (removing them would remove features): the erased, archived and no-primary-contact banners; the technical details (member number, IDs), copy buttons and flag; the marketing badge and switch per contact and the marketing-audience link; the invite and re-send buttons and badges; the member invoice filters (the same `invStatus` / `invYear` / `invQ` URL); the renew action and at-risk band; the full change-request history; the per-contact data-export scope.
 - **Invoice row actions** (view, record payment, credit note, void) move into the board's "⋯" menu; for a manager they are disabled with the reason in the item, as the tooltip said before.
-- **Section links** list only the sections present for the viewer's role and the feature flags. **On a phone**, as the board: erase, archive and data export move into the header's "⋯" menu, and a pending change request shows as an info alert above the strip.
+- **Section links** list only the sections present for the viewer's role and the feature flags. **On a phone** the board moves erase, archive and data export into a header "⋯" menu; that contradicts the product (ux-standards § 19: a destructive action on a page header is a standalone button, never an overflow-menu item), so Erase and Archive stay visible buttons that wrap. A contact's Remove may sit in its row's "⋯" menu: it is soft and confirmed (§ 19's low-irreversibility exception).
 
 ## User Scenarios & Testing *(mandatory)*
 

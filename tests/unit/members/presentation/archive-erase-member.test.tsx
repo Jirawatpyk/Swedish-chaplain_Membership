@@ -113,8 +113,9 @@ describe('EraseMemberButton (T555)', () => {
     const dialog = openErase();
     fireEvent.click(within(dialog).getByRole('radio', { name: ER.reasonPdpa }));
     fireEvent.click(within(dialog).getByRole('checkbox', { name: ER.attestationLabel }));
-    fireEvent.click(within(dialog).getByRole('combobox', { name: ER.methodLabel }));
-    fireEvent.click(await screen.findByRole('option', { name: ER.method.in_person }));
+    // The repo's convention for an AURA Select: change its native <select>.
+    expect(within(dialog).getByRole('combobox', { name: ER.methodLabel })).toBeInTheDocument();
+    fireEvent.change(dialog.querySelector('select')!, { target: { value: 'in_person' } });
     fireEvent.change(within(dialog).getByRole('textbox', { name: ER.noteLabel }), { target: { value: 'DPO-7' } });
     fireEvent.change(
       within(dialog).getByRole('textbox', { name: ER.confirmLabel.replace('{memberNumber}', 'TSCC-0003') }),

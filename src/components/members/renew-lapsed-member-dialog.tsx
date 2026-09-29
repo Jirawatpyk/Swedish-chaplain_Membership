@@ -19,21 +19,13 @@
  */
 'use client';
 
-import { useRef, useState, useTransition } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { toast } from '@/lib/toast';
 import { RefreshCwIcon } from 'lucide-react';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
+import { Button } from '@jirawatpyk/aura-react';
+import { toast } from '@/lib/toast';
+import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
 import { useSupersedeWarningToast } from '@/components/invoices/use-supersede-warning-toast';
 
 export interface RenewLapsedMemberDialogProps {
@@ -47,82 +39,71 @@ export function RenewLapsedMemberDialog({
   const router = useRouter();
   const showSupersedeWarning = useSupersedeWarningToast();
   const [open, setOpen] = useState(false);
-  const [pending, startTransition] = useTransition();
-  const cancelRef = useRef<HTMLButtonElement | null>(null);
 
-  const onConfirm = () => {
-    startTransition(async () => {
-      try {
-        const res = await fetch(
-          `/api/admin/members/${encodeURIComponent(memberId)}/renew`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            // Confirmation-only body. The §86/4's price AND plan_year are
-            // BOTH server-derived (L2, 068 security review) — the client
-            // does not (and must not) influence a tax document's amount or
-            // fiscal year.
-            body: JSON.stringify({}),
-          },
-        );
-        if (!res.ok) {
-          let code = 'server_error';
-          try {
-            const errBody = (await res.json()) as { error?: { code?: string } };
-            code = errBody.error?.code ?? code;
-          } catch {
-            /* ignore */
-          }
-          // 068 cluster D — next-intl's 2nd `t()` arg is interpolation VALUES,
-          // not options; there is NO `fallback` option. A route code without a
-          // `toast.error.*` key (rate_limited / invalid_body / invalid_input)
-          // previously rendered the raw dotted key path + logged
-          // MISSING_MESSAGE. Use `t.has(...)` to resolve a known code and fall
-          // back to `server_error` for any unknown future code — cleanly, with
-          // no MISSING_MESSAGE.
-          const key = `toast.error.${code}`;
-          toast.error(t('toast.failure'), {
-            description: t.has(key) ? t(key) : t('toast.error.server_error'),
-          });
-          return;
+  // ConfirmationDialog shows the busy state, blocks a second click and starts
+  // on Cancel; it closes only on success (a refusal keeps it open).
+  const onConfirm = async (): Promise<void> => {
+    try {
+      const res = await fetch(
+        `/api/admin/members/${encodeURIComponent(memberId)}/renew`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          // Confirmation-only body. The §86/4's price AND plan_year are
+          // BOTH server-derived (L2, 068 security review) — the client
+          // does not (and must not) influence a tax document's amount or
+          // fiscal year.
+          body: JSON.stringify({}),
+        },
+      );
+      if (!res.ok) {
+        let code = 'server_error';
+        try {
+          const errBody = (await res.json()) as { error?: { code?: string } };
+          code = errBody.error?.code ?? code;
+        } catch {
+          /* ignore */
         }
-        toast.success(t('toast.success'));
-        // 106-void-on-reissue follow-up — the reactivation bill was issued,
-        // but the member's older unpaid bill may not have been auto-voided.
-        showSupersedeWarning(await res.json().catch(() => null));
-        setOpen(false);
-        router.refresh();
-      } catch {
-        toast.error(t('toast.failure'));
+        // 068 cluster D — next-intl's 2nd `t()` arg is interpolation VALUES,
+        // not options; there is NO `fallback` option. A route code without a
+        // `toast.error.*` key (rate_limited / invalid_body / invalid_input)
+        // previously rendered the raw dotted key path + logged
+        // MISSING_MESSAGE. Use `t.has(...)` to resolve a known code and fall
+        // back to `server_error` for any unknown future code — cleanly, with
+        // no MISSING_MESSAGE.
+        const key = `toast.error.${code}`;
+        toast.error(t('toast.failure'), {
+          description: t.has(key) ? t(key) : t('toast.error.server_error'),
+        });
+        return;
       }
-    });
+      toast.success(t('toast.success'));
+      // 106-void-on-reissue follow-up — the reactivation bill was issued,
+      // but the member's older unpaid bill may not have been auto-voided.
+      showSupersedeWarning(await res.json().catch(() => null));
+      setOpen(false);
+      router.refresh();
+    } catch {
+      toast.error(t('toast.failure'));
+    }
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button variant="outline" size="sm" />}>
+    <>
+      <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
         <RefreshCwIcon className="size-3.5" aria-hidden="true" />
         {t('trigger')}
-      </DialogTrigger>
-      <DialogContent initialFocus={cancelRef} role="alertdialog">
-        <DialogHeader>
-          <DialogTitle>{t('title')}</DialogTitle>
-          <DialogDescription>{t('description')}</DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button
-            ref={cancelRef}
-            variant="outline"
-            onClick={() => setOpen(false)}
-            disabled={pending}
-          >
-            {t('cancel')}
-          </Button>
-          <Button onClick={onConfirm} disabled={pending}>
-            {pending ? t('submitting') : t('confirm')}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      </Button>
+      <ConfirmationDialog
+        open={open}
+        onOpenChange={setOpen}
+        title={t('title')}
+        description={t('description')}
+        confirmLabel={t('confirm')}
+        cancelLabel={t('cancel')}
+        closeOnConfirm={false}
+        onConfirm={onConfirm}
+      />
+    </>
   );
 }

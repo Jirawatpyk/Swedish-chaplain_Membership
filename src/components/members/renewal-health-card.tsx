@@ -18,15 +18,9 @@
  * 8601 UTC string, never a pre-formatted/raw `.toISOString()` slice.
  */
 import Link from 'next/link';
-import { ArrowRightIcon, CalendarClockIcon } from 'lucide-react';
+import { ArrowRightIcon } from 'lucide-react';
 import { useFormatter, useLocale, useTranslations } from 'next-intl';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-} from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { buttonVariants } from '@/components/ui/button';
+import { Badge, Card, StatusPill, buttonClass } from '@jirawatpyk/aura-react';
 import type { CycleStatus } from '@/modules/renewals/client';
 import type { EngagementBand } from '@/modules/insights';
 import { RenewLapsedMemberDialog } from '@/components/members/renew-lapsed-member-dialog';
@@ -84,25 +78,24 @@ function isLapsed(status: CycleStatus | null): boolean {
   );
 }
 
-/** Decorative Badge variant per cycle status (label still carries meaning). */
-function statusVariant(
-  status: CycleStatus,
-): 'default' | 'secondary' | 'outline' | 'destructive' {
-  switch (status) {
-    case 'completed':
-      return 'default';
-    case 'lapsed':
-    case 'cancelled':
-      return 'destructive';
-    case 'awaiting_payment':
-    case 'pending_admin_reactivation':
-      return 'outline';
-    case 'upcoming':
-    case 'reminded':
-    default:
-      return 'secondary';
-  }
-}
+/** Pill tone per cycle status (the word carries the meaning, not the colour). */
+const STATUS_TONE: Readonly<Record<CycleStatus, 'neutral' | 'progress' | 'ready' | 'warning' | 'blocked'>> = {
+  upcoming: 'neutral',
+  reminded: 'neutral',
+  awaiting_payment: 'progress',
+  pending_admin_reactivation: 'warning',
+  completed: 'ready',
+  lapsed: 'blocked',
+  cancelled: 'blocked',
+};
+
+/** Engagement band tones, as the members list draws them. */
+const ENGAGEMENT_TONE: Readonly<Record<EngagementBand, 'success' | 'neutral' | 'warning' | 'danger'>> = {
+  healthy: 'success',
+  moderate: 'neutral',
+  warning: 'warning',
+  critical: 'danger',
+};
 
 export function RenewalHealthCard({
   headingId,
@@ -123,111 +116,85 @@ export function RenewalHealthCard({
 
   const hasEngagement = engagementScore !== null && engagementBand !== null;
 
+  const engagementValue = hasEngagement ? (
+    <span className="flex flex-wrap items-center gap-2">
+      <Badge tone={ENGAGEMENT_TONE[engagementBand]}>{tBand(engagementBand)}</Badge>
+      <span className="text-xs tabular-nums text-[var(--aura-fg-secondary)]">{format.number(engagementScore)}</span>
+    </span>
+  ) : null;
+
+  // Spec 122 US5b-1 — an AURA Card as the `Admin-member-detail` board draws
+  // it: the title with Renew (lapsed only) and "View renewal" beside it, then
+  // Status / Expiry / Engagement as a list.
   return (
-    <section aria-labelledby={headingId} className="h-full">
-      <Card className="h-full flex flex-col">
-      <CardHeader className="flex flex-row items-center justify-between gap-2">
-        {/* 056 fix #1 — real <h2> (not the CardTitle <div>) so this section
-            appears in the SR heading tree under the page <h1>. Carries the
-            CardTitle font classes so the visual is unchanged. */}
-        <h2
-          id={headingId}
-          className="flex items-center gap-2 font-heading text-base font-medium leading-snug"
-        >
-          <CalendarClockIcon className="size-4" aria-hidden="true" />
-          {t('title')}
-        </h2>
-        <div className="flex items-center gap-2">
+    <Card
+      as="section"
+      className="h-full"
+      title={t('title')}
+      titleId={headingId}
+      headingLevel={2}
+      actions={
+        <div className="flex flex-wrap items-center gap-2">
           {canRenew && memberId !== undefined && !readFailed && isLapsed(status) && (
             <RenewLapsedMemberDialog memberId={memberId} />
           )}
-          <Link
-            href={viewHref}
-            className={buttonVariants({ variant: 'outline', size: 'sm' })}
-          >
+          <Link href={viewHref} className={buttonClass({ variant: 'ghost', size: 'sm' })}>
             {t('viewRenewal')}
             <ArrowRightIcon className="size-3.5" aria-hidden="true" />
           </Link>
         </div>
-      </CardHeader>
-      <CardContent>
-        {readFailed ? (
-          // Cluster 7 (G18) — the read errored: render a DISTINCT "unavailable"
-          // state, never the empty state (which would claim the member has no
-          // cycle when in fact the read failed). Mirrors the portal precedent.
-          // The F9 engagement score is fetched independently of the renewal
-          // read, so surface it if it DID load — a renewal-read blip should not
-          // drop already-loaded info (final-review nit).
-          <div className="flex flex-col gap-3">
-            <p className="text-sm text-muted-foreground">{t('readFailed')}</p>
-            {hasEngagement && (
-              <dl className="flex flex-col gap-1">
-                <dt className="text-xs text-muted-foreground">
-                  {t('engagement')}
-                </dt>
-                <dd className="flex items-center gap-2 text-sm">
-                  <span className="font-medium tabular-nums">
-                    {format.number(engagementScore)}
-                  </span>
-                  <span className="text-caption text-muted-foreground">
-                    {tBand(engagementBand)}
-                  </span>
-                </dd>
-              </dl>
-            )}
+      }
+    >
+      {readFailed ? (
+        // Cluster 7 (G18) — the read errored: a DISTINCT "unavailable" state,
+        // never the empty state. The engagement score is read independently,
+        // so it still shows if it loaded.
+        <div className="flex flex-col gap-3">
+          <p className="text-sm text-[var(--aura-fg-secondary)]">{t('readFailed')}</p>
+          {engagementValue && (
+            <dl className="flex flex-col gap-1">
+              <dt className="text-xs text-[var(--aura-fg-secondary)]">{t('engagement')}</dt>
+              <dd>{engagementValue}</dd>
+            </dl>
+          )}
+        </div>
+      ) : status === null ? (
+        <p className="text-sm text-[var(--aura-fg-secondary)]">{t('empty')}</p>
+      ) : (
+        <dl className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1">
+            <dt className="text-xs text-[var(--aura-fg-secondary)]">{t('status')}</dt>
+            <dd>
+              <StatusPill tone={STATUS_TONE[status]}>{t(`cycleStatus.${status}`)}</StatusPill>
+            </dd>
           </div>
-        ) : status === null ? (
-          <p className="text-sm text-muted-foreground">{t('empty')}</p>
-        ) : (
-          <dl className="grid grid-cols-1 gap-x-8 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
-            <div className="flex flex-col gap-1">
-              <dt className="text-xs text-muted-foreground">{t('status')}</dt>
-              <dd>
-                <Badge variant={statusVariant(status)}>
-                  {t(`cycleStatus.${status}`)}
-                </Badge>
-              </dd>
-            </div>
-            <div className="flex flex-col gap-1">
-              <dt className="text-xs text-muted-foreground">{t('expiry')}</dt>
-              <dd className="text-sm">
-                {expiryIso !== null ? (
-                  <div className="flex flex-col">
-                    <span>
-                      {formatDatePreset(expiryIso, locale, 'dateMedium2Digit')}
+          <div className="flex flex-col gap-1">
+            <dt className="text-xs text-[var(--aura-fg-secondary)]">{t('expiry')}</dt>
+            <dd className="text-sm">
+              {expiryIso !== null ? (
+                <span className="flex flex-col">
+                  <span>{formatDatePreset(expiryIso, locale, 'dateMedium2Digit')}</span>
+                  {daysRemaining !== null && (
+                    <span className="text-xs text-[var(--aura-fg-secondary)]">
+                      {daysRemaining < 0
+                        ? t('overdueDays', { days: Math.abs(daysRemaining) })
+                        : t('daysRemaining', { days: daysRemaining })}
                     </span>
-                    {daysRemaining !== null && (
-                      <span className="text-caption text-muted-foreground">
-                        {daysRemaining < 0
-                          ? t('overdueDays', { days: Math.abs(daysRemaining) })
-                          : t('daysRemaining', { days: daysRemaining })}
-                      </span>
-                    )}
-                  </div>
-                ) : (
-                  <span className="text-muted-foreground">—</span>
-                )}
-              </dd>
+                  )}
+                </span>
+              ) : (
+                <span className="text-[var(--aura-fg-secondary)]">—</span>
+              )}
+            </dd>
+          </div>
+          {engagementValue && (
+            <div className="flex flex-col gap-1">
+              <dt className="text-xs text-[var(--aura-fg-secondary)]">{t('engagement')}</dt>
+              <dd>{engagementValue}</dd>
             </div>
-            {hasEngagement && (
-              <div className="flex flex-col gap-1">
-                <dt className="text-xs text-muted-foreground">
-                  {t('engagement')}
-                </dt>
-                <dd className="flex items-center gap-2 text-sm">
-                  <span className="font-medium tabular-nums">
-                    {format.number(engagementScore)}
-                  </span>
-                  <span className="text-caption text-muted-foreground">
-                    {tBand(engagementBand)}
-                  </span>
-                </dd>
-              </div>
-            )}
-          </dl>
-        )}
-      </CardContent>
-      </Card>
-    </section>
+          )}
+        </dl>
+      )}
+    </Card>
   );
 }

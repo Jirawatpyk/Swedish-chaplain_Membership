@@ -7,27 +7,20 @@
  * POST /api/members/:id/archive with a fresh Idempotency-Key, then
  * refreshes the page on success so the ArchivedBanner appears and
  * the edit button disappears.
+ *
+ * Spec 122 US5b-1: the shared AURA `ConfirmationDialog` (an alertdialog that
+ * starts on Cancel), the reason on AURA `Textarea` with its limit as the
+ * field's hint. A standalone destructive button, never a menu item
+ * (ux-standards § 19).
  */
 
 import { useState, useTransition, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { ArchiveIcon } from 'lucide-react';
+import { Button, Textarea } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
-import { ArchiveIcon, Loader2Icon } from 'lucide-react';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
-import { buttonVariants } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
 
 type Props = {
   readonly memberId: string;
@@ -39,7 +32,6 @@ export function ArchiveMemberButton({ memberId, companyName }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState('');
-  const [loading, setLoading] = useState(false);
   const [, startTransition] = useTransition();
 
   // R006 (staff-review-20260417-us7) — reset transient dialog state
@@ -48,15 +40,13 @@ export function ArchiveMemberButton({ memberId, companyName }: Props) {
   // archive. Prevents a stale `reason` from bleeding into a later
   // archive attempt after the admin cancelled the first one.
   const handleOpenChange = useCallback((next: boolean) => {
-    if (!next) {
-      setReason('');
-      setLoading(false);
-    }
+    if (!next) setReason('');
     setOpen(next);
   }, []);
 
+  // ConfirmationDialog shows the busy state and blocks a second click; it
+  // closes only on success (a refusal keeps the typed reason).
   async function handleConfirm() {
-    setLoading(true);
     try {
       const res = await fetch(`/api/members/${memberId}/archive`, {
         method: 'POST',
@@ -87,65 +77,37 @@ export function ArchiveMemberButton({ memberId, companyName }: Props) {
       }
     } catch {
       toast.error(t('archiveError'));
-    } finally {
-      setLoading(false);
     }
   }
 
   return (
-    <AlertDialog open={open} onOpenChange={handleOpenChange}>
-      <AlertDialogTrigger
-        className={buttonVariants({ variant: 'destructive-outline' })}
-        aria-label={t('archiveCta')}
-      >
+    <>
+      <Button variant="danger-secondary" onClick={() => setOpen(true)}>
         <ArchiveIcon className="size-4" aria-hidden="true" />
         {t('archiveCta')}
-      </AlertDialogTrigger>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>
-            {t('confirmTitle', { companyName })}
-          </AlertDialogTitle>
-          <AlertDialogDescription>
-            {t('confirmDescription')}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <div className="grid gap-2">
-          <Label htmlFor="archive-reason" className="text-sm">
-            {t('reasonLabel')}
-          </Label>
-          <Textarea
-            id="archive-reason"
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            maxLength={500}
-            placeholder={t('reasonPlaceholder')}
-            rows={3}
-          />
-          <p className="text-xs text-muted-foreground">
-            {t('reasonHelper')}
-          </p>
-        </div>
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={loading}>
-            {t('cancel')}
-          </AlertDialogCancel>
-          <AlertDialogAction
-            onClick={(e) => {
-              e.preventDefault();
-              void handleConfirm();
-            }}
-            disabled={loading}
-            aria-busy={loading}
-            className={buttonVariants({ variant: 'destructive' })}
-          >
-            {loading && (
-              <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" />
-            )}
-            {loading ? t('archivingInProgress') : t('confirmCta')}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+      </Button>
+      <ConfirmationDialog
+        open={open}
+        onOpenChange={handleOpenChange}
+        title={t('confirmTitle', { companyName })}
+        description={t('confirmDescription')}
+        confirmLabel={t('confirmCta')}
+        cancelLabel={t('cancel')}
+        destructive
+        closeOnConfirm={false}
+        onConfirm={handleConfirm}
+      >
+        <Textarea
+          id="archive-reason"
+          label={t('reasonLabel')}
+          hint={t('reasonHelper')}
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          maxLength={500}
+          placeholder={t('reasonPlaceholder')}
+          rows={3}
+        />
+      </ConfirmationDialog>
+    </>
   );
 }
