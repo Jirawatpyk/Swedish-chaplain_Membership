@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowLeftIcon, ChevronRightIcon } from 'lucide-react';
+import { ArrowLeftIcon } from 'lucide-react';
+import { Breadcrumb } from '@jirawatpyk/aura-react';
 import { usePathname } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { formatCalendarYear } from '@/lib/format-date-localised';
@@ -54,23 +55,23 @@ export function BreadcrumbNav({ pathname }: { readonly pathname?: string | undef
   const segments = useBreadcrumbSegments(pathname);
   if (segments.length === 0) return null;
 
-  // AURA's breadcrumb markup (`aura-crumbs`), drawn here rather than with
-  // AURA `Breadcrumb` for the organisational segments and the data-slots the
-  // e2e breadcrumb spec selects on.
-  // AURA's crumb classes on our own trail, not AURA's `Breadcrumb`: the trail
-  // collapses on narrow widths and each item carries its e2e data-slot (#58).
-  // A stand-in until AURA #94 (Breadcrumb collapse + per-item attributes).
+  // AURA's `Breadcrumb` (#94, 5.15): each item's `<li>` carries the e2e
+  // `data-slot` through `itemProps`, and an organisational segment (its href
+  // rewritten to the parent's) has no href, so AURA draws it as text. The
+  // wrapper carries the list slot, as AURA's `<ol>` takes no attributes. The
+  // trail shows from 1024px only, so it never needs AURA's collapse.
   return (
-    <nav aria-label={tLayout('breadcrumbAriaLabel')} data-slot="breadcrumb" className="aura-crumbs">
-      {/* Keys compose `href` + `idx` because a non-route segment
-          (NON_ROUTE_SEGMENTS in breadcrumb-path.ts) rewrites its href to the
-          parent path, duplicating it. */}
-      <ol data-slot="breadcrumb-list" className="flex">
-        {segments.map((seg, idx) => (
-          <Crumb key={`${idx}:${seg.href}`} segment={seg} isLast={idx === segments.length - 1} />
-        ))}
-      </ol>
-    </nav>
+    <div data-slot="breadcrumb-list">
+      <Breadcrumb
+        label={tLayout('breadcrumbAriaLabel')}
+        linkComponent={Link}
+        items={segments.map((seg, idx) => ({
+          label: seg.label,
+          ...(idx < segments.length - 1 && seg.isLinkable ? { href: seg.href } : {}),
+          itemProps: { 'data-slot': 'breadcrumb-item' },
+        }))}
+      />
+    </div>
   );
 }
 
@@ -95,26 +96,5 @@ export function BreadcrumbBackLink({ pathname }: { readonly pathname?: string | 
         {target.label}
       </Link>
     </div>
-  );
-}
-
-// AURA's crumb element classes: a stand-in until AURA #94.
-function Crumb({ segment, isLast }: { segment: BreadcrumbSegment; isLast: boolean }) {
-  return (
-    <li data-slot="breadcrumb-item">
-      {isLast ? (
-        <span aria-current="page" className="aura-crumbs__current">
-          {segment.label}
-        </span>
-      ) : segment.isLinkable ? (
-        <Link href={segment.href}>{segment.label}</Link>
-      ) : (
-        // An organisational segment (NON_ROUTE_BY_PARENT): its href was
-        // rewritten to the parent's, so a link would duplicate that one.
-        // stand-in until AURA #94: AURA's crumb classes on our own trail
-        <span className="aura-crumbs__text">{segment.label}</span>
-      )}
-      {isLast ? null : <ChevronRightIcon className="aura-crumbs__sep size-3" aria-hidden />}
-    </li>
   );
 }

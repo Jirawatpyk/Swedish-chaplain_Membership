@@ -553,14 +553,9 @@ summary,
 }
 
 /* --- Spec 122 US1 — the AURA shell (staff + member frames) -----------------
-   AppShell pads <main>; the layout containers pad too. The containers keep the
-   job (their API and data-slot are the layout contract, FR-012), on AURA's
-   own steps — 16 / 24 / 32 px at base / md / lg, as on the boards. */
+   The layout containers pad the page (AppShell `contentPadding={false}`,
+   #97): their API and data-slot are the layout contract (FR-012). */
 @layer components {
-  /* A stand-in until AURA #97 (AppShell content without its own padding). */
-  .chamber-shell .aura-shell__content {
-    padding: 0;
-  }
   /* Page padding, section gap and column on the boards' steps (spec 122,
      Session 2026-09-27): staff 18 / 24 / 28px top and 32px bottom with a
      16px section gap; the portal 20 / 32px top, 32 / 64px bottom, a 16px
@@ -615,23 +610,6 @@ summary,
   .auth-mesh {
     --aura-mesh-from: #5b9bd5;
     --aura-mesh-to: #ffe27a;
-  }
-
-  /* Spec 122 — the staff nav as `Admin-members` draws it: the Settings group
-     points right while closed and down when open (AURA draws down / up), and
-     the header's end padding is 6px so the brand, its dot and the Staff badge
-     keep one row in EN (AURA's padding wraps the badge).
-     A stand-in until AURA #96 (SideNav closed-group chevron, one-row header).
-     The rail, drawer, staff bar and bottom nav keep AURA's own sizes (parity
-     rule). */
-  .staff-nav .aura-nav__chevron {
-    transform: rotate(-90deg);
-  }
-  .staff-nav .aura-nav__chevron.is-open {
-    transform: none;
-  }
-  .staff-nav .aura-nav__header {
-    padding-inline-end: 6px;
   }
 }
 

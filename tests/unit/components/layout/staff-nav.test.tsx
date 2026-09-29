@@ -82,6 +82,8 @@ describe('StaffNav (spec 122 US1)', () => {
   it('starts in the rail the cookie asked for, and saves the next choice to it', () => {
     renderNav({ defaultCollapsed: true });
     const expand = screen.getByRole('button', { name: 'Expand sidebar' });
+    // AURA #95 (5.16): the labelled toggle row is AURA's own (collapseToggle="row")
+    expect(expand).toHaveClass('aura-nav__item--action');
     fireEvent.click(expand);
     expect(document.cookie).toContain('sidebar_state=true');
     fireEvent.click(screen.getByRole('button', { name: 'Collapse sidebar' }));
@@ -117,7 +119,10 @@ describe('StaffNav (spec 122 US1)', () => {
 
   it('gives the phone drawer a Sign out row and leaves the Staff badge to the close button (Admin-nav-mobile)', () => {
     renderNav({ collapsed: false, collapsible: false });
-    expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+    // AURA #95 (5.16): an action row, never the current item
+    const signOut = screen.getByRole('button', { name: 'Sign out' });
+    expect(signOut).not.toHaveAttribute('aria-current');
+    expect(signOut.closest('.aura-nav')).not.toBeNull();
     expect(screen.queryByText('Staff')).toBeNull();
   });
 });
