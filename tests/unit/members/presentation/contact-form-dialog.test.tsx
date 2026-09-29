@@ -94,7 +94,7 @@ describe('ContactFormDialog — edit-mode email editability', () => {
     const email = document.querySelector('#cf-email') as HTMLInputElement;
     expect(email.readOnly).toBe(false);
     expect(email.disabled).toBe(false);
-    expect(document.querySelector('#cf-email-note')).toBeNull();
+    expect(screen.queryByText(enMessages.admin.members.contactForm.emailEditNote)).toBeNull();
   });
 
   it('LINKED PRIMARY contact: email is read-only (focusable, not disabled) with a note', () => {
@@ -103,7 +103,8 @@ describe('ContactFormDialog — edit-mode email editability', () => {
     // read-only (not disabled) so screen readers still reach it + announce the note.
     expect(email.readOnly).toBe(true);
     expect(email.disabled).toBe(false);
-    expect(document.querySelector('#cf-email-note')).not.toBeNull();
+    // The note is the field's description (122 US5b-1: AURA's hint, linked by aria-describedby).
+    expect(email).toHaveAccessibleDescription(enMessages.admin.members.contactForm.emailEditNote);
   });
 
   it('LINKED SECONDARY contact: email field is editable (no dead-end), no note', () => {
@@ -115,7 +116,7 @@ describe('ContactFormDialog — edit-mode email editability', () => {
     const email = document.querySelector('#cf-email') as HTMLInputElement;
     expect(email.readOnly).toBe(false);
     expect(email.disabled).toBe(false);
-    expect(document.querySelector('#cf-email-note')).toBeNull();
+    expect(screen.queryByText(enMessages.admin.members.contactForm.emailEditNote)).toBeNull();
   });
 
   it('LINKED SECONDARY contact: a changed email PATCHes `email` AND `locale`', async () => {

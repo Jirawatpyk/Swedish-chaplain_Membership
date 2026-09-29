@@ -1641,7 +1641,8 @@
             "notFound": "Kontakt hittades inte.",
             "generic": "Något gick fel. Försök igen.",
             "serverBusy": "Servern är upptagen. Försök igen om en stund."
-          }
+          },
+          "moreActions": "Fler åtgärder för {name}"
         },
         "noPrimaryBanner": {
           "title": "Ingen primär kontakt — betalningsmejl skickas inte",

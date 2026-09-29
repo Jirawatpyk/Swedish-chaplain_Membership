@@ -16,7 +16,7 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
 import { MailPlusIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button } from '@jirawatpyk/aura-react';
 
 type Props = {
   readonly memberId: string;
@@ -80,15 +80,8 @@ export function InvitePortalButton({ memberId, contactId }: Props) {
   }
 
   return (
-    <Button
-      type="button"
-      variant="outline"
-      size="sm"
-      onClick={handleClick}
-      disabled={submitting}
-      className="gap-2"
-    >
-      <MailPlusIcon className="h-4 w-4" aria-hidden="true" />
+    <Button variant="secondary" size="sm" onClick={handleClick} disabled={submitting}>
+      <MailPlusIcon className="size-4" aria-hidden="true" />
       {submitting ? t('submitting') : t('label')}
     </Button>
   );

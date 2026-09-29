@@ -1641,7 +1641,8 @@
             "notFound": "Contact not found.",
             "generic": "Something went wrong. Please try again.",
             "serverBusy": "The server is busy. Please try again in a moment."
-          }
+          },
+          "moreActions": "More actions for {name}"
         },
         "noPrimaryBanner": {
           "title": "No primary contact — payment emails are not being sent",

@@ -39,7 +39,7 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
 import { AUDIENCE_COUNT_ID } from '@/lib/marketing-audience-filter';
-import { Switch } from '@/components/ui/switch';
+import { Switch } from '@jirawatpyk/aura-react';
 import type { MarketingState } from '@/modules/members';
 
 type ProblemBody = { readonly type?: string; readonly outcome?: string };
@@ -72,12 +72,12 @@ export function MarketingSwitch({
   contactId,
   contactName,
   state,
-  size = 'default',
   leavesView = false,
 }: {
   readonly contactId: string;
   readonly contactName: string;
   readonly state: MarketingState;
+  /** Kept for callers; AURA's Switch has one size. */
   readonly size?: 'sm' | 'default';
   /**
    * True when the current view is filtered by marketing state, so a
@@ -88,7 +88,19 @@ export function MarketingSwitch({
   const t = useTranslations('shared.marketing.switch');
   const tState = useTranslations('shared.marketing.state');
   const router = useRouter();
-  const ref = useRef<HTMLButtonElement>(null);
+  // AURA's Switch takes no ref: the wrapper holds one and the switch is its
+  // `role="switch"` child (spec 122 US5b-1).
+  const wrapRef = useRef<HTMLSpanElement>(null);
+  const ref = {
+    get current(): HTMLElement | null {
+      return wrapRef.current?.querySelector<HTMLElement>('[role="switch"]') ?? null;
+    },
+  };
+  // A ref, not state, guards a second click while a request is in flight:
+  // two clicks inside one render both saw `busy === false`. The switch itself
+  // stays enabled — a native-disabled AURA switch cannot take the focus the
+  // Undo hands back to it — and says it is busy instead.
+  const inFlight = useRef(false);
   const [busy, setBusy] = useState(false);
   const [isRefreshing, startRefresh] = useTransition();
 
@@ -112,7 +124,8 @@ export function MarketingSwitch({
     state !== 'off_by_contact' && state !== 'unsubscribed' && state !== 'unavailable';
 
   async function send(next: 'on' | 'off', opts: { readonly offerUndo: boolean }): Promise<void> {
-    if (busy) return;
+    if (inFlight.current) return;
+    inFlight.current = true;
     setBusy(true);
     setOptimistic(next);
     try {
@@ -209,6 +222,7 @@ export function MarketingSwitch({
       setOptimistic(null);
       toast.error(t('errors.generic'));
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   }
@@ -224,15 +238,16 @@ export function MarketingSwitch({
   }
 
   return (
-    <span className="inline-flex min-h-6 min-w-6 items-center">
+    <span
+      ref={wrapRef}
+      className="inline-flex min-h-6 min-w-6 items-center"
+      data-marketing-state={state}
+      aria-busy={busy || isRefreshing || undefined}
+    >
       <Switch
-        ref={ref}
-        size={size}
         checked={checked}
-        disabled={busy || isRefreshing}
         aria-label={t('ariaLabel', { name: contactName, state: tState(state) })}
-        data-marketing-state={state}
-        onCheckedChange={(next) => {
+        onChange={(next) => {
           void send(next ? 'on' : 'off', { offerUndo: true });
         }}
       />

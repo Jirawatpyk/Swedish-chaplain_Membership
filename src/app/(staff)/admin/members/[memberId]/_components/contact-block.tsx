@@ -2,13 +2,16 @@
  * One contact on the member detail page (primary or other): name, status
  * badges, the marketing pair, the write affordances and the details grid.
  * Moved out of the page for spec 122 US5b-1 so the page and the preview route
- * render one view.
+ * render one view, and drawn as the `Admin-member-detail` board's contact
+ * row: the name with its status badges, the actions on the right, then a
+ * two-column details grid. Badges are AURA tones with an icon and a word,
+ * never colour alone.
  */
 import type { getTranslations } from 'next-intl/server';
 import { MailWarningIcon } from 'lucide-react';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 import type { Contact, MarketingState } from '@/modules/members';
-import { Badge } from '@/components/ui/badge';
+import { Badge } from '@jirawatpyk/aura-react/server';
 import { CopyButton } from '@/components/members/copy-button';
 import { DetailField } from '@/components/members/detail-field';
 import { InvitePortalButton } from '@/components/members/invite-portal-button';
@@ -129,16 +132,16 @@ export function ContactBlock({
           >
             {contact.isPrimary && (
               <>
-                <Badge variant="default">{t('sections.primary')}</Badge>
+                <Badge tone="accent">{t('sections.primary')}</Badge>
                 {/* 108 FR-031 — the descriptor says WHAT primary means for
                     money email; the phrase "billing contact" is never used. */}
-                <span className="text-xs text-muted-foreground">
+                <span className="text-xs text-[var(--aura-fg-secondary)]">
                   {t('marketing.primaryDescriptor')}
                 </span>
               </>
             )}
             {contact.linkedUserId && !pendingInvitation && (
-              <Badge variant="secondary">{t('portal.linked')}</Badge>
+              <Badge tone="success">{t('portal.linked')}</Badge>
             )}
             {/* C6 round-10 ui-design-specialist — inline pending-
                 invitation badge replaces "Portal linked" when the
@@ -146,8 +149,7 @@ export function ContactBlock({
                 (2026-07-12) splits this into a live vs expired variant. */}
             {pendingInvitation && !pendingInvitation.expired && daysUntilExpiry !== null && (
               <Badge
-                variant="outline"
-                className="gap-1 border-amber-600 text-amber-900 dark:border-amber-500 dark:text-amber-100"
+                tone="warning"
                 title={t('pendingInvitations.expiresAt', {
                   // FIX 5 — use the shared Buddhist-aware helper so th-TH
                   // users see พ.ศ. (BE) in the hover tooltip, not raw ค.ศ.
@@ -174,16 +176,15 @@ export function ContactBlock({
                 Destructive styling signals the dead-end; the sibling
                 "Re-send invitation" button (below) is the recovery. */}
             {pendingInvitation && pendingInvitation.expired && (
-              <Badge
-                variant="outline"
-                className="gap-1 border-destructive text-destructive dark:border-red-400 dark:text-red-400"
-                aria-label={t('pendingInvitations.expiredAria')}
-              >
+              <Badge tone="danger">
                 <MailWarningIcon
                   aria-hidden="true"
                   className="size-3"
                 />
                 <span>{t('pendingInvitations.expired')}</span>
+                {/* The why as real (visually hidden) text — an aria-label on a
+                    role-less span is ARIA-prohibited (review M2). */}
+                <span className="sr-only">{`, ${t('pendingInvitations.expiredAria')}`}</span>
               </Badge>
             )}
             {/* F3 spec § Edge Cases — "Invite bounced" warning badge.
@@ -209,16 +210,13 @@ export function ContactBlock({
             {contact.inviteBouncedAt &&
               contact.linkedUserId &&
               !(pendingInvitation && pendingInvitation.expired) && (
-              <Badge
-                variant="outline"
-                className="gap-1 border-destructive text-destructive dark:border-red-400 dark:text-red-400"
-                aria-label={t('inviteBounced.badgeAria')}
-              >
+              <Badge tone="danger">
                 <MailWarningIcon
                   aria-hidden="true"
                   className="size-3"
                 />
                 <span>{t('inviteBounced.badge')}</span>
+                <span className="sr-only">{`, ${t('inviteBounced.badgeAria')}`}</span>
               </Badge>
             )}
           </div>
@@ -297,7 +295,7 @@ export function ContactBlock({
           </div>
         )}
       </div>
-      <dl className="grid grid-cols-1 gap-x-8 gap-y-1 md:grid-cols-2">
+      <dl className="grid grid-cols-1 gap-x-8 gap-y-1 sm:grid-cols-2">
         <DetailField
           label={t('fields.email')}
           value={contact.email}

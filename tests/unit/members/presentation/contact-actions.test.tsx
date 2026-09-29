@@ -6,7 +6,7 @@
  * neither. Promote and Remove each confirm in an AURA alert dialog with the
  * same copy and the same requests as before.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
@@ -39,9 +39,14 @@ function renderActions(isPrimary: boolean) {
   );
 }
 
+// Real timers: the global setup fakes them, and findBy / waitFor poll on timers.
+beforeEach(() => {
+  vi.useRealTimers();
+});
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.useFakeTimers();
 });
 
 describe('ContactActions (T554)', () => {

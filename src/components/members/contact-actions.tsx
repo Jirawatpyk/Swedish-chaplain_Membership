@@ -11,25 +11,19 @@
  * Promote + Remove are hidden for the primary contact: you cannot remove a
  * primary (must promote another first) and promoting the current primary is
  * a no-op.
+ *
+ * Spec 122 US5b-1 (board `Admin-member-detail`): Edit and "Make primary" are
+ * visible buttons, Remove sits in the row's "⋯" menu, and both confirmations
+ * are the shared AURA `ConfirmationDialog`.
  */
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { PencilIcon, StarIcon } from 'lucide-react';
+import { DropdownMenu, IconButton, buttonClass } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
-import { PencilIcon, Trash2Icon, StarIcon, Loader2Icon } from 'lucide-react';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
-import { Button, buttonVariants } from '@/components/ui/button';
+import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
 import {
   ContactFormDialog,
   type ContactInitial,
@@ -46,7 +40,6 @@ export function ContactActions({ memberId, contact, isPrimary }: Props) {
   const router = useRouter();
   const [removeOpen, setRemoveOpen] = useState(false);
   const [promoteOpen, setPromoteOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
 
   const contactName = `${contact.firstName} ${contact.lastName}`.trim();
 
@@ -63,8 +56,8 @@ export function ContactActions({ memberId, contact, isPrimary }: Props) {
     }
   };
 
+  // ConfirmationDialog shows the busy state and blocks a second click.
   const handleRemove = async () => {
-    setBusy(true);
     try {
       const res = await fetch(
         `/api/members/${memberId}/contacts/${contact.contactId}`,
@@ -79,13 +72,10 @@ export function ContactActions({ memberId, contact, isPrimary }: Props) {
       router.refresh();
     } catch {
       toast.error(t('errors.generic'));
-    } finally {
-      setBusy(false);
     }
   };
 
   const handlePromote = async () => {
-    setBusy(true);
     try {
       const res = await fetch(
         `/api/members/${memberId}/contacts/${contact.contactId}/promote-primary`,
@@ -100,8 +90,6 @@ export function ContactActions({ memberId, contact, isPrimary }: Props) {
       router.refresh();
     } catch {
       toast.error(t('errors.generic'));
-    } finally {
-      setBusy(false);
     }
   };
 
@@ -115,87 +103,51 @@ export function ContactActions({ memberId, contact, isPrimary }: Props) {
         // read-only while letting a linked SECONDARY email be edited.
         contact={{ ...contact, isPrimary }}
         trigger={
-          <Button type="button" variant="outline" size="sm" className="gap-2">
+          <button type="button" className={buttonClass({ variant: 'secondary', size: 'sm' })}>
             <PencilIcon className="size-4" aria-hidden="true" />
             {t('edit')}
-          </Button>
+          </button>
         }
       />
 
       {!isPrimary && (
         <>
-          <AlertDialog open={promoteOpen} onOpenChange={setPromoteOpen}>
-            <AlertDialogTrigger
-              className={buttonVariants({ variant: 'outline', size: 'sm' })}
-            >
-              <StarIcon className="size-4" aria-hidden="true" />
-              {t('promote')}
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>
-                  {t('promoteTitle', { name: contactName })}
-                </AlertDialogTitle>
-                <AlertDialogDescription>
-                  {t('promoteDescription')}
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel disabled={busy} autoFocus>
-                  {t('cancel')}
-                </AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={(e) => {
-                    e.preventDefault();
-                    void handlePromote();
-                  }}
-                  disabled={busy}
-                  aria-busy={busy}
-                >
-                  {busy && (
-                    <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" />
-                  )}
-                  {t('promoteConfirm')}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+          <button
+            type="button"
+            className={buttonClass({ variant: 'secondary', size: 'sm' })}
+            onClick={() => setPromoteOpen(true)}
+          >
+            <StarIcon className="size-4" aria-hidden="true" />
+            {t('promote')}
+          </button>
+          <DropdownMenu
+            label={t('moreActions', { name: contactName })}
+            trigger={<IconButton icon="ellipsis" size="sm" label={t('moreActions', { name: contactName })} />}
+            items={[{ label: t('remove'), icon: 'trash-2', tone: 'danger', onSelect: () => setRemoveOpen(true) }]}
+          />
 
-          <AlertDialog open={removeOpen} onOpenChange={setRemoveOpen}>
-            <AlertDialogTrigger
-              className={buttonVariants({ variant: 'destructive-outline', size: 'sm' })}
-            >
-              <Trash2Icon className="size-4" aria-hidden="true" />
-              {t('remove')}
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>{t('removeTitle')}</AlertDialogTitle>
-                <AlertDialogDescription>
-                  {t('removeDescription', { name: contactName })}
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel disabled={busy} autoFocus>
-                  {t('cancel')}
-                </AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={(e) => {
-                    e.preventDefault();
-                    void handleRemove();
-                  }}
-                  disabled={busy}
-                  aria-busy={busy}
-                  variant="destructive"
-                >
-                  {busy && (
-                    <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" />
-                  )}
-                  {t('removeConfirm')}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+          <ConfirmationDialog
+            open={promoteOpen}
+            onOpenChange={setPromoteOpen}
+            title={t('promoteTitle', { name: contactName })}
+            description={t('promoteDescription')}
+            confirmLabel={t('promoteConfirm')}
+            cancelLabel={t('cancel')}
+            // Closes itself on success; a refusal keeps it open, as before.
+            closeOnConfirm={false}
+            onConfirm={handlePromote}
+          />
+          <ConfirmationDialog
+            open={removeOpen}
+            onOpenChange={setRemoveOpen}
+            title={t('removeTitle')}
+            description={t('removeDescription', { name: contactName })}
+            confirmLabel={t('removeConfirm')}
+            cancelLabel={t('cancel')}
+            destructive
+            closeOnConfirm={false}
+            onConfirm={handleRemove}
+          />
         </>
       )}
     </div>
