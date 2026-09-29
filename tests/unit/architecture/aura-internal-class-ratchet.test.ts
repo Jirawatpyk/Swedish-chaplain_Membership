@@ -146,8 +146,8 @@ describe('AURA internal-class ratchet (spec 122 parity rule)', () => {
     expect(open.size).toBeGreaterThan(0);
     // the worked example: the change-request queue's #85 stand-in is scanned and labelled
     const queue = reaches.filter((r) => r.file.endsWith('admin/change-requests/_components/queue-table.tsx'));
-    expect(queue.length).toBeGreaterThan(0);
-    expect(queue.every((r) => r.item === 85)).toBe(true);
+    expect(queue.some((r) => r.item === 85)).toBe(true);
+    expect(queue.every((r) => r.item !== undefined)).toBe(true);
   });
 
   it('every reach is labelled, and every label names an open item', () => {

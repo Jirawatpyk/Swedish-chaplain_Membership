@@ -45,7 +45,7 @@ export async function ChangeRequestQueueTable({
   const fmt = (d: Date) => formatLocalisedDate(d.toISOString(), locale, { dateStyle: 'medium', timeStyle: 'short' });
   return (
     // On a phone the cards stand apart, so the list itself loses its frame
-    // (the table keeps it from 640px); part of the #85 stand-in.
+    // (the table keeps it from 640px). Part of the stand-in until AURA #85.
     <div data-queue="board" className="max-sm:[&_.aura-tbl-wrap]:rounded-none max-sm:[&_.aura-tbl-wrap]:border-0 max-sm:[&_.aura-tbl-wrap]:bg-transparent">
     <Table data-testid="queue-table" caption={t('tableCaption')} captionHidden stackBelow="sm" align="middle">
       <THead>
@@ -69,7 +69,8 @@ export async function ChangeRequestQueueTable({
               {/* No card label: the company is the card's title. */}
               <Td card="title">
                 <div className="font-medium">{item.row.member.companyName}</div>
-                {/* Muted in the table, bold in the phone card's title (boards). */}
+                {/* Muted in the table, bold in the phone card's title (boards).
+                    AURA app content: the number's weight on a stacked card. */}
                 <div className="text-xs text-[var(--aura-fg-secondary)] @max-[640px]/aura-tbl:font-semibold @max-[640px]/aura-tbl:text-[var(--aura-fg-primary)]">
                   #{item.row.member.memberNumber}
                   {item.row.member.archived ? ` · ${t('archivedMember')}` : null}
@@ -113,7 +114,7 @@ export async function ChangeRequestQueueTable({
                   // `sm` in the table (AURA's table rule); a phone card takes
                   // the default button height, as the mobile board draws it.
                   // AURA's own height token, no pixels; it keys on AURA's
-                  // stacking container, part of the #85 stand-in.
+                  // stacking container. Part of the stand-in until AURA #85.
                   className={buttonClass({
                     variant: 'secondary',
                     size: 'sm',

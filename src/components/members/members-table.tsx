@@ -354,12 +354,14 @@ function InlineStatusCell({
       onClick={handleToggle}
       disabled={saving}
       title={t('toggleStatus', { current: currentLabel })}
+      // AURA app content: on a stacked phone card the pill sits flush (no hover room).
       className="group inline-flex min-h-6 min-w-[60px] cursor-pointer items-center gap-1 rounded-[var(--aura-radius-sm)] px-1 py-0.5 in-[.aura-table--stacked]:px-0 transition-colors hover:bg-[var(--aura-bg-surface-hover)] focus-visible:outline-2 focus-visible:outline-[var(--aura-focus-ring)] disabled:cursor-wait disabled:opacity-60"
       aria-label={t('toggleStatus', { current: currentLabel })}
     >
       <StatusBadge status={optimistic} />
       {/* Hover / focus hint only; on a phone card (no hover) it would hold
-          empty room and push the pill off the card's edge. */}
+          empty room and push the pill off the card's edge.
+          AURA app content: hidden on a stacked phone card. */}
       <PencilIcon
         className="size-3 text-[var(--aura-fg-tertiary)] opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 in-[.aura-table--stacked]:hidden"
         aria-hidden="true"
@@ -420,6 +422,7 @@ const WRAP_ROW = 'flex min-w-0 flex-wrap items-center gap-1.5 leading-snug';
 /**
  * The status cell is the card's pill, beside the title: on a card its two
  * badges stack so the company name keeps its width.
+ * AURA app content: the badges stack only on a stacked phone card.
  */
 const STATUS_ROW = `${WRAP_ROW} in-[.aura-table--stacked]:flex-col in-[.aura-table--stacked]:items-end in-[.aura-table--stacked]:gap-1`;
 
@@ -635,6 +638,7 @@ export function MembersTable({
         ...MEMBERS_COLUMN_SIZES.company_name,
         render: (row) => (
           <span className="flex min-w-0 items-center gap-2">
+            {/* AURA app content: the flag is on the desktop row only, not the phone card (board). */}
             {row.country && (
               <span data-card-slot="flag" className="shrink-0 in-[.aura-table--stacked]:hidden">
                 <CountryDisplay code={row.country} variant="flag-only" />
@@ -709,7 +713,7 @@ export function MembersTable({
           <span data-card-slot="plan" title={row.plan_id} className={WRAP_TEXT}>
             {row.plan_display_name ?? row.plan_id}
             {/* " · 2026" never starts a line on its own; a phone card shows
-                the plan alone, as on the board. */}
+                the plan alone, as on the board. AURA app content: hidden on a stacked card. */}
             <span className="whitespace-nowrap in-[.aura-table--stacked]:hidden">
               <span aria-hidden="true"> · </span>
               {row.plan_year}
@@ -772,6 +776,7 @@ export function MembersTable({
               </span>
             );
           // A phone card shows the band alone, as on the board.
+          // AURA app content: the score is hidden on a stacked phone card.
           return (
             <span data-card-slot="engagement" className="inline-flex items-center gap-1.5">
               <span className="font-medium tabular-nums in-[.aura-table--stacked]:hidden">{eng.score}</span>
@@ -834,6 +839,7 @@ export function MembersTable({
       // flag set for a later keyboard toggle (AURA toggles on Space, no click).
       onClickCapture={(e) => {
         const target = e.target as Element;
+        // A stand-in until AURA #98 (selection callback reporting a Shift-click).
         shiftClickRef.current = e.shiftKey && target.closest('.aura-table__sel') !== null;
       }}
     >

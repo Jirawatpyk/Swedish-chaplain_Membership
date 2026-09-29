@@ -133,6 +133,7 @@ export function ChangeRequestDecisionTable({ fields, selected, onToggle, canDeci
             </div>
             {/* The checkbox keeps AURA's 16px box but, as before AURA, takes a
                 40×32 hit area (WCAG 2.5.8): its invisible input grows past the box.
+                A stand-in until AURA #99 (Checkbox hit area wider than its box).
                 Phone: top right of the card with the word "Approve" beside it;
                 desktop: the decision column. */}
             <div className="col-start-2 row-start-1 flex items-center gap-2 self-start sm:col-start-4 [&_.aura-check__input]:-inset-x-3 [&_.aura-check__input]:-inset-y-2">
