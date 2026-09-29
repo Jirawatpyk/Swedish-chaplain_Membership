@@ -55,7 +55,7 @@ import type { PortalState } from '@/modules/members';
 // C4 round-10 ui-design-specialist — flag emoji + localised country name.
 // 056-members-table-compact — the flag now leads the Company cell.
 import { CountryDisplay } from './country-display';
-import { MEMBERS_COLUMN_SIZES } from './members-table-columns';
+import { MEMBERS_COLUMN_CARD, MEMBERS_COLUMN_SIZES } from './members-table-columns';
 
 export type MembersTableRow = {
   readonly member_id: string;
@@ -421,12 +421,6 @@ const WRAP_ROW = 'flex min-w-0 flex-wrap items-center gap-1.5 leading-snug';
  * The status cell is the card's pill, beside the title: on a card its two
  * badges stack so the company name keeps its width.
  */
-// Card-mode rules (AURA adds `.aura-table--stacked` below 640px); they reach
-// into AURA's table classes, a stand-in until AURA #80 (column card options).
-// Bulk work
-// and the Edit shortcut stay on wider screens; tapping a card opens the
-// member (maintainer's decision, 28 Sep 2026).
-const PHONE_CARD = String.raw`[&_.aura-table--stacked_.aura-table\_\_sel]:hidden [&_.aura-table--stacked_.aura-table\_\_head.has-select-all]:hidden [&_.aura-table--stacked_[data-card='actions']]:hidden [&_.aura-table--stacked_.aura-table\_\_td:has([data-card-slot='activity'])]:hidden [&_.aura-table--stacked_.aura-table\_\_td:has([data-card-slot='number'])]:order-5 [&_.aura-table--stacked_.aura-table\_\_td:has([data-card-slot='plan'])]:order-6 [&_.aura-table--stacked_.aura-table\_\_td:has([data-card-slot='contact'])]:order-7 [&_.aura-table--stacked_.aura-table\_\_td:has([data-card-slot='engagement'])]:order-8`;
 const STATUS_ROW = `${WRAP_ROW} in-[.aura-table--stacked]:flex-col in-[.aura-table--stacked]:items-end in-[.aura-table--stacked]:gap-1`;
 
 /**
@@ -658,6 +652,7 @@ export function MembersTable({
         mono: true,
         ...MEMBERS_COLUMN_SIZES.member_number_display,
         sortable: true,
+        ...MEMBERS_COLUMN_CARD.member_number_display,
         render: (row) => <span data-card-slot="number">{row.member_number_display}</span>,
       },
       {
@@ -666,6 +661,7 @@ export function MembersTable({
         key: 'primary_contact',
         label: t('columns.primaryContact'),
         ...MEMBERS_COLUMN_SIZES.primary_contact,
+        ...MEMBERS_COLUMN_CARD.primary_contact,
         render: (row) => {
           const c = row.primary_contact;
           if (!c)
@@ -708,6 +704,7 @@ export function MembersTable({
         key: 'plan_display_name',
         label: t('columns.plan'),
         ...MEMBERS_COLUMN_SIZES.plan_display_name,
+        ...MEMBERS_COLUMN_CARD.plan_display_name,
         render: (row) => (
           <span data-card-slot="plan" title={row.plan_id} className={WRAP_TEXT}>
             {row.plan_display_name ?? row.plan_id}
@@ -763,6 +760,7 @@ export function MembersTable({
         label: t('columns.engagement'),
         ...MEMBERS_COLUMN_SIZES.engagement,
         sortable: true,
+        ...MEMBERS_COLUMN_CARD.engagement,
         render: (row) => {
           const eng = row.engagement;
           if (eng === null)
@@ -789,6 +787,7 @@ export function MembersTable({
         key: 'last_activity_at',
         label: t('columns.lastActivity'),
         ...MEMBERS_COLUMN_SIZES.last_activity_at,
+        ...MEMBERS_COLUMN_CARD.last_activity_at,
         render: (row) => {
           const v = row.last_activity_at;
           if (!v)
@@ -814,6 +813,7 @@ export function MembersTable({
         label: '',
         ...MEMBERS_COLUMN_SIZES.actions,
         actions: true,
+        ...MEMBERS_COLUMN_CARD.actions,
         render: (row) => <RowMenu row={row} canEdit={canEdit} />,
       },
     ],
@@ -823,10 +823,8 @@ export function MembersTable({
   return (
     <div
       // The selection checkboxes take a 24×24 target from AURA 5.11 itself
-      // (WCAG 2.5.8 AA, ADOPT-01). A phone card is the board's
-      // (`Admin-members-mobile`): no checkbox, no ⋯ menu, no Last activity,
-      // and the fields in the board's order.
-      className={`flex flex-col gap-4 ${PHONE_CARD}`}
+      // (WCAG 2.5.8 AA, ADOPT-01).
+      className="flex flex-col gap-4"
       ref={tableContainerRef}
       // The bulk bar's Clear hands focus to this table's select-all checkbox.
       data-members-table=""
@@ -914,7 +912,12 @@ export function MembersTable({
           // Rows grow to fit wrapped text (a long name, a name beside its
           // badges); cells stay vertically centred.
           rowHeight="auto"
+          // A phone card is the board's (`Admin-members-mobile`): no checkbox,
+          // no ⋯ menu, no Last activity, and the fields in the board's order
+          // (AURA column `card` / `cardOrder`, handoff #80, 5.13.0). Bulk work
+          // stays on wider screens (maintainer's decision, 28 Sep 2026).
           stackBelow={640}
+          hideSelectionInCards
           {...(enableSelection
             ? {
                 selectable: true,

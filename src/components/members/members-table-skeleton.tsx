@@ -4,7 +4,7 @@
  * Loading skeleton for the members table (122 US5a).
  *
  * AURA's own `DataTable` in its loading state, with the real table's columns
- * (same keys, sizes, narrow-table hiding and phone-card breakpoint from
+ * (same keys, sizes, narrow-table hiding, phone-card breakpoint and card parts from
  * `members-table-columns`), so the grid that replaces it lands in the same
  * place: CLS 0 (ux-standards § 2.1). `withSelection` adds the checkbox
  * column the admin table has; the route-level `loading.tsx` runs before the
@@ -16,7 +16,7 @@
 import { useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import { DataTable, type DataTableColumn } from '@jirawatpyk/aura-react';
-import { MEMBERS_COLUMN_ORDER, MEMBERS_COLUMN_SIZES } from './members-table-columns';
+import { MEMBERS_COLUMN_CARD, MEMBERS_COLUMN_ORDER, MEMBERS_COLUMN_SIZES } from './members-table-columns';
 
 const LABEL_KEYS = {
   company_name: 'columns.company',
@@ -44,6 +44,7 @@ export function MembersTableSkeleton({ withSelection = false }: MembersTableSkel
           key,
           label: labelKey === null ? '' : t(labelKey),
           ...MEMBERS_COLUMN_SIZES[key],
+          ...(key in MEMBERS_COLUMN_CARD ? MEMBERS_COLUMN_CARD[key as keyof typeof MEMBERS_COLUMN_CARD] : {}),
           ...(key === 'actions' ? { actions: true } : {}),
           ...(key === 'status' ? { pill: true } : {}),
         };
@@ -64,6 +65,7 @@ export function MembersTableSkeleton({ withSelection = false }: MembersTableSkel
         selectable={withSelection}
         rowHeight="auto"
         stackBelow={640}
+        hideSelectionInCards
       />
     </div>
   );

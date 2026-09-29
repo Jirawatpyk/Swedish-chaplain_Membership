@@ -10,7 +10,7 @@
  * handleRowSelectionChange was mapping with rows[Number(idx)] — UUID
  * strings cast to NaN, always returning undefined → empty selection.
  */
-import { describe, expect, it, vi, beforeAll } from 'vitest';
+import { describe, expect, it, vi, beforeAll, onTestFinished } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import type { MembersTableRow } from '@/components/members/members-table';
@@ -311,6 +311,12 @@ describe('MembersTable selection on the AURA grid (122 US5a review)', () => {
 
   it('a Shift-click outside a checkbox never turns a later keyboard toggle into a range', async () => {
     const selectionSpy = vi.fn();
+    // A desktop-width grid: jsdom measures 0px, a phone card, where AURA
+    // takes no selection keys (`hideSelectionInCards`).
+    const rect = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockReturnValue({ width: 1280, height: 600, top: 0, left: 0, right: 1280, bottom: 600, x: 0, y: 0 } as DOMRect);
+    onTestFinished(() => rect.mockRestore());
     const { MembersTable } = await import('@/components/members/members-table');
     render(
       <NextIntlClientProvider locale="en" messages={messages}>

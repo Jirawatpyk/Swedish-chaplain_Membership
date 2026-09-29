@@ -11,6 +11,7 @@
 import type { DataTableColumn } from '@jirawatpyk/aura-react';
 
 type ColumnSize = Pick<DataTableColumn, 'width' | 'minWidth' | 'hideBelow'>;
+type ColumnCard = Pick<DataTableColumn, 'card' | 'cardOrder'>;
 
 export const MEMBERS_COLUMN_SIZES = {
   company_name: { minWidth: 130 },
@@ -23,6 +24,22 @@ export const MEMBERS_COLUMN_SIZES = {
   last_activity_at: { width: 132, hideBelow: 1100 },
   actions: { width: 48 },
 } as const satisfies Record<string, ColumnSize>;
+
+/**
+ * The phone card as the `Admin-members-mobile` board draws it (AURA column
+ * `card` / `cardOrder`, handoff #80, 5.13.0): Company is the title and Status
+ * the pill (AURA's defaults), then Member No., Plan, Primary contact and the
+ * engagement band; no Last activity and no ⋯ menu (tapping a card opens the
+ * member).
+ */
+export const MEMBERS_COLUMN_CARD = {
+  member_number_display: { cardOrder: 1 },
+  plan_display_name: { cardOrder: 2 },
+  primary_contact: { cardOrder: 3 },
+  engagement: { cardOrder: 4 },
+  last_activity_at: { card: 'hide' },
+  actions: { card: 'hide' },
+} as const satisfies Partial<Record<keyof typeof MEMBERS_COLUMN_SIZES, ColumnCard>>;
 
 /** Grid column order (the table's `columns` keys, left to right). */
 export const MEMBERS_COLUMN_ORDER = [
