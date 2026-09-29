@@ -15,6 +15,7 @@
  */
 
 import { SkeletonBlock as Skeleton } from '@/components/shell/page-skeletons';
+import { AuraCardSkeleton } from '@/components/shell/aura-card-skeleton';
 import { PageHeader } from '@/components/layout/page-header';
 
 function TimelineEventSkeleton() {
@@ -46,19 +47,17 @@ export function TimelineSkeleton() {
         subtitle={<Skeleton className="h-4 w-52" />}
         actions={<Skeleton className="h-11 w-32" />}
       />
-      <div className="aura-card" aria-hidden>
-        <div className="aura-card__head">
-          <Skeleton className="h-4 w-40" />
-          <Skeleton className="h-4 w-24" />
-        </div>
-        <div className="aura-card__body">
-          <ol className="flex flex-col">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <TimelineEventSkeleton key={i} />
-            ))}
-          </ol>
-        </div>
-      </div>
+      <AuraCardSkeleton
+        aria-hidden
+        title={<Skeleton className="h-4 w-40" />}
+        actions={<Skeleton className="h-4 w-24" />}
+      >
+        <ol className="flex flex-col">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <TimelineEventSkeleton key={i} />
+          ))}
+        </ol>
+      </AuraCardSkeleton>
     </>
   );
 }

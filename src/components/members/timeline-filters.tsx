@@ -75,6 +75,8 @@ export function TimelineFilters(): React.JSX.Element {
     Boolean(currentFrom) ||
     Boolean(currentTo);
 
+  // Four equal filter columns with Clear at the end, as the boards draw them:
+  // a stand-in until AURA #92 (FilterBar controls sharing the row evenly).
   return (
     <FilterBar
       label={t('title')}
