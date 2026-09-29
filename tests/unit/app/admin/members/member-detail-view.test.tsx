@@ -120,6 +120,7 @@ const base: Props = {
     invoices: <div data-testid="invoices" />,
     timeline: <div data-testid="timeline" />,
     changeRequests: <div data-testid="change-requests" />,
+    pendingChangeRequest: <div data-testid="pending-change-request" />,
     dataExport: <div data-testid="data-export" />,
   },
 };
@@ -225,6 +226,15 @@ describe('renderMemberDetailView — sections and "On this page" (T553)', () => 
     await renderView();
     expect(screen.getByRole('region', { name: enMessages.admin.members.detail.sections.company })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: enMessages.admin.members.detail.sections.contacts })).toBeInTheDocument();
+  });
+
+  // UX review M9 (the mobile board): a request awaiting review is flagged
+  // above the figures, not only in the history far down the page.
+  it('puts the pending change-request alert above the strip', async () => {
+    await renderView();
+    const alert = screen.getByTestId('pending-change-request');
+    const strip = screen.getByTestId('strip');
+    expect(alert.compareDocumentPosition(strip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   // UX review M6 (2.5.3 Label in Name): the link's name starts with the
