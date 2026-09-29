@@ -62,15 +62,6 @@ const STATUS_TONE: Readonly<Record<InvoiceStatus, 'neutral' | 'progress' | 'read
   partially_credited: 'neutral',
 };
 
-/**
- * An end-aligned figure, start-aligned in the phone card under its label, as
- * the phone board has it. AURA keeps a column's end alignment inside stacked
- * cards (handoff #108); this is our own markup, not a reach into AURA's.
- */
-function StartOnCard({ children }: { readonly children: React.ReactNode }) {
-  return <span className="block max-[639px]:text-start">{children}</span>;
-}
-
 function menuItems(row: MemberInvoiceRow, labels: MemberInvoicesTableLabels, canMutate: boolean): MenuItem[] {
   const base = `/admin/invoices/${row.invoiceId}`;
   const gated = (label: string, href: string, extra: Partial<MenuItem> = {}): MenuItem =>
@@ -122,17 +113,16 @@ export function MemberInvoicesTable({
       // The board prints "Not paid yet" (G-U7P: words, never a bare dash).
       render: (row) => row.paid ?? <span className="text-[var(--aura-fg-secondary)]">{labels.notPaid}</span>,
     },
-    { key: 'total', label: labels.total, width: 130, align: 'end', render: (row) => <StartOnCard>{row.total}</StartOnCard> },
+    { key: 'total', label: labels.total, width: 130, align: 'end', render: (row) => row.total },
     {
       key: 'remaining',
       label: labels.remaining,
       width: 130,
       align: 'end',
-      render: (row) => (
-        <StartOnCard>
-          {row.owing ? <span className="font-medium text-[var(--aura-alert-warning-fg)]">{row.remaining}</span> : row.remaining}
-        </StartOnCard>
-      ),
+      // AURA's warning text token (≥6.8:1 in both themes); the chip ink
+      // `--aura-status-warning-fg` is near-black on the dark surface.
+      render: (row) =>
+        row.owing ? <span className="font-medium text-[var(--aura-fg-warning)]">{row.remaining}</span> : row.remaining,
     },
     {
       key: 'actions',
