@@ -127,130 +127,129 @@ export function ContactBlock({
             cluster live in adjacent flex containers, separated by
             `gap-2`. The badge cluster ships its own aria-label so SRs
             still hear the state info after the heading. */}
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <ContactAvatar name={`${contact.firstName} ${contact.lastName}`.trim()} />
-          <h3 className="text-base font-semibold">
-            {`${contact.firstName} ${contact.lastName}`.trim()}
-          </h3>
-          {/* `role="group"` — a bare <div> is `generic`, on which `aria-label`
-              is ARIA-prohibited (axe `aria-prohibited-attr`, a hard violation
-              once the cluster is empty). `empty:hidden` drops the labelled
-              group for a contact with no badge at all. */}
-          <div
-            role="group"
-            className="flex flex-wrap items-center gap-2 empty:hidden sm:[&:not(:empty)]:border-e sm:[&:not(:empty)]:pe-2"
-            aria-label={t('sections.contactStatusBadges')}
-          >
-            {contact.isPrimary && (
-              <>
-                <Badge tone="accent">{t('sections.primary')}</Badge>
-                {/* 108 FR-031 — the descriptor says WHAT primary means for
-                    money email; the phrase "billing contact" is never used. */}
-                <span className="text-xs text-[var(--aura-fg-secondary)]">
-                  {t('marketing.primaryDescriptor')}
-                </span>
-              </>
-            )}
-            {contact.linkedUserId && !pendingInvitation && (
-              <Badge tone="success">{t('portal.linked')}</Badge>
-            )}
-            {/* C6 round-10 ui-design-specialist — inline pending-
-                invitation badge replaces "Portal linked" when the
-                user row exists but `consumed_at` is NULL. Cluster 3
-                (2026-07-12) splits this into a live vs expired variant. */}
-            {pendingInvitation && !pendingInvitation.expired && daysUntilExpiry !== null && (
-              <Badge
-                tone="warning"
-                title={t('pendingInvitations.expiresAt', {
-                  // FIX 5 — use the shared Buddhist-aware helper so th-TH
-                  // users see พ.ศ. (BE) in the hover tooltip, not raw ค.ศ.
-                  date: formatLocalisedDate(
-                    pendingInvitation.expiresAt.toISOString(),
-                    locale,
-                    { dateStyle: 'medium' },
-                  ),
-                })}
-              >
-                <MailWarningIcon
-                  aria-hidden="true"
-                  className="size-3"
-                />
-                <span>
-                  {t('pendingInvitations.expiresInDays', {
-                    days: daysUntilExpiry,
+        <div className="flex min-w-0 flex-col gap-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <ContactAvatar name={`${contact.firstName} ${contact.lastName}`.trim()} />
+            <h3 className="text-base font-semibold">
+              {`${contact.firstName} ${contact.lastName}`.trim()}
+            </h3>
+            {/* `role="group"` — a bare <div> is `generic`, on which `aria-label`
+                is ARIA-prohibited (axe `aria-prohibited-attr`, a hard violation
+                once the cluster is empty). `empty:hidden` drops the labelled
+                group for a contact with no badge at all. */}
+            <div
+              role="group"
+              className="flex flex-wrap items-center gap-2 empty:hidden sm:[&:not(:empty)]:border-e sm:[&:not(:empty)]:pe-2"
+              aria-label={t('sections.contactStatusBadges')}
+            >
+              {contact.isPrimary && <Badge tone="accent">{t('sections.primary')}</Badge>}
+              {contact.linkedUserId && !pendingInvitation && (
+                <Badge tone="success">{t('portal.linked')}</Badge>
+              )}
+              {/* C6 round-10 ui-design-specialist — inline pending-
+                  invitation badge replaces "Portal linked" when the
+                  user row exists but `consumed_at` is NULL. Cluster 3
+                  (2026-07-12) splits this into a live vs expired variant. */}
+              {pendingInvitation && !pendingInvitation.expired && daysUntilExpiry !== null && (
+                <Badge
+                  tone="warning"
+                  title={t('pendingInvitations.expiresAt', {
+                    // FIX 5 — use the shared Buddhist-aware helper so th-TH
+                    // users see พ.ศ. (BE) in the hover tooltip, not raw ค.ศ.
+                    date: formatLocalisedDate(
+                      pendingInvitation.expiresAt.toISOString(),
+                      locale,
+                      { dateStyle: 'medium' },
+                    ),
                   })}
-                </span>
-              </Badge>
-            )}
-            {/* Cluster 3 (2026-07-12) — an invitation that expired
-                unaccepted (still consumed_at IS NULL, past expires_at).
-                Destructive styling signals the dead-end; the sibling
-                "Re-send invitation" button (below) is the recovery. */}
-            {pendingInvitation && pendingInvitation.expired && (
-              <Badge tone="danger">
-                <MailWarningIcon
-                  aria-hidden="true"
-                  className="size-3"
-                />
-                <span>{t('pendingInvitations.expired')}</span>
-                {/* The why as real (visually hidden) text — an aria-label on a
-                    role-less span is ARIA-prohibited (review M2). */}
-                <span className="sr-only">{`, ${t('pendingInvitations.expiredAria')}`}</span>
-              </Badge>
-            )}
-            {/* F3 spec § Edge Cases — "Invite bounced" warning badge.
-                Shown when invite_bounced_at is set (the invitation email
-                bounced and was never delivered). Sits alongside a LIVE
-                pending-invitation badge.
+                >
+                  <MailWarningIcon
+                    aria-hidden="true"
+                    className="size-3"
+                  />
+                  <span>
+                    {t('pendingInvitations.expiresInDays', {
+                      days: daysUntilExpiry,
+                    })}
+                  </span>
+                </Badge>
+              )}
+              {/* Cluster 3 (2026-07-12) — an invitation that expired
+                  unaccepted (still consumed_at IS NULL, past expires_at).
+                  Destructive styling signals the dead-end; the sibling
+                  "Re-send invitation" button (below) is the recovery. */}
+              {pendingInvitation && pendingInvitation.expired && (
+                <Badge tone="danger">
+                  <MailWarningIcon
+                    aria-hidden="true"
+                    className="size-3"
+                  />
+                  <span>{t('pendingInvitations.expired')}</span>
+                  {/* The why as real (visually hidden) text — an aria-label on a
+                      role-less span is ARIA-prohibited (review M2). */}
+                  <span className="sr-only">{`, ${t('pendingInvitations.expiredAria')}`}</span>
+                </Badge>
+              )}
+              {/* F3 spec § Edge Cases — "Invite bounced" warning badge.
+                  Shown when invite_bounced_at is set (the invitation email
+                  bounced and was never delivered). Sits alongside a LIVE
+                  pending-invitation badge.
 
-                Cluster 3 review (2026-07-12) — suppressed when the pending
-                invite has ALSO expired: the red "Invitation expired" badge
-                above already signals the dead-end and the shared "Re-send
-                invitation" button below is the single recovery, so showing
-                a second near-identical red "Invite bounced" badge for the
-                same root cause is redundant (a11y double-badge finding).
+                  Cluster 3 review (2026-07-12) — suppressed when the pending
+                  invite has ALSO expired: the red "Invitation expired" badge
+                  above already signals the dead-end and the shared "Re-send
+                  invitation" button below is the single recovery, so showing
+                  a second near-identical red "Invite bounced" badge for the
+                  same root cause is redundant (a11y double-badge finding).
 
-                Task 10 (staff-invitation-lifecycle) — invite_bounced_at is
-                only meaningful while a user is still linked. A staff
-                Revoke/Prune hard-deletes the pending user, which
-                `ON DELETE SET NULL`s contacts.linked_user_id; without this
-                check a bounce recorded before the revoke would leave this
-                badge stuck forever (resendBouncedInvite requires
-                linkedUserId, so it can never clear the flag). Self-heals
-                the read the moment the FK nulls out. */}
-            {contact.inviteBouncedAt &&
-              contact.linkedUserId &&
-              !(pendingInvitation && pendingInvitation.expired) && (
-              <Badge tone="danger">
-                <MailWarningIcon
-                  aria-hidden="true"
-                  className="size-3"
-                />
-                <span>{t('inviteBounced.badge')}</span>
-                <span className="sr-only">{`, ${t('inviteBounced.badgeAria')}`}</span>
-              </Badge>
+                  Task 10 (staff-invitation-lifecycle) — invite_bounced_at is
+                  only meaningful while a user is still linked. A staff
+                  Revoke/Prune hard-deletes the pending user, which
+                  `ON DELETE SET NULL`s contacts.linked_user_id; without this
+                  check a bounce recorded before the revoke would leave this
+                  badge stuck forever (resendBouncedInvite requires
+                  linkedUserId, so it can never clear the flag). Self-heals
+                  the read the moment the FK nulls out. */}
+              {contact.inviteBouncedAt &&
+                contact.linkedUserId &&
+                !(pendingInvitation && pendingInvitation.expired) && (
+                <Badge tone="danger">
+                  <MailWarningIcon
+                    aria-hidden="true"
+                    className="size-3"
+                  />
+                  <span>{t('inviteBounced.badge')}</span>
+                  <span className="sr-only">{`, ${t('inviteBounced.badgeAria')}`}</span>
+                </Badge>
+              )}
+            </div>
+            {/* 108 PR-D (FR-031 / FR-030 / FR-034) — the marketing PAIR: the
+                five-state badge (was the two-state E-Blast subscription badge)
+                plus, for `contacts.marketing` holders, its switch. Grouped
+                together and OUTSIDE the status-badge cluster so an interactive
+                control is never announced as a "status badge" (review M9), and
+                OUTSIDE the `canWrite` cluster (marketing holds this right
+                without `contacts.write`). Only for contacts that HAVE an email
+                (no email = no E-Blast target). */}
+            {contact.email && (
+              <span className="inline-flex items-center gap-2">
+                <MarketingStateBadge state={marketingState} />
+                {canMarketing && (
+                  <MarketingSwitch
+                    contactId={contact.contactId}
+                    contactName={`${contact.firstName} ${contact.lastName}`.trim()}
+                    state={marketingState}
+                    size="sm"
+                  />
+                )}
+              </span>
             )}
           </div>
-          {/* 108 PR-D (FR-031 / FR-030 / FR-034) — the marketing PAIR: the
-              five-state badge (was the two-state E-Blast subscription badge)
-              plus, for `contacts.marketing` holders, its switch. Grouped
-              together and OUTSIDE the status-badge cluster so an interactive
-              control is never announced as a "status badge" (review M9), and
-              OUTSIDE the `canWrite` cluster (marketing holds this right
-              without `contacts.write`). Only for contacts that HAVE an email
-              (no email = no E-Blast target). */}
-          {contact.email && (
-            <span className="inline-flex items-center gap-2">
-              <MarketingStateBadge state={marketingState} />
-              {canMarketing && (
-                <MarketingSwitch
-                  contactId={contact.contactId}
-                  contactName={`${contact.firstName} ${contact.lastName}`.trim()}
-                  state={marketingState}
-                  size="sm"
-                />
-              )}
-            </span>
+          {/* 108 FR-031 — the descriptor says WHAT primary means for money
+              email; the phrase "billing contact" is never used. Its own line,
+              so the badges stay on the name's line (board `Admin-member-detail`). */}
+          {contact.isPrimary && (
+            <p className="text-xs text-[var(--aura-fg-secondary)]">{t('marketing.primaryDescriptor')}</p>
           )}
         </div>
         {/* S1-P1-10: write affordances hidden for the read-only manager. */}

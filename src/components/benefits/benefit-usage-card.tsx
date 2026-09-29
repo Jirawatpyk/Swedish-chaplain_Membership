@@ -91,6 +91,13 @@ export interface BenefitUsageCardProps {
    * the standalone benefits page or the portal (they don't pass this prop).
    */
   readonly className?: string;
+  /**
+   * Spec 122 US5b-1 — `staff` follows the admin boards (`Admin-member-benefits`,
+   * `Admin-member-detail`): the included benefits as outline badges under an
+   * h3, and the compact preview titled "Benefits" with "Details" in its head.
+   * The portal keeps the default.
+   */
+  readonly variant?: 'portal' | 'staff';
 }
 
 function useFormatDate(locale: string): (iso: string) => string {
@@ -121,14 +128,18 @@ export function BenefitUsageCard({
   previewHref,
   headingId,
   className,
+  variant = 'portal',
 }: BenefitUsageCardProps): React.ReactElement {
+  const staff = variant === 'staff';
   const t = useTranslations('benefits');
   const formatDate = useFormatDate(locale);
   const hasContent = quantifiable.length > 0 || active.length > 0;
 
   const title = (
     <span className="flex min-w-0 flex-wrap items-center gap-2">
-      <span>{t('card.title', { year: formatCalendarYear(membershipYear, locale) })}</span>
+      <span>
+        {staff && compact ? t('card.staffPreviewTitle') : t('card.title', { year: formatCalendarYear(membershipYear, locale) })}
+      </span>
       {suspended && (
         // Non-colour-alone encoding, mirrors Task 16's directory badge:
         // distinct icon + distinct visible label + distinct sr-only phrase.
@@ -158,10 +169,17 @@ export function BenefitUsageCard({
       actions={
         !compact && staffActions !== undefined ? (
           <div className="flex shrink-0 items-center gap-2">{staffActions}</div>
+        ) : staff && compact && previewHref !== undefined ? (
+          <Link
+            href={previewHref}
+            className="inline-flex min-h-11 items-center text-sm font-medium text-[var(--aura-fg-accent)] no-underline hover:text-[var(--aura-fg-primary)] hover:underline"
+          >
+            {t('card.staffPreviewLink')}
+          </Link>
         ) : undefined
       }
       footer={
-        compact && previewHref !== undefined ? (
+        !staff && compact && previewHref !== undefined ? (
           // As on the Main board: a footer text link with a 44px target.
           <Link
             href={previewHref}
@@ -234,13 +252,17 @@ export function BenefitUsageCard({
         {!compact && active.length > 0 && (
           <div className="flex flex-col gap-2">
             <Separator />
-            <p className="text-[13px] font-medium text-[var(--aura-fg-secondary)]">
-              {t('card.activeHeading')}
-            </p>
+            {staff ? (
+              <h3 className="text-sm font-semibold">{t('card.activeHeading')}</h3>
+            ) : (
+              <p className="text-[13px] font-medium text-[var(--aura-fg-secondary)]">
+                {t('card.activeHeading')}
+              </p>
+            )}
             <ul className="flex flex-wrap gap-2">
               {active.map((a) => (
                 <li key={a.key}>
-                  <Badge>{t(`active.${a.key}`)}</Badge>
+                  <Badge {...(staff ? { variant: 'outline' as const } : {})}>{t(`active.${a.key}`)}</Badge>
                 </li>
               ))}
             </ul>

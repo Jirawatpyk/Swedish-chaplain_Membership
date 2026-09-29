@@ -72,23 +72,40 @@ const loadMemberChangeRequests = cache(async (tenant: TenantContext, memberId: s
 export async function MemberPendingChangeRequestAlert({ tenant, memberId }: Props) {
   const { items } = await loadMemberChangeRequests(tenant, memberId);
   const pending = items.find(({ row }) => row.request.state === 'pending');
-  return pending ? <PendingChangeRequestAlert requestId={pending.row.request.id} /> : null;
+  if (!pending) return null;
+  const tReview = await getTranslations('admin.changeRequests.review');
+  return (
+    <PendingChangeRequestAlert
+      requestId={pending.row.request.id}
+      submitterName={pending.row.submitter.displayName}
+      submitterRole={tReview(`roles.${pending.row.request.submitterRoleAtSubmission}`)}
+    />
+  );
 }
 
 /** The alert itself — presentation only, so the no-DB preview renders it too. */
-export async function PendingChangeRequestAlert({ requestId }: { readonly requestId: string }) {
+export async function PendingChangeRequestAlert({
+  requestId,
+  submitterName,
+  submitterRole,
+}: {
+  readonly requestId: string;
+  readonly submitterName: string;
+  readonly submitterRole: string;
+}) {
   const t = await getTranslations('admin.members.changeRequests');
   return (
     <Alert
       tone="info"
       role="status"
+      title={t('pendingAlert')}
       action={
         <Link href={`/admin/change-requests/${requestId}`} className={buttonClass({ variant: 'secondary', size: 'sm' })}>
           {t('review')}
         </Link>
       }
     >
-      {t('pendingAlert')}
+      {`${t('submittedBy', { name: submitterName, role: submitterRole })}.`}
     </Alert>
   );
 }

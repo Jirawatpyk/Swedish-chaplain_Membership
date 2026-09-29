@@ -1256,7 +1256,7 @@
           "submittedBy": "Submitted by {name} ({role})",
           "submittedOn": "Submitted {submittedAt}",
           "review": "Review",
-          "pendingAlert": "A change request is awaiting review.",
+          "pendingAlert": "Change request awaiting review",
           "open": "Open"
         },
       "title": "Members",
@@ -8242,6 +8242,8 @@
       "neverUsed": "Not used yet this year",
       "lastUsed": "Last used {date}",
       "activeHeading": "Included benefits",
+      "staffPreviewTitle": "Benefits",
+      "staffPreviewLink": "Details",
       "liveNote": "Updated on load · current year",
       "emptyTitle": "No tracked benefits",
       "fullBenefits": "Full benefits",

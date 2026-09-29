@@ -101,10 +101,10 @@ describe('renderMemberBenefitsView (T558)', () => {
         locale: 'en',
       }),
     );
-    expect(screen.getByRole('link', { name: BN.staffActions.sendReminder })).toHaveAttribute(
-      'href',
-      'mailto:erik@example.com?subject=x',
-    );
+    // Two copies, one per width (the phone board puts it under the title).
+    for (const link of screen.getAllByRole('link', { name: BN.staffActions.sendReminder })) {
+      expect(link).toHaveAttribute('href', 'mailto:erik@example.com?subject=x');
+    }
   });
 
   // Board `Admin-member-benefits`: "Included benefits" is an h3 and each

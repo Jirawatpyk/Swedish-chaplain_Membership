@@ -1256,7 +1256,7 @@
           "submittedBy": "Skickad av {name} ({role})",
           "submittedOn": "Skickad {submittedAt}",
           "review": "Granska",
-          "pendingAlert": "En ändringsbegäran väntar på granskning.",
+          "pendingAlert": "Ändringsbegäran väntar på granskning",
           "open": "Öppna"
         },
       "title": "Medlemmar",
@@ -8242,6 +8242,8 @@
       "neverUsed": "Inte använd i år ännu",
       "lastUsed": "Senast använd {date}",
       "activeHeading": "Inkluderade förmåner",
+      "staffPreviewTitle": "Förmåner",
+      "staffPreviewLink": "Detaljer",
       "liveNote": "Uppdateras vid laddning · innevarande år",
       "emptyTitle": "Inga spårade förmåner",
       "fullBenefits": "Alla förmåner",

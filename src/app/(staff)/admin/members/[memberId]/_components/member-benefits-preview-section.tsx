@@ -71,6 +71,7 @@ export async function MemberBenefitsPreviewSection({
   return (
     <section aria-labelledby="member-benefits-preview-heading" className="h-full">
       <BenefitUsageCard
+        variant="staff"
         headingId="member-benefits-preview-heading"
         locale={locale}
         membershipYear={usage.membershipYear}

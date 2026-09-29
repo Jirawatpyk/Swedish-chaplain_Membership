@@ -1256,7 +1256,7 @@
           "submittedBy": "ส่งโดย {name} ({role})",
           "submittedOn": "ส่งเมื่อ {submittedAt}",
           "review": "พิจารณา",
-          "pendingAlert": "มีคำขอแก้ไขข้อมูลรอตรวจสอบ",
+          "pendingAlert": "คำขอแก้ไขข้อมูลรอตรวจสอบ",
           "open": "เปิด"
         },
       "title": "สมาชิก",
@@ -8242,6 +8242,8 @@
       "neverUsed": "ยังไม่ได้ใช้ในปีนี้",
       "lastUsed": "ใช้ล่าสุด {date}",
       "activeHeading": "สิทธิประโยชน์ที่รวมอยู่",
+      "staffPreviewTitle": "สิทธิประโยชน์",
+      "staffPreviewLink": "รายละเอียด",
       "liveNote": "อัปเดตเมื่อโหลด · ปีปัจจุบัน",
       "emptyTitle": "ไม่มีสิทธิประโยชน์ที่ติดตาม",
       "fullBenefits": "ดูสิทธิประโยชน์ทั้งหมด",

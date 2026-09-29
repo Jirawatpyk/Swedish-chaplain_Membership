@@ -20,7 +20,7 @@
 import Link from 'next/link';
 import { ArrowRightIcon } from 'lucide-react';
 import { useFormatter, useLocale, useTranslations } from 'next-intl';
-import { Badge, Card, StatusPill, buttonClass } from '@jirawatpyk/aura-react';
+import { Badge, Card, StatusPill } from '@jirawatpyk/aura-react';
 import type { CycleStatus } from '@/modules/renewals/client';
 import type { EngagementBand } from '@/modules/insights';
 import { RenewLapsedMemberDialog } from '@/components/members/renew-lapsed-member-dialog';
@@ -124,8 +124,8 @@ export function RenewalHealthCard({
   ) : null;
 
   // Spec 122 US5b-1 — an AURA Card as the `Admin-member-detail` board draws
-  // it: the title with "View renewal" beside it, then Status / Expiry /
-  // Engagement as a list, and Renew (lapsed only) under them.
+  // it: Status and Expiry side by side, Engagement under them, then Renew
+  // (lapsed only) and "View renewal →".
   return (
     <Card
       as="section"
@@ -133,15 +133,10 @@ export function RenewalHealthCard({
       title={t('title')}
       titleId={headingId}
       headingLevel={2}
-      actions={
-        <Link href={viewHref} className={buttonClass({ variant: 'ghost', size: 'sm' })}>
-          {t('viewRenewal')}
-          <ArrowRightIcon className="size-3.5" aria-hidden="true" />
-        </Link>
-      }
     >
-      {/* Renew sits in the body, not the head: AURA's card head does not wrap,
-          and two actions there squeeze the title on a phone (UX review M11). */}
+      {/* The head holds the title alone (board `Admin-member-detail`); Renew
+          and "View renewal →" close the body. AURA's card head does not wrap,
+          so actions there squeeze the title on a phone (UX review M11). */}
       {readFailed ? (
         // Cluster 7 (G18) — the read errored: a DISTINCT "unavailable" state,
         // never the empty state. The engagement score is read independently,
@@ -158,7 +153,7 @@ export function RenewalHealthCard({
       ) : status === null ? (
         <p className="text-sm text-[var(--aura-fg-secondary)]">{t('empty')}</p>
       ) : (
-        <dl className="flex flex-col gap-3">
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
           <div className="flex flex-col gap-1">
             <dt className="text-xs text-[var(--aura-fg-secondary)]">{t('status')}</dt>
             <dd>
@@ -185,18 +180,25 @@ export function RenewalHealthCard({
             </dd>
           </div>
           {engagementValue && (
-            <div className="flex flex-col gap-1">
+            <div className="col-span-2 flex flex-col gap-1">
               <dt className="text-xs text-[var(--aura-fg-secondary)]">{t('engagement')}</dt>
               <dd>{engagementValue}</dd>
             </div>
           )}
         </dl>
       )}
-      {canRenew && memberId !== undefined && !readFailed && isLapsed(status) && (
-        <div className="mt-4">
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        {canRenew && memberId !== undefined && !readFailed && isLapsed(status) && (
           <RenewLapsedMemberDialog memberId={memberId} />
-        </div>
-      )}
+        )}
+        <Link
+          href={viewHref}
+          className="inline-flex min-h-11 items-center gap-1.5 text-sm font-medium text-[var(--aura-fg-accent)] no-underline hover:text-[var(--aura-fg-primary)] hover:underline"
+        >
+          {t('viewRenewal')}
+          <ArrowRightIcon className="size-4" aria-hidden="true" />
+        </Link>
+      </div>
     </Card>
   );
 }

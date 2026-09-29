@@ -87,6 +87,25 @@ function SubGroupLabel({ children }: { readonly children: ReactNode }) {
   );
 }
 
+function AddressGroup({ label, lines }: { readonly label: string; readonly lines: readonly string[] }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <SubGroupLabel>{label}</SubGroupLabel>
+      {lines.length > 0 ? (
+        <p className="text-sm">
+          {lines.map((line, i) => (
+            <span key={i} className="block">
+              {line}
+            </span>
+          ))}
+        </p>
+      ) : (
+        <p className="text-sm text-[var(--aura-fg-secondary)]">—</p>
+      )}
+    </div>
+  );
+}
+
 function TextBlock({ label, lines }: { readonly label: string; readonly lines: readonly string[] }) {
   return (
     <dl>
@@ -370,12 +389,12 @@ export async function renderMemberDetailView({
                 </dl>
               </div>
 
-              {addressLines.length > 0 || billingLines ? (
-                <div className="grid grid-cols-1 gap-4 border-t border-[var(--aura-border-default)] pt-4 md:grid-cols-2">
-                  {addressLines.length > 0 && <TextBlock label={t('fields.address')} lines={addressLines} />}
-                  {billingLines && <TextBlock label={t('fields.billingAddress')} lines={billingLines} />}
-                </div>
-              ) : null}
+              {/* Board: Address and Billing address (tax documents) are groups
+                  of their own; an unset one reads "—". */}
+              <div className="grid grid-cols-1 gap-4 border-t border-[var(--aura-border-default)] pt-4 md:grid-cols-2">
+                <AddressGroup label={t('fields.address')} lines={addressLines} />
+                <AddressGroup label={t('fields.billingAddress')} lines={billingLines ?? []} />
+              </div>
               {member.description && (
                 <div className="border-t border-[var(--aura-border-default)] pt-4">
                   <TextBlock label={t('fields.description')} lines={[member.description]} />

@@ -61,6 +61,15 @@ const STATUS_TONE: Readonly<Record<InvoiceStatus, 'neutral' | 'progress' | 'read
   partially_credited: 'neutral',
 };
 
+/**
+ * An end-aligned figure, start-aligned in the phone card under its label, as
+ * the phone board has it. AURA keeps a column's end alignment inside stacked
+ * cards (handoff #108); this is our own markup, not a reach into AURA's.
+ */
+function StartOnCard({ children }: { readonly children: React.ReactNode }) {
+  return <span className="block max-[639px]:text-start">{children}</span>;
+}
+
 function menuItems(row: MemberInvoiceRow, labels: MemberInvoicesTableLabels, canMutate: boolean): MenuItem[] {
   const base = `/admin/invoices/${row.invoiceId}`;
   const gated = (label: string, href: string, extra: Partial<MenuItem> = {}): MenuItem =>
@@ -98,30 +107,29 @@ export function MemberInvoicesTable({
       card: 'pill',
       render: (row) => <StatusPill tone={STATUS_TONE[row.status]}>{row.statusLabel}</StatusPill>,
     },
-    { key: 'issued', label: labels.issued, width: 120, hideBelow: 'lg' },
+    // The phone board's card shows Due, Total and Remaining only.
+    { key: 'issued', label: labels.issued, width: 120, hideBelow: 'lg', card: 'hide' },
     { key: 'due', label: labels.due, width: 120 },
     {
       key: 'paid',
       label: labels.paid,
       width: 120,
       hideBelow: 'lg',
-      // G-U7P — the dash is read as words ("Not paid yet").
-      render: (row) =>
-        row.paid ?? (
-          <>
-            <span aria-hidden="true">—</span>
-            <span className="sr-only">{labels.notPaid}</span>
-          </>
-        ),
+      card: 'hide',
+      // The board prints "Not paid yet" (G-U7P: words, never a bare dash).
+      render: (row) => row.paid ?? <span className="text-[var(--aura-fg-secondary)]">{labels.notPaid}</span>,
     },
-    { key: 'total', label: labels.total, width: 130, align: 'end' },
+    { key: 'total', label: labels.total, width: 130, align: 'end', render: (row) => <StartOnCard>{row.total}</StartOnCard> },
     {
       key: 'remaining',
       label: labels.remaining,
       width: 130,
       align: 'end',
-      render: (row) =>
-        row.owing ? <span className="font-medium text-[var(--aura-alert-warning-fg)]">{row.remaining}</span> : row.remaining,
+      render: (row) => (
+        <StartOnCard>
+          {row.owing ? <span className="font-medium text-[var(--aura-alert-warning-fg)]">{row.remaining}</span> : row.remaining}
+        </StartOnCard>
+      ),
     },
     {
       key: 'actions',
