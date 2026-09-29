@@ -11,7 +11,7 @@ import type { getTranslations } from 'next-intl/server';
 import { MailWarningIcon } from 'lucide-react';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 import type { Contact, MarketingState } from '@/modules/members';
-import { Badge } from '@jirawatpyk/aura-react/server';
+import { Avatar, Badge } from '@jirawatpyk/aura-react/server';
 import { CopyButton } from '@/components/members/copy-button';
 import { DetailField } from '@/components/members/detail-field';
 import { InvitePortalButton } from '@/components/members/invite-portal-button';
@@ -20,7 +20,6 @@ import { ResendVerificationButton } from '@/components/members/resend-verificati
 import { ContactActions } from '@/components/members/contact-actions';
 import { MarketingStateBadge } from '@/components/members/marketing-state-badge';
 import { MarketingSwitch } from '@/components/members/marketing-switch';
-import { ContactAvatar } from './contact-avatar';
 
 export type PendingInvitation = {
   /**
@@ -141,7 +140,10 @@ export function ContactBlock({
             still hear the state info after the heading. */}
         <div className={`flex min-w-0 flex-col gap-1${hasCornerMenu ? ' max-sm:pe-10' : ''}`}>
           <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <ContactAvatar name={`${contact.firstName} ${contact.lastName}`.trim()} />
+            {/* Decorative: the name is the h3 beside it. */}
+            <span aria-hidden="true" className="inline-flex">
+              <Avatar name={`${contact.firstName} ${contact.lastName}`.trim()} />
+            </span>
             {/* On a phone "Role · Language" sits under the name, beside the
                 avatar (board `Admin-member-detail-mobile`). */}
             <div className="flex min-w-0 flex-col">
