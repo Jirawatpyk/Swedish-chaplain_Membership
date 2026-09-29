@@ -27,4 +27,15 @@ describe('aura-admin preview renders the pages’ own views', () => {
     // phone screenshot showed no "← Change requests" (local review, 29 Sep).
     expect(preview).toContain('<StaffFrame path={`/admin/change-requests/${request.id}`}>');
   });
+
+  it('the member detail, timeline and benefits through their views, framed at their real paths (US5b-1)', () => {
+    expect(preview).toContain('renderMemberDetailView(');
+    expect(preview).toContain('renderMemberTimelineView(');
+    expect(preview).toContain('renderMemberBenefitsView(');
+    expect(preview).toContain('<StaffFrame path={`/admin/members/${MEMBER_ID}`}>');
+    // The sections render through the page's own cards, never a copy.
+    expect(preview).toContain('<MemberInvoicesCard');
+    expect(preview).toContain('<MemberSummaryStrip');
+    expect(preview).not.toContain('<MemberInvoicesTable');
+  });
 });
