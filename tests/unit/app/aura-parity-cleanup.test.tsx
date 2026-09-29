@@ -113,3 +113,21 @@ describe('US3 portal home', () => {
     expect(s).not.toMatch(/aura-alert/);
   });
 });
+
+describe('US3 portal benefits', () => {
+  it.each([
+    'src/components/benefits/portal-benefits-panel.tsx',
+    'src/components/benefits/benefit-usage-card.tsx',
+    'src/components/benefits/benefit-usage-skeleton.tsx',
+    'src/components/benefits/under-use-warning.tsx',
+  ])('%s takes AURA’s Icon / Card and the shared empty state, and no raw px text', (file) => {
+    const s = src(file);
+    expect(s).not.toMatch(HAND_AURA_CLASS);
+    expect(s).not.toMatch(/aura-empty/);
+    expect(s).not.toMatch(RAW_TEXT_PX);
+  });
+
+  it('the big used figure is AURA’s h2 step', () => {
+    expect(src('src/components/benefits/portal-benefits-panel.tsx')).toMatch(/aura-text-h2[^"]*tabular-nums/);
+  });
+});
