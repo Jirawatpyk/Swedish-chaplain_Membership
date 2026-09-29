@@ -226,4 +226,13 @@ describe('renderMemberDetailView — sections and "On this page" (T553)', () => 
     expect(screen.getByRole('region', { name: enMessages.admin.members.detail.sections.company })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: enMessages.admin.members.detail.sections.contacts })).toBeInTheDocument();
   });
+
+  // UX review M6 (2.5.3 Label in Name): the link's name starts with the
+  // address it shows; "opens in a new tab" follows for screen readers.
+  it('the website link is named by the address it shows', async () => {
+    await renderView();
+    const link = screen.getByRole('link', { name: /^siamnordic\.example/ });
+    expect(link).toHaveAttribute('href', 'https://siamnordic.example');
+    expect(link).toHaveAccessibleName(expect.stringContaining(enMessages.admin.members.detail.fields.websiteExternal));
+  });
 });

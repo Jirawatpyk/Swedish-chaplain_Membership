@@ -558,4 +558,17 @@ describe('ContactFormDialog — footer Save and the Art. 14 gate (122 US5b-1)', 
     expect(await screen.findByText(CF.art14AttestationRequired)).toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  // UX review M4: a natively disabled Save drops focus to <body> mid-save,
+  // outside the dialog. While saving it stays focusable and says it is busy.
+  it('Save keeps focus while saving: aria-disabled, never native disabled', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})));
+    openAddDialog();
+    fillAdd();
+    fireEvent.click(document.querySelector('#cf-art14-attested')!);
+    const save = screen.getByRole('button', { name: CF.submit });
+    fireEvent.click(save);
+    await waitFor(() => expect(screen.getByRole('button', { name: CF.submitting })).toHaveAttribute('aria-disabled', 'true'));
+    expect(screen.getByRole('button', { name: CF.submitting })).not.toBeDisabled();
+  });
 });
