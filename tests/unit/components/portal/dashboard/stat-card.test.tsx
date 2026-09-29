@@ -56,7 +56,21 @@ describe('<StatCard>', () => {
     expect(heading.parentElement).toHaveClass('aura-stat__head');
     expect(container.querySelector('.aura-stat__icon svg')).toHaveAttribute('aria-hidden', 'true');
     expect(screen.getByText('38,520.00 THB')).toHaveClass('aura-stat__value');
-    expect(screen.getByText('1 unpaid invoice')).toHaveClass('aura-stat__caption');
+    expect(screen.getByText('1 unpaid invoice').closest('.aura-stat__caption')).not.toBeNull();
+  });
+
+  it('is AURA\'s own Stat (#110, 5.17): the tone row in its status slot, no hand-drawn link overlay', () => {
+    render(
+      <StatCard label="Membership" value="Due" variant="warning" variantLabel="Due" sub="Renews in 5 days" href="/portal/renewal" />,
+    );
+    const card = screen.getByTestId('stat-card');
+    // AURA's label link, stretched over the tile by AURA (linkArea="label")
+    expect(card).toHaveClass('aura-stat--label-link');
+    const link = screen.getByRole('link', { name: 'Membership' });
+    expect(link).toHaveClass('aura-stat__link');
+    expect(link.className).not.toMatch(/after:/);
+    expect(card.className).not.toMatch(/has-\[a:focus-visible\]/);
+    expect(screen.getByTestId('stat-card-status').closest('.aura-stat__status')).not.toBeNull();
   });
 
   it('renders its action as an AURA link button with a 44px target', () => {

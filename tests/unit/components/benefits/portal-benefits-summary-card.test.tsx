@@ -73,6 +73,9 @@ describe('<PortalBenefitsSummaryCard> reserved E-Blasts (spec 122 US3, `Main` bo
     expect(screen.getByText('1 reserved · 3 left · last used 3 Jul 2026')).toBeInTheDocument();
     expect(container.querySelectorAll('.aura-progress__track > span')).toHaveLength(2);
     expect(container.querySelector('.aura-progress__bar--reserved')).not.toBeNull();
+    // AURA's own Progress (#111, 5.17): its tone class, and the bar named by its label element
+    expect(container.querySelector('.aura-progress')).toHaveClass('aura-progress--accent');
+    expect(bar).toHaveAttribute('aria-labelledby');
   });
 
   it('keeps the plain bar when nothing is reserved', () => {
