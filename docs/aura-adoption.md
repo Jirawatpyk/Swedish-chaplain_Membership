@@ -85,24 +85,32 @@ Phases 2–12 each depend on 1 and can land in any order.
 
 ## AURA gaps (the handoff doc)
 
-The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, items 52–56 (Addendum 4) in 5.6.0, items 57–62 (Addendum 5, found in US1) in 5.7.0, item 63 in 5.7.1, item 64 (Addendum 6) in 5.7.2, item 65 (Addendum 7, found in US2) in 5.7.3, items 66–69 (Addendum 8, found in US3) in 5.8.0, items 70–71 (Addendum 9, found in US4) in 5.9.0, items 72–74 (Addendum 10, found adopting 5.9.0 in US4) in 5.10.0, items 75–78 (Addendum 11, found in US5a) in 5.11.0, item 79 (Addendum 12) in 5.12.0 and items 80–84 (Addendum 13) in **5.13.0**, the current pin. One item is open, found adopting 5.13.0:
+The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, items 52–56 (Addendum 4) in 5.6.0, items 57–62 (Addendum 5, found in US1) in 5.7.0, item 63 in 5.7.1, item 64 (Addendum 6) in 5.7.2, item 65 (Addendum 7, found in US2) in 5.7.3, items 66–69 (Addendum 8, found in US3) in 5.8.0, items 70–71 (Addendum 9, found in US4) in 5.9.0, items 72–74 (Addendum 10, found adopting 5.9.0 in US4) in 5.10.0, items 75–78 (Addendum 11, found in US5a) in 5.11.0, item 79 (Addendum 12) in 5.12.0, items 80–84 (Addendum 13) in 5.13.0, and items 85–108 (Addenda 14–16) across 5.14.0, 5.15.0 and **5.16.0**, the current pin.
+
+Items 85–100 have shipped, but their stand-ins stay until a follow-up PR removes them (the 5.15 items are opt-in props, so nothing changes until then). One is on this branch:
+
+| Item | Shipped | Stand-in still in place |
+|---|---|---|
+| #85 | 5.15.0: `Table stackStyle="cards"` | the per-row `CARD` frame, the frameless wrap and the Review button's card height below 640px in `src/app/(staff)/admin/change-requests/_components/queue-table.tsx` |
+
+Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
+
+| # | Shipped in | Used by |
+|---|---|---|
+| 101 | 5.16.0: `Dialog` `trigger` / `onOpen`, `finalFocus`, `onCloseComplete`, `data-*` on the panel | `RestorePrimaryDialog` (focus to the caller's target and the pick reset on close; the ref + microtask is gone); `ContactFormDialog` opens from its `trigger`, its open state still controlled so each open re-seeds the form (the `cloneElement` opener is gone) |
+| 102 | 5.14.0: `Button` keeps a passed `aria-disabled` | the erase gate in `EraseMemberButton` and the expired Restore in `ArchivedBanner` (the plain `buttonClass` buttons are gone) |
+| 103 | 5.14.0: `Avatar` from `/server` | the contact row in `contact-block.tsx` (`contact-avatar.tsx` is gone) |
+| 104 | 5.14.0: `--aura-shell-bar-height` | the sticky "On this page" strip in `section-links.tsx` (was `top-14`) |
+| 105 | 5.16.0: `Combobox` `allowCustomValue` and `groups` | nothing yet — US5b-2 can move the three address comboboxes off the old kit |
+| 106 | 5.14.0: `--aura-fg-warning` | the owed Remaining figure in `member-invoices-table.tsx` |
+| 107 | 5.14.0: `Tabs` `current="location"` | the section links (`aria-current="location"`) |
+| 108 | 5.14.0: stacked `DataTable` cards start `align: 'end'` values under their label | the invoice phone cards (`StartOnCard` is gone) |
+
+Addendum 17 is open:
 
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
-| #85 | a stacked static `Table` whose rows stand apart as separate framed cards (5.13 stacks them in one frame, divided by rules) | the per-row `CARD` frame, the frameless wrap and the Review button's card height below 640px in `src/app/(staff)/admin/change-requests/_components/queue-table.tsx` |
-
-Addendum 16 (items 101–108, found in US5b-1, the member detail page) is open too:
-
-| Item | AURA gap | Chamber-OS stand-in |
-|---|---|---|
-| #101 | `Dialog` final focus, a close-complete callback, a trigger, `data-*` on the panel | a ref + microtask in `restore-primary-dialog.tsx`; `cloneElement` trigger in `contact-form-dialog.tsx` |
-| #102 | `Button` replaces a passed `aria-disabled` with its `loading` flag | a plain `<button className={buttonClass(…)}>` in `erase-member-button.tsx` and `archived-banner.tsx` |
-| #103 | `Avatar` is client-only | `members/[memberId]/_components/contact-avatar.tsx` (`'use client'`) |
-| #104 | no token for the shell top bar's height | `top-14` in `members/[memberId]/_components/section-links.tsx` |
-| #105 | `Combobox` takes no typed value and no option groups | US5b-2 keeps the three address comboboxes on the old kit (`NOT_YET_ON_AURA`) |
-| #106 | no warning text token (`--aura-status-warning-fg` is chip ink, near-black in dark mode) | `--aura-alert-warning-fg` in `member-invoices-table.tsx` |
-| #107 | `Tabs` link mode marks `aria-current="page"`, not `location`, for in-page anchors | none — the section links accept `page` |
-| #108 | stacked `DataTable` cards keep a column's `align: 'end'` | `StartOnCard` (`block max-[639px]:text-start`) around Total and Remaining in `member-invoices-table.tsx` |
+| #109 | the read-only input rule (`.aura-input:has(.aura-input__control:read-only:not(select))`) also matches a custom `Select`'s `<button>` trigger, so every Select gets `--aura-bg-input-disabled` and its placeholder reads 4.47:1 | none, by the maintainer's call (29 Sep): the `members-erase` @a11y e2e case stays red until AURA fixes it |
 
 One note stays with AURA: `Menu` closes on any scroll or window resize (iOS Safari fires resize when its toolbar moves), to be checked on a real iPhone before it becomes an item.
 
