@@ -21,7 +21,7 @@
  * and `TextField`. Behaviour and gates unchanged.
  */
 
-import { useState, useTransition, useCallback } from 'react';
+import { useState, useTransition, useCallback, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { ShieldXIcon } from 'lucide-react';
@@ -83,7 +83,15 @@ export function EraseMemberButton({ memberId, companyName, memberNumberDisplay }
   const [note, setNote] = useState('');
   const [typedConfirm, setTypedConfirm] = useState('');
   const [loading, setLoading] = useState(false);
+  // A refusal is said inside the dialog (ux-standards § 6.4): a toast sits
+  // outside the aria-modal dialog, where a screen reader does not go.
+  const [error, setError] = useState<string | null>(null);
+  const errorRef = useRef<HTMLDivElement>(null);
   const [, startTransition] = useTransition();
+
+  useEffect(() => {
+    if (error) errorRef.current?.focus();
+  }, [error]);
 
   const resetState = useCallback(() => {
     setReason(null);
@@ -92,6 +100,7 @@ export function EraseMemberButton({ memberId, companyName, memberNumberDisplay }
     setNote('');
     setTypedConfirm('');
     setLoading(false);
+    setError(null);
   }, []);
 
   const handleOpenChange = useCallback(
@@ -110,6 +119,7 @@ export function EraseMemberButton({ memberId, companyName, memberNumberDisplay }
   async function handleConfirm() {
     if (!canConfirm || reason === null || method === null) return;
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`/api/members/${memberId}/erase`, {
         method: 'POST',
@@ -138,12 +148,10 @@ export function EraseMemberButton({ memberId, companyName, memberNumberDisplay }
         const data = (await res.json().catch(() => ({}))) as { error?: { code?: string } };
         // Map the server error CODE to localized copy — never render the
         // server's raw English `error.message`.
-        toast.error(
-          data.error?.code === 'not_found' ? t('eraseNotFound') : t('eraseError'),
-        );
+        setError(data.error?.code === 'not_found' ? t('eraseNotFound') : t('eraseError'));
       }
     } catch {
-      toast.error(t('eraseError'));
+      setError(t('eraseError'));
     } finally {
       setLoading(false);
     }
@@ -187,6 +195,11 @@ export function EraseMemberButton({ memberId, companyName, memberNumberDisplay }
         }
       >
         <div className="flex flex-col gap-4">
+          {error && (
+            <Alert ref={errorRef} tone="danger" role="alert" tabIndex={-1}>
+              {error}
+            </Alert>
+          )}
           {/* Prominent permanence callout (UX M3) — the danger treatment, not a
               muted description. A note, not a live region: it is read with
               the dialog. */}
