@@ -106,6 +106,8 @@ export function ContactActions({ memberId, contact, isPrimary }: Props) {
           <button type="button" className={buttonClass({ variant: 'secondary', size: 'sm' })}>
             <PencilIcon className="size-4" aria-hidden="true" />
             {t('edit')}
+            {/* Several contacts each have an Edit: the name tells them apart. */}
+            <span className="sr-only">{`, ${contactName}`}</span>
           </button>
         }
       />
@@ -119,6 +121,7 @@ export function ContactActions({ memberId, contact, isPrimary }: Props) {
           >
             <StarIcon className="size-4" aria-hidden="true" />
             {t('promote')}
+            <span className="sr-only">{`, ${contactName}`}</span>
           </button>
           <DropdownMenu
             label={t('moreActions', { name: contactName })}

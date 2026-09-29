@@ -97,7 +97,8 @@ describe('ContactActions (T554)', () => {
   // each button carries the contact's name after its visible text (2.5.3).
   it('Edit and Make primary are named for their contact', () => {
     renderActions(false);
-    expect(screen.getByRole('button', { name: `${A.edit}, Ploy Srisuk` })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: `${A.promote}, Ploy Srisuk` })).toBeInTheDocument();
+    // jsdom pads the sr-only span with a space; a browser does not.
+    expect(screen.getByRole('button', { name: new RegExp(`^${A.edit} ?, Ploy Srisuk$`) })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: new RegExp(`^${A.promote} ?, Ploy Srisuk$`) })).toBeInTheDocument();
   });
 });

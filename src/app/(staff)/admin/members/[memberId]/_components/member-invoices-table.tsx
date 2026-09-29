@@ -121,7 +121,7 @@ export function MemberInvoicesTable({
       width: 130,
       align: 'end',
       render: (row) =>
-        row.owing ? <span className="font-medium text-[var(--aura-status-warning-fg)]">{row.remaining}</span> : row.remaining,
+        row.owing ? <span className="font-medium text-[var(--aura-alert-warning-fg)]">{row.remaining}</span> : row.remaining,
     },
     {
       key: 'actions',

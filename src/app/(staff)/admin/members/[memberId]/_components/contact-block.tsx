@@ -55,6 +55,15 @@ export type PendingInvitation = {
   readonly expired: boolean;
 };
 
+/** The language's name in the page's language ("Thai"), as the board shows it. */
+function languageName(code: string, locale: string): string {
+  try {
+    return new Intl.DisplayNames([locale], { type: 'language' }).of(code) ?? code.toUpperCase();
+  } catch {
+    return code.toUpperCase();
+  }
+}
+
 export function ContactBlock({
   contact,
   memberId,
@@ -109,7 +118,7 @@ export function ContactBlock({
   // card-in-card anti-pattern.
   return (
     <div>
-      <div className="mb-3 flex flex-row items-start justify-between gap-4">
+      <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         {/* Round-11 review fix — badges moved OUT of the <h3> so the
             heading text reads cleanly to screen readers (was producing
             "John Smith Primary Portal linked Expires in 5 days" as a
@@ -127,7 +136,7 @@ export function ContactBlock({
               group for a contact with no badge at all. */}
           <div
             role="group"
-            className="flex flex-wrap items-center gap-2 empty:hidden [&:not(:empty)]:border-e [&:not(:empty)]:pe-2"
+            className="flex flex-wrap items-center gap-2 empty:hidden sm:[&:not(:empty)]:border-e sm:[&:not(:empty)]:pe-2"
             aria-label={t('sections.contactStatusBadges')}
           >
             {contact.isPrimary && (
@@ -244,7 +253,7 @@ export function ContactBlock({
         </div>
         {/* S1-P1-10: write affordances hidden for the read-only manager. */}
         {canWrite && (
-          <div className="flex flex-wrap items-center justify-end gap-2">
+          <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
             {canInvite && (
               <InvitePortalButton memberId={memberId} contactId={contact.contactId} />
             )}
@@ -307,7 +316,7 @@ export function ContactBlock({
         <DetailField label={t('fields.roleTitle')} value={contact.roleTitle} />
         <DetailField
           label={t('fields.preferredLanguage')}
-          value={contact.preferredLanguage.toUpperCase()}
+          value={languageName(contact.preferredLanguage, locale)}
         />
       </dl>
     </div>
