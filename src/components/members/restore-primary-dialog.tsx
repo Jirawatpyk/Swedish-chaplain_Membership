@@ -33,12 +33,12 @@
  *
  * Spec 122 US5b-1: an AURA `Dialog role="alertdialog"` (its body scrolls on a
  * short screen while the footer stays reachable) with an AURA `RadioGroup`
- * whose legend names the choices. AURA's Dialog has no close-complete
- * callback or `finalFocus`, so both run in this component's close effect,
- * after AURA's own focus restore.
+ * whose legend names the choices. On close, AURA's `finalFocus` sends focus
+ * to the caller's target and `onCloseComplete` runs once the panel has left
+ * the page (AURA 5.16, handoff 101).
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { UserPlusIcon } from 'lucide-react';
 import { Button, Dialog, RadioGroup } from '@jirawatpyk/aura-react';
@@ -98,31 +98,6 @@ export function RestorePrimaryDialog({
     onOpenChange(false);
   };
 
-  // The close cycle: forget the pick, run the caller's close-complete, then
-  // hand focus to `finalFocus` — a microtask after AURA's own restore (which
-  // runs in the same commit), and never out of a dialog that is still open.
-  const closeRef = useRef({ onCloseComplete, finalFocus });
-  useEffect(() => {
-    closeRef.current = { onCloseComplete, finalFocus };
-  }, [onCloseComplete, finalFocus]);
-  const wasOpen = useRef(open);
-  useEffect(() => {
-    if (open) {
-      wasOpen.current = true;
-      return;
-    }
-    if (!wasOpen.current) return;
-    wasOpen.current = false;
-    const { onCloseComplete: done, finalFocus: focusTarget } = closeRef.current;
-    queueMicrotask(() => {
-      // Forget the pick however it closed (a caller may close it itself).
-      setPicked(null);
-      const target = focusTarget?.();
-      if (target && !document.activeElement?.closest('[role="dialog"], [role="alertdialog"]')) target.focus();
-      done?.();
-    });
-  }, [open]);
-
   return (
     <Dialog
       role="alertdialog"
@@ -132,6 +107,12 @@ export function RestorePrimaryDialog({
         handleClose();
       }}
       dismissible={!submitting}
+      finalFocus={() => finalFocus?.() || null}
+      onCloseComplete={() => {
+        // Forget the pick however it closed (a caller may close it itself).
+        setPicked(null);
+        onCloseComplete?.();
+      }}
       title={t('title')}
       description={none ? t('noContactsDescription') : t('description')}
       footer={
