@@ -24,6 +24,8 @@
  */
 import AxeBuilder from '@axe-core/playwright';
 import { memberTest as test, expect } from './helpers/member-session';
+import { stubInitiateEndpoint } from './helpers/payment-intent-stub';
+import { stubStripeConfirmSuccess } from './helpers/stripe-mock';
 
 const ISSUED_INVOICE_ID = process.env.E2E_ISSUED_INVOICE_ID;
 const PAID_INVOICE_ID = process.env.E2E_PAID_ONLINE_INVOICE_ID;
@@ -73,6 +75,13 @@ test.describe('F5 payment surfaces a11y @a11y @payment @e2e (T144)', () => {
   test('PaySheet drawer (card tab) passes WCAG 2.1 AA on open', async ({
     page,
   }) => {
+    // The initiate call and the Stripe SDK are stubbed: the E2E member is
+    // lapsed by the renewals seed (global setup), so the real route refuses
+    // with `membership_terminated` and the card form never mounts. axe scans
+    // the sheet's own DOM — a cross-origin Stripe iframe is out of its reach
+    // either way (see the note below) — so the stub costs no coverage.
+    await stubInitiateEndpoint(page);
+    await stubStripeConfirmSuccess(page);
     // ?pay=1 deep-link auto-opens the drawer + selects the card tab.
     await page.goto(`/portal/invoices/${ISSUED_INVOICE_ID}?pay=1`);
     await page.waitForSelector('[data-testid="pay-sheet-content"]', {

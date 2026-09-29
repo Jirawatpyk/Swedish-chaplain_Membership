@@ -7,7 +7,11 @@ import { clearE2ERateLimits } from './helpers/rate-limit';
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
 
-const EXPECTED_H1_PX = 30; // 1.875rem
+// h1 is NOT a fixed px any more. Spec 122 put page titles on the boards'
+// step (`--font-size-h1`: 26px on phones, 32px from 640px, #435), and a hero
+// header overrides the token again (globals.css). FR-017's 1.875rem holds for
+// h2–h4 only. So each h1 is read against the token in force at that h1, which
+// still fails if a title stops using `.text-h1`.
 const EXPECTED_H2_PX = 24; // 1.5rem
 const EXPECTED_H3_PX = 20; // 1.25rem
 const EXPECTED_H4_PX = 18; // 1.125rem
@@ -36,10 +40,18 @@ test.describe('F4 SC-010 — typography scale @layout', () => {
       const h1 = page.getByRole('heading', { level: 1 });
       if (await h1.count()) {
         await h1.first().waitFor({ state: 'visible', timeout: 5_000 });
-        const size = await h1
-          .first()
-          .evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
-        expect(size, `${path} h1`).toBeCloseTo(EXPECTED_H1_PX, 0);
+        const { size, token } = await h1.first().evaluate((el) => {
+          // The probe sits inside the h1, so it inherits the same
+          // `--font-size-h1` (a hero header narrows it on its own subtree).
+          const probe = document.createElement('span');
+          probe.style.fontSize = 'var(--font-size-h1)';
+          el.append(probe);
+          const tokenPx = parseFloat(getComputedStyle(probe).fontSize);
+          probe.remove();
+          return { size: parseFloat(getComputedStyle(el).fontSize), token: tokenPx };
+        });
+        expect(token, `${path} --font-size-h1 resolves`).toBeGreaterThan(0);
+        expect(size, `${path} h1`).toBeCloseTo(token, 0);
       }
 
       // SC-010 literal: every h2/h3/h4 on a migrated page MUST either carry
