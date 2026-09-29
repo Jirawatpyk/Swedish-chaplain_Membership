@@ -246,11 +246,21 @@ describe('renderMemberDetailView — sections and "On this page" (T553)', () => 
     expect(screen.getByRole('heading', { level: 3, name: D.sections.membership })).toBeInTheDocument();
   });
 
+  // Board `Admin-member-detail`: the labels already say "(THB)", so the
+  // figures carry no currency; the website shows its host.
+  it('turnover and capital read as plain figures; the website as its host', async () => {
+    await renderView({ member: { ...member, turnoverThb: 184000000, registeredCapitalThb: 20000000 } });
+    const company = screen.getByRole('region', { name: enMessages.admin.members.detail.sections.company });
+    expect(company).toHaveTextContent('184,000,000');
+    expect(company).not.toHaveTextContent(/THB\s?184|฿184/);
+    expect(screen.getByRole('link', { name: /^siamnordic\.example/ })).toHaveAttribute('href', 'https://siamnordic.example');
+  });
+
   // UX review M6 (2.5.3 Label in Name): the link's name starts with the
   // address it shows; "opens in a new tab" follows for screen readers.
   it('the website link is named by the address it shows', async () => {
     await renderView();
-    const link = screen.getByRole('link', { name: /^https:\/\/siamnordic\.example/ });
+    const link = screen.getByRole('link', { name: /^siamnordic\.example/ });
     expect(link).toHaveAttribute('href', 'https://siamnordic.example');
     expect(link).toHaveAccessibleName(expect.stringContaining(enMessages.admin.members.detail.fields.websiteExternal));
   });
