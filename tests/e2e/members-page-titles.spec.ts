@@ -134,6 +134,9 @@ test.describe('F3 admin route page titles @f3 @a11y', () => {
   });
 
   test('all collected F3 admin titles are unique', async ({ page }) => {
+    // Five routes, each waiting for networkidle plus up to 3 s for the title:
+    // ~20 s alone, and a slow full-file run hit the 30 s default (R17).
+    test.setTimeout(60_000);
     await signIn(page);
     const memberId = await firstMemberId(page);
     if (!memberId) {
