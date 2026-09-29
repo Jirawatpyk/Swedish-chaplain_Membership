@@ -1748,7 +1748,8 @@
           "issueCreditNote": "ออกใบลดหนี้",
           "void": "ยกเลิก",
           "voidAriaLabel": "ยกเลิกใบแจ้งหนี้ {number}",
-          "disabledForManager": "ผู้จัดการดูได้อย่างเดียว กรุณาติดต่อผู้ดูแลระบบ"
+          "disabledForManager": "ผู้จัดการดูได้อย่างเดียว กรุณาติดต่อผู้ดูแลระบบ",
+          "menuFor": "การดำเนินการสำหรับ {number}"
         }
       },
       "create": {

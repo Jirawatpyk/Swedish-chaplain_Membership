@@ -17,15 +17,7 @@
 import { useCallback, useMemo, useState, useTransition } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  TranslatedSelectValue,
-} from '@/components/ui/select';
+import { Button, Select, TextField } from '@jirawatpyk/aura-react';
 
 const STATUSES = [
   'all',
@@ -74,24 +66,19 @@ export function MemberInvoicesFilters() {
     [params, pathname, router],
   );
 
+  // Spec 122 US5b-1 — AURA fields in the same staged form: nothing applies
+  // until Apply (or Enter), and the URL (`invQ`, `invStatus`, `invYear`) is
+  // unchanged. Search full width on a phone, then status and year side by
+  // side, then the buttons.
   return (
     <form
-      // `data-slot="filter-bar"` activates the global mobile-width
-      // rule in globals.css (mobile stacks full-width, desktop defers
-      // to utilities). Outer wrapper keeps the border-b divider used
-      // as a visual section separator between the member header and
-      // the invoice table below.
-      data-slot="filter-bar"
-      className="mb-4 flex flex-col gap-3 border-b border-border/60 pb-4 sm:flex-row sm:flex-wrap sm:items-end"
+      className="mb-4 flex flex-col gap-3 border-b border-[var(--aura-border-default)] pb-4 sm:flex-row sm:flex-wrap sm:items-end"
       onSubmit={(e) => {
         e.preventDefault();
         applyFilters(q, status, year);
       }}
     >
-      {/* All controls use project standard h-9 (36px) — matches
-        * `--input-height` + Button default per docs/shadcn-
-        * customizations. Mobile stacks column, desktop wraps inline. */}
-      <Input
+      <TextField
         id="member-inv-q"
         type="search"
         inputMode="search"
@@ -103,27 +90,14 @@ export function MemberInvoicesFilters() {
         autoComplete="off"
       />
       <div className="grid grid-cols-2 gap-3 sm:contents">
-        <Select value={status} onValueChange={(v) => setStatus(v ?? 'all')}>
-          <SelectTrigger
-            className="sm:w-[11rem]"
-            aria-label={t('statusAria')}
-          >
-            <TranslatedSelectValue
-              placeholder={t('status.all')}
-              translate={(v) =>
-                v === 'all' || !v ? t('status.all') : tStatuses(v)
-              }
-            />
-          </SelectTrigger>
-          <SelectContent>
-            {STATUSES.map((s) => (
-              <SelectItem key={s} value={s}>
-                {s === 'all' ? t('status.all') : tStatuses(s)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Input
+        <Select
+          aria-label={t('statusAria')}
+          value={status}
+          onChange={(e) => setStatus(e.target.value || 'all')}
+          className="sm:w-44"
+          options={STATUSES.map((s) => ({ value: s, label: s === 'all' ? t('status.all') : tStatuses(s) }))}
+        />
+        <TextField
           id="member-inv-fy"
           type="number"
           inputMode="numeric"
@@ -137,22 +111,12 @@ export function MemberInvoicesFilters() {
           autoComplete="off"
         />
       </div>
-      <div
-        className={`grid gap-3 sm:contents ${
-          hasFilters ? 'grid-cols-2' : 'grid-cols-1'
-        }`}
-      >
-        <Button
-          type="submit"
-          variant="outline"
-          disabled={pending}
-          aria-busy={pending}
-        >
+      <div className={`grid gap-3 sm:contents ${hasFilters ? 'grid-cols-2' : 'grid-cols-1'}`}>
+        <Button type="submit" variant="secondary" loading={pending}>
           {t('apply')}
         </Button>
         {hasFilters && (
           <Button
-            type="button"
             variant="ghost"
             disabled={pending}
             onClick={() => {

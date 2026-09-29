@@ -70,7 +70,8 @@ describe('MemberInvoicesTable (T556)', () => {
     expect(headers.slice(0, 7)).toEqual(['Number', 'Status', 'Issued', 'Due', 'Paid', 'Total', 'Remaining']);
     expect(grid).toHaveTextContent('SC-2026-000123');
     expect(grid).toHaveTextContent('฿38,520.00');
-    expect(screen.getByLabelText(labels.notPaid)).toBeInTheDocument();
+    // The dash is read as words, not as "dash" (G-U7P).
+    expect(screen.getByText(labels.notPaid)).toHaveClass('sr-only');
   });
 
   it('a writer, issued invoice: View, Record payment and Void — the links as before', () => {

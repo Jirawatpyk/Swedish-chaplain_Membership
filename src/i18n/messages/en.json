@@ -1748,7 +1748,8 @@
           "issueCreditNote": "Issue credit note",
           "void": "Void",
           "voidAriaLabel": "Void invoice {number}",
-          "disabledForManager": "Managers have read-only access. Ask an administrator."
+          "disabledForManager": "Managers have read-only access. Ask an administrator.",
+          "menuFor": "Actions for {number}"
         }
       },
       "create": {

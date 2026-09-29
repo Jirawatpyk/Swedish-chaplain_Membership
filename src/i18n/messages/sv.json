@@ -1748,7 +1748,8 @@
           "issueCreditNote": "Utfärda kreditnota",
           "void": "Annullera",
           "voidAriaLabel": "Annullera faktura {number}",
-          "disabledForManager": "Chefer har läsbehörighet. Kontakta en administratör."
+          "disabledForManager": "Chefer har läsbehörighet. Kontakta en administratör.",
+          "menuFor": "Åtgärder för {number}"
         }
       },
       "create": {
