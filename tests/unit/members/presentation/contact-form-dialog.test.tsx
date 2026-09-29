@@ -524,3 +524,38 @@ describe('ContactFormDialog — 108 T041 round 4', () => {
     vi.unstubAllGlobals();
   });
 });
+
+// 122 US5b-1 PDPA review L-1 / L-2: on AURA the Save button sits in the
+// dialog footer, outside the <form>, tied to it by `form=`; and ADD is refused
+// until the Art. 14 notice is attested.
+describe('ContactFormDialog — footer Save and the Art. 14 gate (122 US5b-1)', () => {
+  const CF = enMessages.admin.members.contactForm;
+
+  function fillAdd() {
+    fireEvent.change(document.querySelector('#cf-first-name')!, { target: { value: 'New' } });
+    fireEvent.change(document.querySelector('#cf-last-name')!, { target: { value: 'Person' } });
+    fireEvent.change(document.querySelector('#cf-email')!, { target: { value: 'new@person.example' } });
+  }
+
+  it('the footer Save button submits the form', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 201, json: async () => ({ contact_id: 'c-new' }) });
+    vi.stubGlobal('fetch', fetchMock);
+    openAddDialog();
+    fillAdd();
+    fireEvent.click(document.querySelector('#cf-art14-attested')!);
+    const save = screen.getByRole('button', { name: CF.submit });
+    expect(save.closest('form')).toBeNull();
+    fireEvent.click(save);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+  });
+
+  it('ADD without the Art. 14 attestation is refused and never sent', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    openAddDialog();
+    fillAdd();
+    fireEvent.click(screen.getByRole('button', { name: CF.submit }));
+    expect(await screen.findByText(CF.art14AttestationRequired)).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});

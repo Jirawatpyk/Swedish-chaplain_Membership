@@ -37,7 +37,9 @@ export async function MemberDataExportSection({
 
 /**
  * The export card once the member's jobs are read — split out so the no-DB
- * preview route renders the same markup (spec 122 US5b-1).
+ * preview route renders the same markup (spec 122 US5b-1). It has no gate
+ * of its own: callers render it only where the page's `showDataExport` holds
+ * (F9 flag, `members.bulk`, not erased).
  */
 export async function MemberDataExportCard({
   memberId,
