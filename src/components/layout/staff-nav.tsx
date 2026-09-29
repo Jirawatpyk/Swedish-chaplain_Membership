@@ -157,7 +157,9 @@ function StaffBrand({
         {collapsed ? (
           <span className="sr-only">{tenantName}</span>
         ) : (
-          <span className="flex min-w-0 items-center gap-3">
+          // 8px to the dot, so the EN Staff badge keeps the row inside AURA's
+          // 8px header end padding (#96).
+          <span className="flex min-w-0 items-center gap-2">
             <span className="truncate font-[family-name:var(--font-display)] text-xl leading-none font-semibold tracking-[-0.01em]">
               {tenantName}
             </span>

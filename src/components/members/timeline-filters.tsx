@@ -95,7 +95,7 @@ export function TimelineFilters(): React.JSX.Element {
       <Button
         type="button"
         variant="secondary"
-        className="flex-none sm:hidden"
+        className="flex-none self-end sm:hidden"
         icon={<SlidersHorizontalIcon aria-hidden />}
         aria-expanded={moreOpen}
         aria-controls={moreId}
