@@ -18,11 +18,9 @@
  * probe audit) is handled by `getMember`, mirroring the timeline staff page.
  */
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { headers } from 'next/headers';
 import { getLocale, getTranslations } from 'next-intl/server';
-import { ArrowLeftIcon, MailIcon } from 'lucide-react';
 import { canPerform, requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
@@ -34,12 +32,8 @@ import {
 } from '@/modules/insights';
 import { getMember, type MemberId } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
-import { Card, CardContent } from '@/components/ui/card';
-import { buttonVariants } from '@/components/ui/button';
-import { DetailContainer } from '@/components/layout';
-import { PageHeader } from '@/components/layout/page-header';
-import { DynamicBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
-import { BenefitUsageCard } from '@/components/benefits/benefit-usage-card';
+import { MemberNotFound } from '../_components/member-not-found';
+import { renderMemberBenefitsView } from '../_components/member-benefits-view';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -64,7 +58,6 @@ export default async function MemberBenefitsPage({ params }: PageProps) {
   const locale = await getLocale();
 
   const t = await getTranslations('admin.members.benefits');
-  const tDetail = await getTranslations('admin.members.detail');
 
   const deps = buildMembersDeps(tenant);
   const memberResult = await getMember(
@@ -74,27 +67,7 @@ export default async function MemberBenefitsPage({ params }: PageProps) {
   );
   if (!memberResult.ok) {
     if (memberResult.error.type === 'not_found') {
-      return (
-        <DetailContainer>
-          <Card>
-            <CardContent className="flex flex-col items-center gap-4 p-10 text-center">
-              <h2 className="text-h2 text-xl font-semibold">
-                {tDetail('notFound.title')}
-              </h2>
-              <p className="text-sm text-muted-foreground">
-                {tDetail('notFound.description')}
-              </p>
-              <Link
-                href="/admin/members"
-                className={buttonVariants({ variant: 'outline' })}
-              >
-                <ArrowLeftIcon className="size-4" />
-                {tDetail('notFound.cta')}
-              </Link>
-            </CardContent>
-          </Card>
-        </DetailContainer>
-      );
+      return <MemberNotFound />;
     }
     // Use the discriminant code, not error.message — a raw repo message can
     // carry SQL/table fragments (forbidden-fields hygiene, R I-5).
@@ -159,44 +132,11 @@ export default async function MemberBenefitsPage({ params }: PageProps) {
           t('staffActions.reminderSubject', { company: member.companyName }),
         )}`;
 
-  return (
-    <DetailContainer>
-      <DynamicBreadcrumbLabel segment={memberId} label={member.companyName} />
-      <PageHeader
-        title={t('title')}
-        subtitle={member.companyName}
-        actions={
-          <Link
-            href={`/admin/members/${member.memberId}`}
-            className={buttonVariants({ variant: 'outline' })}
-          >
-            <ArrowLeftIcon className="size-4" />
-            {t('backToDetail')}
-          </Link>
-        }
-      />
-      <BenefitUsageCard
-        locale={locale}
-        membershipYear={usage.membershipYear}
-        elapsedYearPct={usage.elapsedYearPct}
-        quantifiable={usage.quantifiable}
-        active={usage.active}
-        aggregateConsumedPct={usage.aggregateConsumedPct}
-        underUseWarning={usage.underUseWarning}
-        suspended={membershipAccess.access === 'suspended'}
-        staffSubjectName={member.companyName}
-        staffActions={
-          reminderHref !== undefined ? (
-            <a
-              href={reminderHref}
-              className={buttonVariants({ variant: 'outline', size: 'sm' })}
-            >
-              <MailIcon className="size-4" />
-              {t('staffActions.sendReminder')}
-            </a>
-          ) : undefined
-        }
-      />
-    </DetailContainer>
-  );
+  return renderMemberBenefitsView({
+    member: { memberId: member.memberId, companyName: member.companyName },
+    usage,
+    suspended: membershipAccess.access === 'suspended',
+    reminderHref,
+    locale,
+  });
 }
