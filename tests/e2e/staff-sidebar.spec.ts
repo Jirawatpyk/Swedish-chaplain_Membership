@@ -27,6 +27,10 @@ test.describe('staff sidebar — US1/US2/US3', () => {
     !ADMIN_EMAIL || !ADMIN_PASSWORD,
     'Set E2E_SUPER_ADMIN_EMAIL and E2E_SUPER_ADMIN_PASSWORD',
   );
+  // The rail — and its collapse state — is a desktop surface: below 1024px
+  // AURA's AppShell puts the same nav in a drawer (spec 122 US1). The phone
+  // drawer is covered by nav-a11y and change-requests US6.
+  test.skip(({ isMobile }) => isMobile === true, 'the staff rail is desktop-only; phones get the nav drawer');
 
   test.beforeAll(async () => {
     await clearE2ERateLimits();
