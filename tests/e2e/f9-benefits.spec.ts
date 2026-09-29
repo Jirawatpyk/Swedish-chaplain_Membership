@@ -61,7 +61,12 @@ test.describe('F9 — member benefit usage dashboard (US4) @f9', () => {
         .or(page.getByText(/no quantifiable benefits/i)),
     ).toBeVisible();
 
-    await expect(page.getByRole('link', { name: /back to member/i })).toBeVisible();
+    // A way back to the member, whatever labels it: from `lg` the page draws
+    // its own "Member record" button, and below that the staff shell's
+    // breadcrumb back link does the job, named after the member (122 US5b-1).
+    await expect(
+      page.locator(`a[href="/admin/members/${memberId}"]`).filter({ visible: true }).first(),
+    ).toBeVisible();
   });
 
   // Signs in as the good-standing persona: the renewals seed lapses the

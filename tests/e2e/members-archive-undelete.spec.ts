@@ -111,7 +111,21 @@ test.describe('members archive/undelete — F3 US7 @f3 @a11y @i18n', () => {
 
     // Open archive dialog and scan again
     await openMemberHeaderAction(page, /archive member/i);
-    await page.getByRole('alertdialog').waitFor({ timeout: 5_000 });
+    const archiveDialog = page.getByRole('alertdialog');
+    await archiveDialog.waitFor({ timeout: 5_000 });
+    // Let the dialog's entry animation finish first: axe samples colours as
+    // painted, and mid-fade the danger button's white label reads as #e3cece
+    // on #b43e3e (3.78:1) — a false contrast failure (R18, mobile-chrome).
+    // Document-wide, since the fade can sit on the dialog layer above the
+    // alertdialog; only finite animations, as a looping one never resolves.
+    await page.evaluate(() =>
+      Promise.all(
+        document
+          .getAnimations()
+          .filter((a) => a.effect?.getComputedTiming().iterations !== Infinity)
+          .map((a) => a.finished),
+      ),
+    );
 
     results = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
@@ -268,13 +282,10 @@ test.describe('members undelete — designate a primary (108 FR-014) @f3 @a11y @
     // <body>" (a skip link would pass that).
     await page.getByTestId('restore-primary-cancel').click();
     await expect(dialog).toBeHidden();
-    const afterLabel = await page.evaluate(
-      () =>
-        document.activeElement?.getAttribute('aria-label') ??
-        document.activeElement?.tagName ??
-        'BODY',
-    );
-    expect(afterLabel).toMatch(/^restore$/i);
+    // Assert the element, not an `aria-label`: the button's name is its own
+    // visible text now (122 US5b-1 dropped the aria-label that duplicated it,
+    // WCAG 2.5.3), and reading the attribute alone saw only the tag name.
+    await expect(page.getByRole('button', { name: /^restore$/i }).first()).toBeFocused();
   });
 
   test('the add-contact door: nested dialog opens, Escape returns focus to the door, a saved contact restores in place', async ({

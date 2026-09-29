@@ -120,9 +120,16 @@ test.describe('@us7 F3 × F4 integration on admin member page', () => {
     ).toHaveCount(0);
     const rowMenus = invoicesCard.getByRole('button', { name: /actions for/i });
     if ((await rowMenus.count()) > 0) {
-      await rowMenus.first().click();
+      // The member page streams its sections in; one landing above the
+      // Invoices card can shift it between the click's actionability check
+      // and the click, which then misses the trigger. Retry until it opens.
       const menu = page.getByRole('menu');
-      await expect(menu).toBeVisible();
+      await expect(async () => {
+        if ((await rowMenus.first().getAttribute('aria-expanded')) !== 'true') {
+          await rowMenus.first().click({ timeout: 2_000 });
+        }
+        await expect(menu).toBeVisible({ timeout: 1_500 });
+      }).toPass({ timeout: 15_000 });
       await expect(menu.getByRole('menuitem', { name: /view/i })).toBeVisible();
       const mutating = menu.getByRole('menuitem', { name: /record payment|issue credit note|void/i });
       const count = await mutating.count();
