@@ -59,7 +59,7 @@ export async function renderMemberBenefitsView({
             {/* The phone board puts Send reminder under the title; the card
                 head holds it from sm up. One is display:none at each width. */}
             {reminderHref !== undefined && (
-              <a href={reminderHref} className={buttonClass({ variant: 'secondary', className: 'sm:hidden' })}>
+              <a href={reminderHref} className={buttonClass({ variant: 'secondary', className: 'flex-none! sm:hidden' })}>
                 <MailIcon className="size-4" aria-hidden="true" />
                 {t('staffActions.sendReminder')}
               </a>
