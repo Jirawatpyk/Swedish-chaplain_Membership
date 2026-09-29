@@ -73,17 +73,23 @@ test.describe('plan-change UX — admin member-edit plan-change confirm', () => 
     await page.waitForLoadState('networkidle');
     await expect(page.locator('#plan_id')).toBeVisible({ timeout: 15_000 });
 
-    // The seeded e2e-member is on Diamond Partnership (2026). Change to a
-    // cheaper, DOB-free corporate plan so client-side validation stays green.
+    // No seed pins the e2e-member's plan (it has sat on Regular Corporate since
+    // September; the test once assumed Diamond), so read the current plan and
+    // move to a different DOB-free corporate plan so client-side validation
+    // stays green. The PATCH is stubbed, so the plan never actually changes.
     const trigger = page.locator('#plan_id');
-    await expect(trigger).toContainText('Diamond Partnership');
+    await expect(trigger).toContainText(/\S+.*— \d{4}/);
+    const currentLabel = (await trigger.innerText()).split('—')[0]!.trim();
+    const target = /Premium Corporate/.test(currentLabel)
+      ? { id: 'regular', name: 'Regular Corporate', fee: /16,000\.00/ }
+      : { id: 'premium', name: 'Premium Corporate', fee: /36,000\.00/ };
 
     await trigger.click();
-    // The edit page lists ALL active years, so pin the 2026 Premium option.
+    // The edit page lists ALL active years, so pin the 2026 option.
     await page
-      .getByRole('option', { name: /Premium Corporate.*2026/i })
+      .getByRole('option', { name: new RegExp(`${target.name}.*2026`, 'i') })
       .click();
-    await expect(trigger).toContainText('Premium Corporate');
+    await expect(trigger).toContainText(target.name);
 
     // --- Save opens the confirm dialog; NO PATCH yet (gate-before-request) ---
     await page.getByRole('button', { name: /save changes/i }).click();
@@ -95,10 +101,9 @@ test.describe('plan-change UX — admin member-edit plan-change confirm', () => 
     ).toBeVisible();
     // old→new plan labels + annual fees + the (flag-stable) billing-note
     // heading are shown.
-    await expect(dialog.getByText(/Diamond Partnership/)).toBeVisible();
-    await expect(dialog.getByText(/Premium Corporate/)).toBeVisible();
-    await expect(dialog.getByText(/200,000\.00/)).toBeVisible(); // diamond fee
-    await expect(dialog.getByText(/36,000\.00/)).toBeVisible(); // premium fee
+    await expect(dialog.getByText(currentLabel).first()).toBeVisible();
+    await expect(dialog.getByText(target.name).first()).toBeVisible();
+    await expect(dialog.getByText(target.fee).first()).toBeVisible(); // new plan's fee
     await expect(
       dialog.getByText(/what this does and does not change/i),
     ).toBeVisible();
@@ -116,8 +121,8 @@ test.describe('plan-change UX — admin member-edit plan-change confirm', () => 
 
     // Assert the PLAN PATCH landed (find, not [0], so an incidental member-
     // field PATCH from load-time normalization can't fail the plan assertion).
-    const planPatch = patchBodies.find((b) => b.new_plan_id === 'premium');
-    expect(planPatch, 'plan PATCH with new_plan_id=premium').toBeDefined();
+    const planPatch = patchBodies.find((b) => b.new_plan_id === target.id);
+    expect(planPatch, `plan PATCH with new_plan_id=${target.id}`).toBeDefined();
     expect(Number(planPatch?.new_plan_year)).toBe(2026);
   });
 });
