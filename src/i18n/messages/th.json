@@ -1618,6 +1618,7 @@
           "linked": "เชื่อมบัญชีพอร์ทัล"
         },
         "editCta": "แก้ไข",
+        "headerMoreActions": "การดำเนินการเพิ่มเติม",
         "contactActions": {
           "add": "เพิ่มผู้ติดต่อ",
           "edit": "แก้ไข",

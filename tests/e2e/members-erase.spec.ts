@@ -27,6 +27,7 @@ import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
 import { expect, test, fillField } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
+import { expectMemberHeaderAction, openMemberHeaderAction } from './helpers/member-header-actions';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
@@ -80,11 +81,7 @@ test.describe('members erase — COMP-1 US3-A @f3 @a11y @i18n', () => {
     await page.waitForLoadState('networkidle');
 
     // Trigger label is `admin.members.erase.eraseCta` = "Erase (GDPR/PDPA)…".
-    await expect(
-      page
-        .getByRole('button', { name: /erase.*GDPR\/PDPA|erase \(gdpr/i })
-        .first(),
-    ).toBeVisible({ timeout: 15_000 });
+    await expectMemberHeaderAction(page, /erase.*GDPR\/PDPA|erase \(gdpr/i);
   });
 
   test('Erase dialog gates the confirm button until all conditions are met', async ({
@@ -105,10 +102,7 @@ test.describe('members erase — COMP-1 US3-A @f3 @a11y @i18n', () => {
     expect(memberNumber.length).toBeGreaterThan(0);
 
     // Open the erase dialog.
-    await page
-      .getByRole('button', { name: /erase.*GDPR\/PDPA|erase \(gdpr/i })
-      .first()
-      .click();
+    await openMemberHeaderAction(page, /erase.*GDPR\/PDPA|erase \(gdpr/i);
 
     const dialog = page.getByRole('alertdialog');
     await expect(dialog).toBeVisible({ timeout: 5_000 });
@@ -172,10 +166,7 @@ test.describe('members erase — COMP-1 US3-A @f3 @a11y @i18n', () => {
     expect(results.violations).toEqual([]);
 
     // Open the erase dialog and scan again.
-    await page
-      .getByRole('button', { name: /erase.*GDPR\/PDPA|erase \(gdpr/i })
-      .first()
-      .click();
+    await openMemberHeaderAction(page, /erase.*GDPR\/PDPA|erase \(gdpr/i);
     await page.getByRole('alertdialog').waitFor({ timeout: 5_000 });
 
     results = await new AxeBuilder({ page })
@@ -212,10 +203,7 @@ test.describe('members erase — COMP-1 US3-A @f3 @a11y @i18n', () => {
       // Dialog-level: open the erase dialog and re-check. The CTA label is
       // localised (TH "ลบข้อมูล (GDPR/PDPA)…", SV "Radera (GDPR/PDPA)…") but the
       // "(GDPR/PDPA)" token is stable across all three locales, so match on it.
-      await page
-        .getByRole('button', { name: /\(GDPR\/PDPA\)/i })
-        .first()
-        .click();
+      await openMemberHeaderAction(page, /\(GDPR\/PDPA\)/i);
       const dialog = page.getByRole('alertdialog');
       await expect(dialog).toBeVisible({ timeout: 5_000 });
       const dialogText = await dialog.evaluate((el) => el.textContent ?? '');

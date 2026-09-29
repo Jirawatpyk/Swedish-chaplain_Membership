@@ -1618,6 +1618,7 @@
           "linked": "Portal linked"
         },
         "editCta": "Edit",
+        "headerMoreActions": "More actions",
         "contactActions": {
           "add": "Add contact",
           "edit": "Edit",

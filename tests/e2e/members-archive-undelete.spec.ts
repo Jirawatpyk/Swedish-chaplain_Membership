@@ -19,6 +19,7 @@ import {
   seedArchivedNoPrimaryMembers,
   type ArchivedNoPrimarySeed,
 } from './helpers/archived-no-primary-seed';
+import { expectMemberHeaderAction, openMemberHeaderAction } from './helpers/member-header-actions';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
@@ -70,9 +71,7 @@ test.describe('members archive/undelete — F3 US7 @f3 @a11y @i18n', () => {
     await page.goto(`/admin/members/${memberId}`);
     await page.waitForLoadState('networkidle');
 
-    await expect(
-      page.getByRole('button', { name: /archive member/i }).first(),
-    ).toBeVisible({ timeout: 15_000 });
+    await expectMemberHeaderAction(page, /archive member/i);
   });
 
   test('Archive dialog opens with reason textarea + Cancel/Confirm', async ({
@@ -82,10 +81,7 @@ test.describe('members archive/undelete — F3 US7 @f3 @a11y @i18n', () => {
     const memberId = await firstActiveMemberId(page);
     await page.goto(`/admin/members/${memberId}`);
 
-    await page
-      .getByRole('button', { name: /archive member/i })
-      .first()
-      .click();
+    await openMemberHeaderAction(page, /archive member/i);
 
     // Alert dialog surfaces
     const dialog = page.getByRole('alertdialog');
@@ -114,10 +110,7 @@ test.describe('members archive/undelete — F3 US7 @f3 @a11y @i18n', () => {
     expect(results.violations).toEqual([]);
 
     // Open archive dialog and scan again
-    await page
-      .getByRole('button', { name: /archive member/i })
-      .first()
-      .click();
+    await openMemberHeaderAction(page, /archive member/i);
     await page.getByRole('alertdialog').waitFor({ timeout: 5_000 });
 
     results = await new AxeBuilder({ page })

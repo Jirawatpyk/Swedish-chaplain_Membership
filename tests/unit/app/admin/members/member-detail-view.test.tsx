@@ -12,7 +12,7 @@
  *   and every link lands on a section with that id.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { NextIntlClientProvider, createFormatter, createTranslator } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
@@ -189,7 +189,7 @@ describe('renderMemberDetailView — header (T553)', () => {
     expect(within(screen.getByRole('menu')).getAllByRole('menuitem').map((i) => i.textContent?.trim())).toEqual([
       D.erase.eraseCta,
     ]);
-    document.body.innerHTML = '';
+    cleanup();
     await renderView({ can: { write: false, marketing: false } });
     expect(screen.queryByRole('button', { name: D.detail.headerMoreActions })).toBeNull();
   });

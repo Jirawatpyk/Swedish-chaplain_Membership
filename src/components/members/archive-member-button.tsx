@@ -25,12 +25,33 @@ import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
 type Props = {
   readonly memberId: string;
   readonly companyName: string;
+  /**
+   * Opened by the caller instead of its own button (spec 122 US5b-1: the
+   * phone header's ⋯ menu). With `showTrigger={false}` no button renders.
+   */
+  readonly open?: boolean;
+  readonly onOpenChange?: (open: boolean) => void;
+  readonly showTrigger?: boolean;
 };
 
-export function ArchiveMemberButton({ memberId, companyName }: Props) {
+export function ArchiveMemberButton({
+  memberId,
+  companyName,
+  open: openProp,
+  onOpenChange,
+  showTrigger = true,
+}: Props) {
   const t = useTranslations('admin.members.archive');
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const [openState, setOpenState] = useState(false);
+  const open = openProp ?? openState;
+  const setOpen = useCallback(
+    (next: boolean) => {
+      if (openProp === undefined) setOpenState(next);
+      onOpenChange?.(next);
+    },
+    [openProp, onOpenChange],
+  );
   const [reason, setReason] = useState('');
   const [, startTransition] = useTransition();
 
@@ -39,10 +60,13 @@ export function ArchiveMemberButton({ memberId, companyName }: Props) {
   // pattern as _components/archive-confirm-dialog.tsx:50–58 for bulk
   // archive. Prevents a stale `reason` from bleeding into a later
   // archive attempt after the admin cancelled the first one.
-  const handleOpenChange = useCallback((next: boolean) => {
-    if (!next) setReason('');
-    setOpen(next);
-  }, []);
+  const handleOpenChange = useCallback(
+    (next: boolean) => {
+      if (!next) setReason('');
+      setOpen(next);
+    },
+    [setOpen],
+  );
 
   // ConfirmationDialog shows the busy state and blocks a second click; it
   // closes only on success (a refusal keeps the typed reason).
@@ -82,10 +106,12 @@ export function ArchiveMemberButton({ memberId, companyName }: Props) {
 
   return (
     <>
-      <Button variant="danger-secondary" onClick={() => setOpen(true)}>
-        <ArchiveIcon className="size-4" aria-hidden="true" />
-        {t('archiveCta')}
-      </Button>
+      {showTrigger && (
+        <Button variant="danger-secondary" onClick={() => setOpen(true)}>
+          <ArchiveIcon className="size-4" aria-hidden="true" />
+          {t('archiveCta')}
+        </Button>
+      )}
       <ConfirmationDialog
         open={open}
         onOpenChange={handleOpenChange}

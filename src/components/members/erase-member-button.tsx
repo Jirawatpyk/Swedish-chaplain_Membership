@@ -71,12 +71,34 @@ type Props = {
   readonly companyName: string;
   /** Formatted member number, e.g. "SCCM-0042" — the type-to-confirm target. */
   readonly memberNumberDisplay: string;
+  /**
+   * Opened by the caller instead of its own button (spec 122 US5b-1: the
+   * phone header's ⋯ menu). With `showTrigger={false}` no button renders.
+   */
+  readonly open?: boolean;
+  readonly onOpenChange?: (open: boolean) => void;
+  readonly showTrigger?: boolean;
 };
 
-export function EraseMemberButton({ memberId, companyName, memberNumberDisplay }: Props) {
+export function EraseMemberButton({
+  memberId,
+  companyName,
+  memberNumberDisplay,
+  open: openProp,
+  onOpenChange,
+  showTrigger = true,
+}: Props) {
   const t = useTranslations('admin.members.erase');
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const [openState, setOpenState] = useState(false);
+  const open = openProp ?? openState;
+  const setOpen = useCallback(
+    (next: boolean) => {
+      if (openProp === undefined) setOpenState(next);
+      onOpenChange?.(next);
+    },
+    [openProp, onOpenChange],
+  );
   const [reason, setReason] = useState<Reason | null>(null);
   const [identityVerified, setIdentityVerified] = useState(false);
   const [method, setMethod] = useState<VerificationMethod | null>(null);
@@ -108,7 +130,7 @@ export function EraseMemberButton({ memberId, companyName, memberNumberDisplay }
       if (!next) resetState();
       setOpen(next);
     },
-    [resetState],
+    [resetState, setOpen],
   );
 
   const reasonOk = reason !== null;
@@ -159,10 +181,12 @@ export function EraseMemberButton({ memberId, companyName, memberNumberDisplay }
 
   return (
     <>
-      <Button variant="danger-secondary" onClick={() => handleOpenChange(true)}>
-        <ShieldXIcon className="size-4" aria-hidden="true" />
-        {t('eraseCta')}
-      </Button>
+      {showTrigger && (
+        <Button variant="danger-secondary" onClick={() => handleOpenChange(true)}>
+          <ShieldXIcon className="size-4" aria-hidden="true" />
+          {t('eraseCta')}
+        </Button>
+      )}
       <Dialog
         role="alertdialog"
         open={open}

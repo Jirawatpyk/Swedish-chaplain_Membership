@@ -37,6 +37,7 @@ import { ErasedBanner } from '@/components/members/erased-banner';
 import { AddContactButton } from './add-contact-button';
 import { ContactBlock, type PendingInvitation } from './contact-block';
 import { SectionLinks, type SectionLink } from './section-links';
+import { MemberHeaderMoreMenu } from './member-header-more-menu';
 
 export interface MemberDetailSlots {
   readonly strip: ReactNode;
@@ -239,14 +240,28 @@ export async function renderMemberDetailView({
                 erasure is orthogonal to archive (UX M2). */}
             {canModify && (
               <>
-                <EraseMemberButton
+                {/* From sm up Erase and Archive are visible buttons; on a
+                    phone they open from the ⋯ menu, as the mobile board has
+                    it (maintainer, 29 Sep — a narrow ux-standards § 19
+                    exception, both behind their confirmation dialogs). */}
+                <span className="contents max-sm:hidden">
+                  <EraseMemberButton
+                    memberId={member.memberId}
+                    companyName={member.companyName}
+                    memberNumberDisplay={memberNumberDisplay}
+                  />
+                </span>
+                <MemberHeaderMoreMenu
                   memberId={member.memberId}
                   companyName={member.companyName}
                   memberNumberDisplay={memberNumberDisplay}
+                  canArchive={notArchived}
                 />
                 {notArchived && (
                   <>
-                    <ArchiveMemberButton memberId={member.memberId} companyName={member.companyName} />
+                    <span className="contents max-sm:hidden">
+                      <ArchiveMemberButton memberId={member.memberId} companyName={member.companyName} />
+                    </span>
                     {/* Edit leads on a phone, as the mobile board has it. */}
                     <Link href={`/admin/members/${member.memberId}/edit`} className={`${buttonClass()} max-sm:order-first`}>
                       <PencilIcon className="size-4" aria-hidden="true" />
