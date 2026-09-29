@@ -196,3 +196,20 @@ describe('US3 portal account', () => {
     },
   );
 });
+
+describe('US3 portal timeline and not-found', () => {
+  it.each([
+    'src/components/members/timeline-skeleton.tsx',
+    'src/app/(member)/portal/not-found.tsx',
+  ])('%s takes AURA’s Card / Icon (or the shared skeleton card), not their classes by hand', (file) => {
+    expect(src(file)).not.toMatch(HAND_AURA_CLASS);
+  });
+
+  it('the timeline stream sizes its caption and group headings on the type scale', () => {
+    expect(src('src/components/members/timeline-stream.tsx')).not.toMatch(RAW_TEXT_PX);
+  });
+
+  it('the not-found card keeps AURA’s card padding', () => {
+    expect(src('src/app/(member)/portal/not-found.tsx')).not.toMatch(/\bp-8\b/);
+  });
+});
