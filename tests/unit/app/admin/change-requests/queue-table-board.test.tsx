@@ -50,14 +50,15 @@ function render(ui: React.ReactElement) {
 }
 
 describe('change-request queue as on the board (US5a)', () => {
-  it('shows the Actions column head; the member cell carries no card label; the row is centred', async () => {
+  it('shows the Actions column head; the member cell carries no card label; rows centred by AURA', async () => {
     render(await ChangeRequestQueueTable({ items: [item] }));
     const head = screen.getByRole('columnheader', { name: 'admin.changeRequests.queue.columns.actions' });
     expect(head.querySelector('.sr-only')).toBeNull();
     const row = screen.getByTestId('queue-row');
     const [memberCell] = within(row).getAllByRole('cell');
     expect(memberCell).not.toHaveAttribute('data-label');
-    expect(screen.getByTestId('queue-table').closest('[data-queue]')).toHaveAttribute('data-queue', 'board');
+    // AURA 5.13 (#81): the static Table's own vertical centring.
+    expect(screen.getByTestId('queue-table')).toHaveClass('aura-tbl--middle');
   });
 
   it('keeps "Overdue" on the line of the waiting time', async () => {
@@ -66,15 +67,14 @@ describe('change-request queue as on the board (US5a)', () => {
     expect(badge.parentElement).toHaveClass('flex-nowrap');
   });
 
-  it('pins the phone card title to the first column so Review can share its line', async () => {
-    // A title that spans two columns with no start column cannot sit beside
-    // Review (pinned to column 2 of row 1): the grid then adds implicit
-    // columns and every cell collapses to a sliver. Pinned to column 1, the
-    // two overlap and the title's end padding keeps its text clear.
+  it('lays out the phone card with AURA’s card slots: the company as title, Review as action', async () => {
+    // AURA 5.13 (#84): Td card="title" / "action" share the first line of a
+    // stacked row and the other cells fall two to a line; no grid of our own.
     render(await ChangeRequestQueueTable({ items: [item] }));
-    const [titleCell] = within(screen.getByTestId('queue-row')).getAllByRole('cell');
-    expect(titleCell!.className).toContain('@max-[640px]/aura-tbl:col-start-1');
-    expect(titleCell!.className).toContain('@max-[640px]/aura-tbl:col-span-2');
+    const cells = within(screen.getByTestId('queue-row')).getAllByRole('cell');
+    expect(cells[0]).toHaveAttribute('data-card', 'title');
+    expect(cells.at(-1)).toHaveAttribute('data-card', 'action');
+    expect(cells.every((c) => !c.className.includes('aura-tbl:col-'))).toBe(true);
   });
 });
 
