@@ -134,4 +134,26 @@ describe('EraseMemberButton (T555)', () => {
       note: 'DPO-7',
     });
   });
+
+  // UX review M5 (ux-standards § 6.4): a refusal is said inside the dialog,
+  // where the modal keeps the screen reader, and focus moves to it — a toast
+  // outside an aria-modal dialog goes unheard.
+  it('a refusal is an inline alert that takes focus, and the dialog stays open', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ error: { code: 'not_found' } }), { status: 404 }),
+    );
+    const dialog = openErase();
+    fireEvent.click(within(dialog).getByRole('radio', { name: ER.reasonPdpa }));
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: ER.attestationLabel }));
+    fireEvent.change(dialog.querySelector('select')!, { target: { value: 'in_person' } });
+    fireEvent.change(
+      within(dialog).getByRole('textbox', { name: ER.confirmLabel.replace('{memberNumber}', 'TSCC-0003') }),
+      { target: { value: 'TSCC-0003' } },
+    );
+    fireEvent.click(within(dialog).getByRole('button', { name: ER.confirmCta }));
+    const alert = await within(dialog).findByRole('alert');
+    expect(alert).toHaveTextContent(ER.eraseNotFound);
+    await waitFor(() => expect(document.activeElement).toBe(alert));
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+  });
 });
