@@ -6,7 +6,7 @@ import {
   XCircle,
   type LucideIcon,
 } from 'lucide-react';
-import { Icon as AuraIcon, buttonClass } from '@jirawatpyk/aura-react/server';
+import { Stat, buttonClass } from '@jirawatpyk/aura-react/server';
 import { cn } from '@/lib/utils';
 
 /**
@@ -21,12 +21,12 @@ import { cn } from '@/lib/utils';
  * Heading rule (spec a11y-6): the label renders as a real `<h2>`, not
  * a CardTitle div, so the dashboard outline is h1 (PageHeader) → h2.
  *
- * Spec 122 US3: AURA `Stat` markup (the `Main` / `Home-mobile` boards), drawn
- * with AURA's classes. AURA 5.14 ships `Stat` in `/server` with a heading
- * label (item 88), but it passes no `data-*` attributes through, has no slot
- * for the status line, and its `href` makes the whole tile one link where the
- * board links the heading only: a stand-in until AURA #110.
- * The label keeps its h2; `data-testid` / `data-variant` stay for the e2e.
+ * Spec 122 US3: AURA's `Stat` from `/server` (the `Main` / `Home-mobile`
+ * boards; #88, 5.14, and #110, 5.17): the label is its h2, the tone row sits
+ * in its `status` slot, and an `href` links the label only, stretched over the
+ * tile (`linkArea="label"`). `data-testid` / `data-variant` stay for the e2e
+ * through AURA's attribute passthrough. `Stat` has no action slot, so the CTA
+ * follows `sub` in its caption.
  *
  * The variant set is intentionally identical to the route-layer `StatVariant`
  * (dashboard-stats.ts) — the previously-declared `'ok'` member was dead (no
@@ -129,69 +129,51 @@ export function StatCard({
   const showStatus = variant !== 'neutral' && Boolean(variantLabel);
   const Icon = icon ?? (variant === 'neutral' ? Info : VARIANT_ICON[variant]);
 
-  // stand-in until AURA #110 (Stat attributes, status slot, heading link): AURA's Stat markup by hand
-  return (
-    <div
-      data-testid="stat-card"
-      data-variant={variant}
+  const linked = href !== undefined && !action;
+  const status = showStatus ? (
+    <span
+      data-testid="stat-card-status"
       className={cn(
-        'aura-stat h-full',
-        href && !action && 'is-interactive relative has-[a:focus-visible]:outline-2 has-[a:focus-visible]:outline-offset-2 has-[a:focus-visible]:outline-[var(--aura-focus-ring)]',
-        className,
+        'inline-flex items-center gap-1.5 aura-text-label',
+        VARIANT_STATUS_CLASS[variant as Exclude<StatCardVariant, 'neutral'>],
       )}
     >
-      <div className="aura-stat__head">
-        <h2 className="aura-stat__label">
-          {href && !action ? (
-            <Link href={href} className="text-inherit no-underline outline-none after:absolute after:inset-0 after:content-['']">
-              {label}
-            </Link>
+      <Icon className="size-3.5" aria-hidden="true" />
+      {variantLabel}
+    </span>
+  ) : undefined;
+  const caption =
+    sub !== undefined || action ? (
+      <span className="flex flex-col items-start gap-3">
+        {sub !== undefined ? <span data-slot="stat-card-sub">{sub}</span> : null}
+        {action ? (
+          // The card's one next step: AURA's primary default (44px) button, not
+          // `sm` (32px), for the WCAG 2.5.5 target.
+          isExternalHref(action.href) ? (
+            <a href={action.href} className={buttonClass()}>
+              {action.label}
+            </a>
           ) : (
-            label
-          )}
-        </h2>
-        {/* stand-in until AURA #110 */}
-        {HeadIcon ? (
-          <span className="aura-stat__icon">
-            <AuraIcon name={<HeadIcon focusable="false" />} size={16} />
-          </span>
+            <Link href={action.href} className={buttonClass()}>
+              {action.label}
+            </Link>
+          )
         ) : null}
-      </div>
-      <p className="aura-stat__value tabular-nums">{value}</p>
-      {sub !== undefined || showStatus ? (
-        <span className="aura-stat__foot flex-col items-start">
-          {sub !== undefined ? (
-            <span data-slot="stat-card-sub" className="aura-stat__caption">
-              {sub}
-            </span>
-          ) : null}
-          {showStatus ? (
-            <span
-              data-testid="stat-card-status"
-              className={cn(
-                'inline-flex items-center gap-1.5 aura-text-label',
-                VARIANT_STATUS_CLASS[variant as Exclude<StatCardVariant, 'neutral'>],
-              )}
-            >
-              <Icon className="size-3.5" aria-hidden="true" />
-              {variantLabel}
-            </span>
-          ) : null}
-        </span>
-      ) : null}
-      {action ? (
-        // The card's one next step: AURA's primary default (44px) button, not
-        // `sm` (32px), for the WCAG 2.5.5 target.
-        isExternalHref(action.href) ? (
-          <a href={action.href} className={cn(buttonClass(), 'mt-3 w-fit')}>
-            {action.label}
-          </a>
-        ) : (
-          <Link href={action.href} className={cn(buttonClass(), 'mt-3 w-fit')}>
-            {action.label}
-          </Link>
-        )
-      ) : null}
-    </div>
+      </span>
+    ) : undefined;
+
+  return (
+    <Stat
+      data-testid="stat-card"
+      data-variant={variant}
+      className={cn('h-full', className)}
+      label={label}
+      headingLevel={2}
+      value={value}
+      icon={HeadIcon ? <HeadIcon focusable="false" /> : undefined}
+      status={status}
+      caption={caption}
+      {...(linked ? { href, linkArea: 'label' as const, linkComponent: Link } : {})}
+    />
   );
 }

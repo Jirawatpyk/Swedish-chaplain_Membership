@@ -71,11 +71,12 @@ export function PortalBenefitsSummaryCard({
               <li key={b.key} className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
                 <div className="min-w-0 flex-1">
                   {b.reserved !== undefined && b.reserved > 0 ? (
-                    <ReservedProgress
+                    <Progress
                       label={t(`benefit.${b.key}`)}
-                      used={b.used}
-                      reserved={b.reserved}
-                      total={b.entitlement}
+                      value={b.used}
+                      secondaryValue={b.reserved}
+                      max={b.entitlement}
+                      showValue
                       valueLabel={t('card.usedOf', { used: b.used, total: b.entitlement })}
                       valueText={t('card.quotaValueText', {
                         used: b.used,
@@ -125,61 +126,5 @@ export function PortalBenefitsSummaryCard({
         </div>
       </div>
     </Card>
-  );
-}
-
-/**
- * AURA's Progress with a second, striped segment for reserved E-Blasts (the
- * `Main` board): the same `aura-progress` markup and classes, so it matches
- * the bars beside it; `aria-valuetext` says all three counts. AURA's
- * `Progress` draws the reserved segment (`secondaryValue`, #89, 5.15) but
- * reads its shown `valueLabel` ("2 of 6 used") as the value text, which drops
- * the reserved and remaining counts: a stand-in until AURA #111 (a value text
- * apart from the shown label).
- */
-function ReservedProgress({
-  label,
-  used,
-  reserved,
-  total,
-  valueLabel,
-  valueText,
-  hint,
-}: {
-  readonly label: string;
-  readonly used: number;
-  readonly reserved: number;
-  readonly total: number;
-  readonly valueLabel: string;
-  readonly valueText: string;
-  readonly hint: string;
-}) {
-  const pct = (n: number) => `${total > 0 ? Math.min(100, Math.max(0, (n / total) * 100)) : 0}%`;
-  const usedPct = pct(used);
-  // stand-in until AURA #111 (Progress value text apart from its label): AURA's markup by hand
-  return (
-    <div className="aura-progress">
-      <div className="aura-progress__head">
-        <span className="aura-progress__label">{label}</span>
-        <span className="aura-progress__value">{valueLabel}</span>
-      </div>
-      <div
-        className="aura-progress__track"
-        role="progressbar"
-        aria-label={label}
-        aria-valuemin={0}
-        aria-valuemax={total}
-        aria-valuenow={used}
-        aria-valuetext={valueText}
-      >
-        {/* stand-in until AURA #111: the used bar and AURA's reserved segment */}
-        <span className="aura-progress__bar" style={{ width: usedPct }} />
-        <span
-          className="aura-progress__bar aura-progress__bar--reserved"
-          style={{ left: usedPct, width: pct(Math.min(reserved, total - used)) }}
-        />
-      </div>
-      <p className="aura-progress__hint">{hint}</p>
-    </div>
   );
 }

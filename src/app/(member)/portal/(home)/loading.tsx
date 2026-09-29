@@ -45,9 +45,9 @@ export default async function Loading() {
 
         {/* 3 stat cards — 1-col mobile, 3-up sm+ */}
         <div className="grid grid-cols-1 gap-[var(--page-section-gap)] sm:grid-cols-3">
-          <StatSkeleton />
-          <StatSkeleton />
-          <StatSkeleton />
+          <StatSkeleton label={t('membership.label')} />
+          <StatSkeleton label={t('outstanding.label')} />
+          <StatSkeleton label={t('benefits.label')} />
         </div>
 
         {/* 2-col: invoices summary | benefits quota */}

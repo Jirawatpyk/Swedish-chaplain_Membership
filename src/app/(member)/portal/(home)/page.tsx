@@ -146,13 +146,13 @@ export default async function MemberPortalHomePage() {
           boundary so a slow read never blocks the others. The sections share
           the per-request cached reads from dashboard-reads.ts. */}
       <div className="grid grid-cols-1 gap-[var(--page-section-gap)] sm:grid-cols-3">
-        <Suspense fallback={<StatSkeleton />}>
+        <Suspense fallback={<StatSkeleton label={t('membership.label')} />}>
           <MembershipStatSection tenantId={tenant.slug} memberId={memberId} />
         </Suspense>
-        <Suspense fallback={<StatSkeleton />}>
+        <Suspense fallback={<StatSkeleton label={t('outstanding.label')} />}>
           <OutstandingStatSection tenantId={tenant.slug} memberId={memberId} />
         </Suspense>
-        <Suspense fallback={<StatSkeleton />}>
+        <Suspense fallback={<StatSkeleton label={t('benefits.label')} />}>
           <BenefitsStatSection ctx={tenant} memberId={memberId} />
         </Suspense>
       </div>
