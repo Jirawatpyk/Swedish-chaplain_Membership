@@ -18,7 +18,8 @@ export function AddContactButton({ memberId }: { readonly memberId: string }) {
       memberId={memberId}
       mode="add"
       trigger={
-        <button type="button" className={buttonClass({ variant: 'secondary', size: 'sm' })}>
+        // On a phone a bare + (the board's ghost look); from 640px up the outlined button.
+        <button type="button" className={buttonClass({ variant: 'secondary', size: 'sm', className: 'max-sm:border-transparent' })}>
           <PlusIcon className="size-4" aria-hidden="true" />
           {/* An icon button on a phone (board `Admin-member-detail-mobile`); the word stays its name. */}
           <span className="max-sm:sr-only">{t('add')}</span>
