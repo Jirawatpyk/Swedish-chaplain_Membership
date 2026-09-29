@@ -320,8 +320,7 @@ test.describe('members undelete — designate a primary (108 FR-014) @f3 @a11y @
     await fillField(nested.locator('#cf-first-name'), 'Door');
     await fillField(nested.locator('#cf-last-name'), `Contact-${rand}`);
     await fillField(nested.locator('#cf-email'), `door-${rand}@example.com`);
-    // `#cf-art14-attested` is Base UI's hidden native input; the visible
-    // role=checkbox carries the accessible name (aria-label).
+    // The Art. 14 attestation — the form's only checkbox (a native AURA one).
     await nested.getByRole('checkbox').first().click();
     await nested.getByRole('button', { name: /save|บันทึก|spara/i }).click();
 

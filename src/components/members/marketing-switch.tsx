@@ -244,7 +244,10 @@ export function MarketingSwitch({
       data-marketing-state={state}
       aria-busy={busy || isRefreshing || undefined}
     >
+      {/* AURA's switch is 36 × 20; its row takes 24 px of height, so the
+          control keeps the 24 × 24 clear area WCAG 2.5.8 asks for. */}
       <Switch
+        className="min-h-6 items-center"
         checked={checked}
         aria-label={t('ariaLabel', { name: contactName, state: tState(state) })}
         onChange={(next) => {

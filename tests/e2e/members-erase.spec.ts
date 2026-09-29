@@ -123,26 +123,23 @@ test.describe('members erase — COMP-1 US3-A @f3 @a11y @i18n', () => {
     await expect(confirmBtn).toHaveAttribute('aria-disabled', 'true');
 
     // Satisfy the gate WITHOUT confirming.
-    // 1) Legal-basis radio (GDPR Art. 17). Base UI RadioGroup renders a visible
-    //    role="radio" control PLUS a hidden native <input type="radio"> — both
-    //    label-associated — so getByLabel() is ambiguous. Target the visible
-    //    control by role (Playwright .check() drives role="radio").
+    // 1) Legal-basis radio (GDPR Art. 17) — AURA renders native radios, named
+    //    by their labels (spec 122 US5b-1).
     await dialog
       .getByRole('radio', { name: /GDPR Art\. 17|GDPR มาตรา 17|GDPR art\. 17/i })
       .check();
-    // 2) Art.12 identity-verification attestation checkbox. Same Base UI
-    //    visible-control + hidden-input duplication — use role="checkbox".
+    // 2) Art.12 identity-verification attestation checkbox (a native one).
     await dialog
       .getByRole('checkbox', {
         name: /identity was verified|ตรวจสอบตัวตน|identitet/i,
       })
       .check();
-    // 3) Verification-method select (Base UI Select — click trigger, then pick
-    //    the in-person option from the listbox).
+    // 3) Verification-method select (AURA Select — its combobox trigger opens
+    //    the listbox; pick the in-person option).
     await dialog
-      .getByLabel(
-        /how was identity verified|ตรวจสอบตัวตนด้วยวิธีใด|verifierades identiteten/i,
-      )
+      .getByRole('combobox', {
+        name: /how was identity verified|ตรวจสอบตัวตนด้วยวิธีใด|verifierades identiteten/i,
+      })
       .click();
     await page
       .getByRole('option', { name: /in person|พบด้วยตนเอง|personligen/i })

@@ -109,23 +109,28 @@ test.describe('@us7 F3 × F4 integration on admin member page', () => {
       invoicesCard.getByTestId('member-invoices-content'),
     ).toBeVisible();
 
-    // Mutating actions MUST NOT render as <Link> for manager — they
-    // render as disabled <Button> with a tooltip instead. Both links
-    // and active buttons MUST be absent; disabled buttons are fine.
+    // Mutating actions MUST NOT render as <Link> for manager. Spec 122
+    // US5b-1: they live in each row's "⋯" menu, listed but disabled with the
+    // reason — never links a manager could follow.
     await expect(
       invoicesCard.getByRole('link', { name: /record payment/i }),
     ).toHaveCount(0);
     await expect(
       invoicesCard.getByRole('link', { name: /issue credit note/i }),
     ).toHaveCount(0);
-    // If any disabled button is shown, it must explicitly carry the
-    // aria-disabled signal — not hidden, so admins can request escalation.
-    const disabledButtons = invoicesCard.locator(
-      'button[aria-disabled="true"]',
-    );
-    const count = await disabledButtons.count();
-    for (let i = 0; i < count; i++) {
-      await expect(disabledButtons.nth(i)).toBeVisible();
+    const rowMenus = invoicesCard.getByRole('button', { name: /actions for/i });
+    if ((await rowMenus.count()) > 0) {
+      await rowMenus.first().click();
+      const menu = page.getByRole('menu');
+      await expect(menu).toBeVisible();
+      await expect(menu.getByRole('menuitem', { name: /view/i })).toBeVisible();
+      const mutating = menu.getByRole('menuitem', { name: /record payment|issue credit note|void/i });
+      const count = await mutating.count();
+      for (let i = 0; i < count; i++) {
+        await expect(mutating.nth(i)).toHaveAttribute('aria-disabled', 'true');
+        await expect(mutating.nth(i)).not.toHaveAttribute('href', /.+/);
+      }
+      await page.keyboard.press('Escape');
     }
   });
 
