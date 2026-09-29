@@ -333,6 +333,33 @@ describe('MembersTable selection on the AURA grid (122 US5a review)', () => {
     expect([...last].sort()).toEqual(['aaaa-1111-bbbb-2222', 'cccc-3333']);
   });
 
+  it('Shift-click selects the range from the last row changed, skips archived rows, and deselects a range too (FR-040, AURA rangeSelect #98)', async () => {
+    const selectionSpy = vi.fn();
+    const rect = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockReturnValue({ width: 1280, height: 600, top: 0, left: 0, right: 1280, bottom: 600, x: 0, y: 0 } as DOMRect);
+    onTestFinished(() => rect.mockRestore());
+    const fourRows: MembersTableRow[] = [
+      ...threeRows.slice(0, 1),
+      { ...testRows[1]!, member_id: 'arch-0000', company_name: 'Archived Co', status: 'archived' },
+      ...threeRows.slice(1),
+    ];
+    const { MembersTable } = await import('@/components/members/members-table');
+    render(
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <MembersTable rows={fourRows} enableSelection onSelectionChange={selectionSpy} />
+      </NextIntlClientProvider>,
+    );
+    const box = (company: string) => screen.getByRole('checkbox', { name: `Select ${company}` });
+    fireEvent.click(box('Fogmaker AB'));
+    fireEvent.click(box('IKEA Thailand'), { shiftKey: true });
+    const selected = selectionSpy.mock.calls.at(-1)?.[0] as string[];
+    expect([...selected].sort()).toEqual(['aaaa-1111-bbbb-2222', 'bbbb-2222', 'cccc-3333']);
+    // Shift-click back to the first row: its new state (off) runs across the range.
+    fireEvent.click(box('Fogmaker AB'), { shiftKey: true });
+    expect(selectionSpy.mock.calls.at(-1)?.[0]).toEqual([]);
+  });
+
   it('the table does not announce the selection itself — the bulk bar does', async () => {
     const { MembersTable } = await import('@/components/members/members-table');
     render(

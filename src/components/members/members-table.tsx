@@ -478,8 +478,6 @@ export function MembersTable({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [selected, setSelected] = useState<string[]>([]);
-  const lastToggledRef = useRef<string | null>(null);
-  const shiftClickRef = useRef(false);
   const tableContainerRef = useRef<HTMLDivElement>(null);
   // #2 focus management — the offer/active banner is a DOM-swapping ternary, so
   // clicking a control unmounts it and focus would drop to <body> (this repo's
@@ -537,39 +535,13 @@ export function MembersTable({
     [onSelectionChange],
   );
 
+  // Shift+Click range selection (FR-040) is AURA's `rangeSelect` (#98, 5.16):
+  // the clicked row's new state applies across the range from the last row
+  // changed, so a shift-click can DESELECT a range as well as select one, and
+  // archived rows in it stay unselected (`isRowSelectable`, BUG-013).
   const handleSelectionChange = useCallback(
-    (keys: Array<string | number>) => {
-      const next = keys.map(String);
-      const before = new Set(selected);
-      const added = next.filter((k) => !before.has(k));
-      const removed = selected.filter((k) => !next.includes(k));
-      const toggled = added.length + removed.length === 1 ? (added[0] ?? removed[0]) : undefined;
-      const shift = shiftClickRef.current;
-      shiftClickRef.current = false;
-      // Shift+Click range selection (FR-040): apply the clicked row's new state
-      // across the range from the last row clicked without Shift — so a
-      // shift-click can DESELECT a range as well as select one. Archived rows in
-      // the range stay unselected (BUG-013).
-      if (shift && toggled && lastToggledRef.current && lastToggledRef.current !== toggled) {
-        const ids = rows.map((r) => r.member_id);
-        const a = ids.indexOf(lastToggledRef.current);
-        const b = ids.indexOf(toggled);
-        if (a !== -1 && b !== -1) {
-          const on = added.length === 1;
-          const result = new Set(selected);
-          for (const row of rows.slice(Math.min(a, b), Math.max(a, b) + 1)) {
-            if (!isMemberRowSelectable(row)) continue;
-            if (on) result.add(row.member_id);
-            else result.delete(row.member_id);
-          }
-          commitSelection(ids.filter((id) => result.has(id)));
-          return;
-        }
-      }
-      if (toggled) lastToggledRef.current = toggled;
-      commitSelection(next);
-    },
-    [selected, rows, commitSelection],
+    (keys: Array<string | number>) => commitSelection(keys.map(String)),
+    [commitSelection],
   );
 
   // Staff-review SW-4: Ctrl+A / Cmd+A within the table selects every
@@ -607,7 +579,6 @@ export function MembersTable({
   useEffect(() => {
     if (clearSelectionNonce !== prevClearNonceRef.current) {
       prevClearNonceRef.current = clearSelectionNonce;
-      lastToggledRef.current = null;
       onSelectionChange?.([]);
     }
   }, [clearSelectionNonce, onSelectionChange]);
@@ -833,15 +804,6 @@ export function MembersTable({
       ref={tableContainerRef}
       // The bulk bar's Clear hands focus to this table's select-all checkbox.
       data-members-table=""
-      // Record Shift on the click that toggles a checkbox; the selection
-      // callback reads it to select a range. Only a click in the selection
-      // column counts: a Shift-click on a row link would otherwise leave the
-      // flag set for a later keyboard toggle (AURA toggles on Space, no click).
-      onClickCapture={(e) => {
-        const target = e.target as Element;
-        // A stand-in until AURA #98 (selection callback reporting a Shift-click).
-        shiftClickRef.current = e.shiftKey && target.closest('.aura-table__sel') !== null;
-      }}
     >
       {/* Result count — a live region, so ANY filter change is announced;
           "N of M" when the full filtered total is known. Visible only while
@@ -927,6 +889,7 @@ export function MembersTable({
           {...(enableSelection
             ? {
                 selectable: true,
+                rangeSelect: true,
                 selected,
                 onSelectionChange: handleSelectionChange,
                 isRowSelectable: isMemberRowSelectable,

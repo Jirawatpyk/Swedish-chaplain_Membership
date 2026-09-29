@@ -76,5 +76,14 @@ describe('change-request queue as on the board (US5a)', () => {
     expect(cells.at(-1)).toHaveAttribute('data-card', 'action');
     expect(cells.every((c) => !c.className.includes('aura-tbl:col-'))).toBe(true);
   });
+
+  it('draws each phone card apart and framed with AURA’s own cards, Review at touch height (AURA #85, #100)', async () => {
+    render(await ChangeRequestQueueTable({ items: [item] }));
+    expect(screen.getByTestId('queue-table')).toHaveClass('aura-tbl--cards');
+    const row = screen.getByTestId('queue-row');
+    // no frame of our own on the row, no reach into the table's wrap
+    expect(row.className).not.toContain('aura-tbl:');
+    expect(within(row).getByRole('link')).toHaveClass('aura-btn--sm', 'aura-btn--touch');
+  });
 });
 

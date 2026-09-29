@@ -255,3 +255,31 @@ describe('US5a follow-up', () => {
     expect(s).toMatch(/className="lg:w-56"/);
   });
 });
+
+describe('AURA 5.14–5.16 adoption (T512)', () => {
+  // Each swap uses AURA's prop (#85–#100); the ratchet checks the reaches are gone.
+  it.each([
+    ['#85', 'src/app/(staff)/admin/change-requests/_components/queue-table.tsx', 'stackStyle="cards"'],
+    ['#90', 'src/app/(member)/portal/benefits/_components/benefits-tabs.tsx', 'fullWidth="below-lg"'],
+    ['#92', 'src/app/(staff)/admin/invoices/_components/invoice-filters.tsx', 'controlsLayout="fill"'],
+    ['#92', 'src/components/members/timeline-filters.tsx', 'controlsLayout="fill"'],
+    ['#93', 'src/app/(member)/portal/invoices/page.tsx', 'flushBelow="lg"'],
+    ['#95', 'src/components/layout/staff-nav.tsx', 'collapseToggle="row"'],
+    ['#96', 'src/components/layout/staff-nav.tsx', 'chevron="right"'],
+    ['#97', 'src/components/layout/staff-shell.tsx', 'contentPadding={false}'],
+    ['#98', 'src/components/members/members-table.tsx', 'rangeSelect: true'],
+    ['#99', 'src/components/members/change-requests/change-request-decision-table.tsx', 'hitArea={{ x: 12, y: 8 }}'],
+  ])('%s: %s uses %s', (_item, path, prop) => {
+    expect(src(path)).toContain(prop);
+  });
+
+  it('#91 / #100: the pay sheet keeps no local scroll padding or 44px hack', () => {
+    const s = src('src/app/(member)/portal/invoices/[invoiceId]/_components/pay-sheet/index.tsx');
+    expect(s).not.toMatch(/scroll-pt-/);
+    expect(s).toContain("closeProps={{ 'data-testid': 'pay-sheet-close', touchHeight: true }}");
+  });
+
+  it('#96: the staff nav rules are gone from globals.css', () => {
+    expect(src('src/app/globals.css')).not.toMatch(/aura-nav__|aura-shell__content/);
+  });
+});
