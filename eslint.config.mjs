@@ -313,6 +313,32 @@ const MIGRATED_PATHS = [
   'src/app/(staff)/admin/change-requests/**',
   'src/components/members/change-requests/**',
   'src/app/test-fixtures/aura-admin/**',
+  // US5b-1 — the member detail, its timeline and benefits pages, and every
+  // dialog or banner opened from the detail page. The new / edit forms and
+  // their dialogs are US5b-2.
+  'src/app/(staff)/admin/members/\\[memberId\\]/page.tsx',
+  'src/app/(staff)/admin/members/\\[memberId\\]/loading.tsx',
+  'src/app/(staff)/admin/members/\\[memberId\\]/error.tsx',
+  'src/app/(staff)/admin/members/\\[memberId\\]/_components/**',
+  'src/app/(staff)/admin/members/\\[memberId\\]/_lib/**',
+  'src/app/(staff)/admin/members/\\[memberId\\]/timeline/**',
+  'src/app/(staff)/admin/members/\\[memberId\\]/benefits/**',
+  'src/components/members/contact-form-dialog.tsx',
+  'src/components/members/contact-actions.tsx',
+  'src/components/members/archive-member-button.tsx',
+  'src/components/members/erase-member-button.tsx',
+  'src/components/members/archived-banner.tsx',
+  'src/components/members/restore-primary-dialog.tsx',
+  'src/components/members/erased-banner.tsx',
+  'src/components/members/no-primary-contact-banner.tsx',
+  'src/components/members/renewal-health-card.tsx',
+  'src/components/members/renew-lapsed-member-dialog.tsx',
+  'src/components/members/marketing-switch.tsx',
+  'src/components/members/marketing-state-badge.tsx',
+  'src/components/members/invite-portal-button.tsx',
+  'src/components/members/resend-bounced-invite-button.tsx',
+  'src/components/members/resend-verification-button.tsx',
+  'src/components/members/member-detail-skeleton.tsx',
 ];
 
 /**
