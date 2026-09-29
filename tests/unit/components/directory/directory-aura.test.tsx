@@ -176,4 +176,27 @@ describe('RecentExports on AURA (T506)', () => {
     expect(within(list).getByText(/20 Sep 2026, 16:40 · Ready/)).toBeInTheDocument();
     expect(within(list).getByText('Generating…').closest('.aura-pill')).not.toBeNull();
   });
+
+  it('the table is frameless and centres each row through AURA props (#81), not its classes', () => {
+    const { container } = render(
+      <RecentExports
+        labels={exportLabels}
+        rows={[
+          {
+            jobId: 'j-1',
+            kindLabel: 'Directory JSON',
+            status: 'ready',
+            statusLabel: 'Ready',
+            downloadable: true,
+            requestedAt: '20 Sep 2026, 16:40',
+          },
+        ]}
+      />,
+    );
+    const table = screen.getByRole('table');
+    expect(table).toHaveClass('aura-tbl--middle');
+    expect(table.closest('.aura-tbl-wrap')).toHaveClass('is-flush');
+    // No reach into AURA's table internals is left.
+    expect(container.innerHTML).not.toMatch(/\[&amp;_\.aura-tbl/);
+  });
 });
