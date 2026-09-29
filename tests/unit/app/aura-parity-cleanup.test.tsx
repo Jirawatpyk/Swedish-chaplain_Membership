@@ -247,3 +247,11 @@ describe('US4 portal invoices and pay sheet', () => {
     expect(src('src/app/(member)/portal/invoices/page.tsx')).not.toMatch(/aura-card\\_\\_body/);
   });
 });
+
+describe('US5a follow-up', () => {
+  it('the change-request queue filters size each AURA field through its className, not `.aura-field`', () => {
+    const s = src('src/app/(staff)/admin/change-requests/_components/queue-filters.tsx');
+    expect(s).not.toMatch(/\.aura-field/);
+    expect(s).toMatch(/className="lg:w-56"/);
+  });
+});
