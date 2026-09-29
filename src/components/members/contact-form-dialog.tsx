@@ -19,7 +19,7 @@
  * patches only the non-email fields that changed.
  */
 
-import { cloneElement, useId, useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -368,149 +368,146 @@ export function ContactFormDialog({
     }
   };
 
-  // AURA's Dialog has no trigger slot: the caller's button opens it, and AURA
-  // returns focus to it on close. The form lives in the dialog body and its
+  // The caller's button is AURA's Dialog `trigger` (5.16, handoff 101): AURA
+  // wires aria-haspopup / aria-expanded and returns focus to it on close; the
+  // open state stays ours (`onOpen`) so each open re-seeds the form and a
+  // `disabled` form refuses to open. The form lives in the dialog body and its
   // footer submit is tied to it by `form=` (AURA renders the footer outside
   // the body).
   const formId = useId();
-  const opener = cloneElement(trigger, {
-    'aria-haspopup': 'dialog',
-    onClick: () => handleOpenChange(true),
-  });
   const languageOptions = (['en', 'th', 'sv'] as const).map((value) => ({
     value,
     label: tLang(`languageOptions.${value}`),
   }));
 
   return (
-    <>
-      {opener}
-      <Dialog
-        open={open}
-        onClose={() => handleOpenChange(false)}
-        // No Escape / scrim close while the save runs.
-        dismissible={!submitting}
-        title={mode === 'add' ? t('title') : t('editTitle')}
-        description={mode === 'add' ? (description ?? t('description')) : t('editDescription')}
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setOpen(false)} disabled={submitting}>
-              {t('cancel')}
-            </Button>
-            {/* `loading` alone: AURA marks it aria-disabled and ignores clicks,
-                and focus stays on it (a native disabled drops it to <body>). */}
-            <Button type="submit" form={formId} loading={submitting}>
-              {submitting ? t('submitting') : t('submit')}
-            </Button>
-          </>
-        }
+    <Dialog
+      trigger={trigger}
+      open={open}
+      onOpen={() => handleOpenChange(true)}
+      onClose={() => handleOpenChange(false)}
+      // No Escape / scrim close while the save runs.
+      dismissible={!submitting}
+      title={mode === 'add' ? t('title') : t('editTitle')}
+      description={mode === 'add' ? (description ?? t('description')) : t('editDescription')}
+      footer={
+        <>
+          <Button variant="secondary" onClick={() => setOpen(false)} disabled={submitting}>
+            {t('cancel')}
+          </Button>
+          {/* `loading` alone: AURA marks it aria-disabled and ignores clicks,
+              and focus stays on it (a native disabled drops it to <body>). */}
+          <Button type="submit" form={formId} loading={submitting}>
+            {submitting ? t('submitting') : t('submit')}
+          </Button>
+        </>
+      }
+    >
+      <form
+        id={formId}
+        onSubmit={handleSubmit(onSubmit)}
+        // Native fallback POSTs so contact name/email/phone (PII) stays out
+        // of the URL on a pre-hydration submit (CWE-598; audit XF-03).
+        method="post"
+        noValidate
+        className="flex flex-col gap-4"
       >
-        <form
-          id={formId}
-          onSubmit={handleSubmit(onSubmit)}
-          // Native fallback POSTs so contact name/email/phone (PII) stays out
-          // of the URL on a pre-hydration submit (CWE-598; audit XF-03).
-          method="post"
-          noValidate
-          className="flex flex-col gap-4"
-        >
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <TextField
-              id="cf-first-name"
-              label={tf('firstName')}
-              required
-              autoComplete="given-name"
-              maxLength={100}
-              error={errors.first_name?.message}
-              {...register('first_name')}
-            />
-            <TextField
-              id="cf-last-name"
-              label={tf('lastName')}
-              required
-              autoComplete="family-name"
-              maxLength={100}
-              error={errors.last_name?.message}
-              {...register('last_name')}
-            />
-          </div>
-
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <TextField
-            id="cf-email"
-            type="email"
-            inputMode="email"
-            autoComplete="email"
-            label={tf('email')}
-            required={emailEditable}
-            maxLength={254}
-            // Read-only (not `disabled`) for a linked primary so the field stays
-            // focusable — a disabled input is skipped by screen readers in forms
-            // mode, which would hide its note. The PATCH already guards on
-            // `emailEditable`, so no value leaks.
-            readOnly={!emailEditable}
-            hint={!emailEditable ? t('emailEditNote') : undefined}
-            error={emailEditable ? errors.email?.message : undefined}
-            {...register('email')}
+            id="cf-first-name"
+            label={tf('firstName')}
+            required
+            autoComplete="given-name"
+            maxLength={100}
+            error={errors.first_name?.message}
+            {...register('first_name')}
           />
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <TextField
-              id="cf-phone"
-              type="tel"
-              inputMode="tel"
-              autoComplete="tel"
-              label={tf('phone')}
-              maxLength={20}
-              placeholder="+66812345678"
-              error={errors.phone?.message}
-              {...register('phone')}
-            />
-            <TextField
-              id="cf-role"
-              label={tf('roleTitle')}
-              autoComplete="organization-title"
-              maxLength={100}
-              {...register('role_title')}
-            />
-          </div>
-
-          <Select
-            id="cf-language"
-            label={tf('preferredLanguage')}
-            options={languageOptions}
-            {...register('preferred_language')}
+          <TextField
+            id="cf-last-name"
+            label={tf('lastName')}
+            required
+            autoComplete="family-name"
+            maxLength={100}
+            error={errors.last_name?.message}
+            {...register('last_name')}
           />
+        </div>
 
-          {mode === 'add' && (
-            // Task 8 (GDPR Art. 14) — this contact's data is supplied by the
-            // admin, not the person themselves (a third party). The admin
-            // must attest they informed that person the chamber holds their
-            // details, and where to find the privacy notice, before this
-            // contact can be added.
-            <Controller
-              control={control}
-              name="art14_attested"
-              render={({ field }) => (
-                <Checkbox
-                  id="cf-art14-attested"
-                  checked={field.value ?? false}
-                  onChange={(checked) => field.onChange(checked)}
-                  aria-invalid={Boolean(errors.art14_attested) || undefined}
-                  description={
-                    errors.art14_attested ? (
-                      <span id="cf-art14-attested-error" role="alert" className="text-[var(--aura-fg-danger)]">
-                        {errors.art14_attested.message}
-                      </span>
-                    ) : undefined
-                  }
-                >
-                  {t('art14AttestationLabel')}
-                </Checkbox>
-              )}
-            />
-          )}
-        </form>
-      </Dialog>
-    </>
+        <TextField
+          id="cf-email"
+          type="email"
+          inputMode="email"
+          autoComplete="email"
+          label={tf('email')}
+          required={emailEditable}
+          maxLength={254}
+          // Read-only (not `disabled`) for a linked primary so the field stays
+          // focusable — a disabled input is skipped by screen readers in forms
+          // mode, which would hide its note. The PATCH already guards on
+          // `emailEditable`, so no value leaks.
+          readOnly={!emailEditable}
+          hint={!emailEditable ? t('emailEditNote') : undefined}
+          error={emailEditable ? errors.email?.message : undefined}
+          {...register('email')}
+        />
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <TextField
+            id="cf-phone"
+            type="tel"
+            inputMode="tel"
+            autoComplete="tel"
+            label={tf('phone')}
+            maxLength={20}
+            placeholder="+66812345678"
+            error={errors.phone?.message}
+            {...register('phone')}
+          />
+          <TextField
+            id="cf-role"
+            label={tf('roleTitle')}
+            autoComplete="organization-title"
+            maxLength={100}
+            {...register('role_title')}
+          />
+        </div>
+
+        <Select
+          id="cf-language"
+          label={tf('preferredLanguage')}
+          options={languageOptions}
+          {...register('preferred_language')}
+        />
+
+        {mode === 'add' && (
+          // Task 8 (GDPR Art. 14) — this contact's data is supplied by the
+          // admin, not the person themselves (a third party). The admin
+          // must attest they informed that person the chamber holds their
+          // details, and where to find the privacy notice, before this
+          // contact can be added.
+          <Controller
+            control={control}
+            name="art14_attested"
+            render={({ field }) => (
+              <Checkbox
+                id="cf-art14-attested"
+                checked={field.value ?? false}
+                onChange={(checked) => field.onChange(checked)}
+                aria-invalid={Boolean(errors.art14_attested) || undefined}
+                description={
+                  errors.art14_attested ? (
+                    <span id="cf-art14-attested-error" role="alert" className="text-[var(--aura-fg-danger)]">
+                      {errors.art14_attested.message}
+                    </span>
+                  ) : undefined
+                }
+              >
+                {t('art14AttestationLabel')}
+              </Checkbox>
+            )}
+          />
+        )}
+      </form>
+    </Dialog>
   );
 }
