@@ -55,6 +55,10 @@ const adminCopy = en.admin.changeRequests;
 
 /** 122 US5a — below 640px the queue folds its filters behind a "Filters · Status: …" toggle; open it first. */
 async function openQueueFiltersOnPhone(page: Page): Promise<void> {
+  // The queue streams in behind `loading.tsx` and `isVisible()` does not wait:
+  // checked before the form arrived, the toggle read as absent and the panel
+  // was never opened (R17 flake on both projects). Wait for the form first.
+  await expect(page.getByRole('form', { name: adminCopy.filters.label })).toBeVisible();
   const toggle = page.getByRole('button', { name: new RegExp(`^${adminCopy.filters.toggle}`) });
   if (!(await toggle.isVisible())) return;
   // A tap before hydration is lost, and hydration can reset the panel: open
