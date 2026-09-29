@@ -1720,7 +1720,9 @@
             "all": "Alla år"
           },
           "apply": "Tillämpa",
-          "clear": "Rensa filter"
+          "clear": "Rensa filter",
+          "searchLabel": "Sök",
+          "statusLabel": "Status"
         },
         "draftPlaceholder": "(utkast)",
         "cols": {

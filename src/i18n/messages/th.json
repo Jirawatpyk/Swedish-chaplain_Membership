@@ -1720,7 +1720,9 @@
             "all": "ทุกปี"
           },
           "apply": "ใช้ตัวกรอง",
-          "clear": "ล้างตัวกรอง"
+          "clear": "ล้างตัวกรอง",
+          "searchLabel": "ค้นหา",
+          "statusLabel": "สถานะ"
         },
         "draftPlaceholder": "(ร่าง)",
         "cols": {

@@ -1720,7 +1720,9 @@
             "all": "All years"
           },
           "apply": "Apply",
-          "clear": "Clear filters"
+          "clear": "Clear filters",
+          "searchLabel": "Search",
+          "statusLabel": "Status"
         },
         "draftPlaceholder": "(draft)",
         "cols": {

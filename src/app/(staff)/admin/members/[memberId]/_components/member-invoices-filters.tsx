@@ -69,7 +69,8 @@ export function MemberInvoicesFilters() {
   // Spec 122 US5b-1 — AURA fields in the same staged form: nothing applies
   // until Apply (or Enter), and the URL (`invQ`, `invStatus`, `invYear`) is
   // unchanged. Search full width on a phone, then status and year side by
-  // side, then the buttons.
+  // side, then the buttons. Each field has a visible label (it had only an
+  // aria-label).
   return (
     <form
       className="mb-4 flex flex-col gap-3 border-b border-[var(--aura-border-default)] pb-4 sm:flex-row sm:flex-wrap sm:items-end"
@@ -84,14 +85,14 @@ export function MemberInvoicesFilters() {
         inputMode="search"
         value={q}
         onChange={(e) => setQ(e.target.value)}
+        label={t('searchLabel')}
         placeholder={t('search')}
-        aria-label={t('search')}
         className="sm:min-w-[10rem] sm:flex-1"
         autoComplete="off"
       />
       <div className="grid grid-cols-2 gap-3 sm:contents">
         <Select
-          aria-label={t('statusAria')}
+          label={t('statusLabel')}
           value={status}
           onChange={(e) => setStatus(e.target.value || 'all')}
           className="sm:w-44"
@@ -105,8 +106,7 @@ export function MemberInvoicesFilters() {
           max="2100"
           value={year}
           onChange={(e) => setYear(e.target.value)}
-          placeholder={t('fiscalYear')}
-          aria-label={t('yearAria')}
+          label={t('fiscalYear')}
           className="sm:w-32"
           autoComplete="off"
         />
