@@ -220,4 +220,19 @@ describe('RenewalHealthCard (Pass A · Section 1)', () => {
     });
     expect(heading).toHaveAttribute('id', 'renewal-health-heading');
   });
+
+  // Board `Admin-member-detail`: "View renewal →" closes the card body; the
+  // head holds the title alone (AURA's head does not wrap on a phone).
+  it('puts View renewal in the body, not the card head', () => {
+    const { container } = renderCard({
+      status: 'awaiting_payment',
+      expiryIso: '2026-07-15T00:00:00.000Z',
+      daysRemaining: 20,
+      engagementScore: null,
+      engagementBand: null,
+      viewHref: '/admin/renewals',
+    });
+    const link = screen.getByRole('link', { name: /View renewal/ });
+    expect(container.querySelector('.aura-card__head')?.contains(link)).toBe(false);
+  });
 });

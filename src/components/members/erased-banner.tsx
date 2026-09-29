@@ -14,9 +14,8 @@
  * Gregorian ISO).
  */
 import { useLocale, useTranslations } from 'next-intl';
-import { AlertTriangleIcon } from 'lucide-react';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
-import { Card } from '@/components/ui/card';
+import { Alert } from '@jirawatpyk/aura-react';
 
 type Props = {
   readonly erasedAtIso: string;
@@ -44,18 +43,12 @@ export function ErasedBanner({ erasedAtIso, completed }: Props) {
     formattedDate = erasedDate.toISOString().slice(0, 10);
   }
 
+  // Spec 122 US5b-1 — an AURA danger Alert. A note, not a live region: it is
+  // part of the page's first render, not a change to announce.
   return (
-    <Card className="border-destructive/40 bg-destructive/5 p-4">
-      <div className="flex gap-3">
-        <AlertTriangleIcon className="mt-0.5 size-5 shrink-0 text-destructive" aria-hidden="true" />
-        <div>
-          <p className="text-sm font-semibold">{t('bannerTitle', { date: formattedDate })}</p>
-          <p className="mt-1 text-sm text-muted-foreground">{t('bannerBody')}</p>
-          {!completed && (
-            <p className="mt-1 text-sm text-muted-foreground">{t('bannerPending')}</p>
-          )}
-        </div>
-      </div>
-    </Card>
+    <Alert tone="danger" role="note" title={t('bannerTitle', { date: formattedDate })}>
+      <p>{t('bannerBody')}</p>
+      {!completed && <p className="mt-1">{t('bannerPending')}</p>}
+    </Alert>
   );
 }

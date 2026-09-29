@@ -13,7 +13,7 @@
 import { getLocale, getTranslations } from 'next-intl/server';
 import { listMemberDataExports } from '@/modules/insights';
 import type { TenantContext } from '@/modules/tenants';
-import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
+import { Card } from '@jirawatpyk/aura-react/server';
 import type { Contact } from '@/modules/members';
 import { AdminDataExportRequest } from '@/components/data-export/admin-data-export-request';
 import {
@@ -31,9 +31,27 @@ export async function MemberDataExportSection({
   /** The member's contacts, incl. removed ones (a former contact keeps the right of access). */
   readonly contacts: readonly Contact[];
 }): Promise<React.JSX.Element> {
+  const jobs = await listMemberDataExports(tenant, memberId);
+  return <MemberDataExportCard memberId={memberId} contacts={contacts} jobs={jobs} />;
+}
+
+/**
+ * The export card once the member's jobs are read — split out so the no-DB
+ * preview route renders the same markup (spec 122 US5b-1). It has no gate
+ * of its own: callers render it only where the page's `showDataExport` holds
+ * (F9 flag, `members.bulk`, not erased).
+ */
+export async function MemberDataExportCard({
+  memberId,
+  contacts,
+  jobs,
+}: {
+  readonly memberId: string;
+  readonly contacts: readonly Contact[];
+  readonly jobs: Awaited<ReturnType<typeof listMemberDataExports>>;
+}): Promise<React.JSX.Element> {
   const t = await getTranslations('dataExport');
   const locale = await getLocale();
-  const jobs = await listMemberDataExports(tenant, memberId);
   const base = `/api/admin/members/${memberId}/data-export`;
   const nameOf = new Map(
     contacts.map((c) => [String(c.contactId), `${c.firstName} ${c.lastName}`.trim()]),
@@ -45,33 +63,26 @@ export async function MemberDataExportSection({
     return { contactId: String(c.contactId), label: `${name}${role}${removed}` };
   });
 
+  // Spec 122 US5b-1 — an AURA Card; a real <h2> (056 fix #1) names it.
   return (
-    <section aria-labelledby="member-data-export-heading">
-      <Card data-testid="member-data-export-card">
-        <CardHeader>
-          {/* 056 fix #1 — real <h2> so the export section is reachable via
-              SR heading navigation under the page <h1>. */}
-          <h2
-            id="member-data-export-heading"
-            className="font-heading text-base font-medium leading-snug"
-          >
-            {t('adminHeading')}
-          </h2>
-          <CardDescription>{t('adminDescription')}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <AdminDataExportRequest
-            contacts={options}
-            rows={buildDataExportRows(jobs, t, locale, (job) =>
-              job.subjectContactId
-                ? t('forContact', { name: nameOf.get(job.subjectContactId) ?? job.subjectContactId })
-                : t('forCompany'),
-            )}
-            baseUrl={base}
-            labels={{ ...buildDataExportLabels(t), colFor: t('colFor') }}
-          />
-        </CardContent>
-      </Card>
-    </section>
+    <Card
+      as="section"
+      data-testid="member-data-export-card"
+      title={t('adminHeading')}
+      titleId="member-data-export-heading"
+      description={t('adminDescription')}
+      headingLevel={2}
+    >
+      <AdminDataExportRequest
+        contacts={options}
+        rows={buildDataExportRows(jobs, t, locale, (job) =>
+          job.subjectContactId
+            ? t('forContact', { name: nameOf.get(job.subjectContactId) ?? job.subjectContactId })
+            : t('forCompany'),
+        )}
+        baseUrl={base}
+        labels={{ ...buildDataExportLabels(t), colFor: t('colFor') }}
+      />
+    </Card>
   );
 }

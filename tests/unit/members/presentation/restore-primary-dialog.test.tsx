@@ -12,7 +12,7 @@
  * safe under jsdom (same harness as plan-change-confirm-dialog.test.tsx).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { RestorePrimaryDialog } from '@/components/members/restore-primary-dialog';
@@ -120,12 +120,13 @@ describe('RestorePrimaryDialog (108 FR-014)', () => {
 
   it('disables the whole form while the restore is in flight', () => {
     renderDialog({ submitting: true });
-    expect(screen.getByTestId('restore-primary-confirm')).toBeDisabled();
-    // Base UI renders a disabled radio as <span role="radio" aria-disabled>
-    // (not a natively-disabled element), so assert the ARIA state — the same
-    // precedent as event-fee-form.test.tsx.
+    // AURA's loading state: busy and swallowing clicks (122 US5b-1).
+    const confirm = screen.getByTestId('restore-primary-confirm');
+    expect(confirm).toHaveAttribute('aria-busy', 'true');
+    expect(confirm).toHaveAttribute('aria-disabled', 'true');
+    // AURA radios are native inputs inside a disabled fieldset.
     for (const r of screen.getAllByRole('radio')) {
-      expect(r).toHaveAttribute('aria-disabled', 'true');
+      expect(r).toBeDisabled();
     }
   });
 
@@ -181,20 +182,23 @@ describe('RestorePrimaryDialog (108 FR-014)', () => {
     expect(onContactAdded).toHaveBeenCalledTimes(1);
   });
 
-  it('caps its height and scrolls — long TH copy plus five radios must not push the footer off a 320x568 screen (H3)', () => {
+  it('keeps Cancel and Restore out of the scrolling choice list — the footer stays reachable on a 320x568 screen (H3, N5)', () => {
+    // AURA's Dialog scrolls its body and keeps the footer in place (122
+    // US5b-1); the choices live in the body, the actions in the footer.
     renderDialog();
-    const dialog = screen.getByRole('alertdialog');
-    expect(dialog.className).toContain('max-h-[85vh]');
-    expect(dialog.className).toContain('overflow-y-auto');
+    const group = screen.getByRole('group', { name: D.contactsLabel });
+    expect(group).not.toContainElement(screen.getByTestId('restore-primary-cancel'));
+    expect(screen.getByTestId('restore-primary-dialog')).not.toContainElement(
+      screen.getByTestId('restore-primary-confirm'),
+    );
   });
 
-  it('the radiogroup is named by its visible legend, once (L9b)', () => {
+  it('the choices are one group named by its visible legend, once (L9b)', () => {
     renderDialog();
-    const group = screen.getByRole('radiogroup');
-    const labelledBy = group.getAttribute('aria-labelledby');
-    expect(labelledBy).toBeTruthy();
-    expect(document.getElementById(labelledBy!)).toHaveTextContent(D.contactsLabel);
+    // A native fieldset + legend: the legend names the group, no aria-label.
+    const group = screen.getByRole('group', { name: D.contactsLabel });
     expect(group).not.toHaveAttribute('aria-label');
+    expect(within(group).getAllByRole('radio')).toHaveLength(2);
   });
 
   // ── T041 UX review round 2 ─────────────────────────────────────────────────
@@ -210,30 +214,9 @@ describe('RestorePrimaryDialog (108 FR-014)', () => {
     expect(screen.getByTestId('cfd-stub')).toHaveAttribute('data-disabled', 'true');
   });
 
-  it('spinners respect reduced motion (motion-safe:animate-spin) (N3)', () => {
-    const { container } = render(
-      <NextIntlClientProvider locale="en" messages={enMessages}>
-        <RestorePrimaryDialog
-          open
-          onOpenChange={() => {}}
-          memberId="member-1"
-          designatable={[ANN, BO]}
-          onConfirm={() => {}}
-          submitting
-        />
-      </NextIntlClientProvider>,
-    );
-    void container;
-    const spinner = document.querySelector('svg.motion-safe\\:animate-spin');
-    expect(spinner).not.toBeNull();
-    expect(document.querySelector('svg.animate-spin:not(.motion-safe\\:animate-spin)')).toBeNull();
-  });
-
-  it('the contact list scrolls inside the dialog so the footer stays reachable at 320x568 (N5)', () => {
-    renderDialog();
-    const group = screen.getByRole('radiogroup');
-    expect(group.className).toContain('overflow-y-auto');
-    expect(group.className).toContain('max-h-[40vh]');
+  it('while restoring, the action shows AURA\'s busy state (its spinner follows reduced motion) (N3)', () => {
+    renderDialog({ submitting: true });
+    expect(screen.getByTestId('restore-primary-confirm')).toHaveAttribute('aria-busy', 'true');
   });
 
   it('a radio is named by its label alone — no redundant aria-label (N6b)', () => {

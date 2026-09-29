@@ -19,7 +19,7 @@ import {
   UserRoundXIcon,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { Badge } from '@/components/ui/badge';
+import { Badge } from '@jirawatpyk/aura-react';
 import type { MarketingState } from '@/modules/members';
 
 const ICON: Record<MarketingState, typeof BellIcon> = {
@@ -30,24 +30,16 @@ const ICON: Record<MarketingState, typeof BellIcon> = {
   unavailable: HelpCircleIcon,
 };
 
-const VARIANT: Record<MarketingState, 'secondary' | 'outline'> = {
-  on: 'secondary',
-  off_by_staff: 'outline',
-  off_by_contact: 'outline',
-  unsubscribed: 'outline',
-  unavailable: 'outline',
-};
-
-// Semantic warning tokens (globals.css `--warning*`, AA-tuned) — never a
-// hardcoded amber that ignores theming (review M6, repeat of F7.1a US7).
-const OFF_TONE = 'border-warning bg-warning-surface text-warning';
-const TONE: Record<MarketingState, string> = {
-  on: '',
-  off_by_staff: OFF_TONE,
-  off_by_contact: OFF_TONE,
-  unsubscribed: OFF_TONE,
-  // A STATE, not an empty sentinel — never muted (portal toggle rule).
-  unavailable: '',
+// Spec 122 US5b-1 — AURA tones: the three "won't receive" states are the
+// warning tone (themed and AA-tuned by AURA, never a hardcoded amber — review
+// M6); "on" and "unavailable" are neutral. `unavailable` is a STATE, not an
+// empty sentinel, so it is never muted (portal toggle rule).
+const TONE: Record<MarketingState, 'neutral' | 'warning'> = {
+  on: 'neutral',
+  off_by_staff: 'warning',
+  off_by_contact: 'warning',
+  unsubscribed: 'warning',
+  unavailable: 'neutral',
 };
 
 export function MarketingStateBadge({
@@ -59,11 +51,7 @@ export function MarketingStateBadge({
   const Icon = ICON[state];
   const explanation = state === 'on' ? undefined : t(`${state}Aria`);
   return (
-    <Badge
-      variant={VARIANT[state]}
-      className={`gap-1 ${TONE[state]}`.trim()}
-      data-marketing-state={state}
-    >
+    <Badge tone={TONE[state]} data-marketing-state={state}>
       <Icon aria-hidden="true" className="size-3" />
       <span>{t(state)}</span>
       {/* The WHY as real (visually hidden) text — `aria-label` on a role-less

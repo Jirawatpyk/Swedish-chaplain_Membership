@@ -24,42 +24,22 @@
  *   - `member`  — never reaches this surface (admin route).
  */
 import Link from 'next/link';
-import { getTranslations, getFormatter, getLocale } from 'next-intl/server';
+import { getTranslations, getLocale } from 'next-intl/server';
 import { canPerform } from '@/lib/rbac';
 import type { Role } from '@/modules/auth/domain/role';
-import { FileTextIcon, PlusIcon, ReceiptIcon } from 'lucide-react';
+import { PlusIcon } from 'lucide-react';
 import {
   listInvoicesByMember,
   makeListInvoicesByMemberDeps,
   type Invoice,
-  type InvoiceStatus,
 } from '@/modules/invoicing';
 import type { TenantContext } from '@/modules/tenants';
-import { Badge } from '@/components/ui/badge';
-import { Button, buttonVariants } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-} from '@/components/ui/card';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
-import { cn } from '@/lib/utils';
+import { Card, EmptyState, buttonClass } from '@jirawatpyk/aura-react/server';
 import { MemberInvoicesFilters } from './member-invoices-filters';
+import { MemberInvoicesTable, type MemberInvoiceRow } from './member-invoices-table';
 import { resolveMemberInvoiceDisplayNumber } from './resolve-invoice-display-number';
 import { formatDatePreset } from '@/lib/format-date-localised';
+import { formatSatangThb } from '@/lib/format-thb';
 
 interface MemberInvoicesSectionProps {
   readonly tenant: TenantContext;
@@ -80,66 +60,10 @@ interface MemberInvoicesSectionProps {
   readonly searchFilter?: string | undefined;
 }
 
-function statusBadgeVariant(
-  status: InvoiceStatus,
-): 'default' | 'secondary' | 'outline' | 'destructive' {
-  switch (status) {
-    case 'paid':
-      return 'default';
-    case 'void':
-      return 'destructive';
-    case 'credited':
-    case 'partially_credited':
-      return 'outline';
-    case 'issued':
-    case 'draft':
-    default:
-      return 'secondary';
-  }
-}
-
 /** Difference between invoice total and credited total = amount owing. */
 function remainingSatang(inv: Invoice): bigint | null {
   if (!inv.total) return null;
   return inv.total.satang - inv.creditedTotal.satang;
-}
-
-/**
- * Role-gated action shown as a disabled Button wrapped in a Tooltip
- * explaining the role constraint. Extracted from three near-identical
- * inline Tooltip blocks (Record Payment / Void / Issue Credit Note)
- * per the UX review — centralises tooltip copy and destructive tint so
- * future changes apply once, not three times.
- */
-function ManagerDisabledAction({
-  label,
-  tooltipMessage,
-  destructive = false,
-  ariaLabel,
-}: {
-  readonly label: string;
-  readonly tooltipMessage: string;
-  readonly destructive?: boolean;
-  readonly ariaLabel?: string;
-}): React.ReactElement {
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            variant={destructive ? 'destructive-outline' : 'outline'}
-            size="sm"
-            disabled
-            aria-disabled="true"
-            {...(ariaLabel ? { 'aria-label': ariaLabel } : {})}
-          >
-            {label}
-          </Button>
-        }
-      />
-      <TooltipContent>{tooltipMessage}</TooltipContent>
-    </Tooltip>
-  );
 }
 
 export async function MemberInvoicesSection({
@@ -151,7 +75,6 @@ export async function MemberInvoicesSection({
   searchFilter,
 }: MemberInvoicesSectionProps): Promise<React.ReactElement> {
   const t = await getTranslations('admin.members.invoices');
-  const format = await getFormatter();
   const locale = await getLocale();
 
   // G-U7F — fetch the unfiltered count once so we know whether to
@@ -213,266 +136,134 @@ export async function MemberInvoicesSection({
   // outside the first version of the page gate's scan radius).
   const canMutate = canPerform(role, 'invoicing.write');
 
+  // The board's form ("38,520.00 THB"), the same as the figures strip above.
   const formatBaht = (satang: bigint | null): string =>
-    satang === null
-      ? '—'
-      : format.number(Number(satang) / 100, {
-          style: 'currency',
-          currency: 'THB',
-        });
+    satang === null ? '—' : formatSatangThb(satang, locale);
 
   const formatDate = (iso: string | null): string =>
     iso === null ? '—' : formatDatePreset(iso, locale, 'dateMedium2Digit');
 
+  const hasFilter = statusFilter !== undefined || fiscalYearFilter !== undefined || searchFilter !== undefined;
+  // 088 FR-030 — bill-first: an issued (or paid) 088 bill carries its SC
+  // number in `billDocumentNumberRaw` with the §87 `documentNumber` NULL;
+  // `null` (a true draft) falls back to the placeholder.
+  const tableRows: MemberInvoiceRow[] = rows.map((inv) => {
+    const remaining = remainingSatang(inv);
+    return {
+      invoiceId: inv.invoiceId,
+      number: resolveMemberInvoiceDisplayNumber(inv) ?? t('draftPlaceholder'),
+      status: inv.status,
+      statusLabel: t(`statuses.${inv.status}`),
+      issued: formatDate(inv.issueDate),
+      due: formatDate(inv.dueDate),
+      paid: inv.paidAt ? formatDate(inv.paidAt) : null,
+      total: formatBaht(inv.total?.satang ?? null),
+      remaining: formatBaht(remaining),
+      // `issued` is the only unpaid state (canTransition: issued → paid | void;
+      // credit notes need paid), the same rule as `_lib/member-outstanding.ts`.
+      owing: inv.status === 'issued',
+    };
+  });
   return (
-    <section aria-labelledby="member-invoices-heading">
-      <Card>
-        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
-          {/* 056 fix #1 — real <h2> (was a CardTitle <div>) so the section
-              appears in the SR heading tree; aria-labelledby on the wrapping
-              <section> resolves to this id. */}
-          <h2
-            id="member-invoices-heading"
-            className="flex items-center gap-2 font-heading text-base font-medium leading-snug"
-          >
-            <ReceiptIcon className="size-4" aria-hidden="true" />
-            {t('title')}
-            <span className="text-xs text-muted-foreground font-normal">
-              {t('count', { count: total })}
-            </span>
-          </h2>
-          {/* "New invoice" CTA visible whenever the member already
-            * has any invoices (total > 0). MUTUALLY EXCLUSIVE with
-            * the empty-state CTA in CardContent (which only renders
-            * when total === 0 AND no filters active) — so the member
-            * page NEVER shows two "New invoice" buttons at once.
-            * Admin-only: managers are read-only on finance per
-            * Constitution Principle V. */}
-          {canMutate && total > 0 && (
-            <Link
-              href={`/admin/invoices/new?memberId=${encodeURIComponent(memberId)}`}
-              className={buttonVariants({ variant: 'outline' })}
-            >
+    <MemberInvoicesCard
+      memberId={memberId}
+      total={total}
+      rows={tableRows}
+      canMutate={canMutate}
+      hasFilter={hasFilter}
+      showFilters={allYearsResult.ok && allYearsResult.value.total > 0}
+    />
+  );
+}
+
+/**
+ * The invoices card once its rows are loaded and formatted — split out so the
+ * no-DB preview route renders the same markup (spec 122 US5b-1).
+ */
+export async function MemberInvoicesCard({
+  memberId,
+  total,
+  rows: tableRows,
+  canMutate,
+  hasFilter,
+  showFilters,
+}: {
+  readonly memberId: string;
+  readonly total: number;
+  readonly rows: readonly MemberInvoiceRow[];
+  readonly canMutate: boolean;
+  readonly hasFilter: boolean;
+  /** G-U7F — only when the member has any invoice at all. */
+  readonly showFilters: boolean;
+}): Promise<React.ReactElement> {
+  const t = await getTranslations('admin.members.invoices');
+  const newInvoiceHref = `/admin/invoices/new?memberId=${encodeURIComponent(memberId)}`;
+
+  // Spec 122 US5b-1 — an AURA Card as the `Admin-member-detail` board draws
+  // it: the title with the count and "New invoice", the filters, then the
+  // table (cards on a phone) or an empty state.
+  return (
+    <Card
+      as="section"
+      title={t('title')}
+      titleId="member-invoices-heading"
+      headingLevel={2}
+      actions={
+        // The count beside the heading, not in it. "New invoice" shows
+        // whenever the member already has invoices; the empty state carries
+        // its own, so the page never shows two. Admin only — managers are
+        // read-only on finance (Principle V).
+        <span className="flex items-center gap-3">
+          <span className="text-xs text-[var(--aura-fg-secondary)]">{t('count', { count: total })}</span>
+          {canMutate && total > 0 ? (
+            <Link href={newInvoiceHref} className={buttonClass({ size: 'sm' })}>
               <PlusIcon className="size-4" aria-hidden="true" />
               {t('newInvoice')}
             </Link>
-          )}
-        </CardHeader>
-        <CardContent data-testid="member-invoices-content">
-          {/* G-U7F — status + year filter. Only render when the
-            * unfiltered set is non-empty: if the member has ZERO
-            * invoices there is nothing to filter, so the empty-CTA
-            * stays the dominant focus. */}
-          {allYearsResult.ok && allYearsResult.value.total > 0 && (
-            <MemberInvoicesFilters />
-          )}
-          {/* G-U7S — Spec US7 AS1 "sortable" deferred to Phase 10
-            * polish. Rationale: typical member has ≤20 invoices;
-            * server default `ORDER BY issue_date DESC` already
-            * surfaces 'most recent first' (the 95% user intent).
-            * Filter (G-U7F) + paid-date column (G-U7P) together
-            * cover the 'I can find invoice X' job that 'sortable'
-            * is a proxy for. Revisit when members regularly carry
-            * ≥50 invoices. */}
-          {rows.length === 0 ? (
-            <div className="flex flex-col items-start gap-3 py-4">
-              <p className="text-sm text-muted-foreground">
-                {statusFilter !== undefined ||
-                fiscalYearFilter !== undefined ||
-                searchFilter !== undefined
-                  ? t('emptyFiltered')
-                  : t('empty')}
-              </p>
-              {statusFilter === undefined &&
-                fiscalYearFilter === undefined &&
-                searchFilter === undefined &&
-                canMutate && (
-                <Link
-                  href={`/admin/invoices/new?memberId=${encodeURIComponent(memberId)}`}
-                  className={buttonVariants({ variant: 'outline', size: 'sm' })}
-                >
+          ) : null}
+        </span>
+      }
+    >
+      <div data-testid="member-invoices-content">
+        {/* G-U7F — only when the unfiltered set is non-empty: with ZERO
+            invoices there is nothing to filter. */}
+        {showFilters && <MemberInvoicesFilters />}
+        {tableRows.length === 0 ? (
+          <EmptyState
+            size="sm"
+            title={hasFilter ? t('emptyFiltered') : t('empty')}
+            action={
+              !hasFilter && canMutate ? (
+                <Link href={newInvoiceHref} className={buttonClass({ variant: 'secondary', size: 'sm' })}>
                   {t('emptyCta')}
                 </Link>
-              )}
-            </div>
-          ) : (
-            <TooltipProvider>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead scope="col">{t('cols.number')}</TableHead>
-                      <TableHead scope="col">{t('cols.status')}</TableHead>
-                      <TableHead scope="col">{t('cols.issued')}</TableHead>
-                      <TableHead scope="col">{t('cols.due')}</TableHead>
-                      {/* G-U7P — spec US7 AS1 requires "issue/due/paid dates" */}
-                      <TableHead scope="col">{t('cols.paid')}</TableHead>
-                      <TableHead scope="col" className="text-right">
-                        {t('cols.total')}
-                      </TableHead>
-                      <TableHead scope="col" className="text-right">
-                        {t('cols.remaining')}
-                      </TableHead>
-                      <TableHead scope="col" className="text-right">
-                        <span className="sr-only">{t('cols.actions')}</span>
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {rows.map((inv) => {
-                      // 088 FR-030 — bill-first: an issued (or paid) 088
-                      // ใบแจ้งหนี้ carries its SC number in
-                      // `billDocumentNumberRaw` with the §87 `documentNumber`
-                      // NULL, so reading `documentNumber` alone rendered the
-                      // draft placeholder for a real issued bill. `null` (true
-                      // draft) falls back to the placeholder; the void
-                      // aria-label reuses the resolved number.
-                      const resolvedNumber =
-                        resolveMemberInvoiceDisplayNumber(inv);
-                      const docNum = resolvedNumber ?? t('draftPlaceholder');
-                      const canRecordPayment = inv.status === 'issued';
-                      // G-V1 / US7 AS1 — spec-required Void action
-                      // per-row. Gate matches /admin/invoices/[id]/page.tsx
-                      // Void button exactly: status === 'issued'.
-                      const canVoid = inv.status === 'issued';
-                      const canIssueCreditNote =
-                        inv.status === 'paid' ||
-                        inv.status === 'partially_credited';
-                      const remaining = remainingSatang(inv);
-                      return (
-                        <TableRow key={inv.invoiceId}>
-                          <TableCell className="font-mono text-xs">
-                            {docNum}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={statusBadgeVariant(inv.status)}>
-                              {t(`statuses.${inv.status}`)}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-xs">
-                            {formatDate(inv.issueDate)}
-                          </TableCell>
-                          <TableCell className="text-xs">
-                            {formatDate(inv.dueDate)}
-                          </TableCell>
-                          <TableCell className="text-xs">
-                            {/* G-U7P — paid date. SR aria-label on the
-                              * em-dash so screen readers read 'Not
-                              * paid yet' instead of a meaningless dash. */}
-                            {inv.paidAt ? (
-                              formatDate(inv.paidAt)
-                            ) : (
-                              <span
-                                className="text-muted-foreground"
-                                aria-label={t('cols.paidEmpty')}
-                              >
-                                —
-                              </span>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right font-mono text-xs">
-                            {formatBaht(inv.total?.satang ?? null)}
-                          </TableCell>
-                          <TableCell
-                            className={cn(
-                              'text-right font-mono text-xs',
-                              remaining !== null &&
-                                remaining > 0n &&
-                                inv.status !== 'paid' &&
-                                // amber-700 (not -600) on white = 4.8:1, meets
-                                // WCAG 2.1 AA 1.4.3 (a11y scan fix); dark mode
-                                // keeps amber-400 (sufficient on dark bg).
-                                'text-amber-700 dark:text-amber-400',
-                            )}
-                          >
-                            {formatBaht(remaining)}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex items-center justify-end gap-1 whitespace-nowrap">
-                              <Link
-                                href={`/admin/invoices/${inv.invoiceId}`}
-                                className={buttonVariants({
-                                  variant: 'ghost',
-                                  size: 'sm',
-                                })}
-                              >
-                                <FileTextIcon
-                                  className="size-3.5"
-                                  aria-hidden="true"
-                                />
-                                <span>{t('actions.view')}</span>
-                              </Link>
-                              {canRecordPayment &&
-                                (canMutate ? (
-                                  <Link
-                                    // W1-44: target the RecordPaymentDialog trigger
-                                    // (id="record-payment") that renders for ISSUED invoices.
-                                    // The old #payment anchor only exists on PAID invoices, so
-                                    // the link from this issued-invoice CTA resolved to nothing.
-                                    href={`/admin/invoices/${inv.invoiceId}#record-payment`}
-                                    className={buttonVariants({
-                                      variant: 'outline',
-                                      size: 'sm',
-                                    })}
-                                  >
-                                    {t('actions.recordPayment')}
-                                  </Link>
-                                ) : (
-                                  <ManagerDisabledAction
-                                    label={t('actions.recordPayment')}
-                                    tooltipMessage={t('actions.disabledForManager')}
-                                  />
-                                ))}
-                              {canVoid &&
-                                (canMutate ? (
-                                  <Link
-                                    href={`/admin/invoices/${inv.invoiceId}/void`}
-                                    className={buttonVariants({
-                                      variant: 'destructive-outline',
-                                      size: 'sm',
-                                    })}
-                                    aria-label={t('actions.voidAriaLabel', {
-                                      number: resolvedNumber ?? inv.invoiceId,
-                                    })}
-                                  >
-                                    {t('actions.void')}
-                                  </Link>
-                                ) : (
-                                  <ManagerDisabledAction
-                                    label={t('actions.void')}
-                                    tooltipMessage={t('actions.disabledForManager')}
-                                    destructive
-                                  />
-                                ))}
-                              {canIssueCreditNote &&
-                                (canMutate ? (
-                                  <Link
-                                    href={`/admin/invoices/${inv.invoiceId}/credit-notes/new`}
-                                    className={buttonVariants({
-                                      variant: 'outline',
-                                      size: 'sm',
-                                    })}
-                                  >
-                                    {t('actions.issueCreditNote')}
-                                  </Link>
-                                ) : (
-                                  <ManagerDisabledAction
-                                    label={t('actions.issueCreditNote')}
-                                    tooltipMessage={t('actions.disabledForManager')}
-                                  />
-                                ))}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-            </TooltipProvider>
-          )}
-        </CardContent>
-      </Card>
-    </section>
+              ) : undefined
+            }
+          />
+        ) : (
+          <MemberInvoicesTable
+            rows={tableRows}
+            canMutate={canMutate}
+            labels={{
+              caption: t('title'),
+              number: t('cols.number'),
+              status: t('cols.status'),
+              issued: t('cols.issued'),
+              due: t('cols.due'),
+              paid: t('cols.paid'),
+              total: t('cols.total'),
+              remaining: t('cols.remaining'),
+              notPaid: t('cols.paidEmpty'),
+              actionsFor: t('actions.menuFor', { number: '{number}' }),
+              view: t('actions.view'),
+              recordPayment: t('actions.recordPayment'),
+              issueCreditNote: t('actions.issueCreditNote'),
+              void: t('actions.void'),
+              disabledForManager: t('actions.disabledForManager'),
+            }}
+          />
+        )}
+      </div>
+    </Card>
   );
 }

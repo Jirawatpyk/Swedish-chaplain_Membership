@@ -887,6 +887,16 @@ unacceptable failure modes for irreversible actions. Only `DropdownMenuItem
 variant="destructive"` with `ConfirmationDialog` gating is allowed inside a
 menu, and only for low-irreversibility items.
 
+**Exception — the admin member header on a phone** (spec 122 US5b-1,
+maintainer, 29 Sep 2026). Below 640px the member detail header is Edit,
+Benefits and ⋯, as the `Admin-member-detail-mobile` board draws it; Erase
+and Archive open from that menu (danger tone), because as visible buttons
+they stacked into rows of their own. Both open the same confirmation
+dialogs as the visible buttons (Erase: legal basis, attestation, method and
+the typed member number; Archive: a reason), so no menu item acts on its
+own. From 640px up they stay standalone buttons. Any other page header
+still follows the rule above.
+
 ### Reduced-motion
 
 Spinner icons (`Loader2 animate-spin`) inside menu items inherit the

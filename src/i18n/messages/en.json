@@ -1256,6 +1256,7 @@
           "submittedBy": "Submitted by {name} ({role})",
           "submittedOn": "Submitted {submittedAt}",
           "review": "Review",
+          "pendingAlert": "Change request awaiting review",
           "open": "Open"
         },
       "title": "Members",
@@ -1545,7 +1546,6 @@
           "primary": "Primary contact",
           "secondary": "Other contacts",
           "plan": "Plan",
-          "audit": "Recent activity",
           "contactStatusBadges": "Contact status",
           "benefits": "Benefits"
         },
@@ -1618,6 +1618,7 @@
           "linked": "Portal linked"
         },
         "editCta": "Edit",
+        "headerMoreActions": "More actions",
         "contactActions": {
           "add": "Add contact",
           "edit": "Edit",
@@ -1641,12 +1642,39 @@
             "notFound": "Contact not found.",
             "generic": "Something went wrong. Please try again.",
             "serverBusy": "The server is busy. Please try again in a moment."
-          }
+          },
+          "moreActions": "More actions for {name}"
         },
         "noPrimaryBanner": {
           "title": "No primary contact — payment emails are not being sent",
           "body": "Invoices, receipts, void notices and credit notes for this member are queued to nobody until a contact is marked as primary. Add or promote a contact to resume them.",
           "cta": "Open the member to fix it"
+        },
+        "summary": {
+          "label": "Member summary",
+          "outstanding": "Outstanding",
+          "outstandingNote": "{count, plural, one {# unpaid} other {# unpaid}} · due {date}",
+          "outstandingOverdueNote": "{count, plural, one {# unpaid} other {# unpaid}} · overdue since {date}",
+          "outstandingCount": "{count, plural, one {# unpaid} other {# unpaid}}",
+          "outstandingNone": "Nothing unpaid",
+          "outstandingPartial": "First 100 unpaid invoices only",
+          "unavailable": "Unavailable",
+          "expires": "Membership expires",
+          "expiresShort": "Expires",
+          "daysLeft": "{days, plural, one {# day left} other {# days left}}",
+          "primaryContact": "Primary contact",
+          "engagement": "Engagement",
+          "lastActivity": "Last activity {when}",
+          "lastActivityShort": "Active {when}"
+        },
+        "sectionLinks": {
+          "label": "On this page",
+          "overview": "Overview",
+          "contacts": "Contacts",
+          "invoices": "Invoices",
+          "changeRequests": "Change requests",
+          "timeline": "Timeline",
+          "dataExport": "Data export"
         }
       },
       "timeline": {
@@ -1683,8 +1711,6 @@
         "emptyCta": "Create first invoice",
         "newInvoice": "New invoice",
         "filters": {
-          "statusAria": "Filter invoices by status",
-          "yearAria": "Filter invoices by fiscal year",
           "search": "Search document number…",
           "fiscalYear": "Year",
           "status": {
@@ -1694,7 +1720,9 @@
             "all": "All years"
           },
           "apply": "Apply",
-          "clear": "Clear filters"
+          "clear": "Clear filters",
+          "searchLabel": "Search",
+          "statusLabel": "Status"
         },
         "draftPlaceholder": "(draft)",
         "cols": {
@@ -1721,8 +1749,8 @@
           "recordPayment": "Record payment…",
           "issueCreditNote": "Issue credit note",
           "void": "Void",
-          "voidAriaLabel": "Void invoice {number}",
-          "disabledForManager": "Managers have read-only access. Ask an administrator."
+          "disabledForManager": "Managers have read-only access. Ask an administrator.",
+          "menuFor": "Actions for {number}"
         }
       },
       "create": {
@@ -8215,6 +8243,8 @@
       "neverUsed": "Not used yet this year",
       "lastUsed": "Last used {date}",
       "activeHeading": "Included benefits",
+      "staffPreviewTitle": "Benefits",
+      "staffPreviewLink": "Details",
       "liveNote": "Updated on load · current year",
       "emptyTitle": "No tracked benefits",
       "fullBenefits": "Full benefits",

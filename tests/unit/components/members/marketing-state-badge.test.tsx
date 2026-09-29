@@ -61,15 +61,19 @@ describe('MarketingStateBadge', () => {
   });
 
   it.each(['off_by_staff', 'off_by_contact', 'unsubscribed'] as const)(
-    '%s uses the semantic warning tokens, not hardcoded amber',
+    '%s is an AURA warning badge, not hardcoded amber (122 US5b-1)',
     (state) => {
       const { container } = renderBadge(state);
       const badge = container.querySelector('[data-marketing-state]');
-      expect(badge?.className).toContain('border-warning');
-      expect(badge?.className).toContain('text-warning');
+      expect(badge).toHaveClass('aura-badge', 'aura-badge--warning');
       expect(badge?.className).not.toMatch(/amber/);
     },
   );
+
+  it.each(['on', 'unavailable'] as const)('%s is a neutral AURA badge — a state, never muted', (state) => {
+    const { container } = renderBadge(state);
+    expect(container.querySelector('[data-marketing-state]')).toHaveClass('aura-badge', 'aura-badge--neutral');
+  });
 
   it('exposes the state as a data attribute for e2e + styling hooks', () => {
     const { container } = renderBadge('off_by_staff');

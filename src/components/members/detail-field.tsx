@@ -37,6 +37,8 @@ export interface DetailFieldProps {
    * `definition-list` / `dlitem` rules (108 PR-D portal a11y sweep).
    */
   readonly className?: string;
+  /** Extra classes on the `<dt>` (e.g. `max-sm:sr-only` where a phone row drops the label). */
+  readonly labelClassName?: string;
 }
 
 export function DetailField({
@@ -46,12 +48,13 @@ export function DetailField({
   mono = false,
   extra,
   className,
+  labelClassName,
 }: DetailFieldProps) {
   const v =
     value === null || value === undefined || value === '' ? null : String(value);
   return (
     <div className={cn('flex flex-col gap-1 py-2', className)}>
-      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dt className={cn('text-xs text-muted-foreground', labelClassName)}>{label}</dt>
       <dd className="flex items-center gap-2 text-sm">
         {v !== null && (
           <span className={cn(mono && 'font-mono text-xs')}>{v}</span>

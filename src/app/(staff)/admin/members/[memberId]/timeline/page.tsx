@@ -11,11 +11,9 @@
  */
 
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { headers } from 'next/headers';
 import { getTranslations } from 'next-intl/server';
-import { ArrowLeftIcon } from 'lucide-react';
 import { requirePagePermission, canPerform } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
@@ -27,19 +25,9 @@ import { toTimelineItemProps } from '@/lib/timeline-presenter';
 import { getMember, timelineList, type MemberId } from '@/modules/members';
 import { recordStaffTimelineView } from '@/modules/insights';
 import { buildMembersDeps } from '@/modules/members/members-deps';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import { buttonVariants } from '@/components/ui/button';
-import { DetailContainer } from '@/components/layout';
-import { PageHeader } from '@/components/layout/page-header';
-import { DynamicBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
-import { TimelineFilters } from '@/components/members/timeline-filters';
-import { TimelineStream } from '@/components/members/timeline-stream';
 import type { TimelineItemProps } from '@/components/members/timeline-event-item';
+import { MemberNotFound } from '../_components/member-not-found';
+import { renderMemberTimelineView } from '../_components/member-timeline-view';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -70,9 +58,6 @@ export default async function MemberTimelinePage({ params, searchParams }: PageP
   const h = await headers();
   const requestId = requestIdFromHeaders(h);
 
-  const t = await getTranslations('admin.members.timeline');
-  const tPage = await getTranslations('timeline.page');
-  const tDetail = await getTranslations('admin.members.detail');
 
   const deps = buildMembersDeps(tenant);
   const memberResult = await getMember(
@@ -83,27 +68,7 @@ export default async function MemberTimelinePage({ params, searchParams }: PageP
 
   if (!memberResult.ok) {
     if (memberResult.error.type === 'not_found') {
-      return (
-        <DetailContainer>
-          <Card>
-            <CardContent className="flex flex-col items-center gap-4 p-10 text-center">
-              <h2 className="text-h2 text-xl font-semibold">
-                {tDetail('notFound.title')}
-              </h2>
-              <p className="text-sm text-muted-foreground">
-                {tDetail('notFound.description')}
-              </p>
-              <Link
-                href="/admin/members"
-                className={buttonVariants({ variant: 'outline' })}
-              >
-                <ArrowLeftIcon className="size-4" />
-                {tDetail('notFound.cta')}
-              </Link>
-            </CardContent>
-          </Card>
-        </DetailContainer>
-      );
+      return <MemberNotFound />;
     }
     throw new Error(`getMember failed: ${memberResult.error.message}`);
   }
@@ -183,44 +148,13 @@ export default async function MemberTimelinePage({ params, searchParams }: PageP
   // Remount the stream on filter change so paginated state resets cleanly.
   const filterKey = timelineFilterKey(filterArgs);
 
-  return (
-    <DetailContainer>
-      <DynamicBreadcrumbLabel segment={memberId} label={member.companyName} />
-      <PageHeader
-        title={t('title')}
-        subtitle={t('subtitle')}
-        actions={
-          <Link
-            href={`/admin/members/${member.memberId}`}
-            className={buttonVariants({ variant: 'outline' })}
-          >
-            <ArrowLeftIcon className="size-4" />
-            {t('backToDetail')}
-          </Link>
-        }
-      />
-
-      <Card>
-        <CardHeader className="flex flex-row items-start justify-between gap-4">
-          <CardTitle className="text-base">{member.companyName}</CardTitle>
-          {totalEvents > 0 && (
-            <span className="text-sm text-muted-foreground whitespace-nowrap">
-              {t('totalEvents', { count: totalEvents })}
-            </span>
-          )}
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <TimelineFilters />
-          <TimelineStream
-            key={filterKey}
-            fetchPath={`/api/members/${member.memberId}/timeline`}
-            initialEvents={initialEvents}
-            initialCursor={initialCursor}
-            emptyLabel={hasFilter ? tPage('emptyFiltered') : tPage('empty')}
-            listLabel={t('title')}
-          />
-        </CardContent>
-      </Card>
-    </DetailContainer>
-  );
+  return renderMemberTimelineView({
+    routeSegment: memberId,
+    member: { memberId: member.memberId, companyName: member.companyName },
+    initialEvents,
+    initialCursor,
+    totalEvents,
+    hasFilter,
+    filterKey,
+  });
 }

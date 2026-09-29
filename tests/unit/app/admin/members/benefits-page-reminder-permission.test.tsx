@@ -98,7 +98,8 @@ async function renderAs(role: string) {
   );
 }
 
-const reminder = () => screen.queryByRole('link', { name: 'staffActions.sendReminder' });
+// Two copies, one per width (spec 122 US5b-1: the phone board puts it under the title).
+const reminder = () => screen.queryAllByRole('link', { name: 'staffActions.sendReminder' })[0] ?? null;
 
 describe('Admin MemberBenefitsPage — send reminder is admin-only', () => {
   afterEach(() => vi.clearAllMocks());
