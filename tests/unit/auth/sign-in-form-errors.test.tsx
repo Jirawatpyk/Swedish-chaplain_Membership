@@ -7,7 +7,7 @@
  * field uses inputmode=email. Rendered against real en.json.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { SignInForm } from '@/components/auth/sign-in-form';
@@ -165,7 +165,9 @@ describe('SignInForm', () => {
     const summary = await screen.findByRole('alert', { name: /fix 2 fields/i });
     const links = within(summary).getAllByRole('link');
     expect(links.map((a) => a.getAttribute('href'))).toEqual(['#email', '#password']);
-    expect(summary.contains(document.activeElement)).toBe(true);
+    // FormErrorSummary focuses on the submitCount commit (its focusKey), which
+    // react-hook-form can land one render after the errors that show the summary.
+    await waitFor(() => expect(summary.contains(document.activeElement)).toBe(true));
     // The fields keep their own messages.
     expect(container.querySelector('#email-error')).not.toBeNull();
     expect(container.querySelector('#password-error')).not.toBeNull();
