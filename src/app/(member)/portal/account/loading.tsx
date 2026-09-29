@@ -3,6 +3,7 @@ import { ChangePasswordFormSkeleton } from '@/components/auth/change-password-fo
 import { env } from '@/lib/env';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
+import { AuraCardSkeleton } from '@/components/shell/aura-card-skeleton';
 import {
   PageSkeletonShell,
   SkeletonBlock,
@@ -43,14 +44,11 @@ function HubCardSkeleton({
   children: React.ReactNode;
 }) {
   return (
-    <div className="aura-card">
-      {/* Title-skeleton INSIDE the card head so it lands where the real h2
-          renders — no shift on the content swap. */}
-      <div className="aura-card__head">
-        <SkeletonBlock className={`h-5 ${titleWidth}`} />
-      </div>
-      <div className="aura-card__body flex flex-col gap-3">{children}</div>
-    </div>
+    // Title-skeleton INSIDE the card head so it lands where the real h2
+    // renders — no shift on the content swap.
+    <AuraCardSkeleton title={<SkeletonBlock className={`h-5 ${titleWidth}`} />}>
+      <div className="flex flex-col gap-3">{children}</div>
+    </AuraCardSkeleton>
   );
 }
 

@@ -74,8 +74,7 @@ export function ContactLanguageForm({ initialValue }: ContactLanguageFormProps):
       <RadioGroup
         label={t('groupLabel')}
         hint={t('hint')}
-        // 44px option rows on phones (the `Portal-account-mobile` board's touch targets)
-        className="max-sm:[&_.aura-choice]:min-h-11 max-sm:[&_.aura-choice]:items-center"
+        // AURA's option rows are 44px on touch screens (coarse pointers)
         value={value}
         onChange={(v) => setValue(v as ContactLanguage)}
         disabled={saving}

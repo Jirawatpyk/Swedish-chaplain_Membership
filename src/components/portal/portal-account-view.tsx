@@ -74,7 +74,7 @@ export async function renderPortalAccountView({
             <ChangePasswordForm
               showPasswordHint
               secondaryAction={
-                <Link href="/forgot-password" className={`inline-flex min-h-11 items-center text-[13px] sm:min-h-0 ${link}`}>
+                <Link href="/forgot-password" className={`inline-flex min-h-11 items-center aura-text-label sm:min-h-0 ${link}`}>
                   {tPage('forgotPassword')}
                 </Link>
               }
@@ -124,7 +124,7 @@ export async function renderPortalAccountView({
             {/* The other data-subject rights (GDPR Art. 16–21 · PDPA §33–36):
                 where to go for each. The contact and the notice only when the
                 tenant has configured them — never a dead link. */}
-            <div className="rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface-hover)] px-3.5 py-3 text-[13px]" data-testid="portal-other-data-requests">
+            <div className="rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface-hover)] px-3.5 py-3 aura-text-table-cell" data-testid="portal-other-data-requests">
               <p className="font-semibold">{tExport('otherRequests.title')}</p>
               <p className="mt-1 text-[var(--aura-fg-secondary)]">
                 {tExport.rich('otherRequests.edit', {
