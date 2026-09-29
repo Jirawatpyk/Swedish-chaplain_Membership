@@ -83,8 +83,12 @@ test.describe('staff sign-in (happy path)', () => {
     await page.waitForURL('**/admin', { timeout: 45_000 });
     expect(page.url()).toContain('/admin');
 
-    // Welcome heading + user menu trigger
-    await expect(page.getByRole('heading', { name: /welcome/i })).toBeVisible();
+    // The landing page's own h1 + the user menu trigger. An admin who can
+    // read insights lands on the F9 dashboard ("Dashboard"); anyone else gets
+    // the welcome header, so either name proves the shell rendered.
+    await expect(
+      page.getByRole('heading', { level: 1, name: /dashboard|welcome/i }),
+    ).toBeVisible();
     await expect(page.getByRole('button', { name: /account menu/i })).toBeVisible();
   });
 

@@ -37,6 +37,7 @@ import { memberTest as test, expect } from './helpers/member-session';
 // into `success` without a real js.stripe.com iframe or Stripe test
 // account. See helpers/stripe-mock.ts for the interception contract.
 import { stubStripeConfirmSuccess } from './helpers/stripe-mock';
+import { stubInitiateEndpoint } from './helpers/payment-intent-stub';
 
 // ---------------------------------------------------------------------------
 // Environment & fixtures
@@ -78,42 +79,6 @@ const VIEWPORTS = [
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/**
- * Stub `POST /api/payments/initiate` with a fixture response so LAYOUT
- * assertions don't require a real Stripe account. The shape matches
- * `InitiateResponse` in `pay-sheet-internal.tsx`.
- */
-async function stubInitiateEndpoint(page: Page): Promise<void> {
-  await page.route('**/api/payments/initiate', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        payment: { id: 'pay_test_layout' },
-        stripe: {
-          // Stripe SDK validates secret length; stub uses ≥24-char tail to satisfy regex.
-          clientSecret: 'pi_3OXTestLayout00000000_secret_test000000000000000000000000',
-          publishableKey: 'pk_test_layout',
-          paymentIntentId: 'pi_test_layout',
-          promptpayQrSvgUrl: null,
-        },
-        correlationId: 'test-correlation-layout',
-      }),
-    });
-  });
-  // PaySheet calls `/cancel` on close (FR-028 cancel-on-close). The stub
-  // payment id `pay_test_layout` does not exist in the DB, so the real
-  // route returns 400. Layout-only viewport assertions don't care about
-  // server state, so short-circuit with 200 to keep the console clean.
-  await page.route('**/api/payments/pay_test_layout/cancel', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ ok: true, kind: 'canceled-by-user' }),
-    });
-  });
-}
 
 /**
  * Sign the member fixture in and open the pay sheet via ?pay=1 deep link

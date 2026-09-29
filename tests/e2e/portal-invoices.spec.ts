@@ -191,9 +191,11 @@ test.describe('F4 portal /portal/invoices smoke (N9) @f4', () => {
     await page.goto('/portal/invoices');
     await waitForLayoutContainer(page);
 
-    // Header row + at least one body row.
-    const rowCount = await page.getByRole('row').count();
-    expect(rowCount, 'expected header + ≥1 body row').toBeGreaterThanOrEqual(2);
+    // A phone draws the list as cards (spec 122 US4 board `Invoices-mobile`),
+    // so count rows OR cards: both are one invoice each.
+    const rows = await page.getByRole('row').count();
+    const cards = await page.getByRole('listitem').count();
+    expect(rows >= 2 || cards >= 1, 'expected header + ≥1 body row, or ≥1 card').toBe(true);
 
     // At least one PDF download affordance per the AS1 contract.
     // F5R6+ — implementation switched from <a download href> to
@@ -261,10 +263,12 @@ test.describe('F4 portal /portal/invoices smoke (N9) @f4', () => {
     await page.goto('/portal');
     await waitForLayoutContainer(page);
 
-    const viewAll = page.getByRole('link', {
-      name: /view all|ดูทั้งหมด|visa alla/i,
+    // The home carries a second "View all …" link (recent activity) since
+    // spec 122 US3, so the name alone is ambiguous: pin the invoices one by
+    // its destination.
+    const viewAll = page.getByRole('link', { name: /view all|ดูทั้งหมด|visa alla/i }).filter({
+      has: page.locator('xpath=self::a[@href="/portal/invoices"]'),
     });
     await expect(viewAll).toBeVisible();
-    await expect(viewAll).toHaveAttribute('href', '/portal/invoices');
   });
 });

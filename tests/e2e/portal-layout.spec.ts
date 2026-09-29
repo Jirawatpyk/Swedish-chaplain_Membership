@@ -10,21 +10,26 @@
 import { expect, test } from './fixtures';
 import { signInViaForm, waitForLayoutContainer } from './helpers/layout';
 
-const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL;
-const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD;
+// Profile, edit and the invite page are not on the lapsed allowlist
+// (lib/lapsed-portal-scope) and the F8 renewals seed terminates the default
+// persona in global setup, so this walk signs in as the good-standing one.
+const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL_EMPTY;
+const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD_EMPTY;
 
 type Variant = 'detail' | 'form';
 
 const PAGES: Array<{ path: string; variant: Variant }> = [
   { path: '/portal', variant: 'detail' },
   { path: '/portal/profile', variant: 'detail' },
-  { path: '/portal/account', variant: 'form' },
+  // 058 consolidated the account hub onto DetailContainer; the invite page
+  // reads as a detail page too. Only the propose-changes form is a form.
+  { path: '/portal/account', variant: 'detail' },
   { path: '/portal/edit', variant: 'form' },
-  { path: '/portal/contacts/invite', variant: 'form' },
+  { path: '/portal/contacts/invite', variant: 'detail' },
 ];
 
 test.describe('F5 portal layout @layout', () => {
-  test.skip(!MEMBER_EMAIL || !MEMBER_PASSWORD, 'E2E_MEMBER_* not set');
+  test.skip(!MEMBER_EMAIL || !MEMBER_PASSWORD, 'E2E_MEMBER_EMAIL_EMPTY / _PASSWORD_EMPTY not set');
 
   test('portal pages use the correct content-type container at 1440px', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
@@ -48,11 +53,17 @@ test.describe('F5 portal layout @layout', () => {
         (el) => (el as HTMLElement).getBoundingClientRect().width,
       );
       if (variant === 'detail') {
-        expect(boxWidth).toBeGreaterThanOrEqual(1148);
-        expect(boxWidth).toBeLessThanOrEqual(1156);
+        // `.chamber-portal` widens the detail container to
+        // `1200px + 2 * --page-padding-x` (globals.css), i.e. 1264px at
+        // 1440px wide. The admin shell keeps the 1152px token, which
+        // layout-consistency.spec.ts covers.
+        expect(boxWidth).toBeGreaterThanOrEqual(1256);
+        expect(boxWidth).toBeLessThanOrEqual(1272);
       } else {
-        expect(boxWidth).toBeGreaterThanOrEqual(664);
-        expect(boxWidth).toBeLessThanOrEqual(680);
+        // `/portal/edit` widens its FormContainer to the boards' 880px
+        // column (`55rem + 2 * --page-padding-x`), so 944px at 1440.
+        expect(boxWidth).toBeGreaterThanOrEqual(936);
+        expect(boxWidth).toBeLessThanOrEqual(952);
       }
 
       // The page MUST render either an h1 (linked-member happy path)

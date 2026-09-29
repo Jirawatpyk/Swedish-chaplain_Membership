@@ -36,6 +36,10 @@ test.describe('F4 SC-011 — universal focus ring @a11y @layout', () => {
         const focus = await page.evaluate(() => {
           const el = document.activeElement;
           if (!el || el === document.body) return null;
+          // Next.js's dev-tools overlay (`<nextjs-portal>`) is tabbable and
+          // carries no ring of ours. It exists in dev only — never in the
+          // build this ships — so it is not ours to style.
+          if (el.closest('nextjs-portal, nextjs-dev-tools-button')) return null;
           const cs = getComputedStyle(el);
           return {
             boxShadow: cs.boxShadow,
