@@ -62,7 +62,8 @@ vi.mock('@/lib/rbac', async () => {
   const { hasPermission } = await import('@/modules/auth/domain/permissions/evaluator');
   return { canPerform: (role: string, key: never) => hasPermission(role, key) };
 });
-vi.mock('next/navigation', () => ({ usePathname: () => '/admin' }));
+// StaffNav's drawer Sign out row (an AURA action row, #95) signs out through the router.
+vi.mock('next/navigation', () => ({ usePathname: () => '/admin', useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
 
 /** `runInTenant` hands the counter a tx that records its SELECT and answers `h.counts`. */
 vi.mock('@/lib/db', () => ({

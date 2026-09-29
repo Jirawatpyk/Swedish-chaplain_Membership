@@ -147,8 +147,10 @@ describe('globals.css — AURA foundation (spec 122)', () => {
 
   it('lets the page containers own the padding inside the AURA shell, on AURA\'s 16 / 24 / 32 steps (spec 122 US1)', () => {
     const layer = css.match(/@layer components\s*\{[\s\S]*?\n\}/)?.[0] ?? '';
-    // AppShell pads <main> itself; the containers already pad, so one of the two must go.
-    expect(layer).toMatch(/\.chamber-shell \.aura-shell__content\s*\{\s*padding:\s*0;/);
+    // AppShell pads <main> unless told not to; the containers pad, so AppShell
+    // takes `contentPadding={false}` (AURA #97) and no rule reaches its content.
+    expect(css).not.toMatch(/aura-shell__content/);
+    expect(readFileSync('src/components/layout/staff-shell.tsx', 'utf8')).toContain('contentPadding={false}');
     expect(layer).toMatch(/\.chamber-shell\s*\{[^}]*--page-padding-x:\s*1rem;/);
     // Sticky page parts stop below the sticky bar (whole-branch review M2).
     expect(layer).toMatch(/\.chamber-shell\s*\{[^}]*--shell-bar-height:\s*56px;/);
