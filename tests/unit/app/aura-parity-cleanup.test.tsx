@@ -89,3 +89,27 @@ describe('US2 auth', () => {
     expect(src('src/components/auth/auth-title.tsx')).toContain('text-(length:--font-size-h1)');
   });
 });
+
+/** An AURA class written onto a foreign element by hand (a lucide icon, a div), not AURA's component. */
+const HAND_AURA_CLASS = /className=["'`{][^"'`]*\baura-(icon|card|alert)\b(?![-_])/;
+
+describe('US3 portal home', () => {
+  it.each([
+    'src/app/(member)/portal/(home)/page.tsx',
+    'src/app/(member)/portal/_components/recent-activity-section.tsx',
+    'src/app/(member)/portal/_components/membership-invoice-alert.tsx',
+    'src/components/portal/invoices-summary-card.tsx',
+    'src/components/benefits/portal-benefits-summary-card.tsx',
+    'src/components/portal/dashboard/stat-card.tsx',
+  ])('%s takes AURA’s Icon / Card, not their classes by hand, and no raw px text', (file) => {
+    const s = src(file);
+    expect(s).not.toMatch(HAND_AURA_CLASS);
+    expect(s).not.toMatch(RAW_TEXT_PX);
+  });
+
+  it('the marketing acknowledgement banner is AURA’s warning Alert inside its named region', async () => {
+    const s = src('src/app/(member)/portal/_components/marketing-acknowledgement-banner-client.tsx');
+    expect(s).toMatch(/<Alert[\s\S]*?tone="warning"/);
+    expect(s).not.toMatch(/aura-alert/);
+  });
+});
