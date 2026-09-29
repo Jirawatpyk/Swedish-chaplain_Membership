@@ -1,7 +1,7 @@
 /**
- * 122 US5b-1 (board `Admin-member-detail-mobile`; maintainer, 29 Sep) — on a
- * phone "Add contact" is a bare + in the Contacts card head: no border, the
- * word kept as its name. From 640px up it is the outlined "+ Add contact".
+ * 122 US5b-1 (maintainer, 29 Sep) — "Add contact" keeps its word and its
+ * outline at every width, like the page's other card-head buttons ("New
+ * invoice"), though the phone board draws a bare +.
  */
 import { describe, it, expect, vi } from 'vitest';
 import type { ReactElement } from 'react';
@@ -18,14 +18,16 @@ const { AddContactButton } = await import(
 );
 
 describe('AddContactButton (122 US5b-1)', () => {
-  it('is a borderless + on a phone that keeps "Add contact" as its name', () => {
+  it('shows "Add contact" as an outlined button at every width', () => {
     render(
       <NextIntlClientProvider locale="en" messages={enMessages}>
         <AddContactButton memberId="m-1" />
       </NextIntlClientProvider>,
     );
-    const button = screen.getByRole('button', { name: enMessages.admin.members.detail.contactActions.add });
+    const label = enMessages.admin.members.detail.contactActions.add;
+    const button = screen.getByRole('button', { name: label });
     expect(button).toHaveClass('aura-btn--secondary');
-    expect(button.className).toContain('max-sm:border-transparent');
+    expect(button.className).not.toContain('border-transparent');
+    expect(button.querySelector('.max-sm\\:sr-only')).toBeNull();
   });
 });
