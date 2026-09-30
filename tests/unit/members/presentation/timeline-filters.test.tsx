@@ -38,7 +38,7 @@ describe('TimelineFilters on AURA (spec 122 US3)', () => {
   it('is an AURA filter bar with AURA selects, labelled AURA date pickers and a Clear that waits for a filter', () => {
     const { container } = renderFilters();
     const bar = screen.getByRole('region', { name: copy.title });
-    expect(bar).toHaveClass('aura-filterbar');
+    expect(bar).toHaveClass('aura-filterbar', 'aura-filterbar--fill');
     for (const [name, label] of [['source', copy.source], ['actorKind', copy.actor]] as const) {
       const field = container.querySelector(`select[name="${name}"]`)?.closest('.aura-field');
       expect(field).not.toBeNull();

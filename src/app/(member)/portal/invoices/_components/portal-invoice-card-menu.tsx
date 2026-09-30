@@ -76,8 +76,9 @@ export function PortalInvoiceCardMenu({
       label={label}
       items={items}
       trigger={
-        // The same secondary button as the download beside it, square at
-        // 44px; the label is its name and its tooltip.
+        // The same secondary button as the download beside it, square: 32px,
+        // 44px on phones (AURA `touchHeight`, #100); the label is its name
+        // and its tooltip.
         <button
           type="button"
           aria-label={label}
@@ -85,7 +86,8 @@ export function PortalInvoiceCardMenu({
           className={buttonClass({
             variant: 'secondary',
             size: 'sm',
-            className: 'min-h-11 min-w-11 px-0',
+            touchHeight: true,
+            className: 'aspect-square px-0',
           })}
         >
           <IconEllipsis />

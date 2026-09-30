@@ -29,6 +29,9 @@ describe('BreadcrumbNav (spec 122 US1)', () => {
     const [desktop] = within(nav).getAllByRole('list');
     const items = within(desktop!).getAllByRole('listitem');
     expect(items).toHaveLength(3);
+    // AURA #94 (5.15): the e2e slots ride AURA's own itemProps, the list slot its wrapper
+    expect(items.every((li) => li.getAttribute('data-slot') === 'breadcrumb-item')).toBe(true);
+    expect(nav.parentElement).toHaveAttribute('data-slot', 'breadcrumb-list');
     // Settings has a page: a link.
     expect(within(items[0]!).getByRole('link')).toHaveAttribute('href', '/admin/settings');
     // `renewals` has none (NON_ROUTE_BY_PARENT): text, no link, no dead button.

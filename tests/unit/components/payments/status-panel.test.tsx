@@ -67,7 +67,7 @@ describe('<StatusPanel kind="processing">', () => {
   it('Cancel button has ≥44px tap target (WCAG 2.5.5)', () => {
     renderWithIntl('processing', () => {});
     const btn = screen.getByTestId('pay-sheet-processing-cancel');
-    expect(btn.className).toMatch(/min-h-11/);
+    expect(btn).toHaveClass('aura-btn--touch');
   });
 });
 
@@ -107,6 +107,6 @@ describe('<StatusPanel kind="three-d-secure">', () => {
   it('3DS Cancel button has ≥44px tap target (WCAG 2.5.5)', () => {
     renderWithIntl('three-d-secure', () => {});
     const btn = screen.getByTestId('pay-sheet-3ds-cancel');
-    expect(btn.className).toMatch(/min-h-11/);
+    expect(btn).toHaveClass('aura-btn--touch');
   });
 });

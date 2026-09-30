@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { LogOutIcon, PanelLeftCloseIcon, PanelLeftOpenIcon, SettingsIcon } from 'lucide-react';
+import { LogOutIcon, SettingsIcon } from 'lucide-react';
 import { Badge, SideNav, type NavItem as AuraNavItem } from '@jirawatpyk/aura-react';
 
 import {
@@ -62,7 +62,7 @@ function badgeNode(item: RenderedNavItem, t: Translate): ReactNode {
   const count = item.badgeCount;
   if (item.badge === undefined || typeof count !== 'number' || count <= 0) return undefined;
   return (
-    <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--aura-status-progress-bg)] px-1.5 text-[11px] font-semibold tabular-nums text-[var(--aura-status-progress-fg)]">
+    <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--aura-status-progress-bg)] px-1.5 aura-text-pill-label font-semibold tabular-nums text-[var(--aura-status-progress-fg)]">
       {' '}
       {count}
       <span className="sr-only"> {t(item.badge.labelKey, { count })}</span>
@@ -128,44 +128,6 @@ function writeSidebarCookie(expanded: boolean) {
   document.cookie = `${SIDEBAR_COOKIE}=${expanded}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}; samesite=lax`;
 }
 
-/**
- * The labelled "Collapse sidebar" row at the bottom of the board, in place of
- * AURA's icon-only toggle (the same AURA strings, so it still reads "Expand
- * sidebar" in the rail). It reuses AURA's nav-item styling.
- */
-function RailToggle({ collapsed, onToggle }: { readonly collapsed: boolean; readonly onToggle: () => void }) {
-  const t = useTranslations('nav.staff');
-  const label = collapsed ? t('expand') : t('collapse');
-  const Icon = collapsed ? PanelLeftOpenIcon : PanelLeftCloseIcon;
-  return (
-    <button type="button" className="aura-nav__item w-full" aria-label={label} onClick={onToggle}>
-      <span className="aura-icon" aria-hidden>
-        {/* 20px in the rail, as the collapsed boards draw it. */}
-        <Icon className={collapsed ? 'size-5' : 'size-4'} />
-      </span>
-      {collapsed ? null : <span className="aura-nav__label">{label}</span>}
-    </button>
-  );
-}
-
-/**
- * The phone drawer's last row, as `Admin-nav-mobile` draws it: the drawer
- * has no collapse toggle, so its footer signs out (the same call as the
- * account menu).
- */
-function DrawerSignOut() {
-  const t = useTranslations('shell.userMenu');
-  const signOut = useSignOut('staff');
-  return (
-    <button type="button" className="aura-nav__item w-full" onClick={() => void signOut()}>
-      <span className="aura-icon" aria-hidden>
-        <LogOutIcon className="size-4" />
-      </span>
-      <span className="aura-nav__label">{t('signOut')}</span>
-    </button>
-  );
-}
-
 function StaffBrand({
   tenantName,
   collapsed,
@@ -195,7 +157,9 @@ function StaffBrand({
         {collapsed ? (
           <span className="sr-only">{tenantName}</span>
         ) : (
-          <span className="flex min-w-0 items-center gap-3">
+          // 8px to the dot, so the EN Staff badge keeps the row inside AURA's
+          // 8px header end padding (#96).
+          <span className="flex min-w-0 items-center gap-2">
             <span className="truncate font-[family-name:var(--font-display)] text-xl leading-none font-semibold tracking-[-0.01em]">
               {tenantName}
             </span>
@@ -226,6 +190,7 @@ export interface StaffNavProps {
   readonly currentPath?: string;
   // Set by AURA `AppShell` when it clones this nav into its phone drawer.
   readonly onChange?: (id: string) => void;
+  readonly onAction?: (id: string) => void;
   readonly className?: string;
   readonly collapsed?: boolean;
   readonly collapsible?: boolean;
@@ -239,6 +204,7 @@ export function StaffNav({
   defaultCollapsed = false,
   currentPath,
   onChange,
+  onAction,
   className,
   collapsed: forcedCollapsed,
   collapsible = true,
@@ -254,6 +220,26 @@ export function StaffNav({
   const visible = filterNavConfig(staffNavConfig, navVisibilityFlags, new Set(allowedHrefs));
   const rendered = navBadgeCounts ? applyNavBadges(visible, navBadgeCounts) : visible;
   const { sections, value } = toStaffNavSections(rendered, pathname, t);
+  const signOut = useSignOut('staff');
+  // The phone drawer has no collapse toggle, so its last row signs out (the
+  // same call as the account menu), as `Admin-nav-mobile` draws it: an AURA
+  // action row (#95, 5.16), which never becomes the current item.
+  const navSections = collapsible
+    ? sections
+    : [
+        ...sections,
+        {
+          items: [
+            {
+              id: 'action:sign-out',
+              label: t('shell.userMenu.signOut'),
+              icon: <LogOutIcon aria-hidden />,
+              selectable: false,
+              onSelect: () => void signOut(),
+            },
+          ],
+        },
+      ];
 
   const setCollapsed = (next: boolean) => {
     setRailCollapsed(next);
@@ -280,17 +266,21 @@ export function StaffNav({
   return (
     <SideNav
       label={t('nav.staff.ariaLabel')}
-      sections={sections}
+      sections={navSections}
       value={value}
       linkComponent={Link}
       header={<StaffBrand tenantName={tenantName} collapsed={collapsed} inDrawer={!collapsible} />}
-      footer={collapsible ? <RailToggle collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} /> : <DrawerSignOut />}
+      // The board's labelled "Collapse sidebar" row at the bottom (#95), and
+      // the Settings group's chevron pointing right while closed (#96).
+      collapsible={collapsible}
+      collapseToggle="row"
+      chevron="right"
       collapsed={collapsed}
-      // A group clicked in the rail asks to expand it (AURA calls this with `false`).
+      // The toggle row, and a group clicked in the rail (AURA calls this with `false`).
       onCollapsedChange={setCollapsed}
       {...(onChange ? { onChange } : {})}
-      // `staff-nav` reaches the drawer copy too, which AURA portals out of the shell.
-      className={className ? `staff-nav ${className}` : 'staff-nav'}
+      {...(onAction ? { onAction } : {})}
+      {...(className ? { className } : {})}
     />
   );
 }

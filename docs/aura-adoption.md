@@ -58,7 +58,9 @@ A server component that needs a static AURA component imports it from **`@jirawa
 6. An enterprise-ux-designer review has signed; on money screens, a financial-integrity review as well.
 7. **No logic change.** A defect found along the way ships as its own PR, merged first.
 
-**Board parity rule (US5a, 28 Sep 2026).** AURA's component defaults (spacing, sizes, radius, type scale) win over a board's pixel values. The board wins on content, structure, order, icons and copy. When a board value is clearly better, it goes to the AURA handoff, never into a per-page override. Styling that reaches into AURA's internal classes (`.aura-table__*`, `.aura-tbl__*`, `.aura-empty*`, `.aura-filterbar__*`) is a stand-in: it gets a comment naming its handoff item and is listed under the open items below.
+**Board parity rule (US5a, 28 Sep 2026).** AURA's component defaults (spacing, sizes, radius, type scale) win over a board's pixel values. The board wins on content, structure, order, icons and copy. When a board value is clearly better, it goes to the AURA handoff, never into a per-page override. Styling that reaches into AURA's internal classes (`.aura-table__*`, `.aura-tbl__*`, `.aura-empty*`, `.aura-filterbar__*`, `.aura-card__*`, `.aura-alert*`, `.aura-stat*`, `.aura-progress*`, `.aura-nav*`, `.aura-shell*`, `.aura-bottomnav*`, a hand-applied `aura-icon`) is a stand-in: it gets a `stand-in until AURA #NN` comment naming an item open below. A reach AURA's owner agreed is app content (e.g. hiding part of a cell only on a stacked phone card) is labelled `AURA app content: <why>` instead. `tests/unit/architecture/aura-internal-class-ratchet.test.ts` enforces both over every `MIGRATED_PATHS` entry and `globals.css`, and fails on a label naming an item that is no longer open: when AURA ships an item, its stand-ins are swapped in the same PR that bumps the pin.
+
+**Type scale.** Text sizes on AURA surfaces use AURA's type classes (`aura-text-label` 13/500, `aura-text-table-cell` 13/400, `aura-text-caption` 12, `aura-text-mono` 12 mono, `aura-text-pill-label` 11, `aura-text-h2` 24), not `text-[Npx]`. They load in the `aura-tokens` layer, below Tailwind's preflight, so on a `<button>`, `<kbd>` or heading (where preflight resets the font) the class goes on the inner text span; Tailwind `font-*` / `leading-*` utilities still win over it. Page titles keep the app's shared `--font-size-h1` step.
 
 ## Phases
 
@@ -85,13 +87,10 @@ Phases 2–12 each depend on 1 and can land in any order.
 
 ## AURA gaps (the handoff doc)
 
-The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, items 52–56 (Addendum 4) in 5.6.0, items 57–62 (Addendum 5, found in US1) in 5.7.0, item 63 in 5.7.1, item 64 (Addendum 6) in 5.7.2, item 65 (Addendum 7, found in US2) in 5.7.3, items 66–69 (Addendum 8, found in US3) in 5.8.0, items 70–71 (Addendum 9, found in US4) in 5.9.0, items 72–74 (Addendum 10, found adopting 5.9.0 in US4) in 5.10.0, items 75–78 (Addendum 11, found in US5a) in 5.11.0, item 79 (Addendum 12) in 5.12.0, items 80–84 (Addendum 13) in 5.13.0, and items 85–108 (Addenda 14–16) across 5.14.0, 5.15.0 and **5.16.0**, the current pin.
+The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, items 52–56 (Addendum 4) in 5.6.0, items 57–62 (Addendum 5, found in US1) in 5.7.0, item 63 in 5.7.1, item 64 (Addendum 6) in 5.7.2, item 65 (Addendum 7, found in US2) in 5.7.3, items 66–69 (Addendum 8, found in US3) in 5.8.0, items 70–71 (Addendum 9, found in US4) in 5.9.0, items 72–74 (Addendum 10, found adopting 5.9.0 in US4) in 5.10.0, items 75–78 (Addendum 11, found in US5a) in 5.11.0, item 79 (Addendum 12) in 5.12.0 and items 80–84 (Addendum 13) in 5.13.0, items 85–100 (Addenda 14–15) in 5.14.0–5.16.0, items 101–108 (Addendum 16, found in US5b-1) in 5.14.0 and 5.16.0, item 109 (Addendum 17) in 5.16.1 and items 110–111 (Addendum 18) in 5.17.0 — **5.17.0** is the current pin. Items 85–100 (Addenda 14–15, found adopting 5.13.0 and applying the parity rule to US1–US5a) shipped in 5.14.0 (86, 88, 91, 97), 5.15.0 (85, 87, 89, 90, 92–94, 99, 100) and 5.16.0 (95, 96, 98), and are adopted below (T512). The two gaps found adopting them (Addendum 18: #110 `Stat`, #111 `Progress`) shipped in 5.17.0, and 5.16.1 fixed #109 (a custom `Select` painted with the disabled ground). No item is open:
 
-Items 85–100 have shipped, but their stand-ins stay until a follow-up PR removes them (the 5.15 items are opt-in props, so nothing changes until then). One is on this branch:
-
-| Item | Shipped | Stand-in still in place |
+| Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
-| #85 | 5.15.0: `Table stackStyle="cards"` | the per-row `CARD` frame, the frameless wrap and the Review button's card height below 640px in `src/app/(staff)/admin/change-requests/_components/queue-table.tsx` |
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 
@@ -106,12 +105,6 @@ Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped i
 | 107 | 5.14.0: `Tabs` `current="location"` | the section links (`aria-current="location"`) |
 | 108 | 5.14.0: stacked `DataTable` cards start `align: 'end'` values under their label | the invoice phone cards (`StartOnCard` is gone) |
 
-Addendum 17 (item 109) shipped in 5.16.1, which PR #472 (T512) adopts; this branch stays on 5.16.0:
-
-| Item | AURA gap | Chamber-OS stand-in |
-|---|---|---|
-| #109 | the read-only input rule (`.aura-input:has(.aura-input__control:read-only:not(select))`) also matches a custom `Select`'s `<button>` trigger, so every Select gets `--aura-bg-input-disabled` (`#fafafa`) instead of white | none (maintainer's call, 29 Sep). The placeholder is `#71717a` on `#fafafa`, 4.63:1, so it still passes AA; the 4.47:1 first reported was an arithmetic slip. The `members-erase` @a11y red was a mid-fade axe sample, fixed by waiting for the dialog's entry animation (`7d0b9eefa`). |
-
 One note stays with AURA: `Menu` closes on any scroll or window resize (iOS Safari fires resize when its toolbar moves), to be checked on a real iPhone before it becomes an item.
 
 5.9.0 also prepares for 6.0, which builds in only English and drops icon names given as strings from the default bundle. Chamber-OS clears its dev notices without changing any output:
@@ -119,7 +112,7 @@ One note stays with AURA: `Menu` closes on any scroll or window resize (iOS Safa
 - Icons are registered by name once for each registry: `registerIcons(allIcons)` in `AuraBridge` for client components, and `@/lib/aura-server-icons` (imported by the root layout) for Server Components. `tests/setup.ts` registers both, since component tests render without the layout.
 - Moving to icon components (`npx aura-icons-codemod`), which would let the 6.0 bundle drop the name map, is a separate change.
 
-How Chamber-OS uses the Addendum 5 – 13 items (US1 to US5a dropped their bridge for each):
+How Chamber-OS uses the Addendum 5 – 15 items (US1 to US5a and T512 dropped their bridge for each):
 
 | # | Shipped in | Used by |
 |---|---|---|
@@ -151,6 +144,25 @@ How Chamber-OS uses the Addendum 5 – 13 items (US1 to US5a dropped their bridg
 | 82 | 5.13.0: `EmptyState tone="danger"` (with `role` passed through) | `MembersErrorState`; the danger wrapper is gone |
 | 83 | 5.13.0: `FilterBar` `searchGrow` | The members and directory filter bars, at AURA's own breakpoint (the search takes its own row below 768px); the `.aura-filterbar` overrides are gone |
 | 84 | 5.13.0: `Td` / `Th` `card="title" \| "action"` on a stacked static `Table` | The change-request queue's phone card: company and member number as the title, Review beside it; the container-query grid is gone |
+| 85 | 5.15.0: static `Table` `stackStyle="cards"` | The change-request queue's phone cards stand apart, each framed; the per-row `CARD` classes, the frameless wrap and the Review height reach are gone (Review takes `touchHeight`, #100) |
+| 86 | 5.14.0: `EmptyState` `headingLevel={false}` | `shell/empty-state.tsx` renders AURA's `EmptyState` (title a `<p>`, the status role only with `announce`); the hand-built `aura-empty` markup is gone. A caller with no icon gets AURA's inbox icon (the directory list, the portal timeline) |
+| 87 | 5.15.0: `Card` `header` | Loading cards (`AuraCardSkeleton`) and the change-request history card (pill above the h2 on phones) put their head in `header` |
+| 88 | 5.14.0: `Stat` from `/server`, `headingLevel` | The portal dashboard's stat tiles (`StatCard`) and their loading tiles (`StatSkeleton`, `Stat loading`) |
+| 89 | 5.15.0: `Progress` `secondaryValue` | The home benefits card's reserved E-Blasts, striped after the used ones |
+| 90 | 5.15.0: underline `Tabs` `fullWidth="below-lg"` | The benefits tabs share the width on phones and tablets |
+| 91 | 5.14.0: Drawer body scroll padding | The pay sheet's local `scroll-pt-4` is gone |
+| 92 | 5.15.0: `FilterBar` `controlsLayout="fill"`, `stackBelow="lg"` | The invoice filters (search on its own row below 1024px) and the timeline filters (equal columns) |
+| 93 | 5.15.0: `Card` `flushBelow="lg"` | The portal invoices list drops its frame where the rows become cards |
+| 94 | 5.15.0: `Breadcrumb` `collapseBelow`, `itemProps` | `BreadcrumbNav`: the e2e `data-slot`s ride `itemProps`, the list slot a wrapper. The trail shows from 1024px only, so it needs no collapse |
+| 95 | 5.16.0: `SideNav` action rows, `collapseToggle="row"` | The staff rail's labelled Collapse row and the phone drawer's Sign out |
+| 96 | 5.16.0: `SideNav` `chevron="right"`; 8px header end padding | The staff nav's closed Settings group; the local chevron and header rules are gone |
+| 97 | 5.14.0: `AppShell` `contentPadding={false}` | The staff and member frames; the page containers keep the padding |
+| 98 | 5.16.0: `DataTable` `rangeSelect`, `onSelectionChange(keys, change)` | The members table's Shift-click range; the click-capture flag is gone |
+| 99 | 5.15.0: `Checkbox` `hitArea` | The change-request decision rows' 40 × 32 target |
+| 100 | 5.15.0: `touchHeight` on `Button` / `IconButton` (and Drawer `closeProps`) | The portal invoice and pay-sheet small buttons and the pay-sheet close: 44px on phones |
+| 109 | 5.16.1: a custom `Select` keeps `--aura-bg-input` (the read-only rule no longer catches its button) | Every `Select`; no Chamber-OS change |
+| 110 | 5.17.0: `Stat` attributes (`data-*`, `aria-*`), `status`, `linkArea="label"` | `StatCard`: `data-testid` / `data-variant` on the tile, the tone row in `status`, the label link stretched over the tile; `StatSkeleton` hidden with `aria-hidden` |
+| 111 | 5.17.0: `Progress` `valueText` | The reserved E-Blasts bar reads "2 used, 1 reserved, 3 remaining of 6" while it shows "2 of 6 used" |
 
 How Chamber-OS uses the 5.6.0 items:
 

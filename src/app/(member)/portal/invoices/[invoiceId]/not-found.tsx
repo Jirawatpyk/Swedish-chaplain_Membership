@@ -26,7 +26,7 @@ import { ArrowLeft } from 'lucide-react';
 import { getTranslations } from 'next-intl/server';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { buttonClass } from '@jirawatpyk/aura-react/server';
+import { Icon, buttonClass } from '@jirawatpyk/aura-react/server';
 
 export default async function PortalInvoiceNotFound(): Promise<React.ReactElement> {
   const t = await getTranslations('portal.invoices');
@@ -44,7 +44,7 @@ export default async function PortalInvoiceNotFound(): Promise<React.ReactElemen
           href="/portal/invoices"
           className={buttonClass({ variant: 'secondary', size: 'sm', className: 'mt-4' })}
         >
-          <ArrowLeft className="aura-icon size-4" aria-hidden="true" />
+          <Icon name={<ArrowLeft />} size={16} />
           {t('title')}
         </Link>
       </div>

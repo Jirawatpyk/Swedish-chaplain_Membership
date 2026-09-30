@@ -230,9 +230,10 @@ export function ChangeRequestQueueFilters({ resultCount, hasMore, timeZone }: Ch
           own widths with Apply right after the dates, as on the board. */}
       <div
         id={panelId}
-        className={`grid gap-3 rounded-[var(--aura-card-radius)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] p-4 sm:grid-cols-2 lg:flex lg:flex-wrap lg:items-end lg:[&>.aura-field]:w-56 ${openOnPhone ? '' : 'max-sm:hidden'}`}
+        className={`grid gap-3 rounded-[var(--aura-card-radius)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] p-4 sm:grid-cols-2 lg:flex lg:flex-wrap lg:items-end ${openOnPhone ? '' : 'max-sm:hidden'}`}
       >
       <Select
+        className="lg:w-56"
         label={tFilters('state')}
         data-testid="queue-filter-state"
         value={state}
@@ -241,6 +242,7 @@ export function ChangeRequestQueueFilters({ resultCount, hasMore, timeZone }: Ch
       />
       {state === 'decided' ? (
         <Select
+          className="lg:w-56"
           label={tFilters('outcome')}
           data-testid="queue-filter-outcome"
           value={outcome}
@@ -252,12 +254,14 @@ export function ChangeRequestQueueFilters({ resultCount, hasMore, timeZone }: Ch
         />
       ) : null}
       <DatePicker
+        className="lg:w-56"
         label={tFilters('from')}
         timeZone={timeZone}
         value={from ? (from as ISODate) : null}
         onChange={(v) => setFrom(v ?? '')}
       />
       <DatePicker
+        className="lg:w-56"
         label={tFilters('to')}
         timeZone={timeZone}
         value={to ? (to as ISODate) : null}

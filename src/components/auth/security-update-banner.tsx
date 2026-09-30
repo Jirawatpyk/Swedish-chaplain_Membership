@@ -18,12 +18,11 @@
  * `aria-atomic="true"` ensures the entire region is announced as a
  * single unit even if a future change adds child nodes.
  *
- * Spec 122 US2: drawn as an AURA info Alert (its classes and icon). Not the
- * `Alert` component itself, whose own `role="status"` would nest a second
- * live region inside this one and cannot take `aria-atomic`.
+ * Spec 122: AURA's info `Alert` with `role="none"` (5.8, handoff #66), so
+ * it does not nest a second live region inside this atomic one.
  */
 import { useEffect, useState } from 'react';
-import { Icon } from '@jirawatpyk/aura-react';
+import { Alert } from '@jirawatpyk/aura-react';
 
 export interface SecurityUpdateBannerProps {
   /** Pre-translated banner text from the server page's getTranslations. */
@@ -45,12 +44,9 @@ export function SecurityUpdateBanner({ message }: SecurityUpdateBannerProps) {
   return (
     <div role="status" aria-live="polite" aria-atomic="true" className="min-h-[2.5rem]">
       {displayedText ? (
-        <div className="aura-alert aura-alert--info">
-          <Icon name="info" className="aura-alert__icon" />
-          <div className="aura-alert__body">
-            <div className="aura-alert__text">{displayedText}</div>
-          </div>
-        </div>
+        <Alert tone="info" role="none">
+          {displayedText}
+        </Alert>
       ) : null}
     </div>
   );

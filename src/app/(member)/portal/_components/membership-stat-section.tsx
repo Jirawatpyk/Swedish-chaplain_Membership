@@ -1,7 +1,7 @@
 import { CircleCheck, PauseCircle, TriangleAlert } from 'lucide-react';
 import { getLocale, getTranslations } from 'next-intl/server';
+import { Stat } from '@jirawatpyk/aura-react/server';
 import { env } from '@/lib/env';
-import { SkeletonBlock } from '@/components/shell/page-skeletons';
 import { StatCard } from '@/components/portal/dashboard/stat-card';
 import { deriveMembershipStat, shouldOfferRenewNow } from '../_lib/dashboard-stats';
 import { formatDueDate } from '../_lib/format-due-date';
@@ -220,13 +220,11 @@ export async function MembershipStatSection({
   );
 }
 
-/** Skeleton in the shape of a stat tile while the async section streams in. */
-export function StatSkeleton(): React.JSX.Element {
-  return (
-    <div aria-busy="true" aria-hidden="true" className="aura-stat h-full gap-2">
-      <SkeletonBlock className="h-3 w-24" />
-      <SkeletonBlock className="h-7 w-32" />
-      <SkeletonBlock className="h-3 w-40" />
-    </div>
-  );
+/**
+ * The stat tile while its async section streams in: AURA's loading `Stat`
+ * (#110, 5.17) with the tile's own label and AURA's value bar, hidden from
+ * assistive tech (the page's loading status speaks for it).
+ */
+export function StatSkeleton({ label }: { readonly label: string }): React.JSX.Element {
+  return <Stat loading aria-hidden="true" label={label} className="h-full" />;
 }

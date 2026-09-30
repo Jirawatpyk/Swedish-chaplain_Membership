@@ -239,9 +239,8 @@ export function ConfirmationPanel({
         onClick={handleDownloadReceipt}
         className={cn(
           buttonClass({ variant: 'primary', fullWidth: true }),
-          // WCAG 2.5.5 / SC 2.5.8 — mobile tap target ≥ 44×44 px
+          // WCAG 2.5.5 / SC 2.5.8 — AURA's md button is the 44px tap target
           // (G-Review Finding #5).
-          'min-h-[44px] w-full px-4',
           // T164 — accountant print convenience: hide download CTA when
           // printing (button is non-functional on paper). The F4 receipt
           // PDF remains the authoritative Thai-tax-compliant document
@@ -267,7 +266,7 @@ export function ConfirmationPanel({
           onClose();
         }}
         // T164: hide on print — close button has no meaning on paper.
-        className={cn(buttonClass({ variant: 'secondary', fullWidth: true }), 'min-h-[44px] w-full px-4 print:hidden')}
+        className={cn(buttonClass({ variant: 'secondary', fullWidth: true }), 'print:hidden')}
         data-testid="pay-sheet-confirmation-close"
       >
         {t('close')}

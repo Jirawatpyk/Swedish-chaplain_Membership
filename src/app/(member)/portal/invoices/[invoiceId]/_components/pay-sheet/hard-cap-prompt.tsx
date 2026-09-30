@@ -99,8 +99,7 @@ export function HardCapPrompt({ onContinue, onCancel }: HardCapPromptProps) {
           interruptCountdown();
           onContinue();
         }}
-        // WCAG 2.5.5 / SC 2.5.8 — ≥ 44×44 px tap target.
-        className="w-full min-h-[44px]"
+        // WCAG 2.5.5 / SC 2.5.8 — AURA's md button is the 44px tap target.
         data-testid="pay-sheet-hard-cap-continue"
       >
         {t('continue')}

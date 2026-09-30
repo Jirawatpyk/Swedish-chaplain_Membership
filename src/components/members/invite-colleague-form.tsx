@@ -218,7 +218,7 @@ export function InviteColleagueForm({ privacyNoticeHref = null }: InviteColleagu
               {...form.register('preferred_language')}
             />
           </div>
-          <p className="text-[13px] text-[var(--aura-fg-secondary)]" data-testid="invite-privacy-note">
+          <p className="aura-text-table-cell text-[var(--aura-fg-secondary)]" data-testid="invite-privacy-note">
             {firstName
               ? t.rich('privacyNote', { firstName, link: privacyLink })
               : t.rich('privacyNoteNoName', { link: privacyLink })}

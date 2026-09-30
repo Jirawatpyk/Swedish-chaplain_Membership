@@ -76,7 +76,7 @@ export function DirectoryTable({
       pill: true,
       // The table says Yes / No; a phone card, where the column name is not
       // beside it, says "Listed" / "Not listed" with the pill's icon (boards
-      // `Admin-directory` and `-mobile`).
+      // `Admin-directory` and `-mobile`). AURA app content: swapped on a stacked card.
       render: (row) => (
         <>
           <span className="in-[.aura-table--stacked]:hidden">

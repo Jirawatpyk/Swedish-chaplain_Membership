@@ -61,7 +61,7 @@ vi.mock(
         data-testid="invoice-download"
         aria-label={props.ariaLabel ?? props.label}
         // Echo the card's className so the ≥44px target-size guard
-        // (T072b) can assert the min-h-11 the card passes actually lands.
+        // (T072b) can assert the touch-height class the card passes lands.
         className={props.className}
       >
         {props.label}
@@ -777,7 +777,7 @@ describe('<PortalInvoiceCardList> — 088 flag reflected via VM kind "none"', ()
 // The @a11y e2e (portal-invoices-a11y.spec.ts) is preview-authoritative (it
 // emits documented 320px/target-size noise on local dev). These structural
 // guards are the LOAD-BEARING local verification for the mobile-first FIXES:
-// the card must pass ≥44px (min-h-11 / min-w-11) target-size classes to every
+// the card must pass ≥44px target size (AURA touchHeight, #100) to every
 // action control and wrap both the action group AND (for 088 rows) the header
 // doc-kind badge group so a 320px card never scrolls horizontally / clips
 // (WCAG 1.4.10 Reflow, 2.5.5 Target Size).
@@ -791,11 +791,11 @@ describe('<PortalInvoiceCardList> — FR-036 mobile-first target size + wrap (T0
       receiptPdf: { blobKey: 'rk', sha256: sha(), templateVersion: 1 },
     });
 
-    // The one download carries the ≥44px min-h-11 the card passes and fills
+    // The one download carries the 44px phone height (AURA touchHeight, #100) the card passes and fills
     // the row beside the ⋯ trigger (whose 44px square is pinned in the menu's
     // own test).
     const receipt = screen.getByTestId('receipt-download');
-    expect(receipt.className).toContain('min-h-11');
+    expect(receipt).toHaveClass('aura-btn--touch');
     expect(receipt.className).toContain('flex-1');
 
     // The action group is a flex-wrap container so a 320px card never scrolls

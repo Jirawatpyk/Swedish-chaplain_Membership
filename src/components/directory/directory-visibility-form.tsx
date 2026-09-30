@@ -228,8 +228,8 @@ export function DirectoryVisibilityForm({
                   {t('contactConfirmBody')}
                 </Alert>
               ) : null}
-              {/* 44px rows on phones (the `Portal-directory-mobile` board's touch targets). */}
-              <div className="grid gap-x-4 gap-y-2.5 sm:grid-cols-2 max-sm:gap-y-1 max-sm:[&_.aura-check]:min-h-11 max-sm:[&_.aura-check]:items-center">
+              {/* AURA's checkbox rows are 44px on touch screens (coarse pointers). */}
+              <div className="grid gap-x-4 gap-y-2.5 sm:grid-cols-2 max-sm:gap-y-1">
                 {COMPANY_FIELDS.map((f) => (
                   <Checkbox key={f} checked={vis[f]} onChange={(c) => setVis((prev) => ({ ...prev, [f]: c }))}>
                     {tf(f)}

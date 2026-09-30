@@ -22,12 +22,8 @@ import {
 
 // On a phone each row is the board's card (`Admin-change-requests-mobile`):
 // the company and member number as its title with Review beside it, the other
-// cells two to a line below (AURA 5.13 Td card slots, #84). The board draws
-// the cards apart, each framed, where AURA stacks them in one divided frame:
-// our own frame on each stacked row (CARD), in the container query AURA
-// stacks the rows in (`aura-tbl`, below 640px). A stand-in until AURA #85
-// (separate cards for a stacked static Table).
-const CARD = '@max-[640px]/aura-tbl:mb-3 @max-[640px]/aura-tbl:rounded-[var(--aura-card-radius)] @max-[640px]/aura-tbl:!border @max-[640px]/aura-tbl:!border-[var(--aura-border-default)] @max-[640px]/aura-tbl:bg-[var(--aura-bg-surface)] @max-[640px]/aura-tbl:!p-4';
+// cells two to a line below (AURA 5.13 Td card slots, #84), each card framed
+// and apart (AURA `stackStyle="cards"`, #85).
 
 /** Whole days / hours for the waiting column — the exact seconds are not what a reviewer scans for. */
 function waitingParts(seconds: number): { days: number; hours: number } {
@@ -44,10 +40,7 @@ export async function ChangeRequestQueueTable({
   const locale = await getLocale();
   const fmt = (d: Date) => formatLocalisedDate(d.toISOString(), locale, { dateStyle: 'medium', timeStyle: 'short' });
   return (
-    // On a phone the cards stand apart, so the list itself loses its frame
-    // (the table keeps it from 640px); part of the #85 stand-in.
-    <div data-queue="board" className="max-sm:[&_.aura-tbl-wrap]:rounded-none max-sm:[&_.aura-tbl-wrap]:border-0 max-sm:[&_.aura-tbl-wrap]:bg-transparent">
-    <Table data-testid="queue-table" caption={t('tableCaption')} captionHidden stackBelow="sm" align="middle">
+    <Table data-testid="queue-table" caption={t('tableCaption')} captionHidden stackBelow="sm" stackStyle="cards" align="middle">
       <THead>
         <Tr>
           <Th>{t('columns.member')}</Th>
@@ -65,11 +58,12 @@ export async function ChangeRequestQueueTable({
           const wait = waitingParts(item.waitingSeconds);
           const rowId = `cr-row-${r.id}`;
           return (
-            <Tr key={r.id} className={CARD} data-testid="queue-row" data-request-id={r.id} data-overdue={item.overdue ? 'true' : undefined}>
+            <Tr key={r.id} data-testid="queue-row" data-request-id={r.id} data-overdue={item.overdue ? 'true' : undefined}>
               {/* No card label: the company is the card's title. */}
               <Td card="title">
                 <div className="font-medium">{item.row.member.companyName}</div>
-                {/* Muted in the table, bold in the phone card's title (boards). */}
+                {/* Muted in the table, bold in the phone card's title (boards).
+                    AURA app content: the number's weight on a stacked card. */}
                 <div className="text-xs text-[var(--aura-fg-secondary)] @max-[640px]/aura-tbl:font-semibold @max-[640px]/aura-tbl:text-[var(--aura-fg-primary)]">
                   #{item.row.member.memberNumber}
                   {item.row.member.archived ? ` · ${t('archivedMember')}` : null}
@@ -110,15 +104,9 @@ export async function ChangeRequestQueueTable({
               <Td card="action">
                 <Link
                   href={`/admin/change-requests/${r.id}`}
-                  // `sm` in the table (AURA's table rule); a phone card takes
-                  // the default button height, as the mobile board draws it.
-                  // AURA's own height token, no pixels; it keys on AURA's
-                  // stacking container, part of the #85 stand-in.
-                  className={buttonClass({
-                    variant: 'secondary',
-                    size: 'sm',
-                    className: '@max-[640px]/aura-tbl:h-[var(--aura-button-height)]',
-                  })}
+                  // `sm` in the table (AURA's table rule); 44px on a phone,
+                  // as the mobile board draws it (AURA `touchHeight`, #100).
+                  className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}
                   aria-label={r.state === 'pending' ? t('reviewFor', { company: item.row.member.companyName }) : t('viewFor', { company: item.row.member.companyName })}
                   aria-describedby={`${rowId}-waiting`}
                 >
@@ -130,6 +118,5 @@ export async function ChangeRequestQueueTable({
         })}
       </TBody>
     </Table>
-    </div>
   );
 }

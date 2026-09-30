@@ -14,7 +14,7 @@
  *   1. The rendered region uses role="status" (NOT role="alert").
  *   2. The destructive tone (visual affordance) is preserved.
  *   3. Title + body + retry CTA render with the supplied props.
- *   4. CTA target size meets WCAG 2.5.8 (≥44×44 px via min-h-11).
+ *   4. CTA target size meets WCAG 2.5.8 (44px on phones via AURA touchHeight, #100).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
@@ -87,10 +87,10 @@ describe('<PaymentFailurePanel> — R2-CRIT-3 / R3-CR-9 regression coverage', ()
     expect(screen.getByText('Retry')).toBeDefined();
   });
 
-  it('CTA fires onRetry when clicked + carries min-h-11 (44px) for WCAG 2.5.8 target size', () => {
+  it('CTA fires onRetry when clicked + is 44px on phones (AURA touchHeight) for WCAG 2.5.8 target size', () => {
     const { onRetry } = renderPanel();
     const cta = screen.getByTestId('pay-sheet-failure-retry');
-    expect(cta.className).toContain('min-h-11');
+    expect(cta).toHaveClass('aura-btn--touch');
     fireEvent.click(cta);
     expect(onRetry).toHaveBeenCalledTimes(1);
   });

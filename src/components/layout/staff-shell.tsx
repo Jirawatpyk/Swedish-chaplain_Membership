@@ -35,6 +35,8 @@ export function StaffShell({ nav, user, topBarExtras, children }: StaffShellProp
     <BreadcrumbProvider>
       <AppShell
         className="chamber-shell"
+        // The page containers pad (their data-slot is the layout contract, FR-012).
+        contentPadding={false}
         mainId="main-content"
         navLabel={t('ariaLabel')}
         nav={<StaffNav {...nav} />}

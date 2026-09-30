@@ -368,7 +368,6 @@ export function InvoiceFilters({
   const statusSelect = (
     <Select
       aria-label={t('columns.status')}
-      className="sm:w-[12rem]"
       value={effectiveStatus}
       onChange={(e) => pushUrl({ status: e.target.value !== 'all' ? e.target.value : null })}
       options={[
@@ -405,7 +404,6 @@ export function InvoiceFilters({
     <Select
       aria-label={t('filters.origin.label')}
       data-testid="invoice-origin-filter"
-      className="sm:w-[13rem]"
       value={currentOrigin}
       onChange={(e) => pushUrl(originFilterPatch(e.target.value, searchParams.get('status')))}
       options={[
@@ -426,6 +424,7 @@ export function InvoiceFilters({
         variant={paidOnlineActive ? 'primary' : 'secondary'}
         size="sm"
         onClick={togglePaidOnline}
+        className="flex-none"
         data-testid="paid-online-filter-chip"
         aria-pressed={paidOnlineActive}
         aria-label={tReconciliation('ariaLabel')}
@@ -458,7 +457,7 @@ export function InvoiceFilters({
   };
 
   const clearButton = hasAnyFilter ? (
-    <Button variant="ghost" size="sm" icon="x" onClick={clearAll} aria-label={t('filters.clearAll')}>
+    <Button variant="ghost" size="sm" icon="x" className="flex-none" onClick={clearAll} aria-label={t('filters.clearAll')}>
       {t('filters.clearAll')}
     </Button>
   ) : null;
@@ -506,14 +505,15 @@ export function InvoiceFilters({
     ) : null;
 
   // Spec 122 US4 — below 1024px the search takes its own row and the filters
-  // share the next one evenly, so their edges line up with the search (AURA
-  // does the search row only below 768px, which left 768–1023px ragged). From
-  // 1024px it is AURA's one row: search, then the fixed-width filters.
+  // share the next one evenly, so their edges line up with the search; from
+  // 1024px search and filters share one row (AURA `controlsLayout="fill"`,
+  // `stackBelow="lg"`, #92). The buttons keep their own width (`flex-none`).
   const bar = (children: React.ReactNode) => (
     <FilterBar
       key={searchResetKey}
       ref={barRef}
-      className="max-lg:[&_.aura-filterbar\_\_search]:basis-full max-lg:[&_.aura-filterbar\_\_search]:max-w-none max-lg:[&_.aura-filterbar\_\_controls]:basis-full max-lg:[&_.aura-filterbar\_\_controls>.aura-field]:flex-[1_1_8rem]"
+      controlsLayout="fill"
+      stackBelow="lg"
       search={currentQ}
       // Untrimmed on purpose: the FilterBar compares the URL back against
       // what it sent, so a trimmed "Acme " would rewrite the box while the
@@ -536,7 +536,7 @@ export function InvoiceFilters({
         {bar(
           <>
             {statusSelect}
-            {subjectSelect('sm:w-[12rem]')}
+            {subjectSelect('')}
             {originSelect}
             {paidOnlineToggle}
             {clearButton}
@@ -560,117 +560,120 @@ export function InvoiceFilters({
         <>
           {statusSelect}
           {originSelect}
-          <Popover
-            title={t('filters.more.title')}
-            placement="bottom-start"
-            width="min(18rem, calc(100vw - 2rem))"
-            trigger={
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                icon="filter"
-                // No "(0 active)" noise: annotate the count only when there
-                // is something to announce.
-                aria-label={
-                  secondaryActiveCount > 0
-                    ? t('filters.more.ariaOpen', { count: secondaryActiveCount })
-                    : t('filters.more.button')
-                }
-                data-testid="invoice-more-filters-trigger"
-              >
-                {t('filters.more.button')}
-                {secondaryActiveCount > 0 && (
-                  <Badge data-testid="invoice-more-filters-count" className="ml-1">
-                    {secondaryActiveCount}
-                  </Badge>
+          {/* The trigger keeps its own width in the filled row. */}
+          <span className="flex flex-none">
+            <Popover
+              title={t('filters.more.title')}
+              placement="bottom-start"
+              width="min(18rem, calc(100vw - 2rem))"
+              trigger={
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  icon="filter"
+                  // No "(0 active)" noise: annotate the count only when there
+                  // is something to announce.
+                  aria-label={
+                    secondaryActiveCount > 0
+                      ? t('filters.more.ariaOpen', { count: secondaryActiveCount })
+                      : t('filters.more.button')
+                  }
+                  data-testid="invoice-more-filters-trigger"
+                >
+                  {t('filters.more.button')}
+                  {secondaryActiveCount > 0 && (
+                    <Badge data-testid="invoice-more-filters-count" className="ml-1">
+                      {secondaryActiveCount}
+                    </Badge>
+                  )}
+                </Button>
+              }
+            >
+              <div className="grid gap-3" data-testid="filters-popover-content">
+                {field(t('filters.subject.label'), subjectSelect('w-full'))}
+                {/* 088 T065b (FR-031) — the three admin-only tax-document
+                    filters; `show088Filters` is always true in this branch
+                    (collapseSecondary === show088Filters), kept defensive. */}
+                {show088Filters && (
+                  <>
+                    {field(
+                      t('filters.documentType.label'),
+                      <Select
+                        aria-label={t('filters.documentType.label')}
+                        data-testid="invoice-document-type-filter"
+                        className="w-full"
+                        value={currentDocType}
+                        onChange={(e) => pushUrl({ docType: e.target.value !== 'all' ? e.target.value : null })}
+                        options={[
+                          { value: 'all', label: t('filters.documentType.all') },
+                          { value: 'sc', label: t('filters.documentType.sc') },
+                          { value: 'rc', label: t('filters.documentType.rc') },
+                          { value: 're', label: t('filters.documentType.re') },
+                          { value: 'cn', label: t('filters.documentType.cn') },
+                        ]}
+                      />,
+                    )}
+                    {field(
+                      t('filters.taxPoint.label'),
+                      <Select
+                        aria-label={t('filters.taxPoint.label')}
+                        data-testid="invoice-tax-point-filter"
+                        className="w-full"
+                        value={currentTaxPoint}
+                        onChange={(e) => pushUrl({ taxPoint: e.target.value !== 'all' ? e.target.value : null })}
+                        options={[
+                          { value: 'all', label: t('filters.taxPoint.all') },
+                          { value: 'pre_payment', label: t('filters.taxPoint.prePayment') },
+                          { value: 'at_payment', label: t('filters.taxPoint.atPayment') },
+                        ]}
+                      />,
+                    )}
+                    {field(
+                      t('filters.vatTreatment.label'),
+                      <Select
+                        aria-label={t('filters.vatTreatment.label')}
+                        data-testid="invoice-vat-treatment-filter"
+                        className="w-full"
+                        value={currentVat}
+                        onChange={(e) => pushUrl({ vat: e.target.value !== 'all' ? e.target.value : null })}
+                        options={[
+                          { value: 'all', label: t('filters.vatTreatment.all') },
+                          { value: 'standard', label: t('filters.vatTreatment.standard') },
+                          { value: 'zero_rated_80_1_5', label: t('filters.vatTreatment.zeroRated') },
+                        ]}
+                      />,
+                    )}
+                  </>
                 )}
-              </Button>
-            }
-          >
-            <div className="grid gap-3" data-testid="filters-popover-content">
-              {field(t('filters.subject.label'), subjectSelect('w-full'))}
-              {/* 088 T065b (FR-031) — the three admin-only tax-document
-                  filters; `show088Filters` is always true in this branch
-                  (collapseSecondary === show088Filters), kept defensive. */}
-              {show088Filters && (
-                <>
-                  {field(
-                    t('filters.documentType.label'),
-                    <Select
-                      aria-label={t('filters.documentType.label')}
-                      data-testid="invoice-document-type-filter"
-                      className="w-full"
-                      value={currentDocType}
-                      onChange={(e) => pushUrl({ docType: e.target.value !== 'all' ? e.target.value : null })}
-                      options={[
-                        { value: 'all', label: t('filters.documentType.all') },
-                        { value: 'sc', label: t('filters.documentType.sc') },
-                        { value: 'rc', label: t('filters.documentType.rc') },
-                        { value: 're', label: t('filters.documentType.re') },
-                        { value: 'cn', label: t('filters.documentType.cn') },
-                      ]}
-                    />,
+                {/* Paid-online toggle — self-labelled, no field label. */}
+                {paidOnlineToggle}
+                {/* #292 review A1 — the badge counts an active dueBefore, so
+                    the popover shows it too: a read-only row (the filter is
+                    URL-only, no picker by design) with a clear button reusing
+                    the chip's handler. */}
+                {dueBeforeChip &&
+                  field(
+                    t('filters.dueBefore.label'),
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm tabular-nums" data-testid="invoice-due-before-readout">
+                        {currentDueBefore}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        icon="x"
+                        onClick={dueBeforeChip.clear}
+                        aria-label={t('filters.more.removeAria', { label: dueBeforeChip.label })}
+                      >
+                        {t('filters.dueBefore.clear')}
+                      </Button>
+                    </div>,
                   )}
-                  {field(
-                    t('filters.taxPoint.label'),
-                    <Select
-                      aria-label={t('filters.taxPoint.label')}
-                      data-testid="invoice-tax-point-filter"
-                      className="w-full"
-                      value={currentTaxPoint}
-                      onChange={(e) => pushUrl({ taxPoint: e.target.value !== 'all' ? e.target.value : null })}
-                      options={[
-                        { value: 'all', label: t('filters.taxPoint.all') },
-                        { value: 'pre_payment', label: t('filters.taxPoint.prePayment') },
-                        { value: 'at_payment', label: t('filters.taxPoint.atPayment') },
-                      ]}
-                    />,
-                  )}
-                  {field(
-                    t('filters.vatTreatment.label'),
-                    <Select
-                      aria-label={t('filters.vatTreatment.label')}
-                      data-testid="invoice-vat-treatment-filter"
-                      className="w-full"
-                      value={currentVat}
-                      onChange={(e) => pushUrl({ vat: e.target.value !== 'all' ? e.target.value : null })}
-                      options={[
-                        { value: 'all', label: t('filters.vatTreatment.all') },
-                        { value: 'standard', label: t('filters.vatTreatment.standard') },
-                        { value: 'zero_rated_80_1_5', label: t('filters.vatTreatment.zeroRated') },
-                      ]}
-                    />,
-                  )}
-                </>
-              )}
-              {/* Paid-online toggle — self-labelled, no field label. */}
-              {paidOnlineToggle}
-              {/* #292 review A1 — the badge counts an active dueBefore, so
-                  the popover shows it too: a read-only row (the filter is
-                  URL-only, no picker by design) with a clear button reusing
-                  the chip's handler. */}
-              {dueBeforeChip &&
-                field(
-                  t('filters.dueBefore.label'),
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm tabular-nums" data-testid="invoice-due-before-readout">
-                      {currentDueBefore}
-                    </span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      icon="x"
-                      onClick={dueBeforeChip.clear}
-                      aria-label={t('filters.more.removeAria', { label: dueBeforeChip.label })}
-                    >
-                      {t('filters.dueBefore.clear')}
-                    </Button>
-                  </div>,
-                )}
-            </div>
-          </Popover>
+              </div>
+            </Popover>
+          </span>
           {clearButton}
         </>,
       )}

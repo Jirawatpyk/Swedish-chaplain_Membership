@@ -87,9 +87,10 @@ export function BenefitsTabs(props: BenefitsTabsProps): React.ReactElement {
   }
 
   return (
-    // On phones the two tabs share the width, as `Benefits-mobile` draws them.
-    <div aria-busy={isPending || undefined} className="max-lg:[&_.aura-tabs\_\_list>*]:flex-1 max-lg:[&_.aura-tabs\_\_list>*]:justify-center">
-      <Tabs tabs={tabs} label={t('ariaLabel')} value={active} onChange={onValueChange} />
+    // On phones and tablets the tabs share the width, as `Benefits-mobile`
+    // draws them (AURA `fullWidth="below-lg"`, #90).
+    <div aria-busy={isPending || undefined}>
+      <Tabs tabs={tabs} label={t('ariaLabel')} value={active} onChange={onValueChange} fullWidth="below-lg" />
     </div>
   );
 }

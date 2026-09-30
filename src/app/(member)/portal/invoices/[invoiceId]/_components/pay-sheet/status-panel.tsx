@@ -87,7 +87,7 @@ export function StatusPanel({ kind, onCancel }: StatusPanelProps) {
           size="sm"
           onClick={onCancel}
           // WCAG 2.5.5 / SC 2.5.8 — ≥ 44×44 px on mobile (G-Review #7).
-          className="min-h-11 px-4"
+          touchHeight
           data-testid={cfg.cancelTestId}
         >
           {t('cancel')}

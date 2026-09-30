@@ -7,7 +7,8 @@
  *       ≥ 640 px → right-aligned drawer, max-width 480 px
  *   - specs/009-online-payment/plan.md § UX Mobile responsiveness matrix
  *     (3 viewport presets: iPhone SE 320×568, iPad 768×1024, FHD 1920×1080)
- *   - WCAG 2.1 SC 2.5.5 / WCAG 2.2 SC 2.5.8 — tap target ≥ 44×44 px
+ *   - WCAG 2.1 SC 2.5.5 — tap target ≥ 44×44 px on phones; WCAG 2.2 SC 2.5.8
+ *     (≥ 24×24 px) for the close button from 640 px, AURA's 32px IconButton
  *   - WCAG 2.2 SC 2.4.11 — Focus Not Obscured (sticky header + scroll-padding)
  *   - specs/009-online-payment SC-012 — zero serious/critical axe violations
  *
@@ -118,7 +119,7 @@ async function openPaySheet(page: Page): Promise<void> {
 
 /**
  * Assert a locator's rendered box is at least `min` px on each axis.
- * Used for tap-target checks (WCAG 2.5.5 / 2.5.8 = 44 px minimum).
+ * Used for tap-target checks (44 px by default, SC 2.5.5; 24 px is SC 2.5.8).
  */
 async function expectMinTapTarget(
   page: Page,
@@ -218,11 +219,15 @@ test.describe('PaySheet viewport + mobile layout — @payment @a11y @f5', () => 
         }
       });
 
-      test('close button tap target ≥ 44×44 px (SC 2.5.5 / 2.5.8)', async ({
+      // Spec 122 T512 (AURA #100, `closeProps.touchHeight`): the close button
+      // is 44×44 on phones (SC 2.5.5) and AURA's 32px IconButton from 640px,
+      // which clears SC 2.5.8 AA (≥ 24px) where a mouse or a tablet is used.
+      const closeMin = preset.width < 640 ? 44 : 24;
+      test(`close button tap target ≥ ${closeMin}×${closeMin} px (SC ${preset.width < 640 ? '2.5.5' : '2.5.8'})`, async ({
         page,
       }) => {
         await openPaySheet(page);
-        await expectMinTapTarget(page, 'pay-sheet-close');
+        await expectMinTapTarget(page, 'pay-sheet-close', closeMin);
       });
 
       test('sticky header remains pinned during drawer-body scroll (SC 2.4.11)', async ({

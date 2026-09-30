@@ -6,9 +6,9 @@
  * action. Used by F1's account lifecycle UI (T135) and by every list
  * surface in later phases.
  */
+import { EmptyState as AuraEmptyState } from '@jirawatpyk/aura-react/server';
 import type { LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { cn } from '@/lib/utils';
 
 export interface EmptyStateProps {
   readonly icon?: LucideIcon;
@@ -25,7 +25,7 @@ export interface EmptyStateProps {
   readonly bordered?: boolean;
   /**
    * Fix round 1 M-3 — override the icon's colour class. Defaults to
-   * `text-muted-foreground` (unchanged for every existing consumer). Lets a
+   * AURA's empty-state icon colour (unchanged for every existing consumer). Lets a
    * deliberate positive-affirmation empty state (e.g. the at-risk widget's
    * "no one at risk" `ShieldCheck`) keep its `text-success` green after
    * routing through this shared primitive.
@@ -53,24 +53,21 @@ export function EmptyState({
   'data-testid': dataTestId,
   announce = true,
 }: EmptyStateProps) {
-  // Spec 122 US1 — AURA's EmptyState markup (its classes, so its spacing,
-  // tint and dashed edge), drawn here rather than imported: this is a server
-  // component, and server files never import AURA (docs/aura-adoption.md).
-  // The title stays a <p>, not AURA's heading, so no page's outline changes.
+  // Spec 122 — AURA's EmptyState (#86, 5.14): the title stays a <p>
+  // (`headingLevel={false}`) so no page's outline changes, and `announce`
+  // decides the status role, which AURA leaves to the caller. Without an
+  // icon AURA draws its default inbox icon.
   return (
-    <div
+    <AuraEmptyState
       data-testid={dataTestId}
-      className={cn('aura-empty', bordered && 'is-bordered', className)}
       role={announce ? 'status' : undefined}
-    >
-      {Icon ? (
-        <span className="aura-empty__icon" aria-hidden>
-          <Icon className={cn('size-6', iconClassName)} aria-hidden />
-        </span>
-      ) : null}
-      <p className="aura-empty__title">{title}</p>
-      {description ? <p className="aura-empty__text">{description}</p> : null}
-      {action ? <div className="aura-empty__action">{action}</div> : null}
-    </div>
+      className={className}
+      bordered={bordered}
+      headingLevel={false}
+      icon={Icon ? <Icon className={iconClassName} aria-hidden /> : undefined}
+      title={title}
+      description={description}
+      action={action}
+    />
   );
 }

@@ -99,9 +99,9 @@ describe('portal/loading.tsx — CLS-stable skeleton (057 redesign)', () => {
   it('renders exactly 3 stat-card skeletons (matching the 3-up stat grid)', async () => {
     const tree = await PortalDashboardLoading();
     const html = renderToStaticMarkup(tree as ReactElement);
-    // StatSkeleton renders an AURA stat tile ("aura-stat h-full gap-2", spec
-    // 122 US3) — one per stat card. Three instances = three occurrences.
-    const statMatches = html.match(/aura-stat h-full gap-2/g);
+    // StatSkeleton is AURA's loading Stat (#110, 5.17): hidden from assistive
+    // tech, one per stat card. Three instances = three occurrences.
+    const statMatches = html.match(/class="aura-stat is-loading[^"]*"/g);
     expect(statMatches).toHaveLength(3);
   });
 

@@ -75,11 +75,12 @@ export function TimelineFilters(): React.JSX.Element {
     Boolean(currentFrom) ||
     Boolean(currentTo);
 
+  // Four equal filter columns with Clear at the end, as the boards draw them
+  // (AURA `controlsLayout="fill"`, #92). The three fields in the phone
+  // disclosure share the row from 640px, where their wrapper is `contents`,
+  // so they take the same equal share; the buttons keep their own width.
   return (
-    <FilterBar
-      label={t('title')}
-      className="[&_.aura-filterbar\_\_controls]:w-full [&_.aura-filterbar\_\_controls]:items-end sm:[&_.aura-filterbar\_\_controls]:grid sm:[&_.aura-filterbar\_\_controls]:grid-cols-[repeat(4,minmax(0,1fr))_auto] sm:[&_.aura-filterbar\_\_controls]:gap-3"
-    >
+    <FilterBar label={t('title')} controlsLayout="fill">
       <Select
         name="source"
         label={t('source')}
@@ -94,7 +95,7 @@ export function TimelineFilters(): React.JSX.Element {
       <Button
         type="button"
         variant="secondary"
-        className="sm:hidden"
+        className="flex-none self-end sm:hidden"
         icon={<SlidersHorizontalIcon aria-hidden />}
         aria-expanded={moreOpen}
         aria-controls={moreId}
@@ -102,7 +103,13 @@ export function TimelineFilters(): React.JSX.Element {
       >
         {t('moreFilters')}
       </Button>
-      <div id={moreId} className={cn('flex w-full flex-col gap-3 sm:contents', !moreOpen && 'max-sm:hidden')}>
+      <div
+        id={moreId}
+        className={cn(
+          'flex basis-full flex-col gap-3 sm:contents sm:[&>*]:min-w-30 sm:[&>*]:flex-1',
+          !moreOpen && 'max-sm:hidden',
+        )}
+      >
         <Select
           name="actorKind"
           label={t('actor')}
@@ -134,7 +141,7 @@ export function TimelineFilters(): React.JSX.Element {
       <Button
         type="button"
         variant="secondary"
-        className={cn('max-sm:order-last max-sm:w-full', !hasAnyFilter && 'max-sm:hidden')}
+        className={cn('self-end max-sm:order-last max-sm:basis-full sm:flex-none', !hasAnyFilter && 'max-sm:hidden')}
         disabled={!hasAnyFilter}
         onClick={() => pushUrl({ source: null, actorKind: null, from: null, to: null })}
       >

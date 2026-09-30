@@ -140,7 +140,7 @@ export function TimelineStream({
     <div className="flex flex-col gap-2 sm:gap-3">
       {/* the Portal-timeline boards' caption: how many rows, and whose clock —
           on phones also which filters sit behind "More filters" */}
-      <p className="text-xs text-[var(--aura-fg-secondary)] sm:text-[13px]">
+      <p className="aura-text-table-cell text-[var(--aura-fg-secondary)] max-sm:text-xs">
         {t('caption', { count: events.length })}
         <span className="sm:hidden">. {t('captionMoreFilters')}</span>
       </p>
@@ -291,12 +291,13 @@ function TimelineRow({
       {opensGroup && heading ? (
         <h2
           className={cn(
-            // the boards: 11px mono, 16px above every group (the first too), 4px below
-            'pt-4 pb-1 font-mono text-[11px] font-normal uppercase tracking-[0.04em] text-[var(--aura-fg-secondary)]',
+            // the boards: a mono caption, 16px above every group (the first too), 4px below
+            'pt-4 pb-1 font-normal text-[var(--aura-fg-secondary)]',
           )}
           suppressHydrationWarning
         >
-          {heading}
+          {/* AURA's mono caption on the text: preflight resets a heading's size over AURA's token layer */}
+          <span className="aura-text-mono uppercase tracking-[0.04em]">{heading}</span>
         </h2>
       ) : null}
       <div className="border-t border-[var(--aura-border-default)]">

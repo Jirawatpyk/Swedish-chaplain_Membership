@@ -284,11 +284,13 @@ html:has([data-auth-frame]) {
 
 /* Spec 122 US3 — keep a field that gets focus (an error-summary link, Tab)
    clear of the sticky shell bar (56px; the portal's is 72px at lg) and of a
-   viewport ActionBar (~72px) riding above the bottom nav. */
+   viewport ActionBar (~72px) riding above the bottom nav. A viewport
+   ActionBar carries the app class `chamber-viewport-actionbar`, so this
+   never reads AURA's own modifier class. */
 html:has(.chamber-shell) {
   scroll-padding-top: 5.5rem;
 }
-html:has(.aura-actionbar--viewport) {
+html:has(.chamber-viewport-actionbar) {
   scroll-padding-bottom: calc(var(--aura-bottomnav-offset, 0px) + 5.5rem);
 }
 /* Spec 122 US4 — the invoice page's sticky amount-due bar (~7rem) rides
@@ -551,13 +553,9 @@ summary,
 }
 
 /* --- Spec 122 US1 — the AURA shell (staff + member frames) -----------------
-   AppShell pads <main>; the layout containers pad too. The containers keep the
-   job (their API and data-slot are the layout contract, FR-012), on AURA's
-   own steps — 16 / 24 / 32 px at base / md / lg, as on the boards. */
+   The layout containers pad the page (AppShell `contentPadding={false}`,
+   #97): their API and data-slot are the layout contract (FR-012). */
 @layer components {
-  .chamber-shell .aura-shell__content {
-    padding: 0;
-  }
   /* Page padding, section gap and column on the boards' steps (spec 122,
      Session 2026-09-27): staff 18 / 24 / 28px top and 32px bottom with a
      16px section gap; the portal 20 / 32px top, 32 / 64px bottom, a 16px
@@ -612,159 +610,6 @@ summary,
   .auth-mesh {
     --aura-mesh-from: #5b9bd5;
     --aura-mesh-to: #ffe27a;
-  }
-
-  /* Spec 122 US3 — the change-request diff as the portal boards draw it
-     (ChangeRequestDiffTable variant="plain"): no box, mono uppercase column
-     heads, the first column flush with the surrounding text; stacked (below
-     640px of the table's width) each value sits beside a 76px label. */
-  .cr-diff--plain .aura-tbl-wrap {
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-    box-shadow: none;
-  }
-  /* The boards' table: 14px text at the card's 1.7 line height, 8px header
-     rows and 10px body rows (AURA's default is 13/20 with 12px). */
-  .cr-diff--plain .aura-tbl {
-    font-size: 14px;
-    line-height: 1.7;
-  }
-  .cr-diff--plain .aura-tbl__head .aura-tbl__th {
-    padding-block: 8px;
-  }
-  .cr-diff--plain .aura-tbl__body > .aura-tbl__row > * {
-    padding-block: 10px;
-  }
-  .cr-diff--plain .aura-tbl__head .aura-tbl__th {
-    background: transparent;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--aura-fg-secondary);
-  }
-  .cr-diff--plain .aura-tbl__row > :first-child {
-    padding-inline-start: 0;
-  }
-  @container aura-tbl (width < 640px) {
-    .cr-diff--plain .aura-tbl--stack-sm > * > .aura-tbl__row {
-      padding-inline: 0;
-    }
-    /* The phone boards rule off the first field from the card's header too. */
-    .cr-diff--plain .aura-tbl--stack-sm > .aura-tbl__body > .aura-tbl__row:first-child {
-      border-top: 1px solid var(--aura-border-default);
-    }
-    .cr-diff--plain .aura-tbl--stack-sm > * > .aura-tbl__row > .aura-tbl__td[data-label] {
-      display: grid;
-      grid-template-columns: 76px minmax(0, 1fr);
-      column-gap: 8px;
-    }
-    .cr-diff--plain .aura-tbl--stack-sm > * > .aura-tbl__row > .aura-tbl__td[data-label]::before {
-      margin: 0;
-      font-family: var(--font-sans);
-      font-size: 13px;
-      line-height: inherit;
-    }
-  }
-
-  /* Spec 122 — the staff nav as `Admin-members` draws it. The Settings group
-     points right while closed and down when open (AURA draws down / up). The
-     header's end padding is 6px so the brand, its dot and the Staff badge
-     fit one row in EN. */
-  .staff-nav .aura-nav__chevron {
-    transform: rotate(-90deg);
-  }
-  .staff-nav .aura-nav__chevron.is-open {
-    transform: none;
-  }
-  .staff-nav .aura-nav__header {
-    padding-inline-end: 6px;
-  }
-  /* The collapsed rail (`Admin-members`, sidebar=collapsed): 44 × 40 items
-     with 20px icons, a rule under the brand, 8px section rhythm and a 72px
-     header. AURA sets the icon size inline, hence !important. */
-  .staff-nav.aura-nav--collapsed .aura-nav__scroll {
-    padding-inline: 10px;
-  }
-  /* The rail board's 40px rows with a mouse; touch keeps AURA's 44px (FR-013). */
-  @media (pointer: fine) {
-    .staff-nav.aura-nav--collapsed .aura-nav__item {
-      min-height: 40px;
-    }
-  }
-  .staff-nav.aura-nav--collapsed .aura-nav__item > .aura-icon,
-  .staff-nav.aura-nav--collapsed .aura-nav__item > svg {
-    width: 20px !important;
-    height: 20px !important;
-  }
-  .staff-nav.aura-nav--collapsed .aura-nav__section:first-child {
-    border-top: 1px solid var(--aura-border-default);
-    padding-top: 8px;
-  }
-  .staff-nav.aura-nav--collapsed .aura-nav__section + .aura-nav__section {
-    margin-top: 0;
-    padding-block: 8px;
-  }
-  .staff-nav.aura-nav--collapsed .aura-nav__header {
-    height: 72px;
-    padding-block: 16px;
-  }
-  /* The phone drawer is 300px wide on `Admin-nav-mobile` (AURA: the nav
-     width). The drawer is portaled out of the shell, hence :has. The close
-     button sits where the badge was; keep the brand clear of it. */
-  .aura-drawer--nav:has(.staff-nav) {
-    max-width: 300px;
-  }
-  .aura-drawer--nav .staff-nav .aura-nav__header {
-    padding-inline-end: 48px;
-  }
-  /* The staff bar's side padding and the menu button, per board: 24px on the
-     tablet board, 8 / 12px and a 60px bar with a 44px menu button on phones;
-     the menu icon is 16px on both (AppShell hard-codes 20). */
-  .chamber-shell .aura-shell__menu .aura-icon,
-  .chamber-shell .aura-shell__menu svg {
-    width: 16px !important;
-    height: 16px !important;
-  }
-  @media (min-width: 640px) and (max-width: 1023.98px) {
-    .chamber-shell .aura-shell__bar {
-      padding-inline: 24px;
-    }
-  }
-  @media (max-width: 639.98px) {
-    .chamber-shell .aura-shell__bar {
-      min-height: 60px;
-      padding: 0 12px 0 8px;
-      gap: 6px;
-    }
-    .chamber-shell .aura-shell__menu {
-      width: 44px;
-      height: 44px;
-    }
-  }
-  /* The portal's phone tab bar (`Home-mobile`): 56px active pill, the label
-     12px and in the accent colour when active, 6 / 8px padding with 22px
-     under the tabs. The spacer and the offset that toasts and viewport
-     ActionBars read grow by the same amount. */
-  @media (max-width: 1023.98px) {
-    .chamber-shell .aura-bottomnav {
-      padding: 6px 8px max(22px, env(safe-area-inset-bottom, 0px));
-    }
-    .chamber-shell .aura-bottomnav__item {
-      font-size: 12px;
-    }
-    .chamber-shell .aura-bottomnav__item.is-active {
-      color: var(--aura-fg-accent);
-    }
-    .chamber-shell .aura-bottomnav__icon {
-      width: 56px;
-    }
-    .chamber-shell .aura-bottomnav-spacer {
-      height: calc(var(--aura-bottomnav-height) + 6px + max(22px, env(safe-area-inset-bottom, 0px)));
-    }
-    :root:has(.chamber-shell .aura-bottomnav--below-lg) {
-      --aura-bottomnav-offset: calc(var(--aura-bottomnav-height) + 6px + max(22px, env(safe-area-inset-bottom, 0px)));
-    }
   }
 }
 

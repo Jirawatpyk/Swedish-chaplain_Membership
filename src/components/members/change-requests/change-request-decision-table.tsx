@@ -132,10 +132,10 @@ export function ChangeRequestDecisionTable({ fields, selected, onToggle, canDeci
               </div>
             </div>
             {/* The checkbox keeps AURA's 16px box but, as before AURA, takes a
-                40×32 hit area (WCAG 2.5.8): its invisible input grows past the box.
+                40×32 hit area (WCAG 2.5.8): AURA `hitArea` (#99, 5.15).
                 Phone: top right of the card with the word "Approve" beside it;
                 desktop: the decision column. */}
-            <div className="col-start-2 row-start-1 flex items-center gap-2 self-start sm:col-start-4 [&_.aura-check__input]:-inset-x-3 [&_.aura-check__input]:-inset-y-2">
+            <div className="col-start-2 row-start-1 flex items-center gap-2 self-start sm:col-start-4">
               {decided ? (
                 <span
                   className={cn(
@@ -156,6 +156,7 @@ export function ChangeRequestDecisionTable({ fields, selected, onToggle, canDeci
                       its `description` (it sets aria-describedby itself). */}
                   <Checkbox
                     id={`decide-${f.key}`}
+                    hitArea={{ x: 12, y: 8 }}
                     label={t('approveCheckbox', { field: label })}
                     hideLabel
                     {...(inert ? { description: t('markers.contactRemoved') } : {})}

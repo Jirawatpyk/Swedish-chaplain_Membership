@@ -22,11 +22,12 @@ describe('<EmptyState> icon colour', () => {
       <EmptyState icon={ShieldCheck} title="Nothing here" />,
     );
     const icon = container.querySelector('svg[aria-hidden="true"]');
-    expect(icon?.parentElement).toHaveClass('aura-empty__icon');
+    // AURA #86 (5.14): AURA's own EmptyState wraps a custom icon in its sized span
+    expect(icon?.closest('.aura-empty__icon')).not.toBeNull();
     expect(icon).not.toHaveClass('text-success');
   });
 
-  it('overrides the icon colour via iconClassName without losing its size', () => {
+  it('overrides the icon colour via iconClassName, inside AURA\'s sized icon span', () => {
     const { container } = render(
       <EmptyState
         icon={ShieldCheck}
@@ -36,6 +37,21 @@ describe('<EmptyState> icon colour', () => {
     );
     const icon = container.querySelector('svg[aria-hidden="true"]');
     expect(icon).toHaveClass('text-success');
-    expect(icon).toHaveClass('size-6');
+    expect(icon?.parentElement).toHaveClass('aura-icon--custom');
+  });
+});
+
+describe('<EmptyState> on AURA (spec 122 #86)', () => {
+  it('keeps the title a paragraph and the status role optional', () => {
+    const { container, rerender } = render(<EmptyState title="Nothing here" data-testid="e" />);
+    const root = container.firstElementChild;
+    expect(root).toHaveClass('aura-empty', 'is-bordered');
+    expect(root).toHaveAttribute('role', 'status');
+    expect(root).toHaveAttribute('data-testid', 'e');
+    expect(container.querySelector('p.aura-empty__title')).toHaveTextContent('Nothing here');
+    expect(container.querySelector('h2, h3, h4, h5, h6')).toBeNull();
+    rerender(<EmptyState title="Nothing here" announce={false} bordered={false} />);
+    expect(container.firstElementChild).not.toHaveAttribute('role');
+    expect(container.firstElementChild).not.toHaveClass('is-bordered');
   });
 });

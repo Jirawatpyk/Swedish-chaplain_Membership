@@ -239,7 +239,7 @@ function CardFormInner({
           icon="lock"
           fullWidth
           disabled={!stripe || !elements || submitting || !show}
-          className="mt-4 w-full min-h-[44px]"
+          className="mt-4"
           data-testid="pay-sheet-card-submit"
         >
           {submitting

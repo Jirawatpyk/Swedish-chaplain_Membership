@@ -354,12 +354,14 @@ function InlineStatusCell({
       onClick={handleToggle}
       disabled={saving}
       title={t('toggleStatus', { current: currentLabel })}
+      // AURA app content: on a stacked phone card the pill sits flush (no hover room).
       className="group inline-flex min-h-6 min-w-[60px] cursor-pointer items-center gap-1 rounded-[var(--aura-radius-sm)] px-1 py-0.5 in-[.aura-table--stacked]:px-0 transition-colors hover:bg-[var(--aura-bg-surface-hover)] focus-visible:outline-2 focus-visible:outline-[var(--aura-focus-ring)] disabled:cursor-wait disabled:opacity-60"
       aria-label={t('toggleStatus', { current: currentLabel })}
     >
       <StatusBadge status={optimistic} />
       {/* Hover / focus hint only; on a phone card (no hover) it would hold
-          empty room and push the pill off the card's edge. */}
+          empty room and push the pill off the card's edge.
+          AURA app content: hidden on a stacked phone card. */}
       <PencilIcon
         className="size-3 text-[var(--aura-fg-tertiary)] opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 in-[.aura-table--stacked]:hidden"
         aria-hidden="true"
@@ -420,6 +422,7 @@ const WRAP_ROW = 'flex min-w-0 flex-wrap items-center gap-1.5 leading-snug';
 /**
  * The status cell is the card's pill, beside the title: on a card its two
  * badges stack so the company name keeps its width.
+ * AURA app content: the badges stack only on a stacked phone card.
  */
 const STATUS_ROW = `${WRAP_ROW} in-[.aura-table--stacked]:flex-col in-[.aura-table--stacked]:items-end in-[.aura-table--stacked]:gap-1`;
 
@@ -475,8 +478,6 @@ export function MembersTable({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [selected, setSelected] = useState<string[]>([]);
-  const lastToggledRef = useRef<string | null>(null);
-  const shiftClickRef = useRef(false);
   const tableContainerRef = useRef<HTMLDivElement>(null);
   // #2 focus management — the offer/active banner is a DOM-swapping ternary, so
   // clicking a control unmounts it and focus would drop to <body> (this repo's
@@ -534,39 +535,13 @@ export function MembersTable({
     [onSelectionChange],
   );
 
+  // Shift+Click range selection (FR-040) is AURA's `rangeSelect` (#98, 5.16):
+  // the clicked row's new state applies across the range from the last row
+  // changed, so a shift-click can DESELECT a range as well as select one, and
+  // archived rows in it stay unselected (`isRowSelectable`, BUG-013).
   const handleSelectionChange = useCallback(
-    (keys: Array<string | number>) => {
-      const next = keys.map(String);
-      const before = new Set(selected);
-      const added = next.filter((k) => !before.has(k));
-      const removed = selected.filter((k) => !next.includes(k));
-      const toggled = added.length + removed.length === 1 ? (added[0] ?? removed[0]) : undefined;
-      const shift = shiftClickRef.current;
-      shiftClickRef.current = false;
-      // Shift+Click range selection (FR-040): apply the clicked row's new state
-      // across the range from the last row clicked without Shift — so a
-      // shift-click can DESELECT a range as well as select one. Archived rows in
-      // the range stay unselected (BUG-013).
-      if (shift && toggled && lastToggledRef.current && lastToggledRef.current !== toggled) {
-        const ids = rows.map((r) => r.member_id);
-        const a = ids.indexOf(lastToggledRef.current);
-        const b = ids.indexOf(toggled);
-        if (a !== -1 && b !== -1) {
-          const on = added.length === 1;
-          const result = new Set(selected);
-          for (const row of rows.slice(Math.min(a, b), Math.max(a, b) + 1)) {
-            if (!isMemberRowSelectable(row)) continue;
-            if (on) result.add(row.member_id);
-            else result.delete(row.member_id);
-          }
-          commitSelection(ids.filter((id) => result.has(id)));
-          return;
-        }
-      }
-      if (toggled) lastToggledRef.current = toggled;
-      commitSelection(next);
-    },
-    [selected, rows, commitSelection],
+    (keys: Array<string | number>) => commitSelection(keys.map(String)),
+    [commitSelection],
   );
 
   // Staff-review SW-4: Ctrl+A / Cmd+A within the table selects every
@@ -604,7 +579,6 @@ export function MembersTable({
   useEffect(() => {
     if (clearSelectionNonce !== prevClearNonceRef.current) {
       prevClearNonceRef.current = clearSelectionNonce;
-      lastToggledRef.current = null;
       onSelectionChange?.([]);
     }
   }, [clearSelectionNonce, onSelectionChange]);
@@ -635,6 +609,7 @@ export function MembersTable({
         ...MEMBERS_COLUMN_SIZES.company_name,
         render: (row) => (
           <span className="flex min-w-0 items-center gap-2">
+            {/* AURA app content: the flag is on the desktop row only, not the phone card (board). */}
             {row.country && (
               <span data-card-slot="flag" className="shrink-0 in-[.aura-table--stacked]:hidden">
                 <CountryDisplay code={row.country} variant="flag-only" />
@@ -709,7 +684,7 @@ export function MembersTable({
           <span data-card-slot="plan" title={row.plan_id} className={WRAP_TEXT}>
             {row.plan_display_name ?? row.plan_id}
             {/* " · 2026" never starts a line on its own; a phone card shows
-                the plan alone, as on the board. */}
+                the plan alone, as on the board. AURA app content: hidden on a stacked card. */}
             <span className="whitespace-nowrap in-[.aura-table--stacked]:hidden">
               <span aria-hidden="true"> · </span>
               {row.plan_year}
@@ -772,6 +747,7 @@ export function MembersTable({
               </span>
             );
           // A phone card shows the band alone, as on the board.
+          // AURA app content: the score is hidden on a stacked phone card.
           return (
             <span data-card-slot="engagement" className="inline-flex items-center gap-1.5">
               <span className="font-medium tabular-nums in-[.aura-table--stacked]:hidden">{eng.score}</span>
@@ -828,14 +804,6 @@ export function MembersTable({
       ref={tableContainerRef}
       // The bulk bar's Clear hands focus to this table's select-all checkbox.
       data-members-table=""
-      // Record Shift on the click that toggles a checkbox; the selection
-      // callback reads it to select a range. Only a click in the selection
-      // column counts: a Shift-click on a row link would otherwise leave the
-      // flag set for a later keyboard toggle (AURA toggles on Space, no click).
-      onClickCapture={(e) => {
-        const target = e.target as Element;
-        shiftClickRef.current = e.shiftKey && target.closest('.aura-table__sel') !== null;
-      }}
     >
       {/* Result count — a live region, so ANY filter change is announced;
           "N of M" when the full filtered total is known. Visible only while
@@ -921,6 +889,7 @@ export function MembersTable({
           {...(enableSelection
             ? {
                 selectable: true,
+                rangeSelect: true,
                 selected,
                 onSelectionChange: handleSelectionChange,
                 isRowSelectable: isMemberRowSelectable,

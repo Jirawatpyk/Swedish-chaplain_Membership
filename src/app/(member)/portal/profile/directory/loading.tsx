@@ -5,7 +5,9 @@
  * 1024px.
  */
 import { getTranslations } from 'next-intl/server';
+import { Card } from '@jirawatpyk/aura-react/server';
 import { SkeletonBlock } from '@/components/shell/page-skeletons';
+import { AuraCardSkeleton } from '@/components/shell/aura-card-skeleton';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 
@@ -13,12 +15,9 @@ const FIELD_ROWS = Array.from({ length: 9 }, (_, i) => i);
 
 function CardSkeleton({ children }: { readonly children: React.ReactNode }) {
   return (
-    <div className="aura-card" aria-hidden>
-      <div className="aura-card__head">
-        <SkeletonBlock className="h-5 w-40" />
-      </div>
-      <div className="aura-card__body flex flex-col gap-3">{children}</div>
-    </div>
+    <AuraCardSkeleton aria-hidden title={<SkeletonBlock className="h-5 w-40" />}>
+      <div className="flex flex-col gap-3">{children}</div>
+    </AuraCardSkeleton>
   );
 }
 
@@ -61,13 +60,13 @@ export default async function Loading(): Promise<React.JSX.Element> {
 
         <div className="flex flex-col gap-2.5" aria-hidden>
           <SkeletonBlock className="h-4 w-40" />
-          <div className="aura-card">
-            <div className="aura-card__body flex flex-col gap-3">
+          <Card as="div">
+            <div className="flex flex-col gap-3">
               <SkeletonBlock className="h-14 w-full" />
               <SkeletonBlock className="h-12 w-full" />
               <SkeletonBlock className="h-4 w-3/4" />
             </div>
-          </div>
+          </Card>
         </div>
       </div>
     </DetailContainer>

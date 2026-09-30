@@ -18,12 +18,13 @@
  * "Proposed") in the server HTML, headers kept for screen readers.
  *
  * `variant="plain"` is the portal boards' table (`Portal-profile`,
- * `Portal-change-requests`): no box, mono uppercase headers, the first
- * column flush with the text, the submitted value in the secondary colour,
- * the tax marker as an outline chip beside the field name, an address on one
- * line, each decided field's outcome as a pill in a Decision column, and on
- * phones "Was" / "Proposed" labels beside the values (globals.css
- * `.cr-diff--plain`). The staff record section keeps the boxed table.
+ * `Portal-change-requests`): AURA's frameless table (`bordered={false}`,
+ * 5.13, handoff #81) with the first column flush with the text, the
+ * submitted value in the secondary colour, the tax marker as an outline chip
+ * beside the field name, an address on one line and each decided field's
+ * outcome as a pill in a Decision column. Row padding, header style and the
+ * stacked phone labels are AURA's own (parity rule). The staff record
+ * section keeps the boxed table.
  */
 import { useTranslations } from 'next-intl';
 import { Badge, StatusPill, Table, TBody, THead, Td, Th, Tr } from '@jirawatpyk/aura-react';
@@ -110,8 +111,8 @@ function PlainDiffTable({
   const t = useTranslations('portal.changeRequests.diff');
   const decided = showOutcome && fields.some((f) => f.outcome);
   return (
-    <div className={cn('cr-diff--plain', className)} data-testid="change-request-diff">
-      <Table stackBelow="sm">
+    <div className={className} data-testid="change-request-diff">
+      <Table stackBelow="sm" bordered={false}>
         <THead>
           <Tr>
             <Th>{t('field')}</Th>

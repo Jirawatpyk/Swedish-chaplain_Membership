@@ -424,14 +424,15 @@ export function PaySheet({
             {t('subtitle', { invoiceNumber: invoice.invoiceNumber })}
           </span>
         }
-        // The close button keeps a 44px box (WCAG 2.5.5), as the phone
-        // boards draw it; AURA's own is 32px with a 44px touch halo. The
-        // body keeps a scroll padding so a field scrolled into view (the iOS
-        // soft keyboard) lands clear of its top edge (SC 2.4.11).
-        className="pay-sheet [&_.aura-drawer\_\_body]:scroll-pt-4 [&_.aura-drawer\_\_head_.aura-icon-btn]:min-h-11 [&_.aura-drawer\_\_head_.aura-icon-btn]:min-w-11"
+        // AURA's Drawer body keeps a scroll padding (#91, 5.14), so a field
+        // scrolled into view (the iOS soft keyboard) lands clear of its top
+        // edge (SC 2.4.11).
+        className="pay-sheet"
         data-testid="pay-sheet-content"
         closeLabel={t('close')}
-        closeProps={{ 'data-testid': 'pay-sheet-close' }}
+        // The close button is 44px on phones (WCAG 2.5.5), as the phone boards
+        // draw it: AURA's `touchHeight` through closeProps (#100, 5.15).
+        closeProps={{ 'data-testid': 'pay-sheet-close', touchHeight: true }}
       >
             {hasOpened && timeoutExceeded ? (
               // FR-028c (B3): 30-min hard-cap prompt replaces the

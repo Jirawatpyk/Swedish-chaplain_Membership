@@ -407,6 +407,9 @@ export function BulkActionBar({
       <AuraProvider strings={barStrings}>
         <ActionBar
           ref={barRef}
+          // The app's marker for a viewport ActionBar: globals.css keeps a
+          // focused field clear of it by this class, not AURA's modifier.
+          className="chamber-viewport-actionbar"
           label={t('toolbarLabel')}
           selected={count}
           onClearSelection={handleClearSelection}

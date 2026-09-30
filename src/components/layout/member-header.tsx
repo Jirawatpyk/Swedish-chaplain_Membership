@@ -48,7 +48,7 @@ export function MemberHeader({
           <span className="flex size-10 shrink-0 items-center justify-center rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)] bg-white p-[5px]">
             <BrandMark variant="mark" className="size-full" />
           </span>
-          <span className="truncate font-[family-name:var(--font-display)] text-xl leading-none font-semibold tracking-[-0.01em] lg:text-[22px]">
+          <span className="truncate font-[family-name:var(--font-display)] aura-text-h2 leading-none font-semibold tracking-[-0.01em] max-lg:text-xl">
             {tenantName}
           </span>
           {/* The portal name is read with the brand ("SweCham · Member"). */}

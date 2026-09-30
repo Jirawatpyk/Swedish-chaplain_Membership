@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import { ArrowLeftIcon, SearchIcon } from 'lucide-react';
 import { DetailContainer } from '@/components/layout';
-import { buttonClass } from '@jirawatpyk/aura-react/server';
+import { Card, Icon, buttonClass } from '@jirawatpyk/aura-react/server';
 
 /**
  * Member-portal not-found boundary (portal error states #3; AURA canvas
@@ -33,23 +33,26 @@ export default async function PortalNotFound(): Promise<React.ReactElement> {
 
   return (
     <DetailContainer className="lg:pt-8">
-      <section
+      <Card
+        as="section"
         data-testid="portal-not-found"
         aria-labelledby="portal-not-found-heading"
-        className="aura-card mx-auto flex w-full max-w-[560px] flex-col gap-3 p-8 [--font-size-h1:1.875rem]"
+        className="mx-auto w-full max-w-[560px] [--font-size-h1:1.875rem]"
       >
-        <SearchIcon size={28} aria-hidden="true" className="text-[var(--aura-fg-secondary)]" />
-        <h1 id="portal-not-found-heading" tabIndex={-1} className="text-h1 focus-visible:outline-none">
-          {t('notFound')}
-        </h1>
-        <p className="text-[var(--aura-fg-secondary)]">{t('notFoundHint')}</p>
-        <div className="flex gap-2 pt-1">
-          <Link href="/portal" className={buttonClass()}>
-            <ArrowLeftIcon className="aura-icon size-4" aria-hidden="true" />
-            {t('backToDashboard')}
-          </Link>
+        <div className="flex flex-col gap-3">
+          <SearchIcon size={28} aria-hidden="true" className="text-[var(--aura-fg-secondary)]" />
+          <h1 id="portal-not-found-heading" tabIndex={-1} className="text-h1 focus-visible:outline-none">
+            {t('notFound')}
+          </h1>
+          <p className="text-[var(--aura-fg-secondary)]">{t('notFoundHint')}</p>
+          <div className="flex gap-2 pt-1">
+            <Link href="/portal" className={buttonClass()}>
+              <Icon name={<ArrowLeftIcon />} size={16} />
+              {t('backToDashboard')}
+            </Link>
+          </div>
         </div>
-      </section>
+      </Card>
     </DetailContainer>
   );
 }

@@ -137,8 +137,7 @@ export function PreferredLocaleForm({
       <RadioGroup
         label={t('groupLabel')}
         hint={t('hint')}
-        // 44px option rows on phones (the `Portal-account-mobile` board's touch targets)
-        className="max-sm:[&_.aura-choice]:min-h-11 max-sm:[&_.aura-choice]:items-center"
+        // AURA's option rows are 44px on touch screens (coarse pointers)
         value={value === null ? '__null' : value}
         onChange={(v) => setValue(v === '__null' ? null : (v as 'en' | 'th' | 'sv'))}
         disabled={saving}

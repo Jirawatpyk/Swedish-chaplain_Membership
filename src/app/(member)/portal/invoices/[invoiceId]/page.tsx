@@ -506,8 +506,9 @@ export async function renderPortalInvoiceDetailView({
                               buttonClass({
                                 variant: showReceiptPdf || payBar ? 'secondary' : 'primary',
                                 size: 'sm',
+                                touchHeight: true,
                               }),
-                              'min-h-11 px-4 max-sm:w-full',
+                              'max-sm:w-full',
                             )}
                             data-testid="portal-download-invoice"
                           />
@@ -526,8 +527,8 @@ export async function renderPortalInvoiceDetailView({
                               // invoice), so it is always the
                               // filled `default` CTA, ranking above the demoted bill
                               // PDF above.
-                              buttonClass({ variant: 'primary', size: 'sm' }),
-                              'min-h-11 px-4 max-sm:w-full',
+                              buttonClass({ variant: 'primary', size: 'sm', touchHeight: true }),
+                              'max-sm:w-full',
                             )}
                             data-testid="portal-download-receipt"
                           />
@@ -949,7 +950,7 @@ export async function renderPortalInvoiceDetailView({
                   </div>
                   <Link
                     href={`/portal/credit-notes/${pcn.creditNoteId}`}
-                    className={cn(buttonClass({ variant: 'secondary', size: 'sm' }), 'min-h-11 px-4')}
+                    className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}
                     aria-label={t('creditNotes.viewAria', {
                       number: pcn.documentNumber.raw,
                     })}

@@ -35,7 +35,7 @@
  *     non-interrupting (FR-028j)
  *   - expired-state region uses `aria-live="assertive"` so SR users hear
  *     the expiry the moment it lands
- *   - refresh button has `min-h-[44px] min-w-[44px]` (WCAG 2.5.5)
+ *   - refresh button is 44px on phones (AURA `touchHeight`, #100; WCAG 2.5.5)
  *
  * App-switching state persistence (T093 / spec § Edge Cases P6)
  * -------------------------------------------------------------
@@ -291,7 +291,8 @@ export function PromptPayPanel({
               size="sm"
               onClick={onRefresh}
               icon="rotate-ccw"
-              className="mt-1 min-h-11"
+              touchHeight
+              className="mt-1"
               data-testid="pay-sheet-promptpay-refresh"
             >
               {t('refresh')}
@@ -384,7 +385,7 @@ export function PromptPayPanel({
           size="sm"
           onClick={onRefresh}
           icon="rotate-ccw"
-          className="min-h-11"
+          touchHeight
           data-testid="pay-sheet-promptpay-refresh"
         >
           {t('refresh')}

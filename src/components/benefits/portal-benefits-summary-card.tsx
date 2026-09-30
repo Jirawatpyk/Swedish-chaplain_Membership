@@ -15,7 +15,7 @@ import Link from 'next/link';
 import { ArrowRight, CalendarDays, Mail, type LucideIcon } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { Progress } from '@jirawatpyk/aura-react';
-import { Card, buttonClass } from '@jirawatpyk/aura-react/server';
+import { Card, Icon as AuraIcon, buttonClass } from '@jirawatpyk/aura-react/server';
 import { formatCalendarYear, getDateFormatLocale } from '@/lib/format-date-localised';
 import { cn } from '@/lib/utils';
 import type { BenefitUsageItem } from './benefit-usage-card';
@@ -71,11 +71,12 @@ export function PortalBenefitsSummaryCard({
               <li key={b.key} className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
                 <div className="min-w-0 flex-1">
                   {b.reserved !== undefined && b.reserved > 0 ? (
-                    <ReservedProgress
+                    <Progress
                       label={t(`benefit.${b.key}`)}
-                      used={b.used}
-                      reserved={b.reserved}
-                      total={b.entitlement}
+                      value={b.used}
+                      secondaryValue={b.reserved}
+                      max={b.entitlement}
+                      showValue
                       valueLabel={t('card.usedOf', { used: b.used, total: b.entitlement })}
                       valueText={t('card.quotaValueText', {
                         used: b.used,
@@ -106,7 +107,7 @@ export function PortalBenefitsSummaryCard({
                     href={b.actionHref}
                     className={cn(buttonClass({ variant: 'secondary' }), 'shrink-0 self-start no-underline sm:w-[148px] sm:self-auto')}
                   >
-                    {Icon ? <Icon className="aura-icon size-4" aria-hidden /> : null}
+                    {Icon ? <AuraIcon name={<Icon />} size={16} /> : null}
                     {t(`benefit.action.${b.key}`)}
                   </Link>
                 ) : null}
@@ -117,67 +118,13 @@ export function PortalBenefitsSummaryCard({
         <div className="border-t border-[var(--aura-border-default)] pt-3">
           <Link
             href={fullHref}
-            className="inline-flex min-h-11 items-center gap-1.5 text-[13px] font-medium text-[var(--aura-fg-accent)] no-underline hover:text-[var(--aura-fg-primary)] hover:underline sm:min-h-0"
+            className="inline-flex min-h-11 items-center gap-1.5 aura-text-label text-[var(--aura-fg-accent)] no-underline hover:text-[var(--aura-fg-primary)] hover:underline sm:min-h-0"
           >
             {t('card.fullBenefits')}
-            <ArrowRight aria-hidden="true" size={16} className="aura-icon" />
+            <AuraIcon name={<ArrowRight />} size={16} />
           </Link>
         </div>
       </div>
     </Card>
-  );
-}
-
-/**
- * AURA's Progress with a second, striped segment for reserved E-Blasts (the
- * `Main` board): the same `aura-progress` markup and classes, so it matches
- * the bars beside it; `aria-valuetext` says all three counts.
- */
-function ReservedProgress({
-  label,
-  used,
-  reserved,
-  total,
-  valueLabel,
-  valueText,
-  hint,
-}: {
-  readonly label: string;
-  readonly used: number;
-  readonly reserved: number;
-  readonly total: number;
-  readonly valueLabel: string;
-  readonly valueText: string;
-  readonly hint: string;
-}) {
-  const pct = (n: number) => `${total > 0 ? Math.min(100, Math.max(0, (n / total) * 100)) : 0}%`;
-  const usedPct = pct(used);
-  return (
-    <div className="aura-progress">
-      <div className="aura-progress__head">
-        <span className="aura-progress__label">{label}</span>
-        <span className="aura-progress__value">{valueLabel}</span>
-      </div>
-      <div
-        className="aura-progress__track"
-        role="progressbar"
-        aria-label={label}
-        aria-valuemin={0}
-        aria-valuemax={total}
-        aria-valuenow={used}
-        aria-valuetext={valueText}
-      >
-        <span className="aura-progress__bar" style={{ width: usedPct }} />
-        <span
-          className="aura-progress__bar rounded-none opacity-60"
-          style={{
-            left: usedPct,
-            width: pct(Math.min(reserved, total - used)),
-            background: 'repeating-linear-gradient(45deg, var(--aura-fg-accent) 0 3px, transparent 3px 6px)',
-          }}
-        />
-      </div>
-      <p className="aura-progress__hint">{hint}</p>
-    </div>
   );
 }

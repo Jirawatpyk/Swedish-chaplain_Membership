@@ -1,6 +1,7 @@
 import { getTranslations } from 'next-intl/server';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
+import { Card } from '@jirawatpyk/aura-react/server';
 import {
   PageSkeletonShell,
   SkeletonBlock,
@@ -8,20 +9,11 @@ import {
 
 /**
  * Portal profile loading skeleton — matches the shape of
- * `/portal/profile/page.tsx` (Organisation + Membership + Contacts).
+ * `/portal/profile/page.tsx` (Organisation + Membership + Contacts), whose
+ * sections are AURA Cards titled with an h2: the skeleton uses the same Card
+ * and title, so its headings and outline match the loaded page.
  * Wraps in DetailContainer (72rem) to mirror the real page.
- *
- * Section titles render as real `<h2>` (NOT CardTitle, which is a `<div>`) so
- * the skeleton's heading semantics match the loaded page's `SectionHeading`
- * (057 review F10) — same font classes, identical visual.
  */
-function SectionHeading({ children }: { children: React.ReactNode }) {
-  return (
-    <h2 className="font-heading text-base font-medium leading-snug">
-      {children}
-    </h2>
-  );
-}
 export default async function Loading() {
   const t = await getTranslations('portal.profile');
   const tLayout = await getTranslations('layout');
@@ -34,11 +26,8 @@ export default async function Loading() {
           actions={<SkeletonBlock className="h-9 w-28" />}
         />
         {/* Organisation */}
-        <div className="aura-card">
-          <div className="aura-card__head">
-            <SectionHeading>{t('organisationSection')}</SectionHeading>
-          </div>
-          <div className="aura-card__body">
+        <Card as="div" title={t('organisationSection')} headingLevel={2}>
+          <div>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {Array.from({ length: 4 }).map((_, i) => (
                 <div key={i} className="flex flex-col gap-1.5">
@@ -48,14 +37,11 @@ export default async function Loading() {
               ))}
             </div>
           </div>
-        </div>
+        </Card>
 
         {/* Membership */}
-        <div className="aura-card">
-          <div className="aura-card__head">
-            <SectionHeading>{t('membershipSection')}</SectionHeading>
-          </div>
-          <div className="aura-card__body">
+        <Card as="div" title={t('membershipSection')} headingLevel={2}>
+          <div>
             <div className="grid gap-3 sm:grid-cols-2">
               {Array.from({ length: 3 }).map((_, i) => (
                 <div key={i} className="flex flex-col gap-1.5">
@@ -65,17 +51,13 @@ export default async function Loading() {
               ))}
             </div>
           </div>
-        </div>
+        </Card>
 
         {/* Contacts */}
-        <div className="aura-card">
-          <div className="aura-card__head">
-            <SectionHeading>{t('contactsSection')}</SectionHeading>
-            {/* Invite Colleague button (visible only when caller is primary —
-                optimistic render of the skeleton so layout stays stable). */}
-            <SkeletonBlock className="h-9 w-36" />
-          </div>
-          <div className="aura-card__body">
+        {/* The Invite Colleague action (visible only when the caller is
+            primary — optimistic render of the skeleton so layout stays stable). */}
+        <Card as="div" title={t('contactsSection')} headingLevel={2} actions={<SkeletonBlock className="h-9 w-36" />}>
+          <div>
             <div className="space-y-4">
               {Array.from({ length: 2 }).map((_, i) => (
                 <div
@@ -91,7 +73,7 @@ export default async function Loading() {
               ))}
             </div>
           </div>
-        </div>
+        </Card>
       </DetailContainer>
     </PageSkeletonShell>
   );

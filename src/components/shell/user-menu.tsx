@@ -110,7 +110,7 @@ export function UserMenu({ displayName, email, role, themeChoicesOnPhone = false
           type="button"
           className={cn(
             // On phones the avatar alone in a 44px circle, as the phone boards draw it.
-            'inline-flex h-10 items-center justify-center gap-2 rounded-full py-0 pr-2.5 pl-1 text-[13px] font-medium text-[var(--aura-fg-primary)] hover:bg-[var(--aura-bg-surface-hover)] pointer-coarse:h-11 pointer-coarse:min-w-11 max-sm:size-11 max-sm:p-0',
+            'inline-flex h-10 items-center justify-center gap-2 rounded-full py-0 pr-2.5 pl-1 text-[var(--aura-fg-primary)] hover:bg-[var(--aura-bg-surface-hover)] pointer-coarse:h-11 pointer-coarse:min-w-11 max-sm:size-11 max-sm:p-0',
             AURA_FOCUS_RING,
             className,
           )}
@@ -121,7 +121,7 @@ export function UserMenu({ displayName, email, role, themeChoicesOnPhone = false
           <span aria-hidden className="contents">
             <Avatar name={name} size="sm" />
           </span>
-          <span className="hidden max-w-40 truncate lg:inline">{triggerName}</span>
+          <span className="aura-text-label hidden max-w-40 truncate lg:inline">{triggerName}</span>
           <ChevronDownIcon className="size-4 max-sm:hidden" aria-hidden />
         </button>
       }

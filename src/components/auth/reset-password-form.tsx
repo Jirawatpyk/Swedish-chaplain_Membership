@@ -210,7 +210,7 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
           {t('submit')}
         </Button>
         {/* True: resetting revokes every session (reset-password.ts). */}
-        <p className="text-[13px] text-[var(--aura-fg-secondary)]">{t('signsOutNote')}</p>
+        <p className="aura-text-table-cell text-[var(--aura-fg-secondary)]">{t('signsOutNote')}</p>
       </div>
     </form>
   );
