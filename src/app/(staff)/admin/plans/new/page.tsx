@@ -20,7 +20,6 @@ import { requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { vatRatePercent } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
-import { Card, CardContent } from '@/components/ui/card';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { NewPlanClient } from './new-plan-client';
@@ -44,18 +43,16 @@ export default async function NewPlanPage() {
   const currentYear = deps.clock.currentYear();
 
   return (
-    <FormContainer>
+    // 122 US6 (T605): the 672px column at the page's start edge, the stepper
+    // and one card per step straight under the title (board `Admin-plan-new`).
+    <FormContainer className="mx-0">
       <PageHeader title={t('title')} />
-      <Card>
-        <CardContent>
-          <NewPlanClient
-            currentYear={currentYear}
-            currencyUnit={currencyCode}
-            currencyCode={currencyCode}
-            vatRatePercent={feeHintVatPercent(taxPolicy)}
-          />
-        </CardContent>
-      </Card>
+      <NewPlanClient
+        currentYear={currentYear}
+        currencyUnit={currencyCode}
+        currencyCode={currencyCode}
+        vatRatePercent={feeHintVatPercent(taxPolicy)}
+      />
     </FormContainer>
   );
 }

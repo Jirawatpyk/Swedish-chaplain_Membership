@@ -84,10 +84,11 @@ function renderWizard(initialValues?: PlanSchemaInput) {
 }
 
 const next = () => fireEvent.click(screen.getByRole('button', { name: 'Next' }));
-const heading = () => screen.getByRole('heading', { level: 2 }).textContent;
+/** The open step's card title (the error summary has an h2 of its own). */
+const heading = () => document.querySelector('.aura-card h2')?.textContent;
 /** The step the AURA stepper marks as current. */
 const currentStep = () =>
-  screen.getByRole('list', { name: en.admin.plans.create.steps.wizardAriaLabel }).querySelector('[aria-current="step"]')
+  screen.getByRole('navigation', { name: en.admin.plans.create.steps.wizardAriaLabel }).querySelector('[aria-current="step"]')
     ?.textContent;
 
 describe('PlanFormWizard review step', () => {
@@ -118,9 +119,17 @@ describe('PlanFormWizard per-field errors', () => {
     expect(planId).toHaveAccessibleDescription(E.planId);
     const summary = document.querySelector('.aura-error-summary') as HTMLElement;
     expect(summary).toHaveAttribute('role', 'alert');
-    expect(within(summary).getByRole('link', { name: new RegExp(E.planId) })).toHaveAttribute('href', '#plan_id');
-    expect(within(summary).getByText(new RegExp(E.planName))).toBeInTheDocument();
-    expect(within(summary).getByText(new RegExp(E.description))).toBeInTheDocument();
+    const links = within(summary).getAllByRole('link');
+    expect(links[0]).toHaveAttribute('href', '#plan_id');
+    const lines = links.map((l) => l.textContent);
+    expect(lines).toEqual(
+      expect.arrayContaining([
+        `${en.admin.plans.create.labels.planId} — ${E.planId}`,
+        `${en.admin.plans.create.labels.planName} — ${E.planName}`,
+        `${en.admin.plans.create.labels.description} — ${E.description}`,
+      ]),
+    );
+    expect(links[0]?.querySelector('strong')).toHaveTextContent(en.admin.plans.create.labels.planId);
   });
 
   it('puts each step in an AURA card under the stepper, with Cancel, Back and Next', () => {

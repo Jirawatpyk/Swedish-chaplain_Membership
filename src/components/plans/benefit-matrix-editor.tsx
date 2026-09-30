@@ -39,6 +39,15 @@ export interface BenefitMatrixEditorProps {
   readonly disabled?: boolean;
   /** A prior-year plan: every benefit read-only (the server refuses changes too). */
   readonly locked?: boolean;
+  /**
+   * Frames each part: the plan boards give the partnership benefits their
+   * own card beside the benefit matrix's. Without it the partnership block
+   * is one more group under its heading.
+   */
+  readonly renderSection?: (section: {
+    readonly id: 'benefits' | 'partnership';
+    readonly children: ReactNode;
+  }) => ReactNode;
 }
 
 const DEFAULT_PARTNERSHIP: PartnershipBenefits = {
@@ -101,6 +110,7 @@ export function BenefitMatrixEditor({
   planCategory,
   disabled = false,
   locked = false,
+  renderSection,
 }: BenefitMatrixEditorProps) {
   const t = useTranslations('admin.plans.create.options');
   const tM = useTranslations('admin.plans.create.matrix');
@@ -178,8 +188,8 @@ export function BenefitMatrixEditor({
   const switches = locked ? { role: 'group', 'aria-describedby': PLAN_LOCKED_NOTE_ID } : {};
   const sw = { disabled: disabled || locked };
 
-  return (
-    <div className="space-y-[var(--aura-space-6)]">
+  const core = (
+    <>
       <Group title={tM('section.brandVisibility')}>
         <div className="grid grid-cols-1 gap-[var(--aura-space-4)] md:grid-cols-2">
           <NumberField
@@ -276,8 +286,12 @@ export function BenefitMatrixEditor({
         </div>
       </Group>
 
-      {planCategory === 'partnership' && value.partnership !== null ? (
-        <Group title={tM('section.partnershipBenefits')}>
+    </>
+  );
+
+  const partnership =
+    planCategory === 'partnership' && value.partnership !== null ? (
+      <div className="space-y-[var(--aura-space-3)]">
           <div className="grid grid-cols-1 gap-[var(--aura-space-4)] md:grid-cols-2">
             <NumberField
               label={tM('eventTicketsIncluded')}
@@ -363,8 +377,22 @@ export function BenefitMatrixEditor({
               {...sw}
             />
           </div>
-        </Group>
-      ) : null}
+        </div>
+    ) : null;
+
+  if (renderSection) {
+    return (
+      <>
+        {renderSection({ id: 'benefits', children: <div className="space-y-[var(--aura-space-6)]">{core}</div> })}
+        {partnership ? renderSection({ id: 'partnership', children: partnership }) : null}
+      </>
+    );
+  }
+
+  return (
+    <div className="space-y-[var(--aura-space-6)]">
+      {core}
+      {partnership ? <Group title={tM('section.partnershipBenefits')}>{partnership}</Group> : null}
     </div>
   );
 }

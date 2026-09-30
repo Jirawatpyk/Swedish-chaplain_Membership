@@ -38,6 +38,8 @@ export interface LocaleTextInputProps {
   readonly disabled?: boolean;
   /** The English value's message (it is the only required one). */
   readonly error?: string;
+  /** The English field's id (the others add `-th` / `-sv`), for error links. */
+  readonly id?: string;
 }
 
 const LOCALES: ReadonlyArray<{ readonly key: LocaleKey; readonly tab: string }> = [
@@ -55,6 +57,7 @@ export function LocaleTextInput({
   required = false,
   disabled = false,
   error,
+  id,
 }: LocaleTextInputProps) {
   const t = useTranslations('admin.plans.create');
   const [active, setActive] = useState<LocaleKey>('en');
@@ -89,6 +92,7 @@ export function LocaleTextInput({
     const missing = l.key !== 'en' && !value[l.key];
     const fieldLabel = `${label} (${t(`localeNames.${l.key}`)})`;
     const common = {
+      ...(id ? { id: l.key === 'en' ? id : `${id}-${l.key}` } : {}),
       label: fieldLabel,
       value: value[l.key] ?? '',
       maxLength,

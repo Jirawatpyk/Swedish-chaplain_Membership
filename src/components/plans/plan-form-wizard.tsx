@@ -3,10 +3,17 @@
  *
  * 4-step wizard (Basics → Fees → Benefits → Review) with per-step
  * validation. Next validates the current step against `planSchema`
- * (shape + the cross-field rules); a failing step stays put, its
- * Stepper circle turns into an error and each offending field shows
- * its message (see `plan-form-errors.ts`). Final Save runs the full
- * schema and jumps back to the first failing step.
+ * (shape + the cross-field rules); a failing step stays put and each
+ * offending field shows its message (see `plan-form-errors.ts`). Final
+ * Save runs the full schema and jumps back to the first failing step.
+ *
+ * 122 US6 (T605): on AURA as the `Admin-plan-new` board draws it — AURA's
+ * Stepper above the steps (progress only: it has no error state, AURA
+ * handoff #112), each step one fieldset card (the benefits step two: the
+ * matrix and the partnership benefits), AURA's error summary when a step
+ * has more than one error, and Cancel | Back / Next. On a phone Back and
+ * Next are pinned to the bottom of the screen and Cancel stays in the page
+ * (`Admin-plan-new-mobile`).
  *
  * State is held in a single plain `draft` object rather than
  * react-hook-form because:
@@ -22,23 +29,20 @@
  */
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2Icon } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
+import {
+  ActionBar,
+  Alert,
+  Button,
+  Card,
+  FormErrorSummary,
+  Select,
+  Stepper,
+  TextField,
+} from '@jirawatpyk/aura-react';
 import { formatSatangThb } from '@/lib/format-thb';
 import { formatCalendarYear } from '@/lib/format-date-localised';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  TranslatedSelectValue,
-} from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
-import { Stepper, type StepperStep } from '@/components/ui/stepper';
 import { LocaleTextInput } from './locale-text-input';
 import { MoneyInput } from './money-input';
 import { BenefitMatrixEditor } from './benefit-matrix-editor';
@@ -99,8 +103,45 @@ function emptyDraft(currentYear: number): PlanSchemaInput {
   };
 }
 
+/** The element each field's message is linked from (the error summary's links). */
+const FIELD_DOM_ID: Record<PlanFormField, string> = {
+  plan_id: 'plan_id',
+  plan_year: 'plan_year',
+  plan_name: 'plan_name',
+  description: 'description',
+  sort_order: 'sort_order',
+  plan_category: 'plan_category',
+  member_type_scope: 'member_type_scope',
+  annual_fee_minor_units: 'annual_fee',
+  min_turnover_minor_units: 'min_turnover',
+  max_turnover_minor_units: 'max_turnover',
+  max_duration_years: 'max_duration',
+  max_member_age: 'max_member_age',
+  includes_corporate_plan_id: 'bundle',
+  benefit_matrix: 'benefit_matrix-error',
+};
+
+/** The field's label key, for its line in the error summary. */
+const FIELD_LABEL: Record<PlanFormField, string> = {
+  plan_id: 'planId',
+  plan_year: 'planYear',
+  plan_name: 'planName',
+  description: 'description',
+  sort_order: 'sortOrder',
+  plan_category: 'planCategory',
+  member_type_scope: 'memberTypeScope',
+  annual_fee_minor_units: 'annualFee',
+  min_turnover_minor_units: 'minTurnover',
+  max_turnover_minor_units: 'maxTurnover',
+  max_duration_years: 'maxDurationYears',
+  max_member_age: 'maxMemberAge',
+  includes_corporate_plan_id: 'includesCorporatePlanId',
+  benefit_matrix: 'benefitMatrix',
+};
+
 export interface PlanFormWizardProps {
   readonly currentYear: number;
+  /** The unit shown after the money fields (the tenant currency code). */
   readonly currencyUnit: string;
   /** Tenant currency (ISO 4217) for the Review step's fee — default THB. */
   readonly currencyCode?: string;
@@ -125,6 +166,7 @@ export function PlanFormWizard({
   const t = useTranslations('admin.plans.create');
   const tLabels = useTranslations('admin.plans.create.labels');
   const tButtons = useTranslations('admin.plans.create.buttons');
+  const tMatrix = useTranslations('admin.plans.create.matrix');
   const tErrors = useTranslations('admin.plans.create.fieldErrors');
   const locale = useLocale();
   const { categoryOptions: CATEGORY_OPTIONS, memberTypeOptions: MEMBER_TYPE_OPTIONS } = usePlanOptions();
@@ -240,29 +282,24 @@ export function PlanFormWizard({
     navigateToStep(STEPS[stepIndex + 1]!);
   }
 
-  // Canonical Stepper primitive (`@/components/ui/stepper`) — replaces the
-  // earlier ad-hoc `<ol>` text list so F2 plan creation shares the visual
-  // language used by F5 PaySheet + F6 webhook-config-wizard (circle +
-  // connector line + Check icon on completed steps + WCAG `aria-current`).
-  // Round 2 adds an `error` status (driven by `failedStep`) so a final-
-  // submit validation failure is signalled visually on the offending
-  // step's circle rather than only via a generic error toast on Review.
-  const stepperSteps: StepperStep[] = useMemo(
-    () =>
-      STEPS.map((s, idx) => ({
-        id: s,
-        label: t(`steps.${s}`),
-        status:
-          s === failedStep && stepHasErrors[s]
-            ? 'error'
-            : idx < stepIndex
-              ? 'complete'
-              : idx === stepIndex
-                ? 'current'
-                : 'upcoming',
-      })),
-    [stepIndex, failedStep, stepHasErrors, t],
-  );
+  const stepperSteps = useMemo(() => STEPS.map((s) => ({ id: s, label: t(`steps.${s}`) })), [t]);
+
+  // The failed step's messages, in form order, for the summary above it.
+  const summaryItems =
+    failedStep === step
+      ? (Object.keys(FIELD_DOM_ID) as PlanFormField[])
+          .filter((f) => fieldErrors[f] !== undefined && planFieldStep(f) === step)
+          .map((f) => ({
+            field: FIELD_DOM_ID[f],
+            message: (
+              <>
+                <strong>{tLabels(FIELD_LABEL[f])}</strong>
+                {' — '}
+                {tErrors(fieldErrors[f]!)}
+              </>
+            ),
+          }))
+      : [];
 
   async function handleSubmit(): Promise<void> {
     const parsed = planSchema.safeParse(draft);
@@ -280,112 +317,65 @@ export function PlanFormWizard({
     await onSubmit(parsed.data);
   }
 
-  return (
-    <div className="space-y-6">
-      <Stepper
-        steps={stepperSteps}
-        aria-label={t('steps.wizardAriaLabel')}
-        compact
-      />
-      {/* F2 polish round 2 — mobile-only compact summary. Stepper hides
-          labels below sm:640px so 3-4 long Thai/Swedish labels don't
-          overflow; this single-line summary replaces them. aria-hidden
-          because the Stepper already exposes `aria-current="step"` to
-          screen readers — we don't want a double announcement. */}
-      <p
-        className="text-muted-foreground sm:hidden text-center text-sm"
-        aria-hidden="true"
-      >
-        {t('steps.mobileSummary', {
-          current: stepIndex + 1,
-          total: STEPS.length,
-          label: t(`steps.${step}`),
-        })}
-      </p>
+  const cancelLabel = tButtons('cancel');
 
-      <Separator />
+  return (
+    <div className="space-y-[var(--aura-space-6)]">
+      <Stepper label={t('steps.wizardAriaLabel')} steps={stepperSteps} current={step} />
+
+      {/* Only for MORE THAN ONE error (ux-standards § 11.3): one message is
+          already on its field, which takes focus. The summary never takes
+          focus itself (a constant focusKey), so the field keeps it. */}
+      <FormErrorSummary
+        focusKey={0}
+        errors={summaryItems.length > 1 ? summaryItems : []}
+      />
 
       {step === 'basics' ? (
-        <section
-          ref={basicsRef}
-          tabIndex={-1}
-          className="space-y-4 focus-visible:outline-none"
-        >
-          <h2 className="text-lg font-semibold">{t('steps.basics')}</h2>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div className="space-y-1">
-              <Label htmlFor="plan_id">{tLabels('planId')}</Label>
-              <Input
-                id="plan_id"
-                value={draft.plan_id}
-                onChange={(e) => update('plan_id', e.target.value.toLowerCase())}
-                placeholder={tLabels('planIdPlaceholder')}
-                {...invalidProps('plan_id', fieldError('plan_id'))}
-              />
-              <p className="text-muted-foreground text-sm">{tLabels('planIdHelp')}</p>
-              <FieldError field="plan_id" message={fieldError('plan_id')} />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="plan_year">{tLabels('planYear')}</Label>
-              <Input
-                id="plan_year"
-                type="number"
-                min={2000}
-                max={2100}
-                value={draft.plan_year}
-                onChange={(e) =>
-                  update('plan_year', Number.parseInt(e.target.value, 10) || currentYear)
-                }
-                {...invalidProps('plan_year', fieldError('plan_year'))}
-              />
-              <FieldError field="plan_year" message={fieldError('plan_year')} />
-            </div>
-            <div className="space-y-1">
-              <Label>{tLabels('planCategory')}</Label>
-              <Select
-                value={draft.plan_category}
-                onValueChange={(v) => update('plan_category', v as PlanCategory)}
-                items={CATEGORY_OPTIONS}
-              >
-                <SelectTrigger aria-label={tLabels('planCategory')} className="w-full">
-                  <TranslatedSelectValue
-                    translate={(v) =>
-                      CATEGORY_OPTIONS.find((o) => o.value === v)?.label ?? null
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {CATEGORY_OPTIONS.map((o) => (
-                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label>{tLabels('memberTypeScope')}</Label>
-              <Select
-                value={draft.member_type_scope}
-                onValueChange={(v) =>
-                  update('member_type_scope', v as PlanSchemaInput['member_type_scope'])
-                }
-                items={MEMBER_TYPE_OPTIONS}
-              >
-                <SelectTrigger aria-label={tLabels('memberTypeScope')} className="w-full">
-                  <TranslatedSelectValue
-                    translate={(v) =>
-                      MEMBER_TYPE_OPTIONS.find((o) => o.value === v)?.label ?? null
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {MEMBER_TYPE_OPTIONS.map((o) => (
-                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+        <StepCard stepRef={basicsRef} id="basics" title={t('steps.basics')}>
+          <div className="grid grid-cols-1 gap-[var(--aura-space-4)] md:grid-cols-2">
+            <TextField
+              id="plan_id"
+              label={tLabels('planId')}
+              value={draft.plan_id}
+              onChange={(e) => update('plan_id', e.target.value.toLowerCase())}
+              placeholder={tLabels('planIdPlaceholder')}
+              hint={tLabels('planIdHelp')}
+              {...optionalError(fieldError('plan_id'))}
+            />
+            <TextField
+              id="plan_year"
+              label={tLabels('planYear')}
+              type="number"
+              min={2000}
+              max={2100}
+              value={draft.plan_year}
+              onChange={(e) =>
+                update('plan_year', Number.parseInt(e.target.value, 10) || currentYear)
+              }
+              {...optionalError(fieldError('plan_year'))}
+            />
+            <Select
+              id="plan_category"
+              label={tLabels('planCategory')}
+              value={draft.plan_category}
+              onChange={(e) => update('plan_category', e.target.value as PlanCategory)}
+              options={CATEGORY_OPTIONS}
+              {...optionalError(fieldError('plan_category'))}
+            />
+            <Select
+              id="member_type_scope"
+              label={tLabels('memberTypeScope')}
+              value={draft.member_type_scope}
+              onChange={(e) =>
+                update('member_type_scope', e.target.value as PlanSchemaInput['member_type_scope'])
+              }
+              options={MEMBER_TYPE_OPTIONS}
+              {...optionalError(fieldError('member_type_scope'))}
+            />
           </div>
           <LocaleTextInput
+            id="plan_name"
             label={tLabels('planName')}
             value={draft.plan_name}
             onChange={(next) => update('plan_name', next as PlanSchemaInput['plan_name'])}
@@ -393,6 +383,7 @@ export function PlanFormWizard({
             {...optionalError(fieldError('plan_name'))}
           />
           <LocaleTextInput
+            id="description"
             label={tLabels('description')}
             value={draft.description}
             onChange={(next) => update('description', next as PlanSchemaInput['description'])}
@@ -401,33 +392,24 @@ export function PlanFormWizard({
             required
             {...optionalError(fieldError('description'))}
           />
-          <div className="space-y-1">
-            <Label htmlFor="sort_order">{tLabels('sortOrder')}</Label>
-            <Input
-              id="sort_order"
-              type="number"
-              min={0}
-              max={10_000}
-              value={draft.sort_order}
-              onChange={(e) =>
-                update('sort_order', Number.parseInt(e.target.value, 10) || 0)
-              }
-              {...invalidProps('sort_order', fieldError('sort_order'))}
-            />
-            <p className="text-muted-foreground text-sm">{tLabels('sortOrderHelp')}</p>
-            <FieldError field="sort_order" message={fieldError('sort_order')} />
-          </div>
-        </section>
+          <TextField
+            id="sort_order"
+            label={tLabels('sortOrder')}
+            type="number"
+            min={0}
+            max={10_000}
+            value={draft.sort_order}
+            onChange={(e) => update('sort_order', Number.parseInt(e.target.value, 10) || 0)}
+            hint={tLabels('sortOrderHelp')}
+            {...optionalError(fieldError('sort_order'))}
+          />
+        </StepCard>
       ) : null}
 
       {step === 'fees' ? (
-        <section
-          ref={feesRef}
-          tabIndex={-1}
-          className="space-y-4 focus-visible:outline-none"
-        >
-          <h2 className="text-lg font-semibold">{t('steps.fees')}</h2>
+        <StepCard stepRef={feesRef} id="fees" title={t('steps.fees')}>
           <MoneyInput
+            id="annual_fee"
             label={tLabels('annualFee')}
             value={draft.annual_fee_minor_units}
             onChange={(n) => update('annual_fee_minor_units', n ?? 0)}
@@ -440,8 +422,9 @@ export function PlanFormWizard({
             }
             {...optionalError(fieldError('annual_fee_minor_units'))}
           />
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-[var(--aura-space-4)] md:grid-cols-2">
             <MoneyInput
+              id="min_turnover"
               label={tLabels('minTurnover')}
               value={draft.min_turnover_minor_units}
               onChange={(n) => update('min_turnover_minor_units', n)}
@@ -449,200 +432,176 @@ export function PlanFormWizard({
               {...optionalError(fieldError('min_turnover_minor_units'))}
             />
             <MoneyInput
+              id="max_turnover"
               label={tLabels('maxTurnover')}
               value={draft.max_turnover_minor_units}
               onChange={(n) => update('max_turnover_minor_units', n)}
               unit={currencyUnit}
               {...optionalError(fieldError('max_turnover_minor_units'))}
             />
-          </div>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div className="space-y-1">
-              <Label htmlFor="max_duration">{tLabels('maxDurationYears')}</Label>
-              <Input
-                id="max_duration"
-                type="number"
-                min={1}
-                value={draft.max_duration_years ?? ''}
-                onChange={(e) => {
-                  const v = Number.parseInt(e.target.value, 10);
-                  update('max_duration_years', Number.isFinite(v) && v > 0 ? v : null);
-                }}
-                {...invalidProps('max_duration', fieldError('max_duration_years'))}
-              />
-              <FieldError field="max_duration" message={fieldError('max_duration_years')} />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="max_member_age">{tLabels('maxMemberAge')}</Label>
-              <Input
-                id="max_member_age"
-                type="number"
-                min={1}
-                max={199}
-                value={draft.max_member_age ?? ''}
-                onChange={(e) => {
-                  const v = Number.parseInt(e.target.value, 10);
-                  update('max_member_age', Number.isFinite(v) && v > 0 ? v : null);
-                }}
-                {...invalidProps('max_member_age', fieldError('max_member_age'))}
-              />
-              <FieldError field="max_member_age" message={fieldError('max_member_age')} />
-            </div>
+            <TextField
+              id="max_duration"
+              label={tLabels('maxDurationYears')}
+              type="number"
+              min={1}
+              value={draft.max_duration_years ?? ''}
+              onChange={(e) => {
+                const v = Number.parseInt(e.target.value, 10);
+                update('max_duration_years', Number.isFinite(v) && v > 0 ? v : null);
+              }}
+              {...optionalError(fieldError('max_duration_years'))}
+            />
+            <TextField
+              id="max_member_age"
+              label={tLabels('maxMemberAge')}
+              type="number"
+              min={1}
+              max={199}
+              value={draft.max_member_age ?? ''}
+              onChange={(e) => {
+                const v = Number.parseInt(e.target.value, 10);
+                update('max_member_age', Number.isFinite(v) && v > 0 ? v : null);
+              }}
+              {...optionalError(fieldError('max_member_age'))}
+            />
           </div>
           {draft.plan_category === 'partnership' ? (
-            <div className="space-y-1">
-              <Label htmlFor="bundle">{tLabels('includesCorporatePlanId')}</Label>
-              <Input
-                id="bundle"
-                value={draft.includes_corporate_plan_id ?? ''}
-                onChange={(e) =>
-                  update(
-                    'includes_corporate_plan_id',
-                    e.target.value.trim() === '' ? null : e.target.value.toLowerCase(),
-                  )
-                }
-                placeholder={tLabels('planIdPlaceholder')}
-                {...invalidProps('bundle', fieldError('includes_corporate_plan_id'))}
-              />
-              <FieldError field="bundle" message={fieldError('includes_corporate_plan_id')} />
-            </div>
+            <TextField
+              id="bundle"
+              label={tLabels('includesCorporatePlanId')}
+              value={draft.includes_corporate_plan_id ?? ''}
+              onChange={(e) =>
+                update(
+                  'includes_corporate_plan_id',
+                  e.target.value.trim() === '' ? null : e.target.value.toLowerCase(),
+                )
+              }
+              placeholder={tLabels('planIdPlaceholder')}
+              {...optionalError(fieldError('includes_corporate_plan_id'))}
+            />
           ) : null}
-        </section>
+        </StepCard>
       ) : null}
 
       {step === 'benefits' ? (
-        <section
-          ref={benefitsRef}
-          tabIndex={-1}
-          className="space-y-4 focus-visible:outline-none"
-        >
-          <h2 className="text-lg font-semibold">{t('steps.benefits')}</h2>
-          {/* No control owns the matrix-level message, so it takes focus itself. */}
-          <FieldError
-            field="benefit_matrix"
-            message={fieldError('benefit_matrix')}
-            focusable
-          />
+        <div ref={benefitsRef as React.RefObject<HTMLDivElement>} tabIndex={-1} className="space-y-[var(--aura-space-6)] focus-visible:outline-none">
           <BenefitMatrixEditor
             value={draft.benefit_matrix}
             onChange={(next) => update('benefit_matrix', next)}
             planCategory={draft.plan_category}
+            renderSection={({ id, children }) =>
+              id === 'benefits' ? (
+                <Card as="fieldset" title={t('steps.benefits')} titleId="plan-step-benefits" headingLevel={2} className="min-w-0">
+                  {/* No control owns the matrix-level message, so it takes focus itself. */}
+                  <FieldError field="benefit_matrix" message={fieldError('benefit_matrix')} focusable />
+                  {children}
+                </Card>
+              ) : (
+                <Card as="fieldset" title={tMatrix('section.partnershipBenefits')} titleId="plan-step-partnership" headingLevel={2} className="min-w-0">
+                  {children}
+                </Card>
+              )
+            }
           />
-        </section>
+        </div>
       ) : null}
 
       {step === 'review' ? (
-        <section
-          ref={reviewRef}
-          tabIndex={-1}
-          className="space-y-4 focus-visible:outline-none"
-        >
-          <h2 className="text-lg font-semibold">{t('steps.review')}</h2>
-          <div className="rounded-md border p-4 text-sm">
-            <dl className="grid grid-cols-1 gap-2 md:grid-cols-2">
-              <div>
-                <dt className="text-muted-foreground">{tLabels('planId')}</dt>
-                <dd className="font-mono">{draft.plan_id}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">{tLabels('planYear')}</dt>
-                <dd>{formatCalendarYear(draft.plan_year, locale)}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">{tLabels('planName')}</dt>
-                <dd>{draft.plan_name.en}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">{tLabels('planCategory')}</dt>
-                <dd>
-                  {CATEGORY_OPTIONS.find((o) => o.value === draft.plan_category)?.label ??
-                    draft.plan_category}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">{tLabels('annualFee')}</dt>
-                <dd>
-                  {Number.isInteger(draft.annual_fee_minor_units)
-                    ? formatSatangThb(
-                        BigInt(draft.annual_fee_minor_units),
-                        locale,
-                        currencyCode,
-                      )
-                    : '—'}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">{tLabels('memberTypeScope')}</dt>
-                <dd>
-                  {MEMBER_TYPE_OPTIONS.find((o) => o.value === draft.member_type_scope)
-                    ?.label ?? draft.member_type_scope}
-                </dd>
-              </div>
-            </dl>
-          </div>
+        <StepCard stepRef={reviewRef} id="review" title={t('steps.review')}>
+          <dl className="grid grid-cols-1 gap-[var(--aura-space-3)] md:grid-cols-2">
+            <ReviewItem label={tLabels('planId')}>
+              <span className="aura-text-mono">{draft.plan_id}</span>
+            </ReviewItem>
+            <ReviewItem label={tLabels('planYear')}>{formatCalendarYear(draft.plan_year, locale)}</ReviewItem>
+            <ReviewItem label={tLabels('planName')}>{draft.plan_name.en}</ReviewItem>
+            <ReviewItem label={tLabels('planCategory')}>
+              {CATEGORY_OPTIONS.find((o) => o.value === draft.plan_category)?.label ??
+                draft.plan_category}
+            </ReviewItem>
+            <ReviewItem label={tLabels('annualFee')}>
+              {Number.isInteger(draft.annual_fee_minor_units)
+                ? formatSatangThb(BigInt(draft.annual_fee_minor_units), locale, currencyCode)
+                : '—'}
+            </ReviewItem>
+            <ReviewItem label={tLabels('memberTypeScope')}>
+              {MEMBER_TYPE_OPTIONS.find((o) => o.value === draft.member_type_scope)?.label ??
+                draft.member_type_scope}
+            </ReviewItem>
+          </dl>
           {stepHasErrors.review ? (
-            <p className="text-destructive text-sm" role="alert">
+            <Alert tone="danger" role="alert">
               {t('errors.stepValidation')}
-            </p>
+            </Alert>
           ) : null}
-        </section>
+        </StepCard>
       ) : null}
 
-      <Separator />
-
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          {onCancel ? (
-            <Button variant="ghost" type="button" onClick={onCancel} disabled={submitting}>
-              {tButtons('cancel')}
-            </Button>
-          ) : null}
-        </div>
-        <div className="flex items-center gap-2">
-          {stepIndex > 0 ? (
-            <Button
-              variant="outline"
-              type="button"
-              onClick={() => navigateToStep(STEPS[stepIndex - 1]!)}
-              disabled={submitting}
-            >
-              {tButtons('back')}
-            </Button>
-          ) : null}
-          {step !== 'review' ? (
-            <Button type="button" onClick={goNext} disabled={submitting}>
-              {tButtons('next')}
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              onClick={handleSubmit}
-              disabled={submitting}
-              aria-busy={submitting}
-            >
-              {submitting ? (
-                <>
-                  <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" />
-                  {tButtons('saving')}
-                </>
-              ) : (
-                tButtons('save')
-              )}
-            </Button>
-          )}
-        </div>
-      </div>
+      {/* On a phone Cancel stays in the page and Back / Next are pinned; from
+          640px Cancel starts the same row (board `Admin-plan-new`). */}
+      {onCancel ? (
+        <Button type="button" variant="secondary" fullWidth onClick={onCancel} disabled={submitting} className="sm:hidden">
+          {cancelLabel}
+        </Button>
+      ) : null}
+      <ActionBar className="chamber-viewport-actionbar plan-form-actions plan-form-actions--even">
+        {onCancel ? (
+          <Button type="button" variant="secondary" onClick={onCancel} disabled={submitting} className="me-auto max-sm:hidden">
+            {cancelLabel}
+          </Button>
+        ) : null}
+        {stepIndex > 0 ? (
+          <Button
+            type="button"
+            variant="secondary"
+            icon="arrow-left"
+            onClick={() => navigateToStep(STEPS[stepIndex - 1]!)}
+            disabled={submitting}
+          >
+            {tButtons('back')}
+          </Button>
+        ) : null}
+        {step !== 'review' ? (
+          <Button type="button" iconRight="arrow-right" onClick={goNext} disabled={submitting}>
+            {tButtons('next')}
+          </Button>
+        ) : (
+          <Button type="button" onClick={handleSubmit} loading={submitting}>
+            {submitting ? tButtons('saving') : tButtons('save')}
+          </Button>
+        )}
+      </ActionBar>
     </div>
   );
 }
 
-// `aria-invalid` + `aria-describedby` for a raw <Input> whose message is
-// rendered by <FieldError field={id}>.
-function invalidProps(
-  id: string,
-  message: string | undefined,
-): { 'aria-invalid'?: true; 'aria-describedby'?: string } {
-  return message ? { 'aria-invalid': true, 'aria-describedby': `${id}-error` } : {};
+/** One wizard step as a fieldset card, focused when the step opens (WCAG 2.4.3). */
+function StepCard({
+  stepRef,
+  id,
+  title,
+  children,
+}: {
+  readonly stepRef: React.RefObject<HTMLElement | null>;
+  readonly id: string;
+  readonly title: string;
+  readonly children: ReactNode;
+}) {
+  return (
+    <div ref={stepRef as React.RefObject<HTMLDivElement>} tabIndex={-1} className="focus-visible:outline-none">
+      <Card as="fieldset" title={title} titleId={`plan-step-${id}`} headingLevel={2} className="min-w-0">
+        <div className="space-y-[var(--aura-space-4)]">{children}</div>
+      </Card>
+    </div>
+  );
+}
+
+function ReviewItem({ label, children }: { readonly label: string; readonly children: ReactNode }) {
+  return (
+    <div>
+      <dt className="text-[var(--aura-fg-secondary)]">{label}</dt>
+      <dd>{children}</dd>
+    </div>
+  );
 }
 
 // `exactOptionalPropertyTypes` — spread the `error` prop only when set.
@@ -664,7 +623,7 @@ function FieldError({
   return (
     <p
       id={`${field}-error`}
-      className="text-destructive text-sm"
+      className="text-[var(--aura-fg-danger)]"
       {...(focusable ? { tabIndex: -1, 'data-field-error': true } : {})}
     >
       {message}

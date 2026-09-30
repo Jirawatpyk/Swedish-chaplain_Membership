@@ -294,14 +294,15 @@ html:has(.chamber-viewport-actionbar) {
   scroll-padding-bottom: calc(var(--aura-bottomnav-offset, 0px) + 5.5rem + env(safe-area-inset-bottom, 0px));
 }
 /* Spec 122 US5b-2 — the member form's action bar (boards `Admin-member-new`,
-   `-edit`, each with `-mobile`). On a phone it is pinned edge to edge to the
+   `-edit`, each with `-mobile`), and US6 the plan forms' (`Admin-plan-new`,
+   `-edit`, `Admin-plans-clone`, each with `-mobile`). On a phone it is pinned edge to edge to the
    bottom of the screen, Cancel a third and the primary button two thirds;
    from 640px it is a plain right-aligned row at the end of the form. Only the
    app's class and the bar's element structure (inner row → status, actions)
    are read, never AURA's own classes. The bar never shows a status, so its
    empty status cell gives the actions the whole row on a phone. */
 @media (max-width: 639.98px) {
-  .member-form-actions {
+  :is(.member-form-actions, .plan-form-actions) {
     bottom: 0;
     margin-inline: calc(-1 * var(--page-padding-x));
     border-inline: 0;
@@ -310,22 +311,26 @@ html:has(.chamber-viewport-actionbar) {
     box-shadow: none;
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
-  .member-form-actions > div > :first-child:empty {
+  :is(.member-form-actions, .plan-form-actions) > div > :first-child:empty {
     display: none;
   }
-  .member-form-actions > div > :last-child {
+  :is(.member-form-actions, .plan-form-actions) > div > :last-child {
     flex: 1 1 auto;
     flex-wrap: nowrap;
   }
-  .member-form-actions > div > :last-child > * {
+  :is(.member-form-actions, .plan-form-actions) > div > :last-child > * {
     flex: 2 1 0;
   }
-  .member-form-actions > div > :last-child > :first-child:not(:last-child) {
+  :is(.member-form-actions, .plan-form-actions) > div > :last-child > :first-child:not(:last-child) {
+    flex: 1 1 0;
+  }
+  /* The plan wizard's Back / Next share the bar evenly (board `Admin-plan-new-mobile`). */
+  .plan-form-actions--even > div > :last-child > * {
     flex: 1 1 0;
   }
 }
 @media (min-width: 640px) {
-  .member-form-actions {
+  :is(.member-form-actions, .plan-form-actions) {
     position: static;
     margin-top: 0;
     border: 0;
@@ -333,7 +338,7 @@ html:has(.chamber-viewport-actionbar) {
     background: transparent;
     box-shadow: none;
   }
-  .member-form-actions > div {
+  :is(.member-form-actions, .plan-form-actions) > div {
     min-height: 0;
     padding: 0;
   }
