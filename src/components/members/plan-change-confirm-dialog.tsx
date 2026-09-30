@@ -58,7 +58,7 @@ export function PlanChangeConfirmDialog({
       <div className="text-xs text-[var(--aura-fg-secondary)]">{label}</div>
       <div className="font-semibold text-[var(--aura-fg-primary)]">{plan}</div>
       <div className="mt-1 text-xs text-[var(--aura-fg-secondary)]">
-        {t('feeLabel')} <span className="tabular-nums text-[var(--aura-fg-primary)]">{amount}</span>
+        {t('feeLabel')} <span className="whitespace-nowrap tabular-nums text-[var(--aura-fg-primary)]">{amount}</span>
       </div>
     </div>
   );
