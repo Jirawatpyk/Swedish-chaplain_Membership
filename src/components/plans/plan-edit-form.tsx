@@ -89,7 +89,10 @@ export function PlanEditForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-[var(--aura-space-6)]">
+    // `noValidate`: the AURA fields pass `required` to the input, which would
+    // put the browser's bubble ahead of the app's own messages (as on main,
+    // the server's 422 decides).
+    <form onSubmit={handleSubmit} noValidate className="space-y-[var(--aura-space-6)]">
       {isPriorYear ? (
         <>
           <PriorYearLockBanner
