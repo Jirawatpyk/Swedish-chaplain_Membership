@@ -255,10 +255,37 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the member forms and their dialogs keep the legacy kit until US5b-2', async () => {
-      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/members/[memberId]/edit/page.tsx')).toEqual([]);
-      expect(await ratchetHits(legacy, 'src/components/members/member-form/member-form.tsx')).toEqual([]);
-      expect(await ratchetHits(legacy, 'src/components/members/plan-change-confirm-dialog.tsx')).toEqual([]);
+  });
+
+  describe('the US5b-2 member forms, their dialogs and the notification-language card are on AURA (the real MIGRATED_PATHS)', () => {
+    const legacy = "import { Button } from '@/components/ui/button';\nexport const B = Button;\n";
+
+    it.each([
+      'src/app/(staff)/admin/members/new/page.tsx',
+      'src/app/(staff)/admin/members/new/loading.tsx',
+      'src/app/(staff)/admin/members/[memberId]/edit/page.tsx',
+      'src/app/(staff)/admin/members/[memberId]/edit/loading.tsx',
+      'src/app/(staff)/admin/members/[memberId]/edit/error.tsx',
+      'src/components/members/member-form/member-form.tsx',
+      'src/components/members/member-form/form-section-card.tsx',
+      'src/components/members/member-form/sections/address-section.tsx',
+      'src/components/members/member-form/sections/company-section.tsx',
+      'src/components/members/member-form/sections/contact-fields.tsx',
+      'src/components/members/member-form-skeleton.tsx',
+      'src/components/members/country-combobox.tsx',
+      'src/components/members/create-member-client.tsx',
+      'src/components/members/edit-member-client.tsx',
+      'src/components/members/plan-change-confirm-dialog.tsx',
+      'src/components/members/bundle-change-warning-dialog.tsx',
+      'src/components/members/override-reason-dialog.tsx',
+      'src/components/members/soft-duplicate-dialog.tsx',
+      'src/components/admin/admin-preferred-locale-card.tsx',
+    ])('%s cannot import the legacy kit', async (path) => {
+      expect(await ratchetHits(legacy, path)).toHaveLength(1);
+    });
+
+    it('control: the member picker keeps the legacy kit until the invoice forms move (US8)', async () => {
+      expect(await ratchetHits(legacy, 'src/components/members/member-picker.tsx')).toEqual([]);
     });
   });
 });
