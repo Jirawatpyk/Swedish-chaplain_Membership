@@ -295,7 +295,7 @@ export function CloneYearClient({
                 key={p.plan_id}
                 className="flex break-inside-avoid items-center justify-between gap-[var(--aura-space-4)] border-t border-[var(--aura-border-subtle)] py-[var(--aura-space-2)]"
               >
-                <span className="min-w-0 truncate">
+                <span className="min-w-0 break-words">
                   <LocaleTextDisplay value={p.plan_name} />
                   {p.is_active ? null : (
                     <span className="text-[var(--aura-fg-secondary)]">
