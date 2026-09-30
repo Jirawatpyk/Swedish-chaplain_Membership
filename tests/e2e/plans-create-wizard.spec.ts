@@ -96,13 +96,14 @@ test.describe('plans create + clone wizard — US2', () => {
     createdPlanIds.push(planId);
     await page.getByLabel(/plan id/i).fill(planId);
     await page.getByLabel(/plan year/i).fill(WIZARD_YEAR);
-    await page.getByLabel(/plan name \(en\)/i).fill(planName);
+    // 122 US6: each language's field is labelled with the language's name.
+    await page.getByLabel(/^plan name \(english\)/i).fill(planName);
     // Required since #110 ("require non-empty EN description", June 2026):
     // `localeDescriptionSchema.en` carries `.min(1)`, mirroring the DB CHECK
     // `membership_plans_description_en_non_empty`, and `plan-form-errors.ts`
     // maps the field to the Basics step — so an empty one makes Next a no-op
     // and step 2 never renders. The spec had not been updated for it.
-    await page.getByLabel(/description \(en\)/i).fill('E2E test description');
+    await page.getByLabel(/^description \(english\)/i).fill('E2E test description');
     await page.getByRole('button', { name: 'Next', exact: true }).click();
 
     // Step 2 — Fees

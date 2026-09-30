@@ -283,3 +283,30 @@ describe('AURA 5.14–5.16 adoption (T512)', () => {
     expect(src('src/app/globals.css')).not.toMatch(/aura-nav__|aura-shell__content/);
   });
 });
+
+describe('US6 plans (parity-page comments)', () => {
+  it('the phone form bar pads both ends alike (AURA pads its end 12px, its start 16px)', () => {
+    expect(src('src/app/globals.css')).toMatch(
+      /:is\(\.member-form-actions, \.plan-form-actions\) > div \{\s*padding-inline: var\(--aura-space-4\);/,
+    );
+  });
+
+  it('the plan form column is the boards\' 672px of content, inside the page padding', () => {
+    expect(src('src/app/(staff)/admin/plans/_components/plan-form-views.tsx')).toContain(
+      'max-w-[calc(var(--layout-max-width-form)+2*var(--page-padding-x))]',
+    );
+  });
+
+  it('#113–#116 (AURA 5.19 / 5.20): no plans stand-in is left', () => {
+    for (const path of [
+      'src/components/plans/plan-form-wizard.tsx',
+      'src/components/plans/benefit-matrix-editor.tsx',
+      'src/components/plans/plan-locked-note.tsx',
+      'src/components/plans/plans-table.tsx',
+      'src/app/globals.css',
+    ]) {
+      expect(src(path)).not.toMatch(/Stand-in until AURA #11[3-6]/);
+    }
+    expect(src('src/app/globals.css')).not.toContain('plan-form-actions--split');
+  });
+});

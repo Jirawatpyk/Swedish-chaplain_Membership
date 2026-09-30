@@ -806,13 +806,17 @@
     "plans": {
       "title": "Membership Plans",
       "subtitle": "{total} plans in {year}",
+      "subtitleWithVat": "{total} plans in {year} · fees exclude {rate}% VAT",
       "listDescription": "Manage tier definitions, annual fees, and benefit matrices. Prior-year plans are partially locked for audit integrity.",
       "tableCaption": "List of membership plans for the selected year.",
       "empty": {
         "title": "No plans for this year",
         "description": "Create one from scratch, or clone the previous year’s catalogue.",
         "newCta": "New plan",
-        "cloneCta": "Clone {sourceYear} → {targetYear}"
+        "cloneCta": "Clone {sourceYear} → {targetYear}",
+        "filteredTitle": "No plans match these filters",
+        "filteredDescription": "Clear the filters to see every plan for {year}.",
+        "clearFilters": "Clear filters"
       },
       "columns": {
         "name": "Name",
@@ -825,6 +829,7 @@
         "actionsFor": "Actions for {planName}"
       },
       "filters": {
+        "groupLabel": "Filter plans",
         "all": "All",
         "category": {
           "label": "Category",
@@ -858,24 +863,30 @@
         "undelete": "Restore"
       },
       "priorYearLock": {
+        "lockedField": "Locked: historical plan",
         "banner": "Historical plan — pricing, eligibility, and benefits are locked for {year}.",
         "explanation": "Fees, eligibility and benefits can't change on a past year's plan. Change them on the {currentYear} version of this plan. Name, description and sort order stay editable here.",
         "explanationNoCurrentVersion": "Fees, eligibility and benefits can't change on a past year's plan, and {currentYear} has no version of this plan yet. Clone the {year} plans into {currentYear} then edit the copy. Name, description and sort order stay editable here.",
         "explanationCreateInCurrentYear": "Fees, eligibility and benefits can't change on a past year's plan, and {currentYear} has no version of this plan. Add it to {currentYear} as a new plan with the same plan ID. Name, description and sort order stay editable here.",
         "createCta": "Create the {currentYear} plan",
         "openCurrentCta": "Open the {currentYear} version",
-        "cloneCta": "Clone {year} plans to {currentYear}",
-        "fieldTooltip": "Locked on prior-year plans. Change it on the current year's version."
+        "cloneCta": "Clone {year} plans to {currentYear}"
       },
       "create": {
+        "localeTabsLabel": "{field} language",
+        "translationMissing": "{code} ({locale}) — translation missing",
+        "localeNames": {
+          "en": "English",
+          "th": "Thai",
+          "sv": "Swedish"
+        },
         "title": "New plan",
         "steps": {
           "wizardAriaLabel": "Plan creation wizard steps",
           "basics": "Basics",
           "fees": "Fees",
           "benefits": "Benefits",
-          "review": "Review",
-          "mobileSummary": "Step {current}/{total} — {label}"
+          "review": "Review"
         },
         "matrix": {
           "section": {
@@ -1024,17 +1035,19 @@
       },
       "detail": {
         "titleGeneric": "Plan details",
-        "totalWithVat": "Annual fee incl. VAT",
-        "feeWithVat": "{fee} + {rate}% VAT = {total}",
+        "moreActionsFor": "More actions for {planName}",
+        "yearLine": "Year {year}",
+        "vatAdded": "+ {rate}% VAT = {total}",
         "members": "Members on this plan",
         "memberCount": "{count, plural, =0 {No members} one {# member} other {# members}}"
       },
       "clone": {
         "title": "Clone year",
-        "description": "Clone all {count} non-deleted plans from {sourceYear} into {targetYear}. New plans start as inactive until you review and activate them.",
+        "description": "Clone all <b>{count}</b> non-deleted plans from {sourceYear} into {targetYear}. New plans start as inactive until you review and activate them.",
         "sourceLabel": "Source year",
         "targetLabel": "Target year",
         "activateClonedLabel": "Activate cloned plans immediately",
+        "activateClonedHint": "Leave off to review fees and benefits first.",
         "submit": "Clone {count} plans",
         "submitting": "Cloning…",
         "cancel": "Cancel",
@@ -1087,7 +1100,6 @@
         "priorYearLocked": "These fields are locked on historical plans: {fields}. Clone this plan to the current year to edit them.",
         "feeConfigMissing": "Fee configuration hasn’t been set up yet. Please contact your system administrator.",
         "loadFailed": "Failed to load plans.",
-        "backToList": "Back to plans",
         "duplicateKey": "A plan with this ID already exists for {year}.",
         "memberAttached": "{count} active members are on this plan. Move them to another plan before deleting.",
         "planActive": "This plan is active. Deactivate it before deleting it.",

@@ -288,4 +288,29 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, 'src/components/members/member-picker.tsx')).toEqual([]);
     });
   });
+
+  describe('the US6 plans pages are on AURA (the real MIGRATED_PATHS)', () => {
+    const legacy = "import { Button } from '@/components/ui/button';\nexport const B = Button;\n";
+
+    it.each([
+      'src/app/(staff)/admin/plans/page.tsx',
+      'src/app/(staff)/admin/plans/loading.tsx',
+      'src/app/(staff)/admin/plans/error.tsx',
+      'src/app/(staff)/admin/plans/[year]/[planId]/page.tsx',
+      'src/app/(staff)/admin/plans/[year]/[planId]/edit/page.tsx',
+      'src/app/(staff)/admin/plans/new/new-plan-client.tsx',
+      'src/app/(staff)/admin/plans/clone/clone-year-client.tsx',
+      'src/components/plans/plans-table.tsx',
+      'src/components/plans/plan-form-wizard.tsx',
+      'src/components/plans/plan-edit-form.tsx',
+      'src/components/plans/benefit-matrix-editor.tsx',
+      'src/components/plans/clone-year-dialog.tsx',
+    ])('%s cannot import the legacy kit', async (path) => {
+      expect(await ratchetHits(legacy, path)).toHaveLength(1);
+    });
+
+    it('control: the member picker keeps the legacy kit until the invoice forms move (US8)', async () => {
+      expect(await ratchetHits(legacy, 'src/components/members/member-picker.tsx')).toEqual([]);
+    });
+  });
 });

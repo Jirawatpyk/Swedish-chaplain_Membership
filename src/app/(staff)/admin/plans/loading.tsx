@@ -1,6 +1,5 @@
 import { getTranslations } from 'next-intl/server';
-import { Card, CardContent } from '@/components/ui/card';
-import { FilterBar } from '@/components/ui/filter-bar';
+import { Card } from '@jirawatpyk/aura-react/server';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { PlanListSkeleton } from '@/components/plans/plan-list-skeleton';
@@ -32,34 +31,43 @@ export default async function Loading() {
             </>
           }
         />
-        <Card>
-          <CardContent className="flex flex-col gap-4">
-            {/* Filter bar — matches PlansTable: search (with icon space)
-                + category select + year select + 2 switch+label pairs */}
-            <FilterBar aria-hidden>
-              {/* Search with 🔍 icon indent */}
-              <SkeletonBlock className="h-9 min-w-0 sm:flex-1" />
-              {/* Category select */}
-              <SkeletonBlock className="h-9 sm:w-[180px]" />
-              {/* Year select */}
-              <SkeletonBlock className="h-9 sm:w-[120px]" data-skeleton="year-select" />
-              {/* Active only: switch (h-5 w-9) + label */}
-              <div className="flex items-center gap-2">
+        <Card flushBelow="sm">
+          <div className="flex flex-col gap-4">
+            {/* The filter row — matches PlansTable: search, category and year
+                selects, 2 switch + label pairs (122 US6 T608). */}
+            <div
+              aria-hidden
+              data-skeleton="filters"
+              className="grid grid-cols-2 items-end gap-3 sm:flex sm:flex-wrap"
+            >
+              <LabelledFieldSkeleton className="col-span-2 min-w-0 sm:min-w-60 sm:flex-1" />
+              <LabelledFieldSkeleton className="sm:w-44" />
+              <LabelledFieldSkeleton className="sm:w-36" slot="year-select" />
+              <div className="col-span-2 flex items-center gap-2 sm:col-auto">
                 <SkeletonBlock className="h-5 w-9 rounded-full" />
                 <SkeletonBlock className="h-4 w-20" />
               </div>
-              {/* Show deleted: switch + label */}
-              <div className="flex items-center gap-2">
+              <div className="col-span-2 flex items-center gap-2 sm:col-auto">
                 <SkeletonBlock className="h-5 w-9 rounded-full" />
                 <SkeletonBlock className="h-4 w-24" />
               </div>
-            </FilterBar>
+            </div>
             <PlanListSkeleton />
-            {/* "{total} plans in {year}" caption */}
-            <SkeletonBlock className="h-3 w-40" />
-          </CardContent>
+            {/* "{total} plans in {year} · fees exclude VAT" caption */}
+            <SkeletonBlock className="h-3 w-56" />
+          </div>
         </Card>
       </TableContainer>
     </PageSkeletonShell>
+  );
+}
+
+/** A labelled AURA field's slot: its label line, then the control. */
+function LabelledFieldSkeleton({ className, slot }: { readonly className: string; readonly slot?: string }) {
+  return (
+    <div data-skeleton="labelled-field" className={`flex flex-col gap-1 ${className}`}>
+      <SkeletonBlock className="h-4 w-16" />
+      <SkeletonBlock className="h-[var(--input-height)] w-full" {...(slot ? { 'data-skeleton': slot } : {})} />
+    </div>
   );
 }

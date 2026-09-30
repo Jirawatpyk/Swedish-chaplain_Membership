@@ -1,26 +1,24 @@
 /**
  * T104 — LocaleTextInput (US2 + US3).
  *
- * Tabbed en/th/sv editor used inside the plan wizard. EN is the only
- * required locale; TH/SV are optional but surface a "missing" badge
- * until they are filled in so admins see the translation gap live.
+ * Tabbed en/th/sv editor used in the plan wizard and edit form. EN is the
+ * only required locale; TH/SV are optional, and a tab whose translation is
+ * empty is marked so admins see the gap live.
  *
  * Tab state is local to this component; values are lifted up via
- * `onChange` so react-hook-form can own the single-source-of-truth.
+ * `onChange` so the form's draft stays the single source of truth.
  *
- * UX standards § 12 (forms): every label pairs with an `id`-based
- * `htmlFor` so screen readers associate labels correctly.
+ * 122 US6 (T604): AURA `Tabs` ("Plan name language") above one AURA field
+ * per language, labelled "Plan name (English)" etc. as the plan boards draw
+ * it; every panel stays mounted so a hidden language keeps its field. An
+ * error belongs to the English value, so it switches back to that tab.
  */
 'use client';
 
-import { useId, useState } from 'react';
+import { useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
-import { RequiredMark } from '@/components/ui/required-mark';
-import { Textarea } from '@/components/ui/textarea';
-import { Badge } from '@/components/ui/badge';
+import { Tabs, TextField, Textarea } from '@jirawatpyk/aura-react';
+
 type LocaleKey = 'en' | 'th' | 'sv';
 // Aligned with zod z.input<typeof localeTextSchema> which emits
 // `| undefined` on optional fields under exactOptionalPropertyTypes.
@@ -38,13 +36,16 @@ export interface LocaleTextInputProps {
   readonly maxLength?: number;
   readonly required?: boolean;
   readonly disabled?: boolean;
+  /** The English value's message (it is the only required one). */
   readonly error?: string;
+  /** The English field's id (the others add `-th` / `-sv`), for error links. */
+  readonly id?: string;
 }
 
-const LOCALES: ReadonlyArray<{ readonly key: LocaleKey; readonly label: string }> = [
-  { key: 'en', label: 'EN' },
-  { key: 'th', label: 'TH' },
-  { key: 'sv', label: 'SV' },
+const LOCALES: ReadonlyArray<{ readonly key: LocaleKey; readonly tab: string }> = [
+  { key: 'en', tab: 'EN' },
+  { key: 'th', tab: 'TH' },
+  { key: 'sv', tab: 'SV' },
 ];
 
 export function LocaleTextInput({
@@ -56,14 +57,20 @@ export function LocaleTextInput({
   required = false,
   disabled = false,
   error,
+  id,
 }: LocaleTextInputProps) {
-  const t = useTranslations('admin.plans.badges');
-  const baseId = useId();
-  const errorId = `${baseId}-error`;
-  const invalidProps = error
-    ? { 'aria-invalid': true, 'aria-describedby': errorId }
-    : {};
+  const t = useTranslations('admin.plans.create');
   const [active, setActive] = useState<LocaleKey>('en');
+
+  // The message is about the English value: when one arrives, show that
+  // tab so the field (and its message) is on screen and can take the form's
+  // error focus. Adjusted while rendering (React's derived-state pattern),
+  // so the other tabs stay reachable while the message stands.
+  const [shownError, setShownError] = useState(error);
+  if (error !== shownError) {
+    setShownError(error);
+    if (error) setActive('en');
+  }
 
   function update(locale: LocaleKey, next: string): void {
     const mutable: { en: string; th?: string; sv?: string } = {
@@ -81,78 +88,44 @@ export function LocaleTextInput({
     onChange(mutable);
   }
 
+  const tabs = LOCALES.map((l) => {
+    const missing = l.key !== 'en' && !value[l.key];
+    const fieldLabel = `${label} (${t(`localeNames.${l.key}`)})`;
+    const common = {
+      ...(id ? { id: l.key === 'en' ? id : `${id}-${l.key}` } : {}),
+      label: fieldLabel,
+      value: value[l.key] ?? '',
+      maxLength,
+      disabled,
+      ...(l.key === 'en' && required ? { required: true } : {}),
+      ...(l.key === 'en' && error ? { error } : {}),
+    };
+    return {
+      id: l.key,
+      label: l.tab,
+      ...(missing
+        ? {
+            icon: 'triangle-alert' as const,
+            tabProps: {
+              'aria-label': t('translationMissing', { code: l.tab, locale: t(`localeNames.${l.key}`) }),
+            },
+          }
+        : {}),
+      content: multiline ? (
+        <Textarea {...common} rows={3} onChange={(e) => update(l.key, e.target.value)} />
+      ) : (
+        <TextField {...common} type="text" onChange={(e) => update(l.key, e.target.value)} />
+      ),
+    };
+  });
+
   return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2">
-        {/* mb-0 overrides the primitive's field-label-gap — here the
-            Label sits inside a flex row with badges, and the outer
-            `space-y-2` already manages the gap to the Tabs below.
-            Without this override, the primitive's 6px bottom margin
-            would stack with the 8px space-y → 14px double-gap. */}
-        <Label className="mb-0">
-          {label}
-          {required ? (
-            <>
-              {' '}
-              <RequiredMark />
-            </>
-          ) : null}
-        </Label>
-        {LOCALES.filter((l) => l.key !== 'en' && !value[l.key]).map((l) => (
-          <Badge
-            key={l.key}
-            variant="outline"
-            className="text-xs"
-            title={t('missingTranslations', { locales: l.key })}
-          >
-            {l.label} ⚠
-          </Badge>
-        ))}
-      </div>
-      <Tabs value={active} onValueChange={(v) => setActive(v as LocaleKey)}>
-        <TabsList>
-          {LOCALES.map((l) => (
-            <TabsTrigger key={l.key} value={l.key}>
-              {l.label}
-              {l.key === 'en' && required ? ' *' : ''}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-        {LOCALES.map((l) => (
-          <TabsContent key={l.key} value={l.key}>
-            {multiline ? (
-              <Textarea
-                id={`${baseId}-${l.key}`}
-                value={value[l.key] ?? ''}
-                onChange={(e) => update(l.key, e.target.value)}
-                maxLength={maxLength}
-                disabled={disabled}
-                rows={4}
-                aria-label={`${label} (${l.label})`}
-                {...invalidProps}
-              />
-            ) : (
-              <Input
-                id={`${baseId}-${l.key}`}
-                type="text"
-                value={value[l.key] ?? ''}
-                onChange={(e) => update(l.key, e.target.value)}
-                maxLength={maxLength}
-                disabled={disabled}
-                aria-label={`${label} (${l.label})`}
-                {...invalidProps}
-              />
-            )}
-          </TabsContent>
-        ))}
-      </Tabs>
-      {error ? (
-        // Linked via aria-describedby (not role="alert"): the form moves
-        // focus to the first invalid field, which then reads its message.
-        <p id={errorId} className="text-destructive text-sm">
-          {error}
-        </p>
-      ) : null}
-    </div>
+    <Tabs
+      label={t('localeTabsLabel', { field: label })}
+      tabs={tabs}
+      value={active}
+      onChange={(id) => setActive(id as LocaleKey)}
+      keepMounted
+    />
   );
 }

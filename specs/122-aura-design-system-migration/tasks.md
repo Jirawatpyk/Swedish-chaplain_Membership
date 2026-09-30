@@ -224,9 +224,23 @@ Goal: the admin new and edit member forms, the plan-change, bundle-warning, over
 - [x] T579 [US5] The notification-language card on AURA (`RadioGroup`, "Save preference", saved on its own), the same request. RED: the card test.
 - [x] T580 [US5] Every US5b-2 path joins `MIGRATED_PATHS` and the address entries leave `NOT_YET_ON_AURA` (RED: `ui-import-ratchet.test.ts`, its control moved to a path still on the old kit); preview views; the e2e form helpers move to roles; exit gates, build + bundle budgets, board screenshots and a parity page, enterprise-ux, i18n and financial-integrity (plan fee) reviews.
 
+## Phase 8: User Story 6 — Plans (Priority: P3) — PR 9 (US6, T600)
+
+Goal: the plans list, detail, new-plan wizard, edit (current and prior year) and clone pages match their boards (`Admin-plans`, `Admin-state-plans-empty`, `Admin-plan-detail`, `Admin-plan-new`, `Admin-plan-edit`, `Admin-plan-edit-locked`, `Admin-plans-clone`, each with `-mobile`) with the same validation, lock rule, requests and stored plan (Clarifications, Session 2026-09-30 US6 start).
+
+- [x] T601 [US6] Spec Clarifications for US6 (wizard errors, the THB suffix, the locked fields, selects not segmented controls), these tasks, and AURA handoff item 112 (Stepper per-step error status).
+- [x] T602 [US6] The plans list: AURA `Table` with the board's columns (not `DataTable`: its rows cannot carry the `data-plan-id` / `data-plan-year` hooks the e2e and the actions menu read) (category `Badge`, fee right-aligned, status `StatusPill`, a "Actions for {name}" menu with the same items), the filter row on AURA fields (same ids and URL sync), cards on phones without the year, the empty state inside the table, the caption with the VAT note. RED: `plans-table-affordances` on AURA.
+- [x] T603 [US6] The plan detail: badges beside the title, Edit and a "More actions" menu, the "Annual fee" and "Benefit matrix" cards side by side (stacked on phones, with a back link). RED: `plan-detail-page` and `plan-detail-actions` on AURA.
+- [x] T604 [US6] The shared form pieces: the name and description with EN / TH / SV AURA `Tabs` (a missing translation marked), the money field with a "THB" suffix and the same whole-baht parse, the benefit matrix on AURA `Select` / `Switch` / `TextField`, and one locked-field helper. RED: a test per piece.
+- [x] T605 [US6] The new-plan wizard: AURA `Stepper`, one card per step, `FormErrorSummary` and field errors, Next held and Save sent back to the first failing step, Cancel / Back / Next (Back and Next pinned on phones); the same `planSchema` and request. RED: `plan-form-wizard` on AURA.
+- [x] T606 [US6] The edit page: the "Plan name", "Annual fee" and "Benefit matrix" cards, Cancel / "Save changes" (pinned on phones), and a prior-year plan locked as decided (warning `Alert` with its action, locked fields read-only or disabled with the lock icon and screen-reader text); the same patch. RED: `prior-year-lock-banner`, `plan-edit-form-fee-hint`, `edit-plan-page-current-version` on AURA.
+- [x] T607 [US6] The clone page: one card (the count sentence, source and target year, the "Activate cloned plans immediately" switch with its description, the plans-to-copy list), Cancel / "Clone {n} plans" (pinned 1:2 on phones), the confirmation on AURA `Dialog` `role="alertdialog"`; the same preview and request. RED: the `clone-year-client` tests on AURA.
+- [x] T608 [US6] Page frames: layout containers kept, header actions as AURA buttons, phone back links, loading on AURA skeletons, errors on `RouteErrorPanel`. RED: `plans-loading-skeletons` on AURA.
+- [x] T609 [US6] Every US6 path joins `MIGRATED_PATHS` (RED: a US6 block in `ui-import-ratchet.test.ts`); preview views `plans`, `plans-empty`, `plan`, `plan-new`, `plan-edit`, `plan-edit-locked`, `plans-clone` from the pages' own views; e2e selectors for the stepper, switches and dialogs.
+- [ ] T610 [US6] Exit gates, build and bundle budgets for the plans routes, board screenshots and a parity page, enterprise-ux, i18n and financial-integrity (fee and VAT display, whole-baht parse) reviews, the PR, and the relay request for the plans e2e.
+
 ## Later phases (one PR each; tasks written when the phase starts)
 
-- [ ] T600 [US6] Plans: forms, SegmentedControl, Switch.
 - [ ] T700 [US7] Renewals: one DataTable (stacked on phone), cycle detail, tasks, schedules.
 - [ ] T800 [US8] Invoicing admin: registers with sticky footer; refund, void, credit and record-payment dialogs. Financial-integrity review.
 - [ ] T900 [US9] Events: DatePicker/TimePicker (`Asia/Bangkok`), Combobox, FileUpload, erasure pages.

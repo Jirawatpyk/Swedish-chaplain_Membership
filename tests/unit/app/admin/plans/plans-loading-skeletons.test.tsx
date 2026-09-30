@@ -6,6 +6,9 @@
  *   - list: the filter bar includes the Year select;
  *   - detail: only the always-present benefit sections (the Partnership
  *     section exists only for partnership plans), plus header actions.
+ * 122 US6 (T608): on AURA — every skeleton's surfaces are AURA cards, none
+ * the legacy kit's (`data-slot="card"`), the list's filter row no longer the
+ * legacy FilterBar.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, cleanup } from '@testing-library/react';
@@ -59,12 +62,23 @@ describe('plans loading skeletons', () => {
     expect(container.querySelector('.size-7.rounded-full')).toBeNull();
     const footer = container.querySelector('[data-skeleton="footer"]');
     expect(footer?.querySelectorAll('[data-slot="skeleton-block"]').length).toBe(2);
+    expect(container.querySelector('[data-skeleton-section="basics"]')?.closest('.aura-card')).not.toBeNull();
+    expect(container.querySelector('[data-slot="card"]')).toBeNull();
+    // UX review (US6): the fee's currency is a suffix inside the field now,
+    // so no leading currency block sits beside the input.
+    const fees = container.querySelector('[data-skeleton-section="fees"]')!;
+    expect(fees.querySelector('[data-skeleton="currency-prefix"], .h-5.w-6')).toBeNull();
   });
 
   it('list reserves a slot for the Year select', async () => {
     const { container } = renderUi(await ListLoading());
-    const filterBar = container.querySelector('[data-slot="filter-bar"]')!;
-    expect(filterBar.querySelector('[data-skeleton="year-select"]')).not.toBeNull();
+    const filters = container.querySelector('[data-skeleton="filters"]')!;
+    expect(filters.querySelector('[data-skeleton="year-select"]')).not.toBeNull();
+    expect(filters.closest('.aura-card')).not.toBeNull();
+    expect(container.querySelector('[data-slot="filter-bar"], [data-slot="card"]')).toBeNull();
+    // UX review (US6): search, category and year are labelled AURA fields, so
+    // each slot reserves its label line too (no shift when the page loads).
+    expect(filters.querySelectorAll('[data-skeleton="labelled-field"]')).toHaveLength(3);
   });
 
   it('detail shows only the always-present benefit sections', async () => {
@@ -75,5 +89,7 @@ describe('plans loading skeletons', () => {
       'additionalBenefits',
     ]);
     expect(container.querySelector('[data-skeleton="header-actions"]')).not.toBeNull();
+    expect(container.querySelector('[data-skeleton-section="events"]')?.closest('.aura-card')).not.toBeNull();
+    expect(container.querySelector('[data-slot="card"]')).toBeNull();
   });
 });

@@ -806,13 +806,17 @@
     "plans": {
       "title": "Medlemspaket",
       "subtitle": "{total} paket år {year}",
+      "subtitleWithVat": "{total} paket år {year} · avgifter exkl. {rate} % moms",
       "listDescription": "Hantera nivådefinitioner, årliga avgifter och förmånsmatriser. Föregående års paket är delvis låsta för revisionsintegritet.",
       "tableCaption": "Lista över medlemspaket för det valda året.",
       "empty": {
         "title": "Inga paket för detta år",
         "description": "Skapa ett nytt från grunden, eller klona föregående års katalog.",
         "newCta": "Nytt paket",
-        "cloneCta": "Klona {sourceYear} → {targetYear}"
+        "cloneCta": "Klona {sourceYear} → {targetYear}",
+        "filteredTitle": "Inga paket matchar filtren",
+        "filteredDescription": "Rensa filtren för att se alla paket för {year}.",
+        "clearFilters": "Rensa filter"
       },
       "columns": {
         "name": "Namn",
@@ -825,6 +829,7 @@
         "actionsFor": "Åtgärder för {planName}"
       },
       "filters": {
+        "groupLabel": "Filtrera paket",
         "all": "Alla",
         "category": {
           "label": "Kategori",
@@ -858,24 +863,30 @@
         "undelete": "Återställ"
       },
       "priorYearLock": {
+        "lockedField": "Låst: historiskt paket",
         "banner": "Historiskt paket — pris, behörighet och förmåner för {year} är låsta.",
         "explanation": "Avgifter, behörighet och förmåner kan inte ändras på ett tidigare års paket. Ändra dem i {currentYear} års version av paketet. Namn, beskrivning och sortering kan fortfarande redigeras här.",
         "explanationNoCurrentVersion": "Avgifter, behörighet och förmåner kan inte ändras på ett tidigare års paket, och {currentYear} har ännu ingen version av paketet. Klona {year} års paket till {currentYear} och redigera sedan kopian. Namn, beskrivning och sortering kan fortfarande redigeras här.",
         "explanationCreateInCurrentYear": "Avgifter, behörighet och förmåner kan inte ändras på ett tidigare års paket, och {currentYear} har ingen version av paketet. Lägg till det i {currentYear} som ett nytt paket med samma paket-ID. Namn, beskrivning och sortering kan fortfarande redigeras här.",
         "createCta": "Skapa {currentYear} års paket",
         "openCurrentCta": "Öppna {currentYear} års version",
-        "cloneCta": "Klona {year} års paket till {currentYear}",
-        "fieldTooltip": "Låst på föregående års paket. Ändra det i innevarande års version."
+        "cloneCta": "Klona {year} års paket till {currentYear}"
       },
       "create": {
+        "localeTabsLabel": "{field} – språk",
+        "translationMissing": "{code} ({locale}) — översättning saknas",
+        "localeNames": {
+          "en": "engelska",
+          "th": "thailändska",
+          "sv": "svenska"
+        },
         "title": "Nytt paket",
         "steps": {
           "wizardAriaLabel": "Stegen i guiden för att skapa paket",
           "basics": "Grunder",
           "fees": "Avgifter",
           "benefits": "Förmåner",
-          "review": "Granska",
-          "mobileSummary": "Steg {current}/{total} — {label}"
+          "review": "Granska"
         },
         "matrix": {
           "section": {
@@ -1024,17 +1035,19 @@
       },
       "detail": {
         "titleGeneric": "Paketdetaljer",
-        "totalWithVat": "Årsavgift inkl. moms",
-        "feeWithVat": "{fee} + {rate} % moms = {total}",
+        "moreActionsFor": "Fler åtgärder för {planName}",
+        "yearLine": "År {year}",
+        "vatAdded": "+ {rate} % moms = {total}",
         "members": "Medlemmar på paketet",
         "memberCount": "{count, plural, =0 {Inga medlemmar} one {# medlem} other {# medlemmar}}"
       },
       "clone": {
         "title": "Klona år",
-        "description": "Klona alla {count} icke-borttagna paket från {sourceYear} till {targetYear}. Nya paket startar som inaktiva tills du granskar och aktiverar dem.",
+        "description": "Klona alla <b>{count}</b> icke-borttagna paket från {sourceYear} till {targetYear}. Nya paket startar som inaktiva tills du granskar och aktiverar dem.",
         "sourceLabel": "Källår",
         "targetLabel": "Målår",
         "activateClonedLabel": "Aktivera klonade paket omedelbart",
+        "activateClonedHint": "Låt vara avstängt om du vill granska avgifter och förmåner först.",
         "submit": "Klona {count} paket",
         "submitting": "Klonar…",
         "cancel": "Avbryt",
@@ -1087,7 +1100,6 @@
         "priorYearLocked": "Dessa fält är låsta på historiska paket: {fields}. Klona paketet till innevarande år för att redigera.",
         "feeConfigMissing": "Avgiftskonfigurationen har inte konfigurerats ännu. Kontakta din systemadministratör.",
         "loadFailed": "Det gick inte att läsa in paket.",
-        "backToList": "Tillbaka till paket",
         "duplicateKey": "Ett paket med detta ID finns redan för {year}.",
         "memberAttached": "{count} aktiva medlemmar använder detta paket. Flytta dem till ett annat paket före borttagning.",
         "planActive": "Paketet är aktivt. Inaktivera det innan du tar bort det.",

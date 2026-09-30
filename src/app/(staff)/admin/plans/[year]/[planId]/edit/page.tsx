@@ -21,12 +21,9 @@ import {
   type PlanSchemaInput,
 } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
-import { Card, CardContent } from '@/components/ui/card';
 import { FormContainer } from '@/components/layout';
-import { PageHeader } from '@/components/layout/page-header';
-import { PlanBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
 import type { CurrentYearPlanStatus } from '@/components/plans/prior-year-lock-banner';
-import { EditPlanClient } from './edit-plan-client';
+import { PLAN_FORM_COLUMN, renderPlanEditView } from '../../../_components/plan-form-views';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.plans.edit');
@@ -51,8 +48,6 @@ export default async function EditPlanPage({
   if (!/^[a-z0-9-]{1,63}$/.test(rawPlanId)) {
     notFound();
   }
-
-  const t = await getTranslations('admin.plans.edit');
 
   const tenant = resolveTenantFromRequest();
   const deps = buildPlansDeps(tenant);
@@ -84,7 +79,6 @@ export default async function EditPlanPage({
   const taxPolicy = await deps.taxPolicy();
   const currencyCode = taxPolicy?.currencyCode ?? 'THB';
   const currentYear = deps.clock.currentYear();
-  const currencyPrefix = currencyCode === 'THB' ? '฿' : currencyCode;
 
   // Prior-year plans: what does the current year hold? The lock banner links
   // to the same plan's current-year version when there is one, to the clone
@@ -128,22 +122,16 @@ export default async function EditPlanPage({
   };
 
   return (
-    <FormContainer>
-      <PlanBreadcrumbLabel segment={plan.plan_id} label={plan.plan_name.en} />
-      <PageHeader title={t('title', { planName: plan.plan_name.en })} />
-      <Card>
-        <CardContent>
-          <EditPlanClient
-            planId={plan.plan_id}
-            planYear={plan.plan_year}
-            initialValues={initialValues}
-            currentYear={currentYear}
-            currencyPrefix={currencyPrefix}
-            currentYearStatus={currentYearStatus}
-            vatRatePercent={feeHintVatPercent(taxPolicy)}
-          />
-        </CardContent>
-      </Card>
+    // 122 US6 (T606): the start-edge 672px column, the form's cards straight
+    // under the title (boards `Admin-plan-edit`, `-locked`).
+    <FormContainer className={PLAN_FORM_COLUMN}>
+      {await renderPlanEditView({
+        initialValues,
+        currentYear,
+        currencyCode,
+        currentYearStatus,
+        vatRatePercent: feeHintVatPercent(taxPolicy),
+      })}
     </FormContainer>
   );
 }

@@ -29,12 +29,22 @@ import { PendingChangeRequestAlert } from '@/app/(staff)/admin/members/[memberId
 import { renderMemberTimelineView } from '@/app/(staff)/admin/members/[memberId]/_components/member-timeline-view';
 import { renderMemberBenefitsView } from '@/app/(staff)/admin/members/[memberId]/_components/member-benefits-view';
 import { MEMBER_FORM_COLUMN, MemberFormFrame } from '@/app/(staff)/admin/members/_components/member-form-frame';
-import { FormContainer } from '@/components/layout';
+import { FormContainer, TableContainer } from '@/components/layout';
 import { CreateMemberClient } from '@/components/members/create-member-client';
 import { EditMemberClient } from '@/components/members/edit-member-client';
 import { AdminPreferredLocaleCard } from '@/components/admin/admin-preferred-locale-card';
 import type { PlanOption as FormPlanOption } from '@/components/members/member-form';
 import { MemberFormDialogPreview } from './member-form-previews';
+import { PlansTable } from '@/components/plans/plans-table';
+import { renderPlansListView } from '@/app/(staff)/admin/plans/_components/plans-list-view';
+import {
+  PLAN_FORM_COLUMN,
+  renderCloneYearView,
+  renderNewPlanView,
+  renderPlanEditView,
+} from '@/app/(staff)/admin/plans/_components/plan-form-views';
+import { renderPlanDetailView } from '@/app/(staff)/admin/plans/[year]/[planId]/_components/plan-detail-view';
+import { CLONE_SOURCE_PLANS, PLAN_ID, PLAN_ROWS, PLAN_YEAR, PREMIUM_PLAN, premiumPlanInput } from './plan-fixtures';
 
 // Request-time evaluation so the guard runs per request (see button-matrix).
 export const dynamic = 'force-dynamic';
@@ -527,6 +537,89 @@ export default async function AuraAdminPreviewPage({
             />
             {dialog ? <MemberFormDialogPreview dialog={dialog} /> : null}
           </MemberFormFrame>
+        </FormContainer>
+      </StaffFrame>
+    );
+  }
+
+  // ── US6: the plans pages (`Admin-plans*`, `Admin-plan-*` boards) ─────────
+  if (view === 'plans' || view === 'plans-empty') {
+    const manager = state === 'manager';
+    return (
+      <StaffFrame path="/admin/plans">
+        <TableContainer>
+          {await renderPlansListView({
+            canWrite: !manager,
+            children: (
+              <PlansTable
+                plans={view === 'plans-empty' ? [] : PLAN_ROWS}
+                currencyCode="THB"
+                year={PLAN_YEAR}
+                currentUserRole={manager ? 'manager' : 'admin'}
+                initialFilter={{ category: null, q: null, activeOnly: false, showDeleted: false }}
+              />
+            ),
+          })}
+        </TableContainer>
+      </StaffFrame>
+    );
+  }
+
+  if (view === 'plan') {
+    return (
+      <StaffFrame path={`/admin/plans/${PLAN_YEAR}/${PLAN_ID}`}>
+        {await renderPlanDetailView({
+          plan: PREMIUM_PLAN,
+          year: String(PLAN_YEAR),
+          planId: PLAN_ID,
+          canWritePlans: state !== 'manager',
+          canReadMembers: true,
+          currencyCode: 'THB',
+          vat: { totalMinorUnits: 3_852_000, ratePercent: 7 },
+          memberCount: 28,
+          bundledPlanName: null,
+        })}
+      </StaffFrame>
+    );
+  }
+
+  if (view === 'plan-new') {
+    return (
+      <StaffFrame path="/admin/plans/new">
+        <FormContainer className={PLAN_FORM_COLUMN}>
+          {await renderNewPlanView({ currentYear: PLAN_YEAR, currencyCode: 'THB', vatRatePercent: 7 })}
+        </FormContainer>
+      </StaffFrame>
+    );
+  }
+
+  if (view === 'plan-edit' || view === 'plan-edit-locked') {
+    const year = view === 'plan-edit-locked' ? PLAN_YEAR - 1 : PLAN_YEAR;
+    return (
+      <StaffFrame path={`/admin/plans/${year}/${PLAN_ID}/edit`}>
+        <FormContainer className={PLAN_FORM_COLUMN}>
+          {await renderPlanEditView({
+            initialValues: premiumPlanInput(year),
+            currentYear: PLAN_YEAR,
+            currencyCode: 'THB',
+            currentYearStatus: 'has_plan',
+            vatRatePercent: 7,
+          })}
+        </FormContainer>
+      </StaffFrame>
+    );
+  }
+
+  if (view === 'plans-clone') {
+    return (
+      <StaffFrame path="/admin/plans/clone">
+        <FormContainer className={PLAN_FORM_COLUMN}>
+          {await renderCloneYearView({
+            sourceYear: PLAN_YEAR,
+            targetYear: PLAN_YEAR + 1,
+            currencyCode: 'THB',
+            sourcePlans: CLONE_SOURCE_PLANS,
+          })}
         </FormContainer>
       </StaffFrame>
     );

@@ -1,5 +1,4 @@
 import { getTranslations } from 'next-intl/server';
-import { Card, CardContent } from '@/components/ui/card';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { PlanFormWizardSkeleton } from '@/components/plans/plan-form-wizard-skeleton';
@@ -10,13 +9,9 @@ export default async function Loading() {
   const tLayout = await getTranslations('layout');
   return (
     <PageSkeletonShell ariaLabel={tLayout('loadingForm')}>
-      <FormContainer>
+      <FormContainer className="mx-0">
         <PageHeader title={t('title')} />
-        <Card>
-          <CardContent>
-            <PlanFormWizardSkeleton />
-          </CardContent>
-        </Card>
+        <PlanFormWizardSkeleton />
       </FormContainer>
     </PageSkeletonShell>
   );

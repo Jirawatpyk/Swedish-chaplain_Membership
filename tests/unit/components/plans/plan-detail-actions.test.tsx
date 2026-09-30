@@ -3,11 +3,9 @@
  * Deactivate, Delete, Restore). Same endpoints, confirmation dialogs and
  * toasts as the plans list row menu (both use `usePlanActions`).
  *
- * Base UI Menu only renders its popup while open, via pointer interactions
- * jsdom does not model, so the dropdown primitives are swapped for inline
- * stand-ins (same pattern as invoice-more-menu.test.tsx).
+ * 122 US6 (T603): AURA's DropdownMenu behind an IconButton named "More
+ * actions for {plan}" (board `Admin-plan-detail`); each test opens it first.
  */
-import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
@@ -20,48 +18,14 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh }),
 }));
 
-vi.mock('@/components/ui/dropdown-menu', () => {
-  function DropdownMenu({ children }: { children?: React.ReactNode }) {
-    return <div>{children}</div>;
-  }
-  function DropdownMenuTrigger({
-    render: renderProp,
-  }: {
-    render?: (props: Record<string, unknown>) => React.ReactNode;
-  }) {
-    return <>{renderProp ? renderProp({}) : null}</>;
-  }
-  function DropdownMenuContent({ children }: { children?: React.ReactNode }) {
-    return <div role="menu">{children}</div>;
-  }
-  function DropdownMenuItem({
-    children,
-    onClick,
-  }: {
-    children?: React.ReactNode;
-    onClick?: () => void;
-  }) {
-    return (
-      <button type="button" role="menuitem" onClick={onClick}>
-        {children}
-      </button>
-    );
-  }
-  function DropdownMenuSeparator() {
-    return <hr />;
-  }
-  return {
-    DropdownMenu,
-    DropdownMenuTrigger,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuSeparator,
-  };
-});
-
 import { PlanDetailActions } from '@/components/plans/plan-detail-actions';
 
 const fetchMock = vi.fn();
+
+/** Opens the AURA menu from its trigger. */
+function openMenu() {
+  fireEvent.click(screen.getByRole('button', { name: 'More actions for Diamond' }));
+}
 
 function renderActions(state: { is_active: boolean; deleted: boolean }) {
   render(
@@ -93,13 +57,16 @@ describe('PlanDetailActions', () => {
     vi.clearAllMocks();
   });
 
-  it('labels the menu trigger with the plan name', () => {
+  it('labels the menu trigger with the plan name, an AURA icon button', () => {
     renderActions({ is_active: true, deleted: false });
-    expect(screen.getByRole('button', { name: 'Actions for Diamond' })).toBeInTheDocument();
+    const trigger = screen.getByRole('button', { name: 'More actions for Diamond' });
+    expect(trigger).toHaveClass('aura-icon-btn');
+    expect(trigger).toHaveAttribute('aria-haspopup', 'menu');
   });
 
   it('deactivates an active plan after confirmation', async () => {
     renderActions({ is_active: true, deleted: false });
+    openMenu();
     expect(screen.queryByRole('menuitem', { name: 'Activate' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('menuitem', { name: 'Deactivate' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Deactivate' }));
@@ -117,6 +84,7 @@ describe('PlanDetailActions', () => {
 
   it('activates an inactive plan straight away', async () => {
     renderActions({ is_active: false, deleted: false });
+    openMenu();
     fireEvent.click(screen.getByRole('menuitem', { name: 'Activate' }));
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
@@ -128,11 +96,13 @@ describe('PlanDetailActions', () => {
 
   it('offers no Delete on an active plan (deactivate first)', () => {
     renderActions({ is_active: true, deleted: false });
+    openMenu();
     expect(screen.getAllByRole('menuitem').map((b) => b.textContent)).toEqual(['Deactivate']);
   });
 
   it('deletes an inactive plan after confirmation', async () => {
     renderActions({ is_active: false, deleted: false });
+    openMenu();
     fireEvent.click(screen.getByRole('menuitem', { name: 'Delete' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Delete' }));
     await waitFor(() =>
@@ -145,6 +115,7 @@ describe('PlanDetailActions', () => {
 
   it('offers only Restore on a deleted plan', async () => {
     renderActions({ is_active: false, deleted: true });
+    openMenu();
     expect(screen.getAllByRole('menuitem').map((b) => b.textContent)).toEqual(['Restore']);
     fireEvent.click(screen.getByRole('menuitem', { name: 'Restore' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Restore' }));
@@ -164,6 +135,7 @@ describe('PlanDetailActions', () => {
       }),
     });
     renderActions({ is_active: false, deleted: false });
+    openMenu();
     fireEvent.click(screen.getByRole('menuitem', { name: 'Delete' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Delete' }));
     await waitFor(() =>
@@ -180,6 +152,7 @@ describe('PlanDetailActions', () => {
       json: async () => ({ error: { code: 'plan_active' } }),
     });
     renderActions({ is_active: false, deleted: false });
+    openMenu();
     fireEvent.click(screen.getByRole('menuitem', { name: 'Delete' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Delete' }));
     await waitFor(() =>

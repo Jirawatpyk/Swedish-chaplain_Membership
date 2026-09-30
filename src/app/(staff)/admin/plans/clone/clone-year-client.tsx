@@ -2,6 +2,12 @@
  * Client shell for /admin/plans/clone — source/target pickers, a
  * read-only preview of the plans the clone will copy, confirmation
  * dialog + POST + toast.
+ *
+ * 122 US6 (T607): on AURA as the `Admin-plans-clone` board draws it — the
+ * count sentence (the count in bold), the two years side by side, the
+ * "Activate cloned plans immediately" switch with its description, the
+ * plans to copy in two columns (one on a phone), then Cancel / "Clone {n}
+ * plans", pinned to the bottom of a phone (Cancel a third).
  */
 'use client';
 
@@ -12,10 +18,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { formatSatangThb } from '@/lib/format-thb';
 import { formatCalendarYear } from '@/lib/format-date-localised';
 import { isReadOnlyCode, problemCode } from '@/lib/http/read-only-refusal';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
+import { ActionBar, Button, Switch, TextField } from '@jirawatpyk/aura-react';
 import { CloneYearDialog } from '@/components/plans/clone-year-dialog';
 import { LocaleTextDisplay } from '@/components/plans/locale-text-display';
 import type { LocaleText } from '@/modules/plans';
@@ -216,88 +219,91 @@ export function CloneYearClient({
   const countLabel = sourcePlanCount ?? '…';
 
   return (
-    <div className="space-y-4">
-      <p className="text-muted-foreground text-sm">
+    <div className="space-y-[var(--aura-space-4)]">
+      <p>
         {/* Visible years follow the locale (TH 2569); a half-typed value
             echoes back as typed. Inputs, the API body and URLs stay CE. */}
-        {tClone('description', {
+        {tClone.rich('description', {
           count: countLabel,
           sourceYear: formatCalendarYear(sourceYear, locale),
           targetYear: formatCalendarYear(targetYear, locale),
+          b: (chunks) => <strong>{chunks}</strong>,
         })}
       </p>
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div className="space-y-1">
-          <Label htmlFor="source_year">{tClone('sourceLabel')}</Label>
-          <Input
-            id="source_year"
-            type="number"
-            min={2000}
-            max={2100}
-            value={sourceYear}
-            onChange={(e) => {
-              const nextYear =
-                Number.parseInt(e.target.value, 10) || defaultSourceYear;
-              setSourceYear(nextYear);
-              // Blank the count synchronously ONLY when the year actually
-              // changes: batched with setSourceYear it avoids a frame painting
-              // the NEW year beside the OLD count, while skipping a same-value
-              // edit (e.g. clearing the field back to the current year) avoids
-              // stranding it at "…" — a no-op setSourceYear would not re-run the
-              // effect that restores the count.
-              if (nextYear !== sourceYear) {
-                setSourcePlans(null);
-              }
-            }}
-          />
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor="target_year">{tClone('targetLabel')}</Label>
-          <Input
-            id="target_year"
-            type="number"
-            min={2000}
-            max={2100}
-            value={targetYear}
-            onChange={(e) =>
-              setTargetYear(Number.parseInt(e.target.value, 10) || defaultTargetYear)
+      <div className="grid grid-cols-2 gap-[var(--aura-space-4)]">
+        <TextField
+          id="source_year"
+          label={tClone('sourceLabel')}
+          type="number"
+          min={2000}
+          max={2100}
+          required
+          value={sourceYear}
+          onChange={(e) => {
+            const nextYear =
+              Number.parseInt(e.target.value, 10) || defaultSourceYear;
+            setSourceYear(nextYear);
+            // Blank the count synchronously ONLY when the year actually
+            // changes: batched with setSourceYear it avoids a frame painting
+            // the NEW year beside the OLD count, while skipping a same-value
+            // edit (e.g. clearing the field back to the current year) avoids
+            // stranding it at "…" — a no-op setSourceYear would not re-run the
+            // effect that restores the count.
+            if (nextYear !== sourceYear) {
+              setSourcePlans(null);
             }
-          />
-        </div>
+          }}
+        />
+        <TextField
+          id="target_year"
+          label={tClone('targetLabel')}
+          type="number"
+          min={2000}
+          max={2100}
+          required
+          value={targetYear}
+          onChange={(e) =>
+            setTargetYear(Number.parseInt(e.target.value, 10) || defaultTargetYear)
+          }
+        />
       </div>
-      <section aria-labelledby="clone-preview-title" className="space-y-2">
-        <h3 id="clone-preview-title" className="text-sm font-medium">
+      <Switch
+        id="activate_cloned"
+        label={tClone('activateClonedLabel')}
+        description={tClone('activateClonedHint')}
+        checked={activateCloned}
+        onChange={setActivateCloned}
+      />
+      <section aria-labelledby="clone-preview-title" className="space-y-[var(--aura-space-2)]">
+        <h3 id="clone-preview-title" className="font-semibold">
           {sourceYear >= 2000 && sourceYear <= 2100
             ? tClone('preview.title', { sourceYear: formatCalendarYear(sourceYear, locale) })
             : tClone('preview.titleNoYear')}
         </h3>
         {sourcePlans === null ? (
-          <p className="text-muted-foreground text-sm" role="status">
+          <p className="text-[var(--aura-fg-secondary)]" role="status">
             {previewFailed ? tClone('preview.failed') : tClone('preview.loading')}
           </p>
         ) : sourcePlans.length === 0 ? (
-          <p className="text-muted-foreground text-sm">
+          <p className="text-[var(--aura-fg-secondary)]">
             {tClone('preview.empty', { sourceYear: formatCalendarYear(sourceYear, locale) })}
           </p>
         ) : (
-          <ul
-            aria-labelledby="clone-preview-title"
-            className="divide-y rounded-md border text-sm"
-          >
+          <ul aria-labelledby="clone-preview-title" className="aura-text-table-cell gap-x-[var(--aura-space-6)] md:columns-2">
             {sourcePlans.map((p) => (
               <li
                 key={p.plan_id}
-                className="flex items-center justify-between gap-4 px-3 py-2"
+                className="flex break-inside-avoid items-center justify-between gap-[var(--aura-space-4)] border-t border-[var(--aura-border-default)] py-[var(--aura-space-2)]"
               >
-                <span className="min-w-0 truncate">
+                <span className="min-w-0 break-words">
                   <LocaleTextDisplay value={p.plan_name} />
                   {p.is_active ? null : (
-                    <span className="text-muted-foreground">
+                    <span className="text-[var(--aura-fg-secondary)]">
                       {' '}({tClone('preview.inactive')})
                     </span>
                   )}
                 </span>
-                <span className="shrink-0 tabular-nums">
+                <span className="shrink-0 tabular-nums text-[var(--aura-fg-secondary)]">
                   {formatSatangThb(BigInt(p.annual_fee_minor_units), locale, previewCurrency)}
                 </span>
               </li>
@@ -305,25 +311,13 @@ export function CloneYearClient({
           </ul>
         )}
       </section>
-      <div className="flex items-center justify-between gap-4">
-        <Label htmlFor="activate_cloned" className="flex-1">
-          {tClone('activateClonedLabel')}
-        </Label>
-        {/* Named in the SSR HTML so the switch is not anonymous to AT during
-            the pre-hydration window — see invoice-settings-form for the full
-            note on Base UI's late aria-labelledby. */}
-        <Switch
-          id="activate_cloned"
-          aria-label={tClone('activateClonedLabel')}
-          checked={activateCloned}
-          onCheckedChange={setActivateCloned}
-        />
-      </div>
-      <div className="flex items-center justify-end gap-2 pt-2">
-        <Button variant="ghost" onClick={() => router.push('/admin/plans')}>
+      <ActionBar className="chamber-viewport-actionbar plan-form-actions plan-form-actions--in-card">
+        <Button type="button" variant="secondary" onClick={() => router.push('/admin/plans')}>
           {tClone('cancel')}
         </Button>
         <Button
+          type="button"
+          icon="copy"
           onClick={() => setOpen(true)}
           // NOT gated on the count: it is a display-only preview, and the clone
           // uses the real Source year server-side. A "…" (loading/failed) count
@@ -332,7 +326,7 @@ export function CloneYearClient({
         >
           {tClone('submit', { count: countLabel })}
         </Button>
-      </div>
+      </ActionBar>
 
       <CloneYearDialog
         open={open}

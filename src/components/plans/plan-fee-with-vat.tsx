@@ -24,11 +24,15 @@ export function PlanFeeWithVat({
   const t = useTranslations('admin.plans.detail');
   return (
     <span data-money-display data-currency={currencyCode}>
-      {t('feeWithVat', {
-        fee: formatSatangThb(BigInt(feeMinorUnits), locale, currencyCode),
-        rate: vatRatePercent,
-        total: formatSatangThb(BigInt(totalWithVatMinorUnits), locale, currencyCode),
-      })}
+      {/* 122 US6 (T603): the fee in bold, then the VAT-inclusive total — on
+          a phone on its own line in caption size (board `Admin-plan-detail`). */}
+      <strong className="font-semibold">{formatSatangThb(BigInt(feeMinorUnits), locale, currencyCode)}</strong>{' '}
+      <span className="text-[var(--aura-fg-secondary)] max-sm:block max-sm:text-xs">
+        {t('vatAdded', {
+          rate: vatRatePercent,
+          total: formatSatangThb(BigInt(totalWithVatMinorUnits), locale, currencyCode),
+        })}
+      </span>
     </span>
   );
 }

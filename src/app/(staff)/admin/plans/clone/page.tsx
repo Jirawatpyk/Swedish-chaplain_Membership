@@ -15,10 +15,8 @@ import { requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { listPlans, asPlanYear } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { FormContainer } from '@/components/layout';
-import { PageHeader } from '@/components/layout/page-header';
-import { CloneYearClient } from './clone-year-client';
+import { PLAN_FORM_COLUMN, renderCloneYearView } from '../_components/plan-form-views';
 import { parseCloneYearParam } from './clone-year-params';
 
 interface SearchParams {
@@ -38,8 +36,6 @@ export default async function CloneYearPage({
 }) {
   await requirePagePermission('plans.clone');
   const query = await searchParams;
-
-  const t = await getTranslations('admin.plans.clone');
 
   const tenant = resolveTenantFromRequest();
   const deps = buildPlansDeps(tenant);
@@ -69,21 +65,10 @@ export default async function CloneYearPage({
   const currencyCode = listResult.ok ? listResult.value.meta.currency_code : 'THB';
 
   return (
-    <FormContainer>
-      <PageHeader title={t('title')} />
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('title')}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <CloneYearClient
-            defaultSourceYear={sourceYear}
-            defaultTargetYear={targetYear}
-            currencyCode={currencyCode}
-            defaultSourcePlans={sourcePlans}
-          />
-        </CardContent>
-      </Card>
+    // 122 US6 (T607): one card in the start-edge 672px column (board
+    // `Admin-plans-clone`).
+    <FormContainer className={PLAN_FORM_COLUMN}>
+      {await renderCloneYearView({ sourceYear, targetYear, currencyCode, sourcePlans })}
     </FormContainer>
   );
 }

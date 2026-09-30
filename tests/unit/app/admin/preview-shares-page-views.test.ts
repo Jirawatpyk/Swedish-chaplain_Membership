@@ -38,4 +38,16 @@ describe('aura-admin preview renders the pages’ own views', () => {
     expect(preview).toContain('<MemberSummaryStrip');
     expect(preview).not.toContain('<MemberInvoicesTable');
   });
+
+  it('the plans pages through their views, framed at their real paths (US6)', () => {
+    expect(preview).toContain('renderPlansListView(');
+    expect(preview).toContain('renderPlanDetailView(');
+    expect(preview).toContain('renderNewPlanView(');
+    expect(preview).toContain('renderPlanEditView(');
+    expect(preview).toContain('renderCloneYearView(');
+    expect(preview).toContain('<StaffFrame path="/admin/plans">');
+    expect(preview).toContain('<StaffFrame path={`/admin/plans/${PLAN_YEAR}/${PLAN_ID}`}>');
+    // The list renders through the page's own table, never a copy.
+    expect(preview).toContain('<PlansTable');
+  });
 });

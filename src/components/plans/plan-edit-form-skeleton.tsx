@@ -1,3 +1,4 @@
+import { Card } from '@jirawatpyk/aura-react/server';
 import { SkeletonBlock } from '@/components/shell/page-skeletons';
 
 /**
@@ -7,7 +8,7 @@ import { SkeletonBlock } from '@/components/shell/page-skeletons';
  * Shape mirrors plan-edit-form.tsx:
  *   - Basics: h2 + plan name + description (EN/TH/SV tabs + input /
  *     textarea) + 2-column grid (sort order, member type)
- *   - Fees: h2 + annual fee (currency prefix + input + VAT hint) +
+ *   - Fees: h2 + annual fee (input with its THB suffix + VAT hint) +
  *     2-column grid (min/max turnover, max duration, max member age)
  *   - Benefits: h2 + the benefit matrix editor's always-present sections
  *     (Brand Visibility, Events, Additional). The Partnership section only
@@ -38,10 +39,7 @@ function MoneyFieldSkeleton({ withHint = false }: { readonly withHint?: boolean 
   return (
     <div className="space-y-1">
       <SkeletonBlock className="h-4 w-28" />
-      <div className="flex items-center gap-2">
-        <SkeletonBlock className="h-5 w-6" />
-        <SkeletonBlock className="h-[var(--input-height)] w-full" />
-      </div>
+      <SkeletonBlock className="h-[var(--input-height)] w-full" />
       {withHint ? <SkeletonBlock className="h-3 w-48" /> : null}
     </div>
   );
@@ -58,9 +56,10 @@ function SwitchRowSkeleton() {
 
 export function PlanEditFormSkeleton() {
   return (
+    // 122 US6 (T608): the edit form's three AURA cards, then its footer.
     <div className="space-y-6" aria-busy="true">
+      <Card header={<SkeletonBlock className="h-6 w-28" />}>
       <section className="space-y-4" data-skeleton-section="basics">
-        <SkeletonBlock className="h-6 w-28" />
         <LocaleFieldSkeleton />
         <LocaleFieldSkeleton multiline />
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -68,9 +67,9 @@ export function PlanEditFormSkeleton() {
           <FieldSkeleton labelWidth="w-32" />
         </div>
       </section>
-      <div className="border-t border-border" />
+      </Card>
+      <Card header={<SkeletonBlock className="h-6 w-28" />}>
       <section className="space-y-4" data-skeleton-section="fees">
-        <SkeletonBlock className="h-6 w-28" />
         <MoneyFieldSkeleton withHint />
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <MoneyFieldSkeleton />
@@ -79,9 +78,9 @@ export function PlanEditFormSkeleton() {
           <FieldSkeleton labelWidth="w-32" />
         </div>
       </section>
-      <div className="border-t border-border" />
+      </Card>
+      <Card header={<SkeletonBlock className="h-6 w-32" />}>
       <section className="space-y-4" data-skeleton-section="benefits">
-        <SkeletonBlock className="h-6 w-32" />
         <div className="space-y-3">
           <SkeletonBlock className="h-4 w-36" />
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -104,7 +103,7 @@ export function PlanEditFormSkeleton() {
           <SwitchRowSkeleton />
         </div>
       </section>
-      <div className="border-t border-border" />
+      </Card>
       <div className="flex items-center justify-end gap-2" data-skeleton="footer">
         <SkeletonBlock className="h-9 w-20" />
         <SkeletonBlock className="h-9 w-32" />

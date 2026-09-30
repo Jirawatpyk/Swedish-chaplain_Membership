@@ -51,7 +51,7 @@ function renderForm() {
       <PlanEditForm
         initialValues={PLAN}
         currentYear={2026}
-        currencyPrefix="฿"
+        currencyUnit="THB"
         onSubmit={onSubmit}
       />
     </NextIntlClientProvider>,
@@ -62,7 +62,7 @@ function renderForm() {
 const save = () => fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
 const sortOrder = () => document.getElementById('sort_order') as HTMLInputElement;
 const englishName = () =>
-  screen.getByRole('textbox', { name: 'Plan name (EN)' }) as HTMLInputElement;
+  screen.getByRole('textbox', { name: /^Plan name \(English\)/ }) as HTMLInputElement;
 
 describe('PlanEditForm save-time validation', () => {
   it('blocks an out-of-range sort order and flags the field', () => {

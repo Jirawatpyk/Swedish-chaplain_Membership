@@ -20,10 +20,8 @@ import { requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { vatRatePercent } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
-import { Card, CardContent } from '@/components/ui/card';
 import { FormContainer } from '@/components/layout';
-import { PageHeader } from '@/components/layout/page-header';
-import { NewPlanClient } from './new-plan-client';
+import { PLAN_FORM_COLUMN, renderNewPlanView } from '../_components/plan-form-views';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.plans.create');
@@ -33,8 +31,6 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function NewPlanPage() {
   await requirePagePermission('plans.write');
 
-  const t = await getTranslations('admin.plans.create');
-
   const tenant = resolveTenantFromRequest();
   const deps = buildPlansDeps(tenant);
   // R8 — read currency from F4 invoice_settings (single source of
@@ -42,21 +38,16 @@ export default async function NewPlanPage() {
   const taxPolicy = await deps.taxPolicy();
   const currencyCode = taxPolicy?.currencyCode ?? 'THB';
   const currentYear = deps.clock.currentYear();
-  const currencyPrefix = currencyCode === 'THB' ? '฿' : currencyCode;
 
   return (
-    <FormContainer>
-      <PageHeader title={t('title')} />
-      <Card>
-        <CardContent>
-          <NewPlanClient
-            currentYear={currentYear}
-            currencyPrefix={currencyPrefix}
-            currencyCode={currencyCode}
-            vatRatePercent={feeHintVatPercent(taxPolicy)}
-          />
-        </CardContent>
-      </Card>
+    // 122 US6 (T605): the 672px column at the page's start edge, the stepper
+    // and one card per step straight under the title (board `Admin-plan-new`).
+    <FormContainer className={PLAN_FORM_COLUMN}>
+      {await renderNewPlanView({
+        currentYear,
+        currencyCode,
+        vatRatePercent: feeHintVatPercent(taxPolicy),
+      })}
     </FormContainer>
   );
 }

@@ -41,7 +41,7 @@
 
   /* AURA's type families (spec 122 FR-003), served from our origin by aura-fonts.local.css. */
   --font-sans: "Inter", "Noto Sans Thai", sans-serif;
-  --font-mono: "JetBrains Mono", monospace;
+  --font-mono: "JetBrains Mono", "Noto Sans Thai", monospace;
 
   /* Kit titles (card, dialog, sheet) are h2/h3-level, which AURA sets in sans;
      Fraunces, AURA's display face, is for page titles (`.text-h1`) only. */
@@ -294,14 +294,15 @@ html:has(.chamber-viewport-actionbar) {
   scroll-padding-bottom: calc(var(--aura-bottomnav-offset, 0px) + 5.5rem + env(safe-area-inset-bottom, 0px));
 }
 /* Spec 122 US5b-2 — the member form's action bar (boards `Admin-member-new`,
-   `-edit`, each with `-mobile`). On a phone it is pinned edge to edge to the
+   `-edit`, each with `-mobile`), and US6 the plan forms' (`Admin-plan-new`,
+   `-edit`, `Admin-plans-clone`, each with `-mobile`). On a phone it is pinned edge to edge to the
    bottom of the screen, Cancel a third and the primary button two thirds;
    from 640px it is a plain right-aligned row at the end of the form. Only the
-   app's class and the bar's element structure (inner row → status, actions)
+   app's class and the bar's element structure (inner row → status, [start,] actions)
    are read, never AURA's own classes. The bar never shows a status, so its
    empty status cell gives the actions the whole row on a phone. */
 @media (max-width: 639.98px) {
-  .member-form-actions {
+  :is(.member-form-actions, .plan-form-actions) {
     bottom: 0;
     margin-inline: calc(-1 * var(--page-padding-x));
     border-inline: 0;
@@ -309,23 +310,45 @@ html:has(.chamber-viewport-actionbar) {
     border-radius: 0;
     box-shadow: none;
     padding-bottom: env(safe-area-inset-bottom, 0px);
+    /* AURA 5.20 gives the bar `width: 100%`; `auto` lets the negative
+       margins above carry it to the screen edges. */
+    width: auto;
   }
-  .member-form-actions > div > :first-child:empty {
+  /* AURA pads the bar's row 16px at its start and 12px at its end; pinned
+     edge to edge, the buttons sit 16px from both screen edges, as drawn. */
+  :is(.member-form-actions, .plan-form-actions) > div {
+    padding-inline: var(--aura-space-4);
+  }
+  :is(.member-form-actions, .plan-form-actions) > div > :first-child:empty {
     display: none;
   }
-  .member-form-actions > div > :last-child {
+  :is(.member-form-actions, .plan-form-actions) > div > :last-child {
     flex: 1 1 auto;
     flex-wrap: nowrap;
   }
-  .member-form-actions > div > :last-child > * {
+  :is(.member-form-actions, .plan-form-actions) > div > :last-child > * {
     flex: 2 1 0;
   }
-  .member-form-actions > div > :last-child > :first-child:not(:last-child) {
+  :is(.member-form-actions, .plan-form-actions) > div > :last-child > :first-child:not(:last-child) {
+    flex: 1 1 0;
+  }
+  /* The clone bar sits inside its card (board `Admin-plans-clone-mobile`):
+     it also reaches past the card's padding and border to the screen edges. */
+  .plan-form-actions--in-card {
+    margin-inline: calc(-1 * (var(--page-padding-x) + var(--aura-space-4) + 1px));
+  }
+  /* The plan wizard keeps Cancel in the page on a phone: its start slot
+     (status, start, actions) leaves the pinned bar. */
+  .plan-form-actions--start-wide > div > :nth-child(2):not(:last-child) {
+    display: none;
+  }
+  /* The plan wizard's Back / Next share the bar evenly (board `Admin-plan-new-mobile`). */
+  .plan-form-actions--even > div > :last-child > * {
     flex: 1 1 0;
   }
 }
 @media (min-width: 640px) {
-  .member-form-actions {
+  :is(.member-form-actions, .plan-form-actions) {
     position: static;
     margin-top: 0;
     border: 0;
@@ -333,7 +356,7 @@ html:has(.chamber-viewport-actionbar) {
     background: transparent;
     box-shadow: none;
   }
-  .member-form-actions > div {
+  :is(.member-form-actions, .plan-form-actions) > div {
     min-height: 0;
     padding: 0;
   }

@@ -1,26 +1,20 @@
 'use client';
 
-import { useEffect } from 'react';
-import Link from 'next/link';
-import { useTranslations } from 'next-intl';
-import { AlertCircleIcon } from 'lucide-react';
-import { Button, buttonVariants } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import { FormContainer } from '@/components/layout';
-import { PageHeader } from '@/components/layout/page-header';
-
 /**
  * Segment-level error boundary for `/admin/plans/clone` (form page).
  *
  * Renders inside `<FormContainer>` (42rem) to match the clone wizard's
  * width. Post-ship R6 I12.
+ *
+ * 122 US6 (T608): the shared AURA RouteErrorPanel (error id and Retry), as
+ * every migrated route shows a failure.
  */
+import { useEffect } from 'react';
+import { useTranslations } from 'next-intl';
+import { FormContainer } from '@/components/layout';
+import { PageHeader } from '@/components/layout/page-header';
+import { RouteErrorPanel } from '@/components/shell/route-error-panel';
+
 export default function PlansCloneError({
   error,
   reset,
@@ -29,33 +23,15 @@ export default function PlansCloneError({
   reset: () => void;
 }) {
   const t = useTranslations('errors');
-  const tPlans = useTranslations('admin.plans.errors');
-  const tButtons = useTranslations('buttons');
 
   useEffect(() => {
     console.error('[admin/plans/clone error boundary]', error);
   }, [error]);
 
   return (
-    <FormContainer>
+    <FormContainer className="mx-0">
       <PageHeader title={t('generic')} />
-      <Card>
-        <CardHeader className="flex flex-row items-start gap-3">
-          <AlertCircleIcon className="size-6 text-destructive" aria-hidden />
-          <div>
-            <CardTitle>{t('generic')}</CardTitle>
-            <CardDescription>
-              {error.digest ? t('errorId', { id: error.digest }) : null}
-            </CardDescription>
-          </div>
-        </CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
-          <Button onClick={reset}>{tButtons('retry')}</Button>
-          <Link href="/admin/plans" className={buttonVariants({ variant: 'outline' })}>
-            {tPlans('backToList')}
-          </Link>
-        </CardContent>
-      </Card>
+      <RouteErrorPanel digest={error.digest} onRetry={reset} />
     </FormContainer>
   );
 }

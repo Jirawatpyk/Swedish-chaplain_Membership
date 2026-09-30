@@ -32,10 +32,25 @@ export function FieldError({
   return (
     <p
       id={`${field}-error`}
-      className="text-destructive text-sm"
+      className="text-[var(--aura-fg-danger)]"
       {...(focusable ? { tabIndex: -1, 'data-field-error': true } : {})}
     >
       {message}
     </p>
   );
+}
+
+/**
+ * Focus a field, first opening the language tab it sits behind: the plan
+ * name and description show one language at a time, and a field in a hidden
+ * panel cannot take focus (UX review, US6).
+ */
+export function focusField(field: HTMLElement | null): void {
+  if (!field) return;
+  const panel = field.closest<HTMLElement>('[role="tabpanel"][hidden]');
+  const tabId = panel?.getAttribute('aria-labelledby');
+  // A click is a discrete event: React commits the tab switch before it
+  // returns, so the panel is visible by the time the field is focused.
+  if (tabId) document.getElementById(tabId)?.click();
+  field.focus();
 }

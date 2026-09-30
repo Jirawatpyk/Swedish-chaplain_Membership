@@ -11,19 +11,15 @@
  * path the API route uses.
  */
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
-import { PlusIcon, CopyIcon } from 'lucide-react';
 import { canPerform, requirePagePermission } from '@/lib/rbac';
 import type { Role } from '@/modules/auth/domain/role';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { listPlans, asPlanYear } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
-import { Card, CardContent } from '@/components/ui/card';
-import { buttonVariants } from '@/components/ui/button';
 import { PlansTable } from '@/components/plans/plans-table';
 import { TableContainer } from '@/components/layout';
-import { PageHeader } from '@/components/layout/page-header';
+import { renderPlansListView } from './_components/plans-list-view';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.plans');
@@ -45,51 +41,20 @@ export default async function PlansListPage({
 }) {
   const { user: currentUser } = await requirePagePermission('plans.read');
   const query = await searchParams;
-  const t = await getTranslations('admin.plans');
 
   return (
     <TableContainer>
-      <PageHeader
-        title={t('title')}
-        subtitle={t('listDescription')}
-        actions={
-          // 016 re-review D — evaluator-derived ('plans.write').
-          canPerform(currentUser.role, 'plans.write') ? (
-            <>
-              <Link
-                href="/admin/plans/clone"
-                className={buttonVariants({ variant: 'outline' })}
-              >
-                <CopyIcon className="h-3.5 w-3.5" />
-                {t('actions.cloneYear')}
-              </Link>
-              <Link
-                href="/admin/plans/new"
-                className={buttonVariants()}
-              >
-                <PlusIcon className="h-3.5 w-3.5" />
-                {t('actions.new')}
-              </Link>
-            </>
-          ) : null
-        }
-      />
-
-      <Card>
-        <CardContent>
-          {/*
-            No internal <Suspense> wrapper — the route-level loading.tsx
-            is the single Suspense boundary and renders <PlanListSkeleton>
-            with the real page shell. Double-wrapping caused the shimmer
-            to run twice (once for loading.tsx, once for the inner
-            boundary swap).
-          */}
-          <PlansList
-            query={query}
-            currentUserRole={currentUser.role}
-          />
-        </CardContent>
-      </Card>
+      {/* 016 re-review D — evaluator-derived ('plans.write'). */}
+      {await renderPlansListView({
+        canWrite: canPerform(currentUser.role, 'plans.write'),
+        children: (
+          // No internal <Suspense> wrapper — the route-level loading.tsx is
+          // the single Suspense boundary and renders <PlanListSkeleton> with
+          // the real page shell. Double-wrapping caused the skeleton to run
+          // twice (once for loading.tsx, once for the inner boundary swap).
+          <PlansList query={query} currentUserRole={currentUser.role} />
+        ),
+      })}
     </TableContainer>
   );
 }
@@ -133,7 +98,7 @@ async function PlansList({
 
   if (!result.ok) {
     return (
-      <p className="text-sm text-destructive" role="alert">
+      <p className="text-[var(--aura-fg-danger)]" role="alert">
         {result.error.type === 'fee_config_missing'
           ? t('errors.feeConfigMissing')
           : t('errors.loadFailed')}

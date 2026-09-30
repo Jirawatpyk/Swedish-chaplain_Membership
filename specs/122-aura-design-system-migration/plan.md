@@ -129,7 +129,7 @@ docs/ux-standards.md · docs/aura-adoption.md (NEW) · docs/design-system-audit.
 | 3 | Portal home/profile/account | Card, Stat, StatusPill, link Tabs, ActionBar | US1; colleague-contact decision | M |
 | 4 | Portal invoicing + pay sheet | DataTable, StatusPill, Alert, right Drawer (full screen on phones) around unchanged Stripe Elements — no Stepper (spec Clarifications, US4 start) | US1 | L, money |
 | 5 | Members (three PRs: US5a list, directory, change requests; US5b-1 detail, timeline, benefits, their dialogs; US5b-2 forms) | DataTable server mode (URL contract), FilterBar, bulk action bar, Dialog, Stat | US1 | L |
-| 6 | Plans | forms, SegmentedControl, Switch | US1 | M |
+| 6 | Plans | forms, Select, Switch, Tabs, Stepper, Table | US1 | M |
 | 7 | Renewals | one DataTable (stacked cards on phone), cycle detail, tasks | US1 | L |
 | 8 | Invoicing admin | registers (sticky footer), refund/void/credit/record-payment dialogs | US1; void/auto-refund logic task first | L, money |
 | 9 | Events | DatePicker/TimePicker (`timeZone="Asia/Bangkok"`), Combobox, FileUpload | US1 | L |

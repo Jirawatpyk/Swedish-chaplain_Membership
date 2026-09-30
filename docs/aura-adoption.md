@@ -87,7 +87,16 @@ Phases 2–12 each depend on 1 and can land in any order.
 
 ## AURA gaps (the handoff doc)
 
-The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, items 52–56 (Addendum 4) in 5.6.0, items 57–62 (Addendum 5, found in US1) in 5.7.0, item 63 in 5.7.1, item 64 (Addendum 6) in 5.7.2, item 65 (Addendum 7, found in US2) in 5.7.3, items 66–69 (Addendum 8, found in US3) in 5.8.0, items 70–71 (Addendum 9, found in US4) in 5.9.0, items 72–74 (Addendum 10, found adopting 5.9.0 in US4) in 5.10.0, items 75–78 (Addendum 11, found in US5a) in 5.11.0, item 79 (Addendum 12) in 5.12.0 and items 80–84 (Addendum 13) in 5.13.0, items 85–100 (Addenda 14–15) in 5.14.0–5.16.0, items 101–108 (Addendum 16, found in US5b-1) in 5.14.0 and 5.16.0, item 109 (Addendum 17) in 5.16.1 and items 110–111 (Addendum 18) in 5.17.0 — **5.17.0** is the current pin. Items 85–100 (Addenda 14–15, found adopting 5.13.0 and applying the parity rule to US1–US5a) shipped in 5.14.0 (86, 88, 91, 97), 5.15.0 (85, 87, 89, 90, 92–94, 99, 100) and 5.16.0 (95, 96, 98), and are adopted below (T512). The two gaps found adopting them (Addendum 18: #110 `Stat`, #111 `Progress`) shipped in 5.17.0, and 5.16.1 fixed #109 (a custom `Select` painted with the disabled ground). No item is open:
+The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, items 52–56 (Addendum 4) in 5.6.0, items 57–62 (Addendum 5, found in US1) in 5.7.0, item 63 in 5.7.1, item 64 (Addendum 6) in 5.7.2, item 65 (Addendum 7, found in US2) in 5.7.3, items 66–69 (Addendum 8, found in US3) in 5.8.0, items 70–71 (Addendum 9, found in US4) in 5.9.0, items 72–74 (Addendum 10, found adopting 5.9.0 in US4) in 5.10.0, items 75–78 (Addendum 11, found in US5a) in 5.11.0, item 79 (Addendum 12) in 5.12.0 and items 80–84 (Addendum 13) in 5.13.0, items 85–100 (Addenda 14–15) in 5.14.0–5.16.0, items 101–108 (Addendum 16, found in US5b-1) in 5.14.0 and 5.16.0, item 109 (Addendum 17) in 5.16.1, items 110–111 (Addendum 18) in 5.17.0 and item 112 (Addendum 19, found in US6) in 5.18.0, and items 113–116 (Addendum 20, found in US6) in 5.19.0 and 5.20.0 — **5.20.0** is the current pin. Items 85–100 (Addenda 14–15, found adopting 5.13.0 and applying the parity rule to US1–US5a) shipped in 5.14.0 (86, 88, 91, 97), 5.15.0 (85, 87, 89, 90, 92–94, 99, 100) and 5.16.0 (95, 96, 98), and are adopted below (T512). The two gaps found adopting them (Addendum 18: #110 `Stat`, #111 `Progress`) shipped in 5.17.0, and 5.16.1 fixed #109 (a custom `Select` painted with the disabled ground). Addendum 20 (items 113–116, found in US6: #113–#114 from the UX review, #115–#116 from the board check) shipped in 5.19.0 and 5.20.0, and US6 dropped each stand-in:
+
+| Item | Shipped | Chamber-OS change |
+|---|---|---|
+| 113 | 5.19.0: `Switch` `readOnly`, `icon`, caller `aria-describedby` | A locked switch is read-only (in the tab order, its state and lock note heard) with `icon="lock"` via `lockedSwitchProps`; the `role="group"` stand-in and the local lock `Icon` go |
+| 114 | 5.19.0: `Select` `readOnly` | `lockedSelectProps` sets `readOnly` in place of `disabled` |
+| 115 | 5.20.0: the static `Table` takes the page's density | The plans table drops `density="compact"`; every static `Table` inside the compact staff frame is now compact too |
+| 116 | 5.20.0: `ActionBar` `start` slot | The wizard's Cancel moves into `start`; `plan-form-actions--split` and `me-auto` go (`--start-wide` keeps the slot out of the pinned phone bar). 5.20 also gives the bar `width: 100%`, so the phone form bars set `width: auto` to reach the screen edges |
+
+No item is open (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.test.ts` reads this table; a new gap goes here as `| #N | … |`):
 
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
@@ -163,6 +172,7 @@ How Chamber-OS uses the Addendum 5 – 15 items (US1 to US5a and T512 dropped th
 | 109 | 5.16.1: a custom `Select` keeps `--aura-bg-input` (the read-only rule no longer catches its button) | Every `Select`; no Chamber-OS change |
 | 110 | 5.17.0: `Stat` attributes (`data-*`, `aria-*`), `status`, `linkArea="label"` | `StatCard`: `data-testid` / `data-variant` on the tile, the tone row in `status`, the label link stretched over the tile; `StatSkeleton` hidden with `aria-hidden` |
 | 111 | 5.17.0: `Progress` `valueText` | The reserved E-Blasts bar reads "2 used, 1 reserved, 3 remaining of 6" while it shows "2 of 6 used" |
+| 112 | 5.18.0: `Stepper` step `status: 'error'` ("has errors" in its name and the phone line) | The new-plan wizard: the step whose Next / Save failed, while it still has errors |
 
 How Chamber-OS uses the 5.6.0 items:
 

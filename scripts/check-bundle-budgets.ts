@@ -111,6 +111,14 @@
  *   /portal/preferences/renewals (936.9 → 695.3 KB) and the broadcast
  *   routes (−30 to −103 KB); their ceilings stay as they are.
  *
+ *   Spec 122 US6 (AURA plans pages, 2026-09-30, AURA 5.18.0) — first
+ *   budgets for the plans routes, measured on the branch build:
+ *     /admin/plans                     928.8 KB measured → ≤ 1030 KB
+ *     /admin/plans/[year]/[planId]     768.0 KB measured → ≤  870 KB
+ *     /admin/plans/new                 958.8 KB measured → ≤ 1060 KB
+ *     /admin/plans/[year]/[planId]/edit 962.7 KB measured → ≤ 1070 KB
+ *     /admin/plans/clone               962.7 KB measured → ≤ 1070 KB
+ *
  * Run as a post-build step:
  *
  *   pnpm build
@@ -178,6 +186,12 @@ const BUDGETS: ReadonlyArray<RouteBudget> = [
   // --- 067 dashboard-interactive-charts (Task 14 post-chart re-baseline) -
   // 1004.8 KB measured with all four charts wired — see docblock above.
   { route: '/admin', maxKb: 1110 },
+  // --- Spec 122 US6 plans (AURA) — see docblock -------------------------
+  { route: '/admin/plans', maxKb: 1030 },
+  { route: '/admin/plans/[year]/[planId]', maxKb: 870 },
+  { route: '/admin/plans/new', maxKb: 1060 },
+  { route: '/admin/plans/[year]/[planId]/edit', maxKb: 1070 },
+  { route: '/admin/plans/clone', maxKb: 1070 },
 ];
 
 const NEXT_DIR = join(process.cwd(), '.next');

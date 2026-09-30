@@ -115,11 +115,29 @@ describe('Plan detail page', () => {
     expect(valueOf(M.videoDurationShort)).toBe('1.5 min');
   });
 
-  it('shows the fee with the VAT-inclusive total', async () => {
+  it('shows the fee with the VAT-inclusive total on one row, the fee in bold (board)', async () => {
     await renderPage();
-    expect(
-      screen.getByText('36,000.00 THB + 7% VAT = 38,520.00 THB'),
-    ).toBeInTheDocument();
+    const label = en.admin.plans.create.labels.annualFee;
+    expect(valueOf(label)).toBe('36,000.00 THB + 7% VAT = 38,520.00 THB');
+    expect(screen.getByText(label, { selector: 'dt' }).nextElementSibling?.querySelector('strong')).toHaveTextContent(
+      '36,000.00 THB',
+    );
+  });
+
+  // 122 US6 (T603) — board `Admin-plan-detail`.
+  it('shows the fee and the benefit matrix as two AURA cards named by their headings', async () => {
+    await renderPage();
+    const fee = screen.getByRole('heading', { level: 2, name: en.admin.plans.create.labels.annualFee });
+    expect(fee.closest('.aura-card')).not.toBeNull();
+    expect(screen.getByText('Year 2026')).toBeInTheDocument();
+    const matrix = screen.getByRole('heading', { level: 2, name: en.admin.plans.create.labels.benefitMatrix });
+    expect(matrix.closest('.aura-card')).not.toBeNull();
+  });
+
+  it('shows the category badge and the status pill beside the title', async () => {
+    await renderPage();
+    expect(screen.getByText(en.admin.plans.badges.partnership)).toHaveClass('aura-badge');
+    expect(screen.getByText(en.admin.plans.badges.active).closest('.aura-pill')).not.toBeNull();
   });
 
   it('counts the members on the plan and links to the filtered members list', async () => {
@@ -131,24 +149,23 @@ describe('Plan detail page', () => {
 
   it('gives plans.write holders Edit and the actions menu', async () => {
     await renderPage();
-    expect(screen.getByRole('link', { name: 'Edit' })).toHaveAttribute(
-      'href',
-      '/admin/plans/2026/diamond/edit',
-    );
-    expect(screen.getByRole('button', { name: 'Actions for Diamond' })).toBeInTheDocument();
+    const edit = screen.getByRole('link', { name: 'Edit' });
+    expect(edit).toHaveAttribute('href', '/admin/plans/2026/diamond/edit');
+    expect(edit).toHaveClass('aura-btn--secondary');
+    expect(screen.getByRole('button', { name: 'More actions for Diamond' })).toHaveClass('aura-icon-btn');
   });
 
   it('hides Edit on a deleted plan but keeps the menu (Restore)', async () => {
     await renderPage(makePlan({ deleted_at: new Date('2026-03-01T00:00:00Z'), is_active: false }));
     expect(screen.queryByRole('link', { name: 'Edit' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Actions for Diamond' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'More actions for Diamond' })).toBeInTheDocument();
   });
 
   it('shows a read-only header to a manager (plans.read only)', async () => {
     role.current = 'manager';
     await renderPage();
     expect(screen.queryByRole('link', { name: 'Edit' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Actions for Diamond' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'More actions for Diamond' })).not.toBeInTheDocument();
     // manager holds members.read, so the member count still links through
     expect(screen.getByRole('link', { name: /12 members/ })).toBeInTheDocument();
   });

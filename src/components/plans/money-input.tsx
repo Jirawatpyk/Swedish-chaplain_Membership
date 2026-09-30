@@ -1,8 +1,7 @@
 /**
  * T105 — MoneyInput (US2 + US3).
  *
- * Integer-only numeric input that renders the tenant currency symbol
- * as a leading prefix and converts the user's human-facing
+ * Integer-only numeric input that converts the user's human-facing
  * major-units value (e.g. "36000" THB) to integer minor units
  * (3_600_000 satang) on change.
  *
@@ -10,30 +9,35 @@
  * side; the backend still re-validates via `planSchema`. This is a
  * UX nicety, not a security boundary.
  *
- * The currency symbol is resolved by the parent component from the
- * tenant fee config (`meta.currency_code`) and passed in as `prefix`
- * so MoneyInput does not need to hard-code the SweCham THB assumption.
+ * The currency unit is resolved by the parent component from the tenant
+ * fee config (`meta.currency_code`) and passed in as `unit`, so MoneyInput
+ * does not hard-code the SweCham THB assumption.
+ *
+ * 122 US6 (T604): an AURA `TextField` with the currency code as its suffix
+ * ("36000 THB", as the product writes amounts); on a prior-year plan it is
+ * read-only with AURA's lock icon (spec Clarifications, US6 start).
  */
 'use client';
 
-import { useId } from 'react';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { RequiredMark } from '@/components/ui/required-mark';
+import { TextField } from '@jirawatpyk/aura-react';
+import { lockedFieldProps } from './plan-locked-note';
 
 export interface MoneyInputProps {
   /** Current value in integer MINOR units (e.g. satang). */
   readonly value: number | null;
   readonly onChange: (minorUnits: number | null) => void;
   readonly label: string;
-  /** Currency prefix rendered before the input (e.g. `฿`, `kr`, `$`). */
-  readonly prefix: string;
+  /** Currency unit shown after the value (e.g. `THB`). */
+  readonly unit: string;
   /** Optional max in minor units (default 10_000_000_000 = 100M THB). */
   readonly max?: number;
   readonly required?: boolean;
   readonly disabled?: boolean;
+  /** A prior-year plan's locked field: read-only, with the lock icon. */
+  readonly locked?: boolean;
   readonly error?: string;
   readonly helpText?: string;
+  readonly id?: string;
 }
 
 const DEFAULT_MAX_MINOR_UNITS = 10_000_000_000;
@@ -54,64 +58,35 @@ export function MoneyInput({
   value,
   onChange,
   label,
-  prefix,
+  unit,
   max = DEFAULT_MAX_MINOR_UNITS,
   required = false,
   disabled = false,
+  locked = false,
   error,
   helpText,
+  id,
 }: MoneyInputProps) {
-  const id = useId();
-  const helpId = `${id}-help`;
-  const errorId = `${id}-error`;
-  const describedBy =
-    [helpText ? helpId : null, error ? errorId : null].filter(Boolean).join(' ') ||
-    undefined;
-
   return (
-    <div className="space-y-1">
-      <Label htmlFor={id}>
-        {label}
-        {required ? (
-          <>
-            {' '}
-            <RequiredMark />
-          </>
-        ) : null}
-      </Label>
-      <div className="flex items-center gap-2">
-        <span className="text-muted-foreground w-6 text-center text-base">
-          {prefix}
-        </span>
-        <Input
-          id={id}
-          type="text"
-          inputMode="numeric"
-          pattern="[0-9]*"
-          value={minorToDisplay(value)}
-          onChange={(e) => {
-            const raw = e.target.value.replace(/[^\d]/g, '');
-            const next = displayToMinor(raw);
-            if (next !== null && next > max) return;
-            onChange(next);
-          }}
-          disabled={disabled}
-          aria-invalid={Boolean(error)}
-          aria-describedby={describedBy}
-        />
-      </div>
-      {helpText ? (
-        <p id={helpId} className="text-muted-foreground text-sm">
-          {helpText}
-        </p>
-      ) : null}
-      {error ? (
-        // Linked via aria-describedby (not role="alert"): the form moves
-        // focus to the first invalid field, which then reads its message.
-        <p id={errorId} className="text-destructive text-sm">
-          {error}
-        </p>
-      ) : null}
-    </div>
+    <TextField
+      {...(id ? { id } : {})}
+      label={label}
+      type="text"
+      inputMode="numeric"
+      pattern="[0-9]*"
+      suffix={unit}
+      value={minorToDisplay(value)}
+      onChange={(e) => {
+        const raw = e.target.value.replace(/[^\d]/g, '');
+        const next = displayToMinor(raw);
+        if (next !== null && next > max) return;
+        onChange(next);
+      }}
+      disabled={disabled}
+      {...(required ? { required: true } : {})}
+      {...(helpText ? { hint: helpText } : {})}
+      {...(error ? { error } : {})}
+      {...lockedFieldProps(locked)}
+    />
   );
 }

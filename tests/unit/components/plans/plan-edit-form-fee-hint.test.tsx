@@ -4,7 +4,7 @@
 // the tenant's rate when it is known.
 
 import { describe, it, expect, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
 import { PlanEditForm } from '@/components/plans/plan-edit-form';
@@ -47,7 +47,7 @@ function renderForm(vatRatePercent: number | null) {
       <PlanEditForm
         initialValues={PLAN}
         currentYear={2026}
-        currencyPrefix="฿"
+        currencyUnit="THB"
         vatRatePercent={vatRatePercent}
         onSubmit={() => {}}
       />
@@ -64,5 +64,66 @@ describe('PlanEditForm annual fee hint', () => {
   it('still says it excludes VAT when the rate is unknown', () => {
     renderForm(null);
     expect(screen.getByText('Whole baht, excluding VAT.')).toBeInTheDocument();
+  });
+});
+
+// 122 US6 (T606) — board `Admin-plan-edit` (+ `-locked`): three fieldset
+// cards, Cancel / "Save changes" in an action bar, and a prior-year plan's
+// locked fields read-only or disabled with the lock icon and the note.
+describe('PlanEditForm on AURA', () => {
+  function renderEdit(plan: PlanSchemaInput) {
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <PlanEditForm
+          initialValues={plan}
+          currentYear={2026}
+          currencyUnit="THB"
+          vatRatePercent={7}
+          currentYearStatus="has_plan"
+          onSubmit={() => {}}
+          onCancel={() => {}}
+        />
+      </NextIntlClientProvider>,
+    );
+  }
+  const L = en.admin.plans.create.labels;
+
+  it('shows the plan name, annual fee and benefit matrix as three AURA cards', () => {
+    renderEdit(PLAN);
+    for (const name of [L.planName, L.annualFee, L.benefitMatrix]) {
+      const group = screen.getByRole('group', { name });
+      expect(group).toHaveClass('aura-card');
+    }
+  });
+
+  it('ends with Cancel then "Save changes" in an AURA action bar', () => {
+    renderEdit(PLAN);
+    const bar = screen.getByRole('region', { name: 'Actions' });
+    expect(within(bar).getAllByRole('button').map((b) => b.textContent)).toEqual(['Cancel', 'Save changes']);
+    expect(within(bar).getByRole('button', { name: 'Save changes' })).toHaveAttribute('type', 'submit');
+  });
+
+  it('leaves validation to the app, not the browser (the AURA fields pass `required` to the input)', () => {
+    renderEdit(PLAN);
+    const bar = screen.getByRole('region', { name: 'Actions' });
+    expect(bar.closest('form')).toHaveAttribute('novalidate');
+  });
+
+  it('locks the prior-year fields as decided, keeping name, description and sort order editable', () => {
+    renderEdit({ ...PLAN, plan_year: 2025 });
+    const locked = en.admin.plans.priorYearLock.lockedField;
+    const fee = screen.getByRole('textbox', { name: /^Annual fee/ });
+    expect(fee).toHaveAttribute('readonly');
+    expect(fee).toHaveAccessibleDescription(new RegExp(locked));
+    const memberType = screen.getByRole('combobox', { name: L.memberTypeScope });
+    // AURA 5.19 (#114): a locked select is read-only, so it stays in the tab order.
+    expect(memberType).not.toBeDisabled();
+    expect(memberType).toHaveAttribute('aria-readonly', 'true');
+    expect(memberType).toHaveAccessibleDescription(locked);
+    expect(screen.getByRole('spinbutton', { name: L.sortOrder })).not.toHaveAttribute('readonly');
+    expect(screen.getByRole('textbox', { name: /^Plan name \(English\)/ })).not.toHaveAttribute('readonly');
+    const m2m = screen.getByRole('switch', { name: en.admin.plans.create.matrix.m2mBenefitsAccess });
+    expect(m2m).not.toBeDisabled();
+    expect(m2m).toHaveAttribute('aria-readonly', 'true');
   });
 });

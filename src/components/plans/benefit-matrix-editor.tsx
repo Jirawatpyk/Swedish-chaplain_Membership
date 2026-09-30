@@ -14,33 +14,40 @@
  * default partnership sub-object; switching back nulls it out.
  * This mirrors the zod superRefine integrity rule so the wizard
  * cannot end up in a state that the server would reject.
+ *
+ * 122 US6 (T604): AURA Select / Switch / number TextField, laid out as the
+ * plan boards draw it (two columns from 768px, the groups under small mono
+ * headings); `locked` shows a prior-year plan's matrix read-only with AURA's
+ * lock icon (spec Clarifications, US6 start).
  */
 'use client';
 
-import { useEffect, useId, useMemo } from 'react';
+import { useEffect, useMemo, type ReactNode } from 'react';
 import { useTranslations } from 'next-intl';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  TranslatedSelectValue,
-} from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
+import { Select, Switch, TextField } from '@jirawatpyk/aura-react';
 import type {
   BenefitMatrix,
   PartnershipBenefits,
   PlanCategory,
 } from '@/modules/plans';
+import { lockedFieldProps, lockedSelectProps, lockedSwitchProps } from './plan-locked-note';
 
 export interface BenefitMatrixEditorProps {
   readonly value: BenefitMatrix;
   readonly onChange: (next: BenefitMatrix) => void;
   readonly planCategory: PlanCategory;
   readonly disabled?: boolean;
+  /** A prior-year plan: every benefit read-only (the server refuses changes too). */
+  readonly locked?: boolean;
+  /**
+   * Frames each part: the plan boards give the partnership benefits their
+   * own card beside the benefit matrix's. Without it the partnership block
+   * is one more group under its heading.
+   */
+  readonly renderSection?: (section: {
+    readonly id: 'benefits' | 'partnership';
+    readonly children: ReactNode;
+  }) => ReactNode;
 }
 
 const DEFAULT_PARTNERSHIP: PartnershipBenefits = {
@@ -62,59 +69,38 @@ function NumberField({
   value,
   onChange,
   disabled,
+  locked,
 }: {
   readonly label: string;
   readonly value: number;
   readonly onChange: (n: number) => void;
-  readonly disabled?: boolean;
+  readonly disabled: boolean;
+  readonly locked: boolean;
 }) {
-  const id = useId();
   return (
-    <div className="space-y-1">
-      {/* S1-P1-19: associate Label↔Input (WCAG 1.3.1 / 4.1.2). */}
-      <Label htmlFor={id}>{label}</Label>
-      <Input
-        id={id}
-        type="number"
-        min={0}
-        step={1}
-        value={value}
-        onChange={(e) => {
-          const next = Number.parseInt(e.target.value, 10);
-          onChange(Number.isFinite(next) ? Math.max(0, next) : 0);
-        }}
-        disabled={disabled}
-      />
-    </div>
+    <TextField
+      label={label}
+      type="number"
+      min={0}
+      step={1}
+      value={value}
+      onChange={(e) => {
+        const next = Number.parseInt(e.target.value, 10);
+        onChange(Number.isFinite(next) ? Math.max(0, next) : 0);
+      }}
+      disabled={disabled}
+      {...lockedFieldProps(locked)}
+    />
   );
 }
 
-function BoolField({
-  label,
-  value,
-  onChange,
-  disabled,
-}: {
-  readonly label: string;
-  readonly value: boolean;
-  readonly onChange: (b: boolean) => void;
-  readonly disabled?: boolean;
-}) {
-  const id = useId();
-  const labelId = `${id}-label`;
+/** A group of fields under a small mono heading (Brand Visibility, Events, …). */
+function Group({ title, children }: { readonly title: string; readonly children: ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-4 py-1">
-      <Label htmlFor={id} id={labelId} className="mb-0 flex-1">
-        {label}
-      </Label>
-      <Switch
-        id={id}
-        aria-labelledby={labelId}
-        checked={value}
-        onCheckedChange={onChange}
-        disabled={disabled}
-      />
-    </div>
+    <section className="space-y-[var(--aura-space-3)]">
+      <h3 className="aura-text-mono uppercase tracking-wider text-[var(--aura-fg-secondary)] [&:lang(th)]:tracking-normal">{title}</h3>
+      {children}
+    </section>
   );
 }
 
@@ -123,6 +109,8 @@ export function BenefitMatrixEditor({
   onChange,
   planCategory,
   disabled = false,
+  locked = false,
+  renderSection,
 }: BenefitMatrixEditorProps) {
   const t = useTranslations('admin.plans.create.options');
   const tM = useTranslations('admin.plans.create.matrix');
@@ -194,316 +182,213 @@ export function BenefitMatrixEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only fire on category change
   }, [planCategory]);
 
-  return (
-    <div className="space-y-6">
-      <section className="space-y-3">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          {tM('section.brandVisibility')}
-        </h3>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+  const num = { disabled, locked };
+  const sel = { disabled, ...lockedSelectProps(locked) };
+  const sw = { disabled, ...lockedSwitchProps(locked) };
+
+  const core = (
+    <>
+      <Group title={tM('section.brandVisibility')}>
+        <div className="grid grid-cols-1 gap-[var(--aura-space-4)] md:grid-cols-2">
           <NumberField
             label={tM('eblastPerYear')}
             value={value.eblast_per_year}
             onChange={(n) => patch({ eblast_per_year: n })}
-            disabled={disabled}
+            {...num}
           />
-          <div className="space-y-1">
-            <Label>{tM('websitePageType')}</Label>
-            <Select
-              value={value.website_page_type ?? '__null__'}
-              onValueChange={(v) =>
-                patch({
-                  website_page_type: v === '__null__' ? null : (v as BenefitMatrix['website_page_type']),
-                })
-              }
-              disabled={disabled}
-              items={WEBSITE_PAGE_OPTIONS}
-            >
-              <SelectTrigger aria-label={tM('websitePageType')} className="w-full">
-                <TranslatedSelectValue
-                  translate={(v) =>
-                    WEBSITE_PAGE_OPTIONS.find((o) => o.value === v)?.label ?? null
-                  }
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {WEBSITE_PAGE_OPTIONS.map((o) => (
-                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1">
-            <Label>{tM('homepageLogoCategory')}</Label>
-            <Select
-              value={value.homepage_logo_category ?? '__null__'}
-              onValueChange={(v) =>
-                patch({
-                  homepage_logo_category:
-                    v === '__null__'
-                      ? null
-                      : (v as BenefitMatrix['homepage_logo_category']),
-                })
-              }
-              disabled={disabled}
-              items={LOGO_CATEGORY_OPTIONS}
-            >
-              <SelectTrigger aria-label={tM('homepageLogoCategory')} className="w-full">
-                <TranslatedSelectValue
-                  translate={(v) =>
-                    LOGO_CATEGORY_OPTIONS.find((o) => o.value === v)?.label ?? null
-                  }
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {LOGO_CATEGORY_OPTIONS.map((o) => (
-                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1">
-            <Label>{tM('directoryListingSize')}</Label>
-            <Select
-              value={value.directory_listing_size ?? '__null__'}
-              onValueChange={(v) =>
-                patch({
-                  directory_listing_size:
-                    v === '__null__'
-                      ? null
-                      : (v as BenefitMatrix['directory_listing_size']),
-                })
-              }
-              disabled={disabled}
-              items={DIRECTORY_SIZE_OPTIONS}
-            >
-              <SelectTrigger aria-label={tM('directoryListingSize')} className="w-full">
-                <TranslatedSelectValue
-                  translate={(v) =>
-                    DIRECTORY_SIZE_OPTIONS.find((o) => o.value === v)?.label ?? null
-                  }
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {DIRECTORY_SIZE_OPTIONS.map((o) => (
-                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-      </section>
-
-      <Separator />
-
-      <section className="space-y-3">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          {tM('section.events')}
-        </h3>
-        <div className="space-y-1">
-          <Label>{tM('eventDiscountScope')}</Label>
           <Select
-            value={value.event_discount_scope}
-            onValueChange={(v) =>
-              patch({ event_discount_scope: v as BenefitMatrix['event_discount_scope'] })
+            label={tM('websitePageType')}
+            value={value.website_page_type ?? '__null__'}
+            onChange={(e) =>
+              patch({
+                website_page_type:
+                  e.target.value === '__null__' ? null : (e.target.value as BenefitMatrix['website_page_type']),
+              })
             }
-            disabled={disabled}
-            items={DISCOUNT_SCOPE_OPTIONS}
-          >
-            <SelectTrigger aria-label={tM('eventDiscountScope')} className="w-full">
-              <TranslatedSelectValue
-                translate={(v) =>
-                  DISCOUNT_SCOPE_OPTIONS.find((o) => o.value === v)?.label ?? null
-                }
-              />
-            </SelectTrigger>
-            <SelectContent>
-              {DISCOUNT_SCOPE_OPTIONS.map((o) => (
-                <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            options={WEBSITE_PAGE_OPTIONS}
+            {...sel}
+          />
+          <Select
+            label={tM('homepageLogoCategory')}
+            value={value.homepage_logo_category ?? '__null__'}
+            onChange={(e) =>
+              patch({
+                homepage_logo_category:
+                  e.target.value === '__null__' ? null : (e.target.value as BenefitMatrix['homepage_logo_category']),
+              })
+            }
+            options={LOGO_CATEGORY_OPTIONS}
+            {...sel}
+          />
+          <Select
+            label={tM('directoryListingSize')}
+            value={value.directory_listing_size ?? '__null__'}
+            onChange={(e) =>
+              patch({
+                directory_listing_size:
+                  e.target.value === '__null__' ? null : (e.target.value as BenefitMatrix['directory_listing_size']),
+              })
+            }
+            options={DIRECTORY_SIZE_OPTIONS}
+            {...sel}
+          />
         </div>
-        <BoolField
+      </Group>
+
+      <Group title={tM('section.events')}>
+        <div className="grid grid-cols-1 gap-[var(--aura-space-4)] md:grid-cols-2">
+          <Select
+            label={tM('eventDiscountScope')}
+            value={value.event_discount_scope}
+            onChange={(e) => patch({ event_discount_scope: e.target.value as BenefitMatrix['event_discount_scope'] })}
+            options={DISCOUNT_SCOPE_OPTIONS}
+            {...sel}
+          />
+          <NumberField
+            label={tM('culturalTicketsPerYear')}
+            value={value.cultural_tickets_per_year}
+            onChange={(n) => patch({ cultural_tickets_per_year: n })}
+            {...num}
+          />
+        </div>
+        <Switch
           label={tM('eventsCoBrandedAccess')}
-          value={value.events_cobranded_access}
+          checked={value.events_cobranded_access}
           onChange={(b) => patch({ events_cobranded_access: b })}
-          disabled={disabled}
+          {...sw}
         />
-        <NumberField
-          label={tM('culturalTicketsPerYear')}
-          value={value.cultural_tickets_per_year}
-          onChange={(n) => patch({ cultural_tickets_per_year: n })}
-          disabled={disabled}
-        />
-      </section>
+      </Group>
 
-      <Separator />
+      <Group title={tM('section.additionalBenefits')}>
+        <div className="space-y-[var(--aura-space-2)]">
+          <Switch
+            label={tM('m2mBenefitsAccess')}
+            checked={value.m2m_benefits_access}
+            onChange={(b) => patch({ m2m_benefits_access: b })}
+            {...sw}
+          />
+          <Switch
+            label={tM('businessReferrals')}
+            checked={value.business_referrals}
+            onChange={(b) => patch({ business_referrals: b })}
+            {...sw}
+          />
+          <Switch
+            label={tM('tailorMadeServices')}
+            checked={value.tailor_made_services}
+            onChange={(b) => patch({ tailor_made_services: b })}
+            {...sw}
+          />
+        </div>
+      </Group>
 
-      <section className="space-y-3">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          {tM('section.additionalBenefits')}
-        </h3>
-        <BoolField
-          label={tM('m2mBenefitsAccess')}
-          value={value.m2m_benefits_access}
-          onChange={(b) => patch({ m2m_benefits_access: b })}
-          disabled={disabled}
-        />
-        <BoolField
-          label={tM('businessReferrals')}
-          value={value.business_referrals}
-          onChange={(b) => patch({ business_referrals: b })}
-          disabled={disabled}
-        />
-        <BoolField
-          label={tM('tailorMadeServices')}
-          value={value.tailor_made_services}
-          onChange={(b) => patch({ tailor_made_services: b })}
-          disabled={disabled}
-        />
-      </section>
+    </>
+  );
 
-      {planCategory === 'partnership' && value.partnership !== null ? (
-        <>
-          <Separator />
-          <section className="space-y-3">
-            <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              {tM('section.partnershipBenefits')}
-            </h3>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <NumberField
-                label={tM('eventTicketsIncluded')}
-                value={value.partnership.event_tickets_included}
-                onChange={(n) => patchPartnership({ event_tickets_included: n })}
-                disabled={disabled}
-              />
-              <NumberField
-                label={tM('websiteLogoMonths')}
-                value={value.partnership.website_logo_months}
-                onChange={(n) => patchPartnership({ website_logo_months: n })}
-                disabled={disabled}
-              />
-              <NumberField
-                label={tM('bannerPerYear')}
-                value={value.partnership.banner_per_year}
-                onChange={(n) => patchPartnership({ banner_per_year: n })}
-                disabled={disabled}
-              />
-              <div className="space-y-1">
-                <Label>{tM('videoDuration')}</Label>
-                <Select
-                  value={String(value.partnership.video_duration_minutes)}
-                  onValueChange={(v) => {
-                    if (v === null) return;
-                    patchPartnership({
-                      video_duration_minutes: Number.parseFloat(v) as 1.0 | 1.5,
-                    });
-                  }}
-                  disabled={disabled}
-                  items={VIDEO_DURATION_OPTIONS}
-                >
-                  <SelectTrigger aria-label={tM('videoDuration')} className="w-full">
-                    <TranslatedSelectValue
-                      translate={(v) =>
-                        VIDEO_DURATION_OPTIONS.find((o) => o.value === v)?.label ?? null
-                      }
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {VIDEO_DURATION_OPTIONS.map((o) => (
-                      <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label>{tM('videoFrequencyScope')}</Label>
-                <Select
-                  value={value.partnership.video_frequency_scope}
-                  onValueChange={(v) =>
-                    patchPartnership({
-                      video_frequency_scope: v as PartnershipBenefits['video_frequency_scope'],
-                    })
-                  }
-                  disabled={disabled}
-                  items={VIDEO_FREQUENCY_OPTIONS}
-                >
-                  <SelectTrigger aria-label={tM('videoFrequencyScope')} className="w-full">
-                    <TranslatedSelectValue
-                      translate={(v) =>
-                        VIDEO_FREQUENCY_OPTIONS.find((o) => o.value === v)?.label ?? null
-                      }
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {VIDEO_FREQUENCY_OPTIONS.map((o) => (
-                      <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label>{tM('directoryAdPosition')}</Label>
-                <Select
-                  value={value.partnership.directory_ad_position}
-                  onValueChange={(v) =>
-                    patchPartnership({
-                      directory_ad_position:
-                        v as PartnershipBenefits['directory_ad_position'],
-                    })
-                  }
-                  disabled={disabled}
-                  items={DIRECTORY_AD_OPTIONS}
-                >
-                  <SelectTrigger aria-label={tM('directoryAdPosition')} className="w-full">
-                    <TranslatedSelectValue
-                      translate={(v) =>
-                        DIRECTORY_AD_OPTIONS.find((o) => o.value === v)?.label ?? null
-                      }
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {DIRECTORY_AD_OPTIONS.map((o) => (
-                      <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <BoolField
+  const partnership =
+    planCategory === 'partnership' && value.partnership !== null ? (
+      <div className="space-y-[var(--aura-space-3)]">
+          <div className="grid grid-cols-1 gap-[var(--aura-space-4)] md:grid-cols-2">
+            <NumberField
+              label={tM('eventTicketsIncluded')}
+              value={value.partnership.event_tickets_included}
+              onChange={(n) => patchPartnership({ event_tickets_included: n })}
+              {...num}
+            />
+            <NumberField
+              label={tM('websiteLogoMonths')}
+              value={value.partnership.website_logo_months}
+              onChange={(n) => patchPartnership({ website_logo_months: n })}
+              {...num}
+            />
+            <NumberField
+              label={tM('bannerPerYear')}
+              value={value.partnership.banner_per_year}
+              onChange={(n) => patchPartnership({ banner_per_year: n })}
+              {...num}
+            />
+            <Select
+              label={tM('directoryAdPosition')}
+              value={value.partnership.directory_ad_position}
+              onChange={(e) =>
+                patchPartnership({
+                  directory_ad_position: e.target.value as PartnershipBenefits['directory_ad_position'],
+                })
+              }
+              options={DIRECTORY_AD_OPTIONS}
+              {...sel}
+            />
+            <Select
+              label={tM('videoDuration')}
+              value={String(value.partnership.video_duration_minutes)}
+              onChange={(e) =>
+                patchPartnership({
+                  video_duration_minutes: Number.parseFloat(e.target.value) as 1.0 | 1.5,
+                })
+              }
+              options={VIDEO_DURATION_OPTIONS}
+              {...sel}
+            />
+            <Select
+              label={tM('videoFrequencyScope')}
+              value={value.partnership.video_frequency_scope}
+              onChange={(e) =>
+                patchPartnership({
+                  video_frequency_scope: e.target.value as PartnershipBenefits['video_frequency_scope'],
+                })
+              }
+              options={VIDEO_FREQUENCY_OPTIONS}
+              {...sel}
+            />
+          </div>
+          <div className="grid grid-cols-1 gap-[var(--aura-space-2)] md:grid-cols-2">
+            <Switch
               label={tM('boothIncluded')}
-              value={value.partnership.booth_included}
+              checked={value.partnership.booth_included}
               onChange={(b) => patchPartnership({ booth_included: b })}
-              disabled={disabled}
+              {...sw}
             />
-            <BoolField
+            <Switch
               label={tM('rollupLogoAtEvents')}
-              value={value.partnership.rollup_logo_at_events}
+              checked={value.partnership.rollup_logo_at_events}
               onChange={(b) => patchPartnership({ rollup_logo_at_events: b })}
-              disabled={disabled}
+              {...sw}
             />
-            <BoolField
+            <Switch
               label={tM('logoOnMerch')}
-              value={value.partnership.logo_on_merch}
+              checked={value.partnership.logo_on_merch}
               onChange={(b) => patchPartnership({ logo_on_merch: b })}
-              disabled={disabled}
+              {...sw}
             />
-            <BoolField
+            <Switch
               label={tM('newsletterPromotion')}
-              value={value.partnership.newsletter_promotion}
+              checked={value.partnership.newsletter_promotion}
               onChange={(b) => patchPartnership({ newsletter_promotion: b })}
-              disabled={disabled}
+              {...sw}
             />
-            <BoolField
+            <Switch
               label={tM('eNewsletterLogo')}
-              value={value.partnership.enewsletter_logo}
+              checked={value.partnership.enewsletter_logo}
               onChange={(b) => patchPartnership({ enewsletter_logo: b })}
-              disabled={disabled}
+              {...sw}
             />
-          </section>
-        </>
-      ) : null}
+          </div>
+        </div>
+    ) : null;
+
+  if (renderSection) {
+    return (
+      <>
+        {renderSection({ id: 'benefits', children: <div className="space-y-[var(--aura-space-6)]">{core}</div> })}
+        {partnership ? renderSection({ id: 'partnership', children: partnership }) : null}
+      </>
+    );
+  }
+
+  return (
+    <div className="space-y-[var(--aura-space-6)]">
+      {core}
+      {partnership ? <Group title={tM('section.partnershipBenefits')}>{partnership}</Group> : null}
     </div>
   );
 }

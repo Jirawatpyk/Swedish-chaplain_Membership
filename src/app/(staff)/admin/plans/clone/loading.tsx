@@ -1,10 +1,5 @@
 import { getTranslations } from 'next-intl/server';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card } from '@jirawatpyk/aura-react/server';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import {
@@ -17,15 +12,10 @@ export default async function Loading() {
   const tLayout = await getTranslations('layout');
   return (
     <PageSkeletonShell ariaLabel={tLayout('loadingForm')}>
-      <FormContainer>
+      <FormContainer className="mx-0">
         <PageHeader title={t('title')} />
-        <Card>
-          <CardHeader>
-            <CardTitle>{t('title')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <FormSkeleton fields={4} footerButtons={2} withHeader={false} />
-          </CardContent>
+        <Card title={t('title')} headingLevel={2}>
+          <FormSkeleton fields={4} footerButtons={2} withHeader={false} />
         </Card>
       </FormContainer>
     </PageSkeletonShell>

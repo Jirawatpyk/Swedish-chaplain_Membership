@@ -8,7 +8,7 @@
  *      the count is display-only; the clone uses the real Source year.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import { CloneYearClient } from '@/app/(staff)/admin/plans/clone/clone-year-client';
 
@@ -29,6 +29,7 @@ const messages = {
         sourceLabel: 'Source year',
         targetLabel: 'Target year',
         activateClonedLabel: 'Activate cloned',
+        activateClonedHint: 'Leave off to review fees and benefits first.',
         cancel: 'Cancel',
         submit: 'Clone {count} plans',
         submitting: 'Cloning…',
@@ -140,5 +141,66 @@ describe('CloneYearClient pre-flight count', () => {
     });
     expect(screen.getByText('Clone 5 plans from 2026 to 2027')).toBeTruthy();
     expect(cloneButton()).not.toBeDisabled();
+  });
+});
+
+// 122 US6 (T607) — board `Admin-plans-clone`: AURA fields (ids kept), the
+// switch with its description, Cancel then "Clone {n} plans" in an action
+// bar, and the confirmation on an AURA alertdialog.
+describe('CloneYearClient on AURA', () => {
+  it('uses AURA fields and a described switch, ending with Cancel and Clone in an action bar', () => {
+    renderClient();
+    const source = document.getElementById('source_year') as HTMLInputElement;
+    expect(source.closest('.aura-field')).not.toBeNull();
+    expect(source).toBeRequired();
+    expect(document.getElementById('target_year')).toBeRequired();
+    const activate = screen.getByRole('switch', { name: 'Activate cloned' });
+    expect(activate).toHaveAccessibleDescription('Leave off to review fees and benefits first.');
+    const bar = screen.getByRole('region', { name: 'Actions' });
+    expect(within(bar).getAllByRole('button').map((b) => b.textContent)).toEqual(['Cancel', 'Clone 5 plans']);
+    expect(within(bar).getByRole('button', { name: 'Clone 5 plans' })).toHaveClass('aura-btn--primary');
+  });
+
+  // Board `Admin-plans-clone-mobile`: the bar sits inside the clone card, so
+  // on a phone it also reaches past the card's padding to pin edge to edge.
+  it('marks its action bar as inside a card, for the phone edge-to-edge rule', () => {
+    renderClient();
+    expect(screen.getByRole('region', { name: 'Actions' })).toHaveClass('plan-form-actions', 'plan-form-actions--in-card');
+  });
+
+  // Board `Admin-plans-clone`: each plan's full name, never cut to "Diamond
+  // Partners…" (the name wraps; the fee keeps its place).
+  it('lists each plan to copy by its full name, wrapping rather than cutting it', () => {
+    renderClient();
+    const list = screen.getByRole('list');
+    for (const item of within(list).getAllByRole('listitem')) {
+      const name = item.firstElementChild as HTMLElement;
+      expect(name).not.toHaveClass('truncate');
+      expect(name).toHaveClass('break-words');
+    }
+  });
+
+  // Parity comment (US6): the rows are ruled in AURA's default border, as the
+  // board draws them; the subtle tone all but vanished on white.
+  it('rules the plan rows in the default border tone', () => {
+    renderClient();
+    for (const item of within(screen.getByRole('list')).getAllByRole('listitem')) {
+      expect(item).toHaveClass('border-[var(--aura-border-default)]');
+    }
+  });
+
+  // Board `Admin-plans-clone`: a name/fee list set in AURA's 13px table-cell
+  // text, so "Thai Alumni/Student (inactive)" keeps to one line in a column.
+  it('sets the plan list in AURA\'s table-cell text', () => {
+    renderClient();
+    expect(screen.getByRole('list')).toHaveClass('aura-text-table-cell');
+  });
+
+  it('confirms on an AURA alertdialog before cloning', () => {
+    renderClient();
+    fireEvent.click(cloneButton());
+    const dialog = screen.getByRole('alertdialog');
+    expect(dialog).toHaveClass('aura-dialog');
+    expect(within(dialog).getByRole('button', { name: 'Clone 5 plans' })).toBeInTheDocument();
   });
 });
