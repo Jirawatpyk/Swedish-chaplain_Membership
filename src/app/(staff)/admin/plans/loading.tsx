@@ -40,9 +40,9 @@ export default async function Loading() {
               data-skeleton="filters"
               className="grid grid-cols-2 items-end gap-3 sm:flex sm:flex-wrap"
             >
-              <SkeletonBlock className="col-span-2 h-9 min-w-0 sm:min-w-60 sm:flex-1" />
-              <SkeletonBlock className="h-9 sm:w-44" />
-              <SkeletonBlock className="h-9 sm:w-36" data-skeleton="year-select" />
+              <LabelledFieldSkeleton className="col-span-2 min-w-0 sm:min-w-60 sm:flex-1" />
+              <LabelledFieldSkeleton className="sm:w-44" />
+              <LabelledFieldSkeleton className="sm:w-36" slot="year-select" />
               <div className="col-span-2 flex items-center gap-2 sm:col-auto">
                 <SkeletonBlock className="h-5 w-9 rounded-full" />
                 <SkeletonBlock className="h-4 w-20" />
@@ -59,5 +59,15 @@ export default async function Loading() {
         </Card>
       </TableContainer>
     </PageSkeletonShell>
+  );
+}
+
+/** A labelled AURA field's slot: its label line, then the control. */
+function LabelledFieldSkeleton({ className, slot }: { readonly className: string; readonly slot?: string }) {
+  return (
+    <div data-skeleton="labelled-field" className={`flex flex-col gap-1 ${className}`}>
+      <SkeletonBlock className="h-4 w-16" />
+      <SkeletonBlock className="h-[var(--input-height)] w-full" {...(slot ? { 'data-skeleton': slot } : {})} />
+    </div>
   );
 }

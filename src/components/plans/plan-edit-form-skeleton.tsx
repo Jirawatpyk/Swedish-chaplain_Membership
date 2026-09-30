@@ -8,7 +8,7 @@ import { SkeletonBlock } from '@/components/shell/page-skeletons';
  * Shape mirrors plan-edit-form.tsx:
  *   - Basics: h2 + plan name + description (EN/TH/SV tabs + input /
  *     textarea) + 2-column grid (sort order, member type)
- *   - Fees: h2 + annual fee (currency prefix + input + VAT hint) +
+ *   - Fees: h2 + annual fee (input with its THB suffix + VAT hint) +
  *     2-column grid (min/max turnover, max duration, max member age)
  *   - Benefits: h2 + the benefit matrix editor's always-present sections
  *     (Brand Visibility, Events, Additional). The Partnership section only
@@ -39,10 +39,7 @@ function MoneyFieldSkeleton({ withHint = false }: { readonly withHint?: boolean 
   return (
     <div className="space-y-1">
       <SkeletonBlock className="h-4 w-28" />
-      <div className="flex items-center gap-2">
-        <SkeletonBlock className="h-5 w-6" />
-        <SkeletonBlock className="h-[var(--input-height)] w-full" />
-      </div>
+      <SkeletonBlock className="h-[var(--input-height)] w-full" />
       {withHint ? <SkeletonBlock className="h-3 w-48" /> : null}
     </div>
   );
