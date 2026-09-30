@@ -49,7 +49,7 @@ describe('LocaleTextInput on AURA tabs', () => {
 
   it('marks a tab whose translation is missing', () => {
     wrap(<LocaleTextInput label={C.labels.description} value={{ en: 'x', th: 'y' }} onChange={vi.fn()} multiline />);
-    expect(screen.getByRole('tab', { name: 'SV — translation missing' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'SV (Swedish) — translation missing' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'TH' })).toBeInTheDocument();
   });
 
