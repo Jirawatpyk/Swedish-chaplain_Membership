@@ -183,7 +183,6 @@ export function ContactFields({
               name={field.name}
               // The input carries RHF's ref so a failed submit can focus it.
               ref={field.ref}
-              onBlur={field.onBlur}
               label={tf('dateOfBirth')}
               required
               max="today"
