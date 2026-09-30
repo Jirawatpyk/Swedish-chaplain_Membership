@@ -358,6 +358,11 @@ const DETAIL_LABEL_KEYS_BY_PARENT: Record<string, string> = {
 const isDynamicSegment = (segment: string): boolean =>
   UUID_RE.test(segment) || /^\d{4}$/.test(segment);
 
+// The plan id in `/admin/plans/<year>/<planId>` is a slug (`premium-corporate`),
+// not a UUID, so only its position marks it as a record.
+const isPlanSlugAt = (parts: readonly string[], idx: number): boolean =>
+  idx >= 2 && parts[idx - 2] === 'plans' && /^\d{4}$/.test(parts[idx - 1] ?? '');
+
 /**
  * Resolve the `breadcrumb.*` label for every segment the current path can
  * show. `t` looks up a key under the `breadcrumb` namespace and may throw
@@ -389,10 +394,9 @@ export function buildBreadcrumbStaticLabels(
   for (let i = 1; i < parts.length; i++) {
     const segment = parts[i]!;
     const parent = parts[i - 1]!;
-    let resource = parent;
-    for (let j = i - 1; j > 0 && isDynamicSegment(resource); j--) {
-      resource = parts[j - 1]!;
-    }
+    let r = i - 1;
+    while (r > 0 && (isDynamicSegment(parts[r]!) || isPlanSlugAt(parts, r))) r--;
+    const resource = parts[r]!;
 
     const verbKey = CONTEXTUAL_VERBS[resource]?.[segment];
     if (verbKey) {
