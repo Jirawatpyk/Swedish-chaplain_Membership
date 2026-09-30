@@ -284,7 +284,8 @@ export function PipelineTable({
         // An empty label: AURA names the header "Actions" for screen readers.
         key: 'actions',
         label: '',
-        width: 176,
+        // Fits the longest "Send reminder" (SV "Skicka påminnelse") beside ⋯.
+        width: 216,
         actions: true,
         render: (row) => (
           <RowActions

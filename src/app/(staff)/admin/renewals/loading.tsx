@@ -35,7 +35,7 @@
  * both lists at once:
  *   - Result-count caption: one text-sm line above the rows.
  *   - Columns: the selection checkbox, 7 data columns and the actions slot
- *     (Send reminder + ⋯, ~176px). Rows carry a 44px action shimmer, the
+ *     (Send reminder + ⋯, 216px). Rows carry a 44px action shimmer, the
  *     real row's height driver (`touchHeight` buttons).
  *   - Row count: the page requests `limit: 50`, but the shimmer stays
  *     capped at 10 rows (3 cards on a phone) — the swap difference lands
@@ -128,7 +128,7 @@ export default async function Loading() {
                   {Array.from({ length: 7 }).map((_, i) => (
                     <SkeletonBlock key={i} className="h-4 flex-1" />
                   ))}
-                  <div className="w-44 shrink-0" />
+                  <div className="w-54 shrink-0" />
                 </div>
                 {Array.from({ length: 10 }).map((_, rowIdx) => (
                   <div
@@ -139,7 +139,7 @@ export default async function Loading() {
                     {Array.from({ length: 7 }).map((_, colIdx) => (
                       <SkeletonBlock key={colIdx} className="h-5 flex-1" />
                     ))}
-                    <SkeletonBlock className="h-11 w-44 shrink-0" />
+                    <SkeletonBlock className="h-11 w-54 shrink-0" />
                   </div>
                 ))}
               </div>

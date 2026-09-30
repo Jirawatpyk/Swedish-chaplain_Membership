@@ -130,6 +130,8 @@ export function UrgencyBucketTabs({
           label={tTable('columns.urgency')}
           value={current ?? ''}
           placeholder={monthLensActive ? t('monthLensBadge') : undefined}
+          // Same hint the chips carry: why no stage is chosen.
+          {...(monthLensActive ? { 'aria-describedby': MONTH_LENS_HINT_ID } : {})}
           options={chips.map(({ bucket, count, label }) => ({
             value: bucket,
             label: `${label} (${count})`,
