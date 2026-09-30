@@ -59,11 +59,22 @@ describe('<TierBadge>', () => {
     expect(el.getAttribute('aria-label')).toBeNull();
   });
 
-  it('applies tier-specific colour classes', () => {
-    const { container } = renderBadge('premium');
-    const el = container.querySelector('span')!;
-    expect(el.className).toMatch(/bg-purple/);
-  });
+  it.each([
+    ['premium', 'Premium', 'aura-badge--accent', false],
+    ['regular', 'Regular', 'aura-badge--neutral', false],
+    ['start_up', 'Start-up', 'aura-badge--warning', false],
+    ['partnership', 'Partnership', 'aura-badge--success', false],
+    ['thai_alumni', 'Thai alumni', 'aura-badge--warning', true],
+  ] as const)(
+    '122 US7a: %s is an AURA badge toned as the board draws it',
+    (tier, label, tone, outline) => {
+      renderBadge(tier);
+      const el = screen.getByText(label);
+      expect(el).toHaveClass('aura-badge', tone);
+      if (outline) expect(el).toHaveClass('is-outline');
+      else expect(el).not.toHaveClass('is-outline');
+    },
+  );
 
   it('merges custom className', () => {
     render(

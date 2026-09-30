@@ -33,6 +33,11 @@ describe('<BillIssuedBadge>', () => {
     ).toBeDefined();
   });
 
+  it('122 US7a: is a neutral outline AURA badge, quieter than the urgency pill', () => {
+    renderBadge('awaiting_payment', 't-30');
+    expect(screen.getByText('Bill issued')).toHaveClass('aura-badge', 'aura-badge--neutral', 'is-outline');
+  });
+
   it.each([
     ['awaiting_payment', 'suspended'], // born-awaiting / period ended — the pill already says it
     ['upcoming', 't-30'], // no bill yet

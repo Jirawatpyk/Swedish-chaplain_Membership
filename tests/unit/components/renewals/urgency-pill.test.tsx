@@ -54,34 +54,24 @@ describe('<UrgencyPill>', () => {
     }
   });
 
-  it('uses red palette for t-0 (most urgent)', () => {
-    const { container } = renderPill('t-0');
-    expect(container.querySelector('span')!.className).toMatch(/bg-red-100/);
-  });
-
-  it('uses a solid amber fill for suspended, distinct from the t-14 countdown', () => {
-    const suspended = renderPill('suspended');
-    const suspendedClass =
-      suspended.container.querySelector('span')!.className;
-    // The real differentiator is the fill/ring shade (Tailwind rings can't be
-    // dashed). Suspended is the enterprise-ux-signed-off amber-300 solid fill
-    // (dark amber-800) + ring-amber-500; t-14 is the pale amber-100 tint.
-    expect(suspendedClass).toMatch(/bg-amber-300/);
-    expect(suspendedClass).toMatch(/dark:bg-amber-800/);
-    expect(suspendedClass).toMatch(/ring-amber-500/);
-    suspended.unmount();
-
-    const t14 = renderPill('t-14');
-    const t14Class = t14.container.querySelector('span')!.className;
-    // Guard the collision the review caught: the two amber pills must NOT
-    // share a fill class.
-    expect(t14Class).not.toMatch(/bg-amber-300/);
-    t14.unmount();
-  });
-
-  it('uses gray for terminated (membership ended)', () => {
-    const { container } = renderPill('terminated');
-    expect(container.querySelector('span')!.className).toMatch(/bg-gray-100/);
+  it.each([
+    ['t-90', 'aura-badge--neutral', ''],
+    ['t-60', 'aura-badge--neutral', ''],
+    ['t-30', 'aura-badge--warning', ''],
+    ['t-14', 'aura-badge--warning', ''],
+    ['t-7', 'aura-badge--danger', ''],
+    ['t-0', 'aura-badge--danger', ''],
+    // Past the deadline: suspended is the one solid chip, terminated is ended.
+    ['suspended', 'aura-badge--warning', 'is-solid'],
+    ['terminated', 'aura-badge--neutral', 'is-outline'],
+  ] as const)('122 US7a: %s is an AURA badge (%s %s)', (urgency, tone, variant) => {
+    const { container } = renderPill(urgency);
+    const el = container.querySelector('.aura-badge');
+    expect(el).toHaveClass(tone);
+    for (const v of ['is-solid', 'is-outline']) {
+      if (v === variant) expect(el).toHaveClass(v);
+      else expect(el).not.toHaveClass(v);
+    }
   });
 
   it('K12-2 (UX-K-6): visible text serves as accessible name (no redundant aria-label)', () => {
