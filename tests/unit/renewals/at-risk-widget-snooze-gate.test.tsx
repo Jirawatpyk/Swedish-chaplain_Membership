@@ -10,7 +10,7 @@
  * React rendering.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
 import { AtRiskWidget } from '@/app/(staff)/admin/renewals/_components/at-risk-widget';
@@ -69,4 +69,36 @@ describe('AtRiskWidget snooze × renewals.write', () => {
       ).toBeInTheDocument();
     },
   );
+});
+
+// 122 US7a (T706) — board `Admin-renewals-needs-action`: the band filters as
+// AURA tabs with counts, the rows as an AURA table (the company links to the
+// member), Contact and Snooze as AURA buttons; Snooze opens the AURA dialog.
+describe('AtRiskWidget on AURA', () => {
+  it('filters by band with AURA tabs, "At risk" selected, each with its count', async () => {
+    renderAs('admin');
+    await screen.findByText('Acme AB');
+    const tabs = screen.getByRole('tablist', { name: 'Filter by risk band' });
+    expect(tabs).toHaveClass('aura-tabs__list');
+    expect(within(tabs).getByRole('tab', { name: /^At risk/ })).toHaveAttribute('aria-selected', 'true');
+    expect(within(tabs).getByRole('tab', { name: /^At risk/ })).toHaveTextContent('At risk1');
+  });
+
+  it('lists the members in an AURA table, the company linking to the member', async () => {
+    renderAs('admin');
+    const link = await screen.findByRole('link', { name: 'Acme AB' });
+    expect(link).toHaveAttribute('href', '/admin/members/00000000-0000-4000-8000-000000000001');
+    expect(link.closest('.aura-tbl')).not.toBeNull();
+  });
+
+  it('Contact and Snooze are AURA secondary buttons; Snooze opens the AURA snooze dialog', async () => {
+    renderAs('admin');
+    const contact = await screen.findByRole('button', { name: 'Contact Acme AB' });
+    const snooze = screen.getByRole('button', { name: snoozeLabel });
+    expect(contact).toHaveClass('aura-btn', 'aura-btn--secondary');
+    expect(snooze).toHaveClass('aura-btn', 'aura-btn--secondary');
+    fireEvent.click(snooze);
+    const dialog = await screen.findByRole('alertdialog', { name: 'Snooze at-risk member' });
+    expect(dialog).toHaveClass('aura-dialog');
+  });
 });
