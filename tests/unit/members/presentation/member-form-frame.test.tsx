@@ -121,4 +121,11 @@ describe('MemberForm core (T573)', () => {
     expect(dob).toHaveAttribute('inputmode', 'numeric');
     expect(within(contact).getByLabelText(new RegExp(`^${T.fields.email}`))).toHaveAttribute('type', 'email');
   });
+
+  it('explains the phone format under the field, as the boards draw it', () => {
+    renderForm();
+    const phone = document.getElementById('contact_phone');
+    expect(phone).toHaveAccessibleDescription(T.fields.phoneHint);
+    expect(T.fields.phoneHint).toBe('International format, e.g. +66812345678');
+  });
 });
