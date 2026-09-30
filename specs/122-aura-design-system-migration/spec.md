@@ -153,6 +153,10 @@ Only two dialogs are drawn: the offline payment ("Record an offline payment?") a
   - "Members without a renewal cycle".
   - On needs-action: the at-risk counters and table.
 
+### Session 2026-10-01 (maintainer, US7a review)
+
+- Q: The `Admin-renewals` board tones the tier badges with status colours (Start-up and Thai alumni warning, Partnership success, Premium accent). The urgency pill in the same row uses warning to mean "renewal due, act", so an amber tier reads as a member that needs attention. Should tiers keep the board's colours? → A: **No. A tier is a category, not a state, and never takes a status tone.** Partnership is `accent`, as on the plans list; every other tier is `neutral`. Warning, success and danger stay for urgency and risk. The label names the tier. The `Admin-renewals` boards are updated to match, and US7b uses the same tier badge.
+
 ## User Scenarios & Testing *(mandatory)*
 
 Every story below is one phase and one pull request. A story is done when its screens use only AURA components, match their canvas boards, and pass the per-module definition of done (FR-010).
