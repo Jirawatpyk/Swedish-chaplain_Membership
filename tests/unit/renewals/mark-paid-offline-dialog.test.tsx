@@ -124,4 +124,25 @@ describe('MarkPaidOfflineDialog on AURA', () => {
       payment_date: '2026-09-24',
     });
   });
+
+  it('cannot be dismissed while the payment is being recorded (ux-standards § 6.4)', async () => {
+    // The POST never settles: the dialog stays in its pending state.
+    vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})));
+    const onOpenChange = vi.fn();
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <MarkPaidOfflineDialog cycleId={CYCLE_ID} open onOpenChange={onOpenChange} />
+      </NextIntlClientProvider>,
+    );
+    fireEvent.change(screen.getByRole('textbox', { name: M.paymentReferenceLabel }), {
+      target: { value: 'KBANK-240926' },
+    });
+    typeDate(M.paymentDateLabel, '2026-09-24');
+    const confirm = screen.getByRole('button', { name: M.confirm });
+    await waitFor(() => expect(confirm).not.toBeDisabled());
+    fireEvent.click(confirm);
+    await waitFor(() => expect(confirm).toHaveAttribute('aria-busy', 'true'));
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+  });
 });
