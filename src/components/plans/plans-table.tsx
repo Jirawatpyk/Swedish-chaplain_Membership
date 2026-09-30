@@ -261,12 +261,13 @@ export function PlansTable({
           className="sm:w-36"
         />
         {/* Both switches in one box: on a phone they stack 44px apart (the
-            board's two rows); from 640px the box is an input's height on the
-            fields' line, the switches centred in it. */}
+            board's two rows) — AURA's touch rows are 44px, so no gap there;
+            from 640px the box is an input's height on the fields' line, the
+            switches centred in it. */}
         {yearEmpty && !canWritePlans ? null : (
           <div
             data-plans-switches
-            className="col-span-2 flex flex-col gap-[var(--aura-space-6)] sm:h-[var(--aura-input-height)] sm:flex-row sm:items-center sm:gap-[var(--aura-space-4)] sm:self-end"
+            className="col-span-2 flex flex-col gap-[var(--aura-space-3)] max-sm:pointer-coarse:gap-0 sm:h-[var(--aura-input-height)] sm:flex-row sm:items-center sm:gap-[var(--aura-space-4)] sm:self-end"
           >
             {yearEmpty ? null : (
               <Switch
