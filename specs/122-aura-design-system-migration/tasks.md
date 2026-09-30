@@ -322,12 +322,19 @@ Boards: `Admin-renewals` (+`-mobile`), `Admin-renewals-needs-action`, `Admin-ren
     - e2e: urgency chips are a nav of links, the tier select is "Tier", the bulk bar is the "Bulk actions" region, the mark-paid date is typed then blurred.
     - `empty-state-cta-permission-wiring` reads the page's object-form gate (`canManageSchedules: canPerform(…)`); a wrong key still fails it.
     - A dev key warning (the server-built result count beside the table) is gone behind a keyed fragment.
-- [ ] T711 [US7] Exit:
+- [x] T711 [US7] Exit:
   - gates, build and the bundle budget for `/admin/renewals`;
   - board screenshots and a parity page;
   - enterprise-ux, i18n and financial-integrity (money band, mark-paid amounts, settlement preview) reviews;
   - the PR;
   - the relay request for the pipeline e2e.
+  - Done:
+    - Full unit + contract suite green (1630 files, 18,442 tests); typecheck, lint and the static gates clean; `next build` passes; `/admin/renewals` re-baselined 1390 → 1160 KB (1056.8 KB measured).
+    - Parity page "US7a Renewals Pipeline Parity" (board vs live at 1440 and 390; dark, TH, SV); no horizontal overflow anywhere.
+    - Reviews: financial-integrity PASS; thai-tax conditional pass (warning names the tax invoice/receipt; the WHT line stays out); enterprise-ux and i18n no blockers, MEDIUMs fixed. Maintainer decisions from the review are in the spec (Session 2026-10-01): tier badges take no status tone (boards updated), and the pre-existing TH/SV copy and the bulk tax warning are fixed here.
+    - AURA handoff Addendum 22: #118 (stacked-card action row) and #119 (stacked title that wraps).
+    - Fixed on the way: `aura-foundation-css` had been red since T702 because the #118 stand-in sat before the shell's `@layer components` block.
+    - PR #483 (draft); relay R22 for the ten renewal e2e specs.
 
 ### US7b — cycle detail, tasks, tier upgrades, schedules (PR 11)
 
