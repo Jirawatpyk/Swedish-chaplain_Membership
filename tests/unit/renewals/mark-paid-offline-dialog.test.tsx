@@ -18,7 +18,7 @@
  * (behaviour-preserving).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { MarkPaidOfflineDialog } from '@/app/(staff)/admin/renewals/_components/mark-paid-offline-dialog';
@@ -64,5 +64,63 @@ describe('MarkPaidOfflineDialog — I-1 member-identity confirmation', () => {
   it('renders nothing extra when companyName is absent (cycle-detail caller)', () => {
     renderWithoutCompany();
     expect(screen.queryByText(/^For /)).toBeNull();
+  });
+});
+
+// 122 US7a (T708), board `Admin-renewal-mark-paid`: an AURA dialog with the
+// method, reference and date (an AURA DatePicker), the tax-document warning,
+// and the same request body.
+describe('MarkPaidOfflineDialog on AURA', () => {
+  const M = enMessages.admin.renewals.cycleDetail.markPaidOffline;
+
+  beforeEach(() => {
+    vi.useRealTimers();
+  });
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  /** An AURA DatePicker takes a typed ISO date on blur (US5b-2 precedent). */
+  function typeDate(label: string, value: string) {
+    const input = screen.getByLabelText(label);
+    fireEvent.change(input, { target: { value } });
+    fireEvent.blur(input);
+  }
+
+  it('is an AURA dialog with the method, reference and date fields and the tax-document warning', () => {
+    renderWithCompany('Acme Co., Ltd.');
+    const dialog = screen.getByRole('dialog', { name: M.dialogTitle });
+    expect(dialog).toHaveClass('aura-dialog');
+    expect(within(dialog).getByRole('combobox', { name: M.paymentMethodLabel })).toHaveTextContent(
+      M.paymentMethod.bank_transfer,
+    );
+    expect(within(dialog).getByRole('textbox', { name: M.paymentReferenceLabel })).toBeRequired();
+    expect(within(dialog).getByLabelText(M.paymentDateLabel).closest('.aura-datepicker')).not.toBeNull();
+    const warning = within(dialog).getByText(M.taxDocWarningTitle).closest('.aura-alert');
+    expect(warning).toHaveClass('aura-alert--warning');
+    expect(warning).toHaveTextContent(M.taxDocWarningBody);
+  });
+
+  it('enables Mark paid once the reference and date are set, and sends the same body', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
+    vi.stubGlobal('fetch', fetchMock);
+    renderWithCompany('Acme Co., Ltd.');
+    const confirm = screen.getByRole('button', { name: M.confirm });
+    expect(confirm).toBeDisabled();
+    fireEvent.change(screen.getByRole('textbox', { name: M.paymentReferenceLabel }), {
+      target: { value: ' KBANK-240926 ' },
+    });
+    typeDate(M.paymentDateLabel, '2026-09-24');
+    await waitFor(() => expect(confirm).not.toBeDisabled());
+    fireEvent.click(confirm);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(`/api/admin/renewals/${CYCLE_ID}/mark-paid-offline`);
+    expect(JSON.parse(init.body as string)).toEqual({
+      payment_method: 'bank_transfer',
+      payment_reference: 'KBANK-240926',
+      payment_date: '2026-09-24',
+    });
   });
 });
