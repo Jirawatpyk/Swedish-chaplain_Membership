@@ -51,7 +51,10 @@ const baseInput: SoftDeletePlanInput = {
   idempotencyKey: 'idempotency-key-001',
 };
 
+// Defaults to an INACTIVE plan: `plan-state.ts` only allows
+// `inactive → soft_deleted`, so that is the legal starting point for a delete.
 function makePlan(overrides: Partial<{
+  is_active: boolean;
   deleted_at: Date | null;
 }> = {}): Plan {
   return {
@@ -70,7 +73,7 @@ function makePlan(overrides: Partial<{
     max_duration_years: null,
     max_member_age: null,
     benefit_matrix: {},
-    is_active: true,
+    is_active: overrides.is_active ?? false,
     deleted_at: overrides.deleted_at ?? null,
     created_at: new Date('2026-01-01'),
     updated_at: new Date('2026-01-01'),
@@ -218,6 +221,20 @@ describe('softDeletePlan use case', () => {
     if (result.ok) {
       expect(result.value).toBe(alreadyDeleted);
       expect(result.value.deleted_at).toEqual(new Date('2026-03-01T00:00:00.000Z'));
+    }
+    expect(deps.planRepo.softDeleteGuarded).not.toHaveBeenCalled();
+    expect(deps.audit.record).not.toHaveBeenCalled();
+  });
+
+  // ---- Lifecycle gate: active → soft_deleted is illegal (deactivate first) --
+
+  it('returns plan_active without calling softDeleteGuarded when the plan is active', async () => {
+    const deps = makeDeps({ findOneResult: makePlan({ is_active: true }) });
+    const result = await softDeletePlan(baseInput, deps);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.type).toBe('plan_active');
     }
     expect(deps.planRepo.softDeleteGuarded).not.toHaveBeenCalled();
     expect(deps.audit.record).not.toHaveBeenCalled();

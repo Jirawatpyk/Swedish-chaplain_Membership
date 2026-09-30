@@ -142,6 +142,20 @@ describe('contract: DELETE /api/plans/[year]/[planId] (T123)', () => {
     expect(body.error?.details?.affected_member_count).toBe(3);
   });
 
+  it('409 plan_active when the plan has not been deactivated first', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
+    softDeletePlanMock.mockResolvedValueOnce(err({ type: 'plan_active' }));
+
+    const { DELETE } = await import('@/app/api/plans/[year]/[planId]/route');
+    const res = await DELETE(makeRequest('2026', 'premium'), {
+      params: params('2026', 'premium'),
+    });
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error?.code).toBe('plan_active');
+  });
+
   it('404 when plan not found', async () => {
     requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
