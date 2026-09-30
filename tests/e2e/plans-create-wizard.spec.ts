@@ -46,7 +46,8 @@ test.describe('plans create + clone wizard — US2', () => {
     const planId = `e2e-${Date.now().toString(36)}`;
     await page.getByLabel(/plan id/i).fill(planId);
     await page.getByLabel(/plan year/i).fill('2027');
-    await page.getByLabel(/plan name \(en\)/i).fill('E2E Test Plan');
+    // 122 US6: each language's field is labelled with the language's name.
+    await page.getByLabel(/^plan name \(english\)/i).fill('E2E Test Plan');
     await page.getByRole('button', { name: 'Next', exact: true }).click();
 
     // Step 2 — Fees
