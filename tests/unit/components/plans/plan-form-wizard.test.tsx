@@ -207,6 +207,32 @@ describe('PlanFormWizard per-field errors', () => {
     expect(name).toHaveAccessibleDescription(E.planName);
   });
 
+  // UX review (US6): the English field can sit behind the TH / SV tab when
+  // Next fails again or a summary link is followed; it comes back into view
+  // and takes focus rather than focusing a hidden panel.
+  it('brings the English name back into view when Next fails again from another language tab', () => {
+    renderWizard({ ...VALID, plan_name: { en: '' } });
+    next();
+    fireEvent.click(screen.getAllByRole('tab', { name: /^TH/ })[0]!);
+    next();
+    const name = screen.getByRole('textbox', { name: /^Plan name \(English\)/ });
+    expect(name).toBeVisible();
+    expect(document.activeElement).toBe(name);
+  });
+
+  it('brings the English name back into view from its summary link', () => {
+    renderWizard({ ...VALID, plan_id: 'Bad Id', plan_name: { en: '' } });
+    next();
+    fireEvent.click(screen.getAllByRole('tab', { name: /^SV/ })[0]!);
+    const summary = document.querySelector('.aura-error-summary') as HTMLElement;
+    const link = within(summary)
+      .getAllByRole('link')
+      .find((l) => l.textContent?.startsWith(en.admin.plans.create.labels.planName)) as HTMLElement;
+    fireEvent.click(link);
+    const name = screen.getByRole('textbox', { name: /^Plan name \(English\)/ });
+    expect(document.activeElement).toBe(name);
+  });
+
   it('describes max turnover with the cross-field message', () => {
     renderWizard({
       ...VALID,
