@@ -332,7 +332,7 @@ export function PlansTable({
                           {t('empty.newCta')}
                         </Link>
                         <Link
-                          href="/admin/plans/clone"
+                          href={`/admin/plans/clone?from=${year - 1}&to=${year}`}
                           className={buttonVariants({ variant: 'outline' })}
                         >
                           <CopyIcon className="h-3.5 w-3.5" />
@@ -437,12 +437,15 @@ export function PlansTable({
                                   {tActions('activate')}
                                 </DropdownMenuItem>
                               )}
-                              <DropdownMenuItem
-                                onClick={() => openDialog('delete', plan)}
-                                variant="destructive"
-                              >
-                                {tActions('delete')}
-                              </DropdownMenuItem>
+                              {/* plan-state.ts: only an inactive plan can be deleted. */}
+                              {!plan.is_active ? (
+                                <DropdownMenuItem
+                                  onClick={() => openDialog('delete', plan)}
+                                  variant="destructive"
+                                >
+                                  {tActions('delete')}
+                                </DropdownMenuItem>
+                              ) : null}
                             </>
                           ) : (
                             <DropdownMenuItem

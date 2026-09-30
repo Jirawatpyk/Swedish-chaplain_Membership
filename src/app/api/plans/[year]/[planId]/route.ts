@@ -18,7 +18,7 @@
  *
  * DELETE: admin-only soft-delete. Requires `Idempotency-Key`. Maps
  * `has_active_members` → 409 with `details.affected_member_count`,
- * `not_found` → 404, `idempotency_conflict` → 409.
+ * `plan_active` → 409 (deactivate first), `not_found` → 404, `idempotency_conflict` → 409.
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { requireApiPermission } from '@/lib/rbac';
@@ -470,6 +470,16 @@ export async function DELETE(
               message:
                 'This plan has active members attached and cannot be deleted.',
               details: { affected_member_count: result.error.count },
+            },
+          },
+          { status: 409 },
+        );
+      case 'plan_active':
+        return NextResponse.json(
+          {
+            error: {
+              code: 'plan_active',
+              message: 'This plan is active. Deactivate it before deleting it.',
             },
           },
           { status: 409 },

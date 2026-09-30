@@ -6,6 +6,9 @@
  *   1. Load the plan via `planRepo.findOne` — returns `not_found`
  *      if missing or cross-tenant.
  *   2. Short-circuit idempotent no-op if the plan is already deleted.
+ *   2b. Enforce the lifecycle in `domain/plan-state.ts`: only an
+ *      `inactive` plan may be soft-deleted — `active → soft_deleted` is
+ *      illegal (deactivate first) → `plan_active` (409).
  *   3. Call `planRepo.softDeleteGuarded(...)` — this method runs in ONE
  *      `runInTenant` tx: acquires `pg_advisory_xact_lock` on
  *      `plans:softdelete:<tenantSlug>:<planId>:<planYear>`, counts active
@@ -43,6 +46,7 @@ import type {
 } from './ports';
 import { recordAuditEvent } from './record-audit-event';
 import type { Plan, PlanSlug, PlanYear } from '../domain/plan';
+import { canTransition, planStateOf } from '../domain/plan-state';
 
 export type SoftDeletePlanInput = {
   readonly planId: PlanSlug;
@@ -56,6 +60,8 @@ export type SoftDeletePlanInput = {
 export type SoftDeletePlanError =
   | { readonly type: 'not_found' }
   | { readonly type: 'has_active_members'; readonly count: number }
+  /** The plan is still active — it must be deactivated before deletion. */
+  | { readonly type: 'plan_active' }
   | { readonly type: 'idempotency_conflict' }
   | { readonly type: 'audit_failed'; readonly message: string }
   | { readonly type: 'server_error'; readonly message: string };
@@ -89,6 +95,15 @@ export async function softDeletePlan(
   // 2. Idempotent no-op — already deleted
   if (existing.deleted_at !== null) {
     return ok(existing);
+  }
+
+  // 2b. Lifecycle gate (plan-state.ts). The member-count half of the rule
+  //     stays in step 3, which checks it atomically under the advisory lock.
+  //     This check is read outside that lock: an activate landing between
+  //     here and step 3 is not caught.
+  //     The plan is not deleted here, so the only refusal is `active`.
+  if (!canTransition(planStateOf(existing), 'soft_deleted').ok) {
+    return err({ type: 'plan_active' });
   }
 
   // 3. Atomic guard: advisory-lock + count-check + soft-delete in one tx.

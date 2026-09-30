@@ -1090,6 +1090,7 @@
         "backToList": "Tillbaka till paket",
         "duplicateKey": "Ett paket med detta ID finns redan för {year}.",
         "memberAttached": "{count} aktiva medlemmar använder detta paket. Flytta dem till ett annat paket före borttagning.",
+        "planActive": "Paketet är aktivt. Inaktivera det innan du tar bort det.",
         "idempotencyConflict": "Denna förfrågan har redan hanterats med andra data. Uppdatera och försök igen.",
         "targetYearPopulated": "{targetYear} har redan paket. Ta bort dem först eller välj ett annat år.",
         "sourceYearEmpty": "Inga paket hittades för {sourceYear}.",

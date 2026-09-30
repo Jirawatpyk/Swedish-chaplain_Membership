@@ -99,7 +99,7 @@ function buildPlanDraft(userId: string, planId: string): PlanDraftInput {
     max_duration_years: null,
     max_member_age: null,
     benefit_matrix: MATRIX,
-    isActive: true,
+    isActive: false, // plan-state.ts: only an inactive plan can be soft-deleted
     createdBy: userId,
     updatedBy: userId,
   } as PlanDraftInput;
