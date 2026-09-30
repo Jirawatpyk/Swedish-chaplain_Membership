@@ -150,4 +150,36 @@ describe('PlansTable on AURA (board Admin-plans)', () => {
     renderRows();
     expect(screen.getByText('3 plans in 2026 · fees exclude 7% VAT')).toBeInTheDocument();
   });
+
+  // UX review (US6): the plan name is the only way into a plan from a phone
+  // card, so its link fills a 44px touch target there.
+  it('gives the plan name link a 44px touch target on phones', () => {
+    renderRows();
+    expect(screen.getByRole('link', { name: 'Premium Corporate' })).toHaveClass('max-sm:min-h-11');
+  });
+});
+
+// UX review (US6): filters that hide every plan of a year that has plans say
+// so and offer to clear them, rather than "No plans for this year" and a
+// clone the server would refuse.
+describe('PlansTable filtered-empty state', () => {
+  function renderFiltered(filter: { category: 'corporate' | null; q: string | null; activeOnly: boolean; showDeleted: boolean }) {
+    return render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <PlansTable plans={[]} currencyCode="THB" year={2026} currentUserRole="admin" initialFilter={filter} />
+      </NextIntlClientProvider>,
+    );
+  }
+
+  it('says no plan matches and offers Clear filters instead of New / Clone', () => {
+    renderFiltered({ category: null, q: 'zzz', activeOnly: false, showDeleted: false });
+    expect(screen.getByText(en.admin.plans.empty.filteredTitle)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: en.admin.plans.empty.clearFilters })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: new RegExp(NEW_CTA, 'i') })).not.toBeInTheDocument();
+  });
+
+  it('keeps the year-empty state when only the year is chosen', () => {
+    renderFiltered({ category: null, q: null, activeOnly: false, showDeleted: false });
+    expect(screen.getByText(en.admin.plans.empty.title)).toBeInTheDocument();
+  });
 });

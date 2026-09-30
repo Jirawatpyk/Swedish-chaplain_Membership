@@ -43,6 +43,8 @@ describe('PriorYearLockBanner on AURA', () => {
     expect(alert).not.toBeNull();
     expect(alert).toHaveAttribute('role', 'note');
     expect(screen.getByRole('link', { name: 'Open the 2026 version' })).toHaveClass('aura-btn--secondary');
+    // UX review (US6): full-size, a 44px target on a phone (not `sm`).
+    expect(screen.getByRole('link', { name: 'Open the 2026 version' })).not.toHaveClass('aura-btn--sm');
   });
 });
 
