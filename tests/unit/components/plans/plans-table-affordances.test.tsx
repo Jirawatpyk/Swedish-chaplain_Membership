@@ -146,6 +146,13 @@ describe('PlansTable on AURA (board Admin-plans)', () => {
     ]);
   });
 
+  // Parity (US6): the staff pages are compact, but AURA's static Table does
+  // not take the provider's density (handoff #115), so it is set here.
+  it('is a compact AURA table, as the staff board draws its rows', () => {
+    const { container } = renderRows();
+    expect(container.querySelector('.aura-tbl-wrap')).toHaveAttribute('data-density', 'compact');
+  });
+
   it('ends with the count and the VAT note under the table', () => {
     renderRows();
     expect(screen.getByText('3 plans in 2026 · fees exclude 7% VAT')).toBeInTheDocument();
