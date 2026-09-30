@@ -17,7 +17,7 @@
  * runtime — see memory note "Real en.json render test".
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import { RenewalsSectionTabs } from '@/app/(staff)/admin/renewals/_components/renewals-section-tabs';
 import en from '@/i18n/messages/en.json';
@@ -33,17 +33,24 @@ const nav = vi.hoisted(() => ({
   searchParams: new URLSearchParams(),
 }));
 
+const push = vi.hoisted(() => vi.fn());
 vi.mock('next/navigation', () => ({
   usePathname: () => nav.pathname,
   useSearchParams: () => nav.searchParams,
+  useRouter: () => ({ push }),
 }));
 
-function renderTabs(showPipelineHelp = false) {
+function renderTabs() {
   return render(
     <NextIntlClientProvider locale="en" messages={en}>
-      <RenewalsSectionTabs showPipelineHelp={showPipelineHelp} />
+      <RenewalsSectionTabs />
     </NextIntlClientProvider>,
   );
+}
+
+/** The AURA link tabs (the phone select is a separate control). */
+function sections(): HTMLElement {
+  return screen.getByRole('navigation', { name: 'Renewals sections' });
 }
 
 function activeEntryText(container: HTMLElement): string | null {
@@ -52,7 +59,7 @@ function activeEntryText(container: HTMLElement): string | null {
 }
 
 function href(name: RegExp): string {
-  return screen.getByRole('link', { name }).getAttribute('href') ?? '';
+  return within(sections()).getByRole('link', { name }).getAttribute('href') ?? '';
 }
 
 beforeEach(() => {
@@ -193,22 +200,6 @@ describe('<RenewalsSectionTabs> hrefs — arriving FROM Tasks/Tier-upgrades (cle
   });
 });
 
-describe('<RenewalsSectionTabs> pipeline-help popover visibility', () => {
-  it('does not render the help trigger by default (Tasks/Tier-upgrades pages)', () => {
-    renderTabs(false);
-    expect(
-      screen.queryByRole('button', { name: 'About the renewal pipeline' }),
-    ).not.toBeInTheDocument();
-  });
-
-  it('renders the help trigger when showPipelineHelp is set (Renewals page)', () => {
-    renderTabs(true);
-    expect(
-      screen.getByRole('button', { name: 'About the renewal pipeline' }),
-    ).toBeInTheDocument();
-  });
-});
-
 /**
  * Item ④ (plan-wide decision) — count badges on Pending review / Tasks /
  * Tier upgrades entries, so an admin sees pending work at a glance without
@@ -231,7 +222,7 @@ function renderTabsWithCount(
 ) {
   return render(
     <NextIntlClientProvider locale="en" messages={en}>
-      <RenewalsSectionTabs showPipelineHelp {...counts} />
+      <RenewalsSectionTabs {...counts} />
     </NextIntlClientProvider>,
   );
 }
@@ -241,14 +232,14 @@ describe('<RenewalsSectionTabs> pending-review count badge (item ④)', () => {
     renderTabsWithCount({ pendingReviewCount: 4 });
     const pendingLink = screen.getByRole('link', { name: /pending review/i });
     expect(pendingLink.textContent).toContain('4');
-    expect(screen.getByText(/4 cycles awaiting review/i)).toBeInTheDocument();
+    expect(pendingLink).toHaveAccessibleName('Pending review, 4 cycles awaiting review');
   });
 
   it('renders NO badge when count is 0 or undefined', () => {
     renderTabsWithCount({ pendingReviewCount: 0 });
-    expect(screen.queryByText(/awaiting review/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /awaiting review/i })).not.toBeInTheDocument();
     renderTabsWithCount({});
-    expect(screen.queryByText(/awaiting review/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /awaiting review/i })).not.toBeInTheDocument();
   });
 });
 
@@ -257,14 +248,14 @@ describe('<RenewalsSectionTabs> tasks count badge (item ④ plan-wide decision)'
     renderTabsWithCount({ tasksCount: 7 });
     const tasksLink = screen.getByRole('link', { name: /^tasks/i });
     expect(tasksLink.textContent).toContain('7');
-    expect(screen.getByText(/7 open tasks/i)).toBeInTheDocument();
+    expect(tasksLink).toHaveAccessibleName('Tasks, 7 open tasks');
   });
 
   it('renders NO badge when count is 0 or undefined', () => {
     renderTabsWithCount({ tasksCount: 0 });
-    expect(screen.queryByText(/open tasks?/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /open tasks?/i })).not.toBeInTheDocument();
     renderTabsWithCount({});
-    expect(screen.queryByText(/open tasks?/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /open tasks?/i })).not.toBeInTheDocument();
   });
 });
 
@@ -273,19 +264,17 @@ describe('<RenewalsSectionTabs> tier-upgrade count badge (item ④ plan-wide dec
     renderTabsWithCount({ tierUpgradeCount: 2 });
     const tierLink = screen.getByRole('link', { name: /tier upgrades/i });
     expect(tierLink.textContent).toContain('2');
-    expect(
-      screen.getByText(/2 tier-upgrade suggestions/i),
-    ).toBeInTheDocument();
+    expect(tierLink).toHaveAccessibleName('Tier upgrades, 2 tier-upgrade suggestions');
   });
 
   it('renders NO badge when count is 0 or undefined', () => {
     renderTabsWithCount({ tierUpgradeCount: 0 });
     expect(
-      screen.queryByText(/tier-upgrade suggestion/i),
+      screen.queryByRole('link', { name: /tier-upgrade suggestion/i }),
     ).not.toBeInTheDocument();
     renderTabsWithCount({});
     expect(
-      screen.queryByText(/tier-upgrade suggestion/i),
+      screen.queryByRole('link', { name: /tier-upgrade suggestion/i }),
     ).not.toBeInTheDocument();
   });
 });
@@ -303,37 +292,36 @@ describe('<RenewalsSectionTabs> Pipeline entry is never badged', () => {
 });
 
 /**
- * Enhancement C2 (#4) — mobile horizontal scroll + touch targets.
- *
- * The four `whitespace-nowrap` links overflow a narrow viewport; the strip
- * must scroll inside its OWN `overflow-x-auto` container (never the page body),
- * keeping the help Popover trigger visible beside it. Touch targets are raised
- * to >=44px on coarse pointers (WCAG 2.5.5 / audit goal) while the compact
- * desktop (fine-pointer) height is left unchanged.
+ * 122 US7a (T703) — AURA link tabs on a desktop (board `Admin-renewals`), a
+ * "Section" select on a phone (board `Admin-renewals-mobile`).
  */
-describe('<RenewalsSectionTabs> C2 — mobile overflow + touch targets', () => {
-  it('wraps the nav in a horizontal-scroll container (strip scrolls, not the page)', () => {
+describe('<RenewalsSectionTabs> AURA link tabs and the phone select', () => {
+  it('the four sections are AURA link tabs', () => {
     renderTabs();
-    const strip = screen.getByRole('navigation', { name: 'Renewals sections' });
-    expect(strip.closest('.overflow-x-auto')).not.toBeNull();
+    expect(sections()).toHaveClass('aura-tabs');
+    expect(within(sections()).getAllByRole('link')).toHaveLength(4);
   });
 
-  it('the help Popover trigger stays beside the scroll container, not inside it', () => {
-    renderTabs(true);
-    const helpTrigger = screen.getByRole('button', {
-      name: 'About the renewal pipeline',
-    });
-    // The scroll container clips the nav only; the help button must live
-    // OUTSIDE it so it can never be scrolled out of reach.
-    expect(helpTrigger.closest('.overflow-x-auto')).toBeNull();
+  it('a "Section" select lists the four sections, the current one chosen', () => {
+    nav.pathname = '/admin/renewals/tasks';
+    renderTabs();
+    const select = screen.getByRole('combobox', { name: 'Section' });
+    expect(within(select).getAllByRole('option').map((o) => o.textContent)).toEqual([
+      'Pipeline',
+      'Pending review',
+      'Tasks',
+      'Tier upgrades',
+    ]);
+    expect((select as HTMLSelectElement).selectedOptions[0]?.textContent).toBe('Tasks');
   });
 
-  it('raises each link tap target to >=44px on coarse pointers', () => {
+  it('choosing a section in the select navigates to that tab\'s href', () => {
+    push.mockClear();
+    nav.searchParams = new URLSearchParams('tier=premium&urgency=t-30');
     renderTabs();
-    const links = screen.getAllByRole('link');
-    expect(links).toHaveLength(4);
-    for (const link of links) {
-      expect(link.className).toContain('pointer-coarse:min-h-11');
-    }
+    const select = screen.getByRole('combobox', { name: 'Section' });
+    const pending = within(select).getByRole('option', { name: 'Pending review' }) as HTMLOptionElement;
+    fireEvent.change(select, { target: { value: pending.value } });
+    expect(push).toHaveBeenCalledWith(href(/pending review/i));
   });
 });
