@@ -260,30 +260,38 @@ export function PlansTable({
           options={yearOptions.map((y) => ({ value: String(y), label: formatCalendarYear(y, locale) }))}
           className="sm:w-36"
         />
-        {yearEmpty ? null : (
-          <Switch
-            id="plans-active-only"
-            label={t('filters.activeOnly')}
-            checked={activeOnly}
-            onChange={(v) => {
-              setActiveOnly(v);
-              updateFilter({ activeOnly: v ? 'true' : null });
-            }}
-            className="col-span-2 sm:col-auto sm:self-center"
-          />
+        {/* Both switches in one box: on a phone they stack with no grid gap
+            (the board's two rows); from 640px the box is an input's height
+            on the fields' line, the switches centred in it. */}
+        {yearEmpty && !canWritePlans ? null : (
+          <div
+            data-plans-switches
+            className="col-span-2 flex flex-col sm:h-[var(--aura-input-height)] sm:flex-row sm:items-center sm:gap-[var(--aura-space-4)] sm:self-end"
+          >
+            {yearEmpty ? null : (
+              <Switch
+                id="plans-active-only"
+                label={t('filters.activeOnly')}
+                checked={activeOnly}
+                onChange={(v) => {
+                  setActiveOnly(v);
+                  updateFilter({ activeOnly: v ? 'true' : null });
+                }}
+              />
+            )}
+            {canWritePlans ? (
+              <Switch
+                id="plans-show-deleted"
+                label={t('filters.showDeleted')}
+                checked={showDeleted}
+                onChange={(v) => {
+                  setShowDeleted(v);
+                  updateFilter({ showDeleted: v ? 'true' : null });
+                }}
+              />
+            ) : null}
+          </div>
         )}
-        {canWritePlans ? (
-          <Switch
-            id="plans-show-deleted"
-            label={t('filters.showDeleted')}
-            checked={showDeleted}
-            onChange={(v) => {
-              setShowDeleted(v);
-              updateFilter({ showDeleted: v ? 'true' : null });
-            }}
-            className="col-span-2 sm:col-auto sm:self-center"
-          />
-        ) : null}
       </div>
 
       <Table
@@ -310,7 +318,7 @@ export function PlansTable({
         <TBody>
           {sorted.length === 0 && filtered ? (
             <Tr>
-              <Td colSpan={canWritePlans ? 7 : 6} className="py-12">
+              <Td colSpan={canWritePlans ? 7 : 6}>
                 <EmptyState
                   icon={SearchXIcon}
                   bordered={false}
@@ -326,7 +334,7 @@ export function PlansTable({
             </Tr>
           ) : sorted.length === 0 ? (
             <Tr>
-              <Td colSpan={canWritePlans ? 7 : 6} className="py-12">
+              <Td colSpan={canWritePlans ? 7 : 6}>
                 <EmptyState
                   icon={PlusIcon}
                   bordered={false}
@@ -383,8 +391,10 @@ export function PlansTable({
                   </Td>
                   <Td>{tOptions(`memberTypeScope.${plan.member_type_scope}`)}</Td>
                   <Td className={HIDE_IN_CARD}>{formatCalendarYear(plan.plan_year, locale)}</Td>
-                  {/* Beside the name on a card, as the phone board draws it. */}
-                  <Td card="action">
+                  {/* Beside the name on a card, as the phone board draws it,
+                      centred on the name's 44px line (AURA's card row aligns
+                      its items to the top). */}
+                  <Td card="action" className="self-center">
                     {isDeleted ? (
                       <StatusPill tone="blocked">{t('badges.deleted')}</StatusPill>
                     ) : plan.is_active ? (
