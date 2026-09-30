@@ -190,14 +190,15 @@ describe('PlansTable filtered-empty state', () => {
     expect(screen.getByText(en.admin.plans.empty.title)).toBeInTheDocument();
   });
 
-  // Board `Admin-state-plans-empty`: a year with no plans shows only the Year
-  // filter — nothing else can narrow an empty year.
-  it('shows only the Year filter for a year with no plans', () => {
+  // Board `Admin-state-plans-empty`: a year with no plans shows the Year
+  // filter — nothing else can narrow an empty year — and, for plans.write,
+  // Show deleted, the one way back to plans that were all deleted.
+  it('shows only the Year filter and Show deleted for a year with no plans', () => {
     renderFiltered({ category: null, q: null, activeOnly: false, showDeleted: false });
     const group = screen.getByRole('group', { name: en.admin.plans.filters.groupLabel });
     expect(within(group).getByRole('combobox', { name: en.admin.plans.filters.year })).toBeInTheDocument();
     expect(within(group).queryByRole('searchbox')).not.toBeInTheDocument();
-    expect(within(group).queryAllByRole('switch')).toHaveLength(0);
+    expect(within(group).getAllByRole('switch').map((sw) => sw.id)).toEqual(['plans-show-deleted']);
     expect(within(group).getAllByRole('combobox')).toHaveLength(1);
   });
 });

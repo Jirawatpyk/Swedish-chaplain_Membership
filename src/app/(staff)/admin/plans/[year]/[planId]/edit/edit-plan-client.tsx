@@ -14,6 +14,8 @@ import { useTranslations } from 'next-intl';
 import { isReadOnlyCode, problemCode } from '@/lib/http/read-only-refusal';
 import { PlanEditForm } from '@/components/plans/plan-edit-form';
 import type { CurrentYearPlanStatus } from '@/components/plans/prior-year-lock-banner';
+import { computePlanPatch } from '@/components/plans/plan-patch';
+import { lockedFieldLabels } from '@/components/plans/locked-field-labels';
 import type { PlanSchemaInput } from '@/modules/plans';
 
 export interface EditPlanClientProps {
@@ -33,29 +35,6 @@ function freshIdempotencyKey(): string {
   return `idem-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-/**
- * Compute a sparse PATCH payload by diffing the draft against the
- * initial values. Only fields that changed are included in the body.
- * This keeps the audit log's diff honest (no phantom no-op writes).
- */
-function computePatch(
-  initial: PlanSchemaInput,
-  draft: PlanSchemaInput,
-): Partial<PlanSchemaInput> {
-  const patch: Record<string, unknown> = {};
-  const keys = Object.keys(draft) as Array<keyof PlanSchemaInput>;
-  for (const key of keys) {
-    // plan_id + plan_year are identity keys, never patched
-    if (key === 'plan_id' || key === 'plan_year') continue;
-    const before = initial[key];
-    const after = draft[key];
-    if (JSON.stringify(before) !== JSON.stringify(after)) {
-      patch[key] = after;
-    }
-  }
-  return patch as Partial<PlanSchemaInput>;
-}
-
 export function EditPlanClient({
   planId,
   planYear,
@@ -68,9 +47,10 @@ export function EditPlanClient({
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   const t = useTranslations('admin.plans');
+  const tLabels = useTranslations('admin.plans.create.labels');
 
   async function handleSubmit(draft: PlanSchemaInput): Promise<void> {
-    const patch = computePatch(initialValues, draft);
+    const patch = computePlanPatch(initialValues, draft);
     if (Object.keys(patch).length === 0) {
       toast.info(t('edit.toast.noChanges'));
       return;
@@ -103,7 +83,7 @@ export function EditPlanClient({
       if (isReadOnlyCode(errorCode)) {
         toast.error(t('errors.readOnlyMode'));
       } else if (errorCode === 'prior_year_locked_fields') {
-        const fields = (errorObj?.details?.locked_fields ?? []).join(', ');
+        const fields = lockedFieldLabels(errorObj?.details?.locked_fields, tLabels).join(', ');
         toast.error(t('errors.priorYearLocked', { fields }));
       } else if (errorCode === 'not_found') {
         toast.error(t('errors.notFound'));

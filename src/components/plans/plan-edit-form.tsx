@@ -11,9 +11,15 @@
  * AURA's lock icon and read to a screen reader as locked. The
  * `<PriorYearLockBanner>` is rendered at the top.
  *
- * Client-side validation uses `planPatchSchema.partial()` at save
- * time. The server re-runs the same schema + the locked-field rule,
- * so this form is a UX nicety — NOT a security boundary.
+ * Save-time validation: the draft is diffed against `initialValues`
+ * (`computePlanPatch` — the same sparse patch the page sends) and that
+ * patch is checked with `planPatchSchema`. Invalid fields get the
+ * wizard's per-field messages and focus moves to the first one; the
+ * draft only reaches `onSubmit` once the patch is valid. Rules that
+ * need the whole stored plan (e.g. a new max turnover below the stored
+ * min) are still enforced server-side by the merged-plan check in
+ * `update-plan.ts`, which also re-runs the schema + the locked-field
+ * rule — so this form is a UX nicety, NOT a security boundary.
  *
  * 122 US6 (T606): on AURA as the `Admin-plan-edit` (+ `-locked`) boards
  * draw it — the "Plan name", "Annual fee" and "Benefit matrix" fieldset
@@ -22,7 +28,7 @@
  */
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslations } from 'next-intl';
 import { ActionBar, Button, Card, Select, TextField } from '@jirawatpyk/aura-react';
 import { LocaleTextInput } from './locale-text-input';
@@ -34,6 +40,9 @@ import {
 } from './prior-year-lock-banner';
 import { PlanLockedNote, lockedFieldProps, lockedSelectProps } from './plan-locked-note';
 import { usePlanOptions } from './use-plan-options';
+import { FieldError, focusField, optionalError } from './plan-field-error';
+import type { PlanFormField } from './plan-form-errors';
+import { computePlanPatch, planPatchFieldErrors } from './plan-patch';
 import {
   LOCKED_FIELDS_ON_PRIOR_YEAR,
   type PlanSchemaInput,
@@ -67,6 +76,7 @@ export function PlanEditForm({
   const tEdit = useTranslations('admin.plans.edit');
   const tButtons = useTranslations('admin.plans.create.buttons');
   const tMatrix = useTranslations('admin.plans.create.matrix');
+  const tErrors = useTranslations('admin.plans.create.fieldErrors');
   const { memberTypeOptions: MEMBER_TYPE_OPTIONS } = usePlanOptions();
 
   const [draft, setDraft] = useState<PlanSchemaInput>(initialValues);
@@ -83,16 +93,48 @@ export function PlanEditForm({
     return isPriorYear && LOCKED_FIELDS_ON_PRIOR_YEAR.includes(field);
   }
 
+  // Per-field messages for the patch this save would send. Recomputed on
+  // every edit, so a fixed field's message clears as soon as it is valid;
+  // shown only after a save attempt.
+  const fieldErrors = useMemo(
+    () => planPatchFieldErrors(computePlanPatch(initialValues, draft), draft.plan_category),
+    [initialValues, draft],
+  );
+  const [showErrors, setShowErrors] = useState(false);
+
+  function fieldError(field: PlanFormField): string | undefined {
+    const key = fieldErrors[field];
+    if (key === undefined || !showErrors) return undefined;
+    return tErrors(key);
+  }
+
+  // After a failed save, focus the first invalid field (WCAG 3.3.1); it
+  // announces its message via aria-describedby. A name or description
+  // behind the TH / SV tab opens its tab first.
+  const formRef = useRef<HTMLFormElement>(null);
+  const [focusErrorRequest, setFocusErrorRequest] = useState(0);
+  useEffect(() => {
+    if (focusErrorRequest === 0) return;
+    focusField(
+      formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"], [data-field-error]') ?? null,
+    );
+  }, [focusErrorRequest]);
+
   async function handleSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
+    if (Object.keys(fieldErrors).length > 0) {
+      setShowErrors(true);
+      setFocusErrorRequest((n) => n + 1);
+      return;
+    }
     await onSubmit(draft);
   }
 
   return (
-    // `noValidate`: the AURA fields pass `required` to the input, which would
-    // put the browser's bubble ahead of the app's own messages (as on main,
-    // the server's 422 decides).
-    <form onSubmit={handleSubmit} noValidate className="space-y-[var(--aura-space-6)]">
+    // `noValidate`: the per-field messages below replace the browser's
+    // bubbles (the AURA fields pass `required` and native min/max to the
+    // input, which would otherwise block the submit before they run).
+    <form ref={formRef} onSubmit={handleSubmit} noValidate className="space-y-[var(--aura-space-6)]">
       {isPriorYear ? (
         <>
           <PriorYearLockBanner
@@ -111,6 +153,7 @@ export function PlanEditForm({
           value={draft.plan_name}
           onChange={(next) => update('plan_name', next as PlanSchemaInput['plan_name'])}
           required
+          {...optionalError(fieldError('plan_name'))}
         />
         <LocaleTextInput
           label={t('description')}
@@ -119,6 +162,7 @@ export function PlanEditForm({
           multiline
           maxLength={2000}
           required
+          {...optionalError(fieldError('description'))}
         />
         <div className="grid grid-cols-1 gap-[var(--aura-space-4)] md:grid-cols-2">
           <TextField
@@ -129,6 +173,7 @@ export function PlanEditForm({
             max={10_000}
             value={draft.sort_order}
             onChange={(e) => update('sort_order', Number.parseInt(e.target.value, 10) || 0)}
+            {...optionalError(fieldError('sort_order'))}
           />
           <Select
             id="member_type_scope"
@@ -152,6 +197,7 @@ export function PlanEditForm({
           unit={currencyUnit}
           locked={isLocked('annual_fee_minor_units')}
           required
+          {...optionalError(fieldError('annual_fee_minor_units'))}
           helpText={
             vatRatePercent === null
               ? t('annualFeeHelpNoRate')
@@ -166,6 +212,7 @@ export function PlanEditForm({
             onChange={(n) => update('min_turnover_minor_units', n)}
             unit={currencyUnit}
             locked={isLocked('min_turnover_minor_units')}
+            {...optionalError(fieldError('min_turnover_minor_units'))}
           />
           <MoneyInput
             id="max_turnover"
@@ -174,6 +221,7 @@ export function PlanEditForm({
             onChange={(n) => update('max_turnover_minor_units', n)}
             unit={currencyUnit}
             locked={isLocked('max_turnover_minor_units')}
+            {...optionalError(fieldError('max_turnover_minor_units'))}
           />
           <TextField
             id="max_duration"
@@ -186,6 +234,7 @@ export function PlanEditForm({
               update('max_duration_years', Number.isFinite(v) && v > 0 ? v : null);
             }}
             {...lockedFieldProps(isLocked('max_duration_years'))}
+            {...optionalError(fieldError('max_duration_years'))}
           />
           <TextField
             id="max_member_age"
@@ -199,6 +248,7 @@ export function PlanEditForm({
               update('max_member_age', Number.isFinite(v) && v > 0 ? v : null);
             }}
             {...lockedFieldProps(isLocked('max_member_age'))}
+            {...optionalError(fieldError('max_member_age'))}
           />
         </div>
       </SectionCard>
@@ -213,6 +263,10 @@ export function PlanEditForm({
             id={id === 'benefits' ? 'benefits' : 'partnership'}
             title={id === 'benefits' ? t('benefitMatrix') : tMatrix('section.partnershipBenefits')}
           >
+            {/* No control owns the matrix-level message, so it takes focus itself. */}
+            {id === 'benefits' ? (
+              <FieldError field="benefit_matrix" message={fieldError('benefit_matrix')} focusable />
+            ) : null}
             {children}
           </SectionCard>
         )}
