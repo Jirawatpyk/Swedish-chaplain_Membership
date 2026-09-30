@@ -1866,6 +1866,7 @@
           "dateOfBirth": "Date of birth",
           "dateOfBirthHint": "Required for Thai Alumni plan",
           "phoneError": "Use international format, e.g. +66812345678",
+          "phoneHint": "International format, e.g. +66812345678",
           "errors": {
             "required": "This field is required.",
             "countryCode": "Use the ISO 3166-1 alpha-2 code, e.g. TH, SE, US.",

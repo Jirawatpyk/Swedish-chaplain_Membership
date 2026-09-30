@@ -136,6 +136,7 @@ export function ContactFields({
         label={tf('phone')}
         maxLength={20}
         placeholder="+66812345678"
+        hint={tf('phoneHint')}
         error={contactErrors?.phone?.message}
         {...register(fieldPath('phone'))}
       />

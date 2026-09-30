@@ -1866,6 +1866,7 @@
           "dateOfBirth": "วันเกิด",
           "dateOfBirthHint": "จำเป็นสำหรับแพ็กเกจ Thai Alumni",
           "phoneError": "ใช้รูปแบบสากล เช่น +66812345678",
+          "phoneHint": "รูปแบบสากล เช่น +66812345678",
           "errors": {
             "required": "จำเป็นต้องกรอกช่องนี้",
             "countryCode": "ใช้รหัสประเทศ ISO 3166-1 alpha-2 เช่น TH, SE, US",

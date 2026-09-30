@@ -1866,6 +1866,7 @@
           "dateOfBirth": "Födelsedatum",
           "dateOfBirthHint": "Krävs för paketet Thai Alumni",
           "phoneError": "Använd internationellt format, t.ex. +66812345678",
+          "phoneHint": "Internationellt format, t.ex. +66812345678",
           "errors": {
             "required": "Detta fält är obligatoriskt.",
             "countryCode": "Använd ISO 3166-1 alpha-2-koden, t.ex. TH, SE, US.",
