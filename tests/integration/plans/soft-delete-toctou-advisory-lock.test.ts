@@ -333,4 +333,55 @@ describe('Integration: soft-delete TOCTOU advisory lock (W0-02)', () => {
     expect(reloaded?.deleted_at).toBeNull();
     expect(reloaded?.is_active).toBe(true);
   });
+
+  // -----------------------------------------------------------------------
+  // Test 4 — the reverse window: setActive must not touch a deleted plan.
+  //
+  //   setPlanActive reads the plan (not deleted → passes its soft_deleted
+  //   check) OUTSIDE the tx. A soft-delete that commits before setActive
+  //   runs must win: the flip is a no-op (undefined → the use case's
+  //   not_found), never a deleted-yet-active row.
+  //
+  //     use case: findOne → not deleted ✓ ── [window] ── setActive(true)
+  //     admin B:                  softDeleteGuarded → commit
+  //
+  //   Sequential like Tests 2–3: B's commit lands first, deterministically.
+  // -----------------------------------------------------------------------
+
+  it('Race condition closed — plan soft-deleted after the use-case read: setActive leaves it untouched', async () => {
+    const user = await createActiveTestUser('admin');
+    tenant = await createTestTenant('test-swecham');
+    await seedTenantFiscal({ tenant, registrationFeeSatang: 100000n });
+
+    const planId = `w002-del-${randomUUID().slice(0, 8)}`;
+    await planRepo.insert(tenant.ctx, buildPlanDraft(user.userId, planId));
+
+    // Admin B soft-deletes the plan inside the use case's window.
+    const deleted = await planRepo.softDeleteGuarded(
+      tenant.ctx,
+      asPlanSlug(planId),
+      asPlanYear(PLAN_YEAR),
+      new Date('2027-06-15T00:00:00Z'),
+      user.userId,
+    );
+    expect(deleted.kind).toBe('deleted');
+
+    const flipped = await planRepo.setActive(
+      tenant.ctx,
+      asPlanSlug(planId),
+      asPlanYear(PLAN_YEAR),
+      true,
+      user.userId,
+    );
+    expect(flipped).toBeUndefined();
+
+    // The plan stays deleted AND inactive — undelete remains the only way back.
+    const reloaded = await planRepo.findOne(
+      tenant.ctx,
+      asPlanSlug(planId),
+      asPlanYear(PLAN_YEAR),
+    );
+    expect(reloaded?.deleted_at).not.toBeNull();
+    expect(reloaded?.is_active).toBe(false);
+  });
 });
