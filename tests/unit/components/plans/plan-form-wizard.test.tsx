@@ -8,7 +8,7 @@
 //     corporate plan). A failing step stays put and puts the message on the
 //     offending field.
 //   - 122 US6 (T605): on AURA as the `Admin-plan-new` board draws it — AURA's
-//     Stepper (progress only: it has no error state, handoff #112), one card
+//     Stepper (the failing step marked since 5.18, handoff #112), one card
 //     per step, the AURA error summary for more than one error, and Cancel |
 //     Back / Next with Back and Next in an action bar.
 
@@ -180,6 +180,19 @@ describe('PlanFormWizard per-field errors', () => {
     expect(heading()).toBe('Fees');
     expect(screen.getByText(E.bundleRequired)).toBeInTheDocument();
     expect(document.getElementById('bundle')).toHaveAttribute('aria-invalid', 'true');
+  });
+
+  // AURA 5.18 (handoff #112, addendum 19): the step whose Next / Save failed
+  // shows the error status while it still has errors.
+  it('marks the failing step on the AURA stepper until its errors are fixed', () => {
+    renderWizard({ ...VALID, plan_id: 'Bad Id' });
+    next();
+    const nav = screen.getByRole('navigation', { name: en.admin.plans.create.steps.wizardAriaLabel });
+    const failing = nav.querySelector('.is-error');
+    expect(failing).toHaveTextContent('Basics');
+    expect(failing).toHaveTextContent('has errors');
+    fireEvent.change(document.getElementById('plan_id')!, { target: { value: 'gold' } });
+    expect(nav.querySelector('.is-error')).toBeNull();
   });
 
   it('does not show messages before the step is attempted', () => {
