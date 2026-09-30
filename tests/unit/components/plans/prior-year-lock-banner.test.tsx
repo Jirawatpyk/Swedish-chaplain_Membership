@@ -33,6 +33,19 @@ function renderBanner(currentYearStatus: Status) {
   );
 }
 
+// 122 US6 (T606) — board `Admin-plan-edit-locked`: AURA's warning Alert, a
+// standing notice (not a live region), its action an AURA secondary button.
+describe('PriorYearLockBanner on AURA', () => {
+  it('is a warning AURA alert with its title and the action as a secondary button', () => {
+    renderBanner('has_plan');
+    const title = screen.getByText('Historical plan — pricing, eligibility, and benefits are locked for 2025.');
+    const alert = title.closest('.aura-alert');
+    expect(alert).not.toBeNull();
+    expect(alert).toHaveAttribute('role', 'note');
+    expect(screen.getByRole('link', { name: 'Open the 2026 version' })).toHaveClass('aura-btn--secondary');
+  });
+});
+
 describe('PriorYearLockBanner CTA', () => {
   it('links to the current-year version of the plan when it exists', () => {
     renderBanner('has_plan');
