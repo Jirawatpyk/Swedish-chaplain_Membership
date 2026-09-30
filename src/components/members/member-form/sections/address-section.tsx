@@ -881,35 +881,20 @@ export function AddressSection({ mode }: { readonly mode: 'create' | 'edit' }) {
                 message={errors.billing_postal_code?.message}
               />
             </div>
-            <div>
-              <Label id="billing_country-label" htmlFor="billing_country">
-                {tf('country')}
-                <RequiredMark />
-              </Label>
-              <Controller
-                control={control}
-                name="billing_country"
-                render={({ field }) => (
-                  <CountryCombobox
-                    id="billing_country"
-                    value={field.value ?? ''}
-                    onChange={field.onChange}
-                    aria-labelledby="billing_country-label"
-                    aria-required
-                    aria-invalid={Boolean(errors.billing_country)}
-                    // `exactOptionalPropertyTypes` — the prop type has no
-                    // `| undefined`, so spread it in only when present.
-                    {...(errors.billing_country
-                      ? { 'aria-describedby': 'billing_country-error' }
-                      : {})}
-                  />
-                )}
-              />
-              <FieldError
-                id="billing_country-error"
-                message={errors.billing_country?.message}
-              />
-            </div>
+            <Controller
+              control={control}
+              name="billing_country"
+              render={({ field }) => (
+                <CountryCombobox
+                  id="billing_country"
+                  label={tf('country')}
+                  required
+                  value={field.value ?? ''}
+                  error={errors.billing_country?.message}
+                  onChange={field.onChange}
+                />
+              )}
+            />
           </div>
         </div>
       )}

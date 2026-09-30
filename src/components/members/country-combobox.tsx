@@ -9,10 +9,14 @@
  * `superRefine` on submit. The reviewer who prompted this asked for a
  * dropdown, but a fixed 3-value dropdown (Thailand / Sweden / Others) would
  * make SG/US/etc. members unrepresentable — `members.country` is `char(2)`
- * ISO-3166 and feeds the tax PDF. This wraps `Combobox` (ui/combobox.tsx)
+ * ISO-3166 and feeds the tax PDF. This wraps a combobox
  * with the full ISO list, pinning Thailand + Sweden (SweCham/TSCC's two
  * most common member countries) in a "Suggested" group for the same
  * discoverability the reviewer wanted, without losing coverage.
+ *
+ * Spec 122 US5b-2 (T574): on AURA `Combobox`, the "Suggested" group through
+ * its `groups` (5.16, handoff #105). The field carries its own label, hint and
+ * error, and the ISO code is a search keyword, so "US" finds the US.
  *
  * Localised names come from the SAME `i18n-iso-countries` registration
  * lifecycle `CountryDisplay` uses (`ensureLocaleLoaded` / `isLocaleRegistered`,
@@ -24,7 +28,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import i18nIsoCountries from 'i18n-iso-countries';
-import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
+import { Combobox, type ComboboxOption } from '@jirawatpyk/aura-react';
 import { ensureLocaleLoaded, isLocaleRegistered } from './country-display';
 
 /** SweCham/TSCC's two most common member countries — pinned above the
@@ -34,23 +38,22 @@ const SUGGESTED_CODES = ['TH', 'SE'] as const;
 
 export type CountryComboboxProps = {
   readonly id: string;
+  readonly label: string;
+  /** ISO alpha-2 (any case), or '' for none. */
   readonly value: string;
   readonly onChange: (next: string) => void;
-  readonly 'aria-labelledby'?: string;
-  readonly 'aria-describedby'?: string;
-  readonly 'aria-invalid'?: boolean;
-  readonly 'aria-required'?: boolean;
+  readonly required?: boolean;
+  readonly error?: string | undefined;
   readonly disabled?: boolean;
 };
 
 export function CountryCombobox({
   id,
+  label,
   value,
   onChange,
-  'aria-labelledby': ariaLabelledBy,
-  'aria-describedby': ariaDescribedBy,
-  'aria-invalid': ariaInvalid,
-  'aria-required': ariaRequired,
+  required,
+  error,
   disabled,
 }: CountryComboboxProps) {
   const t = useTranslations('admin.members.create.fields');
@@ -60,7 +63,7 @@ export function CountryCombobox({
 
   useEffect(() => {
     let cancelled = false;
-    ensureLocaleLoaded(baseLocale).then(() => {
+    void ensureLocaleLoaded(baseLocale).then(() => {
       if (!cancelled) setReady(isLocaleRegistered(baseLocale));
     });
     return () => {
@@ -68,7 +71,7 @@ export function CountryCombobox({
     };
   }, [baseLocale]);
 
-  const options = useMemo<ComboboxOption[]>(() => {
+  const groups = useMemo(() => {
     // While the locale isn't registered yet, getNames() returns {} — fall
     // back to the bare alpha-2 code list (label = code) so the field is
     // never empty and the option set doesn't shift shape mid-search.
@@ -77,42 +80,36 @@ export function CountryCombobox({
       : Object.fromEntries(
           Object.keys(i18nIsoCountries.getAlpha2Codes()).map((code) => [code, code]),
         );
-
-    const suggested: ComboboxOption[] = SUGGESTED_CODES.filter(
-      (code) => code in names,
-    ).map((code) => ({
+    const option = (code: string): ComboboxOption => ({
       value: code,
       label: names[code] ?? code,
-      group: t('countrySuggestedGroup'),
-    }));
-
+      keywords: [code],
+    });
     const suggestedSet: readonly string[] = SUGGESTED_CODES;
-    const rest: ComboboxOption[] = Object.entries(names)
-      .filter(([code]) => !suggestedSet.includes(code))
-      .map(([code, label]) => ({
-        value: code,
-        label,
-        group: t('countryAllGroup'),
-      }))
+    const rest = Object.keys(names)
+      .filter((code) => !suggestedSet.includes(code))
+      .map(option)
       .sort((a, b) => a.label.localeCompare(b.label, baseLocale));
-
-    return [...suggested, ...rest];
+    return [
+      { label: t('countrySuggestedGroup'), options: SUGGESTED_CODES.filter((code) => code in names).map(option) },
+      { label: t('countryAllGroup'), options: rest },
+    ];
   }, [ready, baseLocale, t]);
 
   return (
     <Combobox
       id={id}
-      options={options}
-      value={value.toUpperCase()}
-      onChange={onChange}
-      placeholder={t('countryPlaceholder')}
-      searchPlaceholder={t('countrySearchPlaceholder')}
-      emptyMessage={t('countryEmptyMessage')}
-      aria-labelledby={ariaLabelledBy}
-      aria-describedby={ariaDescribedBy}
-      aria-invalid={ariaInvalid}
-      aria-required={ariaRequired}
+      label={label}
+      required={required}
+      error={error}
       disabled={disabled}
+      groups={groups}
+      value={value.toUpperCase() || null}
+      onChange={(next) => onChange(next ?? '')}
+      // Every country stays reachable by scrolling (AURA renders 200 by default).
+      limit={300}
+      placeholder={t('countryPlaceholder')}
+      emptyText={t('countryEmptyMessage')}
     />
   );
 }

@@ -70,12 +70,13 @@ describe('MemberForm serverFieldError', () => {
     const { container, getByText } = renderForm({ field, message });
     const input = container.querySelector(`#${FIELD_TO_ID[field]}`);
     expect(input?.getAttribute('aria-invalid')).toBe('true');
-    // role=alert message rendered with the verbatim server message.
-    const alert = getByText(message);
-    expect(alert).not.toBeNull();
-    expect(alert.getAttribute('role')).toBe('alert');
-    // aria-describedby links the input to its error.
-    expect(input?.getAttribute('aria-describedby') ?? '').toContain(alert.id);
+    // The verbatim server message renders as the field's AURA error
+    // (`<id>-error`); RHF moves focus to the field, which reads it out
+    // through aria-describedby (122 US5b-2: AURA field errors are not
+    // live regions — the focused field announces its own error).
+    const error = getByText(message).closest('[id]');
+    expect(error?.id).toBe(`${FIELD_TO_ID[field]}-error`);
+    expect(input?.getAttribute('aria-describedby') ?? '').toContain(error?.id);
   });
 
   it('moves focus to the rejected field (WCAG 3.3.1)', () => {
