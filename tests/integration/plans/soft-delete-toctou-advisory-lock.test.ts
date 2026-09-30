@@ -99,7 +99,7 @@ function buildPlanDraft(userId: string, planId: string): PlanDraftInput {
     max_duration_years: null,
     max_member_age: null,
     benefit_matrix: MATRIX,
-    isActive: true,
+    isActive: false, // plan-state.ts: only an inactive plan can be soft-deleted
     createdBy: userId,
     updatedBy: userId,
   } as PlanDraftInput;
@@ -280,5 +280,154 @@ describe('Integration: soft-delete TOCTOU advisory lock (W0-02)', () => {
       asPlanYear(PLAN_YEAR),
     );
     expect(reloaded?.deleted_at).toBeNull();
+  });
+
+  // -----------------------------------------------------------------------
+  // Test 3 — activate/delete TOCTOU: the lifecycle check is enforced
+  //          INSIDE softDeleteGuarded's tx, not only by the use case.
+  //
+  //   softDeletePlan reads the plan (inactive → passes its plan_active
+  //   check) OUTSIDE the tx. An activate that commits before
+  //   softDeleteGuarded runs must still be refused:
+  //
+  //     use case: findOne → inactive ✓ ── [window] ── softDeleteGuarded
+  //     admin B:                  setActive(true) → commit
+  //
+  //   The guard row-locks the plan (SELECT … FOR UPDATE) and re-reads
+  //   is_active under the lock, so it sees B's commit and refuses.
+  //   Sequential like Test 2: B's commit lands first, deterministically.
+  // -----------------------------------------------------------------------
+
+  it('Race condition closed — plan activated after the use-case read: softDeleteGuarded refuses with plan_active', async () => {
+    const user = await createActiveTestUser('admin');
+    tenant = await createTestTenant('test-swecham');
+    await seedTenantFiscal({ tenant, registrationFeeSatang: 100000n });
+
+    const planId = `w002-act-${randomUUID().slice(0, 8)}`;
+    await planRepo.insert(tenant.ctx, buildPlanDraft(user.userId, planId));
+
+    // Admin B activates the plan inside the use case's window.
+    await planRepo.setActive(
+      tenant.ctx,
+      asPlanSlug(planId),
+      asPlanYear(PLAN_YEAR),
+      true,
+      user.userId,
+    );
+
+    const guardResult = await planRepo.softDeleteGuarded(
+      tenant.ctx,
+      asPlanSlug(planId),
+      asPlanYear(PLAN_YEAR),
+      new Date('2027-06-15T00:00:00Z'),
+      user.userId,
+    );
+    expect(guardResult.kind).toBe('plan_active');
+
+    // The plan stays active and undeleted.
+    const reloaded = await planRepo.findOne(
+      tenant.ctx,
+      asPlanSlug(planId),
+      asPlanYear(PLAN_YEAR),
+    );
+    expect(reloaded?.deleted_at).toBeNull();
+    expect(reloaded?.is_active).toBe(true);
+  });
+
+  // -----------------------------------------------------------------------
+  // Test 4 — the reverse window: setActive must not touch a deleted plan.
+  //
+  //   setPlanActive reads the plan (not deleted → passes its soft_deleted
+  //   check) OUTSIDE the tx. A soft-delete that commits before setActive
+  //   runs must win: the flip is a no-op (undefined → the use case's
+  //   not_found), never a deleted-yet-active row.
+  //
+  //     use case: findOne → not deleted ✓ ── [window] ── setActive(true)
+  //     admin B:                  softDeleteGuarded → commit
+  //
+  //   Sequential like Tests 2–3: B's commit lands first, deterministically.
+  // -----------------------------------------------------------------------
+
+  it('Race condition closed — plan soft-deleted after the use-case read: setActive leaves it untouched', async () => {
+    const user = await createActiveTestUser('admin');
+    tenant = await createTestTenant('test-swecham');
+    await seedTenantFiscal({ tenant, registrationFeeSatang: 100000n });
+
+    const planId = `w002-del-${randomUUID().slice(0, 8)}`;
+    await planRepo.insert(tenant.ctx, buildPlanDraft(user.userId, planId));
+
+    // Admin B soft-deletes the plan inside the use case's window.
+    const deleted = await planRepo.softDeleteGuarded(
+      tenant.ctx,
+      asPlanSlug(planId),
+      asPlanYear(PLAN_YEAR),
+      new Date('2027-06-15T00:00:00Z'),
+      user.userId,
+    );
+    expect(deleted.kind).toBe('deleted');
+
+    const flipped = await planRepo.setActive(
+      tenant.ctx,
+      asPlanSlug(planId),
+      asPlanYear(PLAN_YEAR),
+      true,
+      user.userId,
+    );
+    expect(flipped).toBeUndefined();
+
+    // The plan stays deleted AND inactive — undelete remains the only way back.
+    const reloaded = await planRepo.findOne(
+      tenant.ctx,
+      asPlanSlug(planId),
+      asPlanYear(PLAN_YEAR),
+    );
+    expect(reloaded?.deleted_at).not.toBeNull();
+    expect(reloaded?.is_active).toBe(false);
+  });
+
+  // -----------------------------------------------------------------------
+  // Test 5 — a stale undelete must not touch a live plan.
+  //
+  //   undeletePlan reads the plan (deleted → proceeds) OUTSIDE the tx. If a
+  //   concurrent undelete already restored it and an admin then activated
+  //   it, the stale undelete must be a no-op — not force is_active back to
+  //   false (and not write a second plan_undeleted audit event).
+  //
+  //     undelete B: findOne → deleted ✓ ── [window] ── undelete()
+  //     undelete A + admin:     undelete → commit; setActive(true) → commit
+  //
+  //   Sequential like Tests 2–4.
+  // -----------------------------------------------------------------------
+
+  it('Race condition closed — stale undelete on an already-restored plan leaves it untouched', async () => {
+    const user = await createActiveTestUser('admin');
+    tenant = await createTestTenant('test-swecham');
+    await seedTenantFiscal({ tenant, registrationFeeSatang: 100000n });
+
+    const planId = `w002-und-${randomUUID().slice(0, 8)}`;
+    await planRepo.insert(tenant.ctx, buildPlanDraft(user.userId, planId));
+    const slug = asPlanSlug(planId);
+    const year = asPlanYear(PLAN_YEAR);
+
+    const deleted = await planRepo.softDeleteGuarded(
+      tenant.ctx,
+      slug,
+      year,
+      new Date('2027-06-15T00:00:00Z'),
+      user.userId,
+    );
+    expect(deleted.kind).toBe('deleted');
+
+    // Undelete A wins, then an admin re-activates the plan.
+    expect(await planRepo.undelete(tenant.ctx, slug, year, user.userId)).toBeDefined();
+    expect(await planRepo.setActive(tenant.ctx, slug, year, true, user.userId)).toBeDefined();
+
+    // Stale undelete B lands last.
+    const stale = await planRepo.undelete(tenant.ctx, slug, year, user.userId);
+    expect(stale).toBeUndefined();
+
+    const reloaded = await planRepo.findOne(tenant.ctx, slug, year);
+    expect(reloaded?.deleted_at).toBeNull();
+    expect(reloaded?.is_active).toBe(true);
   });
 });

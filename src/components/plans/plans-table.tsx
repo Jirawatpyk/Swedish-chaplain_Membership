@@ -194,7 +194,10 @@ export function PlansTable({
       plan.is_active
         ? { label: tActions('deactivate'), onSelect: () => openDialog('deactivate', plan) }
         : { label: tActions('activate'), onSelect: () => openDialog('activate', plan) },
-      { label: tActions('delete'), tone: 'danger', onSelect: () => openDialog('delete', plan) },
+      // plan-state.ts: only an inactive plan can be deleted (#479).
+      ...(plan.is_active
+        ? []
+        : [{ label: tActions('delete'), tone: 'danger', onSelect: () => openDialog('delete', plan) } satisfies MenuItem]),
     ];
   }
 
@@ -350,7 +353,7 @@ export function PlansTable({
                           <PlusIcon aria-hidden="true" className="size-4" />
                           {t('empty.newCta')}
                         </Link>
-                        <Link href="/admin/plans/clone" className={buttonClass({ variant: 'secondary' })}>
+                        <Link href={`/admin/plans/clone?from=${year - 1}&to=${year}`} className={buttonClass({ variant: 'secondary' })}>
                           <CopyIcon aria-hidden="true" className="size-4" />
                           {t('empty.cloneCta', {
                             sourceYear: formatCalendarYear(year - 1, locale),

@@ -1102,6 +1102,7 @@
         "loadFailed": "Failed to load plans.",
         "duplicateKey": "A plan with this ID already exists for {year}.",
         "memberAttached": "{count} active members are on this plan. Move them to another plan before deleting.",
+        "planActive": "This plan is active. Deactivate it before deleting it.",
         "idempotencyConflict": "This request was already handled with different data. Refresh and try again.",
         "targetYearPopulated": "{targetYear} already has plans. Delete them first or choose a different year.",
         "sourceYearEmpty": "No plans found for {sourceYear}.",

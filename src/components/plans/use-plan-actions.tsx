@@ -138,6 +138,8 @@ export function usePlanActions(): PlanActions {
                   : undefined) ?? 0,
             }),
           );
+        } else if (code === 'plan_active') {
+          toast.error(tErrors('planActive'));
         } else if (code === 'not_found') {
           toast.error(tErrors('notFound'));
         } else if (code === 'idempotency_conflict') {

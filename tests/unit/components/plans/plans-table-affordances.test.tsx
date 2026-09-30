@@ -27,13 +27,16 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 
-function renderTable(role: Role) {
+function renderTable(
+  role: Role,
+  opts: { year?: number; plans?: ReadonlyArray<PlanListItem> } = {},
+) {
   return render(
     <NextIntlClientProvider locale="en" messages={en}>
       <PlansTable
-        plans={[]}
+        plans={opts.plans ?? []}
         currencyCode="THB"
-        year={2026}
+        year={opts.year ?? 2026}
         currentUserRole={role}
         initialFilter={{ category: null, q: null, activeOnly: false, showDeleted: false }}
       />
@@ -43,6 +46,28 @@ function renderTable(role: Role) {
 
 const SHOW_DELETED = en.admin.plans.filters.showDeleted;
 const NEW_CTA = en.admin.plans.empty.newCta;
+const DELETE = en.admin.plans.actions.delete;
+
+function planRow(planId: string, isActive: boolean): PlanListItem {
+  return {
+    plan_id: planId,
+    plan_year: 2026,
+    plan_name: { en: planId },
+    description: { en: '' },
+    plan_category: 'corporate',
+    member_type_scope: 'company',
+    annual_fee_minor_units: 3_600_000,
+    vat_rate: 7,
+    total_with_vat_minor_units: 3_852_000,
+    includes_corporate_plan_id: null,
+    is_active: isActive,
+    deleted_at: null,
+    created_at: '2026-01-01T00:00:00.000Z',
+    updated_at: '2026-01-01T00:00:00.000Z',
+    sort_order: 1,
+    missing_translations: [],
+  } as PlanListItem;
+}
 
 afterEach(cleanup);
 
@@ -142,7 +167,6 @@ describe('PlansTable on AURA (board Admin-plans)', () => {
     expect(within(menu).getAllByRole('menuitem').map((i) => i.textContent)).toEqual([
       en.admin.plans.actions.edit,
       en.admin.plans.actions.deactivate,
-      en.admin.plans.actions.delete,
     ]);
   });
 
@@ -237,5 +261,32 @@ describe('PlansTable filtered-empty state', () => {
     expect(screen.getByText(en.admin.plans.empty.title).closest('td')).not.toHaveAttribute('data-label');
     const newCta = screen.getByRole('link', { name: new RegExp(NEW_CTA, 'i') });
     expect(newCta.parentElement).toHaveClass('max-sm:flex-col', 'max-sm:items-stretch');
+  });
+});
+
+describe('PlansTable empty-state Clone CTA', () => {
+  it('clones INTO the year being viewed (from = year − 1, to = year)', () => {
+    renderTable('admin', { year: 2028 });
+    const cta = en.admin.plans.empty.cloneCta
+      .replace('{sourceYear}', '2027')
+      .replace('{targetYear}', '2028');
+    expect(screen.getByRole('link', { name: cta })).toHaveAttribute(
+      'href',
+      '/admin/plans/clone?from=2027&to=2028',
+    );
+  });
+});
+
+describe('PlansTable row menu — Delete follows the plan lifecycle', () => {
+  it('offers Delete only on inactive plans (active must be deactivated first)', () => {
+    renderTable('admin', { plans: [planRow('active-plan', true), planRow('inactive-plan', false)] });
+    const itemsFor = (planId: string) => {
+      fireEvent.click(screen.getByRole('button', { name: `Actions for ${planId}` }));
+      const items = within(screen.getByRole('menu')).getAllByRole('menuitem').map((b) => b.textContent);
+      fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
+      return items;
+    };
+    expect(itemsFor('active-plan')).not.toContain(DELETE);
+    expect(itemsFor('inactive-plan')).toContain(DELETE);
   });
 });

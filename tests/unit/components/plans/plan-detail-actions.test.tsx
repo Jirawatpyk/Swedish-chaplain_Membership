@@ -94,8 +94,14 @@ describe('PlanDetailActions', () => {
     );
   });
 
-  it('deletes after confirmation', async () => {
+  it('offers no Delete on an active plan (deactivate first)', () => {
     renderActions({ is_active: true, deleted: false });
+    openMenu();
+    expect(screen.getAllByRole('menuitem').map((b) => b.textContent)).toEqual(['Deactivate']);
+  });
+
+  it('deletes an inactive plan after confirmation', async () => {
+    renderActions({ is_active: false, deleted: false });
     openMenu();
     fireEvent.click(screen.getByRole('menuitem', { name: 'Delete' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Delete' }));
@@ -128,7 +134,7 @@ describe('PlanDetailActions', () => {
         error: { code: 'plan_has_active_members', details: { affected_member_count: 3 } },
       }),
     });
-    renderActions({ is_active: true, deleted: false });
+    renderActions({ is_active: false, deleted: false });
     openMenu();
     fireEvent.click(screen.getByRole('menuitem', { name: 'Delete' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Delete' }));
@@ -136,6 +142,21 @@ describe('PlanDetailActions', () => {
       expect(toast.error).toHaveBeenCalledWith(
         '3 active members are on this plan. Move them to another plan before deleting.',
       ),
+    );
+  });
+
+  it('shows the deactivate-first error when delete is refused as plan_active', async () => {
+    // A stale page: the plan was reactivated elsewhere after this menu rendered.
+    fetchMock.mockResolvedValue({
+      ok: false,
+      json: async () => ({ error: { code: 'plan_active' } }),
+    });
+    renderActions({ is_active: false, deleted: false });
+    openMenu();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete' }));
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(en.admin.plans.errors.planActive),
     );
   });
 });

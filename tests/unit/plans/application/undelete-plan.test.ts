@@ -144,7 +144,32 @@ describe('undeletePlan use case', () => {
     expect(deps.audit.record).not.toHaveBeenCalled();
   });
 
-  it('returns not_found when planRepo.undelete returns undefined', async () => {
+  it('returns ok idempotently when a concurrent undelete already restored the plan', async () => {
+    // findOne saw it deleted; by the time undelete ran, another request had
+    // restored it (repo undelete only matches deleted rows → undefined).
+    const restored = makePlan({ deleted_at: null, is_active: true });
+    const deps = makeDeps({ undeleteResult: undefined });
+    vi.mocked(deps.planRepo.findOne)
+      .mockResolvedValueOnce(makePlan({ deleted_at: DELETED_AT }))
+      .mockResolvedValueOnce(restored);
+    const result = await undeletePlan(baseInput, deps);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value).toBe(restored);
+    expect(deps.audit.record).not.toHaveBeenCalled();
+  });
+
+  it('returns server_error when the re-read after a no-op undelete throws', async () => {
+    const deps = makeDeps({ undeleteResult: undefined });
+    vi.mocked(deps.planRepo.findOne)
+      .mockResolvedValueOnce(makePlan({ deleted_at: DELETED_AT }))
+      .mockRejectedValueOnce(new Error('DB down'));
+    const result = await undeletePlan(baseInput, deps);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.type).toBe('server_error');
+    expect(deps.audit.record).not.toHaveBeenCalled();
+  });
+
+  it('returns not_found when planRepo.undelete returns undefined and the plan is still missing or deleted', async () => {
     const deps = makeDeps({
       findOneResult: makePlan({ deleted_at: DELETED_AT }),
       undeleteResult: undefined,

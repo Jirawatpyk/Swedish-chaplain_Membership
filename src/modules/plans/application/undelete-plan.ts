@@ -11,6 +11,9 @@
  *   3. Call `planRepo.undelete()` which clears `deleted_at` AND forces
  *      `is_active = false` per AS4 (undelete never returns directly
  *      to the active state — the admin must explicitly re-activate).
+ *      The repo only matches a still-deleted row; when a concurrent
+ *      undelete got there first it returns undefined, and this use case
+ *      re-reads and returns the live plan idempotently.
  *   4. Append `plan_undeleted` audit event with
  *      `{deleted_at: {before: <ISO>, after: null}}` diff. If the row
  *      was active at delete time the repo also flipped `is_active`,
@@ -94,6 +97,22 @@ export async function undeletePlan(
     });
   }
   if (!updated) {
+    // The repo only restores a still-deleted row. Re-read to tell "a
+    // concurrent undelete already restored it" (idempotent, like the
+    // not-deleted short-circuit above: no second audit event) from
+    // "the row vanished" (not_found).
+    let current: Plan | undefined;
+    try {
+      current = await deps.planRepo.findOne(deps.tenant, input.planId, input.year);
+    } catch (e) {
+      return err({
+        type: 'server_error',
+        message: e instanceof Error ? e.message : String(e),
+      });
+    }
+    if (current && current.deleted_at === null) {
+      return ok(current);
+    }
     return err({ type: 'not_found' });
   }
 

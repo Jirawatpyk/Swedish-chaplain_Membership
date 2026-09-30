@@ -35,8 +35,13 @@ export function PlanDetailActions({ plan }: PlanDetailActionsProps) {
           plan.is_active
             ? { label: tActions('deactivate'), onSelect: () => openAction('deactivate', plan) }
             : { label: tActions('activate'), onSelect: () => openAction('activate', plan) },
-          { separator: true },
-          { label: tActions('delete'), tone: 'danger', onSelect: () => openAction('delete', plan) },
+          // plan-state.ts: only an inactive plan can be deleted (#479).
+          ...(plan.is_active
+            ? []
+            : ([
+                { separator: true },
+                { label: tActions('delete'), tone: 'danger', onSelect: () => openAction('delete', plan) },
+              ] satisfies MenuItem[])),
         ];
 
   return (
