@@ -357,6 +357,10 @@ export const MIGRATED_PATHS = [
   'src/components/members/override-reason-dialog.tsx',
   'src/components/members/soft-duplicate-dialog.tsx',
   'src/components/admin/admin-preferred-locale-card.tsx',
+  // US6 — the plans list, detail, new-plan wizard, edit (current and prior
+  // year) and clone pages, and every plan component.
+  'src/app/(staff)/admin/plans/**',
+  'src/components/plans/**',
 ];
 
 /**
