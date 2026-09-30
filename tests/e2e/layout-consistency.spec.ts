@@ -57,6 +57,12 @@ test.describe('F5 layout consistency @layout', () => {
   });
 
   test('every admin page applies the correct container variant at 1440px', async ({ page }) => {
+    // Nine routes plus the sign-in, each a possible Turbopack cold compile,
+    // against Playwright's DEFAULT 30 s (playwright.config.ts sets no
+    // `timeout`). That is what timed out on chromium while mobile-chrome —
+    // running second, against a warm server — passed. 120 s is a real raise
+    // here, not a copy of the default: do not "tidy" it back down.
+    test.setTimeout(120_000);
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/admin/sign-in');
     await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
@@ -69,20 +75,28 @@ test.describe('F5 layout consistency @layout', () => {
 
     for (const { path, variant } of PAGES) {
       await page.goto(path);
-      await page.waitForLoadState('networkidle');
-
+      // No `networkidle`: it is unreliable behind Turbopack's on-demand
+      // compile (see helpers/sign-in-landing.ts), and the h1 assertion
+      // below already waits for the page to render.
       const h1 = page.getByRole('heading', { level: 1 }).first();
       await expect(h1, `${path} has h1`).toBeVisible();
-      const { fontSize, token } = await h1.evaluate((el) => {
-        const probe = document.createElement('span');
-        probe.style.fontSize = 'var(--font-size-h1)';
-        el.append(probe);
-        const tokenPx = parseFloat(getComputedStyle(probe).fontSize);
-        probe.remove();
-        return { fontSize: parseFloat(getComputedStyle(el).fontSize), token: tokenPx };
-      });
-      expect(token, `${path} --font-size-h1 resolves`).toBeGreaterThan(0);
-      expect(fontSize, `${path} h1 font-size`).toBeCloseTo(token, 0);
+      // Retry the probe. It appends a span to the h1 and reads back its
+      // computed size; if React replaces the h1 mid-hydration the span is
+      // detached before the read and the token comes back NaN. `networkidle`
+      // used to hide that by waiting out hydration — at the cost of the 30 s
+      // timeout this test kept hitting. Retrying is the cheap half.
+      await expect(async () => {
+        const { fontSize, token } = await h1.evaluate((el) => {
+          const probe = document.createElement('span');
+          probe.style.fontSize = 'var(--font-size-h1)';
+          el.append(probe);
+          const tokenPx = parseFloat(getComputedStyle(probe).fontSize);
+          probe.remove();
+          return { fontSize: parseFloat(getComputedStyle(el).fontSize), token: tokenPx };
+        });
+        expect(token, `${path} --font-size-h1 resolves`).toBeGreaterThan(0);
+        expect(fontSize, `${path} h1 font-size`).toBeCloseTo(token, 0);
+      }).toPass({ timeout: 15_000 });
 
       const container = page
         .locator(`[data-slot="layout-container"][data-variant="${variant}"]`)
