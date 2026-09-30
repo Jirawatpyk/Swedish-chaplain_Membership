@@ -117,7 +117,8 @@ describe('globals.css — AURA foundation (spec 122)', () => {
     ['--font-sans', '"Inter", "Noto Sans Thai", sans-serif'],
     // Kit titles (card, dialog, sheet) are h2/h3-level: AURA sets those in sans; Fraunces is display-only.
     ['--font-heading', '"Inter", "Noto Sans Thai", sans-serif'],
-    ['--font-mono', '"JetBrains Mono", monospace'],
+    // Thai in a mono label takes Noto Sans Thai, not whatever monospace the OS has (US6 parity).
+    ['--font-mono', '"JetBrains Mono", "Noto Sans Thai", monospace'],
   ])('%s names the AURA families', (name, stack) => {
     expect(declared(block('@theme inline'), name)).toBe(stack);
   });

@@ -180,6 +180,15 @@ describe('CloneYearClient on AURA', () => {
     }
   });
 
+  // Parity comment (US6): the rows are ruled in AURA's default border, as the
+  // board draws them; the subtle tone all but vanished on white.
+  it('rules the plan rows in the default border tone', () => {
+    renderClient();
+    for (const item of within(screen.getByRole('list')).getAllByRole('listitem')) {
+      expect(item).toHaveClass('border-[var(--aura-border-default)]');
+    }
+  });
+
   it('confirms on an AURA alertdialog before cloning', () => {
     renderClient();
     fireEvent.click(cloneButton());

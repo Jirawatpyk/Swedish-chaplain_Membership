@@ -126,6 +126,14 @@ describe('BenefitMatrixEditor on AURA', () => {
     expect(onChange).toHaveBeenLastCalledWith({ ...MATRIX, business_referrals: true });
   });
 
+  // Parity comment (US6): Thai takes no letter-spacing — spread-out Thai
+  // detaches its marks; the Latin heading keeps the board's tracking.
+  it('drops the heading tracking for Thai', () => {
+    wrap(<BenefitMatrixEditor value={MATRIX} onChange={vi.fn()} planCategory="corporate" />);
+    const heading = screen.getByRole('heading', { name: C.matrix.section.additionalBenefits });
+    expect(heading).toHaveClass('tracking-wider', '[&:lang(th)]:tracking-normal');
+  });
+
   it('locks every benefit on a prior-year plan', () => {
     wrap(
       <>
