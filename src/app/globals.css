@@ -368,25 +368,6 @@ html:has(.chamber-viewport-actionbar) {
     scroll-padding-bottom: calc(var(--aura-bottomnav-offset, 0px) + 7.5rem);
   }
 }
-/* Spec 122 US7a — the renewal pipeline's phone card ends with its row actions
-   ("Send reminder" across the card, then ⋯), as the `Admin-renewals-mobile`
-   board draws them; AURA's stacked card puts the actions cell at the top right.
-   stand-in until AURA #118 (a stacked-card action row). */
-@layer components {
-  .aura-table--stacked .aura-table__td[data-card='actions']:has([data-pipeline-row-actions]) {
-    order: 99;
-    flex: 0 0 100%;
-    margin: var(--aura-space-2) 0 0;
-  }
-  /* The card's company name wraps instead of being cut beside the urgency
-     pill: similar names ("Nordvik Logistics (Thailand)…") must stay telling
-     apart next to a one-click "Send reminder". AURA's stacked title cell is
-     `nowrap` — stand-in until AURA #119 (a stacked title that wraps). */
-  .aura-table--stacked .aura-table__row:has([data-pipeline-row-actions]) .aura-table__td[data-card='title'] {
-    white-space: normal;
-    overflow-wrap: anywhere;
-  }
-}
 
 body {
   font-family: var(--font-sans);
@@ -697,6 +678,26 @@ summary,
   .auth-mesh {
     --aura-mesh-from: #5b9bd5;
     --aura-mesh-to: #ffe27a;
+  }
+}
+
+/* Spec 122 US7a — the renewal pipeline's phone card ends with its row actions
+   ("Send reminder" across the card, then ⋯), as the `Admin-renewals-mobile`
+   board draws them; AURA's stacked card puts the actions cell at the top right.
+   stand-in until AURA #118 (a stacked-card action row). */
+@layer components {
+  .aura-table--stacked .aura-table__td[data-card='actions']:has([data-pipeline-row-actions]) {
+    order: 99;
+    flex: 0 0 100%;
+    margin: var(--aura-space-2) 0 0;
+  }
+  /* The card's company name wraps instead of being cut beside the urgency
+     pill: similar names ("Nordvik Logistics (Thailand)…") must stay telling
+     apart next to a one-click "Send reminder". AURA's stacked title cell is
+     `nowrap` — stand-in until AURA #119 (a stacked title that wraps). */
+  .aura-table--stacked .aura-table__row:has([data-pipeline-row-actions]) .aura-table__td[data-card='title'] {
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 }
 
