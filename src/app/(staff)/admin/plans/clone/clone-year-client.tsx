@@ -311,7 +311,7 @@ export function CloneYearClient({
           </ul>
         )}
       </section>
-      <ActionBar className="chamber-viewport-actionbar plan-form-actions">
+      <ActionBar className="chamber-viewport-actionbar plan-form-actions plan-form-actions--in-card">
         <Button type="button" variant="secondary" onClick={() => router.push('/admin/plans')}>
           {tClone('cancel')}
         </Button>

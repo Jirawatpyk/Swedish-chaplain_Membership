@@ -324,6 +324,11 @@ html:has(.chamber-viewport-actionbar) {
   :is(.member-form-actions, .plan-form-actions) > div > :last-child > :first-child:not(:last-child) {
     flex: 1 1 0;
   }
+  /* The clone bar sits inside its card (board `Admin-plans-clone-mobile`):
+     it also reaches past the card's padding and border to the screen edges. */
+  .plan-form-actions--in-card {
+    margin-inline: calc(-1 * (var(--page-padding-x) + var(--aura-space-4) + 1px));
+  }
   /* The plan wizard's Back / Next share the bar evenly (board `Admin-plan-new-mobile`). */
   .plan-form-actions--even > div > :last-child > * {
     flex: 1 1 0;
