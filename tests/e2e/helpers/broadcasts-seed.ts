@@ -107,8 +107,12 @@ export async function seedF7Broadcasts(
       // longer resolves from E2E_MEMBER_EMAIL). Either way the review-queue
       // spec's `tbody tr` filter resolves to two elements (strict-mode
       // violation). The subject is unique to this seed, so it is the key.
-      // The newest id is still reused below so the exported
-      // E2E_SEED_BROADCAST_ID stays stable across re-seeds.
+      // The re-INSERT below takes a FRESH id rather than reusing the old
+      // one (2026-09-30): the previous test's approve/reject POST can still
+      // be in flight, and with the id reused that late UPDATE landed on the
+      // new row and flipped it out of `submitted`. Callers do not need a
+      // stable id — `reseed()` re-points SEEDED_SUBMITTED_BROADCAST_ID from
+      // the returned value on every call.
       await sql`
         DELETE FROM broadcast_deliveries
         WHERE tenant_id = ${TENANT_ID}
@@ -123,7 +127,7 @@ export async function seedF7Broadcasts(
         WHERE tenant_id = ${TENANT_ID}
           AND subject = '[E2E SEED] AS2-AS6 fixture broadcast'
       `;
-      broadcastId = existingId;
+      broadcastId = randomUUID();
       await sql`
         INSERT INTO broadcasts (
           tenant_id, broadcast_id,
@@ -314,7 +318,15 @@ export async function seedBulkApproveFixtures(
         LIMIT 1
       `;
       const existingId = existingRows[0]?.broadcast_id;
-      const id = existingId ?? randomUUID();
+      // A FRESH id every time, never the old one. The previous test's
+      // approve POST can still be in flight when the next test's seed
+      // replaces the fixture; reusing the id let that late UPDATE land on
+      // the brand-new row and flip it out of `submitted`, so the queue
+      // rendered it non-actionable and the row had no checkbox at all
+      // (`openQueueAndSelectBoth` then timed out). Caught 2026-09-30: the
+      // approved row's `updated_at` predated its own INSERT. With a new id
+      // the stale write matches nothing.
+      const id = randomUUID();
 
       if (existingId) {
         // Same immutability-trigger workaround as `seedF7Broadcasts` —
