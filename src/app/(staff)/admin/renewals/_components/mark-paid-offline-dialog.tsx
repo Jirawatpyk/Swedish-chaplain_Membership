@@ -345,6 +345,9 @@ export function MarkPaidOfflineDialog({
     <Dialog
       open={open}
       onClose={close}
+      // Stays open until the request settles (ux-standards § 6.4), as the
+      // bulk dialog does: Esc, the X and the scrim wait while it records.
+      dismissible={!pending}
       {...(finalFocus ? { finalFocus: resolveFinalFocus } : {})}
       title={t('markPaidOffline.dialogTitle')}
       description={t('markPaidOffline.dialogBody')}

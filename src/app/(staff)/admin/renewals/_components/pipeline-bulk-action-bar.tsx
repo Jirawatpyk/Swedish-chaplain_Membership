@@ -558,7 +558,7 @@ export function PipelineBulkActionBar({
           onClearSelection={handleClearClick}
           status={
             overCap ? (
-              <span className="flex flex-col gap-0.5" role="alert">
+              <span className="flex flex-col gap-0.5">
                 <span className="text-xs font-medium text-[var(--aura-fg-danger)]">
                   {t('overCap', { max: BULK_CAP })}
                 </span>

@@ -167,6 +167,7 @@ export function LapsedTab({ rows }: LapsedTabProps) {
                           icon="ellipsis"
                           label={menuLabel}
                           size="sm"
+                          touchHeight
                           onClick={(e) => {
                             activeTriggerRef.current = e.currentTarget;
                           }}

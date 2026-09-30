@@ -116,6 +116,16 @@ export const RENEWALS_BY_MONTH: RenewalMonthSummary = {
   totalCount: MONTH_COUNTS.reduce((a, b) => a + b, 0),
 };
 
+/** The empty view: nothing overdue or due within 90 days (Oct–Dec 2026). */
+export const RENEWALS_BY_MONTH_EMPTY_WINDOW: RenewalMonthSummary = (() => {
+  const buckets = RENEWALS_BY_MONTH.buckets.map((b, i) => (i <= 3 ? { ...b, count: 0 } : b));
+  return {
+    buckets,
+    maxCount: Math.max(...buckets.map((b) => b.count)),
+    totalCount: buckets.reduce((a, b) => a + b.count, 0),
+  };
+})();
+
 export const MEMBERS_WITHOUT_CYCLE: LoadMembersWithoutCycleOutput = {
   items: [
     {

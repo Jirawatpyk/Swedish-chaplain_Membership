@@ -378,6 +378,14 @@ html:has(.chamber-viewport-actionbar) {
     flex: 0 0 100%;
     margin: var(--aura-space-2) 0 0;
   }
+  /* The card's company name wraps instead of being cut beside the urgency
+     pill: similar names ("Nordvik Logistics (Thailand)…") must stay telling
+     apart next to a one-click "Send reminder". AURA's stacked title cell is
+     `nowrap` — stand-in until AURA #119 (a stacked title that wraps). */
+  .aura-table--stacked .aura-table__row:has([data-pipeline-row-actions]) .aura-table__td[data-card='title'] {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
 }
 
 body {

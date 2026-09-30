@@ -47,7 +47,7 @@ export function CycleCompanyCell({
     <span className="inline-flex min-w-0 items-center gap-1.5">
       <Link
         href={`/admin/members/${memberId}`}
-        className="font-medium text-[var(--aura-fg-primary)] hover:text-[var(--aura-fg-accent)] hover:underline"
+        className="font-medium text-[var(--aura-fg-accent)] hover:underline"
       >
         {display}
       </Link>

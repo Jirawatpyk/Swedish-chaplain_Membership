@@ -101,6 +101,7 @@ Open items (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
 | #118 | `DataTable` stacked card: no slot for a full-width action row at the end of a card (the actions cell sits at the top right) | US7a renewal pipeline: a `globals.css` rule moves the actions cell of a row holding `[data-pipeline-row-actions]` to a full-width last row of the card (`Admin-renewals-mobile`) |
+| #119 | `DataTable` stacked card: the title cell is `nowrap`, so a long title is cut (no ellipsis) beside a `pill` | US7a renewal pipeline: a `globals.css` rule lets the title of a row holding `[data-pipeline-row-actions]` wrap (UX review: similar company names beside a one-click Send reminder) |
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 

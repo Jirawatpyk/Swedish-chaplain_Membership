@@ -58,6 +58,7 @@ import { MembersWithoutCycleTray } from '@/app/(staff)/admin/renewals/_component
 import {
   MEMBERS_WITHOUT_CYCLE,
   RENEWALS_BY_MONTH,
+  RENEWALS_BY_MONTH_EMPTY_WINDOW,
   RENEWALS_MONEY,
   RENEWALS_NEEDS_ACTION_COUNT,
   RENEWALS_NOW_ISO,
@@ -808,7 +809,7 @@ export default async function AuraAdminPreviewPage({
                 tenantSlug="preview"
                 nowIso={RENEWALS_NOW_ISO}
                 selectedMonth={null}
-                summaryPromise={Promise.resolve({ ok: true, v: { ok: true, value: RENEWALS_BY_MONTH } } as const)}
+                summaryPromise={Promise.resolve({ ok: true, v: { ok: true, value: empty ? RENEWALS_BY_MONTH_EMPTY_WINDOW : RENEWALS_BY_MONTH } } as const)}
               />
             ),
             tray: (

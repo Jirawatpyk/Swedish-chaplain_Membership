@@ -244,7 +244,7 @@ export function RowActions({
         label={menuLabel}
         items={items}
         trigger={
-          <IconButton ref={rowMenuTriggerRef} icon="ellipsis" label={menuLabel} size="sm" />
+          <IconButton ref={rowMenuTriggerRef} icon="ellipsis" label={menuLabel} size="sm" touchHeight />
         }
       />
     </div>
