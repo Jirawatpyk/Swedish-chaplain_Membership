@@ -77,6 +77,7 @@ function renderWizard(initialValues?: PlanSchemaInput) {
         vatRatePercent={7}
         {...(initialValues ? { initialValues } : {})}
         onSubmit={onSubmit}
+        onCancel={() => {}}
       />
     </NextIntlClientProvider>,
   );

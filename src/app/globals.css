@@ -342,6 +342,12 @@ html:has(.chamber-viewport-actionbar) {
     min-height: 0;
     padding: 0;
   }
+  /* The plan wizard (board `Admin-plan-new`): Cancel at the start edge, Back
+     and Next at the end — the buttons' row fills the bar so Cancel's
+     `me-auto` takes the space between. */
+  .plan-form-actions--split > div > :last-child {
+    flex: 1 1 auto;
+  }
 }
 /* Spec 122 US4 — the invoice page's sticky amount-due bar (~7rem) rides
    above the bottom nav on phones; keep a focused control clear of it. */

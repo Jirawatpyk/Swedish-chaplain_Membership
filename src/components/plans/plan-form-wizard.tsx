@@ -552,7 +552,7 @@ export function PlanFormWizard({
           {cancelLabel}
         </Button>
       ) : null}
-      <ActionBar className="chamber-viewport-actionbar plan-form-actions plan-form-actions--even">
+      <ActionBar className="chamber-viewport-actionbar plan-form-actions plan-form-actions--even plan-form-actions--split">
         {onCancel ? (
           <Button type="button" variant="secondary" onClick={onCancel} disabled={submitting} className="me-auto max-sm:hidden">
             {cancelLabel}
