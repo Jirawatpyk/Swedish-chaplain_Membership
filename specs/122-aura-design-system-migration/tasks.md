@@ -271,8 +271,13 @@ Boards: `Admin-renewals` (+`-mobile`), `Admin-renewals-needs-action`, `Admin-ren
     - The linked tiles link through their label and carry AURA's arrow icon. The prior-years line is its own link, in the danger tone.
     - The basis hint is an AURA `Popover`. It is kept although the board omits it.
     - The skeleton is four loading `Stat` tiles.
-- [ ] T705 [US7] "Renewals by month" in an AURA `Card`: the bar chart on AURA chart tokens, bars that filter, and the month chip.
+- [x] T705 [US7] "Renewals by month" in an AURA `Card`: the bar chart on AURA chart tokens, bars that filter, and the month chip.
   - RED: `month-bar-chart` and `month-filter-chip`.
+  - Done:
+    - AURA server `Card` titled with the open count; it is the chip's focus target. The failure is an AURA danger `Alert` and the empty state is an AURA `EmptyState`.
+    - The Overdue bar takes AURA's danger colour and every month bar `--aura-chart-1`, as the board draws them. The four-band palette and its helper are gone.
+    - The month chip is an AURA `Tag` with its remove button.
+    - Extra test: `renewals-by-month-section`.
 - [ ] T706 [US7] The at-risk section: counters, a table (risk badge, main signal, last computed, Contact / Snooze) and the snooze and outreach dialogs on AURA, with the same requests.
   - RED: `at-risk-widget-snooze-gate` and `snooze-dialog-error-map` on AURA.
 - [ ] T707 [US7] Pending review, the lapsed tab and the members-without-cycle tray on AURA cards, tables and dialogs, with the same reactivate request.

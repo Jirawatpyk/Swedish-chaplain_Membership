@@ -10,10 +10,8 @@
  * so it never crashes the page.
  */
 import { getLocale, getTranslations } from 'next-intl/server';
-import { AlertTriangle, CalendarClock } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
-import { EmptyState } from '@/components/shell/empty-state';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Alert, Card, EmptyState } from '@jirawatpyk/aura-react/server';
+import { SkeletonBlock } from '@/components/shell/page-skeletons';
 import { logger } from '@/lib/logger';
 import {
   type loadRenewalMonthSummary,
@@ -26,7 +24,6 @@ import type { Settled } from '../_lib/settled';
 import {
   formatMonthKeyLabel,
   formatMonthKeyShort,
-  bandForBucketIndex,
   type MonthBarItem,
 } from '@/components/renewals/month-bucket-label';
 import { MonthBarChart } from '@/components/renewals/month-bar-chart';
@@ -81,23 +78,14 @@ export async function RenewalsByMonthSection({
     );
     return (
       <Card>
-        <CardContent
-          role="alert"
-          aria-live="assertive"
-          className="flex flex-col items-center gap-4 py-12 text-center"
-        >
-          <AlertTriangle aria-hidden="true" className="h-10 w-10 text-destructive" />
-          <div className="text-base font-medium text-destructive">
-            {t('loadFailed')}
-          </div>
-        </CardContent>
+        <Alert tone="danger" title={t('loadFailed')} />
       </Card>
     );
   }
 
   // Resolve labels in Presentation (Constitution III — VM carries none).
   const laterStartKey = addMonthsToYm(bkkYearMonth(nowIso), 12);
-  const items: MonthBarItem[] = summary.buckets.map((b, i) => {
+  const items: MonthBarItem[] = summary.buckets.map((b) => {
     // Compute the bucket kind ONCE, then branch on it for both the full label
     // (accessible name) and the compact axis short label — so the two can never
     // diverge on which case applies (mirrors the `selectedMonthKind` idiom below).
@@ -122,7 +110,6 @@ export async function RenewalsByMonthSection({
       count: b.count,
       barPercent: barWidthPercent(b.count, summary.maxCount),
       interactive: b.count > 0,
-      band: bandForBucketIndex(i),
     };
   });
 
@@ -147,81 +134,68 @@ export async function RenewalsByMonthSection({
         ? formatMonthKeyLabel(laterStartKey, locale)
         : formatMonthKeyLabel(selectedMonth as string, locale);
 
+  // The card is the focus target the month chip returns focus to
+  // (`#renewals-by-month`), labelled by its own title.
   return (
-    <Card>
-      <CardContent className="flex flex-col gap-4">
-        <section
-          id="renewals-by-month"
-          tabIndex={-1}
-          aria-labelledby="renewals-by-month-heading"
-          className="flex flex-col gap-3 focus-visible:outline-none"
-        >
-          <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
-            <div className="space-y-1">
-              <h2 id="renewals-by-month-heading" className="text-base font-semibold">
-                {t('title')}
-              </h2>
-              <p className="text-sm text-muted-foreground">
-                {t('subtitle', { count: summary.totalCount })}
-              </p>
-            </div>
-            {selectedMonthKind !== undefined ? (
-              <MonthFilterChip
-                monthKind={selectedMonthKind}
-                {...(selectedMonthLabel !== undefined
-                  ? { monthLabel: selectedMonthLabel }
-                  : {})}
-              />
-            ) : null}
-          </div>
-
-          {summary.totalCount === 0 ? (
-            <EmptyState
-              icon={CalendarClock}
-              title={t('emptyTitle')}
-              description={t('emptyDescription')}
-              bordered={false}
-            />
-          ) : (
-            <MonthBarChart items={items} selectedKey={selectedMonth} />
-          )}
-        </section>
-      </CardContent>
+    <Card
+      as="section"
+      id="renewals-by-month"
+      tabIndex={-1}
+      className="focus-visible:outline-none"
+      title={t('title')}
+      titleId="renewals-by-month-heading"
+      headingLevel={2}
+      description={t('subtitle', { count: summary.totalCount })}
+      actions={
+        selectedMonthKind !== undefined ? (
+          <MonthFilterChip
+            monthKind={selectedMonthKind}
+            {...(selectedMonthLabel !== undefined ? { monthLabel: selectedMonthLabel } : {})}
+          />
+        ) : undefined
+      }
+    >
+      {summary.totalCount === 0 ? (
+        <EmptyState
+          icon="calendar"
+          title={t('emptyTitle')}
+          description={t('emptyDescription')}
+          headingLevel={false}
+        />
+      ) : (
+        <MonthBarChart items={items} selectedKey={selectedMonth} />
+      )}
     </Card>
   );
 }
 
-/** Suspense fallback — 14 bar placeholders matching the final layout (CLS 0). */
 export function RenewalsByMonthSectionSkeleton() {
   return (
-    <Card>
-      <CardContent className="flex flex-col gap-3">
-        {/* Deferred fix-wave-2 T9(a) — wrap in `space-y-1` to mirror the real
-            header's `space-y-1` (below); without it the outer `gap-3` gave
-            the title+subtitle pair ~8px more vertical space than the real
-            render, producing CLS on hydration. */}
-        <div className="space-y-1">
-          <Skeleton className="h-5 w-48" />
-          <Skeleton className="h-4 w-64" />
+    <Card
+      header={
+        <div className="flex flex-col gap-[var(--aura-space-1)]">
+          <SkeletonBlock className="h-5 w-48" />
+          <SkeletonBlock className="h-4 w-64" />
         </div>
-        {/* Mirror the real chart's scroll region + per-column `min-w-11` +
-            `overflow-x-auto` so the 14-column strip does not resize/gain a
-            scrollbar on hydration (CLS 0). */}
-        <div className="overflow-x-auto">
-          <div className="flex items-stretch gap-1 px-0.5 pb-1">
-            {Array.from({ length: 14 }).map((_, i) => (
-              <div key={i} className="flex min-w-11 flex-1 flex-col items-center gap-1 py-1">
-                <div className="flex h-32 w-full items-end justify-center border-b border-border">
-                  <Skeleton className="h-24 w-10" />
-                </div>
-                <div className="flex h-8 items-start">
-                  <Skeleton className="h-3 w-8" />
-                </div>
+      }
+    >
+      {/* Mirror the real chart's scroll region + per-column `min-w-11` so the
+          14-column strip does not resize or gain a scrollbar on hydration
+          (CLS 0). */}
+      <div className="overflow-x-auto">
+        <div className="flex items-stretch gap-1 px-0.5 pb-1">
+          {Array.from({ length: 14 }).map((_, i) => (
+            <div key={i} className="flex min-w-11 flex-1 flex-col items-center gap-1 py-1">
+              <div className="flex h-32 w-full items-end justify-center border-b border-[var(--aura-chart-axis)]">
+                <SkeletonBlock className="h-24 w-10" />
               </div>
-            ))}
-          </div>
+              <div className="flex h-8 items-start">
+                <SkeletonBlock className="h-3 w-8" />
+              </div>
+            </div>
+          ))}
         </div>
-      </CardContent>
+      </div>
     </Card>
   );
 }
