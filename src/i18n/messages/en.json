@@ -1101,6 +1101,7 @@
       "description": "Override the language this member receives transactional emails in (broadcast approvals, invoices, etc.). Leave on \"Use chamber default\" to follow the tenant default.",
       "useTenantDefault": "Use chamber default",
       "save": "Save preference",
+      "savedSeparately": "Saved on its own — not with “Save changes”.",
       "savedToast": "Notification language updated.",
       "errorToast": "Could not save preference. Please try again.",
       "loading": "Loading…"
