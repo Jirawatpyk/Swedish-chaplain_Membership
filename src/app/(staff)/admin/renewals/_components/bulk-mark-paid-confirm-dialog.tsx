@@ -63,6 +63,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import {
+  Alert,
   Button,
   DatePicker,
   Dialog,
@@ -451,6 +452,11 @@ export function BulkMarkPaidConfirmDialog({
           onChange={(iso) => setPaymentDate(iso ?? '')}
           required
         />
+        {/* Same rule as the single dialog, per member: each gets a tax
+            invoice/receipt that can only be corrected by a credit note. */}
+        <Alert tone="warning" role="note" title={t('taxDocWarningTitle')}>
+          {t('taxDocWarningBody')}
+        </Alert>
       </div>
     </Dialog>
   );

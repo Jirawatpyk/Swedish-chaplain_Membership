@@ -4197,6 +4197,8 @@
         "toolbarLabel": "Bulk actions",
         "selectedCount": "{count, plural, one {# selected} other {# selected}}",
         "overCap": "Maximum {max} renewals per batch. Split the selection.",
+        "taxDocWarningTitle": "This issues a tax invoice/receipt for each member",
+        "taxDocWarningBody": "Each member gets a tax invoice/receipt with the next number, marked paid in one step. They can't be voided — a mistake needs a credit note for that document.",
         "overCapHelper": "{count} of {total} selected — only {max} can be processed at once. Deselect rows past row {max}, or use filters to narrow the list before re-selecting.",
         "clear": "Clear selection",
         "cancel": "Cancel",

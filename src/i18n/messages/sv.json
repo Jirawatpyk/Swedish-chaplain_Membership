@@ -4014,7 +4014,7 @@
           "ariaLabel": "Influtet denna månad {amount} — visa betalda medlemsfakturor"
         },
         "collectionRate": {
-          "label": "Inkasseringsgrad",
+          "label": "Inbetalningsgrad",
           "basis": "medlemsavgifter · räkenskapsår hittills · endast poster som nått förfallodagen · inkl. moms",
           "hintAriaLabel": "Hur denna siffra skiljer sig från instrumentpanelens Betalda intäkter",
           "hint": "Räknar medlemsavgifter som FÖRFALLER till betalning under innevarande räkenskapsår. Instrumentpanelens Betalda intäkter räknas efter det år fakturan STÄLLDES UT — siffrorna kan därför helt korrekt skilja sig åt."
@@ -4197,6 +4197,8 @@
         "toolbarLabel": "Massåtgärder",
         "selectedCount": "{count, plural, one {# vald} other {# valda}}",
         "overCap": "Högst {max} förnyelser per omgång. Dela upp urvalet.",
+        "taxDocWarningTitle": "Detta utfärdar ett skattekvitto för varje medlem",
+        "taxDocWarningBody": "Varje medlem får ett skattekvitto med nästa nummer, markerat som betalt i ett steg. De kan inte makuleras — ett misstag kräver en kreditnota för det kvittot.",
         "overCapHelper": "{count} av {total} valda — endast {max} kan bearbetas åt gången. Avmarkera rader efter rad {max}, eller använd filter för att begränsa listan innan du väljer på nytt.",
         "clear": "Rensa markering",
         "cancel": "Avbryt",
