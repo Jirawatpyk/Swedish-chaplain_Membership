@@ -23,8 +23,7 @@ import { Suspense } from 'react';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { headers } from 'next/headers';
 import { randomUUID } from 'node:crypto';
-import { Card, CardContent } from '@/components/ui/card';
-import { buttonVariants } from '@/components/ui/button';
+import { Card, EmptyState, buttonClass } from '@jirawatpyk/aura-react/server';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { renewalsMetrics } from '@/lib/metrics';
@@ -175,13 +174,13 @@ export default async function RenewalsPipelinePage({
     return (
       <RenewalsPageShell title={t('title')} subtitle={t('subtitle')}>
         <Card>
-          <CardContent
+          <p
             role="status"
             aria-live="polite"
-            className="py-12 text-center text-muted-foreground"
+            className="py-[var(--aura-space-8)] text-center text-[var(--aura-fg-secondary)]"
           >
             {t('error.featureDisabled')}
-          </CardContent>
+          </p>
         </Card>
       </RenewalsPageShell>
     );
@@ -259,7 +258,7 @@ export default async function RenewalsPipelinePage({
     return (
       <RenewalsPageShell title={t('title')} subtitle={t('subtitle')}>
         <Card>
-          <CardContent className="flex flex-col gap-4">
+          <div className="flex flex-col gap-[var(--aura-space-4)]">
             {/* C3 (#8) — the Pending-review view now also carries the sibling-
                 queue count badges (Tasks / Tier upgrades / its own Pending
                 review), streamed in a Suspense island whose fallback is the
@@ -276,7 +275,7 @@ export default async function RenewalsPipelinePage({
               // literal went false for every human after Migration C).
               canApprove={canPerform(currentUser.role, 'renewals.write')}
             />
-          </CardContent>
+          </div>
         </Card>
       </RenewalsPageShell>
     );
@@ -371,26 +370,36 @@ export default async function RenewalsPipelinePage({
     );
     return (
       <RenewalsPageShell title={t('title')} subtitle={t('subtitle')}>
-        <LoadErrorCard message={t('error.loadFailed')}>
-          {/*
+        {/* 122 US7a (`Admin-state-renewals-error`): AURA's danger empty state —
+            the message, Try again / Go back, and the reference id beneath.
             K12-1 (UX-K-3): Retry was a `<Link>` with `?_retry=${id}`
             query-string cache-bust which (a) read as "navigation" to
             AT (WCAG SC 4.1.2) and (b) polluted browser history with
             accumulating retry IDs. ErrorCardActions runs
             `router.refresh()` inside `useTransition` — semantic
             button, no URL mutation, pending state for the in-flight
-            RSC re-fetch.
-          */}
-          <ErrorCardActions
-            correlationId={correlationId}
-            goBackHref="/admin"
-            retryLabel={t('error.retry')}
-            pendingLabel={t('error.retrying')}
-            retryFailedLabel={t('error.retryFailed')}
-            goBackLabel={t('error.goBack')}
-            referenceLabel={t('error.referenceLabel')}
-          />
-        </LoadErrorCard>
+            RSC re-fetch. */}
+        <EmptyState
+          role="alert"
+          bordered
+          tone="danger"
+          headingLevel={false}
+          icon="triangle-alert"
+          title={t('error.loadFailed')}
+          action={
+            <div className="flex flex-col items-center gap-[var(--aura-space-3)]">
+              <ErrorCardActions
+                correlationId={correlationId}
+                goBackHref="/admin"
+                retryLabel={t('error.retry')}
+                pendingLabel={t('error.retrying')}
+                retryFailedLabel={t('error.retryFailed')}
+                goBackLabel={t('error.goBack')}
+                referenceLabel={t('error.referenceLabel')}
+              />
+            </div>
+          }
+        />
       </RenewalsPageShell>
     );
   }
@@ -547,7 +556,7 @@ export default async function RenewalsPipelinePage({
         />
       </Suspense>
       <Card>
-        <CardContent className="flex flex-col gap-4">
+        <div className="flex flex-col gap-[var(--aura-space-4)]">
           {/* 070 F8 item #18 (extended, nav-orphans follow-up) — section
               nav reachable from the pipeline so admins can navigate to
               the pending-review discovery list, plus Tasks and Tier
@@ -677,13 +686,10 @@ export default async function RenewalsPipelinePage({
                     // on tab switch (line 63), so stale cursors are
                     // auto-cleared on urgency change.
                     <div className="flex items-center justify-between gap-4 pt-1">
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-xs text-[var(--aura-fg-secondary)]">
                         {t('table.pagination.showingFirst')}
                       </p>
-                      <a
-                        href={nextHref}
-                        className={buttonVariants({ variant: 'outline' })}
-                      >
+                      <a href={nextHref} className={buttonClass({ variant: 'secondary' })}>
                         {t('table.pagination.next')}
                       </a>
                     </div>
@@ -699,7 +705,7 @@ export default async function RenewalsPipelinePage({
             needsAction={<AtRiskWidget canSnooze={canMutate} />}
             {...(needsActionCount !== undefined ? { needsActionCount } : {})}
           />
-        </CardContent>
+        </div>
       </Card>
       {/* Renewals-by-month year view. Rendered BELOW the work-queue Card as a
           secondary lens and NOT gated behind `showEmptyState`: the urgency

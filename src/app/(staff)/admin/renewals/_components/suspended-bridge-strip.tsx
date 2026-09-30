@@ -43,7 +43,7 @@ export function SuspendedBridgeStrip({
   const t = useTranslations('admin.renewals.suspendedBridge');
   if (outsideWindowCount <= 0) return null;
   return (
-    <p className="text-sm text-muted-foreground">
+    <p className="text-sm text-[var(--aura-fg-secondary)]">
       {t.rich('line', {
         total: inWindowCount + outsideWindowCount,
         inWindow: inWindowCount,
@@ -56,7 +56,7 @@ export function SuspendedBridgeStrip({
           // carries the "this is a link" signal.
           <Link
             href="/admin/invoices?status=issued&subject=membership"
-            className="rounded-xs underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            className="rounded-[var(--aura-radius-sm)] underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)]"
           >
             {chunks}
           </Link>

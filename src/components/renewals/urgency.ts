@@ -6,7 +6,7 @@
  * countdown (still within the covered period) — see `urgency-pill.tsx`'s
  * module docstring for the full bucket list + colour rationale.
  *
- * Consumed by `pipeline-table.tsx` + `pipeline-card-list.tsx` (F8 pipeline
+ * Consumed by `pipeline-table.tsx` (F8 pipeline
  * dashboard) to gate the green "Covered" invoice-cell label to pre-expiry
  * (countdown) urgency only — an anchored cycle whose urgency has already
  * crossed into `suspended`/`terminated` falls through to the existing "—"

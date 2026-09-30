@@ -299,13 +299,21 @@ Boards: `Admin-renewals` (+`-mobile`), `Admin-renewals-needs-action`, `Admin-ren
     - Single mark-paid: an AURA `Dialog` with method select, reference field, payment date on AURA `DatePicker` (Asia/Bangkok) and the board's can't-undo warning as an AURA warning alert (new copy `taxDocWarningTitle` / `taxDocWarningBody` in EN, TH, SV). Cancel takes the first focus; focus return is unchanged. Same request body.
     - Bulk mark-paid: an AURA alertdialog, not dismissible while submitting, keeping the settlement preview; same fields and request.
     - Not shown, for review: the board's amount summary (the dialog has no server figure, and a client-side sum could disagree with the invoice) and its 3% WHT sentence (it conflicts with the §65 bis (13) WHT-exempt copy). Both go to the financial-integrity and thai-tax reviews at T711.
-- [ ] T709 [US7] Page frame and states:
+- [x] T709 [US7] Page frame and states:
   - the layout container and header kept;
   - the empty state as the board draws it;
   - the error state on `RouteErrorPanel`;
   - loading on AURA skeletons;
   - the shared renewals badges and pills (`urgency-pill`, `tier-badge`, `bill-issued-badge`, `cycle-cells`, `risk-score-badge`) on AURA `Badge` / `StatusPill`.
   - RED: the badge tests and `renewals-empty-state` on AURA.
+  - Done:
+    - Frame: `TableContainer` and `PageHeader` kept; the work-queue, pending-review and feature-off cards are AURA cards; "Next 50" is an AURA secondary button.
+    - Empty (`Admin-state-renewals-empty`): the shell empty state with a primary AURA "View all members" button and the "Review schedule settings" link stacked beneath it (still permission-gated); the suspended bridge line is on AURA tokens.
+    - Error (`Admin-state-renewals-error`): the pipeline load failure is AURA's danger empty state with Try again / Go back and the reference id, as the board draws it. That board is this in-page failure, not a route boundary, so `RouteErrorPanel` (Retry only, no Go back or reference) is not used here.
+    - Loading: AURA card and shell `SkeletonBlock`s in the page's new order; one table shimmer from 640px, three stacked cards below it.
+    - Badges on AURA `Badge`: tier as the board tones it (premium accent, regular neutral, start-up warning, partnership success, Thai alumni warning outline); urgency neutral → warning → danger as the deadline nears, suspended solid warning, terminated neutral outline; risk band success / warning / danger / critical solid danger; "Bill issued" neutral outline. Labels are unchanged, so colour is never the only signal.
+    - `cycle-cells` on AURA tokens; the card-list-only props (`linkClassName`, the expires `label`) are gone with the card list. The shared retry button used by the tasks and tier-upgrades pages is an AURA button.
+    - Extra test: `risk-score-badge`.
 - [ ] T710 [US7] Every US7a path joins `MIGRATED_PATHS` (RED: a US7a block in `ui-import-ratchet.test.ts`). Preview views `renewals`, `renewals-needs-action`, `renewals-empty` and `renewals-error`, plus the mark-paid dialog, all from the page's own view. e2e selectors for the stacked table.
 - [ ] T711 [US7] Exit:
   - gates, build and the bundle budget for `/admin/renewals`;
