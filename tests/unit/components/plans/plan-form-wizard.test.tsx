@@ -145,6 +145,19 @@ describe('PlanFormWizard per-field errors', () => {
     expect(heading()).toBe('Basics');
   });
 
+  // Board `Admin-plan-new`: from 640px Cancel sits at the bar's start edge,
+  // Back and Next at its end (the split modifier lets the buttons' row fill
+  // the bar, so Cancel's `me-auto` takes the space between).
+  it('splits the bar: Cancel first at the start edge, then Back and Next', () => {
+    renderWizard(VALID);
+    next();
+    const bar = screen.getByRole('region', { name: 'Actions' });
+    expect(bar).toHaveClass('plan-form-actions--split');
+    const buttons = within(bar).getAllByRole('button');
+    expect(buttons.map((b) => b.textContent)).toEqual(['Cancel', 'Back', 'Next']);
+    expect(buttons[0]).toHaveClass('me-auto');
+  });
+
   it('clears a field message once the value is fixed', () => {
     renderWizard({ ...VALID, plan_id: 'Bad Id' });
     next();
