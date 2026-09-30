@@ -104,7 +104,10 @@ function Group({ title, children }: { readonly title: string; readonly children:
   );
 }
 
-/** A Switch that, on a locked plan, shows AURA's lock at the end of its row, as the board draws it. */
+/**
+ * A Switch that, on a locked plan, shows AURA's lock at the end of its row, as the board draws it.
+ * Stand-in until AURA #113 (Switch `readOnly`, `icon`, caller `aria-describedby`; Addendum 20).
+ */
 function LockableSwitch({ locked, ...props }: SwitchProps & { readonly locked: boolean }) {
   if (!locked) return <Switch {...props} />;
   return (
@@ -196,7 +199,7 @@ export function BenefitMatrixEditor({
   const num = { disabled, locked };
   const sel = { disabled, ...lockedSelectProps(locked) };
   // A switch takes no description of its own: a locked group is named by its
-  // heading and described instead (UX review, US6).
+  // heading and described instead (UX review, US6; stand-in until AURA #113).
   const switches = (label: string) =>
     locked ? { role: 'group', 'aria-label': label, 'aria-describedby': PLAN_LOCKED_NOTE_ID } : {};
   const sw = { disabled: disabled || locked, locked };

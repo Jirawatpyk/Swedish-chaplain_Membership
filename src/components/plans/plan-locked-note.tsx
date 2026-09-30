@@ -26,7 +26,7 @@ export function lockedFieldProps(locked: boolean): {
   return locked ? { readOnly: true, icon: 'lock', 'aria-describedby': PLAN_LOCKED_NOTE_ID } : {};
 }
 
-/** The props a locked Select takes (a select cannot be read-only). */
+/** The props a locked Select takes (a select cannot be read-only yet: stand-in until AURA #114, Addendum 20). */
 export function lockedSelectProps(locked: boolean): {
   disabled?: true;
   icon?: 'lock';
