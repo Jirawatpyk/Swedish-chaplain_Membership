@@ -175,8 +175,10 @@ describe('PlansTable on AURA (board Admin-plans)', () => {
     expect(wrapper).not.toBeNull();
     expect(showDeleted?.closest('[data-plans-switches]')).toBe(wrapper);
     expect(wrapper).toHaveClass('col-span-2', 'sm:self-end', 'sm:h-[var(--aura-input-height)]');
-    // Stacked on a phone, 44px apart as the board draws them (20px rows).
-    expect(wrapper).toHaveClass('gap-[var(--aura-space-6)]', 'sm:gap-[var(--aura-space-4)]');
+    // Stacked on a phone 44px apart, as the board draws them: AURA makes each
+    // row 44px on a touch screen, so the stack adds no gap there (as AURA's
+    // own radio list does), and a small one for a mouse's 20px rows.
+    expect(wrapper).toHaveClass('gap-[var(--aura-space-3)]', 'max-sm:pointer-coarse:gap-0', 'sm:gap-[var(--aura-space-4)]');
   });
 
   it('centres the status pill on the name line of a phone card', () => {
