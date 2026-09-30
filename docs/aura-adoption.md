@@ -96,10 +96,11 @@ The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requ
 | 115 | 5.20.0: the static `Table` takes the page's density | The plans table drops `density="compact"`; every static `Table` inside the compact staff frame is now compact too |
 | 116 | 5.20.0: `ActionBar` `start` slot | The wizard's Cancel moves into `start`; `plan-form-actions--split` and `me-auto` go (`--start-wide` keeps the slot out of the pinned phone bar). 5.20 also gives the bar `width: 100%`, so the phone form bars set `width: auto` to reach the screen edges |
 
-No item is open (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.test.ts` reads this table; a new gap goes here as `| #N | … |`):
+One item is open (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.test.ts` reads this table; a new gap goes here as `| #N | … |`):
 
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
+| #117 | A static `Table` row height that follows the density, as `DataTable` `rowHeight="auto"` already does (row min-height `--aura-table-row-height`, cell padding clamped so a `sm` Button, an `IconButton`, a pill or one line all fit it). Proposed: `<Table rowHeight="density">`. Found on `/admin/directory` "Recent exports" (compact, 1440px): the row with a Download measures ~49px (32px `sm` button + 2 × 8px padding + rule), the pill-only rows ~38px. `size="sm"` is already used and `IconButton` is also 32px, so neither evens the rows (the `Admin-directory` board's Download is a text-and-icon button) | None: the rows stay uneven (cosmetic). No height is set locally; `directory-aura.test.tsx` pins the prop with `it.fails` until it ships. The 390px list is not affected |
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 
