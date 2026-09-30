@@ -155,11 +155,19 @@ describeBlock('F8 — auto tier-upgrade queue (US5)', () => {
   }) => {
     await signInAsAdmin(page);
     await page.goto('/admin/renewals/tier-upgrades');
-    // Either the empty-state title OR the table renders. The
-    // empty-state title text is locale-aware; we assert at least one
-    // of the two is present so the test is robust to seeded data.
-    const emptyOrTable = page.getByText(/no upgrade candidates|tier upgrade queue/i);
-    await expect(emptyOrTable.first()).toBeVisible();
+    // Either the empty state OR the populated table renders — the seed
+    // decides which, so assert that one of them is on screen.
+    //
+    // Anchored on the empty state's testid and on a table row, not on the
+    // old `/no upgrade candidates|tier upgrade queue/i` text: that regex also
+    // matched the shell breadcrumb's `<span aria-current="page">Tier upgrade
+    // queue</span>`, which is hidden below `lg`. `.first()` then picked that
+    // hidden node and the mobile project failed on every run (R20,
+    // 2026-09-30) while the page itself was fine. Scoped to `#main-content`
+    // so no chrome outside the page can satisfy it again.
+    const empty = page.locator('#main-content [data-testid="tier-upgrades-empty"]');
+    const row = page.locator('#main-content tbody tr');
+    await expect(empty.or(row).first()).toBeVisible();
   });
 
   test('shows action buttons in admin queue rows when suggestions exist', async ({
