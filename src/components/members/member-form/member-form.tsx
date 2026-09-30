@@ -32,9 +32,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useForm, FormProvider } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useTranslations } from 'next-intl';
-import { Loader2Icon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { FormErrorSummary } from '@/components/ui/form-error-summary';
+import { ActionBar, Button, FormErrorSummary } from '@jirawatpyk/aura-react';
 import { type Translator } from '@/lib/zod-i18n';
 import {
   buildMemberFormSchema,
@@ -49,6 +47,7 @@ import { AddressSection } from './sections/address-section';
 import { TaxBranchSection } from './sections/tax-branch-section';
 import { ContactFields } from './sections/contact-fields';
 import { SecondaryContactSection } from './sections/secondary-contact-section';
+import { FormSectionCard } from './form-section-card';
 
 type Props = {
   readonly plans: readonly PlanOption[];
@@ -209,16 +208,33 @@ export function MemberForm({
     <FormProvider {...methods}>
       <form onSubmit={handleSubmit(onSubmit)} method="post" noValidate className="flex flex-col gap-[var(--page-section-gap)]">
         {/* FR-035 part (c): form-top required fields note */}
-        <p className="text-sm text-muted-foreground" id="required-fields-note">
+        <p className="text-sm text-[var(--aura-fg-secondary)]" id="required-fields-note">
           {t('requiredNote')}
         </p>
 
         {/* Summary only when MORE THAN ONE error (ux-standards § 11.3); a single
-          * error is already covered by its inline field message + RHF focus. */}
+          * error is already covered by its inline field message + RHF focus.
+          * RHF's shouldFocusError moves focus to the first field, so the
+          * summary must never take it: a constant `focusKey` never re-arms
+          * AURA's focus-after-submit (it only renders and announces, as the
+          * old `autoFocus={false}` did). Each line names its field in bold. */}
         <FormErrorSummary
           title={t('errorSummaryTitle')}
-          items={summaryItems.length > 1 ? summaryItems : []}
-          autoFocus={false}
+          focusKey={0}
+          errors={
+            summaryItems.length > 1
+              ? summaryItems.map((item) => ({
+                  field: item.fieldId,
+                  message: (
+                    <>
+                      <strong>{item.label}</strong>
+                      {' — '}
+                      {item.message}
+                    </>
+                  ),
+                }))
+              : []
+          }
         />
 
         <CompanySection mode={mode} vatManuallyTouchedRef={vatManuallyTouchedRef} />
@@ -245,39 +261,32 @@ export function MemberForm({
         />
 
         {/* --- Primary contact section --- */}
-        <fieldset className="flex flex-col gap-4 rounded-md border p-4">
-          <legend className="px-2 text-base font-semibold">
-            {t('sections.primaryContact')}
-          </legend>
+        <FormSectionCard id="primary-contact" title={t('sections.primaryContact')}>
           <ContactFields
             prefix="primary_contact"
             idPrefix="contact"
             showDateOfBirth={needsDob}
             required
           />
-        </fieldset>
+        </FormSectionCard>
 
         {/* --- Secondary contact — CREATE only (PR-B task 8) --- */}
         {mode === 'create' && <SecondaryContactSection />}
 
-        <div className="flex items-center justify-end gap-2">
+        {/* Cancel before the primary action (ux-standards § 11.1). Pinned to
+            the bottom of a phone, Cancel a third and the primary two thirds;
+            from 640px a plain right-aligned row at the end of the form
+            (globals.css `.member-form-actions`). */}
+        <ActionBar className="chamber-viewport-actionbar member-form-actions">
           {onCancel && (
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onCancel}
-              disabled={submitting}
-            >
+            <Button type="button" variant="secondary" onClick={onCancel} disabled={submitting}>
               {cancelLabel}
             </Button>
           )}
-          <Button type="submit" disabled={submitting}>
-            {submitting && (
-              <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" />
-            )}
+          <Button type="submit" loading={submitting}>
             {submitting ? submittingLabel : submitLabel}
           </Button>
-        </div>
+        </ActionBar>
       </form>
     </FormProvider>
   );

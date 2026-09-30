@@ -7,8 +7,17 @@
  * DOM id so `FormErrorSummary` can render a `#id` jump link.
  */
 import { type FieldErrors } from 'react-hook-form';
-import { type FormErrorSummaryItem } from '@/components/ui/form-error-summary';
 import { type MemberFormValues } from './schema';
+
+/** One summary line: the field's DOM id (the jump anchor), its label (the
+ * same string the field shows) and the message. The label is required: most
+ * rules share one message ("This field is required."), so a line without it
+ * would not say which field it means. */
+export interface MemberFormErrorItem {
+  readonly fieldId: string;
+  readonly label: string;
+  readonly message: string;
+}
 
 export type MemberFormErrorsInput = {
   readonly errors: FieldErrors<MemberFormValues>;
@@ -63,7 +72,7 @@ export function useMemberFormErrors({
   isHeadOffice,
   tf,
   secondaryContactLabel,
-}: MemberFormErrorsInput): readonly FormErrorSummaryItem[] {
+}: MemberFormErrorsInput): readonly MemberFormErrorItem[] {
   const summaryEntries: ReadonlyArray<readonly [string, string, string | undefined]> = [
     ['company_name', tf('companyName'), errors.company_name?.message],
     ['legal_entity_type', tf('legalEntityType'), errors.legal_entity_type?.message],

@@ -6,26 +6,20 @@
  * admin role (members:write).
  *
  * FR-037: page title "Add member · SweCham" via generateMetadata.
+ *
+ * Spec 122 US5b-2: the board's frame (`MemberFormFrame`); the form's own
+ * fieldset cards replace the one card around it.
  */
 
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { headers } from 'next/headers';
 import { getTranslations, getLocale } from 'next-intl/server';
-import { ArrowLeftIcon } from 'lucide-react';
+import { Alert } from '@jirawatpyk/aura-react/server';
 import { requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { listPlans } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import { buttonVariants } from '@/components/ui/button';
-import { FormContainer } from '@/components/layout';
-import { PageHeader } from '@/components/layout/page-header';
+import { MemberFormFrame } from '../_components/member-form-frame';
 import { CreateMemberClient } from '@/components/members/create-member-client';
 import { buildPlanOptions, type PlanOption } from '@/components/members/member-form';
 
@@ -61,16 +55,9 @@ export default async function NewMemberPage() {
 
   if (!plansResult.ok) {
     return (
-      <FormContainer>
-        <PageHeader title={t('title')} />
-        <Card>
-          <CardContent className="p-6">
-            <p className="text-sm text-destructive" role="alert">
-              {t('errors.planMissing')}
-            </p>
-          </CardContent>
-        </Card>
-      </FormContainer>
+      <MemberFormFrame title={t('title')} cancelHref="/admin/members" cancelLabel={t('cancel')}>
+        <Alert tone="danger">{t('errors.planMissing')}</Alert>
+      </MemberFormFrame>
     );
   }
 
@@ -86,37 +73,17 @@ export default async function NewMemberPage() {
     plansResult.value.meta.year ?? new Date().getUTCFullYear();
 
   return (
-    <FormContainer>
-      <PageHeader
-        title={t('title')}
-        subtitle={t('subtitle')}
-        actions={
-          <Link
-            href="/admin/members"
-            className={buttonVariants({ variant: 'outline' })}
-          >
-            <ArrowLeftIcon className="size-4" />
-            {t('cancel')}
-          </Link>
-        }
-      />
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">{t('title')}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {plans.length === 0 ? (
-            <p className="text-sm text-destructive" role="alert">
-              {t('errors.planMissing')}
-            </p>
-          ) : (
-            <CreateMemberClient
-              plans={plans}
-              defaultPlanYear={defaultPlanYear}
-            />
-          )}
-        </CardContent>
-      </Card>
-    </FormContainer>
+    <MemberFormFrame
+      title={t('title')}
+      subtitle={t('subtitle')}
+      cancelHref="/admin/members"
+      cancelLabel={t('cancel')}
+    >
+      {plans.length === 0 ? (
+        <Alert tone="danger">{t('errors.planMissing')}</Alert>
+      ) : (
+        <CreateMemberClient plans={plans} defaultPlanYear={defaultPlanYear} />
+      )}
+    </MemberFormFrame>
   );
 }
