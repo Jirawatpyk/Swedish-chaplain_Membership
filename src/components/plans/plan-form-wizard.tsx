@@ -259,9 +259,9 @@ export function PlanFormWizard({
       benefits: benefitsRef,
       review: reviewRef,
     };
-    refForStep[step].current
-      ?.querySelector<HTMLElement>('[aria-invalid="true"], [data-field-error]')
-      ?.focus();
+    focusField(
+      refForStep[step].current?.querySelector<HTMLElement>('[aria-invalid="true"], [data-field-error]') ?? null,
+    );
     // Only a new request re-runs this; `step` is read at that moment.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusErrorRequest]);
@@ -329,6 +329,7 @@ export function PlanFormWizard({
       <FormErrorSummary
         focusKey={0}
         errors={summaryItems.length > 1 ? summaryItems : []}
+        onSelect={(field) => focusField(document.getElementById(field))}
       />
 
       {step === 'basics' ? (
@@ -629,4 +630,19 @@ function FieldError({
       {message}
     </p>
   );
+}
+
+/**
+ * Focus a field, first opening the language tab it sits behind: the plan
+ * name and description show one language at a time, and a field in a hidden
+ * panel cannot take focus (UX review, US6).
+ */
+function focusField(field: HTMLElement | null): void {
+  if (!field) return;
+  const panel = field.closest<HTMLElement>('[role="tabpanel"][hidden]');
+  const tabId = panel?.getAttribute('aria-labelledby');
+  // A click is a discrete event: React commits the tab switch before it
+  // returns, so the panel is visible by the time the field is focused.
+  if (tabId) document.getElementById(tabId)?.click();
+  field.focus();
 }
