@@ -1026,8 +1026,9 @@
       },
       "detail": {
         "titleGeneric": "Plan details",
-        "totalWithVat": "Annual fee incl. VAT",
-        "feeWithVat": "{fee} + {rate}% VAT = {total}",
+        "moreActionsFor": "More actions for {planName}",
+        "yearLine": "Year {year}",
+        "vatAdded": "+ {rate}% VAT = {total}",
         "members": "Members on this plan",
         "memberCount": "{count, plural, =0 {No members} one {# member} other {# members}}"
       },
