@@ -18,6 +18,10 @@
  * and falls back to a uniform `${idPrefix}_<field>` scheme for any other
  * idPrefix (e.g. task 8's `secondary_contact`), which avoids an id
  * collision when this component is rendered twice on the same page.
+ *
+ * Spec 122 US5b-2 (T577): AURA fields, two a row from 640px as the board
+ * draws them; the language on an AURA `Select`, the date of birth on an AURA
+ * `DatePicker` (Buddhist-era years in Thai, the value stays ISO).
  */
 import { useTranslations } from 'next-intl';
 import {
@@ -26,18 +30,7 @@ import {
   type FieldErrors,
   type Path,
 } from 'react-hook-form';
-import { Input } from '@/components/ui/input';
-import { EmailInput } from '@/components/ui/email-input';
-import { Label } from '@/components/ui/label';
-import { RequiredMark } from '@/components/ui/required-mark';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  TranslatedSelectValue,
-} from '@/components/ui/select';
-import { FieldError } from '../field-error';
+import { DatePicker, Select, TextField, type ISODate } from '@jirawatpyk/aura-react';
 import { type MemberFormValues } from '../schema';
 
 export type ContactFieldsProps = {
@@ -97,215 +90,109 @@ export function ContactFields({
   const idPreferredLanguage = fieldId(idPrefix, 'preferred_language');
   const idDateOfBirth = fieldId(idPrefix, 'date_of_birth');
 
+  const requiredNote = required ? 'required-fields-note' : undefined;
+
   return (
-    <>
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div>
-          <Label htmlFor={idFirstName}>
-            {tf('firstName')}
-            {required && <RequiredMark />}
-          </Label>
-          <Input
-            id={idFirstName}
-            {...register(fieldPath('first_name'))}
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <TextField
+        id={idFirstName}
+        label={tf('firstName')}
+        required={required}
+        aria-required={required ? 'true' : undefined}
+        aria-describedby={requiredNote}
+        autoComplete="given-name"
+        maxLength={100}
+        error={contactErrors?.first_name?.message}
+        {...register(fieldPath('first_name'))}
+      />
+      <TextField
+        id={idLastName}
+        label={tf('lastName')}
+        required={required}
+        aria-required={required ? 'true' : undefined}
+        aria-describedby={requiredNote}
+        autoComplete="family-name"
+        maxLength={100}
+        error={contactErrors?.last_name?.message}
+        {...register(fieldPath('last_name'))}
+      />
+      <TextField
+        id={idEmail}
+        type="email"
+        inputMode="email"
+        autoComplete="email"
+        label={tf('email')}
+        required={required}
+        aria-required={required ? 'true' : undefined}
+        aria-describedby={requiredNote}
+        maxLength={254}
+        error={contactErrors?.email?.message}
+        {...register(fieldPath('email'))}
+      />
+      <TextField
+        id={idPhone}
+        type="tel"
+        autoComplete="tel"
+        label={tf('phone')}
+        maxLength={20}
+        placeholder="+66812345678"
+        error={contactErrors?.phone?.message}
+        {...register(fieldPath('phone'))}
+      />
+      <TextField
+        id={idRoleTitle}
+        label={tf('roleTitle')}
+        maxLength={100}
+        autoComplete="organization-title"
+        error={contactErrors?.role_title?.message}
+        {...register(fieldPath('role_title'))}
+      />
+      <Controller
+        control={control}
+        name={fieldPath('preferred_language')}
+        defaultValue="en"
+        render={({ field }) => (
+          <Select
+            id={idPreferredLanguage}
+            name={field.name}
+            ref={field.ref}
+            onBlur={field.onBlur}
+            label={tf('preferredLanguage')}
             required={required}
-            aria-required={required ? 'true' : undefined}
-            aria-invalid={Boolean(contactErrors?.first_name)}
-            aria-describedby={
-              contactErrors?.first_name
-                ? `${idFirstName}-error required-fields-note`
-                : required
-                  ? 'required-fields-note'
-                  : undefined
-            }
-            autoComplete="given-name"
-            maxLength={100}
+            // The schema pins this to z.enum(['en','th','sv']) and
+            // `common.languageOptions.{en,th,sv}` exist in every locale file,
+            // so every reachable value has a label.
+            value={(field.value as 'en' | 'th' | 'sv' | undefined) ?? 'en'}
+            options={(['en', 'th', 'sv'] as const).map((code) => ({
+              value: code,
+              label: tLang(`languageOptions.${code}`),
+            }))}
+            error={contactErrors?.preferred_language?.message}
+            onChange={(e) => field.onChange(e.target.value)}
           />
-          <FieldError
-            id={`${idFirstName}-error`}
-            message={contactErrors?.first_name?.message}
-          />
-        </div>
-        <div>
-          <Label htmlFor={idLastName}>
-            {tf('lastName')}
-            {required && <RequiredMark />}
-          </Label>
-          <Input
-            id={idLastName}
-            {...register(fieldPath('last_name'))}
-            required={required}
-            aria-required={required ? 'true' : undefined}
-            aria-invalid={Boolean(contactErrors?.last_name)}
-            aria-describedby={
-              contactErrors?.last_name
-                ? `${idLastName}-error required-fields-note`
-                : required
-                  ? 'required-fields-note'
-                  : undefined
-            }
-            autoComplete="family-name"
-            maxLength={100}
-          />
-          <FieldError
-            id={`${idLastName}-error`}
-            message={contactErrors?.last_name?.message}
-          />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div>
-          <Label htmlFor={idEmail}>
-            {tf('email')}
-            {required && <RequiredMark />}
-          </Label>
-          <EmailInput
-            id={idEmail}
-            {...register(fieldPath('email'))}
-            required={required}
-            aria-required={required ? 'true' : undefined}
-            aria-invalid={Boolean(contactErrors?.email)}
-            aria-describedby={
-              contactErrors?.email
-                ? `${idEmail}-error required-fields-note`
-                : required
-                  ? 'required-fields-note'
-                  : undefined
-            }
-            maxLength={254}
-          />
-          <FieldError id={`${idEmail}-error`} message={contactErrors?.email?.message} />
-        </div>
-        <div>
-          <Label htmlFor={idPhone}>{tf('phone')}</Label>
-          <Input
-            id={idPhone}
-            type="tel"
-            {...register(fieldPath('phone'))}
-            autoComplete="tel"
-            maxLength={20}
-            placeholder="+66812345678"
-            aria-invalid={Boolean(contactErrors?.phone)}
-            aria-describedby={contactErrors?.phone ? `${idPhone}-error` : undefined}
-          />
-          <FieldError id={`${idPhone}-error`} message={contactErrors?.phone?.message} />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div>
-          <Label htmlFor={idRoleTitle}>{tf('roleTitle')}</Label>
-          <Input
-            id={idRoleTitle}
-            {...register(fieldPath('role_title'))}
-            maxLength={100}
-            autoComplete="organization-title"
-            aria-invalid={Boolean(contactErrors?.role_title)}
-            aria-describedby={
-              contactErrors?.role_title ? `${idRoleTitle}-error` : undefined
-            }
-          />
-          <FieldError
-            id={`${idRoleTitle}-error`}
-            message={contactErrors?.role_title?.message}
-          />
-        </div>
-        <div>
-          <Label htmlFor={idPreferredLanguage}>
-            {tf('preferredLanguage')}
-            {required && <RequiredMark />}
-          </Label>
-          <Controller
-            control={control}
-            name={fieldPath('preferred_language')}
-            // Task 8 review-fix (Important 3) — `defaultValue` is the RHF
-            // mechanism for a Controller mounted WITHOUT a corresponding
-            // `useForm({defaultValues})` entry (the secondary-contact
-            // fieldset has none: it mounts fresh via `unregister`/re-add).
-            // Unlike `useWatch`'s `defaultValue` (a per-render display
-            // override — see `address-section.tsx`'s postcode gotcha),
-            // `Controller`'s `defaultValue` only applies when NEITHER the
-            // live form value NOR `useForm`'s defaultValues already have an
-            // entry at this path, and it WRITES the value into the real
-            // form state on mount (not just the display) — so it never
-            // clobbers the primary contact's real seeded value and closes
-            // the "displays English, actually undefined" trap for any
-            // future un-seeded consumer of this component.
-            defaultValue="en"
-            render={({ field }) => (
-              <Select
-                value={(field.value as 'en' | 'th' | 'sv' | undefined) ?? 'en'}
-                onValueChange={(v) => field.onChange(v)}
-              >
-                <SelectTrigger
-                  id={idPreferredLanguage}
-                  aria-required={required ? 'true' : undefined}
-                  aria-invalid={Boolean(contactErrors?.preferred_language)}
-                  aria-describedby={
-                    contactErrors?.preferred_language
-                      ? `${idPreferredLanguage}-error`
-                      : undefined
-                  }
-                  className="w-full"
-                >
-                  {/* 067 #4 review-fix — no `?? LANG_LABELS.en` fallback is
-                      needed here (unlike a free-text Select): the only values
-                      that reach `translate` come from this field, which the
-                      zod schema pins to `z.enum(['en','th','sv'])`, and
-                      `common.languageOptions.{en,th,sv}` exist in all three
-                      locale files (verified). So every reachable value
-                      resolves — there is no MISSING_MESSAGE path to guard. */}
-                  <TranslatedSelectValue
-                    translate={(value) =>
-                      tLang(`languageOptions.${value as 'en' | 'th' | 'sv'}`)
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="en">{tLang('languageOptions.en')}</SelectItem>
-                  <SelectItem value="th">{tLang('languageOptions.th')}</SelectItem>
-                  <SelectItem value="sv">{tLang('languageOptions.sv')}</SelectItem>
-                </SelectContent>
-              </Select>
-            )}
-          />
-          <FieldError
-            id={`${idPreferredLanguage}-error`}
-            message={contactErrors?.preferred_language?.message}
-          />
-        </div>
-      </div>
+        )}
+      />
 
       {showDateOfBirth && (
-        <div>
-          <Label htmlFor={idDateOfBirth}>
-            {tf('dateOfBirth')}
-            <RequiredMark />
-          </Label>
-          <Input
-            id={idDateOfBirth}
-            type="date"
-            {...register(fieldPath('date_of_birth'))}
-            required
-            aria-required="true"
-            autoComplete="bday"
-            aria-invalid={Boolean(contactErrors?.date_of_birth)}
-            aria-describedby={
-              contactErrors?.date_of_birth
-                ? `${idDateOfBirth}-error ${idDateOfBirth}-hint`
-                : `${idDateOfBirth}-hint`
-            }
-          />
-          <p id={`${idDateOfBirth}-hint`} className="mt-1 text-xs text-muted-foreground">
-            {tf('dateOfBirthHint')}
-          </p>
-          <FieldError
-            id={`${idDateOfBirth}-error`}
-            message={contactErrors?.date_of_birth?.message}
-          />
-        </div>
+        <Controller
+          control={control}
+          name={fieldPath('date_of_birth')}
+          render={({ field }) => (
+            <DatePicker
+              id={idDateOfBirth}
+              name={field.name}
+              label={tf('dateOfBirth')}
+              required
+              max="today"
+              timeZone="Asia/Bangkok"
+              value={((field.value as string | null | undefined) || null) as ISODate | null}
+              onChange={(iso) => field.onChange(iso ?? '')}
+              hint={tf('dateOfBirthHint')}
+              error={contactErrors?.date_of_birth?.message}
+            />
+          )}
+        />
       )}
-    </>
+    </div>
   );
 }

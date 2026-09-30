@@ -25,12 +25,10 @@ import { useEffect, useRef, useState } from 'react';
 import { Controller, useFormContext } from 'react-hook-form';
 import { useTranslations } from 'next-intl';
 import { UserPlusIcon, Trash2Icon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Label } from '@/components/ui/label';
-import { FieldError } from '../field-error';
+import { Button, Checkbox } from '@jirawatpyk/aura-react';
 import { ContactFields } from './contact-fields';
 import { type MemberFormValues } from '../schema';
+import { FormSectionCard } from '../form-section-card';
 
 export function SecondaryContactSection() {
   const t = useTranslations('admin.members.create');
@@ -88,79 +86,68 @@ export function SecondaryContactSection() {
       <Button
         ref={addButtonRef}
         type="button"
-        variant="outline"
+        variant="secondary"
+        icon={<UserPlusIcon className="size-4" aria-hidden="true" />}
         onClick={handleAdd}
-        className="w-fit gap-2"
+        className="w-fit"
       >
-        <UserPlusIcon className="size-4" aria-hidden="true" />
         {t('secondaryContact.addButton')}
       </Button>
     );
   }
 
+  const art14Error = errors.secondary_contact?.art14_attested?.message;
+
   return (
-    <fieldset className="flex flex-col gap-4 rounded-md border p-4">
-      <legend className="px-2 text-base font-semibold">
-        {t('sections.secondaryContact')}
-      </legend>
-      <ContactFields
-        prefix="secondary_contact"
-        idPrefix="secondary_contact"
-        showDateOfBirth={false}
-        required
-      />
-      {/* Task 8 (GDPR Art. 14) — the admin must attest they informed this
-          third party (whose data they, not the person, are supplying) that
-          the chamber holds their details, and where to find the privacy
-          notice. Blocks submit until checked (schema.ts refine). */}
-      <div className="flex items-start gap-2">
-        <Controller
-          control={control}
-          name="secondary_contact.art14_attested"
-          defaultValue={false}
-          render={({ field }) => (
-            <Checkbox
-              id="secondary_contact_art14_attested"
-              className="mt-0.5"
-              // Base UI Checkbox.Root's visible role=checkbox element uses its
-              // own generated id, so a sibling <Label htmlFor> can't reliably
-              // name it — set the accessible name directly (same fix as
-              // tax-branch-section.tsx's is_head_office checkbox).
-              aria-label={tf('art14AttestationLabel')}
-              aria-invalid={Boolean(errors.secondary_contact?.art14_attested)}
-              aria-describedby={
-                errors.secondary_contact?.art14_attested
-                  ? 'secondary_contact_art14_attested-error'
-                  : undefined
-              }
-              checked={field.value ?? false}
-              onCheckedChange={(checked) => field.onChange(checked === true)}
-            />
-          )}
+    <FormSectionCard id="secondary-contact" title={t('sections.secondaryContact')}>
+      <div className="flex flex-col gap-4">
+        <ContactFields
+          prefix="secondary_contact"
+          idPrefix="secondary_contact"
+          showDateOfBirth={false}
+          required
         />
-        <div>
-          <Label
-            htmlFor="secondary_contact_art14_attested"
-            className="font-normal"
-          >
-            {tf('art14AttestationLabel')}
-          </Label>
-          <FieldError
-            id="secondary_contact_art14_attested-error"
-            message={errors.secondary_contact?.art14_attested?.message}
+        {/* Task 8 (GDPR Art. 14) — the admin must attest they informed this
+            third party (whose data they, not the person, are supplying) that
+            the chamber holds their details, and where to find the privacy
+            notice. Blocks submit until checked (schema.ts refine). */}
+        <div className="flex flex-col gap-1">
+          <Controller
+            control={control}
+            name="secondary_contact.art14_attested"
+            defaultValue={false}
+            render={({ field }) => (
+              <Checkbox
+                id="secondary_contact_art14_attested"
+                name={field.name}
+                ref={field.ref}
+                onBlur={field.onBlur}
+                aria-invalid={Boolean(art14Error)}
+                aria-describedby={art14Error ? 'secondary_contact_art14_attested-error' : undefined}
+                checked={field.value ?? false}
+                onChange={(checked) => field.onChange(checked)}
+              >
+                {tf('art14AttestationLabel')}
+              </Checkbox>
+            )}
           />
+          {art14Error && (
+            <p id="secondary_contact_art14_attested-error" className="ms-6 text-xs text-[var(--aura-fg-danger)]">
+              {art14Error}
+            </p>
+          )}
         </div>
+        <Button
+          type="button"
+          variant="danger-secondary"
+          size="sm"
+          icon={<Trash2Icon className="size-4" aria-hidden="true" />}
+          onClick={handleRemove}
+          className="w-fit"
+        >
+          {t('secondaryContact.removeButton')}
+        </Button>
       </div>
-      <Button
-        type="button"
-        variant="destructive-outline"
-        size="sm"
-        onClick={handleRemove}
-        className="w-fit gap-2"
-      >
-        <Trash2Icon className="size-4" aria-hidden="true" />
-        {t('secondaryContact.removeButton')}
-      </Button>
-    </fieldset>
+    </FormSectionCard>
   );
 }

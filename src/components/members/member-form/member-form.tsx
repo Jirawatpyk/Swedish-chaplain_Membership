@@ -4,7 +4,7 @@
  * T053 — Member creation form (composition root).
  *
  * Decomposed from a single 1,116-line file into `member-form/` (PR-B task 4,
- * pure move — see `schema.ts`, `use-member-form-errors.ts`, `field-error.tsx`,
+ * pure move — see `schema.ts`, `use-member-form-errors.ts`,
  * `sections/*`). This file now only owns: `useForm`, the server-field-error
  * effect, the error summary, the section list, and the footer.
  *
@@ -270,8 +270,13 @@ export function MemberForm({
           />
         </FormSectionCard>
 
-        {/* --- Secondary contact — CREATE only (PR-B task 8) --- */}
-        {mode === 'create' && <SecondaryContactSection />}
+        {/* --- Secondary contact — CREATE only (PR-B task 8); the edit form
+            says where the other contacts live (board `Admin-member-edit`). --- */}
+        {mode === 'create' ? (
+          <SecondaryContactSection />
+        ) : (
+          <p className="text-sm text-[var(--aura-fg-secondary)]">{tEdit('otherContactsNote')}</p>
+        )}
 
         {/* Cancel before the primary action (ux-standards § 11.1). Pinned to
             the bottom of a phone, Cancel a third and the primary two thirds;
