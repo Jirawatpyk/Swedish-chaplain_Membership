@@ -285,8 +285,13 @@ Boards: `Admin-renewals` (+`-mobile`), `Admin-renewals-needs-action`, `Admin-ren
     - Contact and Snooze are AURA buttons. The snooze and outreach dialogs are AURA alertdialogs (radio fieldset; selects, textarea with its counter as hint or error). Payloads are unchanged.
     - The board's "Main signal" column is not shown, because the at-risk API returns no such field.
     - Extra test: `outreach-dialog`.
-- [ ] T707 [US7] Pending review, the lapsed tab and the members-without-cycle tray on AURA cards, tables and dialogs, with the same reactivate request.
+- [x] T707 [US7] Pending review, the lapsed tab and the members-without-cycle tray on AURA cards, tables and dialogs, with the same reactivate request.
   - RED: `pending-review-list` on AURA.
+  - Done:
+    - Pending review: an AURA table that stacks on a phone, with the settling and aged chips as AURA badges and Approve / Review as AURA buttons. The approve confirmation is the shell `ConfirmationDialog` (AURA), with the same `/reactivate` request, 409 path and focus return.
+    - Lapsed tab: an AURA info alert, an AURA table, reasons as AURA badges toned by meaning, and an AURA row menu.
+    - Tray: an AURA server card with a borderless AURA table; the failure is an AURA danger alert.
+    - Extra tests: `lapsed-tab`, `members-without-cycle-tray`.
 - [ ] T708 [US7] The bulk bar on AURA `ActionBar` with the selection count, and the single and bulk mark-paid dialogs on AURA `Dialog`. The single dialog follows the board's amounts and warnings; the bulk one keeps its settlement preview. Money is unchanged.
   - RED: `mark-paid-offline-dialog`, `bulk-mark-paid-confirm-dialog`, `pipeline-bulk-action-bar` and `pipeline-row-mark-paid` on AURA.
 - [ ] T709 [US7] Page frame and states:

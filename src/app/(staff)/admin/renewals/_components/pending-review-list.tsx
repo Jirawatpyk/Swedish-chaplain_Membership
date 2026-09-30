@@ -26,43 +26,26 @@
  */
 'use client';
 
-import {
-  useCallback,
-  useMemo,
-  useRef,
-  useState,
-  useTransition,
-  type RefObject,
-} from 'react';
+import { useCallback, useMemo, useRef, useState, type RefObject } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
 import {
-  ArrowDownIcon,
-  ArrowUpIcon,
-  BellOff,
-  Loader2Icon,
-} from 'lucide-react';
-import { Button, buttonVariants } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import {
+  Badge,
+  Button,
+  EmptyState,
+  Icon,
   Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { EmptyState } from '@/components/shell/empty-state';
-import { useDialogFinalFocus } from '@/components/broadcast/reason-confirmation-dialog';
+  TBody,
+  Td,
+  Th,
+  THead,
+  Tr,
+  buttonClass,
+} from '@jirawatpyk/aura-react';
+import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
+import { useDialogFinalFocus } from '@/components/shell/reason-confirmation-dialog';
 import { readErrorCode } from '../_lib/read-error-code';
 
 export interface PendingReviewRow {
@@ -143,13 +126,12 @@ export function PendingReviewList({
   // launching row's cycleId + finalFocus resolver so one dialog serves every
   // row (escalation-queue pattern).
   const [approveTarget, setApproveTarget] = useState<ApproveTarget | null>(null);
-  const [approvePending, startApprove] = useTransition();
+  const [approvePending, setApprovePending] = useState(false);
   // Raised on the programmatic close paths (success / 409) that run
   // router.refresh() and unmount the launching row — the row's finalFocus
   // resolver then skips the vanishing Approve trigger and lands on
   // #main-content instead of dropping focus to <body> (WCAG 2.1 AA SC 2.4.3).
   const closedViaSuccessRef = useRef(false);
-  const approveCancelRef = useRef<HTMLButtonElement | null>(null);
   // Holds the CURRENTLY-LAUNCHED row's focus-return resolver so it survives the
   // `approveTarget → null` commit that closes the dialog. Base UI reads its
   // returnFocus (from `finalFocus`) LIVE at close, not at open — so a prop of
@@ -199,163 +181,130 @@ export function PendingReviewList({
     [],
   );
 
-  const onApproveConfirm = (): void => {
+  const onApproveConfirm = async (): Promise<void> => {
     const target = approveTarget;
     if (target === null) return;
-    startApprove(async () => {
-      try {
-        const res = await fetch(
-          `/api/admin/renewals/${encodeURIComponent(target.cycleId)}/reactivate`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: '{}',
-          },
-        );
-        if (!res.ok) {
-          const code = await readErrorCode(res);
-          // Copied verbatim from PendingReactivationActions: a 409
-          // `reject_refund_in_progress` means the cycle was rejected (async
-          // refund in flight) between render and click. Surface the specific
-          // reason and refresh so the row re-renders into the settling state
-          // (its Approve disappears → trigger unmounts → land on #main-content).
-          if (code === 'reject_refund_in_progress') {
-            toast.error(tReactivate('reactivate.errorRefundInProgressToast'));
-            closedViaSuccessRef.current = true;
-            setApproveTarget(null);
-            router.refresh();
-            return;
-          }
-          // Generic failure — keep the dialog open for retry; the row survives,
-          // so on a later Cancel focus returns to its Approve trigger.
-          toast.error(tReactivate('reactivate.errorToast'));
+    setApprovePending(true);
+    try {
+      const res = await fetch(
+        `/api/admin/renewals/${encodeURIComponent(target.cycleId)}/reactivate`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: '{}',
+        },
+      );
+      if (!res.ok) {
+        const code = await readErrorCode(res);
+        if (code === 'reject_refund_in_progress') {
+          // Rejected (refund settling) between render and click: the row
+          // leaves its open state, so close, refresh and send focus to the
+          // page landmark (the trigger is going away).
+          toast.error(tReactivate('reactivate.errorRefundInProgressToast'));
+          closedViaSuccessRef.current = true;
+          setApproveTarget(null);
+          router.refresh();
           return;
         }
-        toast.success(tReactivate('reactivate.successToast'));
-        // Success unmounts the row (cycle leaves `pending_admin_reactivation`).
-        closedViaSuccessRef.current = true;
-        setApproveTarget(null);
-        router.refresh();
-      } catch {
+        // Generic failure: the dialog stays open and the row survives.
         toast.error(tReactivate('reactivate.errorToast'));
+        return;
       }
-    });
+      toast.success(tReactivate('reactivate.successToast'));
+      closedViaSuccessRef.current = true;
+      setApproveTarget(null);
+      router.refresh();
+    } catch {
+      toast.error(tReactivate('reactivate.errorToast'));
+    } finally {
+      setApprovePending(false);
+    }
   };
 
   if (rows.length === 0) {
     return (
-      <EmptyState
-        icon={BellOff}
-        title={t('emptyTitle')}
-        description={t('emptyDescription')}
-      />
+      <EmptyState icon="bell" title={t('emptyTitle')} description={t('emptyDescription')} />
     );
   }
 
-  const SortIcon = sortDir === 'asc' ? ArrowUpIcon : ArrowDownIcon;
-
   return (
     <>
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>{t('columns.member')}</TableHead>
+      <Table
+        caption={t('sectionTitle')}
+        captionHidden
+        stackBelow="sm"
+        stackStyle="cards"
+        align="middle"
+      >
+        <THead>
+          <Tr>
+            <Th>{t('columns.member')}</Th>
             {/* B3 — sortable "Pending since". `aria-sort` lives on the
-                columnheader (WCAG 1.3.1 / 4.1.2); the button carries the action
-                label (what the next click does) + the direction caret. Mirrors
-                the pipeline's sortable-header treatment (button/anchor + caret). */}
-            <TableHead
-              aria-sort={sortDir === 'asc' ? 'ascending' : 'descending'}
-            >
+                columnheader (WCAG 1.3.1 / 4.1.2); the button carries the
+                action label (what the next click does) + the direction caret. */}
+            <Th aria-sort={sortDir === 'asc' ? 'ascending' : 'descending'}>
               <button
                 type="button"
-                onClick={() =>
-                  setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
-                }
+                onClick={() => setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))}
                 aria-label={t(
-                  sortDir === 'asc'
-                    ? 'sortPendingSinceToNewest'
-                    : 'sortPendingSinceToOldest',
+                  sortDir === 'asc' ? 'sortPendingSinceToNewest' : 'sortPendingSinceToOldest',
                 )}
-                className="inline-flex items-center gap-1 whitespace-nowrap rounded-sm hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2"
+                className="inline-flex items-center gap-1 whitespace-nowrap rounded-[var(--aura-radius-sm)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)]"
               >
                 {t('columns.pendingSince')}
-                <SortIcon
-                  className="size-3.5 shrink-0 text-muted-foreground"
-                  aria-hidden="true"
-                />
+                <Icon name={sortDir === 'asc' ? 'arrow-up' : 'arrow-down'} size={14} />
               </button>
-            </TableHead>
-            <TableHead>{t('columns.expiry')}</TableHead>
-            <TableHead className="text-right">{t('columns.action')}</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
+            </Th>
+            <Th>{t('columns.expiry')}</Th>
+            <Th>{t('columns.action')}</Th>
+          </Tr>
+        </THead>
+        <TBody>
           {sortedRows.map((row) => (
-            <TableRow key={row.cycleId}>
-              <TableCell className="font-medium">
+            <Tr key={row.cycleId}>
+              <Td card="title">
                 <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                  {/* B4 — company links to the F3 member (escalation-queue +
-                      invoice-table parity); a member absent from the batch map
-                      degrades to plain text (a cycle short-id, never a broken
-                      `/admin/members/` link with an empty id). */}
+                  {/* B4 — the company links to the F3 member; a member
+                      absent from the batch map degrades to plain text (a
+                      cycle short-id, never a broken `/admin/members/` link). */}
                   {row.memberId !== null ? (
                     <Link
                       href={`/admin/members/${row.memberId}`}
-                      className="font-medium text-primary underline-offset-4 rounded-sm hover:underline focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2"
+                      className="font-medium text-[var(--aura-fg-accent)] underline-offset-4 hover:underline"
                     >
                       {row.companyName}
                     </Link>
                   ) : (
-                    <span>{row.companyName}</span>
+                    <span className="font-medium">{row.companyName}</span>
                   )}
-                  {/* B4 — SCCM member number in muted secondary text (members-
-                      table / invoice-table convention); tabular-nums so the
-                      NNNN digits align down the column. */}
                   {row.memberNumberDisplay !== null && (
-                    <span className="text-xs font-normal tabular-nums text-muted-foreground">
+                    <span className="text-xs font-normal tabular-nums text-[var(--aura-fg-secondary)]">
                       {row.memberNumberDisplay}
                     </span>
                   )}
-                  {row.refundSettling && (
-                    <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900 ring-1 ring-inset ring-amber-300 dark:bg-amber-900 dark:text-amber-100 dark:ring-amber-600">
-                      {t('settlingPill')}
-                    </span>
-                  )}
+                  {row.refundSettling && <Badge tone="warning">{t('settlingPill')}</Badge>}
                 </span>
-              </TableCell>
-              <TableCell className="text-muted-foreground">
+              </Td>
+              <Td className="text-[var(--aura-fg-secondary)]">
                 <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                   <span>{row.pendingSinceLabel}</span>
-                  {/* B3 — subtle amber "Aged {n}d" chip on decisions lingering
-                      past the threshold. Reuses the `settlingPill` amber styling
-                      for visual consistency (never a new colour); placed here (not
-                      the Member cell) so it sits beside the pending date it
-                      describes and never clashes with the "Refund settling" pill. */}
+                  {/* B3 — "Aged {n}d" beside the date it describes. */}
                   {row.isAged && (
-                    <span
-                      title={t('agedChipTitle', { days: row.agingDays })}
-                      className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900 ring-1 ring-inset ring-amber-300 dark:bg-amber-900 dark:text-amber-100 dark:ring-amber-600"
-                    >
+                    <Badge tone="warning" title={t('agedChipTitle', { days: row.agingDays })}>
                       {t('agedChip', { days: row.agingDays })}
-                    </span>
+                    </Badge>
                   )}
                 </span>
-              </TableCell>
-              <TableCell className="text-muted-foreground">
-                {row.expiryLabel}
-              </TableCell>
-              <TableCell className="text-right">
-                {/* B2 — an OPEN row gets an inline Approve (admins) + a Review
-                    link. A refund-settling row (decided) keeps the read-only
-                    View link only; a read-only viewer (manager) sees Review
-                    only — no Approve CTA that would just 403. */}
+              </Td>
+              <Td className="text-[var(--aura-fg-secondary)]">{row.expiryLabel}</Td>
+              <Td card="action">
+                {/* B2 — an OPEN row gets an inline Approve (admins) + Review.
+                    A refund-settling row (decided) keeps the read-only View;
+                    a manager sees Review only — no Approve that would 403. */}
                 {canApprove && !row.refundSettling ? (
                   <PendingReviewRowActions
                     row={row}
-                    busy={
-                      approvePending && approveTarget?.cycleId === row.cycleId
-                    }
+                    busy={approvePending && approveTarget?.cycleId === row.cycleId}
                     closedViaSuccessRef={closedViaSuccessRef}
                     onApprove={openApprove}
                     t={t}
@@ -363,89 +312,43 @@ export function PendingReviewList({
                 ) : (
                   <Link
                     href={`/admin/renewals/${row.cycleId}`}
-                    className={buttonVariants({
-                      variant: 'outline',
-                      size: 'sm',
-                    })}
+                    className={buttonClass({ variant: 'secondary', size: 'sm' })}
                   >
-                    {/* UX-A Bug 2: read-only "View" for a decided
-                        (refund-settling) row so the queue doesn't imply open
-                        review work. */}
+                    {/* UX-A Bug 2: read-only "View" for a decided row. */}
                     {row.refundSettling ? t('viewAction') : t('openAction')}
                   </Link>
                 )}
-              </TableCell>
-            </TableRow>
+              </Td>
+            </Tr>
           ))}
-        </TableBody>
+        </TBody>
       </Table>
 
-      {/* B2 — one lifted, non-destructive Approve confirm dialog serving every
-          row (reuses the detail-page Approve copy + `/reactivate` flow). Only
-          mounted for admins; managers never approve. */}
+      {/* B2 — one lifted, non-destructive Approve confirm serving every row
+          (the detail page's Approve copy + `/reactivate` flow). Admins only.
+          `finalFocus` is a STABLE callback reading the launching row's
+          resolver at close: after a success or 409 close it skips the
+          unmounting trigger for #main-content; on Cancel/Escape it returns
+          the still-mounted Approve trigger (WCAG 2.4.3). */}
       {canApprove && (
-        <Dialog
+        <ConfirmationDialog
           open={approveTarget !== null}
           onOpenChange={(open) => {
             if (!open) setApproveTarget(null);
           }}
-        >
-          {/* `finalFocus` is a STABLE, always-defined callback (never
-              `approveTarget?.finalFocus`, which evaporates to `undefined` on the
-              close commit). Base UI reads returnFocus from it LIVE at close: it
-              defers to `activeFinalFocusRef` — the launching row's resolver —
-              which, with `closedViaSuccessRef` raised on a success/409 close,
-              skips the unmounting trigger and lands on #main-content; on
-              Cancel/ESC it returns the still-mounted Approve trigger (WCAG 2.1 AA
-              SC 2.4.3). */}
-          <DialogContent
-            initialFocus={approveCancelRef}
-            finalFocus={finalFocus}
-            role="alertdialog"
-          >
-            <DialogHeader>
-              <DialogTitle>{tReactivate('reactivate.dialogTitle')}</DialogTitle>
-              <DialogDescription>
-                {tReactivate('reactivate.dialogBody')}
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button
-                ref={approveCancelRef}
-                variant="outline"
-                onClick={() => setApproveTarget(null)}
-                disabled={approvePending}
-              >
-                {tReactivate('reactivate.cancel')}
-              </Button>
-              <Button onClick={onApproveConfirm} disabled={approvePending}>
-                {approvePending ? (
-                  <>
-                    <Loader2Icon
-                      className="size-4 motion-safe:animate-spin"
-                      aria-hidden="true"
-                    />
-                    {tReactivate('reactivate.submitting')}
-                  </>
-                ) : (
-                  tReactivate('reactivate.confirm')
-                )}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+          title={tReactivate('reactivate.dialogTitle')}
+          description={tReactivate('reactivate.dialogBody')}
+          confirmLabel={tReactivate('reactivate.confirm')}
+          cancelLabel={tReactivate('reactivate.cancel')}
+          closeOnConfirm={false}
+          onConfirm={onApproveConfirm}
+          finalFocus={finalFocus}
+        />
       )}
     </>
   );
 }
 
-/**
- * B2 — per-row inline-Approve cluster: a visible Approve primary + a Review
- * link. Split out of the row map so it can own the row's Approve-trigger ref +
- * `useDialogFinalFocus` resolver (hooks can't live in a `.map()` callback). The
- * resolver returns the Approve trigger on cancel, and #main-content when a
- * successful approve unmounts the row. Admin-gated by the caller (`canApprove`).
- */
 function PendingReviewRowActions({
   row,
   busy,
@@ -466,15 +369,12 @@ function PendingReviewRowActions({
     closedViaSuccessRef,
   );
   return (
-    <div className="flex items-center justify-end gap-2">
+    <div className="flex items-center gap-[var(--aura-space-2)] sm:justify-end">
       <Button
         ref={approveTriggerRef}
         size="sm"
-        disabled={busy}
-        aria-busy={busy}
-        // Per-row accessible name so SR users tabbing the queue know WHICH
-        // member they're about to approve (multiple identical "Approve" buttons
-        // would otherwise be ambiguous). Mirrors the escalation ⋯-trigger idiom.
+        touchHeight
+        loading={busy}
         aria-label={t('approveRowAria', { company: row.companyName })}
         onClick={() => onApprove({ cycleId: row.cycleId, finalFocus })}
       >
@@ -482,7 +382,7 @@ function PendingReviewRowActions({
       </Button>
       <Link
         href={`/admin/renewals/${row.cycleId}`}
-        className={buttonVariants({ variant: 'outline', size: 'sm' })}
+        className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}
       >
         {t('openAction')}
       </Link>
