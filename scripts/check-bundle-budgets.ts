@@ -72,8 +72,8 @@
  *                                     1057 KB measured → ≤ 1160 KB
  *   Members (058 / PR-B — guards the 367 KB (uncompressed) Thai postal
  *   reference dataset, which must stay server-only):
- *     /admin/members/new              1223 KB measured → ≤ 1330 KB
- *     /admin/members/[memberId]/edit  1247 KB measured → ≤ 1350 KB
+ *     /admin/members/new              1002 KB measured → ≤ 1110 KB (spec 122 US5b-2)
+ *     /admin/members/[memberId]/edit  1020 KB measured → ≤ 1130 KB (spec 122 US5b-2)
  *
  *   067 dashboard-interactive-charts:
  *     /admin  Task 7 (pre-chart) baseline: 992 KB measured → ≤ 1100 KB
@@ -173,8 +173,8 @@ const BUDGETS: ReadonlyArray<RouteBudget> = [
   // lands in the client bundle, these budgets are what catches it — see
   // the headroom-rule note in the docblock above for why their headroom
   // is deliberately kept well under 367 KB.
-  { route: '/admin/members/new', maxKb: 1330 },
-  { route: '/admin/members/[memberId]/edit', maxKb: 1350 },
+  { route: '/admin/members/new', maxKb: 1110 },
+  { route: '/admin/members/[memberId]/edit', maxKb: 1130 },
   // --- 067 dashboard-interactive-charts (Task 14 post-chart re-baseline) -
   // 1004.8 KB measured with all four charts wired — see docblock above.
   { route: '/admin', maxKb: 1110 },

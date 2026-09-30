@@ -222,7 +222,7 @@ Goal: the admin new and edit member forms, the plan-change, bundle-warning, over
 - [x] T577 [US5] The contact fields and secondary contact on AURA fields (ids kept, date of birth on `DatePicker`); on edit, the note that other contacts are managed on the member record. RED: the contact-fields tests.
 - [x] T578 [US5] The plan-change confirmation as its board (current and new tiles with the fee, what changes, Cancel first), and the bundle-warning, override-reason and soft-duplicate dialogs on AURA `Dialog`, content and behaviour unchanged. RED: the four dialog tests on AURA.
 - [x] T579 [US5] The notification-language card on AURA (`RadioGroup`, "Save preference", saved on its own), the same request. RED: the card test.
-- [ ] T580 [US5] Every US5b-2 path joins `MIGRATED_PATHS` and the address entries leave `NOT_YET_ON_AURA` (RED: `ui-import-ratchet.test.ts`, its control moved to a path still on the old kit); preview views; the e2e form helpers move to roles; exit gates, build + bundle budgets, board screenshots and a parity page, enterprise-ux, i18n and financial-integrity (plan fee) reviews.
+- [x] T580 [US5] Every US5b-2 path joins `MIGRATED_PATHS` and the address entries leave `NOT_YET_ON_AURA` (RED: `ui-import-ratchet.test.ts`, its control moved to a path still on the old kit); preview views; the e2e form helpers move to roles; exit gates, build + bundle budgets, board screenshots and a parity page, enterprise-ux, i18n and financial-integrity (plan fee) reviews.
 
 ## Later phases (one PR each; tasks written when the phase starts)
 
