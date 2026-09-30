@@ -161,6 +161,18 @@ describe('CloneYearClient on AURA', () => {
     expect(within(bar).getByRole('button', { name: 'Clone 5 plans' })).toHaveClass('aura-btn--primary');
   });
 
+  // Board `Admin-plans-clone`: each plan's full name, never cut to "Diamond
+  // Partners…" (the name wraps; the fee keeps its place).
+  it('lists each plan to copy by its full name, wrapping rather than cutting it', () => {
+    renderClient();
+    const list = screen.getByRole('list');
+    for (const item of within(list).getAllByRole('listitem')) {
+      const name = item.firstElementChild as HTMLElement;
+      expect(name).not.toHaveClass('truncate');
+      expect(name).toHaveClass('break-words');
+    }
+  });
+
   it('confirms on an AURA alertdialog before cloning', () => {
     renderClient();
     fireEvent.click(cloneButton());
