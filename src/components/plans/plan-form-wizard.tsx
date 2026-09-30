@@ -8,8 +8,8 @@
  * Save runs the full schema and jumps back to the first failing step.
  *
  * 122 US6 (T605): on AURA as the `Admin-plan-new` board draws it — AURA's
- * Stepper above the steps (progress only: it has no error state, AURA
- * handoff #112), each step one fieldset card (the benefits step two: the
+ * Stepper above the steps (the step whose Next / Save failed marked with
+ * AURA's error status while it has errors — 5.18, handoff #112), each step one fieldset card (the benefits step two: the
  * matrix and the partnership benefits), AURA's error summary when a step
  * has more than one error, and Cancel | Back / Next. On a phone Back and
  * Next are pinned to the bottom of the screen and Cancel stays in the page
@@ -282,7 +282,15 @@ export function PlanFormWizard({
     navigateToStep(STEPS[stepIndex + 1]!);
   }
 
-  const stepperSteps = useMemo(() => STEPS.map((s) => ({ id: s, label: t(`steps.${s}`) })), [t]);
+  const stepperSteps = useMemo(
+    () =>
+      STEPS.map((s) => ({
+        id: s,
+        label: t(`steps.${s}`),
+        ...(failedStep === s && stepHasErrors[s] ? { status: 'error' as const } : {}),
+      })),
+    [t, failedStep, stepHasErrors],
+  );
 
   // The failed step's messages, in form order, for the summary above it.
   const summaryItems =

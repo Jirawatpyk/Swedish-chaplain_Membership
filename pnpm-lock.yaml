@@ -20,11 +20,11 @@ importers:
         specifier: ^3.9.1
         version: 3.10.0(react-hook-form@7.72.1(react@19.2.4))
       '@jirawatpyk/aura-react':
-        specifier: 5.17.0
-        version: 5.17.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+        specifier: 5.18.0
+        version: 5.18.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       '@jirawatpyk/aura-tokens':
-        specifier: 5.17.0
-        version: 5.17.0
+        specifier: 5.18.0
+        version: 5.18.0
       '@js-joda/core':
         specifier: ^6.0.1
         version: 6.0.1
@@ -1442,15 +1442,15 @@ packages:
     resolution: {integrity: sha512-ZXRY4jNvVgSVQ8DL3LTcakaAtXwTVUxE81hslsyD2AtoXW/wVob10HkOJ1X/pAlcI7D+2YoZKg5do8G/w6RYgA==}
     engines: {node: '>=8'}
 
-  '@jirawatpyk/aura-react@5.17.0':
-    resolution: {integrity: sha512-PUTdNdH/h4fGafnHSMgMQG2aQ9zEfhvShVcqTo8UsDHOyeWP7YmWefTSuvsdmNwGRGXUklDjlwbS4OOKN4LwaA==}
+  '@jirawatpyk/aura-react@5.18.0':
+    resolution: {integrity: sha512-W2SDogCp5O5ZRWutEUMSG99gzIjvnGJWjp+odAohoVvS7cliVtpeTBdrWRNV3F0MTi1QadCdTvYQIwDKfeS1ZQ==}
     hasBin: true
     peerDependencies:
       react: '>=18'
       react-dom: '>=18'
 
-  '@jirawatpyk/aura-tokens@5.17.0':
-    resolution: {integrity: sha512-GTyM28DUDK4+upibdjXOsfw4cGcBfuHsJgXfGWqU3RWWL/+h7r4G8ExFU07PHpdSgEfoKrSmjmcKGbaycCnOmQ==}
+  '@jirawatpyk/aura-tokens@5.18.0':
+    resolution: {integrity: sha512-br/ivSU+a8ubSxkPpFWmgQkE67z4aAcf25bq5UfJQngUTyLJkTLkqgm5L3vKEyp4hSkwm/6oNHwLkLo92npG8A==}
 
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
@@ -7569,12 +7569,12 @@ snapshots:
 
   '@istanbuljs/schema@0.1.3': {}
 
-  '@jirawatpyk/aura-react@5.17.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)':
+  '@jirawatpyk/aura-react@5.18.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)':
     dependencies:
       react: 19.2.4
       react-dom: 19.2.4(react@19.2.4)
 
-  '@jirawatpyk/aura-tokens@5.17.0': {}
+  '@jirawatpyk/aura-tokens@5.18.0': {}
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:

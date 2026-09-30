@@ -121,7 +121,7 @@ The US5b-2 boards (`Admin-member-new`, `-new-mobile`, `-edit`, `-edit-mobile`, `
 
 The US6 boards (`Admin-plans`, `Admin-state-plans-empty`, `Admin-plan-detail`, `Admin-plan-new`, `Admin-plan-edit`, `Admin-plan-edit-locked`, `Admin-plans-clone`, and the `-mobile` variant of each) were read before the tasks were written. The wizard is drawn at step 3 only. No board draws a dialog, the wizard's error state or steps 1, 2 and 4: those keep their content and behaviour on AURA defaults.
 
-- Q: The spec asks that a wizard step with errors shows them in "the AURA error summary and stepper"; AURA 5.17's `Stepper` has no per-step error state (the old one marked the failing step). → A: **Error summary, and the wizard stays on the step.** A step with more than one error shows AURA `FormErrorSummary`; each field shows its error through AURA's `error` prop. Next does not advance; Save goes back to the first step with an error and focuses its first invalid field. The stepper shows progress only. An AURA handoff asks for a per-step error status (item 112, not blocking).
+- Q: The spec asks that a wizard step with errors shows them in "the AURA error summary and stepper"; AURA 5.17's `Stepper` has no per-step error state (the old one marked the failing step). → A: **Error summary, and the wizard stays on the step.** A step with more than one error shows AURA `FormErrorSummary`; each field shows its error through AURA's `error` prop. Next does not advance; Save goes back to the first step with an error and focuses its first invalid field. The stepper shows progress only. An AURA handoff asks for a per-step error status (item 112, not blocking). *Update (30 Sep, Addendum 19): AURA 5.18.0 ships it; the failing step shows the Stepper's error status while it still has errors.*
 - Q: The boards draw "฿" before the money fields; AURA `TextField` has a trailing unit only. → A: **"THB" as the field's suffix**, as the rest of the product writes amounts ("36,000.00 THB"). Whole baht in, minor units stored, the same maximum.
 - Q: The locked (prior-year) edit board lays a lock icon over each locked field; AURA has no locked state. → A: **The warning `Alert` with its "Open the {year} version" action, then locked fields that cannot change**: text and money fields `readOnly` with AURA's `lock` icon, Selects `disabled` with the same icon, Switches `disabled`. Each locked field tells a screen reader "Locked: historical plan". The lock rule and the server check are unchanged.
 - **From the boards:** no board uses a segmented control. The small fixed-option fields (category, member type, discount scope, video duration and frequency, directory position) and the list's category filter stay AURA `Select`. This replaces "segmented controls" in User Story 6. The clone page's confirmation dialog, which no board draws, stays as an AURA `Dialog` with `role="alertdialog"`.
@@ -222,7 +222,7 @@ Plans list, detail, create wizard, edit and clone use AURA forms, selects and sw
 
 **Acceptance Scenarios**:
 
-1. **Given** the plan wizard, **When** a step has errors, **Then** the AURA error summary lists them, each field shows its own, and the wizard stays on (or, on Save, returns to) that step.
+1. **Given** the plan wizard, **When** a step has errors, **Then** the AURA error summary lists them, the stepper marks the step, each field shows its own, and the wizard stays on (or, on Save, returns to) that step.
 
 ---
 
