@@ -49,7 +49,7 @@ describe('PlanChangeConfirmDialog on AURA (board Admin-member-plan-change)', () 
   it('is an AURA dialog whose "what changes" note is a heading, with Cancel first and focused', async () => {
     const onOpenChange = vi.fn();
     wrap(<PlanChangeConfirmDialog open onOpenChange={onOpenChange} summary={summary} onConfirm={vi.fn()} submitting={false} />);
-    const dialog = screen.getByRole('dialog', { name: M.planChangeConfirm.title });
+    const dialog = screen.getByRole('alertdialog', { name: M.planChangeConfirm.title });
     expect(dialog).toHaveClass('aura-dialog');
     expect(within(dialog).getByRole('heading', { level: 3, name: M.planChangeConfirm.billingNoteHeading })).toBeInTheDocument();
     const buttons = within(dialog).getAllByRole('button').filter((b) => b.textContent);

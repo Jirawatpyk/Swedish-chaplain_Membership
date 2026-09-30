@@ -65,6 +65,9 @@ export function PlanChangeConfirmDialog({
 
   return (
     <Dialog
+      // A confirmation that gates a request (as the old AlertDialog): a stray
+      // scrim click doesn't dismiss it; Escape and Cancel do.
+      role="alertdialog"
       open={open}
       onClose={() => {
         if (!submitting) onOpenChange(false);

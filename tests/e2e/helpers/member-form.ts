@@ -18,8 +18,8 @@ import { expect, fillField } from '../fixtures';
  * been filled by the caller (specs differ there) and country is left at
  * its 'TH' schema default.
  *
- * - Plan / billing_cycle: shadcn (Base UI) Selects — click trigger, pick
- *   the first option.
+ * - Plan / billing_cycle: AURA Selects (spec 122 US5b-2) — click the
+ *   field, pick the first option.
  * - Address (088 §86/4, TH create): `address_line1` + an UNAMBIGUOUS
  *   Bangkok postcode (10800 → Bang Sue) whose lookup auto-fills
  *   province/city/sub_district; we wait for that to land (300ms debounce
@@ -37,23 +37,24 @@ export async function fillRequiredMembershipAndAddress(
   // 088 §86/4 — TH member buyer address (required on create).
   await fillField(page.locator('#address_line1'), '99 Test Tower');
   await fillField(page.locator('#postal_code'), '10800');
-  await expect(page.locator('#province')).toContainText(/bangkok/i, {
+  // The AURA combobox is the text input itself (spec 122 US5b-2).
+  await expect(page.locator('#province')).toHaveValue(/bangkok/i, {
     timeout: 10_000,
   });
 }
 
 /**
- * Opens a Base UI Select and picks its first option. The open is retried: a
- * click that lands before hydration toggles nothing, and the option wait then
- * times out. After the pick it waits for the popup to finish closing: while it
- * animates out its options are still visible, so the NEXT Select's
- * `getByRole('option').first()` would resolve to this one's selected item.
+ * Opens an AURA Select and picks its first choice (the placeholder is listed
+ * disabled, so it is skipped). The open is retried: a click that lands
+ * before hydration toggles nothing, and the option wait then times out. After
+ * the pick it waits for the list to close, so the NEXT Select's options are
+ * not confused with this one's.
  */
 async function pickFirstOption(page: Page, trigger: Locator): Promise<void> {
   await expect(async () => {
     if ((await trigger.getAttribute('aria-expanded')) !== 'true') await trigger.click();
     await expect(trigger).toHaveAttribute('aria-expanded', 'true', { timeout: 2_000 });
   }).toPass({ timeout: 15_000 });
-  await page.getByRole('option').first().click();
+  await page.locator('[role="option"]:not([aria-disabled="true"])').first().click();
   await expect(page.getByRole('option')).toHaveCount(0);
 }
