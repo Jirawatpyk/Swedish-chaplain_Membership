@@ -103,6 +103,12 @@ describe('PlanEditForm on AURA', () => {
     expect(within(bar).getByRole('button', { name: 'Save changes' })).toHaveAttribute('type', 'submit');
   });
 
+  it('leaves validation to the app, not the browser (the AURA fields pass `required` to the input)', () => {
+    renderEdit(PLAN);
+    const bar = screen.getByRole('region', { name: 'Actions' });
+    expect(bar.closest('form')).toHaveAttribute('novalidate');
+  });
+
   it('locks the prior-year fields as decided, keeping name, description and sort order editable', () => {
     renderEdit({ ...PLAN, plan_year: 2025 });
     const locked = en.admin.plans.priorYearLock.lockedField;
