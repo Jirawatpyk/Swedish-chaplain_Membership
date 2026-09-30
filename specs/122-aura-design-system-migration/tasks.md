@@ -237,11 +237,60 @@ Goal: the plans list, detail, new-plan wizard, edit (current and prior year) and
 - [x] T607 [US6] The clone page: one card (the count sentence, source and target year, the "Activate cloned plans immediately" switch with its description, the plans-to-copy list), Cancel / "Clone {n} plans" (pinned 1:2 on phones), the confirmation on AURA `Dialog` `role="alertdialog"`; the same preview and request. RED: the `clone-year-client` tests on AURA.
 - [x] T608 [US6] Page frames: layout containers kept, header actions as AURA buttons, phone back links, loading on AURA skeletons, errors on `RouteErrorPanel`. RED: `plans-loading-skeletons` on AURA.
 - [x] T609 [US6] Every US6 path joins `MIGRATED_PATHS` (RED: a US6 block in `ui-import-ratchet.test.ts`); preview views `plans`, `plans-empty`, `plan`, `plan-new`, `plan-edit`, `plan-edit-locked`, `plans-clone` from the pages' own views; e2e selectors for the stepper, switches and dialogs.
-- [ ] T610 [US6] Exit gates, build and bundle budgets for the plans routes, board screenshots and a parity page, enterprise-ux, i18n and financial-integrity (fee and VAT display, whole-baht parse) reviews, the PR, and the relay request for the plans e2e.
+- [x] T610 [US6] Exit gates, build and bundle budgets for the plans routes, board screenshots and a parity page, enterprise-ux, i18n and financial-integrity (fee and VAT display, whole-baht parse) reviews, the PR, and the relay request for the plans e2e.
+
+## Phase 9: User Story 7 — Renewals (Priority: P2) — PRs 10–12 (US7a, US7b, US7c; T700)
+
+Goal: the renewals screens match their boards with the same requests, figures and URL contract. US7 ships as three PRs (Clarifications, Session 2026-09-30 US7 start).
+
+### US7a — the pipeline page (PR 10)
+
+Boards: `Admin-renewals` (+`-mobile`), `Admin-renewals-needs-action`, `Admin-renewal-mark-paid` (+`-mobile`), `Admin-state-renewals-empty`, `Admin-state-renewals-error`.
+
+- [x] T701 [US7] Spec Clarifications for US7: the three PRs, portal renewal in scope, a money phase, one stacking table, and the board facts. Also these tasks.
+- [ ] T702 [US7] The pipeline table is one AURA table:
+  - the board's columns, with "Send reminder" and the ⋯ menu per row;
+  - row selection for admins;
+  - cards below 640px from the same rows, with no second list;
+  - the same sort links, filters and paging.
+  - RED: `pipeline-table`, `pipeline-table-selection` and `pipeline-sortable-headers` on AURA, with no `pipeline-card-list`.
+- [ ] T703 [US7] Filters and tabs on AURA: the section tabs with counts, the All / Needs action toggle, the tier filter and the stage chips, with the same links and query parameters.
+  - RED: `renewals-section-tabs(-with-counts)`, `urgency-bucket-tabs` and `work-queue-tabs` on AURA.
+- [ ] T704 [US7] The money band as four AURA `Stat` tiles, with the basis hint on AURA and the figures unchanged. The shared dashboard `kpi-card` stays for US11.
+  - RED: `pipeline-money-band` on AURA.
+- [ ] T705 [US7] "Renewals by month" in an AURA `Card`: the bar chart on AURA chart tokens, bars that filter, and the month chip.
+  - RED: `month-bar-chart` and `month-filter-chip`.
+- [ ] T706 [US7] The at-risk section: counters, a table (risk badge, main signal, last computed, Contact / Snooze) and the snooze and outreach dialogs on AURA, with the same requests.
+  - RED: `at-risk-widget-snooze-gate` and `snooze-dialog-error-map` on AURA.
+- [ ] T707 [US7] Pending review, the lapsed tab and the members-without-cycle tray on AURA cards, tables and dialogs, with the same reactivate request.
+  - RED: `pending-review-list` on AURA.
+- [ ] T708 [US7] The bulk bar on AURA `ActionBar` with the selection count, and the single and bulk mark-paid dialogs on AURA `Dialog`. The single dialog follows the board's amounts and warnings; the bulk one keeps its settlement preview. Money is unchanged.
+  - RED: `mark-paid-offline-dialog`, `bulk-mark-paid-confirm-dialog`, `pipeline-bulk-action-bar` and `pipeline-row-mark-paid` on AURA.
+- [ ] T709 [US7] Page frame and states:
+  - the layout container and header kept;
+  - the empty state as the board draws it;
+  - the error state on `RouteErrorPanel`;
+  - loading on AURA skeletons;
+  - the shared renewals badges and pills (`urgency-pill`, `tier-badge`, `bill-issued-badge`, `cycle-cells`, `risk-score-badge`) on AURA `Badge` / `StatusPill`.
+  - RED: the badge tests and `renewals-empty-state` on AURA.
+- [ ] T710 [US7] Every US7a path joins `MIGRATED_PATHS` (RED: a US7a block in `ui-import-ratchet.test.ts`). Preview views `renewals`, `renewals-needs-action`, `renewals-empty` and `renewals-error`, plus the mark-paid dialog, all from the page's own view. e2e selectors for the stacked table.
+- [ ] T711 [US7] Exit:
+  - gates, build and the bundle budget for `/admin/renewals`;
+  - board screenshots and a parity page;
+  - enterprise-ux, i18n and financial-integrity (money band, mark-paid amounts, settlement preview) reviews;
+  - the PR;
+  - the relay request for the pipeline e2e.
+
+### US7b — cycle detail, tasks, tier upgrades, schedules (PR 11)
+
+- [ ] T720 [US7] Tasks written when US7b starts. Boards: `Admin-renewal-cycle` (+`-reminded`, `-pending`, `-mobile`), `Admin-renewal-tasks` (+`-mobile`), `Admin-tier-upgrades` (+`-accept`, `-mobile`), `Admin-renewal-schedules` (+`-mobile`).
+
+### US7c — portal renewal (PR 12)
+
+- [ ] T740 [US7] Tasks written when US7c starts. Boards: `Portal-renewal`, `Portal-renewal-processing`, `Portal-renewal-success`, each with `-mobile`.
 
 ## Later phases (one PR each; tasks written when the phase starts)
 
-- [ ] T700 [US7] Renewals: one DataTable (stacked on phone), cycle detail, tasks, schedules.
 - [ ] T800 [US8] Invoicing admin: registers with sticky footer; refund, void, credit and record-payment dialogs. Financial-integrity review.
 - [ ] T900 [US9] Events: DatePicker/TimePicker (`Asia/Bangkok`), Combobox, FileUpload, erasure pages.
 - [ ] T1000 [US10] Users, audit, compliance, settings: DataTable, Menu danger items.

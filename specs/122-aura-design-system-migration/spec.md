@@ -126,6 +126,33 @@ The US6 boards (`Admin-plans`, `Admin-state-plans-empty`, `Admin-plan-detail`, `
 - Q: The locked (prior-year) edit board lays a lock icon over each locked field; AURA has no locked state. → A: **The warning `Alert` with its "Open the {year} version" action, then locked fields that cannot change**: text and money fields `readOnly` with AURA's `lock` icon, Selects `disabled` with the same icon, Switches `disabled`. Each locked field tells a screen reader "Locked: historical plan". The lock rule and the server check are unchanged. *(Updated 30 Sep, AURA 5.19 / Addendum 20 #113–#114: Selects and Switches are now `readOnly` too, so every locked field stays in the tab order; Switches show the lock at the end of the row.)*
 - **From the boards:** no board uses a segmented control. The small fixed-option fields (category, member type, discount scope, video duration and frequency, directory position) and the list's category filter stay AURA `Select`. This replaces "segmented controls" in User Story 6. The clone page's confirmation dialog, which no board draws, stays as an AURA `Dialog` with `role="alertdialog"`.
 
+### Session 2026-09-30 (maintainer, US7 start)
+
+The US7 boards were read before the tasks were written:
+- **Pipeline:** `Admin-renewals` (+`-mobile`), `Admin-renewals-needs-action`, `Admin-renewal-mark-paid` (+`-mobile`), `Admin-state-renewals-empty`, `Admin-state-renewals-error`.
+- **Cycle detail:** `Admin-renewal-cycle` (+`-reminded`, `-pending`, `-mobile`).
+- **Queues and settings:** `Admin-renewal-tasks` (+`-mobile`), `Admin-tier-upgrades` (+`-accept`, `-mobile`), `Admin-renewal-schedules` (+`-mobile`).
+- **Portal:** `Portal-renewal`, `Portal-renewal-processing`, `Portal-renewal-success`, each with `-mobile`.
+
+Only two dialogs are drawn: the offline payment ("Record an offline payment?") and "Accept tier upgrade?". The others keep their content and behaviour on AURA defaults: send reminder, bulk mark-paid with its settlement preview, snooze, outreach, reactivate / reject, cancel cycle, done / skip / reassign task, and escalate / dismiss.
+
+- Q: US7 covers 52 files on the old kit (about 16k lines) and 24 boards; one PR would be too large to review. → A: **Three PRs:**
+  - **US7a**, the pipeline page: money band, "Renewals by month", pipeline table, bulk bar and mark-paid dialogs, at-risk section, pending review, lapsed tab, members-without-cycle tray, empty and error states.
+  - **US7b**: cycle detail, escalation tasks, tier upgrades and reminder schedules.
+  - **US7c**: the portal renewal pages.
+- Q: The portal renewal pages (`/portal/renewal/[memberId]` and its success page) belong to no user story. → A: **US7 (as US7c).**
+- Q: US7 is not tagged as a money phase, but it records offline payments, previews bulk settlements, shows frozen prices and runs the portal renewal confirm. → A: **Treat US7 as a money phase.** Each of its PRs gets a financial-integrity review (FR-010f). Every amount, VAT line and settlement figure stays as it is.
+- Q: On a phone the pipeline renders a second, separate card list beside the desktop table; User Story 7 asks for one table that stacks. → A: **One AURA table that stacks into cards below 640px.** Selection, row actions and the dialogs work from the same rows, and the separate card list goes. The phone e2e reads the stacked table. The URL contract for sort, filters and paging is unchanged (FR-015).
+- **From the boards (pipeline):**
+  - Four money tiles: Collection rate, Past due (with the prior-years line), Collected this month, Due soon.
+  - Section tabs Pipeline / Pending review / Tasks / Tier upgrades, with counts.
+  - The All / Needs action toggle, a tier filter, and the stage chips T-90, T-60, T-30, T-14, T-7, T-0, Suspended, Terminated.
+  - Table columns Tier, Company, Expires, Urgency, Last reminder, Status, Invoice and Actions. Actions are "Send reminder" plus a ⋯ menu.
+  - A bulk bar: "{n} selected · Send reminder · Mark paid · Clear selection".
+  - The "Renewals by month" bar chart, whose bars filter the table.
+  - "Members without a renewal cycle".
+  - On needs-action: the at-risk counters and table.
+
 ## User Scenarios & Testing *(mandatory)*
 
 Every story below is one phase and one pull request. A story is done when its screens use only AURA components, match their canvas boards, and pass the per-module definition of done (FR-010).
