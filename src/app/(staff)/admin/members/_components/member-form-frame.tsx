@@ -1,6 +1,7 @@
 /**
  * 122 US5b-2 (T572) — the frame of the new and edit member pages (boards
- * `Admin-member-new`, `-edit`): one 672px column, the title, and Cancel at the
+ * `Admin-member-new`, `-edit`): one 672px column at the page's start edge,
+ * the title, and Cancel at the
  * top right as the boards draw it. Below 1024px the shell's "← back" link
  * stands in for it and the form's pinned action bar carries Cancel.
  */
@@ -25,7 +26,7 @@ export function MemberFormFrame({
   readonly children: ReactNode;
 }) {
   return (
-    <FormContainer>
+    <FormContainer className="mx-0">
       <PageHeader
         title={title}
         subtitle={subtitle}

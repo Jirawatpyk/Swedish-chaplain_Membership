@@ -28,6 +28,12 @@ import { MemberDataExportCard } from '@/app/(staff)/admin/members/[memberId]/_co
 import { PendingChangeRequestAlert } from '@/app/(staff)/admin/members/[memberId]/_components/member-change-requests-section';
 import { renderMemberTimelineView } from '@/app/(staff)/admin/members/[memberId]/_components/member-timeline-view';
 import { renderMemberBenefitsView } from '@/app/(staff)/admin/members/[memberId]/_components/member-benefits-view';
+import { MemberFormFrame } from '@/app/(staff)/admin/members/_components/member-form-frame';
+import { CreateMemberClient } from '@/components/members/create-member-client';
+import { EditMemberClient } from '@/components/members/edit-member-client';
+import { AdminPreferredLocaleCard } from '@/components/admin/admin-preferred-locale-card';
+import type { PlanOption as FormPlanOption } from '@/components/members/member-form';
+import { MemberFormDialogPreview } from './member-form-previews';
 
 // Request-time evaluation so the guard runs per request (see button-matrix).
 export const dynamic = 'force-dynamic';
@@ -46,6 +52,9 @@ export const dynamic = 'force-dynamic';
  *   ?view=member&state=default|manager|archived|erased|no-primary   (US5b-1)
  *   ?view=member-timeline
  *   ?view=member-benefits
+ *   ?view=member-new                                                   (US5b-2)
+ *   ?view=member-edit&state=default|complete
+ *   ?view=member-edit&dialog=plan-change|bundle|override|duplicate
  *
  * The bodies render through the pages' own view functions and client
  * components with fixture data. Nothing here can succeed: an action reaches
@@ -345,7 +354,7 @@ const MEMBER_EVENTS: TimelineItemProps[] = [
 export default async function AuraAdminPreviewPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string; state?: string }>;
+  searchParams: Promise<{ view?: string; state?: string; dialog?: string }>;
 }) {
   if (!process.env.ALLOW_TEST_ROUTES) notFound();
   const { view = 'members', state = 'default' } = await searchParams;
@@ -433,6 +442,87 @@ export default async function AuraAdminPreviewPage({
             dataExport: manager || erased ? null : <MemberDataExportCard memberId={MEMBER_ID} contacts={contacts} jobs={[]} />,
           },
         })}
+      </StaffFrame>
+    );
+  }
+
+  if (view === 'member-new' || view === 'member-edit') {
+    const FORM_PLANS: FormPlanOption[] = [
+      { plan_id: 'regular', plan_year: 2026, display_name: 'Regular Corporate — 2026', annual_fee_minor_units: 1_600_000, currency_code: 'THB', plan_category: 'corporate' },
+      { plan_id: 'large', plan_year: 2026, display_name: 'Large Corporate — 2026', annual_fee_minor_units: 2_600_000, currency_code: 'THB', plan_category: 'corporate' },
+      { plan_id: 'premium', plan_year: 2026, display_name: 'Premium Corporate — 2026', annual_fee_minor_units: 3_600_000, currency_code: 'THB', plan_category: 'corporate' },
+      { plan_id: 'alumni', plan_year: 2026, display_name: 'Thai Alumni — 2026', annual_fee_minor_units: 200_000, currency_code: 'THB', plan_category: 'corporate', requires_date_of_birth: true },
+    ];
+    if (view === 'member-new') {
+      const t = await getTranslations('admin.members.create');
+      return (
+        <StaffFrame path="/admin/members/new">
+          <MemberFormFrame title={t('title')} subtitle={t('subtitle')} cancelHref="/admin/members" cancelLabel={t('cancel')}>
+            <CreateMemberClient plans={FORM_PLANS} defaultPlanYear={2026} />
+          </MemberFormFrame>
+        </StaffFrame>
+      );
+    }
+    const t = await getTranslations('admin.members.edit');
+    const complete = state === 'complete';
+    const { dialog } = await searchParams;
+    return (
+      <StaffFrame path={`/admin/members/${MEMBER_ID}/edit`}>
+        <MemberFormFrame
+          title={t('title')}
+          subtitle="Siam Nordic Trading Co., Ltd."
+          cancelHref={`/admin/members/${MEMBER_ID}`}
+          cancelLabel={t('cancel')}
+        >
+          <AdminPreferredLocaleCard memberId={MEMBER_ID} initialValue={null} />
+          <EditMemberClient
+            plans={FORM_PLANS}
+            member={{
+              memberId: MEMBER_ID,
+              companyName: 'Siam Nordic Trading Co., Ltd.',
+              legalEntityType: 'limited_company',
+              country: 'TH',
+              taxId: '0105561234560',
+              website: 'https://siamnordic.example',
+              description: 'Nordic furniture and design import, Bangkok showroom.',
+              notes: null,
+              addressLine1: '98 Sathorn Road',
+              addressLine2: null,
+              city: 'Bang Rak',
+              province: 'Bangkok',
+              postalCode: '10500',
+              subDistrict: complete ? 'Silom' : null,
+              billingAddressLine1: null,
+              billingAddressLine2: null,
+              billingSubDistrict: null,
+              billingCity: null,
+              billingProvince: null,
+              billingPostalCode: null,
+              billingCountry: null,
+              foundedYear: 2009,
+              turnoverThb: 180_000_000,
+              registeredCapitalThb: 20_000_000,
+              isHeadOffice: true,
+              branchCode: null,
+              isVatRegistered: true,
+              billingCycle: 'calendar',
+              planId: 'premium',
+              planYear: 2026,
+              registrationDate: '2019-01-12',
+            }}
+            primaryContact={{
+              contactId: 'c-erik',
+              firstName: 'Erik',
+              lastName: 'Johansson',
+              email: 'erik@siamnordic.example',
+              phone: '+66812345678',
+              roleTitle: 'Managing Director',
+              preferredLanguage: 'en',
+              dateOfBirth: null,
+            }}
+          />
+          {dialog ? <MemberFormDialogPreview dialog={dialog} /> : null}
+        </MemberFormFrame>
       </StaffFrame>
     );
   }

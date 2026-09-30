@@ -1773,7 +1773,7 @@
           "additionalDetails": "Additional details"
         },
         "secondaryContact": {
-          "addButton": "+ Add a secondary contact",
+          "addButton": "Add a secondary contact",
           "removeButton": "Remove secondary contact"
         },
         "fields": {

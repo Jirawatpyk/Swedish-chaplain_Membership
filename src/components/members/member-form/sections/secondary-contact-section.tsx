@@ -24,7 +24,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Controller, useFormContext } from 'react-hook-form';
 import { useTranslations } from 'next-intl';
-import { UserPlusIcon, Trash2Icon } from 'lucide-react';
+import { Trash2Icon } from 'lucide-react';
 import { Button, Checkbox } from '@jirawatpyk/aura-react';
 import { ContactFields } from './contact-fields';
 import { type MemberFormValues } from '../schema';
@@ -87,7 +87,7 @@ export function SecondaryContactSection() {
         ref={addButtonRef}
         type="button"
         variant="secondary"
-        icon={<UserPlusIcon className="size-4" aria-hidden="true" />}
+        icon="plus"
         onClick={handleAdd}
         className="w-fit"
       >

@@ -1773,7 +1773,7 @@
           "additionalDetails": "Ytterligare uppgifter"
         },
         "secondaryContact": {
-          "addButton": "+ Lägg till en sekundär kontakt",
+          "addButton": "Lägg till en sekundär kontakt",
           "removeButton": "Ta bort sekundär kontakt"
         },
         "fields": {

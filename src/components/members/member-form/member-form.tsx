@@ -49,6 +49,18 @@ import { ContactFields } from './sections/contact-fields';
 import { SecondaryContactSection } from './sections/secondary-contact-section';
 import { FormSectionCard } from './form-section-card';
 
+/** The note's leading "*" in the danger colour, as every field's asterisk
+ * (hidden from screen readers, which read "fields are required"). */
+function RequiredNote({ text }: { readonly text: string }) {
+  const star = text.match(/^\*\s*/);
+  if (!star) return <>{text}</>;
+  return (
+    <>
+      <span aria-hidden="true" className="text-[var(--aura-fg-danger)]">*</span> {text.slice(star[0].length)}
+    </>
+  );
+}
+
 type Props = {
   readonly plans: readonly PlanOption[];
   readonly defaultPlanYear: number;
@@ -209,7 +221,7 @@ export function MemberForm({
       <form onSubmit={handleSubmit(onSubmit)} method="post" noValidate className="flex flex-col gap-[var(--page-section-gap)]">
         {/* FR-035 part (c): form-top required fields note */}
         <p className="text-sm text-[var(--aura-fg-secondary)]" id="required-fields-note">
-          {t('requiredNote')}
+          <RequiredNote text={t('requiredNote')} />
         </p>
 
         {/* Summary only when MORE THAN ONE error (ux-standards § 11.3); a single

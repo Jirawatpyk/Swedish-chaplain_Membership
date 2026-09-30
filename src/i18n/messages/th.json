@@ -1773,7 +1773,7 @@
           "additionalDetails": "รายละเอียดเพิ่มเติม"
         },
         "secondaryContact": {
-          "addButton": "+ เพิ่มผู้ติดต่อรอง",
+          "addButton": "เพิ่มผู้ติดต่อรอง",
           "removeButton": "ลบผู้ติดต่อรอง"
         },
         "fields": {
