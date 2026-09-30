@@ -19,13 +19,19 @@ import { Badge, type BadgeProps } from '@jirawatpyk/aura-react/server';
 // Client-safe sub-barrel — see `tier-filter-select.tsx` for rationale.
 import type { TierBucket } from '@/modules/renewals/client';
 
-/** 122 US7a — the `Admin-renewals` board's tier badges (tone, then variant). */
-const TIER_BADGE: Record<TierBucket, Pick<BadgeProps, 'tone' | 'variant'>> = {
-  premium: { tone: 'accent' },
-  regular: { tone: 'neutral' },
-  start_up: { tone: 'warning' },
-  partnership: { tone: 'success' },
-  thai_alumni: { tone: 'warning', variant: 'outline' },
+/**
+ * 122 US7a (maintainer decision, 1 Oct 2026) — a tier is a category, not a
+ * state, so it never takes a status tone: warning, success and danger stay
+ * for the urgency pill and the risk badge beside it in the same row.
+ * Partnership is `accent`, as on the plans list (`plans-table.tsx`); every
+ * other tier is `neutral`. The label names the tier.
+ */
+const TIER_TONE: Record<TierBucket, BadgeProps['tone']> = {
+  partnership: 'accent',
+  premium: 'neutral',
+  regular: 'neutral',
+  start_up: 'neutral',
+  thai_alumni: 'neutral',
 };
 
 export interface TierBadgeProps {
@@ -42,7 +48,7 @@ export function TierBadge({ tier, className }: TierBadgeProps) {
   // label lets the text content serve as the accessible name (WCAG
   // recommends NOT setting aria-label when visible text is sufficient).
   return (
-    <Badge {...TIER_BADGE[tier]} {...(className ? { className } : {})}>
+    <Badge tone={TIER_TONE[tier]} {...(className ? { className } : {})}>
       {label}
     </Badge>
   );
