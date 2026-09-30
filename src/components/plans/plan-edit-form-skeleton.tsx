@@ -1,3 +1,4 @@
+import { Card } from '@jirawatpyk/aura-react/server';
 import { SkeletonBlock } from '@/components/shell/page-skeletons';
 
 /**
@@ -58,9 +59,10 @@ function SwitchRowSkeleton() {
 
 export function PlanEditFormSkeleton() {
   return (
+    // 122 US6 (T608): the edit form's three AURA cards, then its footer.
     <div className="space-y-6" aria-busy="true">
+      <Card header={<SkeletonBlock className="h-6 w-28" />}>
       <section className="space-y-4" data-skeleton-section="basics">
-        <SkeletonBlock className="h-6 w-28" />
         <LocaleFieldSkeleton />
         <LocaleFieldSkeleton multiline />
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -68,9 +70,9 @@ export function PlanEditFormSkeleton() {
           <FieldSkeleton labelWidth="w-32" />
         </div>
       </section>
-      <div className="border-t border-border" />
+      </Card>
+      <Card header={<SkeletonBlock className="h-6 w-28" />}>
       <section className="space-y-4" data-skeleton-section="fees">
-        <SkeletonBlock className="h-6 w-28" />
         <MoneyFieldSkeleton withHint />
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <MoneyFieldSkeleton />
@@ -79,9 +81,9 @@ export function PlanEditFormSkeleton() {
           <FieldSkeleton labelWidth="w-32" />
         </div>
       </section>
-      <div className="border-t border-border" />
+      </Card>
+      <Card header={<SkeletonBlock className="h-6 w-32" />}>
       <section className="space-y-4" data-skeleton-section="benefits">
-        <SkeletonBlock className="h-6 w-32" />
         <div className="space-y-3">
           <SkeletonBlock className="h-4 w-36" />
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -104,7 +106,7 @@ export function PlanEditFormSkeleton() {
           <SwitchRowSkeleton />
         </div>
       </section>
-      <div className="border-t border-border" />
+      </Card>
       <div className="flex items-center justify-end gap-2" data-skeleton="footer">
         <SkeletonBlock className="h-9 w-20" />
         <SkeletonBlock className="h-9 w-32" />

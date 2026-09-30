@@ -1,20 +1,5 @@
 'use client';
 
-import { useEffect } from 'react';
-import Link from 'next/link';
-import { useTranslations } from 'next-intl';
-import { AlertCircleIcon } from 'lucide-react';
-import { Button, buttonVariants } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import { TableContainer } from '@/components/layout';
-import { PageHeader } from '@/components/layout/page-header';
-
 /**
  * Segment-level error boundary for `/admin/plans` (list page).
  *
@@ -24,7 +9,16 @@ import { PageHeader } from '@/components/layout/page-header';
  * parent `/admin/error.tsx`'s `<DetailContainer>` (72rem) — that
  * width mismatch was post-ship R6 I12. Sidebar + top bar remain
  * usable via the staff shell layout.
+ *
+ * 122 US6 (T608): the shared AURA RouteErrorPanel (error id and Retry), as
+ * every migrated route shows a failure.
  */
+import { useEffect } from 'react';
+import { useTranslations } from 'next-intl';
+import { TableContainer } from '@/components/layout';
+import { PageHeader } from '@/components/layout/page-header';
+import { RouteErrorPanel } from '@/components/shell/route-error-panel';
+
 export default function PlansListError({
   error,
   reset,
@@ -33,8 +27,6 @@ export default function PlansListError({
   reset: () => void;
 }) {
   const t = useTranslations('errors');
-  const tPlans = useTranslations('admin.plans.errors');
-  const tButtons = useTranslations('buttons');
 
   useEffect(() => {
     console.error('[admin/plans error boundary]', error);
@@ -43,23 +35,7 @@ export default function PlansListError({
   return (
     <TableContainer>
       <PageHeader title={t('generic')} />
-      <Card>
-        <CardHeader className="flex flex-row items-start gap-3">
-          <AlertCircleIcon className="size-6 text-destructive" aria-hidden />
-          <div>
-            <CardTitle>{t('generic')}</CardTitle>
-            <CardDescription>
-              {error.digest ? t('errorId', { id: error.digest }) : null}
-            </CardDescription>
-          </div>
-        </CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
-          <Button onClick={reset}>{tButtons('retry')}</Button>
-          <Link href="/admin/plans" className={buttonVariants({ variant: 'outline' })}>
-            {tPlans('backToList')}
-          </Link>
-        </CardContent>
-      </Card>
+      <RouteErrorPanel digest={error.digest} onRetry={reset} />
     </TableContainer>
   );
 }

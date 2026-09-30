@@ -1,3 +1,4 @@
+import { Card } from '@jirawatpyk/aura-react/server';
 import { SkeletonBlock } from '@/components/shell/page-skeletons';
 
 /**
@@ -37,7 +38,7 @@ export function PlanFormWizardSkeleton() {
                 className={
                   i === 0
                     ? 'h-px flex-1 bg-transparent'
-                    : 'h-px flex-1 bg-border'
+                    : 'h-px flex-1 bg-[var(--aura-border-subtle)]'
                 }
               />
               <SkeletonBlock className="size-7 shrink-0 rounded-full" />
@@ -46,22 +47,16 @@ export function PlanFormWizardSkeleton() {
                 className={
                   i === 3
                     ? 'h-px flex-1 bg-transparent'
-                    : 'h-px flex-1 bg-border'
+                    : 'h-px flex-1 bg-[var(--aura-border-subtle)]'
                 }
               />
             </div>
           </div>
         ))}
       </div>
-      {/* Mobile compact-summary placeholder — matches the real wizard's
-          `<p className="sm:hidden">Step 2/4 — {label}</p>` so the row
-          doesn't pop in on hydrate (CLS-0). */}
-      <SkeletonBlock className="mx-auto h-4 w-32 sm:hidden" />
-      {/* Separator */}
-      <div className="border-t border-border" />
-      {/* Basics section */}
+      {/* Basics — one AURA card, as the wizard's steps (122 US6 T608). */}
+      <Card header={<SkeletonBlock className="h-6 w-24" />}>
       <section className="space-y-4">
-        <SkeletonBlock className="h-6 w-24" />
         {/* 2-column grid: plan_id, plan_year, plan_category, member_type_scope */}
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div className="space-y-1">
@@ -99,6 +94,7 @@ export function PlanFormWizardSkeleton() {
           <SkeletonBlock className="h-3 w-48" />
         </div>
       </section>
+      </Card>
       {/* Footer — "Next" button right-aligned (basics step has no Back) */}
       <div className="flex items-center justify-end gap-2">
         <SkeletonBlock className="h-9 w-20" />

@@ -12,14 +12,7 @@
  *     the category, so it is not reserved.
  */
 import { getTranslations } from 'next-intl/server';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Card } from '@jirawatpyk/aura-react/server';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import {
@@ -27,21 +20,11 @@ import {
   SkeletonBlock,
 } from '@/components/shell/page-skeletons';
 
-function DlPairSkeleton({ wraps = false }: { wraps?: boolean }) {
-  return (
-    <div>
-      <Skeleton className="h-3 w-24 mb-2" />
-      {/* The "fee + VAT = total" value wraps to two lines below md. */}
-      <Skeleton className={wraps ? 'h-12 w-64 md:h-6' : 'h-6 w-32'} />
-    </div>
-  );
-}
-
 function KvRowSkeleton() {
   return (
-    <div className="flex justify-between border-b border-border/50 py-1">
-      <Skeleton className="h-4 w-32" />
-      <Skeleton className="h-4 w-20" />
+    <div className="flex justify-between border-t border-[var(--aura-border-subtle)] py-1">
+      <SkeletonBlock className="h-4 w-32" />
+      <SkeletonBlock className="h-4 w-20" />
     </div>
   );
 }
@@ -49,8 +32,8 @@ function KvRowSkeleton() {
 function SectionSkeleton({ rows, name }: { rows: number; name: string }) {
   return (
     <section data-skeleton-section={name}>
-      <Skeleton className="h-3 w-28 mb-2" />
-      <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+      <SkeletonBlock className="h-3 w-28 mb-2" />
+      <div className="mt-2 flex flex-col">
         {Array.from({ length: rows }).map((_, i) => (
           <KvRowSkeleton key={i} />
         ))}
@@ -70,8 +53,8 @@ export default async function Loading() {
           subtitle={<SkeletonBlock className="h-4 w-72" />}
           badge={
             <div className="flex gap-2">
-              <Skeleton className="h-5 w-20 rounded-full" />
-              <Skeleton className="h-5 w-16 rounded-full" />
+              <SkeletonBlock className="h-5 w-20 rounded-full" />
+              <SkeletonBlock className="h-5 w-16 rounded-full" />
             </div>
           }
           actions={
@@ -82,42 +65,35 @@ export default async function Loading() {
           }
         />
 
-        {/* Fee card: title + description + 2-col grid */}
-        <Card>
-          <CardHeader>
-            <CardTitle>
-              <Skeleton className="h-5 w-28" />
-            </CardTitle>
-            <CardDescription>
-              <Skeleton className="h-3 w-20" />
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <DlPairSkeleton />
-              <DlPairSkeleton wraps />
-              <DlPairSkeleton />
-              <DlPairSkeleton />
+        {/* The fee and benefit-matrix cards, side by side from 1024px
+            (board `Admin-plan-detail`; 122 US6 T608). */}
+        <div className="grid items-start gap-[var(--aura-space-4)] lg:grid-cols-[1fr_1.4fr]">
+          <Card
+            header={
+              <div className="space-y-2">
+                <SkeletonBlock className="h-5 w-28" />
+                <SkeletonBlock className="h-3 w-20" />
+              </div>
+            }
+          >
+            <div className="flex flex-col">
+              <KvRowSkeleton />
+              <KvRowSkeleton />
+              <KvRowSkeleton />
+              <KvRowSkeleton />
             </div>
-          </CardContent>
-        </Card>
-
-        {/* Benefit matrix card: title + 3 sections */}
-        <Card>
-          <CardHeader>
-            <CardTitle>
-              <Skeleton className="h-5 w-32" />
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {/* Brand Visibility — 4 KV rows */}
-            <SectionSkeleton name="brandVisibility" rows={4} />
-            {/* Events — 3 KV rows */}
-            <SectionSkeleton name="events" rows={3} />
-            {/* Additional benefits — 3 KV rows */}
-            <SectionSkeleton name="additionalBenefits" rows={3} />
-          </CardContent>
-        </Card>
+          </Card>
+          <Card header={<SkeletonBlock className="h-5 w-32" />}>
+            <div className="space-y-4">
+              {/* Brand Visibility — 4 rows */}
+              <SectionSkeleton name="brandVisibility" rows={4} />
+              {/* Events — 3 rows */}
+              <SectionSkeleton name="events" rows={3} />
+              {/* Additional benefits — 3 rows */}
+              <SectionSkeleton name="additionalBenefits" rows={3} />
+            </div>
+          </Card>
+        </div>
       </DetailContainer>
     </PageSkeletonShell>
   );
