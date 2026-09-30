@@ -45,7 +45,10 @@ describe('MemberFormFrame (T572)', () => {
     expect(cancel).toHaveAttribute('href', '/admin/members');
     expect(cancel).toHaveClass('aura-btn--secondary');
     expect(cancel).toHaveClass('max-lg:hidden');
-    expect(screen.getByText('form').closest('[data-slot="layout-container"][data-variant="form"]')).not.toBeNull();
+    const column = screen.getByText('form').closest('[data-slot="layout-container"][data-variant="form"]');
+    expect(column).not.toBeNull();
+    // The staff form boards set the 672px column at the page's start edge.
+    expect(column).toHaveClass('mx-0');
   });
 });
 
@@ -55,6 +58,21 @@ describe('MemberForm core (T573)', () => {
     const contact = screen.getByRole('group', { name: T.sections.primaryContact });
     expect(contact).toHaveClass('aura-card');
     expect(within(contact).getByRole('heading', { level: 2, name: T.sections.primaryContact })).toBeInTheDocument();
+  });
+
+  it('marks the required-fields note\'s asterisk in the danger colour, hidden from screen readers', () => {
+    const { container } = renderForm();
+    const note = container.querySelector('#required-fields-note');
+    const star = note?.querySelector('[aria-hidden="true"]');
+    expect(star).toHaveTextContent('*');
+    expect(star).toHaveClass('text-[var(--aura-fg-danger)]');
+    expect(note?.textContent?.replace(/\s+/g, ' ').trim()).toBe(T.requiredNote);
+  });
+
+  it('shows "Add a secondary contact" with its plus icon and no plus in the words (board)', () => {
+    renderForm();
+    const add = screen.getByRole('button', { name: /add a secondary contact/i });
+    expect(add.textContent?.trim()).toBe('Add a secondary contact');
   });
 
   it('puts Cancel then the submit button in one action bar', () => {
