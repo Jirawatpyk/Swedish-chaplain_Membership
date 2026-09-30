@@ -169,6 +169,10 @@ export function PlansTable({
     initialFilter.activeOnly ||
     initialFilter.showDeleted;
 
+  // A year with no plans at all (board `Admin-state-plans-empty`): only the
+  // Year filter, and Show deleted — nothing else can narrow an empty year.
+  const yearEmpty = sorted.length === 0 && !filtered;
+
   function clearFilters() {
     setCategory(null);
     setQ('');
@@ -206,44 +210,48 @@ export function PlansTable({
         aria-label={t('filters.groupLabel')}
         className="grid grid-cols-2 items-end gap-3 sm:flex sm:flex-wrap"
       >
-        <TextField
-          id="plans-search"
-          type="search"
-          label={t('filters.search.label')}
-          placeholder={t('filters.search.placeholder')}
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          onBlur={() => updateFilter({ q: q || null })}
-          // Commit the search on Enter too — there is no <form> around the
-          // filters, so there is no implicit submit and, without this, the
-          // term only applied on blur (BUG-007). Ignore Enter during an IME
-          // composition (it confirms the candidate, not the search).
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-              e.preventDefault();
-              updateFilter({ q: q || null });
-            }
-          }}
-          disabled={busy}
-          className="col-span-2 sm:min-w-60 sm:flex-1"
-        />
-        <Select
-          id="plans-category"
-          label={t('filters.category.label')}
-          value={category ?? 'all'}
-          onChange={(e) => {
-            const v = e.target.value;
-            const next = v === 'all' ? null : (v as 'corporate' | 'partnership');
-            setCategory(next);
-            updateFilter({ category: next });
-          }}
-          options={[
-            { value: 'all', label: t('filters.all') },
-            { value: 'corporate', label: t('filters.category.corporate') },
-            { value: 'partnership', label: t('filters.category.partnership') },
-          ]}
-          className="sm:w-44"
-        />
+        {yearEmpty ? null : (
+          <TextField
+            id="plans-search"
+            type="search"
+            label={t('filters.search.label')}
+            placeholder={t('filters.search.placeholder')}
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onBlur={() => updateFilter({ q: q || null })}
+            // Commit the search on Enter too — there is no <form> around the
+            // filters, so there is no implicit submit and, without this, the
+            // term only applied on blur (BUG-007). Ignore Enter during an IME
+            // composition (it confirms the candidate, not the search).
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                updateFilter({ q: q || null });
+              }
+            }}
+            disabled={busy}
+            className="col-span-2 sm:min-w-60 sm:flex-1"
+          />
+        )}
+        {yearEmpty ? null : (
+          <Select
+            id="plans-category"
+            label={t('filters.category.label')}
+            value={category ?? 'all'}
+            onChange={(e) => {
+              const v = e.target.value;
+              const next = v === 'all' ? null : (v as 'corporate' | 'partnership');
+              setCategory(next);
+              updateFilter({ category: next });
+            }}
+            options={[
+              { value: 'all', label: t('filters.all') },
+              { value: 'corporate', label: t('filters.category.corporate') },
+              { value: 'partnership', label: t('filters.category.partnership') },
+            ]}
+            className="sm:w-44"
+          />
+        )}
         <Select
           id="plans-year"
           label={t('filters.year')}
@@ -252,16 +260,18 @@ export function PlansTable({
           options={yearOptions.map((y) => ({ value: String(y), label: formatCalendarYear(y, locale) }))}
           className="sm:w-36"
         />
-        <Switch
-          id="plans-active-only"
-          label={t('filters.activeOnly')}
-          checked={activeOnly}
-          onChange={(v) => {
-            setActiveOnly(v);
-            updateFilter({ activeOnly: v ? 'true' : null });
-          }}
-          className="col-span-2 sm:col-auto sm:self-center"
-        />
+        {yearEmpty ? null : (
+          <Switch
+            id="plans-active-only"
+            label={t('filters.activeOnly')}
+            checked={activeOnly}
+            onChange={(v) => {
+              setActiveOnly(v);
+              updateFilter({ activeOnly: v ? 'true' : null });
+            }}
+            className="col-span-2 sm:col-auto sm:self-center"
+          />
+        )}
         {canWritePlans ? (
           <Switch
             id="plans-show-deleted"
@@ -276,7 +286,16 @@ export function PlansTable({
         ) : null}
       </div>
 
-      <Table caption={t('tableCaption')} captionHidden stackBelow="sm" stackStyle="cards" align="middle">
+      <Table
+        caption={t('tableCaption')}
+        captionHidden
+        // Stand-in until AURA #115: the static Table does not take the staff
+        // frame's compact density on its own.
+        density="compact"
+        stackBelow="sm"
+        stackStyle="cards"
+        align="middle"
+      >
         <THead>
           <Tr>
             <Th>{t('columns.name')}</Th>
