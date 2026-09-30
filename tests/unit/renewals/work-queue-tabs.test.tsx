@@ -68,4 +68,11 @@ describe('WorkQueueTabs on AURA', () => {
     setup();
     expect(screen.getByRole('button', { name: 'About the renewal pipeline' })).toBeInTheDocument();
   });
+
+  it('opens on Needs action when asked (the preview of `Admin-renewals-needs-action`)', () => {
+    setup({ defaultLens: 'needsAction' });
+    expect(screen.getByRole('tab', { name: /^Needs action/ })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId('needs-action-panel')).toBeVisible();
+    expect(screen.queryByTestId('pipeline-panel')).toBeNull();
+  });
 });
