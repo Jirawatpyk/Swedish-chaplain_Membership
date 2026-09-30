@@ -161,6 +161,13 @@ describe('CloneYearClient on AURA', () => {
     expect(within(bar).getByRole('button', { name: 'Clone 5 plans' })).toHaveClass('aura-btn--primary');
   });
 
+  // Board `Admin-plans-clone-mobile`: the bar sits inside the clone card, so
+  // on a phone it also reaches past the card's padding to pin edge to edge.
+  it('marks its action bar as inside a card, for the phone edge-to-edge rule', () => {
+    renderClient();
+    expect(screen.getByRole('region', { name: 'Actions' })).toHaveClass('plan-form-actions', 'plan-form-actions--in-card');
+  });
+
   // Board `Admin-plans-clone`: each plan's full name, never cut to "Diamond
   // Partners…" (the name wraps; the fee keeps its place).
   it('lists each plan to copy by its full name, wrapping rather than cutting it', () => {
