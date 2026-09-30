@@ -343,8 +343,11 @@ html:has(.chamber-viewport-actionbar) {
     padding: 0;
   }
   /* The plan wizard (board `Admin-plan-new`): Cancel at the start edge, Back
-     and Next at the end — the buttons' row fills the bar so Cancel's
-     `me-auto` takes the space between. */
+     and Next at the end — the empty status cell goes and the buttons' row
+     fills the bar, so Cancel's `me-auto` takes the space between. */
+  .plan-form-actions--split > div > :first-child:empty {
+    display: none;
+  }
   .plan-form-actions--split > div > :last-child {
     flex: 1 1 auto;
   }
