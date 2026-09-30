@@ -94,7 +94,7 @@ describe('ContactFormDialog — edit-mode email editability', () => {
     const email = document.querySelector('#cf-email') as HTMLInputElement;
     expect(email.readOnly).toBe(false);
     expect(email.disabled).toBe(false);
-    expect(document.querySelector('#cf-email-note')).toBeNull();
+    expect(screen.queryByText(enMessages.admin.members.contactForm.emailEditNote)).toBeNull();
   });
 
   it('LINKED PRIMARY contact: email is read-only (focusable, not disabled) with a note', () => {
@@ -103,7 +103,8 @@ describe('ContactFormDialog — edit-mode email editability', () => {
     // read-only (not disabled) so screen readers still reach it + announce the note.
     expect(email.readOnly).toBe(true);
     expect(email.disabled).toBe(false);
-    expect(document.querySelector('#cf-email-note')).not.toBeNull();
+    // The note is the field's description (122 US5b-1: AURA's hint, linked by aria-describedby).
+    expect(email).toHaveAccessibleDescription(enMessages.admin.members.contactForm.emailEditNote);
   });
 
   it('LINKED SECONDARY contact: email field is editable (no dead-end), no note', () => {
@@ -115,7 +116,7 @@ describe('ContactFormDialog — edit-mode email editability', () => {
     const email = document.querySelector('#cf-email') as HTMLInputElement;
     expect(email.readOnly).toBe(false);
     expect(email.disabled).toBe(false);
-    expect(document.querySelector('#cf-email-note')).toBeNull();
+    expect(screen.queryByText(enMessages.admin.members.contactForm.emailEditNote)).toBeNull();
   });
 
   it('LINKED SECONDARY contact: a changed email PATCHes `email` AND `locale`', async () => {
@@ -521,5 +522,53 @@ describe('ContactFormDialog — 108 T041 round 4', () => {
     expect(onSaved).not.toHaveBeenCalled();
 
     vi.unstubAllGlobals();
+  });
+});
+
+// 122 US5b-1 PDPA review L-1 / L-2: on AURA the Save button sits in the
+// dialog footer, outside the <form>, tied to it by `form=`; and ADD is refused
+// until the Art. 14 notice is attested.
+describe('ContactFormDialog — footer Save and the Art. 14 gate (122 US5b-1)', () => {
+  const CF = enMessages.admin.members.contactForm;
+
+  function fillAdd() {
+    fireEvent.change(document.querySelector('#cf-first-name')!, { target: { value: 'New' } });
+    fireEvent.change(document.querySelector('#cf-last-name')!, { target: { value: 'Person' } });
+    fireEvent.change(document.querySelector('#cf-email')!, { target: { value: 'new@person.example' } });
+  }
+
+  it('the footer Save button submits the form', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 201, json: async () => ({ contact_id: 'c-new' }) });
+    vi.stubGlobal('fetch', fetchMock);
+    openAddDialog();
+    fillAdd();
+    fireEvent.click(document.querySelector('#cf-art14-attested')!);
+    const save = screen.getByRole('button', { name: CF.submit });
+    expect(save.closest('form')).toBeNull();
+    fireEvent.click(save);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+  });
+
+  it('ADD without the Art. 14 attestation is refused and never sent', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    openAddDialog();
+    fillAdd();
+    fireEvent.click(screen.getByRole('button', { name: CF.submit }));
+    expect(await screen.findByText(CF.art14AttestationRequired)).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  // UX review M4: a natively disabled Save drops focus to <body> mid-save,
+  // outside the dialog. While saving it stays focusable and says it is busy.
+  it('Save keeps focus while saving: aria-disabled, never native disabled', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})));
+    openAddDialog();
+    fillAdd();
+    fireEvent.click(document.querySelector('#cf-art14-attested')!);
+    const save = screen.getByRole('button', { name: CF.submit });
+    fireEvent.click(save);
+    await waitFor(() => expect(screen.getByRole('button', { name: CF.submitting })).toHaveAttribute('aria-disabled', 'true'));
+    expect(screen.getByRole('button', { name: CF.submitting })).not.toBeDisabled();
   });
 });

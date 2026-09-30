@@ -221,9 +221,44 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the member detail and its forms keep the legacy kit until US5b', async () => {
-      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/members/[memberId]/page.tsx')).toEqual([]);
+  });
+
+  describe('the US5b-1 member detail, timeline, benefits and their dialogs are on AURA (the real MIGRATED_PATHS)', () => {
+    const legacy = "import { Button } from '@/components/ui/button';\nexport const B = Button;\n";
+
+    it.each([
+      'src/app/(staff)/admin/members/[memberId]/page.tsx',
+      'src/app/(staff)/admin/members/[memberId]/loading.tsx',
+      'src/app/(staff)/admin/members/[memberId]/error.tsx',
+      'src/app/(staff)/admin/members/[memberId]/_components/member-detail-view.tsx',
+      'src/app/(staff)/admin/members/[memberId]/_components/member-invoices-section.tsx',
+      'src/app/(staff)/admin/members/[memberId]/_lib/member-outstanding.ts',
+      'src/app/(staff)/admin/members/[memberId]/timeline/page.tsx',
+      'src/app/(staff)/admin/members/[memberId]/benefits/page.tsx',
+      'src/components/members/contact-form-dialog.tsx',
+      'src/components/members/contact-actions.tsx',
+      'src/components/members/archive-member-button.tsx',
+      'src/components/members/erase-member-button.tsx',
+      'src/components/members/archived-banner.tsx',
+      'src/components/members/restore-primary-dialog.tsx',
+      'src/components/members/erased-banner.tsx',
+      'src/components/members/no-primary-contact-banner.tsx',
+      'src/components/members/renewal-health-card.tsx',
+      'src/components/members/renew-lapsed-member-dialog.tsx',
+      'src/components/members/marketing-switch.tsx',
+      'src/components/members/marketing-state-badge.tsx',
+      'src/components/members/invite-portal-button.tsx',
+      'src/components/members/resend-bounced-invite-button.tsx',
+      'src/components/members/resend-verification-button.tsx',
+      'src/components/members/member-detail-skeleton.tsx',
+    ])('%s cannot import the legacy kit', async (path) => {
+      expect(await ratchetHits(legacy, path)).toHaveLength(1);
+    });
+
+    it('control: the member forms and their dialogs keep the legacy kit until US5b-2', async () => {
+      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/members/[memberId]/edit/page.tsx')).toEqual([]);
       expect(await ratchetHits(legacy, 'src/components/members/member-form/member-form.tsx')).toEqual([]);
+      expect(await ratchetHits(legacy, 'src/components/members/plan-change-confirm-dialog.tsx')).toEqual([]);
     });
   });
 });

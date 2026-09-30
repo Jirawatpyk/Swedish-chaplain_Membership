@@ -38,7 +38,12 @@ test.describe('member sign-in (T140)', () => {
     ]);
 
     await page.waitForURL('**/portal', { timeout: 30_000 });
-    await expect(page.getByRole('heading', { name: /welcome|portal/i })).toBeVisible();
+    // Spec 122 US3 put the member's own greeting on the portal home
+    // ("Hi {name}", portal.dashboard.welcome); an unlinked account still
+    // reads "Welcome, …".
+    await expect(
+      page.getByRole('heading', { level: 1, name: /^(hi|welcome)/i }),
+    ).toBeVisible();
   });
 
   test('member attempting /admin is bounced back to /portal', async ({ page }) => {

@@ -60,8 +60,10 @@ test.describe('F4 SC-009 — top bar consistency @layout', () => {
 
     const wide = (memberPage.viewportSize()?.width ?? 1280) >= 1024;
     expect(adminHeader.height).toBe(56);
-    // +1px: the portal header's bottom hairline sits outside its content row.
-    expect(portalHeader.height).toBe(wide ? 73 : 65);
+    // The board's 72 / 64px bar INCLUDES the bottom hairline: the content row
+    // is 71 / 63px and the border makes up the last pixel (member-header.tsx,
+    // spec 122 US3 #435). The old 73 / 65 counted that pixel twice.
+    expect(portalHeader.height).toBe(wide ? 72 : 64);
 
     await adminCtx.close();
     await memberCtx.close();

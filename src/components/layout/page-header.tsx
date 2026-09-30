@@ -11,6 +11,8 @@ type PageHeaderProps = {
   badge?: ReactNode;
   /** Chips on their own row under the subtitle (the portal `Main` board's member number, plan and status). */
   meta?: ReactNode;
+  /** Chips on their own row above the title (the staff `Admin-member-detail` board's status, member number and badges). */
+  eyebrow?: ReactNode;
   className?: string;
   /**
    * Staff-Review-2026-05-09 Round-2 R2-W2 fix: auto-focus the H1 on
@@ -42,6 +44,7 @@ export function PageHeader({
   actions,
   badge,
   meta,
+  eyebrow,
   className,
   autoFocusTitle = false,
   size = 'default',
@@ -78,6 +81,11 @@ export function PageHeader({
       )}
     >
       <div className="min-w-0 flex-1">
+        {eyebrow ? (
+          <div data-slot="page-header-eyebrow" className="flex flex-wrap items-center gap-2 pb-2">
+            {eyebrow}
+          </div>
+        ) : null}
         {/*
          * 056 polish FIX 1 (WCAG 1.4.10 Reflow) — `flex-wrap` lets the
          * badge chips drop to a new line on narrow viewports instead of

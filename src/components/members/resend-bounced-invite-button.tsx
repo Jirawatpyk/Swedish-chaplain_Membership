@@ -19,7 +19,7 @@
 import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
 import { MailIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button } from '@jirawatpyk/aura-react';
 import { useContactResendAction } from './use-contact-resend-action';
 
 type Props = {
@@ -69,15 +69,8 @@ export function ResendBouncedInviteButton({ memberId, contactId }: Props) {
   });
 
   return (
-    <Button
-      type="button"
-      variant="outline"
-      size="sm"
-      onClick={handleClick}
-      disabled={submitting}
-      className="gap-2"
-    >
-      <MailIcon className="h-4 w-4" aria-hidden="true" />
+    <Button variant="secondary" size="sm" onClick={handleClick} disabled={submitting}>
+      <MailIcon className="size-4" aria-hidden="true" />
       {submitting ? t('resendSubmitting') : t('resendLabel')}
     </Button>
   );

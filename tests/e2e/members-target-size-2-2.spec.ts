@@ -68,7 +68,8 @@ test.describe('members WCAG 2.2 SC 2.5.8 target sizes @f3 @a11y', () => {
     return { width: box.width, height: box.height };
   }
 
-  test('row checkboxes meet 24×24 minimum target size', async ({ page }) => {
+  test('row checkboxes meet 24×24 minimum target size', async ({ page, isMobile }) => {
+    test.skip(isMobile === true, 'bulk selection is desktop-only by design: phone cards carry no checkbox (spec 122 Clarifications, 2026-09-28)');
     await signIn(page);
     await page.goto('/admin/members');
     await page.waitForSelector(MEMBERS_GRID, { timeout: 10_000 });

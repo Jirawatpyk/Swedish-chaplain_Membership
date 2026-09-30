@@ -1256,6 +1256,7 @@
           "submittedBy": "ส่งโดย {name} ({role})",
           "submittedOn": "ส่งเมื่อ {submittedAt}",
           "review": "พิจารณา",
+          "pendingAlert": "คำขอแก้ไขข้อมูลรอตรวจสอบ",
           "open": "เปิด"
         },
       "title": "สมาชิก",
@@ -1545,7 +1546,6 @@
           "primary": "ผู้ติดต่อหลัก",
           "secondary": "ผู้ติดต่ออื่น",
           "plan": "แพ็กเกจ",
-          "audit": "กิจกรรมล่าสุด",
           "contactStatusBadges": "สถานะผู้ติดต่อ",
           "benefits": "สิทธิประโยชน์"
         },
@@ -1618,6 +1618,7 @@
           "linked": "เชื่อมบัญชีพอร์ทัล"
         },
         "editCta": "แก้ไข",
+        "headerMoreActions": "การดำเนินการเพิ่มเติม",
         "contactActions": {
           "add": "เพิ่มผู้ติดต่อ",
           "edit": "แก้ไข",
@@ -1641,12 +1642,39 @@
             "notFound": "ไม่พบผู้ติดต่อ",
             "generic": "เกิดข้อผิดพลาด กรุณาลองอีกครั้ง",
             "serverBusy": "เซิร์ฟเวอร์ไม่ว่าง กรุณาลองอีกครั้งในสักครู่"
-          }
+          },
+          "moreActions": "การดำเนินการเพิ่มเติมสำหรับ {name}"
         },
         "noPrimaryBanner": {
           "title": "ไม่มีผู้ติดต่อหลัก — ระบบไม่ได้ส่งอีเมลเรื่องการชำระเงิน",
           "body": "ใบแจ้งหนี้ ใบเสร็จ ใบแจ้งยกเลิก และใบลดหนี้ของสมาชิกรายนี้จะไม่ถูกส่งถึงใครเลยจนกว่าจะมีผู้ติดต่อหลัก เพิ่มผู้ติดต่อหรือตั้งผู้ติดต่อที่มีอยู่ให้เป็นผู้ติดต่อหลักเพื่อให้ระบบส่งต่อได้",
           "cta": "เปิดหน้าสมาชิกเพื่อแก้ไข"
+        },
+        "summary": {
+          "label": "สรุปข้อมูลสมาชิก",
+          "outstanding": "ยอดค้างชำระ",
+          "outstandingNote": "ค้างชำระ {count} ใบ · ครบกำหนด {date}",
+          "outstandingOverdueNote": "ค้างชำระ {count} ใบ · เกินกำหนดตั้งแต่ {date}",
+          "outstandingCount": "ค้างชำระ {count} ใบ",
+          "outstandingNone": "ไม่มียอดค้างชำระ",
+          "outstandingPartial": "นับเฉพาะใบแจ้งหนี้ค้างชำระ 100 ใบแรก",
+          "unavailable": "ไม่สามารถแสดงได้",
+          "expires": "วันหมดอายุสมาชิก",
+          "expiresShort": "วันหมดอายุ",
+          "daysLeft": "เหลือ {days} วัน",
+          "primaryContact": "ผู้ติดต่อหลัก",
+          "engagement": "การมีส่วนร่วม",
+          "lastActivity": "กิจกรรมล่าสุด {when}",
+          "lastActivityShort": "ล่าสุด {when}"
+        },
+        "sectionLinks": {
+          "label": "ในหน้านี้",
+          "overview": "ภาพรวม",
+          "contacts": "ผู้ติดต่อ",
+          "invoices": "ใบแจ้งหนี้",
+          "changeRequests": "คำขอแก้ไขข้อมูล",
+          "timeline": "ไทม์ไลน์",
+          "dataExport": "ส่งออกข้อมูล"
         }
       },
       "timeline": {
@@ -1683,8 +1711,6 @@
         "emptyCta": "สร้างใบแจ้งหนี้ใบแรก",
         "newInvoice": "ใบแจ้งหนี้ใหม่",
         "filters": {
-          "statusAria": "กรองใบแจ้งหนี้ตามสถานะ",
-          "yearAria": "กรองใบแจ้งหนี้ตามปีภาษี",
           "search": "ค้นหาเลขที่เอกสาร…",
           "fiscalYear": "ปี",
           "status": {
@@ -1694,7 +1720,9 @@
             "all": "ทุกปี"
           },
           "apply": "ใช้ตัวกรอง",
-          "clear": "ล้างตัวกรอง"
+          "clear": "ล้างตัวกรอง",
+          "searchLabel": "ค้นหา",
+          "statusLabel": "สถานะ"
         },
         "draftPlaceholder": "(ร่าง)",
         "cols": {
@@ -1721,8 +1749,8 @@
           "recordPayment": "บันทึกการชำระ…",
           "issueCreditNote": "ออกใบลดหนี้",
           "void": "ยกเลิก",
-          "voidAriaLabel": "ยกเลิกใบแจ้งหนี้ {number}",
-          "disabledForManager": "ผู้จัดการดูได้อย่างเดียว กรุณาติดต่อผู้ดูแลระบบ"
+          "disabledForManager": "ผู้จัดการดูได้อย่างเดียว กรุณาติดต่อผู้ดูแลระบบ",
+          "menuFor": "การดำเนินการสำหรับ {number}"
         }
       },
       "create": {
@@ -8215,6 +8243,8 @@
       "neverUsed": "ยังไม่ได้ใช้ในปีนี้",
       "lastUsed": "ใช้ล่าสุด {date}",
       "activeHeading": "สิทธิประโยชน์ที่รวมอยู่",
+      "staffPreviewTitle": "สิทธิประโยชน์",
+      "staffPreviewLink": "รายละเอียด",
       "liveNote": "อัปเดตเมื่อโหลด · ปีปัจจุบัน",
       "emptyTitle": "ไม่มีสิทธิประโยชน์ที่ติดตาม",
       "fullBenefits": "ดูสิทธิประโยชน์ทั้งหมด",

@@ -1256,6 +1256,7 @@
           "submittedBy": "Skickad av {name} ({role})",
           "submittedOn": "Skickad {submittedAt}",
           "review": "Granska",
+          "pendingAlert": "Ändringsbegäran väntar på granskning",
           "open": "Öppna"
         },
       "title": "Medlemmar",
@@ -1545,7 +1546,6 @@
           "primary": "Primär kontakt",
           "secondary": "Övriga kontakter",
           "plan": "Paket",
-          "audit": "Senaste aktivitet",
           "contactStatusBadges": "Kontaktstatus",
           "benefits": "Förmåner"
         },
@@ -1618,6 +1618,7 @@
           "linked": "Portalansluten"
         },
         "editCta": "Redigera",
+        "headerMoreActions": "Fler åtgärder",
         "contactActions": {
           "add": "Lägg till kontakt",
           "edit": "Redigera",
@@ -1641,12 +1642,39 @@
             "notFound": "Kontakt hittades inte.",
             "generic": "Något gick fel. Försök igen.",
             "serverBusy": "Servern är upptagen. Försök igen om en stund."
-          }
+          },
+          "moreActions": "Fler åtgärder för {name}"
         },
         "noPrimaryBanner": {
           "title": "Ingen primär kontakt — betalningsmejl skickas inte",
           "body": "Fakturor, kvitton, annulleringsbesked och kreditnotor för den här medlemmen köas till ingen förrän en kontakt är markerad som primär. Lägg till eller befordra en kontakt för att återuppta dem.",
           "cta": "Öppna medlemmen för att åtgärda"
+        },
+        "summary": {
+          "label": "Medlemsöversikt",
+          "outstanding": "Utestående",
+          "outstandingNote": "{count, plural, one {# obetald} other {# obetalda}} · förfaller {date}",
+          "outstandingOverdueNote": "{count, plural, one {# obetald} other {# obetalda}} · förföll {date}",
+          "outstandingCount": "{count, plural, one {# obetald} other {# obetalda}}",
+          "outstandingNone": "Inget obetalt",
+          "outstandingPartial": "Endast de första 100 obetalda fakturorna",
+          "unavailable": "Inte tillgängligt",
+          "expires": "Medlemskapet löper ut",
+          "expiresShort": "Löper ut",
+          "daysLeft": "{days, plural, one {# dag kvar} other {# dagar kvar}}",
+          "primaryContact": "Primär kontakt",
+          "engagement": "Engagemang",
+          "lastActivity": "Senaste aktivitet {when}",
+          "lastActivityShort": "Aktiv {when}"
+        },
+        "sectionLinks": {
+          "label": "På den här sidan",
+          "overview": "Översikt",
+          "contacts": "Kontakter",
+          "invoices": "Fakturor",
+          "changeRequests": "Ändringsbegäranden",
+          "timeline": "Tidslinje",
+          "dataExport": "Dataexport"
         }
       },
       "timeline": {
@@ -1683,8 +1711,6 @@
         "emptyCta": "Skapa första fakturan",
         "newInvoice": "Ny faktura",
         "filters": {
-          "statusAria": "Filtrera fakturor efter status",
-          "yearAria": "Filtrera fakturor efter räkenskapsår",
           "search": "Sök dokumentnummer…",
           "fiscalYear": "År",
           "status": {
@@ -1694,7 +1720,9 @@
             "all": "Alla år"
           },
           "apply": "Tillämpa",
-          "clear": "Rensa filter"
+          "clear": "Rensa filter",
+          "searchLabel": "Sök",
+          "statusLabel": "Status"
         },
         "draftPlaceholder": "(utkast)",
         "cols": {
@@ -1721,8 +1749,8 @@
           "recordPayment": "Bokför betalning…",
           "issueCreditNote": "Utfärda kreditnota",
           "void": "Annullera",
-          "voidAriaLabel": "Annullera faktura {number}",
-          "disabledForManager": "Chefer har läsbehörighet. Kontakta en administratör."
+          "disabledForManager": "Chefer har läsbehörighet. Kontakta en administratör.",
+          "menuFor": "Åtgärder för {number}"
         }
       },
       "create": {
@@ -8215,6 +8243,8 @@
       "neverUsed": "Inte använd i år ännu",
       "lastUsed": "Senast använd {date}",
       "activeHeading": "Inkluderade förmåner",
+      "staffPreviewTitle": "Förmåner",
+      "staffPreviewLink": "Detaljer",
       "liveNote": "Uppdateras vid laddning · innevarande år",
       "emptyTitle": "Inga spårade förmåner",
       "fullBenefits": "Alla förmåner",

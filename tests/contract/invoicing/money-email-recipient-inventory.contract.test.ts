@@ -161,16 +161,26 @@ describe('money-email recipient inventory (108 SC-001)', () => {
     // banner it must decide with the same function the money path decides
     // with. Adding a fourth banner site without wiring the resolver fails
     // here.
-    const bannerSites = [
-      'src/app/(staff)/admin/invoices/[invoiceId]/page.tsx',
-      'src/app/(staff)/admin/credit-notes/[creditNoteId]/page.tsx',
-      'src/app/(staff)/admin/members/[memberId]/page.tsx',
+    // `view` — where the page's markup lives when it is split out (spec 122
+    // US5b-1: the member page decides, `renderMemberDetailView` renders).
+    const bannerSites: readonly { readonly rel: string; readonly view?: string }[] = [
+      { rel: 'src/app/(staff)/admin/invoices/[invoiceId]/page.tsx' },
+      { rel: 'src/app/(staff)/admin/credit-notes/[creditNoteId]/page.tsx' },
+      {
+        rel: 'src/app/(staff)/admin/members/[memberId]/page.tsx',
+        view: 'src/app/(staff)/admin/members/[memberId]/_components/member-detail-view.tsx',
+      },
     ];
-    for (const rel of bannerSites) {
+    for (const { rel, view } of bannerSites) {
       const src = readFileSync(resolvePath(REPO_ROOT, rel), 'utf8');
-      // Positive control: if the file stopped rendering the banner, the
+      const markup = view ? readFileSync(resolvePath(REPO_ROOT, view), 'utf8') : src;
+      // Positive control: if the site stopped rendering the banner, the
       // assertion below would pass vacuously.
-      expect(src, `${rel} no longer renders the banner`).toContain('NoPrimaryContactBanner');
+      expect(markup, `${view ?? rel} no longer renders the banner`).toContain('NoPrimaryContactBanner');
+      if (view) {
+        // The view renders; it must not decide on its own.
+        expect(markup, `${view} decides the banner itself`).not.toContain('getMemberMoneyRecipientStatus');
+      }
       // The USE CASE, not the resolver and never the adapter. Presentation
       // calls use cases only (Principle III, NON-NEGOTIABLE) — the first fix
       // for the predicate-drift bug wired `recipientLocaleAdapter` into three

@@ -28,9 +28,9 @@
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import { headers } from 'next/headers';
-import { ClockIcon } from 'lucide-react';
+import { ArrowRightIcon } from 'lucide-react';
 import { Card, buttonClass } from '@jirawatpyk/aura-react/server';
-import { SkeletonBlock as Skeleton } from '@/components/shell/page-skeletons';
+import { SectionCardSkeleton } from './section-card-skeleton';
 import { logger } from '@/lib/logger';
 import { canPerform } from '@/lib/rbac';
 import { errKind, rootCause } from '@/lib/log-id';
@@ -57,8 +57,6 @@ export async function TimelinePreviewSection({
   actorUserId,
   actorRole,
 }: Props) {
-  const t = await getTranslations('admin.members.detail');
-  const tTimeline = await getTranslations('admin.members.timeline');
 
   const h = await headers();
   const tenant = resolveTenantFromHeaders(h);
@@ -113,17 +111,36 @@ export async function TimelinePreviewSection({
     );
   }
 
+  return <TimelinePreviewCard memberId={memberId} events={events} loadFailed={loadFailed} />;
+}
+
+/**
+ * The preview card once its events are read — split out so the no-DB preview
+ * route renders the same markup (spec 122 US5b-1).
+ */
+export async function TimelinePreviewCard({
+  memberId,
+  events,
+  loadFailed,
+}: {
+  readonly memberId: string;
+  readonly events: readonly TimelineItemProps[];
+  readonly loadFailed: boolean;
+}) {
+  const t = await getTranslations('admin.members.detail');
+  const tTimeline = await getTranslations('admin.members.timeline');
   // Spec 122 US3: an AURA card — its h2 title (056 fix #1: reachable via SR
   // heading navigation under the page h1) and the "view all" link as its action.
   return (
     <Card
-      title={t('sections.audit')}
+      // The board's "Timeline", the name its "On this page" link uses.
+      title={t('sectionLinks.timeline')}
       titleId="member-timeline-preview-heading"
       headingLevel={2}
       actions={
-        <Link href={`/admin/members/${memberId}/timeline`} className={buttonClass({ variant: 'secondary' })}>
-          <ClockIcon className="aura-icon size-4" aria-hidden="true" />
+        <Link href={`/admin/members/${memberId}/timeline`} className={buttonClass({ variant: 'ghost', size: 'sm' })}>
           {t('timelinePreview.viewAll')}
+          <ArrowRightIcon className="size-4" aria-hidden="true" />
         </Link>
       }
     >
@@ -149,37 +166,10 @@ export async function TimelinePreviewSection({
 }
 
 /**
- * Skeleton matching the 3-row timeline shape — used as the Suspense
- * fallback at the call site for CLS-stable layout.
- *
- * AURA card markup + the shell's SkeletonBlock (spec 122 US3; reduced-motion
- * handled by the shared skeleton class).
+ * Skeleton matching the 3-row timeline card — used as the Suspense fallback
+ * at the call site for CLS-stable layout (the shared AURA section skeleton,
+ * spec 122 US5b-1).
  */
 export function TimelinePreviewSkeleton() {
-  return (
-    <div className="aura-card" aria-busy="true" aria-hidden="true">
-      <div className="aura-card__head">
-        <Skeleton className="h-5 w-32" />
-        <Skeleton className="h-11 w-28" />
-      </div>
-      <div className="aura-card__body">
-        <ul className="flex flex-col gap-3">
-          {Array.from({ length: PREVIEW_LIMIT }).map((_, i) => (
-            <li
-              key={i}
-              className="relative border-l-2 border-[var(--aura-border-default)] pl-6 py-3"
-            >
-              {/* Matches the real TimelineEventItem marker (24px circle at
-                  -left-[13px]) so the skeleton→content swap is CLS-free. */}
-              <span className="absolute -left-[13px] top-4 size-6 rounded-full border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)]" />
-              <div className="flex flex-col gap-1.5">
-                <Skeleton className="h-4 w-2/3" />
-                <Skeleton className="h-3 w-1/3" />
-              </div>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </div>
-  );
+  return <SectionCardSkeleton rows={PREVIEW_LIMIT} action />;
 }

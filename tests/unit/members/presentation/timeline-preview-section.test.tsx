@@ -83,7 +83,13 @@ async function renderSection(): Promise<string> {
     actorUserId: 'u1',
     actorRole: 'admin',
   });
-  return renderToStaticMarkup(tree as ReactElement);
+  // The section hands its data to the async `TimelinePreviewCard` (spec 122
+  // US5b-1, shared with the preview route); resolve that one level too.
+  const el = tree as ReactElement<Record<string, unknown>>;
+  const card = typeof el.type === 'function'
+    ? await (el.type as (p: unknown) => Promise<ReactElement>)(el.props)
+    : el;
+  return renderToStaticMarkup(card);
 }
 
 describe('<TimelinePreviewSection> — failure path (G19, mirrors portal B2)', () => {
@@ -139,14 +145,20 @@ describe('<TimelinePreviewSection> on AURA (spec 122 US3)', () => {
     timelineListMock.mockReset();
   });
 
-  it('is an AURA card with its h2 title and an AURA secondary "view all" link', async () => {
+  // 122 US5b-1 (board `Admin-member-detail`, UX review M8): the card is
+  // "Timeline" — the name its "On this page" link uses — and "View all
+  // activity →" is a quiet text link, not a second button.
+  it('is an AURA card titled "Timeline" with a quiet "View all activity" link', async () => {
     timelineListMock.mockResolvedValue({ ok: true, value: { events: [], nextCursor: null } });
     const el = document.createElement('div');
     el.innerHTML = await renderSection();
     const card = el.querySelector('section.aura-card')!;
     expect(card).toHaveAttribute('aria-labelledby', 'member-timeline-preview-heading');
-    expect(card.querySelector('h2.aura-card__title')?.id).toBe('member-timeline-preview-heading');
+    const h2 = card.querySelector('h2.aura-card__title')!;
+    expect(h2.id).toBe('member-timeline-preview-heading');
+    expect(h2).toHaveTextContent(en.admin.members.detail.sectionLinks.timeline);
     const link = card.querySelector('a[href="/admin/members/m1/timeline"]')!;
-    expect(link).toHaveClass('aura-btn', 'aura-btn--secondary');
+    expect(link).toHaveTextContent(en.admin.members.detail.timelinePreview.viewAll);
+    expect(link).toHaveClass('aura-btn', 'aura-btn--ghost');
   });
 });

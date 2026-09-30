@@ -1,24 +1,10 @@
 /**
- * F9 US6 (staff-review I1/B1) — skeleton for the admin on-behalf GDPR card,
- * shown while `MemberDataExportSection`'s `listMemberDataExports` resolves so
- * the card loads independently and never blocks the member-detail render
- * (ux-standards § 2.4 — each card replaces its own skeleton).
+ * Suspense fallback for the member-detail GDPR data-export card (F9 US6):
+ * the shared AURA section skeleton (spec 122 US5b-1), so the layout does not
+ * jump when the export list streams in.
  */
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
+import { SectionCardSkeleton } from './section-card-skeleton';
 
 export function MemberDataExportSkeleton(): React.JSX.Element {
-  return (
-    <Card aria-hidden>
-      <CardHeader className="space-y-2">
-        <Skeleton className="h-5 w-40" />
-        <Skeleton className="h-4 w-full max-w-md" />
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <Skeleton className="h-9 w-48" />
-        <Skeleton className="h-5 w-28" />
-        <Skeleton className="h-9 w-full" />
-      </CardContent>
-    </Card>
-  );
+  return <SectionCardSkeleton rows={2} action />;
 }

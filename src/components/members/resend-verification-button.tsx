@@ -16,7 +16,7 @@
 import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
 import { MailCheckIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button } from '@jirawatpyk/aura-react';
 import { useContactResendAction } from './use-contact-resend-action';
 
 type Props = { readonly memberId: string; readonly contactId: string };
@@ -48,8 +48,8 @@ export function ResendVerificationButton({ memberId, contactId }: Props) {
   });
 
   return (
-    <Button type="button" variant="outline" size="sm" onClick={handleClick} disabled={submitting} className="gap-2">
-      <MailCheckIcon className="h-4 w-4" aria-hidden="true" />
+    <Button variant="secondary" size="sm" onClick={handleClick} disabled={submitting}>
+      <MailCheckIcon className="size-4" aria-hidden="true" />
       {submitting ? t('resendSubmitting') : t('resendLabel')}
     </Button>
   );

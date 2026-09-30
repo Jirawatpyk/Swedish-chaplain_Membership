@@ -32,12 +32,7 @@ import {
 import { logger } from '@/lib/logger';
 import { loadMembershipAccess } from '@/lib/load-membership-access';
 import type { TenantContext } from '@/modules/tenants';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-} from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
+import { SectionCardSkeleton } from './section-card-skeleton';
 import { BenefitUsageCard } from '@/components/benefits/benefit-usage-card';
 
 export async function MemberBenefitsPreviewSection({
@@ -76,6 +71,7 @@ export async function MemberBenefitsPreviewSection({
   return (
     <section aria-labelledby="member-benefits-preview-heading" className="h-full">
       <BenefitUsageCard
+        variant="staff"
         headingId="member-benefits-preview-heading"
         locale={locale}
         membershipYear={usage.membershipYear}
@@ -96,23 +92,8 @@ export async function MemberBenefitsPreviewSection({
 
 /**
  * Suspense fallback matching the compact card (title + link + 2 quota bars)
- * for CLS-stable layout. Canonical <Skeleton> (shimmer + reduced-motion).
+ * for CLS-stable layout — the shared AURA section skeleton (spec 122 US5b-1).
  */
 export function MemberBenefitsPreviewSkeleton(): React.JSX.Element {
-  return (
-    <Card aria-busy="true" aria-hidden="true" className="h-full">
-      <CardHeader className="flex flex-row items-start justify-between gap-3">
-        <Skeleton className="h-5 w-40" />
-        <Skeleton className="h-5 w-24" />
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        {Array.from({ length: 2 }).map((_, i) => (
-          <div key={i} className="flex flex-col gap-1.5">
-            <Skeleton className="h-4 w-full" />
-            <Skeleton className="h-3 w-1/3" />
-          </div>
-        ))}
-      </CardContent>
-    </Card>
-  );
+  return <SectionCardSkeleton rows={2} action className="h-full" />;
 }

@@ -87,10 +87,23 @@ Phases 2–12 each depend on 1 and can land in any order.
 
 ## AURA gaps (the handoff doc)
 
-The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, items 52–56 (Addendum 4) in 5.6.0, items 57–62 (Addendum 5, found in US1) in 5.7.0, item 63 in 5.7.1, item 64 (Addendum 6) in 5.7.2, item 65 (Addendum 7, found in US2) in 5.7.3, items 66–69 (Addendum 8, found in US3) in 5.8.0, items 70–71 (Addendum 9, found in US4) in 5.9.0, items 72–74 (Addendum 10, found adopting 5.9.0 in US4) in 5.10.0, items 75–78 (Addendum 11, found in US5a) in 5.11.0, item 79 (Addendum 12) in 5.12.0 and items 80–84 (Addendum 13) in 5.13.0, and items 85–100 (Addenda 14–15) in 5.14.0–5.16.0, item 109 (Addendum 17) in 5.16.1 and items 110–111 (Addendum 18) in 5.17.0 — **5.17.0** is the current pin. Items 85–100 (Addenda 14–15, found adopting 5.13.0 and applying the parity rule to US1–US5a) shipped in 5.14.0 (86, 88, 91, 97), 5.15.0 (85, 87, 89, 90, 92–94, 99, 100) and 5.16.0 (95, 96, 98), and are adopted below (T512). The two gaps found adopting them (Addendum 18: #110 `Stat`, #111 `Progress`) shipped in 5.17.0, and 5.16.1 fixed #109 (a custom `Select` painted with the disabled ground). No item is open:
+The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, items 52–56 (Addendum 4) in 5.6.0, items 57–62 (Addendum 5, found in US1) in 5.7.0, item 63 in 5.7.1, item 64 (Addendum 6) in 5.7.2, item 65 (Addendum 7, found in US2) in 5.7.3, items 66–69 (Addendum 8, found in US3) in 5.8.0, items 70–71 (Addendum 9, found in US4) in 5.9.0, items 72–74 (Addendum 10, found adopting 5.9.0 in US4) in 5.10.0, items 75–78 (Addendum 11, found in US5a) in 5.11.0, item 79 (Addendum 12) in 5.12.0 and items 80–84 (Addendum 13) in 5.13.0, items 85–100 (Addenda 14–15) in 5.14.0–5.16.0, items 101–108 (Addendum 16, found in US5b-1) in 5.14.0 and 5.16.0, item 109 (Addendum 17) in 5.16.1 and items 110–111 (Addendum 18) in 5.17.0 — **5.17.0** is the current pin. Items 85–100 (Addenda 14–15, found adopting 5.13.0 and applying the parity rule to US1–US5a) shipped in 5.14.0 (86, 88, 91, 97), 5.15.0 (85, 87, 89, 90, 92–94, 99, 100) and 5.16.0 (95, 96, 98), and are adopted below (T512). The two gaps found adopting them (Addendum 18: #110 `Stat`, #111 `Progress`) shipped in 5.17.0, and 5.16.1 fixed #109 (a custom `Select` painted with the disabled ground). No item is open:
 
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
+
+Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
+
+| # | Shipped in | Used by |
+|---|---|---|
+| 101 | 5.16.0: `Dialog` `trigger` / `onOpen`, `finalFocus`, `onCloseComplete`, `data-*` on the panel | `RestorePrimaryDialog` (focus to the caller's target and the pick reset on close; the ref + microtask is gone); `ContactFormDialog` opens from its `trigger`, its open state still controlled so each open re-seeds the form (the `cloneElement` opener is gone) |
+| 102 | 5.14.0: `Button` keeps a passed `aria-disabled` | the erase gate in `EraseMemberButton` and the expired Restore in `ArchivedBanner` (the plain `buttonClass` buttons are gone) |
+| 103 | 5.14.0: `Avatar` from `/server` | the contact row in `contact-block.tsx` (`contact-avatar.tsx` is gone) |
+| 104 | 5.14.0: `--aura-shell-bar-height` | the sticky "On this page" strip in `section-links.tsx` (was `top-14`) |
+| 105 | 5.16.0: `Combobox` `allowCustomValue` and `groups` | nothing yet — US5b-2 can move the three address comboboxes off the old kit |
+| 106 | 5.14.0: `--aura-fg-warning` | the owed Remaining figure in `member-invoices-table.tsx` |
+| 107 | 5.14.0: `Tabs` `current="location"` | the section links (`aria-current="location"`) |
+| 108 | 5.14.0: stacked `DataTable` cards start `align: 'end'` values under their label | the invoice phone cards (`StartOnCard` is gone) |
 
 One note stays with AURA: `Menu` closes on any scroll or window resize (iOS Safari fires resize when its toolbar moves), to be checked on a real iPhone before it becomes an item.
 

@@ -19,6 +19,7 @@ import {
   seedArchivedNoPrimaryMembers,
   type ArchivedNoPrimarySeed,
 } from './helpers/archived-no-primary-seed';
+import { expectMemberHeaderAction, openMemberHeaderAction } from './helpers/member-header-actions';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
@@ -70,9 +71,7 @@ test.describe('members archive/undelete — F3 US7 @f3 @a11y @i18n', () => {
     await page.goto(`/admin/members/${memberId}`);
     await page.waitForLoadState('networkidle');
 
-    await expect(
-      page.getByRole('button', { name: /archive member/i }).first(),
-    ).toBeVisible({ timeout: 15_000 });
+    await expectMemberHeaderAction(page, /archive member/i);
   });
 
   test('Archive dialog opens with reason textarea + Cancel/Confirm', async ({
@@ -82,10 +81,7 @@ test.describe('members archive/undelete — F3 US7 @f3 @a11y @i18n', () => {
     const memberId = await firstActiveMemberId(page);
     await page.goto(`/admin/members/${memberId}`);
 
-    await page
-      .getByRole('button', { name: /archive member/i })
-      .first()
-      .click();
+    await openMemberHeaderAction(page, /archive member/i);
 
     // Alert dialog surfaces
     const dialog = page.getByRole('alertdialog');
@@ -114,11 +110,22 @@ test.describe('members archive/undelete — F3 US7 @f3 @a11y @i18n', () => {
     expect(results.violations).toEqual([]);
 
     // Open archive dialog and scan again
-    await page
-      .getByRole('button', { name: /archive member/i })
-      .first()
-      .click();
-    await page.getByRole('alertdialog').waitFor({ timeout: 5_000 });
+    await openMemberHeaderAction(page, /archive member/i);
+    const archiveDialog = page.getByRole('alertdialog');
+    await archiveDialog.waitFor({ timeout: 5_000 });
+    // Let the dialog's entry animation finish first: axe samples colours as
+    // painted, and mid-fade the danger button's white label reads as #e3cece
+    // on #b43e3e (3.78:1) — a false contrast failure (R18, mobile-chrome).
+    // Document-wide, since the fade can sit on the dialog layer above the
+    // alertdialog; only finite animations, as a looping one never resolves.
+    await page.evaluate(() =>
+      Promise.all(
+        document
+          .getAnimations()
+          .filter((a) => a.effect?.getComputedTiming().iterations !== Infinity)
+          .map((a) => a.finished),
+      ),
+    );
 
     results = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
@@ -275,13 +282,10 @@ test.describe('members undelete — designate a primary (108 FR-014) @f3 @a11y @
     // <body>" (a skip link would pass that).
     await page.getByTestId('restore-primary-cancel').click();
     await expect(dialog).toBeHidden();
-    const afterLabel = await page.evaluate(
-      () =>
-        document.activeElement?.getAttribute('aria-label') ??
-        document.activeElement?.tagName ??
-        'BODY',
-    );
-    expect(afterLabel).toMatch(/^restore$/i);
+    // Assert the element, not an `aria-label`: the button's name is its own
+    // visible text now (122 US5b-1 dropped the aria-label that duplicated it,
+    // WCAG 2.5.3), and reading the attribute alone saw only the tag name.
+    await expect(page.getByRole('button', { name: /^restore$/i }).first()).toBeFocused();
   });
 
   test('the add-contact door: nested dialog opens, Escape returns focus to the door, a saved contact restores in place', async ({
@@ -320,8 +324,7 @@ test.describe('members undelete — designate a primary (108 FR-014) @f3 @a11y @
     await fillField(nested.locator('#cf-first-name'), 'Door');
     await fillField(nested.locator('#cf-last-name'), `Contact-${rand}`);
     await fillField(nested.locator('#cf-email'), `door-${rand}@example.com`);
-    // `#cf-art14-attested` is Base UI's hidden native input; the visible
-    // role=checkbox carries the accessible name (aria-label).
+    // The Art. 14 attestation — the form's only checkbox (a native AURA one).
     await nested.getByRole('checkbox').first().click();
     await nested.getByRole('button', { name: /save|บันทึก|spara/i }).click();
 

@@ -258,6 +258,11 @@ async function isFeatureEnabled(page: Page): Promise<boolean> {
 test.describe.configure({ mode: 'serial' });
 
 test.describe('admin review queue (T099 — US2 AS1–AS6 + Q14)', () => {
+  // These cases read the desktop `<table>` (rows, the Audience column, the
+  // row checkbox). A phone renders `QueueCardList` instead and hides the
+  // table (`queue-table-client.tsx`), and the card drops Audience on
+  // purpose. The phone presentation has its own a11y case below.
+  test.skip(({ isMobile }) => isMobile === true, 'the queue table is a desktop surface; phones get QueueCardList');
   test.skip(
     !ADMIN_EMAIL || !ADMIN_PASSWORD,
     'Set E2E_ADMIN_EMAIL and E2E_ADMIN_PASSWORD',
@@ -738,11 +743,14 @@ test.describe('@a11y queue render-tree scan — desktop table / mobile card / bu
     // after the dev reconciliation). One submitted row makes the table real.
     await reseed();
 
+    // This case scans the DESKTOP table, so it pins a desktop viewport — the
+    // mobile-card case below pins 360px the same way. Without it the phone
+    // project renders the card list and the table is hidden.
+    await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto('/admin/broadcasts');
     await page.locator('h1').first().waitFor({ timeout: 10_000 });
 
-    // Task 9 — the Playwright `chromium` project's default viewport
-    // (1280×720, Desktop Chrome) is ≥ the `md` breakpoint, so the shared
+    // Task 9 — at a desktop width (≥ the `md` breakpoint) the shared
     // `ui/table.tsx` primitive Task 3 adopted (`hidden md:block` wrapper)
     // must render, not a hand-rolled table.
     await expect(page.locator('[data-slot="table"]')).toBeVisible();
@@ -805,6 +813,9 @@ test.describe('@a11y queue render-tree scan — desktop table / mobile card / bu
     );
     await reseed();
 
+    // Selection is made in the desktop table, so pin a desktop viewport —
+    // as the desktop-table case above and the 360px card case below do.
+    await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto('/admin/broadcasts');
     await page.locator('h1').first().waitFor({ timeout: 10_000 });
 
@@ -966,6 +977,8 @@ test.describe(
       !ADMIN_EMAIL || !ADMIN_PASSWORD,
       'Set E2E_ADMIN_EMAIL and E2E_ADMIN_PASSWORD',
     );
+    // Selects rows in the desktop `<table>`, like the serial suite above.
+    test.skip(({ isMobile }) => isMobile === true, 'the queue table is a desktop surface; phones get QueueCardList');
 
     let bulkSeed: BulkApproveSeedResult | null = null;
 

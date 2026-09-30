@@ -10,41 +10,23 @@
  * (1) picks a legal basis, (2) attests Art.12 identity verification AND picks a
  * method, and (3) types the member number exactly.
  *
- * a11y: mirrors confirmation-dialog.tsx (NOT archive-member-button) —
- * initialFocus → Cancel; the gated action uses aria-disabled +
- * aria-describedby + a role=status checklist of remaining conditions so
- * screen-reader users learn WHY it is blocked (a native `disabled` button is
- * neither focusable nor announced).
+ * a11y: mirrors confirmation-dialog.tsx — focus starts on Cancel; the gated
+ * action uses aria-disabled + aria-describedby + a role=status checklist of
+ * remaining conditions so screen-reader users learn WHY it is blocked (a
+ * native `disabled` button is neither focusable nor announced).
+ *
+ * Spec 122 US5b-1: an AURA `Dialog role="alertdialog"` (a stray scrim click
+ * never throws the form away; its body scrolls on a short screen while the
+ * footer stays put) with AURA `RadioGroup`, `Checkbox`, `Select`, `Textarea`
+ * and `TextField`. Behaviour and gates unchanged.
  */
 
-import { useState, useRef, useTransition, useCallback, useEffect } from 'react';
+import { useState, useTransition, useCallback, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { ShieldXIcon } from 'lucide-react';
+import { Alert, Button, Checkbox, Dialog, RadioGroup, Select, TextField, Textarea } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
-import { ShieldXIcon, Loader2Icon } from 'lucide-react';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
-import { buttonVariants } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Checkbox } from '@/components/ui/checkbox';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 // TYPE-ONLY import — erased by SWC, so it pulls ZERO runtime code from the
 // barrel. The runtime `VERIFICATION_METHODS` value CANNOT be imported here: the
 // `@/modules/members` barrel re-exports server-only infrastructure (the Drizzle
@@ -89,20 +71,49 @@ type Props = {
   readonly companyName: string;
   /** Formatted member number, e.g. "SCCM-0042" — the type-to-confirm target. */
   readonly memberNumberDisplay: string;
+  /**
+   * Opened by the caller instead of its own button (spec 122 US5b-1: the
+   * phone header's ⋯ menu). With `showTrigger={false}` no button renders.
+   */
+  readonly open?: boolean;
+  readonly onOpenChange?: (open: boolean) => void;
+  readonly showTrigger?: boolean;
 };
 
-export function EraseMemberButton({ memberId, companyName, memberNumberDisplay }: Props) {
+export function EraseMemberButton({
+  memberId,
+  companyName,
+  memberNumberDisplay,
+  open: openProp,
+  onOpenChange,
+  showTrigger = true,
+}: Props) {
   const t = useTranslations('admin.members.erase');
   const router = useRouter();
-  const cancelRef = useRef<HTMLButtonElement>(null);
-  const [open, setOpen] = useState(false);
+  const [openState, setOpenState] = useState(false);
+  const open = openProp ?? openState;
+  const setOpen = useCallback(
+    (next: boolean) => {
+      if (openProp === undefined) setOpenState(next);
+      onOpenChange?.(next);
+    },
+    [openProp, onOpenChange],
+  );
   const [reason, setReason] = useState<Reason | null>(null);
   const [identityVerified, setIdentityVerified] = useState(false);
   const [method, setMethod] = useState<VerificationMethod | null>(null);
   const [note, setNote] = useState('');
   const [typedConfirm, setTypedConfirm] = useState('');
   const [loading, setLoading] = useState(false);
+  // A refusal is said inside the dialog (ux-standards § 6.4): a toast sits
+  // outside the aria-modal dialog, where a screen reader does not go.
+  const [error, setError] = useState<string | null>(null);
+  const errorRef = useRef<HTMLDivElement>(null);
   const [, startTransition] = useTransition();
+
+  useEffect(() => {
+    if (error) errorRef.current?.focus();
+  }, [error]);
 
   const resetState = useCallback(() => {
     setReason(null);
@@ -111,6 +122,7 @@ export function EraseMemberButton({ memberId, companyName, memberNumberDisplay }
     setNote('');
     setTypedConfirm('');
     setLoading(false);
+    setError(null);
   }, []);
 
   const handleOpenChange = useCallback(
@@ -118,28 +130,8 @@ export function EraseMemberButton({ memberId, companyName, memberNumberDisplay }
       if (!next) resetState();
       setOpen(next);
     },
-    [resetState],
+    [resetState, setOpen],
   );
-
-  // On open, Base UI focuses the Cancel button (in the footer) WITHOUT
-  // `preventScroll`, which — now that the content scrolls (max-h + overflow) —
-  // scrolls this destructive dialog past its red "permanent, cannot be undone"
-  // callout on a short / mobile viewport. Reset the scroll to the top AFTER
-  // Base UI's rAF-scheduled focus so the warning is the first thing shown.
-  // Double rAF: the focus scroll is itself queued in a rAF, so we must land the
-  // frame after it (before paint → no visible jump). Cancel stays focused for
-  // keyboard/SR; the callout is what the eye lands on.
-  useEffect(() => {
-    if (!open) return;
-    const raf = requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        document
-          .querySelector<HTMLElement>('[data-slot="alert-dialog-content"]')
-          ?.scrollTo({ top: 0 });
-      });
-    });
-    return () => cancelAnimationFrame(raf);
-  }, [open]);
 
   const reasonOk = reason !== null;
   const methodOk = method !== null;
@@ -149,6 +141,7 @@ export function EraseMemberButton({ memberId, companyName, memberNumberDisplay }
   async function handleConfirm() {
     if (!canConfirm || reason === null || method === null) return;
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`/api/members/${memberId}/erase`, {
         method: 'POST',
@@ -177,137 +170,120 @@ export function EraseMemberButton({ memberId, companyName, memberNumberDisplay }
         const data = (await res.json().catch(() => ({}))) as { error?: { code?: string } };
         // Map the server error CODE to localized copy — never render the
         // server's raw English `error.message`.
-        toast.error(
-          data.error?.code === 'not_found' ? t('eraseNotFound') : t('eraseError'),
-        );
+        setError(data.error?.code === 'not_found' ? t('eraseNotFound') : t('eraseError'));
       }
     } catch {
-      toast.error(t('eraseError'));
+      setError(t('eraseError'));
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <AlertDialog open={open} onOpenChange={handleOpenChange}>
-      <AlertDialogTrigger
-        className={buttonVariants({ variant: 'destructive-outline' })}
-        aria-label={t('eraseCta')}
+    <>
+      {showTrigger && (
+        <Button variant="danger-secondary" onClick={() => handleOpenChange(true)}>
+          <ShieldXIcon className="size-4" aria-hidden="true" />
+          {t('eraseCta')}
+        </Button>
+      )}
+      <Dialog
+        role="alertdialog"
+        open={open}
+        onClose={() => handleOpenChange(false)}
+        // No Escape / close while the erasure runs.
+        dismissible={!loading}
+        title={t('dialogTitle')}
+        footer={
+          <>
+            <Button variant="secondary" data-autofocus disabled={loading} onClick={() => handleOpenChange(false)}>
+              {t('cancel')}
+            </Button>
+            {/* The gate stays focusable and announced while blocked: AURA's
+                Button keeps a passed aria-disabled and ignores clicks then
+                (5.14, handoff 102); handleConfirm re-checks the gate too. */}
+            <Button
+              variant="danger"
+              loading={loading}
+              aria-disabled={!canConfirm || undefined}
+              aria-describedby={!canConfirm ? 'erase-gate-checklist' : undefined}
+              onClick={() => void handleConfirm()}
+            >
+              {loading ? t('erasingInProgress') : t('confirmCta')}
+            </Button>
+          </>
+        }
       >
-        <ShieldXIcon className="size-4" aria-hidden="true" />
-        {t('eraseCta')}
-      </AlertDialogTrigger>
-      {/* max-h + scroll so the tall erasure form never overflows a short
-          (mobile) viewport — the header/footer scroll with it; without this the
-          top + confirm button were clipped off-screen on phones.
-          `w-[calc(100%-2rem)]` overrides the base `w-full` so the dialog keeps a
-          1rem side gutter at ≤320px instead of touching the screen edge (its
-          ring/shadow was being clipped). */}
-      <AlertDialogContent
-        initialFocus={cancelRef}
-        className="w-[calc(100%-2rem)] max-h-[85dvh] overflow-y-auto overflow-x-hidden"
-      >
-        <AlertDialogHeader>
-          <AlertDialogTitle>{t('dialogTitle')}</AlertDialogTitle>
-          {/* Prominent permanence callout (UX M3) — destructive treatment, not
-              a muted AlertDialogDescription. */}
-          <p className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm font-medium text-destructive">
+        <div className="flex flex-col gap-4">
+          {error && (
+            <Alert ref={errorRef} tone="danger" role="alert" tabIndex={-1}>
+              {error}
+            </Alert>
+          )}
+          {/* Prominent permanence callout (UX M3) — the danger treatment, not a
+              muted description. A note, not a live region: it is read with
+              the dialog. */}
+          <Alert tone="danger" role="note">
             {t('permanenceCallout', { companyName, memberNumber: memberNumberDisplay })}
-          </p>
-        </AlertDialogHeader>
+          </Alert>
 
-        <div className="flex flex-col gap-3">
-          {/* Reason — legal basis */}
-          <fieldset className="flex flex-col gap-2">
-            <legend className="text-sm font-medium">{t('reasonLegend')}</legend>
-            <RadioGroup value={reason ?? ''} onValueChange={(v) => setReason(v as Reason)} className="gap-1">
-              {/* items-start + a line-height-matched (h-5) radio wrapper so the O
-                  stays centered on the FIRST line even when a long / localized
-                  legal-basis label wraps on a narrow (mobile) dialog. */}
-              <div className="flex items-start gap-2">
-                <span className="flex h-5 items-center">
-                  <RadioGroupItem value="gdpr_erasure_request" id="erase-reason-gdpr" />
-                </span>
-                <Label htmlFor="erase-reason-gdpr" className="font-normal leading-5">{t('reasonGdpr')}</Label>
-              </div>
-              <div className="flex items-start gap-2">
-                <span className="flex h-5 items-center">
-                  <RadioGroupItem value="pdpa_deletion_request" id="erase-reason-pdpa" />
-                </span>
-                <Label htmlFor="erase-reason-pdpa" className="font-normal leading-5">{t('reasonPdpa')}</Label>
-              </div>
-            </RadioGroup>
-          </fieldset>
+          <RadioGroup
+            label={t('reasonLegend')}
+            name="erase-reason"
+            value={reason ?? ''}
+            onChange={(v) => setReason(v as Reason)}
+            options={[
+              { value: 'gdpr_erasure_request', label: t('reasonGdpr') },
+              { value: 'pdpa_deletion_request', label: t('reasonPdpa') },
+            ]}
+          />
 
-          {/* Art.12 attestation — same first-line-centered box treatment as the
-              legal-basis radios (h-5 wrapper + leading-5 label) so the checkbox
-              stays aligned with "I confirm…" even as the sentence wraps. */}
-          <div className="flex items-start gap-2">
-            <span className="flex h-5 items-center">
-              <Checkbox
-                id="erase-attestation"
-                checked={identityVerified}
-                onCheckedChange={(c) => setIdentityVerified(c === true)}
-              />
-            </span>
-            <Label htmlFor="erase-attestation" className="font-normal leading-5">
-              {t('attestationLabel')}
-            </Label>
-          </div>
+          <Checkbox
+            id="erase-attestation"
+            checked={identityVerified}
+            onChange={(c) => setIdentityVerified(c)}
+          >
+            {t('attestationLabel')}
+          </Checkbox>
 
-          {/* Verification method */}
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="erase-method">{t('methodLabel')}</Label>
-            <Select value={method ?? ''} onValueChange={(v) => setMethod(v as VerificationMethod)}>
-              <SelectTrigger id="erase-method" aria-label={t('methodLabel')} className="w-full">
-                <SelectValue placeholder={t('methodPlaceholder')} />
-              </SelectTrigger>
-              <SelectContent>
-                {VERIFICATION_METHODS.map((m) => (
-                  <SelectItem key={m} value={m}>
-                    {t(`method.${m}`)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          <Select
+            id="erase-method"
+            label={t('methodLabel')}
+            placeholder={t('methodPlaceholder')}
+            value={method ?? ''}
+            onChange={(e) => setMethod((e.target.value || null) as VerificationMethod | null)}
+            options={VERIFICATION_METHODS.map((m) => ({ value: m, label: t(`method.${m}`) }))}
+          />
 
-          {/* Optional note */}
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="erase-note">{t('noteLabel')}</Label>
-            <Textarea
-              id="erase-note"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              maxLength={500}
-              rows={2}
-              placeholder={t('notePlaceholder')}
-            />
-            <p className="text-xs text-muted-foreground">{t('noteHelper')}</p>
-          </div>
+          <Textarea
+            id="erase-note"
+            label={t('noteLabel')}
+            hint={t('noteHelper')}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            maxLength={500}
+            rows={2}
+            placeholder={t('notePlaceholder')}
+          />
 
           {/* Type-to-confirm */}
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="erase-confirm">
-              {t('confirmLabel', { memberNumber: memberNumberDisplay })}
-            </Label>
-            <Input
-              id="erase-confirm"
-              value={typedConfirm}
-              onChange={(e) => setTypedConfirm(e.target.value)}
-              placeholder={memberNumberDisplay}
-              autoComplete="off"
-              autoCorrect="off"
-              spellCheck={false}
-            />
-          </div>
+          <TextField
+            id="erase-confirm"
+            label={t('confirmLabel', { memberNumber: memberNumberDisplay })}
+            value={typedConfirm}
+            onChange={(e) => setTypedConfirm(e.target.value)}
+            placeholder={memberNumberDisplay}
+            autoComplete="off"
+            autoCorrect="off"
+            spellCheck={false}
+          />
 
           {/* a11y M1 — remaining-conditions checklist, announced politely. */}
           {!canConfirm && (
             <div
               id="erase-gate-checklist"
               role="status"
-              className="rounded-md bg-muted p-3 text-xs text-muted-foreground"
+              className="rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface-hover)] p-3 text-xs text-[var(--aura-fg-secondary)]"
             >
               <p className="font-medium">{t('gateHeading')}</p>
               <ul className="mt-1 list-disc pl-4">
@@ -319,31 +295,7 @@ export function EraseMemberButton({ memberId, companyName, memberNumberDisplay }
             </div>
           )}
         </div>
-
-        <AlertDialogFooter>
-          {/* min-h-11 (44px) tap targets — this is a destructive GDPR/PDPA
-              action; give both footer buttons a comfortable mobile hit-height. */}
-          <AlertDialogCancel ref={cancelRef} disabled={loading} className="min-h-11">
-            {t('cancel')}
-          </AlertDialogCancel>
-          <AlertDialogAction
-            aria-disabled={!canConfirm || undefined}
-            aria-describedby={!canConfirm ? 'erase-gate-checklist' : undefined}
-            aria-busy={loading}
-            className={`${buttonVariants({ variant: 'destructive' })} min-h-11`}
-            onClick={(e) => {
-              e.preventDefault();
-              if (!canConfirm) return;
-              void handleConfirm();
-            }}
-          >
-            {loading && (
-              <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" />
-            )}
-            {loading ? t('erasingInProgress') : t('confirmCta')}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+      </Dialog>
+    </>
   );
 }
