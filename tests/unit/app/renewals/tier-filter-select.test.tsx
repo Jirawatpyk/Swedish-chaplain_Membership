@@ -10,6 +10,13 @@ import { NextIntlClientProvider } from 'next-intl';
 import { TierFilterSelect } from '@/app/(staff)/admin/renewals/_components/tier-filter-select';
 import en from '@/i18n/messages/en.json';
 
+/** AURA Select keeps a real <select> under its listbox: pick by changing it (US5a precedent). */
+function pickNative(label: string, value: string) {
+  const native = screen.getByRole('combobox', { name: label }).closest('.aura-select')?.querySelector('select');
+  if (!native) throw new Error(`no native select for ${label}`);
+  fireEvent.change(native, { target: { value } });
+}
+
 const replace = vi.hoisted(() => vi.fn());
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ replace }),
@@ -35,14 +42,12 @@ describe('<TierFilterSelect> on AURA', () => {
     renderSelect('premium');
     const select = screen.getByRole('combobox', { name: 'Tier' });
     expect(select.closest('.aura-field')).not.toBeNull();
-    expect(select).toHaveValue('premium');
+    expect(select).toHaveTextContent('Premium');
   });
 
   it('choosing a tier replaces the URL, dropping cursor, month and anchor, without scrolling', async () => {
     renderSelect();
-    fireEvent.change(screen.getByRole('combobox', { name: 'Tier' }), {
-      target: { value: 'premium' },
-    });
+    pickNative('Tier', 'premium');
     await vi.waitFor(() =>
       expect(replace).toHaveBeenCalledWith('/admin/renewals?urgency=t-30&tier=premium', {
         scroll: false,
@@ -52,9 +57,7 @@ describe('<TierFilterSelect> on AURA', () => {
 
   it('"All tiers" removes the tier filter', async () => {
     renderSelect('premium');
-    fireEvent.change(screen.getByRole('combobox', { name: 'Tier' }), {
-      target: { value: 'all' },
-    });
+    pickNative('Tier', 'all');
     await vi.waitFor(() =>
       expect(replace).toHaveBeenCalledWith('/admin/renewals?urgency=t-30', { scroll: false }),
     );

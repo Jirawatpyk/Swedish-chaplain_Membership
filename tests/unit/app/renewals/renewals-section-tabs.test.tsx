@@ -22,6 +22,13 @@ import { NextIntlClientProvider } from 'next-intl';
 import { RenewalsSectionTabs } from '@/app/(staff)/admin/renewals/_components/renewals-section-tabs';
 import en from '@/i18n/messages/en.json';
 
+/** AURA Select keeps a real <select> under its listbox: pick by changing it (US5a precedent). */
+function pickNative(label: string, value: string) {
+  const native = screen.getByRole('combobox', { name: label }).closest('.aura-select')?.querySelector('select');
+  if (!native) throw new Error(`no native select for ${label}`);
+  fireEvent.change(native, { target: { value } });
+}
+
 // Mutable navigation state so each test can simulate a different page's
 // pathname + searchParams without re-mocking the module (mirrors the
 // `nav` pattern in tests/unit/members/presentation/directory-filters-search-focus.test.tsx).
@@ -306,22 +313,21 @@ describe('<RenewalsSectionTabs> AURA link tabs and the phone select', () => {
     nav.pathname = '/admin/renewals/tasks';
     renderTabs();
     const select = screen.getByRole('combobox', { name: 'Section' });
-    expect(within(select).getAllByRole('option').map((o) => o.textContent)).toEqual([
+    expect(select).toHaveTextContent('Tasks');
+    const native = select.closest('.aura-select')?.querySelector('select');
+    expect([...(native?.options ?? [])].map((o) => o.textContent)).toEqual([
       'Pipeline',
       'Pending review',
       'Tasks',
       'Tier upgrades',
     ]);
-    expect((select as HTMLSelectElement).selectedOptions[0]?.textContent).toBe('Tasks');
   });
 
   it('choosing a section in the select navigates to that tab\'s href', () => {
     push.mockClear();
     nav.searchParams = new URLSearchParams('tier=premium&urgency=t-30');
     renderTabs();
-    const select = screen.getByRole('combobox', { name: 'Section' });
-    const pending = within(select).getByRole('option', { name: 'Pending review' }) as HTMLOptionElement;
-    fireEvent.change(select, { target: { value: pending.value } });
+    pickNative('Section', 'pending-review');
     expect(push).toHaveBeenCalledWith(href(/pending review/i));
   });
 });

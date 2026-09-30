@@ -4029,6 +4029,7 @@
       },
       "tabs": {
         "ariaLabel": "ส่วนต่าง ๆ ของการต่ออายุ",
+        "selectLabel": "ส่วน",
         "pipeline": "ไปป์ไลน์",
         "tasks": "งานติดตาม",
         "tasksCountSr": "{count, plural, other {# งานที่เปิดอยู่}}",

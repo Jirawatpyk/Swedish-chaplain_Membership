@@ -4029,6 +4029,7 @@
       },
       "tabs": {
         "ariaLabel": "Förnyelsesektioner",
+        "selectLabel": "Avsnitt",
         "pipeline": "Pipeline",
         "tasks": "Uppgifter",
         "tasksCountSr": "{count, plural, one {# öppen uppgift} other {# öppna uppgifter}}",

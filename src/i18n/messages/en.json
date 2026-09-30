@@ -4029,6 +4029,7 @@
       },
       "tabs": {
         "ariaLabel": "Renewals sections",
+        "selectLabel": "Section",
         "pipeline": "Pipeline",
         "tasks": "Tasks",
         "tasksCountSr": "{count, plural, one {# open task} other {# open tasks}}",

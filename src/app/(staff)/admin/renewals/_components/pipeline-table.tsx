@@ -138,14 +138,21 @@ export function PipelineTable({
     (keys: Array<string | number>) => commitSelection(keys.map(String)),
     [commitSelection],
   );
-  // A parent Clear bumps the nonce; fire on a CHANGE only, never on mount.
-  const prevClearNonceRef = useRef(clearSelectionNonce);
+  // A parent Clear bumps the nonce: the boxes clear during that render, and
+  // the parent hears the empty selection after it. On a CHANGE only, never
+  // on mount.
+  const [seenClearNonce, setSeenClearNonce] = useState(clearSelectionNonce);
+  if (clearSelectionNonce !== seenClearNonce) {
+    setSeenClearNonce(clearSelectionNonce);
+    setSelected([]);
+  }
+  const reportedClearNonceRef = useRef(clearSelectionNonce);
   useEffect(() => {
-    if (clearSelectionNonce !== prevClearNonceRef.current) {
-      prevClearNonceRef.current = clearSelectionNonce;
-      commitSelection([]);
+    if (clearSelectionNonce !== reportedClearNonceRef.current) {
+      reportedClearNonceRef.current = clearSelectionNonce;
+      onSelectionChange?.([]);
     }
-  }, [clearSelectionNonce, commitSelection]);
+  }, [clearSelectionNonce, onSelectionChange]);
 
   // ── Sort: the URL is the source of truth ────────────────────────────────
   // AURA cycles asc → desc → unsorted; the URL contract never unsorts, so
@@ -263,7 +270,7 @@ export function PipelineTable({
             // PRE-EXPIRY urgency (059 covered-gate fix): once a cycle is
             // suspended/terminated a renewal is owed, so it falls to "—".
             <span
-              className="font-medium text-[var(--aura-fg-success)]"
+              className="font-medium text-[var(--aura-fg-positive)]"
               title={t('invoiceCoveredTitle')}
             >
               {t('invoiceCoveredLabel')}

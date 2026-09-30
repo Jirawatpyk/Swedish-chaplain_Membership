@@ -82,10 +82,7 @@ import {
   MembersWithoutCycleTray,
   MembersWithoutCycleTraySkeleton,
 } from './_components/members-without-cycle-tray';
-import {
-  RenewalsSectionTabs,
-  TabCountBadge,
-} from './_components/renewals-section-tabs';
+import { RenewalsSectionTabs } from './_components/renewals-section-tabs';
 import {
   RenewalsSectionTabsWithCounts,
   loadSectionTabCounts,
@@ -267,11 +264,8 @@ export default async function RenewalsPipelinePage({
                 queue count badges (Tasks / Tier upgrades / its own Pending
                 review), streamed in a Suspense island whose fallback is the
                 bare strip (CLS-safe, only the badges appear once resolved). */}
-            <Suspense fallback={<RenewalsSectionTabs showPipelineHelp />}>
-              <RenewalsSectionTabsWithCounts
-                tenantSlug={tenantCtx.slug}
-                showPipelineHelp
-              />
+            <Suspense fallback={<RenewalsSectionTabs />}>
+              <RenewalsSectionTabsWithCounts tenantSlug={tenantCtx.slug} />
             </Suspense>
             <PendingReviewSection
               tenantSlug={tenantCtx.slug}
@@ -530,6 +524,13 @@ export default async function RenewalsPipelinePage({
     />
   );
 
+  // The needs-action count rides on the work-queue tab (AURA's numeric
+  // `count`), so it is resolved here; its read started beside `loadPipeline`.
+  const needsActionCount = await resolveNeedsActionCount(
+    tenantCtx.slug,
+    needsActionCountPromise,
+  );
+
   return (
     <RenewalsPageShell title={t('title')} subtitle={t('subtitle')}>
       {/* DV-Wave2 ⑥ — THB money KPI band. Best-effort Suspense island: it
@@ -560,10 +561,9 @@ export default async function RenewalsPipelinePage({
               badges appear once resolved). Best-effort per count: a load
               throw degrades that ONE badge to hidden rather than
               blanking all three. */}
-          <Suspense fallback={<RenewalsSectionTabs showPipelineHelp />}>
+          <Suspense fallback={<RenewalsSectionTabs />}>
             <RenewalsSectionTabsWithCounts
               tenantSlug={tenantCtx.slug}
-              showPipelineHelp
               countsPromise={sectionCountsPromise}
             />
           </Suspense>
@@ -605,7 +605,10 @@ export default async function RenewalsPipelinePage({
                 // filter row / table block / pagination even vertical rhythm
                 // matching the tabs' own `pt-3`/`mb-3`.
                 <div className="flex flex-col gap-3">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  {/* Board `Admin-renewals`: the stage chips, then the Tier
+                      select at the row's end; `-mobile`: the Urgency and Tier
+                      selects side by side. */}
+                  <div className="grid grid-cols-2 items-end gap-[var(--aura-space-3)] sm:flex sm:justify-between">
                     <UrgencyBucketTabs
                       current={monthLensActive ? null : urgency}
                       counts={summary.byUrgency}
@@ -694,14 +697,7 @@ export default async function RenewalsPipelinePage({
             // (its fetch already starts client-side, independent of
             // `loadPipeline`). Intentionally left as-is.
             needsAction={<AtRiskWidget canSnooze={canMutate} />}
-            needsActionBadge={
-              <Suspense fallback={null}>
-                <NeedsActionCountBadge
-                  tenantSlug={tenantCtx.slug}
-                  countPromise={needsActionCountPromise}
-                />
-              </Suspense>
-            }
+            {...(needsActionCount !== undefined ? { needsActionCount } : {})}
           />
         </CardContent>
       </Card>
@@ -844,9 +840,10 @@ async function PipelineMoneyBandSection({
 }
 
 /**
- * Fix I-1 (review round 1) — best-effort count badge for the `WorkQueueTabs`
- * "Needs action" tab, streamed in a Suspense island so it never blocks the
- * pipeline render. Restores the at-risk discoverability that regressed when
+ * Fix I-1 (review round 1) — best-effort count for the `WorkQueueTabs`
+ * "Needs action" tab. 122 US7a (T703): resolved by the page (the read starts
+ * before `await loadPipeline`, so it adds no serial wait) because AURA's tab
+ * takes a numeric `count`; streaming it into the tab would remount the lens. Restores the at-risk discoverability that regressed when
  * Task 7 folded the always-visible `AtRiskWidget` behind an inactive tab:
  * without a count, an admin has no signal that the "Needs action" lens has
  * work in it.
@@ -861,28 +858,22 @@ async function PipelineMoneyBandSection({
  * set) — `warning` is intentionally excluded, matching the widget's own
  * default band tab of `at-risk` rather than `warning`.
  *
- * Best-effort: a read failure logs a distinct errorId and renders `null` —
+ * Best-effort: a read failure logs a distinct errorId and yields no count —
  * the tab itself always renders regardless (never crashes the page).
  */
-async function NeedsActionCountBadge({
-  tenantSlug,
-  countPromise,
-}: {
-  readonly tenantSlug: string;
+async function resolveNeedsActionCount(
+  tenantSlug: string,
   /**
    * Waterfall fix (eager-island pattern, `_lib/settled.ts`) — the page fires
    * the `listAtRiskWidgetMembers limit:1` summary read BEFORE `await
-   * loadPipeline`. Settled at creation; a failure keeps the exact
-   * pre-existing best-effort branch (log + render null — the tab itself
-   * always renders regardless).
+   * loadPipeline`. Settled at creation.
    */
-  readonly countPromise: Promise<
+  countPromise: Promise<
     Settled<{
       readonly summary: { readonly critical: number; readonly atRisk: number };
     }>
-  >;
-}) {
-  const t = await getTranslations('admin.renewals.workQueue');
+  >,
+): Promise<number | undefined> {
   const settled = await countPromise;
   if (!settled.ok) {
     const e = settled.e;
@@ -894,13 +885,9 @@ async function NeedsActionCountBadge({
       },
       '[admin/renewals] needs-action badge count load failed',
     );
-    return null;
+    return undefined;
   }
-  const count = settled.v.summary.critical + settled.v.summary.atRisk;
-  if (count <= 0) return null;
-  return (
-    <TabCountBadge count={count} label={t('needsActionCountSr', { count })} />
-  );
+  return settled.v.summary.critical + settled.v.summary.atRisk;
 }
 
 /**

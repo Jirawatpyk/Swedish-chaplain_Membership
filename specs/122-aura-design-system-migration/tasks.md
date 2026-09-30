@@ -255,8 +255,15 @@ Boards: `Admin-renewals` (+`-mobile`), `Admin-renewals-needs-action`, `Admin-ren
   - the same sort links, filters and paging.
   - RED: `pipeline-table`, `pipeline-table-selection` and `pipeline-sortable-headers` on AURA, with no `pipeline-card-list`.
   - Done: AURA `DataTable` (`manual`, `stackBelow={640}`). A sortable header navigates to the page's precomputed sort href, as the members list does (US5a). The phone card keeps its checkbox in place of the board's "Select" button. Its row actions take a full-width row at the end of the card through a `globals.css` stand-in until AURA #118.
-- [ ] T703 [US7] Filters and tabs on AURA: the section tabs with counts, the All / Needs action toggle, the tier filter and the stage chips, with the same links and query parameters.
+- [x] T703 [US7] Filters and tabs on AURA: the section tabs with counts, the All / Needs action toggle, the tier filter and the stage chips, with the same links and query parameters.
   - RED: `renewals-section-tabs(-with-counts)`, `urgency-bucket-tabs` and `work-queue-tabs` on AURA.
+  - Done:
+    - Section tabs and stage chips are AURA link tabs. With a month lens active no chip is current, which a tablist cannot express. The chips keep the scroll position.
+    - On phones the board's "Section" and "Urgency" selects stand in for the tabs.
+    - The toggle is AURA segmented `Tabs` with the needs-action count; the page now resolves that count beside the pipeline load.
+    - The pipeline help moved to the end of the toggle row.
+    - The tier filter is an AURA `Select` labelled "Tier".
+    - The e2e selectors for the urgency chips change in T710.
 - [ ] T704 [US7] The money band as four AURA `Stat` tiles, with the basis hint on AURA and the figures unchanged. The shared dashboard `kpi-card` stays for US11.
   - RED: `pipeline-money-band` on AURA.
 - [ ] T705 [US7] "Renewals by month" in an AURA `Card`: the bar chart on AURA chart tokens, bars that filter, and the month chip.

@@ -15,6 +15,13 @@ import { NextIntlClientProvider } from 'next-intl';
 import { UrgencyBucketTabs } from '@/app/(staff)/admin/renewals/_components/urgency-bucket-tabs';
 import en from '@/i18n/messages/en.json';
 
+/** AURA Select keeps a real <select> under its listbox: pick by changing it (US5a precedent). */
+function pickNative(label: string, value: string) {
+  const native = screen.getByRole('combobox', { name: label }).closest('.aura-select')?.querySelector('select');
+  if (!native) throw new Error(`no native select for ${label}`);
+  fireEvent.change(native, { target: { value } });
+}
+
 // `month=2027-02` models a stale month-lens URL: choosing a chip must drop it.
 const push = vi.hoisted(() => vi.fn());
 vi.mock('next/navigation', () => ({
@@ -113,7 +120,8 @@ describe('<UrgencyBucketTabs> month lens (item ③)', () => {
 
   it('shows a visible "Paused" badge, hidden from screen readers', () => {
     renderTabs(null, true);
-    const badge = screen.getByText(en.admin.renewals.urgencyBuckets.monthLensBadge);
+    // The chips row's badge (the phone select shows the same words as its placeholder).
+    const badge = within(chips().parentElement!).getByText(en.admin.renewals.urgencyBuckets.monthLensBadge);
     expect(badge.closest('[aria-hidden]')).not.toBeNull();
   });
 
@@ -138,16 +146,14 @@ describe('<UrgencyBucketTabs> phone select (board Admin-renewals-mobile)', () =>
   it('an "Urgency" select lists each stage with its count, the current one chosen', () => {
     renderTabs('t-30');
     const select = screen.getByRole('combobox', { name: 'Urgency' });
-    expect(select).toHaveValue('t-30');
-    expect(within(select).getByRole('option', { name: 'T-30 (3)' })).toBeInTheDocument();
-    expect(within(select).getByRole('option', { name: 'Terminated (9)' })).toBeInTheDocument();
+    expect(select).toHaveTextContent('T-30 (3)');
+    const native = select.closest('.aura-select')?.querySelector('select');
+    expect([...(native?.options ?? [])].map((o) => o.textContent)).toContain('Terminated (9)');
   });
 
   it('choosing a stage navigates like its chip, without scrolling', () => {
     renderTabs('t-30');
-    fireEvent.change(screen.getByRole('combobox', { name: 'Urgency' }), {
-      target: { value: 'suspended' },
-    });
+    pickNative('Urgency', 'suspended');
     expect(push).toHaveBeenCalledWith('/admin/renewals?urgency=suspended', { scroll: false });
   });
 });
