@@ -19,8 +19,7 @@ import type { Role } from '@/modules/auth/domain/role';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { listPlans, asPlanYear } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
-import { Card, CardContent } from '@/components/ui/card';
-import { buttonVariants } from '@/components/ui/button';
+import { Card, buttonClass } from '@jirawatpyk/aura-react/server';
 import { PlansTable } from '@/components/plans/plans-table';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
@@ -56,18 +55,17 @@ export default async function PlansListPage({
           // 016 re-review D — evaluator-derived ('plans.write').
           canPerform(currentUser.role, 'plans.write') ? (
             <>
-              <Link
-                href="/admin/plans/clone"
-                className={buttonVariants({ variant: 'outline' })}
-              >
-                <CopyIcon className="h-3.5 w-3.5" />
+              {/* 122 US6 (T602): AURA buttons as the `Admin-plans` board draws
+                  them; on a phone "New plan" comes first (`-mobile`). */}
+              <Link href="/admin/plans/clone" className={buttonClass({ variant: 'secondary' })}>
+                <CopyIcon aria-hidden="true" className="size-4" />
                 {t('actions.cloneYear')}
               </Link>
               <Link
                 href="/admin/plans/new"
-                className={buttonVariants()}
+                className={buttonClass({ variant: 'primary', className: 'max-sm:order-first' })}
               >
-                <PlusIcon className="h-3.5 w-3.5" />
+                <PlusIcon aria-hidden="true" className="size-4" />
                 {t('actions.new')}
               </Link>
             </>
@@ -75,8 +73,9 @@ export default async function PlansListPage({
         }
       />
 
-      <Card>
-        <CardContent>
+      {/* One card on a desktop; on a phone the rows are cards of their own,
+          so this one drops its frame (AURA `flushBelow`). */}
+      <Card flushBelow="sm">
           {/*
             No internal <Suspense> wrapper — the route-level loading.tsx
             is the single Suspense boundary and renders <PlanListSkeleton>
@@ -88,7 +87,6 @@ export default async function PlansListPage({
             query={query}
             currentUserRole={currentUser.role}
           />
-        </CardContent>
       </Card>
     </TableContainer>
   );
@@ -133,7 +131,7 @@ async function PlansList({
 
   if (!result.ok) {
     return (
-      <p className="text-sm text-destructive" role="alert">
+      <p className="text-[var(--aura-fg-danger)]" role="alert">
         {result.error.type === 'fee_config_missing'
           ? t('errors.feeConfigMissing')
           : t('errors.loadFailed')}

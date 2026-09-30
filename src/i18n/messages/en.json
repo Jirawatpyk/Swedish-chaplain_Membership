@@ -806,6 +806,7 @@
     "plans": {
       "title": "Membership Plans",
       "subtitle": "{total} plans in {year}",
+      "subtitleWithVat": "{total} plans in {year} · fees exclude {rate}% VAT",
       "listDescription": "Manage tier definitions, annual fees, and benefit matrices. Prior-year plans are partially locked for audit integrity.",
       "tableCaption": "List of membership plans for the selected year.",
       "empty": {
@@ -825,6 +826,7 @@
         "actionsFor": "Actions for {planName}"
       },
       "filters": {
+        "groupLabel": "Filter plans",
         "all": "All",
         "category": {
           "label": "Category",

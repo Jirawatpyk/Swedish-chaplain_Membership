@@ -6,7 +6,7 @@
  * admin users when the active locale is missing.
  */
 import { useLocale, useTranslations } from 'next-intl';
-import { Badge } from '@/components/ui/badge';
+import { Badge } from '@jirawatpyk/aura-react/server';
 import type { LocaleText, LocaleKey } from '@/modules/plans';
 import { pickLocaleText } from '@/modules/plans';
 
@@ -50,7 +50,9 @@ export function LocaleTextDisplay({
     >
       {picked.value}
       {showMissingBadge && picked.missing ? (
-        <Badge variant="outline" className="ml-2 text-xs" title={t('missingTranslations', { locales: locale })}>
+        // 122 US6: AURA's warning outline badge, as the `Admin-plans` board
+        // draws a missing translation beside the name.
+        <Badge tone="warning" variant="outline" className="ml-2" title={t('missingTranslations', { locales: locale })}>
           {locale.toUpperCase()} ⚠
         </Badge>
       ) : null}

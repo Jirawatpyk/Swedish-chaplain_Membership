@@ -1,18 +1,25 @@
 /**
  * T084 — PlansTable (US1) + T136–T137 — row-level US4 actions.
  *
- * Plain shadcn `<Table>` rendering the 9 SweCham 2026 plans (or more
- * depending on filter state). Sortable column headers (client-side sort
- * on plan_category + sort_order), filter bar (category / year / search /
- * activeOnly / showDeleted), category badges, and a row-level dropdown
- * menu for US4 actions (Activate/Deactivate/Delete/Undelete).
+ * The plans for one year (partnership first, then sort order), the filter
+ * row (search / category / year / active only / show deleted, all in the
+ * URL), category badges, and a row menu for the US4 actions
+ * (Activate / Deactivate / Delete / Restore).
+ *
+ * 122 US6 (T602): on AURA as the `Admin-plans` board draws it — the filters
+ * as one labelled group of AURA fields, AURA's table (each row keeps its
+ * `data-plan-id` / `data-plan-year` for the e2e, which DataTable cannot
+ * carry), badges, status pills, an IconButton menu per row, and the count
+ * with the VAT note under it. Below 640px each row is a card: the name as
+ * its title with the status and the menu beside it, the year left out
+ * (`Admin-plans-mobile`).
  *
  * The US4 actions (confirmation dialog, API call, toasts, refresh) live
  * in `usePlanActions`, shared with the plan detail header menu.
  *
  * **NO inline edit** — US7 deferred to F3 per critique X1c.
  *
- * Client component because the filter bar updates URL query params via
+ * Client component because the filter row updates URL query params via
  * `useRouter().push`, which requires client-side navigation.
  */
 'use client';
@@ -21,40 +28,28 @@ import { useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
-import { CopyIcon, MoreHorizontal, PlusIcon, SearchIcon } from 'lucide-react';
+import { CopyIcon, PlusIcon } from 'lucide-react';
+import {
+  Badge,
+  DropdownMenu,
+  IconButton,
+  Select,
+  StatusPill,
+  Switch,
+  Table,
+  TBody,
+  Td,
+  TextField,
+  Th,
+  THead,
+  Tr,
+  buttonClass,
+  type MenuItem,
+} from '@jirawatpyk/aura-react';
 // Deep PURE-Domain imports (never the auth barrel — this is a client bundle).
 import type { Role } from '@/modules/auth/domain/role';
 import { hasPermission } from '@/modules/auth/domain/permissions/evaluator';
-import { Badge } from '@/components/ui/badge';
-import { Button, buttonVariants } from '@/components/ui/button';
 import { EmptyState } from '@/components/shell/empty-state';
-import { FilterBar } from '@/components/ui/filter-bar';
-import { Input } from '@/components/ui/input';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  TranslatedSelectValue,
-} from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
-import { Label } from '@/components/ui/label';
-import {
-  Table,
-  TableBody,
-  TableCaption,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { MoneyDisplay } from './money-display';
 import { LocaleTextDisplay } from './locale-text-display';
 import { usePlanActions } from './use-plan-actions';
@@ -75,6 +70,9 @@ export interface PlansTableProps {
     readonly showDeleted: boolean;
   };
 }
+
+/** A card hides the year: the page is already one year (`Admin-plans-mobile`). */
+const HIDE_IN_CARD = '@max-[640px]/aura-tbl:hidden';
 
 export function PlansTable({
   plans,
@@ -141,6 +139,11 @@ export function PlansTable({
     return years;
   }, [year]);
 
+  // The tenant's VAT rate travels on every row (the list reads it once);
+  // the note under the table names it ("fees exclude 7% VAT").
+  const vatPercent =
+    sorted[0] !== undefined ? Math.round(sorted[0].vat_rate * 10_000) / 100 : null;
+
   function updateFilter(next: Record<string, string | null>) {
     const params = new URLSearchParams(searchParams.toString());
     for (const [k, v] of Object.entries(next)) {
@@ -152,190 +155,135 @@ export function PlansTable({
     });
   }
 
+  function rowActions(plan: PlanListItem): MenuItem[] {
+    if (plan.deleted_at !== null) {
+      return [{ label: tActions('undelete'), onSelect: () => openDialog('undelete', plan) }];
+    }
+    return [
+      {
+        label: tActions('edit'),
+        onSelect: () => router.push(`/admin/plans/${plan.plan_year}/${plan.plan_id}/edit`),
+      },
+      { separator: true },
+      plan.is_active
+        ? { label: tActions('deactivate'), onSelect: () => openDialog('deactivate', plan) }
+        : { label: tActions('activate'), onSelect: () => openDialog('activate', plan) },
+      { label: tActions('delete'), tone: 'danger', onSelect: () => openDialog('delete', plan) },
+    ];
+  }
+
+  const busy = isPending || actionPending;
+
   return (
     <div className="space-y-4" data-plans-table>
-      {/* Filter bar — flat, matches members/directory-filters.tsx style */}
-      <FilterBar aria-label={t('filters.search.label')}>
-        <div className="relative sm:flex-1 min-w-0">
-          <SearchIcon
-            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground"
-            aria-hidden
-          />
-          <Label htmlFor="plans-search" className="sr-only">
-            {t('filters.search.label')}
-          </Label>
-          <Input
-            id="plans-search"
-            type="search"
-            placeholder={t('filters.search.placeholder')}
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            onBlur={() => updateFilter({ q: q || null })}
-            // Commit the search on Enter too — the FilterBar is a
-            // role="search" div (no <form>), so there is no implicit submit
-            // and, without this, the term only applied on blur (BUG-007).
-            // Ignore Enter during an IME composition (it confirms the
-            // candidate, not the search).
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-                e.preventDefault();
-                updateFilter({ q: q || null });
-              }
-            }}
-            disabled={isPending || actionPending}
-            className="pl-9"
-          />
-        </div>
-
-        {/* Label is `sr-only` (screen-reader only) and sits as a direct
-            sibling — no wrapping `<div>` — so the SelectTrigger stays a
-            direct child of FilterBar, letting the global mobile
-            100%-width rule apply to the trigger itself. */}
-        <Label htmlFor="plans-category" className="sr-only">
-          {t('filters.category.label')}
-        </Label>
+      {/* The board's filter row: labelled AURA fields in one group. On a
+          phone the search takes its own row, category and year share the
+          next, and the switches stack (`Admin-plans-mobile`). */}
+      <div
+        role="group"
+        aria-label={t('filters.groupLabel')}
+        className="grid grid-cols-2 items-end gap-3 sm:flex sm:flex-wrap"
+      >
+        <TextField
+          id="plans-search"
+          type="search"
+          label={t('filters.search.label')}
+          placeholder={t('filters.search.placeholder')}
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onBlur={() => updateFilter({ q: q || null })}
+          // Commit the search on Enter too — there is no <form> around the
+          // filters, so there is no implicit submit and, without this, the
+          // term only applied on blur (BUG-007). Ignore Enter during an IME
+          // composition (it confirms the candidate, not the search).
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+              e.preventDefault();
+              updateFilter({ q: q || null });
+            }
+          }}
+          disabled={busy}
+          className="col-span-2 sm:min-w-60 sm:flex-1"
+        />
         <Select
+          id="plans-category"
+          label={t('filters.category.label')}
           value={category ?? 'all'}
-          onValueChange={(v) => {
+          onChange={(e) => {
+            const v = e.target.value;
             const next = v === 'all' ? null : (v as 'corporate' | 'partnership');
             setCategory(next);
             updateFilter({ category: next });
           }}
-        >
-          <SelectTrigger id="plans-category" className="sm:w-[180px]">
-            <TranslatedSelectValue
-              placeholder={t('filters.category.label')}
-              translate={(v) => {
-                const keys: Record<string, string> = {
-                  all: 'filters.all',
-                  corporate: 'filters.category.corporate',
-                  partnership: 'filters.category.partnership',
-                };
-                const key = keys[v || 'all'];
-                return key ? t(key) : v;
-              }}
-            />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{t('filters.all')}</SelectItem>
-            <SelectItem value="corporate">{t('filters.category.corporate')}</SelectItem>
-            <SelectItem value="partnership">{t('filters.category.partnership')}</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <Label htmlFor="plans-year" className="sr-only">
-          {t('filters.year')}
-        </Label>
-        <Select value={String(year)} onValueChange={(v) => updateFilter({ year: v })}>
-          <SelectTrigger id="plans-year" className="sm:w-[120px]">
-            <TranslatedSelectValue
-              placeholder={t('filters.year')}
-              translate={(v) => formatCalendarYear(Number(v), locale)}
-            />
-          </SelectTrigger>
-          <SelectContent>
-            {yearOptions.map((y) => (
-              <SelectItem key={y} value={String(y)}>
-                {formatCalendarYear(y, locale)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <div className="flex items-center gap-2">
-          <Switch
-            id="plans-active-only"
-            checked={activeOnly}
-            aria-labelledby="plans-active-only-label"
-            onCheckedChange={(v) => {
-              setActiveOnly(v);
-              updateFilter({ activeOnly: v ? 'true' : null });
-            }}
-          />
-          <Label htmlFor="plans-active-only" id="plans-active-only-label" className="mb-0">
-            {t('filters.activeOnly')}
-          </Label>
-        </div>
-
+          options={[
+            { value: 'all', label: t('filters.all') },
+            { value: 'corporate', label: t('filters.category.corporate') },
+            { value: 'partnership', label: t('filters.category.partnership') },
+          ]}
+          className="sm:w-44"
+        />
+        <Select
+          id="plans-year"
+          label={t('filters.year')}
+          value={String(year)}
+          onChange={(e) => updateFilter({ year: e.target.value })}
+          options={yearOptions.map((y) => ({ value: String(y), label: formatCalendarYear(y, locale) }))}
+          className="sm:w-36"
+        />
+        <Switch
+          id="plans-active-only"
+          label={t('filters.activeOnly')}
+          checked={activeOnly}
+          onChange={(v) => {
+            setActiveOnly(v);
+            updateFilter({ activeOnly: v ? 'true' : null });
+          }}
+          className="col-span-2 sm:col-auto sm:self-center"
+        />
         {canWritePlans ? (
-          <div className="flex items-center gap-2">
-            <Switch
-              id="plans-show-deleted"
-              checked={showDeleted}
-              aria-labelledby="plans-show-deleted-label"
-              onCheckedChange={(v) => {
-                setShowDeleted(v);
-                updateFilter({ showDeleted: v ? 'true' : null });
-              }}
-            />
-            <Label htmlFor="plans-show-deleted" id="plans-show-deleted-label" className="mb-0">
-              {t('filters.showDeleted')}
-            </Label>
-          </div>
+          <Switch
+            id="plans-show-deleted"
+            label={t('filters.showDeleted')}
+            checked={showDeleted}
+            onChange={(v) => {
+              setShowDeleted(v);
+              updateFilter({ showDeleted: v ? 'true' : null });
+            }}
+            className="col-span-2 sm:col-auto sm:self-center"
+          />
         ) : null}
-      </FilterBar>
+      </div>
 
-      {/* Table — matches /admin/members style (uppercase muted header
-          + hover row). No outer border: parent <Card> is the container. */}
-      <Table aria-label={t('tableCaption')}>
-          {/* aria-label above names the scrollable REGION landmark (the
-              <Table> wrapper); without it the region fell back to the
-              hardcoded English "Data table" for every locale. The
-              sr-only <caption> additionally labels the inner <table>
-              element itself — both are kept so the table has an
-              accessible name whether a SR navigates by region or by
-              table. */}
-          <TableCaption className="sr-only">{t('tableCaption')}</TableCaption>
-          <TableHeader>
-            <TableRow>
-              <TableHead scope="col" className="text-xs uppercase tracking-wide text-muted-foreground">
-                {t('columns.name')}
-              </TableHead>
-              <TableHead scope="col" className="text-xs uppercase tracking-wide text-muted-foreground">
-                {t('columns.category')}
-              </TableHead>
-              <TableHead scope="col" className="text-xs uppercase tracking-wide text-muted-foreground">
-                {t('columns.annualFee')}
-              </TableHead>
-              <TableHead scope="col" className="text-xs uppercase tracking-wide text-muted-foreground">
-                {t('columns.memberType')}
-              </TableHead>
-              <TableHead scope="col" className="text-xs uppercase tracking-wide text-muted-foreground">
-                {t('columns.year')}
-              </TableHead>
-              <TableHead scope="col" className="text-xs uppercase tracking-wide text-muted-foreground">
-                {t('columns.status')}
-              </TableHead>
-              {canWritePlans ? (
-                <TableHead scope="col" className="w-[48px] text-xs uppercase tracking-wide text-muted-foreground">
-                  <span className="sr-only">{t('columns.actions')}</span>
-                </TableHead>
-              ) : null}
-            </TableRow>
-          </TableHeader>
-        <TableBody>
+      <Table caption={t('tableCaption')} captionHidden stackBelow="sm" stackStyle="cards" align="middle">
+        <THead>
+          <Tr>
+            <Th>{t('columns.name')}</Th>
+            <Th>{t('columns.category')}</Th>
+            <Th numeric>{t('columns.annualFee')}</Th>
+            <Th>{t('columns.memberType')}</Th>
+            <Th>{t('columns.year')}</Th>
+            <Th>{t('columns.status')}</Th>
+            {canWritePlans ? <Th>{t('columns.actions')}</Th> : null}
+          </Tr>
+        </THead>
+        <TBody>
           {sorted.length === 0 ? (
-            <TableRow>
-              <TableCell colSpan={canWritePlans ? 7 : 6} className="py-12">
+            <Tr>
+              <Td colSpan={canWritePlans ? 7 : 6} className="py-12">
                 <EmptyState
                   icon={PlusIcon}
+                  bordered={false}
                   title={t('empty.title')}
                   description={t('empty.description')}
                   action={
                     canWritePlans ? (
                       <div className="flex flex-wrap items-center justify-center gap-2">
-                        <Link
-                          href="/admin/plans/new"
-                          className={buttonVariants()}
-                        >
-                          <PlusIcon className="h-3.5 w-3.5" />
+                        <Link href="/admin/plans/new" className={buttonClass({ variant: 'primary' })}>
+                          <PlusIcon aria-hidden="true" className="size-4" />
                           {t('empty.newCta')}
                         </Link>
-                        <Link
-                          href="/admin/plans/clone"
-                          className={buttonVariants({ variant: 'outline' })}
-                        >
-                          <CopyIcon className="h-3.5 w-3.5" />
+                        <Link href="/admin/plans/clone" className={buttonClass({ variant: 'secondary' })}>
+                          <CopyIcon aria-hidden="true" className="size-4" />
                           {t('empty.cloneCta', {
                             sourceYear: formatCalendarYear(year - 1, locale),
                             targetYear: formatCalendarYear(year, locale),
@@ -345,126 +293,83 @@ export function PlansTable({
                     ) : undefined
                   }
                 />
-              </TableCell>
-            </TableRow>
+              </Td>
+            </Tr>
           ) : (
             sorted.map((plan) => {
               const isDeleted = plan.deleted_at !== null;
               return (
-                <TableRow
+                <Tr
                   key={`${plan.plan_year}-${plan.plan_id}`}
-                  className="hover:bg-accent/40"
                   data-plan-id={plan.plan_id}
                   data-plan-year={plan.plan_year}
                 >
-                  <TableCell>
-                    <a
-                      href={`/admin/plans/${plan.plan_year}/${plan.plan_id}`}
-                      className="focus-visible:underline"
-                    >
+                  <Td card="title">
+                    <Link href={`/admin/plans/${plan.plan_year}/${plan.plan_id}`} className="text-[var(--aura-fg-accent)] underline-offset-4 hover:underline">
                       <LocaleTextDisplay
                         value={plan.plan_name}
                         showMissingBadge={canWritePlans}
                         dataAttr="data-plan-name"
                       />
-                    </a>
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={plan.plan_category === 'partnership' ? 'default' : 'secondary'}
-                    >
+                    </Link>
+                  </Td>
+                  <Td>
+                    <Badge tone={plan.plan_category === 'partnership' ? 'accent' : 'neutral'}>
                       {t(`badges.${plan.plan_category}`)}
                     </Badge>
-                  </TableCell>
-                  <TableCell>
+                  </Td>
+                  <Td numeric>
                     <MoneyDisplay
                       amountMinorUnits={plan.annual_fee_minor_units}
                       currencyCode={currencyCode}
                     />
-                  </TableCell>
-                  <TableCell>
-                    {tOptions(`memberTypeScope.${plan.member_type_scope}`)}
-                  </TableCell>
-                  <TableCell>{formatCalendarYear(plan.plan_year, locale)}</TableCell>
-                  <TableCell>
+                  </Td>
+                  <Td>{tOptions(`memberTypeScope.${plan.member_type_scope}`)}</Td>
+                  <Td className={HIDE_IN_CARD}>{formatCalendarYear(plan.plan_year, locale)}</Td>
+                  {/* Beside the name on a card, as the phone board draws it. */}
+                  <Td card="action">
                     {isDeleted ? (
-                      <Badge variant="outline">{t('badges.deleted')}</Badge>
+                      <StatusPill tone="blocked">{t('badges.deleted')}</StatusPill>
                     ) : plan.is_active ? (
-                      <Badge variant="default">{t('badges.active')}</Badge>
+                      <StatusPill tone="ready">{t('badges.active')}</StatusPill>
                     ) : (
-                      <Badge variant="secondary">{t('badges.inactive')}</Badge>
+                      <StatusPill tone="neutral">{t('badges.inactive')}</StatusPill>
                     )}
-                  </TableCell>
+                  </Td>
                   {canWritePlans ? (
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger
-                          render={(props) => (
-                            <Button
-                              {...props}
-                              variant="ghost"
-                              size="icon"
-                              aria-label={t('columns.actionsFor', { planName: plan.plan_name.en })}
-                              data-row-actions-trigger
-                            >
-                              <MoreHorizontal className="size-4" aria-hidden="true" />
-                            </Button>
-                          )}
-                        />
-                        <DropdownMenuContent align="end">
-                          {!isDeleted ? (
-                            <>
-                              <DropdownMenuItem
-                                onClick={() => {
-                                  router.push(
-                                    `/admin/plans/${plan.plan_year}/${plan.plan_id}/edit`,
-                                  );
-                                }}
-                              >
-                                {tActions('edit')}
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              {plan.is_active ? (
-                                <DropdownMenuItem
-                                  onClick={() => openDialog('deactivate', plan)}
-                                >
-                                  {tActions('deactivate')}
-                                </DropdownMenuItem>
-                              ) : (
-                                <DropdownMenuItem
-                                  onClick={() => openDialog('activate', plan)}
-                                >
-                                  {tActions('activate')}
-                                </DropdownMenuItem>
-                              )}
-                              <DropdownMenuItem
-                                onClick={() => openDialog('delete', plan)}
-                                variant="destructive"
-                              >
-                                {tActions('delete')}
-                              </DropdownMenuItem>
-                            </>
-                          ) : (
-                            <DropdownMenuItem
-                              onClick={() => openDialog('undelete', plan)}
-                            >
-                              {tActions('undelete')}
-                            </DropdownMenuItem>
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
+                    <Td card="action">
+                      <DropdownMenu
+                        label={t('columns.actionsFor', { planName: plan.plan_name.en })}
+                        items={rowActions(plan)}
+                        trigger={
+                          <IconButton
+                            icon="ellipsis"
+                            label={t('columns.actionsFor', { planName: plan.plan_name.en })}
+                            touchHeight
+                            data-row-actions-trigger
+                          />
+                        }
+                      />
+                    </Td>
                   ) : null}
-                </TableRow>
+                </Tr>
               );
             })
           )}
-        </TableBody>
+        </TBody>
       </Table>
 
-      <p className="text-xs text-muted-foreground">
-        {t('subtitle', { total: sorted.length, year: formatCalendarYear(year, locale) })}
-      </p>
+      {sorted.length > 0 ? (
+        <p className="aura-text-caption text-[var(--aura-fg-secondary)]">
+          {vatPercent !== null
+            ? t('subtitleWithVat', {
+                total: sorted.length,
+                year: formatCalendarYear(year, locale),
+                rate: vatPercent,
+              })
+            : t('subtitle', { total: sorted.length, year: formatCalendarYear(year, locale) })}
+        </p>
+      ) : null}
 
       {/* Confirmation dialog for destructive + state-changing US4 actions */}
       {actionDialog}
