@@ -94,6 +94,7 @@ type GuardedResult =
   | { kind: 'deleted'; plan: Plan }
   | { kind: 'has_active_members'; count: number }
   | { kind: 'not_found' }
+  | { kind: 'plan_active' }
   | Error; // throw
 
 type DepsOverrides = {
@@ -295,6 +296,20 @@ describe('softDeletePlan use case', () => {
       if (result.error.type === 'has_active_members') {
         expect(result.error.count).toBe(7);
       }
+    }
+    expect(deps.audit.record).not.toHaveBeenCalled();
+  });
+
+  it('returns plan_active when softDeleteGuarded finds the plan activated after the read (TOCTOU)', async () => {
+    const deps = makeDeps({
+      findOneResult: makePlan({ is_active: false }),
+      softDeleteGuardedResult: { kind: 'plan_active' },
+    });
+    const result = await softDeletePlan(baseInput, deps);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.type).toBe('plan_active');
     }
     expect(deps.audit.record).not.toHaveBeenCalled();
   });
