@@ -189,6 +189,13 @@ describe('CloneYearClient on AURA', () => {
     }
   });
 
+  // Board `Admin-plans-clone`: a name/fee list set in AURA's 13px table-cell
+  // text, so "Thai Alumni/Student (inactive)" keeps to one line in a column.
+  it('sets the plan list in AURA\'s table-cell text', () => {
+    renderClient();
+    expect(screen.getByRole('list')).toHaveClass('aura-text-table-cell');
+  });
+
   it('confirms on an AURA alertdialog before cloning', () => {
     renderClient();
     fireEvent.click(cloneButton());
