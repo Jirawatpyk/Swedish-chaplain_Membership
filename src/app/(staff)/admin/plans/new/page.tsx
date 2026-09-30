@@ -21,8 +21,7 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { vatRatePercent } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import { FormContainer } from '@/components/layout';
-import { PageHeader } from '@/components/layout/page-header';
-import { NewPlanClient } from './new-plan-client';
+import { PLAN_FORM_COLUMN, renderNewPlanView } from '../_components/plan-form-views';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.plans.create');
@@ -31,8 +30,6 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function NewPlanPage() {
   await requirePagePermission('plans.write');
-
-  const t = await getTranslations('admin.plans.create');
 
   const tenant = resolveTenantFromRequest();
   const deps = buildPlansDeps(tenant);
@@ -45,14 +42,12 @@ export default async function NewPlanPage() {
   return (
     // 122 US6 (T605): the 672px column at the page's start edge, the stepper
     // and one card per step straight under the title (board `Admin-plan-new`).
-    <FormContainer className="mx-0">
-      <PageHeader title={t('title')} />
-      <NewPlanClient
-        currentYear={currentYear}
-        currencyUnit={currencyCode}
-        currencyCode={currencyCode}
-        vatRatePercent={feeHintVatPercent(taxPolicy)}
-      />
+    <FormContainer className={PLAN_FORM_COLUMN}>
+      {await renderNewPlanView({
+        currentYear,
+        currencyCode,
+        vatRatePercent: feeHintVatPercent(taxPolicy),
+      })}
     </FormContainer>
   );
 }
