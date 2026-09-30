@@ -60,21 +60,32 @@ describe('<TierBadge>', () => {
   });
 
   it.each([
-    ['premium', 'Premium', 'aura-badge--accent', false],
-    ['regular', 'Regular', 'aura-badge--neutral', false],
-    ['start_up', 'Start-up', 'aura-badge--warning', false],
-    ['partnership', 'Partnership', 'aura-badge--success', false],
-    ['thai_alumni', 'Thai alumni', 'aura-badge--warning', true],
+    ['partnership', 'Partnership', 'aura-badge--accent'],
+    ['premium', 'Premium', 'aura-badge--neutral'],
+    ['regular', 'Regular', 'aura-badge--neutral'],
+    ['start_up', 'Start-up', 'aura-badge--neutral'],
+    ['thai_alumni', 'Thai alumni', 'aura-badge--neutral'],
   ] as const)(
-    '122 US7a: %s is an AURA badge toned as the board draws it',
-    (tier, label, tone, outline) => {
+    '122 US7a: %s is a soft AURA badge — accent for Partnership (as on the plans list), neutral otherwise',
+    (tier, label, tone) => {
       renderBadge(tier);
       const el = screen.getByText(label);
       expect(el).toHaveClass('aura-badge', tone);
-      if (outline) expect(el).toHaveClass('is-outline');
-      else expect(el).not.toHaveClass('is-outline');
+      expect(el).not.toHaveClass('is-outline');
+      expect(el).not.toHaveClass('is-solid');
     },
   );
+
+  it('never takes a status tone: warning, success and danger stay for urgency and risk', () => {
+    for (const tier of ['thai_alumni', 'start_up', 'regular', 'premium', 'partnership'] as const) {
+      const { container, unmount } = renderBadge(tier);
+      const badge = container.querySelector('.aura-badge');
+      for (const status of ['aura-badge--warning', 'aura-badge--success', 'aura-badge--danger']) {
+        expect(badge).not.toHaveClass(status);
+      }
+      unmount();
+    }
+  });
 
   it('merges custom className', () => {
     render(
