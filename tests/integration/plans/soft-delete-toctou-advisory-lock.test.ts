@@ -384,4 +384,50 @@ describe('Integration: soft-delete TOCTOU advisory lock (W0-02)', () => {
     expect(reloaded?.deleted_at).not.toBeNull();
     expect(reloaded?.is_active).toBe(false);
   });
+
+  // -----------------------------------------------------------------------
+  // Test 5 — a stale undelete must not touch a live plan.
+  //
+  //   undeletePlan reads the plan (deleted → proceeds) OUTSIDE the tx. If a
+  //   concurrent undelete already restored it and an admin then activated
+  //   it, the stale undelete must be a no-op — not force is_active back to
+  //   false (and not write a second plan_undeleted audit event).
+  //
+  //     undelete B: findOne → deleted ✓ ── [window] ── undelete()
+  //     undelete A + admin:     undelete → commit; setActive(true) → commit
+  //
+  //   Sequential like Tests 2–4.
+  // -----------------------------------------------------------------------
+
+  it('Race condition closed — stale undelete on an already-restored plan leaves it untouched', async () => {
+    const user = await createActiveTestUser('admin');
+    tenant = await createTestTenant('test-swecham');
+    await seedTenantFiscal({ tenant, registrationFeeSatang: 100000n });
+
+    const planId = `w002-und-${randomUUID().slice(0, 8)}`;
+    await planRepo.insert(tenant.ctx, buildPlanDraft(user.userId, planId));
+    const slug = asPlanSlug(planId);
+    const year = asPlanYear(PLAN_YEAR);
+
+    const deleted = await planRepo.softDeleteGuarded(
+      tenant.ctx,
+      slug,
+      year,
+      new Date('2027-06-15T00:00:00Z'),
+      user.userId,
+    );
+    expect(deleted.kind).toBe('deleted');
+
+    // Undelete A wins, then an admin re-activates the plan.
+    expect(await planRepo.undelete(tenant.ctx, slug, year, user.userId)).toBeDefined();
+    expect(await planRepo.setActive(tenant.ctx, slug, year, true, user.userId)).toBeDefined();
+
+    // Stale undelete B lands last.
+    const stale = await planRepo.undelete(tenant.ctx, slug, year, user.userId);
+    expect(stale).toBeUndefined();
+
+    const reloaded = await planRepo.findOne(tenant.ctx, slug, year);
+    expect(reloaded?.deleted_at).toBeNull();
+    expect(reloaded?.is_active).toBe(true);
+  });
 });
