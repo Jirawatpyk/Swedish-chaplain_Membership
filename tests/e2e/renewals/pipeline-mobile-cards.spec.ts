@@ -6,7 +6,8 @@
  * (`aura-table--stacked`); from 640px up it is the grid. There is no second
  * list. This spec locks that contract, the "no horizontal body scroll at
  * phone widths" guarantee and a WCAG 2.1 AA scan, and that selecting a card
- * keeps the LAST card reachable above the sticky bulk bar (WCAG 2.4.11).
+ * keeps the LAST card reachable above the sticky AURA `ActionBar` bulk bar
+ * (WCAG 2.4.11).
  *
  * Requires `E2E_ADMIN_*` in `.env.local` + `FEATURE_F8_RENEWALS=true`.
  * Run:
@@ -104,17 +105,16 @@ test.describe('/admin/renewals — one table, cards on a phone @a11y @layout', (
     const cardCount = await cards.count();
     test.skip(cardCount === 0, 'no seeded renewal cycles for this admin — nothing to select');
 
-    // Select the FIRST card's checkbox — enough to mount the sticky
-    // `PipelineBulkActionBar` (role="toolbar") without needing every row.
+    // Select the FIRST card's checkbox — enough to wake the sticky
+    // `PipelineBulkActionBar` (an AURA ActionBar region) without every row.
     await cards.first().getByRole('checkbox').click();
-    const bar = page.getByRole('toolbar', { name: /bulk actions/i });
+    const bar = page.getByRole('region', { name: /bulk actions/i });
     await expect(bar).toBeVisible();
 
     // Scroll the LAST card fully into view, then assert its bottom edge
-    // sits ABOVE the sticky bar's top edge — the bar's measured
-    // `ResizeObserver` spacer (mirrors `admin/members/_components/
-    // bulk-action-bar.tsx`) must never leave the last card's controls
-    // covered by the bar (WCAG 2.4.11 Focus Not Obscured).
+    // sits ABOVE the sticky bar's top edge — the bar sits in the flow after
+    // the table and the page's scroll-padding reserves its height, so the
+    // last card's controls are never covered (WCAG 2.4.11 Focus Not Obscured).
     //
     // Park the last card half under the bar first. Otherwise, with one
     // seeded card, the checkbox click has already scrolled it into view and

@@ -314,7 +314,14 @@ Boards: `Admin-renewals` (+`-mobile`), `Admin-renewals-needs-action`, `Admin-ren
     - Badges on AURA `Badge`: tier as the board tones it (premium accent, regular neutral, start-up warning, partnership success, Thai alumni warning outline); urgency neutral → warning → danger as the deadline nears, suspended solid warning, terminated neutral outline; risk band success / warning / danger / critical solid danger; "Bill issued" neutral outline. Labels are unchanged, so colour is never the only signal.
     - `cycle-cells` on AURA tokens; the card-list-only props (`linkClassName`, the expires `label`) are gone with the card list. The shared retry button used by the tasks and tier-upgrades pages is an AURA button.
     - Extra test: `risk-score-badge`.
-- [ ] T710 [US7] Every US7a path joins `MIGRATED_PATHS` (RED: a US7a block in `ui-import-ratchet.test.ts`). Preview views `renewals`, `renewals-needs-action`, `renewals-empty` and `renewals-error`, plus the mark-paid dialog, all from the page's own view. e2e selectors for the stacked table.
+- [x] T710 [US7] Every US7a path joins `MIGRATED_PATHS` (RED: a US7a block in `ui-import-ratchet.test.ts`). Preview views `renewals`, `renewals-needs-action`, `renewals-empty` and `renewals-error`, plus the mark-paid dialog, all from the page's own view. e2e selectors for the stacked table.
+  - Done:
+    - `MIGRATED_PATHS` gains the pipeline page, its loading skeleton, every `_components` piece and `src/components/renewals/**`; a US7a block in `ui-import-ratchet.test.ts` (control: the tasks page waits for US7b). The two stacked-card reaches in `row-actions` carry the `#118` label.
+    - The page's view is `_components/renewals-pipeline-view.tsx`: `renderRenewalsPipelineView` (money band, section tabs, work queue, chart, tray as slots), `renderPipelineLens` (empty state or filters, table and paging) and `renderPipelineLoadError`. The page keeps its data and Suspense islands; the preview passes settled fixture reads.
+    - Preview views `renewals`, `renewals-needs-action` (work queue opens on Needs action: new `defaultLens`), `renewals-empty`, `renewals-error` and `renewals-mark-paid`; sample data in `renewal-fixtures.ts`, the at-risk read answered in the browser by `renewal-previews.tsx`. `preview-shares-page-views` covers them. Measured at 1440 and 390: no horizontal overflow.
+    - e2e: urgency chips are a nav of links, the tier select is "Tier", the bulk bar is the "Bulk actions" region, the mark-paid date is typed then blurred.
+    - `empty-state-cta-permission-wiring` reads the page's object-form gate (`canManageSchedules: canPerform(…)`); a wrong key still fails it.
+    - A dev key warning (the server-built result count beside the table) is gone behind a keyed fragment.
 - [ ] T711 [US7] Exit:
   - gates, build and the bundle budget for `/admin/renewals`;
   - board screenshots and a parity page;

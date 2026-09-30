@@ -37,9 +37,17 @@ export interface WorkQueueTabsProps {
    * above 0. Absent when the count could not be read (best-effort).
    */
   readonly needsActionCount?: number;
+  /** The lens shown first — the page always opens on the pipeline; the
+   *  preview of `Admin-renewals-needs-action` opens on Needs action. */
+  readonly defaultLens?: 'pipeline' | 'needsAction';
 }
 
-export function WorkQueueTabs({ pipeline, needsAction, needsActionCount }: WorkQueueTabsProps) {
+export function WorkQueueTabs({
+  pipeline,
+  needsAction,
+  needsActionCount,
+  defaultLens = 'pipeline',
+}: WorkQueueTabsProps) {
   const t = useTranslations('admin.renewals.workQueue');
   const needsActionLabel = t('needsAction');
   const counted = needsActionCount !== undefined && needsActionCount > 0;
@@ -72,7 +80,7 @@ export function WorkQueueTabs({ pipeline, needsAction, needsActionCount }: WorkQ
 
   return (
     <div className="relative">
-      <Tabs label={t('label')} tabs={tabs} variant="segmented" />
+      <Tabs label={t('label')} tabs={tabs} variant="segmented" defaultValue={defaultLens} />
       {/* The help sits at the end of the toggle row (the tablist is as wide
           as its two tabs, so the corner is free). */}
       <div className="absolute end-0 top-0">

@@ -212,6 +212,9 @@ export function RowActions({
   ];
   const menuLabel = tActions('rowMenu', { company: companyName });
 
+  // In a phone card the actions take the full row: `in-[.aura-table--stacked]`
+  // reads AURA's stacked class — a stand-in until AURA #118 (a card slot for a
+  // full-width action row).
   return (
     <div
       data-pipeline-row-actions=""
@@ -229,6 +232,7 @@ export function RowActions({
           loading={isPending}
           onClick={handleSendReminder}
           aria-label={tActions('sendReminderAriaLabel', { company: companyName })}
+          // Full-width beside the ⋯ in a phone card: stand-in until AURA #118.
           className="in-[.aura-table--stacked]:flex-1"
         >
           {tActions('sendReminder')}

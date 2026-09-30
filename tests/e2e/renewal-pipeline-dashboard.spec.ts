@@ -65,20 +65,18 @@ test.describe('F8 — /admin/renewals pipeline dashboard (US1)', () => {
       page.getByRole('heading', { name: /renewal pipeline/i }),
     ).toBeVisible();
 
-    // 8 urgency tabs render (T-90 / T-60 / T-30 / T-14 / T-7 / T-0 /
-    // Suspended / Terminated). Scope to the urgency tablist by its name:
-    // the page also renders `RenewalsSectionTabs` (4 tabs) + `WorkQueueTabs`
-    // (2 lenses, Wave 2 Task 7) on the same view, so a bare getByRole('tab')
-    // would over-match every tablist on the page. EN canonical label — the
-    // E2E session signs in in English, mirroring the tier-filter assertion
-    // below (line ~81).
+    // 8 urgency chips render (T-90 / T-60 / T-30 / T-14 / T-7 / T-0 /
+    // Suspended / Terminated). 122 US7a: AURA link tabs — a `nav` of links
+    // (the month lens needs a "no current chip" state). Scope to it by name:
+    // the section tabs are another nav on the same view. EN canonical label
+    // — the E2E session signs in in English.
     const tabs = page
-      .getByRole('tablist', { name: /filter by renewal urgency/i })
-      .getByRole('tab');
+      .getByRole('navigation', { name: /filter by renewal urgency/i })
+      .getByRole('link');
     await expect(tabs).toHaveCount(8, { timeout: 10_000 });
 
-    // Tier filter present
-    await expect(page.getByLabel(/filter pipeline by tier/i)).toBeVisible();
+    // Tier filter present (122 US7a: an AURA select labelled "Tier").
+    await expect(page.getByRole('combobox', { name: /^tier$/i })).toBeVisible();
 
     // AS5 perf smoke (full 5k-member benchmark in pnpm test:perf)
     expect(elapsed).toBeLessThan(5_000);
@@ -97,16 +95,10 @@ test.describe('F8 — /admin/renewals pipeline dashboard (US1)', () => {
       page.getByRole('heading', { name: /renewal pipeline/i }),
     ).toBeVisible({ timeout: 10_000 });
 
-    // Open the tier select trigger via its accessible role.
-    // The visually-hidden label and the combobox both match
-    // `/filter pipeline by tier/i`, so we narrow to the combobox role
-    // for a stable target.
-    await page
-      .getByRole('combobox', { name: /filter pipeline by tier/i })
-      .click();
-    // Wait for the listbox to render before clicking. base-ui mounts
-    // options in a portal, so they aren't queryable until the popover
-    // commits.
+    // Open the tier select (122 US7a: an AURA select labelled "Tier").
+    await page.getByRole('combobox', { name: /^tier$/i }).click();
+    // Wait for the listbox to render before clicking: the options exist
+    // only while the list is open.
     const premiumOption = page.getByRole('option', { name: /^premium$/i });
     await premiumOption.waitFor({ state: 'visible', timeout: 5_000 });
     await premiumOption.click();
@@ -132,10 +124,12 @@ test.describe('F8 — /admin/renewals pipeline dashboard (US1)', () => {
       page.getByRole('heading', { name: /renewal pipeline/i }),
     ).toBeVisible({ timeout: 10_000 });
 
-    // Click the "Terminated" tab (last in the tablist; renamed from
+    // Click the "Terminated" chip (last in the urgency nav; renamed from
     // "Lapsed"). Using `waitForURL` instead of `networkidle` because RSC
     // streaming races the URL push under Turbopack dev.
-    const terminatedTab = page.getByRole('tab', { name: /^terminated/i });
+    const terminatedTab = page
+      .getByRole('navigation', { name: /filter by renewal urgency/i })
+      .getByRole('link', { name: /^terminated/i });
     await terminatedTab.click();
     await page.waitForURL(/[?&]urgency=terminated\b/, { timeout: 10_000 });
     expect(page.url()).toContain('urgency=terminated');
@@ -228,7 +222,7 @@ test.describe('F8 — /admin/renewals pipeline dashboard (US1)', () => {
     await expect(
       page.getByRole('heading', { name: /renewal pipeline/i }),
     ).toBeVisible({ timeout: 10_000 });
-    const urgencyTablist = page.getByRole('tablist', {
+    const urgencyTablist = page.getByRole('navigation', {
       name: /filter by renewal urgency/i,
     });
     const monthHeading = page.getByRole('heading', {

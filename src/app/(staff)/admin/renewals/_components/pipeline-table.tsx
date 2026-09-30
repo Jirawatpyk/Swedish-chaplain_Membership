@@ -20,7 +20,7 @@
  */
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, Fragment } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -309,7 +309,10 @@ export function PipelineTable({
     // One block, so the page's pipeline gap treats the table as a unit; the
     // result-count caption sits directly above the rows it describes.
     <div className="flex flex-col gap-[var(--aura-space-2)]">
-      {resultCount}
+      {/* The caption is built on the server and arrives as a resolved node;
+          a keyed fragment keeps React from reading it as an unkeyed list
+          child beside the table. */}
+      <Fragment key="result-count">{resultCount}</Fragment>
       <AuraProvider strings={tableStrings}>
         <DataTable<PipelineRow>
           label={t('tableCaption')}
