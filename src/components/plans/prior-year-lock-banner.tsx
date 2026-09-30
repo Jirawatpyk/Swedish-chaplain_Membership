@@ -13,17 +13,18 @@
  *   - `other_plans` → the new-plan wizard, to add this plan to the year.
  *
  * i18n keys live under `admin.plans.priorYearLock`.
+ *
+ * 122 US6 (T606): AURA's warning Alert as the `Admin-plan-edit-locked`
+ * board draws it — a standing note (not a live region: it is there when the
+ * page opens), the action an AURA secondary button with its arrow.
  */
 'use client';
 
 import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
+import { ArrowRightIcon } from 'lucide-react';
+import { Alert, buttonClass } from '@jirawatpyk/aura-react';
 import { formatCalendarYear } from '@/lib/format-date-localised';
-import {
-  InlineAlert,
-  InlineAlertDescription,
-  InlineAlertTitle,
-} from '@/components/ui/inline-alert';
 
 /**
  * What the current year holds, relative to this plan:
@@ -74,17 +75,18 @@ export function PriorYearLockBanner({
   }[currentYearStatus];
 
   return (
-    <InlineAlert tone="warning">
-      <InlineAlertTitle>{t('banner', { year: shownYear })}</InlineAlertTitle>
-      <InlineAlertDescription className="mt-2 space-y-2">
-        <p>{cta.explanation}</p>
-        <Link
-          href={cta.href}
-          className="inline-flex items-center rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium shadow-sm hover:bg-accent hover:text-accent-foreground"
-        >
+    <Alert
+      tone="warning"
+      role="note"
+      title={t('banner', { year: shownYear })}
+      action={
+        <Link href={cta.href} className={buttonClass({ variant: 'secondary', size: 'sm' })}>
+          <ArrowRightIcon aria-hidden="true" className="size-4" />
           {cta.label}
         </Link>
-      </InlineAlertDescription>
-    </InlineAlert>
+      }
+    >
+      {cta.explanation}
+    </Alert>
   );
 }

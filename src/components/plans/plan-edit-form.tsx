@@ -7,29 +7,24 @@
  * to see + change everything in one pass.
  *
  * Prior-year lock: when `isPriorYear === true`, all locked fields
- * per `LOCKED_FIELDS_ON_PRIOR_YEAR` are disabled with a lock-icon
- * tooltip. The `<PriorYearLockBanner>` is rendered at the top.
+ * per `LOCKED_FIELDS_ON_PRIOR_YEAR` are read-only (or disabled) with
+ * AURA's lock icon and read to a screen reader as locked. The
+ * `<PriorYearLockBanner>` is rendered at the top.
  *
  * Client-side validation uses `planPatchSchema.partial()` at save
  * time. The server re-runs the same schema + the locked-field rule,
  * so this form is a UX nicety — NOT a security boundary.
+ *
+ * 122 US6 (T606): on AURA as the `Admin-plan-edit` (+ `-locked`) boards
+ * draw it — the "Plan name", "Annual fee" and "Benefit matrix" fieldset
+ * cards (a partnership plan's benefits in a card of their own), then
+ * Cancel / "Save changes", pinned to the bottom of a phone.
  */
 'use client';
 
-import { useState } from 'react';
-import { Loader2Icon, Lock } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
 import { useTranslations } from 'next-intl';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  TranslatedSelectValue,
-} from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
+import { ActionBar, Button, Card, Select, TextField } from '@jirawatpyk/aura-react';
 import { LocaleTextInput } from './locale-text-input';
 import { MoneyInput } from './money-input';
 import { BenefitMatrixEditor } from './benefit-matrix-editor';
@@ -37,6 +32,7 @@ import {
   PriorYearLockBanner,
   type CurrentYearPlanStatus,
 } from './prior-year-lock-banner';
+import { PlanLockedNote, lockedFieldProps, lockedSelectProps } from './plan-locked-note';
 import { usePlanOptions } from './use-plan-options';
 import {
   LOCKED_FIELDS_ON_PRIOR_YEAR,
@@ -57,41 +53,6 @@ export interface PlanEditFormProps {
   readonly onCancel?: () => void;
 }
 
-/**
- * Wraps a field that may be disabled with a lock icon overlay + a
- * native `title` tooltip. Uses the browser's built-in title-attribute
- * tooltip rather than a Radix/BaseUI `<Tooltip>` wrapper because the
- * wrapped children can contain their own interactive elements (a
- * `<Select>` or `<Button>` that each render a native `<button>`), and
- * putting a `<button>`-based TooltipTrigger around another `<button>`
- * is invalid HTML nesting that throws a React hydration error in
- * dev and emits a "button inside button" DOM warning in prod. The
- * native-title approach has zero HTML-nesting concerns, works on
- * keyboard focus + mouse hover, and the banner at the top of the
- * form already explains the rule in full.
- */
-function LockWrapper({
-  locked,
-  children,
-}: {
-  readonly locked: boolean;
-  readonly children: React.ReactNode;
-}) {
-  const t = useTranslations('admin.plans.priorYearLock');
-  if (!locked) return <>{children}</>;
-  return (
-    <div className="relative" title={t('fieldTooltip')}>
-      <div className="pointer-events-none opacity-60">{children}</div>
-      <div
-        aria-hidden="true"
-        className="absolute right-2 top-2 flex items-center gap-1 text-muted-foreground"
-      >
-        <Lock className="h-4 w-4" />
-      </div>
-    </div>
-  );
-}
-
 export function PlanEditForm({
   initialValues,
   currentYear,
@@ -105,6 +66,7 @@ export function PlanEditForm({
   const t = useTranslations('admin.plans.create.labels');
   const tEdit = useTranslations('admin.plans.edit');
   const tButtons = useTranslations('admin.plans.create.buttons');
+  const tMatrix = useTranslations('admin.plans.create.matrix');
   const { memberTypeOptions: MEMBER_TYPE_OPTIONS } = usePlanOptions();
 
   const [draft, setDraft] = useState<PlanSchemaInput>(initialValues);
@@ -127,19 +89,20 @@ export function PlanEditForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form onSubmit={handleSubmit} className="space-y-[var(--aura-space-6)]">
       {isPriorYear ? (
-        <PriorYearLockBanner
-          planId={draft.plan_id}
-          planYear={draft.plan_year}
-          currentYear={currentYear}
-          currentYearStatus={currentYearStatus}
-        />
+        <>
+          <PriorYearLockBanner
+            planId={draft.plan_id}
+            planYear={draft.plan_year}
+            currentYear={currentYear}
+            currentYearStatus={currentYearStatus}
+          />
+          <PlanLockedNote />
+        </>
       ) : null}
 
-      {/* Basics */}
-      <section className="space-y-4">
-        <h2 className="text-lg font-semibold">{t('planName')}</h2>
+      <SectionCard id="name" title={t('planName')}>
         <LocaleTextInput
           label={t('planName')}
           value={draft.plan_name}
@@ -154,155 +117,133 @@ export function PlanEditForm({
           maxLength={2000}
           required
         />
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div className="space-y-1">
-            <Label>{t('sortOrder')}</Label>
-            <Input
-              id="sort_order"
-              type="number"
-              min={0}
-              max={10_000}
-              value={draft.sort_order}
-              onChange={(e) =>
-                update('sort_order', Number.parseInt(e.target.value, 10) || 0)
-              }
-            />
-          </div>
-          <LockWrapper locked={isLocked('member_type_scope')}>
-            <div className="space-y-1">
-              <Label>{t('memberTypeScope')}</Label>
-              <Select
-                value={draft.member_type_scope}
-                onValueChange={(v) => {
-                  if (v === null) return;
-                  update('member_type_scope', v as PlanSchemaInput['member_type_scope']);
-                }}
-                disabled={isLocked('member_type_scope')}
-                items={MEMBER_TYPE_OPTIONS}
-              >
-                <SelectTrigger aria-label={t('memberTypeScope')} className="w-full">
-                  <TranslatedSelectValue
-                    translate={(v) =>
-                      MEMBER_TYPE_OPTIONS.find((o) => o.value === v)?.label ?? null
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {MEMBER_TYPE_OPTIONS.map((o) => (
-                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </LockWrapper>
-        </div>
-      </section>
-
-      <Separator />
-
-      {/* Fees */}
-      <section className="space-y-4">
-        <h2 className="text-lg font-semibold">{t('annualFee')}</h2>
-        <LockWrapper locked={isLocked('annual_fee_minor_units')}>
-          <MoneyInput
-            label={t('annualFee')}
-            value={draft.annual_fee_minor_units}
-            onChange={(n) => update('annual_fee_minor_units', n ?? 0)}
-            unit={currencyUnit}
-            disabled={isLocked('annual_fee_minor_units')}
-            required
-            helpText={
-              vatRatePercent === null
-                ? t('annualFeeHelpNoRate')
-                : t('annualFeeHelp', { rate: vatRatePercent })
+        <div className="grid grid-cols-1 gap-[var(--aura-space-4)] md:grid-cols-2">
+          <TextField
+            id="sort_order"
+            label={t('sortOrder')}
+            type="number"
+            min={0}
+            max={10_000}
+            value={draft.sort_order}
+            onChange={(e) => update('sort_order', Number.parseInt(e.target.value, 10) || 0)}
+          />
+          <Select
+            id="member_type_scope"
+            label={t('memberTypeScope')}
+            value={draft.member_type_scope}
+            onChange={(e) =>
+              update('member_type_scope', e.target.value as PlanSchemaInput['member_type_scope'])
             }
+            options={MEMBER_TYPE_OPTIONS}
+            {...lockedSelectProps(isLocked('member_type_scope'))}
           />
-        </LockWrapper>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <LockWrapper locked={isLocked('min_turnover_minor_units')}>
-            <MoneyInput
-              label={t('minTurnover')}
-              value={draft.min_turnover_minor_units}
-              onChange={(n) => update('min_turnover_minor_units', n)}
-              unit={currencyUnit}
-              disabled={isLocked('min_turnover_minor_units')}
-            />
-          </LockWrapper>
-          <LockWrapper locked={isLocked('max_turnover_minor_units')}>
-            <MoneyInput
-              label={t('maxTurnover')}
-              value={draft.max_turnover_minor_units}
-              onChange={(n) => update('max_turnover_minor_units', n)}
-              unit={currencyUnit}
-              disabled={isLocked('max_turnover_minor_units')}
-            />
-          </LockWrapper>
-          <LockWrapper locked={isLocked('max_duration_years')}>
-            <div className="space-y-1">
-              <Label htmlFor="max_duration">{t('maxDurationYears')}</Label>
-              <Input
-                id="max_duration"
-                type="number"
-                min={1}
-                value={draft.max_duration_years ?? ''}
-                onChange={(e) => {
-                  const v = Number.parseInt(e.target.value, 10);
-                  update('max_duration_years', Number.isFinite(v) && v > 0 ? v : null);
-                }}
-                disabled={isLocked('max_duration_years')}
-              />
-            </div>
-          </LockWrapper>
-          <LockWrapper locked={isLocked('max_member_age')}>
-            <div className="space-y-1">
-              <Label htmlFor="max_member_age">{t('maxMemberAge')}</Label>
-              <Input
-                id="max_member_age"
-                type="number"
-                min={1}
-                max={199}
-                value={draft.max_member_age ?? ''}
-                onChange={(e) => {
-                  const v = Number.parseInt(e.target.value, 10);
-                  update('max_member_age', Number.isFinite(v) && v > 0 ? v : null);
-                }}
-                disabled={isLocked('max_member_age')}
-              />
-            </div>
-          </LockWrapper>
         </div>
-      </section>
+      </SectionCard>
 
-      <Separator />
-
-      {/* Benefits */}
-      <section className="space-y-4">
-        <h2 className="text-lg font-semibold">{t('benefitMatrix')}</h2>
-        <LockWrapper locked={isLocked('benefit_matrix')}>
-          <BenefitMatrixEditor
-            value={draft.benefit_matrix}
-            onChange={(next) => update('benefit_matrix', next)}
-            planCategory={draft.plan_category}
-            disabled={isLocked('benefit_matrix')}
+      <SectionCard id="fee" title={t('annualFee')}>
+        <MoneyInput
+          id="annual_fee"
+          label={t('annualFee')}
+          value={draft.annual_fee_minor_units}
+          onChange={(n) => update('annual_fee_minor_units', n ?? 0)}
+          unit={currencyUnit}
+          locked={isLocked('annual_fee_minor_units')}
+          required
+          helpText={
+            vatRatePercent === null
+              ? t('annualFeeHelpNoRate')
+              : t('annualFeeHelp', { rate: vatRatePercent })
+          }
+        />
+        <div className="grid grid-cols-1 gap-[var(--aura-space-4)] md:grid-cols-2">
+          <MoneyInput
+            id="min_turnover"
+            label={t('minTurnover')}
+            value={draft.min_turnover_minor_units}
+            onChange={(n) => update('min_turnover_minor_units', n)}
+            unit={currencyUnit}
+            locked={isLocked('min_turnover_minor_units')}
           />
-        </LockWrapper>
-      </section>
+          <MoneyInput
+            id="max_turnover"
+            label={t('maxTurnover')}
+            value={draft.max_turnover_minor_units}
+            onChange={(n) => update('max_turnover_minor_units', n)}
+            unit={currencyUnit}
+            locked={isLocked('max_turnover_minor_units')}
+          />
+          <TextField
+            id="max_duration"
+            label={t('maxDurationYears')}
+            type="number"
+            min={1}
+            value={draft.max_duration_years ?? ''}
+            onChange={(e) => {
+              const v = Number.parseInt(e.target.value, 10);
+              update('max_duration_years', Number.isFinite(v) && v > 0 ? v : null);
+            }}
+            {...lockedFieldProps(isLocked('max_duration_years'))}
+          />
+          <TextField
+            id="max_member_age"
+            label={t('maxMemberAge')}
+            type="number"
+            min={1}
+            max={199}
+            value={draft.max_member_age ?? ''}
+            onChange={(e) => {
+              const v = Number.parseInt(e.target.value, 10);
+              update('max_member_age', Number.isFinite(v) && v > 0 ? v : null);
+            }}
+            {...lockedFieldProps(isLocked('max_member_age'))}
+          />
+        </div>
+      </SectionCard>
 
-      <Separator />
+      <BenefitMatrixEditor
+        value={draft.benefit_matrix}
+        onChange={(next) => update('benefit_matrix', next)}
+        planCategory={draft.plan_category}
+        locked={isLocked('benefit_matrix')}
+        renderSection={({ id, children }) => (
+          <SectionCard
+            id={id === 'benefits' ? 'benefits' : 'partnership'}
+            title={id === 'benefits' ? t('benefitMatrix') : tMatrix('section.partnershipBenefits')}
+          >
+            {children}
+          </SectionCard>
+        )}
+      />
 
-      <div className="flex items-center justify-end gap-2">
+      {/* Cancel before the primary action (ux-standards § 11.1); pinned to
+          the bottom of a phone (globals.css `.plan-form-actions`). */}
+      <ActionBar className="chamber-viewport-actionbar plan-form-actions">
         {onCancel ? (
-          <Button type="button" variant="ghost" onClick={onCancel} disabled={submitting}>
+          <Button type="button" variant="secondary" onClick={onCancel} disabled={submitting}>
             {tButtons('cancel')}
           </Button>
         ) : null}
-        <Button type="submit" disabled={submitting} aria-busy={submitting}>
-          {submitting && (
-            <Loader2Icon className="mr-2 h-4 w-4 motion-safe:animate-spin" aria-hidden />
-          )}
+        <Button type="submit" loading={submitting}>
           {submitting ? tEdit('saving') : tEdit('save')}
         </Button>
-      </div>
+      </ActionBar>
     </form>
+  );
+}
+
+/** One part of the form as an AURA fieldset card named by its h2. */
+function SectionCard({
+  id,
+  title,
+  children,
+}: {
+  readonly id: string;
+  readonly title: string;
+  readonly children: ReactNode;
+}) {
+  return (
+    <Card as="fieldset" title={title} titleId={`plan-edit-${id}`} headingLevel={2} className="min-w-0">
+      <div className="space-y-[var(--aura-space-4)]">{children}</div>
+    </Card>
   );
 }

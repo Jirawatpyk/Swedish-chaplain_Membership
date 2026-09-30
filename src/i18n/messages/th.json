@@ -867,8 +867,7 @@
         "explanationCreateInCurrentYear": "ค่าธรรมเนียม เงื่อนไข และสิทธิประโยชน์ของแพ็กเกจปีที่ผ่านมาไม่สามารถแก้ไขได้ และปี {currentYear} ยังไม่มีแพ็กเกจนี้ กรุณาเพิ่มแพ็กเกจใหม่ในปี {currentYear} โดยใช้รหัสแพ็กเกจเดิม ชื่อ คำอธิบาย และลำดับยังคงแก้ไขได้ในที่นี้",
         "createCta": "สร้างแพ็กเกจของปี {currentYear}",
         "openCurrentCta": "เปิดแพ็กเกจของปี {currentYear}",
-        "cloneCta": "คัดลอกแพ็กเกจปี {year} ไปยังปี {currentYear}",
-        "fieldTooltip": "ฟิลด์นี้ถูกล็อกในแพ็กเกจย้อนหลัง แก้ไขได้ในแพ็กเกจของปีปัจจุบัน"
+        "cloneCta": "คัดลอกแพ็กเกจปี {year} ไปยังปี {currentYear}"
       },
       "create": {
         "localeTabsLabel": "ภาษาของ{field}",

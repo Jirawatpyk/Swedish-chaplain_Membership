@@ -12,6 +12,7 @@ import { makePlan } from './plan-fixture';
 
 vi.mock('next-intl/server', () => ({
   getTranslations: vi.fn().mockImplementation(async () => (key: string) => key),
+  getLocale: vi.fn(async () => 'en'),
 }));
 vi.mock('next/navigation', () => ({
   notFound: vi.fn(() => {

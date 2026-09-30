@@ -867,8 +867,7 @@
         "explanationCreateInCurrentYear": "Avgifter, behörighet och förmåner kan inte ändras på ett tidigare års paket, och {currentYear} har ingen version av paketet. Lägg till det i {currentYear} som ett nytt paket med samma paket-ID. Namn, beskrivning och sortering kan fortfarande redigeras här.",
         "createCta": "Skapa {currentYear} års paket",
         "openCurrentCta": "Öppna {currentYear} års version",
-        "cloneCta": "Klona {year} års paket till {currentYear}",
-        "fieldTooltip": "Låst på föregående års paket. Ändra det i innevarande års version."
+        "cloneCta": "Klona {year} års paket till {currentYear}"
       },
       "create": {
         "localeTabsLabel": "Språk för {field}",
