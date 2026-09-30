@@ -291,7 +291,7 @@ html:has(.chamber-shell) {
   scroll-padding-top: 5.5rem;
 }
 html:has(.chamber-viewport-actionbar) {
-  scroll-padding-bottom: calc(var(--aura-bottomnav-offset, 0px) + 5.5rem);
+  scroll-padding-bottom: calc(var(--aura-bottomnav-offset, 0px) + 5.5rem + env(safe-area-inset-bottom, 0px));
 }
 /* Spec 122 US5b-2 — the member form's action bar (boards `Admin-member-new`,
    `-edit`, each with `-mobile`). On a phone it is pinned edge to edge to the

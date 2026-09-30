@@ -162,6 +162,9 @@ export function MembershipSection({
               <DatePicker
                 id="registration_date"
                 name={field.name}
+                // The input carries RHF's ref so a failed submit can focus it.
+                ref={field.ref}
+                onBlur={field.onBlur}
                 label={tf('registrationDate')}
                 timeZone="Asia/Bangkok"
                 value={(field.value || null) as ISODate | null}

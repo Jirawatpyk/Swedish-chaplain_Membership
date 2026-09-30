@@ -104,7 +104,8 @@ export function BundleChangeWarningDialog({
       open={open}
       onClose={() => onOpenChange(false)}
       title={t('title')}
-      description={count !== null ? t('description', { affectedCount: count }) : undefined}
+      // Described from the moment it opens: the loading line, then the count.
+      description={count !== null ? t('description', { affectedCount: count }) : t('loading')}
       footer={
         <>
           <Button variant="secondary" onClick={() => onOpenChange(false)}>

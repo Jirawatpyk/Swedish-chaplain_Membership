@@ -189,6 +189,7 @@ export function CompanySection({
           name="country"
           render={({ field }) => (
             <CountryCombobox
+              ref={field.ref}
               id="country"
               label={tf('country')}
               required

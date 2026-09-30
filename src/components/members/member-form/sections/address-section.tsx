@@ -542,6 +542,7 @@ export function AddressSection({ mode }: { readonly mode: 'create' | 'edit' }) {
                 name="province"
                 render={({ field }) => (
                   <Combobox
+                    ref={field.ref}
                     id="province"
                     label={tf('province')}
                     required={isCreate}
@@ -564,6 +565,7 @@ export function AddressSection({ mode }: { readonly mode: 'create' | 'edit' }) {
                 name="city"
                 render={({ field }) => (
                   <Combobox
+                    ref={field.ref}
                     id="city"
                     label={tf('city')}
                     required={isCreate}
@@ -582,6 +584,7 @@ export function AddressSection({ mode }: { readonly mode: 'create' | 'edit' }) {
                 name="sub_district"
                 render={({ field }) => (
                   <Combobox
+                    ref={field.ref}
                     id="sub_district"
                     label={tf('subDistrict')}
                     required={isCreate}
@@ -738,6 +741,7 @@ export function AddressSection({ mode }: { readonly mode: 'create' | 'edit' }) {
                 name="billing_country"
                 render={({ field }) => (
                   <CountryCombobox
+                    ref={field.ref}
                     id="billing_country"
                     label={tf('country')}
                     required

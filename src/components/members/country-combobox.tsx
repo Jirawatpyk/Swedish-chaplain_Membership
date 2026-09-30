@@ -25,7 +25,7 @@
  * `ready` state and falls back to the bare alpha-2 code list
  * (`getAlpha2Codes()`) while loading, so the option set is never empty.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type Ref } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import i18nIsoCountries from 'i18n-iso-countries';
 import { Combobox, type ComboboxOption } from '@jirawatpyk/aura-react';
@@ -45,6 +45,8 @@ export type CountryComboboxProps = {
   readonly required?: boolean;
   readonly error?: string | undefined;
   readonly disabled?: boolean;
+  /** Reaches the text input, so react-hook-form can focus it on an error. */
+  readonly ref?: Ref<HTMLInputElement>;
 };
 
 export function CountryCombobox({
@@ -55,6 +57,7 @@ export function CountryCombobox({
   required,
   error,
   disabled,
+  ref,
 }: CountryComboboxProps) {
   const t = useTranslations('admin.members.create.fields');
   const locale = useLocale();
@@ -98,6 +101,7 @@ export function CountryCombobox({
 
   return (
     <Combobox
+      ref={ref}
       id={id}
       label={label}
       required={required}

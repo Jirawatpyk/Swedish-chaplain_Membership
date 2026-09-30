@@ -57,6 +57,9 @@ export function OverrideReasonDialog({
     (typeof OVERRIDE_REASON_CODES)[number] | null
   >(null);
   const [note, setNote] = useState('');
+  // The note's "required" error waits until the note has been left empty
+  // (never on picking "Other" before anything is typed).
+  const [noteTouched, setNoteTouched] = useState(false);
 
   const noteRequired = code === 'other';
   const canProceed =
@@ -67,11 +70,13 @@ export function OverrideReasonDialog({
     onConfirm({ code, note: note.trim() || null });
     setCode(null);
     setNote('');
+    setNoteTouched(false);
   };
 
   const handleCancel = () => {
     setCode(null);
     setNote('');
+    setNoteTouched(false);
     onOpenChange(false);
   };
 
@@ -114,10 +119,11 @@ export function OverrideReasonDialog({
           required={noteRequired}
           value={note}
           onChange={(e) => setNote(e.target.value)}
+          onBlur={() => setNoteTouched(true)}
           maxLength={500}
           rows={3}
           placeholder={t('notePlaceholder')}
-          error={noteRequired && note.trim() === '' ? t('noteRequired') : undefined}
+          error={noteTouched && noteRequired && note.trim() === '' ? t('noteRequired') : undefined}
         />
       </div>
     </Dialog>

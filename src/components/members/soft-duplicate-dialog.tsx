@@ -32,6 +32,8 @@ export function SoftDuplicateDialog({
 }: Props) {
   const t = useTranslations('admin.members.softDuplicate');
 
+  // Focus starts on Cancel (the safe action), not on the body's link, which
+  // opens a new tab.
   return (
     <Dialog
       open={open}
@@ -40,7 +42,7 @@ export function SoftDuplicateDialog({
       description={t('description')}
       footer={
         <>
-          <Button variant="secondary" onClick={() => onOpenChange(false)}>
+          <Button variant="secondary" data-autofocus onClick={() => onOpenChange(false)}>
             {t('cancel')}
           </Button>
           <Button onClick={onProceed}>{t('proceed')}</Button>
