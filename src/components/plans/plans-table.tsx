@@ -319,7 +319,8 @@ export function PlansTable({
         <TBody>
           {sorted.length === 0 && filtered ? (
             <Tr>
-              <Td colSpan={canWritePlans ? 7 : 6}>
+              {/* No card label on a phone: the empty state is not a field. */}
+              <Td colSpan={canWritePlans ? 7 : 6} label="">
                 <EmptyState
                   icon={SearchXIcon}
                   bordered={false}
@@ -335,7 +336,7 @@ export function PlansTable({
             </Tr>
           ) : sorted.length === 0 ? (
             <Tr>
-              <Td colSpan={canWritePlans ? 7 : 6}>
+              <Td colSpan={canWritePlans ? 7 : 6} label="">
                 <EmptyState
                   icon={PlusIcon}
                   bordered={false}
@@ -343,7 +344,8 @@ export function PlansTable({
                   description={t('empty.description')}
                   action={
                     canWritePlans ? (
-                      <div className="flex flex-wrap items-center justify-center gap-2">
+                      // On a phone the two actions stack at one full width, not two ragged ones.
+                      <div className="flex flex-wrap items-center justify-center gap-2 max-sm:flex-col max-sm:items-stretch">
                         <Link href="/admin/plans/new" className={buttonClass({ variant: 'primary' })}>
                           <PlusIcon aria-hidden="true" className="size-4" />
                           {t('empty.newCta')}
