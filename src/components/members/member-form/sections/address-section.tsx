@@ -47,7 +47,7 @@
  *     documents in two different languages, for no legal benefit.
  * `sub_district + city + province` are frozen onto the §86/4 tax document at
  * issue (compose-buyer-address.ts) — it is language-agnostic and prints
- * whatever is stored. The Thai name is shown only as secondary `detail` text
+ * whatever is stored. The Thai name is shown only as the option's secondary `description`
  * inside the picker (see `dedupeOptions`) — a recognition aid for the admin,
  * never what gets saved. Do NOT revert this to Thai storage without new
  * evidence overturning both facts above.
@@ -56,43 +56,37 @@
  * empty content from the first render — its own docblock is explicit that a
  * conditionally-mounted live region is not announced by most screen readers.
  *
- * Trade-off, NOT "preserved verbatim" (review-round-2 correction — the first
- * implementation report claimed `autoComplete` was preserved verbatim on
- * every field; that was wrong for these three): `province`, `city` and
- * `sub_district` are each a button-based `Combobox` (`role="combobox"`, not
- * an `<input>`), so Chrome's `autoComplete="address-level1"/"address-
- * level2"` autofill CANNOT act on them — a `<button>` is never an autofill
- * target, independent of anything the lookup effect does. Only
- * `address_line1` / `address_line2` / `postal_code` (still plain `<Input>`s)
- * carry working autofill. This is the same trade-off Task 5 already made for
- * the country field; it is accepted, not accidental — but it must be
- * documented honestly, not asserted away.
+ * Autofill trade-off: `province`, `city` and `sub_district` are comboboxes
+ * (AURA's `Combobox` sets `autocomplete="off"` on its input), so Chrome's
+ * `address-level1`/`address-level2` autofill does not fill them. Only
+ * `address_line1` / `address_line2` / `postal_code` carry working autofill —
+ * the same trade-off Task 5 made for the country field; accepted, not
+ * accidental.
  *
- * `allowCustomValue` (review-round-2 Critical 1 fix): a `Combobox` with zero
- * matching options is otherwise a dead end — the trigger is a `<button>`,
- * there is no way to type a value the option list doesn't already contain.
- * Of 955 postcodes, an unresolved/mistyped/uncovered one is not rare, and
- * blocking on it would make Thai member CREATE impossible and imported
- * members' addresses unfixable. `province`/`city`/`sub_district` therefore
- * pass `allowCustomValue` + a translated `customValueLabel` — see
- * `ui/combobox.tsx`'s file-header comment for how the "Use «text»" item
- * itself works. `postalCodeUnknownHint`'s promise of manual entry depends on
- * this being wired.
+ * Typed values (review-round-2 Critical 1): a combobox with zero matching
+ * options must not be a dead end. Of 955 postcodes, an unresolved/mistyped/
+ * uncovered one is not rare, and blocking on it would make Thai member CREATE
+ * impossible and imported members' addresses unfixable. The three comboboxes
+ * pass AURA's `allowCustomValue` (5.16, handoff #105): Enter with nothing
+ * highlighted, or leaving the field, keeps the typed text (text matching an
+ * option's label picks that option). `postalCodeUnknownHint`'s promise of
+ * manual entry depends on this.
+ *
+ * Spec 122 US5b-2 (T576): the board's Address card — the two lines across,
+ * then postcode | province and district | sub-district from 640px, the
+ * auto-filled note under them, the billing-address box after — on AURA fields,
+ * with the Thai name as each option's `description`; the edit-mode
+ * incomplete-address notice is an AURA warning alert.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Controller, useFormContext, useWatch } from 'react-hook-form';
-import { AlertTriangleIcon } from 'lucide-react';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { RequiredMark } from '@/components/ui/required-mark';
+import { CircleCheckIcon } from 'lucide-react';
+import { Alert, Button, Checkbox, Combobox, TextField, type ComboboxOption } from '@jirawatpyk/aura-react';
 import { LiveRegion } from '@/components/shell/live-region';
-import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { CountryCombobox } from '@/components/members/country-combobox';
-import { FieldError } from '../field-error';
 import { type MemberFormValues } from '../schema';
+import { FormSectionCard } from '../form-section-card';
 
 const POSTAL_CODE_RE = /^\d{5}$/;
 const LOOKUP_DEBOUNCE_MS = 300;
@@ -125,7 +119,7 @@ type AutoFillSnapshot = {
 };
 
 /** Dedupe candidate rows down to one option per distinct English name,
- * keeping the Thai name as secondary `detail` text (never the primary label
+ * keeping the Thai name as the option's secondary `description` (searched too) (never the primary label
  * — the STORED value must stay the English name regardless of UI locale;
  * see the file-header comment for why). */
 function dedupeOptions(
@@ -136,7 +130,7 @@ function dedupeOptions(
   for (const c of candidates) {
     const name = pick(c);
     if (!name.en || seen.has(name.en)) continue;
-    seen.set(name.en, { value: name.en, label: name.en, detail: name.th });
+    seen.set(name.en, { value: name.en, label: name.en, description: name.th });
   }
   return Array.from(seen.values());
 }
@@ -478,431 +472,290 @@ export function AddressSection({ mode }: { readonly mode: 'create' | 'edit' }) {
   // carry no marker at all.
   const addressRequired = isCreate && countryIsTH;
 
-  return (
-    <fieldset className="flex flex-col gap-4 rounded-md border p-4">
-      <legend className="px-2 text-base font-semibold">{t('sections.address')}</legend>
+  // The postcode's extra descriptions (the field's own hint is the SC 3.3.2
+  // instruction; AURA replaces it with the error when there is one).
+  const postalExtraDescribedBy =
+    [
+      lookupStatus === 'unknown' ? 'postal_code-unknown-hint' : null,
+      activeAutoFill ? 'postal_code-autofill-hint' : null,
+    ]
+      .filter(Boolean)
+      .join(' ') || undefined;
 
-      {mode === 'edit' && addressIncomplete && (
-        <div className="flex items-start gap-2 rounded-md border border-amber-600/40 bg-amber-50 p-3 text-sm dark:border-amber-400/40 dark:bg-amber-950/30">
-          <AlertTriangleIcon
-            className="mt-0.5 size-4 shrink-0 text-amber-700 dark:text-amber-400"
-            aria-hidden="true"
-          />
-          <p className="text-amber-800 dark:text-amber-200">
-            {tf('addressIncompleteBanner')}{' '}
-            <a href="#address_line1" className="underline underline-offset-2">
+  return (
+    <FormSectionCard id="address" title={t('sections.address')}>
+      <div className="flex flex-col gap-4">
+        {mode === 'edit' && addressIncomplete && (
+          // A standing notice (`role="status"`): it shows on load and tracks
+          // the fields as they change, so it must not interrupt as an alert.
+          <Alert tone="warning" role="status" title={tf('addressIncompleteBanner')}>
+            <a href="#address_line1" className="text-[var(--aura-fg-accent)] underline underline-offset-2">
               {tf('addressIncompleteJumpLink')}
             </a>
-          </p>
-        </div>
-      )}
+          </Alert>
+        )}
 
-      <div>
-        <Label htmlFor="address_line1">
-          {tf('addressLine1')}
-          {addressRequired && <RequiredMark />}
-        </Label>
-        <Input
+        <TextField
           id="address_line1"
-          {...register('address_line1')}
-          maxLength={200}
-          autoComplete="address-line1"
+          label={tf('addressLine1')}
           required={addressRequired}
           aria-required={addressRequired}
-          aria-invalid={Boolean(errors.address_line1)}
-          aria-describedby={errors.address_line1 ? 'address_line1-error' : undefined}
+          maxLength={200}
+          autoComplete="address-line1"
+          error={errors.address_line1?.message}
+          {...register('address_line1')}
         />
-        <FieldError id="address_line1-error" message={errors.address_line1?.message} />
-      </div>
-      <div>
-        <Label htmlFor="address_line2">{tf('addressLine2')}</Label>
-        <Input
+        <TextField
           id="address_line2"
-          {...register('address_line2')}
+          label={tf('addressLine2')}
           maxLength={200}
           autoComplete="address-line2"
-          aria-invalid={Boolean(errors.address_line2)}
-          aria-describedby={errors.address_line2 ? 'address_line2-error' : undefined}
+          error={errors.address_line2?.message}
+          {...register('address_line2')}
         />
-        <FieldError id="address_line2-error" message={errors.address_line2?.message} />
-      </div>
 
-      {countryIsTH ? (
-        <>
-          <div>
-            <Label htmlFor="postal_code">
-              {tf('postalCode')}
-              {isCreate && <RequiredMark />}
-            </Label>
-            <Input
-              id="postal_code"
-              {...register('postal_code')}
-              maxLength={20}
-              inputMode="numeric"
-              autoComplete="postal-code"
-              required={isCreate}
-              aria-required={isCreate}
-              aria-invalid={Boolean(errors.postal_code)}
-              aria-describedby={
-                [
-                  errors.postal_code ? 'postal_code-error' : null,
-                  'postal_code-instruction',
-                  lookupStatus === 'unknown' ? 'postal_code-unknown-hint' : null,
-                  activeAutoFill ? 'postal_code-autofill-hint' : null,
-                ]
-                  .filter(Boolean)
-                  .join(' ') || undefined
-              }
-            />
-            <p id="postal_code-instruction" className="mt-1 text-xs text-muted-foreground">
-              {tf('postalCodeInstruction')}
-            </p>
-            {lookupStatus === 'unknown' && (
-              <p id="postal_code-unknown-hint" className="mt-1 text-xs text-muted-foreground">
-                {tf('postalCodeUnknownHint')}
-              </p>
-            )}
-            {activeAutoFill && (
-              <p
-                id="postal_code-autofill-hint"
-                className="mt-1 flex items-center gap-2 text-xs text-muted-foreground"
-              >
-                <span>{tf('postalCodeAutoFilledHint', { code: activeAutoFill.code })}</span>
-                <Button
-                  type="button"
-                  variant="link"
-                  size="sm"
-                  // Review-round-2 Important 4 fix: `h-auto p-0` collapsed the
-                  // hit area to the 12px text's own line-height (WCAG 2.5.8
-                  // wants ≥24×24, this project's bar is 44×44). `min-h-11`
-                  // restores the tap target; `-mx-2 px-2` keeps the visible
-                  // chrome compact without shifting the surrounding text
-                  // horizontally (same pattern as copy-charge-id-button.tsx).
-                  className="h-auto min-h-11 -mx-2 px-2 text-xs"
-                  onClick={handleUndoAutoFill}
-                >
-                  {tf('postalCodeUndo')}
-                </Button>
-              </p>
-            )}
-            <FieldError id="postal_code-error" message={errors.postal_code?.message} />
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <div>
-              <Label id="province-label" htmlFor="province">
-                {tf('province')}
-                {isCreate && <RequiredMark />}
-              </Label>
+        {countryIsTH ? (
+          <>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="flex min-w-0 flex-col gap-1">
+                <TextField
+                  id="postal_code"
+                  label={tf('postalCode')}
+                  required={isCreate}
+                  aria-required={isCreate}
+                  maxLength={20}
+                  inputMode="numeric"
+                  autoComplete="postal-code"
+                  hint={tf('postalCodeInstruction')}
+                  error={errors.postal_code?.message}
+                  aria-describedby={postalExtraDescribedBy}
+                  {...register('postal_code')}
+                />
+                {lookupStatus === 'unknown' && (
+                  <p id="postal_code-unknown-hint" className="text-xs text-[var(--aura-fg-secondary)]">
+                    {tf('postalCodeUnknownHint')}
+                  </p>
+                )}
+              </div>
               <Controller
                 control={control}
                 name="province"
                 render={({ field }) => (
                   <Combobox
                     id="province"
+                    label={tf('province')}
+                    required={isCreate}
                     options={provinceOptions}
-                    value={field.value ?? ''}
-                    onChange={field.onChange}
+                    value={field.value || null}
+                    onChange={(next) => field.onChange(next ?? '')}
                     placeholder={tf('provincePlaceholder')}
-                    searchPlaceholder={tf('provinceSearchPlaceholder')}
-                    emptyMessage={tf('provinceEmptyMessage')}
-                    aria-labelledby="province-label"
-                    aria-required={isCreate}
-                    aria-invalid={Boolean(errors.province)}
-                    aria-describedby={errors.province ? 'province-error' : undefined}
-                    // Review-round-2 Critical 1 fix: the 97 KB postal dataset
-                    // doesn't enumerate every Thai province spelling/typo —
+                    emptyText={tf('provinceEmptyMessage')}
+                    error={errors.province?.message}
+                    // Review-round-2 Critical 1 fix: the postal dataset
+                    // doesn't enumerate every Thai province spelling —
                     // manual entry must be a REAL escape hatch, matching
-                    // `postalCodeUnknownHint`'s promise below.
+                    // `postalCodeUnknownHint`'s promise.
                     allowCustomValue
-                    customValueLabel={(typed) => tf('useTypedValueLabel', { value: typed })}
                   />
                 )}
               />
-              <FieldError id="province-error" message={errors.province?.message} />
-            </div>
-            <div>
-              <Label id="city-label" htmlFor="city">
-                {tf('city')}
-                {isCreate && <RequiredMark />}
-              </Label>
               <Controller
                 control={control}
                 name="city"
                 render={({ field }) => (
                   <Combobox
                     id="city"
+                    label={tf('city')}
+                    required={isCreate}
                     options={cityOptions}
-                    value={field.value ?? ''}
-                    onChange={field.onChange}
+                    value={field.value || null}
+                    onChange={(next) => field.onChange(next ?? '')}
                     placeholder={tf('cityPlaceholder')}
-                    searchPlaceholder={tf('citySearchPlaceholder')}
-                    emptyMessage={tf('cityEmptyMessage')}
-                    aria-labelledby="city-label"
-                    aria-required={isCreate}
-                    aria-invalid={Boolean(errors.city)}
-                    aria-describedby={errors.city ? 'city-error' : undefined}
+                    emptyText={tf('cityEmptyMessage')}
+                    error={errors.city?.message}
                     allowCustomValue
-                    customValueLabel={(typed) => tf('useTypedValueLabel', { value: typed })}
                   />
                 )}
               />
-              <FieldError id="city-error" message={errors.city?.message} />
-            </div>
-            <div>
-              <Label id="sub_district-label" htmlFor="sub_district">
-                {tf('subDistrict')}
-                {isCreate && <RequiredMark />}
-              </Label>
               <Controller
                 control={control}
                 name="sub_district"
                 render={({ field }) => (
                   <Combobox
                     id="sub_district"
+                    label={tf('subDistrict')}
+                    required={isCreate}
                     options={subDistrictOptions}
-                    value={field.value ?? ''}
-                    onChange={field.onChange}
+                    value={field.value || null}
+                    onChange={(next) => field.onChange(next ?? '')}
                     placeholder={tf('subDistrictPlaceholder')}
-                    searchPlaceholder={tf('subDistrictSearchPlaceholder')}
-                    emptyMessage={tf('subDistrictEmptyMessage')}
-                    aria-labelledby="sub_district-label"
-                    aria-required={isCreate}
-                    aria-invalid={Boolean(errors.sub_district)}
-                    aria-describedby={errors.sub_district ? 'sub_district-error' : undefined}
+                    emptyText={tf('subDistrictEmptyMessage')}
+                    error={errors.sub_district?.message}
                     allowCustomValue
-                    customValueLabel={(typed) => tf('useTypedValueLabel', { value: typed })}
                   />
                 )}
               />
-              <FieldError id="sub_district-error" message={errors.sub_district?.message} />
             </div>
-          </div>
-        </>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <div>
-            {/* Non-TH city: optional (no required marker) — a foreign member's
-                address is not a §86/4 particular. Matches province/postal below
-                and the TH-gated schema superRefine. */}
-            <Label htmlFor="city">{tf('city')}</Label>
-            <Input
+            {activeAutoFill && (
+              <p
+                id="postal_code-autofill-hint"
+                className="-mt-2 flex flex-wrap items-center gap-x-2 text-xs text-[var(--aura-fg-secondary)]"
+              >
+                <CircleCheckIcon className="size-4 shrink-0" aria-hidden="true" />
+                <span>{tf('postalCodeAutoFilledHint', { code: activeAutoFill.code })}</span>
+                {/* 44px target (the project's bar; WCAG 2.5.8 wants ≥24),
+                    pulled into the line so the note stays compact. */}
+                <Button type="button" variant="ghost" size="sm" touchHeight className="-my-2" onClick={handleUndoAutoFill}>
+                  {tf('postalCodeUndo')}
+                </Button>
+              </p>
+            )}
+          </>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            {/* Non-TH: optional (no required marker) — a foreign member's
+                address is not a §86/4 particular. Matches the TH-gated schema
+                superRefine. */}
+            <TextField
               id="city"
-              {...register('city')}
+              label={tf('city')}
               maxLength={100}
               autoComplete="address-level2"
-              aria-invalid={Boolean(errors.city)}
-              aria-describedby={errors.city ? 'city-error' : undefined}
+              error={errors.city?.message}
+              {...register('city')}
             />
-            <FieldError id="city-error" message={errors.city?.message} />
-          </div>
-          <div>
-            <Label htmlFor="province">{tf('province')}</Label>
-            <Input
+            <TextField
               id="province"
-              {...register('province')}
+              label={tf('province')}
               maxLength={100}
               autoComplete="address-level1"
-              aria-invalid={Boolean(errors.province)}
-              aria-describedby={errors.province ? 'province-error' : undefined}
+              error={errors.province?.message}
+              {...register('province')}
             />
-            <FieldError id="province-error" message={errors.province?.message} />
-          </div>
-          <div>
-            <Label htmlFor="postal_code">{tf('postalCode')}</Label>
-            <Input
+            <TextField
               id="postal_code"
-              {...register('postal_code')}
+              label={tf('postalCode')}
               maxLength={20}
               autoComplete="postal-code"
-              aria-invalid={Boolean(errors.postal_code)}
-              aria-describedby={errors.postal_code ? 'postal_code-error' : undefined}
+              error={errors.postal_code?.message}
+              {...register('postal_code')}
             />
-            <FieldError id="postal_code-error" message={errors.postal_code?.message} />
           </div>
-        </div>
-      )}
+        )}
 
-      {/* member-billing-address (0284) — optional tax-document address.
-          A checkbox reveals a SIMPLE 7-field group (plain Inputs + the
-          shared CountryCombobox). Deliberately NO postal auto-fill /
-          cascading-combobox machinery here: that apparatus above serves
-          the operating address every member gets; the billing group is a
-          rarer power-user field for VAT registrants whose ภ.พ.20 address
-          differs — wiring a second lookup pipeline would double this
-          file's most complex code for its least-used field (follow-up if
-          demand appears). Unchecking HIDES the group but keeps the typed
-          values in form state (re-checking restores them); the payload
-          builders send the whole group as null while unchecked, which is
-          what clears it server-side (no enable flag exists — "set" ⟺
-          line1 IS NOT NULL). */}
-      <div className="flex items-start gap-2 border-t pt-4">
+        {/* member-billing-address (0284) — optional tax-document address.
+            A checkbox reveals a SIMPLE 7-field group (plain fields + the
+            shared CountryCombobox). Deliberately NO postal auto-fill /
+            cascading-combobox machinery here: that apparatus above serves
+            the operating address every member gets; the billing group is a
+            rarer power-user field for VAT registrants whose ภ.พ.20 address
+            differs — wiring a second lookup pipeline would double this
+            file's most complex code for its least-used field (follow-up if
+            demand appears). Unchecking HIDES the group but keeps the typed
+            values in form state (re-checking restores them); the payload
+            builders send the whole group as null while unchecked, which is
+            what clears it server-side (no enable flag exists — "set" ⟺
+            line1 IS NOT NULL). */}
         <Controller
           control={control}
           name="billing_differs"
           render={({ field }) => (
             <Checkbox
               id="billing_differs"
-              className="mt-0.5"
-              // base-ui Checkbox.Root's visible `role=checkbox` element uses
-              // its own generated id (the `id` prop we pass lands on the
-              // hidden native input instead), so the sibling <Label
-              // htmlFor> can't reliably name it — set the accessible name
-              // directly (same fix as is_vat_registered / is_head_office in
-              // tax-branch-section.tsx and art14_attested; fixes axe
-              // aria-toggle-field-name).
-              aria-label={tf('billingDiffers')}
+              name={field.name}
+              ref={field.ref}
+              onBlur={field.onBlur}
               checked={field.value === true}
-              onCheckedChange={(checked: boolean) => field.onChange(checked)}
-            />
+              description={tf('billingDiffersHint')}
+              onChange={(checked) => field.onChange(checked)}
+            >
+              {tf('billingDiffers')}
+            </Checkbox>
           )}
         />
-        <div>
-          <Label htmlFor="billing_differs" className="font-normal">
-            {tf('billingDiffers')}
-          </Label>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {tf('billingDiffersHint')}
-          </p>
-        </div>
-      </div>
-      {billingDiffers && (
-        <div
-          role="group"
-          aria-labelledby="billing-address-heading"
-          className="flex flex-col gap-4 rounded-md border bg-muted/20 p-3"
-        >
-          <p id="billing-address-heading" className="text-sm font-semibold">
-            {tf('billingAddressHeading')}
-          </p>
-          <div>
-            <Label htmlFor="billing_address_line1">
-              {tf('addressLine1')}
-              <RequiredMark />
-            </Label>
-            <Input
+        {billingDiffers && (
+          <div
+            role="group"
+            aria-labelledby="billing-address-heading"
+            className="flex flex-col gap-4 rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-canvas)] p-4"
+          >
+            <p id="billing-address-heading" className="text-sm font-semibold text-[var(--aura-fg-primary)]">
+              {tf('billingAddressHeading')}
+            </p>
+            <TextField
               id="billing_address_line1"
+              label={tf('addressLine1')}
+              required
+              aria-required="true"
+              maxLength={200}
+              error={errors.billing_address_line1?.message}
               {...register('billing_address_line1')}
-              maxLength={200}
-              aria-required
-              aria-invalid={Boolean(errors.billing_address_line1)}
-              aria-describedby={
-                errors.billing_address_line1 ? 'billing_address_line1-error' : undefined
-              }
             />
-            <FieldError
-              id="billing_address_line1-error"
-              message={errors.billing_address_line1?.message}
-            />
-          </div>
-          <div>
-            <Label htmlFor="billing_address_line2">{tf('addressLine2')}</Label>
-            <Input
+            <TextField
               id="billing_address_line2"
-              {...register('billing_address_line2')}
+              label={tf('addressLine2')}
               maxLength={200}
-              aria-invalid={Boolean(errors.billing_address_line2)}
-              aria-describedby={
-                errors.billing_address_line2 ? 'billing_address_line2-error' : undefined
-              }
+              error={errors.billing_address_line2?.message}
+              {...register('billing_address_line2')}
             />
-            <FieldError
-              id="billing_address_line2-error"
-              message={errors.billing_address_line2?.message}
-            />
-          </div>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <div>
-              <Label htmlFor="billing_sub_district">{tf('subDistrict')}</Label>
-              <Input
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <TextField
                 id="billing_sub_district"
+                label={tf('subDistrict')}
+                maxLength={100}
+                error={errors.billing_sub_district?.message}
                 {...register('billing_sub_district')}
-                maxLength={100}
-                aria-invalid={Boolean(errors.billing_sub_district)}
-                aria-describedby={
-                  errors.billing_sub_district ? 'billing_sub_district-error' : undefined
-                }
               />
-              <FieldError
-                id="billing_sub_district-error"
-                message={errors.billing_sub_district?.message}
-              />
-            </div>
-            <div>
-              <Label htmlFor="billing_city">
-                {tf('city')}
-                <RequiredMark />
-              </Label>
-              <Input
+              <TextField
                 id="billing_city"
+                label={tf('city')}
+                required
+                aria-required="true"
+                maxLength={100}
+                error={errors.billing_city?.message}
                 {...register('billing_city')}
-                maxLength={100}
-                aria-required
-                aria-invalid={Boolean(errors.billing_city)}
-                aria-describedby={errors.billing_city ? 'billing_city-error' : undefined}
               />
-              <FieldError id="billing_city-error" message={errors.billing_city?.message} />
-            </div>
-            <div>
-              <Label htmlFor="billing_province">{tf('province')}</Label>
-              <Input
+              <TextField
                 id="billing_province"
-                {...register('billing_province')}
+                label={tf('province')}
                 maxLength={100}
-                aria-invalid={Boolean(errors.billing_province)}
-                aria-describedby={
-                  errors.billing_province ? 'billing_province-error' : undefined
-                }
-              />
-              <FieldError
-                id="billing_province-error"
-                message={errors.billing_province?.message}
+                error={errors.billing_province?.message}
+                {...register('billing_province')}
               />
             </div>
-          </div>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div>
-              <Label htmlFor="billing_postal_code">
-                {tf('postalCode')}
-                <RequiredMark />
-              </Label>
-              <Input
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <TextField
                 id="billing_postal_code"
-                {...register('billing_postal_code')}
+                label={tf('postalCode')}
+                required
+                aria-required="true"
                 maxLength={20}
-                aria-required
-                aria-invalid={Boolean(errors.billing_postal_code)}
-                aria-describedby={
-                  errors.billing_postal_code ? 'billing_postal_code-error' : undefined
-                }
+                error={errors.billing_postal_code?.message}
+                {...register('billing_postal_code')}
               />
-              <FieldError
-                id="billing_postal_code-error"
-                message={errors.billing_postal_code?.message}
+              <Controller
+                control={control}
+                name="billing_country"
+                render={({ field }) => (
+                  <CountryCombobox
+                    id="billing_country"
+                    label={tf('country')}
+                    required
+                    value={field.value ?? ''}
+                    error={errors.billing_country?.message}
+                    onChange={field.onChange}
+                  />
+                )}
               />
             </div>
-            <Controller
-              control={control}
-              name="billing_country"
-              render={({ field }) => (
-                <CountryCombobox
-                  id="billing_country"
-                  label={tf('country')}
-                  required
-                  value={field.value ?? ''}
-                  error={errors.billing_country?.message}
-                  onChange={field.onChange}
-                />
-              )}
-            />
           </div>
-        </div>
-      )}
+        )}
 
-      {/* SC 4.1.3 — mounted unconditionally with empty content from the
-          first render; a conditionally-mounted live region is not
-          announced by most screen readers (see live-region.tsx docblock). */}
-      <LiveRegion politeness="polite">{announcement}</LiveRegion>
-    </fieldset>
+        {/* SC 4.1.3 — mounted unconditionally with empty content from the
+            first render; a conditionally-mounted live region is not
+            announced by most screen readers (see live-region.tsx docblock). */}
+        <LiveRegion politeness="polite">{announcement}</LiveRegion>
+      </div>
+    </FormSectionCard>
   );
 }

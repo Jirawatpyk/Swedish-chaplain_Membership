@@ -121,8 +121,10 @@ function byId(id: string): HTMLElement {
   return el;
 }
 
+// The address section's own live region (the edit-mode incomplete-address
+// notice and AURA's comboboxes are status regions too — 122 US5b-2).
 function liveRegionText(): string {
-  return document.querySelector('[role="status"]')?.textContent ?? '';
+  return document.querySelector('[data-slot="live-region"]')?.textContent ?? '';
 }
 
 function renderForm() {
@@ -157,7 +159,7 @@ afterEach(() => {
 describe('AddressSection — the live region mounts empty from the start', () => {
   it('renders an empty role="status" live region before any postcode is typed', () => {
     renderForm();
-    const region = document.querySelector('[role="status"]');
+    const region = document.querySelector('[data-slot="live-region"][role="status"]');
     expect(region).not.toBeNull();
     expect(region?.textContent).toBe('');
   });
@@ -292,9 +294,9 @@ describe('AddressSection — case 2: ambiguous district (single province)', () =
     });
 
     // Nothing set — province/city/sub_district all still show their placeholder.
-    expect(byId('province')).toHaveValue(/select a province/i);
-    expect(byId('city')).toHaveValue(/select a district/i);
-    expect(byId('sub_district')).toHaveValue(/select a sub-district/i);
+    expect(byId('province')).toHaveValue('');
+    expect(byId('city')).toHaveValue('');
+    expect(byId('sub_district')).toHaveValue('');
 
     // The primary (stored) option label is English; the district's Thai
     // name is available as secondary `detail` text on the same option.
@@ -320,7 +322,7 @@ describe('AddressSection — case 3: multi-province postcode', () => {
       timeout: 3000,
     });
 
-    expect(byId('province')).toHaveValue(/select a province/i);
+    expect(byId('province')).toHaveValue('');
 
     // English is the primary (stored) option label; Thai renders as
     // secondary `detail` text.
@@ -350,8 +352,8 @@ describe('AddressSection — case 4: unknown postcode', () => {
     );
 
     expect(byId('postal_code')).not.toHaveAttribute('aria-invalid', 'true');
-    expect(byId('province')).toHaveValue(/select a province/i);
-    expect(byId('city')).toHaveValue(/select a district/i);
+    expect(byId('province')).toHaveValue('');
+    expect(byId('city')).toHaveValue('');
   });
 });
 
@@ -681,7 +683,7 @@ describe('AddressSection — edit mode: the postcode picker is NOT inert (I1 hea
 
     // Anti-overwrite guarantee still holds: sub_district was NOT written,
     // nothing announced, no Undo offered.
-    expect(byId('sub_district')).toHaveValue(/select a sub-district/i);
+    expect(byId('sub_district')).toHaveValue('');
     expect(liveRegionText()).toBe('');
     expect(screen.queryByRole('button', { name: /undo/i })).toBeNull();
 
@@ -719,10 +721,11 @@ describe('AddressSection — manual entry when the postcode has no candidates (C
 describe('AddressSection — province, district and sub-district are AURA comboboxes (122 US5b-2)', () => {
   it('each is a text combobox named by its own label', () => {
     renderForm();
+    const f = enMessages.admin.members.create.fields;
     for (const [id, name] of [
-      ['province', /province/i],
-      ['city', /city|district/i],
-      ['sub_district', /sub-district/i],
+      ['province', f.province],
+      ['city', f.city],
+      ['sub_district', f.subDistrict],
     ] as const) {
       const input = byId(id);
       expect(input.tagName).toBe('INPUT');
