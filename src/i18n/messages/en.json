@@ -4635,6 +4635,8 @@
           "paymentReferenceLabel": "Payment reference",
           "paymentReferencePlaceholder": "e.g. bank slip number or cheque number",
           "paymentDateLabel": "Payment date",
+          "taxDocWarningTitle": "This records a payment on a tax document",
+          "taxDocWarningBody": "The invoice is issued and paid in one step, and it can't be undone — a mistake needs a credit note.",
           "confirm": "Mark paid",
           "cancel": "Cancel",
           "submitting": "Recording…",

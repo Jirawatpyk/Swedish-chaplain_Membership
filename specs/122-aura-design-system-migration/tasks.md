@@ -292,8 +292,13 @@ Boards: `Admin-renewals` (+`-mobile`), `Admin-renewals-needs-action`, `Admin-ren
     - Lapsed tab: an AURA info alert, an AURA table, reasons as AURA badges toned by meaning, and an AURA row menu.
     - Tray: an AURA server card with a borderless AURA table; the failure is an AURA danger alert.
     - Extra tests: `lapsed-tab`, `members-without-cycle-tray`.
-- [ ] T708 [US7] The bulk bar on AURA `ActionBar` with the selection count, and the single and bulk mark-paid dialogs on AURA `Dialog`. The single dialog follows the board's amounts and warnings; the bulk one keeps its settlement preview. Money is unchanged.
+- [x] T708 [US7] The bulk bar on AURA `ActionBar` with the selection count, and the single and bulk mark-paid dialogs on AURA `Dialog`. The single dialog follows the board's amounts and warnings; the bulk one keeps its settlement preview. Money is unchanged.
   - RED: `mark-paid-offline-dialog`, `bulk-mark-paid-confirm-dialog`, `pipeline-bulk-action-bar` and `pipeline-row-mark-paid` on AURA.
+  - Done:
+    - Bulk bar: AURA `ActionBar` in the page flow, with the selection count, Send reminder, Mark paid, Clear selection and the over-cap status; idle at zero. The fixed bar, its spacer and the `ResizeObserver` padding are gone. The run results panel sits above it.
+    - Single mark-paid: an AURA `Dialog` with method select, reference field, payment date on AURA `DatePicker` (Asia/Bangkok) and the board's can't-undo warning as an AURA warning alert (new copy `taxDocWarningTitle` / `taxDocWarningBody` in EN, TH, SV). Cancel takes the first focus; focus return is unchanged. Same request body.
+    - Bulk mark-paid: an AURA alertdialog, not dismissible while submitting, keeping the settlement preview; same fields and request.
+    - Not shown, for review: the board's amount summary (the dialog has no server figure, and a client-side sum could disagree with the invoice) and its 3% WHT sentence (it conflicts with the §65 bis (13) WHT-exempt copy). Both go to the financial-integrity and thai-tax reviews at T711.
 - [ ] T709 [US7] Page frame and states:
   - the layout container and header kept;
   - the empty state as the board draws it;

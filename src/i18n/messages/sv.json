@@ -4635,6 +4635,8 @@
           "paymentReferenceLabel": "Betalningsreferens",
           "paymentReferencePlaceholder": "t.ex. bankslippsnummer eller checknummer",
           "paymentDateLabel": "Betalningsdatum",
+          "taxDocWarningTitle": "Detta registrerar en betalning på ett skattedokument",
+          "taxDocWarningBody": "Fakturan utfärdas och betalas i ett steg och kan inte ångras — ett misstag kräver en kreditnota.",
           "confirm": "Markera betald",
           "cancel": "Avbryt",
           "submitting": "Registrerar…",

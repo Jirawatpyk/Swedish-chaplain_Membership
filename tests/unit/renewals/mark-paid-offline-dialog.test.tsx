@@ -83,7 +83,8 @@ describe('MarkPaidOfflineDialog on AURA', () => {
 
   /** An AURA DatePicker takes a typed ISO date on blur (US5b-2 precedent). */
   function typeDate(label: string, value: string) {
-    const input = screen.getByLabelText(label);
+    // The required field's label ends with its asterisk.
+    const input = screen.getByLabelText(new RegExp(`^${label}`));
     fireEvent.change(input, { target: { value } });
     fireEvent.blur(input);
   }
@@ -96,7 +97,7 @@ describe('MarkPaidOfflineDialog on AURA', () => {
       M.paymentMethod.bank_transfer,
     );
     expect(within(dialog).getByRole('textbox', { name: M.paymentReferenceLabel })).toBeRequired();
-    expect(within(dialog).getByLabelText(M.paymentDateLabel).closest('.aura-datepicker')).not.toBeNull();
+    expect(within(dialog).getByLabelText(new RegExp(`^${M.paymentDateLabel}`)).closest('.aura-field')?.querySelector('.aura-date__toggle')).not.toBeNull();
     const warning = within(dialog).getByText(M.taxDocWarningTitle).closest('.aura-alert');
     expect(warning).toHaveClass('aura-alert--warning');
     expect(warning).toHaveTextContent(M.taxDocWarningBody);
