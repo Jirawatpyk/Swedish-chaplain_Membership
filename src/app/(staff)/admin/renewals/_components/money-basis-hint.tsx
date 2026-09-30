@@ -5,16 +5,13 @@
  * year; the F9 dashboard's "Paid revenue" counts by ISSUE year — users
  * comparing the two pages need the divergence explained in place).
  *
- * UX-review follow-up F1 — thin wrapper over the shared `InfoHint` system
- * pattern (Base UI Popover: click/tap/Enter/Space to open, ESC + outside
- * click to close, touch-reachable — the original hover/focus-only Tooltip
- * was not). Public usage in `pipeline-money-band.tsx` is unchanged; the
- * `tooltipText` prop name is kept for that reason. `-my-1` keeps the 24px
- * hit target (WCAG 2.2 SC 2.5.8) from stretching the compact tile's label
- * row. No 'use client' needed any more — `InfoHint` owns the client
- * boundary and only serialisable string props cross it.
+ * 122 US7a (T704): AURA `Popover` behind an info `IconButton` — click, tap,
+ * Enter or Space opens it; Escape and an outside click close it (touch- and
+ * keyboard-reachable, never hover-only).
  */
-import { InfoHint } from '@/components/ui/info-hint';
+'use client';
+
+import { IconButton, Popover } from '@jirawatpyk/aura-react';
 
 export function MoneyBasisHint({
   ariaLabel,
@@ -24,8 +21,13 @@ export function MoneyBasisHint({
   readonly tooltipText: string;
 }) {
   return (
-    <InfoHint ariaLabel={ariaLabel} triggerClassName="-my-1">
-      {tooltipText}
-    </InfoHint>
+    <Popover
+      label={ariaLabel}
+      placement="bottom-start"
+      width={320}
+      trigger={<IconButton icon="info" label={ariaLabel} size="sm" />}
+    >
+      <p className="text-[var(--aura-fg-secondary)]">{tooltipText}</p>
+    </Popover>
   );
 }

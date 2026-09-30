@@ -264,8 +264,13 @@ Boards: `Admin-renewals` (+`-mobile`), `Admin-renewals-needs-action`, `Admin-ren
     - The pipeline help moved to the end of the toggle row.
     - The tier filter is an AURA `Select` labelled "Tier".
     - The e2e selectors for the urgency chips change in T710.
-- [ ] T704 [US7] The money band as four AURA `Stat` tiles, with the basis hint on AURA and the figures unchanged. The shared dashboard `kpi-card` stays for US11.
+- [x] T704 [US7] The money band as four AURA `Stat` tiles, with the basis hint on AURA and the figures unchanged. The shared dashboard `kpi-card` stays for US11.
   - RED: `pipeline-money-band` on AURA.
+  - Done:
+    - Four AURA `Stat` tiles from the server entry. The figures take the text colour, with no success / warning tone, as the board draws them. Each value is one string ("500.00 THB", the localised unit).
+    - The linked tiles link through their label and carry AURA's arrow icon. The prior-years line is its own link, in the danger tone.
+    - The basis hint is an AURA `Popover`. It is kept although the board omits it.
+    - The skeleton is four loading `Stat` tiles.
 - [ ] T705 [US7] "Renewals by month" in an AURA `Card`: the bar chart on AURA chart tokens, bars that filter, and the month chip.
   - RED: `month-bar-chart` and `month-filter-chip`.
 - [ ] T706 [US7] The at-risk section: counters, a table (risk badge, main signal, last computed, Contact / Snooze) and the snooze and outreach dialogs on AURA, with the same requests.
