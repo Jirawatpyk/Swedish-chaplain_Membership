@@ -139,4 +139,23 @@ describe('BenefitMatrixEditor on AURA', () => {
     expect(select).toHaveAccessibleDescription(en.admin.plans.priorYearLock.lockedField);
     expect(screen.getByRole('switch', { name: C.matrix.m2mBenefitsAccess })).toBeDisabled();
   });
+
+  // UX review (US6): an AURA Switch takes no description, so the locked
+  // switches' group is named by its heading and described as locked, and
+  // each locked switch row shows the lock icon (board `Admin-plan-edit-locked`).
+  it('names and describes a locked switch group, with the lock icon on each row', () => {
+    wrap(
+      <>
+        <PlanLockedNote />
+        <BenefitMatrixEditor value={MATRIX} onChange={vi.fn()} planCategory="corporate" locked />
+      </>,
+    );
+    const group = screen.getByRole('group', { name: C.matrix.section.additionalBenefits });
+    expect(group).toHaveAccessibleDescription(en.admin.plans.priorYearLock.lockedField);
+    const switches = within(group).getAllByRole('switch');
+    expect(switches).toHaveLength(3);
+    for (const sw of switches) {
+      expect(sw.closest('[data-locked-row]')?.querySelector('.aura-icon')).not.toBeNull();
+    }
+  });
 });
