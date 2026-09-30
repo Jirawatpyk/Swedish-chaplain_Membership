@@ -78,4 +78,26 @@ describe('MemberForm core (T573)', () => {
     const link = summary?.querySelector('a[href="#company_name"]');
     expect(link?.querySelector('strong')).toHaveTextContent(T.fields.companyName);
   });
+
+  it('puts the primary contact on AURA fields — a language Select and a date-of-birth picker (T577)', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <MemberForm
+          plans={[{ plan_id: 'alumni', plan_year: 2026, display_name: 'Alumni — 2026', requires_date_of_birth: true }]}
+          defaultPlanYear={2026}
+          onSubmit={vi.fn()}
+          submitting={false}
+          initialValues={{ plan_id: 'alumni' }}
+        />
+      </NextIntlClientProvider>,
+    );
+    const contact = screen.getByRole('group', { name: T.sections.primaryContact });
+    const language = within(contact).getByRole('combobox', { name: new RegExp(T.fields.preferredLanguage) });
+    expect(language).toHaveAttribute('id', 'preferred_language');
+    expect(language).toHaveTextContent(enMessages.common.languageOptions.en);
+    const dob = within(contact).getByLabelText(new RegExp(T.fields.dateOfBirth));
+    expect(dob).toHaveAttribute('id', 'date_of_birth');
+    expect(dob).toHaveAttribute('inputmode', 'numeric');
+    expect(within(contact).getByLabelText(new RegExp(`^${T.fields.email}`))).toHaveAttribute('type', 'email');
+  });
 });

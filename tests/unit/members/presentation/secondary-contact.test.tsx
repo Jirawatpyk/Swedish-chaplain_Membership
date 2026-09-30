@@ -131,6 +131,18 @@ describe('SecondaryContactSection — additive, not a negative opt-out', () => {
     ).toBeNull();
   });
 
+  it('is its own AURA card with an AURA outline Add button and a native attestation box (122 US5b-2)', () => {
+    renderForm();
+    const add = screen.getByRole('button', { name: /add a secondary contact/i });
+    expect(add).toHaveClass('aura-btn--secondary');
+    fireEvent.click(add);
+    const card = screen.getByRole('group', { name: enMessages.admin.members.create.sections.secondaryContact });
+    expect(card).toHaveClass('aura-card');
+    const attest = screen.getByRole('checkbox', { name: enMessages.admin.members.create.fields.art14AttestationLabel });
+    expect(attest.tagName).toBe('INPUT');
+    expect(card.contains(attest)).toBe(true);
+  });
+
   it('clicking Remove hides the fieldset and brings back the Add trigger', () => {
     renderForm();
     fireEvent.click(
@@ -284,6 +296,22 @@ describe('SecondaryContactSection — additive, not a negative opt-out', () => {
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
     const values = onSubmit.mock.calls[0]?.[0];
     expect(values.secondary_contact).toBeUndefined();
+  });
+
+  it('says on the EDIT form that other contacts are managed on the member record (board `Admin-member-edit`)', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <MemberForm
+          plans={PLANS}
+          defaultPlanYear={2026}
+          onSubmit={vi.fn()}
+          submitting={false}
+          mode="edit"
+          initialValues={{ company_name: 'Acme', country: 'TH' }}
+        />
+      </NextIntlClientProvider>,
+    );
+    expect(screen.getByText(enMessages.admin.members.edit.otherContactsNote)).toBeInTheDocument();
   });
 
   it('does not render the secondary-contact trigger on the EDIT form', () => {
