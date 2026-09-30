@@ -229,4 +229,13 @@ describe('PlansTable filtered-empty state', () => {
     renderFiltered({ category: null, q: null, activeOnly: false, showDeleted: false });
     expect(screen.getByText(en.admin.plans.empty.title).closest('td')).not.toHaveClass('py-12');
   });
+
+  // Parity comment (US6): on a phone the empty state is no card field, so it
+  // carries no "Name" label, and its two actions stack at one full width.
+  it('shows the empty state unlabelled on a phone card, its actions stacked full width', () => {
+    renderFiltered({ category: null, q: null, activeOnly: false, showDeleted: false });
+    expect(screen.getByText(en.admin.plans.empty.title).closest('td')).not.toHaveAttribute('data-label');
+    const newCta = screen.getByRole('link', { name: new RegExp(NEW_CTA, 'i') });
+    expect(newCta.parentElement).toHaveClass('max-sm:flex-col', 'max-sm:items-stretch');
+  });
 });
