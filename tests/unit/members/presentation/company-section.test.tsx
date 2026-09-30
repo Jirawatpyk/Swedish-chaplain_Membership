@@ -272,10 +272,17 @@ describe('CompanySection — Additional details collapsible', () => {
  * DOM risk, in resolve-vat-seed.test.ts.
  */
 describe('CompanySection — legal_entity_type is a closed Select (PR-A Task 3b)', () => {
-  it('renders a Select trigger at #legal_entity_type, not a free-text input', () => {
+  it('renders an AURA Select (a real <select>) at #legal_entity_type, not a free-text input', () => {
     const { container } = renderEditForm({});
     expect(container.querySelector('input#legal_entity_type')).toBeNull();
-    expect(container.querySelector('#legal_entity_type')).not.toBeNull();
+    expect(container.querySelector('select#legal_entity_type')).not.toBeNull();
+  });
+
+  it('sits in the Company card (122 US5b-2), a group named by its heading', () => {
+    renderEditForm({});
+    const card = screen.getByRole('group', { name: 'Company' });
+    expect(card).toHaveClass('aura-card');
+    expect(card.querySelector('select#legal_entity_type')).not.toBeNull();
   });
 
   it('is NOT labelled "Member Type" — that name is already taken', () => {
