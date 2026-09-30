@@ -313,4 +313,24 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, 'src/components/members/member-picker.tsx')).toEqual([]);
     });
   });
+
+  describe('the US7a renewals pipeline page is on AURA (the real MIGRATED_PATHS)', () => {
+    const legacy = "import { Button } from '@/components/ui/button';\nexport const B = Button;\n";
+
+    it.each([
+      'src/app/(staff)/admin/renewals/page.tsx',
+      'src/app/(staff)/admin/renewals/loading.tsx',
+      'src/app/(staff)/admin/renewals/_components/pipeline-table.tsx',
+      'src/app/(staff)/admin/renewals/_components/mark-paid-offline-dialog.tsx',
+      'src/app/(staff)/admin/renewals/_components/empty-state.tsx',
+      'src/components/renewals/urgency-pill.tsx',
+      'src/components/renewals/month-bar-chart.tsx',
+    ])('%s cannot import the legacy kit', async (path) => {
+      expect(await ratchetHits(legacy, path)).toHaveLength(1);
+    });
+
+    it('control: the renewal tasks page keeps the legacy kit until US7b', async () => {
+      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/renewals/tasks/page.tsx')).toEqual([]);
+    });
+  });
 });
