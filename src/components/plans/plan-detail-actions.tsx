@@ -64,12 +64,15 @@ export function PlanDetailActions({ plan }: PlanDetailActionsProps) {
                   {tActions('activate')}
                 </DropdownMenuItem>
               )}
-              <DropdownMenuItem
-                onClick={() => openAction('delete', plan)}
-                variant="destructive"
-              >
-                {tActions('delete')}
-              </DropdownMenuItem>
+              {/* plan-state.ts: only an inactive plan can be deleted. */}
+              {!plan.is_active ? (
+                <DropdownMenuItem
+                  onClick={() => openAction('delete', plan)}
+                  variant="destructive"
+                >
+                  {tActions('delete')}
+                </DropdownMenuItem>
+              ) : null}
             </>
           )}
         </DropdownMenuContent>

@@ -6,12 +6,18 @@
  *   1. Load the plan via `planRepo.findOne` — returns `not_found`
  *      if missing or cross-tenant.
  *   2. Short-circuit idempotent no-op if the plan is already deleted.
+ *   2b. Enforce the lifecycle in `domain/plan-state.ts`: only an
+ *      `inactive` plan may be soft-deleted — `active → soft_deleted` is
+ *      illegal (deactivate first) → `plan_active` (409). Fast path only;
+ *      step 3 re-checks under a row lock.
  *   3. Call `planRepo.softDeleteGuarded(...)` — this method runs in ONE
  *      `runInTenant` tx: acquires `pg_advisory_xact_lock` on
- *      `plans:softdelete:<tenantSlug>:<planId>:<planYear>`, counts active
- *      members (status=active|inactive), refuses if count>0, and sets
+ *      `plans:softdelete:<tenantSlug>:<planId>:<planYear>`, row-locks the
+ *      plan and refuses if it is active, counts active members
+ *      (status=active|inactive), refuses if count>0, and sets
  *      `deleted_at` if 0. Returns a discriminated union:
  *        - `{kind:'deleted',plan}` → step 4 (audit)
+ *        - `{kind:'plan_active'}` → 409 (activated after step 1's read)
  *        - `{kind:'has_active_members',count}` → 409
  *        - `{kind:'not_found'}` → 404 (row vanished between step 1 and step 3)
  *   4. Append `plan_soft_deleted` audit event with
@@ -43,6 +49,7 @@ import type {
 } from './ports';
 import { recordAuditEvent } from './record-audit-event';
 import type { Plan, PlanSlug, PlanYear } from '../domain/plan';
+import { canTransition, planStateOf } from '../domain/plan-state';
 
 export type SoftDeletePlanInput = {
   readonly planId: PlanSlug;
@@ -56,6 +63,8 @@ export type SoftDeletePlanInput = {
 export type SoftDeletePlanError =
   | { readonly type: 'not_found' }
   | { readonly type: 'has_active_members'; readonly count: number }
+  /** The plan is still active — it must be deactivated before deletion. */
+  | { readonly type: 'plan_active' }
   | { readonly type: 'idempotency_conflict' }
   | { readonly type: 'audit_failed'; readonly message: string }
   | { readonly type: 'server_error'; readonly message: string };
@@ -91,6 +100,15 @@ export async function softDeletePlan(
     return ok(existing);
   }
 
+  // 2b. Lifecycle fast path (plan-state.ts) — refuses an active plan
+  //     without taking the lock. The plan is not deleted here, so the only
+  //     refusal is `active`. This read is outside the tx; step 3 re-checks
+  //     is_active under a row lock, so an activate landing in between is
+  //     still refused (`plan_active` from the guard).
+  if (!canTransition(planStateOf(existing), 'soft_deleted').ok) {
+    return err({ type: 'plan_active' });
+  }
+
   // 3. Atomic guard: advisory-lock + count-check + soft-delete in one tx.
   //    (W0-02 fix — replaces the former separate countActivePlanMembers +
   //    softDelete two-step pattern.)
@@ -113,6 +131,9 @@ export async function softDeletePlan(
 
   if (guardResult.kind === 'has_active_members') {
     return err({ type: 'has_active_members', count: guardResult.count });
+  }
+  if (guardResult.kind === 'plan_active') {
+    return err({ type: 'plan_active' });
   }
   if (guardResult.kind === 'not_found') {
     return err({ type: 'not_found' });
