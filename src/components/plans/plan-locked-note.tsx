@@ -26,11 +26,20 @@ export function lockedFieldProps(locked: boolean): {
   return locked ? { readOnly: true, icon: 'lock', 'aria-describedby': PLAN_LOCKED_NOTE_ID } : {};
 }
 
-/** The props a locked Select takes (a select cannot be read-only yet: stand-in until AURA #114, Addendum 20). */
+/** The props a locked Select takes: read-only since AURA 5.19, so it stays in the tab order. */
 export function lockedSelectProps(locked: boolean): {
-  disabled?: true;
+  readOnly?: true;
   icon?: 'lock';
   'aria-describedby'?: string;
 } {
-  return locked ? { disabled: true, icon: 'lock', 'aria-describedby': PLAN_LOCKED_NOTE_ID } : {};
+  return locked ? { readOnly: true, icon: 'lock', 'aria-describedby': PLAN_LOCKED_NOTE_ID } : {};
+}
+
+/** The props a locked Switch takes: read-only with the lock at the end of its row (AURA 5.19). */
+export function lockedSwitchProps(locked: boolean): {
+  readOnly?: true;
+  icon?: 'lock';
+  'aria-describedby'?: string;
+} {
+  return locked ? { readOnly: true, icon: 'lock', 'aria-describedby': PLAN_LOCKED_NOTE_ID } : {};
 }

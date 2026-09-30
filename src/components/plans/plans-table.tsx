@@ -301,9 +301,6 @@ export function PlansTable({
       <Table
         caption={t('tableCaption')}
         captionHidden
-        // Stand-in until AURA #115: the static Table does not take the staff
-        // frame's compact density on its own.
-        density="compact"
         stackBelow="sm"
         stackStyle="cards"
         align="middle"

@@ -298,7 +298,7 @@ html:has(.chamber-viewport-actionbar) {
    `-edit`, `Admin-plans-clone`, each with `-mobile`). On a phone it is pinned edge to edge to the
    bottom of the screen, Cancel a third and the primary button two thirds;
    from 640px it is a plain right-aligned row at the end of the form. Only the
-   app's class and the bar's element structure (inner row → status, actions)
+   app's class and the bar's element structure (inner row → status, [start,] actions)
    are read, never AURA's own classes. The bar never shows a status, so its
    empty status cell gives the actions the whole row on a phone. */
 @media (max-width: 639.98px) {
@@ -310,6 +310,9 @@ html:has(.chamber-viewport-actionbar) {
     border-radius: 0;
     box-shadow: none;
     padding-bottom: env(safe-area-inset-bottom, 0px);
+    /* AURA 5.20 gives the bar `width: 100%`; `auto` lets the negative
+       margins above carry it to the screen edges. */
+    width: auto;
   }
   /* AURA pads the bar's row 16px at its start and 12px at its end; pinned
      edge to edge, the buttons sit 16px from both screen edges, as drawn. */
@@ -334,6 +337,11 @@ html:has(.chamber-viewport-actionbar) {
   .plan-form-actions--in-card {
     margin-inline: calc(-1 * (var(--page-padding-x) + var(--aura-space-4) + 1px));
   }
+  /* The plan wizard keeps Cancel in the page on a phone: its start slot
+     (status, start, actions) leaves the pinned bar. */
+  .plan-form-actions--start-wide > div > :nth-child(2):not(:last-child) {
+    display: none;
+  }
   /* The plan wizard's Back / Next share the bar evenly (board `Admin-plan-new-mobile`). */
   .plan-form-actions--even > div > :last-child > * {
     flex: 1 1 0;
@@ -351,16 +359,6 @@ html:has(.chamber-viewport-actionbar) {
   :is(.member-form-actions, .plan-form-actions) > div {
     min-height: 0;
     padding: 0;
-  }
-  /* Stand-in until AURA #116 (an ActionBar start slot). The plan wizard
-     (board `Admin-plan-new`): Cancel at the start edge, Back and Next at the
-     end — the empty status cell goes and the buttons' row fills the bar, so
-     Cancel's `me-auto` takes the space between. */
-  .plan-form-actions--split > div > :first-child:empty {
-    display: none;
-  }
-  .plan-form-actions--split > div > :last-child {
-    flex: 1 1 auto;
   }
 }
 /* Spec 122 US4 — the invoice page's sticky amount-due bar (~7rem) rides

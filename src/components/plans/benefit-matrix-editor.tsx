@@ -24,13 +24,13 @@
 
 import { useEffect, useMemo, type ReactNode } from 'react';
 import { useTranslations } from 'next-intl';
-import { Icon, Select, Switch, TextField, type SwitchProps } from '@jirawatpyk/aura-react';
+import { Select, Switch, TextField } from '@jirawatpyk/aura-react';
 import type {
   BenefitMatrix,
   PartnershipBenefits,
   PlanCategory,
 } from '@/modules/plans';
-import { PLAN_LOCKED_NOTE_ID, lockedFieldProps, lockedSelectProps } from './plan-locked-note';
+import { lockedFieldProps, lockedSelectProps, lockedSwitchProps } from './plan-locked-note';
 
 export interface BenefitMatrixEditorProps {
   readonly value: BenefitMatrix;
@@ -101,20 +101,6 @@ function Group({ title, children }: { readonly title: string; readonly children:
       <h3 className="aura-text-mono uppercase tracking-wider text-[var(--aura-fg-secondary)] [&:lang(th)]:tracking-normal">{title}</h3>
       {children}
     </section>
-  );
-}
-
-/**
- * A Switch that, on a locked plan, shows AURA's lock at the end of its row, as the board draws it.
- * Stand-in until AURA #113 (Switch `readOnly`, `icon`, caller `aria-describedby`; Addendum 20).
- */
-function LockableSwitch({ locked, ...props }: SwitchProps & { readonly locked: boolean }) {
-  if (!locked) return <Switch {...props} />;
-  return (
-    <div data-locked-row className="flex items-center justify-between gap-[var(--aura-space-3)]">
-      <Switch {...props} />
-      <Icon name="lock" className="flex-none text-[var(--aura-fg-secondary)]" />
-    </div>
   );
 }
 
@@ -198,11 +184,7 @@ export function BenefitMatrixEditor({
 
   const num = { disabled, locked };
   const sel = { disabled, ...lockedSelectProps(locked) };
-  // A switch takes no description of its own: a locked group is named by its
-  // heading and described instead (UX review, US6; stand-in until AURA #113).
-  const switches = (label: string) =>
-    locked ? { role: 'group', 'aria-label': label, 'aria-describedby': PLAN_LOCKED_NOTE_ID } : {};
-  const sw = { disabled: disabled || locked, locked };
+  const sw = { disabled, ...lockedSwitchProps(locked) };
 
   const core = (
     <>
@@ -269,31 +251,29 @@ export function BenefitMatrixEditor({
             {...num}
           />
         </div>
-        <div {...switches(tM('section.events'))}>
-          <LockableSwitch
-            label={tM('eventsCoBrandedAccess')}
-            checked={value.events_cobranded_access}
-            onChange={(b) => patch({ events_cobranded_access: b })}
-            {...sw}
-          />
-        </div>
+        <Switch
+          label={tM('eventsCoBrandedAccess')}
+          checked={value.events_cobranded_access}
+          onChange={(b) => patch({ events_cobranded_access: b })}
+          {...sw}
+        />
       </Group>
 
       <Group title={tM('section.additionalBenefits')}>
-        <div className="space-y-[var(--aura-space-2)]" {...switches(tM('section.additionalBenefits'))}>
-          <LockableSwitch
+        <div className="space-y-[var(--aura-space-2)]">
+          <Switch
             label={tM('m2mBenefitsAccess')}
             checked={value.m2m_benefits_access}
             onChange={(b) => patch({ m2m_benefits_access: b })}
             {...sw}
           />
-          <LockableSwitch
+          <Switch
             label={tM('businessReferrals')}
             checked={value.business_referrals}
             onChange={(b) => patch({ business_referrals: b })}
             {...sw}
           />
-          <LockableSwitch
+          <Switch
             label={tM('tailorMadeServices')}
             checked={value.tailor_made_services}
             onChange={(b) => patch({ tailor_made_services: b })}
@@ -361,32 +341,32 @@ export function BenefitMatrixEditor({
               {...sel}
             />
           </div>
-          <div className="grid grid-cols-1 gap-[var(--aura-space-2)] md:grid-cols-2" {...switches(tM('section.partnershipBenefits'))}>
-            <LockableSwitch
+          <div className="grid grid-cols-1 gap-[var(--aura-space-2)] md:grid-cols-2">
+            <Switch
               label={tM('boothIncluded')}
               checked={value.partnership.booth_included}
               onChange={(b) => patchPartnership({ booth_included: b })}
               {...sw}
             />
-            <LockableSwitch
+            <Switch
               label={tM('rollupLogoAtEvents')}
               checked={value.partnership.rollup_logo_at_events}
               onChange={(b) => patchPartnership({ rollup_logo_at_events: b })}
               {...sw}
             />
-            <LockableSwitch
+            <Switch
               label={tM('logoOnMerch')}
               checked={value.partnership.logo_on_merch}
               onChange={(b) => patchPartnership({ logo_on_merch: b })}
               {...sw}
             />
-            <LockableSwitch
+            <Switch
               label={tM('newsletterPromotion')}
               checked={value.partnership.newsletter_promotion}
               onChange={(b) => patchPartnership({ newsletter_promotion: b })}
               {...sw}
             />
-            <LockableSwitch
+            <Switch
               label={tM('eNewsletterLogo')}
               checked={value.partnership.enewsletter_logo}
               onChange={(b) => patchPartnership({ enewsletter_logo: b })}

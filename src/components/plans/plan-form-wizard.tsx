@@ -553,14 +553,18 @@ export function PlanFormWizard({
           {cancelLabel}
         </Button>
       ) : null}
-      {/* Stand-in until AURA #116: the ActionBar has no start slot, so Cancel
-          rides first in its actions with `me-auto` (`.plan-form-actions--split`). */}
-      <ActionBar className="chamber-viewport-actionbar plan-form-actions plan-form-actions--even plan-form-actions--split">
-        {onCancel ? (
-          <Button type="button" variant="secondary" onClick={onCancel} disabled={submitting} className="me-auto max-sm:hidden">
-            {cancelLabel}
-          </Button>
-        ) : null}
+      {/* AURA 5.20's start slot holds Cancel from 640px; on a phone the slot
+          is hidden (`--start-wide`) and Cancel is the button above. */}
+      <ActionBar
+        className="chamber-viewport-actionbar plan-form-actions plan-form-actions--even plan-form-actions--start-wide"
+        start={
+          onCancel ? (
+            <Button type="button" variant="secondary" onClick={onCancel} disabled={submitting}>
+              {cancelLabel}
+            </Button>
+          ) : undefined
+        }
+      >
         {stepIndex > 0 ? (
           <Button
             type="button"
