@@ -102,7 +102,7 @@ test.describe('plans edit — US3', () => {
     await expect(page.getByText(/historical plan/i)).toBeVisible();
 
     // annual_fee is locked: read-only (122 US6 — AURA text fields lock as
-    // read-only with the lock icon; selects and switches are disabled) and
+    // read-only with the lock icon, as selects and switches are since AURA 5.19) and
     // read to a screen reader as locked.
     const feeInput = page.getByLabel(/annual fee/i);
     await expect(feeInput).toHaveAttribute('readonly', '');
