@@ -92,6 +92,7 @@ The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requ
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
 | 112 | `Stepper` has no per-step error status (the old stepper marked the step that failed) | None: the new-plan wizard shows its errors in `FormErrorSummary` and the fields, and stays on (or returns to) the failing step; the stepper shows progress only (spec Clarifications, US6 start) |
+| 113 | `Switch` takes no `aria-describedby`, and `Select` / `Switch` labels are strings only, so a disabled (locked) control cannot carry its own "Locked: historical plan" text | The locked switches' group is named by its heading and described as locked, each row shows AURA's lock; a disabled `Select` keeps `aria-describedby` and the lock icon, with the warning `Alert` above the form (UX review, US6) |
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 
