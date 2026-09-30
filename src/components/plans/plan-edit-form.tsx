@@ -10,13 +10,19 @@
  * per `LOCKED_FIELDS_ON_PRIOR_YEAR` are disabled with a lock-icon
  * tooltip. The `<PriorYearLockBanner>` is rendered at the top.
  *
- * Client-side validation uses `planPatchSchema.partial()` at save
- * time. The server re-runs the same schema + the locked-field rule,
- * so this form is a UX nicety — NOT a security boundary.
+ * Save-time validation: the draft is diffed against `initialValues`
+ * (`computePlanPatch` — the same sparse patch the page sends) and that
+ * patch is checked with `planPatchSchema`. Invalid fields get the
+ * wizard's per-field messages and focus moves to the first one; the
+ * draft only reaches `onSubmit` once the patch is valid. Rules that
+ * need the whole stored plan (e.g. a new max turnover below the stored
+ * min) are still enforced server-side by the merged-plan check in
+ * `update-plan.ts`, which also re-runs the schema + the locked-field
+ * rule — so this form is a UX nicety, NOT a security boundary.
  */
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2Icon, Lock } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
@@ -38,6 +44,9 @@ import {
   type CurrentYearPlanStatus,
 } from './prior-year-lock-banner';
 import { usePlanOptions } from './use-plan-options';
+import { FieldError, invalidProps, optionalError } from './plan-field-error';
+import type { PlanFormField } from './plan-form-errors';
+import { computePlanPatch, planPatchFieldErrors } from './plan-patch';
 import {
   LOCKED_FIELDS_ON_PRIOR_YEAR,
   type PlanSchemaInput,
@@ -105,6 +114,7 @@ export function PlanEditForm({
   const t = useTranslations('admin.plans.create.labels');
   const tEdit = useTranslations('admin.plans.edit');
   const tButtons = useTranslations('admin.plans.create.buttons');
+  const tErrors = useTranslations('admin.plans.create.fieldErrors');
   const { memberTypeOptions: MEMBER_TYPE_OPTIONS } = usePlanOptions();
 
   const [draft, setDraft] = useState<PlanSchemaInput>(initialValues);
@@ -121,13 +131,46 @@ export function PlanEditForm({
     return isPriorYear && LOCKED_FIELDS_ON_PRIOR_YEAR.includes(field);
   }
 
+  // Per-field messages for the patch this save would send. Recomputed on
+  // every edit, so a fixed field's message clears as soon as it is valid;
+  // shown only after a save attempt.
+  const fieldErrors = useMemo(
+    () => planPatchFieldErrors(computePlanPatch(initialValues, draft), draft.plan_category),
+    [initialValues, draft],
+  );
+  const [showErrors, setShowErrors] = useState(false);
+
+  function fieldError(field: PlanFormField): string | undefined {
+    const key = fieldErrors[field];
+    if (key === undefined || !showErrors) return undefined;
+    return tErrors(key);
+  }
+
+  // After a failed save, focus the first invalid field (WCAG 3.3.1); it
+  // announces its message via aria-describedby.
+  const formRef = useRef<HTMLFormElement>(null);
+  const [focusErrorRequest, setFocusErrorRequest] = useState(0);
+  useEffect(() => {
+    if (focusErrorRequest === 0) return;
+    formRef.current
+      ?.querySelector<HTMLElement>('[aria-invalid="true"], [data-field-error]')
+      ?.focus();
+  }, [focusErrorRequest]);
+
   async function handleSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
+    if (Object.keys(fieldErrors).length > 0) {
+      setShowErrors(true);
+      setFocusErrorRequest((n) => n + 1);
+      return;
+    }
     await onSubmit(draft);
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    // noValidate: the per-field messages below replace the browser's bubbles
+    // (native min/max would otherwise block the submit before they run).
+    <form ref={formRef} onSubmit={handleSubmit} noValidate className="space-y-6">
       {isPriorYear ? (
         <PriorYearLockBanner
           planId={draft.plan_id}
@@ -145,6 +188,7 @@ export function PlanEditForm({
           value={draft.plan_name}
           onChange={(next) => update('plan_name', next as PlanSchemaInput['plan_name'])}
           required
+          {...optionalError(fieldError('plan_name'))}
         />
         <LocaleTextInput
           label={t('description')}
@@ -153,6 +197,7 @@ export function PlanEditForm({
           multiline
           maxLength={2000}
           required
+          {...optionalError(fieldError('description'))}
         />
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div className="space-y-1">
@@ -166,7 +211,9 @@ export function PlanEditForm({
               onChange={(e) =>
                 update('sort_order', Number.parseInt(e.target.value, 10) || 0)
               }
+              {...invalidProps('sort_order', fieldError('sort_order'))}
             />
+            <FieldError field="sort_order" message={fieldError('sort_order')} />
           </div>
           <LockWrapper locked={isLocked('member_type_scope')}>
             <div className="space-y-1">
@@ -211,6 +258,7 @@ export function PlanEditForm({
             prefix={currencyPrefix}
             disabled={isLocked('annual_fee_minor_units')}
             required
+            {...optionalError(fieldError('annual_fee_minor_units'))}
             helpText={
               vatRatePercent === null
                 ? t('annualFeeHelpNoRate')
@@ -226,6 +274,7 @@ export function PlanEditForm({
               onChange={(n) => update('min_turnover_minor_units', n)}
               prefix={currencyPrefix}
               disabled={isLocked('min_turnover_minor_units')}
+              {...optionalError(fieldError('min_turnover_minor_units'))}
             />
           </LockWrapper>
           <LockWrapper locked={isLocked('max_turnover_minor_units')}>
@@ -235,6 +284,7 @@ export function PlanEditForm({
               onChange={(n) => update('max_turnover_minor_units', n)}
               prefix={currencyPrefix}
               disabled={isLocked('max_turnover_minor_units')}
+              {...optionalError(fieldError('max_turnover_minor_units'))}
             />
           </LockWrapper>
           <LockWrapper locked={isLocked('max_duration_years')}>
@@ -250,7 +300,9 @@ export function PlanEditForm({
                   update('max_duration_years', Number.isFinite(v) && v > 0 ? v : null);
                 }}
                 disabled={isLocked('max_duration_years')}
+                {...invalidProps('max_duration', fieldError('max_duration_years'))}
               />
+              <FieldError field="max_duration" message={fieldError('max_duration_years')} />
             </div>
           </LockWrapper>
           <LockWrapper locked={isLocked('max_member_age')}>
@@ -267,7 +319,9 @@ export function PlanEditForm({
                   update('max_member_age', Number.isFinite(v) && v > 0 ? v : null);
                 }}
                 disabled={isLocked('max_member_age')}
+                {...invalidProps('max_member_age', fieldError('max_member_age'))}
               />
+              <FieldError field="max_member_age" message={fieldError('max_member_age')} />
             </div>
           </LockWrapper>
         </div>
@@ -278,6 +332,12 @@ export function PlanEditForm({
       {/* Benefits */}
       <section className="space-y-4">
         <h2 className="text-lg font-semibold">{t('benefitMatrix')}</h2>
+        {/* No control owns the matrix-level message, so it takes focus itself. */}
+        <FieldError
+          field="benefit_matrix"
+          message={fieldError('benefit_matrix')}
+          focusable
+        />
         <LockWrapper locked={isLocked('benefit_matrix')}>
           <BenefitMatrixEditor
             value={draft.benefit_matrix}

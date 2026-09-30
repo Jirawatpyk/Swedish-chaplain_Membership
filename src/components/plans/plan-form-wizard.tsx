@@ -42,6 +42,7 @@ import { Stepper, type StepperStep } from '@/components/ui/stepper';
 import { LocaleTextInput } from './locale-text-input';
 import { MoneyInput } from './money-input';
 import { BenefitMatrixEditor } from './benefit-matrix-editor';
+import { FieldError, invalidProps, optionalError } from './plan-field-error';
 import { usePlanOptions } from './use-plan-options';
 import {
   planFieldStep,
@@ -633,41 +634,5 @@ export function PlanFormWizard({
         </div>
       </div>
     </div>
-  );
-}
-
-// `aria-invalid` + `aria-describedby` for a raw <Input> whose message is
-// rendered by <FieldError field={id}>.
-function invalidProps(
-  id: string,
-  message: string | undefined,
-): { 'aria-invalid'?: true; 'aria-describedby'?: string } {
-  return message ? { 'aria-invalid': true, 'aria-describedby': `${id}-error` } : {};
-}
-
-// `exactOptionalPropertyTypes` — spread the `error` prop only when set.
-function optionalError(message: string | undefined): { error?: string } {
-  return message ? { error: message } : {};
-}
-
-function FieldError({
-  field,
-  message,
-  focusable = false,
-}: {
-  readonly field: string;
-  readonly message: string | undefined;
-  /** For a message no input points at — it receives the error focus itself. */
-  readonly focusable?: boolean;
-}) {
-  if (!message) return null;
-  return (
-    <p
-      id={`${field}-error`}
-      className="text-destructive text-sm"
-      {...(focusable ? { tabIndex: -1, 'data-field-error': true } : {})}
-    >
-      {message}
-    </p>
   );
 }
