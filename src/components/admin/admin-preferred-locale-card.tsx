@@ -12,6 +12,11 @@
  *
  * Closes the R4 data-loss footgun (admin clicked Save without seeing
  * the current value → silently reset member's preference to null).
+ *
+ * Spec 122 US5b-2 (T579): the board's card (`Admin-member-edit`) — an AURA
+ * RadioGroup named "Notification language" whose hint says it is saved on
+ * its own, not with the form's "Save changes", and a secondary
+ * "Save preference" (the portal form's shape).
  */
 'use client';
 
@@ -19,10 +24,7 @@ import type { ReactElement } from 'react';
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
-import { Loader2Icon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Button, Card, RadioGroup } from '@jirawatpyk/aura-react';
 import { useAriaAnnounce } from '@/hooks/use-aria-announce';
 import { locales } from '@/i18n/config';
 // Single source for the locale-or-tenant-default union (shared with the portal
@@ -40,7 +42,6 @@ export function AdminPreferredLocaleCard({
 }: AdminPreferredLocaleCardProps): ReactElement {
   const t = useTranslations('admin.membersPreferredLocale');
   const tLang = useTranslations('common');
-  const titleId = `admin-preferred-locale-title-${memberId}`;
   const [value, setValue] = useState<PreferredLocale>(initialValue);
   const [saving, setSaving] = useState(false);
   const { announcement, announce } = useAriaAnnounce();
@@ -74,47 +75,28 @@ export function AdminPreferredLocaleCard({
   }
 
   return (
-    <div className="rounded-lg border bg-card text-card-foreground mb-6 p-6">
-      <h3
-        id={titleId}
-        className="text-base font-semibold leading-none tracking-tight"
-      >
-        {t('title')}
-      </h3>
-      <p className="text-muted-foreground mt-1.5 text-sm">{t('description')}</p>
-      <form onSubmit={handleSubmit} className="mt-4 space-y-4">
-        <fieldset className="space-y-2" aria-labelledby={titleId}>
-          <RadioGroup
-            value={value === null ? '__null' : value}
-            onValueChange={(v) => setValue(v === '__null' ? null : (v as 'en' | 'th' | 'sv'))}
-            disabled={saving}
-            className="space-y-2"
-          >
-            {(['__null', ...locales] as const).map((opt) => {
-              const id = `admin-preferred-locale-${memberId}-${opt}`;
-              const label =
-                opt === '__null' ? t('useTenantDefault') : tLang(`languageOptions.${opt}`);
-              return (
-                <div key={opt} className="flex items-center gap-2">
-                  <RadioGroupItem id={id} value={opt} aria-label={label} />
-                  <Label htmlFor={id} className="mb-0 leading-4 cursor-pointer">
-                    {label}
-                  </Label>
-                </div>
-              );
-            })}
-          </RadioGroup>
-        </fieldset>
-        <Button type="submit" disabled={saving} className="min-w-[8rem]">
-          {saving && (
-            <Loader2Icon className="mr-2 h-4 w-4 motion-safe:animate-spin" />
-          )}
+    <Card>
+      <form onSubmit={handleSubmit} className="flex flex-col items-start gap-4">
+        <RadioGroup
+          id={`admin-preferred-locale-${memberId}`}
+          label={t('title')}
+          hint={`${t('description')} ${t('savedSeparately')}`}
+          orientation="horizontal"
+          value={value === null ? '__null' : value}
+          onChange={(v) => setValue(v === '__null' ? null : (v as 'en' | 'th' | 'sv'))}
+          disabled={saving}
+          options={(['__null', ...locales] as const).map((opt) => ({
+            value: opt,
+            label: opt === '__null' ? t('useTenantDefault') : tLang(`languageOptions.${opt}`),
+          }))}
+        />
+        <Button type="submit" variant="secondary" loading={saving}>
           {t('save')}
         </Button>
         <span role="status" aria-live="polite" className="sr-only">
           {announcement}
         </span>
       </form>
-    </div>
+    </Card>
   );
 }

@@ -63,9 +63,8 @@ test.describe('US5 Member self-service portal @f3 @a11y @i18n', () => {
     await expect(companyField).toBeVisible({ timeout: 10_000 });
 
     await fillField(companyField, `E2E Portal Corp ${RUN_ID}`);
-    // PR-B task 5 — #country is now a searchable combobox trigger <button>
-    // (not a fillable text <input>); no explicit selection needed since
-    // the form already defaults it to 'TH' (schema default).
+    // #country is an AURA combobox (spec 122 US5b-2); no explicit selection
+    // needed since the form already defaults it to 'TH' (schema default).
 
     // Required plan + billing_cycle picks and the 088 §86/4 TH address —
     // shared helper so the next required field is added in ONE place.

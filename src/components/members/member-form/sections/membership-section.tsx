@@ -14,22 +14,21 @@
  * which needs it BEFORE `useForm()` is constructed (to rebuild the zod
  * schema with the plan's conditional DOB requirement) — so the `planId`
  * state itself stays in the root rather than living here.
+ *
+ * Spec 122 US5b-2 (T575): the board's Membership card, two fields a row from
+ * 640px. AURA `Select` lists one line per option, so the plan's annual fee
+ * is the field hint for the selected plan (maintainer, 30 Sep). The
+ * registration date is an AURA `DatePicker` on create (typed or picked;
+ * Buddhist-era years shown in Thai, the value stays ISO) and read-only text
+ * on edit, as the board draws it.
  */
 import { useTranslations, useLocale } from 'next-intl';
-import { Controller, useFormContext } from 'react-hook-form';
+import { Controller, useFormContext, useWatch } from 'react-hook-form';
+import { DatePicker, Select, TextField, type ISODate } from '@jirawatpyk/aura-react';
 import { formatSatangThb } from '@/lib/format-thb';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { RequiredMark } from '@/components/ui/required-mark';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  TranslatedSelectValue,
-} from '@/components/ui/select';
-import { FieldError } from '../field-error';
+import { formatLocalisedDate } from '@/lib/format-date-localised';
 import { type MemberFormValues, type PlanOption } from '../schema';
+import { FormSectionCard } from '../form-section-card';
 
 export function MembershipSection({
   plans,
@@ -70,178 +69,112 @@ export function MembershipSection({
     );
   }
 
+  const selectedPlanId = useWatch({ control, name: 'plan_id' });
+  const selectedPlan = plans.find((p) => p.plan_id === selectedPlanId);
+  const selectedFee = selectedPlan ? planFeeLabel(selectedPlan) : null;
+  const registrationDate = useWatch({ control, name: 'registration_date' });
+
   return (
-    <fieldset className="flex flex-col gap-4 rounded-md border p-4">
-      <legend className="px-2 text-base font-semibold">
-        {t('sections.membership')}
-      </legend>
+    <FormSectionCard id="membership" title={t('sections.membership')}>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <Controller
+          control={control}
+          name="plan_id"
+          render={({ field }) => (
+            <Select
+              id="plan_id"
+              name={field.name}
+              ref={field.ref}
+              onBlur={field.onBlur}
+              label={tf('plan')}
+              required
+              value={field.value ?? ''}
+              placeholder={tf('planPlaceholder')}
+              options={plans.map((p) => ({ value: p.plan_id, label: p.display_name }))}
+              hint={selectedFee !== null ? `${tf('planAnnualFee')}: ${selectedFee}` : undefined}
+              error={errors.plan_id?.message}
+              onChange={(e) => {
+                field.onChange(e.target.value);
+                // Mirror to the root so the schema rebuilds with the plan's
+                // DOB requirement (see the planId state there).
+                onPlanIdChange(e.target.value);
+              }}
+            />
+          )}
+        />
+        <TextField
+          id="plan_year"
+          type="number"
+          inputMode="numeric"
+          label={tf('planYear')}
+          min={2020}
+          max={2100}
+          required
+          aria-required="true"
+          aria-describedby="required-fields-note"
+          error={errors.plan_year?.message}
+          {...register('plan_year')}
+        />
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <div className="md:col-span-2">
-          <Label htmlFor="plan_id">
-            {tf('plan')}
-            <RequiredMark />
-          </Label>
-          <Controller
-            control={control}
-            name="plan_id"
-            render={({ field }) => (
-              <Select
-                value={field.value ?? ''}
-                onValueChange={(v) => {
-                  field.onChange(v);
-                  // Mirror to the root so the schema rebuilds with the
-                  // plan's DOB requirement (see the planId state there).
-                  onPlanIdChange(v ?? '');
-                }}
-              >
-                <SelectTrigger
-                  id="plan_id"
-                  aria-required="true"
-                  aria-invalid={Boolean(errors.plan_id)}
-                  aria-describedby={
-                    errors.plan_id ? 'plan_id-error required-fields-note' : 'required-fields-note'
-                  }
-                  className="w-full"
-                >
-                  {/* base-ui Select.Value doesn't auto-resolve
-                      the matching SelectItem's text — it shows the
-                      raw value unless we pass a render function that
-                      maps value → display. Lookup against the plans
-                      array; fall back to placeholder when unset. */}
-                  <TranslatedSelectValue
-                    placeholder={tf('planPlaceholder')}
-                    translate={(value) =>
-                      plans.find((p) => p.plan_id === value)?.display_name ?? null
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {plans.map((p) => {
-                    const fee = planFeeLabel(p);
-                    return (
-                      <SelectItem key={p.plan_id} value={p.plan_id}>
-                        <span>{p.display_name}</span>
-                        {fee !== null && (
-                          <span className="ml-auto text-xs text-muted-foreground">
-                            {/* sr-only prefix so a screen reader hears
-                                "Annual fee: …" rather than a bare number
-                                trailing the plan name. */}
-                            <span className="sr-only">{tf('planAnnualFee')}: </span>
-                            {fee}
-                          </span>
-                        )}
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
-            )}
-          />
-          <FieldError id="plan_id-error" message={errors.plan_id?.message} />
-        </div>
-        <div>
-          <Label htmlFor="plan_year">
-            {tf('planYear')}
-            <RequiredMark />
-          </Label>
-          <Input
-            id="plan_year"
-            type="number"
-            inputMode="numeric"
-            min={2020}
-            max={2100}
-            required
-            aria-required="true"
-            aria-invalid={Boolean(errors.plan_year)}
-            aria-describedby={
-              errors.plan_year ? 'plan_year-error required-fields-note' : 'required-fields-note'
-            }
-            {...register('plan_year')}
-          />
-          <FieldError id="plan_year-error" message={errors.plan_year?.message} />
-        </div>
-      </div>
-
-      {/* 065 §5.1 — per-member billing cadence. A REQUIRED free choice
-          (calendar year vs rolling anniversary); mirrors the plan picker's
-          Controller/Select shape. */}
-      <div>
-        <Label htmlFor="billing_cycle">
-          {tf('billingCycle')}
-          <RequiredMark />
-        </Label>
+        {/* 065 §5.1 — per-member billing cadence. A REQUIRED free choice
+            (calendar year vs rolling anniversary). */}
         <Controller
           control={control}
           name="billing_cycle"
           render={({ field }) => (
-            <Select value={field.value ?? ''} onValueChange={(v) => field.onChange(v)}>
-              <SelectTrigger
-                id="billing_cycle"
-                aria-required="true"
-                aria-invalid={Boolean(errors.billing_cycle)}
-                aria-describedby={
-                  errors.billing_cycle ? 'billing_cycle-error required-fields-note' : 'required-fields-note'
-                }
-                className="w-full"
-              >
-                <TranslatedSelectValue
-                  placeholder={tf('billingCyclePlaceholder')}
-                  translate={(value) =>
-                    value === 'calendar' || value === 'rolling'
-                      ? tf(`billingCycleOptions.${value}`)
-                      : null
-                  }
-                />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="calendar">{tf('billingCycleOptions.calendar')}</SelectItem>
-                <SelectItem value="rolling">{tf('billingCycleOptions.rolling')}</SelectItem>
-              </SelectContent>
-            </Select>
+            <Select
+              id="billing_cycle"
+              name={field.name}
+              ref={field.ref}
+              onBlur={field.onBlur}
+              label={tf('billingCycle')}
+              required
+              value={field.value ?? ''}
+              placeholder={tf('billingCyclePlaceholder')}
+              options={[
+                { value: 'calendar', label: tf('billingCycleOptions.calendar') },
+                { value: 'rolling', label: tf('billingCycleOptions.rolling') },
+              ]}
+              error={errors.billing_cycle?.message}
+              onChange={(e) => field.onChange(e.target.value)}
+            />
           )}
         />
-        <FieldError id="billing_cycle-error" message={errors.billing_cycle?.message} />
-      </div>
 
-      <div>
-        <Label htmlFor="registration_date">{tf('registrationDate')}</Label>
-        <Input
-          id="registration_date"
-          type="date"
-          readOnly={mode === 'edit'}
-          aria-describedby={
-            mode === 'edit'
-              ? 'registration_date-readonly'
-              : 'registration_date-hint'
-          }
-          // Tailwind-merge only dedupes WITHIN the same variant group —
-          // `bg-muted` (no modifier) and `dark:bg-input/30` from the base
-          // Input class list (input.tsx) don't collide, so the dark
-          // variant wins and the read-only cue disappears in dark mode.
-          // Pin the dark variant explicitly.
-          className={mode === 'edit' ? 'bg-muted dark:bg-muted' : undefined}
-          {...register('registration_date')}
-        />
         {/* Each mode gets the copy that is true for it — create honours a
           * back-dated value verbatim (it anchors the F8 renewal cycle);
-          * edit discards any change, so only the read-only note applies. */}
+          * edit discards any change, so the field is read-only text with
+          * only the read-only note. The stored value stays in the form's
+          * defaults either way. */}
         {mode === 'edit' ? (
-          <p
-            id="registration_date-readonly"
-            className="mt-1 text-xs text-muted-foreground"
-          >
-            {tf('registrationDateReadOnly')}
-          </p>
+          <TextField
+            id="registration_date"
+            label={tf('registrationDate')}
+            readOnly
+            value={registrationDate ? formatLocalisedDate(registrationDate, locale) : ''}
+            hint={tf('registrationDateReadOnly')}
+          />
         ) : (
-          <p
-            id="registration_date-hint"
-            className="mt-1 text-xs text-muted-foreground"
-          >
-            {tf('registrationDateHint')}
-          </p>
+          <Controller
+            control={control}
+            name="registration_date"
+            render={({ field }) => (
+              <DatePicker
+                id="registration_date"
+                name={field.name}
+                // The input carries RHF's ref so a failed submit can focus it.
+                ref={field.ref}
+                label={tf('registrationDate')}
+                timeZone="Asia/Bangkok"
+                value={(field.value || null) as ISODate | null}
+                onChange={(iso) => field.onChange(iso ?? '')}
+                hint={tf('registrationDateHint')}
+                error={errors.registration_date?.message}
+              />
+            )}
+          />
         )}
       </div>
-    </fieldset>
+    </FormSectionCard>
   );
 }

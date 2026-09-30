@@ -1098,9 +1098,10 @@
     },
     "membersPreferredLocale": {
       "title": "ภาษาของอีเมลแจ้งเตือน",
-      "description": "ตั้งค่าภาษาที่สมาชิกรายนี้จะได้รับอีเมลแจ้งเตือน (การอนุมัติบรอดแคสต์, ใบแจ้งหนี้ ฯลฯ) ปล่อยที่ \"ใช้ภาษาของหอการค้า\" เพื่อใช้ค่าเริ่มต้นของหอการค้า",
+      "description": "ตั้งค่าภาษาที่สมาชิกรายนี้จะได้รับอีเมลแจ้งเตือน (การอนุมัติบรอดแคสต์, ใบแจ้งหนี้ ฯลฯ) ปล่อยที่ “ใช้ภาษาของหอการค้า” เพื่อใช้ค่าเริ่มต้นของหอการค้า",
       "useTenantDefault": "ใช้ภาษาของหอการค้า",
       "save": "บันทึก",
+      "savedSeparately": "บันทึกแยกต่างหาก — ไม่ได้บันทึกเมื่อกดปุ่ม “บันทึกการเปลี่ยนแปลง”",
       "savedToast": "อัปเดตภาษาของอีเมลแจ้งเตือนแล้ว",
       "errorToast": "ไม่สามารถบันทึกได้ กรุณาลองใหม่",
       "loading": "กำลังโหลด…"
@@ -1772,7 +1773,7 @@
           "additionalDetails": "รายละเอียดเพิ่มเติม"
         },
         "secondaryContact": {
-          "addButton": "+ เพิ่มผู้ติดต่อรอง",
+          "addButton": "เพิ่มผู้ติดต่อรอง",
           "removeButton": "ลบผู้ติดต่อรอง"
         },
         "fields": {
@@ -1797,7 +1798,6 @@
           },
           "country": "ประเทศ (ISO alpha-2)",
           "countryPlaceholder": "เลือกประเทศ…",
-          "countrySearchPlaceholder": "ค้นหาประเทศ…",
           "countryEmptyMessage": "ไม่พบประเทศ",
           "countrySuggestedGroup": "แนะนำ",
           "countryAllGroup": "ประเทศทั้งหมด",
@@ -1812,13 +1812,10 @@
           "postalCode": "รหัสไปรษณีย์",
           "subDistrict": "แขวง/ตำบล",
           "subDistrictPlaceholder": "เลือกแขวง/ตำบล…",
-          "subDistrictSearchPlaceholder": "ค้นหาแขวง/ตำบล…",
           "subDistrictEmptyMessage": "ไม่พบแขวง/ตำบล",
           "provincePlaceholder": "เลือกจังหวัด…",
-          "provinceSearchPlaceholder": "ค้นหาจังหวัด…",
           "provinceEmptyMessage": "ไม่พบจังหวัด",
           "cityPlaceholder": "เลือกอำเภอ/เขต…",
-          "citySearchPlaceholder": "ค้นหาอำเภอ/เขต…",
           "cityEmptyMessage": "ไม่พบอำเภอ/เขต",
           "postalCodeInstruction": "การกรอกรหัสไปรษณีย์จะเติมจังหวัด อำเภอ/เขต และแขวง/ตำบลให้อัตโนมัติ",
           "postalCodeAutoFilledHint": "เติมอัตโนมัติจากรหัสไปรษณีย์ {code}",
@@ -1830,7 +1827,6 @@
           "postalCodeAmbiguousProvince": "รหัสไปรษณีย์ {code} ตรงกับ {count} จังหวัด กรุณาเลือกด้านล่าง",
           "postalCodeUnknownHint": "ไม่พบรหัสไปรษณีย์นี้ กรุณากรอกจังหวัด อำเภอ/เขต และแขวง/ตำบลด้วยตนเอง",
           "postalCodeUnknownAnnouncement": "ไม่พบข้อมูลรหัสไปรษณีย์ {code} กรุณากรอกที่อยู่ด้วยตนเอง",
-          "useTypedValueLabel": "ใช้ \"{value}\"",
           "addressIncompleteBanner": "ที่อยู่ไม่สมบูรณ์ — จำเป็นต้องกรอกก่อนออกใบกำกับภาษี",
           "addressIncompleteJumpLink": "กรอกที่อยู่ให้ครบถ้วน",
           "billingDiffers": "ที่อยู่ออกใบกำกับต่างจากที่อยู่บริษัท",
@@ -1870,6 +1866,7 @@
           "dateOfBirth": "วันเกิด",
           "dateOfBirthHint": "จำเป็นสำหรับแพ็กเกจ Thai Alumni",
           "phoneError": "ใช้รูปแบบสากล เช่น +66812345678",
+          "phoneHint": "รูปแบบสากล เช่น +66812345678",
           "errors": {
             "required": "จำเป็นต้องกรอกช่องนี้",
             "countryCode": "ใช้รหัสประเทศ ISO 3166-1 alpha-2 เช่น TH, SE, US",
@@ -1921,6 +1918,7 @@
         "submit": "บันทึกการเปลี่ยนแปลง",
         "submitting": "กำลังบันทึก…",
         "cancel": "ยกเลิก",
+        "otherContactsNote": "จัดการผู้ติดต่ออื่นได้ที่หน้าสมาชิก",
         "success": "อัปเดตสมาชิกสำเร็จ",
         "contactsHeading": "ผู้ติดต่อ",
         "addContact": "เพิ่มผู้ติดต่อ",

@@ -194,14 +194,14 @@ export function EraseMemberButton({
         // No Escape / close while the erasure runs.
         dismissible={!loading}
         title={t('dialogTitle')}
+        // The confirm gate stays focusable and announced while blocked:
+        // AURA's Button keeps a passed aria-disabled and ignores clicks then
+        // (5.14, handoff 102); handleConfirm re-checks the gate too.
         footer={
           <>
             <Button variant="secondary" data-autofocus disabled={loading} onClick={() => handleOpenChange(false)}>
               {t('cancel')}
             </Button>
-            {/* The gate stays focusable and announced while blocked: AURA's
-                Button keeps a passed aria-disabled and ignores clicks then
-                (5.14, handoff 102); handleConfirm re-checks the gate too. */}
             <Button
               variant="danger"
               loading={loading}

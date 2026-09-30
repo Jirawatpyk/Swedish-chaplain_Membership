@@ -1098,9 +1098,10 @@
     },
     "membersPreferredLocale": {
       "title": "Språk för aviseringar",
-      "description": "Åsidosätt språket som denna medlem tar emot transaktionsmejl på (utskicksgodkännanden, fakturor m.m.). Lämna på \"Använd kammarens standardspråk\" för att följa kammarens inställning.",
+      "description": "Åsidosätt språket som denna medlem tar emot transaktionsmejl på (utskicksgodkännanden, fakturor m.m.). Lämna på ”Använd kammarens standardspråk” för att följa kammarens inställning.",
       "useTenantDefault": "Använd kammarens standardspråk",
       "save": "Spara",
+      "savedSeparately": "Sparas för sig — inte med ”Spara ändringar”.",
       "savedToast": "Aviseringsspråk uppdaterat.",
       "errorToast": "Kunde inte spara inställningen. Försök igen.",
       "loading": "Läser in…"
@@ -1772,7 +1773,7 @@
           "additionalDetails": "Ytterligare uppgifter"
         },
         "secondaryContact": {
-          "addButton": "+ Lägg till en sekundär kontakt",
+          "addButton": "Lägg till en sekundär kontakt",
           "removeButton": "Ta bort sekundär kontakt"
         },
         "fields": {
@@ -1797,7 +1798,6 @@
           },
           "country": "Land (ISO-kod)",
           "countryPlaceholder": "Välj ett land…",
-          "countrySearchPlaceholder": "Sök länder…",
           "countryEmptyMessage": "Inget land hittades.",
           "countrySuggestedGroup": "Förslag",
           "countryAllGroup": "Alla länder",
@@ -1812,13 +1812,10 @@
           "postalCode": "Postnummer",
           "subDistrict": "Stadsdel",
           "subDistrictPlaceholder": "Välj en stadsdel…",
-          "subDistrictSearchPlaceholder": "Sök stadsdelar…",
           "subDistrictEmptyMessage": "Ingen stadsdel hittades.",
           "provincePlaceholder": "Välj ett län…",
-          "provinceSearchPlaceholder": "Sök län…",
           "provinceEmptyMessage": "Inget län hittades.",
           "cityPlaceholder": "Välj ett distrikt…",
-          "citySearchPlaceholder": "Sök distrikt…",
           "cityEmptyMessage": "Inget distrikt hittades.",
           "postalCodeInstruction": "Att ange ett postnummer fyller i län, distrikt och stadsdel.",
           "postalCodeAutoFilledHint": "Ifyllt automatiskt från postnummer {code}.",
@@ -1830,7 +1827,6 @@
           "postalCodeAmbiguousProvince": "{count} län matchar postnummer {code}. Välj ett nedan.",
           "postalCodeUnknownHint": "Inget resultat för detta postnummer. Ange län, distrikt och stadsdel manuellt.",
           "postalCodeUnknownAnnouncement": "Inget resultat för postnummer {code}. Ange adressen manuellt.",
-          "useTypedValueLabel": "Använd \"{value}\"",
           "addressIncompleteBanner": "Adressen är ofullständig — krävs innan en skattefaktura kan utfärdas.",
           "addressIncompleteJumpLink": "Fyll i adressen",
           "billingDiffers": "Faktureringsadressen skiljer sig från företagsadressen",
@@ -1870,6 +1866,7 @@
           "dateOfBirth": "Födelsedatum",
           "dateOfBirthHint": "Krävs för paketet Thai Alumni",
           "phoneError": "Använd internationellt format, t.ex. +66812345678",
+          "phoneHint": "Internationellt format, t.ex. +66812345678",
           "errors": {
             "required": "Detta fält är obligatoriskt.",
             "countryCode": "Använd ISO 3166-1 alpha-2-koden, t.ex. TH, SE, US.",
@@ -1921,6 +1918,7 @@
         "submit": "Spara ändringar",
         "submitting": "Sparar…",
         "cancel": "Avbryt",
+        "otherContactsNote": "Övriga kontakter hanteras på medlemsposten.",
         "success": "Medlem uppdaterad.",
         "contactsHeading": "Kontakter",
         "addContact": "Lägg till kontakt",

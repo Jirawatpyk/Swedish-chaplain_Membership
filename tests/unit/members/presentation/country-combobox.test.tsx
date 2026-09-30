@@ -1,5 +1,6 @@
 /**
- * PR-B task 5 — <CountryCombobox> unit tests.
+ * PR-B task 5 — <CountryCombobox> unit tests; spec 122 US5b-2 (T574): on AURA
+ * `Combobox`, the "Suggested" group (TH, SE) through `groups`.
  *
  * Renders against the REAL `i18n-iso-countries` module (no mock) — the EN
  * locale is eager-registered as a module-load side effect in
@@ -7,10 +8,6 @@
  * for the sibling contract on `<CountryDisplay>`), so `getNames('en')`
  * resolves synchronously on first render for locale="en" and this suite
  * never races the dynamic per-locale import.
- *
- * Same jsdom workarounds as `combobox-a11y.test.tsx` (real timers,
- * ResizeObserver + scrollIntoView stubs) since this opens the real
- * Popover + cmdk stack, not a mock.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup, within } from '@testing-library/react';
@@ -19,41 +16,40 @@ import { useState } from 'react';
 import enMessages from '@/i18n/messages/en.json';
 import { CountryCombobox } from '@/components/members/country-combobox';
 
-class ResizeObserverStub {
-  observe() {}
-  unobserve() {}
-  disconnect() {}
-}
-
-function Harness({ initial = 'TH' }: { readonly initial?: string }) {
+function Harness({
+  initial = 'TH',
+  onChange,
+  error,
+}: {
+  readonly initial?: string;
+  readonly onChange?: (next: string) => void;
+  readonly error?: string;
+}) {
   const [value, setValue] = useState(initial);
   return (
     <NextIntlClientProvider locale="en" messages={enMessages}>
-      <label id="country-label" htmlFor="country">
-        Country
-      </label>
       <CountryCombobox
         id="country"
+        label="Country"
+        required
         value={value}
-        onChange={setValue}
-        aria-labelledby="country-label"
-        aria-describedby="country-help"
-        aria-invalid={false}
+        onChange={(next) => {
+          onChange?.(next);
+          setValue(next);
+        }}
+        {...(error ? { error } : {})}
       />
-      <p id="country-help">Helper text</p>
     </NextIntlClientProvider>
   );
 }
 
 beforeEach(() => {
   vi.useRealTimers();
-  vi.stubGlobal('ResizeObserver', ResizeObserverStub);
   Element.prototype.scrollIntoView = vi.fn();
 });
 
 afterEach(() => {
   cleanup();
-  vi.unstubAllGlobals();
   vi.useFakeTimers({
     now: new Date('2026-04-09T12:00:00.000Z'),
     shouldAdvanceTime: false,
@@ -61,103 +57,59 @@ afterEach(() => {
   });
 });
 
-describe('<CountryCombobox>', () => {
-  it('renders a trigger labelled by the external <Label>', () => {
-    render(<Harness />);
-    const trigger = screen.getByRole('combobox');
-    expect(trigger).toHaveAttribute('aria-labelledby', 'country-label');
-    expect(trigger).toHaveAccessibleName('Country');
-  });
-
-  it('shows the localised EN name for the default value ("TH" → "Thailand")', () => {
-    render(<Harness />);
-    expect(screen.getByRole('combobox')).toHaveTextContent('Thailand');
+describe('<CountryCombobox> (AURA)', () => {
+  it('is an AURA combobox named by its own label, required, showing the localised name', () => {
+    const { container } = render(<Harness />);
+    const input = screen.getByRole('combobox', { name: /country/i });
+    expect(input).toHaveValue('Thailand');
+    expect(input).toBeRequired();
+    expect(container.querySelector('label[for="country"]')?.textContent).toContain('*');
   });
 
   it('resolves a lowercase stored value to its uppercase option ("se" → "Sweden")', () => {
     render(<Harness initial="se" />);
-    expect(screen.getByRole('combobox')).toHaveTextContent('Sweden');
+    expect(screen.getByRole('combobox', { name: /country/i })).toHaveValue('Sweden');
   });
 
-  it('passes through aria-describedby and aria-invalid', () => {
-    render(<Harness />);
-    const trigger = screen.getByRole('combobox');
-    expect(trigger).toHaveAttribute('aria-describedby', 'country-help');
-    expect(trigger).toHaveAttribute('aria-invalid', 'false');
+  it('shows an error under the field and marks the input invalid', () => {
+    render(<Harness error="Pick a country" />);
+    const input = screen.getByRole('combobox', { name: /country/i });
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+    expect(input).toHaveAttribute('aria-describedby', 'country-error');
+    expect(document.getElementById('country-error')).toHaveTextContent('Pick a country');
   });
 
-  it('opening the popover shows a Suggested group with Thailand + Sweden, and an All countries group with the rest', async () => {
+  it('lists Thailand and Sweden under "Suggested", every other country under "All countries"', async () => {
     render(<Harness />);
-    fireEvent.click(screen.getByRole('combobox'));
-
+    fireEvent.click(screen.getByRole('combobox', { name: /country/i }));
     const listbox = await screen.findByRole('listbox');
-    const suggestedHeading = within(listbox).getByText('Suggested');
-    expect(suggestedHeading).toBeInTheDocument();
-    expect(within(listbox).getByText('All countries')).toBeInTheDocument();
-
-    // cmdk marks each group's OUTER wrapper `role="presentation"` (removed
-    // from the a11y tree, not queryable via getByRole('group')) — walk up
-    // from the heading text to the `[cmdk-group]` container cmdk documents
-    // as its own stable public selector (same one `combobox.tsx` reads the
-    // listbox id off of).
-    const suggestedGroup = suggestedHeading.closest('[cmdk-group]');
-    expect(suggestedGroup).not.toBeNull();
-    expect(within(suggestedGroup as HTMLElement).getByText('Thailand')).toBeInTheDocument();
-    expect(within(suggestedGroup as HTMLElement).getByText('Sweden')).toBeInTheDocument();
-
-    // A non-pinned country (the US — i18n-iso-countries' official EN name
-    // is "United States of America") is reachable but lives in the "All
-    // countries" group, not "Suggested" — the whole point of this task (a
-    // 3-value dropdown would make it unrepresentable at all).
-    expect(
-      within(suggestedGroup as HTMLElement).queryByText('United States of America'),
-    ).toBeNull();
-    expect(within(listbox).getByText('United States of America')).toBeInTheDocument();
+    const suggested = within(listbox).getByRole('group', { name: 'Suggested' });
+    expect(within(suggested).getAllByRole('option').map((o) => o.textContent)).toEqual(['Thailand', 'Sweden']);
+    const all = within(listbox).getByRole('group', { name: 'All countries' });
+    expect(within(all).getByRole('option', { name: 'United States of America' })).toBeInTheDocument();
+    expect(within(suggested).queryByRole('option', { name: 'United States of America' })).toBeNull();
   });
 
-  it('selecting a country calls onChange with the uppercase alpha-2 code, not the label', async () => {
+  it('selecting a country reports the uppercase alpha-2 code, not the label', async () => {
     const onChange = vi.fn();
-    function ControlledHarness() {
-      const [value, setValue] = useState('TH');
-      return (
-        <NextIntlClientProvider locale="en" messages={enMessages}>
-          <label id="country-label" htmlFor="country">
-            Country
-          </label>
-          <CountryCombobox
-            id="country"
-            value={value}
-            onChange={(next) => {
-              onChange(next);
-              setValue(next);
-            }}
-            aria-labelledby="country-label"
-          />
-        </NextIntlClientProvider>
-      );
-    }
-    render(<ControlledHarness />);
-    fireEvent.click(screen.getByRole('combobox'));
+    render(<Harness onChange={onChange} />);
+    fireEvent.click(screen.getByRole('combobox', { name: /country/i }));
     const listbox = await screen.findByRole('listbox');
-    fireEvent.click(within(listbox).getByText('Sweden'));
-
+    fireEvent.click(within(listbox).getByRole('option', { name: 'Sweden' }));
     await waitFor(() => expect(onChange).toHaveBeenCalledWith('SE'));
-    await waitFor(() =>
-      expect(screen.getByRole('combobox')).toHaveTextContent('Sweden'),
-    );
+    expect(screen.getByRole('combobox', { name: /country/i })).toHaveValue('Sweden');
   });
 
-  it('the search box filters by the localised label (e.g. "Sweden" narrows to SE)', async () => {
+  it('typing filters by the localised name and by the ISO code', async () => {
     render(<Harness />);
-    fireEvent.click(screen.getByRole('combobox'));
+    const input = screen.getByRole('combobox', { name: /country/i });
+    fireEvent.change(input, { target: { value: 'Swed' } });
     const listbox = await screen.findByRole('listbox');
-    const search = screen.getByPlaceholderText('Search countries…');
-
-    fireEvent.change(search, { target: { value: 'Sweden' } });
-
-    await waitFor(() => {
-      expect(within(listbox).getByText('Sweden')).toBeInTheDocument();
-      expect(within(listbox).queryByText('United States of America')).toBeNull();
-    });
+    expect(within(listbox).getByRole('option', { name: 'Sweden' })).toBeInTheDocument();
+    expect(within(listbox).queryByRole('option', { name: 'United States of America' })).toBeNull();
+    fireEvent.change(input, { target: { value: 'US' } });
+    await waitFor(() =>
+      expect(within(screen.getByRole('listbox')).getByRole('option', { name: 'United States of America' })).toBeInTheDocument(),
+    );
   });
 });

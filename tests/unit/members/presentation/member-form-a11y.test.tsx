@@ -86,8 +86,11 @@ describe('MemberForm FR-035 tri-part required indicator', () => {
     (id, expected) => {
       const { container } = renderForm();
       const input = byId(container, id);
-      const actual = input.getAttribute('aria-required');
-      expect(actual === 'true').toBe(expected);
+      // Programmatic either way: `aria-required="true"`, or the native
+      // `required` attribute (HTML-AAM maps it to aria-required), which the
+      // AURA combobox fields carry (122 US5b-2).
+      const actual = input.getAttribute('aria-required') === 'true' || input.required === true;
+      expect(actual).toBe(expected);
     },
   );
 

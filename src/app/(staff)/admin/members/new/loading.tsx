@@ -1,38 +1,25 @@
 /**
- * Route-level loading UI for /admin/members/new — form-shape skeleton
- * so the transition from the directory doesn't flash the wrong shape
- * (the parent segment's loading.tsx is a table skeleton, which would
- * render during navigation without this override).
+ * Route-level loading UI for /admin/members/new — the form's shape (spec 122
+ * US5b-2, board `Admin-member-new`) so the transition from the directory
+ * doesn't flash the parent segment's table skeleton. `PageSkeletonShell` is
+ * the one live region that announces the load.
  */
 import { getTranslations } from 'next-intl/server';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
-import { FormContainer } from '@/components/layout';
-import { PageHeader } from '@/components/layout/page-header';
+import { PageSkeletonShell, SkeletonBlock } from '@/components/shell/page-skeletons';
 import { MemberFormSkeleton } from '@/components/members/member-form-skeleton';
+import { FormContainer } from '@/components/layout';
+import { MEMBER_FORM_COLUMN, MemberFormFrame } from '../_components/member-form-frame';
 
 export default async function Loading() {
   const t = await getTranslations('admin.members.create');
+  const tLayout = await getTranslations('layout');
   return (
-    <FormContainer>
-      <PageHeader
-        title={t('title')}
-        subtitle={t('subtitle')}
-        actions={<Skeleton className="h-9 w-20" />}
-      />
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">{t('title')}</CardTitle>
-        </CardHeader>
-        <CardContent>
+    <PageSkeletonShell ariaLabel={tLayout('loadingPage')}>
+      <FormContainer className={MEMBER_FORM_COLUMN}>
+        <MemberFormFrame title={t('title')} subtitle={<SkeletonBlock className="h-4 w-72" />}>
           <MemberFormSkeleton />
-        </CardContent>
-      </Card>
-    </FormContainer>
+        </MemberFormFrame>
+      </FormContainer>
+    </PageSkeletonShell>
   );
 }

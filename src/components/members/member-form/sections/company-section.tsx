@@ -9,44 +9,25 @@
  * Extracted from the former single-file `member-form.tsx` (pure move, PR-B
  * task 4) — reads/writes form state via `useFormContext` instead of
  * prop-drilled `register`/`errors`.
+ *
+ * Spec 122 US5b-2 (T574): AURA fields in the board's Company card — the name
+ * across, then two a row from 640px — the entity-type help in an AURA
+ * Popover and "Additional details" in an AURA Accordion (its panel stays
+ * mounted and `hidden` while closed, as `keepMounted` did).
  */
 import { useState, type RefObject } from 'react';
 import { useTranslations } from 'next-intl';
 import { Controller, useFormContext, useWatch } from 'react-hook-form';
-import { ChevronDownIcon, HelpCircleIcon } from 'lucide-react';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
-import { Button } from '@/components/ui/button';
-import { RequiredMark } from '@/components/ui/required-mark';
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  TranslatedSelectValue,
-} from '@/components/ui/select';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
+import { HelpCircleIcon } from 'lucide-react';
+import { Accordion, IconButton, Popover, Select, TextField, Textarea } from '@jirawatpyk/aura-react';
 import { CountryCombobox } from '@/components/members/country-combobox';
 // 059 / PR-A Task 3b — deep import (NOT the `@/modules/members` barrel),
 // same rationale as schema.ts: pure TS, zero framework deps, safe in this
 // client component.
-import {
-  LEGAL_ENTITY_TYPES,
-  isLegalEntityTypeCode,
-} from '@/modules/members/domain/value-objects/legal-entity-type';
-import { FieldError } from '../field-error';
+import { LEGAL_ENTITY_TYPES } from '@/modules/members/domain/value-objects/legal-entity-type';
 import { type MemberFormValues } from '../schema';
 import { resolveVatSeed } from '../resolve-vat-seed';
+import { FormSectionCard } from '../form-section-card';
 
 export function CompanySection({
   mode,
@@ -115,110 +96,56 @@ export function CompanySection({
   const additionalDetailsOpen = additionalOpen || hasAdditionalError;
 
   return (
-    <fieldset className="flex flex-col gap-4 rounded-md border p-4">
-      <legend className="px-2 text-base font-semibold">
-        {t('sections.company')}
-      </legend>
-
-      <div>
-        <Label htmlFor="company_name">
-          {tf('companyName')}
-          <RequiredMark />
-        </Label>
-        <Input
+    <FormSectionCard id="company" title={t('sections.company')}>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <TextField
           id="company_name"
+          className="sm:col-span-2"
+          label={tf('companyName')}
+          required
+          aria-required="true"
           // Auto-focus the primary input on create (ux-standards § 7.2);
           // never on edit, so opening an edit form doesn't steal scroll/focus.
           autoFocus={mode === 'create'}
-          {...register('company_name')}
-          required
-          aria-required="true"
-          aria-invalid={Boolean(errors.company_name)}
-          aria-describedby={
-            errors.company_name
-              ? 'company_name-error required-fields-note'
-              : 'required-fields-note'
-          }
           autoComplete="organization"
           maxLength={200}
+          error={errors.company_name?.message}
+          aria-describedby="required-fields-note"
+          {...register('company_name')}
         />
-        <FieldError id="company_name-error" message={errors.company_name?.message} />
-      </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <div>
-          {/* The gap below the label lives on THIS wrapper, and the Label is
-            * reset to `mb-0`. `ui/label.tsx` ships `mb-[var(--field-label-gap)]`
-            * on the Label itself — fine when the Label is the block above its
-            * control (every other field here), but inside a flex row that
-            * bottom margin is trapped IN the row: it inflates the row, so
-            * `items-center` drops the help icon below the label text, and it
-            * leaves no gap at all before the Select. Moving it out restores
-            * both. */}
-          <div className="mb-[var(--field-label-gap)] flex items-center gap-1">
-            <Label htmlFor="legal_entity_type" className="mb-0">
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <div className="flex items-center gap-1">
+            <label htmlFor="legal_entity_type" className="aura-text-label text-[var(--aura-fg-primary)]">
               {tf('legalEntityType')}
-            </Label>
+            </label>
             {/* 059 / PR-A Task 3b — reviewer feedback item #3 asked for an
-              * explanation of each type. Tap-discoverable Popover (not a
-              * hover Tooltip — must work on mobile), same pattern as the
-              * Contacts section's "Emergency primary contact transfer"
-              * helper (admin/members/[memberId]/page.tsx). The explicit
-              * `type="button"` is defensive redundancy, not a fix for an
-              * observed bug: Base UI's `PopoverTrigger` already renders a
-              * native button with `type="button"` on its own (`useButton`'s
-              * `getButtonProps`, applied last by `mergeProps`), so this
-              * popover — which lives inside <form onSubmit> — would not
-              * actually have submitted the form without this prop. Kept
-              * explicit anyway: harmless, and it removes the dependency on
-              * that Base UI internal for anyone reading this in isolation. */}
-            <Popover>
-              {/* `size-6` + `-my-2` — both load-bearing; the geometry is tight
-                * and every other combination breaks something visible.
-                *
-                * Two constraints have to hold at once:
-                *   1. The button must not GROW the label row. The Label is
-                *      `leading-none`, so the row is only ~14px; any flex item
-                *      whose outer height exceeds that pushes the Select down and
-                *      this field falls out of line with `country` / `tax_id`
-                *      beside it. `-my-2` cuts the 24px box to an 8px outer
-                *      height — under the label — so the row height is decided by
-                *      the Label alone, exactly as in every sibling field.
-                *   2. The button must not REACH the Select. Centred in a ~14px
-                *      row, a 24px box overhangs ~5px, which fits inside
-                *      `--field-label-gap` (6px). At 32px it overhangs 9px and at
-                *      44px, 15px — both land on the Select and swallow clicks
-                *      along its top edge.
-                *
-                * 24px is not an arbitrary shrink: it is exactly WCAG 2.2
-                * SC 2.5.8's minimum, and exactly `MIN_TARGET_PX` in
-                * `tests/e2e/members-target-size-2-2.spec.ts`, which measures the
-                * real box via `boundingBox()` — so the element must genuinely BE
-                * 24px. A pseudo-element hit area would report the 16px icon and
-                * fail that gate. */}
-              <PopoverTrigger
-                type="button"
-                aria-label={tf('legalEntityTypeHelpAriaLabel')}
-                className="-my-2 inline-flex size-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <HelpCircleIcon className="size-4" aria-hidden="true" />
-              </PopoverTrigger>
-              <PopoverContent
-                className="w-80 max-w-[calc(100vw-2rem)] text-sm"
-                sideOffset={4}
-              >
-                <p className="font-medium">{tf('legalEntityTypeHelpTitle')}</p>
-                <dl className="mt-2 max-h-80 space-y-2 overflow-y-auto pr-1">
-                  {LEGAL_ENTITY_TYPES.map((code) => (
-                    <div key={code}>
-                      <dt className="font-medium text-foreground">
-                        {tTypes(code)}
-                      </dt>
-                      <dd className="text-muted-foreground">{tExplain(code)}</dd>
-                    </div>
-                  ))}
-                </dl>
-              </PopoverContent>
+              * explanation of each type. Tap-discoverable (not a hover
+              * tooltip — must work on mobile). The 32px icon button is pulled
+              * into the label row with negative margins so it neither grows
+              * the row (the field stays level with Country beside it) nor
+              * shrinks its target below WCAG 2.5.8's 24px. */}
+            <Popover
+              title={tf('legalEntityTypeHelpTitle')}
+              width={320}
+              placement="bottom-start"
+              trigger={
+                <IconButton
+                  type="button"
+                  icon={<HelpCircleIcon className="size-4" aria-hidden="true" />}
+                  label={tf('legalEntityTypeHelpAriaLabel')}
+                  className="-my-2"
+                />
+              }
+            >
+              <dl className="max-h-80 space-y-2 overflow-y-auto pe-1 text-sm">
+                {LEGAL_ENTITY_TYPES.map((code) => (
+                  <div key={code}>
+                    <dt className="font-medium text-[var(--aura-fg-primary)]">{tTypes(code)}</dt>
+                    <dd className="text-[var(--aura-fg-secondary)]">{tExplain(code)}</dd>
+                  </div>
+                ))}
+              </dl>
             </Popover>
           </div>
           <Controller
@@ -226,20 +153,24 @@ export function CompanySection({
             name="legal_entity_type"
             render={({ field }) => (
               <Select
+                id="legal_entity_type"
+                name={field.name}
+                ref={field.ref}
+                onBlur={field.onBlur}
                 value={field.value ?? ''}
-                onValueChange={(next) => {
-                  const code = next ?? '';
+                placeholder={tf('legalEntityTypePlaceholder')}
+                options={LEGAL_ENTITY_TYPES.map((code) => ({ value: code, label: tTypes(code) }))}
+                error={errors.legal_entity_type?.message}
+                onChange={(e) => {
+                  const code = e.target.value;
                   field.onChange(code);
                   // 059 / PR-A Task 3b — seed is_vat_registered from the
-                  // picked type's default. This runs INSIDE a
-                  // user-initiated onValueChange (never a
-                  // useEffect/useWatch) — the PR-B Critical this class of
-                  // bug produced was an effect firing on MOUNT because
-                  // useWatch returns defaultValues on the first render; a
-                  // Select's onValueChange literally cannot fire without
-                  // the admin picking an option, so there is no
-                  // mount-firing path to guard against here in the first
-                  // place. See resolve-vat-seed.ts for the three gates.
+                  // picked type's default. This runs INSIDE a user-initiated
+                  // change (never a useEffect/useWatch) — the PR-B Critical
+                  // this class of bug produced was an effect firing on MOUNT
+                  // because useWatch returns defaultValues on the first
+                  // render; a change event cannot fire without the admin
+                  // picking an option. See resolve-vat-seed.ts for the gates.
                   const seed = resolveVatSeed({
                     code,
                     vatManuallyTouched: vatManuallyTouchedRef.current,
@@ -248,232 +179,132 @@ export function CompanySection({
                     setValue('is_vat_registered', seed, { shouldDirty: true });
                   }
                 }}
-              >
-                <SelectTrigger
-                  id="legal_entity_type"
-                  aria-invalid={Boolean(errors.legal_entity_type)}
-                  aria-describedby={
-                    errors.legal_entity_type
-                      ? 'legal_entity_type-error'
-                      : undefined
-                  }
-                  className="w-full"
-                >
-                  <TranslatedSelectValue
-                    placeholder={tf('legalEntityTypePlaceholder')}
-                    translate={(value) =>
-                      isLegalEntityTypeCode(value) ? tTypes(value) : null
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {LEGAL_ENTITY_TYPES.map((code) => (
-                    <SelectItem key={code} value={code}>
-                      {tTypes(code)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          />
-          <FieldError
-            id="legal_entity_type-error"
-            message={errors.legal_entity_type?.message}
-          />
-        </div>
-        <div>
-          <Label id="country-label" htmlFor="country">
-            {tf('country')}
-            <RequiredMark />
-          </Label>
-          <Controller
-            control={control}
-            name="country"
-            render={({ field }) => (
-              <CountryCombobox
-                id="country"
-                value={field.value ?? 'TH'}
-                onChange={(next) => {
-                  field.onChange(next);
-                  setCountry(next);
-                }}
-                aria-labelledby="country-label"
-                aria-required
-                aria-invalid={Boolean(errors.country)}
-                aria-describedby={
-                  errors.country
-                    ? 'country-error required-fields-note'
-                    : 'required-fields-note'
-                }
               />
             )}
           />
-          <FieldError id="country-error" message={errors.country?.message} />
         </div>
-        <div>
-          <Label htmlFor="tax_id">
-            {tf('taxId')}
-            {isVatRegistered && <RequiredMark />}
-          </Label>
-          <Input
-            id="tax_id"
-            {...register('tax_id')}
-            maxLength={50}
-            aria-required={isVatRegistered}
-            aria-invalid={Boolean(errors.tax_id)}
-            aria-describedby={
-              [
-                errors.tax_id ? 'tax_id-error' : null,
-                countryIsTH ? 'tax_id-hint' : null,
-              ]
-                .filter(Boolean)
-                .join(' ') || undefined
-            }
-          />
-          {countryIsTH && (
-            <p id="tax_id-hint" className="mt-1 text-xs text-muted-foreground">
-              {tf('taxIdHintTH')}
-            </p>
-          )}
-          <FieldError id="tax_id-error" message={errors.tax_id?.message} />
-        </div>
-      </div>
 
-      <div>
-        <Label htmlFor="website">{tf('website')}</Label>
-        <Input
+        <Controller
+          control={control}
+          name="country"
+          render={({ field }) => (
+            <CountryCombobox
+              ref={field.ref}
+              id="country"
+              label={tf('country')}
+              required
+              value={field.value ?? 'TH'}
+              error={errors.country?.message}
+              onChange={(next) => {
+                field.onChange(next);
+                setCountry(next);
+              }}
+            />
+          )}
+        />
+
+        <TextField
+          id="tax_id"
+          label={tf('taxId')}
+          required={isVatRegistered}
+          aria-required={isVatRegistered}
+          maxLength={50}
+          hint={countryIsTH ? tf('taxIdHintTH') : undefined}
+          error={errors.tax_id?.message}
+          {...register('tax_id')}
+        />
+
+        <TextField
           id="website"
           type="url"
-          {...register('website')}
+          label={tf('website')}
           autoComplete="url"
           maxLength={200}
           placeholder={tf('websitePlaceholder')}
-          aria-invalid={Boolean(errors.website)}
-          aria-describedby={errors.website ? 'website-error' : undefined}
+          error={errors.website?.message}
+          {...register('website')}
         />
-        <FieldError id="website-error" message={errors.website?.message} />
       </div>
 
       {/* PR-B task 7 — genuinely optional fields, not needed to create a
         * member: description, notes, founded_year, turnover_thb,
-        * registered_capital_thb. `keepMounted` on the panel keeps every
-        * field permanently in the DOM (never unmounted) — closed just sets
-        * the native `hidden` attribute, which already removes it from the
-        * accessibility tree and from `getByRole` queries. That is what lets
-        * `additionalDetailsOpen` force back to `true` synchronously the
-        * moment one of these fields errors, with no mount/ref timing gap for
-        * react-hook-form's focus-on-error to race against. */}
-      <Collapsible open={additionalDetailsOpen} onOpenChange={setAdditionalOpen}>
-        <CollapsibleTrigger
-          render={
-            <Button type="button" variant="ghost" className="group w-full justify-between" />
-          }
-        >
-          {t('sections.additionalDetails')}
-          <ChevronDownIcon
-            className="size-4 shrink-0 transition-transform duration-200 group-data-[panel-open]:rotate-180"
-            aria-hidden="true"
-          />
-        </CollapsibleTrigger>
-        <CollapsibleContent keepMounted className="flex flex-col gap-4 pt-4">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <div>
-              <Label htmlFor="founded_year">{tf('foundedYear')}</Label>
-              <Input
-                id="founded_year"
-                type="number"
-                inputMode="numeric"
-                min={1800}
-                max={new Date().getUTCFullYear()}
-                aria-invalid={Boolean(errors.founded_year)}
-                aria-describedby={errors.founded_year ? 'founded_year-error' : undefined}
-                {...register('founded_year')}
-              />
-              <FieldError id="founded_year-error" message={errors.founded_year?.message} />
-            </div>
-            <div>
-              <Label htmlFor="turnover_thb">{tf('turnoverThb')}</Label>
-              <Input
-                id="turnover_thb"
-                type="number"
-                inputMode="numeric"
-                min={0}
-                aria-invalid={Boolean(errors.turnover_thb)}
-                aria-describedby={
-                  [
-                    errors.turnover_thb ? 'turnover_thb-error' : null,
-                    'turnover_thb-hint',
-                  ]
-                    .filter(Boolean)
-                    .join(' ') || undefined
-                }
-                {...register('turnover_thb')}
-              />
-              {/* Reviewer asked to RENAME this to registered capital — deliberately
-                * not done: turnover gates the F2 plan turnover band (out-of-band ⇒
-                * mandatory override reason) and drives F8 auto tier-upgrade
-                * suggestions. Renaming the label would silently re-point a
-                * membership-tier business rule at a different quantity. */}
-              <p id="turnover_thb-hint" className="mt-1 text-xs text-muted-foreground">
-                {tf('turnoverHint')}
-              </p>
-              <FieldError id="turnover_thb-error" message={errors.turnover_thb?.message} />
-            </div>
-            <div>
-              <Label htmlFor="registered_capital_thb">{tf('registeredCapitalThb')}</Label>
-              <Input
-                id="registered_capital_thb"
-                type="number"
-                inputMode="numeric"
-                min={0}
-                aria-invalid={Boolean(errors.registered_capital_thb)}
-                aria-describedby={
-                  errors.registered_capital_thb ? 'registered_capital_thb-error' : undefined
-                }
-                {...register('registered_capital_thb')}
-              />
-              <FieldError
-                id="registered_capital_thb-error"
-                message={errors.registered_capital_thb?.message}
-              />
-            </div>
-          </div>
-
-          <div>
-            <Label htmlFor="description">{tf('description')}</Label>
-            <Textarea
-              id="description"
-              {...register('description')}
-              rows={3}
-              maxLength={2000}
-              aria-invalid={Boolean(errors.description)}
-              aria-describedby={
-                errors.description ? 'description-error' : undefined
-              }
-            />
-            <FieldError id="description-error" message={errors.description?.message} />
-          </div>
-
-          <div>
-            <Label htmlFor="notes">{tf('notes')}</Label>
-            <Textarea
-              id="notes"
-              {...register('notes')}
-              rows={3}
-              maxLength={4000}
-              placeholder={tf('notesPlaceholder')}
-              aria-invalid={Boolean(errors.notes)}
-              aria-describedby={
-                errors.notes ? 'notes-error notes-hint' : 'notes-hint'
-              }
-            />
-            <p id="notes-hint" className="mt-1 text-xs text-muted-foreground">
-              {tf('notesHint')}
-            </p>
-            <FieldError id="notes-error" message={errors.notes?.message} />
-          </div>
-        </CollapsibleContent>
-      </Collapsible>
-    </fieldset>
+        * registered_capital_thb. The Accordion keeps its panel mounted and
+        * sets the native `hidden` attribute while closed, which removes the
+        * fields from the accessibility tree and from `getByRole` queries.
+        * That is what lets `additionalDetailsOpen` force back to open
+        * synchronously the moment one of these fields errors, with no
+        * mount/ref timing gap for react-hook-form's focus-on-error. */}
+      <Accordion
+        className="mt-4"
+        headingLevel={3}
+        value={additionalDetailsOpen ? 'additional' : null}
+        onChange={(next: string | null) => setAdditionalOpen(next === 'additional')}
+        items={[
+          {
+            id: 'additional',
+            title: t('sections.additionalDetails'),
+            content: (
+              <div className="flex flex-col gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                  <TextField
+                    id="founded_year"
+                    type="number"
+                    inputMode="numeric"
+                    label={tf('foundedYear')}
+                    min={1800}
+                    max={new Date().getUTCFullYear()}
+                    error={errors.founded_year?.message}
+                    {...register('founded_year')}
+                  />
+                  {/* Reviewer asked to RENAME this to registered capital —
+                    * deliberately not done: turnover gates the F2 plan
+                    * turnover band (out-of-band ⇒ mandatory override reason)
+                    * and drives F8 auto tier-upgrade suggestions. Renaming the
+                    * label would silently re-point a membership-tier business
+                    * rule at a different quantity. */}
+                  <TextField
+                    id="turnover_thb"
+                    type="number"
+                    inputMode="numeric"
+                    label={tf('turnoverThb')}
+                    min={0}
+                    hint={tf('turnoverHint')}
+                    error={errors.turnover_thb?.message}
+                    {...register('turnover_thb')}
+                  />
+                  <TextField
+                    id="registered_capital_thb"
+                    type="number"
+                    inputMode="numeric"
+                    label={tf('registeredCapitalThb')}
+                    min={0}
+                    error={errors.registered_capital_thb?.message}
+                    {...register('registered_capital_thb')}
+                  />
+                </div>
+                <Textarea
+                  id="description"
+                  label={tf('description')}
+                  rows={3}
+                  maxLength={2000}
+                  error={errors.description?.message}
+                  {...register('description')}
+                />
+                <Textarea
+                  id="notes"
+                  label={tf('notes')}
+                  rows={3}
+                  maxLength={4000}
+                  placeholder={tf('notesPlaceholder')}
+                  hint={tf('notesHint')}
+                  error={errors.notes?.message}
+                  {...register('notes')}
+                />
+              </div>
+            ),
+          },
+        ]}
+      />
+    </FormSectionCard>
   );
 }

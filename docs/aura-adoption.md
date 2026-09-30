@@ -100,7 +100,7 @@ Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped i
 | 102 | 5.14.0: `Button` keeps a passed `aria-disabled` | the erase gate in `EraseMemberButton` and the expired Restore in `ArchivedBanner` (the plain `buttonClass` buttons are gone) |
 | 103 | 5.14.0: `Avatar` from `/server` | the contact row in `contact-block.tsx` (`contact-avatar.tsx` is gone) |
 | 104 | 5.14.0: `--aura-shell-bar-height` | the sticky "On this page" strip in `section-links.tsx` (was `top-14`) |
-| 105 | 5.16.0: `Combobox` `allowCustomValue` and `groups` | nothing yet — US5b-2 can move the three address comboboxes off the old kit |
+| 105 | 5.16.0: `Combobox` `allowCustomValue` and `groups` | US5b-2: the member form's country picker ("Suggested" group) and the province / district / sub-district comboboxes (typed names) |
 | 106 | 5.14.0: `--aura-fg-warning` | the owed Remaining figure in `member-invoices-table.tsx` |
 | 107 | 5.14.0: `Tabs` `current="location"` | the section links (`aria-current="location"`) |
 | 108 | 5.14.0: stacked `DataTable` cards start `align: 'end'` values under their label | the invoice phone cards (`StartOnCard` is gone) |

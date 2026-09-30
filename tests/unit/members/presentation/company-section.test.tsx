@@ -272,10 +272,18 @@ describe('CompanySection — Additional details collapsible', () => {
  * DOM risk, in resolve-vat-seed.test.ts.
  */
 describe('CompanySection — legal_entity_type is a closed Select (PR-A Task 3b)', () => {
-  it('renders a Select trigger at #legal_entity_type, not a free-text input', () => {
+  it('renders an AURA Select (its combobox over a real <select>) at #legal_entity_type, not a free-text input', () => {
     const { container } = renderEditForm({});
     expect(container.querySelector('input#legal_entity_type')).toBeNull();
-    expect(container.querySelector('#legal_entity_type')).not.toBeNull();
+    expect(container.querySelector('#legal_entity_type')).toHaveAttribute('role', 'combobox');
+    expect(container.querySelector('select#legal_entity_type-select')).not.toBeNull();
+  });
+
+  it('sits in the Company card (122 US5b-2), a group named by its heading', () => {
+    renderEditForm({});
+    const card = screen.getByRole('group', { name: 'Company' });
+    expect(card).toHaveClass('aura-card');
+    expect(card.querySelector('#legal_entity_type')).not.toBeNull();
   });
 
   it('is NOT labelled "Member Type" — that name is already taken', () => {
@@ -295,8 +303,8 @@ describe('CompanySection — legal_entity_type is a closed Select (PR-A Task 3b)
   });
 
   it('shows the placeholder when no type is recorded', () => {
-    renderEditForm({ legal_entity_type: undefined });
-    expect(screen.getByText('Select a type…')).toBeInTheDocument();
+    const { container } = renderEditForm({ legal_entity_type: undefined });
+    expect(container.querySelector('#legal_entity_type')).toHaveTextContent('Select a type…');
   });
 
   it('shows the resolved, translated label for an already-recorded type', () => {

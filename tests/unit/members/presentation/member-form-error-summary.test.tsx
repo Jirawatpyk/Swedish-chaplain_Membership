@@ -180,11 +180,12 @@ describe('MemberForm error summary (XF-09)', () => {
       expect(input).toHaveAttribute('aria-invalid', 'true');
       const describedBy = input?.getAttribute('aria-describedby') ?? '';
       expect(describedBy.split(' ')).toContain(`${id}-error`);
-      if (id === 'notes') {
-        // notes carries a permanent hint paragraph — the error must be
-        // ADDED alongside it, not replace it (dda2437e regression: an
-        // earlier draft overwrote aria-describedby and orphaned the hint).
-        expect(describedBy.split(' ')).toContain('notes-hint');
+      // Every id the field is described by must exist (dda2437e regression:
+      // an earlier draft left aria-describedby pointing at a missing hint).
+      // On AURA fields the error REPLACES the hint (122 US5b-2), so notes'
+      // hint is not referenced while its error shows.
+      for (const ref of describedBy.split(' ').filter(Boolean)) {
+        expect(document.getElementById(ref)).not.toBeNull();
       }
 
       // Summary jump link — the field must contribute a #<id> entry, not

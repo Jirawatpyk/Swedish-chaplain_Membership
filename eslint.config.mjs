@@ -341,6 +341,22 @@ export const MIGRATED_PATHS = [
   'src/components/members/resend-bounced-invite-button.tsx',
   'src/components/members/resend-verification-button.tsx',
   'src/components/members/member-detail-skeleton.tsx',
+  // US5b-2 — the new / edit member forms (every section, the country and
+  // address comboboxes now that AURA 5.16 has `groups` and
+  // `allowCustomValue`), their plan-change, bundle-warning, override-reason
+  // and soft-duplicate dialogs, and the notification-language card.
+  'src/app/(staff)/admin/members/new/**',
+  'src/app/(staff)/admin/members/\\[memberId\\]/edit/**',
+  'src/components/members/member-form/**',
+  'src/components/members/member-form-skeleton.tsx',
+  'src/components/members/country-combobox.tsx',
+  'src/components/members/create-member-client.tsx',
+  'src/components/members/edit-member-client.tsx',
+  'src/components/members/plan-change-confirm-dialog.tsx',
+  'src/components/members/bundle-change-warning-dialog.tsx',
+  'src/components/members/override-reason-dialog.tsx',
+  'src/components/members/soft-duplicate-dialog.tsx',
+  'src/components/admin/admin-preferred-locale-card.tsx',
 ];
 
 /**

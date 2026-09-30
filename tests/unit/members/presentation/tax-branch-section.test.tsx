@@ -101,6 +101,16 @@ describe('TaxBranchSection — the VAT checkbox is reachable at CREATE', () => {
     renderForm('edit');
     expect(vatCheckbox()).toBeInTheDocument();
   });
+
+  it('is a native AURA checkbox in the §86/4 card, its hint linked (122 US5b-2)', () => {
+    renderForm('edit');
+    const card = screen.getByRole('group', { name: enMessages.admin.members.create.sections.taxBranch });
+    expect(card).toHaveClass('aura-card');
+    const box = vatCheckbox();
+    expect(box.tagName).toBe('INPUT');
+    expect(card.contains(box)).toBe(true);
+    expect(box).toHaveAccessibleDescription(enMessages.admin.members.create.fields.isVatRegisteredHint);
+  });
 });
 
 describe('TaxBranchSection — a natural person is never asked about a head office', () => {

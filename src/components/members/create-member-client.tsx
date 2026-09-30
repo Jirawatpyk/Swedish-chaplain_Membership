@@ -118,7 +118,7 @@ function toPayload(
     },
   };
   // PR-B task 8 — optional secondary contact. Only present when the admin
-  // clicked "+ Add a secondary contact" and filled it in — `secondary_contact`
+  // clicked "Add a secondary contact" and filled it in — `secondary_contact`
   // is `undefined` on `values` otherwise (SecondaryContactSection clears the
   // whole sub-object on Remove, so a filled-then-removed contact never rides
   // along here).

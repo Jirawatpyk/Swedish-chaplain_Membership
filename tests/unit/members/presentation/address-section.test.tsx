@@ -121,8 +121,10 @@ function byId(id: string): HTMLElement {
   return el;
 }
 
+// The address section's own live region (the edit-mode incomplete-address
+// notice and AURA's comboboxes are status regions too — 122 US5b-2).
 function liveRegionText(): string {
-  return document.querySelector('[role="status"]')?.textContent ?? '';
+  return document.querySelector('[data-slot="live-region"]')?.textContent ?? '';
 }
 
 function renderForm() {
@@ -157,7 +159,7 @@ afterEach(() => {
 describe('AddressSection — the live region mounts empty from the start', () => {
   it('renders an empty role="status" live region before any postcode is typed', () => {
     renderForm();
-    const region = document.querySelector('[role="status"]');
+    const region = document.querySelector('[data-slot="live-region"][role="status"]');
     expect(region).not.toBeNull();
     expect(region?.textContent).toBe('');
   });
@@ -186,11 +188,11 @@ describe('AddressSection — case 1: unambiguous postcode', () => {
       { timeout: 3000 },
     );
 
-    await waitFor(() => expect(byId('province')).toHaveTextContent('Bangkok'), {
+    await waitFor(() => expect(byId('province')).toHaveValue('Bangkok'), {
       timeout: 3000,
     });
-    expect(byId('city')).toHaveTextContent('Pathum Wan');
-    expect(byId('sub_district')).toHaveTextContent('Wang Mai');
+    expect(byId('city')).toHaveValue('Pathum Wan');
+    expect(byId('sub_district')).toHaveValue('Wang Mai');
 
     expect(screen.getByRole('button', { name: /undo/i })).toBeInTheDocument();
     await waitFor(() => expect(liveRegionText()).toMatch(/auto-filled/i));
@@ -202,16 +204,16 @@ describe('AddressSection — case 1: unambiguous postcode', () => {
     renderForm();
 
     fireEvent.change(byId('postal_code'), { target: { value: '10330' } });
-    await waitFor(() => expect(byId('province')).toHaveTextContent('Bangkok'), {
+    await waitFor(() => expect(byId('province')).toHaveValue('Bangkok'), {
       timeout: 3000,
     });
 
     fireEvent.click(screen.getByRole('button', { name: /undo/i }));
 
     await waitFor(() => expect(screen.queryByRole('button', { name: /undo/i })).toBeNull());
-    expect(byId('province')).not.toHaveTextContent('Bangkok');
-    expect(byId('city')).not.toHaveTextContent('Pathum Wan');
-    expect(byId('sub_district')).not.toHaveTextContent('Wang Mai');
+    expect(byId('province')).not.toHaveValue('Bangkok');
+    expect(byId('city')).not.toHaveValue('Pathum Wan');
+    expect(byId('sub_district')).not.toHaveValue('Wang Mai');
   });
 
   it('hides the Undo hint once the admin edits the postcode away from the code it refers to', async () => {
@@ -232,7 +234,7 @@ describe('AddressSection — case 1: unambiguous postcode', () => {
     // to resolve, and WITHOUT touching the values it already set.
     fireEvent.change(byId('postal_code'), { target: { value: '10339' } });
     expect(screen.queryByRole('button', { name: /undo/i })).toBeNull();
-    expect(byId('province')).toHaveTextContent('Bangkok');
+    expect(byId('province')).toHaveValue('Bangkok');
   });
 });
 
@@ -248,14 +250,14 @@ describe('AddressSection — the picker STORES English, Thai is secondary text o
     fireEvent.change(byId('postal_code'), { target: { value: '10330' } });
 
     // The STORED (and displayed, primary-label) value is English.
-    await waitFor(() => expect(byId('province')).toHaveTextContent('Bangkok'), {
+    await waitFor(() => expect(byId('province')).toHaveValue('Bangkok'), {
       timeout: 3000,
     });
-    expect(byId('city')).toHaveTextContent('Pathum Wan');
-    expect(byId('sub_district')).toHaveTextContent('Wang Mai');
+    expect(byId('city')).toHaveValue('Pathum Wan');
+    expect(byId('sub_district')).toHaveValue('Wang Mai');
     // ...never the Thai name — it must not leak into the trigger's primary
     // label.
-    expect(byId('province')).not.toHaveTextContent('กรุงเทพมหานคร');
+    expect(byId('province')).not.toHaveValue('กรุงเทพมหานคร');
 
     // Thai is demoted to secondary `detail` text inside the picker, not
     // dropped — open each combobox and confirm both texts are present.
@@ -263,13 +265,13 @@ describe('AddressSection — the picker STORES English, Thai is secondary text o
     let listbox = await screen.findByRole('listbox');
     expect(within(listbox).getByText('Bangkok')).toBeInTheDocument();
     expect(within(listbox).getByText('กรุงเทพมหานคร')).toBeInTheDocument();
-    fireEvent.keyDown(listbox, { key: 'Escape' });
+    fireEvent.keyDown(byId('province'), { key: 'Escape' });
 
     fireEvent.click(byId('city'));
     listbox = await screen.findByRole('listbox');
     expect(within(listbox).getByText('Pathum Wan')).toBeInTheDocument();
     expect(within(listbox).getByText('เขตปทุมวัน')).toBeInTheDocument();
-    fireEvent.keyDown(listbox, { key: 'Escape' });
+    fireEvent.keyDown(byId('city'), { key: 'Escape' });
 
     fireEvent.click(byId('sub_district'));
     listbox = await screen.findByRole('listbox');
@@ -292,9 +294,9 @@ describe('AddressSection — case 2: ambiguous district (single province)', () =
     });
 
     // Nothing set — province/city/sub_district all still show their placeholder.
-    expect(byId('province')).toHaveTextContent(/select a province/i);
-    expect(byId('city')).toHaveTextContent(/select a district/i);
-    expect(byId('sub_district')).toHaveTextContent(/select a sub-district/i);
+    expect(byId('province')).toHaveValue('');
+    expect(byId('city')).toHaveValue('');
+    expect(byId('sub_district')).toHaveValue('');
 
     // The primary (stored) option label is English; the district's Thai
     // name is available as secondary `detail` text on the same option.
@@ -320,7 +322,7 @@ describe('AddressSection — case 3: multi-province postcode', () => {
       timeout: 3000,
     });
 
-    expect(byId('province')).toHaveTextContent(/select a province/i);
+    expect(byId('province')).toHaveValue('');
 
     // English is the primary (stored) option label; Thai renders as
     // secondary `detail` text.
@@ -350,8 +352,8 @@ describe('AddressSection — case 4: unknown postcode', () => {
     );
 
     expect(byId('postal_code')).not.toHaveAttribute('aria-invalid', 'true');
-    expect(byId('province')).toHaveTextContent(/select a province/i);
-    expect(byId('city')).toHaveTextContent(/select a district/i);
+    expect(byId('province')).toHaveValue('');
+    expect(byId('city')).toHaveValue('');
   });
 });
 
@@ -372,7 +374,7 @@ describe('AddressSection — plus: picking a district narrows sub-district optio
     let listbox = await screen.findByRole('listbox');
     fireEvent.click(within(listbox).getByText('Watthana'));
 
-    await waitFor(() => expect(byId('city')).toHaveTextContent('Watthana'));
+    await waitFor(() => expect(byId('city')).toHaveValue('Watthana'));
 
     fireEvent.click(byId('sub_district'));
     listbox = await screen.findByRole('listbox');
@@ -468,7 +470,7 @@ describe('AddressSection — country ≠ TH falls back to plain manual fields', 
       </NextIntlClientProvider>,
     );
 
-    expect(byId('sub_district')).toHaveTextContent('ศรีภูมิ');
+    expect(byId('sub_district')).toHaveValue('ศรีภูมิ');
 
     // Let the mount-time lookup settle deterministically BEFORE switching
     // country, so the fetch-count assertion below isn't a race against the
@@ -558,9 +560,9 @@ describe('AddressSection — edit mode must not AUTO-FILL/announce on mount, but
     // written, nothing announced, nothing dirtied, no Undo affordance.
     expect(liveRegionText()).toBe('');
     expect(screen.queryByRole('button', { name: /undo/i })).toBeNull();
-    expect(byId('province')).toHaveTextContent('เชียงใหม่');
-    expect(byId('city')).toHaveTextContent('อำเภอเมืองเชียงใหม่');
-    expect(byId('sub_district')).toHaveTextContent('ศรีภูมิ');
+    expect(byId('province')).toHaveValue('เชียงใหม่');
+    expect(byId('city')).toHaveValue('อำเภอเมืองเชียงใหม่');
+    expect(byId('sub_district')).toHaveValue('ศรีภูมิ');
     expect(addEventListenerSpy).not.toHaveBeenCalledWith(
       'beforeunload',
       expect.any(Function),
@@ -631,9 +633,9 @@ describe('AddressSection — edit mode must not AUTO-FILL/announce on mount unde
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(liveRegionText()).toBe('');
     expect(screen.queryByRole('button', { name: /undo/i })).toBeNull();
-    expect(byId('province')).toHaveTextContent('เชียงใหม่');
-    expect(byId('city')).toHaveTextContent('อำเภอเมืองเชียงใหม่');
-    expect(byId('sub_district')).toHaveTextContent('ศรีภูมิ');
+    expect(byId('province')).toHaveValue('เชียงใหม่');
+    expect(byId('city')).toHaveValue('อำเภอเมืองเชียงใหม่');
+    expect(byId('sub_district')).toHaveValue('ศรีภูมิ');
   });
 });
 
@@ -681,7 +683,7 @@ describe('AddressSection — edit mode: the postcode picker is NOT inert (I1 hea
 
     // Anti-overwrite guarantee still holds: sub_district was NOT written,
     // nothing announced, no Undo offered.
-    expect(byId('sub_district')).toHaveTextContent(/select a sub-district/i);
+    expect(byId('sub_district')).toHaveValue('');
     expect(liveRegionText()).toBe('');
     expect(screen.queryByRole('button', { name: /undo/i })).toBeNull();
 
@@ -698,15 +700,38 @@ describe('AddressSection — manual entry when the postcode has no candidates (C
   it('lets the admin type a province directly into the combobox and commit it', async () => {
     renderForm();
 
-    fireEvent.click(byId('province'));
-    const searchInput = await screen.findByPlaceholderText(/search provinces/i);
+    // 122 US5b-2 — AURA's combobox is the text input itself (allowCustomValue):
+    // Enter with no option highlighted keeps the typed text as the value.
+    const input = byId('province');
+    fireEvent.change(input, { target: { value: 'Farmland Province' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
 
-    fireEvent.change(searchInput, { target: { value: 'Farmland Province' } });
+    await waitFor(() => expect(byId('province')).toHaveValue('Farmland Province'));
+  });
 
-    const useItem = await screen.findByText(/use.*farmland province/i);
-    fireEvent.click(useItem);
+  it('keeps a typed value when the admin leaves the field (122 US5b-2)', async () => {
+    renderForm();
+    const input = byId('sub_district');
+    fireEvent.change(input, { target: { value: 'Typed Tambon' } });
+    fireEvent.blur(input);
+    await waitFor(() => expect(byId('sub_district')).toHaveValue('Typed Tambon'));
+  });
+});
 
-    await waitFor(() => expect(byId('province')).toHaveTextContent('Farmland Province'));
+describe('AddressSection — province, district and sub-district are AURA comboboxes (122 US5b-2)', () => {
+  it('each is a text combobox named by its own label', () => {
+    renderForm();
+    const f = enMessages.admin.members.create.fields;
+    for (const [id, name] of [
+      ['province', f.province],
+      ['city', f.city],
+      ['sub_district', f.subDistrict],
+    ] as const) {
+      const input = byId(id);
+      expect(input.tagName).toBe('INPUT');
+      expect(input).toHaveAttribute('role', 'combobox');
+      expect(screen.getByRole('combobox', { name })).toBe(input);
+    }
   });
 });
 
@@ -806,6 +831,11 @@ describe('AddressSection — edit mode never blocks; shows an incomplete-address
       </NextIntlClientProvider>,
     );
     expect(screen.getByText(/address incomplete/i)).toBeInTheDocument();
+    // 122 US5b-2 — the board's AURA warning alert, a standing notice (not an
+    // interrupting live alert: it shows on load and tracks the fields).
+    const alert = screen.getByText(/address incomplete/i).closest('.aura-alert');
+    expect(alert).not.toBeNull();
+    expect(alert).toHaveAttribute('role', 'status');
     const link = screen.getByText(/complete the address/i).closest('a');
     expect(link).toHaveAttribute('href', '#address_line1');
     unmount();
