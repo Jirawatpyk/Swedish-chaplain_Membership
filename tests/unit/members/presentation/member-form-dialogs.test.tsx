@@ -95,6 +95,11 @@ describe('OverrideReasonDialog on AURA', () => {
     const select = container.ownerDocument.getElementById('override_code-select') as HTMLSelectElement;
     expect(select).not.toBeNull();
     fireEvent.change(select, { target: { value: 'other' } });
+    // UX review: the note's "required" error waits until the note has been
+    // left empty (never on picking "Other" before typing anything).
+    const noteField = within(dialog).getByLabelText(new RegExp(M.overrideReason.noteLabel));
+    expect(within(dialog).queryByText(M.overrideReason.noteRequired)).toBeNull();
+    fireEvent.blur(noteField);
     await waitFor(() => expect(within(dialog).getByText(M.overrideReason.noteRequired)).toBeInTheDocument());
     expect(proceed).toBeDisabled();
 
@@ -122,6 +127,9 @@ describe('SoftDuplicateDialog on AURA', () => {
     const link = within(dialog).getByRole('link', { name: new RegExp(M.softDuplicate.openExisting) });
     expect(link).toHaveAttribute('href', '/admin/members/m-1');
     expect(link).toHaveAttribute('target', '_blank');
+    // UX review: focus starts on Cancel (the safe action), never on the link
+    // that opens a new tab.
+    expect(within(dialog).getByRole('button', { name: M.softDuplicate.cancel })).toHaveAttribute('data-autofocus');
     fireEvent.click(within(dialog).getByRole('button', { name: M.softDuplicate.proceed }));
     expect(onProceed).toHaveBeenCalledTimes(1);
   });

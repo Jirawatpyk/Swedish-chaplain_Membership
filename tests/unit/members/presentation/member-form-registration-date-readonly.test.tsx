@@ -19,7 +19,7 @@
  * hint copy — same pattern as member-form-error-summary.test.tsx.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { MemberForm, type PlanOption } from '@/components/members/member-form';
@@ -83,5 +83,30 @@ describe('MemberForm registration_date read-only on edit', () => {
     const input = screen.getByLabelText(/registration date/i);
     expect(input).toHaveAttribute('inputmode', 'numeric');
     expect(input).toHaveAccessibleDescription(enMessages.admin.members.create.fields.registrationDateHint);
+  });
+
+  it('RHF can focus the date pickers on a failed submit (their input carries the field ref)', async () => {
+    vi.useRealTimers();
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <MemberForm
+          plans={[{ plan_id: 'alumni', plan_year: 2026, display_name: 'Thai Alumni — 2026', requires_date_of_birth: true }]}
+          defaultPlanYear={2026}
+          onSubmit={vi.fn()}
+          submitting={false}
+          initialValues={{
+            company_name: 'ACME',
+            country: 'SE',
+            plan_id: 'alumni',
+            plan_year: 2026,
+            billing_cycle: 'rolling',
+            primary_contact: { first_name: 'A', last_name: 'B', email: 'a@b.com', preferred_language: 'en' },
+          }}
+        />
+      </NextIntlClientProvider>,
+    );
+    fireEvent.submit(document.querySelector('form') as HTMLFormElement);
+    // The date of birth is the one failing field, so RHF focuses it.
+    await waitFor(() => expect(document.activeElement).toBe(document.getElementById('date_of_birth')));
   });
 });
