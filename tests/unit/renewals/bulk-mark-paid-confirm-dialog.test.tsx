@@ -558,4 +558,29 @@ describe('BulkMarkPaidConfirmDialog on AURA', () => {
     expect(screen.getByRole('textbox', { name: B.paymentReferenceLabel }).closest('.aura-field')).not.toBeNull();
     expect(screen.getByLabelText(new RegExp(`^${B.paymentDateLabel}`)).closest('.aura-field')?.querySelector('.aura-date__toggle')).not.toBeNull();
   });
+
+  it('warns that each member gets a tax invoice/receipt that cannot be voided (as the single dialog does)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        settlementPreviewResponse({
+          items: [
+            { cycle_id: 'c1', company_name: 'Acme', invoice_id: 'inv1', amount_thb_minor: 5000, currency: 'THB', previewable: true },
+          ],
+          total_thb_minor: 5000,
+        }),
+      ),
+    );
+    render(
+      wrap(
+        <BulkMarkPaidConfirmDialog open onOpenChange={vi.fn()} cycleIds={['c1']} onConfirm={vi.fn(async () => {})} />,
+      ),
+    );
+    await screen.findByText('Acme');
+    const B = en.admin.renewals.bulk;
+    const warning = screen.getByText(B.taxDocWarningTitle).closest('.aura-alert');
+    expect(warning).toHaveClass('aura-alert--warning');
+    expect(warning).toHaveTextContent(B.taxDocWarningBody);
+    expect(B.taxDocWarningBody).toMatch(/credit note/);
+  });
 });
