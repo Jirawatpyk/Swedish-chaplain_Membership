@@ -2,24 +2,31 @@
  * T080 — E2E: F4 SC-013 table row/cell/hover/sticky-header consistency.
  */
 import { expect, test } from './fixtures';
+import { signInAsSuperAdmin } from './helpers/admin-session';
 import { clearE2ERateLimits } from './helpers/rate-limit';
 
-const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
-const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
+// `/admin/users` is super-admin only under RBAC v2 (`users.manage` is
+// `superAdminOnly`): a plain admin gets `notFound()` and the "Page not
+// available" screen, which has no table at all. This spec signed in as a
+// plain admin, so the first probe never found a `tbody tr` and the test died
+// before either assertion ever ran (2026-09-30). Same note as
+// `layout-consistency.spec.ts`, which already reads the super-admin vars.
+const ADMIN_EMAIL = process.env.E2E_SUPER_ADMIN_EMAIL;
+const ADMIN_PASSWORD = process.env.E2E_SUPER_ADMIN_PASSWORD;
 
 test.describe('F4 SC-013 — data table consistency @layout', () => {
-  test.skip(!ADMIN_EMAIL || !ADMIN_PASSWORD, 'E2E_ADMIN_* not set');
+  test.skip(!ADMIN_EMAIL || !ADMIN_PASSWORD, 'E2E_SUPER_ADMIN_* not set');
+  // Row height and cell padding are a desktop-table contract. Below `sm` the
+  // plans table stacks into cards (spec 122 US6), so there is no `tbody tr`
+  // to measure and nothing to compare against the users table.
+  test.skip(({ isMobile }) => isMobile === true, 'table metrics are a desktop surface; phones get stacked cards');
 
   test.beforeAll(async () => {
     await clearE2ERateLimits();
   });
 
   test('Users + Plans tables share row height + cell padding + sticky header', async ({ page }) => {
-    await page.goto('/admin/sign-in');
-    await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
-    await page.getByRole('textbox', { name: /^password$/i }).fill(ADMIN_PASSWORD!);
-    await page.getByRole('button', { name: /sign in/i }).click();
-    await page.waitForURL((u) => { const p = new URL(u).pathname; return /^\/admin(\/|$)/.test(p) && !p.startsWith("/admin/sign-in"); });
+    await signInAsSuperAdmin(page);
 
     const probe = async (path: string) => {
       await page.goto(path);
