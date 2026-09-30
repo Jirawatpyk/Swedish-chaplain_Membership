@@ -47,6 +47,7 @@ test.describe('plans edit — US3', () => {
     // Mutate plan_name.en — use a unique value so re-runs don't no-op
     const newName = `Premium Plus ${Date.now().toString(36).slice(-4)}`;
     const nameInput = page.getByLabel(/plan name.*en/i).first();
+    const originalName = await nameInput.inputValue();
     await nameInput.fill(newName);
     // Wait a tick for React state to commit before clicking submit
     await page.waitForTimeout(150);
@@ -65,6 +66,21 @@ test.describe('plans edit — US3', () => {
     // Redirect back to list (toast may fire + fade before we can assert)
     await page.waitForURL(/\/admin\/plans(?!\/\d{4})/, { timeout: 10_000 });
     await expect(page.getByText(newName)).toBeVisible();
+
+    // Put the real plan's name back: the dev branch is shared, and a renamed
+    // "Premium Corporate" breaks every spec that picks that plan by name
+    // (members-plan-change-confirm sat red on it).
+    await page.goto('/admin/plans/2026/premium/edit');
+    await page.getByLabel(/plan name.*en/i).first().fill(originalName);
+    await page.waitForTimeout(150);
+    const [restore] = await Promise.all([
+      page.waitForResponse(
+        (r) => r.url().includes('/api/plans/2026/premium') && r.request().method() === 'PATCH',
+        { timeout: 10_000 },
+      ),
+      page.getByRole('button', { name: /save/i }).click(),
+    ]);
+    expect(restore.status()).toBe(200);
   });
 
   test('admin sees persistent lock banner on prior-year plan', async ({ page }) => {
