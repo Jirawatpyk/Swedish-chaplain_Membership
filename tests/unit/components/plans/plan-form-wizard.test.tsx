@@ -5,8 +5,12 @@
 //     values, and the fee in the app's money format ("36,000.00 THB").
 //   - Next validates the current step against `planSchema` (including the
 //     cross-field rules: min < max turnover, a partnership plan bundles a
-//     corporate plan). A failing step stays put, marks its Stepper circle as
-//     an error and puts the message on the offending field.
+//     corporate plan). A failing step stays put and puts the message on the
+//     offending field.
+//   - 122 US6 (T605): on AURA as the `Admin-plan-new` board draws it — AURA's
+//     Stepper (progress only: it has no error state, handoff #112), one card
+//     per step, the AURA error summary for more than one error, and Cancel |
+//     Back / Next with Back and Next in an action bar.
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
@@ -81,8 +85,10 @@ function renderWizard(initialValues?: PlanSchemaInput) {
 
 const next = () => fireEvent.click(screen.getByRole('button', { name: 'Next' }));
 const heading = () => screen.getByRole('heading', { level: 2 }).textContent;
-const stepStatus = (index: number) =>
-  document.querySelectorAll('[data-slot="stepper-step"]')[index]?.getAttribute('data-status');
+/** The step the AURA stepper marks as current. */
+const currentStep = () =>
+  screen.getByRole('list', { name: en.admin.plans.create.steps.wizardAriaLabel }).querySelector('[aria-current="step"]')
+    ?.textContent;
 
 describe('PlanFormWizard review step', () => {
   it('shows localised category + member type and the fee as "36,000.00 THB"', () => {
@@ -91,7 +97,7 @@ describe('PlanFormWizard review step', () => {
     next();
     next();
     expect(heading()).toBe('Review');
-    const review = screen.getByRole('heading', { name: 'Review' }).closest('section')!;
+    const review = screen.getByRole('heading', { name: 'Review' }).closest('.aura-card') as HTMLElement;
     const r = within(review);
     expect(r.getByText('Corporate')).toBeInTheDocument();
     expect(r.getByText('Company')).toBeInTheDocument();
@@ -102,16 +108,32 @@ describe('PlanFormWizard review step', () => {
 });
 
 describe('PlanFormWizard per-field errors', () => {
-  it('keeps an invalid Basics step, marks it as an error and flags the fields', () => {
+  it('keeps an invalid Basics step, lists its errors in the AURA summary and flags the fields', () => {
     renderWizard();
     next();
     expect(heading()).toBe('Basics');
-    expect(stepStatus(0)).toBe('error');
+    expect(currentStep()).toContain('Basics');
     const planId = document.getElementById('plan_id') as HTMLInputElement;
     expect(planId).toHaveAttribute('aria-invalid', 'true');
-    expect(screen.getByText(E.planId)).toBeInTheDocument();
-    expect(screen.getByText(E.planName)).toBeInTheDocument();
-    expect(screen.getByText(E.description)).toBeInTheDocument();
+    expect(planId).toHaveAccessibleDescription(E.planId);
+    const summary = document.querySelector('.aura-error-summary') as HTMLElement;
+    expect(summary).toHaveAttribute('role', 'alert');
+    expect(within(summary).getByRole('link', { name: new RegExp(E.planId) })).toHaveAttribute('href', '#plan_id');
+    expect(within(summary).getByText(new RegExp(E.planName))).toBeInTheDocument();
+    expect(within(summary).getByText(new RegExp(E.description))).toBeInTheDocument();
+  });
+
+  it('puts each step in an AURA card under the stepper, with Cancel, Back and Next', () => {
+    renderWizard(VALID);
+    expect(screen.getByRole('heading', { level: 2, name: 'Basics' }).closest('.aura-card')).not.toBeNull();
+    next();
+    expect(currentStep()).toContain('Fees');
+    const bar = screen.getByRole('region', { name: 'Actions' });
+    const back = within(bar).getByRole('button', { name: 'Back' });
+    expect(back).toHaveClass('aura-btn--secondary');
+    expect(within(bar).getByRole('button', { name: 'Next' })).toHaveClass('aura-btn--primary');
+    fireEvent.click(back);
+    expect(heading()).toBe('Basics');
   });
 
   it('clears a field message once the value is fixed', () => {
@@ -134,7 +156,7 @@ describe('PlanFormWizard per-field errors', () => {
     expect(heading()).toBe('Fees');
     next();
     expect(heading()).toBe('Fees');
-    expect(stepStatus(1)).toBe('error');
+    expect(currentStep()).toContain('Fees');
     expect(screen.getByText(E.turnoverOrder)).toBeInTheDocument();
   });
 
@@ -154,7 +176,8 @@ describe('PlanFormWizard per-field errors', () => {
   it('does not show messages before the step is attempted', () => {
     renderWizard();
     expect(screen.queryByText(E.planId)).not.toBeInTheDocument();
-    expect(stepStatus(0)).toBe('current');
+    expect(document.querySelector('.aura-error-summary')).toBeNull();
+    expect(currentStep()).toContain('Basics');
   });
 
   it('moves focus to the first invalid field when Next fails', () => {
