@@ -19,7 +19,8 @@ import { requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { listPlans } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
-import { MemberFormFrame } from '../_components/member-form-frame';
+import { FormContainer } from '@/components/layout';
+import { MEMBER_FORM_COLUMN, MemberFormFrame } from '../_components/member-form-frame';
 import { CreateMemberClient } from '@/components/members/create-member-client';
 import { buildPlanOptions, type PlanOption } from '@/components/members/member-form';
 
@@ -55,9 +56,11 @@ export default async function NewMemberPage() {
 
   if (!plansResult.ok) {
     return (
-      <MemberFormFrame title={t('title')} cancelHref="/admin/members" cancelLabel={t('cancel')}>
-        <Alert tone="danger">{t('errors.planMissing')}</Alert>
-      </MemberFormFrame>
+      <FormContainer className={MEMBER_FORM_COLUMN}>
+        <MemberFormFrame title={t('title')} cancelHref="/admin/members" cancelLabel={t('cancel')}>
+          <Alert tone="danger">{t('errors.planMissing')}</Alert>
+        </MemberFormFrame>
+      </FormContainer>
     );
   }
 
@@ -73,17 +76,19 @@ export default async function NewMemberPage() {
     plansResult.value.meta.year ?? new Date().getUTCFullYear();
 
   return (
-    <MemberFormFrame
-      title={t('title')}
-      subtitle={t('subtitle')}
-      cancelHref="/admin/members"
-      cancelLabel={t('cancel')}
-    >
-      {plans.length === 0 ? (
-        <Alert tone="danger">{t('errors.planMissing')}</Alert>
-      ) : (
-        <CreateMemberClient plans={plans} defaultPlanYear={defaultPlanYear} />
-      )}
-    </MemberFormFrame>
+    <FormContainer className={MEMBER_FORM_COLUMN}>
+      <MemberFormFrame
+        title={t('title')}
+        subtitle={t('subtitle')}
+        cancelHref="/admin/members"
+        cancelLabel={t('cancel')}
+      >
+        {plans.length === 0 ? (
+          <Alert tone="danger">{t('errors.planMissing')}</Alert>
+        ) : (
+          <CreateMemberClient plans={plans} defaultPlanYear={defaultPlanYear} />
+        )}
+      </MemberFormFrame>
+    </FormContainer>
   );
 }

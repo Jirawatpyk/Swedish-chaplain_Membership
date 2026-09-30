@@ -10,7 +10,8 @@ import { render, screen, fireEvent, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { MemberForm } from '@/components/members/member-form';
-import { MemberFormFrame } from '@/app/(staff)/admin/members/_components/member-form-frame';
+import { MEMBER_FORM_COLUMN, MemberFormFrame } from '@/app/(staff)/admin/members/_components/member-form-frame';
+import { FormContainer } from '@/components/layout';
 
 const T = enMessages.admin.members.create;
 
@@ -36,9 +37,11 @@ function renderForm(onCancel?: () => void) {
 describe('MemberFormFrame (T572)', () => {
   it('puts Cancel at the top right as an AURA secondary link, hidden below 1024px', () => {
     render(
-      <MemberFormFrame title="Add member" subtitle="Create a member" cancelHref="/admin/members" cancelLabel="Cancel">
-        <p>form</p>
-      </MemberFormFrame>,
+      <FormContainer className={MEMBER_FORM_COLUMN}>
+        <MemberFormFrame title="Add member" subtitle="Create a member" cancelHref="/admin/members" cancelLabel="Cancel">
+          <p>form</p>
+        </MemberFormFrame>
+      </FormContainer>,
     );
     expect(screen.getByRole('heading', { level: 1, name: 'Add member' })).toBeInTheDocument();
     const cancel = screen.getByRole('link', { name: 'Cancel' });

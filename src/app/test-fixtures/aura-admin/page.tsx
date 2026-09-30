@@ -28,7 +28,8 @@ import { MemberDataExportCard } from '@/app/(staff)/admin/members/[memberId]/_co
 import { PendingChangeRequestAlert } from '@/app/(staff)/admin/members/[memberId]/_components/member-change-requests-section';
 import { renderMemberTimelineView } from '@/app/(staff)/admin/members/[memberId]/_components/member-timeline-view';
 import { renderMemberBenefitsView } from '@/app/(staff)/admin/members/[memberId]/_components/member-benefits-view';
-import { MemberFormFrame } from '@/app/(staff)/admin/members/_components/member-form-frame';
+import { MEMBER_FORM_COLUMN, MemberFormFrame } from '@/app/(staff)/admin/members/_components/member-form-frame';
+import { FormContainer } from '@/components/layout';
 import { CreateMemberClient } from '@/components/members/create-member-client';
 import { EditMemberClient } from '@/components/members/edit-member-client';
 import { AdminPreferredLocaleCard } from '@/components/admin/admin-preferred-locale-card';
@@ -457,9 +458,11 @@ export default async function AuraAdminPreviewPage({
       const t = await getTranslations('admin.members.create');
       return (
         <StaffFrame path="/admin/members/new">
-          <MemberFormFrame title={t('title')} subtitle={t('subtitle')} cancelHref="/admin/members" cancelLabel={t('cancel')}>
-            <CreateMemberClient plans={FORM_PLANS} defaultPlanYear={2026} />
-          </MemberFormFrame>
+          <FormContainer className={MEMBER_FORM_COLUMN}>
+            <MemberFormFrame title={t('title')} subtitle={t('subtitle')} cancelHref="/admin/members" cancelLabel={t('cancel')}>
+              <CreateMemberClient plans={FORM_PLANS} defaultPlanYear={2026} />
+            </MemberFormFrame>
+          </FormContainer>
         </StaffFrame>
       );
     }
@@ -468,61 +471,63 @@ export default async function AuraAdminPreviewPage({
     const { dialog } = await searchParams;
     return (
       <StaffFrame path={`/admin/members/${MEMBER_ID}/edit`}>
-        <MemberFormFrame
-          title={t('title')}
-          subtitle="Siam Nordic Trading Co., Ltd."
-          cancelHref={`/admin/members/${MEMBER_ID}`}
-          cancelLabel={t('cancel')}
-        >
-          <AdminPreferredLocaleCard memberId={MEMBER_ID} initialValue={null} />
-          <EditMemberClient
-            plans={FORM_PLANS}
-            member={{
-              memberId: MEMBER_ID,
-              companyName: 'Siam Nordic Trading Co., Ltd.',
-              legalEntityType: 'limited_company',
-              country: 'TH',
-              taxId: '0105561234560',
-              website: 'https://siamnordic.example',
-              description: 'Nordic furniture and design import, Bangkok showroom.',
-              notes: null,
-              addressLine1: '98 Sathorn Road',
-              addressLine2: null,
-              city: 'Bang Rak',
-              province: 'Bangkok',
-              postalCode: '10500',
-              subDistrict: complete ? 'Silom' : null,
-              billingAddressLine1: null,
-              billingAddressLine2: null,
-              billingSubDistrict: null,
-              billingCity: null,
-              billingProvince: null,
-              billingPostalCode: null,
-              billingCountry: null,
-              foundedYear: 2009,
-              turnoverThb: 180_000_000,
-              registeredCapitalThb: 20_000_000,
-              isHeadOffice: true,
-              branchCode: null,
-              isVatRegistered: true,
-              billingCycle: 'calendar',
-              planId: 'premium',
-              planYear: 2026,
-              registrationDate: '2019-01-12',
-            }}
-            primaryContact={{
-              contactId: 'c-erik',
-              firstName: 'Erik',
-              lastName: 'Johansson',
-              email: 'erik@siamnordic.example',
-              phone: '+66812345678',
-              roleTitle: 'Managing Director',
-              preferredLanguage: 'en',
-              dateOfBirth: null,
-            }}
-          />
-          {dialog ? <MemberFormDialogPreview dialog={dialog} /> : null}
-        </MemberFormFrame>
+        <FormContainer className={MEMBER_FORM_COLUMN}>
+          <MemberFormFrame
+            title={t('title')}
+            subtitle="Siam Nordic Trading Co., Ltd."
+            cancelHref={`/admin/members/${MEMBER_ID}`}
+            cancelLabel={t('cancel')}
+          >
+            <AdminPreferredLocaleCard memberId={MEMBER_ID} initialValue={null} />
+            <EditMemberClient
+              plans={FORM_PLANS}
+              member={{
+                memberId: MEMBER_ID,
+                companyName: 'Siam Nordic Trading Co., Ltd.',
+                legalEntityType: 'limited_company',
+                country: 'TH',
+                taxId: '0105561234560',
+                website: 'https://siamnordic.example',
+                description: 'Nordic furniture and design import, Bangkok showroom.',
+                notes: null,
+                addressLine1: '98 Sathorn Road',
+                addressLine2: null,
+                city: 'Bang Rak',
+                province: 'Bangkok',
+                postalCode: '10500',
+                subDistrict: complete ? 'Silom' : null,
+                billingAddressLine1: null,
+                billingAddressLine2: null,
+                billingSubDistrict: null,
+                billingCity: null,
+                billingProvince: null,
+                billingPostalCode: null,
+                billingCountry: null,
+                foundedYear: 2009,
+                turnoverThb: 180_000_000,
+                registeredCapitalThb: 20_000_000,
+                isHeadOffice: true,
+                branchCode: null,
+                isVatRegistered: true,
+                billingCycle: 'calendar',
+                planId: 'premium',
+                planYear: 2026,
+                registrationDate: '2019-01-12',
+              }}
+              primaryContact={{
+                contactId: 'c-erik',
+                firstName: 'Erik',
+                lastName: 'Johansson',
+                email: 'erik@siamnordic.example',
+                phone: '+66812345678',
+                roleTitle: 'Managing Director',
+                preferredLanguage: 'en',
+                dateOfBirth: null,
+              }}
+            />
+            {dialog ? <MemberFormDialogPreview dialog={dialog} /> : null}
+          </MemberFormFrame>
+        </FormContainer>
       </StaffFrame>
     );
   }

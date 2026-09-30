@@ -28,7 +28,8 @@ import { DynamicBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-labe
 import { EditMemberClient } from '@/components/members/edit-member-client';
 import { AdminPreferredLocaleCard } from '@/components/admin/admin-preferred-locale-card';
 import { buildPlanOptions, type PlanOption } from '@/components/members/member-form';
-import { MemberFormFrame } from '../../_components/member-form-frame';
+import { FormContainer } from '@/components/layout';
+import { MEMBER_FORM_COLUMN, MemberFormFrame } from '../../_components/member-form-frame';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -127,83 +128,85 @@ export default async function EditMemberPage({ params }: PageProps) {
   );
 
   return (
-    <MemberFormFrame
-      title={t('title')}
-      subtitle={member.companyName}
-      cancelHref={`/admin/members/${memberId}`}
-      cancelLabel={t('cancel')}
-    >
-      <DynamicBreadcrumbLabel segment={memberId} label={member.companyName} />
-      {/* R4 Types-#6 (2026-05-02) — preferred-locale picker section.
-          Card chrome + i18n title rendered inside the client component
-          via useTranslations('admin.membersPreferredLocale').
-          R5 UX-H1: server-seeds initialValue so admin sees current
-          state and never silently overwrites with null on accidental Save. */}
-      <AdminPreferredLocaleCard
-        memberId={member.memberId}
-        initialValue={initialPreferredLocale}
-      />
+    <FormContainer className={MEMBER_FORM_COLUMN}>
+      <MemberFormFrame
+        title={t('title')}
+        subtitle={member.companyName}
+        cancelHref={`/admin/members/${memberId}`}
+        cancelLabel={t('cancel')}
+      >
+        <DynamicBreadcrumbLabel segment={memberId} label={member.companyName} />
+        {/* R4 Types-#6 (2026-05-02) — preferred-locale picker section.
+            Card chrome + i18n title rendered inside the client component
+            via useTranslations('admin.membersPreferredLocale').
+            R5 UX-H1: server-seeds initialValue so admin sees current
+            state and never silently overwrites with null on accidental Save. */}
+        <AdminPreferredLocaleCard
+          memberId={member.memberId}
+          initialValue={initialPreferredLocale}
+        />
 
-      <EditMemberClient
-        member={{
-          memberId: member.memberId,
-          companyName: member.companyName,
-          legalEntityType: member.legalEntityType,
-          country: member.country,
-          taxId: member.taxId,
-          website: member.website,
-          description: member.description,
-          notes: member.notes,
-          addressLine1: member.addressLine1,
-          addressLine2: member.addressLine2,
-          city: member.city,
-          province: member.province,
-          postalCode: member.postalCode,
-          // PR-B task 6 — แขวง/ตำบล.
-          subDistrict: member.subDistrict,
-          // member-billing-address (0284) — the optional tax-document
-          // address group (seeds the edit form's toggle + fields).
-          billingAddressLine1: member.billingAddressLine1 ?? null,
-          billingAddressLine2: member.billingAddressLine2 ?? null,
-          billingSubDistrict: member.billingSubDistrict ?? null,
-          billingCity: member.billingCity ?? null,
-          billingProvince: member.billingProvince ?? null,
-          billingPostalCode: member.billingPostalCode ?? null,
-          billingCountry: member.billingCountry ?? null,
-          foundedYear: member.foundedYear,
-          turnoverThb: member.turnoverThb,
-          // PR-B task 7 — ทุนจดทะเบียน. A separate field from turnoverThb.
-          registeredCapitalThb: member.registeredCapitalThb,
-          // 088 US3 (FR-008) — §86/4 Head-Office / Branch particular.
-          isHeadOffice: member.isHeadOffice ?? true,
-          branchCode: member.branchCode ?? null,
-          // 059 / PR-A — the RECORDED VAT-registrant flag gating them both.
-          isVatRegistered: member.isVatRegistered,
-          // 065 §5.1 — per-member billing cadence.
-          billingCycle: member.billingCycle ?? 'rolling',
-          planId: member.planId,
-          planYear: member.planYear,
-          registrationDate: member.registrationDate
-            .toISOString()
-            .slice(0, 10),
-        }}
-        plans={plans}
-        primaryContact={{
-          contactId: primary?.contactId ?? '',
-          firstName: primary?.firstName ?? '',
-          lastName: primary?.lastName ?? '',
-          email: primary?.email ?? '',
-          phone: primary?.phone ?? null,
-          roleTitle: primary?.roleTitle ?? null,
-          preferredLanguage:
-            (primary?.preferredLanguage as 'en' | 'th' | 'sv') ?? 'en',
-          // Thai Alumni DOB — a date-only value; serialise the domain Date
-          // to 'YYYY-MM-DD' for the <input type="date"> the form seeds.
-          dateOfBirth: primary?.dateOfBirth
-            ? primary.dateOfBirth.toISOString().slice(0, 10)
-            : null,
-        }}
-      />
-    </MemberFormFrame>
+        <EditMemberClient
+          member={{
+            memberId: member.memberId,
+            companyName: member.companyName,
+            legalEntityType: member.legalEntityType,
+            country: member.country,
+            taxId: member.taxId,
+            website: member.website,
+            description: member.description,
+            notes: member.notes,
+            addressLine1: member.addressLine1,
+            addressLine2: member.addressLine2,
+            city: member.city,
+            province: member.province,
+            postalCode: member.postalCode,
+            // PR-B task 6 — แขวง/ตำบล.
+            subDistrict: member.subDistrict,
+            // member-billing-address (0284) — the optional tax-document
+            // address group (seeds the edit form's toggle + fields).
+            billingAddressLine1: member.billingAddressLine1 ?? null,
+            billingAddressLine2: member.billingAddressLine2 ?? null,
+            billingSubDistrict: member.billingSubDistrict ?? null,
+            billingCity: member.billingCity ?? null,
+            billingProvince: member.billingProvince ?? null,
+            billingPostalCode: member.billingPostalCode ?? null,
+            billingCountry: member.billingCountry ?? null,
+            foundedYear: member.foundedYear,
+            turnoverThb: member.turnoverThb,
+            // PR-B task 7 — ทุนจดทะเบียน. A separate field from turnoverThb.
+            registeredCapitalThb: member.registeredCapitalThb,
+            // 088 US3 (FR-008) — §86/4 Head-Office / Branch particular.
+            isHeadOffice: member.isHeadOffice ?? true,
+            branchCode: member.branchCode ?? null,
+            // 059 / PR-A — the RECORDED VAT-registrant flag gating them both.
+            isVatRegistered: member.isVatRegistered,
+            // 065 §5.1 — per-member billing cadence.
+            billingCycle: member.billingCycle ?? 'rolling',
+            planId: member.planId,
+            planYear: member.planYear,
+            registrationDate: member.registrationDate
+              .toISOString()
+              .slice(0, 10),
+          }}
+          plans={plans}
+          primaryContact={{
+            contactId: primary?.contactId ?? '',
+            firstName: primary?.firstName ?? '',
+            lastName: primary?.lastName ?? '',
+            email: primary?.email ?? '',
+            phone: primary?.phone ?? null,
+            roleTitle: primary?.roleTitle ?? null,
+            preferredLanguage:
+              (primary?.preferredLanguage as 'en' | 'th' | 'sv') ?? 'en',
+            // Thai Alumni DOB — a date-only value; serialise the domain Date
+            // to 'YYYY-MM-DD' for the <input type="date"> the form seeds.
+            dateOfBirth: primary?.dateOfBirth
+              ? primary.dateOfBirth.toISOString().slice(0, 10)
+              : null,
+          }}
+        />
+      </MemberFormFrame>
+    </FormContainer>
   );
 }
