@@ -307,6 +307,13 @@ export const planRepo: PlanRepo = {
   },
 
   // -- setActive (US4) -------------------------------------------------------
+  //
+  // `WHERE deleted_at IS NULL`: setPlanActive's soft_deleted check reads the
+  // plan outside this tx, so a soft-delete committing in between must win —
+  // the flip is a no-op (undefined → the use case's not_found) instead of
+  // leaving a deleted-yet-active row. A soft-delete in flight holds the row
+  // lock (softDeleteGuarded's FOR UPDATE); this UPDATE waits on it and then
+  // re-evaluates the predicate against the committed row.
   async setActive(tenant, planId, year, active, updatedBy) {
     return runInTenant(tenant, async (tx) => {
       const updated = await tx
@@ -316,6 +323,7 @@ export const planRepo: PlanRepo = {
           and(
             eq(membershipPlans.planId, planId),
             eq(membershipPlans.planYear, year),
+            sql`${membershipPlans.deletedAt} IS NULL`,
           ),
         )
         .returning();

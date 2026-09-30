@@ -94,7 +94,12 @@ export interface PlanRepo {
     updatedBy: string,
   ): Promise<Plan | undefined>;
 
-  /** Toggle `is_active`. No-op when already at the target state. */
+  /**
+   * Toggle `is_active`. No-op when already at the target state. Never touches
+   * a soft-deleted plan: returns `undefined` when the row is missing or has
+   * `deleted_at` set (a soft-delete that committed after the caller's read
+   * wins — undelete stays the only way back).
+   */
   setActive(
     tenant: TenantContext,
     planId: PlanSlug,
