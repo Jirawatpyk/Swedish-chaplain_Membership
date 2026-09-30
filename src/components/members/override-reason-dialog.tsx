@@ -10,28 +10,15 @@
  * "Other" requires a note (Domain invariant enforced by
  * `asOverrideReason`); the dialog's Proceed button is disabled until the
  * note is present.
+ *
+ * Spec 122 US5b-2 (T578): AURA `Dialog` with an AURA Select and Textarea (no
+ * board — AURA defaults; ids `override_code` / `override_note` kept). A stray
+ * scrim click never throws away a typed reason.
  */
 
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Button } from '@/components/ui/button';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  TranslatedSelectValue,
-} from '@/components/ui/select';
+import { Alert, Button, Dialog, Select, Textarea } from '@jirawatpyk/aura-react';
 
 // Inlined intentionally — importing from `@/modules/members` (barrel)
 // pulls transitive drizzle/postgres deps into the client bundle via
@@ -89,92 +76,50 @@ export function OverrideReasonDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{t('title')}</DialogTitle>
-          <DialogDescription>{t('description')}</DialogDescription>
-        </DialogHeader>
-
-        {warningMessage && (
-          <div className="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
-            {warningMessage}
-          </div>
-        )}
-
-        <div className="flex flex-col gap-4">
-          <div>
-            <Label htmlFor="override_code">{t('codeLabel')}</Label>
-            <Select
-              value={code ?? undefined}
-              onValueChange={(v) =>
-                setCode(v as (typeof OVERRIDE_REASON_CODES)[number])
-              }
-            >
-              <SelectTrigger
-                id="override_code"
-                aria-required="true"
-                className="w-full"
-              >
-                <TranslatedSelectValue
-                  placeholder={t('codePlaceholder')}
-                  translate={(value) =>
-                    (OVERRIDE_REASON_CODES as readonly string[]).includes(value)
-                      ? t(`codes.${value}` as Parameters<typeof t>[0])
-                      : null
-                  }
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {OVERRIDE_REASON_CODES.map((c) => (
-                  <SelectItem key={c} value={c}>
-                    {t(`codes.${c}`)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div>
-            <Label htmlFor="override_note">
-              {t('noteLabel')}
-              {noteRequired && (
-                <span aria-hidden className="ml-0.5 text-destructive">
-                  *
-                </span>
-              )}
-            </Label>
-            <Textarea
-              id="override_note"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              maxLength={500}
-              rows={3}
-              placeholder={t('notePlaceholder')}
-              aria-required={noteRequired}
-              aria-invalid={noteRequired && note.trim() === ''}
-            />
-            {noteRequired && note.trim() === '' && (
-              <p className="mt-1 text-xs text-destructive" role="alert">
-                {t('noteRequired')}
-              </p>
-            )}
-          </div>
-        </div>
-
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={handleCancel}>
+    <Dialog
+      open={open}
+      onClose={handleCancel}
+      dismissOnScrim={false}
+      title={t('title')}
+      description={t('description')}
+      footer={
+        <>
+          <Button variant="secondary" onClick={handleCancel}>
             {t('cancel')}
           </Button>
-          <Button
-            type="button"
-            onClick={handleProceed}
-            disabled={!canProceed}
-          >
+          <Button onClick={handleProceed} disabled={!canProceed}>
             {t('proceed')}
           </Button>
-        </DialogFooter>
-      </DialogContent>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        {warningMessage && (
+          <Alert tone="warning" role="note">
+            {warningMessage}
+          </Alert>
+        )}
+        <Select
+          id="override_code"
+          label={t('codeLabel')}
+          required
+          value={code ?? ''}
+          placeholder={t('codePlaceholder')}
+          options={OVERRIDE_REASON_CODES.map((c) => ({ value: c, label: t(`codes.${c}`) }))}
+          onChange={(e) => setCode(e.target.value as (typeof OVERRIDE_REASON_CODES)[number])}
+        />
+        <Textarea
+          id="override_note"
+          label={t('noteLabel')}
+          required={noteRequired}
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          maxLength={500}
+          rows={3}
+          placeholder={t('notePlaceholder')}
+          error={noteRequired && note.trim() === '' ? t('noteRequired') : undefined}
+        />
+      </div>
     </Dialog>
   );
 }

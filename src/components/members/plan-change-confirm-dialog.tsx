@@ -11,24 +11,19 @@
  *
  * DEFAULT (non-destructive) variant — a plan change is neutral. Initial focus
  * is the Cancel button (the safe action). Per correction C-7 + critique D10,
- * this dialog wires NO `finalFocus`/`id` hook: its trigger is the form's Save
- * button, which survives on Cancel/ESC (Base UI's default focus-return is
- * correct) and on success the whole form unmounts via `router.push`, so there
- * is no stranded-focus case to engineer around.
+ * this dialog wires NO `finalFocus` hook: its opener is the form's Save
+ * button, which survives on Cancel/ESC (focus returns to it) and on success
+ * the whole form unmounts via `router.push`, so there is no stranded-focus
+ * case to engineer around.
+ *
+ * Spec 122 US5b-2 (T578): AURA `Dialog` as the board draws it
+ * (`Admin-member-plan-change`) — the Current → New tiles with the annual
+ * fee excl. VAT, "What this does and does not change" as a heading over its
+ * three points, then Cancel and "Change plan".
  */
-import { useRef } from 'react';
-import { Loader2 } from 'lucide-react';
+import { ArrowRightIcon } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import { Button, Dialog } from '@jirawatpyk/aura-react';
 import {
   formatPlanFee,
   PLAN_CHANGE_BILLING_FLOWS_TO_RENEWAL,
@@ -52,84 +47,73 @@ export function PlanChangeConfirmDialog({
 }: PlanChangeConfirmDialogProps) {
   const t = useTranslations('admin.members.planChangeConfirm');
   const locale = useLocale();
-  const cancelRef = useRef<HTMLButtonElement>(null);
 
   const fee = (minorUnits: number | null, currencyCode: string | null): string =>
     minorUnits === null
       ? t('feeUnknown')
       : formatPlanFee(minorUnits, locale, currencyCode ?? 'THB');
 
+  const tile = (label: string, plan: string, amount: string) => (
+    <div className="min-w-0 flex-1 rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-canvas)] p-3">
+      <div className="text-xs text-[var(--aura-fg-secondary)]">{label}</div>
+      <div className="font-semibold text-[var(--aura-fg-primary)]">{plan}</div>
+      <div className="mt-1 text-xs text-[var(--aura-fg-secondary)]">
+        {t('feeLabel')} <span className="tabular-nums text-[var(--aura-fg-primary)]">{amount}</span>
+      </div>
+    </div>
+  );
+
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent initialFocus={cancelRef}>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{t('title')}</AlertDialogTitle>
-          <AlertDialogDescription>{t('description')}</AlertDialogDescription>
-        </AlertDialogHeader>
-
-        {summary ? (
-          <div className="space-y-3 text-left">
-            {/* P6 — stack the old|new comparison on narrow screens; the
-                AlertDialog is only max-w-xs (320px) until the sm breakpoint, so
-                two columns were cramped <400px. Splits at sm: (≥640px). */}
-            <div className="grid grid-cols-1 gap-4 rounded-md border bg-muted/30 p-3 text-sm sm:grid-cols-2">
-              <div>
-                <div className="text-xs text-muted-foreground">
-                  {t('currentPlan')}
-                </div>
-                <div className="font-medium">{summary.oldPlanLabel}</div>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  {t('feeLabel')}:{' '}
-                  {fee(summary.oldFeeMinorUnits, summary.currencyCode)}
-                </div>
-              </div>
-              <div>
-                <div className="text-xs text-muted-foreground">
-                  {t('newPlan')}
-                </div>
-                <div className="font-medium">{summary.newPlanLabel}</div>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  {t('feeLabel')}:{' '}
-                  {fee(summary.newFeeMinorUnits, summary.currencyCode)}
-                </div>
-              </div>
-            </div>
-
-            {summary.yearOnly ? (
-              <p className="text-sm text-muted-foreground">
-                {t('yearOnlyNotice')}
-              </p>
-            ) : null}
-
-            <div className="rounded-md border bg-muted/20 p-3 text-sm">
-              <p className="font-medium">{t('billingNoteHeading')}</p>
-              <ul className="mt-1 list-disc space-y-1 pl-4 text-muted-foreground">
-                <li>{t('billingNoteRecord')}</li>
-                <li>{t('billingNoteCurrentInvoice')}</li>
-                <li>
-                  {PLAN_CHANGE_BILLING_FLOWS_TO_RENEWAL
-                    ? t('billingNoteFutureCyclesAutomatic')
-                    : t('billingNoteFutureCycles')}
-                </li>
-              </ul>
-            </div>
-          </div>
-        ) : null}
-
-        <AlertDialogFooter>
-          <AlertDialogCancel ref={cancelRef} disabled={submitting}>
+    <Dialog
+      open={open}
+      onClose={() => {
+        if (!submitting) onOpenChange(false);
+      }}
+      dismissible={!submitting}
+      title={t('title')}
+      description={t('description')}
+      footer={
+        <>
+          {/* The safe action takes focus (a plan change is neutral, not
+              destructive — ux-standards § 6.2). */}
+          <Button variant="secondary" data-autofocus onClick={() => onOpenChange(false)} disabled={submitting}>
             {t('cancel')}
-          </AlertDialogCancel>
-          <AlertDialogAction disabled={submitting} onClick={onConfirm}>
-            {/* Busy spinner while the confirm mutation runs (ux-standards
-                § 6.2). aria-hidden keeps the button's accessible name = the
-                confirm label; the global reduced-motion rule (globals.css § 19)
-                neutralises .animate-spin. */}
-            {submitting ? <Loader2 className="animate-spin" aria-hidden /> : null}
+          </Button>
+          <Button loading={submitting} disabled={submitting} onClick={onConfirm}>
             {t('confirm')}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+          </Button>
+        </>
+      }
+    >
+      {summary ? (
+        <div className="flex flex-col gap-4">
+          {/* Current → New as the board draws it; stacked on a phone. */}
+          <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
+            {tile(t('currentPlan'), summary.oldPlanLabel, fee(summary.oldFeeMinorUnits, summary.currencyCode))}
+            <ArrowRightIcon className="size-4 shrink-0 self-center text-[var(--aura-fg-secondary)] max-sm:rotate-90" aria-hidden="true" />
+            {tile(t('newPlan'), summary.newPlanLabel, fee(summary.newFeeMinorUnits, summary.currencyCode))}
+          </div>
+
+          {summary.yearOnly ? (
+            <p className="text-sm text-[var(--aura-fg-secondary)]">{t('yearOnlyNotice')}</p>
+          ) : null}
+
+          <section aria-labelledby="plan-change-effects" className="text-sm">
+            <h3 id="plan-change-effects" className="font-semibold text-[var(--aura-fg-primary)]">
+              {t('billingNoteHeading')}
+            </h3>
+            <ul className="mt-1 list-disc space-y-1 ps-5 text-[var(--aura-fg-secondary)]">
+              <li>{t('billingNoteRecord')}</li>
+              <li>{t('billingNoteCurrentInvoice')}</li>
+              <li>
+                {PLAN_CHANGE_BILLING_FLOWS_TO_RENEWAL
+                  ? t('billingNoteFutureCyclesAutomatic')
+                  : t('billingNoteFutureCycles')}
+              </li>
+            </ul>
+          </section>
+        </div>
+      ) : null}
+    </Dialog>
   );
 }

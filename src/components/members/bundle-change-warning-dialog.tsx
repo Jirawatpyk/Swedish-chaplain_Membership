@@ -8,20 +8,15 @@
  * shows the old/new bundle corporate_plan_ids + the count. Admin must
  * confirm before the parent re-submits the PATCH with
  * `confirm_bundle_change: true`.
+ *
+ * Spec 122 US5b-2 (T578): AURA `Dialog` (no board — AURA defaults, content
+ * and behaviour unchanged).
  */
 
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Skeleton } from '@/components/ui/skeleton';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
+import { Button, Dialog } from '@jirawatpyk/aura-react';
+import { SkeletonBlock } from '@/components/shell/page-skeletons';
 
 export type BundleChangePayload = {
   readonly oldBundleCorporatePlanId: string | null;
@@ -72,7 +67,7 @@ export function BundleChangeWarningDialog({
       );
     }
     return (
-      <span className="text-sm text-muted-foreground">{t('noBundle')}</span>
+      <span className="text-sm text-[var(--aura-fg-secondary)]">{t('noBundle')}</span>
     );
   };
 
@@ -105,83 +100,51 @@ export function BundleChangeWarningDialog({
   /* eslint-enable react-hooks/set-state-in-effect */
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{t('title')}</DialogTitle>
-          {count !== null && (
-            <DialogDescription>
-              {t('description', { affectedCount: count })}
-            </DialogDescription>
-          )}
-        </DialogHeader>
-
+    <Dialog
+      open={open}
+      onClose={() => onOpenChange(false)}
+      title={t('title')}
+      description={count !== null ? t('description', { affectedCount: count }) : undefined}
+      footer={
+        <>
+          <Button variant="secondary" onClick={() => onOpenChange(false)}>
+            {t('cancel')}
+          </Button>
+          <Button onClick={onConfirm} disabled={loading}>
+            {t('confirm')}
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-3">
         {payload && (
-          <div className="grid grid-cols-2 gap-4 rounded-md border bg-muted/30 p-3 text-sm">
+          <div className="grid grid-cols-1 gap-4 rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-canvas)] p-3 text-sm sm:grid-cols-2">
             <div>
-              <div className="text-xs text-muted-foreground">
-                {t('oldBundle')}
-              </div>
-              <div>
-                {renderBundle(
-                  payload.oldBundleLabel,
-                  payload.oldBundleCorporatePlanId,
-                )}
-              </div>
+              <div className="text-xs text-[var(--aura-fg-secondary)]">{t('oldBundle')}</div>
+              <div>{renderBundle(payload.oldBundleLabel, payload.oldBundleCorporatePlanId)}</div>
             </div>
             <div>
-              <div className="text-xs text-muted-foreground">
-                {t('newBundle')}
-              </div>
-              <div>
-                {renderBundle(
-                  payload.newBundleLabel,
-                  payload.newBundleCorporatePlanId,
-                )}
-              </div>
+              <div className="text-xs text-[var(--aura-fg-secondary)]">{t('newBundle')}</div>
+              <div>{renderBundle(payload.newBundleLabel, payload.newBundleCorporatePlanId)}</div>
             </div>
           </div>
         )}
 
-        <div
-          className="text-sm"
-          role="status"
-          aria-live="polite"
-        >
-          {/* I3 round-10 ui-design-specialist — was a spinner + "Loading…"
-              text which broke the skeleton-first convention used by
-              every other admin surface. Now: a width-matched shimmer
-              that has the same visual mass as the final count line
-              ("X members affected"). When `loading` ends, the skeleton
-              swaps to the real text with no CLS. SR users still hear
-              the polite live-region transition. */}
+        <div className="text-sm" role="status" aria-live="polite">
+          {/* I3 round-10 ui-design-specialist — a width-matched skeleton with
+              the same visual mass as the final count line ("X members
+              affected"), swapped for the real text with no CLS. SR users
+              hear the polite live-region transition. */}
           {loading ? (
             <>
               <span className="sr-only">{t('loading')}</span>
-              <Skeleton aria-hidden="true" className="h-4 w-32" />
+              <SkeletonBlock aria-hidden="true" className="h-4 w-32" />
             </>
           ) : count !== null ? (
             <span className="font-medium">{t('affectedCount', { count })}</span>
           ) : null}
         </div>
-
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-          >
-            {t('cancel')}
-          </Button>
-          <Button
-            type="button"
-            onClick={onConfirm}
-            disabled={loading}
-          >
-            {t('confirm')}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
+      </div>
     </Dialog>
   );
 }

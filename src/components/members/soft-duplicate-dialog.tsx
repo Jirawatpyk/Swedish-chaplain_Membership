@@ -7,20 +7,15 @@
  *   - Proceed anyway (re-submits with `confirm_soft_duplicate: true`)
  *   - Open existing member (new tab so the draft form is preserved)
  *   - Cancel (closes the dialog; admin keeps editing the draft)
+ *
+ * Spec 122 US5b-2 (T578): AURA `Dialog` (no board — AURA defaults, content and
+ * behaviour unchanged).
  */
 
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { ExternalLinkIcon } from 'lucide-react';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Button, buttonVariants } from '@/components/ui/button';
+import { Button, Dialog } from '@jirawatpyk/aura-react';
 
 type Props = {
   readonly open: boolean;
@@ -38,44 +33,35 @@ export function SoftDuplicateDialog({
   const t = useTranslations('admin.members.softDuplicate');
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{t('title')}</DialogTitle>
-          <DialogDescription>{t('description')}</DialogDescription>
-        </DialogHeader>
-
-        {existing && (
-          <div className="rounded-md border bg-muted/30 p-3 text-sm">
-            <div className="text-xs text-muted-foreground">
-              {t('existingLabel')}
-            </div>
-            <div className="font-medium">{existing.company_name}</div>
-            <Link
-              href={`/admin/members/${existing.member_id}`}
-              target="_blank"
-              rel="noreferrer"
-              className={buttonVariants({ variant: 'link', size: 'sm' })}
-            >
-              <ExternalLinkIcon className="size-3.5" />
-              {t('openExisting')}
-            </Link>
-          </div>
-        )}
-
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-          >
+    <Dialog
+      open={open}
+      onClose={() => onOpenChange(false)}
+      title={t('title')}
+      description={t('description')}
+      footer={
+        <>
+          <Button variant="secondary" onClick={() => onOpenChange(false)}>
             {t('cancel')}
           </Button>
-          <Button type="button" onClick={onProceed}>
-            {t('proceed')}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
+          <Button onClick={onProceed}>{t('proceed')}</Button>
+        </>
+      }
+    >
+      {existing && (
+        <div className="flex flex-col items-start gap-1 rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-canvas)] p-3 text-sm">
+          <div className="text-xs text-[var(--aura-fg-secondary)]">{t('existingLabel')}</div>
+          <div className="font-medium text-[var(--aura-fg-primary)]">{existing.company_name}</div>
+          <Link
+            href={`/admin/members/${existing.member_id}`}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex min-h-11 items-center gap-1.5 text-[var(--aura-fg-accent)] underline-offset-2 hover:underline"
+          >
+            <ExternalLinkIcon className="size-3.5" aria-hidden="true" />
+            {t('openExisting')}
+          </Link>
+        </div>
+      )}
     </Dialog>
   );
 }
