@@ -3,17 +3,10 @@
  * `Select` (one line per option) the selected plan's fee is the field hint.
  *
  * Rendered against the REAL en.json (same convention as
- * membership-section-billing-cycle.test.tsx). The collapsed trigger shows
- * the plan NAME only (TranslatedSelectValue stays name-only); the fee (with
- * an sr-only "Annual fee" prefix) appears inside the option list once opened.
- *
- * The base-ui Select renders its option list in a portal on interaction —
- * `fireEvent.click` opens it reliably here (real timers). The open-list fee
- * assertion is best-effort per the plan; the reliable contract is the
- * name-only trigger + the sr-only-prefixed fee node.
+ * membership-section-billing-cycle.test.tsx).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import {

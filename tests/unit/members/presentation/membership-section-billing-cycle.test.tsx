@@ -70,16 +70,19 @@ describe('MembershipSection — billing_cycle picker (065 §5.1)', () => {
 
   it('shows the placeholder on a fresh CREATE form (no value picked yet)', () => {
     renderForm({ mode: 'create' });
-    expect(screen.getByText('Select a billing cycle…')).toBeInTheDocument();
+    // The AURA Select's field shows the pick (its hidden <select> repeats every option).
+    expect(screen.getByRole('combobox', { name: /billing cycle/i })).toHaveTextContent('Select a billing cycle…');
   });
 
   it('renders the translated option label when EDIT seeds calendar', () => {
     renderForm({ mode: 'edit', initialValues: { ...EDIT_BASE, billing_cycle: 'calendar' } });
-    expect(screen.getByText('Calendar year (Jan–Dec)')).toBeInTheDocument();
+    // The AURA Select's field shows the pick (its hidden <select> repeats every option).
+    expect(screen.getByRole('combobox', { name: /billing cycle/i })).toHaveTextContent('Calendar year (Jan–Dec)');
   });
 
   it('renders the translated option label when EDIT seeds rolling', () => {
     renderForm({ mode: 'edit', initialValues: { ...EDIT_BASE, billing_cycle: 'rolling' } });
-    expect(screen.getByText('Rolling (anniversary)')).toBeInTheDocument();
+    // The AURA Select's field shows the pick (its hidden <select> repeats every option).
+    expect(screen.getByRole('combobox', { name: /billing cycle/i })).toHaveTextContent('Rolling (anniversary)');
   });
 });
