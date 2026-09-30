@@ -337,6 +337,28 @@ describe('buildBreadcrumbStaticLabels (real en.json breadcrumb copy)', () => {
     expect(labelsFor(`/admin/plans/2026/${OTHER}/edit`).at(-1)).toBe('Edit');
   });
 
+  describe('plan editor — /admin/plans/<year>/<slug>/edit', () => {
+    // Plan ids are slugs, not UUIDs: the slug under `plans/<year>/` is a
+    // record, so `edit` must resolve against `plans` (→ breadcrumb.editPlan),
+    // not fall back to the raw lowercase slug "edit".
+    const path = '/admin/plans/2026/premium-corporate/edit';
+
+    it('the `edit` crumb resolves to breadcrumb.editPlan', () => {
+      expect(buildBreadcrumbStaticLabels(t, path).edit).toBe(t('editPlan'));
+      expect(labelsFor(path).at(-1)).toBe(t('editPlan'));
+    });
+
+    it('other routes with an `edit` leaf keep their trails', () => {
+      expect(labelsFor(`/admin/broadcasts/templates/${OTHER}/edit`)).toEqual([
+        'Broadcasts',
+        'Templates',
+        'Template',
+        'Edit Template',
+      ]);
+      expect(labelsFor(`/admin/members/${MEMBER}/edit`)).toEqual(['Members', 'Details', 'Edit']);
+    });
+  });
+
   it.each([
     ['/admin/events/import', ['Events', 'Import CSV']],
     ['/admin/events/import/history', ['Events', 'Import CSV', 'Import history']],
