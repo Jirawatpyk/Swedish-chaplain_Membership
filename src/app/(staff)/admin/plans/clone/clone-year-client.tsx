@@ -289,7 +289,7 @@ export function CloneYearClient({
             {tClone('preview.empty', { sourceYear: formatCalendarYear(sourceYear, locale) })}
           </p>
         ) : (
-          <ul aria-labelledby="clone-preview-title" className="gap-x-[var(--aura-space-6)] md:columns-2">
+          <ul aria-labelledby="clone-preview-title" className="aura-text-table-cell gap-x-[var(--aura-space-6)] md:columns-2">
             {sourcePlans.map((p) => (
               <li
                 key={p.plan_id}
