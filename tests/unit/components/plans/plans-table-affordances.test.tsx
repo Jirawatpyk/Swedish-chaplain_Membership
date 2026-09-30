@@ -164,6 +164,23 @@ describe('PlansTable on AURA (board Admin-plans)', () => {
     renderRows();
     expect(screen.getByRole('link', { name: 'Premium Corporate' })).toHaveClass('max-sm:min-h-11');
   });
+
+  // Parity comments (US6): the switches sit on the fields' line from 640px
+  // and stack with no grid gap on phones; the pill centres on the name line.
+  it('keeps both switches in one wrapper that sits on the fields\' line', () => {
+    renderRows();
+    const group = screen.getByRole('group', { name: en.admin.plans.filters.groupLabel });
+    const [activeOnly, showDeleted] = within(group).getAllByRole('switch');
+    const wrapper = activeOnly?.closest('[data-plans-switches]');
+    expect(wrapper).not.toBeNull();
+    expect(showDeleted?.closest('[data-plans-switches]')).toBe(wrapper);
+    expect(wrapper).toHaveClass('col-span-2', 'sm:self-end', 'sm:h-[var(--aura-input-height)]');
+  });
+
+  it('centres the status pill on the name line of a phone card', () => {
+    renderRows();
+    expect(screen.getAllByText(en.admin.plans.badges.active)[0]?.closest('td')).toHaveClass('self-center');
+  });
 });
 
 // UX review (US6): filters that hide every plan of a year that has plans say
@@ -200,5 +217,12 @@ describe('PlansTable filtered-empty state', () => {
     expect(within(group).queryByRole('searchbox')).not.toBeInTheDocument();
     expect(within(group).getAllByRole('switch').map((sw) => sw.id)).toEqual(['plans-show-deleted']);
     expect(within(group).getAllByRole('combobox')).toHaveLength(1);
+  });
+
+  // Parity comment (US6): AURA's EmptyState pads itself, as on the members
+  // list; the cell adds nothing on top.
+  it('lets the empty state keep AURA\'s own padding', () => {
+    renderFiltered({ category: null, q: null, activeOnly: false, showDeleted: false });
+    expect(screen.getByText(en.admin.plans.empty.title).closest('td')).not.toHaveClass('py-12');
   });
 });
