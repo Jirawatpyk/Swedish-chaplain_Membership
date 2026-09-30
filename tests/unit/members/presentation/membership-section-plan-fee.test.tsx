@@ -1,5 +1,6 @@
 /**
- * WP2 — the plan picker surfaces the annual fee.
+ * WP2 — the plan picker surfaces the annual fee; spec 122 US5b-2: on AURA
+ * `Select` (one line per option) the selected plan's fee is the field hint.
  *
  * Rendered against the REAL en.json (same convention as
  * membership-section-billing-cycle.test.tsx). The collapsed trigger shows
@@ -66,20 +67,16 @@ function renderForm() {
   );
 }
 
-describe('MembershipSection — annual-fee display (WP2)', () => {
-  it('collapsed trigger shows the plan NAME only (fee not rendered until the list opens)', () => {
+describe('MembershipSection — annual-fee display (WP2; 122 US5b-2)', () => {
+  it('the field shows the plan NAME only, as the board draws it', () => {
     renderForm();
-    expect(screen.getByText('Premium — 2026')).toBeInTheDocument();
-    // The fee lives only inside the (closed) option list — not the trigger.
-    expect(screen.queryByText(/50,000\.00/)).toBeNull();
+    expect(screen.getByRole('combobox', { name: /^plan/i })).toHaveTextContent('Premium — 2026');
+    expect(screen.getByRole('combobox', { name: /^plan/i })).not.toHaveTextContent(/50,000\.00/);
   });
 
-  it('shows the fee with an sr-only "Annual fee" prefix once the option list opens', async () => {
-    renderForm();
-    fireEvent.click(screen.getByRole('combobox', { name: 'Plan' }));
-    // sr-only prefix span (its own direct text) + the formatted fee (the
-    // wrapper's own direct text) — both appear only after the list opens.
-    expect(await screen.findByText(/Annual fee/)).toBeInTheDocument();
-    expect(screen.getByText(/50,000\.00/)).toBeInTheDocument();
+  it('shows the selected plan\'s annual fee as the field hint (AURA Select lists one line per option)', () => {
+    const { container } = renderForm();
+    expect(container.querySelector('#plan_id-hint')).toHaveTextContent('Annual fee: 50,000.00 THB');
+    expect(screen.getByRole('combobox', { name: /^plan/i })).toHaveAccessibleDescription('Annual fee: 50,000.00 THB');
   });
 });
