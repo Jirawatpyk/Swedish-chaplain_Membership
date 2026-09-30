@@ -11,6 +11,7 @@
  * Messages are keyed by field + rule rather than read from zod: the schema's
  * messages are English developer strings.
  */
+import type { z } from 'zod';
 import { planSchema, type PlanSchemaInput } from '@/modules/plans';
 
 export type PlanFormStep = 'basics' | 'fees' | 'benefits';
@@ -95,16 +96,26 @@ function isPlanFormField(value: PropertyKey | undefined): value is PlanFormField
 export function planFormFieldErrors(draft: PlanSchemaInput): PlanFormFieldErrors {
   const parsed = planSchema.safeParse(draft);
   if (parsed.success) return {};
+  return fieldErrorsFromIssues(parsed.error.issues, draft.plan_category);
+}
 
+/**
+ * Maps zod issues from `planSchema` or `planPatchSchema` (same field paths,
+ * same `custom` cross-field rules) to one message key per field. The first
+ * issue per field wins; `planCategory` picks the bundle message.
+ */
+export function fieldErrorsFromIssues(
+  issues: ReadonlyArray<z.ZodIssue>,
+  planCategory: PlanSchemaInput['plan_category'],
+): PlanFormFieldErrors {
   const errors: PlanFormFieldErrors = {};
-  for (const issue of parsed.error.issues) {
+  for (const issue of issues) {
     const field = issue.path[0];
     if (!isPlanFormField(field) || errors[field] !== undefined) continue;
     const crossField = issue.code === 'custom';
 
     if (field === 'includes_corporate_plan_id' && crossField) {
-      errors[field] =
-        draft.plan_category === 'partnership' ? 'bundleRequired' : 'bundleNotAllowed';
+      errors[field] = planCategory === 'partnership' ? 'bundleRequired' : 'bundleNotAllowed';
     } else if (field === 'max_turnover_minor_units' && crossField) {
       errors[field] = 'turnoverOrder';
     } else if (
