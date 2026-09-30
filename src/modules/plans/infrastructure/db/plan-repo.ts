@@ -18,7 +18,8 @@
  * vitest.config.ts:
  *   - `cloneYear`     — target-year-populated check + atomicity
  *   - `update`        — secondary locked-field guard (defence in depth)
- *   - `softDeleteGuarded` — advisory-lock + member-count refusal (W0-02)
+ *   - `softDeleteGuarded` — advisory-lock + member-count refusal (W0-02),
+ *     plus a row-locked active-plan refusal (activate/delete TOCTOU)
  *   - None of the simple CRUD helpers carry branch-level risk by themselves,
  *     but the use-case-level threshold covers them transitively.
  */
@@ -325,7 +326,7 @@ export const planRepo: PlanRepo = {
 
   // -- softDeleteGuarded (W0-02 TOCTOU fix) ------------------------------------
   //
-  // Advisory-lock + count + delete in ONE tx.
+  // Advisory-lock + row-lock lifecycle check + count + delete in ONE tx.
   // Lock key: `plans:softdelete:<tenantSlug>:<planId>:<planYear>`.
   // The same key is acquired by `changePlan` (members module) BEFORE
   // assigning a member to the plan, serialising the two competing paths.
@@ -337,18 +338,47 @@ export const planRepo: PlanRepo = {
         sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`,
       );
 
-      // 2. Count active + inactive members on this plan WITHIN the same tx
+      // 2. Row-lock the plan and re-read its lifecycle state. `setActive`
+      //    takes no advisory lock, so the use case's pre-tx `findOne` can be
+      //    stale: an activate committing in between must still be refused
+      //    (plan-state.ts: active → soft_deleted is illegal). FOR UPDATE waits
+      //    out an in-flight activate and reads its committed value; a later
+      //    activate blocks on this row lock until the delete commits.
+      const current = await tx
+        .select({
+          isActive: membershipPlans.isActive,
+          deletedAt: membershipPlans.deletedAt,
+        })
+        .from(membershipPlans)
+        .where(
+          and(
+            eq(membershipPlans.planId, planId),
+            eq(membershipPlans.planYear, year),
+          ),
+        )
+        .for('update')
+        .limit(1);
+      const state = current[0];
+      if (!state || state.deletedAt !== null) {
+        return { kind: 'not_found' as const };
+      }
+      if (state.isActive) {
+        return { kind: 'plan_active' as const };
+      }
+
+      // 3. Count active + inactive members on this plan WITHIN the same tx
       //    so the count is serialised under the lock.
       const memberCount = await countActiveMembersOnPlanInTx(tx, planId as string, year as number);
       if (memberCount > 0) {
         return { kind: 'has_active_members' as const, count: memberCount };
       }
 
-      // 3. Soft-delete UPDATE under the lock. RLS scopes the row to the
+      // 4. Soft-delete UPDATE under the lock. RLS scopes the row to the
       //    tenant; the explicit `WHERE deleted_at IS NULL` makes a concurrent
       //    soft-delete of the same plan a no-op (returns not_found, which the
       //    Application layer already handles) rather than overwriting the
-      //    first delete's deletedAt/updatedBy.
+      //    first delete's deletedAt/updatedBy. `is_active = false` restates
+      //    step 2's check as defence-in-depth (the row lock already holds it).
       const updated = await tx
         .update(membershipPlans)
         .set({ deletedAt, updatedBy, updatedAt: new Date() })
@@ -357,6 +387,7 @@ export const planRepo: PlanRepo = {
             eq(membershipPlans.planId, planId),
             eq(membershipPlans.planYear, year),
             sql`${membershipPlans.deletedAt} IS NULL`,
+            eq(membershipPlans.isActive, false),
           ),
         )
         .returning();

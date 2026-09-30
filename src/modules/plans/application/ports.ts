@@ -109,20 +109,26 @@ export interface PlanRepo {
    * In ONE `runInTenant` transaction:
    *   1. Acquires `pg_advisory_xact_lock(hashtextextended(<key>, 0))` where
    *      `key = planSoftDeleteLockKey(tenant.slug, planId, year)`.
-   *   2. Counts active (non-archived) members for (tenant, planId, year).
-   *   3. If count > 0 → returns `{ kind: 'has_active_members', count }` WITHOUT
-   *      writing (soft-delete refused per FR-010).
-   *   4. Runs the soft-delete UPDATE with `WHERE deleted_at IS NULL` (a
-   *      concurrent soft-delete is a no-op) → returns `{ kind: 'deleted', plan }`
-   *      on success or `{ kind: 'not_found' }` when the row vanished.
+   *   2. Row-locks the plan (`SELECT … FOR UPDATE`) and re-reads its state:
+   *      missing or already deleted → `{ kind: 'not_found' }`; still active →
+   *      `{ kind: 'plan_active' }` (plan-state.ts: deactivate first). The row
+   *      lock serialises with `setActive`, so an activate that commits after
+   *      the use case's `findOne` is still refused here.
+   *   3. Counts active (non-archived) members for (tenant, planId, year).
+   *      If count > 0 → returns `{ kind: 'has_active_members', count }`
+   *      WITHOUT writing (soft-delete refused per FR-010).
+   *   4. Runs the soft-delete UPDATE with `WHERE deleted_at IS NULL AND
+   *      is_active = false` → returns `{ kind: 'deleted', plan }` on success
+   *      or `{ kind: 'not_found' }` when the row vanished.
    *
    * The advisory lock is the SAME key that `changePlan` (members module)
    * acquires before assigning a member to a plan, serialising the two
    * paths and closing the TOCTOU window.
    *
    * The Application layer (`soft-delete-plan.ts`) still calls `planRepo.findOne`
-   * upfront for the idempotent already-deleted short-circuit and the initial
-   * not_found check — those are read-only and safe outside the lock.
+   * upfront for the idempotent already-deleted short-circuit, the initial
+   * not_found check and a fast-path plan_active refusal — those are
+   * read-only; the authoritative lifecycle check is step 2 above.
    */
   softDeleteGuarded(
     tenant: TenantContext,
@@ -133,6 +139,7 @@ export interface PlanRepo {
   ): Promise<
     | { readonly kind: 'deleted'; readonly plan: Plan }
     | { readonly kind: 'has_active_members'; readonly count: number }
+    | { readonly kind: 'plan_active' }
     | { readonly kind: 'not_found' }
   >;
 
