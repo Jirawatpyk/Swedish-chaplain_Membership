@@ -806,7 +806,7 @@
     "plans": {
       "title": "Medlemspaket",
       "subtitle": "{total} paket år {year}",
-      "subtitleWithVat": "{total} paket år {year} · avgifterna exkluderar {rate} % moms",
+      "subtitleWithVat": "{total} paket år {year} · avgifter exkl. {rate} % moms",
       "listDescription": "Hantera nivådefinitioner, årliga avgifter och förmånsmatriser. Föregående års paket är delvis låsta för revisionsintegritet.",
       "tableCaption": "Lista över medlemspaket för det valda året.",
       "empty": {
@@ -870,8 +870,8 @@
         "cloneCta": "Klona {year} års paket till {currentYear}"
       },
       "create": {
-        "localeTabsLabel": "Språk för {field}",
-        "translationMissing": "{locale} — översättning saknas",
+        "localeTabsLabel": "{field} – språk",
+        "translationMissing": "{code} ({locale}) — översättning saknas",
         "localeNames": {
           "en": "engelska",
           "th": "thailändska",
@@ -1044,7 +1044,7 @@
         "sourceLabel": "Källår",
         "targetLabel": "Målår",
         "activateClonedLabel": "Aktivera klonade paket omedelbart",
-        "activateClonedHint": "Låt vara av för att först granska avgifter och förmåner.",
+        "activateClonedHint": "Låt vara avstängt om du vill granska avgifter och förmåner först.",
         "submit": "Klona {count} paket",
         "submitting": "Klonar…",
         "cancel": "Avbryt",

@@ -871,7 +871,7 @@
       },
       "create": {
         "localeTabsLabel": "{field} language",
-        "translationMissing": "{locale} — translation missing",
+        "translationMissing": "{code} ({locale}) — translation missing",
         "localeNames": {
           "en": "English",
           "th": "Thai",

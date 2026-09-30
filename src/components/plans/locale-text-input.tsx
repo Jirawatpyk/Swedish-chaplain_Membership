@@ -106,7 +106,9 @@ export function LocaleTextInput({
       ...(missing
         ? {
             icon: 'triangle-alert' as const,
-            tabProps: { 'aria-label': t('translationMissing', { locale: l.tab }) },
+            tabProps: {
+              'aria-label': t('translationMissing', { code: l.tab, locale: t(`localeNames.${l.key}`) }),
+            },
           }
         : {}),
       content: multiline ? (
