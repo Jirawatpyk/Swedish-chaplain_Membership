@@ -8,7 +8,7 @@
  * unchecked-by-default box makes a second natural person's name/email/phone
  * REQUIRED BY DEFAULT — friction on the majority path, and it inverts GDPR
  * Art. 25(2) (data protection BY DEFAULT). It is also a negative checkbox,
- * which users reliably mis-parse. Instead: a `+ Add a secondary contact`
+ * which users reliably mis-parse. Instead: a "Add a secondary contact"
  * button (mirrors the Add-contact trigger on the member detail page) reveals
  * `<ContactFields prefix="secondary_contact">`; a Remove action UNREGISTERS
  * the whole sub-object — clearing the underlying form VALUE, not just

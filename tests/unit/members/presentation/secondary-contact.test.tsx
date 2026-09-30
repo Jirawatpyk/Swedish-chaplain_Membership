@@ -7,7 +7,7 @@
  * makes a second natural person's PII required by default (friction on the
  * majority path, inverts GDPR Art. 25(2) — data protection BY DEFAULT) and
  * is a negative checkbox users reliably mis-parse. Instead: a
- * `+ Add a secondary contact` button reveals the fieldset; Remove clears
+ * "Add a secondary contact" button reveals the fieldset; Remove clears
  * the underlying form VALUE (not just the widget) so a filled-then-removed
  * secondary contact never rides along on submit.
  *

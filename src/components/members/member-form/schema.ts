@@ -255,7 +255,7 @@ export function buildMemberFormSchema(
     date_of_birth: z.string().optional(),
   }),
   // PR-B task 8 — optional secondary contact. `undefined` until the admin
-  // clicks "+ Add a secondary contact" (SecondaryContactSection); Remove
+  // clicks "Add a secondary contact" (SecondaryContactSection); Remove
   // clears it back to `undefined` via RHF `unregister`, so this branch only
   // validates when the fieldset is actually mounted. Same shape as
   // primary_contact MINUS date_of_birth (primary-only, plan-driven gate).

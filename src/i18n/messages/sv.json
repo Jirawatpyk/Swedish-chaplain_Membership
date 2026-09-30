@@ -1098,7 +1098,7 @@
     },
     "membersPreferredLocale": {
       "title": "Språk för aviseringar",
-      "description": "Åsidosätt språket som denna medlem tar emot transaktionsmejl på (utskicksgodkännanden, fakturor m.m.). Lämna på \"Använd kammarens standardspråk\" för att följa kammarens inställning.",
+      "description": "Åsidosätt språket som denna medlem tar emot transaktionsmejl på (utskicksgodkännanden, fakturor m.m.). Lämna på ”Använd kammarens standardspråk” för att följa kammarens inställning.",
       "useTenantDefault": "Använd kammarens standardspråk",
       "save": "Spara",
       "savedSeparately": "Sparas för sig — inte med ”Spara ändringar”.",
