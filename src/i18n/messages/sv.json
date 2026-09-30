@@ -4474,6 +4474,7 @@
           "title": "Pausa medlem i riskzon",
           "description": "Dölj {company} från riskzon-widgeten under den valda perioden. Poängen fortsätter att uppdateras i bakgrunden; medlemmen återkommer när pausen löper ut.",
           "descriptionFallback": "Dölj denna medlem från riskzon-widgeten under den valda perioden.",
+          "durationLabel": "Varaktighet",
           "option": "{days} dagar",
           "cancel": "Avbryt",
           "confirm": "Bekräfta paus",

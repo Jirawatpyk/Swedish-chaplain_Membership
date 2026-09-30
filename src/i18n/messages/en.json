@@ -4474,6 +4474,7 @@
           "title": "Snooze at-risk member",
           "description": "Hide {company} from the at-risk widget for the chosen duration. The score keeps updating in the background; the member reappears when the snooze expires.",
           "descriptionFallback": "Hide this member from the at-risk widget for the chosen duration.",
+          "durationLabel": "Duration",
           "option": "{days} days",
           "cancel": "Cancel",
           "confirm": "Confirm snooze",

@@ -71,11 +71,11 @@ describe('SnoozeDialog — server error code mapping', () => {
 });
 
 describe('SnoozeDialog on AURA', () => {
-  it('is an AURA alertdialog with the duration as an AURA radio group, 30 days chosen', () => {
+  it('is an AURA alertdialog with the duration as an AURA radio fieldset, 30 days chosen', () => {
     renderDialog();
     const dialog = screen.getByRole('alertdialog', { name: 'Snooze at-risk member' });
     expect(dialog).toHaveClass('aura-dialog');
-    const group = within(dialog).getByRole('radiogroup', { name: 'Duration' });
+    const group = within(dialog).getByRole('group', { name: 'Duration' });
     expect(within(group).getAllByRole('radio').map((r) => r.getAttribute('value'))).toEqual(['7', '30', '90']);
     expect(within(group).getByRole('radio', { name: '30 days' })).toBeChecked();
   });

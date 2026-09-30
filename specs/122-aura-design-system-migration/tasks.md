@@ -278,8 +278,13 @@ Boards: `Admin-renewals` (+`-mobile`), `Admin-renewals-needs-action`, `Admin-ren
     - The Overdue bar takes AURA's danger colour and every month bar `--aura-chart-1`, as the board draws them. The four-band palette and its helper are gone.
     - The month chip is an AURA `Tag` with its remove button.
     - Extra test: `renewals-by-month-section`.
-- [ ] T706 [US7] The at-risk section: counters, a table (risk badge, main signal, last computed, Contact / Snooze) and the snooze and outreach dialogs on AURA, with the same requests.
+- [x] T706 [US7] The at-risk section: counters, a table (risk badge, main signal, last computed, Contact / Snooze) and the snooze and outreach dialogs on AURA, with the same requests.
   - RED: `at-risk-widget-snooze-gate` and `snooze-dialog-error-map` on AURA.
+  - Done:
+    - The section sits inside the work queue without a card of its own. Band filters are AURA tabs with counts; rows are an AURA table that stacks into cards on a phone; the company links to the member.
+    - Contact and Snooze are AURA buttons. The snooze and outreach dialogs are AURA alertdialogs (radio fieldset; selects, textarea with its counter as hint or error). Payloads are unchanged.
+    - The board's "Main signal" column is not shown, because the at-risk API returns no such field.
+    - Extra test: `outreach-dialog`.
 - [ ] T707 [US7] Pending review, the lapsed tab and the members-without-cycle tray on AURA cards, tables and dialogs, with the same reactivate request.
   - RED: `pending-review-list` on AURA.
 - [ ] T708 [US7] The bulk bar on AURA `ActionBar` with the selection count, and the single and bulk mark-paid dialogs on AURA `Dialog`. The single dialog follows the board's amounts and warnings; the bulk one keeps its settlement preview. Money is unchanged.

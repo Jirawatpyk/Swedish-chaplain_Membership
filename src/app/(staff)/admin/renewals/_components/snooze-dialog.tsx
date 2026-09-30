@@ -11,24 +11,18 @@
  * (destructive-ish action — the member will disappear from the widget
  * for the chosen duration, so we want admin to think before
  * confirming).
+ *
+ * 122 US7a (T706): AURA `Dialog` (`role="alertdialog"`, Cancel focused
+ * first) with the duration as an AURA `RadioGroup`; the request, its error
+ * mapping and the toasts are unchanged.
  */
 'use client';
 
-import { useRef, useState, useTransition } from 'react';
+import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Label } from '@/components/ui/label';
+import { Button, Dialog, RadioGroup } from '@jirawatpyk/aura-react';
 
 export type SnoozeDuration = 7 | 30 | 90;
 
@@ -41,9 +35,8 @@ export interface SnoozeDialogProps {
    * a11y fix — focus-return target on close (WCAG 2.1 AA SC 2.4.3).
    * `SnoozeDialog` is opened from a plain visible "Snooze" button in
    * `at-risk-widget.tsx` (mirrors `OutreachDialog`'s `finalFocus`
-   * pattern for its "Contact" button). Without this, Base UI's default
-   * focus-restore drops focus to `<body>` on close. Optional: omitting
-   * it falls back to Base UI's own default restore-focus behaviour.
+   * pattern for its "Contact" button). Optional: omitting it returns focus
+   * to whatever had it when the dialog opened (AURA's default).
    */
   readonly finalFocus?: React.RefObject<HTMLElement | null>;
 }
@@ -102,61 +95,42 @@ export function SnoozeDialog({
   // the focus-trap which would otherwise steal initial focus to the
   // close X). Canonical pattern for ux-standards § 4 "focus on Cancel
   // by default".
-  const cancelRef = useRef<HTMLButtonElement | null>(null);
+  const durations: ReadonlyArray<SnoozeDuration> = [7, 30, 90];
 
   return (
-    // Fix 4 a11y: form-bearing confirmation dialog — kept as Dialog +
-    // `role="alertdialog"` rather than converted to AlertDialog. The
-    // DOM/a11y is correct: `initialFocus={cancelRef}` delivers focus-
-    // on-Cancel (ux-standards § 4), and `role="alertdialog"` makes AT
-    // announce this as a dialog requiring a response (ARIA 1.1 § 5.3.3).
-    // NOTE: `AlertDialogContent` (=== Base UI AlertDialog.Popup) WOULD
-    // also accept `initialFocus`, so converting is possible — keeping
-    // Dialog here is a stylistic choice, not a technical limitation.
-    // Base UI auto-wires aria-labelledby/describedby on both primitives.
-    // Match: `outreach-dialog.tsx` (same form-bearing-confirm pattern).
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        initialFocus={cancelRef}
-        role="alertdialog"
-        finalFocus={finalFocus}
-      >
-        <DialogHeader>
-          <DialogTitle>{t('title')}</DialogTitle>
-          <DialogDescription>
-            {memberCompanyName
-              ? t('description', { company: memberCompanyName })
-              : t('descriptionFallback')}
-          </DialogDescription>
-        </DialogHeader>
-        <RadioGroup
-          value={String(duration)}
-          onValueChange={(v) => setDuration(Number.parseInt(v, 10) as SnoozeDuration)}
-          className="my-3 space-y-2"
-        >
-          {[7, 30, 90].map((d) => (
-            <div key={d} className="flex items-center gap-2">
-              <RadioGroupItem id={`snooze-${d}`} value={String(d)} aria-label={t('option', { days: d })} />
-              <Label htmlFor={`snooze-${d}`} className="cursor-pointer">
-                {t('option', { days: d })}
-              </Label>
-            </div>
-          ))}
-        </RadioGroup>
-        <DialogFooter>
+    <Dialog
+      open={open}
+      onClose={() => onOpenChange(false)}
+      role="alertdialog"
+      {...(finalFocus ? { finalFocus } : {})}
+      title={t('title')}
+      description={
+        memberCompanyName
+          ? t('description', { company: memberCompanyName })
+          : t('descriptionFallback')
+      }
+      footer={
+        <>
           <Button
-            ref={cancelRef}
-            variant="outline"
+            variant="secondary"
+            data-autofocus=""
             onClick={() => onOpenChange(false)}
             disabled={pending}
           >
             {t('cancel')}
           </Button>
-          <Button onClick={onConfirm} disabled={pending}>
+          <Button onClick={onConfirm} loading={pending}>
             {pending ? t('confirming') : t('confirm')}
           </Button>
-        </DialogFooter>
-      </DialogContent>
+        </>
+      }
+    >
+      <RadioGroup
+        label={t('durationLabel')}
+        value={String(duration)}
+        onChange={(v) => setDuration(Number.parseInt(v, 10) as SnoozeDuration)}
+        options={durations.map((d) => ({ value: String(d), label: t('option', { days: d }) }))}
+      />
     </Dialog>
   );
 }

@@ -16,6 +16,9 @@ import en from '@/i18n/messages/en.json';
 import { AtRiskWidget } from '@/app/(staff)/admin/renewals/_components/at-risk-widget';
 import { hasPermission } from '@/modules/auth/domain/permissions/evaluator';
 
+// The row's dialogs refresh the route after a save.
+vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }) }));
+
 const RESPONSE = {
   items: [
     {
