@@ -1040,10 +1040,11 @@
       },
       "clone": {
         "title": "Klona år",
-        "description": "Klona alla {count} icke-borttagna paket från {sourceYear} till {targetYear}. Nya paket startar som inaktiva tills du granskar och aktiverar dem.",
+        "description": "Klona alla <b>{count}</b> icke-borttagna paket från {sourceYear} till {targetYear}. Nya paket startar som inaktiva tills du granskar och aktiverar dem.",
         "sourceLabel": "Källår",
         "targetLabel": "Målår",
         "activateClonedLabel": "Aktivera klonade paket omedelbart",
+        "activateClonedHint": "Låt vara av för att först granska avgifter och förmåner.",
         "submit": "Klona {count} paket",
         "submitting": "Klonar…",
         "cancel": "Avbryt",

@@ -4,21 +4,16 @@
  * Confirmation dialog that surfaces before the bulk clone runs.
  * Follows UX standards § 4.1 — destructive-action-like confirmation
  * with an explicit verb ("Clone 2026 → 2027") and the row count.
+ *
+ * 122 US6 (T607): AURA `Dialog` with `role="alertdialog"` (no board draws
+ * it): a stray scrim click doesn't dismiss the gate; Escape and Cancel do,
+ * and neither while the clone runs.
  */
 'use client';
 
 import { useLocale, useTranslations } from 'next-intl';
+import { Button, Dialog } from '@jirawatpyk/aura-react';
 import { formatCalendarYear } from '@/lib/format-date-localised';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
 
 export interface CloneYearDialogProps {
   readonly open: boolean;
@@ -50,33 +45,30 @@ export function CloneYearDialog({
   const countLabel = sourcePlanCount ?? '…';
 
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>
-            {t('title')}: {shownSource} → {shownTarget}
-          </AlertDialogTitle>
-          <AlertDialogDescription>
-            {t('description', {
-              count: countLabel,
-              sourceYear: shownSource,
-              targetYear: shownTarget,
-            })}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={submitting}>{t('cancel')}</AlertDialogCancel>
-          <AlertDialogAction
-            onClick={(e) => {
-              e.preventDefault();
-              onConfirm();
-            }}
-            disabled={submitting}
-          >
+    <Dialog
+      role="alertdialog"
+      open={open}
+      onClose={() => {
+        if (!submitting) onOpenChange(false);
+      }}
+      dismissible={!submitting}
+      title={`${t('title')}: ${shownSource} → ${shownTarget}`}
+      description={t.rich('description', {
+        count: countLabel,
+        sourceYear: shownSource,
+        targetYear: shownTarget,
+        b: (chunks) => <strong>{chunks}</strong>,
+      })}
+      footer={
+        <>
+          <Button variant="secondary" data-autofocus onClick={() => onOpenChange(false)} disabled={submitting}>
+            {t('cancel')}
+          </Button>
+          <Button icon="copy" loading={submitting} disabled={submitting} onClick={onConfirm}>
             {submitting ? t('submitting') : t('submit', { count: countLabel })}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+          </Button>
+        </>
+      }
+    />
   );
 }

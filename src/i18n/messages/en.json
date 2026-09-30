@@ -1040,10 +1040,11 @@
       },
       "clone": {
         "title": "Clone year",
-        "description": "Clone all {count} non-deleted plans from {sourceYear} into {targetYear}. New plans start as inactive until you review and activate them.",
+        "description": "Clone all <b>{count}</b> non-deleted plans from {sourceYear} into {targetYear}. New plans start as inactive until you review and activate them.",
         "sourceLabel": "Source year",
         "targetLabel": "Target year",
         "activateClonedLabel": "Activate cloned plans immediately",
+        "activateClonedHint": "Leave off to review fees and benefits first.",
         "submit": "Clone {count} plans",
         "submitting": "Cloning…",
         "cancel": "Cancel",
