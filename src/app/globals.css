@@ -41,7 +41,7 @@
 
   /* AURA's type families (spec 122 FR-003), served from our origin by aura-fonts.local.css. */
   --font-sans: "Inter", "Noto Sans Thai", sans-serif;
-  --font-mono: "JetBrains Mono", monospace;
+  --font-mono: "JetBrains Mono", "Noto Sans Thai", monospace;
 
   /* Kit titles (card, dialog, sheet) are h2/h3-level, which AURA sets in sans;
      Fraunces, AURA's display face, is for page titles (`.text-h1`) only. */
@@ -311,6 +311,11 @@ html:has(.chamber-viewport-actionbar) {
     box-shadow: none;
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
+  /* AURA pads the bar's row 16px at its start and 12px at its end; pinned
+     edge to edge, the buttons sit 16px from both screen edges, as drawn. */
+  :is(.member-form-actions, .plan-form-actions) > div {
+    padding-inline: var(--aura-space-4);
+  }
   :is(.member-form-actions, .plan-form-actions) > div > :first-child:empty {
     display: none;
   }
@@ -347,9 +352,10 @@ html:has(.chamber-viewport-actionbar) {
     min-height: 0;
     padding: 0;
   }
-  /* The plan wizard (board `Admin-plan-new`): Cancel at the start edge, Back
-     and Next at the end — the empty status cell goes and the buttons' row
-     fills the bar, so Cancel's `me-auto` takes the space between. */
+  /* Stand-in until AURA #116 (an ActionBar start slot). The plan wizard
+     (board `Admin-plan-new`): Cancel at the start edge, Back and Next at the
+     end — the empty status cell goes and the buttons' row fills the bar, so
+     Cancel's `me-auto` takes the space between. */
   .plan-form-actions--split > div > :first-child:empty {
     display: none;
   }

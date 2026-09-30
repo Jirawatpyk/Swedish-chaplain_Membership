@@ -98,7 +98,7 @@ function NumberField({
 function Group({ title, children }: { readonly title: string; readonly children: ReactNode }) {
   return (
     <section className="space-y-[var(--aura-space-3)]">
-      <h3 className="aura-text-mono uppercase tracking-wider text-[var(--aura-fg-secondary)]">{title}</h3>
+      <h3 className="aura-text-mono uppercase tracking-wider text-[var(--aura-fg-secondary)] [&:lang(th)]:tracking-normal">{title}</h3>
       {children}
     </section>
   );

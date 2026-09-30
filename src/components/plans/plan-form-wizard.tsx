@@ -553,6 +553,8 @@ export function PlanFormWizard({
           {cancelLabel}
         </Button>
       ) : null}
+      {/* Stand-in until AURA #116: the ActionBar has no start slot, so Cancel
+          rides first in its actions with `me-auto` (`.plan-form-actions--split`). */}
       <ActionBar className="chamber-viewport-actionbar plan-form-actions plan-form-actions--even plan-form-actions--split">
         {onCancel ? (
           <Button type="button" variant="secondary" onClick={onCancel} disabled={submitting} className="me-auto max-sm:hidden">

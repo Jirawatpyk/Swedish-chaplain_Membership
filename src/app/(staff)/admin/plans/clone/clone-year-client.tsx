@@ -293,7 +293,7 @@ export function CloneYearClient({
             {sourcePlans.map((p) => (
               <li
                 key={p.plan_id}
-                className="flex break-inside-avoid items-center justify-between gap-[var(--aura-space-4)] border-t border-[var(--aura-border-subtle)] py-[var(--aura-space-2)]"
+                className="flex break-inside-avoid items-center justify-between gap-[var(--aura-space-4)] border-t border-[var(--aura-border-default)] py-[var(--aura-space-2)]"
               >
                 <span className="min-w-0 break-words">
                   <LocaleTextDisplay value={p.plan_name} />

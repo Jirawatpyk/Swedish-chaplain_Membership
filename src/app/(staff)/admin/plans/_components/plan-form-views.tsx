@@ -5,8 +5,9 @@
  * so the screenshots show the pages themselves, never a copy of their layout.
  *
  * Each page wraps its view in its own `FormContainer` (check:layout reads the
- * page file) with `PLAN_FORM_COLUMN`: the boards set the 672px column at the
- * page's start edge, not centred.
+ * page file) with `PLAN_FORM_COLUMN`: the boards set a 672px column of content
+ * at the page's start edge, not centred — the container's width plus its own
+ * padding, as the detail and table containers count theirs.
  */
 import { getLocale, getTranslations } from 'next-intl/server';
 import { Card } from '@jirawatpyk/aura-react/server';
@@ -19,7 +20,7 @@ import { NewPlanClient } from '../new/new-plan-client';
 import { EditPlanClient } from '../[year]/[planId]/edit/edit-plan-client';
 import { CloneYearClient, type CloneSourcePlan } from '../clone/clone-year-client';
 
-export const PLAN_FORM_COLUMN = 'mx-0';
+export const PLAN_FORM_COLUMN = 'mx-0 max-w-[calc(var(--layout-max-width-form)+2*var(--page-padding-x))]';
 
 /** Board `Admin-plan-new`: the stepper and one card per step under the title. */
 export async function renderNewPlanView({
