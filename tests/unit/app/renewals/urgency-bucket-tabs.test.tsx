@@ -156,4 +156,11 @@ describe('<UrgencyBucketTabs> phone select (board Admin-renewals-mobile)', () =>
     pickNative('Urgency', 'suspended');
     expect(push).toHaveBeenCalledWith('/admin/renewals?urgency=suspended', { scroll: false });
   });
+
+  it('while a month lens is active the select is described by the paused hint too', () => {
+    renderTabs(null, true);
+    expect(screen.getByRole('combobox', { name: 'Urgency' })).toHaveAccessibleDescription(
+      /month filter/i,
+    );
+  });
 });
