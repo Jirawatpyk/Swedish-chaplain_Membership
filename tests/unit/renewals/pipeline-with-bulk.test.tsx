@@ -155,7 +155,7 @@ describe('<PipelineWithBulk> (Task 10 — US3 scaffolding)', () => {
 
     const rowCheckbox = screen.getByRole('checkbox', { name: 'Select Acme' });
     fireEvent.click(rowCheckbox);
-    expect(rowCheckbox).toHaveAttribute('aria-checked', 'true');
+    expect(rowCheckbox).toBeChecked();
 
     // A NEW array reference (same or different content) simulates the page
     // re-rendering after a router.refresh() / filter change — the "adjust
@@ -164,6 +164,6 @@ describe('<PipelineWithBulk> (Task 10 — US3 scaffolding)', () => {
     rerender(wrap(<PipelineWithBulk rows={freshRows} isAdmin />));
 
     const rowCheckboxAfter = screen.getByRole('checkbox', { name: 'Select Acme' });
-    expect(rowCheckboxAfter).toHaveAttribute('aria-checked', 'false');
+    expect(rowCheckboxAfter).not.toBeChecked();
   });
 });

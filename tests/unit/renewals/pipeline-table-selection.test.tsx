@@ -113,7 +113,7 @@ describe('<PipelineTable> row selection (AURA DataTable)', () => {
       ),
     );
     fireEvent.click(screen.getByRole('checkbox', { name: 'Select Acme' }));
-    expect(screen.getByRole('checkbox', { name: 'Select Acme' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('checkbox', { name: 'Select Acme' })).toBeChecked();
     rerender(
       wrap(
         <PipelineTable
@@ -125,7 +125,7 @@ describe('<PipelineTable> row selection (AURA DataTable)', () => {
         />,
       ),
     );
-    expect(screen.getByRole('checkbox', { name: 'Select Acme' })).toHaveAttribute('aria-checked', 'false');
+    expect(screen.getByRole('checkbox', { name: 'Select Acme' })).not.toBeChecked();
     expect(onSelectionChange).toHaveBeenLastCalledWith([]);
   });
 });

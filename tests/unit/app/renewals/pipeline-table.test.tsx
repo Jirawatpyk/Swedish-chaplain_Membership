@@ -481,7 +481,7 @@ describe('<PipelineTable> one AURA table that stacks into cards', () => {
       </NextIntlClientProvider>,
     );
     expect(screen.getAllByRole('grid')).toHaveLength(1);
-    expect(screen.getByRole('grid')).toHaveClass('aura-table');
+    expect(screen.getByRole('grid', { name: 'Renewal pipeline' }).closest('.aura-table')).not.toBeNull();
     expect(screen.queryByTestId('pipeline-card-list')).toBeNull();
     expect(screen.queryByRole('table')).toBeNull();
   });

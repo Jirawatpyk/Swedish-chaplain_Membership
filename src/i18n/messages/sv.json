@@ -4142,6 +4142,7 @@
           "invoice": "Faktura",
           "actions": "Åtgärder"
         },
+        "tableCaption": "Förnyelsepipeline",
         "selectAll": "Markera alla rader på sidan",
         "selectRow": "Markera {company}",
         "selectRowGeneric": "Markera denna medlem",

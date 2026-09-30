@@ -4142,6 +4142,7 @@
           "invoice": "ใบแจ้งหนี้",
           "actions": "การดำเนินการ"
         },
+        "tableCaption": "ไปป์ไลน์การต่ออายุ",
         "selectAll": "เลือกทุกแถวในหน้านี้",
         "selectRow": "เลือก {company}",
         "selectRowGeneric": "เลือกสมาชิกรายนี้",

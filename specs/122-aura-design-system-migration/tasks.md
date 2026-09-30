@@ -248,12 +248,13 @@ Goal: the renewals screens match their boards with the same requests, figures an
 Boards: `Admin-renewals` (+`-mobile`), `Admin-renewals-needs-action`, `Admin-renewal-mark-paid` (+`-mobile`), `Admin-state-renewals-empty`, `Admin-state-renewals-error`.
 
 - [x] T701 [US7] Spec Clarifications for US7: the three PRs, portal renewal in scope, a money phase, one stacking table, and the board facts. Also these tasks.
-- [ ] T702 [US7] The pipeline table is one AURA table:
+- [x] T702 [US7] The pipeline table is one AURA table:
   - the board's columns, with "Send reminder" and the ⋯ menu per row;
   - row selection for admins;
   - cards below 640px from the same rows, with no second list;
   - the same sort links, filters and paging.
   - RED: `pipeline-table`, `pipeline-table-selection` and `pipeline-sortable-headers` on AURA, with no `pipeline-card-list`.
+  - Done: AURA `DataTable` (`manual`, `stackBelow={640}`). A sortable header navigates to the page's precomputed sort href, as the members list does (US5a). The phone card keeps its checkbox in place of the board's "Select" button. Its row actions take a full-width row at the end of the card through a `globals.css` stand-in until AURA #118.
 - [ ] T703 [US7] Filters and tabs on AURA: the section tabs with counts, the All / Needs action toggle, the tier filter and the stage chips, with the same links and query parameters.
   - RED: `renewals-section-tabs(-with-counts)`, `urgency-bucket-tabs` and `work-queue-tabs` on AURA.
 - [ ] T704 [US7] The money band as four AURA `Stat` tiles, with the basis hint on AURA and the figures unchanged. The shared dashboard `kpi-card` stays for US11.

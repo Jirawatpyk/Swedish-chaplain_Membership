@@ -1,77 +1,35 @@
 /**
- * `PipelineTable` — F8 pipeline dashboard client component.
+ * `PipelineTable` — the F8 renewal pipeline, one AURA `DataTable`.
  *
- * TanStack Table v8 with server-side pagination + filter (no client-
- * side filtering — server returns the page). Client-state covers
- * column visibility + row selection (deferred to US3 bulk actions).
+ * 122 US7a (T702; Clarifications, Session 2026-09-30 US7 start): one table
+ * that stacks into cards below 640px, replacing the TanStack table and the
+ * separate phone card list. Selection, row actions and the lifted dialogs
+ * work from the same rows. Paging, filtering and sorting stay on the server
+ * and in the URL (FR-015): the table is `manual`, and a sortable header
+ * navigates to the page's precomputed sort href.
  *
- * Each row shows: tier badge · company name · expires_at · urgency
- * pill · last reminder · status · linked invoice · row actions.
+ * Columns follow the `Admin-renewals` board: Tier, Company, Expires,
+ * Urgency, Last reminder, Status, Invoice and Actions. The phone card
+ * (`Admin-renewals-mobile`) is titled by the company with the urgency pill;
+ * the invoice column leaves the card, and the row actions take a full-width
+ * row at its end (see `row-actions.tsx`).
  *
- * WCAG 2.1 AA: keyboard-navigable rows, focus ring, screen-reader
- * dates via `<time dateTime>`, the icon-only row-actions trigger uses
- * the native `title` attribute (no `Tooltip` primitive — it collides
- * with the DropdownMenu popup positioning). Row actions: "Send
- * reminder" is a one-click visible button; the ⋯ menu keeps "Open"
- * (deep-links to cycle detail) and "Mark contacted" (opens the shared
- * `OutreachDialog`, lifted to this component so it survives the menu
- * closing), and — Task 5 (Wave 2) — now ALSO "Mark paid" (opens the
- * shared `MarkPaidOfflineDialog`, offered only when
- * `shouldOfferMarkPaid(status)`). Cancel is still NOT a row action; it
- * lives only on the cycle detail page.
- *
- * Fix round 3 (manager money-CTA gating) — `canMutate` (required prop,
- * threaded from the page's `currentUser.role === 'admin'`) hides "Send
- * reminder" and "Mark paid" for a read-only manager: both are
- * admin-only at the route (403 + `f8_role_violation_blocked` audit —
- * kept as defence-in-depth), so showing them to a manager was a
- * mint-a-403 UX wart on a money surface. "Mark contacted" is
- * DELIBERATELY NOT gated by `canMutate` — `record-at-risk-outreach` is
- * FR-033 + FR-052a's ONE manager-mutation exception (the route accepts
- * `admin OR manager`; see `contracts/admin-renewals-api.md` § "one
- * mutation exception"), so hiding it would remove a legitimate,
- * already-shipped manager capability rather than fix a 403 trap. "Open"
- * is always visible (pure read).
- *
- * Task 12 — closes J8-M34 (`docs/ux-standards.md` § 9.4): the desktop
- * `<table>` is wrapped `hidden md:block`; `PipelineCardList` renders
- * `md:hidden` and takes over the mobile presentation. Same dual-render
- * shape as `060-member-portal-d4`'s `PortalInvoiceCardList` — the card
- * list is handed the SAME `useReactTable` instance (`table` prop) this
- * component builds below, so row selection + the lifted outreach/
- * mark-paid dialog state are shared uncontrolled state, never
- * re-implemented. `RowActions` (+ `PipelineEmptyMessage` +
- * `OutreachTarget`/`MarkPaidTarget`) live in the sibling `./row-actions`
- * module — review round 1 (FIX 1) moved them out of THIS file to break a
- * circular import (`pipeline-table.tsx` → `pipeline-card-list.tsx` →
- * `pipeline-table.tsx`, untested under Turbopack). This file now imports
- * `PipelineCardList` one-way; see `row-actions.tsx`'s module docstring for
- * the full rationale. `RowActions` is reused verbatim per card so a
- * company's row actions are identical in both presentations.
+ * `canMutate` (admin) gates the row's money and mutation affordances ("Send
+ * reminder", "Mark paid", "Record payment on invoice"); "Open" and "Mark
+ * contacted" stay for a manager (see `row-actions.tsx`).
  */
 'use client';
 
-import type { ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import {
-  flexRender,
-  getCoreRowModel,
-  useReactTable,
-  type ColumnDef,
-  type RowSelectionState,
-} from '@tanstack/react-table';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { Checkbox } from '@/components/ui/checkbox';
-import { ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon } from 'lucide-react';
+  AuraProvider,
+  DataTable,
+  type DataTableColumn,
+  type DataTableSort,
+} from '@jirawatpyk/aura-react';
 import { UrgencyPill } from '@/components/renewals/urgency-pill';
 import { BillIssuedBadge } from '@/components/renewals/bill-issued-badge';
 import { isPastDeadlineUrgency } from '@/components/renewals/urgency';
@@ -83,10 +41,9 @@ import {
 import { RelativeTime } from '@/components/shell/relative-time';
 import { OutreachDialog } from './outreach-dialog';
 import { MarkPaidOfflineDialog } from './mark-paid-offline-dialog';
-import { PipelineCardList } from './pipeline-card-list';
 import {
   RowActions,
-  PipelineEmptyMessage,
+  usePipelineEmptyCopy,
   type OutreachTarget,
   type MarkPaidTarget,
 } from './row-actions';
@@ -97,122 +54,53 @@ import type { CycleStatus, PipelineRow, PipelineSort } from '@/modules/renewals/
 export interface PipelineTableProps {
   readonly rows: ReadonlyArray<PipelineRow>;
   /**
-   * Fix round 3 (manager money-CTA gating) — `true` for `admin`, `false` for
-   * a read-only `manager`. Gates the row's MUTATION affordances ("Send
-   * reminder" button + "Mark paid" menu item — both 403 for manager at the
-   * route). Required (not optional): every caller must state its actor's
-   * role explicitly rather than silently defaulting to admin behaviour. See
-   * the module docstring for why "Mark contacted" is NOT gated by this prop.
+   * `true` for `admin`, `false` for a read-only `manager`. Gates the row's
+   * MUTATION affordances (both 403 for a manager at the route). Required:
+   * every caller states its actor's role rather than defaulting to admin.
    */
   readonly canMutate: boolean;
   /** When set, the empty state reads "No members renew in {month}" (month lens). */
   readonly monthLabel?: string;
   /**
    * Discriminates the month-lens empty copy — `overdue`/`later` get
-   * dedicated grammatical strings instead of composing `monthLabel` into
-   * the generic "renew in {month}" frame (deferred fix-wave-2 #4). Absent
-   * (undefined) preserves the pre-existing `monthLabel`-only behaviour.
+   * dedicated strings (deferred fix-wave-2 #4). Absent keeps the
+   * `monthLabel`-only behaviour.
    */
   readonly monthKind?: 'overdue' | 'later' | 'month';
-  /**
-   * Task 8 — the ACTIVE server-side sort. Drives the `aria-sort` state + the
-   * direction chevron on the `tier`/`expires` headers. Present together with
-   * `sortHrefs` (both come from the page); absent ⇒ headers render as plain
-   * text (backwards-compatible with callers that don't wire sorting).
-   */
+  /** The active server-side sort; drives `aria-sort` on the Tier / Expires headers. */
   readonly sort?: PipelineSort;
   /**
-   * Task 8 — precomputed header sort links (built server-side in the page so
-   * they preserve `tier`/`urgency`/`month`, toggle direction, and DELETE the
-   * pagination `cursor` on a sort change). Keyed by the sortable column id.
+   * Precomputed header sort hrefs (built in the page so they keep
+   * `tier`/`urgency`/`month`, toggle the direction and drop the paging
+   * `cursor`). Absent ⇒ no header is sortable.
    */
   readonly sortHrefs?: Record<'expires' | 'tier', string>;
-  /**
-   * Optional sighted result-count node ("Showing N members in T-30"). The
-   * page passes `ResultCountLabel` here so the count renders as the table's
-   * own caption directly above the rows (the row-density toggle this
-   * originally shared a toolbar with has since been removed — there is no
-   * toolbar row anymore). Absent ⇒ no caption is rendered.
-   */
+  /** Sighted result-count caption, rendered directly above the rows. */
   readonly resultCount?: React.ReactNode;
-  /**
-   * Task 10 (US3 scaffolding) — admin-only row selection, the foundation for
-   * Task 11's bulk action bar. Names + semantics copied verbatim from
-   * `MembersTable`'s `enableSelection`/`onSelectionChange`/
-   * `clearSelectionNonce` trio so the pattern reads identically across the
-   * two directories. Unlike `MembersTable`, there is no "select all N
-   * matching" cross-page selection here (that is a members-only feature,
-   * FR-040) — `PipelineWithBulk` is the simpler per-page-only shape.
-   */
+  /** Admin-only row selection (feeds `PipelineWithBulk`'s bulk bar). */
   readonly enableSelection?: boolean;
-  /** Callback when the selected set changes — receives cycleIds (this
-   *  table's `getRowId`), NOT memberIds. */
+  /** Receives the selected cycleIds (the row key), NOT memberIds. */
   readonly onSelectionChange?: (cycleIds: string[]) => void;
-  /**
-   * Bumped by the parent (`PipelineWithBulk`) to command a full reset of
-   * this table's (uncontrolled) TanStack row-selection — the parent can't
-   * reach the checkbox state otherwise, so without this a parent-side Clear
-   * would leave the page rows checked.
-   */
+  /** Bumped by the parent (`PipelineWithBulk`) to clear the selection. */
   readonly clearSelectionNonce?: number;
 }
 
-/** `aria-sort` token for a sortable column under the active sort (WCAG 1.3.1). */
-function ariaSortForColumn(
-  columnId: 'tier' | 'expires',
-  sort: PipelineSort | undefined,
-): 'ascending' | 'descending' | 'none' {
-  if (columnId === 'expires') {
-    return sort === 'expires_at_asc'
-      ? 'ascending'
-      : sort === 'expires_at_desc'
-        ? 'descending'
-        : 'none';
-  }
-  return sort === 'tier_asc'
-    ? 'ascending'
-    : sort === 'tier_desc'
-      ? 'descending'
-      : 'none';
-}
+/** The grid's column key for each sortable column. */
+const SORT_COLUMN = { tier: 'tierBucket', expires: 'expiresAt' } as const;
 
-/**
- * A sortable column header rendered as a plain anchor (`sortHrefs` are built
- * server-side, so sorting works without JS — same discipline as the "Next 50"
- * pagination link). The `aria-sort` state lives on the `<TableHead>`
- * columnheader (never on this link — WCAG 1.3.1 / 4.1.2), so the link only
- * needs an action label + the direction chevron.
- */
-function SortHeaderLink({
-  href,
-  label,
-  state,
-  actionLabel,
-  activeStateLabel,
-}: {
-  readonly href: string;
-  readonly label: ReactNode;
-  readonly state: 'ascending' | 'descending' | 'none';
-  readonly actionLabel: string;
-  readonly activeStateLabel: string | undefined;
-}) {
-  const Icon =
-    state === 'ascending'
-      ? ArrowUpIcon
-      : state === 'descending'
-        ? ArrowDownIcon
-        : ArrowUpDownIcon;
-  return (
-    <a
-      href={href}
-      aria-label={actionLabel}
-      {...(activeStateLabel !== undefined ? { title: activeStateLabel } : {})}
-      className="inline-flex items-center gap-1 whitespace-nowrap hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2"
-    >
-      {label}
-      <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-    </a>
-  );
+function toDataTableSort(sort: PipelineSort | undefined): DataTableSort | null {
+  switch (sort) {
+    case 'expires_at_asc':
+      return { key: SORT_COLUMN.expires, dir: 'asc' };
+    case 'expires_at_desc':
+      return { key: SORT_COLUMN.expires, dir: 'desc' };
+    case 'tier_asc':
+      return { key: SORT_COLUMN.tier, dir: 'asc' };
+    case 'tier_desc':
+      return { key: SORT_COLUMN.tier, dir: 'desc' };
+    default:
+      return null;
+  }
 }
 
 export function PipelineTable({
@@ -228,231 +116,176 @@ export function PipelineTable({
   clearSelectionNonce,
 }: PipelineTableProps) {
   const t = useTranslations('admin.renewals.table');
+  const router = useRouter();
+  const empty = usePipelineEmptyCopy(monthKind, monthLabel);
 
-  // Task 10 — uncontrolled TanStack row-selection, keyed by cycleId (see
-  // `getRowId` on the table config below). Shape copied verbatim from
-  // `members-table.tsx`'s `rowSelection`/`handleRowSelectionChange` pair.
-  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
-  const handleRowSelectionChange = useCallback(
-    (
-      updater: RowSelectionState | ((old: RowSelectionState) => RowSelectionState),
-    ) => {
-      const next = typeof updater === 'function' ? updater(rowSelection) : updater;
-      setRowSelection(next);
-      if (onSelectionChange) {
-        // With getRowId set to cycleId, keys in RowSelectionState ARE
-        // cycleIds directly (not numeric indices).
-        const selectedIds = Object.keys(next).filter((k) => next[k]);
-        onSelectionChange(selectedIds);
-      }
-    },
-    [rowSelection, onSelectionChange],
-  );
-
-  // Item ② — outreach state lifted up from the row-level menu so the
-  // `OutreachDialog` survives the ⋯ menu closing (same lifted-state
-  // pattern as lapsed-tab.tsx + at-risk-widget.tsx). Review fix #5:
-  // `finalFocus` carries a ref to the row's own ⋯ trigger (set by
-  // `RowActions`) so Base UI returns focus there when the dialog closes,
-  // instead of the default focus-restore target (the now-unmounted
-  // "Mark contacted" menu item) dropping focus to `<body>`.
+  // Lifted from the row menu so the dialogs outlive it closing; each target
+  // carries the row's ⋯ trigger as `finalFocus`. The mark-paid dialog falls
+  // back to `#main-content` when a settlement's refresh unmounts the row.
   const [outreachFor, setOutreachFor] = useState<OutreachTarget | null>(null);
-
-  // Task 5 (Wave 2) — same lifted-state pattern as `outreachFor` above, so
-  // the shared `MarkPaidOfflineDialog` (the SAME dialog/route the cycle-
-  // detail page's "Mark paid offline" button opens — Principle IV, no
-  // second settlement path) survives the ⋯ menu closing. `finalFocus` is
-  // set by `RowActions` to its own ⋯ trigger; the dialog falls back to
-  // `#main-content` when a settlement's `router.refresh()` unmounts the row
-  // (see `mark-paid-offline-dialog.tsx`'s docstring).
-  //
-  // I-1 review-fix — `companyName` rides along so the dialog can show
-  // "For {company}" (same value already passed to the ⋯ trigger's
-  // aria-label + to `OutreachDialog`), giving the admin an in-dialog
-  // confirmation of WHICH member this money mutation settles.
   const [markPaidFor, setMarkPaidFor] = useState<MarkPaidTarget | null>(null);
 
-  const columns = useMemo<ColumnDef<PipelineRow>[]>(
+  // ── Selection (admin only), keyed by cycleId ────────────────────────────
+  const [selected, setSelected] = useState<string[]>([]);
+  const commitSelection = useCallback(
+    (next: string[]) => {
+      setSelected(next);
+      onSelectionChange?.(next);
+    },
+    [onSelectionChange],
+  );
+  const handleSelectionChange = useCallback(
+    (keys: Array<string | number>) => commitSelection(keys.map(String)),
+    [commitSelection],
+  );
+  // A parent Clear bumps the nonce; fire on a CHANGE only, never on mount.
+  const prevClearNonceRef = useRef(clearSelectionNonce);
+  useEffect(() => {
+    if (clearSelectionNonce !== prevClearNonceRef.current) {
+      prevClearNonceRef.current = clearSelectionNonce;
+      commitSelection([]);
+    }
+  }, [clearSelectionNonce, commitSelection]);
+
+  // ── Sort: the URL is the source of truth ────────────────────────────────
+  // AURA cycles asc → desc → unsorted; the URL contract never unsorts, so
+  // only WHICH header was clicked matters (a null means the active one).
+  const tableSort = toDataTableSort(sort);
+  const activeSortKey = tableSort?.key;
+  const handleSortChange = useCallback(
+    (next: DataTableSort | null) => {
+      if (!sortHrefs) return;
+      const key = next?.key ?? activeSortKey;
+      if (key === SORT_COLUMN.tier) router.push(sortHrefs.tier);
+      else if (key === SORT_COLUMN.expires) router.push(sortHrefs.expires);
+    },
+    [sortHrefs, activeSortKey, router],
+  );
+  const sortable = sortHrefs !== undefined;
+
+  const columns = useMemo<DataTableColumn<PipelineRow>[]>(
     () => [
-      // Task 10 (US3 scaffolding) — admin-only selection column. Header +
-      // row checkbox use `@/components/ui/checkbox` with an `aria-label`
-      // from `admin.renewals.table.selectRow`/`selectAll` (mirrors
-      // `members-table.tsx`'s selection column). Review fix I-1:
-      // `min-h-[24px] min-w-[24px]` (matches `members-table.tsx`'s own
-      // selection checkbox) is a 24px VISIBLE box — meeting the WCAG 2.5.8
-      // AA target-size floor, NOT the row's separate 44px ⋯ trigger. The
-      // Checkbox primitive's own `::after -inset-x-3/-inset-y-2` hit-area
-      // (`checkbox.tsx`) extends the tappable region to ~48×40px past the
-      // visible box — well past the 24px floor, though short of a full
-      // 44×44px (WCAG 2.5.5 is AAA, not this project's bar). A 44px
-      // VISIBLE box was redundant here and, on this dense table, would
-      // have let the hit-area spill further into the adjacent row.
-      ...(enableSelection
-        ? [
-            {
-              id: 'select',
-              header: ({ table }) => (
-                <Checkbox
-                  checked={table.getIsAllPageRowsSelected()}
-                  indeterminate={
-                    table.getIsSomePageRowsSelected() &&
-                    !table.getIsAllPageRowsSelected()
-                  }
-                  onCheckedChange={(checked: boolean) =>
-                    table.toggleAllPageRowsSelected(!!checked)
-                  }
-                  aria-label={t('selectAll')}
-                  className="min-h-[24px] min-w-[24px]"
-                />
-              ),
-              cell: ({ row }) => (
-                <Checkbox
-                  checked={row.getIsSelected()}
-                  onCheckedChange={(checked: boolean) =>
-                    row.toggleSelected(!!checked)
-                  }
-                  // Review fix M-3: an empty `companyName` would otherwise
-                  // interpolate to "Select " (a dangling trailing space,
-                  // no context for a screen-reader user). Fall back to a
-                  // generic localized label in that case.
-                  aria-label={
-                    row.original.companyName
-                      ? t('selectRow', { company: row.original.companyName })
-                      : t('selectRowGeneric')
-                  }
-                  className="min-h-[24px] min-w-[24px]"
-                />
-              ),
-            } satisfies ColumnDef<PipelineRow>,
-          ]
-        : []),
       {
-        id: 'tier',
-        header: t('columns.tier'),
-        cell: ({ row }) => <CycleTierCell tier={row.original.tierBucket} />,
+        key: SORT_COLUMN.tier,
+        label: t('columns.tier'),
+        width: 104,
+        sortable,
+        render: (row) => <CycleTierCell tier={row.tierBucket} />,
       },
       {
-        id: 'company',
-        header: t('columns.company'),
-        cell: ({ row }) => (
+        key: 'companyName',
+        label: t('columns.company'),
+        minWidth: 150,
+        card: 'title',
+        render: (row) => (
           <CycleCompanyCell
-            memberId={row.original.memberId}
-            companyName={row.original.companyName}
-            emailUnverified={row.original.emailUnverified}
+            memberId={row.memberId}
+            companyName={row.companyName}
+            emailUnverified={row.emailUnverified}
           />
         ),
       },
       {
-        id: 'expires',
-        header: t('columns.expires'),
-        cell: ({ row }) => <CycleExpiresCell expiresAt={row.original.expiresAt} />,
+        key: SORT_COLUMN.expires,
+        label: t('columns.expires'),
+        width: 112,
+        sortable,
+        render: (row) => <CycleExpiresCell expiresAt={row.expiresAt} />,
       },
       {
-        id: 'urgency',
-        header: t('columns.urgency'),
-        // 0309 — an early renewal bill keeps the countdown pill (access stays
-        // full until expiry); the badge says the bill is already out.
-        cell: ({ row }) => (
+        // 0309 — an early renewal bill keeps the countdown pill (access
+        // stays full until expiry); the badge says the bill is already out.
+        key: 'urgency',
+        label: t('columns.urgency'),
+        width: 136,
+        card: 'pill',
+        render: (row) => (
           <span className="inline-flex flex-wrap items-center gap-1">
-            <UrgencyPill urgency={row.original.urgency} />
+            <UrgencyPill urgency={row.urgency} />
             <BillIssuedBadge
-              status={row.original.status}
-              urgency={row.original.urgency}
-              linkedInvoiceId={row.original.linkedInvoiceId}
+              status={row.status}
+              urgency={row.urgency}
+              linkedInvoiceId={row.linkedInvoiceId}
             />
           </span>
         ),
       },
       {
-        id: 'last_reminder',
-        header: t('columns.lastReminder'),
-        cell: ({ row }) => {
-          if (!row.original.lastReminderAt) {
-            return <span className="text-muted-foreground">—</span>;
-          }
-          // Root-cause hydration fix: `<RelativeTime>` renders an
-          // absolute date on the server (stable across SSR + first
-          // paint), then flips to "X seconds ago" relative-time after
-          // `useEffect` runs client-side. Replaces an earlier inline
-          // `Date.now()` call inside `useMemo` that produced
-          // different text on SSR vs CSR (the canonical "44 vs 45
-          // seconds ago" hydration mismatch).
-          return (
+        // `<RelativeTime>` renders an absolute date on the server and flips
+        // to relative time after hydration (no SSR/CSR text mismatch).
+        key: 'lastReminderAt',
+        label: t('columns.lastReminder'),
+        width: 120,
+        hideBelow: 1080,
+        render: (row) =>
+          row.lastReminderAt ? (
             <RelativeTime
-              iso={row.original.lastReminderAt}
-              className="text-sm text-muted-foreground tabular-nums"
+              iso={row.lastReminderAt}
+              className="tabular-nums text-[var(--aura-fg-secondary)]"
             />
-          );
-        },
+          ) : (
+            <span className="text-[var(--aura-fg-secondary)]">—</span>
+          ),
       },
       {
-        id: 'status',
-        header: t('columns.status'),
-        cell: ({ row }) => (
-          <span className="text-sm text-muted-foreground">
-            {/* Template-literal type auto-tracks CycleStatus enum so a
-                future status addition becomes a compile error rather
-                than a missed translation. */}
-            {t(`status.${row.original.status}` as `status.${CycleStatus}`)}
+        key: 'status',
+        label: t('columns.status'),
+        width: 104,
+        render: (row) => (
+          <span className="text-[var(--aura-fg-secondary)]">
+            {/* The template-literal type tracks CycleStatus, so a new status
+                is a compile error rather than a missed translation. */}
+            {t(`status.${row.status}` as `status.${CycleStatus}`)}
           </span>
         ),
       },
       {
-        id: 'invoice',
-        header: t('columns.invoice'),
-        cell: ({ row }) =>
-          row.original.linkedInvoiceId ? (
+        key: 'linkedInvoiceId',
+        label: t('columns.invoice'),
+        width: 96,
+        hideBelow: 980,
+        card: 'hide',
+        render: (row) =>
+          row.linkedInvoiceId ? (
             <Link
-              href={`/admin/invoices/${row.original.linkedInvoiceId}`}
-              className="text-sm text-primary hover:underline"
+              href={`/admin/invoices/${row.linkedInvoiceId}`}
+              className="text-[var(--aura-fg-accent)] hover:underline"
             >
               {t('viewInvoice')}
             </Link>
-          ) : row.original.anchored && !isPastDeadlineUrgency(row.original.urgency) ? (
-            // plan-change-ux seam 1(b) — the cycle's period is already
-            // COVERED (rolling-anchor) but no RENEWAL invoice is linked yet
-            // (the paying invoice is the prior/anchor one, which for the R4
-            // backfill cohort may not be in the system at all). Show
-            // "Covered" — coverage language that describes the period being
-            // covered WITHOUT asserting a current payment status or an
-            // invoice — so the cell is never misread as "payment owed" when
-            // paired with a pre-expiry countdown pill. `title` gives sighted
-            // mouse users the reason; the `sr-only` span exposes the SAME
-            // reason to keyboard/touch/screen-reader users (a `title` on a
-            // non-interactive span is not reliably announced). Text label
-            // (not colour alone) carries the meaning — WCAG 1.4.1; the
-            // `--success` design token themes light/dark (ux-standards § 1.2).
-            //
-            // covered-gate fix (059-membership-suspension) — "Covered" is
-            // gated to PRE-EXPIRY (countdown-urgency) anchored cycles only,
-            // via the shared `isPastDeadlineUrgency` predicate
-            // (`@/components/renewals/urgency`). An anchored cycle whose
-            // urgency has already crossed into `suspended`/`terminated`
-            // falls through to the final "—" branch below instead — there a
-            // renewal IS effectively owed, so "—" (read as action-needed) is
-            // the honest signal; the "don't misread — as payment owed"
-            // rationale above only holds pre-expiry.
+          ) : row.anchored && !isPastDeadlineUrgency(row.urgency) ? (
+            // plan-change-ux seam 1(b) — the period is already COVERED
+            // (rolling anchor) but no RENEWAL invoice is linked yet: coverage
+            // language that asserts no payment status, so the cell is never
+            // read as "payment owed" beside a countdown pill. `title` for
+            // mouse users, the `sr-only` span for everyone else; text, not
+            // colour alone, carries the meaning (WCAG 1.4.1). Gated to
+            // PRE-EXPIRY urgency (059 covered-gate fix): once a cycle is
+            // suspended/terminated a renewal is owed, so it falls to "—".
             <span
-              className="text-sm font-medium text-success"
+              className="font-medium text-[var(--aura-fg-success)]"
               title={t('invoiceCoveredTitle')}
             >
               {t('invoiceCoveredLabel')}
               <span className="sr-only"> — {t('invoiceCoveredTitle')}</span>
             </span>
           ) : (
-            <span className="text-muted-foreground">—</span>
+            <span className="text-[var(--aura-fg-secondary)]">—</span>
           ),
       },
       {
-        id: 'actions',
-        header: () => <span className="sr-only">{t('columns.actions')}</span>,
-        cell: ({ row }) => (
+        // An empty label: AURA names the header "Actions" for screen readers.
+        key: 'actions',
+        label: '',
+        width: 176,
+        actions: true,
+        render: (row) => (
           <RowActions
-            cycleId={row.original.cycleId}
-            memberId={row.original.memberId}
-            companyName={row.original.companyName}
-            status={row.original.status}
-            linkedInvoiceId={row.original.linkedInvoiceId}
+            cycleId={row.cycleId}
+            memberId={row.memberId}
+            companyName={row.companyName}
+            status={row.status}
+            linkedInvoiceId={row.linkedInvoiceId}
             canMutate={canMutate}
             onRecordOutreach={setOutreachFor}
             onMarkPaid={setMarkPaidFor}
@@ -460,176 +293,43 @@ export function PipelineTable({
         ),
       },
     ],
-    [t, canMutate, enableSelection],
+    [t, canMutate, sortable],
   );
 
-  // Round 5 S-05 — memoise the data array reference so TanStack Table
-  // does NOT rebuild its internal row model on every parent re-render.
-  // The cast to mutable PipelineRow[] is safe (TanStack does not mutate)
-  // but the new array reference per render would otherwise force a
-  // ~1-2ms row-model rebuild at the 200-row cap.
-  const data = useMemo(() => rows as PipelineRow[], [rows]);
-
-  // React Compiler's `react-hooks/incompatible-library` flags
-  // `useReactTable()` because TanStack Table's API returns helper
-  // functions that the compiler cannot safely memoize. The warning is
-  // a known, documented compiler skip for this exact API; we are
-  // already using `useMemo` upstream on `data` to keep the row-model
-  // stable, which is the actual perf-critical invariant. Suppressing
-  // here so a clean lint run flags only real regressions.
-  // eslint-disable-next-line react-hooks/incompatible-library
-  const table = useReactTable({
-    data,
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-    enableRowSelection: enableSelection,
-    onRowSelectionChange: handleRowSelectionChange,
-    state: {
-      rowSelection,
-    },
-    // Task 10 — select by cycleId (not memberId): the bulk action Task 11
-    // builds on top of this operates on renewal CYCLES, and a member can
-    // have more than one cycle across the table's lifetime.
-    getRowId: (row) => row.cycleId,
-  });
-
-  // Full row-selection reset commanded by the parent (`PipelineWithBulk`)
-  // via `clearSelectionNonce` — same pattern as `members-table.tsx`. The
-  // table owns `rowSelection` UNCONTROLLED, so the parent can't uncheck the
-  // boxes directly; resetting here also fires `onSelectionChange([])`, so
-  // the parent mirror follows to zero. Guarded on a nonce CHANGE (not
-  // mount) so it fires only on an actual Clear. `tableRef` keeps the
-  // dependency stable across the per-render `useReactTable` rebuild.
-  const tableRef = useRef(table);
-  tableRef.current = table;
-  const prevClearNonceRef = useRef(clearSelectionNonce);
-  useEffect(() => {
-    if (clearSelectionNonce !== prevClearNonceRef.current) {
-      prevClearNonceRef.current = clearSelectionNonce;
-      tableRef.current.resetRowSelection();
-    }
-  }, [clearSelectionNonce]);
+  const tableStrings = useMemo(() => ({ selectAllRows: t('selectAll') }), [t]);
 
   return (
-    // Single wrapping block so the page's pipeline `gap-3` treats the table as
-    // ONE unit; the inner `gap-2` gives the result-count caption breathing room
-    // above the rows. The portaled dialogs at the end contribute no layout.
-    <div className="flex flex-col gap-2">
-      {/* Sighted result-count caption (passed by the page as `resultCount`),
-          rendered directly above the rows it describes. */}
+    // One block, so the page's pipeline gap treats the table as a unit; the
+    // result-count caption sits directly above the rows it describes.
+    <div className="flex flex-col gap-[var(--aura-space-2)]">
       {resultCount}
-      {/* Task 12 — dual-render. `overflow-x-auto` already lives on the
-          shared `<Table>` primitive itself (`table.tsx`'s wrapping
-          `role="region"` div), so this wrapper only needs the breakpoint
-          class. `PipelineCardList` below consumes the SAME `table`
-          instance (shared row-selection + dialog callbacks — see the
-          module docstring). */}
-      <div className="hidden md:block">
-        <Table>
-          <TableHeader>
-            {table.getHeaderGroups().map((hg) => (
-              <TableRow key={hg.id}>
-                {hg.headers.map((h) => {
-                  const colId = h.column.id;
-                  const sortColId =
-                    colId === 'tier' || colId === 'expires' ? colId : null;
-                  const sortable = sortHrefs !== undefined && sortColId !== null;
-                  const ariaSort =
-                    sortable && sortColId !== null
-                      ? ariaSortForColumn(sortColId, sort)
-                      : undefined;
-                  return (
-                    <TableHead
-                      key={h.id}
-                      {...(ariaSort !== undefined ? { 'aria-sort': ariaSort } : {})}
-                    >
-                      {h.isPlaceholder ? null : sortable &&
-                        sortColId !== null &&
-                        sortHrefs ? (
-                        <SortHeaderLink
-                          href={sortHrefs[sortColId]}
-                          label={
-                            sortColId === 'tier'
-                              ? t('columns.tier')
-                              : t('columns.expires')
-                          }
-                          state={ariaSort ?? 'none'}
-                          actionLabel={t('sort.sortBy', {
-                            column:
-                              sortColId === 'tier'
-                                ? t('columns.tier')
-                                : t('columns.expires'),
-                          })}
-                          activeStateLabel={
-                            ariaSort === 'ascending'
-                              ? t('sort.ascending')
-                              : ariaSort === 'descending'
-                                ? t('sort.descending')
-                                : undefined
-                          }
-                        />
-                      ) : (
-                        flexRender(h.column.columnDef.header, h.getContext())
-                      )}
-                    </TableHead>
-                  );
-                })}
-              </TableRow>
-            ))}
-          </TableHeader>
-          <TableBody>
-            {table.getRowModel().rows.length === 0 ? (
-              <TableRow>
-                {/*
-                 * J8-M30: extended the bare "No members in this bucket"
-                 * placeholder with an actionable hint pointing admins at
-                 * the urgency-tab switcher. Keeps the table-cell skin
-                 * (vs upgrading to <EmptyState> — that would break the
-                 * single-cell-row table pattern).
-                 */}
-                <TableCell
-                  colSpan={columns.length}
-                  className="text-center text-muted-foreground py-8"
-                >
-                  <PipelineEmptyMessage
-                    {...(monthKind !== undefined ? { monthKind } : {})}
-                    {...(monthLabel !== undefined ? { monthLabel } : {})}
-                  />
-                </TableCell>
-              </TableRow>
-            ) : (
-              table.getRowModel().rows.map((row) => (
-                // Review fix M-1: `data-state="selected"` lets the shared
-                // `TableRow` primitive's own `data-[state=selected]:bg-muted`
-                // style apply — mirrors `members-table.tsx:1115`. Safe when
-                // selection is disabled: `row.getIsSelected()` is always
-                // `false` (TanStack's `enableRowSelection` is off), so this
-                // never sets `data-state` for a manager's read-only table.
-                <TableRow
-                  key={row.id}
-                  data-state={row.getIsSelected() ? 'selected' : undefined}
-                >
-                  {row.getVisibleCells().map((c) => (
-                    <TableCell key={c.id}>
-                      {flexRender(c.column.columnDef.cell, c.getContext())}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
-      <PipelineCardList
-        table={table}
-        canMutate={canMutate}
-        enableSelection={enableSelection}
-        onRecordOutreach={setOutreachFor}
-        onMarkPaid={setMarkPaidFor}
-        {...(monthKind !== undefined ? { monthKind } : {})}
-        {...(monthLabel !== undefined ? { monthLabel } : {})}
-        className="md:hidden"
-      />
+      <AuraProvider strings={tableStrings}>
+        <DataTable<PipelineRow>
+          label={t('tableCaption')}
+          rows={rows}
+          columns={columns}
+          rowKey="cycleId"
+          manual
+          sort={tableSort}
+          onSortChange={handleSortChange}
+          rowHeight="auto"
+          stackBelow={640}
+          empty={empty}
+          {...(enableSelection
+            ? {
+                selectable: true,
+                rangeSelect: true,
+                selected,
+                onSelectionChange: handleSelectionChange,
+                // An empty company would read "Select " (M-3).
+                rowSelectLabel: (row: PipelineRow) =>
+                  row.companyName
+                    ? t('selectRow', { company: row.companyName })
+                    : t('selectRowGeneric'),
+              }
+            : {})}
+        />
+      </AuraProvider>
       {outreachFor ? (
         <OutreachDialog
           open

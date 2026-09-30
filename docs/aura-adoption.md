@@ -96,10 +96,11 @@ The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requ
 | 115 | 5.20.0: the static `Table` takes the page's density | The plans table drops `density="compact"`; every static `Table` inside the compact staff frame is now compact too |
 | 116 | 5.20.0: `ActionBar` `start` slot | The wizard's Cancel moves into `start`; `plan-form-actions--split` and `me-auto` go (`--start-wide` keeps the slot out of the pinned phone bar). 5.20 also gives the bar `width: 100%`, so the phone form bars set `width: auto` to reach the screen edges |
 
-No item is open (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.test.ts` reads this table; a new gap goes here as `| #N | … |`):
+Open items (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.test.ts` reads this table; a new gap goes here as `| #N | … |`):
 
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
+| #118 | `DataTable` stacked card: no slot for a full-width action row at the end of a card (the actions cell sits at the top right) | US7a renewal pipeline: a `globals.css` rule moves the actions cell of a row holding `[data-pipeline-row-actions]` to a full-width last row of the card (`Admin-renewals-mobile`) |
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 

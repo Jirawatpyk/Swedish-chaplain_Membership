@@ -4142,6 +4142,7 @@
           "invoice": "Invoice",
           "actions": "Actions"
         },
+        "tableCaption": "Renewal pipeline",
         "selectAll": "Select all rows on this page",
         "selectRow": "Select {company}",
         "selectRowGeneric": "Select this member",
