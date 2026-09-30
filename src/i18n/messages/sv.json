@@ -813,7 +813,10 @@
         "title": "Inga paket för detta år",
         "description": "Skapa ett nytt från grunden, eller klona föregående års katalog.",
         "newCta": "Nytt paket",
-        "cloneCta": "Klona {sourceYear} → {targetYear}"
+        "cloneCta": "Klona {sourceYear} → {targetYear}",
+        "filteredTitle": "Inga paket matchar filtren",
+        "filteredDescription": "Rensa filtren för att se alla paket för {year}.",
+        "clearFilters": "Rensa filter"
       },
       "columns": {
         "name": "Namn",

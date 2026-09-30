@@ -80,7 +80,7 @@ export function PriorYearLockBanner({
       role="note"
       title={t('banner', { year: shownYear })}
       action={
-        <Link href={cta.href} className={buttonClass({ variant: 'secondary', size: 'sm' })}>
+        <Link href={cta.href} className={buttonClass({ variant: 'secondary' })}>
           <ArrowRightIcon aria-hidden="true" className="size-4" />
           {cta.label}
         </Link>

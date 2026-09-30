@@ -28,9 +28,10 @@ import { useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
-import { CopyIcon, PlusIcon } from 'lucide-react';
+import { CopyIcon, PlusIcon, SearchXIcon } from 'lucide-react';
 import {
   Badge,
+  Button,
   DropdownMenu,
   IconButton,
   Select,
@@ -159,6 +160,23 @@ export function PlansTable({
     });
   }
 
+  // Filters beyond the year that the shown rows were loaded with: when they
+  // hide every plan, the empty state says so and offers to clear them, not a
+  // clone the server would refuse for a populated year (UX review, US6).
+  const filtered =
+    initialFilter.category !== null ||
+    Boolean(initialFilter.q) ||
+    initialFilter.activeOnly ||
+    initialFilter.showDeleted;
+
+  function clearFilters() {
+    setCategory(null);
+    setQ('');
+    setActiveOnly(false);
+    setShowDeleted(false);
+    updateFilter({ category: null, q: null, activeOnly: null, showDeleted: null });
+  }
+
   function rowActions(plan: PlanListItem): MenuItem[] {
     if (plan.deleted_at !== null) {
       return [{ label: tActions('undelete'), onSelect: () => openDialog('undelete', plan) }];
@@ -271,7 +289,23 @@ export function PlansTable({
           </Tr>
         </THead>
         <TBody>
-          {sorted.length === 0 ? (
+          {sorted.length === 0 && filtered ? (
+            <Tr>
+              <Td colSpan={canWritePlans ? 7 : 6} className="py-12">
+                <EmptyState
+                  icon={SearchXIcon}
+                  bordered={false}
+                  title={t('empty.filteredTitle')}
+                  description={t('empty.filteredDescription', { year: formatCalendarYear(year, locale) })}
+                  action={
+                    <Button variant="secondary" onClick={clearFilters}>
+                      {t('empty.clearFilters')}
+                    </Button>
+                  }
+                />
+              </Td>
+            </Tr>
+          ) : sorted.length === 0 ? (
             <Tr>
               <Td colSpan={canWritePlans ? 7 : 6} className="py-12">
                 <EmptyState
@@ -309,7 +343,7 @@ export function PlansTable({
                   data-plan-year={plan.plan_year}
                 >
                   <Td card="title">
-                    <Link href={`/admin/plans/${plan.plan_year}/${plan.plan_id}`} className="text-[var(--aura-fg-accent)] underline-offset-4 hover:underline">
+                    <Link href={`/admin/plans/${plan.plan_year}/${plan.plan_id}`} className="text-[var(--aura-fg-accent)] underline-offset-4 hover:underline max-sm:inline-flex max-sm:min-h-11 max-sm:items-center">
                       <LocaleTextDisplay
                         value={plan.plan_name}
                         showMissingBadge={canWritePlans}

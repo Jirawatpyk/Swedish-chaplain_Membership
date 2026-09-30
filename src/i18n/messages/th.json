@@ -813,7 +813,10 @@
         "title": "ยังไม่มีแพ็กเกจสำหรับปีนี้",
         "description": "สร้างใหม่ตั้งแต่ต้น หรือคัดลอกจากแคตตาล็อกของปีก่อน",
         "newCta": "สร้างแพ็กเกจ",
-        "cloneCta": "คัดลอก {sourceYear} → {targetYear}"
+        "cloneCta": "คัดลอก {sourceYear} → {targetYear}",
+        "filteredTitle": "ไม่มีแพ็กเกจที่ตรงกับตัวกรอง",
+        "filteredDescription": "ล้างตัวกรองเพื่อดูแพ็กเกจทั้งหมดของปี {year}",
+        "clearFilters": "ล้างตัวกรอง"
       },
       "columns": {
         "name": "ชื่อแพ็กเกจ",

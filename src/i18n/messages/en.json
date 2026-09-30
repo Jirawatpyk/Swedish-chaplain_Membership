@@ -813,7 +813,10 @@
         "title": "No plans for this year",
         "description": "Create one from scratch, or clone the previous year’s catalogue.",
         "newCta": "New plan",
-        "cloneCta": "Clone {sourceYear} → {targetYear}"
+        "cloneCta": "Clone {sourceYear} → {targetYear}",
+        "filteredTitle": "No plans match these filters",
+        "filteredDescription": "Clear the filters to see every plan for {year}.",
+        "clearFilters": "Clear filters"
       },
       "columns": {
         "name": "Name",
