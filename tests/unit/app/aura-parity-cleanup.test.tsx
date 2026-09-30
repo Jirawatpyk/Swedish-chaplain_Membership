@@ -297,8 +297,16 @@ describe('US6 plans (parity-page comments)', () => {
     );
   });
 
-  it('#116: the wizard\'s start-edge Cancel names its stand-in', () => {
-    expect(src('src/components/plans/plan-form-wizard.tsx')).toContain('Stand-in until AURA #116');
-    expect(src('src/app/globals.css')).toContain('Stand-in until AURA #116');
+  it('#113–#116 (AURA 5.19 / 5.20): no plans stand-in is left', () => {
+    for (const path of [
+      'src/components/plans/plan-form-wizard.tsx',
+      'src/components/plans/benefit-matrix-editor.tsx',
+      'src/components/plans/plan-locked-note.tsx',
+      'src/components/plans/plans-table.tsx',
+      'src/app/globals.css',
+    ]) {
+      expect(src(path)).not.toMatch(/Stand-in until AURA #11[3-6]/);
+    }
+    expect(src('src/app/globals.css')).not.toContain('plan-form-actions--split');
   });
 });

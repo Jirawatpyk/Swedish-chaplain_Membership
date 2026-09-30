@@ -17,6 +17,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
+import { AuraProvider } from '@jirawatpyk/aura-react';
 import en from '@/i18n/messages/en.json';
 import { PlansTable } from '@/components/plans/plans-table';
 import type { Role } from '@/modules/auth/domain/role';
@@ -170,11 +171,20 @@ describe('PlansTable on AURA (board Admin-plans)', () => {
     ]);
   });
 
-  // Parity (US6): the staff pages are compact, but AURA's static Table does
-  // not take the provider's density (handoff #115), so it is set here.
-  it('is a compact AURA table, as the staff board draws its rows', () => {
-    const { container } = renderRows();
-    expect(container.querySelector('.aura-tbl-wrap')).toHaveAttribute('data-density', 'compact');
+  // Parity (US6): the staff pages are compact; since AURA 5.20 (#115) the
+  // static Table takes the page's density, so the table sets none itself.
+  it('takes the page\'s density, compact on the staff pages', () => {
+    const { container, unmount } = renderRows();
+    expect(container.querySelector('.aura-tbl-wrap')).not.toHaveAttribute('data-density', 'compact');
+    unmount();
+    const staff = render(
+      <AuraProvider density="compact">
+        <NextIntlClientProvider locale="en" messages={en}>
+          <PlansTable plans={plans} currencyCode="THB" year={2026} currentUserRole="admin" initialFilter={{ category: null, q: null, activeOnly: false, showDeleted: false }} />
+        </NextIntlClientProvider>
+      </AuraProvider>,
+    );
+    expect(staff.container.querySelector('.aura-tbl-wrap')).toHaveAttribute('data-density', 'compact');
   });
 
   it('ends with the count and the VAT note under the table', () => {

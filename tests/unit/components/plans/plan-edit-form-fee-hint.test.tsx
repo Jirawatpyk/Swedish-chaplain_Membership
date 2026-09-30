@@ -116,10 +116,14 @@ describe('PlanEditForm on AURA', () => {
     expect(fee).toHaveAttribute('readonly');
     expect(fee).toHaveAccessibleDescription(new RegExp(locked));
     const memberType = screen.getByRole('combobox', { name: L.memberTypeScope });
-    expect(memberType).toBeDisabled();
+    // AURA 5.19 (#114): a locked select is read-only, so it stays in the tab order.
+    expect(memberType).not.toBeDisabled();
+    expect(memberType).toHaveAttribute('aria-readonly', 'true');
     expect(memberType).toHaveAccessibleDescription(locked);
     expect(screen.getByRole('spinbutton', { name: L.sortOrder })).not.toHaveAttribute('readonly');
     expect(screen.getByRole('textbox', { name: /^Plan name \(English\)/ })).not.toHaveAttribute('readonly');
-    expect(screen.getByRole('switch', { name: en.admin.plans.create.matrix.m2mBenefitsAccess })).toBeDisabled();
+    const m2m = screen.getByRole('switch', { name: en.admin.plans.create.matrix.m2mBenefitsAccess });
+    expect(m2m).not.toBeDisabled();
+    expect(m2m).toHaveAttribute('aria-readonly', 'true');
   });
 });

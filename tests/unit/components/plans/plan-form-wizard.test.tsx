@@ -147,16 +147,16 @@ describe('PlanFormWizard per-field errors', () => {
   });
 
   // Board `Admin-plan-new`: from 640px Cancel sits at the bar's start edge,
-  // Back and Next at its end (the split modifier lets the buttons' row fill
-  // the bar, so Cancel's `me-auto` takes the space between).
-  it('splits the bar: Cancel first at the start edge, then Back and Next', () => {
+  // Back and Next at its end — AURA 5.20's ActionBar `start` slot (#116).
+  it('puts Cancel in the bar\'s start slot, then Back and Next', () => {
     renderWizard(VALID);
     next();
     const bar = screen.getByRole('region', { name: 'Actions' });
-    expect(bar).toHaveClass('plan-form-actions--split');
+    expect(bar).not.toHaveClass('plan-form-actions--split');
     const buttons = within(bar).getAllByRole('button');
     expect(buttons.map((b) => b.textContent)).toEqual(['Cancel', 'Back', 'Next']);
-    expect(buttons[0]).toHaveClass('me-auto');
+    expect(buttons[0]?.closest('.aura-actionbar__start')).not.toBeNull();
+    expect(buttons[0]).not.toHaveClass('me-auto');
   });
 
   it('clears a field message once the value is fixed', () => {

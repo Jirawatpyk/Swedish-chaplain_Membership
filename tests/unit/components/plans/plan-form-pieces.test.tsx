@@ -142,28 +142,31 @@ describe('BenefitMatrixEditor on AURA', () => {
       </>,
     );
     expect(screen.getByRole('spinbutton', { name: C.matrix.eblastPerYear })).toHaveAttribute('readonly');
+    // AURA 5.19 (#114): read-only, not disabled — it stays in the tab order.
     const select = screen.getByRole('combobox', { name: C.matrix.websitePageType });
-    expect(select).toBeDisabled();
+    expect(select).not.toBeDisabled();
+    expect(select).toHaveAttribute('aria-readonly', 'true');
     expect(select).toHaveAccessibleDescription(en.admin.plans.priorYearLock.lockedField);
-    expect(screen.getByRole('switch', { name: C.matrix.m2mBenefitsAccess })).toBeDisabled();
   });
 
-  // UX review (US6): an AURA Switch takes no description, so the locked
-  // switches' group is named by its heading and described as locked, and
-  // each locked switch row shows the lock icon (board `Admin-plan-edit-locked`).
-  it('names and describes a locked switch group, with the lock icon on each row', () => {
+  // AURA 5.19 (#113): each locked switch is read-only (in the tab order, its
+  // state heard), described as locked, with AURA's lock at the end of its row
+  // (board `Admin-plan-edit-locked`); no group stand-in around them.
+  it('locks each switch read-only, described as locked, with the lock on its row', () => {
+    const onChange = vi.fn();
     wrap(
       <>
         <PlanLockedNote />
-        <BenefitMatrixEditor value={MATRIX} onChange={vi.fn()} planCategory="corporate" locked />
+        <BenefitMatrixEditor value={MATRIX} onChange={onChange} planCategory="corporate" locked />
       </>,
     );
-    const group = screen.getByRole('group', { name: C.matrix.section.additionalBenefits });
-    expect(group).toHaveAccessibleDescription(en.admin.plans.priorYearLock.lockedField);
-    const switches = within(group).getAllByRole('switch');
-    expect(switches).toHaveLength(3);
-    for (const sw of switches) {
-      expect(sw.closest('[data-locked-row]')?.querySelector('.aura-icon')).not.toBeNull();
-    }
+    expect(screen.queryByRole('group', { name: C.matrix.section.additionalBenefits })).not.toBeInTheDocument();
+    const m2m = screen.getByRole('switch', { name: C.matrix.m2mBenefitsAccess });
+    expect(m2m).not.toBeDisabled();
+    expect(m2m).toHaveAttribute('aria-readonly', 'true');
+    expect(m2m).toHaveAccessibleDescription(en.admin.plans.priorYearLock.lockedField);
+    expect(m2m.closest('.aura-switch-row')?.querySelector('.aura-switch-row__icon')).not.toBeNull();
+    fireEvent.click(m2m);
+    expect(onChange).not.toHaveBeenCalled();
   });
 });
