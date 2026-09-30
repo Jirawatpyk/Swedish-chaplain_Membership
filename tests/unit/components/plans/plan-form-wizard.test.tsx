@@ -68,7 +68,7 @@ function renderWizard(initialValues?: PlanSchemaInput) {
     <NextIntlClientProvider locale="en" messages={en}>
       <PlanFormWizard
         currentYear={2026}
-        currencyPrefix="฿"
+        currencyUnit="THB"
         currencyCode="THB"
         vatRatePercent={7}
         {...(initialValues ? { initialValues } : {})}
@@ -169,7 +169,8 @@ describe('PlanFormWizard per-field errors', () => {
       plan_name: { en: '' },
     });
     next();
-    const name = screen.getByLabelText('Plan name (EN)');
+    // 122 US6 (T604): the field per language is labelled as the boards write it.
+    const name = screen.getByRole('textbox', { name: /^Plan name \(English\)/ });
     expect(name).toHaveAttribute('aria-invalid', 'true');
     expect(name).toHaveAccessibleDescription(E.planName);
   });

@@ -84,7 +84,6 @@ export default async function EditPlanPage({
   const taxPolicy = await deps.taxPolicy();
   const currencyCode = taxPolicy?.currencyCode ?? 'THB';
   const currentYear = deps.clock.currentYear();
-  const currencyPrefix = currencyCode === 'THB' ? '฿' : currencyCode;
 
   // Prior-year plans: what does the current year hold? The lock banner links
   // to the same plan's current-year version when there is one, to the clone
@@ -138,7 +137,7 @@ export default async function EditPlanPage({
             planYear={plan.plan_year}
             initialValues={initialValues}
             currentYear={currentYear}
-            currencyPrefix={currencyPrefix}
+            currencyUnit={currencyCode}
             currentYearStatus={currentYearStatus}
             vatRatePercent={feeHintVatPercent(taxPolicy)}
           />

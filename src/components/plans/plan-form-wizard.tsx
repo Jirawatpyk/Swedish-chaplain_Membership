@@ -101,7 +101,7 @@ function emptyDraft(currentYear: number): PlanSchemaInput {
 
 export interface PlanFormWizardProps {
   readonly currentYear: number;
-  readonly currencyPrefix: string;
+  readonly currencyUnit: string;
   /** Tenant currency (ISO 4217) for the Review step's fee — default THB. */
   readonly currencyCode?: string;
   /** Tenant VAT rate in percent (7 for 7 %) for the fee hint; `null` when unknown. */
@@ -114,7 +114,7 @@ export interface PlanFormWizardProps {
 
 export function PlanFormWizard({
   currentYear,
-  currencyPrefix,
+  currencyUnit,
   currencyCode = 'THB',
   vatRatePercent = null,
   submitting = false,
@@ -431,7 +431,7 @@ export function PlanFormWizard({
             label={tLabels('annualFee')}
             value={draft.annual_fee_minor_units}
             onChange={(n) => update('annual_fee_minor_units', n ?? 0)}
-            prefix={currencyPrefix}
+            unit={currencyUnit}
             required
             helpText={
               vatRatePercent === null
@@ -445,14 +445,14 @@ export function PlanFormWizard({
               label={tLabels('minTurnover')}
               value={draft.min_turnover_minor_units}
               onChange={(n) => update('min_turnover_minor_units', n)}
-              prefix={currencyPrefix}
+              unit={currencyUnit}
               {...optionalError(fieldError('min_turnover_minor_units'))}
             />
             <MoneyInput
               label={tLabels('maxTurnover')}
               value={draft.max_turnover_minor_units}
               onChange={(n) => update('max_turnover_minor_units', n)}
-              prefix={currencyPrefix}
+              unit={currencyUnit}
               {...optionalError(fieldError('max_turnover_minor_units'))}
             />
           </div>

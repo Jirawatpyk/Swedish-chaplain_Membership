@@ -46,7 +46,7 @@ import {
 export interface PlanEditFormProps {
   readonly initialValues: PlanSchemaInput;
   readonly currentYear: number;
-  readonly currencyPrefix: string;
+  readonly currencyUnit: string;
   /** What `currentYear` holds relative to this plan — picks the prior-year
    *  banner's CTA (open that version / clone the year / create the plan). */
   readonly currentYearStatus?: CurrentYearPlanStatus;
@@ -95,7 +95,7 @@ function LockWrapper({
 export function PlanEditForm({
   initialValues,
   currentYear,
-  currencyPrefix,
+  currencyUnit,
   currentYearStatus = 'other_plans',
   vatRatePercent = null,
   submitting = false,
@@ -208,7 +208,7 @@ export function PlanEditForm({
             label={t('annualFee')}
             value={draft.annual_fee_minor_units}
             onChange={(n) => update('annual_fee_minor_units', n ?? 0)}
-            prefix={currencyPrefix}
+            unit={currencyUnit}
             disabled={isLocked('annual_fee_minor_units')}
             required
             helpText={
@@ -224,7 +224,7 @@ export function PlanEditForm({
               label={t('minTurnover')}
               value={draft.min_turnover_minor_units}
               onChange={(n) => update('min_turnover_minor_units', n)}
-              prefix={currencyPrefix}
+              unit={currencyUnit}
               disabled={isLocked('min_turnover_minor_units')}
             />
           </LockWrapper>
@@ -233,7 +233,7 @@ export function PlanEditForm({
               label={t('maxTurnover')}
               value={draft.max_turnover_minor_units}
               onChange={(n) => update('max_turnover_minor_units', n)}
-              prefix={currencyPrefix}
+              unit={currencyUnit}
               disabled={isLocked('max_turnover_minor_units')}
             />
           </LockWrapper>

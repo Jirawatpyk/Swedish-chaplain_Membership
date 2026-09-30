@@ -860,6 +860,7 @@
         "undelete": "Restore"
       },
       "priorYearLock": {
+        "lockedField": "Locked: historical plan",
         "banner": "Historical plan — pricing, eligibility, and benefits are locked for {year}.",
         "explanation": "Fees, eligibility and benefits can't change on a past year's plan. Change them on the {currentYear} version of this plan. Name, description and sort order stay editable here.",
         "explanationNoCurrentVersion": "Fees, eligibility and benefits can't change on a past year's plan, and {currentYear} has no version of this plan yet. Clone the {year} plans into {currentYear} then edit the copy. Name, description and sort order stay editable here.",
@@ -870,6 +871,13 @@
         "fieldTooltip": "Locked on prior-year plans. Change it on the current year's version."
       },
       "create": {
+        "localeTabsLabel": "{field} language",
+        "translationMissing": "{locale} — translation missing",
+        "localeNames": {
+          "en": "English",
+          "th": "Thai",
+          "sv": "Swedish"
+        },
         "title": "New plan",
         "steps": {
           "wizardAriaLabel": "Plan creation wizard steps",

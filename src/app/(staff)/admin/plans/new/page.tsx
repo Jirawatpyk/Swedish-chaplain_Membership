@@ -42,7 +42,6 @@ export default async function NewPlanPage() {
   const taxPolicy = await deps.taxPolicy();
   const currencyCode = taxPolicy?.currencyCode ?? 'THB';
   const currentYear = deps.clock.currentYear();
-  const currencyPrefix = currencyCode === 'THB' ? '฿' : currencyCode;
 
   return (
     <FormContainer>
@@ -51,7 +50,7 @@ export default async function NewPlanPage() {
         <CardContent>
           <NewPlanClient
             currentYear={currentYear}
-            currencyPrefix={currencyPrefix}
+            currencyUnit={currencyCode}
             currencyCode={currencyCode}
             vatRatePercent={feeHintVatPercent(taxPolicy)}
           />

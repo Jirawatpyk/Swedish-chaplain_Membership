@@ -21,7 +21,7 @@ export interface EditPlanClientProps {
   readonly planYear: number;
   readonly initialValues: PlanSchemaInput;
   readonly currentYear: number;
-  readonly currencyPrefix: string;
+  readonly currencyUnit: string;
   readonly currentYearStatus: CurrentYearPlanStatus;
   readonly vatRatePercent: number | null;
 }
@@ -61,7 +61,7 @@ export function EditPlanClient({
   planYear,
   initialValues,
   currentYear,
-  currencyPrefix,
+  currencyUnit,
   currentYearStatus,
   vatRatePercent,
 }: EditPlanClientProps) {
@@ -125,7 +125,7 @@ export function EditPlanClient({
     <PlanEditForm
       initialValues={initialValues}
       currentYear={currentYear}
-      currencyPrefix={currencyPrefix}
+      currencyUnit={currencyUnit}
       currentYearStatus={currentYearStatus}
       vatRatePercent={vatRatePercent}
       submitting={submitting}

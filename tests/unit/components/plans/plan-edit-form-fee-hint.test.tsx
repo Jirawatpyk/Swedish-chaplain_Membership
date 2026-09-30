@@ -47,7 +47,7 @@ function renderForm(vatRatePercent: number | null) {
       <PlanEditForm
         initialValues={PLAN}
         currentYear={2026}
-        currencyPrefix="฿"
+        currencyUnit="THB"
         vatRatePercent={vatRatePercent}
         onSubmit={() => {}}
       />
