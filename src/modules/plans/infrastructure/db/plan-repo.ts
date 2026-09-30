@@ -408,6 +408,11 @@ export const planRepo: PlanRepo = {
   },
 
   // -- undelete (US4) --------------------------------------------------------
+  //
+  // `WHERE deleted_at IS NOT NULL`: undeletePlan reads the plan outside this
+  // tx. If a concurrent undelete already restored it (and an admin may have
+  // re-activated it since), this is a no-op returning undefined — never a
+  // second restore that forces a live plan back to inactive.
   async undelete(tenant, planId, year, updatedBy) {
     return runInTenant(tenant, async (tx) => {
       const updated = await tx
@@ -423,6 +428,7 @@ export const planRepo: PlanRepo = {
           and(
             eq(membershipPlans.planId, planId),
             eq(membershipPlans.planYear, year),
+            sql`${membershipPlans.deletedAt} IS NOT NULL`,
           ),
         )
         .returning();

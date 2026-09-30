@@ -150,7 +150,10 @@ export interface PlanRepo {
 
   /**
    * Clear `deleted_at` and force `is_active = false` (US4 AS4: undelete
-   * returns plans to inactive, never directly to active).
+   * returns plans to inactive, never directly to active). Only matches a
+   * still-deleted row: returns `undefined` when the row is missing or already
+   * live (a concurrent undelete won), so a stale undelete never forces a
+   * re-activated plan back to inactive.
    */
   undelete(
     tenant: TenantContext,
