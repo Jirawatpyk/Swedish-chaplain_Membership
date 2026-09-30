@@ -75,10 +75,10 @@ export function PlanChangeConfirmDialog({
       dismissible={!submitting}
       title={t('title')}
       description={t('description')}
+      // The safe action takes focus (a plan change is neutral, not
+      // destructive — ux-standards § 6.2).
       footer={
         <>
-          {/* The safe action takes focus (a plan change is neutral, not
-              destructive — ux-standards § 6.2). */}
           <Button variant="secondary" data-autofocus onClick={() => onOpenChange(false)} disabled={submitting}>
             {t('cancel')}
           </Button>
