@@ -175,7 +175,7 @@ export async function renderRenewalSuccessView({
             redirect, via PageHeader's `autoFocusTitle` (WCAG 2.4.3). */}
         <div
           data-testid="renewal-hero"
-          className="flex flex-col items-center gap-[var(--aura-space-3)] text-center [&_header]:items-center [&_header]:text-center"
+          className="flex flex-col items-center gap-[var(--aura-space-3)] text-center [&_header]:items-center [&_header]:text-center [&_h1]:mx-auto"
         >
           <span className="grid size-16 place-items-center rounded-full bg-[var(--aura-status-ready-bg)] text-[var(--aura-status-ready-fg)]">
             <CircleCheck className="size-8" aria-hidden />
