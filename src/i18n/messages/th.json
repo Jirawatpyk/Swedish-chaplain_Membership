@@ -4832,14 +4832,14 @@
         "loading": "กำลังโหลดงานติดตาม…",
         "manager_read_only_notice": "คุณกำลังดูคิวนี้ในฐานะผู้จัดการ — เฉพาะผู้ดูแลระบบเท่านั้นที่สามารถทำเครื่องหมายเสร็จ ข้าม หรือเปลี่ยนผู้รับผิดชอบงานได้",
         "view_timeline": "ดูประวัติเหตุการณ์",
-        "view_timeline_for": "ดูประวัติเหตุการณ์ของ {company}",
-        "table_caption": "งานติดตามด่วนของผู้เช่าระบบปัจจุบัน — เรียงลำดับตามสถานะ ผู้รับผิดชอบ และวันครบกำหนด",
+        "table_caption": "งานติดตามด่วน",
         "overdue_banner": "{count, plural, other {มีงานเกินกำหนด # รายการ}}",
         "overdue_banner_cta": "แสดงเฉพาะงานเกินกำหนด",
         "overdue_badge": "เกินกำหนด",
-        "status_tabs_aria": "กรองตามสถานะของงาน",
-        "assignment_filter_aria": "กรองตามผู้รับผิดชอบ",
-        "task_type_filter_aria": "กรองตามประเภทของงาน",
+        "filters_aria": "กรองงาน",
+        "status_filter_aria": "สถานะ",
+        "assignment_filter_aria": "ผู้รับผิดชอบ",
+        "task_type_filter_label": "ประเภทงาน",
         "task_type_filter_all": "ทุกประเภท",
         "pagination": {
           "showingFirst": "แสดง 50 รายการต่อหน้า",
@@ -4922,7 +4922,7 @@
         },
         "actions": {
           "menu_label": "การดำเนินการ",
-          "row_menu_for": "การดำเนินการสำหรับ {company}",
+          "row_menu_for": "ข้าม เปลี่ยนผู้รับผิดชอบ หรือดูประวัติเหตุการณ์ — {type}, {company}",
           "errors": {
             "task_not_open": "ผู้ดูแลคนอื่นปิดงานนี้ไปแล้ว — โปรดรีเฟรชเพื่อดูสถานะล่าสุด",
             "task_not_found": "ไม่พบงานนี้แล้ว — โปรดรีเฟรชรายการ",

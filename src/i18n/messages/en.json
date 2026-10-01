@@ -4832,14 +4832,14 @@
         "loading": "Loading escalation tasks…",
         "manager_read_only_notice": "You're viewing this queue as a manager — only admins can mark tasks done, skip, or reassign them.",
         "view_timeline": "View timeline",
-        "view_timeline_for": "View timeline for {company}",
-        "table_caption": "Manual escalation tasks for the current tenant — sortable by status, assignment, and due date.",
+        "table_caption": "Escalation tasks",
         "overdue_banner": "{count, plural, one {# overdue task} other {# overdue tasks}}",
         "overdue_banner_cta": "Show only overdue tasks",
         "overdue_badge": "Overdue",
-        "status_tabs_aria": "Filter by task status",
-        "assignment_filter_aria": "Filter by assignment",
-        "task_type_filter_aria": "Filter by task type",
+        "filters_aria": "Filter tasks",
+        "status_filter_aria": "Status",
+        "assignment_filter_aria": "Assignment",
+        "task_type_filter_label": "Task type",
         "task_type_filter_all": "All types",
         "pagination": {
           "showingFirst": "Showing 50 per page",
@@ -4922,7 +4922,7 @@
         },
         "actions": {
           "menu_label": "Actions",
-          "row_menu_for": "Actions for {company}",
+          "row_menu_for": "Skip, reassign or view timeline — {type}, {company}",
           "errors": {
             "task_not_open": "Another admin already closed this task — refresh to see the latest state.",
             "task_not_found": "This task no longer exists — refresh the list.",

@@ -36,8 +36,8 @@ vi.mock('@/lib/toast', () => ({
 type FinalFocus = () => HTMLElement | null;
 interface Capture {
   open: boolean;
-  finalFocus?: FinalFocus;
-  onSubmit?: (value: never) => Promise<void>;
+  finalFocus?: FinalFocus | undefined;
+  onSubmit?: ((value: never) => Promise<void>) | undefined;
 }
 const { cap } = vi.hoisted(() => ({
   cap: {
@@ -48,7 +48,7 @@ const { cap } = vi.hoisted(() => ({
 }));
 
 function marker(name: 'done' | 'skip' | 'reassign') {
-  return (props: { open: boolean; finalFocus?: FinalFocus; onSubmit?: (v: never) => Promise<void> }) => {
+  return function DialogMarker(props: { open: boolean; finalFocus?: FinalFocus; onSubmit?: (v: never) => Promise<void> }) {
     // Recorded on every render, the closing one too, so a resolver that
     // evaporates when the dialog closes is caught.
     cap[name].open = props.open;
@@ -107,6 +107,10 @@ function renderQueue(canMutate = true, items = [makeTask({ taskId: 't1' })]) {
 }
 
 const MENU = 'Skip, reassign or view timeline — Phone call, Acme Co';
+/** The row's Done button (the Status filter has a "Done" button too). */
+function rowDone(): HTMLElement {
+  return within(screen.getByRole('grid')).getByRole('button', { name: 'Done' });
+}
 function openMenu(): void {
   fireEvent.click(screen.getByRole('button', { name: MENU }));
 }
@@ -148,7 +152,7 @@ describe('<EscalationTaskQueue> table (AURA DataTable)', () => {
   it('a manager gets no actions column and no row controls', () => {
     renderQueue(false);
     expect(screen.getAllByRole('columnheader')).toHaveLength(7);
-    expect(screen.queryByRole('button', { name: 'Done' })).toBeNull();
+    expect(within(screen.getByRole('grid')).queryByRole('button', { name: 'Done' })).toBeNull();
     expect(screen.queryByRole('button', { name: MENU })).toBeNull();
   });
 
@@ -161,7 +165,8 @@ describe('<EscalationTaskQueue> table (AURA DataTable)', () => {
 
   it('shows the tier badge, the assignee name over the role, and the status pill', () => {
     renderQueue();
-    expect(screen.getByText(enMessages.admin.renewals.tierBadge.premium).closest('.aura-badge')).not.toBeNull();
+    // In its column, and again beside the task type on a phone card.
+    expect(screen.getAllByText(enMessages.admin.renewals.tierBadge.premium)[0]?.closest('.aura-badge')).not.toBeNull();
     expect(screen.getByText('Karin Ek')).toBeInTheDocument();
     expect(screen.getByText(T.assigneeRole.admin)).toBeInTheDocument();
     expect(screen.getByText(T.status.open, { selector: '.aura-pill *, .aura-pill' })).toBeInTheDocument();
@@ -176,7 +181,7 @@ describe('<EscalationTaskQueue> table (AURA DataTable)', () => {
 describe('<EscalationTaskQueue> row actions — Done + ⋯ menu', () => {
   it('Done is the row\'s secondary button', () => {
     renderQueue();
-    expect(screen.getByRole('button', { name: 'Done' })).toHaveClass('aura-btn--secondary');
+    expect(rowDone()).toHaveClass('aura-btn--secondary');
   });
 
   it('the ⋯ menu holds Skip, Reassign and View timeline, none of them standalone', () => {
@@ -197,7 +202,7 @@ describe('<EscalationTaskQueue> row actions — Done + ⋯ menu', () => {
 
   it('Done opens its dialog; a success POSTs the same route and body, and focus lands on #main-content', async () => {
     renderQueue();
-    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    fireEvent.click(rowDone());
     expect(screen.getByTestId('done-dialog')).toBeInTheDocument();
     expect(typeof cap.done.finalFocus).toBe('function');
     await act(async () => {
@@ -215,7 +220,7 @@ describe('<EscalationTaskQueue> row actions — Done + ⋯ menu', () => {
 
   it('a cancelled Done returns focus to the Done button', () => {
     renderQueue();
-    const done = screen.getByRole('button', { name: 'Done' });
+    const done = rowDone();
     fireEvent.click(done);
     expect(cap.done.finalFocus?.()).toBe(done);
   });
@@ -251,7 +256,7 @@ describe('<EscalationTaskQueue> row actions — Done + ⋯ menu', () => {
 
   it('a closed task disables Done and the menu', () => {
     renderQueue(true, [makeTask({ taskId: 't1', status: 'done' })]);
-    expect(screen.getByRole('button', { name: 'Done' })).toBeDisabled();
+    expect(rowDone()).toBeDisabled();
     expect(screen.getByRole('button', { name: MENU })).toBeDisabled();
   });
 });
