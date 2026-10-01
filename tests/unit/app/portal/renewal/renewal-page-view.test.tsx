@@ -118,6 +118,10 @@ describe('<RenewalPageView> (board Portal-renewal, US7c)', () => {
     expect(confirm.className).toMatch(/aura-card/);
     const grid = confirm.parentElement!;
     expect(grid.className).toMatch(/lg:grid-cols-\[minmax\(0,1fr\)_420px\]/);
+    // Below lg the one track must be minmax(0,1fr): an implicit `auto` track
+    // grows to the plan select's nowrap option text and the page scrolls
+    // sideways on a phone (parity shot: +110px at 320).
+    expect(grid.className).toMatch(/(^|\s)grid-cols-1(\s|$)/);
     // The left column holds the plan and benefit cards.
     expect(within(grid).getByRole('region', { name: 'Membership plan' })).toBeInTheDocument();
     expect(within(grid).getByRole('region', { name: 'Benefit summary' })).toBeInTheDocument();
