@@ -144,4 +144,16 @@ describe('POST /api/portal/renewal/[memberId]/confirm — downgrade ack (WP4)', 
       currency: 'THB',
     });
   });
+
+  it('invoice_already_exists → 409 naming the bill and its status, so the portal can say draft / paid / issued', async () => {
+    confirmRenewalMock.mockResolvedValue({
+      ok: false,
+      error: { kind: 'invoice_already_exists', invoiceId: 'inv-live-1', invoiceStatus: 'draft' },
+    });
+    const res = await (await route()).POST(confirmReq({ cycleId: CYCLE_ID }), ctx);
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error.code).toBe('invoice_already_exists');
+    expect(body.error.details).toEqual({ invoice_id: 'inv-live-1', invoice_status: 'draft' });
+  });
 });

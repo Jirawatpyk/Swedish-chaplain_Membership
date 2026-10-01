@@ -319,10 +319,16 @@ describe('<RenewalConfirmFlow> — downgrade gate (WP5)', () => {
 });
 
 describe('<RenewalConfirmFlow> — a bill already issued (409 invoice_already_exists)', () => {
-  const existing = (invoiceId: string | null) => ({
+  const existing = (invoiceId: string | null, invoiceStatus?: string) => ({
     ok: false,
     status: 409,
-    json: async () => ({ error: { code: 'invoice_already_exists', invoice_id: invoiceId } }),
+    json: async () => ({
+      error: {
+        code: 'invoice_already_exists',
+        invoice_id: invoiceId,
+        ...(invoiceStatus ? { invoice_status: invoiceStatus } : {}),
+      },
+    }),
   });
 
   it('says the invoice was already issued and links straight to it, without navigating', async () => {
@@ -334,7 +340,7 @@ describe('<RenewalConfirmFlow> — a bill already issued (409 invoice_already_ex
     expect(note).toHaveAttribute('role', 'alert');
     expect(note.className).toMatch(/aura-alert--info/);
     expect(note).toHaveTextContent('An invoice for this renewal has already been issued');
-    expect(note).toHaveTextContent('Pay it to complete your renewal.');
+    expect(note).toHaveTextContent('Pay the invoice to complete your renewal.');
     expect(within(note).getByRole('link', { name: 'View invoice' })).toHaveAttribute(
       'href',
       '/portal/invoices/inv-0042',
@@ -343,6 +349,31 @@ describe('<RenewalConfirmFlow> — a bill already issued (409 invoice_already_ex
     // Not the generic error, and no automatic redirect (maintainer, 1 Oct).
     expect(screen.queryByTestId('confirm-error')).not.toBeInTheDocument();
     expect(locationAssignMock).not.toHaveBeenCalled();
+  });
+
+  it('a bill still in draft (awaiting staff review) is "being prepared", with no link to a page the portal hides', async () => {
+    fetchMock.mockResolvedValueOnce(existing('inv-draft', 'draft'));
+    renderFlow();
+    fireEvent.click(screen.getByRole('button', { name: /confirm renewal/i }));
+
+    const note = await screen.findByTestId('confirm-existing-invoice');
+    expect(note).toHaveTextContent('Your renewal invoice is being prepared');
+    expect(note).not.toHaveTextContent('already been issued');
+    expect(within(note).queryByRole('link')).not.toBeInTheDocument();
+  });
+
+  it('a paid bill says no further payment is needed, and still links to it', async () => {
+    fetchMock.mockResolvedValueOnce(existing('inv-paid', 'paid'));
+    renderFlow();
+    fireEvent.click(screen.getByRole('button', { name: /confirm renewal/i }));
+
+    const note = await screen.findByTestId('confirm-existing-invoice');
+    expect(note).toHaveTextContent('Your renewal invoice is already paid');
+    expect(note).not.toHaveTextContent('Pay the invoice');
+    expect(within(note).getByRole('link', { name: 'View invoice' })).toHaveAttribute(
+      'href',
+      '/portal/invoices/inv-paid',
+    );
   });
 
   it('links to the invoice list when the server names no invoice', async () => {
