@@ -455,38 +455,38 @@ A UI swap with no money on screen: UX and i18n reviews, no financial review (spe
 
 Boards: `Portal-renewal`, `Portal-renewal-processing`, `Portal-renewal-success`, each with `-mobile`. This is a money screen, so it gets the UX, i18n and financial-integrity reviews (spec Clarifications, Session 2026-10-01 US7c start). The confirm request, the `pay_url` redirect, the error codes, the beacon and every amount stay as they are.
 
-- [ ] T740 [US7] Spec Clarifications "Session 2026-10-01 (maintainer, US7c start)"; these tasks.
-- [ ] T741 [US7] Renewal page frame:
+- [x] T740 [US7] Spec Clarifications "Session 2026-10-01 (maintainer, US7c start)"; these tasks.
+- [x] T741 [US7] Renewal page frame:
   - "Membership plan" as an AURA `Card` with the tier as an accent badge;
   - the first-renewal welcome as an AURA info `Alert`;
   - the pending-review, rejected-refund and not-yet-open states on AURA;
   - the board's two-column layout from `lg`.
   - RED: a renewal page view test.
-- [ ] T742 [US7] Benefit summary: an AURA `Card`, metered rows as AURA `Progress`, unmetered rows as plain rows. RED: `benefit-summary`.
-- [ ] T743 [US7] Confirm card:
+- [x] T742 [US7] Benefit summary: an AURA `Card`, metered rows as AURA `Progress`, unmetered rows as plain rows. RED: `benefit-summary`.
+- [x] T743 [US7] Confirm card:
   - the "Confirm renewal → Pay invoice" stepper;
   - the full-width primary "Confirm renewal" with its busy state;
   - the next-step line.
   - RED: the card cases of `renewal-confirm-flow`.
-- [ ] T744 [US7] Plan select, price panel and errors:
+- [x] T744 [US7] Plan select, price panel and errors:
   - an AURA `Select` with the higher, current and lower option groups and the board's option text;
   - the change warning as an AURA `Alert`;
   - the price panel on tokens;
   - the error as a focused AURA danger `Alert`.
   - RED: `renewal-confirm-flow` rewritten without the old select mock, asserting the no-change, upgrade and downgrade bodies byte-for-byte.
-- [ ] T745 [US7] Downgrade dialog: an AURA alertdialog with the same copy, price panel, quota rows and over-quota description; Cancel takes first focus. RED: `downgrade-confirm-dialog`.
-- [ ] T746 [US7] Success page:
+- [x] T745 [US7] Downgrade dialog: an AURA alertdialog with the same copy, price panel, quota rows and over-quota description; Cancel takes first focus. RED: `downgrade-confirm-dialog`.
+- [x] T746 [US7] Success page:
   - the board's hero for success and processing;
   - "Renewal details" as an AURA `Card` with a "Completed" status pill;
   - the same five download outcomes as AURA link buttons, with the receipt still preparing shown as a busy placeholder;
   - full-width actions on a phone.
   - RED: `renewal-success-receipt-gate` on AURA.
-- [ ] T747 [US7] Loading skeletons for both pages in the new shapes, keeping the status announcement. RED: a skeleton test.
-- [ ] T748 [US7] Ratchet and preview:
+- [x] T747 [US7] Loading skeletons for both pages in the new shapes, keeping the status announcement. RED: a skeleton test.
+- [x] T748 [US7] Ratchet and preview:
   - `MIGRATED_PATHS` gains the renewal route;
   - a US7c block in `ui-import-ratchet`;
   - preview views for the renewal page (plain, downgrade, first renewal, gate) and the success page (processing, complete).
-- [ ] T749 [US7] Exit:
+- [x] T749 [US7] Exit:
   - e2e selectors where roles or names changed;
   - gates;
   - `next build` and bundle re-baseline;

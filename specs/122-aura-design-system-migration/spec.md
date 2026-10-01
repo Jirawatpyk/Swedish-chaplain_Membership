@@ -255,6 +255,10 @@ The maintainer approved the US7c plan. Its boards were read against the code: `P
 - **Known trade-offs, kept:**
   - On a 320px phone, AURA's closed select cuts a long TH or SV option short. The price panel below always shows the price.
   - The current plan's option shows this year's catalogue price. The panel shows the locked-in price. The two can differ; that is unchanged from before US7c.
+- **From the parity pass:**
+  - The page grid has an explicit `minmax(0,1fr)` track below `lg`. The implicit `auto` track grew to the select's option text, and phones scrolled sideways.
+  - The price band rules a line between its three rows, as the board draws it.
+  - The success hero centres a title shorter than its subtitle (TH).
 - **Out of scope, filed separately:** the confirm route's `invoice_already_exists` 409 has no message of its own, so the member sees the generic error. Mapping it is a behaviour change (Session 2026-09-27 rule).
 
 ## User Scenarios & Testing *(mandatory)*
