@@ -51,7 +51,7 @@ describe('<ReminderTimeline> chart', () => {
     const name = chart.getAttribute('aria-label') ?? '';
     expect(name).toContain('Premium');
     expect(name).toMatch(/Email: 90 days before renewal, 60 days before renewal, 30 days before renewal, 7 days before renewal,? and On renewal date/i);
-    expect(name).toMatch(/Task: 60 days before renewal and 14 days after renewal/i);
+    expect(name).toMatch(/Tasks: 60 days before renewal and 14 days after renewal/i);
   });
 
   it('draws filled email markers on the upper lane and task rings on the lower lane', () => {

@@ -4388,9 +4388,9 @@
             "legendEmail": "E-post",
             "legendTask": "Uppgift",
             "emptyDue": "Inga påminnelser ännu — endast förfallodatumet visas.",
-            "chartLabel": "Schema för {tier}. E-post: {email}. Uppgift: {task}.",
+            "chartLabel": "Schema för {tier}. E-post: {email}. Uppgifter: {task}.",
             "none": "inga",
-            "dueShort": "Förfall"
+            "dueShort": "Förfallodag"
           },
           "actions": {
             "save": "Spara schema",
@@ -4424,7 +4424,7 @@
           "lastSaved": "Senast sparad {date}",
           "stepCount": "{count, plural, =0 {Inga steg} one {1 steg} other {{count} steg}}",
           "tierTabsLabel": "Medlemsnivå",
-          "saveBarLabel": "Spara",
+          "saveBarLabel": "Schemaåtgärder",
           "stepItem": "Steg {n}"
         }
       },
