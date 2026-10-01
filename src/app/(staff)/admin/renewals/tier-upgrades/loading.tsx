@@ -34,13 +34,23 @@ export default async function Loading() {
               <SkeletonBlock className="hidden h-6 w-16 sm:block" />
               <SkeletonBlock className="hidden h-6 w-32 sm:block" />
             </div>
+            {/* The phone's "Fees exclude VAT." caption above the cards. */}
+            <SkeletonBlock className="h-3 w-32 sm:hidden" />
             {/* Rows: member · current plan · suggested plan · reason (2
-                lines) · status · Accept and ⋯. */}
-            <div className="flex flex-col" aria-hidden>
+                lines) · status · Accept and ⋯. From 640px a grid with its
+                header row; on a phone, bordered cards as the queue stacks. */}
+            <div className="flex flex-col max-sm:gap-[var(--aura-space-3)]" aria-hidden>
+              <div className="hidden grid-cols-12 gap-[var(--aura-space-4)] py-[var(--aura-space-3)] sm:grid">
+                <SkeletonBlock className="col-span-2 h-4 w-20" />
+                <SkeletonBlock className="col-span-2 h-4 w-24" />
+                <SkeletonBlock className="col-span-2 h-4 w-28" />
+                <SkeletonBlock className="col-span-3 h-4 w-16" />
+                <SkeletonBlock className="col-span-1 h-4 w-14" />
+              </div>
               {Array.from({ length: 6 }, (_, i) => (
                 <div
                   key={i}
-                  className="flex flex-col gap-[var(--aura-space-2)] border-t border-[var(--aura-border-subtle)] py-[var(--aura-space-3)] sm:grid sm:grid-cols-12 sm:items-start sm:gap-[var(--aura-space-4)]"
+                  className="flex flex-col gap-[var(--aura-space-2)] rounded-[var(--aura-radius-lg)] border border-[var(--aura-border-default)] p-[var(--aura-space-4)] sm:grid sm:grid-cols-12 sm:items-start sm:gap-[var(--aura-space-4)] sm:rounded-none sm:border-x-0 sm:border-b-0 sm:px-0 sm:py-[var(--aura-space-3)]"
                 >
                   <SkeletonBlock className="h-5 w-40 sm:col-span-2 sm:w-full" />
                   <SkeletonBlock className="h-9 w-full sm:col-span-2" />

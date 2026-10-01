@@ -42,12 +42,7 @@ export async function renderTierUpgradesView({ sectionTabs, queue, loadFailed = 
             {t('error_state.subtitle')}
           </Alert>
         ) : (
-          <>
-            {/* The phone list drops the per-fee "excl. VAT", so it is said
-                once above it (board Admin-tier-upgrades-mobile). */}
-            <p className="m-0 text-xs text-[var(--aura-fg-secondary)] sm:hidden">{t('fees_exclude_vat')}</p>
-            {queue}
-          </>
+          queue
         )}
       </div>
     </Card>

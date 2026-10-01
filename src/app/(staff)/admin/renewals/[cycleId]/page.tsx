@@ -22,6 +22,7 @@ import {
 import { headers } from 'next/headers';
 import { randomUUID } from 'node:crypto';
 import { ArrowLeft, SearchX } from 'lucide-react';
+import { buttonClass } from '@jirawatpyk/aura-react/server';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { PlanBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
@@ -139,10 +140,7 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
             icon={SearchX}
             title={t('notFoundDescription')}
             action={
-              <Link
-                href="/admin/renewals"
-                className="inline-flex items-center gap-2 text-sm text-primary underline-offset-4 hover:underline"
-              >
+              <Link href="/admin/renewals" className={buttonClass({ variant: 'secondary' })}>
                 <ArrowLeft className="h-4 w-4" aria-hidden="true" />
                 {t('backToPipeline')}
               </Link>
@@ -446,17 +444,26 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
         ? tTasks(`assigneeRole.${task.assignedToRole}`)
         : `${task.assignedToRole} (untranslated)`,
     })),
-    // On a phone Cancel cycle leaves the header for the end of the page
-    // (board Admin-renewal-cycle-mobile).
-    dangerZone:
-      canWrite && isCycleCancellable(c.status) ? (
-        <CycleAdminActions
-          cycleId={c.cycleId}
-          status={c.status}
-          liveLinkedBill={liveLinkedBill}
-          placement="dangerZone"
-        />
-      ) : null,
+    // On a phone the destructive action leaves the header for the end of the
+    // page (board Admin-renewal-cycle-mobile): Cancel cycle, or Reject &
+    // refund on an undecided pending cycle.
+    dangerZone: !canWrite
+      ? null
+      : c.status === 'pending_admin_reactivation' && !rejectRefundSettling ? (
+          <PendingReactivationActions
+            cycleId={c.cycleId}
+            status={c.status}
+            rejectRefundInitiatedAt={c.rejectRefundInitiatedAt}
+            placement="dangerZone"
+          />
+        ) : isCycleCancellable(c.status) ? (
+          <CycleAdminActions
+            cycleId={c.cycleId}
+            status={c.status}
+            liveLinkedBill={liveLinkedBill}
+            placement="dangerZone"
+          />
+        ) : null,
   });
 
   return (

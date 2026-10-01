@@ -374,6 +374,7 @@ export const MIGRATED_PATHS = [
   // schedules are US7b-2.
   'src/app/(staff)/admin/renewals/\\[cycleId\\]/page.tsx',
   'src/app/(staff)/admin/renewals/\\[cycleId\\]/loading.tsx',
+  'src/app/(staff)/admin/renewals/\\[cycleId\\]/error.tsx',
   'src/app/(staff)/admin/renewals/\\[cycleId\\]/_components/**',
   'src/app/(staff)/admin/renewals/tier-upgrades/**',
 ];

@@ -2,7 +2,8 @@
  * F8 admin cycle-detail loading skeleton — the page's shape on AURA (spec
  * 122 US7b-1, T724; board `Admin-renewal-cycle` + `-mobile`): the header
  * with its title, subtitle and actions, then the four cards in the page's
- * grid (Linked invoice first on a phone), so the swap to content holds
+ * grid (Linked invoice first in the DOM, Member & plan on the left from
+ * 1024px, as the page orders them), so the swap to content holds
  * CLS 0. `PageSkeletonShell` is the one live region that announces the load;
  * the placeholders are plain `<div>`s, never landmarks (K27 I-4).
  */
@@ -19,19 +20,22 @@ export default async function AdminCycleDetailLoading() {
       <DetailContainer aria-busy="true">
         <PageHeader
           title={<SkeletonBlock className="h-8 w-72" />}
+          // The status pill beside the title.
+          badge={<SkeletonBlock className="h-5 w-28 rounded-full" />}
           subtitle={<SkeletonBlock className="h-4 w-40" />}
           actions={
             <>
-              <SkeletonBlock className="h-9 w-56 max-sm:w-full" />
+              {/* 44px on a phone, where the action is full width. */}
+              <SkeletonBlock className="h-9 w-56 max-sm:h-11 max-sm:w-full" />
               <SkeletonBlock className="h-9 w-32 max-sm:hidden" />
             </>
           }
         />
         <div className="grid grid-cols-1 items-start gap-[var(--aura-space-5)] lg:grid-cols-2">
-          {/* Member & plan: seven fields and the technical-ids line. */}
-          <CardSkeletonFrame fields={7} disclosure />
-          {/* Linked invoice: three fields and the "View invoice" link. */}
-          <CardSkeletonFrame fields={3} link className="max-sm:order-first" />
+          {/* The page's DOM order: Linked invoice first (first on a phone),
+              Member & plan back on the left from 1024px. */}
+          <CardSkeletonFrame fields={3} link />
+          <CardSkeletonFrame fields={7} disclosure className="lg:order-first" />
           {/* Period & timeline: the three always-shown dates (the common
               upcoming / reminded path) and the audit-timestamps line. */}
           <CardSkeletonFrame fields={3} disclosure />

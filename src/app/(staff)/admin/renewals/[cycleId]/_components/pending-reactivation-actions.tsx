@@ -34,11 +34,12 @@
  */
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useCallback, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Button, Dialog, Textarea } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
+import { resolveDialogFinalFocus } from '@/components/broadcast/resolve-dialog-final-focus';
 import { readErrorCode } from '../../_lib/read-error-code';
 
 const REASON_MIN = 1;
@@ -53,6 +54,13 @@ export interface PendingReactivationActionsProps {
    * settling; this component then renders nothing (the decision is made).
    */
   readonly rejectRefundInitiatedAt: string | null;
+  /**
+   * `header` (default): Approve full width on a phone, Reject & refund hidden
+   * below 640px. `dangerZone`: Reject & refund alone, full width, for the
+   * phone's end-of-page danger zone — the refund never sits beside the primary
+   * action on a phone (UX review M6; spec Clarifications, US7b start).
+   */
+  readonly placement?: 'header' | 'dangerZone';
 }
 
 interface RejectSuccessBody {
@@ -63,6 +71,7 @@ export function PendingReactivationActions({
   cycleId,
   status,
   rejectRefundInitiatedAt,
+  placement = 'header',
 }: PendingReactivationActionsProps) {
   const t = useTranslations(
     'admin.renewals.cycleDetail.pendingReactivation',
@@ -74,6 +83,26 @@ export function PendingReactivationActions({
   const [reason, setReason] = useState('');
   const [reactivatePending, startReactivate] = useTransition();
   const [rejectPending, startReject] = useTransition();
+  // Focus return (WCAG 2.4.3): a decision refreshes the page and these
+  // triggers leave it, so focus lands on `#main-content`; on Cancel / Escape
+  // it returns to the trigger.
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const succeededRef = useRef(false);
+  const finalFocus = useCallback(
+    (): HTMLElement | null =>
+      resolveDialogFinalFocus({
+        closedViaSuccess: succeededRef.current,
+        trigger: triggerRef.current,
+        fallback: null,
+        mainContent: typeof document !== 'undefined' ? document.getElementById('main-content') : null,
+      }),
+    [],
+  );
+  const open = (setter: (v: boolean) => void) => (e: React.MouseEvent<HTMLButtonElement>) => {
+    triggerRef.current = e.currentTarget;
+    succeededRef.current = false;
+    setter(true);
+  };
 
   // Render nothing for cycles that aren't awaiting an admin decision.
   if (status !== 'pending_admin_reactivation') {
@@ -117,6 +146,7 @@ export function PendingReactivationActions({
           return;
         }
         toast.success(t('reactivate.successToast'));
+        succeededRef.current = true;
         setReactivateOpen(false);
         router.refresh();
       } catch {
@@ -152,6 +182,7 @@ export function PendingReactivationActions({
         // the "no payment to refund" toast for an in-flight refund.
         if (res.status === 202) {
           toast.success(t('reject.successPendingToast'));
+          succeededRef.current = true;
           setRejectOpen(false);
           setReason('');
           router.refresh();
@@ -163,6 +194,7 @@ export function PendingReactivationActions({
             ? t('reject.successNoRefundToast')
             : t('reject.successRefundedToast'),
         );
+        succeededRef.current = true;
         setRejectOpen(false);
         setReason('');
         router.refresh();
@@ -181,15 +213,18 @@ export function PendingReactivationActions({
 
   return (
     <>
-      {/* --- Approve (the board's primary action) --- */}
-      <Button variant="primary" onClick={() => setReactivateOpen(true)}>
-        {t('reactivate.button')}
-      </Button>
+      {/* --- Approve (the board's primary action; full width on a phone) --- */}
+      {placement === 'header' && (
+        <Button variant="primary" className="max-sm:w-full" onClick={open(setReactivateOpen)}>
+          {t('reactivate.button')}
+        </Button>
+      )}
       <Dialog
         open={reactivateOpen}
         onClose={() => setReactivateOpen(false)}
         role="alertdialog"
         dismissible={!reactivatePending}
+        finalFocus={finalFocus}
         title={t('reactivate.dialogTitle')}
         description={t('reactivate.dialogBody')}
         // Focus on Cancel by default (defensive for a money action).
@@ -211,7 +246,12 @@ export function PendingReactivationActions({
       />
 
       {/* --- Reject & refund (destructive) --- */}
-      <Button variant="danger-secondary" icon="rotate-ccw" onClick={() => setRejectOpen(true)}>
+      <Button
+        variant="danger-secondary"
+        icon="rotate-ccw"
+        className={placement === 'dangerZone' ? 'w-full' : 'max-sm:hidden'}
+        onClick={open(setRejectOpen)}
+      >
         {t('reject.button')}
       </Button>
       <Dialog
@@ -219,6 +259,7 @@ export function PendingReactivationActions({
         onClose={closeReject}
         role="alertdialog"
         dismissible={!rejectPending}
+        finalFocus={finalFocus}
         title={t('reject.dialogTitle')}
         description={t('reject.dialogBody')}
         footer={
@@ -239,6 +280,7 @@ export function PendingReactivationActions({
           placeholder={t('reject.reasonPlaceholder')}
           rows={3}
           maxLength={REASON_MAX}
+          readOnly={rejectPending}
           required
           {...(reasonInvalid && reason.length > 0
             ? { error: t('reject.reasonRequired') }

@@ -116,6 +116,9 @@ export function TierUpgradeQueueClient({
   // falls through to the landmark.
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const closedViaSuccessRef = useRef(false);
+  // Each row's ⋯ trigger, so a Dismiss opened from the menu returns focus to
+  // it on Cancel / Escape (the menu item is gone with the menu).
+  const menuTriggers = useRef(new Map<string, HTMLButtonElement>());
   const finalFocus = useCallback(
     (): HTMLElement | null =>
       resolveDialogFinalFocus({
@@ -186,8 +189,10 @@ export function TierUpgradeQueueClient({
         // and the trigger re-enabled: success → #main-content (the row
         // unmounts on refresh); error → the now-enabled trigger (the admin
         // can retry). No-op for Escalate (no dialog open).
-        setPending(null);
-        setDialog(null);
+        // Scoped to this suggestion: an escalate on one row must not close
+        // (or clear the busy state of) a dialog opened on another (M4).
+        setPending((p) => (p?.suggestionId === suggestionId ? null : p));
+        setDialog((d) => (d?.suggestionId === suggestionId ? null : d));
       }
     },
     [t, router],
@@ -222,7 +227,8 @@ export function TierUpgradeQueueClient({
           <PlanCell
             name={item.fromPlanName}
             planId={item.fromPlanId}
-            fee={item.fromFeeMinorUnits !== undefined ? t('fee_excl_vat', { fee: thb(item.fromFeeMinorUnits / 100) }) : null}
+            exclVat={(fee) => t('fee_excl_vat', { fee })}
+            fee={item.fromFeeMinorUnits !== undefined ? thb(item.fromFeeMinorUnits / 100) : null}
           />
         ),
       },
@@ -234,7 +240,8 @@ export function TierUpgradeQueueClient({
           <PlanCell
             name={item.toPlanName}
             planId={item.toPlanId}
-            fee={item.toFeeMinorUnits !== undefined ? t('fee_excl_vat', { fee: thb(item.toFeeMinorUnits / 100) }) : null}
+            exclVat={(fee) => t('fee_excl_vat', { fee })}
+            fee={item.toFeeMinorUnits !== undefined ? thb(item.toFeeMinorUnits / 100) : null}
             strong
           />
         ),
@@ -277,7 +284,8 @@ export function TierUpgradeQueueClient({
         card: 'footer',
         render: (item) => {
           const busy = pending?.suggestionId === item.suggestionId;
-          const disabled = item.status !== 'open' || busy;
+          const closed = item.status !== 'open';
+          const disabled = closed || busy;
           const company = item.companyName ?? item.memberId.slice(0, 8);
           const menuLabel = t('actions.row_menu', { member: company });
           const openDialog = (action: DialogAction, trigger: HTMLButtonElement | null) => {
@@ -295,7 +303,7 @@ export function TierUpgradeQueueClient({
               label: t('actions.dismiss.label'),
               tone: 'danger',
               disabled,
-              onSelect: () => openDialog('dismiss', null),
+              onSelect: () => openDialog('dismiss', menuTriggers.current.get(item.suggestionId) ?? null),
             },
           ];
           // A fragment: the Button and the ⋯ sit straight in AURA's cell, so
@@ -316,8 +324,21 @@ export function TierUpgradeQueueClient({
               <DropdownMenu
                 label={menuLabel}
                 items={menuItems}
+                // Disabled only for a closed suggestion: while this row's
+                // escalate runs the ⋯ keeps focus and its items are disabled (M3).
                 trigger={
-                  <IconButton icon="ellipsis" label={menuLabel} size="sm" touchHeight disabled={disabled} />
+                  <IconButton
+                    ref={(el) => {
+                      if (el) menuTriggers.current.set(item.suggestionId, el);
+                      else menuTriggers.current.delete(item.suggestionId);
+                    }}
+                    icon="ellipsis"
+                    label={menuLabel}
+                    size="sm"
+                    touchHeight
+                    disabled={closed}
+                    aria-busy={busy || undefined}
+                  />
                 }
               />
             </>
@@ -363,9 +384,14 @@ export function TierUpgradeQueueClient({
   }
 
   const dialogAction = dialog?.action ?? 'accept';
+  // Busy only while THIS dialog's own request runs (M4).
+  const dialogBusy = dialog !== null && pending?.suggestionId === dialog.suggestionId;
 
   return (
     <>
+      {/* The phone cards show bare fees, so "excl. VAT" is said once above
+          them (board Admin-tier-upgrades-mobile); never over the empty state. */}
+      <p className="m-0 text-xs text-[var(--aura-fg-secondary)] sm:hidden">{t('fees_exclude_vat')}</p>
       <DataTable<TierUpgradeQueueItem>
         label={t('tableCaption')}
         rows={items}
@@ -379,7 +405,7 @@ export function TierUpgradeQueueClient({
         onClose={() => setDialog(null)}
         role="alertdialog"
         // ux-standards § 6.4: no dismissal while the action is in flight.
-        dismissible={pending === null}
+        dismissible={!dialogBusy}
         finalFocus={finalFocus}
         title={t(`actions.${dialogAction}.dialog_title`)}
         description={dialogDescription()}
@@ -390,14 +416,14 @@ export function TierUpgradeQueueClient({
               variant="secondary"
               data-autofocus=""
               onClick={() => setDialog(null)}
-              disabled={pending !== null}
+              disabled={dialogBusy}
             >
               {t('dialog.cancel')}
             </Button>
             <Button
               // Dismiss is irreversible (90-day suppression): the danger style.
               variant={dialogAction === 'dismiss' ? 'danger' : 'primary'}
-              loading={pending !== null}
+              loading={dialogBusy}
               onClick={() => {
                 if (!dialog) return;
                 // The dialog stays open until callAction settles (it closes in
@@ -405,7 +431,7 @@ export function TierUpgradeQueueClient({
                 void callAction(dialog.suggestionId, dialog.action);
               }}
             >
-              {pending !== null
+              {dialogBusy
                 ? t(`actions.${dialogAction}.submitting`)
                 : t(`actions.${dialogAction}.label`)}
             </Button>
@@ -425,11 +451,15 @@ function PlanCell({
   name,
   planId,
   fee,
+  exclVat,
   strong = false,
 }: {
   readonly name: string | undefined;
   readonly planId: string;
+  /** The annual fee, formatted. */
   readonly fee: string | null;
+  /** "{fee} excl. VAT", shown from 640px; a phone card says it once above the list. */
+  readonly exclVat: (fee: string) => string;
   readonly strong?: boolean;
 }) {
   return (
@@ -441,7 +471,12 @@ function PlanCell({
           {planId}
         </span>
       )}
-      {fee ? <span className="text-xs tabular-nums text-[var(--aura-fg-secondary)]">{fee}</span> : null}
+      {fee ? (
+        <>
+          <span className="text-xs tabular-nums text-[var(--aura-fg-secondary)] sm:hidden">{fee}</span>
+          <span className="text-xs tabular-nums text-[var(--aura-fg-secondary)] max-sm:hidden">{exclVat(fee)}</span>
+        </>
+      ) : null}
     </span>
   );
 }

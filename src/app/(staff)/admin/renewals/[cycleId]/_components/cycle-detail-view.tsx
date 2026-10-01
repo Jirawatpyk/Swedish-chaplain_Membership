@@ -170,7 +170,45 @@ export async function renderCycleDetailView({
       ) : null}
 
       <div className="grid grid-cols-1 items-start gap-[var(--aura-space-5)] lg:grid-cols-2">
-        <Card as="section" title={t('sectionMemberPlan')} headingLevel={2} titleId="cycle-detail-card-heading">
+        {/* I-4 (UX R3): always rendered, so a missing invoice is explained.
+            First in the DOM, so on a phone it is first for sight, keyboard and
+            screen reader alike (board Admin-renewal-cycle-mobile); from 1024px
+            Member & plan takes the top left. */}
+        <Card
+          as="section"
+          title={t('sectionInvoice')}
+          headingLevel={2}
+          titleId="cycle-detail-invoice-heading"
+        >
+          {invoice ? (
+            <div className="flex flex-col gap-[var(--aura-space-4)]">
+              <FieldList>
+                <Field label={f('invoiceNumber')}>
+                  <span className="aura-text-mono">{invoice.number}</span>
+                </Field>
+                <Field label={f('invoiceStatus')}>
+                  <StatusPill tone={INVOICE_TONE[invoice.status] ?? 'neutral'}>{invoice.statusLabel}</StatusPill>
+                </Field>
+                <Field label={f('invoiceTotal')}>
+                  <span className="font-semibold tabular-nums">{invoice.total}</span>
+                </Field>
+              </FieldList>
+              <Link href={invoice.href} className={`inline-flex self-start text-sm max-sm:min-h-11 max-sm:items-center ${LINK_CLASS}`}>
+                {t('fields.viewInvoice', { number: invoice.number })}
+              </Link>
+            </div>
+          ) : (
+            <p className="text-sm text-[var(--aura-fg-secondary)]">{invoicePendingMessage}</p>
+          )}
+        </Card>
+
+        <Card
+          as="section"
+          title={t('sectionMemberPlan')}
+          headingLevel={2}
+          titleId="cycle-detail-card-heading"
+          className="lg:order-first"
+        >
           <div className="flex flex-col gap-[var(--aura-space-4)]">
             <FieldList>
               <Field label={f('companyName')}>
@@ -200,37 +238,6 @@ export async function renderCycleDetailView({
               <Field label={f('planId')} mono>{memberPlan.technicalIds.planId}</Field>
             </Disclosure>
           </div>
-        </Card>
-
-        {/* I-4 (UX R3): always rendered, so a missing invoice is explained.
-            First on a phone (board Admin-renewal-cycle-mobile). */}
-        <Card
-          as="section"
-          title={t('sectionInvoice')}
-          headingLevel={2}
-          titleId="cycle-detail-invoice-heading"
-          className="max-sm:order-first"
-        >
-          {invoice ? (
-            <div className="flex flex-col gap-[var(--aura-space-4)]">
-              <FieldList>
-                <Field label={f('invoiceNumber')}>
-                  <span className="aura-text-mono">{invoice.number}</span>
-                </Field>
-                <Field label={f('invoiceStatus')}>
-                  <StatusPill tone={INVOICE_TONE[invoice.status] ?? 'neutral'}>{invoice.statusLabel}</StatusPill>
-                </Field>
-                <Field label={f('invoiceTotal')}>
-                  <span className="font-semibold tabular-nums">{invoice.total}</span>
-                </Field>
-              </FieldList>
-              <Link href={invoice.href} className={`self-start text-sm ${LINK_CLASS}`}>
-                {t('fields.viewInvoice', { number: invoice.number })}
-              </Link>
-            </div>
-          ) : (
-            <p className="text-sm text-[var(--aura-fg-secondary)]">{invoicePendingMessage}</p>
-          )}
         </Card>
 
         <Card as="section" title={t('sectionPeriod')} headingLevel={2} titleId="cycle-detail-period-heading">
@@ -383,7 +390,7 @@ function ActivityRow({
 }) {
   const parts = meta.filter((m): m is string => m !== null && m !== '');
   return (
-    <li className="flex flex-col gap-1 border-t border-[var(--aura-border-default)] py-2.5 text-[13px] sm:grid sm:min-h-11 sm:grid-cols-[minmax(0,1fr)_auto_auto_auto] sm:items-center sm:gap-x-[var(--aura-space-3)] sm:py-1">
+    <li className="flex flex-col gap-1 border-t border-[var(--aura-border-default)] py-2.5 text-[13px] sm:grid sm:min-h-11 sm:grid-cols-[minmax(0,1fr)_5.5rem_12rem_9rem] sm:items-center sm:gap-x-[var(--aura-space-3)] sm:py-1">
       <span className="flex min-w-0 items-center justify-between gap-[var(--aura-space-2)] sm:contents">
         <span className="min-w-0 text-sm sm:text-[13px]">{name}</span>
         <span className="shrink-0">{pill}</span>

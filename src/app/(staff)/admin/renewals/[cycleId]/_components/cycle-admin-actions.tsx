@@ -37,13 +37,14 @@
  */
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useCallback, useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { BanknoteIcon } from 'lucide-react';
 import { Button, Dialog, Textarea, buttonClass } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
+import { resolveDialogFinalFocus } from '@/components/broadcast/resolve-dialog-final-focus';
 import type { CycleStatus } from '@/modules/renewals';
 import { MarkPaidOfflineDialog } from '../../_components/mark-paid-offline-dialog';
 import {
@@ -56,6 +57,14 @@ import {
   REASON_MAX,
 } from './cycle-admin-validation';
 
+
+/**
+ * On a phone the header's payment action takes the full width and wraps: a
+ * bill number makes "Record payment on SC-2026-000130" wider than a 320px
+ * screen (UX review H1; AURA buttons don't wrap by default).
+ */
+const PHONE_WRAP =
+  'max-sm:w-full max-sm:h-auto max-sm:min-h-11 max-sm:shrink max-sm:whitespace-normal max-sm:py-2 max-sm:text-center max-sm:leading-snug';
 
 export interface CycleAdminActionsProps {
   readonly cycleId: string;
@@ -123,6 +132,21 @@ export function CycleAdminActions({
   const [cancelOpen, setCancelOpen] = useState(false);
   const [reason, setReason] = useState('');
   const [cancelPending, startCancel] = useTransition();
+  // Focus return (WCAG 2.4.3): a successful cancel refreshes the page and this
+  // trigger leaves it, so focus lands on `#main-content`; on Cancel / Escape
+  // it returns to the trigger that opened the dialog.
+  const cancelTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const cancelSucceededRef = useRef(false);
+  const cancelFinalFocus = useCallback(
+    (): HTMLElement | null =>
+      resolveDialogFinalFocus({
+        closedViaSuccess: cancelSucceededRef.current,
+        trigger: cancelTriggerRef.current,
+        fallback: null,
+        mainContent: typeof document !== 'undefined' ? document.getElementById('main-content') : null,
+      }),
+    [],
+  );
 
   // --- Mark-paid-offline state --- (dialog body itself lives in the
   // extracted `MarkPaidOfflineDialog` — see `_components/mark-paid-offline-
@@ -177,6 +201,7 @@ export function CycleAdminActions({
           return;
         }
         toast.success(t('cancelCycle.successToast'));
+        cancelSucceededRef.current = true;
         setCancelOpen(false);
         setReason('');
         router.refresh();
@@ -199,7 +224,7 @@ export function CycleAdminActions({
       {showRecordPayment && liveLinkedBill !== null && (
         <Link
           href={`/admin/invoices/${encodeURIComponent(liveLinkedBill.invoiceId)}`}
-          className={buttonClass({ variant: 'primary' })}
+          className={buttonClass({ variant: 'primary', className: PHONE_WRAP })}
         >
           <BanknoteIcon aria-hidden="true" className="size-4" />
           {liveLinkedBill.billNumber !== null
@@ -216,6 +241,7 @@ export function CycleAdminActions({
           <Button
             variant="primary"
             icon={<BanknoteIcon aria-hidden="true" className="size-4" />}
+            className={PHONE_WRAP}
             onClick={() => setMarkPaidOpen(true)}
           >
             {t('markPaidOffline.button')}
@@ -237,7 +263,11 @@ export function CycleAdminActions({
             variant="danger-secondary"
             icon="ban"
             className={inDangerZone ? 'w-full' : 'max-sm:hidden'}
-            onClick={() => setCancelOpen(true)}
+            onClick={(e) => {
+              cancelTriggerRef.current = e.currentTarget;
+              cancelSucceededRef.current = false;
+              setCancelOpen(true);
+            }}
           >
             {t('cancelCycle.button')}
           </Button>
@@ -247,6 +277,7 @@ export function CycleAdminActions({
             role="alertdialog"
             // ux-standards § 6.4: no dismissal while the cancel is in flight.
             dismissible={!cancelPending}
+            finalFocus={cancelFinalFocus}
             title={t('cancelCycle.dialogTitle')}
             description={t('cancelCycle.dialogBody')}
             // Focus on Cancel by default (ux-standards § 4).
@@ -278,6 +309,7 @@ export function CycleAdminActions({
               placeholder={t('cancelCycle.reasonPlaceholder')}
               rows={3}
               maxLength={REASON_MAX}
+              readOnly={cancelPending}
               required
               {...(reasonInvalid && reason.length > 0
                 ? { error: t('cancelCycle.reasonRequired') }
