@@ -381,6 +381,9 @@ export const MIGRATED_PATHS = [
   // (page, loading, error, editor, step card, chart, state view).
   'src/app/(staff)/admin/renewals/tasks/**',
   'src/app/(staff)/admin/settings/renewals/schedules/**',
+  // US7c — the member's online renewal and its success page (page, loading,
+  // error, the confirm flow, the downgrade dialog, the page view).
+  'src/app/(member)/portal/renewal/\\[memberId\\]/**',
 ];
 
 /**
