@@ -95,8 +95,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { BanknoteIcon } from 'lucide-react';
-import { AuraProvider, Button } from '@jirawatpyk/aura-react';
-import { TouchClearActionBar } from '@/components/shell/touch-clear-action-bar';
+import { ActionBar, AuraProvider, Button } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
 import { useDialogFinalFocus } from '@/components/broadcast/reason-confirmation-dialog';
@@ -559,11 +558,11 @@ export function PipelineBulkActionBar({
     onClear();
   }, [onClear]);
 
-  // The ActionBar's own count, in this bar's words (Clear is the stand-in's,
-  // labelled below).
+  // The ActionBar's own count and Clear, in this bar's words.
   const barStrings = useMemo(
     () => ({
       selectedCount: (n: number) => t('selectedCount', { count: n }),
+      clear: () => t('clear'),
     }),
     [t],
   );
@@ -578,7 +577,7 @@ export function PipelineBulkActionBar({
         />
       )}
       <AuraProvider strings={barStrings}>
-        <TouchClearActionBar
+        <ActionBar
           ref={barRef}
           // The app's marker for a viewport ActionBar: globals.css keeps a
           // focused field clear of it by this class, not AURA's modifier.
@@ -586,8 +585,9 @@ export function PipelineBulkActionBar({
           label={t('toolbarLabel')}
           selected={count}
           onClearSelection={handleClearClick}
-          // AURA handoff #122: AURA's own Clear is 32px; the stand-in's is 44px.
-          clearLabel={t('clear')}
+          // AURA 5.23 (handoff #122): Clear takes the same 44px touch height
+          // on a phone as the bar's own buttons.
+          touchHeight
           status={
             overCap ? (
               <span className="flex flex-col gap-0.5">
@@ -633,7 +633,7 @@ export function PipelineBulkActionBar({
               </Button>
             </>
           )}
-        </TouchClearActionBar>
+        </ActionBar>
       </AuraProvider>
 
       <ConfirmationDialog
