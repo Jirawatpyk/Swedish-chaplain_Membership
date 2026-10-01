@@ -102,10 +102,11 @@ The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requ
 | 121 | 5.23.0: the `Tabs` underline list draws its baseline as an inset shadow, so the active 2px indicator is no longer clipped | Nothing to change: the renewals section tabs show the full indicator |
 | 122 | 5.23.0: `ActionBar touchHeight` gives the bar's own Clear the 44px touch height below 640px | The members and renewal pipeline bulk bars pass `touchHeight`; the `TouchClearActionBar` stand-in goes |
 
-No item is open (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.test.ts` reads this table; a new gap goes here as `| #N | … |`):
+One item is open (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.test.ts` reads this table; a new gap goes here as `| #N | … |`):
 
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
+| #123 | `touchHeight` is 44px only below 640px wide, so a touch device on a wider screen (a tablet in landscape, a touch laptop) gets 32px targets; ask: apply it under `(pointer: coarse)` as well (Addendum 26, relay R25, 5.23) | None needed: every touch control already passes `touchHeight`, so the fix lands with the version bump. `renewal-a11y` asks for 44px below 640px and 24px above |
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 
