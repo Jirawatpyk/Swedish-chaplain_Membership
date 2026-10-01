@@ -179,6 +179,13 @@ describe('<EscalationTaskQueue> — task type (AURA Select)', () => {
     expect(nativeOptions('Task type')).toEqual(['All types', 'Director call', 'Phone call']);
   });
 
+  it('sits at the end of the filter row from 640px, keeping its visible "Task type" label (board)', () => {
+    renderQueue(ONE, ['director_call', 'phone_call']);
+    const field = screen.getByRole('combobox', { name: 'Task type' }).closest('.aura-select')?.parentElement;
+    expect(field).toHaveClass('sm:ms-auto');
+    expect(screen.getByText('Task type', { selector: 'label' })).toBeVisible();
+  });
+
   it('choosing a type sets ?task_type=, and "All types" clears it', () => {
     renderQueue(ONE, ['director_call', 'phone_call']);
     pickNative('Task type', 'director_call');
