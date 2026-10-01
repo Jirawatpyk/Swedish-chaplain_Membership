@@ -88,7 +88,7 @@ beforeEach(() => {
 describe('<StepCard> header', () => {
   it('reads the timing as a sentence, with AURA icon buttons to move and remove the step', () => {
     const { onRemove } = renderCard({ index: 0, total: 3 });
-    expect(screen.getByText('30 days before renewal', { selector: 'p, span, h3, strong' })).toBeInTheDocument();
+    expect(screen.getByText('30 days before renewal', { selector: 'p' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: S.actions.moveUp })).toBeDisabled();
     expect(screen.getByRole('button', { name: S.actions.moveDown })).toBeEnabled();
     const remove = screen.getByRole('button', { name: S.actions.removeStep });
@@ -99,9 +99,9 @@ describe('<StepCard> header', () => {
 });
 
 describe('<StepCard> delivery channel (AURA RadioGroup)', () => {
-  it('offers Email and Task as radios in a group named "Delivery channel"', () => {
+  it('offers Email and Task as radios in a fieldset named "Delivery channel"', () => {
     renderCard();
-    const group = screen.getByRole('radiogroup', { name: S.stepCard.channelLabel });
+    const group = screen.getByRole('group', { name: S.stepCard.channelLabel });
     expect(group.closest('.aura-field, .aura-radio-group, .aura-choice')).not.toBeNull();
     expect(within(group).getByRole('radio', { name: 'Email' })).toBeChecked();
     expect(within(group).getByRole('radio', { name: 'Task' })).not.toBeChecked();
@@ -166,7 +166,7 @@ describe('<StepCard> send timing (AURA Select)', () => {
     renderCard({ step: { offset_days: -45, step_id: 't-45.email', template_id: 'renewal.t-45.regular' } });
     expect(screen.getByRole('combobox', { name: S.stepCard.timing.label })).toHaveTextContent(S.stepCard.timing.customOption);
     expect(screen.getByRole('spinbutton', { name: S.stepCard.timing.customDaysLabel })).toHaveValue('45');
-    const dir = screen.getByRole('radiogroup', { name: S.stepCard.timing.direction.label });
+    const dir = screen.getByRole('group', { name: S.stepCard.timing.direction.label });
     expect(within(dir).getByRole('radio', { name: S.stepCard.timing.direction.before })).toBeChecked();
   });
 
