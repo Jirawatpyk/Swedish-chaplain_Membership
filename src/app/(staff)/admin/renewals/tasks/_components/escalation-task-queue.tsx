@@ -30,6 +30,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
 import {
   AlertTriangle,
+  Check,
   ClipboardCheck,
   Info,
   MoreHorizontal,
@@ -294,6 +295,11 @@ export function EscalationTaskQueue({
     });
   }, [items, assignment, overdueOnly, actorUserId, now]);
 
+  // spec 122 US7b-2 — a pressed toggle must stay mounted (see the banner
+  // block below), so `overdueOnly` alone keeps it on screen.
+  const showOverdueToggle =
+    status === 'open' && (overdueOnly || overdueCount > 0);
+
   function setSearchParam(name: string, value: string | null): void {
     const params = new URLSearchParams(searchParams.toString());
     if (value === null || value === '') {
@@ -543,31 +549,42 @@ export function EscalationTaskQueue({
       {/* Toggle button for `?overdue_only=`. Its name stays the same in
           both states (the state rides `aria-pressed`, with a matching
           pressed style), and the copy is device-neutral — no "Click", since
-          staff tap it on touch devices. */}
-      {overdueCount > 0 && status === 'open' && (
-        <>
-          <button
-            type="button"
-            className="mb-4 flex w-full items-start gap-3 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-left transition-colors hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/50 aria-pressed:border-destructive aria-pressed:bg-destructive/10"
-            aria-pressed={overdueOnly}
-            onClick={() =>
-              setSearchParam('overdue_only', overdueOnly ? null : 'true')
-            }
-          >
+          staff tap it on touch devices.
+          spec 122 US7b-2 — it stays mounted while the filter is ON, even if
+          the count has dropped to 0 (last overdue task just resolved): an
+          unmounted pressed toggle dropped focus to <body> and left browser
+          Back as the only way to clear the filter. Pressed state also swaps
+          the warning icon for a check + a stronger fill, so it doesn't rely
+          on a border change alone. */}
+      {showOverdueToggle && (
+        <button
+          type="button"
+          className="mb-4 flex w-full items-start gap-3 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-left transition-colors hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/50 aria-pressed:border-destructive aria-pressed:bg-destructive/15 aria-pressed:hover:bg-destructive/20"
+          aria-pressed={overdueOnly}
+          onClick={() =>
+            setSearchParam('overdue_only', overdueOnly ? null : 'true')
+          }
+        >
+          {overdueOnly ? (
+            <Check
+              className="mt-0.5 size-5 shrink-0 text-destructive"
+              aria-hidden
+            />
+          ) : (
             <AlertTriangle
               className="mt-0.5 size-5 shrink-0 text-destructive"
               aria-hidden
             />
-            <div className="flex-1">
-              <p className="text-sm font-medium text-destructive">
-                {t('overdue_banner', { count: overdueCount })}
-              </p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {t('overdue_banner_cta')}
-              </p>
-            </div>
-          </button>
-        </>
+          )}
+          <div className="flex-1">
+            <p className="text-sm font-medium text-destructive">
+              {t('overdue_banner', { count: overdueCount })}
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {t('overdue_banner_cta')}
+            </p>
+          </div>
+        </button>
       )}
       {/* End R6 UX-I-1 banner block. */}
 
