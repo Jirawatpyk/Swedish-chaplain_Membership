@@ -17,8 +17,7 @@
 
 import { useRef, useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+import { Textarea } from '@jirawatpyk/aura-react';
 import { TaskActionDialog } from './task-action-dialog';
 
 export interface SkipTaskDialogProps {
@@ -26,7 +25,7 @@ export interface SkipTaskDialogProps {
   readonly onOpenChange: (open: boolean) => void;
   readonly onSubmit: (skippedReason: string) => Promise<void>;
   /** UX-audit PR-A #5a — focus-return resolver; forwarded to the shared shell. */
-  readonly finalFocus?: (() => HTMLElement | false | null) | undefined;
+  readonly finalFocus?: (() => HTMLElement | null) | undefined;
 }
 
 const MAX_REASON_LENGTH = 500;
@@ -82,53 +81,24 @@ export function SkipTaskDialog({
       variant="destructive"
       finalFocus={finalFocus}
     >
-      <div className="grid gap-2">
-        <Label htmlFor="skipped-reason">
-          {t('reason_label')}{' '}
-          <span aria-hidden className="text-destructive">
-            *
-          </span>
-          <span className="sr-only">{t('required_marker')}</span>
-        </Label>
-        <Textarea
-          id="skipped-reason"
-          ref={textareaRef}
-          value={skippedReason}
-          onChange={(e) =>
-            setSkippedReason(e.target.value.slice(0, MAX_REASON_LENGTH))
-          }
-          onBlur={() => setTouched(true)}
-          placeholder={t('reason_placeholder')}
-          disabled={isPending}
-          rows={4}
-          required
-          maxLength={MAX_REASON_LENGTH}
-          aria-required="true"
-          aria-invalid={showError}
-          aria-describedby={
-            showError
-              ? 'skipped-reason-error skipped-reason-counter'
-              : 'skipped-reason-counter'
-          }
-        />
-        {showError && (
-          <p
-            id="skipped-reason-error"
-            role="alert"
-            className="text-sm text-destructive"
-          >
-            {t('reason_required')}
-          </p>
-        )}
-        {/* R10 W1 close — dropped aria-live (see done-task-dialog
-            for rationale; aria-describedby is the AT path). */}
-        <p
-          id="skipped-reason-counter"
-          className="text-right text-xs text-muted-foreground"
-        >
-          {t('chars_remaining', { count: charsRemaining })}
-        </p>
-      </div>
+      {/* AURA's Textarea: `required` adds the asterisk and the native
+          attribute; the error replaces the counter hint and sets
+          aria-invalid once the empty field is left or a submit is tried. */}
+      <Textarea
+        id="skipped-reason"
+        ref={textareaRef}
+        label={t('reason_label')}
+        required
+        hint={t('chars_remaining', { count: charsRemaining })}
+        {...(showError ? { error: t('reason_required') } : {})}
+        value={skippedReason}
+        onChange={(e) => setSkippedReason(e.target.value.slice(0, MAX_REASON_LENGTH))}
+        onBlur={() => setTouched(true)}
+        placeholder={t('reason_placeholder')}
+        readOnly={isPending}
+        rows={4}
+        maxLength={MAX_REASON_LENGTH}
+      />
     </TaskActionDialog>
   );
 }
