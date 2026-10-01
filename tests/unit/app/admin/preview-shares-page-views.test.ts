@@ -66,7 +66,7 @@ describe('aura-admin preview renders the pages’ own views', () => {
   it('the cycle detail and tier upgrade pages through their own views (US7b-1)', () => {
     const cycle = readFileSync('src/app/(staff)/admin/renewals/[cycleId]/page.tsx', 'utf8');
     const tiers = readFileSync('src/app/(staff)/admin/renewals/tier-upgrades/page.tsx', 'utf8');
-    for (const view of ['renderCycleDetailView(', '<CycleDetailTitle']) {
+    for (const view of ['renderCycleDetailView(', '<CycleDetailBadges']) {
       expect(cycle).toContain(view);
       expect(preview).toContain(view);
     }

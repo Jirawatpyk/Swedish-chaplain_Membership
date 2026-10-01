@@ -41,9 +41,10 @@ const TASK_TONE: Readonly<Record<string, Tone>> = {
   done: 'ready',
 };
 
-export interface CycleDetailTitleProps {
-  readonly title: string;
-  readonly company: string;
+/** An in-text link: accent, underlined on hover (the contact block's style). */
+const LINK_CLASS = 'font-medium text-[var(--aura-fg-accent)] underline-offset-4 hover:underline';
+
+export interface CycleDetailBadgesProps {
   readonly status: CycleStatus;
   readonly statusLabel: string;
   readonly statusSrSuffix: string | null;
@@ -51,21 +52,22 @@ export interface CycleDetailTitleProps {
   readonly refundSettlingLabel: string | null;
 }
 
-/** "Cycle detail · {company}" with the status pill inline (the board's header). */
-export function CycleDetailTitle({
-  title,
-  company,
+/**
+ * The status pill beside "Cycle detail · {company}" (C-2, UX R3; the board's
+ * header). Passed to `PageHeader`'s `badge`, so it keeps the body type rather
+ * than the heading's.
+ */
+export function CycleDetailBadges({
   status,
   statusLabel,
   statusSrSuffix,
   refundSettlingLabel,
-}: CycleDetailTitleProps) {
+}: CycleDetailBadgesProps) {
   return (
-    <span className="flex flex-wrap items-center gap-x-[var(--aura-space-3)] gap-y-[var(--aura-space-2)]">
-      <span>{`${title} · ${company}`}</span>
+    <>
       <CycleStatusBadge status={status} label={statusLabel} srSuffix={statusSrSuffix} />
       {refundSettlingLabel ? <Badge tone="warning">{refundSettlingLabel}</Badge> : null}
-    </span>
+    </>
   );
 }
 
@@ -173,7 +175,7 @@ export async function renderCycleDetailView({
             <FieldList>
               <Field label={f('companyName')}>
                 {memberPlan.memberHref ? (
-                  <Link href={memberPlan.memberHref} className="font-medium">
+                  <Link href={memberPlan.memberHref} className={LINK_CLASS}>
                     {memberPlan.company}
                   </Link>
                 ) : (
@@ -222,7 +224,7 @@ export async function renderCycleDetailView({
                   <span className="font-semibold tabular-nums">{invoice.total}</span>
                 </Field>
               </FieldList>
-              <Link href={invoice.href} className="self-start text-sm">
+              <Link href={invoice.href} className={`self-start text-sm ${LINK_CLASS}`}>
                 {t('fields.viewInvoice', { number: invoice.number })}
               </Link>
             </div>

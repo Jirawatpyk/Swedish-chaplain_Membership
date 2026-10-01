@@ -72,12 +72,13 @@ import {
   type CycleFixtureKind,
 } from './renewal-fixtures';
 import { AtRiskFixture, MarkPaidDialogPreview, TierUpgradeAcceptPreview } from './renewal-previews';
-import { CycleDetailTitle, renderCycleDetailView } from '@/app/(staff)/admin/renewals/[cycleId]/_components/cycle-detail-view';
+import { CycleDetailBadges, renderCycleDetailView } from '@/app/(staff)/admin/renewals/[cycleId]/_components/cycle-detail-view';
 import { CycleAdminActions } from '@/app/(staff)/admin/renewals/[cycleId]/_components/cycle-admin-actions';
 import { PendingReactivationActions } from '@/app/(staff)/admin/renewals/[cycleId]/_components/pending-reactivation-actions';
 import { renderTierUpgradesView } from '@/app/(staff)/admin/renewals/tier-upgrades/_components/tier-upgrades-view';
 import { TierUpgradeQueueClient } from '@/app/(staff)/admin/renewals/tier-upgrades/_components/tier-upgrade-queue';
 import { DetailContainer } from '@/components/layout';
+import { PlanBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
 
 // Request-time evaluation so the guard runs per request (see button-matrix).
 export const dynamic = 'force-dynamic';
@@ -915,11 +916,11 @@ export default async function AuraAdminPreviewPage({
     return (
       <StaffFrame path={`/admin/renewals/${CYCLE_PREVIEW_ID}`}>
         <DetailContainer>
+          <PlanBreadcrumbLabel segment={CYCLE_PREVIEW_ID} label={fx.company} />
           <PageHeader
-            title={
-              <CycleDetailTitle
-                title={t('title')}
-                company={fx.company}
+            title={`${t('title')} · ${fx.company}`}
+            badge={
+              <CycleDetailBadges
                 status={fx.status}
                 statusLabel={t(`cycleStatus.${fx.status}`)}
                 statusSrSuffix={t.has(`statusSeverity.${fx.status}`) ? t(`statusSeverity.${fx.status}`) : null}

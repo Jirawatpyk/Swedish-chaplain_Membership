@@ -31,7 +31,7 @@ import { logger } from '@/lib/logger';
 import { canPerform, requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { loadCycleDetail, makeRenewalsDeps } from '@/modules/renewals';
-import { CycleDetailTitle, renderCycleDetailView } from './_components/cycle-detail-view';
+import { CycleDetailBadges, renderCycleDetailView } from './_components/cycle-detail-view';
 import { PendingReactivationActions } from './_components/pending-reactivation-actions';
 import { CycleAdminActions } from './_components/cycle-admin-actions';
 import { isCycleCancellable } from './_components/cycle-admin-validation';
@@ -466,10 +466,9 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
 
       <PageHeader
         // C-2 (UX R3): the status pill sits beside the title.
-        title={
-          <CycleDetailTitle
-            title={t('title')}
-            company={memberCompany}
+        title={`${t('title')} · ${memberCompany}`}
+        badge={
+          <CycleDetailBadges
             status={c.status}
             statusLabel={t(`cycleStatus.${c.status}`)}
             statusSrSuffix={

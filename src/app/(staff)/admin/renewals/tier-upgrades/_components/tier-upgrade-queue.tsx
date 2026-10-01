@@ -204,7 +204,10 @@ export function TierUpgradeQueueClient({
         // 8-char id slice when the SSR lookup returned nothing. enterprise-ux
         // C3: no sr-only full UUID (its href carries the id).
         render: (item) => (
-          <Link href={`/admin/members/${item.memberId}`} className="font-medium">
+          <Link
+            href={`/admin/members/${item.memberId}`}
+            className="font-medium text-[var(--aura-fg-accent)] underline-offset-4 hover:underline"
+          >
             {item.companyName ?? (
               <span className="aura-text-mono text-xs">{item.memberId.slice(0, 8)}</span>
             )}
@@ -243,7 +246,10 @@ export function TierUpgradeQueueClient({
         label: t('columns.reason'),
         minWidth: 240,
         render: (item) => (
-          <span className="flex flex-col gap-0.5">
+          // AURA's stacked card keeps its cells on one line; the reason and its
+          // evidence wrap instead of clipping (a full-width card field is
+          // AURA handoff #120).
+          <span className="flex flex-col gap-0.5 whitespace-normal">
             <span className="text-sm">{t(`reason.${item.reasonCode}`)}</span>
             <span className="text-xs text-[var(--aura-fg-secondary)]">
               {item.evidence ? buildEvidenceMessage(t, item.evidence, thb) : t('evidence.unavailable')}
@@ -427,7 +433,7 @@ function PlanCell({
   readonly strong?: boolean;
 }) {
   return (
-    <span className="flex flex-col gap-0.5">
+    <span className="flex flex-col gap-0.5 whitespace-normal">
       {name ? (
         <span className={strong ? 'text-sm font-medium' : 'text-sm'}>{name}</span>
       ) : (
