@@ -908,10 +908,16 @@ export default async function AuraAdminPreviewPage({
         date: e.date,
         role: tTasks(`assigneeRole.${e.role}`),
       })),
-      dangerZone:
-        canWrite && fx.status !== 'pending_admin_reactivation' ? (
-          <CycleAdminActions cycleId={CYCLE_PREVIEW_ID} status={fx.status} liveLinkedBill={liveLinkedBill} placement="dangerZone" />
-        ) : null,
+      dangerZone: !canWrite ? null : fx.status === 'pending_admin_reactivation' ? (
+        <PendingReactivationActions
+          cycleId={CYCLE_PREVIEW_ID}
+          status={fx.status}
+          rejectRefundInitiatedAt={null}
+          placement="dangerZone"
+        />
+      ) : (
+        <CycleAdminActions cycleId={CYCLE_PREVIEW_ID} status={fx.status} liveLinkedBill={liveLinkedBill} placement="dangerZone" />
+      ),
     });
     return (
       <StaffFrame path={`/admin/renewals/${CYCLE_PREVIEW_ID}`}>
