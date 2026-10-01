@@ -303,6 +303,16 @@ export function RenewalConfirmFlow({
           onChange={(e) => setSelectedPlanId(e.target.value)}
           disabled={isPending}
         >
+          {/* The current plan may be missing from this year's list (made
+              inactive, or not carried into the catalogue). A controlled
+              <select> whose value has no option shows the FIRST option, so
+              the field would name another plan and price while the panel and
+              the request keep the current one (financial review, US7c). */}
+          {!availablePlans.some((p) => p.planId === currentPlanId) && (
+            <option value={currentPlanId} disabled hidden>
+              {currentPlanLabel}
+            </option>
+          )}
           {grouped.upgrade.length > 0 && (
             <optgroup label={tSelector('groupUpgrade')}>{grouped.upgrade.map(renderOption)}</optgroup>
           )}
