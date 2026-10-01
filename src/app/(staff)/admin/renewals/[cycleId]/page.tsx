@@ -34,6 +34,7 @@ import { loadCycleDetail, makeRenewalsDeps } from '@/modules/renewals';
 import { CycleDetailTitle, renderCycleDetailView } from './_components/cycle-detail-view';
 import { PendingReactivationActions } from './_components/pending-reactivation-actions';
 import { CycleAdminActions } from './_components/cycle-admin-actions';
+import { isCycleCancellable } from './_components/cycle-admin-validation';
 import { resolveLiveLinkedBill } from '../_lib/mark-paid-gate';
 // Phase 6 review-round 2 A2 — display-data fetchers extracted to a
 // testable module so unit tests can drive the C4 error semantics
@@ -445,6 +446,17 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
         ? tTasks(`assigneeRole.${task.assignedToRole}`)
         : `${task.assignedToRole} (untranslated)`,
     })),
+    // On a phone Cancel cycle leaves the header for the end of the page
+    // (board Admin-renewal-cycle-mobile).
+    dangerZone:
+      canWrite && isCycleCancellable(c.status) ? (
+        <CycleAdminActions
+          cycleId={c.cycleId}
+          status={c.status}
+          liveLinkedBill={liveLinkedBill}
+          placement="dangerZone"
+        />
+      ) : null,
   });
 
   return (

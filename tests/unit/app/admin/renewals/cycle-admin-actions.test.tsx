@@ -167,6 +167,10 @@ describe('<CycleAdminActions> on AURA', () => {
   const C = enMessages.admin.renewals.cycleDetail.cancelCycle;
   const INVOICE_ID = '22222222-2222-2222-2222-222222222222';
 
+  // The suite runs on fake timers; the dialog flow awaits real ones.
+  beforeEach(() => {
+    vi.useRealTimers();
+  });
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();

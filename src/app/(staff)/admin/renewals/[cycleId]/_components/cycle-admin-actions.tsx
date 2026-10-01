@@ -20,6 +20,13 @@
  *     (a pending_admin_reactivation cycle has its own approve/reject actions in
  *      `pending-reactivation-actions.tsx`).
  *
+ * 122 US7b-1 (T722), board `Admin-renewal-cycle` (+ `-mobile`): the actions
+ * sit in the page header on AURA — the payment action primary, Cancel cycle in
+ * the danger style. On a phone Cancel cycle leaves the header for the danger
+ * zone at the end of the page (`placement="dangerZone"`). The cancel confirm
+ * is an AURA alertdialog; its reason, request, toasts and refresh are
+ * unchanged.
+ *
  * Cancel is destructive (AlertDialog + required reason 1..500). Mark-paid
  * (DV-Wave2 ⑤) is a controlled `MarkPaidOfflineDialog` — extracted so the
  * pipeline table's ⋯ row menu can reuse the SAME dialog/route as a modal
@@ -30,38 +37,25 @@
  */
 'use client';
 
-import { useRef, useState, useTransition } from 'react';
+import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { BanknoteIcon } from 'lucide-react';
+import { Button, Dialog, Textarea, buttonClass } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
-import { Loader2Icon } from 'lucide-react';
-import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Button, buttonVariants } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import type { CycleStatus } from '@/modules/renewals';
 import { MarkPaidOfflineDialog } from '../../_components/mark-paid-offline-dialog';
 import {
   shouldOfferMarkPaid,
   shouldOfferRecordPaymentOnBill,
 } from '../../_lib/mark-paid-gate';
-import { isCancelReasonInvalid, REASON_MAX } from './cycle-admin-validation';
+import {
+  isCancelReasonInvalid,
+  isCycleCancellable,
+  REASON_MAX,
+} from './cycle-admin-validation';
 
-/** Statuses where the Cancel control is offered (matches the route guard). */
-const CANCELLABLE_STATUSES = new Set<CycleStatus>([
-  'upcoming',
-  'reminded',
-  'awaiting_payment',
-]);
 
 export interface CycleAdminActionsProps {
   readonly cycleId: string;
@@ -75,6 +69,12 @@ export interface CycleAdminActionsProps {
     readonly invoiceId: string;
     readonly billNumber: string | null;
   } | null;
+  /**
+   * `header` (default): every control, Cancel cycle hidden below 640px.
+   * `dangerZone`: Cancel cycle alone, full width, for the phone's end-of-page
+   * danger zone (board `Admin-renewal-cycle-mobile`).
+   */
+  readonly placement?: 'header' | 'dangerZone';
 }
 
 /**
@@ -114,6 +114,7 @@ export function CycleAdminActions({
   cycleId,
   status,
   liveLinkedBill,
+  placement = 'header',
 }: CycleAdminActionsProps) {
   const t = useTranslations('admin.renewals.cycleDetail');
   const router = useRouter();
@@ -122,7 +123,6 @@ export function CycleAdminActions({
   const [cancelOpen, setCancelOpen] = useState(false);
   const [reason, setReason] = useState('');
   const [cancelPending, startCancel] = useTransition();
-  const cancelCancelRef = useRef<HTMLButtonElement | null>(null);
 
   // --- Mark-paid-offline state --- (dialog body itself lives in the
   // extracted `MarkPaidOfflineDialog` — see `_components/mark-paid-offline-
@@ -130,13 +130,14 @@ export function CycleAdminActions({
   // button, same shape as the cancel AlertDialog above).
   const [markPaidOpen, setMarkPaidOpen] = useState(false);
 
-  const showCancel = CANCELLABLE_STATUSES.has(status);
+  const inDangerZone = placement === 'dangerZone';
+  const showCancel = isCycleCancellable(status);
   const linkedInvoiceId = liveLinkedBill?.invoiceId ?? null;
-  const showMarkPaid = shouldOfferMarkPaid(status, linkedInvoiceId);
-  const showRecordPayment = shouldOfferRecordPaymentOnBill(
-    status,
-    linkedInvoiceId,
-  );
+  // The danger zone holds Cancel cycle only; the payment action stays in the
+  // header at every width.
+  const showMarkPaid = !inDangerZone && shouldOfferMarkPaid(status, linkedInvoiceId);
+  const showRecordPayment =
+    !inDangerZone && shouldOfferRecordPaymentOnBill(status, linkedInvoiceId);
 
   // Render nothing for cycles where no action is valid (terminal +
   // pending_admin_reactivation, which has its own approve/reject component).
@@ -185,14 +186,22 @@ export function CycleAdminActions({
     });
   };
 
+  const closeCancel = () => {
+    // Clear the reason on close so a reopened dialog never pre-fills a stale
+    // justification onto the cancel audit trail.
+    setCancelOpen(false);
+    setReason('');
+  };
+
   return (
-    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+    <>
       {/* --- Record payment on the live linked bill (F4 flow) --- */}
       {showRecordPayment && liveLinkedBill !== null && (
         <Link
           href={`/admin/invoices/${encodeURIComponent(liveLinkedBill.invoiceId)}`}
-          className={buttonVariants()}
+          className={buttonClass({ variant: 'primary' })}
         >
+          <BanknoteIcon aria-hidden="true" className="size-4" />
           {liveLinkedBill.billNumber !== null
             ? t('recordPaymentOnBill.link', {
                 billNumber: liveLinkedBill.billNumber,
@@ -201,15 +210,18 @@ export function CycleAdminActions({
         </Link>
       )}
 
-      {/* --- Mark paid offline (non-destructive) --- */}
+      {/* --- Mark paid offline (the board's primary action) --- */}
       {showMarkPaid && (
         <>
-          <Button variant="outline" onClick={() => setMarkPaidOpen(true)}>
+          <Button
+            variant="primary"
+            icon={<BanknoteIcon aria-hidden="true" className="size-4" />}
+            onClick={() => setMarkPaidOpen(true)}
+          >
             {t('markPaidOffline.button')}
           </Button>
-          {/* No `finalFocus` passed — this trigger Button does not unmount
-              on this page, so Base UI's default restore-focus behaviour is
-              exactly the pre-extraction shape (see the dialog's docstring). */}
+          {/* No `finalFocus` passed — this trigger does not unmount on this
+              page, so the default restore-focus is the right target. */}
           <MarkPaidOfflineDialog
             cycleId={cycleId}
             open={markPaidOpen}
@@ -221,83 +233,59 @@ export function CycleAdminActions({
       {/* --- Cancel cycle (destructive) --- */}
       {showCancel && (
         <>
-          <Button variant="destructive" onClick={() => setCancelOpen(true)}>
+          <Button
+            variant="danger-secondary"
+            icon="ban"
+            className={inDangerZone ? 'w-full' : 'max-sm:hidden'}
+            onClick={() => setCancelOpen(true)}
+          >
             {t('cancelCycle.button')}
           </Button>
-          <AlertDialog
+          <Dialog
             open={cancelOpen}
-            onOpenChange={(open) => {
-              setCancelOpen(open);
-              // Clear the reason on cancel/close so a reopened dialog never
-              // pre-fills a stale justification onto the cancel audit trail.
-              if (!open) setReason('');
-            }}
-          >
-            <AlertDialogContent initialFocus={cancelCancelRef}>
-              <AlertDialogHeader>
-                <AlertDialogTitle>
-                  {t('cancelCycle.dialogTitle')}
-                </AlertDialogTitle>
-                <AlertDialogDescription>
-                  {t('cancelCycle.dialogBody')}
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <div className="space-y-1.5">
-                <Label htmlFor="cancel-reason">
-                  {t('cancelCycle.reasonLabel')}
-                </Label>
-                <Textarea
-                  id="cancel-reason"
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  placeholder={t('cancelCycle.reasonPlaceholder')}
-                  rows={3}
-                  maxLength={REASON_MAX}
-                  aria-invalid={reasonInvalid && reason.length > 0}
-                  aria-describedby="cancel-reason-hint"
-                  required
-                />
-                <p
-                  id="cancel-reason-hint"
-                  className={
-                    'text-xs ' +
-                    (reasonInvalid && reason.length > 0
-                      ? 'text-destructive'
-                      : 'text-muted-foreground')
-                  }
-                >
-                  {t('cancelCycle.reasonRequired')}
-                </p>
-              </div>
-              <AlertDialogFooter>
-                <AlertDialogCancel
-                  ref={cancelCancelRef}
+            onClose={closeCancel}
+            role="alertdialog"
+            // ux-standards § 6.4: no dismissal while the cancel is in flight.
+            dismissible={!cancelPending}
+            title={t('cancelCycle.dialogTitle')}
+            description={t('cancelCycle.dialogBody')}
+            // Focus on Cancel by default (ux-standards § 4).
+            footer={
+              <>
+                <Button
+                  variant="secondary"
+                  data-autofocus=""
+                  onClick={closeCancel}
                   disabled={cancelPending}
                 >
                   {t('cancelCycle.cancel')}
-                </AlertDialogCancel>
-                <Button
-                  variant="destructive"
-                  onClick={onCancel}
-                  disabled={cancelPending || reasonInvalid}
-                >
-                  {cancelPending ? (
-                    <>
-                      <Loader2Icon
-                        className="size-4 motion-safe:animate-spin"
-                        aria-hidden="true"
-                      />
-                      {t('cancelCycle.submitting')}
-                    </>
-                  ) : (
-                    t('cancelCycle.confirm')
-                  )}
                 </Button>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+                <Button
+                  variant="danger"
+                  onClick={onCancel}
+                  loading={cancelPending}
+                  disabled={reasonInvalid}
+                >
+                  {cancelPending ? t('cancelCycle.submitting') : t('cancelCycle.confirm')}
+                </Button>
+              </>
+            }
+          >
+            <Textarea
+              label={t('cancelCycle.reasonLabel')}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder={t('cancelCycle.reasonPlaceholder')}
+              rows={3}
+              maxLength={REASON_MAX}
+              required
+              {...(reasonInvalid && reason.length > 0
+                ? { error: t('cancelCycle.reasonRequired') }
+                : { hint: t('cancelCycle.reasonRequired') })}
+            />
+          </Dialog>
         </>
       )}
-    </div>
+    </>
   );
 }
