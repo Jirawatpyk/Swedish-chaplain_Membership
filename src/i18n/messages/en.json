@@ -4387,7 +4387,10 @@
             "dueLabel": "Due date",
             "legendEmail": "Email",
             "legendTask": "Task",
-            "emptyDue": "No reminders yet — only the due date is shown."
+            "emptyDue": "No reminders yet — only the due date is shown.",
+            "chartLabel": "{tier} schedule. Email: {email}. Task: {task}.",
+            "none": "none",
+            "dueShort": "Due"
           },
           "actions": {
             "save": "Save schedule",

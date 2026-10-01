@@ -4387,7 +4387,10 @@
             "dueLabel": "Förfallodatum",
             "legendEmail": "E-post",
             "legendTask": "Uppgift",
-            "emptyDue": "Inga påminnelser ännu — endast förfallodatumet visas."
+            "emptyDue": "Inga påminnelser ännu — endast förfallodatumet visas.",
+            "chartLabel": "Schema för {tier}. E-post: {email}. Uppgift: {task}.",
+            "none": "inga",
+            "dueShort": "Förfall"
           },
           "actions": {
             "save": "Spara schema",
