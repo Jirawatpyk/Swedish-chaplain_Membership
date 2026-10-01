@@ -41,7 +41,7 @@ import {
   type DataTableColumn,
   type MenuItem,
 } from '@jirawatpyk/aura-react';
-import { CircleCheck, TriangleAlert } from 'lucide-react';
+import { Check, CircleCheck, TriangleAlert } from 'lucide-react';
 import { toast } from '@/lib/toast';
 import { resolveDialogFinalFocus } from '@/components/broadcast/resolve-dialog-final-focus';
 import { EmptyState } from '@/components/shell/empty-state';
@@ -515,7 +515,10 @@ export function EscalationTaskQueue({
   const isFilterActive =
     assignment !== 'all' || assignmentPressed === null || taskTypeFilter !== '' || overdueOnly || status !== 'open';
   const dialogTask = dialog ? (items.find((task) => task.taskId === dialog.taskId) ?? null) : null;
-  const showOverdue = overdueCount > 0 && status === 'open';
+  // A pressed toggle stays mounted even once the count drops to 0 (the
+  // last overdue task just resolved): unmounting it dropped focus to <body>
+  // and left browser Back as the only way to clear the filter (#487).
+  const showOverdue = status === 'open' && (overdueOnly || overdueCount > 0);
 
   return (
     <div className="flex flex-col gap-[var(--aura-space-4)]">
@@ -528,19 +531,25 @@ export function EscalationTaskQueue({
       {/* R6 UX-I-1 — the live region stays mounted, so a count change is
           announced once and the toggle mounting is not. */}
       <span className="sr-only" aria-live="polite" aria-atomic="true">
-        {showOverdue ? t('overdue_banner', { count: overdueCount }) : ''}
+        {overdueCount > 0 && status === 'open' ? t('overdue_banner', { count: overdueCount }) : ''}
       </span>
       {showOverdue ? (
         // A toggle for `?overdue_only=`: its name stays the same in both
         // states (the state rides `aria-pressed`), and the copy is
-        // device-neutral, since staff tap it on touch devices.
+        // device-neutral, since staff tap it on touch devices. Pressed, the
+        // warning icon becomes a check and the fill deepens, so the state
+        // does not rest on the ring alone.
         <button
           type="button"
           aria-pressed={overdueOnly}
           onClick={() => setSearchParam('overdue_only', overdueOnly ? null : 'true')}
-          className="flex min-h-14 w-full items-center gap-3 rounded-[var(--aura-radius-lg)] border border-[var(--aura-border-danger)] bg-[var(--aura-alert-danger-bg,var(--aura-bg-surface))] px-4 py-3 text-start text-[var(--aura-fg-primary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)] aria-pressed:ring-2 aria-pressed:ring-[var(--aura-border-danger)]"
+          className="flex min-h-14 w-full items-center gap-3 rounded-[var(--aura-radius-lg)] border border-[var(--aura-border-danger)] bg-[var(--aura-alert-danger-bg,var(--aura-bg-surface))] px-4 py-3 text-start text-[var(--aura-fg-primary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)] aria-pressed:bg-[color-mix(in_srgb,var(--aura-fg-danger)_15%,var(--aura-bg-surface))] aria-pressed:ring-2 aria-pressed:ring-[var(--aura-border-danger)]"
         >
-          <TriangleAlert className="size-5 shrink-0 text-[var(--aura-fg-danger)]" aria-hidden />
+          {overdueOnly ? (
+            <Check className="size-5 shrink-0 text-[var(--aura-fg-danger)]" aria-hidden />
+          ) : (
+            <TriangleAlert className="size-5 shrink-0 text-[var(--aura-fg-danger)]" aria-hidden />
+          )}
           <span className="flex flex-col">
             <span className="text-sm font-semibold">{t('overdue_banner', { count: overdueCount })}</span>
             <span className="text-xs text-[var(--aura-fg-secondary)]">{t('overdue_banner_cta')}</span>

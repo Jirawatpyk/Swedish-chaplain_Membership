@@ -293,10 +293,18 @@ test.describe('F8 — escalation task queue (US6) @a11y', () => {
       page.getByRole('heading', { name: /escalation tasks/i }),
     ).toBeVisible();
     // R10 S3 close — manager banner has role="note" + i18n notice.
-    await expect(page.getByRole('note').first()).toBeVisible();
-    await expect(
-      page.getByText(/manager|chef|ผู้จัดการ/i).first(),
-    ).toBeVisible();
+    //
+    // R25 (1 Oct 2026) — assert the notice's COPY on the banner itself. This
+    // used to be a second, unanchored `getByText(/manager|chef|ผู้จัดการ/i)
+    // .first()` over the whole page. Its first match is the account menu's
+    // name span, which carries `hidden … lg:inline`: visible on a desktop
+    // viewport, hidden below `lg`. So it failed on mobile-chrome, and on
+    // desktop it had been passing by asserting the signed-in user's name
+    // rather than the read-only notice. Scoping it to the note checks the
+    // thing the test is named for, at every width.
+    const managerNotice = page.getByRole('note').first();
+    await expect(managerNotice).toBeVisible();
+    await expect(managerNotice).toContainText(/manager|chef|ผู้จัดการ/i);
     // FR-052a — manager `read` only, mutations are admin-only. 122 US7b-2:
     // the actions column stays, holding only each row's "View timeline"
     // link, so no Done button and no ⋯ menu may appear in any row.

@@ -241,6 +241,57 @@ describe('<EscalationTaskQueue> — overdue toggle and the manager note', () => 
     expect(note.closest('.aura-alert')).not.toBeNull();
     expect(banner()).toBeInTheDocument();
   });
+
+  // spec 122 US7b-2 — the toggle used to unmount once pressed (the count it
+  // was gated on could drop to 0 under the filter), dropping focus to <body>
+  // and leaving browser Back as the only way to clear the filter.
+  it('stays mounted and pressed while the filter is on, even when the count is 0', () => {
+    searchParamsStub = new URLSearchParams('overdue_only=true');
+    renderQueue(ONE, undefined, 0);
+    expect(banner()).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('keeps focus on the toggle once pressed, and pressing again clears ?overdue_only', () => {
+    const view = renderQueue(ONE, undefined, 3);
+    const button = banner();
+    button.focus();
+    fireEvent.click(button);
+    expect(String(replace.mock.calls.at(-1)?.[0])).toContain('overdue_only=true');
+
+    // The router applies the new URL; the server re-renders with the filter
+    // on (the last overdue task may have just been resolved, so count 0).
+    searchParamsStub = new URLSearchParams('overdue_only=true');
+    view.rerender(
+      <NextIntlClientProvider
+        locale="en"
+        messages={enMessages}
+        formats={buildFormats('en')}
+        timeZone="Asia/Bangkok"
+      >
+        <EscalationTaskQueue
+          canMutate
+          actorUserId="actor-1"
+          overdueCount={0}
+          distinctTaskTypes={['phone_call']}
+          items={ONE}
+        />
+      </NextIntlClientProvider>,
+    );
+    expect(banner()).toBe(button);
+    expect(button).toHaveAttribute('aria-pressed', 'true');
+    expect(document.activeElement).toBe(button);
+
+    fireEvent.click(banner());
+    expect(String(replace.mock.calls.at(-1)?.[0])).not.toContain('overdue_only');
+  });
+
+  it('is not rendered outside the Open tab, even with ?overdue_only=true', () => {
+    searchParamsStub = new URLSearchParams('status=done&overdue_only=true');
+    renderQueue(ONE, undefined, 3);
+    expect(
+      screen.queryByRole('button', { name: /show only overdue tasks/i }),
+    ).toBeNull();
+  });
 });
 
 describe('<EscalationTaskQueue> — dates', () => {
@@ -248,4 +299,5 @@ describe('<EscalationTaskQueue> — dates', () => {
     renderQueue(ONE);
     expect(screen.getAllByText('10 Apr 2026').length).toBeGreaterThan(0);
   });
+
 });
