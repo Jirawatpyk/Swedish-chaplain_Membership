@@ -78,4 +78,18 @@ describe('aura-admin preview renders the pages’ own views', () => {
     expect(preview).not.toContain('sectionMemberPlan');
     expect(preview).not.toContain('<DataTable');
   });
+
+  it('the escalation tasks and reminder schedules through their own views (US7b-2)', () => {
+    const tasks = readFileSync('src/app/(staff)/admin/renewals/tasks/page.tsx', 'utf8');
+    const schedules = readFileSync('src/app/(staff)/admin/settings/renewals/schedules/page.tsx', 'utf8');
+    expect(tasks).toContain('renderTasksQueueView(');
+    expect(preview).toContain('renderTasksQueueView(');
+    expect(schedules).toContain('renderSchedulesStateView(');
+    expect(preview).toContain('renderSchedulesStateView(');
+    // The editor is the page's own client component, never a copy.
+    expect(preview).toContain('<ScheduleEditor');
+    expect(preview).toContain('<EscalationTaskQueue');
+    expect(preview).toContain('<StaffFrame path="/admin/renewals/tasks">');
+    expect(preview).toContain('<StaffFrame path="/admin/settings/renewals/schedules">');
+  });
 });
