@@ -62,4 +62,20 @@ describe('aura-admin preview renders the pages’ own views', () => {
     expect(preview).not.toContain('<PipelineWithBulk');
     expect(preview).not.toContain('<UrgencyBucketTabs');
   });
+
+  it('the cycle detail and tier upgrade pages through their own views (US7b-1)', () => {
+    const cycle = readFileSync('src/app/(staff)/admin/renewals/[cycleId]/page.tsx', 'utf8');
+    const tiers = readFileSync('src/app/(staff)/admin/renewals/tier-upgrades/page.tsx', 'utf8');
+    for (const view of ['renderCycleDetailView(', '<CycleDetailTitle']) {
+      expect(cycle).toContain(view);
+      expect(preview).toContain(view);
+    }
+    expect(tiers).toContain('renderTierUpgradesView(');
+    expect(preview).toContain('renderTierUpgradesView(');
+    expect(preview).toContain('<StaffFrame path={`/admin/renewals/${CYCLE_PREVIEW_ID}`}>');
+    expect(preview).toContain('<StaffFrame path="/admin/renewals/tier-upgrades">');
+    // No copy of the cards or the queue table: they come only from the views.
+    expect(preview).not.toContain('sectionMemberPlan');
+    expect(preview).not.toContain('<DataTable');
+  });
 });
