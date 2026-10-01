@@ -128,6 +128,7 @@ test.describe('@a11y T267 — F8 axe-core scan', () => {
 
     test('059-membership-suspension Task 11 — PipelineBulkActionBar toolbar has an accessible name + 44px targets', async ({
       page,
+      isMobile,
     }) => {
       await signInAsAdmin(page);
       await page.goto('/admin/renewals');
@@ -154,14 +155,26 @@ test.describe('@a11y T267 — F8 axe-core scan', () => {
       const toolbar = page.getByRole('region', { name: 'Bulk actions' });
       await expect(toolbar).toBeVisible();
 
-      // WCAG 2.5.5 — every actionable control inside the toolbar (the two
-      // action buttons + Clear) meets the 44px minimum target size.
+      // Every actionable control inside the toolbar (the two action buttons
+      // + Clear) renders, and ON MOBILE meets the 44px minimum target size.
+      //
+      // R25 (1 Oct 2026) — the height assertion is scoped to mobile because
+      // that is the rule this repo actually sets: `docs/ux-standards.md`
+      // § 9.1 Mobile-first — "Tappable targets MUST be >= 44 x 44 px (WCAG
+      // 2.5.5 AAA) **on mobile**". AURA implements exactly that: its
+      // `aura-btn--touch` height sits inside `@media (max-width: 639.98px)`
+      // (5.22.0 `dist/styles.css`), i.e. below the `sm` breakpoint § 9.2
+      // lists. Asserting 44px at every width made this stricter than our own
+      // standard and than WCAG — 2.5.5 is AAA, and the AA rule (2.5.8, WCAG
+      // 2.2) is 24x24 — so it failed on chromium at 1280px for controls that
+      // are correct there. Measured: the same controls are 32px at 1280 and
+      // 44px at 393, with identical classes at both widths.
       const targets = toolbar.getByRole('button');
       const targetCount = await targets.count();
       for (let i = 0; i < targetCount; i++) {
         const box = await targets.nth(i).boundingBox();
         expect(box, `toolbar button ${i} has a bounding box`).not.toBeNull();
-        if (box) {
+        if (box && isMobile) {
           expect(box.height, `toolbar button ${i} height >= 44px`).toBeGreaterThanOrEqual(44);
         }
       }
