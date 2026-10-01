@@ -398,7 +398,58 @@ US7b ships as two PRs (spec Clarifications, Session 2026-10-01 US7b start). It i
 
 #### US7b-2 — escalation tasks and reminder schedules (PR 12)
 
-- [ ] T730 [US7] Tasks written when US7b-2 starts. Boards: `Admin-renewal-tasks` (+`-mobile`), `Admin-state-tasks-manager`, `Admin-renewal-schedules` (+`-mobile`).
+A UI swap with no money on screen: UX and i18n reviews, no financial review (spec Clarifications, Session 2026-10-01 US7b-2 start).
+
+- [x] T730 [US7] Spec Clarifications "Session 2026-10-01 (maintainer, US7b-2 start)"; these tasks.
+- [ ] T731 [US7] Escalation task filters:
+  - the status tabs on AURA, keeping `role="tab"`, the `task-status-tab-*` ids and the `escalation-tasks-tabpanel` link;
+  - the Assignment group as pressed buttons;
+  - the Task type select as an AURA `Select`;
+  - the overdue toggle card on tokens;
+  - the manager note as an AURA `Alert`.
+  - RED: `status-tablist`, the filter cases of `escalation-task-queue`.
+- [ ] T732 [US7] Escalation task table:
+  - an AURA `DataTable` that stacks into cards below 640px, with the actions column only for those who can act;
+  - "Done" plus a ⋯ menu (Skip, Reassign, View timeline) named for its row;
+  - the Overdue badge;
+  - the empty states.
+  - RED: `escalation-task-queue-row-actions`, `escalation-task-queue-view`.
+- [ ] T733 [US7] Task dialogs on AURA alertdialogs: Done with its optional note and counter, Skip with its required reason; same bodies. RED: `task-action-dialog`, `done-task-dialog`, `skip-task-dialog`.
+- [ ] T734 [US7] Reassign picker:
+  - an AURA `Combobox` over the same staff read;
+  - the current assignee marked and disabled;
+  - the same `{to_user_id}` body.
+  - RED: `reassign-task-dropdown`.
+- [ ] T735 [US7] Escalation tasks frame:
+  - the error card;
+  - "Next 50" and "Showing 50 per page";
+  - `loading.tsx` on AURA skeletons and a new `error.tsx`;
+  - the page view is `renderTasksQueueView`.
+  - RED: `tasks-loading-skeleton`, `tasks-error-boundary`.
+- [ ] T736 [US7] Schedule step card:
+  - an AURA `RadioGroup` for the channel;
+  - `Select` for the timing (with "Custom…") and the assignee role;
+  - `NumberField` and Before/After for a custom offset;
+  - a `Combobox` with `allowCustomValue` for the task type;
+  - `IconButton`s to move and remove;
+  - `step_id` composition unchanged.
+  - RED: `step-card`.
+- [ ] T737 [US7] Schedule chart: an SVG on a day scale replacing the legacy `Stepper`, with an accessible sentence and a legend. RED: `reminder-timeline`.
+- [ ] T738 [US7] Schedule editor and frame:
+  - tier tabs on AURA `Tabs`, with the tier as the section heading;
+  - the save bar (sticky on a phone);
+  - the save error and read-only notice as AURA `Alert`s;
+  - the feature-off and load-failure states, `loading.tsx`, a new `error.tsx`;
+  - the page view is `renderSchedulesView`.
+  - RED: `schedule-editor`, `schedules-loading-skeleton`, `schedules-error-boundary`.
+- [ ] T739 [US7] Ratchet, preview and exit:
+  - `MIGRATED_PATHS` gains the tasks and schedules paths, and `ui-import-ratchet` flips the two tasks controls;
+  - preview views `renewal-tasks` (+`-manager`, `-empty`) and `renewal-schedules` (+`-task-step`);
+  - e2e selectors follow;
+  - gates, the full unit suite, `next build`, bundle budgets;
+  - the parity page;
+  - reviews: enterprise-ux, i18n;
+  - draft PR; relay R25.
 
 ### US7c — portal renewal (PR 13)
 
