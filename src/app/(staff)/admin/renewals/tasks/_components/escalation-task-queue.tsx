@@ -394,9 +394,12 @@ export function EscalationTaskQueue({
               </Badge>
             ) : null}
             {/* The phone card adds the assignee after the date
-                ("· Malin Berg (Admin)"); the table has its own column. */}
-            <span className="whitespace-nowrap text-[var(--aura-fg-secondary)] sm:hidden">
-              · {assignee(task)} ({role(task)})
+                ("· Malin Berg (Admin)"); the table has its own column. A
+                no-break space keeps the "·" with the name, while a long
+                role still wraps. */}
+            <span className="text-[var(--aura-fg-secondary)] sm:hidden">
+              {'·\u00a0'}
+              {assignee(task)} ({role(task)})
             </span>
           </span>
         ),
