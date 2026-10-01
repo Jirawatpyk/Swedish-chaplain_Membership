@@ -37,6 +37,8 @@ import { renderPortalInvoicesView } from '@/app/(member)/portal/invoices/page';
 import { renderPortalInvoiceDetailView } from '@/app/(member)/portal/invoices/[invoiceId]/page';
 import { renderPortalCreditNoteView } from '@/app/(member)/portal/credit-notes/[creditNoteId]/page';
 import { toInvoiceRowViewModel } from '@/app/(member)/portal/invoices/_utils/invoice-row-view-model';
+import { RenewalPageView, type RenewalGate } from '@/app/(member)/portal/renewal/[memberId]/_components/renewal-page-view';
+import { renderRenewalSuccessView } from '@/app/(member)/portal/renewal/[memberId]/success/page';
 import { PayPreview, type PayPreviewState } from './pay-preview';
 
 // Request-time evaluation so the guard runs per request (see button-matrix).
@@ -47,7 +49,10 @@ export const dynamic = 'force-dynamic';
  * member frame with no DB, so they can be screenshot at 390 / 1280 in light
  * and dark and compared with the `Main`, `Benefits`, `Portal-*` boards
  * (`?view=home|benefits|profile|edit|change-request|history|account|invite|
- * directory|timeline|not-found`). Client components render as they ship;
+ * directory|timeline|not-found`). US7c adds the renewal pages:
+ * `renewal` (a first renewal with three plans), `renewal-gate`
+ * (`&gate=pending_review|rejected_refund|not_yet_open`), `renewal-processing`
+ * and `renewal-success` (`&receipt=preparing` for a receipt still rendering). Client components render as they ship;
  * profile and history render through the pages' own view functions; the
  * other DB-bound bodies (home, account) are rebuilt here from the same parts
  * they use, with fixture data. Nothing here can succeed: a
@@ -168,7 +173,7 @@ function MemberFrame({ path, children }: { readonly path: string; readonly child
 export default async function AuraPortalPreviewPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string; state?: string }>;
+  searchParams: Promise<{ view?: string; state?: string; gate?: string; receipt?: string }>;
 }) {
   if (!process.env.ALLOW_TEST_ROUTES) notFound();
   const sp = await searchParams;
@@ -542,6 +547,76 @@ export default async function AuraPortalPreviewPage({
         })}
       </MemberFrame>
       </BreadcrumbProvider>
+    );
+  }
+
+  // US7c — the `Portal-renewal` boards' data: Premium Corporate at its
+  // locked-in price, with a cheaper and a much cheaper plan to switch to.
+  if (view === 'renewal' || view === 'renewal-gate') {
+    const gateParam = typeof sp.gate === 'string' ? sp.gate : 'not_yet_open';
+    const gate: RenewalGate =
+      view === 'renewal'
+        ? {
+            kind: 'payable',
+            flow: {
+              memberId: '11111111-1111-4111-8111-111111111111',
+              cycleId: '00000000-0000-4000-8000-0000000000c1',
+              currentPlanId: 'plan-premium',
+              currentPlanLabel: 'Premium Corporate',
+              availablePlans: [
+                { planId: 'plan-premium', label: 'Premium Corporate', annualFeeMinorUnits: 3_600_000, quotas: { eblast: 6, culturalTickets: 2 } },
+                { planId: 'plan-large', label: 'Large Corporate', annualFeeMinorUnits: 2_600_000, quotas: { eblast: 4, culturalTickets: 2 } },
+                { planId: 'plan-regular', label: 'Regular Corporate', annualFeeMinorUnits: 1_600_000, quotas: { eblast: 2, culturalTickets: 0 } },
+              ],
+              frozenPriceMinorUnits: 3_600_000,
+              benefitUsage: { eblast: { used: 2, quota: 6 }, culturalTickets: { used: 0, quota: 2 } },
+            },
+          }
+        : gateParam === 'pending_review' || gateParam === 'rejected_refund'
+          ? { kind: gateParam }
+          : { kind: 'not_yet_open' };
+    return (
+      <MemberFrame path="/portal">
+        <DetailContainer>
+          <RenewalPageView
+            locale="en"
+            isFirstTimeRenewer={view === 'renewal'}
+            plan={{ label: 'Premium Corporate', tierLabel: 'Premium', termMonths: 12, expiresAt: '2026-12-31T00:00:00.000Z' }}
+            benefits={[
+              { key: 'eblast', used: 2, quota: 6 },
+              { key: 'cultural_ticket', used: 0, quota: 2 },
+              { key: 'event_attendance', used: 3, quota: null },
+            ] as never}
+            benefitsAvailable
+            gate={gate}
+          />
+        </DetailContainer>
+      </MemberFrame>
+    );
+  }
+
+  if (view === 'renewal-processing' || view === 'renewal-success') {
+    const preparing = sp.receipt === 'preparing';
+    const invoice = {
+      invoiceId: '00000000-0000-4000-8000-0000000000a9',
+      status: 'paid',
+      documentNumber: null,
+      billDocumentNumberRaw: 'SC-2026-000131',
+      receiptDocumentNumberRaw: 'RC-2026-000131',
+      pdfDocKind: 'invoice',
+      pdf: {},
+      receiptPdfStatus: preparing || view === 'renewal-processing' ? 'pending' : 'rendered',
+      receiptPdf: preparing || view === 'renewal-processing' ? null : { blobKey: 'k', sha256: 'a'.repeat(64), templateVersion: 1 },
+    } as unknown as Invoice;
+    return (
+      <MemberFrame path="/portal">
+        {await renderRenewalSuccessView({
+          locale: 'en',
+          cycle: view === 'renewal-success' ? { status: 'completed', expiresAt: '2027-12-31T00:00:00.000Z' } : null,
+          invoiceId: '00000000-0000-4000-8000-0000000000a9',
+          invoice,
+        })}
+      </MemberFrame>
     );
   }
 

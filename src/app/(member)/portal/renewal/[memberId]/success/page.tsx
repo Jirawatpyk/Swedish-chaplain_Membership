@@ -35,6 +35,7 @@ import {
   getInvoice,
   invoiceStatusHasReceipt,
   makeGetInvoiceDeps,
+  type Invoice,
 } from '@/modules/invoicing';
 import {
   PortalInvoiceDownloadButton,
@@ -54,12 +55,6 @@ export default async function RenewalSuccessPage({
   const { invoice: invoiceId } = await searchParams;
   const { user } = await requireSession('member');
   const tenant = resolveTenantFromRequest();
-  const t = await getTranslations('portal.renewal.success');
-  const tStatus = await getTranslations('portal.renewal.success.cycleStatusValue');
-  // R8-M2-ux — separate translator for invoice-action ariaLabels so SR
-  // users hear "Download tax receipt PDF for invoice RC-2026-0001" not
-  // the generic button label "Download receipt PDF" (no number).
-  const tInvoiceActions = await getTranslations('portal.invoices.actions');
   // I16 review-fix: use next-intl formatter for locale-aware date
   // display (TH applies Buddhist Era; SV/EN use Gregorian) instead of
   // raw `.slice(0, 10)` ISO truncation.
@@ -132,6 +127,37 @@ export default async function RenewalSuccessPage({
       })
     : null;
   const invoice = invoiceForReceipt && invoiceForReceipt.ok ? invoiceForReceipt.value : null;
+
+  return renderRenewalSuccessView({
+    locale,
+    cycle: activeCycle ? { status: activeCycle.status, expiresAt: activeCycle.expiresAt } : null,
+    invoiceId: invoiceId ?? null,
+    invoice,
+  });
+}
+
+/**
+ * The success page's presentation, exported for the preview harness
+ * (spec 122 US7c, as the invoice pages do). `cycle` null is the processing
+ * state; `invoiceId` null means the F5 redirect carried no invoice.
+ */
+export async function renderRenewalSuccessView({
+  locale,
+  cycle: activeCycle,
+  invoiceId,
+  invoice,
+}: {
+  readonly locale: string;
+  readonly cycle: { readonly status: string; readonly expiresAt: string } | null;
+  readonly invoiceId: string | null;
+  readonly invoice: Invoice | null;
+}) {
+  const t = await getTranslations('portal.renewal.success');
+  const tStatus = await getTranslations('portal.renewal.success.cycleStatusValue');
+  // R8-M2-ux — separate translator for invoice-action ariaLabels so SR
+  // users hear "Download tax receipt PDF for invoice RC-2026-0001" not
+  // the generic button label "Download receipt PDF" (no number).
+  const tInvoiceActions = await getTranslations('portal.invoices.actions');
 
   // The processing state is the page's existing branch: no displayable cycle
   // yet (the payment webhook has not landed). The board gives it its own hero.
