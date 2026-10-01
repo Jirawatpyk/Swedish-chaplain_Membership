@@ -16,7 +16,7 @@
  * dialog-jsdom-hang precedent used by `cycle-admin-actions.test.tsx`).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import { PendingReactivationActions } from '@/app/(staff)/admin/renewals/[cycleId]/_components/pending-reactivation-actions';
 import enMessages from '@/i18n/messages/en.json';
@@ -90,5 +90,67 @@ describe('<PendingReactivationActions> — UX-A Bug 2 visibility gates', () => {
       rejectRefundInitiatedAt: null,
     });
     expect(container).toBeEmptyDOMElement();
+  });
+});
+
+// 122 US7b-1 (T723), board `Admin-renewal-cycle-pending`: "Approve
+// reactivation" is the primary AURA button and "Reject & refund" the danger
+// one; both confirm in AURA alertdialogs with the same requests.
+describe('<PendingReactivationActions> on AURA', () => {
+  const P = enMessages.admin.renewals.cycleDetail.pendingReactivation;
+
+  // The suite runs on fake timers; the dialog flow awaits real ones.
+  beforeEach(() => {
+    vi.useRealTimers();
+  });
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  function renderPending() {
+    return renderActions({ status: 'pending_admin_reactivation', rejectRefundInitiatedAt: null });
+  }
+
+  it('makes Approve reactivation primary and Reject & refund danger', () => {
+    renderPending();
+    expect(screen.getByRole('button', { name: P.reactivate.button })).toHaveClass('aura-btn--primary');
+    expect(screen.getByRole('button', { name: P.reject.button })).toHaveClass('aura-btn--danger-secondary');
+  });
+
+  it('approves in an AURA alertdialog with the same empty POST', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
+    vi.stubGlobal('fetch', fetchMock);
+    renderPending();
+    fireEvent.click(screen.getByRole('button', { name: P.reactivate.button }));
+    const dialog = screen.getByRole('alertdialog', { name: P.reactivate.dialogTitle });
+    expect(dialog).toHaveClass('aura-dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: P.reactivate.confirm }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(`/api/admin/renewals/${CYCLE_ID}/reactivate`);
+    expect(init).toMatchObject({ method: 'POST', body: '{}' });
+  });
+
+  it('rejects in an AURA alertdialog that needs a reason, posting it trimmed', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue({ ok: true, status: 200, json: async () => ({ refund_credit_note_id: 'cn-1' }) });
+    vi.stubGlobal('fetch', fetchMock);
+    renderPending();
+    fireEvent.click(screen.getByRole('button', { name: P.reject.button }));
+    const dialog = screen.getByRole('alertdialog', { name: P.reject.dialogTitle });
+    const confirm = within(dialog).getByRole('button', { name: P.reject.confirm });
+    expect(confirm).toHaveClass('aura-btn--danger');
+    expect(confirm).toBeDisabled();
+    fireEvent.change(within(dialog).getByRole('textbox', { name: new RegExp(`^${P.reject.reasonLabel}`) }), {
+      target: { value: '  Duplicate payment  ' },
+    });
+    await waitFor(() => expect(confirm).not.toBeDisabled());
+    fireEvent.click(confirm);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(`/api/admin/renewals/${CYCLE_ID}/reject`);
+    expect(JSON.parse(init.body as string)).toEqual({ reason: 'Duplicate payment' });
   });
 });
