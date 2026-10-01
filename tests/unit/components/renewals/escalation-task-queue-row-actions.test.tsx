@@ -107,6 +107,7 @@ function renderQueue(canMutate = true, items = [makeTask({ taskId: 't1' })]) {
 }
 
 const MENU = 'Skip, reassign or view timeline — Phone call, Acme Co';
+const TIMELINE = 'View timeline — Phone call, Acme Co';
 /** The row's Done button (the Status filter has a "Done" button too). */
 function rowDone(): HTMLElement {
   return within(screen.getByRole('grid')).getByRole('button', { name: 'Done' });
@@ -149,11 +150,12 @@ describe('<EscalationTaskQueue> table (AURA DataTable)', () => {
     ]);
   });
 
-  it('a manager gets no actions column and no row controls', () => {
+  it('a manager gets no row controls, only a link to each row\'s timeline', () => {
     renderQueue(false);
-    expect(screen.getAllByRole('columnheader')).toHaveLength(7);
+    expect(screen.getAllByRole('columnheader')).toHaveLength(8);
     expect(within(screen.getByRole('grid')).queryByRole('button', { name: 'Done' })).toBeNull();
     expect(screen.queryByRole('button', { name: MENU })).toBeNull();
+    expect(screen.getByRole('link', { name: TIMELINE })).toHaveAttribute('href', '/admin/members/member-t1/timeline');
   });
 
   it('the member cell holds one link, to the member', () => {
@@ -254,10 +256,11 @@ describe('<EscalationTaskQueue> row actions — Done + ⋯ menu', () => {
     );
   });
 
-  it('a closed task disables Done and the menu', () => {
+  it('a closed task has no Done or menu, and still links to its timeline', () => {
     renderQueue(true, [makeTask({ taskId: 't1', status: 'done' })]);
-    expect(rowDone()).toBeDisabled();
-    expect(screen.getByRole('button', { name: MENU })).toBeDisabled();
+    expect(within(screen.getByRole('grid')).queryByRole('button', { name: 'Done' })).toBeNull();
+    expect(screen.queryByRole('button', { name: MENU })).toBeNull();
+    expect(screen.getByRole('link', { name: TIMELINE })).toHaveAttribute('href', '/admin/members/member-t1/timeline');
   });
 });
 

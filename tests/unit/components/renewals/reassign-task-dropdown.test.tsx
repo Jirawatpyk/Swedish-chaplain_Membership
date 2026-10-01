@@ -19,7 +19,7 @@
  * and its i18n keys are guaranteed present by `check:i18n`.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { ReassignTaskDropdown } from '@/app/(staff)/admin/renewals/tasks/_components/reassign-task-dropdown';
@@ -156,6 +156,14 @@ describe('<ReassignTaskDropdown> on AURA Combobox', () => {
     expect(ada).toHaveTextContent(reassign.current_assignee_badge);
     expect(ada).toHaveAttribute('aria-disabled', 'true');
     expect(options.find((o) => o.textContent?.includes('Bo Berg'))).toHaveTextContent('b@x.io · Manager');
+  });
+
+  it('a failed staff load is announced as an alert with a Retry button', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 500, json: async () => ({}) }) as unknown as Response));
+    renderPicker();
+    const alert = await screen.findByRole('alert');
+    expect(alert.closest('.aura-alert')).not.toBeNull();
+    expect(within(alert).getByRole('button', { name: reassign.retry })).toBeInTheDocument();
   });
 
   it('picking a colleague enables Reassign and submits their id', async () => {

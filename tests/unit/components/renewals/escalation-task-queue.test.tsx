@@ -117,6 +117,15 @@ describe('<EscalationTaskQueue> — status and assignment groups (board Admin-re
     expect(screen.queryByRole('tabpanel')).toBeNull();
   });
 
+  it('draws both groups as AURA toggle chips, so the pressed one carries a check, not only a fill', () => {
+    renderQueue(ONE);
+    for (const name of ['Status', 'Assignment']) {
+      for (const button of within(screen.getByRole('group', { name })).getAllByRole('button')) {
+        expect(button).toHaveClass('aura-tag');
+      }
+    }
+  });
+
   it('presses the status the URL carries', () => {
     searchParamsStub = new URLSearchParams('status=skipped');
     renderQueue(ONE);
