@@ -202,12 +202,16 @@ The maintainer approved the US7b-2 plan. Its boards were read against the code: 
   - **Escalation tasks, filters:**
     - The overdue toggle card, then Status (Open, Done, Skipped) and Assignment (All, Mine, Unassigned) as segmented groups, then the Task type select.
     - A link that already carries a colleague's id in `assignment` keeps working (no button is pressed). The board draws three buttons.
-    - For a manager, the read-only note sits above the filters and the actions column is not rendered. The overdue toggle stays, since it only filters: the `Admin-state-tasks-manager` board draws an empty queue, where there is nothing overdue to toggle.
-  - **Reminder schedules, chart:** the timeline is a chart on a day scale (email markers on the upper lane, task markers on the lower one, a dashed line at the renewal date), replacing the step strip. It names the schedule in one sentence for screen readers.
+    - For a manager, the read-only note sits above the filters, with no Done button and no ⋯ menu. The overdue toggle stays, since it only filters: the `Admin-state-tasks-manager` board draws an empty queue, where there is nothing overdue to toggle.
+    - Status and Assignment are AURA toggle chips (`Tag selected`, `aria-pressed`), so the pressed chip carries a check, not only a fill. A hand-built pill track read at about 1.2:1 in dark mode (UX review).
+  - **Escalation tasks, the timeline after the move (UX review):** moving "View timeline" into the menu must not take it away from anyone. A row that is closed (Done or Skipped), or any row for a manager, shows a "View timeline" link in the actions column ("View timeline — {type}, {member}" for screen readers) instead of Done and the menu, which would have nothing to act on. So the actions column renders for every role.
+  - **Out of scope, filed separately:** once the overdue toggle is pressed, the page stops counting overdue tasks, so the toggle disappears and only Back turns the filter off. The count is a server read in `page.tsx` that also feeds the overdue gauge. That is a logic change, so it ships in its own PR (Session 2026-09-27 rule).
+  - **Reminder schedules, chart:** the timeline is a chart on a day scale (email markers on the upper lane, task markers on the lower one, a dashed line at the renewal date), replacing the step strip. It names the schedule in one sentence for screen readers. Axis labels are kept or dropped by each label's width at the chart's measured width, and a label at either edge anchors to that edge, so a long TH or SV "Due" never collides on a phone.
   - **Reminder schedules, step card:**
     - Delivery channel (Email or Task) as a radio group, and Send timing as a select ending in "Custom…".
     - A task step has a Task type combobox that accepts a typed type, with the hint "Can't find the task type? Type to add your own.", and an Assignee role select.
     - The email preview keeps today's copy in the board's check-line form; its no-copy warning stays a warning.
+    - The timing sentence heads each card (h3), and the move and remove buttons are described by it, so nine cards no longer read as nine identical "Move up" buttons. A step moved to either end hands focus to the other arrow.
   - **Reminder schedules, editing:**
     - Removing a step keeps its Undo toast; no confirm is added.
     - The save bar holds "{n} steps · Last saved …", "Add step" and "Save schedule". It sits under the steps from 640px and sticks to the bottom of a phone screen.
