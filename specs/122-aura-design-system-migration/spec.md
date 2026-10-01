@@ -202,7 +202,7 @@ The maintainer approved the US7b-2 plan. Its boards were read against the code: 
   - **Escalation tasks, filters:**
     - The overdue toggle card, then Status (Open, Done, Skipped) and Assignment (All, Mine, Unassigned) as segmented groups, then the Task type select.
     - A link that already carries a colleague's id in `assignment` keeps working (no button is pressed). The board draws three buttons.
-    - For a manager, the read-only note replaces the toggle, and the actions column is not rendered.
+    - For a manager, the read-only note sits above the filters and the actions column is not rendered. The overdue toggle stays, since it only filters: the `Admin-state-tasks-manager` board draws an empty queue, where there is nothing overdue to toggle.
   - **Reminder schedules, chart:** the timeline is a chart on a day scale (email markers on the upper lane, task markers on the lower one, a dashed line at the renewal date), replacing the step strip. It names the schedule in one sentence for screen readers.
   - **Reminder schedules, step card:**
     - Delivery channel (Email or Task) as a radio group, and Send timing as a select ending in "Custom…".
