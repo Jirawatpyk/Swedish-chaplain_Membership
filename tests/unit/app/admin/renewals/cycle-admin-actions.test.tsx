@@ -201,6 +201,17 @@ describe('<CycleAdminActions> on AURA', () => {
     expect(cancel).not.toHaveClass('max-sm:hidden');
   });
 
+  it('lets the payment action take the full width and wrap on a phone (UX review H1: 320px)', () => {
+    const { unmount } = renderActions('awaiting_payment', { invoiceId: INVOICE_ID, billNumber: 'SC-2026-000130' });
+    expect(screen.getByRole('link', { name: 'Record payment on SC-2026-000130' })).toHaveClass(
+      'max-sm:w-full',
+      'max-sm:whitespace-normal',
+    );
+    unmount();
+    renderActions('awaiting_payment');
+    expect(screen.getByRole('button', { name: 'Mark paid offline' })).toHaveClass('max-sm:w-full', 'max-sm:whitespace-normal');
+  });
+
   it('renders no danger zone for a cycle that cannot be cancelled', () => {
     const { container } = renderActions('completed', null, 'dangerZone');
     expect(container).toBeEmptyDOMElement();

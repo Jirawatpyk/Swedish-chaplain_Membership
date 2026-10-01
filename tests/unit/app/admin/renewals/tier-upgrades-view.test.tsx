@@ -2,9 +2,8 @@
  * `renderTierUpgradesView` (spec 122 US7b-1, T726; boards `Admin-tier-upgrades`
  * + `-mobile`): the queue page's body, shared with the no-DB preview. The
  * section tabs and the queue sit in one AURA card that drops its frame and
- * padding on a phone (the rows are cards of their own); the phone list is
- * captioned "Fees exclude VAT."; a failed read is an AURA danger alert with
- * Retry.
+ * padding on a phone (the rows are cards of their own); a failed read is an
+ * AURA danger alert with Retry.
  */
 import type { ReactElement } from 'react';
 import { describe, expect, it, vi } from 'vitest';
@@ -41,9 +40,9 @@ describe('renderTierUpgradesView', () => {
     expect(card).toContainElement(screen.getByText('TABS'));
   });
 
-  it('captions the phone list "Fees exclude VAT."', async () => {
+  it('leaves the VAT caption to the queue, so an empty queue has none', async () => {
     await renderView({ sectionTabs: null, queue: <p>QUEUE</p> });
-    expect(screen.getByText(T.fees_exclude_vat)).toHaveClass('sm:hidden');
+    expect(screen.queryByText(T.fees_exclude_vat)).toBeNull();
   });
 
   it('shows a failed read as an AURA danger alert with Retry, in place of the queue', async () => {
@@ -52,6 +51,5 @@ describe('renderTierUpgradesView', () => {
     expect(alert).toHaveClass('aura-alert--danger');
     expect(alert).toHaveTextContent(T.error_state.subtitle);
     expect(screen.getByRole('button', { name: T.error_state.retry })).toBeInTheDocument();
-    expect(screen.queryByText(T.fees_exclude_vat)).toBeNull();
   });
 });

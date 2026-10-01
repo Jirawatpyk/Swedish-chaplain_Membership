@@ -259,3 +259,56 @@ describe('TierUpgradeQueueClient on AURA', () => {
     expect((fetchMock.mock.calls[0] as [string])[0]).toBe('/api/admin/renewals/tier-upgrades/sug-1/dismiss');
   });
 });
+
+// 122 US7b-1 UX review (T728): focus and busy states on the AURA queue.
+describe('TierUpgradeQueueClient — UX review fixes', () => {
+  const second = () =>
+    makeItem({ suggestionId: 'sug-2', memberId: '22222222-2222-4333-8444-555555555555', companyName: 'Baltic Bay' });
+
+  it('returns focus to the row\'s ⋯ when a Dismiss opened from it is cancelled (M2)', async () => {
+    renderQueue([makeItem()]);
+    const trigger = rowMenu();
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole('menuitem', { name: T.actions.dismiss.label }));
+    const dialog = screen.getByRole('alertdialog', { name: T.actions.dismiss.dialog_title });
+    fireEvent.click(within(dialog).getByRole('button', { name: T.dialog.cancel }));
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+  });
+
+  it('keeps the ⋯ focusable while an escalate runs, with its items disabled (M3)', async () => {
+    fetchMock.mockImplementation(() => new Promise(() => {}));
+    renderQueue([makeItem()]);
+    escalateFromMenu();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(rowMenu()).not.toBeDisabled();
+    fireEvent.click(rowMenu());
+    expect(screen.getByRole('menuitem', { name: T.actions.escalate.label })).toHaveAttribute('aria-disabled', 'true');
+  });
+
+  it('an escalate on one row neither busies nor closes the Accept dialog of another (M4)', async () => {
+    let settle: (v: unknown) => void = () => {};
+    fetchMock.mockImplementationOnce(() => new Promise((r) => { settle = r; }));
+    renderQueue([makeItem(), second()]);
+    fireEvent.click(screen.getByRole('button', { name: 'Escalate or dismiss — Baltic Bay' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: T.actions.escalate.label }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getAllByRole('button', { name: T.actions.accept.label })[0]!);
+    const dialog = screen.getByRole('alertdialog', { name: T.actions.accept.dialog_title });
+    expect(within(dialog).getByRole('button', { name: T.actions.accept.label })).not.toHaveAttribute('aria-busy', 'true');
+    settle({ ok: true, status: 200, json: async () => ({}) });
+    await waitFor(() => expect(h.toast.success).toHaveBeenCalled());
+    expect(screen.getByRole('alertdialog', { name: T.actions.accept.dialog_title })).toBeInTheDocument();
+  });
+
+  it('shows the bare fee on a phone with one "Fees exclude VAT." caption, and the suffix from 640px (M7)', () => {
+    renderQueue([makeItem()]);
+    expect(screen.getByText('฿16,000')).toHaveClass('sm:hidden');
+    expect(screen.getByText('฿16,000 excl. VAT')).toHaveClass('max-sm:hidden');
+    expect(screen.getByText(T.fees_exclude_vat)).toHaveClass('sm:hidden');
+  });
+
+  it('has no VAT caption over the empty state (M7)', () => {
+    renderQueue([]);
+    expect(screen.queryByText(T.fees_exclude_vat)).toBeNull();
+  });
+});

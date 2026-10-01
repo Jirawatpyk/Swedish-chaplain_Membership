@@ -32,14 +32,17 @@ describe('cycle detail loading skeleton', () => {
     const cards = host.querySelectorAll('.aura-card');
     expect(cards).toHaveLength(4);
     expect(cards[0]?.parentElement).toHaveClass('lg:grid-cols-2');
-    expect(cards[1]).toHaveClass('max-sm:order-first');
+    // The page's DOM order: Linked invoice first, Member & plan back on the left from 1024px.
+    expect(cards[1]).toHaveClass('lg:order-first');
   });
 
   it('holds the header with its title, subtitle and actions', async () => {
     const host = await dom();
     const header = host.querySelector('[data-slot="page-header"]');
     expect(header).not.toBeNull();
-    expect(header?.querySelectorAll('[data-slot="skeleton-block"]').length).toBeGreaterThanOrEqual(3);
+    // Title, status pill, subtitle and the payment action (UX review M8).
+    expect(header?.querySelectorAll('[data-slot="skeleton-block"]').length).toBeGreaterThanOrEqual(4);
+    expect(header?.querySelector('[data-slot="skeleton-block"].rounded-full')).not.toBeNull();
   });
 
   it('announces the load through one live region', async () => {

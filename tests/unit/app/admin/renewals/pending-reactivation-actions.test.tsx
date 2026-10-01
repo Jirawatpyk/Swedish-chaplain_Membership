@@ -35,6 +35,7 @@ const CYCLE_ID = '22222222-2222-2222-2222-222222222222';
 function renderActions(args: {
   status: string;
   rejectRefundInitiatedAt: string | null;
+  placement?: 'header' | 'dangerZone';
 }) {
   return render(
     <NextIntlClientProvider
@@ -45,6 +46,7 @@ function renderActions(args: {
         cycleId={CYCLE_ID}
         status={args.status}
         rejectRefundInitiatedAt={args.rejectRefundInitiatedAt}
+        {...(args.placement ? { placement: args.placement } : {})}
       />
     </NextIntlClientProvider>,
   );
@@ -116,6 +118,18 @@ describe('<PendingReactivationActions> on AURA', () => {
     renderPending();
     expect(screen.getByRole('button', { name: P.reactivate.button })).toHaveClass('aura-btn--primary');
     expect(screen.getByRole('button', { name: P.reject.button })).toHaveClass('aura-btn--danger-secondary');
+  });
+
+  it('on a phone keeps Approve in the header and moves Reject & refund to the danger zone (UX review M6)', () => {
+    const { unmount } = renderPending();
+    expect(screen.getByRole('button', { name: P.reject.button })).toHaveClass('max-sm:hidden');
+    expect(screen.getByRole('button', { name: P.reactivate.button })).toHaveClass('max-sm:w-full');
+    unmount();
+    renderActions({ status: 'pending_admin_reactivation', rejectRefundInitiatedAt: null, placement: 'dangerZone' });
+    expect(screen.queryByRole('button', { name: P.reactivate.button })).toBeNull();
+    const reject = screen.getByRole('button', { name: P.reject.button });
+    expect(reject).toHaveClass('w-full');
+    expect(reject).not.toHaveClass('max-sm:hidden');
   });
 
   it('approves in an AURA alertdialog with the same empty POST', async () => {

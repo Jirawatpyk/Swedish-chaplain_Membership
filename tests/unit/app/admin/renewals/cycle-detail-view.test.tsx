@@ -95,10 +95,13 @@ describe('renderCycleDetailView — cards', () => {
     }
   });
 
-  it('puts "Linked invoice" first on a phone (board Admin-renewal-cycle-mobile)', async () => {
+  it('puts "Linked invoice" first on a phone in the DOM too, so focus follows it (board Admin-renewal-cycle-mobile)', async () => {
     await renderView();
-    expect(card(cd.sectionInvoice).closest('.aura-card')).toHaveClass('max-sm:order-first');
-    expect(card(cd.sectionMemberPlan).closest('.aura-card')).not.toHaveClass('max-sm:order-first');
+    const invoice = card(cd.sectionInvoice).closest('.aura-card') as HTMLElement;
+    const member = card(cd.sectionMemberPlan).closest('.aura-card') as HTMLElement;
+    expect(invoice.compareDocumentPosition(member) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Two columns from 1024px: Member & plan back at the top left.
+    expect(member).toHaveClass('lg:order-first');
   });
 
   it('lists Member & plan as one list with the frozen price excluding VAT', async () => {
