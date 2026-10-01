@@ -125,6 +125,13 @@ export type StatusFilter = (typeof STATUS_FILTERS)[number];
 const ASSIGNMENT_FILTERS = ['all', 'mine', 'unassigned'] as const;
 type AssignmentFilter = (typeof ASSIGNMENT_FILTERS)[number];
 type TaskAction = 'done' | 'skip' | 'reassign';
+/**
+ * The "All types" option's value. AURA draws an option whose value is '' in a
+ * placeholder's grey, but "All types" is a real choice (board); it never
+ * reaches the URL, which drops `task_type` for it. Task types are snake_case,
+ * so no type can collide with it.
+ */
+const ALL_TASK_TYPES = '__all__';
 
 const OVERDUE_HIGHLIGHT_DAYS = 3;
 const OVERDUE_HIGHLIGHT_MS = OVERDUE_HIGHLIGHT_DAYS * 24 * 60 * 60 * 1000;
@@ -555,12 +562,14 @@ export function EscalationTaskQueue({
           <div className="w-full sm:ms-auto sm:w-56">
             <Select
               label={t('task_type_filter_label')}
-              value={taskTypeFilter}
+              value={taskTypeFilter === '' ? ALL_TASK_TYPES : taskTypeFilter}
               options={[
-                { value: '', label: t('task_type_filter_all') },
+                { value: ALL_TASK_TYPES, label: t('task_type_filter_all') },
                 ...distinctTaskTypes.map((tt) => ({ value: tt, label: resolveTaskTypeLabel(t, tt) })),
               ]}
-              onChange={(e) => setSearchParam('task_type', e.target.value || null)}
+              onChange={(e) =>
+                setSearchParam('task_type', e.target.value === ALL_TASK_TYPES ? null : e.target.value || null)
+              }
             />
           </div>
         ) : null}
