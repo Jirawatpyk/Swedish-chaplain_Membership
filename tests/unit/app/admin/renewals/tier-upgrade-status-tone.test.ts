@@ -1,18 +1,19 @@
 /**
  * Plan-change UX P4 — `tierUpgradeStatusTone` mapping.
  *
- * Pins the suggestion-status → StatusBadge-tone contract so a future status
- * added to the state machine can't silently regress the queue's colour cues.
+ * Pins the suggestion-status → AURA StatusPill tone contract (122 US7b-1,
+ * T725) so a future status added to the state machine can't silently regress
+ * the queue's colour cues.
  */
 import { describe, expect, it } from 'vitest';
 import { tierUpgradeStatusTone } from '@/app/(staff)/admin/renewals/tier-upgrades/_lib/tier-upgrade-status-tone';
 
 describe('tierUpgradeStatusTone', () => {
   it.each([
-    ['open', 'info'],
+    ['open', 'progress'],
     ['accepted_pending_apply', 'warning'],
-    ['applied', 'success'],
-    ['auto_resolved', 'success'],
+    ['applied', 'ready'],
+    ['auto_resolved', 'ready'],
     ['dismissed', 'neutral'],
     ['superseded', 'neutral'],
   ] as const)('maps %s → %s', (status, tone) => {
