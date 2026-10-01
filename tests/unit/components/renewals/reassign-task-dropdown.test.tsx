@@ -71,23 +71,19 @@ describe('<ReassignTaskDropdown> #5b', () => {
       </NextIntlClientProvider>,
     );
 
-    // The lazy-load effect fires on open → the trigger shows the loading copy
-    // (NOT a bare disabled control) while the fetch is pending. This fails if
-    // `isLoadingUsers` is unwired from the trigger.
-    expect(
-      await screen.findByText(reassign.loading, undefined, { timeout: 4000 }),
-    ).toBeInTheDocument();
+    // The lazy-load effect fires on open → the field says "Loading staff…"
+    // (NOT a bare disabled control) while the fetch is pending. 122 US7b-2:
+    // the AURA Combobox carries it as its placeholder.
+    const box = await screen.findByRole('combobox', { name: reassign.assignee_label });
+    await waitFor(() => expect(box).toHaveAttribute('placeholder', reassign.loading), { timeout: 4000 });
 
     // Resolving clears the loading copy back to the placeholder — proves the
-    // spinner is bound to the in-flight state, not always-on.
+    // loading state is bound to the in-flight fetch, not always-on.
     d.resolve({
       ok: true,
       json: async () => ({ users: STAFF }),
     } as unknown as Response);
-    expect(
-      await screen.findByText(reassign.placeholder, undefined, { timeout: 4000 }),
-    ).toBeInTheDocument();
-    expect(screen.queryByText(reassign.loading)).not.toBeInTheDocument();
+    await waitFor(() => expect(box).toHaveAttribute('placeholder', reassign.placeholder), { timeout: 4000 });
   });
 
   it('routes the staff role through the shared assigneeRole i18n key, not the raw enum (#5b, structural — visible render is E2E-only, see header)', () => {
