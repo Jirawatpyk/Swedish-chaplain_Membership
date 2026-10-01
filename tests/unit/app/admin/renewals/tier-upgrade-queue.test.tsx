@@ -208,6 +208,12 @@ describe('TierUpgradeQueueClient on AURA', () => {
     );
   });
 
+  it('gives the reason and its evidence a full-width line on a phone card (AURA 5.23, #120)', () => {
+    renderQueue([makeItem({ evidence: null })]);
+    const reason = screen.getByText(/verify manually before accepting/i).closest('[role="gridcell"]');
+    expect(reason).toHaveAttribute('data-card', 'wide');
+  });
+
   it('shows each plan with its annual fee excluding VAT', () => {
     renderQueue([makeItem()]);
     expect(screen.getByText('Regular — 2026')).toBeInTheDocument();

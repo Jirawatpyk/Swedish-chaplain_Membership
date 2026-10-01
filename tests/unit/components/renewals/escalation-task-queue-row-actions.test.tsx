@@ -174,6 +174,14 @@ describe('<EscalationTaskQueue> table (AURA DataTable)', () => {
     expect(screen.getByText(T.status.open, { selector: '.aura-pill *, .aura-pill' })).toBeInTheDocument();
   });
 
+  it('gives the task type line and the due line the full width of a phone card (board; AURA 5.23, #120)', () => {
+    renderQueue();
+    const typeCell = screen.getByText('Phone call').closest('[role="gridcell"]');
+    const dueCell = screen.getByText('Karin Ek (Admin)', { exact: false, selector: 'span' }).closest('[role="gridcell"]');
+    expect(typeCell).toHaveAttribute('data-card', 'wide');
+    expect(dueCell).toHaveAttribute('data-card', 'wide');
+  });
+
   it('marks a task more than three days late with a danger "Overdue" badge', () => {
     renderQueue(true, [makeTask({ taskId: 't1', dueAt: '2020-01-01T00:00:00.000Z' })]);
     expect(screen.getByText(T.overdue_badge).closest('.aura-badge')).toHaveClass('aura-badge--danger');
