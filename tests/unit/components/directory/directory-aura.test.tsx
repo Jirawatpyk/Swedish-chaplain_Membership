@@ -10,7 +10,7 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import { DirectoryTable, type DirectoryTableRow } from '@/components/directory/directory-table';
-import { RecentExports } from '@/components/directory/recent-exports';
+import { RecentExports, type RecentExportRow } from '@/components/directory/recent-exports';
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
@@ -198,5 +198,43 @@ describe('RecentExports on AURA (T506)', () => {
     expect(table.closest('.aura-tbl-wrap')).toHaveClass('is-flush');
     // No reach into AURA's table internals is left.
     expect(container.innerHTML).not.toMatch(/\[&amp;_\.aura-tbl/);
+  });
+
+  const mixedRows: RecentExportRow[] = [
+    {
+      jobId: 'j-1',
+      kindLabel: 'Directory JSON',
+      status: 'ready',
+      statusLabel: 'Ready',
+      downloadable: true,
+      requestedAt: '20 Sep 2026, 16:40',
+    },
+    {
+      jobId: 'j-2',
+      kindLabel: 'Directory E-Book (PDF)',
+      status: 'processing',
+      statusLabel: 'Generating…',
+      downloadable: false,
+      requestedAt: '24 Sep 2026, 10:12',
+    },
+  ];
+
+  // #117 (AURA 5.21.0): a row with Download (32px `sm` button) and a pill-only
+  // row come out the same height through AURA's `rowHeight="density"`.
+  it('#117: every row follows the density row height through an AURA Table prop', () => {
+    render(<RecentExports labels={exportLabels} rows={mixedRows} />);
+    expect(screen.getByRole('table')).toHaveClass('aura-tbl--row-density');
+  });
+
+  it('sets no row height by hand (AURA owns it, #117)', () => {
+    render(<RecentExports labels={exportLabels} rows={mixedRows} />);
+    const cells = within(screen.getByRole('table'))
+      .getAllByRole('row')
+      .flatMap((r) => [r, ...Array.from(r.children)]);
+    for (const el of cells) {
+      expect(el.className).not.toMatch(/(^|\s)(min-)?h-/);
+      expect((el as HTMLElement).style.height).toBe('');
+      expect((el as HTMLElement).style.minHeight).toBe('');
+    }
   });
 });
