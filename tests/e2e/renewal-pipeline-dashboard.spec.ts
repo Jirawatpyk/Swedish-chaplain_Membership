@@ -26,6 +26,47 @@ import AxeBuilder from '@axe-core/playwright';
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const F8_RENEWALS_ENABLED = process.env.FEATURE_F8_RENEWALS === 'true';
 
+type Page = import('@playwright/test').Page;
+
+/**
+ * 122 US7a — below `sm` (640px) the urgency stages are an AURA select
+ * labelled "Urgency" (board `Admin-renewals-mobile`); from 640px they are a
+ * nav of 8 link tabs. The mobile-chrome project runs this spec at 393px.
+ */
+function isPhone(page: Page): boolean {
+  return (page.viewportSize()?.width ?? 1280) < 640;
+}
+
+/** The visible urgency control: the link-tab nav, or the phone select. */
+function urgencyControl(page: Page) {
+  return isPhone(page)
+    ? page.getByRole('combobox', { name: /^urgency$/i })
+    : page.getByRole('navigation', { name: /filter by renewal urgency/i });
+}
+
+/** The 8 stages (T-90 … T-0, Suspended, Terminated): links, or the select's options. */
+async function expectEightStages(page: Page): Promise<void> {
+  if (!isPhone(page)) {
+    await expect(urgencyControl(page).getByRole('link')).toHaveCount(8, { timeout: 10_000 });
+    return;
+  }
+  await urgencyControl(page).click();
+  await expect(page.getByRole('option')).toHaveCount(8, { timeout: 10_000 });
+  await page.keyboard.press('Escape');
+}
+
+/** Switch to a stage the way each layout offers it. */
+async function chooseStage(page: Page, name: RegExp): Promise<void> {
+  if (!isPhone(page)) {
+    await urgencyControl(page).getByRole('link', { name }).click();
+    return;
+  }
+  await urgencyControl(page).click();
+  const option = page.getByRole('option', { name });
+  await option.waitFor({ state: 'visible', timeout: 5_000 });
+  await option.click();
+}
+
 test.describe('F8 — /admin/renewals pipeline dashboard (US1)', () => {
   // Constitution Principle VI: throw on missing prerequisites instead
   // of skipping so env-config gaps surface as hard failures and the
@@ -70,10 +111,8 @@ test.describe('F8 — /admin/renewals pipeline dashboard (US1)', () => {
     // (the month lens needs a "no current chip" state). Scope to it by name:
     // the section tabs are another nav on the same view. EN canonical label
     // — the E2E session signs in in English.
-    const tabs = page
-      .getByRole('navigation', { name: /filter by renewal urgency/i })
-      .getByRole('link');
-    await expect(tabs).toHaveCount(8, { timeout: 10_000 });
+    // On a phone: the "Urgency" select's 8 options.
+    await expectEightStages(page);
 
     // Tier filter present (122 US7a: an AURA select labelled "Tier").
     await expect(page.getByRole('combobox', { name: /^tier$/i })).toBeVisible();
@@ -127,10 +166,7 @@ test.describe('F8 — /admin/renewals pipeline dashboard (US1)', () => {
     // Click the "Terminated" chip (last in the urgency nav; renamed from
     // "Lapsed"). Using `waitForURL` instead of `networkidle` because RSC
     // streaming races the URL push under Turbopack dev.
-    const terminatedTab = page
-      .getByRole('navigation', { name: /filter by renewal urgency/i })
-      .getByRole('link', { name: /^terminated/i });
-    await terminatedTab.click();
+    await chooseStage(page, /^terminated/i);
     await page.waitForURL(/[?&]urgency=terminated\b/, { timeout: 10_000 });
     expect(page.url()).toContain('urgency=terminated');
 
@@ -140,9 +176,15 @@ test.describe('F8 — /admin/renewals pipeline dashboard (US1)', () => {
     ).toBeVisible();
     // Reason column header — present even on empty state via TableHead
     // (the empty-state row spans columns so headers always render).
-    await expect(
-      page.getByRole('columnheader', { name: /reason/i }),
-    ).toBeVisible();
+    // On a phone the lapsed table stacks into cards (122 US7a) and its
+    // header row is hidden, so the table itself stands in for the header.
+    if (isPhone(page)) {
+      await expect(page.getByRole('table', { name: /terminated members/i })).toBeVisible();
+    } else {
+      await expect(
+        page.getByRole('columnheader', { name: /reason/i }),
+      ).toBeVisible();
+    }
   });
 
   test('AS4: cross-tenant member_id query param does not leak rows', async ({
@@ -222,9 +264,7 @@ test.describe('F8 — /admin/renewals pipeline dashboard (US1)', () => {
     await expect(
       page.getByRole('heading', { name: /renewal pipeline/i }),
     ).toBeVisible({ timeout: 10_000 });
-    const urgencyTablist = page.getByRole('navigation', {
-      name: /filter by renewal urgency/i,
-    });
+    const urgencyTablist = urgencyControl(page);
     const monthHeading = page.getByRole('heading', {
       name: /renewals by month/i,
     });
