@@ -4564,6 +4564,7 @@
         },
         "pendingNoticeBody": "Den här medlemmen betalade för att återaktivera ett utgånget medlemskap, men automatisk återaktivering är spärrad. Godkänn för att slutföra förnyelsen, eller avslå för att avbryta den och återbetala betalningen.",
         "refundSettlingBadge": "Återbetalning behandlas",
+        "dangerZone": "Oåterkalleliga åtgärder",
         "refundSettlingNoticeTitle": "Avslagen — återbetalning behandlas",
         "refundSettlingNoticeBody": "Den här återaktiveringen avslogs och återbetalningen behandlas hos betalningsleverantören. Den stängs automatiskt när den bekräftas — ingen åtgärd behövs.",
         "pendingReactivation": {
@@ -4689,7 +4690,7 @@
           "status": "Status",
           "tier": "Nivå",
           "planId": "Paket-ID",
-          "frozenPrice": "Låst pris",
+          "frozenPrice": "Låst pris (exkl. moms)",
           "frozenTerm": "Löptid (månader)",
           "frozenCurrency": "Valuta",
           "periodFrom": "Period från",
@@ -4704,7 +4705,7 @@
           "updatedAt": "Uppdaterad",
           "invoiceNumber": "Fakturanr",
           "invoiceStatus": "Fakturastatus",
-          "invoiceTotal": "Total",
+          "invoiceTotal": "Totalt (inkl. moms)",
           "viewInvoice": "Visa faktura {number}",
           "companyName": "Företag",
           "primaryContact": "Primär kontakt",
@@ -4733,6 +4734,8 @@
         "title": "Kö för medlemsnivåhöjning",
         "subtitle": "Medlemmar som kvalificerar för en uppgradering baserat på deklarerad omsättning eller betalda fakturor.",
         "tableCaption": "Lista över medlemmar som kvalificerar för en nivåhöjning.",
+        "fee_excl_vat": "{fee} exkl. moms",
+        "fees_exclude_vat": "Avgifterna anges exklusive moms.",
         "breadcrumbs": {
           "renewals": "Förnyelser",
           "tier_upgrades": "Nivåhöjningar"
@@ -4779,7 +4782,7 @@
           "cancel": "Avbryt"
         },
         "actions": {
-          "row_menu_aria": "Öppna radåtgärder",
+          "row_menu": "Eskalera eller avvisa — {member}",
           "accept": {
             "label": "Acceptera",
             "dialog_title": "Acceptera nivåhöjning?",

@@ -8,6 +8,23 @@
  * field-level enable/disable rules a real-browser e2e shouldn't enumerate.
  */
 
+import type { CycleStatus } from '@/modules/renewals/client';
+
+/**
+ * Statuses where Cancel cycle is offered (matches the route's state-machine
+ * guard). Shared by `<CycleAdminActions>` and the page, which renders the
+ * phone danger zone only when there is something to put in it.
+ */
+const CANCELLABLE_STATUSES: ReadonlySet<CycleStatus> = new Set<CycleStatus>([
+  'upcoming',
+  'reminded',
+  'awaiting_payment',
+]);
+
+export function isCycleCancellable(status: CycleStatus): boolean {
+  return CANCELLABLE_STATUSES.has(status);
+}
+
 /** Cancel reason length bounds — mirror the route's zod `min(1).max(500)`. */
 export const REASON_MIN = 1;
 export const REASON_MAX = 500;

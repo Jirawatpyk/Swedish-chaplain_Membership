@@ -4564,6 +4564,7 @@
         },
         "pendingNoticeBody": "This member paid to reactivate a lapsed membership, but auto-reactivation is blocked for them. Approve to complete the renewal, or reject to cancel it and refund the payment.",
         "refundSettlingBadge": "Refund settling",
+        "dangerZone": "Danger zone",
         "refundSettlingNoticeTitle": "Rejected — refund settling",
         "refundSettlingNoticeBody": "This reactivation was rejected and the refund is settling with the payment processor. This closes automatically once it confirms — no action is needed.",
         "pendingReactivation": {
@@ -4689,7 +4690,7 @@
           "status": "Status",
           "tier": "Tier",
           "planId": "Plan ID",
-          "frozenPrice": "Frozen price",
+          "frozenPrice": "Frozen price (excl. VAT)",
           "frozenTerm": "Term (months)",
           "frozenCurrency": "Currency",
           "periodFrom": "Period from",
@@ -4704,7 +4705,7 @@
           "updatedAt": "Updated at",
           "invoiceNumber": "Invoice #",
           "invoiceStatus": "Invoice status",
-          "invoiceTotal": "Total",
+          "invoiceTotal": "Total (incl. VAT)",
           "viewInvoice": "View invoice {number}",
           "companyName": "Company",
           "primaryContact": "Primary contact",
@@ -4733,6 +4734,8 @@
         "title": "Tier upgrade queue",
         "subtitle": "Members eligible for an upgrade based on declared turnover or paid invoice volume.",
         "tableCaption": "List of members eligible for a tier upgrade.",
+        "fee_excl_vat": "{fee} excl. VAT",
+        "fees_exclude_vat": "Fees exclude VAT.",
         "breadcrumbs": {
           "renewals": "Renewals",
           "tier_upgrades": "Tier upgrades"
@@ -4779,7 +4782,7 @@
           "cancel": "Cancel"
         },
         "actions": {
-          "row_menu_aria": "Open row actions menu",
+          "row_menu": "Escalate or dismiss — {member}",
           "accept": {
             "label": "Accept",
             "dialog_title": "Accept tier upgrade?",

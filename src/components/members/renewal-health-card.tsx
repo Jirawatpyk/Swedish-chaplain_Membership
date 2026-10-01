@@ -22,6 +22,7 @@ import { ArrowRightIcon } from 'lucide-react';
 import { useFormatter, useLocale, useTranslations } from 'next-intl';
 import { Badge, Card, StatusPill } from '@jirawatpyk/aura-react';
 import type { CycleStatus } from '@/modules/renewals/client';
+import { CYCLE_STATUS_TONE } from '@/components/renewals/cycle-status-tone';
 import type { EngagementBand } from '@/modules/insights';
 import { RenewLapsedMemberDialog } from '@/components/members/renew-lapsed-member-dialog';
 import { formatDatePreset } from '@/lib/format-date-localised';
@@ -77,17 +78,6 @@ function isLapsed(status: CycleStatus | null): boolean {
     status === 'completed'
   );
 }
-
-/** Pill tone per cycle status (the word carries the meaning, not the colour). */
-const STATUS_TONE: Readonly<Record<CycleStatus, 'neutral' | 'progress' | 'ready' | 'warning' | 'blocked'>> = {
-  upcoming: 'neutral',
-  reminded: 'neutral',
-  awaiting_payment: 'progress',
-  pending_admin_reactivation: 'warning',
-  completed: 'ready',
-  lapsed: 'blocked',
-  cancelled: 'blocked',
-};
 
 /** Engagement band tones, as the members list draws them. */
 const ENGAGEMENT_TONE: Readonly<Record<EngagementBand, 'success' | 'neutral' | 'warning' | 'danger'>> = {
@@ -157,7 +147,7 @@ export function RenewalHealthCard({
           <div className="flex flex-col gap-1">
             <dt className="text-xs text-[var(--aura-fg-secondary)]">{t('status')}</dt>
             <dd>
-              <StatusPill tone={STATUS_TONE[status]}>{t(`cycleStatus.${status}`)}</StatusPill>
+              <StatusPill tone={CYCLE_STATUS_TONE[status]}>{t(`cycleStatus.${status}`)}</StatusPill>
             </dd>
           </div>
           <div className="flex flex-col gap-1">

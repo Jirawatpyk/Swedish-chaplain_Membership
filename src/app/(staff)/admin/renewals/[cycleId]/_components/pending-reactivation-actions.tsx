@@ -27,34 +27,19 @@
  * WCAG 2.1 AA: labelled textarea, focus-on-Cancel default (defensive for a
  * money action), submit disabled while pending or when the reason is
  * invalid, error codes surfaced as toasts.
+ *
+ * 122 US7b-1 (T723), board `Admin-renewal-cycle-pending`: AURA buttons in the
+ * page header (Approve primary, Reject & refund danger) and AURA
+ * alertdialogs; requests, toasts and refreshes are unchanged.
  */
 'use client';
 
-import { useRef, useState, useTransition } from 'react';
+import { useCallback, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { Button, Dialog, Textarea } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
-import { Loader2Icon } from 'lucide-react';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+import { resolveDialogFinalFocus } from '@/components/broadcast/resolve-dialog-final-focus';
 import { readErrorCode } from '../../_lib/read-error-code';
 
 const REASON_MIN = 1;
@@ -69,6 +54,13 @@ export interface PendingReactivationActionsProps {
    * settling; this component then renders nothing (the decision is made).
    */
   readonly rejectRefundInitiatedAt: string | null;
+  /**
+   * `header` (default): Approve full width on a phone, Reject & refund hidden
+   * below 640px. `dangerZone`: Reject & refund alone, full width, for the
+   * phone's end-of-page danger zone — the refund never sits beside the primary
+   * action on a phone (UX review M6; spec Clarifications, US7b start).
+   */
+  readonly placement?: 'header' | 'dangerZone';
 }
 
 interface RejectSuccessBody {
@@ -79,6 +71,7 @@ export function PendingReactivationActions({
   cycleId,
   status,
   rejectRefundInitiatedAt,
+  placement = 'header',
 }: PendingReactivationActionsProps) {
   const t = useTranslations(
     'admin.renewals.cycleDetail.pendingReactivation',
@@ -90,9 +83,26 @@ export function PendingReactivationActions({
   const [reason, setReason] = useState('');
   const [reactivatePending, startReactivate] = useTransition();
   const [rejectPending, startReject] = useTransition();
-
-  const reactivateCancelRef = useRef<HTMLButtonElement | null>(null);
-  const rejectCancelRef = useRef<HTMLButtonElement | null>(null);
+  // Focus return (WCAG 2.4.3): a decision refreshes the page and these
+  // triggers leave it, so focus lands on `#main-content`; on Cancel / Escape
+  // it returns to the trigger.
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const succeededRef = useRef(false);
+  const finalFocus = useCallback(
+    (): HTMLElement | null =>
+      resolveDialogFinalFocus({
+        closedViaSuccess: succeededRef.current,
+        trigger: triggerRef.current,
+        fallback: null,
+        mainContent: typeof document !== 'undefined' ? document.getElementById('main-content') : null,
+      }),
+    [],
+  );
+  const open = (setter: (v: boolean) => void) => (e: React.MouseEvent<HTMLButtonElement>) => {
+    triggerRef.current = e.currentTarget;
+    succeededRef.current = false;
+    setter(true);
+  };
 
   // Render nothing for cycles that aren't awaiting an admin decision.
   if (status !== 'pending_admin_reactivation') {
@@ -136,6 +146,7 @@ export function PendingReactivationActions({
           return;
         }
         toast.success(t('reactivate.successToast'));
+        succeededRef.current = true;
         setReactivateOpen(false);
         router.refresh();
       } catch {
@@ -171,6 +182,7 @@ export function PendingReactivationActions({
         // the "no payment to refund" toast for an in-flight refund.
         if (res.status === 202) {
           toast.success(t('reject.successPendingToast'));
+          succeededRef.current = true;
           setRejectOpen(false);
           setReason('');
           router.refresh();
@@ -182,6 +194,7 @@ export function PendingReactivationActions({
             ? t('reject.successNoRefundToast')
             : t('reject.successRefundedToast'),
         );
+        succeededRef.current = true;
         setRejectOpen(false);
         setReason('');
         router.refresh();
@@ -191,115 +204,89 @@ export function PendingReactivationActions({
     });
   };
 
+  const closeReject = () => {
+    // Clear the reason on close so a reopened dialog never pre-fills a stale
+    // justification onto the refund audit trail.
+    setRejectOpen(false);
+    setReason('');
+  };
+
   return (
-    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-      {/* --- Approve (non-destructive confirmation) --- */}
-      <Button onClick={() => setReactivateOpen(true)}>
-        {t('reactivate.button')}
-      </Button>
-      <Dialog open={reactivateOpen} onOpenChange={setReactivateOpen}>
-        <DialogContent initialFocus={reactivateCancelRef} role="alertdialog">
-          <DialogHeader>
-            <DialogTitle>{t('reactivate.dialogTitle')}</DialogTitle>
-            <DialogDescription>
-              {t('reactivate.dialogBody')}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
+    <>
+      {/* --- Approve (the board's primary action; full width on a phone) --- */}
+      {placement === 'header' && (
+        <Button variant="primary" className="max-sm:w-full" onClick={open(setReactivateOpen)}>
+          {t('reactivate.button')}
+        </Button>
+      )}
+      <Dialog
+        open={reactivateOpen}
+        onClose={() => setReactivateOpen(false)}
+        role="alertdialog"
+        dismissible={!reactivatePending}
+        finalFocus={finalFocus}
+        title={t('reactivate.dialogTitle')}
+        description={t('reactivate.dialogBody')}
+        // Focus on Cancel by default (defensive for a money action).
+        footer={
+          <>
             <Button
-              ref={reactivateCancelRef}
-              variant="outline"
+              variant="secondary"
+              data-autofocus=""
               onClick={() => setReactivateOpen(false)}
               disabled={reactivatePending}
             >
               {t('reactivate.cancel')}
             </Button>
-            <Button onClick={onReactivate} disabled={reactivatePending}>
-              {reactivatePending ? (
-                <>
-                  <Loader2Icon
-                    className="size-4 motion-safe:animate-spin"
-                    aria-hidden="true"
-                  />
-                  {t('reactivate.submitting')}
-                </>
-              ) : (
-                t('reactivate.confirm')
-              )}
+            <Button onClick={onReactivate} loading={reactivatePending}>
+              {reactivatePending ? t('reactivate.submitting') : t('reactivate.confirm')}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </>
+        }
+      />
 
       {/* --- Reject & refund (destructive) --- */}
-      <Button variant="outline" onClick={() => setRejectOpen(true)}>
+      <Button
+        variant="danger-secondary"
+        icon="rotate-ccw"
+        className={placement === 'dangerZone' ? 'w-full' : 'max-sm:hidden'}
+        onClick={open(setRejectOpen)}
+      >
         {t('reject.button')}
       </Button>
-      <AlertDialog
+      <Dialog
         open={rejectOpen}
-        onOpenChange={(open) => {
-          setRejectOpen(open);
-          // Clear the reason on cancel/close so a reopened dialog never
-          // pre-fills a stale justification onto the refund audit trail.
-          if (!open) setReason('');
-        }}
-      >
-        <AlertDialogContent initialFocus={rejectCancelRef}>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('reject.dialogTitle')}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t('reject.dialogBody')}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="space-y-1.5">
-            <Label htmlFor="reject-reason">{t('reject.reasonLabel')}</Label>
-            <Textarea
-              id="reject-reason"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder={t('reject.reasonPlaceholder')}
-              rows={3}
-              maxLength={REASON_MAX}
-              aria-invalid={reasonInvalid && reason.length > 0}
-              aria-describedby="reject-reason-hint"
-              required
-            />
-            <p
-              id="reject-reason-hint"
-              className={
-                'text-xs ' +
-                (reasonInvalid && reason.length > 0
-                  ? 'text-destructive'
-                  : 'text-muted-foreground')
-              }
-            >
-              {t('reject.reasonRequired')}
-            </p>
-          </div>
-          <AlertDialogFooter>
-            <AlertDialogCancel ref={rejectCancelRef} disabled={rejectPending}>
+        onClose={closeReject}
+        role="alertdialog"
+        dismissible={!rejectPending}
+        finalFocus={finalFocus}
+        title={t('reject.dialogTitle')}
+        description={t('reject.dialogBody')}
+        footer={
+          <>
+            <Button variant="secondary" data-autofocus="" onClick={closeReject} disabled={rejectPending}>
               {t('reject.cancel')}
-            </AlertDialogCancel>
-            <Button
-              variant="destructive"
-              onClick={onReject}
-              disabled={rejectPending || reasonInvalid}
-            >
-              {rejectPending ? (
-                <>
-                  <Loader2Icon
-                    className="size-4 motion-safe:animate-spin"
-                    aria-hidden="true"
-                  />
-                  {t('reject.submitting')}
-                </>
-              ) : (
-                t('reject.confirm')
-              )}
             </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </div>
+            <Button variant="danger" onClick={onReject} loading={rejectPending} disabled={reasonInvalid}>
+              {rejectPending ? t('reject.submitting') : t('reject.confirm')}
+            </Button>
+          </>
+        }
+      >
+        <Textarea
+          label={t('reject.reasonLabel')}
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder={t('reject.reasonPlaceholder')}
+          rows={3}
+          maxLength={REASON_MAX}
+          readOnly={rejectPending}
+          required
+          {...(reasonInvalid && reason.length > 0
+            ? { error: t('reject.reasonRequired') }
+            : { hint: t('reject.reasonRequired') })}
+        />
+      </Dialog>
+    </>
   );
 }

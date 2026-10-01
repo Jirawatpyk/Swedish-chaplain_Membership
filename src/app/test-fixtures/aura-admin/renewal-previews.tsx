@@ -6,8 +6,9 @@
  * cannot pass, and the at-risk widget reads its rows in the browser. Nothing
  * here reaches the API. Every value is invented.
  */
-import { useState } from 'react';
+import { useEffect, useRef, useState, type ComponentProps } from 'react';
 import { MarkPaidOfflineDialog } from '@/app/(staff)/admin/renewals/_components/mark-paid-offline-dialog';
+import { TierUpgradeQueueClient } from '@/app/(staff)/admin/renewals/tier-upgrades/_components/tier-upgrade-queue';
 import { AT_RISK_RESPONSE } from './renewal-fixtures';
 
 const AT_RISK_PATH = '/api/admin/renewals/at-risk';
@@ -51,5 +52,29 @@ export function MarkPaidDialogPreview() {
       open={open}
       onOpenChange={setOpen}
     />
+  );
+}
+
+/**
+ * `Admin-tier-upgrade-accept`: the queue with the first row's Accept dialog
+ * opened, the way an admin would open it (a click on its Accept button).
+ */
+export function TierUpgradeAcceptPreview({
+  items,
+  acceptLabel,
+}: {
+  readonly items: ComponentProps<typeof TierUpgradeQueueClient>['items'];
+  /** The Accept button's label in the preview's locale. */
+  readonly acceptLabel: string;
+}) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const buttons = Array.from(ref.current?.querySelectorAll('button') ?? []);
+    buttons.find((b) => b.textContent?.trim() === acceptLabel)?.click();
+  }, [acceptLabel]);
+  return (
+    <div ref={ref}>
+      <TierUpgradeQueueClient items={items} />
+    </div>
   );
 }

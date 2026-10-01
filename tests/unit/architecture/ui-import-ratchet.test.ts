@@ -333,4 +333,27 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, 'src/app/(staff)/admin/renewals/tasks/page.tsx')).toEqual([]);
     });
   });
+
+  describe('the US7b-1 cycle detail and tier upgrade pages are on AURA (the real MIGRATED_PATHS)', () => {
+    const legacy = "import { Button } from '@/components/ui/button';\nexport const B = Button;\n";
+
+    it.each([
+      'src/app/(staff)/admin/renewals/[cycleId]/page.tsx',
+      'src/app/(staff)/admin/renewals/[cycleId]/loading.tsx',
+      'src/app/(staff)/admin/renewals/[cycleId]/_components/cycle-admin-actions.tsx',
+      'src/app/(staff)/admin/renewals/[cycleId]/_components/pending-reactivation-actions.tsx',
+      'src/app/(staff)/admin/renewals/tier-upgrades/page.tsx',
+      'src/app/(staff)/admin/renewals/tier-upgrades/loading.tsx',
+      'src/app/(staff)/admin/renewals/tier-upgrades/error.tsx',
+      'src/app/(staff)/admin/renewals/tier-upgrades/_components/tier-upgrade-queue.tsx',
+    ])('%s cannot import the legacy kit', async (path) => {
+      expect(await ratchetHits(legacy, path)).toHaveLength(1);
+    });
+
+    it('control: the escalation task queue keeps the legacy kit until US7b-2', async () => {
+      expect(
+        await ratchetHits(legacy, 'src/app/(staff)/admin/renewals/tasks/_components/escalation-task-queue.tsx'),
+      ).toEqual([]);
+    });
+  });
 });

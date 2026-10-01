@@ -159,6 +159,34 @@ Only two dialogs are drawn: the offline payment ("Record an offline payment?") a
 - Q: The US7a reviews found copy that predates the migration: TH "บันทึกการชำระเงิน" on the row menu and bulk bar where the dialog button says "บันทึกชำระเงิน"; the TH pending-review count read out as "รอตรวจสอบ" beside the tab "รอการพิจารณา"; SV "Inkasseringsgrad", which reads as a debt-collection rate; and no tax-document warning in the bulk mark-paid dialog, which issues one tax invoice/receipt per member. The "no copy beyond the swap" rule would defer them. → A: **Fix them in US7a.** TH "Mark paid" reads "บันทึกชำระเงิน" everywhere; the count uses "รอการพิจารณา"; SV reads "Inbetalningsgrad"; the bulk dialog carries the single dialog's warning, per member (EN, TH, SV). `renewals-copy-consistency.test.ts` pins the first three. No request, amount or behaviour changes.
 - Q: On the parity page the maintainer asked: the money band's figures are 28px where the board draws 24px; on a desktop the "Tier" label above the tier select makes the gap between the work-queue toggle and the stage tabs 96px against the board's 72px; on a phone the work-queue card keeps its 16px padding, so the row cards sit 33px in instead of on the 16px page gutter (the board, the members list); and at 1440 the board's "Last reminder" column is hidden (its 1080px breakpoint against a 1071px table). → A: **Keep the 28px figures (AURA's `Stat`; AURA drops them to 24px on a phone itself). Show "Tier" only on a phone; on a desktop the select keeps the name for screen readers ("All tiers" says what it filters). On a phone the work-queue card has no frame, border or padding (`flushBelow="sm"`). Last reminder shows from a 1040px table and Invoice from 1180px**: most rows read "—", and an issued bill already shows as the "Bill issued" badge beside the urgency pill. The actions column is 200px, which still fits SV "Skicka påminnelse" and stops the 1280 table scrolling sideways. The `Admin-renewals` boards are updated to match. The plans list (US6) follows the same phone rule: its table card is frameless with no border or padding below 640px.
 
+### Session 2026-10-01 (maintainer, US7b start)
+
+The US7b boards were read against the code before the tasks were written: `Admin-renewal-cycle` (+`-reminded`, `-pending`, `-mobile`), `Admin-renewal-tasks` (+`-mobile`), `Admin-state-tasks-manager`, `Admin-tier-upgrades` (+`-accept`, `-mobile`), `Admin-renewal-schedules` (+`-mobile`).
+
+- Q: US7b is 37 files and about 7,750 lines over four pages, the size of US7a. One PR or two? → A: **Two.** **US7b-1** is cycle detail and the tier upgrade queue. Both touch money (frozen price, invoice total, mark-paid, reject & refund, accepting a fee increase), so the PR gets a financial-integrity review. **US7b-2** is escalation tasks and reminder schedules, which hold the last cmdk users (task reassign, the schedule step's task type).
+- **Decided from the boards (US7b-1), applying the Session 2026-09-27 rule that the board decides content and copy:**
+  - **Cycle detail header:**
+    - The actions sit in the page header, as the board draws them: "Record payment on {bill}" or "Mark paid offline" as the primary action, then "Cancel cycle" in the danger style. On a pending cycle the actions are "Approve reactivation" and "Reject & refund".
+    - On a phone, only the primary action stays in the header, full width. "Cancel cycle" moves to a danger zone at the end of the page, and on a pending cycle so does "Reject & refund" (no `-pending-mobile` board is drawn; the UX review asked that the refund never sit beside the primary action on a phone).
+    - The pending notice is a warning `Alert` under the header.
+  - **Cycle detail cards:**
+    - "Member & plan" is one list (Company, Primary contact, Tier, Plan name, Frozen price, Term, Currency); the Member and Plan sub-headings go.
+    - On a phone, "Linked invoice" comes first.
+    - The pending board omits the Activity card and the Currency row. That is an abbreviated board: the page keeps one layout for every status.
+  - **Copy, money labels:** "Frozen price (excl. VAT)" and "Total (incl. VAT)".
+    - The board's "Total (incl. VAT 7%)" is not followed. The total comes from the invoice, which carries its own VAT snapshot, and the invoice register already reads "Total (incl. VAT)".
+    - The phone tier-upgrade list and the Accept dialog read "Fees exclude VAT." for the same reason.
+  - **Cycle status pill:** uses one tone map, shared with the member-detail Renewal health card (US5b): upcoming and reminded neutral, awaiting payment progress, pending admin reactivation warning, completed ready, lapsed and cancelled blocked. The board's progress for reminded and blocked for pending are not followed, so a cycle status reads the same in both places.
+  - **Tier badge:** the US7a `TierBadge` (Session 2026-10-01, US7a review), not the boards' status tones.
+  - **Tier upgrade queue, rows:**
+    - Accept plus a ⋯ menu with Escalate and Dismiss, at every width. This replaces three inline buttons on a desktop.
+    - The ⋯ button is named for its row: "Escalate or dismiss — {member}".
+    - The Current plan and Suggested plan cells show the annual fee under the plan name ("{fee} excl. VAT"), from the plan read the page already makes.
+    - Amounts keep their current format.
+  - **Tier upgrade queue, layout:** one table that stacks into cards below 640px.
+    - The phone board puts the reason and the plan move on full-width lines. An AURA stacked card has no full-width field, so these cells wrap inside their half of the card. This is AURA handoff #120, recorded in `docs/aura-adoption.md`.
+  - **The actions follow the routes' own guards, not the boards' samples:** the `-reminded` board draws "Mark paid offline", but the mark-paid route accepts only an upcoming or awaiting-payment cycle, so a reminded cycle offers Cancel cycle alone (unchanged from today).
+
 ## User Scenarios & Testing *(mandatory)*
 
 Every story below is one phase and one pull request. A story is done when its screens use only AURA components, match their canvas boards, and pass the per-module definition of done (FR-010).

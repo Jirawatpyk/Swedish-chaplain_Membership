@@ -14,8 +14,6 @@ import { Suspense } from 'react';
 import { notFound } from 'next/navigation';
 import { getTranslations, getLocale } from 'next-intl/server';
 import { headers } from 'next/headers';
-import { AlertTriangle } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { env } from '@/lib/env';
@@ -26,7 +24,7 @@ import { formatLocalisedDate } from '@/lib/format-date-localised';
 import { makeRenewalsDeps } from '@/modules/renewals';
 import { TierUpgradeQueueClient } from './_components/tier-upgrade-queue';
 import { parseTierUpgradeEvidenceView } from './_lib/tier-upgrade-queue-item';
-import { RenewalsErrorRetry } from '../_components/renewals-error-retry';
+import { renderTierUpgradesView } from './_components/tier-upgrades-view';
 import { RenewalsSectionTabs } from '../_components/renewals-section-tabs';
 import { RenewalsSectionTabsWithCounts } from '../_components/renewals-section-tabs-with-counts';
 import { fetchPlanDisplay } from '../[cycleId]/_lib/cycle-detail-fetchers';
@@ -156,86 +154,57 @@ export default async function TierUpgradeQueuePage() {
       timeZone: 'Asia/Bangkok',
     });
 
-  return (
-    <TableContainer>
-      <PageHeader title={t('title')} subtitle={t('subtitle')} />
-      {/* C3 (#8) — carry the sibling-queue count badges (Pending review /
-          Tasks / Tier upgrades) here too, streamed in a Suspense island whose
-          fallback is the bare strip. showPipelineHelp is omitted (defaults
-          false): the Tier-upgrades page renders the strip without the help
-          button. */}
+  const view = await renderTierUpgradesView({
+    // C3 (#8) — the sibling-queue count badges, streamed in a Suspense island
+    // whose fallback is the bare strip.
+    sectionTabs: (
       <Suspense fallback={<RenewalsSectionTabs />}>
         <RenewalsSectionTabsWithCounts tenantSlug={tenantCtx.slug} />
       </Suspense>
-      {hasError ? (
-        // Phase 7 review-fix Round 2 IMP-8 + Round 4 SUG-6: explicit
-        // role="alert" added here on the Card element. The Card
-        // primitive (src/components/ui/card.tsx) is a plain `<div>`
-        // with NO implicit ARIA role — the role="alert" attribute is
-        // load-bearing and provides the implicit aria-live="assertive"
-        // + aria-atomic="true" announcement (which is why aria-live
-        // was removed in Round 3 IMP-10 as redundant). DO NOT remove
-        // role="alert" without adding aria-live back.
-        <Card
-          className="border-destructive/40 bg-destructive/5"
-          role="alert"
-        >
-          <CardContent className="flex items-start gap-3 py-6">
-            <AlertTriangle
-              className="mt-0.5 size-5 shrink-0 text-destructive"
-              aria-hidden
-            />
-            <div className="flex-1">
-              <p className="text-base font-medium text-destructive">
-                {t('error_state.title')}
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {t('error_state.subtitle')}
-              </p>
-              <RenewalsErrorRetry
-                label={t('error_state.retry')}
-                retryingLabel={t('error_state.retrying')}
-              />
-            </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <TierUpgradeQueueClient
-          items={queueItems.map((s) => {
-            const fromPlanName = planNameMap.get(s.fromPlanId);
-            const toPlanName = planNameMap.get(s.toPlanId);
-            const fromFeeMinorUnits = planFeeMap.get(s.fromPlanId);
-            const toFeeMinorUnits = planFeeMap.get(s.toPlanId);
-            const companyName = companyNames.get(s.memberId)?.companyName;
-            // Validate + pre-format the evidence at the presentation
-            // boundary; a malformed/mismatched shape becomes `null` → the
-            // client renders the localised "verify manually" line.
-            const evidence = parseTierUpgradeEvidenceView(
-              s.reasonCode,
-              s.evidence,
-              formatThresholdDate,
-            );
-            return {
-              suggestionId: s.suggestionId,
-              memberId: s.memberId,
-              status: s.status,
-              fromPlanId: s.fromPlanId,
-              // Only spread optional keys when truthy to satisfy
-              // exactOptionalPropertyTypes (string | undefined is not
-              // assignable to optional string without this guard).
-              ...(fromPlanName !== undefined ? { fromPlanName } : {}),
-              ...(fromFeeMinorUnits !== undefined ? { fromFeeMinorUnits } : {}),
-              toPlanId: s.toPlanId,
-              ...(toPlanName !== undefined ? { toPlanName } : {}),
-              ...(toFeeMinorUnits !== undefined ? { toFeeMinorUnits } : {}),
-              ...(companyName !== undefined ? { companyName } : {}),
-              reasonCode: s.reasonCode,
-              evidence,
-              createdAt: s.createdAt,
-            };
-          })}
-        />
-      )}
+    ),
+    loadFailed: hasError,
+    queue: hasError ? null : (
+      <TierUpgradeQueueClient
+        items={queueItems.map((s) => {
+          const fromPlanName = planNameMap.get(s.fromPlanId);
+          const toPlanName = planNameMap.get(s.toPlanId);
+          const fromFeeMinorUnits = planFeeMap.get(s.fromPlanId);
+          const toFeeMinorUnits = planFeeMap.get(s.toPlanId);
+          const companyName = companyNames.get(s.memberId)?.companyName;
+          // Validate + pre-format the evidence at the presentation
+          // boundary; a malformed/mismatched shape becomes `null` → the
+          // client renders the localised "verify manually" line.
+          const evidence = parseTierUpgradeEvidenceView(
+            s.reasonCode,
+            s.evidence,
+            formatThresholdDate,
+          );
+          return {
+            suggestionId: s.suggestionId,
+            memberId: s.memberId,
+            status: s.status,
+            fromPlanId: s.fromPlanId,
+            // Only spread optional keys when defined to satisfy
+            // exactOptionalPropertyTypes.
+            ...(fromPlanName !== undefined ? { fromPlanName } : {}),
+            ...(fromFeeMinorUnits !== undefined ? { fromFeeMinorUnits } : {}),
+            toPlanId: s.toPlanId,
+            ...(toPlanName !== undefined ? { toPlanName } : {}),
+            ...(toFeeMinorUnits !== undefined ? { toFeeMinorUnits } : {}),
+            ...(companyName !== undefined ? { companyName } : {}),
+            reasonCode: s.reasonCode,
+            evidence,
+            createdAt: s.createdAt,
+          };
+        })}
+      />
+    ),
+  });
+
+  return (
+    <TableContainer>
+      <PageHeader title={t('title')} subtitle={t('subtitle')} />
+      {view}
     </TableContainer>
   );
 }

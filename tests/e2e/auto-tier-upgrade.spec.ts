@@ -29,100 +29,40 @@ const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const F8_RENEWALS_ENABLED = process.env.FEATURE_F8_RENEWALS === 'true';
 
 /**
- * Round 6 W-015 follow-up — viewport-aware action locators.
+ * Row action locators (spec 122 US7b-1, T725; board `Admin-tier-upgrades`).
  *
- * The tier-upgrade queue collapses below md (768px) into a row-menu
- * (`DropdownMenu` with aria-label="Open row actions menu") that contains
- * the Accept/Escalate/Dismiss as menu items. The `md:hidden` /
- * `md:inline-flex` classes select between the two presentations, so
- * the desktop chromium project sees inline buttons while mobile-safari
- * + mobile-chrome (375px viewport) see the row-menu.
- *
- * To avoid skipping mobile tests, helpers below resolve the action
- * trigger by inspecting which presentation is visible and routing
- * through the row-menu when needed. Both paths converge on the same
- * AlertDialog flow (the menu item's onSelect calls the same `setDialog`
- * action handler as the inline button's onClick).
+ * Every row has the same actions at every width: an inline Accept button,
+ * plus a ⋯ menu named for its row ("Escalate or dismiss — {member}") with
+ * Escalate and Dismiss. On a phone the row is a stacked card with the same
+ * controls in its last line, so no viewport branching is needed.
  */
 
-async function findInlineActionButton(
-  page: Page,
-  label: RegExp,
-): Promise<Locator | null> {
-  // Wait up to 10s for a visible inline button. Returns null when the
-  // viewport routes through the row-menu instead (mobile) — caller
-  // falls back to openRowMenuIfMobile in that case. Without the wait,
-  // a desktop run can race against page hydration and return null
-  // for a button that's about to render (chromium AlertDialog test
-  // flake observed 2026-05-10).
-  const btn = page.getByRole('button', { name: label }).first();
-  const visible = await btn
-    .waitFor({ state: 'visible', timeout: 10_000 })
-    .then(() => true)
-    .catch(() => false);
-  return visible ? btn : null;
+/** The first row's inline Accept button. */
+function acceptButton(page: Page): Locator {
+  return page.locator('#main-content').getByRole('button', { name: /^accept$/i }).first();
 }
 
-async function openRowMenuIfMobile(page: Page): Promise<boolean> {
-  // The row-menu trigger only renders on viewports < md. When visible,
-  // it carries aria-label `Open row actions menu` (i18n key
-  // `actions.row_menu_aria` — locale-aware). We match a relaxed pattern
-  // so the helper survives EN/TH/SV runs without locale switching.
+/** Opens the first row's ⋯ menu (Escalate, Dismiss) and waits for it. */
+async function openRowMenu(page: Page): Promise<void> {
+  // The ⋯ trigger names its row; matched in EN / TH / SV.
   const menuTrigger = page
-    .getByRole('button', {
-      name: /open row actions? menu|เมนูการดำเนินการของแถว|öppna åtgärdsmeny/i,
-    })
+    .locator('#main-content')
+    .getByRole('button', { name: /escalate or dismiss|ส่งต่อหรือปฏิเสธ|eskalera eller avvisa/i })
     .first();
-  // Wait up to 10s for the trigger to attach + become visible. Mobile
-  // hydration is slower than desktop; without this wait, the helper
-  // can return false on a slow-loading page (false negative cascade
-  // into the caller's `expect(opened).toBe(true)` flake).
-  const visible = await menuTrigger
-    .waitFor({ state: 'visible', timeout: 10_000 })
-    .then(() => true)
-    .catch(() => false);
-  if (!visible) {
-    return false;
-  }
-  // Belt-and-braces for mobile viewports: scroll into view, then click.
-  // shadcn/ui DropdownMenu uses Radix portal — the menu mounts elsewhere
-  // in the DOM but `page.getByRole('menu')` finds it cross-portal.
+  await menuTrigger.waitFor({ state: 'visible', timeout: 10_000 });
   await menuTrigger.scrollIntoViewIfNeeded().catch(() => {});
   await menuTrigger.click();
-  // Wait for the Radix DropdownMenu to be fully rendered before the
-  // caller probes for menu items. Without this, the menuitem locator
-  // can resolve to a not-yet-attached element (mobile click race).
   await page.getByRole('menu').first().waitFor({ state: 'visible', timeout: 5_000 });
-  return true;
 }
 
-/**
- * Round 6 Round-7 UX-fix — restored unified `clickRowAction` helper
- * after the queue component migrated DropdownMenuItem from `onSelect`
- * to `onClick` (matching F8 Phase 8 `escalation-task-queue.tsx`
- * pattern). The `onClick` handler fires on the underlying `<button>`
- * element directly, bypassing Radix's onSelect → popper-close race
- * that previously broke under mobile-chrome / mobile-safari
- * simulators. No more viewport-split, no more skips — single test
- * runs the AlertDialog flow on every browser project.
- */
-async function clickRowAction(
-  page: Page,
-  label: RegExp,
-): Promise<void> {
-  const inline = await findInlineActionButton(page, label);
-  if (inline !== null) {
-    await inline.click();
+/** Accept is inline; Escalate and Dismiss live in the row's ⋯ menu. */
+async function clickRowAction(page: Page, label: RegExp): Promise<void> {
+  if (label.test('Accept')) {
+    await acceptButton(page).click();
     return;
   }
-  const opened = await openRowMenuIfMobile(page);
-  if (!opened) {
-    throw new Error(
-      `clickRowAction: neither inline button nor row-menu trigger found for ${label}`,
-    );
-  }
-  const menu = page.getByRole('menu').first();
-  const menuItem = menu.getByRole('menuitem', { name: label });
+  await openRowMenu(page);
+  const menuItem = page.getByRole('menu').first().getByRole('menuitem', { name: label });
   await menuItem.waitFor({ state: 'visible', timeout: 5_000 });
   await menuItem.click();
 }
@@ -166,7 +106,8 @@ describeBlock('F8 — auto tier-upgrade queue (US5)', () => {
     // 2026-09-30) while the page itself was fine. Scoped to `#main-content`
     // so no chrome outside the page can satisfy it again.
     const empty = page.locator('#main-content [data-testid="tier-upgrades-empty"]');
-    const row = page.locator('#main-content tbody tr');
+    // The queue is an AURA grid (div rows), not a <table>.
+    const row = page.locator('#main-content [role="grid"] [role="gridcell"]');
     await expect(empty.or(row).first()).toBeVisible();
   });
 
@@ -175,28 +116,11 @@ describeBlock('F8 — auto tier-upgrade queue (US5)', () => {
   }) => {
     await signInAsAdmin(page);
     await page.goto('/admin/renewals/tier-upgrades');
-    // Round 6 — viewport-aware: desktop sees inline Accept/Escalate/Dismiss
-    // buttons; mobile sees a row-menu trigger that, when opened,
-    // exposes the same actions as menu items. The seed always creates
-    // an open suggestion for the e2e-member so this is real coverage,
-    // not a vacuous skip.
-    const acceptInline = await findInlineActionButton(page, /^accept$/i);
-    if (acceptInline !== null) {
-      await expect(acceptInline).toBeVisible();
-      await expect(
-        page.getByRole('button', { name: /^dismiss$/i }).first(),
-      ).toBeVisible();
-      await expect(
-        page.getByRole('button', { name: /^escalate$/i }).first(),
-      ).toBeVisible();
-      return;
-    }
-    // Mobile path — open the row menu, assert the 3 menu items exist.
-    const opened = await openRowMenuIfMobile(page);
-    expect(opened, 'expected inline buttons OR a row-menu trigger').toBe(true);
-    await expect(
-      page.getByRole('menuitem', { name: /^accept$/i }),
-    ).toBeVisible();
+    // Every viewport: Accept inline, Escalate and Dismiss in the row's ⋯ menu
+    // (122 US7b-1). The seed always creates an open suggestion for the
+    // e2e-member, so this is real coverage, not a vacuous skip.
+    await expect(acceptButton(page)).toBeVisible({ timeout: 10_000 });
+    await openRowMenu(page);
     await expect(
       page.getByRole('menuitem', { name: /^escalate$/i }),
     ).toBeVisible();
@@ -215,8 +139,7 @@ describeBlock('F8 — auto tier-upgrade queue (US5)', () => {
   }) => {
     await signInAsAdmin(page);
     await page.goto('/admin/renewals/tier-upgrades');
-    // `clickRowAction` handles both desktop (inline button) and mobile
-    // (row-menu → menu item via onClick on the underlying <button>).
+    // Accept is the row's inline button at every width.
     await clickRowAction(page, /^accept$/i);
 
     // AlertDialog opens with title + description + Cancel button.
@@ -299,8 +222,7 @@ describeBlock('F8 — auto tier-upgrade queue (US5)', () => {
     await signInAsAdmin(page);
     await page.goto('/admin/renewals/tier-upgrades');
 
-    // Escalate has no confirm dialog — clickRowAction handles desktop inline
-    // + mobile row-menu on every viewport.
+    // Escalate has no confirm dialog; it sits in the row's ⋯ menu.
     await clickRowAction(page, /^escalate$/i);
 
     // sonner toast — localised title + human description, and NOT the raw code.

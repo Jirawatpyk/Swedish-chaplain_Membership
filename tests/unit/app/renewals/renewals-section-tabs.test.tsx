@@ -47,10 +47,10 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push }),
 }));
 
-function renderTabs() {
+function renderTabs(pathname?: string) {
   return render(
     <NextIntlClientProvider locale="en" messages={en}>
-      <RenewalsSectionTabs />
+      <RenewalsSectionTabs {...(pathname ? { pathname } : {})} />
     </NextIntlClientProvider>,
   );
 }
@@ -96,6 +96,12 @@ describe('<RenewalsSectionTabs> active-state derivation (aria-current="page")', 
   it('pathname starting /admin/renewals/tier-upgrades → Tier upgrades is current', () => {
     nav.pathname = '/admin/renewals/tier-upgrades';
     const { container } = renderTabs();
+    expect(activeEntryText(container)).toBe('Tier upgrades');
+  });
+
+  it('an explicit pathname (the no-DB preview, 122 US7b-1) decides the current entry', () => {
+    nav.pathname = '/test-fixtures/aura-admin';
+    const { container } = renderTabs('/admin/renewals/tier-upgrades');
     expect(activeEntryText(container)).toBe('Tier upgrades');
   });
 
@@ -320,6 +326,24 @@ describe('<RenewalsSectionTabs> AURA link tabs and the phone select', () => {
       'Pending review',
       'Tasks',
       'Tier upgrades',
+    ]);
+  });
+
+  it('the select carries each counted section\'s pending work, as the tabs do (board "Tier upgrades (2)")', () => {
+    nav.pathname = '/admin/renewals/tier-upgrades';
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <RenewalsSectionTabs pendingReviewCount={1} tasksCount={5} tierUpgradeCount={2} />
+      </NextIntlClientProvider>,
+    );
+    const select = screen.getByRole('combobox', { name: 'Section' });
+    expect(select).toHaveTextContent('Tier upgrades (2)');
+    const native = select.closest('.aura-select')?.querySelector('select');
+    expect([...(native?.options ?? [])].map((o) => o.textContent)).toEqual([
+      'Pipeline',
+      'Pending review (1)',
+      'Tasks (5)',
+      'Tier upgrades (2)',
     ]);
   });
 

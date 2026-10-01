@@ -5,14 +5,12 @@
  * actions per row. Manager-role hidden CTAs are NOT rendered here —
  * the parent server component already rejects manager role.
  *
- * **T199 — AlertDialog confirmations**: Accept and Dismiss are
- * destructive per FR-058 § 4 (UX standards). Both wrap a shadcn
- * AlertDialog with focus-on-Cancel default + descriptive copy. Escalate is
- * non-destructive (drafts an outreach record) so it fires directly
- * without a dialog.
+ * **T199 — confirmations**: Accept and Dismiss are destructive per FR-058 § 4
+ * (UX standards), so both confirm with focus on Cancel. Escalate is
+ * non-destructive (drafts an outreach record) and fires directly.
  *
  * **WP6 (plan-change UX remediation)**:
- *   - Reason cell now surfaces the full pricing EVIDENCE (declared turnover /
+ *   - Reason cell surfaces the full pricing EVIDENCE (declared turnover /
  *     paid-invoice volume + threshold date) so an admin isn't approving a
  *     price increase on a coarse label alone (BP2). The Accept dialog restates
  *     the figures + the plan move (ux-standards § 6.2).
@@ -20,46 +18,35 @@
  *     instead of a raw UUID slice (P1-9).
  *   - Action failures map raw server codes to localised copy (BP5 item 1) and
  *     persist (error toasts do not auto-dismiss, ux-standards § 4.2).
- *   - Mobile overflow trigger is a real 44×44 tap target (§ 9.1).
  *   - Programmatic-close focus return: on a success/refresh the trigger row
  *     leaves the queue (or its buttons disable), so focus is steered to
  *     `#main-content` instead of dropping to `<body>` (WCAG 2.1 SC 2.4.3).
+ *
+ * **122 US7b-1 (T725)**, boards `Admin-tier-upgrades` (+ `-accept`,
+ * `-mobile`): one AURA `DataTable` that stacks into cards below 640px, titled
+ * by the member. The plan cells carry the annual fee excl. VAT. Each row has
+ * Accept plus a ⋯ menu (Escalate, Dismiss) named for its row, at every width;
+ * Accept and Dismiss confirm in AURA alertdialogs, and Accept adds "Fees
+ * exclude VAT." (spec Clarifications, Session 2026-10-01 US7b start). The
+ * requests, error mapping and toasts are unchanged.
  */
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useRef, useState, useTransition } from 'react';
+import { useCallback, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useFormatter, useTranslations } from 'next-intl';
-import { toast } from '@/lib/toast';
-import { Loader2, MoreHorizontal } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import {
+  Button,
+  DataTable,
+  Dialog,
   DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {
-  Table,
-  TableBody,
-  TableCaption,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { StatusBadge } from '@/components/ui/status-badge';
+  IconButton,
+  StatusPill,
+  type DataTableColumn,
+  type MenuItem,
+} from '@jirawatpyk/aura-react';
+import { toast } from '@/lib/toast';
 import { resolveDialogFinalFocus } from '@/components/broadcast/resolve-dialog-final-focus';
 import { TierUpgradesEmptyState } from './tier-upgrades-empty-state';
 import { tierUpgradeStatusTone } from '../_lib/tier-upgrade-status-tone';
@@ -123,12 +110,15 @@ export function TierUpgradeQueueClient({
   // button that opened the shared dialog; `closedViaSuccessRef` is raised in
   // `callAction`'s success branch. On success the row unmounts / disables, so
   // the resolver skips the about-to-vanish trigger and lands on
-  // `#main-content` instead of `<body>`. On Cancel / ESC the trigger survives
-  // and is the least-surprising focus target. The mobile dropdown paths pass
-  // NO trigger (the trigger is inside the closing menu), so they always fall
-  // through to the landmark.
+  // `#main-content` instead of `<body>`. On Cancel / Escape the trigger
+  // survives and is the least-surprising focus target. A dialog opened from
+  // the ⋯ menu passes NO trigger (the menu item is gone with the menu), so it
+  // falls through to the landmark.
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const closedViaSuccessRef = useRef(false);
+  // Each row's ⋯ trigger, so a Dismiss opened from the menu returns focus to
+  // it on Cancel / Escape (the menu item is gone with the menu).
+  const menuTriggers = useRef(new Map<string, HTMLButtonElement>());
   const finalFocus = useCallback(
     (): HTMLElement | null =>
       resolveDialogFinalFocus({
@@ -155,61 +145,212 @@ export function TierUpgradeQueueClient({
     [format],
   );
 
-  if (items.length === 0) {
-    return <TierUpgradesEmptyState />;
-  }
-
-  async function callAction(
-    suggestionId: string,
-    action: QueueAction,
-  ): Promise<void> {
-    setPending({ suggestionId, action });
-    closedViaSuccessRef.current = false;
-    try {
-      const response = await fetch(
-        `/api/admin/renewals/tier-upgrades/${suggestionId}/${action}`,
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({}),
-        },
-      );
-      if (!response.ok) {
-        const errBody = await response.json().catch(() => null);
-        const code = normalizeTierUpgradeErrorCode(errBody);
-        // Error toasts persist until the admin dismisses them (ux-standards
-        // § 4.2) and describe the failure in human copy, never a raw code.
+  const callAction = useCallback(
+    async (suggestionId: string, action: QueueAction): Promise<void> => {
+      setPending({ suggestionId, action });
+      closedViaSuccessRef.current = false;
+      try {
+        const response = await fetch(
+          `/api/admin/renewals/tier-upgrades/${suggestionId}/${action}`,
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({}),
+          },
+        );
+        if (!response.ok) {
+          const errBody = await response.json().catch(() => null);
+          const code = normalizeTierUpgradeErrorCode(errBody);
+          // Error toasts persist until the admin dismisses them (ux-standards
+          // § 4.2) and describe the failure in human copy, never a raw code.
+          toast.error(t(`actions.${action}.error`), {
+            description: t(`action_errors.${code}`),
+            duration: Infinity,
+          });
+          return;
+        }
+        // Success → the queue refreshes; steer focus off the vanishing row.
+        closedViaSuccessRef.current = true;
+        toast.success(t(`actions.${action}.success`));
+        startTransition(() => router.refresh());
+      } catch (e) {
+        const isOffline =
+          e instanceof TypeError &&
+          /(failed to fetch|networkerror|load failed)/i.test(e.message);
         toast.error(t(`actions.${action}.error`), {
-          description: t(`action_errors.${code}`),
+          description: t(
+            isOffline ? 'action_errors.network_error' : 'action_errors.unknown',
+          ),
           duration: Infinity,
         });
-        return;
+      } finally {
+        // Close the confirm dialog only AFTER the action settles — so the
+        // focus resolver reads `closedViaSuccessRef` with the real outcome
+        // and the trigger re-enabled: success → #main-content (the row
+        // unmounts on refresh); error → the now-enabled trigger (the admin
+        // can retry). No-op for Escalate (no dialog open).
+        // Scoped to this suggestion: an escalate on one row must not close
+        // (or clear the busy state of) a dialog opened on another (M4).
+        setPending((p) => (p?.suggestionId === suggestionId ? null : p));
+        setDialog((d) => (d?.suggestionId === suggestionId ? null : d));
       }
-      // Success → the queue refreshes; steer focus off the vanishing row.
-      closedViaSuccessRef.current = true;
-      toast.success(t(`actions.${action}.success`));
-      startTransition(() => router.refresh());
-    } catch (e) {
-      const isOffline =
-        e instanceof TypeError &&
-        /(failed to fetch|networkerror|load failed)/i.test(e.message);
-      toast.error(t(`actions.${action}.error`), {
-        description: t(
-          isOffline ? 'action_errors.network_error' : 'action_errors.unknown',
+    },
+    [t, router],
+  );
+
+  const columns = useMemo<DataTableColumn<TierUpgradeQueueItem>[]>(
+    () => [
+      {
+        key: 'member',
+        label: t('columns.member'),
+        minWidth: 160,
+        card: 'title',
+        // P1-9 — the resolved company name links to the member detail; the
+        // 8-char id slice when the SSR lookup returned nothing. enterprise-ux
+        // C3: no sr-only full UUID (its href carries the id).
+        render: (item) => (
+          <Link
+            href={`/admin/members/${item.memberId}`}
+            className="font-medium text-[var(--aura-fg-accent)] underline-offset-4 hover:underline"
+          >
+            {item.companyName ?? (
+              <span className="aura-text-mono text-xs">{item.memberId.slice(0, 8)}</span>
+            )}
+          </Link>
         ),
-        duration: Infinity,
-      });
-    } finally {
-      // Close the confirm dialog only AFTER the action settles + `setPending`
-      // clears — so Base UI reads `finalFocus` with `closedViaSuccessRef`
-      // reflecting the real outcome AND the trigger re-enabled: success →
-      // #main-content (row unmounts on refresh); error → the now-enabled
-      // trigger (admin can retry). The old synchronous close-on-click dropped
-      // focus to <body> on the error path (WCAG 2.4.3). No-op for the inline
-      // escalate path (no dialog open).
-      setPending(null);
-      setDialog(null);
-    }
+      },
+      {
+        key: 'fromPlan',
+        label: t('columns.from_plan'),
+        width: 180,
+        render: (item) => (
+          <PlanCell
+            name={item.fromPlanName}
+            planId={item.fromPlanId}
+            exclVat={(fee) => t('fee_excl_vat', { fee })}
+            fee={item.fromFeeMinorUnits !== undefined ? thb(item.fromFeeMinorUnits / 100) : null}
+          />
+        ),
+      },
+      {
+        key: 'toPlan',
+        label: t('columns.to_plan'),
+        width: 180,
+        render: (item) => (
+          <PlanCell
+            name={item.toPlanName}
+            planId={item.toPlanId}
+            exclVat={(fee) => t('fee_excl_vat', { fee })}
+            fee={item.toFeeMinorUnits !== undefined ? thb(item.toFeeMinorUnits / 100) : null}
+            strong
+          />
+        ),
+      },
+      {
+        // Reason + pricing evidence (WP6): the justification an admin needs
+        // before approving a fee increase; a null view says "verify manually".
+        key: 'reason',
+        label: t('columns.reason'),
+        minWidth: 240,
+        render: (item) => (
+          // AURA's stacked card keeps its cells on one line; the reason and its
+          // evidence wrap instead of clipping (a full-width card field is
+          // AURA handoff #120).
+          <span className="flex flex-col gap-0.5 whitespace-normal">
+            <span className="text-sm">{t(`reason.${item.reasonCode}`)}</span>
+            <span className="text-xs text-[var(--aura-fg-secondary)]">
+              {item.evidence ? buildEvidenceMessage(t, item.evidence, thb) : t('evidence.unavailable')}
+            </span>
+          </span>
+        ),
+      },
+      {
+        key: 'status',
+        label: t('columns.status'),
+        width: 128,
+        card: 'pill',
+        render: (item) => (
+          <StatusPill tone={tierUpgradeStatusTone(item.status)}>{t(`status.${item.status}`)}</StatusPill>
+        ),
+      },
+      {
+        // An empty label: AURA names the header "Actions" for screen readers.
+        key: 'actions',
+        label: '',
+        width: 152,
+        actions: true,
+        align: 'end',
+        // The phone card's last row, full width (board Admin-tier-upgrades-mobile).
+        card: 'footer',
+        render: (item) => {
+          const busy = pending?.suggestionId === item.suggestionId;
+          const closed = item.status !== 'open';
+          const disabled = closed || busy;
+          const company = item.companyName ?? item.memberId.slice(0, 8);
+          const menuLabel = t('actions.row_menu', { member: company });
+          const openDialog = (action: DialogAction, trigger: HTMLButtonElement | null) => {
+            triggerRef.current = trigger;
+            closedViaSuccessRef.current = false;
+            setDialog({ action, suggestionId: item.suggestionId });
+          };
+          const menuItems: MenuItem[] = [
+            {
+              label: t('actions.escalate.label'),
+              disabled,
+              onSelect: () => void callAction(item.suggestionId, 'escalate'),
+            },
+            {
+              label: t('actions.dismiss.label'),
+              tone: 'danger',
+              disabled,
+              onSelect: () => openDialog('dismiss', menuTriggers.current.get(item.suggestionId) ?? null),
+            },
+          ];
+          // A fragment: the Button and the ⋯ sit straight in AURA's cell, so
+          // the stacked card's footer grows Accept across the row.
+          return (
+            <>
+              <Button
+                variant="primary"
+                size="sm"
+                touchHeight
+                disabled={disabled}
+                loading={busy && pending?.action === 'accept'}
+                onClick={(e) => openDialog('accept', e.currentTarget)}
+                className="me-[var(--aura-space-1)]"
+              >
+                {t('actions.accept.label')}
+              </Button>
+              <DropdownMenu
+                label={menuLabel}
+                items={menuItems}
+                // Disabled only for a closed suggestion: while this row's
+                // escalate runs the ⋯ keeps focus and its items are disabled (M3).
+                trigger={
+                  <IconButton
+                    ref={(el) => {
+                      if (el) menuTriggers.current.set(item.suggestionId, el);
+                      else menuTriggers.current.delete(item.suggestionId);
+                    }}
+                    icon="ellipsis"
+                    label={menuLabel}
+                    size="sm"
+                    touchHeight
+                    disabled={closed}
+                    aria-busy={busy || undefined}
+                  />
+                }
+              />
+            </>
+          );
+        },
+      },
+    ],
+    [t, thb, pending, callAction],
+  );
+
+  if (items.length === 0) {
+    return <TierUpgradesEmptyState />;
   }
 
   const dialogItem = dialog
@@ -242,281 +383,100 @@ export function TierUpgradeQueueClient({
     );
   }
 
+  const dialogAction = dialog?.action ?? 'accept';
+  // Busy only while THIS dialog's own request runs (M4).
+  const dialogBusy = dialog !== null && pending?.suggestionId === dialog.suggestionId;
+
   return (
     <>
-      <div className="rounded-md border">
-        <Table>
-          <TableCaption className="sr-only">{t('tableCaption')}</TableCaption>
-          <TableHeader>
-            <TableRow>
-              <TableHead>{t('columns.member')}</TableHead>
-              <TableHead>{t('columns.from_plan')}</TableHead>
-              <TableHead>{t('columns.to_plan')}</TableHead>
-              <TableHead>{t('columns.reason')}</TableHead>
-              <TableHead>{t('columns.status')}</TableHead>
-              <TableHead className="text-right">
-                {t('columns.actions')}
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {items.map((item) => {
-              const busy = pending?.suggestionId === item.suggestionId;
-              const isOpen = item.status === 'open';
-              return (
-                <TableRow key={item.suggestionId} aria-busy={busy}>
-                  {/* P1-9 — resolved company name linked to the member
-                      detail; falls back to the 8-char id slice when the SSR
-                      lookup returned nothing. enterprise-ux C3: no sr-only full
-                      UUID — a screen reader reading a 36-char id on every row is
-                      pure noise; the company-name link (its href carries the id)
-                      is the meaningful, actionable identifier for AT. */}
-                  <TableCell>
-                    <Link
-                      href={`/admin/members/${item.memberId}`}
-                      className="font-medium text-primary underline-offset-4 hover:underline"
-                    >
-                      {item.companyName ?? (
-                        <span className="font-mono text-xs">
-                          {item.memberId.slice(0, 8)}
-                        </span>
-                      )}
-                    </Link>
-                  </TableCell>
-                  {/* Render localised plan name; fall back to the raw ID
-                      (font-mono, title tooltip) when the SSR lookup
-                      returned nothing (e.g. plan deleted/archived). */}
-                  <TableCell>
-                    {item.fromPlanName ? (
-                      <span className="text-sm">{item.fromPlanName}</span>
-                    ) : (
-                      <span
-                        className="font-mono text-xs text-muted-foreground"
-                        title={item.fromPlanId}
-                      >
-                        {item.fromPlanId}
-                      </span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {item.toPlanName ? (
-                      <span className="text-sm">{item.toPlanName}</span>
-                    ) : (
-                      <span
-                        className="font-mono text-xs text-muted-foreground"
-                        title={item.toPlanId}
-                      >
-                        {item.toPlanId}
-                      </span>
-                    )}
-                  </TableCell>
-                  {/* Reason + pricing evidence (WP6). The evidence line is the
-                      justification an admin needs before approving a fee
-                      increase; a null view degrades to the "verify manually"
-                      copy rather than hiding the gap. */}
-                  <TableCell>
-                    <span className="text-sm">
-                      {t(`reason.${item.reasonCode}`)}
-                    </span>
-                    <span className="mt-0.5 block text-xs text-muted-foreground">
-                      {item.evidence
-                        ? buildEvidenceMessage(t, item.evidence, thb)
-                        : t('evidence.unavailable')}
-                    </span>
-                  </TableCell>
-                  {/* P4 — shared semantic StatusBadge (ux-patterns § 6) instead
-                      of a hand-rolled bg-secondary pill; tone is mapped from the
-                      suggestion status so it reads consistently with the rest of
-                      the state surfaces (invoice/payment/member). */}
-                  <TableCell>
-                    <StatusBadge tone={tierUpgradeStatusTone(item.status)}>
-                      {t(`status.${item.status}`)}
-                    </StatusBadge>
-                  </TableCell>
-                  {/* Phase 7 review-fix I-UX-3: 3 buttons inline at md+,
-                      DropdownMenu collapse below md so the 44×44 tap-target
-                      (WCAG 2.5.5) is preserved on tablet/mobile. */}
-                  <TableCell className="text-right">
-                    <div className="hidden gap-2 md:inline-flex">
-                      <Button
-                        size="sm"
-                        variant="default"
-                        disabled={!isOpen || busy}
-                        aria-busy={busy}
-                        onClick={(e) => {
-                          triggerRef.current = e.currentTarget;
-                          closedViaSuccessRef.current = false;
-                          setDialog({
-                            action: 'accept',
-                            suggestionId: item.suggestionId,
-                          });
-                        }}
-                      >
-                        {busy && pending?.action === 'accept' ? (
-                          <>
-                            {/* Busy spinner (ux-standards § 2.2). No size class
-                                → inherits the sm-button icon scale; no
-                                per-component motion-reduce (global rule in
-                                globals.css neutralises .animate-spin, § 19). */}
-                            <Loader2 className="animate-spin" aria-hidden />
-                            {t('actions.accept.submitting')}
-                          </>
-                        ) : (
-                          t('actions.accept.label')
-                        )}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={!isOpen || busy}
-                        aria-busy={busy}
-                        onClick={() =>
-                          void callAction(item.suggestionId, 'escalate')
-                        }
-                      >
-                        {t('actions.escalate.label')}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        disabled={!isOpen || busy}
-                        aria-busy={busy}
-                        onClick={(e) => {
-                          triggerRef.current = e.currentTarget;
-                          closedViaSuccessRef.current = false;
-                          setDialog({
-                            action: 'dismiss',
-                            suggestionId: item.suggestionId,
-                          });
-                        }}
-                      >
-                        {busy && pending?.action === 'dismiss' ? (
-                          <>
-                            <Loader2 className="animate-spin" aria-hidden />
-                            {t('actions.dismiss.submitting')}
-                          </>
-                        ) : (
-                          t('actions.dismiss.label')
-                        )}
-                      </Button>
-                    </div>
-                    <div className="md:hidden">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger
-                          disabled={!isOpen || busy}
-                          aria-busy={busy}
-                          aria-label={t('actions.row_menu_aria')}
-                          className="inline-flex h-11 w-11 items-center justify-center rounded-md border border-input bg-background text-sm shadow-xs hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50"
-                        >
-                          <MoreHorizontal className="size-4" />
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          {/* Round 6 Round-7 UX-fix — onClick (not onSelect)
-                              to align with the escalation-task-queue pattern
-                              that survived review; onSelect races the
-                              popper-close on mobile touch chains.
-                              WP6 — the mobile dropdown passes NO trigger to
-                              finalFocus (the trigger is inside the closing
-                              menu), so the resolver falls through to the
-                              #main-content landmark. */}
-                          <DropdownMenuItem
-                            disabled={!isOpen || busy}
-                            onClick={() => {
-                              triggerRef.current = null;
-                              closedViaSuccessRef.current = false;
-                              setDialog({
-                                action: 'accept',
-                                suggestionId: item.suggestionId,
-                              });
-                            }}
-                          >
-                            {t('actions.accept.label')}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            disabled={!isOpen || busy}
-                            onClick={() =>
-                              void callAction(item.suggestionId, 'escalate')
-                            }
-                          >
-                            {t('actions.escalate.label')}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            disabled={!isOpen || busy}
-                            onClick={() => {
-                              triggerRef.current = null;
-                              closedViaSuccessRef.current = false;
-                              setDialog({
-                                action: 'dismiss',
-                                suggestionId: item.suggestionId,
-                              });
-                            }}
-                            className="text-destructive focus:bg-destructive/10 focus:text-destructive"
-                          >
-                            {t('actions.dismiss.label')}
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-      </div>
-      <AlertDialog
+      {/* The phone cards show bare fees, so "excl. VAT" is said once above
+          them (board Admin-tier-upgrades-mobile); never over the empty state. */}
+      <p className="m-0 text-xs text-[var(--aura-fg-secondary)] sm:hidden">{t('fees_exclude_vat')}</p>
+      <DataTable<TierUpgradeQueueItem>
+        label={t('tableCaption')}
+        rows={items}
+        columns={columns}
+        rowKey="suggestionId"
+        rowHeight="auto"
+        stackBelow={640}
+      />
+      <Dialog
         open={dialog !== null}
-        onOpenChange={(open) => {
-          if (!open) setDialog(null);
-        }}
-      >
-        <AlertDialogContent finalFocus={finalFocus}>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {dialog ? t(`actions.${dialog.action}.dialog_title`) : ''}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {dialogDescription()}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>
+        onClose={() => setDialog(null)}
+        role="alertdialog"
+        // ux-standards § 6.4: no dismissal while the action is in flight.
+        dismissible={!dialogBusy}
+        finalFocus={finalFocus}
+        title={t(`actions.${dialogAction}.dialog_title`)}
+        description={dialogDescription()}
+        // Focus on Cancel by default (FR-058 § 4).
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              data-autofocus=""
+              onClick={() => setDialog(null)}
+              disabled={dialogBusy}
+            >
               {t('dialog.cancel')}
-            </AlertDialogCancel>
-            {/* Phase 7 review-fix C-UX-2 + enterprise-ux C5: use the Button
-                `destructive` variant for Dismiss (irreversible — 90d
-                suppression) rather than hand-rolled utility classes that drift
-                if the token changes. Accept stays default. ux-standards § 6.2. */}
-            <AlertDialogAction
-              variant={dialog?.action === 'dismiss' ? 'destructive' : 'default'}
-              disabled={pending !== null}
-              onClick={(e) => {
+            </Button>
+            <Button
+              // Dismiss is irreversible (90-day suppression): the danger style.
+              variant={dialogAction === 'dismiss' ? 'danger' : 'primary'}
+              loading={dialogBusy}
+              onClick={() => {
                 if (!dialog) return;
-                // Keep the dialog OPEN until callAction settles (it closes in
-                // its `finally`), so focus resolves correctly on both paths —
-                // see the callAction finally note. preventDefault stops Base
-                // UI's synchronous auto-close.
-                e.preventDefault();
-                const { action, suggestionId } = dialog;
-                void callAction(suggestionId, action);
+                // The dialog stays open until callAction settles (it closes in
+                // its `finally`), so focus resolves on the real outcome.
+                void callAction(dialog.suggestionId, dialog.action);
               }}
             >
-              {dialog ? (
-                pending !== null ? (
-                  <>
-                    <Loader2 className="animate-spin" aria-hidden />
-                    {t(`actions.${dialog.action}.submitting`)}
-                  </>
-                ) : (
-                  t(`actions.${dialog.action}.label`)
-                )
-              ) : (
-                ''
-              )}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+              {dialogBusy
+                ? t(`actions.${dialogAction}.submitting`)
+                : t(`actions.${dialogAction}.label`)}
+            </Button>
+          </>
+        }
+      >
+        {dialogAction === 'accept' ? (
+          <p className="m-0 text-sm text-[var(--aura-fg-secondary)]">{t('fees_exclude_vat')}</p>
+        ) : null}
+      </Dialog>
     </>
+  );
+}
+
+/** A plan name with its annual fee underneath; the raw id when the lookup failed. */
+function PlanCell({
+  name,
+  planId,
+  fee,
+  exclVat,
+  strong = false,
+}: {
+  readonly name: string | undefined;
+  readonly planId: string;
+  /** The annual fee, formatted. */
+  readonly fee: string | null;
+  /** "{fee} excl. VAT", shown from 640px; a phone card says it once above the list. */
+  readonly exclVat: (fee: string) => string;
+  readonly strong?: boolean;
+}) {
+  return (
+    <span className="flex flex-col gap-0.5 whitespace-normal">
+      {name ? (
+        <span className={strong ? 'text-sm font-medium' : 'text-sm'}>{name}</span>
+      ) : (
+        <span className="aura-text-mono text-xs text-[var(--aura-fg-secondary)]" title={planId}>
+          {planId}
+        </span>
+      )}
+      {fee ? (
+        <>
+          <span className="text-xs tabular-nums text-[var(--aura-fg-secondary)] sm:hidden">{fee}</span>
+          <span className="text-xs tabular-nums text-[var(--aura-fg-secondary)] max-sm:hidden">{exclVat(fee)}</span>
+        </>
+      ) : null}
+    </span>
   );
 }

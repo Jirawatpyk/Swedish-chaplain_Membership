@@ -21,7 +21,7 @@
  *     are pre-existing + independently tested.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import { CycleAdminActions } from '@/app/(staff)/admin/renewals/[cycleId]/_components/cycle-admin-actions';
 import type { CycleStatus } from '@/modules/renewals';
@@ -45,6 +45,7 @@ function renderActions(
     readonly invoiceId: string;
     readonly billNumber: string | null;
   } | null = null,
+  placement: 'header' | 'dangerZone' = 'header',
 ) {
   return render(
     <NextIntlClientProvider
@@ -55,6 +56,7 @@ function renderActions(
         cycleId={CYCLE_ID}
         status={status}
         liveLinkedBill={liveLinkedBill}
+        placement={placement}
       />
     </NextIntlClientProvider>,
   );
@@ -153,5 +155,87 @@ describe('<CycleAdminActions> — cycle with a live linked bill', () => {
     expect(
       screen.queryByRole('button', { name: 'Mark paid offline' }),
     ).not.toBeInTheDocument();
+  });
+});
+
+// 122 US7b-1 (T722), board `Admin-renewal-cycle` (+ `-mobile`): the actions
+// sit in the page header — the payment action primary, Cancel cycle in the
+// danger style — and on a phone Cancel cycle moves to the danger zone at the
+// end of the page. The cancel confirm is an AURA alertdialog with the same
+// reason and request.
+describe('<CycleAdminActions> on AURA', () => {
+  const C = enMessages.admin.renewals.cycleDetail.cancelCycle;
+  const INVOICE_ID = '22222222-2222-2222-2222-222222222222';
+
+  // The suite runs on fake timers; the dialog flow awaits real ones.
+  beforeEach(() => {
+    vi.useRealTimers();
+  });
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it('makes the payment action primary and Cancel cycle danger, hidden from the header on a phone', () => {
+    renderActions('awaiting_payment');
+    expect(screen.getByRole('button', { name: 'Mark paid offline' })).toHaveClass('aura-btn--primary');
+    const cancel = screen.getByRole('button', { name: 'Cancel cycle' });
+    expect(cancel).toHaveClass('aura-btn--danger-secondary');
+    expect(cancel).toHaveClass('max-sm:hidden');
+  });
+
+  it('styles "Record payment on {bill}" as the primary AURA button', () => {
+    renderActions('awaiting_payment', { invoiceId: INVOICE_ID, billNumber: 'SC-2026-000130' });
+    expect(screen.getByRole('link', { name: 'Record payment on SC-2026-000130' })).toHaveClass(
+      'aura-btn',
+      'aura-btn--primary',
+    );
+  });
+
+  it('renders only Cancel cycle, full width, in the phone danger zone', () => {
+    renderActions('awaiting_payment', { invoiceId: INVOICE_ID, billNumber: 'SC-2026-000130' }, 'dangerZone');
+    expect(screen.queryByRole('link')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Mark paid offline' })).toBeNull();
+    const cancel = screen.getByRole('button', { name: 'Cancel cycle' });
+    expect(cancel).toHaveClass('aura-btn--danger-secondary', 'w-full');
+    expect(cancel).not.toHaveClass('max-sm:hidden');
+  });
+
+  it('lets the payment action take the full width and wrap on a phone (UX review H1: 320px)', () => {
+    const { unmount } = renderActions('awaiting_payment', { invoiceId: INVOICE_ID, billNumber: 'SC-2026-000130' });
+    expect(screen.getByRole('link', { name: 'Record payment on SC-2026-000130' })).toHaveClass(
+      'max-sm:w-full',
+      'max-sm:whitespace-normal',
+    );
+    unmount();
+    renderActions('awaiting_payment');
+    expect(screen.getByRole('button', { name: 'Mark paid offline' })).toHaveClass('max-sm:w-full', 'max-sm:whitespace-normal');
+  });
+
+  it('renders no danger zone for a cycle that cannot be cancelled', () => {
+    const { container } = renderActions('completed', null, 'dangerZone');
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('confirms in an AURA alertdialog and posts the trimmed reason to the same route', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
+    vi.stubGlobal('fetch', fetchMock);
+    renderActions('reminded');
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel cycle' }));
+    const dialog = await screen.findByRole('alertdialog', { name: C.dialogTitle });
+    expect(dialog).toHaveClass('aura-dialog');
+    const confirm = within(dialog).getByRole('button', { name: C.confirm });
+    expect(confirm).toHaveClass('aura-btn--danger');
+    expect(confirm).toBeDisabled();
+    fireEvent.change(within(dialog).getByRole('textbox', { name: new RegExp(`^${C.reasonLabel}`) }), {
+      target: { value: '  Member closed the company  ' },
+    });
+    await waitFor(() => expect(confirm).not.toBeDisabled());
+    fireEvent.click(confirm);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(`/api/admin/renewals/${CYCLE_ID}/cancel`);
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({ reason: 'Member closed the company' });
   });
 });

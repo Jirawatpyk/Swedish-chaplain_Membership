@@ -2,12 +2,15 @@
  * WP6 — `TierUpgradeQueueClient` render + action-error behaviour.
  *
  * Rendered against the REAL en.json so an evidence / error key regression
- * fails here. Base UI AlertDialog deadlocks under jsdom + startTransition, so
- * the error-toast path is driven through ESCALATE (no dialog) per C-19; the
- * dialog title/copy is asserted only where it renders statically.
+ * fails here. The error-toast path is driven through ESCALATE (no dialog).
+ *
+ * 122 US7b-1 (T725), boards `Admin-tier-upgrades` (+ `-accept`, `-mobile`):
+ * one AURA DataTable that stacks into cards below 640px; plan cells carry the
+ * annual fee excl. VAT; each row has Accept plus a ⋯ menu (Escalate, Dismiss)
+ * named for its row; Accept and Dismiss confirm in AURA alertdialogs.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { TierUpgradeQueueClient } from '@/app/(staff)/admin/renewals/tier-upgrades/_components/tier-upgrade-queue';
@@ -41,8 +44,10 @@ function makeItem(
     status: 'open',
     fromPlanId: 'plan-a',
     fromPlanName: 'Regular — 2026',
+    fromFeeMinorUnits: 1_600_000,
     toPlanId: 'plan-b',
     toPlanName: 'Premium — 2026',
+    toFeeMinorUnits: 3_600_000,
     reasonCode: 'declared_turnover_above_threshold',
     evidence: TURNOVER_EVIDENCE,
     createdAt: '2026-07-01T00:00:00.000Z',
@@ -61,6 +66,18 @@ function renderQueue(
 }
 
 let fetchMock: ReturnType<typeof vi.fn>;
+
+const T = enMessages.admin.renewals.tier_upgrades;
+
+/** The row's ⋯ menu, named for its row (board `Admin-tier-upgrades`). */
+function rowMenu(company = 'Acme Trading Co'): HTMLElement {
+  return screen.getByRole('button', { name: `Escalate or dismiss — ${company}` });
+}
+
+function escalateFromMenu(): void {
+  fireEvent.click(rowMenu());
+  fireEvent.click(screen.getByRole('menuitem', { name: T.actions.escalate.label }));
+}
 
 beforeEach(() => {
   vi.useRealTimers();
@@ -91,15 +108,12 @@ describe('TierUpgradeQueueClient — WP6', () => {
     ).toBeInTheDocument();
   });
 
-  it('renders the status via the shared StatusBadge with the mapped tone (P4)', () => {
+  it('renders the status as an AURA StatusPill in its mapped tone', () => {
     renderQueue([makeItem({ status: 'open' })]);
-    const badge = screen.getByText(
-      enMessages.admin.renewals.tier_upgrades.status.open,
-    );
-    // The shared primitive stamps data-slot + data-tone; the hand-rolled
-    // bg-secondary pill did neither.
-    expect(badge).toHaveAttribute('data-slot', 'status-badge');
-    expect(badge).toHaveAttribute('data-tone', 'info');
+    const pill = screen
+      .getByText(enMessages.admin.renewals.tier_upgrades.status.open)
+      .closest('.aura-pill');
+    expect(pill).toHaveClass('aura-pill--progress');
   });
 
   it('links the resolved company name to the member detail (P1-9)', () => {
@@ -111,15 +125,6 @@ describe('TierUpgradeQueueClient — WP6', () => {
     expect(link).toHaveAttribute('href', `/admin/members/${MEMBER_UUID}`);
   });
 
-  it('gives the mobile overflow trigger a 44×44 tap target (h-11 w-11, not size-8)', () => {
-    renderQueue([makeItem()]);
-    const trigger = screen.getByRole('button', {
-      name: enMessages.admin.renewals.tier_upgrades.actions.row_menu_aria,
-    });
-    expect(trigger).toHaveClass('h-11', 'w-11');
-    expect(trigger).not.toHaveClass('size-8');
-  });
-
   it('maps a read-only-mode failure to localised copy on a persistent error toast (via Escalate)', async () => {
     fetchMock.mockResolvedValueOnce({
       ok: false,
@@ -128,7 +133,7 @@ describe('TierUpgradeQueueClient — WP6', () => {
     } as unknown as Response);
     renderQueue([makeItem()]);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Escalate' }));
+    escalateFromMenu();
 
     await vi.waitFor(() => expect(h.toast.error).toHaveBeenCalled());
     const [title, opts] = h.toast.error.mock.calls[0] as [
@@ -154,7 +159,7 @@ describe('TierUpgradeQueueClient — WP6', () => {
     } as unknown as Response);
     renderQueue([makeItem()]);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Escalate' }));
+    escalateFromMenu();
 
     await vi.waitFor(() => expect(h.toast.error).toHaveBeenCalled());
     const [, opts] = h.toast.error.mock.calls[0] as [
@@ -169,10 +174,141 @@ describe('TierUpgradeQueueClient — WP6', () => {
   it('renders the shared empty state when there are no items', () => {
     renderQueue([]);
     expect(screen.getByTestId('tier-upgrades-empty')).toBeInTheDocument();
+    // 122 US7b-1 (T726): the settings link is an AURA secondary button.
+    expect(screen.getByRole('link', { name: T.empty_state.cta })).toHaveClass('aura-btn', 'aura-btn--secondary');
     expect(
       screen.getByText(
         enMessages.admin.renewals.tier_upgrades.empty_state.title,
       ),
     ).toBeInTheDocument();
+  });
+});
+
+describe('TierUpgradeQueueClient on AURA', () => {
+  it('is one AURA grid that stacks into cards, titled by the member', () => {
+    renderQueue([makeItem()]);
+    const grid = screen.getByRole('grid', { name: T.tableCaption });
+    expect(grid.closest('.aura-table')).not.toBeNull();
+    expect(screen.queryByRole('table')).toBeNull();
+    const headers = within(grid)
+      .getAllByRole('columnheader')
+      .map((th) => th.textContent?.trim());
+    expect(headers.slice(0, 5)).toEqual([
+      T.columns.member,
+      T.columns.from_plan,
+      T.columns.to_plan,
+      T.columns.reason,
+      T.columns.status,
+    ]);
+    const memberCell = screen.getByRole('link', { name: 'Acme Trading Co' }).closest('[role="gridcell"]');
+    expect(memberCell).toHaveAttribute('data-card', 'title');
+    expect(within(grid).getByRole('button', { name: T.actions.accept.label }).closest('[role="gridcell"]')).toHaveAttribute(
+      'data-card',
+      'footer',
+    );
+  });
+
+  it('shows each plan with its annual fee excluding VAT', () => {
+    renderQueue([makeItem()]);
+    expect(screen.getByText('Regular — 2026')).toBeInTheDocument();
+    expect(screen.getByText('฿16,000 excl. VAT')).toBeInTheDocument();
+    expect(screen.getByText('฿36,000 excl. VAT')).toBeInTheDocument();
+  });
+
+  it('offers Accept as the primary button and Escalate / Dismiss in a ⋯ menu named for the row', () => {
+    renderQueue([makeItem()]);
+    expect(screen.getByRole('button', { name: T.actions.accept.label })).toHaveClass('aura-btn--primary');
+    expect(screen.queryByRole('button', { name: T.actions.escalate.label })).toBeNull();
+    fireEvent.click(rowMenu());
+    expect(screen.getByRole('menuitem', { name: T.actions.escalate.label })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: T.actions.dismiss.label })).toHaveClass('aura-menu__item--danger');
+  });
+
+  it('disables the row actions once a suggestion is no longer open', () => {
+    renderQueue([makeItem({ status: 'accepted_pending_apply' })]);
+    expect(screen.getByRole('button', { name: T.actions.accept.label })).toBeDisabled();
+    expect(rowMenu()).toBeDisabled();
+  });
+
+  it('restates the evidence, the plan move with fees, and that fees exclude VAT before Accept, then posts it', async () => {
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({}) } as unknown as Response);
+    renderQueue([makeItem()]);
+    fireEvent.click(screen.getByRole('button', { name: T.actions.accept.label }));
+    const dialog = screen.getByRole('alertdialog', { name: T.actions.accept.dialog_title });
+    expect(dialog).toHaveClass('aura-dialog');
+    expect(dialog).toHaveTextContent('Regular — 2026 (฿16,000) to Premium — 2026 (฿36,000)');
+    expect(dialog).toHaveTextContent('Fees exclude VAT.');
+    fireEvent.click(within(dialog).getByRole('button', { name: T.actions.accept.label }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('/api/admin/renewals/tier-upgrades/sug-1/accept');
+    expect(init).toMatchObject({ method: 'POST', body: '{}' });
+  });
+
+  it('confirms Dismiss in a danger alertdialog and posts it', async () => {
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({}) } as unknown as Response);
+    renderQueue([makeItem()]);
+    fireEvent.click(rowMenu());
+    fireEvent.click(screen.getByRole('menuitem', { name: T.actions.dismiss.label }));
+    const dialog = screen.getByRole('alertdialog', { name: T.actions.dismiss.dialog_title });
+    expect(dialog).toHaveTextContent(T.actions.dismiss.confirm);
+    const confirm = within(dialog).getByRole('button', { name: T.actions.dismiss.label });
+    expect(confirm).toHaveClass('aura-btn--danger');
+    fireEvent.click(confirm);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect((fetchMock.mock.calls[0] as [string])[0]).toBe('/api/admin/renewals/tier-upgrades/sug-1/dismiss');
+  });
+});
+
+// 122 US7b-1 UX review (T728): focus and busy states on the AURA queue.
+describe('TierUpgradeQueueClient — UX review fixes', () => {
+  const second = () =>
+    makeItem({ suggestionId: 'sug-2', memberId: '22222222-2222-4333-8444-555555555555', companyName: 'Baltic Bay' });
+
+  it('returns focus to the row\'s ⋯ when a Dismiss opened from it is cancelled (M2)', async () => {
+    renderQueue([makeItem()]);
+    const trigger = rowMenu();
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole('menuitem', { name: T.actions.dismiss.label }));
+    const dialog = screen.getByRole('alertdialog', { name: T.actions.dismiss.dialog_title });
+    fireEvent.click(within(dialog).getByRole('button', { name: T.dialog.cancel }));
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+  });
+
+  it('keeps the ⋯ focusable while an escalate runs, with its items disabled (M3)', async () => {
+    fetchMock.mockImplementation(() => new Promise(() => {}));
+    renderQueue([makeItem()]);
+    escalateFromMenu();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(rowMenu()).not.toBeDisabled();
+    fireEvent.click(rowMenu());
+    expect(screen.getByRole('menuitem', { name: T.actions.escalate.label })).toHaveAttribute('aria-disabled', 'true');
+  });
+
+  it('an escalate on one row neither busies nor closes the Accept dialog of another (M4)', async () => {
+    let settle: (v: unknown) => void = () => {};
+    fetchMock.mockImplementationOnce(() => new Promise((r) => { settle = r; }));
+    renderQueue([makeItem(), second()]);
+    fireEvent.click(screen.getByRole('button', { name: 'Escalate or dismiss — Baltic Bay' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: T.actions.escalate.label }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getAllByRole('button', { name: T.actions.accept.label })[0]!);
+    const dialog = screen.getByRole('alertdialog', { name: T.actions.accept.dialog_title });
+    expect(within(dialog).getByRole('button', { name: T.actions.accept.label })).not.toHaveAttribute('aria-busy', 'true');
+    settle({ ok: true, status: 200, json: async () => ({}) });
+    await waitFor(() => expect(h.toast.success).toHaveBeenCalled());
+    expect(screen.getByRole('alertdialog', { name: T.actions.accept.dialog_title })).toBeInTheDocument();
+  });
+
+  it('shows the bare fee on a phone with one "Fees exclude VAT." caption, and the suffix from 640px (M7)', () => {
+    renderQueue([makeItem()]);
+    expect(screen.getByText('฿16,000')).toHaveClass('sm:hidden');
+    expect(screen.getByText('฿16,000 excl. VAT')).toHaveClass('max-sm:hidden');
+    expect(screen.getByText(T.fees_exclude_vat)).toHaveClass('sm:hidden');
+  });
+
+  it('has no VAT caption over the empty state (M7)', () => {
+    renderQueue([]);
+    expect(screen.queryByText(T.fees_exclude_vat)).toBeNull();
   });
 });

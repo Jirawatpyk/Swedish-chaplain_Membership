@@ -66,8 +66,19 @@ import {
   RENEWALS_SUMMARY,
   RENEWALS_SUMMARY_EMPTY,
   RENEWAL_ROWS,
+  CYCLE_FIXTURES,
+  CYCLE_PREVIEW_ID,
+  TIER_UPGRADE_ITEMS,
+  type CycleFixtureKind,
 } from './renewal-fixtures';
-import { AtRiskFixture, MarkPaidDialogPreview } from './renewal-previews';
+import { AtRiskFixture, MarkPaidDialogPreview, TierUpgradeAcceptPreview } from './renewal-previews';
+import { CycleDetailBadges, renderCycleDetailView } from '@/app/(staff)/admin/renewals/[cycleId]/_components/cycle-detail-view';
+import { CycleAdminActions } from '@/app/(staff)/admin/renewals/[cycleId]/_components/cycle-admin-actions';
+import { PendingReactivationActions } from '@/app/(staff)/admin/renewals/[cycleId]/_components/pending-reactivation-actions';
+import { renderTierUpgradesView } from '@/app/(staff)/admin/renewals/tier-upgrades/_components/tier-upgrades-view';
+import { TierUpgradeQueueClient } from '@/app/(staff)/admin/renewals/tier-upgrades/_components/tier-upgrade-queue';
+import { DetailContainer } from '@/components/layout';
+import { PlanBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
 
 // Request-time evaluation so the guard runs per request (see button-matrix).
 export const dynamic = 'force-dynamic';
@@ -825,6 +836,146 @@ export default async function AuraAdminPreviewPage({
           <PageHeader title={tr('title')} subtitle={tr('subtitle')} />
           {body}
           {view === 'renewals-mark-paid' ? <MarkPaidDialogPreview /> : null}
+        </TableContainer>
+      </StaffFrame>
+    );
+  }
+
+  // ── US7b-1: cycle detail (`Admin-renewal-cycle`, `-reminded`, `-pending`,
+  // `-mobile`) — the page's own title, actions and view with sample data.
+  if (view === 'renewal-cycle' || view === 'renewal-cycle-reminded' || view === 'renewal-cycle-pending') {
+    const kind: CycleFixtureKind =
+      view === 'renewal-cycle-reminded' ? 'reminded' : view === 'renewal-cycle-pending' ? 'pending' : 'bill-issued';
+    const fx = CYCLE_FIXTURES[kind];
+    const t = await getTranslations('admin.renewals.cycleDetail');
+    const tTasks = await getTranslations('admin.renewals.tasks');
+    const tChannel = await getTranslations('admin.renewals.settings.schedules.stepCard');
+    const tInvoice = await getTranslations('admin.invoices.list.statuses');
+    const canWrite = state !== 'manager';
+    const liveLinkedBill =
+      fx.invoice && fx.status === 'awaiting_payment'
+        ? { invoiceId: '00000000-0000-4000-8000-00000000f130', billNumber: fx.invoice.number }
+        : null;
+    const subtitle =
+      fx.status === 'pending_admin_reactivation'
+        ? t('subtitlePendingSince', { date: fx.subtitleDate })
+        : t('subtitleExpiry', { date: fx.subtitleDate });
+    const body = await renderCycleDetailView({
+      status: fx.status,
+      refundSettling: false,
+      lookupFailedMessage: null,
+      memberPlan: {
+        company: fx.company,
+        memberHref: '/admin/members/00000000-0000-4000-8000-000000000003',
+        primaryContact: fx.primaryContact,
+        tier: fx.tier,
+        planName: fx.planName,
+        frozenPrice: fx.frozenPrice,
+        term: '12',
+        currency: 'THB',
+        technicalIds: { cycleId: CYCLE_PREVIEW_ID, memberId: '00000000-0000-4000-8000-000000000003', planId: 'gold-partnership' },
+      },
+      invoice: fx.invoice
+        ? {
+            number: fx.invoice.number,
+            status: fx.invoice.status,
+            statusLabel: tInvoice(fx.invoice.status),
+            total: fx.invoice.total,
+            href: '/admin/invoices/00000000-0000-4000-8000-00000000f130',
+          }
+        : null,
+      invoicePendingMessage: t('noInvoiceYetUpcoming'),
+      period: [
+        { label: t('fields.periodFrom'), value: fx.period.from },
+        { label: t('fields.periodTo'), value: fx.period.to },
+        { label: t('fields.expiresAt'), value: fx.period.expires },
+        ...(fx.period.enteredPending ? [{ label: t('fields.enteredPendingAt'), value: fx.period.enteredPending }] : []),
+      ],
+      auditTimestamps: { createdAt: '24 September 2025 at 09:00', updatedAt: '2 September 2026 at 09:05' },
+      reminders: fx.reminders.map((r, i) => ({
+        id: `r-${i}`,
+        stepId: r.stepId,
+        status: r.status,
+        statusLabel: t(`reminders.status.${r.status}`),
+        date: r.date,
+        channel: tChannel(`channel.${r.channel}`),
+      })),
+      escalations: fx.escalations.map((e, i) => ({
+        id: `e-${i}`,
+        typeLabel: tTasks(`taskType.${e.taskType}`),
+        status: e.status,
+        statusLabel: tTasks(`status.${e.status}`),
+        date: e.date,
+        role: tTasks(`assigneeRole.${e.role}`),
+      })),
+      dangerZone: !canWrite ? null : fx.status === 'pending_admin_reactivation' ? (
+        <PendingReactivationActions
+          cycleId={CYCLE_PREVIEW_ID}
+          status={fx.status}
+          rejectRefundInitiatedAt={null}
+          placement="dangerZone"
+        />
+      ) : (
+        <CycleAdminActions cycleId={CYCLE_PREVIEW_ID} status={fx.status} liveLinkedBill={liveLinkedBill} placement="dangerZone" />
+      ),
+    });
+    return (
+      <StaffFrame path={`/admin/renewals/${CYCLE_PREVIEW_ID}`}>
+        <DetailContainer>
+          <PlanBreadcrumbLabel segment={CYCLE_PREVIEW_ID} label={fx.company} />
+          <PageHeader
+            title={`${t('title')} · ${fx.company}`}
+            badge={
+              <CycleDetailBadges
+                status={fx.status}
+                statusLabel={t(`cycleStatus.${fx.status}`)}
+                statusSrSuffix={t.has(`statusSeverity.${fx.status}`) ? t(`statusSeverity.${fx.status}`) : null}
+                refundSettlingLabel={null}
+              />
+            }
+            subtitle={subtitle}
+            actions={
+              canWrite ? (
+                <>
+                  {fx.status === 'pending_admin_reactivation' && (
+                    <PendingReactivationActions cycleId={CYCLE_PREVIEW_ID} status={fx.status} rejectRefundInitiatedAt={null} />
+                  )}
+                  <CycleAdminActions cycleId={CYCLE_PREVIEW_ID} status={fx.status} liveLinkedBill={liveLinkedBill} />
+                </>
+              ) : null
+            }
+          />
+          {body}
+        </DetailContainer>
+      </StaffFrame>
+    );
+  }
+
+  // ── US7b-1: the tier upgrade queue (`Admin-tier-upgrades`, `-accept`,
+  // `-mobile`), with the empty and failed-read states.
+  if (
+    view === 'tier-upgrades' ||
+    view === 'tier-upgrade-accept' ||
+    view === 'tier-upgrades-empty' ||
+    view === 'tier-upgrades-error'
+  ) {
+    const t = await getTranslations('admin.renewals.tier_upgrades');
+    const items = view === 'tier-upgrades-empty' ? [] : TIER_UPGRADE_ITEMS;
+    const body = await renderTierUpgradesView({
+      sectionTabs: <RenewalsSectionTabs {...RENEWALS_SECTION_COUNTS} pathname="/admin/renewals/tier-upgrades" />,
+      loadFailed: view === 'tier-upgrades-error',
+      queue:
+        view === 'tier-upgrade-accept' ? (
+          <TierUpgradeAcceptPreview items={items} acceptLabel={t('actions.accept.label')} />
+        ) : (
+          <TierUpgradeQueueClient items={items} />
+        ),
+    });
+    return (
+      <StaffFrame path="/admin/renewals/tier-upgrades">
+        <TableContainer>
+          <PageHeader title={t('title')} subtitle={t('subtitle')} />
+          {body}
         </TableContainer>
       </StaffFrame>
     );
