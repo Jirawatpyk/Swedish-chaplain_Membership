@@ -10,9 +10,13 @@ import { NextIntlClientProvider } from 'next-intl';
 import { TierFilterSelect } from '@/app/(staff)/admin/renewals/_components/tier-filter-select';
 import en from '@/i18n/messages/en.json';
 
-/** AURA Select keeps a real <select> under its listbox: pick by changing it (US5a precedent). */
+/**
+ * AURA Select keeps a real <select> under its listbox: pick by changing it
+ * (US5a precedent). There are two selects (the phone one is `sm:hidden`, the
+ * desktop one `hidden sm:block`); jsdom shows both, so drive the desktop one.
+ */
 function pickNative(label: string, value: string) {
-  const native = screen.getByRole('combobox', { name: label }).closest('.aura-select')?.querySelector('select');
+  const native = screen.getAllByRole('combobox', { name: label }).at(-1)?.closest('.aura-select')?.querySelector('select');
   if (!native) throw new Error(`no native select for ${label}`);
   fireEvent.change(native, { target: { value } });
 }
@@ -38,11 +42,24 @@ beforeEach(() => {
 });
 
 describe('<TierFilterSelect> on AURA', () => {
-  it('is an AURA select labelled "Tier", showing the current tier', () => {
+  it('is an AURA select named "Tier", showing the current tier', () => {
     renderSelect('premium');
-    const select = screen.getByRole('combobox', { name: 'Tier' });
-    expect(select.closest('.aura-field')).not.toBeNull();
-    expect(select).toHaveTextContent('Premium');
+    for (const select of screen.getAllByRole('combobox', { name: 'Tier' })) {
+      expect(select.closest('.aura-field, .aura-select')).not.toBeNull();
+      expect(select).toHaveTextContent('Premium');
+    }
+  });
+
+  it('shows the word "Tier" only on a phone (board Admin-renewals-mobile); on a desktop the name is for screen readers only (maintainer, 1 Oct)', () => {
+    const { container } = renderSelect();
+    const [phone, desktop] = screen.getAllByRole('combobox', { name: 'Tier' });
+    expect(phone?.closest('.sm\\:hidden')).not.toBeNull();
+    expect(desktop?.closest('.hidden.sm\\:block')).not.toBeNull();
+    // One visible "Tier" label, inside the phone variant only.
+    const labels = [...container.querySelectorAll('label')].filter((l) => l.textContent?.trim() === 'Tier');
+    expect(labels).toHaveLength(1);
+    expect(labels[0]?.closest('.sm\\:hidden')).not.toBeNull();
+    expect(desktop).toHaveAttribute('aria-label', 'Tier');
   });
 
   it('choosing a tier replaces the URL, dropping cursor, month and anchor, without scrolling', async () => {

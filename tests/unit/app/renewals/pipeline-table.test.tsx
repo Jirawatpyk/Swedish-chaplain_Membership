@@ -528,3 +528,31 @@ describe('<PipelineTable> one AURA table that stacks into cards', () => {
     expect(invoiceCell).toHaveAttribute('data-card', 'hide');
   });
 });
+
+describe('<PipelineTable> column breakpoints (maintainer, 1 Oct: Last reminder at 1440)', () => {
+  it('shows Last reminder from a 1040px table (the 1440 screen has 1071px) and gives Invoice the wide screens; the actions column fits SV "Skicka påminnelse" at 200px', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <PipelineTable rows={ONE_ROW} canMutate />
+      </NextIntlClientProvider>,
+    );
+    const header = (name: string) =>
+      within(screen.getByRole('grid'))
+        .getAllByRole('columnheader')
+        .find((th) => th.textContent?.trim() === name);
+    // AURA DataTable turns each hideBelow into a level, widest first: Invoice
+    // (1180) is level 1 and Last reminder (1040) level 2. Each level's probe
+    // carries the ratio to the level before it (stack 640 → 1180 → 1040).
+    expect(header('Invoice')).toHaveAttribute('data-hide', '1');
+    expect(header('Last reminder')).toHaveAttribute('data-hide', '2');
+    const scale = (level: string) =>
+      (document.querySelector(`.aura-table-q--${level}`) as HTMLElement | null)?.style.getPropertyValue('--aura-q-scale');
+    expect(scale('h1')).toBe(String(640 / 1180));
+    expect(scale('h2')).toBe(String(1180 / 1040));
+    const actions = within(screen.getByRole('grid'))
+      .getAllByRole('columnheader')
+      .at(-1);
+    expect(actions?.getAttribute('style')).toContain('--aura-cell-w: 200px');
+  });
+});
+
