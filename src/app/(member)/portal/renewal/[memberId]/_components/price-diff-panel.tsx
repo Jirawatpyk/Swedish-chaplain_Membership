@@ -12,6 +12,9 @@
 import { useFormatter, useTranslations } from 'next-intl';
 import { formatThbMinorUnits } from '../_lib/format-thb';
 
+const ROW =
+  'flex items-baseline justify-between gap-[var(--aura-space-4)] py-[var(--aura-space-2)] first:pt-0 last:pb-0';
+
 export function PriceDiffPanel({
   currentPriceMinorUnits,
   newPriceMinorUnits,
@@ -23,27 +26,33 @@ export function PriceDiffPanel({
   const format = useFormatter();
   const delta = newPriceMinorUnits - currentPriceMinorUnits;
 
-  // Spec 122 US7c — the board's price band: the surface-hover ground,
-  // tabular figures and a bold Difference row (tokens only).
+  // Spec 122 US7c — the board's price band: the surface-hover ground, a rule
+  // between the pairs, tabular figures and a bold Difference row (tokens only).
   return (
     <div
       data-testid="price-diff-panel"
       className="flex flex-col gap-[var(--aura-space-2)] rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface-hover)] p-[var(--aura-space-3)] text-sm"
     >
       <p className="text-xs font-semibold text-[var(--aura-fg-secondary)]">{t('priceHeading')}</p>
-      <dl className="grid grid-cols-[1fr_auto] gap-x-[var(--aura-space-4)] gap-y-[var(--aura-space-1)]">
-        <dt className="text-[var(--aura-fg-secondary)]">{t('priceCurrent')}</dt>
-        <dd className="text-end tabular-nums" data-testid="price-current">
-          {formatThbMinorUnits(format, currentPriceMinorUnits)}
-        </dd>
-        <dt className="text-[var(--aura-fg-secondary)]">{t('priceNew')}</dt>
-        <dd className="text-end tabular-nums" data-testid="price-new">
-          {formatThbMinorUnits(format, newPriceMinorUnits)}
-        </dd>
-        <dt className="font-semibold">{t('priceDelta')}</dt>
-        <dd className="text-end font-semibold tabular-nums" data-testid="price-delta">
-          {formatThbMinorUnits(format, delta, { signDisplay: 'exceptZero' })}
-        </dd>
+      <dl className="flex flex-col divide-y divide-[var(--aura-border-subtle)]">
+        <div className={ROW}>
+          <dt>{t('priceCurrent')}</dt>
+          <dd className="text-end tabular-nums" data-testid="price-current">
+            {formatThbMinorUnits(format, currentPriceMinorUnits)}
+          </dd>
+        </div>
+        <div className={ROW}>
+          <dt>{t('priceNew')}</dt>
+          <dd className="text-end tabular-nums" data-testid="price-new">
+            {formatThbMinorUnits(format, newPriceMinorUnits)}
+          </dd>
+        </div>
+        <div className={ROW}>
+          <dt className="font-semibold">{t('priceDelta')}</dt>
+          <dd className="text-end font-semibold tabular-nums" data-testid="price-delta">
+            {formatThbMinorUnits(format, delta, { signDisplay: 'exceptZero' })}
+          </dd>
+        </div>
       </dl>
     </div>
   );
