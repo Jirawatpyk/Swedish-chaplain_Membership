@@ -17,7 +17,7 @@
  * in for "the dialog already fetched the preview and the admin confirmed".
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
 import { PipelineBulkActionBar } from '@/app/(staff)/admin/renewals/_components/pipeline-bulk-action-bar';
@@ -701,7 +701,10 @@ describe('PipelineBulkActionBar — mark paid outcome bucketing (Decision 5)', (
 });
 
 describe('PipelineBulkActionBar — accessibility + selection wiring', () => {
-  it('renders nothing when there is no selection and no prior run result', () => {
+  // 122 US7a (T708) — AURA ActionBar: sticky in the page flow (no fixed bar,
+  // no measured spacer); with nothing selected it stays mounted but idle,
+  // so the next selection is announced.
+  it('stays mounted, idle and without actions, when there is no selection and no prior run result', () => {
     render(
       wrap(
         <PipelineBulkActionBar
@@ -711,11 +714,35 @@ describe('PipelineBulkActionBar — accessibility + selection wiring', () => {
         />,
       ),
     );
-    expect(screen.queryByRole('toolbar')).toBeNull();
+    const region = screen.getByRole('region', { name: B.toolbarLabel });
+    expect(region).toHaveClass('aura-actionbar', 'is-idle');
+    expect(screen.queryByRole('button', { name: B.actions.markPaid })).toBeNull();
   });
 
-  it('exposes an accessible name on the sticky toolbar', () => {
+  it('is the AURA ActionBar region, named, with the count, both actions and Clear selection', () => {
     render(
+      wrap(
+        <PipelineBulkActionBar
+          selectedCycles={[
+            { cycleId: 'c1', companyName: 'Acme' },
+            { cycleId: 'c2', companyName: 'Beta' },
+          ]}
+          totalMatching={2}
+          onClear={vi.fn()}
+        />,
+      ),
+    );
+    const region = screen.getByRole('region', { name: B.toolbarLabel });
+    expect(region).toHaveClass('aura-actionbar');
+    expect(region).not.toHaveClass('is-idle');
+    expect(region).toHaveTextContent('2 selected');
+    for (const name of [B.actions.sendReminder, B.actions.markPaid, B.clear]) {
+      expect(within(region).getByRole('button', { name })).toBeInTheDocument();
+    }
+  });
+
+  it('renders no spacer: the bar is in the flow, not fixed over the page', () => {
+    const { container } = render(
       wrap(
         <PipelineBulkActionBar
           selectedCycles={[{ cycleId: 'c1', companyName: 'Acme' }]}
@@ -724,7 +751,11 @@ describe('PipelineBulkActionBar — accessibility + selection wiring', () => {
         />,
       ),
     );
-    expect(screen.getByRole('toolbar', { name: B.toolbarLabel })).toBeInTheDocument();
+    const spacers = Array.from(container.querySelectorAll<HTMLElement>('div[aria-hidden="true"]')).filter(
+      (el) => el.style.height !== '',
+    );
+    expect(spacers).toHaveLength(0);
+    expect(screen.getByRole('region', { name: B.toolbarLabel }).className).not.toMatch(/\bfixed\b/);
   });
 
   it('"Clear selection" dismisses a persisted results panel too', async () => {
@@ -857,5 +888,46 @@ describe('PipelineBulkActionBar — results panel focus (a11y, review round 1 MU
     // AA SC 4.1.3).
     await waitFor(() => expect(document.activeElement).toBe(panel));
     expect(document.activeElement).not.toBe(main);
+  });
+});
+
+describe('PipelineBulkActionBar — keeps the last card clear of the sticky bar (WCAG 2.4.11)', () => {
+  let style: HTMLStyleElement;
+  beforeEach(() => {
+    // The viewport ActionBar sticks this far above the screen edge (AURA's
+    // `bottom`); jsdom has no AURA stylesheet, so the test supplies it.
+    style = document.createElement('style');
+    style.textContent = '.chamber-viewport-actionbar { bottom: 12px; }';
+    document.head.appendChild(style);
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(private readonly cb: ResizeObserverCallback) {}
+        observe() {
+          this.cb([{ borderBoxSize: [{ blockSize: 121.5 }] } as unknown as ResizeObserverEntry], this as unknown as ResizeObserver);
+        }
+        disconnect() {}
+      },
+    );
+  });
+  afterEach(() => {
+    style.remove();
+    document.documentElement.style.scrollPaddingBottom = '';
+  });
+
+  it('reserves the bar height plus its bottom offset while a selection is active, and gives it back when cleared', () => {
+    const { rerender } = render(
+      wrap(
+        <PipelineBulkActionBar
+          selectedCycles={[{ cycleId: 'c1', companyName: 'Acme' }]}
+          totalMatching={1}
+          onClear={vi.fn()}
+        />,
+      ),
+    );
+    expect(document.documentElement.style.scrollPaddingBottom).toBe('134px');
+
+    rerender(wrap(<PipelineBulkActionBar selectedCycles={[]} totalMatching={1} onClear={vi.fn()} />));
+    expect(document.documentElement.style.scrollPaddingBottom).toBe('');
   });
 });

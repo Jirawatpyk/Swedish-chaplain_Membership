@@ -359,15 +359,16 @@ describe('BulkMarkPaidConfirmDialog — settlement preview rendering', () => {
     expect(confirmButton).toBeDisabled();
 
     fireEvent.change(
-      screen.getByLabelText(en.admin.renewals.bulk.paymentReferenceLabel),
+      screen.getByLabelText(new RegExp(`^${en.admin.renewals.bulk.paymentReferenceLabel}`)),
       { target: { value: 'REF-123' } },
     );
     // Reference alone is not enough — date is still empty.
     expect(confirmButton).toBeDisabled();
 
-    fireEvent.change(screen.getByLabelText(en.admin.renewals.bulk.paymentDateLabel), {
-      target: { value: '2026-07-29' },
-    });
+    // AURA DatePicker: a typed ISO date is taken on blur.
+    const date = screen.getByLabelText(new RegExp(`^${en.admin.renewals.bulk.paymentDateLabel}`));
+    fireEvent.change(date, { target: { value: '2026-07-29' } });
+    fireEvent.blur(date);
     await waitFor(() => expect(confirmButton).not.toBeDisabled());
   });
 
@@ -404,12 +405,15 @@ describe('BulkMarkPaidConfirmDialog — settlement preview rendering', () => {
 
     await screen.findByText('Acme');
     fireEvent.change(
-      screen.getByLabelText(en.admin.renewals.bulk.paymentReferenceLabel),
+      screen.getByLabelText(new RegExp(`^${en.admin.renewals.bulk.paymentReferenceLabel}`)),
       { target: { value: 'REF-123' } },
     );
-    fireEvent.change(screen.getByLabelText(en.admin.renewals.bulk.paymentDateLabel), {
-      target: { value: '2026-07-29' },
-    });
+    {
+      // AURA DatePicker: a typed ISO date is taken on blur.
+      const date = screen.getByLabelText(new RegExp(`^${en.admin.renewals.bulk.paymentDateLabel}`));
+      fireEvent.change(date, { target: { value: '2026-07-29' } });
+      fireEvent.blur(date);
+    }
     expect(
       screen.getByRole('button', { name: en.admin.renewals.bulk.confirmMarkPaidAction }),
     ).toBeDisabled();
@@ -484,12 +488,15 @@ describe('BulkMarkPaidConfirmDialog — handleConfirm wiring (Decision 3, real c
     );
 
     await screen.findByText('Acme');
-    fireEvent.change(screen.getByLabelText(en.admin.renewals.bulk.paymentReferenceLabel), {
+    fireEvent.change(screen.getByLabelText(new RegExp(`^${en.admin.renewals.bulk.paymentReferenceLabel}`)), {
       target: { value: 'REF-1' },
     });
-    fireEvent.change(screen.getByLabelText(en.admin.renewals.bulk.paymentDateLabel), {
-      target: { value: '2026-07-29' },
-    });
+    {
+      // AURA DatePicker: a typed ISO date is taken on blur.
+      const date = screen.getByLabelText(new RegExp(`^${en.admin.renewals.bulk.paymentDateLabel}`));
+      fireEvent.change(date, { target: { value: '2026-07-29' } });
+      fireEvent.blur(date);
+    }
 
     const confirmButton = screen.getByRole('button', {
       name: en.admin.renewals.bulk.confirmMarkPaidAction,
@@ -513,5 +520,67 @@ describe('BulkMarkPaidConfirmDialog — handleConfirm wiring (Decision 3, real c
       { cycleId: 'c2', companyName: 'Beta' },
       { cycleId: 'c3', companyName: 'Gamma' },
     ]);
+  });
+});
+
+// 122 US7a (T708): the bulk confirm on AURA — an alertdialog with the shared
+// method / reference / date (AURA DatePicker) and the settlement preview.
+describe('BulkMarkPaidConfirmDialog on AURA', () => {
+  it('is an AURA alertdialog with an AURA method select, reference field and date picker', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        settlementPreviewResponse({
+          items: [
+            {
+              cycle_id: 'c1',
+              company_name: 'Acme',
+              invoice_id: 'inv1',
+              amount_thb_minor: 5000,
+              currency: 'THB',
+              previewable: true,
+            },
+          ],
+          total_thb_minor: 5000,
+        }),
+      ),
+    );
+    render(
+      wrap(
+        <BulkMarkPaidConfirmDialog open onOpenChange={vi.fn()} cycleIds={['c1']} onConfirm={vi.fn(async () => {})} />,
+      ),
+    );
+    await screen.findByText('Acme');
+    const B = en.admin.renewals.bulk;
+    const dialog = screen.getByRole('alertdialog', { name: B.confirmMarkPaidTitle });
+    expect(dialog).toHaveClass('aura-dialog');
+    expect(screen.getByRole('combobox', { name: B.paymentMethodLabel }).closest('.aura-select')).not.toBeNull();
+    expect(screen.getByRole('textbox', { name: B.paymentReferenceLabel }).closest('.aura-field')).not.toBeNull();
+    expect(screen.getByLabelText(new RegExp(`^${B.paymentDateLabel}`)).closest('.aura-field')?.querySelector('.aura-date__toggle')).not.toBeNull();
+  });
+
+  it('warns that each member gets a tax invoice/receipt that cannot be voided (as the single dialog does)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        settlementPreviewResponse({
+          items: [
+            { cycle_id: 'c1', company_name: 'Acme', invoice_id: 'inv1', amount_thb_minor: 5000, currency: 'THB', previewable: true },
+          ],
+          total_thb_minor: 5000,
+        }),
+      ),
+    );
+    render(
+      wrap(
+        <BulkMarkPaidConfirmDialog open onOpenChange={vi.fn()} cycleIds={['c1']} onConfirm={vi.fn(async () => {})} />,
+      ),
+    );
+    await screen.findByText('Acme');
+    const B = en.admin.renewals.bulk;
+    const warning = screen.getByText(B.taxDocWarningTitle).closest('.aura-alert');
+    expect(warning).toHaveClass('aura-alert--warning');
+    expect(warning).toHaveTextContent(B.taxDocWarningBody);
+    expect(B.taxDocWarningBody).toMatch(/credit note/);
   });
 });

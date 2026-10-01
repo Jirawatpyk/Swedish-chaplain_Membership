@@ -9,6 +9,12 @@
  * assertions below were updated to describe the compact 4-tile band BEFORE
  * `pipeline-money-band.tsx` was edited to match (red → green).
  *
+ * 122 US7a (T704): four AURA `Stat` tiles (board `Admin-renewals`). Each
+ * value reads as one "500.00 THB" string in the page's text colour (the board
+ * draws no tone on the figures); a linked tile's label carries the link and
+ * its arrow icon, so the prior-years line (danger tone) stays a separate
+ * link inside the tile. The basis hint is an AURA popover.
+ *
  * The band is a server presentational component; rendered here via
  * `NextIntlClientProvider` (the established next-intl unit-test pattern).
  * `vi.useRealTimers()` — the shared harness installs fake timers that would
@@ -19,7 +25,10 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
-import { PipelineMoneyBand } from '@/app/(staff)/admin/renewals/_components/pipeline-money-band';
+import {
+  PipelineMoneyBand,
+  PipelineMoneyBandSkeleton,
+} from '@/app/(staff)/admin/renewals/_components/pipeline-money-band';
 
 beforeEach(() => vi.useRealTimers());
 
@@ -47,9 +56,9 @@ function renderBand() {
 describe('PipelineMoneyBand', () => {
   it('renders THB hero numbers for all 4 tiles', () => {
     renderBand();
-    expect(screen.getByText('500.00')).toBeInTheDocument(); // overdue / past due
-    expect(screen.getByText('1,000.00')).toBeInTheDocument(); // collected this month
-    expect(screen.getByText('300.00')).toBeInTheDocument(); // due soon
+    expect(screen.getByText('500.00 THB')).toBeInTheDocument(); // overdue / past due
+    expect(screen.getByText('1,000.00 THB')).toBeInTheDocument(); // collected this month
+    expect(screen.getByText('300.00 THB')).toBeInTheDocument(); // due soon
   });
 
   it('groups large hero numbers with thousands separators (formatSatangThb, not formatSatangAsBaht)', () => {
@@ -69,7 +78,7 @@ describe('PipelineMoneyBand', () => {
         />
       </NextIntlClientProvider>,
     );
-    expect(screen.getByText('4,400,000.00')).toBeInTheDocument();
+    expect(screen.getByText('4,400,000.00 THB')).toBeInTheDocument();
   });
 
   it('derives the collection rate (79.2%) from settled + overdue, not a stored field', () => {
@@ -171,25 +180,27 @@ describe('PipelineMoneyBand', () => {
     expect(screen.queryByText(/within 1 days/i)).toBeNull();
   });
 
-  it('colours Collection rate success (an attention-free "how are we doing" signal) and Past due warning (needs attention)', () => {
+  it('renders the four tiles as AURA Stat tiles, in board order', () => {
     renderBand();
-    expect(screen.getByText('79.2%')).toHaveClass('text-success');
-    // The past-due value is inside the deep-link; find the hero figure text node.
-    const pastDueLink = screen.getByRole('link', { name: /past due/i });
-    expect(pastDueLink.querySelector('.text-warning')).not.toBeNull();
+    const labels = ['Collection rate', 'Past due', 'Collected this month', 'Due soon'];
+    const tiles = labels.map((l) => screen.getByText(l).closest('.aura-stat'));
+    for (const tile of tiles) expect(tile).not.toBeNull();
+    expect(new Set(tiles).size).toBe(4);
   });
 
-  it('does NOT tone-colour the neutral tiles (Collected this month, Due soon)', () => {
+  it('draws no tone on the figures (the board shows them in the text colour)', () => {
     renderBand();
-    const collectedLink = screen.getByRole('link', { name: /collected this month/i });
-    expect(collectedLink.querySelector('.text-success')).toBeNull();
-    expect(collectedLink.querySelector('.text-warning')).toBeNull();
+    expect(screen.getByText('79.2%').className).not.toMatch(/text-(success|warning)/);
+    expect(screen.getByText('500.00 THB').className).not.toMatch(/text-(success|warning)/);
   });
 
-  it('renders each compact tile value at text-2xl, not the text-3xl hero size', () => {
+  it('marks the linked tiles with the arrow icon; the display-only tiles have none', () => {
     renderBand();
-    expect(screen.getByText('79.2%')).toHaveClass('text-2xl');
-    expect(screen.getByText('79.2%')).not.toHaveClass('text-3xl');
+    const tileOf = (label: string) => screen.getByText(label).closest('.aura-stat')!;
+    expect(tileOf('Past due').querySelector('.aura-stat__icon')).not.toBeNull();
+    expect(tileOf('Collected this month').querySelector('.aura-stat__icon')).not.toBeNull();
+    expect(tileOf('Collection rate').querySelector('.aura-stat__icon')).toBeNull();
+    expect(tileOf('Due soon').querySelector('.aura-stat__icon')).toBeNull();
   });
 
   // ---- renewals-overdue-prior-fy-subline ----
@@ -199,6 +210,14 @@ describe('PipelineMoneyBand', () => {
     expect(
       screen.getByText('+ 38,520.00 THB overdue from prior years (1 bill)'),
     ).toBeInTheDocument();
+  });
+
+  it('shows the prior-years sub-line in the danger tone, as the board draws it', () => {
+    renderBand();
+    const subline = screen.getByRole('link', {
+      name: '+ 38,520.00 THB overdue from prior years (1 bill)',
+    });
+    expect(subline.className).toContain('text-[var(--aura-fg-danger)]');
   });
 
   it('renders the sub-line as a drill-down link to the overdue membership invoices list (UX follow-up F3)', () => {
@@ -248,7 +267,7 @@ describe('PipelineMoneyBand', () => {
 
   it('does not change the Past-due tile main figure or aria-label when the sub-line is present', () => {
     renderBand();
-    expect(screen.getByText('500.00')).toBeInTheDocument();
+    expect(screen.getByText('500.00 THB')).toBeInTheDocument();
     expect(
       screen.getByRole('link', { name: 'Past due 500.00 THB — view overdue renewals' }),
     ).toBeInTheDocument();
@@ -308,5 +327,19 @@ describe('PipelineMoneyBand', () => {
       name: "How this differs from the dashboard's Paid revenue",
     });
     expect(trigger.closest('a')).toBeNull();
+  });
+});
+
+describe('PipelineMoneyBandSkeleton', () => {
+  it('reserves the band as four loading AURA Stat tiles under the same heading (CLS 0)', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <PipelineMoneyBandSkeleton />
+      </NextIntlClientProvider>,
+    );
+    expect(screen.getByRole('heading', { name: en.admin.renewals.money.title })).toBeInTheDocument();
+    const tiles = document.querySelectorAll('.aura-stat');
+    expect(tiles).toHaveLength(4);
+    for (const tile of tiles) expect(tile).toHaveAttribute('aria-busy', 'true');
   });
 });

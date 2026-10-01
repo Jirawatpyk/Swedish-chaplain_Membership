@@ -31,29 +31,19 @@
  */
 'use client';
 
-import { useRef, useState, useTransition } from 'react';
+import { useCallback, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
-import { Loader2Icon } from 'lucide-react';
 import {
+  Alert,
+  Button,
+  DatePicker,
   Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import {
   Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  TranslatedSelectValue,
-} from '@/components/ui/select';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+  TextField,
+  type ISODate,
+} from '@jirawatpyk/aura-react';
 import { resolveDialogFinalFocus } from '@/components/broadcast/resolve-dialog-final-focus';
 import { isMarkPaidIncomplete } from '../[cycleId]/_components/cycle-admin-validation';
 import {
@@ -125,6 +115,11 @@ async function readError(res: Response): Promise<{
   }
 }
 
+/** A caller ref's element at close time (null when no ref was passed). */
+function currentOf(ref: React.RefObject<HTMLElement | null> | undefined): HTMLElement | null {
+  return ref?.current ?? null;
+}
+
 export function MarkPaidOfflineDialog({
   cycleId,
   open,
@@ -140,7 +135,6 @@ export function MarkPaidOfflineDialog({
   const [paymentReference, setPaymentReference] = useState('');
   const [paymentDate, setPaymentDate] = useState('');
   const [pending, startTransition] = useTransition();
-  const cancelRef = useRef<HTMLButtonElement | null>(null);
 
   // Raised on every close that runs `router.refresh()` (real settlement OR
   // a stale-cycle 409 the route resolves by closing) — see
@@ -180,18 +174,21 @@ export function MarkPaidOfflineDialog({
     router.refresh();
   };
 
-  const resolvedFinalFocus = finalFocus
-    ? (): HTMLElement | null =>
-        resolveDialogFinalFocus({
-          closedViaSuccess: closedViaSuccessRef.current,
-          trigger: finalFocus.current,
-          fallback: null,
-          mainContent:
-            typeof document !== 'undefined'
-              ? document.getElementById('main-content')
-              : null,
-        })
-    : undefined;
+  // Read at close, never during render. Only handed to the dialog when the
+  // caller passed a trigger ref; otherwise the dialog restores focus itself.
+  const resolveFinalFocus = useCallback(
+    (): HTMLElement | null =>
+      resolveDialogFinalFocus({
+        closedViaSuccess: closedViaSuccessRef.current,
+        trigger: currentOf(finalFocus),
+        fallback: null,
+        mainContent:
+          typeof document !== 'undefined'
+            ? document.getElementById('main-content')
+            : null,
+      }),
+    [finalFocus],
+  );
 
   // Shared POST runner — COPIED VERBATIM from `cycle-admin-actions.tsx`'s
   // `runAction`, collapsed to the single `markPaidOffline` namespace (the
@@ -337,99 +334,72 @@ export function MarkPaidOfflineDialog({
     );
   };
 
+  const close = (): void => {
+    onOpenChange(false);
+    reset();
+  };
+
+  // Board `Admin-renewal-mark-paid`: the fields, then the tax-document
+  // warning, then Cancel / Mark paid. Cancel is focused first.
   return (
     <Dialog
       open={open}
-      onOpenChange={(o) => {
-        onOpenChange(o);
-        if (!o) reset();
-      }}
-    >
-      <DialogContent initialFocus={cancelRef} finalFocus={resolvedFinalFocus}>
-        <DialogHeader>
-          <DialogTitle>{t('markPaidOffline.dialogTitle')}</DialogTitle>
-          {/* I-1 — trust-safety line naming the settlement target on the
-              dense pipeline table. Only rendered when the caller passes a
-              non-empty `companyName` (the pipeline row menu); the
-              cycle-detail caller omits the prop, so its dialog body is
-              unchanged from pre-fix. */}
-          {companyName ? (
-            <p className="font-medium text-foreground">
-              {t('markPaidOffline.forMember', { company: companyName })}
-            </p>
-          ) : null}
-          <DialogDescription>{t('markPaidOffline.dialogBody')}</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4 py-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="mark-paid-method">
-              {t('markPaidOffline.paymentMethodLabel')}
-            </Label>
-            <Select
-              value={paymentMethod}
-              onValueChange={(v) => setPaymentMethod(v as PaymentMethod)}
-            >
-              <SelectTrigger id="mark-paid-method" className="w-full">
-                <TranslatedSelectValue
-                  translate={(v) => t(`markPaidOffline.paymentMethod.${v}`)}
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {PAYMENT_METHODS.map((m) => (
-                  <SelectItem key={m} value={m}>
-                    {t(`markPaidOffline.paymentMethod.${m}`)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="mark-paid-reference">
-              {t('markPaidOffline.paymentReferenceLabel')}
-            </Label>
-            <Input
-              id="mark-paid-reference"
-              value={paymentReference}
-              onChange={(e) => setPaymentReference(e.target.value)}
-              placeholder={t('markPaidOffline.paymentReferencePlaceholder')}
-              maxLength={100}
-              required
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="mark-paid-date">
-              {t('markPaidOffline.paymentDateLabel')}
-            </Label>
-            <Input
-              id="mark-paid-date"
-              type="date"
-              value={paymentDate}
-              onChange={(e) => setPaymentDate(e.target.value)}
-              required
-            />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button
-            ref={cancelRef}
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={pending}
-          >
+      onClose={close}
+      // Stays open until the request settles (ux-standards § 6.4), as the
+      // bulk dialog does: Esc, the X and the scrim wait while it records.
+      dismissible={!pending}
+      {...(finalFocus ? { finalFocus: resolveFinalFocus } : {})}
+      title={t('markPaidOffline.dialogTitle')}
+      description={t('markPaidOffline.dialogBody')}
+      footer={
+        <>
+          <Button variant="secondary" data-autofocus="" onClick={close} disabled={pending}>
             {t('markPaidOffline.cancel')}
           </Button>
-          <Button onClick={onMarkPaid} disabled={pending || incomplete}>
-            {pending ? (
-              <>
-                <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" />
-                {t('markPaidOffline.submitting')}
-              </>
-            ) : (
-              t('markPaidOffline.confirm')
-            )}
+          <Button onClick={onMarkPaid} loading={pending} disabled={incomplete}>
+            {pending ? t('markPaidOffline.submitting') : t('markPaidOffline.confirm')}
           </Button>
-        </DialogFooter>
-      </DialogContent>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-[var(--aura-space-4)]">
+        {/* I-1 — names the member this settlement is for on the dense
+            pipeline table. Only the pipeline row menu passes `companyName`;
+            the cycle-detail caller omits it. */}
+        {companyName ? (
+          <p className="font-medium text-[var(--aura-fg-primary)]">
+            {t('markPaidOffline.forMember', { company: companyName })}
+          </p>
+        ) : null}
+        <Select
+          label={t('markPaidOffline.paymentMethodLabel')}
+          value={paymentMethod}
+          onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
+          options={PAYMENT_METHODS.map((m) => ({
+            value: m,
+            label: t(`markPaidOffline.paymentMethod.${m}`),
+          }))}
+        />
+        <TextField
+          label={t('markPaidOffline.paymentReferenceLabel')}
+          value={paymentReference}
+          onChange={(e) => setPaymentReference(e.target.value)}
+          placeholder={t('markPaidOffline.paymentReferencePlaceholder')}
+          maxLength={100}
+          required
+        />
+        {/* The stored value stays ISO Gregorian; Thai shows the Buddhist era. */}
+        <DatePicker
+          label={t('markPaidOffline.paymentDateLabel')}
+          timeZone="Asia/Bangkok"
+          value={(paymentDate || null) as ISODate | null}
+          onChange={(iso) => setPaymentDate(iso ?? '')}
+          required
+        />
+        <Alert tone="warning" role="note" title={t('markPaidOffline.taxDocWarningTitle')}>
+          {t('markPaidOffline.taxDocWarningBody')}
+        </Alert>
+      </div>
     </Dialog>
   );
 }

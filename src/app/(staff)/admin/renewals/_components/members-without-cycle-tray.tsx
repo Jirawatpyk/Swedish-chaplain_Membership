@@ -18,19 +18,9 @@
  */
 import Link from 'next/link';
 import { getLocale, getTranslations } from 'next-intl/server';
-import { UserCheck } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
-import { LoadErrorCard } from '@/components/shell/load-error-card';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { EmptyState } from '@/components/shell/empty-state';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Alert, Card, EmptyState } from '@jirawatpyk/aura-react/server';
+import { Table, TBody, THead, Td, Th, Tr } from '@/components/shell/aura-table';
+import { SkeletonBlock } from '@/components/shell/page-skeletons';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 import { logger } from '@/lib/logger';
 import {
@@ -80,101 +70,85 @@ export async function MembersWithoutCycleTray({
       },
       '[admin/renewals] members-without-cycle tray load failed',
     );
-    return <LoadErrorCard message={t('loadFailed')} />;
+    return (
+      <Card>
+        <Alert tone="danger" title={t('loadFailed')} />
+      </Card>
+    );
   }
 
+  // Board `Admin-renewals`: the title and explanation, then each member (a
+  // link to their record) beside the join date.
   return (
-    <Card>
-      <CardContent className="flex flex-col gap-4">
-        <section
-          aria-labelledby="members-without-cycle-heading"
-          className="flex flex-col gap-3"
-        >
-          <div className="space-y-1">
-            <h2
-              id="members-without-cycle-heading"
-              className="text-base font-semibold"
-            >
-              {t('banner.title')}
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              {t('banner.description')}
-            </p>
-          </div>
-
-          {result.items.length === 0 ? (
-            <EmptyState
-              icon={UserCheck}
-              title={t('empty.title')}
-              description={t('empty.description')}
-              bordered={false}
-            />
-          ) : (
-            <>
-              <p className="text-sm text-muted-foreground" aria-live="polite">
-                {t('count', { count: result.totalCount })}
-                {result.totalCount > result.items.length ? (
-                  <span className="ml-1">
-                    {t('showingFirst', { shown: result.items.length })}
-                  </span>
-                ) : null}
-              </p>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t('columns.company')}</TableHead>
-                    <TableHead>{t('columns.joinedAt')}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {result.items.map((m) => (
-                    <TableRow key={m.memberId}>
-                      <TableCell>
-                        <Link
-                          href={`/admin/members/${m.memberId}`}
-                          aria-label={t('viewMemberFor', {
-                            company: m.companyName,
-                          })}
-                          className="rounded-sm text-primary underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2"
-                        >
-                          {m.companyName}
-                        </Link>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {/* registrationDate is a date-only string — force UTC
-                            so it never renders the previous day on a non-UTC
-                            runtime (matches the invoice tables' convention). */}
-                        {formatLocalisedDate(m.registrationDate, locale, {
-                          dateStyle: 'long',
-                          timeZone: 'UTC',
-                        })}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </>
-          )}
-        </section>
-      </CardContent>
+    <Card
+      title={t('banner.title')}
+      titleId="members-without-cycle-heading"
+      headingLevel={2}
+      description={t('banner.description')}
+    >
+      {result.items.length === 0 ? (
+        <EmptyState
+          icon="users"
+          title={t('empty.title')}
+          description={t('empty.description')}
+          headingLevel={false}
+        />
+      ) : (
+        <div className="flex flex-col gap-[var(--aura-space-2)]">
+          <p className="text-sm text-[var(--aura-fg-secondary)]" aria-live="polite">
+            {t('count', { count: result.totalCount })}
+            {result.totalCount > result.items.length ? (
+              <span className="ml-1">{t('showingFirst', { shown: result.items.length })}</span>
+            ) : null}
+          </p>
+          <Table caption={t('banner.title')} captionHidden bordered={false} align="middle">
+            <THead>
+              <Tr>
+                <Th>{t('columns.company')}</Th>
+                <Th>{t('columns.joinedAt')}</Th>
+              </Tr>
+            </THead>
+            <TBody>
+              {result.items.map((m) => (
+                <Tr key={m.memberId}>
+                  <Td>
+                    <Link
+                      href={`/admin/members/${m.memberId}`}
+                      aria-label={t('viewMemberFor', { company: m.companyName })}
+                      className="text-[var(--aura-fg-accent)] underline-offset-2 hover:underline"
+                    >
+                      {m.companyName}
+                    </Link>
+                  </Td>
+                  <Td className="text-[var(--aura-fg-secondary)]">
+                    {/* registrationDate is a date-only string — force UTC so
+                        it never renders the previous day on a non-UTC runtime. */}
+                    {formatLocalisedDate(m.registrationDate, locale, {
+                      dateStyle: 'long',
+                      timeZone: 'UTC',
+                    })}
+                  </Td>
+                </Tr>
+              ))}
+            </TBody>
+          </Table>
+        </div>
+      )}
     </Card>
   );
 }
 
-/**
- * Suspense fallback for `<MembersWithoutCycleTray>` — a Card-shaped skeleton so
- * the tray's anti-join query streams in WITHOUT blocking the pipeline's render
- * (it would otherwise run as a serial waterfall after `loadPipeline`, adding a
- * round-trip to the SC-003 hot path). Presentational only; no layout shift.
- */
 export function MembersWithoutCycleTraySkeleton() {
   return (
-    <Card>
-      <CardContent className="flex flex-col gap-3">
-        <Skeleton className="h-5 w-64" />
-        <Skeleton className="h-4 w-full max-w-md" />
-        <Skeleton className="h-24 w-full" />
-      </CardContent>
+    <Card
+      header={
+        <div className="flex flex-col gap-[var(--aura-space-1)]">
+          <SkeletonBlock className="h-5 w-64" />
+          <SkeletonBlock className="h-4 w-full max-w-md" />
+        </div>
+      }
+    >
+      <SkeletonBlock className="h-24 w-full" />
     </Card>
   );
 }

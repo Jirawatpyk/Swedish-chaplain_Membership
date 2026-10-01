@@ -4014,7 +4014,7 @@
           "ariaLabel": "Influtet denna månad {amount} — visa betalda medlemsfakturor"
         },
         "collectionRate": {
-          "label": "Inkasseringsgrad",
+          "label": "Inbetalningsgrad",
           "basis": "medlemsavgifter · räkenskapsår hittills · endast poster som nått förfallodagen · inkl. moms",
           "hintAriaLabel": "Hur denna siffra skiljer sig från instrumentpanelens Betalda intäkter",
           "hint": "Räknar medlemsavgifter som FÖRFALLER till betalning under innevarande räkenskapsår. Instrumentpanelens Betalda intäkter räknas efter det år fakturan STÄLLDES UT — siffrorna kan därför helt korrekt skilja sig åt."
@@ -4029,6 +4029,7 @@
       },
       "tabs": {
         "ariaLabel": "Förnyelsesektioner",
+        "selectLabel": "Sektion",
         "pipeline": "Pipeline",
         "tasks": "Uppgifter",
         "tasksCountSr": "{count, plural, one {# öppen uppgift} other {# öppna uppgifter}}",
@@ -4142,6 +4143,7 @@
           "invoice": "Faktura",
           "actions": "Åtgärder"
         },
+        "tableCaption": "Förnyelsepipeline",
         "selectAll": "Markera alla rader på sidan",
         "selectRow": "Markera {company}",
         "selectRowGeneric": "Markera denna medlem",
@@ -4195,6 +4197,8 @@
         "toolbarLabel": "Massåtgärder",
         "selectedCount": "{count, plural, one {# vald} other {# valda}}",
         "overCap": "Högst {max} förnyelser per omgång. Dela upp urvalet.",
+        "taxDocWarningTitle": "Detta utfärdar ett skattekvitto för varje medlem",
+        "taxDocWarningBody": "Varje medlem får ett skattekvitto med nästa nummer, markerat som betalt i ett steg. De kan inte makuleras — ett misstag kräver en kreditnota för det kvittot.",
         "overCapHelper": "{count} av {total} valda — endast {max} kan bearbetas åt gången. Avmarkera rader efter rad {max}, eller använd filter för att begränsa listan innan du väljer på nytt.",
         "clear": "Rensa markering",
         "cancel": "Avbryt",
@@ -4472,6 +4476,7 @@
           "title": "Pausa medlem i riskzon",
           "description": "Dölj {company} från riskzon-widgeten under den valda perioden. Poängen fortsätter att uppdateras i bakgrunden; medlemmen återkommer när pausen löper ut.",
           "descriptionFallback": "Dölj denna medlem från riskzon-widgeten under den valda perioden.",
+          "durationLabel": "Varaktighet",
           "option": "{days} dagar",
           "cancel": "Avbryt",
           "confirm": "Bekräfta paus",
@@ -4632,6 +4637,8 @@
           "paymentReferenceLabel": "Betalningsreferens",
           "paymentReferencePlaceholder": "t.ex. bankslippsnummer eller checknummer",
           "paymentDateLabel": "Betalningsdatum",
+          "taxDocWarningTitle": "Detta utfärdar ett skattekvitto",
+          "taxDocWarningBody": "Ett skattekvitto utfärdas med nästa nummer och markeras som betalt i ett steg. Det kan inte makuleras — ett misstag kräver en kreditnota.",
           "confirm": "Markera betald",
           "cancel": "Avbryt",
           "submitting": "Registrerar…",

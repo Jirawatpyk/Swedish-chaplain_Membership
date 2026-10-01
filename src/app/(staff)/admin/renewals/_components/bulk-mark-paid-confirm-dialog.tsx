@@ -60,27 +60,17 @@
  * fan-out itself happens in the caller, never in this component — no second
  * settlement path (Constitution Principle IV).
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
-import { Loader2Icon } from 'lucide-react';
 import {
+  Alert,
+  Button,
+  DatePicker,
   Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import {
   Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  TranslatedSelectValue,
-} from '@/components/ui/select';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+  TextField,
+  type ISODate,
+} from '@jirawatpyk/aura-react';
 import { isMarkPaidIncomplete } from '../[cycleId]/_components/cycle-admin-validation';
 
 const PAYMENT_METHODS = ['bank_transfer', 'cash', 'cheque'] as const;
@@ -251,7 +241,6 @@ export function BulkMarkPaidConfirmDialog({
   const [paymentDate, setPaymentDate] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [preview, setPreview] = useState<PreviewState>({ kind: 'idle' });
-  const cancelRef = useRef<HTMLButtonElement | null>(null);
 
   const reset = (): void => {
     setPaymentReference('');
@@ -367,125 +356,108 @@ export function BulkMarkPaidConfirmDialog({
     }
   };
 
+  const close = (): void => {
+    onOpenChange(false);
+    reset();
+  };
+
+  // A money confirmation: an alertdialog (a stray scrim click does not throw
+  // the typed reference away), Cancel focused first. The caller's focus
+  // resolver may answer `false` ("it focuses the page landmark itself"),
+  // which AURA reads as "back to the opener" before that runs.
   return (
     <Dialog
       open={open}
-      onOpenChange={(o) => {
-        onOpenChange(o);
-        if (!o) reset();
-      }}
-    >
-      <DialogContent initialFocus={cancelRef} finalFocus={finalFocus}>
-        <DialogHeader>
-          <DialogTitle>{t('confirmMarkPaidTitle')}</DialogTitle>
-          <DialogDescription>{t('confirmMarkPaidDescription')}</DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-3 py-2">
-          {preview.kind === 'loading' && (
-            <p className="text-sm text-muted-foreground">{t('previewLoading')}</p>
-          )}
-          {preview.kind === 'error' && (
-            <p role="alert" className="text-sm text-destructive">
-              {t('previewError')}
-            </p>
-          )}
-          {preview.kind === 'ready' && (
-            <>
-              <ul className="space-y-1 text-sm">
-                {previewableItems.map((item) => (
-                  <li key={item.cycleId} className="flex items-center justify-between gap-2">
-                    <span>{item.companyName}</span>
-                    <span className="tabular-nums">
-                      {item.amountThbMinor !== null
-                        ? formatThbMinor(item.amountThbMinor, locale, item.currency ?? 'THB')
-                        : '—'}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-              <div className="flex items-center justify-between border-t pt-2 text-sm font-semibold">
-                <span>{t('previewGrandTotalLabel')}</span>
-                <span className="tabular-nums">
-                  {formatThbMinor(clientTotalThbMinor, locale, 'THB')}
-                </span>
-              </div>
-              {nonPreviewableItems.length > 0 && (
-                <div className="space-y-1 border-t pt-2">
-                  <p className="text-xs font-medium text-muted-foreground">
-                    {t('previewNotBulkPayableHeading')}
-                  </p>
-                  <ul className="space-y-1 text-sm text-muted-foreground">
-                    {nonPreviewableItems.map((item) => (
-                      <li key={item.cycleId} className="flex items-center justify-between gap-2">
-                        <span>{item.companyName}</span>
-                        <span>{t('previewRowUnpriced')}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </>
-          )}
-
-          <div className="space-y-1.5">
-            <Label htmlFor="bulk-mark-paid-method">{t('paymentMethodLabel')}</Label>
-            <Select
-              value={paymentMethod}
-              onValueChange={(v) => setPaymentMethod(v as PaymentMethod)}
-            >
-              <SelectTrigger id="bulk-mark-paid-method" className="w-full">
-                <TranslatedSelectValue translate={(v) => t(`paymentMethod.${v}`)} />
-              </SelectTrigger>
-              <SelectContent>
-                {PAYMENT_METHODS.map((m) => (
-                  <SelectItem key={m} value={m}>
-                    {t(`paymentMethod.${m}`)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="bulk-mark-paid-reference">{t('paymentReferenceLabel')}</Label>
-            <Input
-              id="bulk-mark-paid-reference"
-              value={paymentReference}
-              onChange={(e) => setPaymentReference(e.target.value)}
-              placeholder={t('paymentReferencePlaceholder')}
-              maxLength={100}
-              required
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="bulk-mark-paid-date">{t('paymentDateLabel')}</Label>
-            <Input
-              id="bulk-mark-paid-date"
-              type="date"
-              value={paymentDate}
-              onChange={(e) => setPaymentDate(e.target.value)}
-              required
-            />
-          </div>
-        </div>
-
-        <DialogFooter>
-          <Button
-            ref={cancelRef}
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={submitting}
-          >
+      onClose={close}
+      role="alertdialog"
+      dismissible={!submitting}
+      {...(finalFocus ? { finalFocus: () => finalFocus() || null } : {})}
+      title={t('confirmMarkPaidTitle')}
+      description={t('confirmMarkPaidDescription')}
+      footer={
+        <>
+          <Button variant="secondary" data-autofocus="" onClick={close} disabled={submitting}>
             {t('cancel')}
           </Button>
-          <Button onClick={() => void handleConfirm()} disabled={confirmDisabled}>
-            {submitting && (
-              <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" />
-            )}
+          <Button onClick={() => void handleConfirm()} loading={submitting} disabled={confirmDisabled}>
             {t('confirmMarkPaidAction')}
           </Button>
-        </DialogFooter>
-      </DialogContent>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-[var(--aura-space-3)]">
+        {preview.kind === 'loading' && (
+          <p className="text-sm text-[var(--aura-fg-secondary)]">{t('previewLoading')}</p>
+        )}
+        {preview.kind === 'error' && (
+          <p role="alert" className="text-sm text-[var(--aura-fg-danger)]">
+            {t('previewError')}
+          </p>
+        )}
+        {preview.kind === 'ready' && (
+          <div className="flex flex-col gap-[var(--aura-space-2)] rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface-strong)] p-[var(--aura-space-3)]">
+            <ul className="flex flex-col gap-[var(--aura-space-1)] text-sm">
+              {previewableItems.map((item) => (
+                <li key={item.cycleId} className="flex items-center justify-between gap-2">
+                  <span>{item.companyName}</span>
+                  <span className="tabular-nums">
+                    {item.amountThbMinor !== null
+                      ? formatThbMinor(item.amountThbMinor, locale, item.currency ?? 'THB')
+                      : '—'}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <div className="flex items-center justify-between border-t border-[var(--aura-border-default)] pt-[var(--aura-space-2)] text-sm font-semibold">
+              <span>{t('previewGrandTotalLabel')}</span>
+              <span className="tabular-nums">{formatThbMinor(clientTotalThbMinor, locale, 'THB')}</span>
+            </div>
+            {nonPreviewableItems.length > 0 && (
+              <div className="flex flex-col gap-[var(--aura-space-1)] border-t border-[var(--aura-border-default)] pt-[var(--aura-space-2)]">
+                <p className="text-xs font-medium text-[var(--aura-fg-secondary)]">
+                  {t('previewNotBulkPayableHeading')}
+                </p>
+                <ul className="flex flex-col gap-[var(--aura-space-1)] text-sm text-[var(--aura-fg-secondary)]">
+                  {nonPreviewableItems.map((item) => (
+                    <li key={item.cycleId} className="flex items-center justify-between gap-2">
+                      <span>{item.companyName}</span>
+                      <span>{t('previewRowUnpriced')}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+
+        <Select
+          label={t('paymentMethodLabel')}
+          value={paymentMethod}
+          onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
+          options={PAYMENT_METHODS.map((m) => ({ value: m, label: t(`paymentMethod.${m}`) }))}
+        />
+        <TextField
+          label={t('paymentReferenceLabel')}
+          value={paymentReference}
+          onChange={(e) => setPaymentReference(e.target.value)}
+          placeholder={t('paymentReferencePlaceholder')}
+          maxLength={100}
+          required
+        />
+        {/* The stored value stays ISO Gregorian; Thai shows the Buddhist era. */}
+        <DatePicker
+          label={t('paymentDateLabel')}
+          timeZone="Asia/Bangkok"
+          value={(paymentDate || null) as ISODate | null}
+          onChange={(iso) => setPaymentDate(iso ?? '')}
+          required
+        />
+        {/* Same rule as the single dialog, per member: each gets a tax
+            invoice/receipt that can only be corrected by a credit note. */}
+        <Alert tone="warning" role="note" title={t('taxDocWarningTitle')}>
+          {t('taxDocWarningBody')}
+        </Alert>
+      </div>
     </Dialog>
   );
 }

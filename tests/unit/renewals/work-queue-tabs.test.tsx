@@ -1,22 +1,9 @@
 /**
- * Wave 2 Task 7 — `WorkQueueTabs` unit test (roving tabindex + panel switch).
- *
- * `WorkQueueTabs` is the 2-lens client tablist that folds the pipeline body
- * and the `AtRiskWidget` into ONE work-queue control on `/admin/renewals`
- * (below the section tabs, no URL param). Only the active lens's panel is
- * mounted — `pipeline` is server-streamed content passed as a `ReactNode`
- * prop, so mounting/unmounting it is cheap.
- *
- * Review round 1 Fix I-1 — `needsActionBadge` is an optional `ReactNode`
- * slot rendered inside the "Needs action" tab, right after its label. The
- * page passes a server-streamed count badge; these tests only verify the
- * slot itself (present vs absent), not the page's data-fetch (that half is
- * a server component, covered by typecheck/lint per the review — see
- * `page.tsx`'s `NeedsActionCountBadge`).
- *
- * `vi.useRealTimers()` — the shared harness installs fake timers that would
- * hang React rendering / `userEvent` (memory: component test harness fake
- * timers).
+ * `<WorkQueueTabs>` — the All renewals / Needs action toggle (spec 122 US7a,
+ * T703; board `Admin-renewals`): AURA segmented `Tabs` whose panels are the
+ * pipeline and the at-risk lens, the needs-action count on its tab, and the
+ * pipeline help button at the end of the row. The active panel keeps the
+ * `#work-queue-panel` hook the e2e specs scope to.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
@@ -42,40 +29,50 @@ function setup(extraProps: Partial<WorkQueueTabsProps> = {}) {
   );
 }
 
-describe('WorkQueueTabs', () => {
-  it('shows pipeline by default and hides needs-action', () => {
+describe('WorkQueueTabs on AURA', () => {
+  it('is an AURA segmented tablist named "Work queue"', () => {
+    setup();
+    const list = screen.getByRole('tablist', { name: 'Work queue' });
+    expect(list).toHaveClass('aura-segmented');
+    expect(screen.getByRole('tab', { name: 'All renewals' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('shows the pipeline by default, inside #work-queue-panel, and not the needs-action lens', () => {
     setup();
     expect(screen.getByTestId('pipeline-panel')).toBeVisible();
+    expect(screen.getByTestId('pipeline-panel').closest('#work-queue-panel')).not.toBeNull();
     expect(screen.queryByTestId('needs-action-panel')).toBeNull();
   });
 
-  it('ArrowRight moves roving focus + selection to needs-action', async () => {
+  it('ArrowRight moves selection to Needs action and shows its lens', async () => {
     setup();
-    const tabs = screen.getAllByRole('tab');
-    tabs[0]!.focus();
+    screen.getByRole('tab', { name: 'All renewals' }).focus();
     await userEvent.keyboard('{ArrowRight}');
-    expect(tabs[1]).toHaveAttribute('aria-selected', 'true');
-    expect(tabs[1]).toHaveAttribute('tabindex', '0');
-    expect(tabs[0]).toHaveAttribute('tabindex', '-1');
+    expect(screen.getByRole('tab', { name: /^Needs action/ })).toHaveAttribute('aria-selected', 'true');
     expect(await screen.findByTestId('needs-action-panel')).toBeVisible();
+    expect(screen.getByTestId('needs-action-panel').closest('#work-queue-panel')).not.toBeNull();
   });
 
-  it('renders needsActionBadge inside the Needs action tab when provided', () => {
-    setup({
-      needsActionBadge: <span data-testid="needs-action-badge">3</span>,
-    });
-    const needsActionTab = screen.getByRole('tab', { name: /needs action/i });
-    const badge = screen.getByTestId('needs-action-badge');
-    expect(badge).toBeVisible();
-    // Slotted INSIDE the tab button, not floated elsewhere on the page.
-    expect(needsActionTab).toContainElement(badge);
+  it('shows the needs-action count on its tab and names it', () => {
+    setup({ needsActionCount: 3 });
+    const tab = screen.getByRole('tab', { name: 'Needs action, 3 members need action' });
+    expect(tab.textContent).toBe('Needs action3');
   });
 
-  it('renders no badge in either tab when needsActionBadge is absent', () => {
+  it('shows no count when there is none (0 or absent)', () => {
+    setup({ needsActionCount: 0 });
+    expect(screen.getByRole('tab', { name: 'Needs action' }).textContent).toBe('Needs action');
+  });
+
+  it('renders the pipeline help button at the end of the toggle row', () => {
     setup();
-    expect(screen.queryByTestId('needs-action-badge')).toBeNull();
-    const pipelineTab = screen.getByRole('tab', { name: /pipeline|all renewals/i });
-    // The pipeline tab never gets a badge slot at all, present or absent.
-    expect(pipelineTab.querySelector('[data-testid]')).toBeNull();
+    expect(screen.getByRole('button', { name: 'About the renewal pipeline' })).toBeInTheDocument();
+  });
+
+  it('opens on Needs action when asked (the preview of `Admin-renewals-needs-action`)', () => {
+    setup({ defaultLens: 'needsAction' });
+    expect(screen.getByRole('tab', { name: /^Needs action/ })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId('needs-action-panel')).toBeVisible();
+    expect(screen.queryByTestId('pipeline-panel')).toBeNull();
   });
 });

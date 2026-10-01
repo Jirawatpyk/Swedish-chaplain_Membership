@@ -82,16 +82,24 @@
  * focus race against Base UI's own management — two frames of buffer after
  * commit reliably runs after Base UI's own close-focus attempt, which
  * no-ops anyway since the trigger it would have targeted is detached).
+ *
+ * 122 US7a (T708): AURA `ActionBar` (board `Admin-renewals`: "2 selected ·
+ * Send reminder · Mark paid · Clear selection"), sticky in the page flow
+ * after the table — no fixed bar, no measured spacer — and idle (its live
+ * region kept) while nothing is selected, as the members bar (US5a). The
+ * results panel sits in the flow just above it. While a selection is active
+ * the bar's measured height (plus the gap it sticks above the screen edge)
+ * is the page's scroll padding, so the last card scrolls clear of it.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useFixedBarScrollPadding } from '@/hooks/use-fixed-bar-scroll-padding';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { BanknoteIcon, BellIcon, XIcon } from 'lucide-react';
+import { BanknoteIcon } from 'lucide-react';
+import { ActionBar, AuraProvider, Button } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
-import { Button } from '@/components/ui/button';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
 import { useDialogFinalFocus } from '@/components/broadcast/reason-confirmation-dialog';
+import { useFixedBarScrollPadding } from '@/hooks/use-fixed-bar-scroll-padding';
 import { BulkProgressIndicator } from '../../members/_components/bulk-progress-indicator';
 import { BULK_CAP } from '@/lib/members-bulk-constants';
 import {
@@ -341,15 +349,37 @@ export function PipelineBulkActionBar({
   // real enforcement regardless of this client guard.
   const overCap = count > BULK_CAP;
   const hasSelection = count > 0;
-  const visible = hasSelection || lastRunResult !== null;
 
   const lastTriggerRef = useRef<HTMLButtonElement | null>(null);
   const closedViaSuccessRef = useRef<boolean>(false);
   const finalFocus = useDialogFinalFocus(lastTriggerRef, undefined, closedViaSuccessRef);
 
-  const barRef = useRef<HTMLDivElement | null>(null);
-  const [barHeight, setBarHeight] = useState(64);
   const resultsPanelRef = useRef<HTMLDivElement | null>(null);
+
+  // WCAG 2.2 SC 2.4.11 — the sticky bar must not cover the card a focus or a
+  // scroll-into-view lands on. Measured, not guessed: on a phone the bar
+  // wraps to two or three lines (locale, the over-cap note). The reserve is
+  // the bar plus the gap AURA sticks it above the screen edge (`bottom`).
+  const barRef = useRef<HTMLDivElement | null>(null);
+  const [barBlock, setBarBlock] = useState(64);
+  useEffect(() => {
+    const el = barRef.current;
+    if (!el || !hasSelection) return undefined;
+    const measure = (height: number): void => {
+      const offset = Number.parseFloat(getComputedStyle(el).bottom);
+      setBarBlock(Math.ceil(height + (Number.isFinite(offset) ? offset : 0)));
+    };
+    if (typeof ResizeObserver === 'undefined') {
+      measure(el.offsetHeight);
+      return undefined;
+    }
+    const ro = new ResizeObserver(([entry]) => {
+      measure(entry?.borderBoxSize?.[0]?.blockSize ?? el.offsetHeight);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [hasSelection]);
+  useFixedBarScrollPadding(hasSelection, barBlock);
 
   // MUST-FIX (review round 1, WCAG 2.1 AA SC 4.1.3) — when a run leaves an
   // issues/not-bulk-payable trail, the persisted results panel is the ONLY
@@ -376,28 +406,6 @@ export function PipelineBulkActionBar({
     };
   }, [lastRunResult]);
 
-  // Re-observes on every hidden↔visible transition (not `[]` like the
-  // members bar) — this bar can become visible from a `count===0` mount
-  // (no selection yet) OR from a `lastRunResult` alone (selection already
-  // cleared), and a `[]`-deps effect would only ever attach if the FIRST
-  // render happened to be visible, missing every later transition.
-  useEffect(() => {
-    const el = barRef.current;
-    if (!el) return;
-    if (typeof ResizeObserver === 'undefined') {
-      setBarHeight(el.offsetHeight);
-      return;
-    }
-    const ro = new ResizeObserver(([entry]) => {
-      const h = entry?.borderBoxSize?.[0]?.blockSize ?? el.offsetHeight;
-      setBarHeight(Math.ceil(h));
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [visible]);
-
-  // WCAG 2.2 SC 2.4.11 — keep focus / scroll-into-view above the bar.
-  useFixedBarScrollPadding(visible, barHeight);
 
   const reportOutcome = useCallback(
     (
@@ -550,83 +558,78 @@ export function PipelineBulkActionBar({
     onClear();
   }, [onClear]);
 
-  if (!visible) return null;
+  // The ActionBar's own count and Clear, in this bar's words.
+  const barStrings = useMemo(
+    () => ({
+      selectedCount: (n: number) => t('selectedCount', { count: n }),
+      clear: () => t('clear'),
+    }),
+    [t],
+  );
 
   return (
     <>
-      <div
-        ref={barRef}
-        className="fixed bottom-0 left-0 right-0 z-40 flex flex-col border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm shadow-lg"
-      >
-        {lastRunResult && (
-          <BulkRunResultsPanel
-            result={lastRunResult}
-            onDismiss={() => setLastRunResult(null)}
-            panelRef={resultsPanelRef}
-          />
-        )}
-        {hasSelection && (
-          <div
-            role="toolbar"
-            aria-label={t('toolbarLabel')}
-            className="mx-auto flex w-full max-w-screen-xl flex-wrap items-center justify-between gap-x-4 gap-y-3 px-4 py-3"
-          >
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium" aria-live="polite">
-                {t('selectedCount', { count })}
+      {lastRunResult && (
+        <BulkRunResultsPanel
+          result={lastRunResult}
+          onDismiss={() => setLastRunResult(null)}
+          panelRef={resultsPanelRef}
+        />
+      )}
+      <AuraProvider strings={barStrings}>
+        <ActionBar
+          ref={barRef}
+          // The app's marker for a viewport ActionBar: globals.css keeps a
+          // focused field clear of it by this class, not AURA's modifier.
+          className="chamber-viewport-actionbar"
+          label={t('toolbarLabel')}
+          selected={count}
+          onClearSelection={handleClearClick}
+          status={
+            overCap ? (
+              <span className="flex flex-col gap-0.5">
+                <span className="text-xs font-medium text-[var(--aura-fg-danger)]">
+                  {t('overCap', { max: BULK_CAP })}
+                </span>
+                <span className="text-xs text-[var(--aura-fg-secondary)]">
+                  {t('overCapHelper', { count, total: totalMatching, max: BULK_CAP })}
+                </span>
               </span>
-              {overCap && (
-                <div className="flex flex-col gap-0.5" role="alert">
-                  <span className="text-xs font-medium text-destructive">
-                    {t('overCap', { max: BULK_CAP })}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {t('overCapHelper', { count, total: totalMatching, max: BULK_CAP })}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
+            ) : undefined
+          }
+        >
+          {hasSelection && (
+            <>
               <Button
-                variant="outline"
+                variant="secondary"
                 size="sm"
+                icon="mail"
                 disabled={executing || overCap}
                 onClick={(e) => {
                   lastTriggerRef.current = e.currentTarget;
                   closedViaSuccessRef.current = false;
                   setReminderDialogOpen(true);
                 }}
-                className="min-h-11"
               >
-                <BellIcon className="mr-1.5 h-4 w-4" />
                 {t('actions.sendReminder')}
               </Button>
               <Button
-                variant="outline"
+                variant="secondary"
                 size="sm"
+                icon={<BanknoteIcon aria-hidden="true" />}
                 disabled={executing || overCap}
                 onClick={(e) => {
                   lastTriggerRef.current = e.currentTarget;
                   closedViaSuccessRef.current = false;
                   setMarkPaidDialogOpen(true);
                 }}
-                className="min-h-11"
               >
-                <BanknoteIcon className="mr-1.5 h-4 w-4" />
                 {t('actions.markPaid')}
               </Button>
-            </div>
-
-            <Button variant="ghost" size="sm" onClick={handleClearClick} className="min-h-11">
-              <XIcon className="mr-1 h-4 w-4" />
-              {t('clear')}
-            </Button>
-          </div>
-        )}
-      </div>
-
-      <div style={{ height: barHeight }} aria-hidden="true" />
+            </>
+          )}
+        </ActionBar>
+      </AuraProvider>
 
       <ConfirmationDialog
         open={reminderDialogOpen}
@@ -705,17 +708,17 @@ function BulkRunResultsPanel({
       role="region"
       aria-label={heading}
       tabIndex={-1}
-      className="mx-auto flex w-full max-w-screen-xl flex-col gap-2 border-b px-4 py-3"
+      className="flex flex-col gap-[var(--aura-space-2)] rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] p-[var(--aura-space-3)] focus-visible:outline-2 focus-visible:outline-[var(--aura-focus-ring)]"
     >
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-sm font-semibold">{heading}</h2>
-        <Button variant="ghost" size="sm" onClick={onDismiss} className="min-h-11">
+        <Button variant="ghost" size="sm" touchHeight onClick={onDismiss}>
           {t('resultsDismiss')}
         </Button>
       </div>
       {sections.map((section) => (
         <div key={section.key} className="space-y-1">
-          <h3 className="text-xs font-medium text-muted-foreground">
+          <h3 className="text-xs font-medium text-[var(--aura-fg-secondary)]">
             {t(`resultLabels.${section.key}`)}
           </h3>
           <ul className="flex flex-wrap gap-x-3 gap-y-1 text-sm">
@@ -727,7 +730,7 @@ function BulkRunResultsPanel({
       ))}
       {notBulkPayable.length > 0 && (
         <div className="space-y-1">
-          <h3 className="text-xs font-medium text-muted-foreground">
+          <h3 className="text-xs font-medium text-[var(--aura-fg-secondary)]">
             {t('resultLabels.notBulkPayable')}
           </h3>
           <ul className="flex flex-wrap gap-x-3 gap-y-1 text-sm">
@@ -739,7 +742,7 @@ function BulkRunResultsPanel({
       )}
       {noEmailItems.length > 0 && (
         <div className="space-y-1">
-          <h3 className="text-xs font-medium text-muted-foreground">
+          <h3 className="text-xs font-medium text-[var(--aura-fg-secondary)]">
             {t('resultLabels.noEmail')}
           </h3>
           <ul className="flex flex-wrap gap-x-3 gap-y-1 text-sm">

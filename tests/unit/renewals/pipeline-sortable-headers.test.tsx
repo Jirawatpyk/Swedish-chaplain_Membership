@@ -1,52 +1,83 @@
 /**
- * Wave 2 Task 8 — `<PipelineTable>` sortable headers.
+ * `<PipelineTable>` sortable headers on AURA `DataTable` (spec 122 US7a,
+ * T702). The URL stays the source of truth (FR-015): the page precomputes
+ * `sortHrefs` (they keep `tier`/`urgency`/`month`, toggle the direction and
+ * drop the paging `cursor`), and a click on a sortable header navigates to
+ * the clicked column's href. The active column's header carries
+ * `aria-sort=ascending|descending`, the other sortable one `none` (WCAG
+ * 1.3.1). Without `sortHrefs` no header is sortable.
  *
- * When `sort` + `sortHrefs` are supplied (the page always wires both) the
- * `tier`/`expires` headers render as anchor links to the precomputed sort
- * hrefs, the active column's `<th>` carries `aria-sort=ascending|descending`
- * and the other sortable column `aria-sort=none` (WCAG 1.3.1). Without the
- * props the headers stay plain text — the backwards-compatible path other
- * callers/tests rely on. Rendered with `rows={[]}` (headers render regardless
- * of rows; no `RowActions`, hence no Base UI menu to mock).
+ * Two rows: AURA only offers sorting when the page has more than one.
  */
-import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import { PipelineTable } from '@/app/(staff)/admin/renewals/_components/pipeline-table';
 import en from '@/i18n/messages/en.json';
 import type { PipelineRow } from '@/modules/renewals/client';
 
-const EMPTY_ROWS: ReadonlyArray<PipelineRow> = [];
+const push = vi.hoisted(() => vi.fn());
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push, refresh: vi.fn() }),
+}));
+
+function row(cycleId: string, companyName: string): PipelineRow {
+  return {
+    cycleId: cycleId as PipelineRow['cycleId'],
+    memberId: `m-${cycleId}`,
+    companyName,
+    tierBucket: 'premium' as PipelineRow['tierBucket'],
+    expiresAt: '2026-12-01T00:00:00.000Z',
+    urgency: 't-30',
+    status: 'upcoming' as PipelineRow['status'],
+    lastReminderAt: null,
+    lastReminderStepId: null,
+    linkedInvoiceId: null,
+    anchored: false,
+    closedReason: null,
+    emailUnverified: false,
+  };
+}
+
+const ROWS: ReadonlyArray<PipelineRow> = [row('c1', 'Acme Co'), row('c2', 'Beta Co')];
 const SORT_HREFS = {
   expires: '/admin/renewals?urgency=t-30&sort=expires_at_asc',
   tier: '/admin/renewals?urgency=t-30&sort=tier_asc',
 } as const;
 
 function columnHeader(label: string): HTMLElement {
-  const col = screen
-    .getAllByRole('columnheader')
-    .find((c) => c.textContent?.includes(label));
-  if (!col) throw new Error(`no columnheader containing "${label}"`);
-  return col;
+  return screen.getByRole('columnheader', { name: new RegExp(`^${label}`) });
 }
 
-describe('<PipelineTable> sortable headers', () => {
-  it('renders tier/expires headers as sort links with the precomputed hrefs', () => {
+beforeEach(() => {
+  push.mockClear();
+});
+
+describe('<PipelineTable> sortable headers (AURA DataTable)', () => {
+  it('a click on the Tier header navigates to its precomputed sort href', () => {
     render(
       <NextIntlClientProvider locale="en" messages={en}>
-        <PipelineTable rows={EMPTY_ROWS} canMutate sort="tier_desc" sortHrefs={SORT_HREFS} />
+        <PipelineTable rows={ROWS} canMutate sort="tier_desc" sortHrefs={SORT_HREFS} />
       </NextIntlClientProvider>,
     );
-    const tierLink = screen.getByRole('link', { name: 'Sort by Tier' });
-    expect(tierLink).toHaveAttribute('href', SORT_HREFS.tier);
-    const expiresLink = screen.getByRole('link', { name: 'Sort by Expires' });
-    expect(expiresLink).toHaveAttribute('href', SORT_HREFS.expires);
+    fireEvent.click(within(columnHeader('Tier')).getByRole('button'));
+    expect(push).toHaveBeenCalledWith(SORT_HREFS.tier);
+  });
+
+  it('a click on the Expires header navigates to its precomputed sort href', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <PipelineTable rows={ROWS} canMutate sort="tier_desc" sortHrefs={SORT_HREFS} />
+      </NextIntlClientProvider>,
+    );
+    fireEvent.click(within(columnHeader('Expires')).getByRole('button'));
+    expect(push).toHaveBeenCalledWith(SORT_HREFS.expires);
   });
 
   it('stamps aria-sort on the active columnheader (descending) and none on the other sortable column', () => {
     render(
       <NextIntlClientProvider locale="en" messages={en}>
-        <PipelineTable rows={EMPTY_ROWS} canMutate sort="tier_desc" sortHrefs={SORT_HREFS} />
+        <PipelineTable rows={ROWS} canMutate sort="tier_desc" sortHrefs={SORT_HREFS} />
       </NextIntlClientProvider>,
     );
     expect(columnHeader('Tier')).toHaveAttribute('aria-sort', 'descending');
@@ -58,25 +89,19 @@ describe('<PipelineTable> sortable headers', () => {
   it('reflects the ascending direction for an expiry sort', () => {
     render(
       <NextIntlClientProvider locale="en" messages={en}>
-        <PipelineTable
-          rows={EMPTY_ROWS}
-          canMutate
-          sort="expires_at_asc"
-          sortHrefs={SORT_HREFS}
-        />
+        <PipelineTable rows={ROWS} canMutate sort="expires_at_asc" sortHrefs={SORT_HREFS} />
       </NextIntlClientProvider>,
     );
     expect(columnHeader('Expires')).toHaveAttribute('aria-sort', 'ascending');
     expect(columnHeader('Tier')).toHaveAttribute('aria-sort', 'none');
   });
 
-  it('renders plain headers with no links or aria-sort when sortHrefs is absent', () => {
+  it('no header is sortable when sortHrefs is absent', () => {
     render(
       <NextIntlClientProvider locale="en" messages={en}>
-        <PipelineTable rows={EMPTY_ROWS} canMutate />
+        <PipelineTable rows={ROWS} canMutate />
       </NextIntlClientProvider>,
     );
-    expect(screen.queryByRole('link', { name: /sort by/i })).toBeNull();
     for (const col of screen.getAllByRole('columnheader')) {
       expect(col).not.toHaveAttribute('aria-sort');
     }

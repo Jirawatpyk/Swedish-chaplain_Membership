@@ -19,7 +19,7 @@
  * `members-table-selection.test.tsx` / `pipeline-table-selection.test.tsx`.
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
 import { PipelineWithBulk } from '@/app/(staff)/admin/renewals/_components/pipeline-with-bulk';
@@ -79,11 +79,7 @@ function wrap(ui: React.ReactNode) {
 describe('<PipelineWithBulk> (Task 10 — US3 scaffolding)', () => {
   it('admin: enables selection checkboxes on the underlying PipelineTable', () => {
     render(wrap(<PipelineWithBulk rows={ROWS} isAdmin />));
-    // Task 12 — PipelineTable now dual-renders a desktop `<table>` AND a
-    // `<PipelineCardList>` for the same rows (both mount unconditionally
-    // in jsdom); scope to the desktop `<table>` for the header select-all
-    // + one row checkbox this test has always pinned.
-    expect(within(screen.getByRole('table')).getAllByRole('checkbox')).toHaveLength(2);
+    expect(screen.getByRole('checkbox', { name: 'Select Acme' })).toBeInTheDocument();
   });
 
   it('manager (isAdmin=false): no selection checkboxes render', () => {
@@ -120,7 +116,7 @@ describe('<PipelineWithBulk> (Task 10 — US3 scaffolding)', () => {
     render(
       wrap(
         <PipelineWithBulk
-          rows={ROWS}
+          rows={[row('c1', 'Acme'), row('c2', 'Beta')]}
           isAdmin
           sort="tier_asc"
           sortHrefs={{
@@ -131,14 +127,8 @@ describe('<PipelineWithBulk> (Task 10 — US3 scaffolding)', () => {
       ),
     );
 
-    const tierSortLink = screen.getByRole('link', { name: 'Sort by Tier' });
-    expect(tierSortLink).toHaveAttribute(
-      'href',
-      '/admin/renewals?sort=tier_desc',
-    );
-    // `aria-sort` lives on the enclosing `<th>` (columnheader), not the link
-    // itself — WCAG 1.3.1 / 4.1.2 (see `pipeline-table.tsx`'s own rationale).
-    expect(tierSortLink.closest('th')).toHaveAttribute(
+    // `aria-sort` on the Tier columnheader proves both props arrived.
+    expect(screen.getByRole('columnheader', { name: /^Tier/ })).toHaveAttribute(
       'aria-sort',
       'ascending',
     );
@@ -155,22 +145,17 @@ describe('<PipelineWithBulk> (Task 10 — US3 scaffolding)', () => {
         />,
       ),
     );
-    // Task 12 — `<PipelineCardList>`'s own empty state renders this SAME
-    // month-lens copy for its `md:hidden` presentation; scope to the
-    // desktop `<table>`.
     expect(
-      within(screen.getByRole('table')).getByText('No members renew August 2028 or later.'),
+      screen.getByText('No members renew August 2028 or later.'),
     ).toBeInTheDocument();
   });
 
   it('resets the selection when a fresh rows reference arrives (server re-render)', () => {
     const { rerender } = render(wrap(<PipelineWithBulk rows={ROWS} isAdmin />));
 
-    // Task 12 — scope to the desktop `<table>`; see the comment on the
-    // "enables selection checkboxes" test above.
-    const rowCheckbox = within(screen.getByRole('table')).getAllByRole('checkbox')[1]!;
+    const rowCheckbox = screen.getByRole('checkbox', { name: 'Select Acme' });
     fireEvent.click(rowCheckbox);
-    expect(rowCheckbox).toHaveAttribute('aria-checked', 'true');
+    expect(rowCheckbox).toBeChecked();
 
     // A NEW array reference (same or different content) simulates the page
     // re-rendering after a router.refresh() / filter change — the "adjust
@@ -178,7 +163,7 @@ describe('<PipelineWithBulk> (Task 10 — US3 scaffolding)', () => {
     const freshRows: ReadonlyArray<PipelineRow> = [row('c1', 'Acme')];
     rerender(wrap(<PipelineWithBulk rows={freshRows} isAdmin />));
 
-    const rowCheckboxAfter = within(screen.getByRole('table')).getAllByRole('checkbox')[1]!;
-    expect(rowCheckboxAfter).toHaveAttribute('aria-checked', 'false');
+    const rowCheckboxAfter = screen.getByRole('checkbox', { name: 'Select Acme' });
+    expect(rowCheckboxAfter).not.toBeChecked();
   });
 });

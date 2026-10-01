@@ -11,31 +11,19 @@
  * UX standards: live counter for outcome_note (docs/ux-standards.md
  * § 6.3); focus on Cancel by default (defensive default for any
  * dialog with side effects).
+ *
+ * 122 US7a (T706): AURA `Dialog` (`role="alertdialog"`, Cancel focused
+ * first) with AURA `Select`s and `Textarea`; the counter is the note's hint,
+ * and a note over the limit is its error. The request body, error mapping
+ * and toasts are unchanged.
  */
 'use client';
 
-import { useRef, useState, useTransition } from 'react';
+import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  TranslatedSelectValue,
-} from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
+import { Button, Dialog, Select, Textarea } from '@jirawatpyk/aura-react';
 // 067 #4 review-fix — single-source the channel list (mirrors the
 // `at_risk_outreach.channel` CHECK at migration 0090) instead of a hand-
 // maintained local copy that silently drifts if a 4th channel is added.
@@ -141,143 +129,68 @@ export function OutreachDialog({
 
   // Phase 6 review S8 — focus on Cancel via @base-ui Dialog
   // `initialFocus` ref (mirrors snooze-dialog) per ux-standards § 4.
-  const cancelRef = useRef<HTMLButtonElement | null>(null);
+  const counter = t('note.counter', { count: noteCount, max: OUTCOME_NOTE_MAX });
 
   return (
-    // Fix 4 a11y: form-bearing confirmation dialog — kept as Dialog +
-    // `role="alertdialog"`. DOM/a11y is correct: `initialFocus={cancelRef}`
-    // delivers focus-on-Cancel; `role="alertdialog"` signals AT this
-    // requires a response (ARIA 1.1 § 5.3.3). AlertDialogContent (===
-    // Base UI AlertDialog.Popup) WOULD also accept `initialFocus` — kept
-    // as Dialog is a stylistic choice, not a technical limitation.
-    // See snooze-dialog.tsx for full rationale (same pattern).
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        initialFocus={cancelRef}
-        role="alertdialog"
-        finalFocus={finalFocus}
-      >
-        <DialogHeader>
-          <DialogTitle>{t('title')}</DialogTitle>
-          <DialogDescription>
-            {memberCompanyName
-              ? t('description', { company: memberCompanyName })
-              : t('descriptionFallback')}
-          </DialogDescription>
-        </DialogHeader>
-        <div className="my-3 space-y-4">
-          <div className="space-y-1">
-            <Label htmlFor="outreach-channel">{t('channel.label')}</Label>
-            <Select
-              value={channel}
-              onValueChange={(v) => setChannel(v as Channel)}
-            >
-              <SelectTrigger id="outreach-channel" className="w-full">
-                <TranslatedSelectValue
-                  translate={(v) => t(`channel.option.${v}`)}
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {CHANNELS.map((c) => (
-                  <SelectItem key={c} value={c}>
-                    {t(`channel.option.${c}`)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          {channel === 'email' && (
-            <div className="space-y-1">
-              <Label htmlFor="outreach-template">
-                {t('template.label')}
-              </Label>
-              <Select
-                value={templateId}
-                onValueChange={(v) => setTemplateId(v ?? EMAIL_TEMPLATES[0])}
-              >
-                <SelectTrigger id="outreach-template" className="w-full">
-                  <TranslatedSelectValue
-                    translate={(v) =>
-                      t(`template.option.${v.replace(/\./g, '_')}`)
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {EMAIL_TEMPLATES.map((tpl) => (
-                    <SelectItem key={tpl} value={tpl}>
-                      {t(`template.option.${tpl.replace(/\./g, '_')}`)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-          <div className="space-y-1">
-            <Label htmlFor="outreach-note">{t('note.label')}</Label>
-            <Textarea
-              id="outreach-note"
-              value={outcomeNote}
-              onChange={(e) => setOutcomeNote(e.target.value)}
-              placeholder={t('note.placeholder')}
-              rows={3}
-              maxLength={OUTCOME_NOTE_MAX + 50}
-              aria-describedby="outreach-note-counter"
-            />
-            {/*
-             * R4-S2 + Round-5 review-finding M4: WCAG 4.1.3 Status
-             * Messages — `aria-live` should announce on MEANINGFUL
-             * state changes only. R4-S2 wired `aria-live="polite"`
-             * + `aria-atomic="true"` on every keystroke (the counter
-             * text re-renders on each character) which produced
-             * "247 / 500 characters" announcements ~250 times for a
-             * 250-char note — itself an accessibility regression on
-             * NVDA + JAWS + VoiceOver.
-             *
-             * Round-5 M4 fix: `aria-live="polite"` ONLY when the
-             * counter crosses into the over-limit state (`noteOver`).
-             * Sighted users still see the counter every keystroke;
-             * SR users only hear it when the limit is breached. Pre-
-             * cross announcements are unhelpful (the user already
-             * knows the limit from the textarea label). The aria-
-             * atomic attribute is dropped from the non-over branch
-             * so the live region is not "armed" while typing.
-             */}
-            <p
-              id="outreach-note-counter"
-              {...(noteOver
-                ? ({
-                    'aria-live': 'polite',
-                    'aria-atomic': 'true',
-                  } as const)
-                : {})}
-              className={
-                'text-xs ' +
-                (noteOver
-                  ? 'text-destructive'
-                  : 'text-muted-foreground')
-              }
-            >
-              {t('note.counter', { count: noteCount, max: OUTCOME_NOTE_MAX })}
-            </p>
-          </div>
-        </div>
-        <DialogFooter>
+    <Dialog
+      open={open}
+      onClose={() => onOpenChange(false)}
+      role="alertdialog"
+      {...(finalFocus ? { finalFocus } : {})}
+      title={t('title')}
+      description={
+        memberCompanyName
+          ? t('description', { company: memberCompanyName })
+          : t('descriptionFallback')
+      }
+      footer={
+        <>
           <Button
-            ref={cancelRef}
-            variant="outline"
+            variant="secondary"
+            data-autofocus=""
             onClick={() => onOpenChange(false)}
             disabled={pending}
           >
             {t('cancel')}
           </Button>
-          <Button
-            onClick={onConfirm}
-            disabled={pending || noteOver}
-          >
+          <Button onClick={onConfirm} loading={pending} disabled={noteOver}>
             {pending ? t('submitting') : t('confirm')}
           </Button>
-        </DialogFooter>
-      </DialogContent>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-[var(--aura-space-4)]">
+        <Select
+          label={t('channel.label')}
+          value={channel}
+          onChange={(e) => setChannel(e.target.value as Channel)}
+          options={CHANNELS.map((c) => ({ value: c, label: t(`channel.option.${c}`) }))}
+        />
+        {channel === 'email' ? (
+          <Select
+            label={t('template.label')}
+            value={templateId}
+            onChange={(e) => setTemplateId(e.target.value || EMAIL_TEMPLATES[0])}
+            options={EMAIL_TEMPLATES.map((tpl) => ({
+              value: tpl,
+              label: t(`template.option.${tpl.replace(/\./g, '_')}`),
+            }))}
+          />
+        ) : null}
+        {/* The counter is the hint; over the limit it becomes the field's
+            error (aria-invalid, announced) and Record outreach is blocked.
+            `maxLength` leaves 50 characters of slack so the over-limit state
+            can be reached and explained rather than silently truncated. */}
+        <Textarea
+          label={t('note.label')}
+          value={outcomeNote}
+          onChange={(e) => setOutcomeNote(e.target.value)}
+          placeholder={t('note.placeholder')}
+          rows={3}
+          maxLength={OUTCOME_NOTE_MAX + 50}
+          {...(noteOver ? { error: counter } : { hint: counter })}
+        />
+      </div>
     </Dialog>
   );
 }

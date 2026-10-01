@@ -13,6 +13,7 @@
  * sighted users (WCAG 1.4.1).
  */
 import { useTranslations } from 'next-intl';
+import { Badge, type BadgeProps } from '@jirawatpyk/aura-react/server';
 import { cn } from '@/lib/utils';
 
 // Single source of truth — the F8 at-risk band lives in the insights domain
@@ -21,15 +22,12 @@ import { cn } from '@/lib/utils';
 import type { RiskBand } from '@/modules/insights';
 export type { RiskBand };
 
-const VARIANT_CLASSES: Record<RiskBand, string> = {
-  healthy:
-    'bg-emerald-50 text-emerald-800 ring-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:ring-emerald-900',
-  warning:
-    'bg-amber-50 text-amber-800 ring-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:ring-amber-900',
-  'at-risk':
-    'bg-orange-100 text-orange-900 ring-orange-300 dark:bg-orange-950 dark:text-orange-200 dark:ring-orange-800',
-  critical:
-    'bg-red-100 text-red-900 ring-red-300 dark:bg-red-950 dark:text-red-200 dark:ring-red-800',
+/** 122 US7a — AURA badge tones by band; critical is the one solid chip. */
+const BAND_BADGE: Record<RiskBand, Pick<BadgeProps, 'tone' | 'variant'>> = {
+  healthy: { tone: 'success' },
+  warning: { tone: 'warning' },
+  'at-risk': { tone: 'danger' },
+  critical: { tone: 'danger', variant: 'solid' },
 };
 
 export interface RiskScoreBadgeProps {
@@ -55,18 +53,15 @@ export function RiskScoreBadge({
   const bandLabel = t(`band.${i18nKey}`);
   const srText = t('srLabel', { score, max: activeMax, band: bandLabel });
   return (
-    <span
+    <Badge
+      {...BAND_BADGE[band]}
       // T097 (F9 a11y) — role="img" makes aria-label valid on this badge
       // (ARIA prohibits aria-label on a roleless span; axe
       // `aria-prohibited-attr` / WCAG 4.1.2). The inner spans are aria-hidden,
       // so the badge reads as a single labelled element ("Risk score N of M,
       // band X") to screen readers — preserving the exact SR experience.
       role="img"
-      className={cn(
-        'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset whitespace-nowrap',
-        VARIANT_CLASSES[band],
-        className,
-      )}
+      className={cn('whitespace-nowrap', className)}
       aria-label={srText}
     >
       <span className="font-semibold tabular-nums" aria-hidden="true">
@@ -74,6 +69,6 @@ export function RiskScoreBadge({
       </span>
       <span aria-hidden="true">·</span>
       <span aria-hidden="true">{bandLabel}</span>
-    </span>
+    </Badge>
   );
 }

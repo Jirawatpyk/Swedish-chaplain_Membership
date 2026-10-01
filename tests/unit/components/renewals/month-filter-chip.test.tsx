@@ -127,3 +127,12 @@ describe('<MonthFilterChip> focus-restore fallback (WCAG 2.4.3)', () => {
     }
   });
 });
+
+describe('<MonthFilterChip> on AURA', () => {
+  it('is an AURA tag whose remove button clears the month filter', () => {
+    renderChip({ monthKind: 'overdue' });
+    const clear = screen.getByRole('button', { name: /clear month filter/i });
+    expect(clear.closest('.aura-tag')).not.toBeNull();
+    expect(clear.closest('.aura-tag')).toHaveTextContent(en.admin.renewals.byMonth.filterChipOverdue);
+  });
+});

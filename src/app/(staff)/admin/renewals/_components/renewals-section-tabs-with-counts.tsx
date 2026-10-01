@@ -42,12 +42,6 @@ export interface SectionTabCounts {
 export interface RenewalsSectionTabsWithCountsProps {
   readonly tenantSlug: string;
   /**
-   * Forwarded to `RenewalsSectionTabs` — the tap-discoverable pipeline help
-   * Popover renders only on the Pipeline + Pending-review views; the Tasks /
-   * Tier-upgrades pages render the bare strip.
-   */
-  readonly showPipelineHelp?: boolean;
-  /**
    * Waterfall fix (eager-island pattern, see `_lib/settled.ts`) — an
    * ALREADY-RUNNING counts promise created by the caller BEFORE its own
    * blocking awaits (the pipeline page fires it before `await
@@ -142,7 +136,6 @@ export async function loadSectionTabCounts(
 
 export async function RenewalsSectionTabsWithCounts({
   tenantSlug,
-  showPipelineHelp = false,
   countsPromise,
 }: RenewalsSectionTabsWithCountsProps) {
   const { pendingReviewCount, tasksCount, tierUpgradeCount } = await (
@@ -150,7 +143,6 @@ export async function RenewalsSectionTabsWithCounts({
   );
   return (
     <RenewalsSectionTabs
-      showPipelineHelp={showPipelineHelp}
       pendingReviewCount={pendingReviewCount}
       tasksCount={tasksCount}
       tierUpgradeCount={tierUpgradeCount}

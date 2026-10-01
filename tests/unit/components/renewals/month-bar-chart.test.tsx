@@ -24,10 +24,10 @@ function renderChart(items: MonthBarItem[], selectedKey: string | null = null) {
 }
 
 const ITEMS: MonthBarItem[] = [
-  { key: 'overdue', label: 'Overdue', shortLabel: 'Overdue', count: 2, barPercent: 12, interactive: true, band: 't-0' },
-  { key: '2026-07', label: 'July 2026', shortLabel: 'Jul 26', count: 17, barPercent: 100, interactive: true, band: 't-7' },
-  { key: '2026-08', label: 'August 2026', shortLabel: 'Aug 26', count: 0, barPercent: 0, interactive: false, band: 't-14' },
-  { key: 'later', label: 'July 2027 or later', shortLabel: 'Jul 27+', count: 1, barPercent: 4, interactive: true, band: 't-90' },
+  { key: 'overdue', label: 'Overdue', shortLabel: 'Overdue', count: 2, barPercent: 12, interactive: true },
+  { key: '2026-07', label: 'July 2026', shortLabel: 'Jul 26', count: 17, barPercent: 100, interactive: true },
+  { key: '2026-08', label: 'August 2026', shortLabel: 'Aug 26', count: 0, barPercent: 0, interactive: false },
+  { key: 'later', label: 'July 2027 or later', shortLabel: 'Jul 27+', count: 1, barPercent: 4, interactive: true },
 ];
 
 describe('MonthBarChart', () => {
@@ -63,5 +63,16 @@ describe('MonthBarChart', () => {
     renderChart(ITEMS, '2026-07');
     const link = screen.getByRole('link', { name: /July 2026/ });
     expect(link).toHaveAttribute('aria-current', 'true');
+  });
+
+  // 122 US7a (T705): board `Admin-renewals` — the Overdue bar in the danger
+  // colour, every month bar in AURA's first chart colour.
+  it('fills the Overdue bar with AURA danger and each month bar with AURA chart colour 1', () => {
+    renderChart(ITEMS);
+    const barOf = (name: RegExp) =>
+      screen.getByRole('link', { name }).querySelector<HTMLElement>('[data-bar]')!;
+    expect(barOf(/^Overdue/).style.backgroundColor).toBe('var(--aura-fg-danger)');
+    expect(barOf(/July 2026/).style.backgroundColor).toBe('var(--aura-chart-1)');
+    expect(barOf(/July 2027 or later/).style.backgroundColor).toBe('var(--aura-chart-1)');
   });
 });

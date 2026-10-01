@@ -1,33 +1,16 @@
 /**
- * Task 11 — `<PipelineTable>` month-lens empty-state unit tests.
+ * `<PipelineTable>` — the renewal pipeline on AURA `DataTable` (spec 122
+ * US7a, T702; Clarifications, Session 2026-09-30 US7 start): ONE table that
+ * stacks into cards below 640px, so there is no second (card) list.
  *
- * Only exercises the empty-rows branch (`rows={[]}`) since that is
- * the only path touched by the `monthLabel` prop — non-empty rows
- * render `RowActions` (router + toast wiring) which is exercised
- * elsewhere and is unaffected by this change.
- *
- * Task 1 (item ②) adds a non-empty-row suite below pinning the
- * visible "Send reminder" row button (promoted out of the ⋯ menu).
- *
- * Task 1 review-fix suite (below) pins three review findings:
- *   - the visible button stays at `h-9` (app's text-button convention;
- *     44px is reserved for the icon-only ⋯ trigger — see the source
- *     comment for the full rationale)
- *   - `aria-busy` + a motion-safe spinner while the request is pending
- *   - `finalFocus` threading: after "Mark contacted" opens the shared
- *     `OutreachDialog` and it is closed, focus returns to the row's own
- *     ⋯ trigger (which survives the menu closing) instead of dropping to
- *     `<body>` (the default-focus-restore bug this fix closes).
- *
- * `@/components/ui/dropdown-menu` is mocked to plain-HTML stand-ins for
- * the finalFocus suite — same pattern as
- * `auto-renewal-queue-actions.test.tsx` / `invoice-more-menu.test.tsx`
- * (Base UI Menu only renders its Popup while open + models portal/pointer
- * positioning jsdom does not support). `@/components/ui/dialog` is
- * DELIBERATELY left real: `OutreachDialog`'s `initialFocus`/`finalFocus`
- * are unconditional (no RAF-racing), which
- * `auto-renewal-queue-actions.test.tsx`'s header comment documents as the
- * jsdom-reliable shape for Base UI's portal focus management.
+ * Suites:
+ *   - the month-lens empty copy (`monthLabel` / `monthKind`);
+ *   - the visible "Send reminder" row button (promoted out of the ⋯ menu),
+ *     with `aria-busy` while the request is in flight;
+ *   - the ⋯ row menu (AURA `DropdownMenu`, named after the company) and the
+ *     focus return to its trigger after "Mark contacted" opens and closes the
+ *     shared `OutreachDialog`;
+ *   - the invoice column's "Covered" gate and the manager (`canMutate`) gate.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -43,58 +26,9 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }));
 
-// Simulate Base UI's React-19 render-prop contract: DropdownMenuTrigger
-// passes its OWN ref inside the render callback's `props`. Plain-HTML
-// stand-in — Base UI Menu only renders its Popup while open + models
-// portal/pointer positioning jsdom does not support.
-const { baseUiTriggerRef } = vi.hoisted(() => ({ baseUiTriggerRef: vi.fn() }));
-
-vi.mock('@/components/ui/dropdown-menu', () => {
-  function DropdownMenu({ children }: { children?: React.ReactNode }) {
-    return <div data-testid="menu-root">{children}</div>;
-  }
-  function DropdownMenuTrigger({
-    render: renderProp,
-  }: {
-    render?: (props: Record<string, unknown>) => React.ReactNode;
-  }) {
-    return <>{renderProp ? renderProp({ ref: baseUiTriggerRef }) : null}</>;
-  }
-  function DropdownMenuContent({ children }: { children?: React.ReactNode }) {
-    return <div role="menu">{children}</div>;
-  }
-  function DropdownMenuItem({
-    children,
-    onClick,
-    render: renderProp,
-  }: {
-    children?: React.ReactNode;
-    onClick?: () => void;
-    render?: (props: Record<string, unknown>) => React.ReactNode;
-  }) {
-    if (renderProp) return <>{renderProp({ role: 'menuitem' })}</>;
-    return (
-      <button type="button" role="menuitem" onClick={onClick}>
-        {children}
-      </button>
-    );
-  }
-  return { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem };
-});
-
-/**
- * Task 12 — `<PipelineTable>` now dual-renders: the desktop `<table>`
- * (`hidden md:block`) AND `<PipelineCardList>` (`md:hidden`) both mount
- * unconditionally — real CSS media queries (absent in jsdom) are what
- * decide which one a user actually sees in a browser. Every row-level
- * query below (RowActions trigger / menu items / Send-reminder button)
- * is scoped to the desktop `<table>` via `within(desktopTable())` so it
- * keeps addressing the SAME element it did before the mobile card-stack
- * existed, instead of throwing on the new (correct, by design) duplicate
- * accessible node the card list now also contributes for the same row.
- */
+/** The one AURA grid; there is no separate card list to disambiguate. */
 function desktopTable(): HTMLElement {
-  return screen.getByRole('table');
+  return screen.getByRole('grid');
 }
 
 const EMPTY_ROWS: ReadonlyArray<PipelineRow> = [];
@@ -106,13 +40,8 @@ describe('<PipelineTable> empty state', () => {
         <PipelineTable rows={EMPTY_ROWS} canMutate monthLabel="December 2026" />
       </NextIntlClientProvider>,
     );
-    // Task 12 — `<PipelineCardList>`'s own empty state renders this SAME
-    // month-lens copy (`PipelineEmptyMessage`, shared with the table) for
-    // its `md:hidden` presentation, so the un-scoped `screen.getByText`
-    // now has two matches. Scope to the desktop `<table>` — see
-    // `desktopTable()`'s docstring above.
     expect(
-      within(desktopTable()).getByText('No members renew in December 2026.'),
+      screen.getByText('No members renew in December 2026.'),
     ).toBeDefined();
   });
 
@@ -122,9 +51,9 @@ describe('<PipelineTable> empty state', () => {
         <PipelineTable rows={EMPTY_ROWS} canMutate />
       </NextIntlClientProvider>,
     );
-    expect(within(desktopTable()).getByText('No members in this bucket.')).toBeDefined();
+    expect(screen.getByText('No members in this bucket.')).toBeDefined();
     expect(
-      within(desktopTable()).getByText(/Switch to another urgency tab/),
+      screen.getByText(/Switch to another urgency tab/),
     ).toBeDefined();
   });
 
@@ -138,7 +67,7 @@ describe('<PipelineTable> empty state', () => {
         <PipelineTable rows={EMPTY_ROWS} canMutate monthKind="overdue" />
       </NextIntlClientProvider>,
     );
-    expect(within(desktopTable()).getByText('No overdue renewals.')).toBeDefined();
+    expect(screen.getByText('No overdue renewals.')).toBeDefined();
   });
 
   it('renders dedicated later empty copy with a SINGLE "or later" when monthKind="later"', () => {
@@ -155,7 +84,7 @@ describe('<PipelineTable> empty state', () => {
     // Exact string — proves the copy is NOT doubled
     // ("…August 2028 or later or later").
     expect(
-      within(desktopTable()).getByText('No members renew August 2028 or later.'),
+      screen.getByText('No members renew August 2028 or later.'),
     ).toBeDefined();
     expect(screen.queryByText(/or later or later/)).toBeNull();
   });
@@ -211,10 +140,9 @@ describe('<PipelineTable> row actions (item ②)', () => {
     vi.unstubAllGlobals();
   });
 
-  // Review fix #2 (controller correction) — h-9 stays the app's
-  // text-button convention; 44px (h-11) is reserved for the icon-only ⋯
-  // trigger, asserted separately below.
-  it('sizes the visible button at h-9 (app text-button convention), NOT h-11', () => {
+  // AURA `Button` size `sm` (32px in the grid row) that grows to 44px on a
+  // phone (`touchHeight`, the stacked card's full-width action).
+  it('is an AURA secondary button, small in the grid and touch height on phones', () => {
     render(
       <NextIntlClientProvider locale="en" messages={en}>
         <PipelineTable rows={ONE_ROW} canMutate />
@@ -223,13 +151,12 @@ describe('<PipelineTable> row actions (item ②)', () => {
     const btn = within(desktopTable()).getByRole('button', {
       name: 'Send reminder to Acme Co',
     });
-    expect(btn.className).toContain('h-9');
-    expect(btn.className).not.toContain('h-11');
+    expect(btn).toHaveClass('aura-btn', 'aura-btn--secondary', 'aura-btn--sm', 'aura-btn--touch');
   });
 
   // Review fix #4 — progress affordance now that Send-reminder is a
   // persistent button (was a one-shot menu item before item ②).
-  it('sets aria-busy and shows a motion-safe spinner while the request is in flight, then clears both', async () => {
+  it('sets aria-busy (AURA loading) while the request is in flight, then clears it', async () => {
     vi.useRealTimers();
     let resolveFetch: (value: unknown) => void = () => {};
     const fetchMock = vi.fn().mockImplementation(
@@ -249,13 +176,11 @@ describe('<PipelineTable> row actions (item ②)', () => {
     const btn = within(desktopTable()).getByRole('button', {
       name: 'Send reminder to Acme Co',
     });
-    expect(btn).toHaveAttribute('aria-busy', 'false');
-    expect(btn.querySelector('svg')).toBeNull();
+    expect(btn).not.toHaveAttribute('aria-busy');
 
     fireEvent.click(btn);
 
     await waitFor(() => expect(btn).toHaveAttribute('aria-busy', 'true'));
-    expect(btn.querySelector('svg')).toBeInTheDocument();
 
     resolveFetch({
       ok: true,
@@ -264,33 +189,34 @@ describe('<PipelineTable> row actions (item ②)', () => {
       json: async () => ({ outcome: { kind: 'sent' } }),
     });
 
-    await waitFor(() => expect(btn).toHaveAttribute('aria-busy', 'false'));
-    expect(btn.querySelector('svg')).toBeNull();
+    await waitFor(() => expect(btn).not.toHaveAttribute('aria-busy'));
 
     vi.unstubAllGlobals();
     vi.useFakeTimers();
   });
 });
 
-describe('<PipelineTable> row actions — finalFocus after "Mark contacted" (review fix #5)', () => {
+describe('<PipelineTable> row menu — AURA DropdownMenu, focus back on its trigger after "Mark contacted"', () => {
   beforeEach(() => {
     vi.useRealTimers();
-    baseUiTriggerRef.mockClear();
   });
   afterEach(() => {
     vi.useFakeTimers();
   });
 
-  it("forwards Base UI's own trigger ref to the real ⋯ button (mergeRefs regression guard)", () => {
+  it('the ⋯ trigger is an AURA icon button that opens a menu named after the company', () => {
     render(
       <NextIntlClientProvider locale="en" messages={en}>
         <PipelineTable rows={ONE_ROW} canMutate />
       </NextIntlClientProvider>,
     );
-    expect(baseUiTriggerRef).toHaveBeenCalled();
-    const el = baseUiTriggerRef.mock.calls.at(-1)?.[0] as HTMLElement | null;
-    expect(el).toBeInstanceOf(HTMLElement);
-    expect(el?.getAttribute('aria-label')).toBe('Actions for Acme Co');
+    const trigger = within(desktopTable()).getByRole('button', {
+      name: 'Actions for Acme Co',
+    });
+    expect(trigger).toHaveClass('aura-icon-btn');
+    expect(trigger).toHaveAttribute('aria-haspopup', 'menu');
+    fireEvent.click(trigger);
+    expect(screen.getByRole('menu', { name: 'Actions for Acme Co' })).toBeInTheDocument();
   });
 
   it('returns focus to the row\'s ⋯ trigger (not <body>) after the outreach dialog is CANCELLED', async () => {
@@ -305,7 +231,7 @@ describe('<PipelineTable> row actions — finalFocus after "Mark contacted" (rev
     });
     fireEvent.click(trigger);
     fireEvent.click(
-      within(desktopTable()).getByRole('menuitem', { name: 'Mark contacted' }),
+      screen.getByRole('menuitem', { name: 'Mark contacted' }),
     );
 
     expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
@@ -334,7 +260,7 @@ describe('<PipelineTable> row actions — finalFocus after "Mark contacted" (rev
     });
     fireEvent.click(trigger);
     fireEvent.click(
-      within(desktopTable()).getByRole('menuitem', { name: 'Mark contacted' }),
+      screen.getByRole('menuitem', { name: 'Mark contacted' }),
     );
     expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
 
@@ -480,13 +406,13 @@ describe('<PipelineTable> canMutate gating (manager money-CTA hiding)', () => {
     fireEvent.click(trigger);
 
     expect(
-      await within(desktopTable()).findByRole('menuitem', { name: /open/i }),
+      await screen.findByRole('menuitem', { name: /open/i }),
     ).toBeInTheDocument();
     expect(
-      within(desktopTable()).getByRole('menuitem', { name: /mark contacted/i }),
+      screen.getByRole('menuitem', { name: /mark contacted/i }),
     ).toBeInTheDocument();
     expect(
-      within(desktopTable()).queryByRole('menuitem', { name: /mark paid/i }),
+      screen.queryByRole('menuitem', { name: /mark paid/i }),
     ).toBeNull();
   });
 
@@ -507,13 +433,13 @@ describe('<PipelineTable> canMutate gating (manager money-CTA hiding)', () => {
     fireEvent.click(trigger);
 
     expect(
-      await within(desktopTable()).findByRole('menuitem', { name: /open/i }),
+      await screen.findByRole('menuitem', { name: /open/i }),
     ).toBeInTheDocument();
     expect(
-      within(desktopTable()).getByRole('menuitem', { name: /mark contacted/i }),
+      screen.getByRole('menuitem', { name: /mark contacted/i }),
     ).toBeInTheDocument();
     expect(
-      within(desktopTable()).getByRole('menuitem', { name: /mark paid/i }),
+      screen.getByRole('menuitem', { name: /mark paid/i }),
     ).toBeInTheDocument();
   });
   // A payable row that already has a live linked bill: the use-case refuses
@@ -533,12 +459,100 @@ describe('<PipelineTable> canMutate gating (manager money-CTA hiding)', () => {
       within(desktopTable()).getByRole('button', { name: /actions for beta co/i }),
     );
 
-    const record = await within(desktopTable()).findByRole('menuitem', {
-      name: /record payment on the invoice for beta co/i,
-    });
+    // AURA menu items carry their visible label; the menu itself is named
+    // after the company ("Actions for Beta Co").
+    const menu = await screen.findByRole('menu', { name: 'Actions for Beta Co' });
+    const record = within(menu).getByRole('menuitem', { name: 'Record payment on invoice' });
     expect(record).toHaveAttribute('href', '/admin/invoices/inv-9');
     expect(
-      within(desktopTable()).queryByRole('menuitem', { name: /mark paid/i }),
+      screen.queryByRole('menuitem', { name: /mark paid/i }),
     ).toBeNull();
   });
 });
+
+// T702 — one table, cards on a phone (Clarifications, Session 2026-09-30 US7
+// start). jsdom has no layout, so AURA renders the grid; the card anatomy is
+// the columns' `data-card` parts, which the stacked cards read.
+describe('<PipelineTable> one AURA table that stacks into cards', () => {
+  it('renders one AURA grid named after the pipeline and no separate card list', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <PipelineTable rows={ONE_ROW} canMutate />
+      </NextIntlClientProvider>,
+    );
+    expect(screen.getAllByRole('grid')).toHaveLength(1);
+    expect(screen.getByRole('grid', { name: 'Renewal pipeline' }).closest('.aura-table')).not.toBeNull();
+    expect(screen.queryByTestId('pipeline-card-list')).toBeNull();
+    expect(screen.queryByRole('table')).toBeNull();
+  });
+
+  it('a card is titled by the company, with the urgency pill and the row actions (board Admin-renewals-mobile)', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <PipelineTable rows={ONE_ROW} canMutate />
+      </NextIntlClientProvider>,
+    );
+    const cells = within(screen.getByRole('grid')).getAllByRole('gridcell');
+    const part = (text: string | RegExp) =>
+      cells.find((c) => within(c).queryByText(text))?.getAttribute('data-card');
+    expect(part('Acme Co')).toBe('title');
+    expect(part(/Renews in 30d|T-30/i)).toBe('pill');
+    const actions = within(screen.getByRole('grid'))
+      .getByRole('button', { name: 'Send reminder to Acme Co' })
+      .closest('[role="gridcell"]');
+    expect(actions).toHaveAttribute('data-card', 'footer');
+  });
+
+  it('the row actions sit directly in the AURA cell, so the card footer grows "Send reminder" beside the ⋯ (AURA 5.22, #118)', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <PipelineTable rows={ONE_ROW} canMutate />
+      </NextIntlClientProvider>,
+    );
+    const grid = within(screen.getByRole('grid'));
+    const send = grid.getByRole('button', { name: 'Send reminder to Acme Co' });
+    const menu = grid.getByRole('button', { name: /^Actions for Acme Co/ });
+    expect(send.parentElement).toHaveClass('aura-table__cell');
+    expect(menu.closest('.aura-dropdown')?.parentElement).toBe(send.parentElement);
+    expect(document.querySelector('[data-pipeline-row-actions]')).toBeNull();
+  });
+
+  it('the invoice column stays in the grid but leaves the phone card, as the board draws it', () => {
+    const rows: ReadonlyArray<PipelineRow> = [{ ...ONE_ROW[0]!, linkedInvoiceId: 'inv-1' }];
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <PipelineTable rows={rows} canMutate />
+      </NextIntlClientProvider>,
+    );
+    const invoiceCell = screen.getByRole('link', { name: 'View invoice' }).closest('[role="gridcell"]');
+    expect(invoiceCell).toHaveAttribute('data-card', 'hide');
+  });
+});
+
+describe('<PipelineTable> column breakpoints (maintainer, 1 Oct: Last reminder at 1440)', () => {
+  it('shows Last reminder from a 1040px table (the 1440 screen has 1071px) and gives Invoice the wide screens; the actions column fits SV "Skicka påminnelse" at 200px', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <PipelineTable rows={ONE_ROW} canMutate />
+      </NextIntlClientProvider>,
+    );
+    const header = (name: string) =>
+      within(screen.getByRole('grid'))
+        .getAllByRole('columnheader')
+        .find((th) => th.textContent?.trim() === name);
+    // AURA DataTable turns each hideBelow into a level, widest first: Invoice
+    // (1180) is level 1 and Last reminder (1040) level 2. Each level's probe
+    // carries the ratio to the level before it (stack 640 → 1180 → 1040).
+    expect(header('Invoice')).toHaveAttribute('data-hide', '1');
+    expect(header('Last reminder')).toHaveAttribute('data-hide', '2');
+    const scale = (level: string) =>
+      (document.querySelector(`.aura-table-q--${level}`) as HTMLElement | null)?.style.getPropertyValue('--aura-q-scale');
+    expect(scale('h1')).toBe(String(640 / 1180));
+    expect(scale('h2')).toBe(String(1180 / 1040));
+    const actions = within(screen.getByRole('grid'))
+      .getAllByRole('columnheader')
+      .at(-1);
+    expect(actions?.getAttribute('style')).toContain('--aura-cell-w: 200px');
+  });
+});
+

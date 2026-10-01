@@ -119,6 +119,11 @@
  *     /admin/plans/[year]/[planId]/edit 962.7 KB measured → ≤ 1070 KB
  *     /admin/plans/clone               962.7 KB measured → ≤ 1070 KB
  *
+ *   Spec 122 US7a (AURA renewal pipeline, 2026-10-01, AURA 5.20.0) — the
+ *   pipeline page off the legacy kit, re-baselined on the branch build:
+ *     /admin/renewals                 1056.8 KB measured → ≤ 1160 KB
+ *   (the cycle detail, tasks and tier-upgrade routes move with US7b).
+ *
  * Run as a post-build step:
  *
  *   pnpm build
@@ -162,8 +167,8 @@ const BUDGETS: ReadonlyArray<RouteBudget> = [
   { route: '/portal/benefits/e-blasts', maxKb: 1050 },
   { route: '/unsubscribe/[token]', maxKb: 690 },
   // --- F8 renewals (Phase 9 / T255) ------------------------------------
-  // Spec 122 US1 re-baseline (dual-library window) — see docblock.
-  { route: '/admin/renewals', maxKb: 1390 },
+  // Spec 122 US7a re-baseline (AURA pipeline) — see docblock.
+  { route: '/admin/renewals', maxKb: 1160 },
   { route: '/admin/renewals/[cycleId]', maxKb: 1140 },
   { route: '/admin/renewals/tasks', maxKb: 1420 },
   { route: '/admin/renewals/tier-upgrades', maxKb: 1250 },

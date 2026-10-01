@@ -12,12 +12,10 @@
  * order). The selected bucket gets `aria-current` + an OUTSET ring + a tinted
  * column + bolder count (non-colour affordance, WCAG 1.4.1).
  *
- * Bar fills use a dedicated SOLID scale (`BAR_FILL_CLASSES`) — the SAME hue
- * language as `UrgencyPill` (slate→amber→orange→red, no blue) but tuned as
- * fill-area marks, not the pill's near-white text-on-tint chip weights. The
- * edge is a `border` (not `ring`) so the selection `ring` composes cleanly
- * (an inset base ring would defeat the themed selection ring in dark mode and
- * occlude a MIN_BAR_PERCENT-floored short bar).
+ * 122 US7a (T705): AURA chart tokens, as the `Admin-renewals` board draws
+ * them — the Overdue bar in the danger colour, every month bar in AURA's
+ * first chart colour (the brand blue); the baseline is AURA's chart axis and
+ * the selected bar takes AURA's focus-ring colour.
  */
 'use client';
 
@@ -25,20 +23,15 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
-import type { ChartBand, MonthBarItem } from '@/components/renewals/month-bucket-label';
+import type { MonthBarItem } from '@/components/renewals/month-bucket-label';
 
-// Solid bar fills, keyed by the 4 bands `bandForBucketIndex` actually returns
-// (same slate→amber→orange→red hue language as UrgencyPill, no blue).
-const BAR_FILL_CLASSES: Record<ChartBand, string> = {
-  't-0': 'bg-red-500 dark:bg-red-500',
-  't-7': 'bg-orange-500 dark:bg-orange-400',
-  't-14': 'bg-amber-500 dark:bg-amber-400',
-  't-90': 'bg-slate-500 dark:bg-slate-400',
-};
+/** The bar's fill: the Overdue bucket in the danger colour, every month in chart colour 1. */
+function barFill(key: string): string {
+  return key === 'overdue' ? 'var(--aura-fg-danger)' : 'var(--aura-chart-1)';
+}
 
-/** Shared column layout — used by both the interactive and zero branches so a
- *  spacing tweak can't misalign one against the shared baseline. */
-const COLUMN_CLASSES = 'flex flex-col items-center gap-1 rounded-md px-0.5 py-1';
+const COLUMN_CLASSES =
+  'flex flex-col items-center gap-1 rounded-[var(--aura-radius-md)] px-0.5 py-1';
 
 export interface MonthBarChartProps {
   readonly items: ReadonlyArray<MonthBarItem>;
@@ -71,11 +64,10 @@ export function MonthBarChart({
       role="region"
       aria-label={t('chartScrollAriaLabel')}
       tabIndex={0}
-      className="overflow-x-auto rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="overflow-x-auto rounded-[var(--aura-radius-md)] focus-visible:outline-2 focus-visible:outline-[var(--aura-focus-ring)]"
     >
       <ul role="list" aria-label={t('listAriaLabel')} className="flex items-stretch gap-1 px-0.5 pb-1">
         {items.map((item) => {
-          const fillClass = BAR_FILL_CLASSES[item.band];
           const isSelected = selectedKey === item.key;
           const ariaLabel = item.interactive
             ? t('bucketAriaLabel', { label: item.label, count: item.count })
@@ -86,32 +78,39 @@ export function MonthBarChart({
               {/* plot — fixed height; the [count, bar] group is bottom-aligned to
                   the baseline rule, so the number always sits on its bar and every
                   bar shares the axis. `border-b` grounds the many zero columns. */}
-              <span className="flex h-32 w-full flex-col items-center justify-end gap-0.5 border-b border-border">
+              <span className="flex h-32 w-full flex-col items-center justify-end gap-0.5 border-b border-[var(--aura-chart-axis)]">
                 {/* Count sits on the bar. Zero months still show a faint "0" at
                     the baseline so an empty month reads as "0 renewals", not a
                     rendering gap (the bar itself is absent for count 0). */}
                 <span
                   className={cn(
                     'text-xs leading-none tabular-nums',
-                    item.count > 0 ? 'text-foreground' : 'text-muted-foreground',
+                    item.count > 0
+                      ? 'text-[var(--aura-fg-primary)]'
+                      : 'text-[var(--aura-fg-tertiary)]',
                     isSelected && 'font-bold',
                   )}
                 >
                   {item.count}
                 </span>
                 {/* Bar only for nonzero counts — a 0-height bar with a border
-                    would clamp to a ~2px band-coloured tick and misread as a
+                    would clamp to a ~2px coloured tick and misread as a
                     tiny value. Height is a % of the plot (scales with h-32),
                     capped so the count always fits above even the tallest bar. */}
                 {item.count > 0 ? (
                   <span
                     aria-hidden
+                    data-bar=""
                     className={cn(
-                      'w-10 rounded-t border border-black/10 dark:border-white/15',
-                      fillClass,
-                      isSelected && 'ring-2 ring-ring ring-offset-1 ring-offset-card',
+                      'w-10 rounded-t-[var(--aura-radius-sm)]',
+                      isSelected &&
+                        'outline-2 outline-offset-1 outline-[var(--aura-focus-ring)]',
                     )}
-                    style={{ height: `${item.barPercent}%`, maxHeight: 'calc(100% - 1.25rem)' }}
+                    style={{
+                      height: `${item.barPercent}%`,
+                      maxHeight: 'calc(100% - 1.25rem)',
+                      backgroundColor: barFill(item.key),
+                    }}
                   />
                 ) : null}
               </span>
@@ -119,7 +118,7 @@ export function MonthBarChart({
                   full label as a hover affordance for sighted mouse users. */}
               <span
                 title={item.label}
-                className="h-8 w-full text-center text-[11px] leading-tight text-muted-foreground"
+                className="h-8 w-full text-center text-[11px] leading-tight text-[var(--aura-fg-secondary)]"
               >
                 {item.shortLabel}
               </span>
@@ -141,8 +140,8 @@ export function MonthBarChart({
                   aria-current={isSelected ? 'true' : undefined}
                   className={cn(
                     COLUMN_CLASSES,
-                    'transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                    isSelected && 'bg-muted/60',
+                    'transition-colors hover:bg-[var(--aura-bg-surface-hover)] focus-visible:outline-2 focus-visible:outline-[var(--aura-focus-ring)]',
+                    isSelected && 'bg-[var(--aura-bg-selected)]',
                   )}
                 >
                   {inner}
@@ -151,7 +150,7 @@ export function MonthBarChart({
                 <div
                   role="img"
                   aria-label={ariaLabel}
-                  className={cn(COLUMN_CLASSES, isSelected && 'bg-muted/60')}
+                  className={cn(COLUMN_CLASSES, isSelected && 'bg-[var(--aura-bg-selected)]')}
                 >
                   {inner}
                 </div>

@@ -19,7 +19,6 @@ import {
   fireEvent,
   waitFor,
 } from '@testing-library/react';
-import { isValidElement, type ReactNode } from 'react';
 import { NextIntlClientProvider } from 'next-intl';
 import {
   PendingReviewList,
@@ -27,11 +26,8 @@ import {
 } from '@/app/(staff)/admin/renewals/_components/pending-review-list';
 import enMessages from '@/i18n/messages/en.json';
 
-// B2 — the component now calls `useRouter()` unconditionally and renders a Base
-// UI Dialog for the inline Approve. Mock the router + sonner (all tests), and
-// replace the Dialog primitives with passthrough divs that respect `open` so
-// the Confirm button is reachable without Base UI's jsdom transition hang
-// (the `snooze-dialog-error-map` precedent).
+// B2 — the component calls `useRouter()` for the post-approve refresh. The
+// approve dialog is the real AURA one (122 US7a T707): no primitive mocks.
 const refreshMock = vi.fn();
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ refresh: refreshMock }),
@@ -44,30 +40,6 @@ vi.mock('@/lib/toast', () => ({
     error: (...a: unknown[]) => toastError(...a),
   },
 }));
-// B2 close-time guard — capture the `finalFocus` prop off the DialogContent
-// CHILD ELEMENT on EVERY parent render, including the close render (open=false).
-// Base UI reads finalFocus LIVE at close, so the ONLY way to catch the
-// `finalFocus={approveTarget?.finalFocus}` regression (prop evaporates to
-// `undefined` when the dialog closes on success) is to observe the value at
-// close time. The `open` gate below skips rendering DialogContent when closed,
-// so we read the prop off the child element here in the Dialog mock instead.
-let capturedDialogFinalFocus: unknown;
-vi.mock('@/components/ui/dialog', () => ({
-  Dialog: ({ open, children }: { open: boolean; children: ReactNode }) => {
-    capturedDialogFinalFocus = isValidElement(children)
-      ? (children.props as { finalFocus?: unknown }).finalFocus
-      : undefined;
-    return open ? <div>{children}</div> : null;
-  },
-  DialogContent: ({ children }: { children: ReactNode }) => (
-    <div data-testid="approve-dialog-content">{children}</div>
-  ),
-  DialogHeader: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  DialogTitle: ({ children }: { children: ReactNode }) => <h2>{children}</h2>,
-  DialogDescription: ({ children }: { children: ReactNode }) => <p>{children}</p>,
-  DialogFooter: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-}));
-
 function renderList(
   rows: ReadonlyArray<PendingReviewRow>,
   props?: { canApprove?: boolean },
@@ -93,7 +65,6 @@ beforeEach(() => {
   refreshMock.mockClear();
   toastSuccess.mockClear();
   toastError.mockClear();
-  capturedDialogFinalFocus = undefined;
 });
 
 const UNMARKED: PendingReviewRow = {
@@ -291,48 +262,20 @@ describe('<PendingReviewList> — B2 inline Approve', () => {
     expect(screen.getByRole('link', { name: 'View' })).toBeInTheDocument();
   });
 
-  it('keeps a STABLE finalFocus resolver that survives close-on-success and returns #main-content (B2 regression: the prop must not evaporate to undefined at close)', async () => {
+  it('returns focus to #main-content after a successful approve (the row\'s trigger leaves the list)', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
     vi.stubGlobal('fetch', fetchMock);
     try {
       renderList([UNMARKED], { canApprove: true });
-      // Open the dialog — it receives the launching row's focus-return resolver.
       fireEvent.click(screen.getByRole('button', { name: APPROVE_TRIGGER }));
-      expect(typeof capturedDialogFinalFocus).toBe('function');
-
-      // Approve → success. `onApproveConfirm` raises `closedViaSuccessRef` and
-      // nulls `approveTarget` in the SAME commit that closes the dialog.
-      fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+      const dialog = screen.getByRole('alertdialog', { name: 'Approve this reactivation?' });
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Approve' }));
       await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
-      await waitFor(() => expect(refreshMock).toHaveBeenCalled());
-
-      // CLOSE-TIME GUARD. Base UI reads `finalFocus` LIVE at close. With the bug
-      // (`finalFocus={approveTarget?.finalFocus}`) the prop is `undefined` on the
-      // close render, so this stays 'undefined' and the assertion times out and
-      // FAILS. The fix passes a stable callback, so it is STILL a function after
-      // the dialog has closed on success.
-      await waitFor(() =>
-        expect(typeof capturedDialogFinalFocus).toBe('function'),
-      );
-
-      // ...and invoking it (as Base UI does at close) returns the surviving
-      // #main-content landmark — NOT the now-unmounting Approve trigger, NOT
-      // null/<body> — because `closedViaSuccessRef` was raised before close.
-      const mainContent = document.getElementById('main-content');
-      expect(mainContent).not.toBeNull();
-      // 2026-09-10 — the resolver no longer RETURNS the landmark. Base UI
-      // applies a returned element as `getFirstTabbableElement(el)`, and the
-      // `tabIndex={-1}` landmark is not tabbable, so focus landed on its first
-      // link. The hook now focuses the landmark itself (after Base UI's own
-      // microtask) and answers `false` = "move nothing".
-      const resolve = capturedDialogFinalFocus as () => HTMLElement | false | null;
-      expect(resolve()).toBe(false);
-      await Promise.resolve();
-      await Promise.resolve();
-      await Promise.resolve();
-      expect(document.activeElement).toBe(mainContent);
+      expect(refreshMock).toHaveBeenCalled();
+      await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+      await waitFor(() => expect(document.activeElement).toBe(document.getElementById('main-content')));
     } finally {
       vi.unstubAllGlobals();
     }
@@ -346,8 +289,8 @@ describe('<PendingReviewList> — B2 inline Approve', () => {
     try {
       renderList([UNMARKED], { canApprove: true });
       fireEvent.click(screen.getByRole('button', { name: APPROVE_TRIGGER }));
-      // Confirm in the (mocked-passthrough) dialog — "Approve" = reactivate.confirm.
-      fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+      // Confirm in the dialog — "Approve" = reactivate.confirm.
+      fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Approve' }));
       await waitFor(() => expect(fetchMock).toHaveBeenCalled());
       expect(fetchMock).toHaveBeenCalledWith(
         `/api/admin/renewals/${encodeURIComponent(UNMARKED.cycleId)}/reactivate`,
@@ -370,7 +313,7 @@ describe('<PendingReviewList> — B2 inline Approve', () => {
     try {
       renderList([UNMARKED], { canApprove: true });
       fireEvent.click(screen.getByRole('button', { name: APPROVE_TRIGGER }));
-      fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+      fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Approve' }));
       await waitFor(() => expect(toastError).toHaveBeenCalled());
       expect(toastSuccess).not.toHaveBeenCalled();
       // No refresh — the cycle stays pending, so the row (Approve trigger) remains.
@@ -398,10 +341,8 @@ describe('<PendingReviewList> — B2 inline Approve', () => {
     try {
       renderList([UNMARKED], { canApprove: true });
       fireEvent.click(screen.getByRole('button', { name: APPROVE_TRIGGER }));
-      // Dialog is open (its mocked content is mounted) before the confirm.
-      expect(screen.getByTestId('approve-dialog-content')).toBeInTheDocument();
-
-      fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+      const dialog = screen.getByRole('alertdialog', { name: 'Approve this reactivation?' });
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Approve' }));
 
       // The SPECIFIC reject-in-progress toast fires — NOT the generic
       // "Couldn't approve" copy (proves the 409 branch, not the fallthrough).
@@ -412,35 +353,43 @@ describe('<PendingReviewList> — B2 inline Approve', () => {
       );
       expect(toastSuccess).not.toHaveBeenCalled();
 
-      // The dialog CLOSES (approveTarget nulled → the mocked Dialog renders null),
-      // and the page refreshes so the row re-renders read-only.
-      await waitFor(() =>
-        expect(
-          screen.queryByTestId('approve-dialog-content'),
-        ).not.toBeInTheDocument(),
-      );
+      // The dialog CLOSES and the page refreshes so the row re-renders read-only.
+      await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
       expect(refreshMock).toHaveBeenCalled();
 
-      // `closedViaSuccessRef` was raised on the 409 close path, so the STABLE
-      // finalFocus resolver (read LIVE by Base UI at close) skips the vanishing
-      // Approve trigger and lands on #main-content — NOT the trigger, NOT
-      // null/<body> (WCAG 2.1 AA SC 2.4.3).
-      const mainContent = document.getElementById('main-content');
-      expect(mainContent).not.toBeNull();
-      // 2026-09-10 — the resolver no longer RETURNS the landmark. Base UI
-      // applies a returned element as `getFirstTabbableElement(el)`, and the
-      // `tabIndex={-1}` landmark is not tabbable, so focus landed on its first
-      // link. The hook now focuses the landmark itself (after Base UI's own
-      // microtask) and answers `false` = "move nothing".
-      expect(typeof capturedDialogFinalFocus).toBe('function');
-      const resolve = capturedDialogFinalFocus as () => HTMLElement | false | null;
-      expect(resolve()).toBe(false);
-      await Promise.resolve();
-      await Promise.resolve();
-      await Promise.resolve();
-      expect(document.activeElement).toBe(mainContent);
+      // `closedViaSuccessRef` was raised on the 409 close path, so focus skips
+      // the vanishing Approve trigger and lands on #main-content (WCAG 2.4.3).
+      await waitFor(() => expect(document.activeElement).toBe(document.getElementById('main-content')));
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+// 122 US7a (T707): the list on AURA — a table that stacks on a phone, the
+// settling and aged chips as AURA badges, Approve and Review as AURA
+// buttons, and the Approve confirmation as an AURA alertdialog.
+describe('<PendingReviewList> on AURA', () => {
+  afterEach(() => cleanup());
+
+  it('renders an AURA table with AURA badges for the settling and aged chips', () => {
+    renderList([UNMARKED, MARKED, { ...UNMARKED, cycleId: 'c-aged', companyName: 'Aged Co', memberId: 'm-aged', isAged: true, agingDays: 9 }]);
+    expect(screen.getByRole('table').closest('.aura-tbl')).not.toBeNull();
+    expect(screen.getByText('Refund settling').closest('.aura-badge')).not.toBeNull();
+    expect(screen.getByText('Aged 9d').closest('.aura-badge')).not.toBeNull();
+  });
+
+  it('Approve and Review are AURA buttons; Approve opens an AURA alertdialog', () => {
+    renderList([UNMARKED], { canApprove: true });
+    const approve = screen.getByRole('button', { name: 'Approve reactivation for Undecided Co' });
+    expect(approve).toHaveClass('aura-btn');
+    expect(screen.getByRole('link', { name: 'Review' })).toHaveClass('aura-btn', 'aura-btn--secondary');
+    fireEvent.click(approve);
+    expect(screen.getByRole('alertdialog', { name: 'Approve this reactivation?' })).toHaveClass('aura-dialog');
+  });
+
+  it('the empty list is an AURA empty state', () => {
+    renderList([]);
+    expect(screen.getByText('Nothing awaiting review').closest('.aura-empty')).not.toBeNull();
   });
 });

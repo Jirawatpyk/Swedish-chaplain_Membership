@@ -12,23 +12,11 @@
  * sidebar entry (a sidebar entry would double-highlight the Renewals
  * sidebar item's prefix `activePattern` — intentionally not added here).
  *
- * These entries NAVIGATE to different routes/URLs, so they are real
- * navigation `<Link>`s inside a `<nav>` landmark — NOT an ARIA tablist
- * (whole-branch review #9, a11y-correctness fix). A prior version rendered
- * a Base UI `<Tabs><TabsList><TabsTrigger>` (`role="tablist"`/`role="tab"` +
- * `aria-selected`) even though there was never a `role="tabpanel"` for the
- * "tabs" to control — a dangling tab role that made screen readers announce
- * "tab, selected" for what are really page links. The rendered appearance is
- * unchanged: the link markup ports the exact `TabsList`/`TabsTrigger` styling
- * (see `src/components/ui/tabs.tsx`), and the active link replicates the
- * active-pill look (`bg-background text-foreground shadow-sm` +
- * dark-mode variants) that the primitive drove from its `data-active` state.
- *
- * Renamed from `RenewalsViewTabs` (which only toggled the `?view=` query
- * param on `/admin/renewals`) because it now also *navigates* to two
- * entirely different routes — "view toggle" stopped being an accurate name.
- * (The `SectionTabs` name is kept for continuity across the three call sites
- * and the `TabCountBadge` reused by `page.tsx`'s `WorkQueueTabs`.)
+ * 122 US7a (T703): AURA link tabs on a desktop (board `Admin-renewals`) —
+ * a `nav` of links with `aria-current="page"`, not an ARIA tablist, as these
+ * entries navigate — and a "Section" select on a phone (board
+ * `Admin-renewals-mobile`) that navigates to the same hrefs. The pipeline
+ * help moved to the work-queue toggle row, where the board draws it.
  *
  * Active entry is derived from `usePathname()` + `useSearchParams()` rather
  * than a prop passed down from each server component — a single source of
@@ -39,28 +27,19 @@
  *   - pathname starts `/admin/renewals/tasks`         → Tasks
  *   - pathname starts `/admin/renewals/tier-upgrades` → Tier upgrades
  *
- * The active entry carries `aria-current="page"`; the others carry nothing.
- *
  * The Pipeline / Pending-review hrefs point at `/admin/renewals` (optionally
  * with `?view=pending-review`), inheriting the pipeline's own query params
  * (tier/urgency/cursor/month/nowIso) ONLY when already on that route —
  * arriving from Tasks/Tier-upgrades starts a clean pipeline URL instead of
  * dragging along that page's unrelated filter params (status/assignment/
- * task_type/etc). Tasks/Tier-upgrades are plain route hrefs. Each href is
- * computed once per render by the pure `buildPipelineHref` helper below.
+ * task_type/etc). Tasks/Tier-upgrades are plain route hrefs; the active
+ * entry keeps the current URL (its own filters).
  */
 'use client';
 
-import { HelpCircleIcon } from 'lucide-react';
-import Link from 'next/link';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { cn } from '@/lib/utils';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
+import { Select, Tabs, type TabItem } from '@jirawatpyk/aura-react';
 
 const RENEWALS_BASE = '/admin/renewals';
 const TASKS_PATH = '/admin/renewals/tasks';
@@ -139,233 +118,94 @@ function buildPipelineHref(
  *   mutually exclusive here to guarantee the identical result regardless of
  *   Tailwind's utility sort order.
  */
-const NAV_LIST =
-  'inline-flex h-8 w-fit items-center justify-center rounded-lg bg-muted p-[3px] text-muted-foreground pointer-coarse:h-auto';
-
-const NAV_LINK_BASE =
-  "relative inline-flex h-[calc(100%-1px)] flex-1 items-center justify-center gap-1.5 rounded-md border border-transparent px-1.5 py-0.5 text-sm font-medium whitespace-nowrap transition-all focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1 focus-visible:outline-ring pointer-coarse:min-h-11";
-
-const NAV_LINK_INACTIVE =
-  'text-muted-foreground hover:text-foreground';
-
-const NAV_LINK_ACTIVE =
-  'border-input bg-background text-foreground shadow-sm dark:bg-input/30';
-
-function navLinkClass(isActive: boolean): string {
-  return cn(NAV_LINK_BASE, isActive ? NAV_LINK_ACTIVE : NAV_LINK_INACTIVE);
-}
-
 export interface RenewalsSectionTabsProps {
-  /**
-   * Tap-discoverable help explaining what the pipeline lists — only
-   * meaningful on the Renewals page (Pipeline + Pending-review views).
-   * The Tasks / Tier-upgrades pages render the bare strip.
-   */
-  readonly showPipelineHelp?: boolean;
-  /**
-   * Item ④ — count of cycles in `pending_admin_reactivation`; badge shown
-   * only when `> 0`.
-   */
+  /** Item ④ — pending work per section, streamed in by `RenewalsSectionTabsWithCounts`. */
   readonly pendingReviewCount?: number;
-  /**
-   * Item ④ (plan-wide decision) — count of open escalation tasks; badge
-   * shown only when `> 0`.
-   */
   readonly tasksCount?: number;
-  /**
-   * Item ④ (plan-wide decision) — count of open + accepted-pending-apply
-   * tier-upgrade suggestions; badge shown only when `> 0`.
-   */
   readonly tierUpgradeCount?: number;
 }
 
-/**
- * Item ④ — visible count pill + sr-only text, shared by the Pending-review
- * / Tasks / Tier-upgrades entries (deliberately NOT the Pipeline entry —
- * that's the default view, not a work queue). Renders nothing when `count`
- * is `0` or `undefined` so an empty section never shows a hollow badge.
- * Styling mirrors `UrgencyBucketTabs`' per-bucket count badge.
- *
- * Exported (review round 1, Fix I-1) — `/admin/renewals` `page.tsx` reuses
- * this exact idiom for the `WorkQueueTabs` "Needs action" tab badge instead
- * of duplicating the pill markup. `page.tsx` renders it from a Server
- * Component (`NeedsActionCountBadge`); this module carries `'use client'`
- * but `TabCountBadge` has no interactivity of its own, so a Server Component
- * rendering it directly is a normal Server→Client composition.
- */
-export function TabCountBadge({
-  count,
-  label,
-}: {
-  readonly count: number | undefined;
-  readonly label: string;
-}) {
-  if (count === undefined || count <= 0) return null;
-  return (
-    <>
-      <span
-        aria-hidden
-        className="ml-1.5 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-primary/10 px-1.5 text-xs font-medium tabular-nums text-primary ring-1 ring-inset ring-primary/20"
-      >
-        {count}
-      </span>
-      <span className="sr-only"> {label}</span>
-    </>
-  );
-}
-
 export function RenewalsSectionTabs({
-  showPipelineHelp = false,
   pendingReviewCount,
   tasksCount,
   tierUpgradeCount,
 }: RenewalsSectionTabsProps) {
   const pathname = usePathname();
   const params = useSearchParams();
+  const router = useRouter();
   const t = useTranslations('admin.renewals');
 
   const current = deriveCurrentTab(pathname, params.get('view'));
 
-  // Four hrefs computed once per render from the current pathname/params.
-  // The ACTIVE entry links to the CURRENT full URL so clicking the section
-  // you're already on is a faithful no-op — the old Base UI tablist suppressed
-  // same-value activation, so the refactor must NOT start dropping the current
-  // page's params (e.g. clicking the active "Tasks" entry must not clear its
-  // status/assignment/task_type filters). INACTIVE entries use the computed
-  // targets: Pipeline/Pending-review inherit the pipeline's params only when
-  // ALREADY on the pipeline route (see `buildPipelineHref`); Tasks/Tier-upgrades
-  // are plain routes so arriving fresh from elsewhere starts clean.
   const search = params.toString();
   const currentUrl = search.length > 0 ? `${pathname}?${search}` : pathname;
-  const pipelineHref =
-    current === PIPELINE_VALUE
-      ? currentUrl
-      : buildPipelineHref(pathname, params, PIPELINE_VALUE);
-  const pendingReviewHref =
-    current === PENDING_REVIEW_VALUE
-      ? currentUrl
-      : buildPipelineHref(pathname, params, PENDING_REVIEW_VALUE);
-  const tasksHref = current === TASKS_VALUE ? currentUrl : TASKS_PATH;
-  const tierUpgradesHref =
-    current === TIER_UPGRADES_VALUE ? currentUrl : TIER_UPGRADES_PATH;
+  const hrefFor = (tab: SectionTab): string => {
+    if (tab === current) return currentUrl;
+    if (tab === TASKS_VALUE) return TASKS_PATH;
+    if (tab === TIER_UPGRADES_VALUE) return TIER_UPGRADES_PATH;
+    return buildPipelineHref(pathname, params, tab);
+  };
+
+  // Item ④ — a count only when there is pending work (the Pipeline entry is
+  // the default view, never counted). The link's name carries the count's
+  // meaning, starting with the visible label (WCAG 2.5.3).
+  const counted = (
+    id: SectionTab,
+    label: string,
+    count: number | undefined,
+    countSr: string,
+  ): TabItem => ({
+    id,
+    label,
+    href: hrefFor(id),
+    ...(count !== undefined && count > 0
+      ? { count, tabProps: { 'aria-label': `${label}, ${countSr}` } }
+      : {}),
+  });
+
+  const tabs: TabItem[] = [
+    { id: PIPELINE_VALUE, label: t('tabs.pipeline'), href: hrefFor(PIPELINE_VALUE) },
+    counted(
+      PENDING_REVIEW_VALUE,
+      t('pendingReview.tab'),
+      pendingReviewCount,
+      t('pendingReview.tabCountSr', { count: pendingReviewCount ?? 0 }),
+    ),
+    counted(
+      TASKS_VALUE,
+      t('tabs.tasks'),
+      tasksCount,
+      t('tabs.tasksCountSr', { count: tasksCount ?? 0 }),
+    ),
+    counted(
+      TIER_UPGRADES_VALUE,
+      t('tabs.tierUpgrades'),
+      tierUpgradeCount,
+      t('tabs.tierUpgradesCountSr', { count: tierUpgradeCount ?? 0 }),
+    ),
+  ];
 
   return (
-    <div className="flex items-center gap-1.5">
-      {/* C2 (#4) — horizontal-scroll container. The `inline-flex w-fit` nav
-          with four `whitespace-nowrap` links overflows a narrow viewport;
-          scrolling it inside its OWN `overflow-x-auto` box keeps the page body
-          from scrolling horizontally (ux-standards § 9.1) and keeps the help
-          Popover trigger (rendered as a sibling below, NOT inside this box)
-          always reachable. `min-w-0` lets the box shrink below its content
-          width so the overflow actually engages inside a flex row; the
-          `-my-1 py-1` bleed gives the focus ring vertical room, and
-          `overflow-y-hidden` suppresses the phantom vertical scrollbar/chevron
-          that `overflow-x: auto` would otherwise coerce to `auto` — same fix as
-          the sibling `urgency-bucket-tabs`. The negative margin keeps the
-          strip's outer height unchanged. No `tabIndex`/`role="region"` is
-          needed on this scroll box: it wraps a `<nav>` whose `<Link>`s are
-          natively focusable, so WCAG 2.1.1 (scrollable-region-focusable) is
-          satisfied via focusable descendants. */}
-      <div className="-my-1 min-w-0 overflow-x-auto overflow-y-hidden py-1">
-        {/* Navigation landmark (NOT an ARIA tablist) — these entries navigate
-            to different routes/URLs, so they are real links. Four links → Tab
-            focuses them in order, no roving/arrow handling needed; native
-            Enter/click navigates. `aria-current="page"` marks the active one.
-            C2 (#4): the track grows to fit the >=44px coarse-pointer links
-            (`pointer-coarse:h-auto`) so the active pill can't overflow the
-            default `h-8` track top/bottom on touch; desktop stays h-8. */}
-        <nav aria-label={t('tabs.ariaLabel')} className={NAV_LIST}>
-          <Link
-            href={pipelineHref}
-            aria-current={current === PIPELINE_VALUE ? 'page' : undefined}
-            className={navLinkClass(current === PIPELINE_VALUE)}
-          >
-            {t('tabs.pipeline')}
-          </Link>
-          <Link
-            href={pendingReviewHref}
-            aria-current={
-              current === PENDING_REVIEW_VALUE ? 'page' : undefined
-            }
-            className={navLinkClass(current === PENDING_REVIEW_VALUE)}
-          >
-            {t('pendingReview.tab')}
-            <TabCountBadge
-              count={pendingReviewCount}
-              label={t('pendingReview.tabCountSr', {
-                count: pendingReviewCount ?? 0,
-              })}
-            />
-          </Link>
-          <Link
-            href={tasksHref}
-            aria-current={current === TASKS_VALUE ? 'page' : undefined}
-            className={navLinkClass(current === TASKS_VALUE)}
-          >
-            {t('tabs.tasks')}
-            <TabCountBadge
-              count={tasksCount}
-              label={t('tabs.tasksCountSr', { count: tasksCount ?? 0 })}
-            />
-          </Link>
-          <Link
-            href={tierUpgradesHref}
-            aria-current={current === TIER_UPGRADES_VALUE ? 'page' : undefined}
-            className={navLinkClass(current === TIER_UPGRADES_VALUE)}
-          >
-            {t('tabs.tierUpgrades')}
-            <TabCountBadge
-              count={tierUpgradeCount}
-              label={t('tabs.tierUpgradesCountSr', {
-                count: tierUpgradeCount ?? 0,
-              })}
-            />
-          </Link>
-        </nav>
+    <>
+      <Tabs
+        label={t('tabs.ariaLabel')}
+        tabs={tabs}
+        value={current}
+        className="max-sm:hidden"
+      />
+      {/* The phone board draws the sections as a select; choosing one goes
+          to the same href as its tab. */}
+      <div className="sm:hidden">
+        <Select
+          label={t('tabs.selectLabel')}
+          value={current}
+          options={tabs.map((tab) => ({ value: tab.id, label: tab.label }))}
+          onChange={(e) => {
+            const next = tabs.find((tab) => tab.id === e.target.value);
+            if (next?.href) router.push(next.href);
+          }}
+        />
       </div>
-      {/* Tap-discoverable help explaining what the pipeline lists. A Popover
-          (not a hover Tooltip) so it works on touch — same pattern as
-          `company-section.tsx`. Placed BESIDE the nav strip, never nested in a
-          link. Renewals page only (showPipelineHelp) — Tasks/Tier-upgrades
-          render just the strip. */}
-      {showPipelineHelp ? (
-        <Popover>
-          <PopoverTrigger
-            type="button"
-            aria-label={t('pipelineHelp.ariaLabel')}
-            className="inline-flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:size-9"
-          >
-            <HelpCircleIcon className="size-4" aria-hidden="true" />
-          </PopoverTrigger>
-          <PopoverContent
-            className="w-80 max-w-[calc(100vw-2rem)] text-sm"
-            sideOffset={4}
-          >
-            <p className="font-medium">{t('pipelineHelp.title')}</p>
-            <p className="mt-1.5 text-muted-foreground">
-              {t('pipelineHelp.body')}
-            </p>
-            <dl className="mt-2 space-y-1.5">
-              <div>
-                <dt className="font-medium text-foreground">
-                  {t('pipelineHelp.suspendedTerm')}
-                </dt>
-                <dd className="text-muted-foreground">
-                  {t('pipelineHelp.suspendedDef')}
-                </dd>
-              </div>
-              <div>
-                <dt className="font-medium text-foreground">
-                  {t('pipelineHelp.terminatedTerm')}
-                </dt>
-                <dd className="text-muted-foreground">
-                  {t('pipelineHelp.terminatedDef')}
-                </dd>
-              </div>
-            </dl>
-          </PopoverContent>
-        </Popover>
-      ) : null}
-    </div>
+    </>
   );
 }
