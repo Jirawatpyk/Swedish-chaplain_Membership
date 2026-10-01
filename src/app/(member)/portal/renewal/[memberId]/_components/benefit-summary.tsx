@@ -61,8 +61,9 @@ function BenefitRow({ benefit }: { benefit: BenefitConsumptionEntry }) {
     return (
       <li className="flex items-baseline justify-between gap-[var(--aura-space-2)]">
         <span className="font-medium">{label}</span>
+        {/* Board: "3 · Unlimited". */}
         <span className="text-[var(--aura-fg-secondary)]">
-          {t('usageUnmetered', { used })} · {t('unmeteredQuota')}
+          {used} · {t('unmeteredQuota')}
         </span>
       </li>
     );

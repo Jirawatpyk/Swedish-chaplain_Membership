@@ -70,8 +70,8 @@ test.describe('F8 — member self-service renewal portal (US3 AS1+AS2+AS3+AS6, T
     // "Welcome to your first renewal" (EN) per
     // `portal.renewal.onboarding.heading` i18n key.
     await expect(
-      // 122 US7c: the welcome is an AURA info alert, a named `note`.
-      page.getByRole('note', { name: /welcome.*first renewal/i }),
+      // 122 US7c: the welcome is an AURA info alert (a `note`, titled in its text).
+      page.getByRole('note').filter({ hasText: /welcome.*first renewal/i }),
     ).toBeVisible();
 
     // AS2 — frozen plan summary card visible. The seed uses 50000.00 THB /

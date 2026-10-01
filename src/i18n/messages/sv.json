@@ -7343,7 +7343,7 @@
         "cardTitle": "Bekräfta",
         "stepsLabel": "Steg i förnyelsen",
         "stepConfirm": "Bekräfta förnyelse",
-        "stepPay": "Betala fakturan",
+        "stepPay": "Betala faktura",
         "nextStep": "Därefter kommer du direkt till fakturan och kan betala med kort eller PromptPay."
       },
       "planChange": {
@@ -7397,7 +7397,7 @@
         "receiptPreparing": "Förbereder kvitto…",
         "viewAllInvoices": "Visa alla fakturor",
         "processingTitle": "Betalningen har tagits emot",
-        "processingSubtitle": "Vi bekräftar din förnyelse.",
+        "processingSubtitle": "Vi håller på att bekräfta din förnyelse.",
         "backToPortal": "Tillbaka till portalens startsida"
       }
     },

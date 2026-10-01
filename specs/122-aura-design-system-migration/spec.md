@@ -246,6 +246,15 @@ The maintainer approved the US7c plan. Its boards were read against the code: `P
   - **Amounts** keep the current format (`฿36,000.00`); the board writes "36,000.00 THB".
   - **Dates** keep the long form everywhere; the board mixes "31 Dec 2026" and "31 December 2027".
   - **Downloads:** the success page keeps its five outcomes (receipt ready, paid with the receipt still preparing, unpaid invoice, no invoice, fetch failure). The board draws only the first and the second.
+- **From the reviews:**
+  - **Success hero (financial):** "Renewal complete" shows only once the cycle is completed. Until then the page shows the processing hero, so a cycle still awaiting payment never reads as complete.
+  - **Plan select (financial):** when the current plan is missing from this year's list (made inactive, or not carried over), the closed field still names it rather than the first option.
+  - **Gate notices (UX):** each notice is an h2 card holding the alert, so the right column keeps its heading.
+  - **Welcome note (UX):** the welcome is a note whose title is its text, with no duplicate name.
+  - **Receipt placeholder (UX):** "Receipt preparing…" is busy, not a live region.
+- **Known trade-offs, kept:**
+  - On a 320px phone, AURA's closed select cuts a long TH or SV option short. The price panel below always shows the price.
+  - The current plan's option shows this year's catalogue price. The panel shows the locked-in price. The two can differ; that is unchanged from before US7c.
 - **Out of scope, filed separately:** the confirm route's `invoice_already_exists` 409 has no message of its own, so the member sees the generic error. Mapping it is a behaviour change (Session 2026-09-27 rule).
 
 ## User Scenarios & Testing *(mandatory)*

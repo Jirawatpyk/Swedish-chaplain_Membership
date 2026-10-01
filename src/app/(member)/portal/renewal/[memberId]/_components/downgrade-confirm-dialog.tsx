@@ -8,8 +8,10 @@
  *
  * Spec 122 US7c: an AURA alertdialog (Session 2026-10-01, US7c start: the
  * board draws none, the maintainer kept it because it gates the money
- * request). Cancel takes first focus; while the request runs Confirm is busy
- * and the dialog cannot be dismissed. Focus returns to the CTA that opened it.
+ * request). Cancel takes first focus, and focus returns to the CTA that
+ * opened it. Confirm closes the dialog at once (as before) and the CTA then
+ * shows the busy state; `loading` / `dismissible` only guard a re-open while
+ * the request is still running.
  *
  * C4 a11y (WCAG 4.1.3): the over-quota warning is added to the dialog's
  * `aria-describedby` (AURA keeps its own description id first) so a screen

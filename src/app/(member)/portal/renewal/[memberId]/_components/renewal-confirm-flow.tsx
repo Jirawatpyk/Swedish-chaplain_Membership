@@ -278,17 +278,17 @@ export function RenewalConfirmFlow({
         <li aria-current="step" className="flex items-center gap-[var(--aura-space-2)] font-semibold">
           <span
             aria-hidden
-            className="grid size-6 shrink-0 place-items-center rounded-full bg-[var(--aura-accent)] text-xs text-[var(--aura-fg-on-accent)]"
+            className="grid size-6 shrink-0 place-items-center rounded-full bg-[var(--aura-button-primary-bg)] text-xs text-[var(--aura-button-primary-fg)]"
           >
             1
           </span>
           {t('stepConfirm')}
         </li>
         <li className="flex flex-1 items-center gap-[var(--aura-space-2)] text-[var(--aura-fg-secondary)]">
-          <span aria-hidden className="h-px min-w-4 flex-1 bg-[var(--aura-border-default)]" />
+          <span aria-hidden className="h-px min-w-4 flex-1 bg-[var(--aura-border-control)]" />
           <span
             aria-hidden
-            className="grid size-6 shrink-0 place-items-center rounded-full border border-[var(--aura-border-default)] text-xs"
+            className="grid size-6 shrink-0 place-items-center rounded-full border border-[var(--aura-border-control)] text-xs"
           >
             2
           </span>
@@ -341,7 +341,7 @@ export function RenewalConfirmFlow({
       <div className="flex flex-col gap-[var(--aura-space-2)]">
         <Button
           icon="arrow-right"
-          className="w-full"
+          fullWidth
           onClick={onConfirm}
           loading={isPending}
         >

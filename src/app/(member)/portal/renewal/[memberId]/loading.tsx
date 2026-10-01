@@ -138,7 +138,7 @@ export default async function RenewalPortalLoading() {
                   </div>
                 ))}
               </div>
-              <SkeletonBlock data-testid="renewal-skeleton-cta" className="h-9 w-full" />
+              <SkeletonBlock data-testid="renewal-skeleton-cta" className="h-11 w-full" />
             </div>
           </Card>
         </div>

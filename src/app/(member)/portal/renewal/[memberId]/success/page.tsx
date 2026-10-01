@@ -159,9 +159,11 @@ export async function renderRenewalSuccessView({
   // the generic button label "Download receipt PDF" (no number).
   const tInvoiceActions = await getTranslations('portal.invoices.actions');
 
-  // The processing state is the page's existing branch: no displayable cycle
-  // yet (the payment webhook has not landed). The board gives it its own hero.
-  const processing = activeCycle === null;
+  // The board's two heroes: "Renewal complete" only once the cycle is
+  // completed; otherwise (no cycle yet, or one the webhook has not completed)
+  // the processing hero — never "complete" for a cycle that isn't (financial
+  // review, US7c).
+  const processing = activeCycle?.status !== 'completed';
   // Buttons stack at full width on a phone and sit side by side from 640px.
   const actionClass = (variant: 'primary' | 'secondary') =>
     `${buttonClass({ variant, touchHeight: true })} w-full sm:w-auto`;
@@ -181,6 +183,7 @@ export async function renderRenewalSuccessView({
           <PageHeader
             title={t(processing ? 'processingTitle' : 'title')}
             subtitle={t(processing ? 'processingSubtitle' : 'subtitle')}
+            size="hero"
             autoFocusTitle
           />
         </div>
@@ -192,25 +195,26 @@ export async function renderRenewalSuccessView({
           headingLevel={2}
         >
           {activeCycle ? (
-            // Two columns from 640px; one below so TH/SV labels don't squeeze
-            // the value column (UX R5 / Mobile #1).
-            <dl className="grid grid-cols-1 gap-x-[var(--aura-space-4)] gap-y-[var(--aura-space-3)] text-sm sm:grid-cols-[auto_1fr]">
-              <dt className="text-[var(--aura-fg-secondary)]">{t('newExpiry')}</dt>
-              <dd className="font-medium">
-                <time dateTime={activeCycle.expiresAt}>
-                  {formatDatePreset(activeCycle.expiresAt, locale, 'dateLong')}
-                </time>
-              </dd>
+            // Board: two columns, each label stacked over its value.
+            <dl className="grid grid-cols-2 gap-x-[var(--aura-space-4)] gap-y-[var(--aura-space-4)] text-sm">
+              <div className="flex min-w-0 flex-col gap-[var(--aura-space-1)]">
+                <dt className="text-[var(--aura-fg-secondary)]">{t('newExpiry')}</dt>
+                <dd className="font-medium">
+                  <time dateTime={activeCycle.expiresAt}>
+                    {formatDatePreset(activeCycle.expiresAt, locale, 'dateLong')}
+                  </time>
+                </dd>
+              </div>
               {/* UX R5 / S3: the status row shows only once the cycle is
                   completed — the Stripe webhook lands async, and an
                   "Awaiting payment" row under this heading would confuse. */}
               {activeCycle.status === 'completed' && (
-                <>
+                <div className="flex min-w-0 flex-col items-start gap-[var(--aura-space-1)]">
                   <dt className="text-[var(--aura-fg-secondary)]">{t('cycleStatus')}</dt>
                   <dd>
                     <StatusPill tone="ready">{tStatus(activeCycle.status)}</StatusPill>
                   </dd>
-                </>
+                </div>
               )}
             </dl>
           ) : (
@@ -299,9 +303,10 @@ export async function renderRenewalSuccessView({
                     data-testid="invoice-download-link"
                     className={actionClass('secondary')}
                   />
+                  {/* A server-rendered placeholder that never updates: busy,
+                      not a live region (a busy live region never announces —
+                      UX review). */}
                   <span
-                    role="status"
-                    aria-live="polite"
                     aria-busy="true"
                     className="inline-flex min-h-11 w-full cursor-progress items-center justify-center gap-[var(--aura-space-2)] rounded-full bg-[var(--aura-bg-surface-hover)] px-[var(--aura-space-4)] text-sm text-[var(--aura-fg-secondary)] sm:w-auto"
                   >

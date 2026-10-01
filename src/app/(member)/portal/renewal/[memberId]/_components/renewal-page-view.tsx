@@ -49,12 +49,11 @@ export function RenewalPageView({
 }: RenewalPageViewProps) {
   const t = useTranslations('portal.renewal.page');
   const tField = useTranslations('portal.renewal.fields');
-  const tGate = useTranslations('portal.renewal');
   const tConfirm = useTranslations('portal.renewal.confirm');
 
   return (
     <>
-      <PageHeader title={t('title')} subtitle={t('subtitle')} />
+      <PageHeader title={t('title')} subtitle={t('subtitle')} size="hero" />
 
       {/* After the h1, so the heading order stays h1 → h2 (I18). */}
       {isFirstTimeRenewer && <OnboardingBanner />}
@@ -67,26 +66,33 @@ export function RenewalPageView({
             titleId="plan-summary-heading"
             headingLevel={2}
           >
-            {/* Two columns from 640px; one below, so a long Thai plan name
-                reflows on a 320px phone (WCAG 1.4.10). */}
-            <dl className="grid grid-cols-1 gap-x-[var(--aura-space-4)] gap-y-[var(--aura-space-3)] text-sm sm:grid-cols-[auto_1fr]">
-              <dt className="text-[var(--aura-fg-secondary)]">{tField('plan')}</dt>
-              <dd className="font-medium">{plan.label}</dd>
-              <dt className="text-[var(--aura-fg-secondary)]">{tField('tier')}</dt>
-              <dd>
-                {/* A tier is a category, never a status tone (US7a decision). */}
-                <Badge tone="accent" variant="soft">
-                  {plan.tierLabel}
-                </Badge>
-              </dd>
-              <dt className="text-[var(--aura-fg-secondary)]">{tField('term')}</dt>
-              <dd>{tField('termMonths', { count: plan.termMonths })}</dd>
-              <dt className="text-[var(--aura-fg-secondary)]">{tField('expiry')}</dt>
-              <dd>
-                <time dateTime={plan.expiresAt}>
-                  {formatDatePreset(plan.expiresAt, locale, 'dateLong')}
-                </time>
-              </dd>
+            {/* Board: two columns, each label stacked over its value. */}
+            <dl className="grid grid-cols-2 gap-x-[var(--aura-space-4)] gap-y-[var(--aura-space-4)] text-sm">
+              <div className="flex min-w-0 flex-col gap-[var(--aura-space-1)]">
+                <dt className="text-[var(--aura-fg-secondary)]">{tField('plan')}</dt>
+                <dd className="font-medium">{plan.label}</dd>
+              </div>
+              <div className="flex min-w-0 flex-col items-start gap-[var(--aura-space-1)]">
+                <dt className="text-[var(--aura-fg-secondary)]">{tField('tier')}</dt>
+                <dd>
+                  {/* A tier is a category, never a status tone (US7a decision). */}
+                  <Badge tone="accent" variant="soft">
+                    {plan.tierLabel}
+                  </Badge>
+                </dd>
+              </div>
+              <div className="flex min-w-0 flex-col gap-[var(--aura-space-1)]">
+                <dt className="text-[var(--aura-fg-secondary)]">{tField('term')}</dt>
+                <dd>{tField('termMonths', { count: plan.termMonths })}</dd>
+              </div>
+              <div className="flex min-w-0 flex-col gap-[var(--aura-space-1)]">
+                <dt className="text-[var(--aura-fg-secondary)]">{tField('expiry')}</dt>
+                <dd>
+                  <time dateTime={plan.expiresAt}>
+                    {formatDatePreset(plan.expiresAt, locale, 'dateLong')}
+                  </time>
+                </dd>
+              </div>
             </dl>
           </Card>
 
@@ -102,38 +108,33 @@ export function RenewalPageView({
           >
             <RenewalConfirmFlow {...gate.flow} />
           </Card>
-        ) : gate.kind === 'pending_review' ? (
-          <Alert
-            tone="info"
-            role="note"
-            aria-label={tGate('pendingReviewTitle')}
-            title={tGate('pendingReviewTitle')}
-          >
-            {tGate('pendingReviewBody')}
-          </Alert>
-        ) : gate.kind === 'rejected_refund' ? (
-          // UX-A Bug 2: while the reject-with-refund marker is set the
-          // reactivation was NOT approved and a refund is under way, so the
-          // "being verified" copy would be false.
-          <Alert
-            tone="warning"
-            role="note"
-            aria-label={tGate('rejectedRefundTitle')}
-            title={tGate('rejectedRefundTitle')}
-          >
-            {tGate('rejectedRefundBody')}
-          </Alert>
         ) : (
-          <Alert
-            tone="info"
-            role="note"
-            aria-label={tGate('notYetOpenTitle')}
-            title={tGate('notYetOpenTitle')}
-          >
-            {tGate('notYetOpenBody')}
-          </Alert>
+          <GateNotice gate={gate} />
         )}
       </div>
     </>
+  );
+}
+
+/**
+ * A gate notice in place of the confirm card: an h2 card (so the right
+ * column keeps its heading — UX review) holding the notice as an AURA alert.
+ */
+function GateNotice({ gate }: { gate: Exclude<RenewalGate, { kind: 'payable' }> }) {
+  const t = useTranslations('portal.renewal');
+  // UX-A Bug 2: while the reject-with-refund marker is set the reactivation
+  // was NOT approved and a refund is under way, so "being verified" would be false.
+  const copy =
+    gate.kind === 'pending_review'
+      ? { title: t('pendingReviewTitle'), body: t('pendingReviewBody'), tone: 'info' as const }
+      : gate.kind === 'rejected_refund'
+        ? { title: t('rejectedRefundTitle'), body: t('rejectedRefundBody'), tone: 'warning' as const }
+        : { title: t('notYetOpenTitle'), body: t('notYetOpenBody'), tone: 'info' as const };
+  return (
+    <Card as="section" title={copy.title} titleId="renewal-gate-heading" headingLevel={2}>
+      <Alert tone={copy.tone} role="none">
+        {copy.body}
+      </Alert>
+    </Card>
   );
 }
