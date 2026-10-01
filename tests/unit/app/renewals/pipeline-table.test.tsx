@@ -500,7 +500,21 @@ describe('<PipelineTable> one AURA table that stacks into cards', () => {
     const actions = within(screen.getByRole('grid'))
       .getByRole('button', { name: 'Send reminder to Acme Co' })
       .closest('[role="gridcell"]');
-    expect(actions).toHaveAttribute('data-card', 'actions');
+    expect(actions).toHaveAttribute('data-card', 'footer');
+  });
+
+  it('the row actions sit directly in the AURA cell, so the card footer grows "Send reminder" beside the ⋯ (AURA 5.22, #118)', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <PipelineTable rows={ONE_ROW} canMutate />
+      </NextIntlClientProvider>,
+    );
+    const grid = within(screen.getByRole('grid'));
+    const send = grid.getByRole('button', { name: 'Send reminder to Acme Co' });
+    const menu = grid.getByRole('button', { name: /^Actions for Acme Co/ });
+    expect(send.parentElement).toHaveClass('aura-table__cell');
+    expect(menu.closest('.aura-dropdown')?.parentElement).toBe(send.parentElement);
+    expect(document.querySelector('[data-pipeline-row-actions]')).toBeNull();
   });
 
   it('the invoice column stays in the grid but leaves the phone card, as the board draws it', () => {
