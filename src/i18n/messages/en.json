@@ -4929,6 +4929,7 @@
         "actions": {
           "menu_label": "Actions",
           "row_menu_for": "Skip, reassign or view timeline — {type}, {company}",
+          "view_timeline_for": "View timeline — {type}, {company}",
           "errors": {
             "task_not_open": "Another admin already closed this task — refresh to see the latest state.",
             "task_not_found": "This task no longer exists — refresh the list.",

@@ -4929,6 +4929,7 @@
         "actions": {
           "menu_label": "Åtgärder",
           "row_menu_for": "Hoppa över, tilldela om eller visa tidslinje — {type}, {company}",
+          "view_timeline_for": "Visa tidslinje — {type}, {company}",
           "errors": {
             "task_not_open": "En annan administratör har redan stängt denna uppgift — uppdatera sidan för att se aktuellt läge.",
             "task_not_found": "Uppgiften finns inte längre — uppdatera listan.",

@@ -17,7 +17,7 @@
 import { useEffect, useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
 import { z } from 'zod';
-import { Button, Combobox, type ComboboxOption } from '@jirawatpyk/aura-react';
+import { Alert, Button, Combobox, type ComboboxOption } from '@jirawatpyk/aura-react';
 import { TaskActionDialog } from './task-action-dialog';
 
 /**
@@ -173,21 +173,27 @@ export function ReassignTaskDropdown({
       finalFocus={finalFocus}
     >
       {loadError ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <p className="m-0 text-sm text-[var(--aura-fg-danger)]">{t('load_error')}</p>
-          <Button
-            size="sm"
-            variant="secondary"
-            loading={isLoadingUsers}
-            onClick={() => {
-              setLoadError(false);
-              setUsers(null);
-              setRetryToken((n) => n + 1);
-            }}
-          >
-            {t('retry')}
-          </Button>
-        </div>
+        // An alert, so a screen reader hears the failure where the picker was.
+        <Alert
+          tone="danger"
+          role="alert"
+          action={
+            <Button
+              size="sm"
+              variant="secondary"
+              loading={isLoadingUsers}
+              onClick={() => {
+                setLoadError(false);
+                setUsers(null);
+                setRetryToken((n) => n + 1);
+              }}
+            >
+              {t('retry')}
+            </Button>
+          }
+        >
+          {t('load_error')}
+        </Alert>
       ) : (
         <Combobox
           label={t('assignee_label')}

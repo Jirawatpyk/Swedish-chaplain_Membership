@@ -10,10 +10,11 @@
  *   - the overdue toggle card, then a "Filter tasks" group: Status (Open, Done,
  *     Skipped) and Assignment (All, Mine, Unassigned) as pressed-button groups,
  *     then the Task type `Select`;
- *   - one `DataTable` that stacks into cards below 640px, with the actions
- *     column only for someone who can act;
- *   - per row, "Done" plus a ⋯ menu (Skip, Reassign, View timeline) named for
- *     its row.
+ *   - one `DataTable` that stacks into cards below 640px;
+ *   - per open row, for someone who can act, "Done" plus a ⋯ menu (Skip,
+ *     Reassign, View timeline) named for its row; a closed row, or a manager,
+ *     gets a "View timeline" link instead, so the timeline stays one tap away
+ *     for everyone (it moved out of the member cell).
  * Filters still live in the URL; the requests, error mapping and toasts are
  * unchanged (spec Clarifications, Session 2026-10-01 US7b-2 start).
  *
@@ -35,6 +36,8 @@ import {
   IconButton,
   Select,
   StatusPill,
+  Tag,
+  buttonClass,
   type DataTableColumn,
   type MenuItem,
 } from '@jirawatpyk/aura-react';
@@ -45,7 +48,6 @@ import { EmptyState } from '@/components/shell/empty-state';
 import { TierBadge } from '@/components/renewals/tier-badge';
 import { TIER_BUCKETS, type TierBucket } from '@/modules/renewals/client';
 import { formatDatePreset } from '@/lib/format-date-localised';
-import { cn } from '@/lib/utils';
 import { DoneTaskDialog } from './done-task-dialog';
 import { SkipTaskDialog } from './skip-task-dialog';
 import { ReassignTaskDropdown } from './reassign-task-dropdown';
@@ -134,10 +136,11 @@ function isTierBucket(value: string | null): value is TierBucket {
 }
 
 /**
- * A pressed-button group, as the board draws Status and Assignment: each
- * button says whether it is the current filter (`aria-pressed`), and pressing
- * one loads that view. Not a tablist: activation is a press (Enter, Space or a
- * click), never an arrow key, because each choice reloads the queue.
+ * A group of AURA toggle chips, as the board draws Status and Assignment: each
+ * chip says whether it is the current filter (`aria-pressed`, plus a check),
+ * and pressing one loads that view. Not a tablist: activation is a press
+ * (Enter, Space or a click), never an arrow key, because each choice reloads
+ * the queue.
  */
 function PressedGroup<V extends string>({
   label,
@@ -151,30 +154,12 @@ function PressedGroup<V extends string>({
   readonly onPress: (next: V) => void;
 }) {
   return (
-    <div
-      role="group"
-      aria-label={label}
-      className="inline-flex max-w-full gap-0.5 rounded-full bg-[var(--aura-bg-surface-hover)] p-[3px]"
-    >
-      {options.map((option) => {
-        const pressed = option.value === value;
-        return (
-          <button
-            key={option.value}
-            type="button"
-            aria-pressed={pressed}
-            onClick={() => onPress(option.value)}
-            className={cn(
-              'min-h-8 whitespace-nowrap rounded-full border-0 px-3 text-[13px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)]',
-              pressed
-                ? 'bg-[var(--aura-bg-surface)] font-semibold text-[var(--aura-fg-primary)] shadow-[0_1px_2px_rgba(0,0,0,.08)]'
-                : 'bg-transparent font-medium text-[var(--aura-fg-secondary)] hover:text-[var(--aura-fg-primary)]',
-            )}
-          >
-            {option.label}
-          </button>
-        );
-      })}
+    <div role="group" aria-label={label} className="flex max-w-full flex-wrap gap-[var(--aura-space-2)]">
+      {options.map((option) => (
+        <Tag key={option.value} selected={option.value === value} onClick={() => onPress(option.value)}>
+          {option.label}
+        </Tag>
+      ))}
     </div>
   );
 }
@@ -233,7 +218,9 @@ export function EscalationTaskQueue({
   const overdueOnly =
     searchParams.get('overdue_only') === 'true' || searchParams.get('overdue_only') === '1';
 
-  const now = Date.now();
+  // Read once per mount: a fresh value on every render would rebuild the
+  // columns each time.
+  const [now] = useState(() => Date.now());
 
   // The server already filtered by status/assignment/overdue/task_type. A
   // client re-filter on assignment and overdue guards the brief URL drift
@@ -408,7 +395,7 @@ export function EscalationTaskQueue({
             ) : null}
             {/* The phone card adds the assignee after the date
                 ("· Malin Berg (Admin)"); the table has its own column. */}
-            <span className="text-[var(--aura-fg-secondary)] sm:hidden">
+            <span className="whitespace-nowrap text-[var(--aura-fg-secondary)] sm:hidden">
               · {assignee(task)} ({role(task)})
             </span>
           </span>
@@ -435,8 +422,6 @@ export function EscalationTaskQueue({
       },
     ];
 
-    if (!canMutate) return cols;
-
     cols.push({
       // An empty label: AURA names the header "Actions" for screen readers.
       key: 'actions',
@@ -447,9 +432,22 @@ export function EscalationTaskQueue({
       // The phone card's last row: Done grows across it beside the ⋯.
       card: 'footer',
       render: (task) => {
-        const busy = pendingTaskId === task.taskId;
-        const closed = task.status !== 'open';
         const company = task.memberCompanyName ?? task.memberId;
+        const timelineHref = `/admin/members/${task.memberId}/timeline`;
+        if (!canMutate || task.status !== 'open') {
+          // Nothing left to act on (a closed task, or a reader): the timeline
+          // is the one thing the row offers.
+          return (
+            <Link
+              href={timelineHref}
+              aria-label={t('actions.view_timeline_for', { type: taskTypeLabel(task), company })}
+              className={buttonClass({ variant: 'ghost', size: 'sm', touchHeight: true })}
+            >
+              {t('view_timeline')}
+            </Link>
+          );
+        }
+        const busy = pendingTaskId === task.taskId;
         const menuLabel = t('actions.row_menu_for', { type: taskTypeLabel(task), company });
         const menuItems: MenuItem[] = [
           {
@@ -462,7 +460,7 @@ export function EscalationTaskQueue({
             disabled: busy,
             onSelect: () => openDialog('reassign', task.taskId, menuTriggers.current.get(task.taskId) ?? null),
           },
-          { label: t('view_timeline'), href: `/admin/members/${task.memberId}/timeline` },
+          { label: t('view_timeline'), href: timelineHref },
         ];
         return (
           <>
@@ -470,7 +468,7 @@ export function EscalationTaskQueue({
               variant="secondary"
               size="sm"
               touchHeight
-              disabled={closed || busy}
+              disabled={busy}
               loading={busy && dialog?.action === 'done'}
               onClick={(e) => openDialog('done', task.taskId, e.currentTarget)}
               className="me-[var(--aura-space-1)]"
@@ -490,7 +488,6 @@ export function EscalationTaskQueue({
                   label={menuLabel}
                   size="sm"
                   touchHeight
-                  disabled={closed}
                   aria-busy={busy || undefined}
                 />
               }

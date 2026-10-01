@@ -297,14 +297,14 @@ test.describe('F8 — escalation task queue (US6) @a11y', () => {
     await expect(
       page.getByText(/manager|chef|ผู้จัดการ/i).first(),
     ).toBeVisible();
-    // Actions column header MUST NOT be present for the manager render
-    // (FR-052a — manager `read` only, mutations are admin-only).
-    await expect(
-      page.getByRole('columnheader', { name: /actions|åtgärder|การดำเนินการ/i }),
-    ).toHaveCount(0);
-    // No Done / Skip / Reassign action buttons rendered in any row.
+    // FR-052a — manager `read` only, mutations are admin-only. 122 US7b-2:
+    // the actions column stays, holding only each row's "View timeline"
+    // link, so no Done button and no ⋯ menu may appear in any row.
     // In the queue: the Status filter has a "Done" button of its own.
     const queue = page.locator('#main-content [role="grid"]');
+    await expect(
+      queue.getByRole('button', { name: /^(skip, reassign or view timeline|ข้าม เปลี่ยนผู้รับผิดชอบ|hoppa över, tilldela om) /i }),
+    ).toHaveCount(0);
     await expect(queue.getByRole('button', { name: /^done$/i })).toHaveCount(0);
     await expect(queue.getByRole('button', { name: /^skip$/i })).toHaveCount(0);
     await expect(queue.getByRole('button', { name: /^reassign$/i })).toHaveCount(0);
@@ -323,7 +323,7 @@ test.describe('F8 — escalation task queue (US6) @a11y', () => {
       // 122 US7b-2: an AURA DataTable, whose cells are gridcells.
       .getByRole('gridcell')
       .getByRole('link')
-      .filter({ hasNotText: /timeline|view/i })
+      .filter({ hasNotText: /timeline|view|tidslinje|ประวัติเหตุการณ์/i })
       .first();
     if ((await memberLink.count()) === 0) {
       test.info().annotations.push({
