@@ -51,11 +51,10 @@ describe('<BenefitSummary> on AURA (US7c)', () => {
     );
   });
 
-  it('shows an unmetered benefit as a plain row, "3 used · Unlimited", with no bar', () => {
+  it('shows an unmetered benefit as a plain row, "3 · Unlimited" (board), with no bar', () => {
     renderSummary();
     const row = screen.getByText('Events attended').closest('li')!;
-    expect(row.textContent).toContain('3 used');
-    expect(row.textContent).toContain('Unlimited');
+    expect(row.textContent).toContain('3 · Unlimited');
     expect(within(row).queryByRole('progressbar')).toBeNull();
   });
 

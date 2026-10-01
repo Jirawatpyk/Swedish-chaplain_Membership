@@ -66,9 +66,10 @@ function renderView(overrides: Partial<RenewalPageViewProps> = {}) {
 }
 
 describe('<RenewalPageView> (board Portal-renewal, US7c)', () => {
-  it('heads the page "Online renewal" with the board subtitle', () => {
+  it('heads the page "Online renewal" (hero size, as the board) with the board subtitle', () => {
     renderView();
-    expect(screen.getByRole('heading', { level: 1, name: 'Online renewal' })).toBeInTheDocument();
+    const h1 = screen.getByRole('heading', { level: 1, name: 'Online renewal' });
+    expect(h1.closest('[data-size]')).toHaveAttribute('data-size', 'hero');
     expect(
       screen.getByText('Review your membership and confirm to receive an invoice.'),
     ).toBeInTheDocument();
@@ -76,12 +77,15 @@ describe('<RenewalPageView> (board Portal-renewal, US7c)', () => {
 
   it('shows the first-renewal welcome as an AURA info alert, only for a first renewal', () => {
     const first = renderView({ isFirstTimeRenewer: true });
-    const welcome = screen.getByRole('note', { name: 'Welcome to your first renewal' });
+    const welcome = screen.getByRole('note');
     expect(welcome.className).toMatch(/aura-alert--info/);
+    expect(welcome.textContent).toContain('Welcome to your first renewal');
     expect(welcome.textContent).toContain('Your renewal price is locked at the rate');
+    // UX review: no aria-label repeating the visible title (read twice).
+    expect(welcome).not.toHaveAttribute('aria-label');
     first.unmount();
     renderView();
-    expect(screen.queryByRole('note', { name: 'Welcome to your first renewal' })).toBeNull();
+    expect(screen.queryByRole('note')).toBeNull();
   });
 
   it('"Membership plan" is an AURA card (h2) with plan, tier badge, term and expiry', () => {
@@ -89,6 +93,10 @@ describe('<RenewalPageView> (board Portal-renewal, US7c)', () => {
     const card = screen.getByRole('region', { name: 'Membership plan' });
     expect(card.className).toMatch(/aura-card/);
     expect(within(card).getByRole('heading', { level: 2, name: 'Membership plan' })).toBeInTheDocument();
+    // Board: two columns, each label stacked over its value, on a phone too.
+    const dl = card.querySelector('dl')!;
+    expect(dl.className).toMatch(/grid-cols-2/);
+    expect(dl.querySelectorAll(':scope > div')).toHaveLength(4);
     const rows = [...card.querySelectorAll('dt')].map((dt) => [
       dt.textContent,
       dt.nextElementSibling?.textContent,
@@ -115,22 +123,21 @@ describe('<RenewalPageView> (board Portal-renewal, US7c)', () => {
     expect(within(grid).getByRole('region', { name: 'Benefit summary' })).toBeInTheDocument();
   });
 
-  it('shows the gate notices as AURA alerts in place of the confirm card', () => {
-    const pending = renderView({ gate: { kind: 'pending_review' } });
-    expect(screen.queryByRole('region', { name: 'Confirm' })).toBeNull();
-    expect(
-      screen.getByRole('note', { name: enMessages.portal.renewal.pendingReviewTitle }).className,
-    ).toMatch(/aura-alert--info/);
-    pending.unmount();
-
-    const refund = renderView({ gate: { kind: 'rejected_refund' } });
-    expect(
-      screen.getByRole('note', { name: enMessages.portal.renewal.rejectedRefundTitle }).className,
-    ).toMatch(/aura-alert--warning/);
-    refund.unmount();
-
-    renderView({ gate: { kind: 'not_yet_open' } });
-    const notYet = screen.getByRole('note', { name: enMessages.portal.renewal.notYetOpenTitle });
-    expect(notYet.textContent).toContain(enMessages.portal.renewal.notYetOpenBody);
+  it('shows each gate notice as an h2 card in place of the confirm card (UX review)', () => {
+    const cases = [
+      ['pending_review', enMessages.portal.renewal.pendingReviewTitle, enMessages.portal.renewal.pendingReviewBody, 'info'],
+      ['rejected_refund', enMessages.portal.renewal.rejectedRefundTitle, enMessages.portal.renewal.rejectedRefundBody, 'warning'],
+      ['not_yet_open', enMessages.portal.renewal.notYetOpenTitle, enMessages.portal.renewal.notYetOpenBody, 'info'],
+    ] as const;
+    for (const [kind, title, body, tone] of cases) {
+      const view = renderView({ gate: { kind } });
+      expect(screen.queryByRole('region', { name: 'Confirm' })).toBeNull();
+      const card = screen.getByRole('region', { name: title });
+      expect(within(card).getByRole('heading', { level: 2, name: title })).toBeInTheDocument();
+      const alert = card.querySelector('.aura-alert')!;
+      expect(alert.className).toMatch(new RegExp(`aura-alert--${tone}`));
+      expect(alert.textContent).toContain(body);
+      view.unmount();
+    }
   });
 });

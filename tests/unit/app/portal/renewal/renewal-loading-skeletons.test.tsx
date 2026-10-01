@@ -49,7 +49,9 @@ describe('renewal page skeleton (US7c)', () => {
     // The confirm card holds the stepper, the select, the price band and the CTA.
     expect(within(confirm as HTMLElement).getByTestId('renewal-skeleton-steps')).toBeInTheDocument();
     expect(confirm!.querySelector('[class*="bg-[var(--aura-bg-surface-hover)]"]')).not.toBeNull();
-    expect(within(confirm as HTMLElement).getByTestId('renewal-skeleton-cta').className).toMatch(/w-full/);
+    const cta = within(confirm as HTMLElement).getByTestId('renewal-skeleton-cta');
+    expect(cta.className).toMatch(/w-full/);
+    expect(cta.className).toMatch(/h-11/); // the real button is 44px
   });
 });
 
@@ -61,5 +63,10 @@ describe('renewal success skeleton (US7c)', () => {
     expect(container.querySelectorAll('.aura-card')).toHaveLength(1);
     expect(container.querySelector('[data-testid="renewal-skeleton-actions"]')!.children).toHaveLength(2);
     expect(container.querySelector('[data-slot="card"]')).toBeNull();
+    // UX review: the title is not claimed before the page knows the state.
+    expect(screen.queryByText('title')).toBeNull();
+    for (const block of container.querySelectorAll('[data-testid="renewal-skeleton-actions"] > *')) {
+      expect(block.className).toMatch(/h-11/);
+    }
   });
 });

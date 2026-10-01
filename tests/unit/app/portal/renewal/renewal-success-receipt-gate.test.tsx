@@ -300,7 +300,10 @@ describe('RenewalSuccessPage on AURA (boards Portal-renewal-success / -processin
     );
     const preparing = nodeWith(html, '[aria-busy="true"]')!;
     expect(preparing.textContent).toContain('receiptPreparing');
-    expect(preparing.getAttribute('role')).toBe('status');
+    // UX review: a server-rendered placeholder that never updates is not a
+    // live region (a busy live region never announces).
+    expect(preparing.getAttribute('role')).toBeNull();
+    expect(preparing.getAttribute('aria-live')).toBeNull();
   });
 
   it('processing (no cycle yet): the hero reads "Payment received", the details card announces the wait', async () => {
@@ -315,6 +318,14 @@ describe('RenewalSuccessPage on AURA (boards Portal-renewal-success / -processin
     expect(nodeWith(html, '[data-testid="processing-back-to-portal"]')?.className).toMatch(
       /aura-btn--secondary/,
     );
+  });
+
+  it('a cycle that is not completed yet gets the processing hero, never "Renewal complete" (financial review)', async () => {
+    findMostRecentForMemberMock.mockResolvedValue({ status: 'awaiting_payment', expiresAt: '2026-12-31T00:00:00Z' });
+    getInvoiceMock.mockResolvedValue({ ok: true, value: invoiceWith('issued') });
+    const html = await renderPage();
+    expect(nodeWith(html, '[data-testid="renewal-hero"] h1')?.textContent).toBe('processingTitle');
+    expect(html).not.toContain('>title<');
   });
 
   it('no invoice id: the "View all invoices" fallback as a secondary AURA link', async () => {

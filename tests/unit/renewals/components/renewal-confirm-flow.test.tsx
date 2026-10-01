@@ -360,13 +360,18 @@ describe('<RenewalConfirmFlow> — confirm card (board Portal-renewal, US7c)', (
     expect(items.map(readable)).toEqual(['Confirm renewal', 'Pay invoice']);
     expect(items[0]).toHaveAttribute('aria-current', 'step');
     expect(items[1]).not.toHaveAttribute('aria-current');
+    // UX review: the current step's disc is filled with tokens that exist.
+    const disc = items[0]!.querySelector('[aria-hidden="true"]')!;
+    expect(disc.className).toMatch(/bg-\[var\(--aura-button-primary-bg\)\]/);
+    expect(disc.className).toMatch(/text-\[var\(--aura-button-primary-fg\)\]/);
   });
 
   it('the CTA is a full-width primary AURA button, and says where the member goes next', () => {
     renderFlow();
     const cta = screen.getByRole('button', { name: 'Confirm renewal' });
     expect(cta.className).toMatch(/aura-btn--primary/);
-    expect(cta.className).toMatch(/w-full/);
+    // AURA's own full width, so a long TH/SV label wraps and keeps its height.
+    expect(cta.className).toMatch(/aura-btn--full/);
     expect(
       screen.getByText('Next, you go straight to the invoice to pay by card or PromptPay.'),
     ).toBeInTheDocument();
