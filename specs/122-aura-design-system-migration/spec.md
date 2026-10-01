@@ -216,6 +216,51 @@ The maintainer approved the US7b-2 plan. Its boards were read against the code: 
     - Removing a step keeps its Undo toast; no confirm is added.
     - The save bar holds "{n} steps · Last saved …", "Add step" and "Save schedule". It sits under the steps from 640px and sticks to the bottom of a phone screen.
 
+### Session 2026-10-01 (maintainer, US7c start)
+
+The maintainer approved the US7c plan. Its boards were read against the code: `Portal-renewal`, `Portal-renewal-processing` and `Portal-renewal-success`, each with `-mobile`. US7c is part of a money phase (Session 2026-09-30), so it gets a financial-integrity review as well as the UX and i18n reviews. It is a UI swap:
+- the confirm request keeps its endpoint, its one `content-type` header and its body (`cycleId`, plus `newPlanId` only on a change and `acknowledgeDowngrade: true` only after the dialog);
+- the `pay_url` redirect, the error codes and the client-error beacon are unchanged;
+- every amount still comes from the same formatter.
+
+- Q: The board draws no downgrade confirmation: the warning and the price-change panel stand in for it. Today a downgrade opens "Confirm a lower-priced plan", and only that dialog sends `acknowledgeDowngrade: true`. → A: **Keep the dialog**, as an AURA alertdialog. Dropping it would change the money request. The board's inline warning and price panel are kept as well.
+- Q: The board's "Choose a plan" is a flat list, with the price in each option and "(current)". Today's list is grouped into higher-priced, current and lower-priced plans. → A: **Keep the groups** (option groups in AURA's select) and use the board's option text, "{plan} — {price}", with "(current)" on the current plan. AURA's select has no separate closed-field text, so the closed field shows the full option, as the board does.
+- **Decided from the boards** (Session 2026-09-27 rule: the board decides content and order):
+  - **Renewal page:**
+    - "Membership plan" and "Benefit summary" cards on the left, with the Confirm card in a 420px column on the right from `lg`; one column below.
+    - The tier shows as an accent badge. A tier is a category, so it never takes a status tone (US7a decision).
+    - Metered benefits are AURA progress bars.
+  - **Confirm card, top to bottom:**
+    - a two-step stepper, "Confirm renewal" (current) then "Pay invoice";
+    - the plan select;
+    - the change warning;
+    - the price-change panel (current, new, difference);
+    - the full-width "Confirm renewal" button;
+    - a line saying the next step is the invoice, paid by card or PromptPay.
+  - **First renewal:** the welcome note is an AURA info alert.
+  - **Processing and success:** a centred hero with a check, then a "Renewal details" card, then the actions.
+    - Processing reads "Payment received / We're confirming your renewal". Its details say the new expiry appears once confirmation arrives, and a receipt still being prepared shows as a busy "Receipt preparing…" placeholder.
+    - Success reads "Renewal complete / Thank you — your membership is active", with the new expiry and a "Completed" status pill.
+    - On a phone the actions stack at full width.
+- **Kept from the code over the boards:**
+  - **Amounts** keep the current format (`฿36,000.00`); the board writes "36,000.00 THB".
+  - **Dates** keep the long form everywhere; the board mixes "31 Dec 2026" and "31 December 2027".
+  - **Downloads:** the success page keeps its five outcomes (receipt ready, paid with the receipt still preparing, unpaid invoice, no invoice, fetch failure). The board draws only the first and the second.
+- **From the reviews:**
+  - **Success hero (financial):** "Renewal complete" shows only once the cycle is completed. Until then the page shows the processing hero, so a cycle still awaiting payment never reads as complete.
+  - **Plan select (financial):** when the current plan is missing from this year's list (made inactive, or not carried over), the closed field still names it rather than the first option.
+  - **Gate notices (UX):** each notice is an h2 card holding the alert, so the right column keeps its heading.
+  - **Welcome note (UX):** the welcome is a note whose title is its text, with no duplicate name.
+  - **Receipt placeholder (UX):** "Receipt preparing…" is busy, not a live region.
+- **Known trade-offs, kept:**
+  - On a 320px phone, AURA's closed select cuts a long TH or SV option short. The price panel below always shows the price.
+  - The current plan's option shows this year's catalogue price. The panel shows the locked-in price. The two can differ; that is unchanged from before US7c.
+- **From the parity pass:**
+  - The page grid has an explicit `minmax(0,1fr)` track below `lg`. The implicit `auto` track grew to the select's option text, and phones scrolled sideways.
+  - The price band rules a line between its three rows, as the board draws it.
+  - The success hero centres a title shorter than its subtitle (TH).
+- **Out of scope, filed separately:** the confirm route's `invoice_already_exists` 409 has no message of its own, so the member sees the generic error. Mapping it is a behaviour change (Session 2026-09-27 rule).
+
 ## User Scenarios & Testing *(mandatory)*
 
 Every story below is one phase and one pull request. A story is done when its screens use only AURA components, match their canvas boards, and pass the per-module definition of done (FR-010).

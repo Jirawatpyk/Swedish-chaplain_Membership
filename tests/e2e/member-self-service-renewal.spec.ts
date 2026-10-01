@@ -70,7 +70,8 @@ test.describe('F8 — member self-service renewal portal (US3 AS1+AS2+AS3+AS6, T
     // "Welcome to your first renewal" (EN) per
     // `portal.renewal.onboarding.heading` i18n key.
     await expect(
-      page.getByRole('region', { name: /welcome.*first renewal/i }),
+      // 122 US7c: the welcome is an AURA info alert (a `note`, titled in its text).
+      page.getByRole('note').filter({ hasText: /welcome.*first renewal/i }),
     ).toBeVisible();
 
     // AS2 — frozen plan summary card visible. The seed uses 50000.00 THB /
@@ -86,31 +87,35 @@ test.describe('F8 — member self-service renewal portal (US3 AS1+AS2+AS3+AS6, T
     await expect(page.getByTestId('price-current')).toContainText(/50,000\.00/);
     await expect(page.getByText('12 months')).toBeVisible();
 
-    // Benefit summary fallback (benefitsAvailable=false in MVP).
+    // Benefit summary card. 122 US7c / R27: the old "benefitsAvailable=false
+    // in MVP" premise is stale — the seeded `regular` plan now carries an
+    // E-Blast quota, so the card shows its rows, not the "unavailable"
+    // fallback. The card (an AURA card headed by an h2) renders on either
+    // data path, so it alone cannot tell rows from the fallback (R27b): also
+    // assert the fallback is absent, which holds for any quota and goes red
+    // the day the F8→F9 consumption reader regresses.
     await expect(
-      page.getByText(/benefit summary unavailable/i),
+      page.getByRole('region', { name: /benefit summary/i }),
     ).toBeVisible();
+    await expect(page.getByText(/benefit summary unavailable/i)).toHaveCount(0);
 
     // AS6 — confirm CTA visible + enabled.
     const confirmBtn = page.getByRole('button', { name: /confirm renewal/i });
     await expect(confirmBtn).toBeVisible();
     await expect(confirmBtn).toBeEnabled();
 
-    // 067 regression — the plan-change trigger shows the localised plan NAME,
-    // not the raw plan id. Base UI's <Select.Value> renders the raw value
-    // ("regular") by default; the page maps it back to the name via
-    // TranslatedSelectValue. The seed's current plan ('regular') → "Regular
-    // Corporate". (Asserting `toContainText('Regular Corporate')` on the
-    // collapsed trigger fails if it regresses to showing "regular".)
+    // 067 regression — the plan select shows the localised plan NAME, not
+    // the raw plan id. 122 US7c: an AURA select, whose closed field shows the
+    // chosen option's text ("Regular Corporate — ฿16,000.00 (current)"), so
+    // the name is there and the raw id ("regular") must never be.
     const planSelect = page.getByRole('combobox', { name: /choose a plan/i });
     await expect(planSelect).toBeVisible();
     await expect(planSelect).toContainText('Regular Corporate');
     // S9 — the displayed label is the localised plan NAME, decoupled from the
     // seed's raw `plan_id_at_cycle_start='regular'`. The 'Regular Corporate'
     // string above is the DB plan record's display name (not something the seed
-    // controls), so pin the actual regression too: the collapsed trigger must
-    // NOT leak the raw plan id. This fails if TranslatedSelectValue regresses to
-    // rendering the raw value, independent of whatever the plan is named.
+    // controls), so pin the actual regression too: the closed field must NOT
+    // show the bare raw plan id, independent of whatever the plan is named.
     await expect(planSelect).not.toContainText(/^\s*regular\s*$/i);
   });
 

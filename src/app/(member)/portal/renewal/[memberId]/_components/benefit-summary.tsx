@@ -1,5 +1,5 @@
 /**
- * F8 Phase 5 Wave C · T127 — benefit-summary panel (server component).
+ * F8 Phase 5 Wave C · T127 — benefit-summary panel.
  *
  * Renders the cycle's benefit-consumption summary on the renewal
  * portal page (T125). Data is resolved upstream by `loadRenewalSummary`
@@ -11,20 +11,18 @@
  * Called from T125 page; pure presentation (no fetching here — the
  * page passes the resolved `summary.benefits` list).
  *
- * I19 review-fix (Phase 5 / US3 review backlog close): each metered
- * benefit (`quota !== null`) now renders a visual progress bar with
- * accessible-name + ARIA progress semantics. Per WCAG 1.4.1 the
- * percent-used signal is conveyed in BOTH text ("{percent}% used") AND
- * shape (filled/unfilled bar segments) — colour is not the only
- * channel. The bar uses `currentColor` against the muted track so it
- * stays legible in the high-contrast / forced-colours render.
- *
- * Unmetered benefits (`quota === null`) skip the bar and render the
- * "Unlimited" label instead — semantically correct (no progress to
- * show against an infinite cap).
+ * Spec 122 US7c (board `Portal-renewal`): an AURA card. A metered benefit
+ * (`quota !== null`) is an AURA progress bar named for the benefit and
+ * reading "{used} of {quota}" (shown and read out), so the signal is in
+ * text and shape, not colour alone (WCAG 1.4.1). An unmetered benefit
+ * (`quota === null`) is a plain row — there is no progress against an
+ * unlimited cap. AURA's Progress is a client component, so this file is too
+ * (the page's confirm flow already ships the AURA client barrel).
  */
+'use client';
+
 import { useTranslations } from 'next-intl';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, Progress } from '@jirawatpyk/aura-react';
 import type { BenefitConsumptionEntry } from '@/modules/renewals';
 
 export interface BenefitSummaryProps {
@@ -36,34 +34,18 @@ export function BenefitSummary({ benefits, benefitsAvailable }: BenefitSummaryPr
   const t = useTranslations('portal.renewal.benefits');
   const hasContent = benefitsAvailable && benefits.length > 0;
   return (
-    <Card role="region" aria-labelledby="benefits-heading">
-      <CardContent className="flex flex-col gap-3">
-        <h2 id="benefits-heading" className="text-h4">
-          {t('heading')}
-        </h2>
-        {hasContent ? (
-          // Round-3 UX M2 fix: reference the region heading from the
-          // <ul> so SR users hear the list's purpose ("Membership
-          // benefits, list, N items") instead of just "list, N items".
-          // The list is inside the labelled region, but most SR engines
-          // do not propagate the region's accessible name to nested
-          // <ul> announcements (WCAG 1.3.1).
-          //
-          // R2-S7: use `aria-label={t('heading')}` instead of reusing
-          // `aria-labelledby="benefits-heading"` (which would point to
-          // the same id used by the parent region) — id-reuse can
-          // produce SR redundancy ("Membership benefits, Membership
-          // benefits list, N items"). aria-label gives the <ul> its
-          // own accessible name without traversing the same node twice.
-          <ul aria-label={t('heading')} className="space-y-3 text-sm">
-            {benefits.map((b) => (
-              <BenefitRow key={b.key} benefit={b} />
-            ))}
-          </ul>
-        ) : (
-          <p className="text-sm text-muted-foreground">{t('unavailable')}</p>
-        )}
-      </CardContent>
+    <Card as="section" title={t('heading')} titleId="benefits-heading" headingLevel={2}>
+      {hasContent ? (
+        // R2-S7: the list carries its own name (`aria-label`) rather than
+        // re-pointing at the card's heading, which the region already uses.
+        <ul aria-label={t('heading')} className="flex flex-col gap-[var(--aura-space-4)] text-sm">
+          {benefits.map((b) => (
+            <BenefitRow key={b.key} benefit={b} />
+          ))}
+        </ul>
+      ) : (
+        <p className="text-sm text-[var(--aura-fg-secondary)]">{t('unavailable')}</p>
+      )}
     </Card>
   );
 }
@@ -72,52 +54,29 @@ function BenefitRow({ benefit }: { benefit: BenefitConsumptionEntry }) {
   const t = useTranslations('portal.renewal.benefits');
   const { key, used, quota } = benefit;
   // Resolve the human-readable benefit name from its stable key via i18n
-  // (the Application layer no longer carries a `label` — that's
-  // Presentation's job, consistent with how this page resolves
-  // tier/plan keys → labels). Keys: eblast | cultural_ticket |
-  // event_attendance, all present under `portal.renewal.benefits.name.*`.
+  // (keys: eblast | cultural_ticket | event_attendance under
+  // `portal.renewal.benefits.name.*`).
   const label = t(`name.${key}`);
-  // Unmetered benefit (e.g. "members can attend any number of …"):
-  // skip the bar — there's no meaningful progress to render.
   if (quota === null) {
     return (
-      <li>
-        <div className="flex items-baseline justify-between gap-2">
-          <span className="font-medium">{label}</span>
-          <span className="text-xs text-muted-foreground">{t('usageUnmetered', { used })}</span>
-        </div>
-        <p className="mt-0.5 text-xs text-muted-foreground">{t('unmeteredQuota')}</p>
+      <li className="flex items-baseline justify-between gap-[var(--aura-space-2)]">
+        <span className="font-medium">{label}</span>
+        {/* Board: "3 · Unlimited". */}
+        <span className="text-[var(--aura-fg-secondary)]">
+          {used} · {t('unmeteredQuota')}
+        </span>
       </li>
     );
   }
-  // Metered: render the progress bar with text + visual.
-  const safeQuota = Math.max(quota, 1);
-  const pct = Math.min(100, Math.max(0, Math.round((used / safeQuota) * 100)));
   return (
     <li>
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="font-medium">{label}</span>
-        <span className="text-xs text-muted-foreground" aria-hidden="true">
-          {t('usageRatio', { used, quota })}
-        </span>
-      </div>
-      <div
-        role="progressbar"
-        aria-valuemin={0}
-        aria-valuemax={quota}
-        aria-valuenow={used}
-        aria-label={t('ariaProgress', { label, used, quota })}
-        className="mt-1 h-2 w-full overflow-hidden rounded-full bg-muted"
-      >
-        {/* UX R5 / S3: `motion-safe:` so future client-side updates
-            to `pct` honour `prefers-reduced-motion`. Server-rendered
-            today, but harmless to gate proactively. */}
-        <div
-          className="h-full bg-primary motion-safe:transition-[width]"
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-      <p className="mt-1 text-xs text-muted-foreground">{t('percentUsed', { percent: pct })}</p>
+      <Progress
+        label={label}
+        value={used}
+        max={Math.max(quota, 1)}
+        showValue
+        valueLabel={t('usageRatio', { used, quota })}
+      />
     </li>
   );
 }

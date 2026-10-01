@@ -7339,7 +7339,12 @@
         "errorReadOnly": "Förnyelsen är pausad medan systemet är i skrivskyddat läge för underhåll. Ingenting debiterades eller ändrades — försök igen om några minuter.",
         "errorRateLimited": "För många förnyelseförsök. Vänta en stund och försök igen.",
         "errorNetwork": "Anslutningsproblem. Kontrollera din internetanslutning och försök igen.",
-        "errorDowngradeNotAcknowledged": "Bekräfta bytet till ett paket med lägre pris innan du fortsätter."
+        "errorDowngradeNotAcknowledged": "Bekräfta bytet till ett paket med lägre pris innan du fortsätter.",
+        "cardTitle": "Bekräfta",
+        "stepsLabel": "Steg i förnyelsen",
+        "stepConfirm": "Bekräfta förnyelse",
+        "stepPay": "Betala faktura",
+        "nextStep": "Därefter kommer du direkt till fakturan och kan betala med kort eller PromptPay."
       },
       "planChange": {
         "label": "Välj ett paket",
@@ -7350,6 +7355,7 @@
         "groupCurrent": "Ditt nuvarande paket",
         "groupDowngrade": "Paket med lägre pris",
         "optionWithPrice": "{label} — {price}",
+        "optionWithPriceCurrent": "{label} — {price} ({current})",
         "priceHeading": "Prisändring",
         "priceCurrent": "Nuvarande låst pris",
         "priceNew": "Nytt pris",
@@ -7390,6 +7396,8 @@
         "downloadBill": "Ladda ner faktura (PDF)",
         "receiptPreparing": "Förbereder kvitto…",
         "viewAllInvoices": "Visa alla fakturor",
+        "processingTitle": "Betalningen har tagits emot",
+        "processingSubtitle": "Vi håller på att bekräfta din förnyelse.",
         "backToPortal": "Tillbaka till portalens startsida"
       }
     },

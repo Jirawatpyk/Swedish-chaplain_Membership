@@ -8,15 +8,22 @@
  * MUST match session-member's memberId.
  *
  * i18n: strings under `portal.renewal.success.*` in EN/TH/SV.
+ *
+ * Spec 122 US7c (boards `Portal-renewal-success` / `-processing`): a centred
+ * hero with a check — "Renewal complete", or "Payment received" while the
+ * renewed cycle has not landed yet — then the "Renewal details" AURA card,
+ * then the actions as AURA link buttons (the receipt download primary, the
+ * rest secondary; full width on a phone). The five download outcomes and
+ * their gates are unchanged.
  */
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { headers } from 'next/headers';
 import { getLocale, getTranslations } from 'next-intl/server';
+import { CircleCheck, LoaderCircle } from 'lucide-react';
+import { Card, StatusPill, buttonClass } from '@jirawatpyk/aura-react/server';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { Card, CardContent } from '@/components/ui/card';
-import { buttonVariants } from '@/components/ui/button';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
@@ -28,6 +35,7 @@ import {
   getInvoice,
   invoiceStatusHasReceipt,
   makeGetInvoiceDeps,
+  type Invoice,
 } from '@/modules/invoicing';
 import {
   PortalInvoiceDownloadButton,
@@ -47,12 +55,6 @@ export default async function RenewalSuccessPage({
   const { invoice: invoiceId } = await searchParams;
   const { user } = await requireSession('member');
   const tenant = resolveTenantFromRequest();
-  const t = await getTranslations('portal.renewal.success');
-  const tStatus = await getTranslations('portal.renewal.success.cycleStatusValue');
-  // R8-M2-ux — separate translator for invoice-action ariaLabels so SR
-  // users hear "Download tax receipt PDF for invoice RC-2026-0001" not
-  // the generic button label "Download receipt PDF" (no number).
-  const tInvoiceActions = await getTranslations('portal.invoices.actions');
   // I16 review-fix: use next-intl formatter for locale-aware date
   // display (TH applies Buddhist Era; SV/EN use Gregorian) instead of
   // raw `.slice(0, 10)` ISO truncation.
@@ -126,161 +128,192 @@ export default async function RenewalSuccessPage({
     : null;
   const invoice = invoiceForReceipt && invoiceForReceipt.ok ? invoiceForReceipt.value : null;
 
+  return renderRenewalSuccessView({
+    locale,
+    cycle: activeCycle ? { status: activeCycle.status, expiresAt: activeCycle.expiresAt } : null,
+    invoiceId: invoiceId ?? null,
+    invoice,
+  });
+}
+
+/**
+ * The success page's presentation, exported for the preview harness
+ * (spec 122 US7c, as the invoice pages do). `cycle` null is the processing
+ * state; `invoiceId` null means the F5 redirect carried no invoice.
+ */
+export async function renderRenewalSuccessView({
+  locale,
+  cycle: activeCycle,
+  invoiceId,
+  invoice,
+}: {
+  readonly locale: string;
+  readonly cycle: { readonly status: string; readonly expiresAt: string } | null;
+  readonly invoiceId: string | null;
+  readonly invoice: Invoice | null;
+}) {
+  const t = await getTranslations('portal.renewal.success');
+  const tStatus = await getTranslations('portal.renewal.success.cycleStatusValue');
+  // R8-M2-ux — separate translator for invoice-action ariaLabels so SR
+  // users hear "Download tax receipt PDF for invoice RC-2026-0001" not
+  // the generic button label "Download receipt PDF" (no number).
+  const tInvoiceActions = await getTranslations('portal.invoices.actions');
+
+  // The board's two heroes: "Renewal complete" only once the cycle is
+  // completed; otherwise (no cycle yet, or one the webhook has not completed)
+  // the processing hero — never "complete" for a cycle that isn't (financial
+  // review, US7c).
+  const processing = activeCycle?.status !== 'completed';
+  // Buttons stack at full width on a phone and sit side by side from 640px.
+  const actionClass = (variant: 'primary' | 'secondary') =>
+    `${buttonClass({ variant, touchHeight: true })} w-full sm:w-auto`;
+
   return (
     <DetailContainer>
-      {/* Staff-Review-2026-05-09 WRN-7 fix: replaced handrolled
-          <header><h1><p></header> with the shared <PageHeader> primitive
-          for visual rhythm parity with sibling portal pages.
+      <div className="mx-auto flex w-full max-w-[720px] flex-col gap-[var(--aura-space-6)]">
+        {/* Board hero. Round-3 UX H2: focus lands on the h1 after the F5
+            redirect, via PageHeader's `autoFocusTitle` (WCAG 2.4.3). */}
+        <div
+          data-testid="renewal-hero"
+          className="flex flex-col items-center gap-[var(--aura-space-3)] text-center [&_header]:items-center [&_header]:text-center [&_h1]:mx-auto"
+        >
+          <span className="grid size-16 place-items-center rounded-full bg-[var(--aura-status-ready-bg)] text-[var(--aura-status-ready-fg)]">
+            <CircleCheck className="size-8" aria-hidden />
+          </span>
+          <PageHeader
+            title={t(processing ? 'processingTitle' : 'title')}
+            subtitle={t(processing ? 'processingSubtitle' : 'subtitle')}
+            size="hero"
+            autoFocusTitle
+          />
+        </div>
 
-          Round-3 UX H2 fix: auto-focus the H1 after F5 redirect so
-          SR + keyboard users land at the heading instead of inheriting
-          focus from Stripe's last-focused payment-form element
-          (WCAG 2.4.3).
-
-          Round-2 R2-W2 follow-up: focus owned by PageHeader's
-          internal ref via `autoFocusTitle` prop (replaces the
-          external <AutoFocusH1> component which mutated `tabIndex`
-          directly on a React-owned DOM node — fragile if PageHeader
-          ever re-rendered client-side). */}
-      <PageHeader title={t('title')} subtitle={t('subtitle')} autoFocusTitle />
-
-      <Card role="region" aria-labelledby="renewal-details-heading">
-        <CardContent className="flex flex-col gap-3">
-          <h2 id="renewal-details-heading" className="text-h4">
-            {t('detailsHeading')}
-          </h2>
+        <Card
+          as="section"
+          title={t('detailsHeading')}
+          titleId="renewal-details-heading"
+          headingLevel={2}
+        >
           {activeCycle ? (
-            // UX R5 / Mobile #1: responsive grid — single column at
-            // <640px so Thai/SV labels don't squeeze the value column.
-            <dl className="grid grid-cols-1 gap-y-2 text-sm sm:grid-cols-2 sm:gap-x-4">
-              <dt className="text-muted-foreground">{t('newExpiry')}</dt>
-              <dd>
-                <time dateTime={activeCycle.expiresAt}>
-                  {formatDatePreset(activeCycle.expiresAt, locale, 'dateLong')}
-                </time>
-              </dd>
-              {/* UX R5 / S3: only show cycle status when it's actually
-                completed. Stripe webhooks land async, so a member
-                redirected from F5 can briefly see status='awaiting_payment'
-                even though the success page heading says "Renewal
-                complete" — confusing. Hiding the row keeps the page
-                consistent until the cycle truly transitions. */}
+            // Board: two columns, each label stacked over its value.
+            <dl className="grid grid-cols-2 gap-x-[var(--aura-space-4)] gap-y-[var(--aura-space-4)] text-sm">
+              <div className="flex min-w-0 flex-col gap-[var(--aura-space-1)]">
+                <dt className="text-[var(--aura-fg-secondary)]">{t('newExpiry')}</dt>
+                <dd className="font-medium">
+                  <time dateTime={activeCycle.expiresAt}>
+                    {formatDatePreset(activeCycle.expiresAt, locale, 'dateLong')}
+                  </time>
+                </dd>
+              </div>
+              {/* UX R5 / S3: the status row shows only once the cycle is
+                  completed — the Stripe webhook lands async, and an
+                  "Awaiting payment" row under this heading would confuse. */}
               {activeCycle.status === 'completed' && (
-                <>
-                  <dt className="text-muted-foreground">{t('cycleStatus')}</dt>
-                  <dd>{tStatus(activeCycle.status)}</dd>
-                </>
+                <div className="flex min-w-0 flex-col items-start gap-[var(--aura-space-1)]">
+                  <dt className="text-[var(--aura-fg-secondary)]">{t('cycleStatus')}</dt>
+                  <dd>
+                    <StatusPill tone="ready">{tStatus(activeCycle.status)}</StatusPill>
+                  </dd>
+                </div>
               )}
             </dl>
           ) : (
-            // Round-3 UX H1 fix: announce the async-processing state to
-            // SR via aria-live="polite" so users hear the transition
-            // when Stripe webhook lands and the page re-renders with
-            // status=completed (WCAG 4.1.3).
-            // Round-3 UX M4 fix: provide a back-to-portal CTA so members
-            // who never see the webhook arrive (network drop, blocked)
-            // have an explicit next step instead of a dead-end page.
-            <div role="status" aria-live="polite" className="space-y-3">
-              <p className="text-sm text-muted-foreground">{t('processing')}</p>
-              <Link
-                href="/portal"
-                className={buttonVariants({ variant: 'outline' })}
-                data-testid="processing-back-to-portal"
-              >
-                {t('backToPortal')}
-              </Link>
+            // Round-3 UX H1: the wait is announced (WCAG 4.1.3). The M4
+            // back-to-portal CTA lives in the actions row below (board).
+            <div role="status" aria-live="polite">
+              <p className="flex items-start gap-[var(--aura-space-2)] text-sm text-[var(--aura-fg-secondary)]">
+                <LoaderCircle className="mt-0.5 size-4 shrink-0 motion-safe:animate-spin" aria-hidden />
+                <span>{t('processing')}</span>
+              </p>
             </div>
           )}
-        </CardContent>
-      </Card>
+        </Card>
 
-      {/* UX R5 / Mobile #2: download receipt is the primary success-
-          page action — must hit ≥36px tap target on mobile. Plain
-          underline link sat at ~14px (text-sm line height) which
-          failed WCAG 2.5.8 on touch. Use the same button-shaped link
-          treatment as backToPortal so both primary actions are
-          visually equivalent.
-          UX R5 / I2: when invoiceId is missing (member navigated to
-          success URL directly, or F5 redirect dropped the param),
-          fall back to "View all invoices" so the receipt is still
-          reachable — empty action row is worse than indirect path. */}
-      <div className="flex flex-wrap items-center gap-3">
-        {(() => {
-          // R7-M6 — render the right download variant based on invoice
-          // state, with a real document number so the fallback filename
-          // is `INV-2026-0042.pdf` (not the bare UUID).
-          // Outline button chrome via the shared `buttonVariants` cva
-          // (default size = h-9 → ≥36px WCAG 2.5.8 tap target) applied
-          // to Link/anchor className — the house pattern (credit-note
-          // page, invoices list) for button-shaped links.
-          const sharedClassName = buttonVariants({ variant: 'outline' });
-          if (!invoiceId) {
-            // No invoice id in URL — F5 redirect dropped the param, or
-            // member navigated here directly. Surface the list page
-            // instead of a dead-end.
-            return (
-              <Link
-                href="/portal/invoices"
-                className={sharedClassName}
-                data-testid="view-invoices-fallback"
-              >
-                {t('viewAllInvoices')}
-              </Link>
-            );
-          }
-          if (
-            invoice &&
-            invoiceStatusHasReceipt(invoice.status) &&
-            invoice.receiptPdfStatus === 'rendered' &&
-            // 092 follow-up — match the three sibling receipt gates (portal
-            // detail `showReceiptPdf`, list-row view-model `showReceipt`, admin
-            // `hasReceiptPdf`), which are ALL blob-gated on `receiptPdf !== null`.
-            // Without it an as-paid row (receiptPdf null BY DESIGN — the main pdf
-            // IS the receipt) or a corrupt two-step row would render a receipt
-            // button whose /receipt/pdf endpoint has no separate blob to serve.
-            invoice.receiptPdf !== null
-          ) {
-            // Receipt rendered on a receipt-bearing invoice — the legal §86/4 +
-            // §105ทวิ doc is what the member should grab. 092 — the status gate is
-            // the receipt-bearing set {paid, partially_credited, credited}, not
-            // `paid` alone: a §86/10 credit note does NOT cancel the §86/4 receipt,
-            // so AFTER a credit note this branch (not the fall-through bill
-            // download at ~L287) still serves the receipt. A credited invoice
-            // always has `receiptPdfStatus === 'rendered'` (the issue-credit-note
-            // precondition), so it matches here first and never reaches the
-            // paid-only branches below. Combined-mode reuses the invoice number;
-            // separate-mode has its own RC-… number.
-            const documentNumber =
-              invoice.receiptDocumentNumberRaw ?? invoice.documentNumber?.raw ?? invoiceId;
-            return (
-              <PortalReceiptDownloadButton
-                invoiceId={invoiceId}
-                documentNumber={documentNumber}
-                label={t('downloadReceipt')}
-                // R8-M2-ux — surface the document number to SR users so
-                // they know WHICH receipt they're about to download.
-                ariaLabel={tInvoiceActions('downloadReceiptAria', {
-                  number: documentNumber,
-                })}
-                data-testid="receipt-download-link"
-                className={sharedClassName}
-              />
-            );
-          }
-          if (invoice && invoice.status === 'paid') {
-            // Paid but receipt PDF still rendering — give the member
-            // the invoice (immediately available) + an explicit "your
-            // receipt is being prepared" affordance.
-            // 088 T069 — an 088 ใบแจ้งหนี้ (bill) carries its number in
-            // `billDocumentNumberRaw`, NOT `documentNumber` (NULL for a bill);
-            // fall back to it before the UUID so the invoice download filename
-            // reads `SC-2026-…` (never the raw UUID) in the new flow.
-            const docNum = billFirstDocumentNumber(invoice) ?? invoiceId;
-            // An 088 bill is a ใบแจ้งหนี้, not a tax invoice — the §86/4 tax
-            // invoice/receipt is the RC issued at payment (see resolveMainPdfKind).
-            const isBill = resolveMainPdfKind(invoice) === 'bill';
-            return (
-              <>
+        {/* UX R5 / I2: with no invoice id (a dropped F5 param, or a direct
+            visit) the list page stays reachable — an empty action row is
+            worse than an indirect path. */}
+        <div className="flex flex-col items-stretch gap-[var(--aura-space-2)] sm:flex-row sm:flex-wrap sm:items-center sm:justify-center">
+          {(() => {
+            // R7-M6 — the download variant follows the invoice state, with a
+            // real document number for the fallback filename.
+            if (!invoiceId) {
+              return (
+                <Link
+                  href="/portal/invoices"
+                  className={actionClass('secondary')}
+                  data-testid="view-invoices-fallback"
+                >
+                  {t('viewAllInvoices')}
+                </Link>
+              );
+            }
+            if (
+              invoice &&
+              invoiceStatusHasReceipt(invoice.status) &&
+              invoice.receiptPdfStatus === 'rendered' &&
+              // 092 follow-up — blob-gated like the three sibling receipt gates
+              // (portal detail, list-row view-model, admin): an as-paid row's
+              // receipt IS the main pdf, so there is no separate blob to serve.
+              invoice.receiptPdf !== null
+            ) {
+              // The §86/4 + §105ทวิ receipt. 092 — the gate is the
+              // receipt-bearing set {paid, partially_credited, credited}: a
+              // §86/10 credit note does not cancel the receipt, so a credited
+              // invoice (always `rendered`) matches here first.
+              const documentNumber =
+                invoice.receiptDocumentNumberRaw ?? invoice.documentNumber?.raw ?? invoiceId;
+              return (
+                <PortalReceiptDownloadButton
+                  invoiceId={invoiceId}
+                  documentNumber={documentNumber}
+                  label={t('downloadReceipt')}
+                  // R8-M2-ux — the document number for screen readers.
+                  ariaLabel={tInvoiceActions('downloadReceiptAria', {
+                    number: documentNumber,
+                  })}
+                  data-testid="receipt-download-link"
+                  className={actionClass('primary')}
+                />
+              );
+            }
+            if (invoice && invoice.status === 'paid') {
+              // Paid, receipt still rendering: the invoice now, plus a busy
+              // "Receipt preparing…" placeholder where the receipt will be.
+              // 088 T069 — a bill carries its number in billDocumentNumberRaw.
+              const docNum = billFirstDocumentNumber(invoice) ?? invoiceId;
+              const isBill = resolveMainPdfKind(invoice) === 'bill';
+              return (
+                <>
+                  <PortalInvoiceDownloadButton
+                    invoiceId={invoiceId}
+                    documentNumber={docNum}
+                    label={t(isBill ? 'downloadBill' : 'downloadInvoice')}
+                    ariaLabel={tInvoiceActions(
+                      isBill ? 'downloadBillAria' : 'downloadInvoiceAria',
+                      { number: docNum },
+                    )}
+                    data-testid="invoice-download-link"
+                    className={actionClass('secondary')}
+                  />
+                  {/* A server-rendered placeholder that never updates: busy,
+                      not a live region (a busy live region never announces —
+                      UX review). */}
+                  <span
+                    aria-busy="true"
+                    className="inline-flex min-h-11 w-full cursor-progress items-center justify-center gap-[var(--aura-space-2)] rounded-full bg-[var(--aura-bg-surface-hover)] px-[var(--aura-space-4)] text-sm text-[var(--aura-fg-secondary)] sm:w-auto"
+                  >
+                    <LoaderCircle className="size-4 shrink-0 motion-safe:animate-spin" aria-hidden />
+                    {t('receiptPreparing')}
+                  </span>
+                </>
+              );
+            }
+            // R8-C1 — an invoice that isn't paid yet: the INVOICE download
+            // with its own label (never "Download receipt").
+            if (invoice) {
+              const docNum = billFirstDocumentNumber(invoice) ?? invoiceId;
+              const isBill = resolveMainPdfKind(invoice) === 'bill';
+              return (
                 <PortalInvoiceDownloadButton
                   invoiceId={invoiceId}
                   documentNumber={docNum}
@@ -290,74 +323,33 @@ export default async function RenewalSuccessPage({
                     { number: docNum },
                   )}
                   data-testid="invoice-download-link"
-                  className={sharedClassName}
+                  className={actionClass('secondary')}
                 />
-                <span
-                  role="status"
-                  aria-live="polite"
-                  aria-busy="true"
-                  className={`${sharedClassName} cursor-progress`}
-                >
-                  {t('receiptPreparing')}
-                </span>
-              </>
-            );
-          }
-          // R8-C1 — invoice exists but not paid (e.g. issued state where
-          // member somehow reached this URL pre-payment). Show the
-          // INVOICE button with the correct "Download invoice" label
-          // (previous code used `t('downloadReceipt')` label — a real
-          // user-confusion bug: members saw "Download receipt PDF" but
-          // got an invoice).
-          if (invoice) {
-            // 088 T069 — bill number lives in `billDocumentNumberRaw` (the
-            // ใบแจ้งหนี้ has NULL `documentNumber` in the new flow).
-            const docNum = billFirstDocumentNumber(invoice) ?? invoiceId;
-            const isBill = resolveMainPdfKind(invoice) === 'bill';
+              );
+            }
+            // The invoice read failed or the member doesn't own it: the list
+            // page rather than a broken button.
             return (
-              <PortalInvoiceDownloadButton
-                invoiceId={invoiceId}
-                documentNumber={docNum}
-                label={t(isBill ? 'downloadBill' : 'downloadInvoice')}
-                ariaLabel={tInvoiceActions(
-                  isBill ? 'downloadBillAria' : 'downloadInvoiceAria',
-                  { number: docNum },
-                )}
-                data-testid="invoice-download-link"
-                className={sharedClassName}
-              />
+              <Link
+                href="/portal/invoices"
+                className={actionClass('secondary')}
+                data-testid="view-invoices-fallback"
+              >
+                {t('viewAllInvoices')}
+              </Link>
             );
-          }
-          // Invoice fetch FAILED entirely (catch path → null) OR member
-          // does not own it (Result.err forbidden/not-found). Don't
-          // dead-end with a broken button; surface the list page so the
-          // member can still reach their other invoices.
-          return (
-            <Link
-              href="/portal/invoices"
-              className={sharedClassName}
-              data-testid="view-invoices-fallback"
-            >
-              {t('viewAllInvoices')}
-            </Link>
-          );
-        })()}
-        {/* In the processing state (activeCycle null) the processing card
-            already renders a `processing-back-to-portal` CTA, so suppress
-            this duplicate here to avoid two identical "Back to portal" links
-            (UX R2-I4). When the cycle is completed this is the sole back CTA. */}
-        {activeCycle ? (
+          })()}
+          {/* Round-3 UX M4: a member whose webhook never arrives is not left
+              at a dead end. One back CTA in every state, at the end of the
+              actions row; the processing test id is kept for e2e. */}
           <Link
             href="/portal"
-            // S-4 review-fix: button-shaped link for primary nav so the
-            // hit area meets WCAG 2.5.8 (≥36px). `buttonVariants` (default
-            // size = h-9) applied to the Link className — no Button/asChild
-            // needed; matches the house pattern used across the portal.
-            className={buttonVariants({ variant: 'outline' })}
+            className={actionClass('secondary')}
+            {...(activeCycle ? {} : { 'data-testid': 'processing-back-to-portal' })}
           >
             {t('backToPortal')}
           </Link>
-        ) : null}
+        </div>
       </div>
     </DetailContainer>
   );

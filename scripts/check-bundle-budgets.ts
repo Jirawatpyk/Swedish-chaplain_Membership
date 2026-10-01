@@ -137,6 +137,11 @@
  *     /admin/renewals/tasks               913.3 KB measured → ≤ 1020 KB (was 1420)
  *     /admin/settings/renewals/schedules  813.8 KB measured → ≤  920 KB (was 1160)
  *
+ *   Spec 122 US7c (AURA portal renewal, 2026-10-01, AURA 5.24.0) — the
+ *   member's online renewal off the legacy kit (its Select, AlertDialog
+ *   and InlineAlert), re-baselined on the branch build:
+ *     /portal/renewal/[memberId]          733.7 KB measured → ≤  840 KB (was 1090)
+ *
  * Run as a post-build step:
  *
  *   pnpm build
@@ -187,7 +192,8 @@ const BUDGETS: ReadonlyArray<RouteBudget> = [
   // Spec 122 US7b-2 re-baseline (AURA escalation tasks) — see docblock.
   { route: '/admin/renewals/tasks', maxKb: 1020 },
   { route: '/admin/renewals/tier-upgrades', maxKb: 950 },
-  { route: '/portal/renewal/[memberId]', maxKb: 1090 },
+  // Spec 122 US7c re-baseline (AURA portal renewal) — see docblock.
+  { route: '/portal/renewal/[memberId]', maxKb: 840 },
   { route: '/portal/preferences/renewals', maxKb: 1040 },
   // PR #24 review-fix — schedule editor is the only F8 admin surface
   // with a non-trivial client component (`ScheduleEditor`); without a

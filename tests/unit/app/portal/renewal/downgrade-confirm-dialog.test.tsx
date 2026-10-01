@@ -1,21 +1,21 @@
 /**
- * WP5 — the downgrade confirmation dialog body.
+ * WP5 — the downgrade confirmation dialog, on AURA since spec 122 US7c.
  *
- * Force-opened via `<AlertDialog open onOpenChange={()=>{}}>` (a full
- * click-to-open flow deadlocks Base UI's portal focus in jsdom). Rendered
- * against the REAL en.json. Verifies the before/after price rows, the numeric
- * quota deltas (rendered only when both from + to are known), and the
- * over-quota warning (shown only when usage already exceeds the new plan).
+ * An AURA alertdialog, rendered open against the REAL en.json. Verifies the
+ * before/after price rows, the numeric quota deltas (rendered only when both
+ * from + to are known), the over-quota warning (shown only when usage already
+ * exceeds the new plan) and that the warning rides on the dialog's accessible
+ * description, so a screen reader hears it when the dialog opens.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
-import { AlertDialog } from '@/components/ui/alert-dialog';
 import {
-  DowngradeConfirmDialogBody,
-  type DowngradeConfirmDialogBodyProps,
-} from '@/app/(member)/portal/renewal/[memberId]/_components/downgrade-confirm-dialog-body';
+  DowngradeConfirmDialog,
+  DOWNGRADE_DIALOG_OVERQUOTA_ID,
+  type DowngradeConfirmDialogProps,
+} from '@/app/(member)/portal/renewal/[memberId]/_components/downgrade-confirm-dialog';
 
 beforeEach(() => {
   vi.useRealTimers();
@@ -25,26 +25,58 @@ afterEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: false });
 });
 
-function renderDialog(overrides?: Partial<DowngradeConfirmDialogBodyProps>) {
+function renderDialog(overrides?: Partial<DowngradeConfirmDialogProps>) {
   return render(
     <NextIntlClientProvider locale="en" messages={enMessages}>
-      <AlertDialog open onOpenChange={() => {}}>
-        <DowngradeConfirmDialogBody
-          currentLabel="Premium"
-          newLabel="Regular"
-          currentPriceMinorUnits={9_000_000} // ฿90,000.00
-          newPriceMinorUnits={5_000_000} // ฿50,000.00
-          submitting={false}
-          onConfirm={() => {}}
-          onCancel={() => {}}
-          {...overrides}
-        />
-      </AlertDialog>
+      <DowngradeConfirmDialog
+        open
+        currentLabel="Premium"
+        newLabel="Regular"
+        currentPriceMinorUnits={9_000_000} // ฿90,000.00
+        newPriceMinorUnits={5_000_000} // ฿50,000.00
+        submitting={false}
+        onConfirm={() => {}}
+        onCancel={() => {}}
+        {...overrides}
+      />
     </NextIntlClientProvider>,
   );
 }
 
-describe('DowngradeConfirmDialogBody (WP5)', () => {
+const dialog = () => screen.getByRole('alertdialog', { name: 'Confirm a lower-priced plan' });
+
+describe('DowngradeConfirmDialog on AURA (US7c)', () => {
+  it('is an AURA alertdialog: Cancel takes first focus, Confirm is the primary action', () => {
+    renderDialog();
+    const cancel = within(dialog()).getByRole('button', { name: 'Keep my current plan' });
+    const confirm = within(dialog()).getByRole('button', { name: 'Yes, switch to this plan' });
+    expect(document.activeElement).toBe(cancel);
+    expect(confirm.className).toMatch(/aura-btn--primary/);
+  });
+
+  it('while the request runs, Confirm is busy and the dialog cannot be dismissed', () => {
+    const onCancel = vi.fn();
+    renderDialog({ submitting: true, onCancel });
+    expect(within(dialog()).getByRole('button', { name: 'Yes, switch to this plan' })).toHaveAttribute(
+      'aria-busy',
+      'true',
+    );
+    fireEvent.keyDown(dialog(), { key: 'Escape' });
+    expect(onCancel).not.toHaveBeenCalled();
+  });
+
+  it('Cancel and Confirm call back', () => {
+    const onCancel = vi.fn();
+    const onConfirm = vi.fn();
+    renderDialog({ onCancel, onConfirm });
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Keep my current plan' }));
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Yes, switch to this plan' }));
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('DowngradeConfirmDialog (WP5)', () => {
   it('renders the title as a heading and the before/after price', () => {
     renderDialog();
     expect(
@@ -84,28 +116,23 @@ describe('DowngradeConfirmDialogBody (WP5)', () => {
   // accessible description. We reference the over-quota region from the
   // popup's `aria-describedby` so a screen reader hears it when the dialog
   // opens (alongside the base description).
-  function popup(): HTMLElement {
-    const el = document.querySelector('[data-slot="alert-dialog-content"]');
-    if (!el) throw new Error('alert-dialog-content not rendered');
-    return el as HTMLElement;
-  }
-
-  it('references BOTH the base description and the over-quota region from aria-describedby when over quota (C4/WCAG 4.1.3)', () => {
+  it('describes the dialog with the switch sentence AND the over-quota region when over quota (C4/WCAG 4.1.3)', () => {
     renderDialog({ eblast: { from: 12, to: 4, used: 6 } });
-    const ids = (popup().getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean);
-    expect(ids).toEqual(
-      expect.arrayContaining(['downgrade-dialog-desc', 'downgrade-dialog-overquota']),
+    const ids = (dialog().getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean);
+    expect(ids).toHaveLength(2);
+    expect(document.getElementById(ids[0]!)?.textContent).toBe(
+      'You are switching from Premium to Regular. This lowers your renewal price and reduces some membership benefits.',
     );
-    const region = document.getElementById('downgrade-dialog-overquota');
-    expect(region).not.toBeNull();
-    expect(region!.textContent).toContain('You have already used 6 of');
+    expect(ids[1]).toBe(DOWNGRADE_DIALOG_OVERQUOTA_ID);
+    expect(document.getElementById(DOWNGRADE_DIALOG_OVERQUOTA_ID)!.textContent).toContain(
+      'You have already used 6 of',
+    );
   });
 
-  it('keeps aria-describedby on the base description only when NOT over quota (C4)', () => {
+  it('describes the dialog with the switch sentence only when NOT over quota (C4)', () => {
     renderDialog({ eblast: { from: 12, to: 4, used: 2 } });
-    const describedby = popup().getAttribute('aria-describedby') ?? '';
-    expect(describedby).toContain('downgrade-dialog-desc');
-    expect(describedby).not.toContain('downgrade-dialog-overquota');
-    expect(document.getElementById('downgrade-dialog-overquota')).toBeNull();
+    const ids = (dialog().getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean);
+    expect(ids).toHaveLength(1);
+    expect(document.getElementById(DOWNGRADE_DIALOG_OVERQUOTA_ID)).toBeNull();
   });
 });

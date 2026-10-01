@@ -3,7 +3,10 @@
  *
  * Rendered by Next.js while the page server component fetches the
  * cycle summary. Mirrors the page's Card layout to avoid layout shift
- * on hydration. Shimmer follows `docs/ux-standards.md § 2.1`.
+ * on hydration. Skeleton blocks follow `docs/ux-standards.md § 2.1`.
+ *
+ * Spec 122 US7c: the board's layout (two columns from `lg`: the plan and
+ * benefit cards left, the confirm card right), AURA cards, shared blocks.
  *
  * S-8 polish (Phase 5 review backlog close): the entire skeleton tree
  * is wrapped in a `role="status" aria-live="polite"` region with a
@@ -23,8 +26,8 @@
  */
 import { getTranslations } from 'next-intl/server';
 import { DetailContainer } from '@/components/layout';
-import { Card, CardContent } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Card } from '@jirawatpyk/aura-react/server';
+import { SkeletonBlock } from '@/components/shell/page-skeletons';
 
 const FALLBACK_LOADING_ANNOUNCE = 'Loading renewal details…';
 
@@ -72,81 +75,73 @@ export default async function RenewalPortalLoading() {
           Real components are responsive — skeleton intentionally
           uses generous fixed heights so post-hydration content
           generally fits without pushing surrounding chrome. */}
-      <div role="status" aria-live="polite" className="space-y-6">
+      <div role="status" aria-live="polite" className="flex flex-col gap-[var(--aura-space-6)]">
         <span className="sr-only">{announce}</span>
-        {/* PageHeader skeleton (mirrors WRN-7 PageHeader primitive) */}
+        {/* PageHeader skeleton */}
         <div>
-          <Skeleton className="h-7 w-40" />
-          <Skeleton className="mt-2 h-4 w-72" />
+          <SkeletonBlock className="h-8 w-48" />
+          <SkeletonBlock className="mt-2 h-4 w-72 max-w-full" />
         </div>
-        {/* Staff-Review-2026-05-09 R2-W1 fix: reserve a slot for the
-            <OnboardingBanner> which conditionally renders for first-
-            time renewers in the real page (`page.tsx:153`). loading.tsx
-            cannot read `summary.isFirstTimeRenewer` (use-case hasn't
-            loaded yet) — the trade-off is ~50px wasted vertical for
-            non-first-renewers vs ~50px CLS for first-renewers. We
-            reserve unconditionally because the first-renewer experience
-            is more sensitive to layout shift (banner content explains
-            the 3-step flow, so any jump distracts from comprehension). */}
-        <Skeleton className="h-12 w-full rounded-lg" />
-        {/* Plan summary card */}
-        <Card>
-          <CardContent>
-            <Skeleton className="mb-3 h-6 w-32" />
-            <div className="grid grid-cols-1 gap-y-2 sm:grid-cols-2 sm:gap-x-4">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className="contents">
-                  <Skeleton className="h-4 w-24" />
-                  <Skeleton className="h-4 w-32" />
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-        {/* Benefit summary card — real BenefitSummary renders ~3
-            progress rows (e-blast, events, member-search, etc.)
-            with bar + label per row. */}
-        <Card>
-          <CardContent>
-            <Skeleton className="mb-3 h-6 w-40" />
-            <div className="space-y-3">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <div key={i} className="space-y-1">
-                  <div className="flex items-baseline justify-between">
-                    <Skeleton className="h-4 w-32" />
-                    <Skeleton className="h-3 w-16" />
-                  </div>
-                  <Skeleton className="h-2 w-full rounded-full" />
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-        {/* RenewalConfirmFlow card — no heading (the real card is an action
-            group: plan select label + select + PriceDiffPanel + confirm CTA). */}
-        <Card>
-          <CardContent className="flex flex-col gap-3">
-            <Skeleton className="h-4 w-32" />
-            <Skeleton className="h-9 w-full" />
-            {/* enterprise-ux B1 — the real PriceDiffPanel renders ALWAYS (C-6,
-                outside the alternatives gate): a bordered box with a heading +
-                3 dl rows (current / new price / delta). Reserve its footprint
-                so the Confirm CTA below does not jump ~110px at hydration on
-                this money-decision screen (CLS = 0, ux-standards § 2.1). */}
-            <div className="rounded-md border p-3">
-              <Skeleton className="mb-3 h-4 w-40" />
-              <div className="space-y-2">
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <div key={i} className="flex items-center justify-between">
-                    <Skeleton className="h-4 w-24" />
-                    <Skeleton className="h-4 w-20" />
+        {/* Staff-Review-2026-05-09 R2-W1: a slot for the first-renewal
+            welcome, reserved unconditionally — a first renewer is the most
+            sensitive to layout shift. */}
+        <SkeletonBlock className="h-16 w-full" />
+        <div className="grid grid-cols-1 gap-[var(--aura-space-6)] lg:grid-cols-[minmax(0,1fr)_420px] lg:items-start">
+          <div className="flex min-w-0 flex-col gap-[var(--aura-space-6)]">
+            {/* Membership plan card: four label/value rows. */}
+            <Card header={<SkeletonBlock className="h-6 w-40" />}>
+              <div className="grid grid-cols-1 gap-x-[var(--aura-space-4)] gap-y-[var(--aura-space-3)] sm:grid-cols-[auto_1fr]">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="contents">
+                    <SkeletonBlock className="h-4 w-24" />
+                    <SkeletonBlock className="h-4 w-40" />
                   </div>
                 ))}
               </div>
+            </Card>
+            {/* Benefit summary card: progress rows. */}
+            <Card header={<SkeletonBlock className="h-6 w-40" />}>
+              <div className="flex flex-col gap-[var(--aura-space-4)]">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="flex flex-col gap-[var(--aura-space-2)]">
+                    <div className="flex items-baseline justify-between">
+                      <SkeletonBlock className="h-4 w-32" />
+                      <SkeletonBlock className="h-3 w-12" />
+                    </div>
+                    <SkeletonBlock className="h-2 w-full rounded-full" />
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </div>
+          {/* Confirm card: stepper, select, price band (always rendered —
+              C-6 — so the CTA below does not jump; enterprise-ux B1), CTA. */}
+          <Card header={<SkeletonBlock className="h-6 w-24" />}>
+            <div className="flex flex-col gap-[var(--aura-space-4)]">
+              <div data-testid="renewal-skeleton-steps" className="flex items-center gap-[var(--aura-space-2)]">
+                <SkeletonBlock className="size-6 rounded-full" />
+                <SkeletonBlock className="h-4 w-28" />
+                <SkeletonBlock className="h-px flex-1" />
+                <SkeletonBlock className="size-6 rounded-full" />
+                <SkeletonBlock className="h-4 w-20" />
+              </div>
+              <div className="flex flex-col gap-[var(--aura-space-2)]">
+                <SkeletonBlock className="h-4 w-28" />
+                <SkeletonBlock className="h-9 w-full" />
+              </div>
+              <div className="flex flex-col gap-[var(--aura-space-2)] rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface-hover)] p-[var(--aura-space-3)]">
+                <SkeletonBlock className="h-3 w-24" />
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="flex items-center justify-between">
+                    <SkeletonBlock className="h-4 w-32" />
+                    <SkeletonBlock className="h-4 w-24" />
+                  </div>
+                ))}
+              </div>
+              <SkeletonBlock data-testid="renewal-skeleton-cta" className="h-11 w-full" />
             </div>
-            <Skeleton className="h-9 w-full sm:w-40" />
-          </CardContent>
-        </Card>
+          </Card>
+        </div>
       </div>
     </DetailContainer>
   );

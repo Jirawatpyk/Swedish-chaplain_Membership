@@ -7339,7 +7339,12 @@
         "errorReadOnly": "Renewal is paused while the system is in read-only mode for maintenance. Nothing was charged or changed — try again in a few minutes.",
         "errorRateLimited": "Too many renewal attempts. Please wait a few minutes and try again.",
         "errorNetwork": "Connection issue. Please check your internet and try again.",
-        "errorDowngradeNotAcknowledged": "Please confirm the lower-priced plan change before continuing."
+        "errorDowngradeNotAcknowledged": "Please confirm the lower-priced plan change before continuing.",
+        "cardTitle": "Confirm",
+        "stepsLabel": "Renewal steps",
+        "stepConfirm": "Confirm renewal",
+        "stepPay": "Pay invoice",
+        "nextStep": "Next, you go straight to the invoice to pay by card or PromptPay."
       },
       "planChange": {
         "label": "Choose a plan",
@@ -7350,6 +7355,7 @@
         "groupCurrent": "Your current plan",
         "groupDowngrade": "Lower-priced plans",
         "optionWithPrice": "{label} — {price}",
+        "optionWithPriceCurrent": "{label} — {price} ({current})",
         "priceHeading": "Price change",
         "priceCurrent": "Current locked-in price",
         "priceNew": "New price",
@@ -7390,6 +7396,8 @@
         "downloadBill": "Download invoice PDF",
         "receiptPreparing": "Receipt preparing…",
         "viewAllInvoices": "View all invoices",
+        "processingTitle": "Payment received",
+        "processingSubtitle": "We're confirming your renewal.",
         "backToPortal": "Back to portal home"
       }
     },
