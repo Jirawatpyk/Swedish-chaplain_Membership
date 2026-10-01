@@ -22,16 +22,9 @@
 import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
-import {
-  Plus,
-  Eye,
-  CalendarPlus,
-  Loader2,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { CalendarPlus } from 'lucide-react';
+import { ActionBar, Alert, Button, Tabs, type TabItem } from '@jirawatpyk/aura-react';
 import { EmptyState } from '@/components/shell/empty-state';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { InlineAlert, InlineAlertDescription } from '@/components/ui/inline-alert';
 import { LiveRegion } from '@/components/shell/live-region';
 
 // Client-safe sub-barrel — see `tier-filter-select.tsx` for rationale.
@@ -465,208 +458,175 @@ export function ScheduleEditor({
     return () => window.removeEventListener('beforeunload', handler);
   }, [dirtyBuckets]);
 
-  return (
-    <Tabs
-      value={activeBucket}
-      onValueChange={(v) => setActiveBucket(v as TierBucket)}
-    >
-      <TabsList className="flex-wrap">
-        {TIER_BUCKETS.map((b) => (
-          <TabsTrigger key={b} value={b}>
-            {t(`tabs.${b}`)}
-          </TabsTrigger>
-        ))}
-      </TabsList>
-
-      {/* I3 — always mounted (empty content on first render); a
-          conditionally-mounted live region is not announced by most
-          screen readers. Updated by onMoveUp/onMoveDown below. */}
-      <LiveRegion politeness="polite">{reorderAnnouncement}</LiveRegion>
-
-      {readOnly ? (
-        // I2 follow-up fix — this notice is INFORMATIONAL ("you're in
-        // read-only mode"), not a warning; raw amber read as a warning
-        // tone. `InlineAlert tone="info"` matches the semantic-color
-        // token, `role="status"` preserved from the original CardContent.
-        <InlineAlert tone="info" role="status" className="mt-3">
-          <Eye aria-hidden="true" />
-          <InlineAlertDescription>{t('manager.readOnlyNotice')}</InlineAlertDescription>
-        </InlineAlert>
-      ) : null}
-
-      {TIER_BUCKETS.map((b) => {
-        const steps = stepsFor(b);
-        const lastSavedAt = byBucket[b]?.updated_at;
-        return (
-          <TabsContent key={b} value={b} className="mt-4">
-            <div className="flex flex-col gap-4">
-              <ReminderTimeline tierBucket={b} steps={steps} />
-              {steps.length === 0 ? (
-                /*
-                 * J8-M28: replaced the bare-text "No schedule policies"
-                 * placeholder with the standard `<EmptyState>` anatomy
-                 * from `docs/ux-standards.md` § 3.1 — icon + title +
-                 * description + primary CTA. The CTA inserts the first
-                 * step locally so admin can immediately start editing
-                 * (the save button persists at the bottom of the tab).
-                 */
-                <EmptyState
-                  icon={CalendarPlus}
-                  title={t('empty.noPoliciesTitle')}
-                  description={t('empty.noPoliciesDescription')}
-                  action={
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={readOnly}
-                      onClick={() => replaceSteps(b, [emptyStep(b, steps)])}
-                    >
-                      <Plus aria-hidden="true" className="mr-1 h-4 w-4" />
-                      {t('actions.addStep')}
-                    </Button>
-                  }
-                />
-              ) : null}
-              {steps.map((step, idx) => (
-                <StepCard
-                  // K5: previously `${b}-${idx}` — array-index keys make
-                  // React reconciliation diff by position, so when admin
-                  // clicks Move-up/Move-down the input field values
-                  // appeared to swap (state stayed bound to the index
-                  // that no longer pointed at the same step).
-                  //
-                  // v3 rework (Change 3): `${b}-${step.step_id}` (the K5
-                  // fix) was itself a bug — `step_id` is recomposed on
-                  // every timing/channel edit (including every keystroke
-                  // in the new custom-day input), so the key changed
-                  // mid-edit and remounted the card, dropping focus.
-                  // `_uiKey` is generated once per step and never
-                  // recomputed on edit — see its doc comment above.
-                  key={step._uiKey}
-                  tierBucket={b}
-                  step={step}
-                  index={idx}
-                  total={steps.length}
-                  readOnly={readOnly}
-                  siblingSteps={steps.filter((_, i) => i !== idx)}
-                  onChange={(next) => {
-                    const arr = [...steps];
-                    arr[idx] = next;
-                    replaceSteps(b, arr);
-                  }}
-                  onRemove={() => {
-                    /*
-                     * J8-M26: Remove-step is locally destructive (the
-                     * step disappears from the editor's draft list)
-                     * but reversible until the admin clicks Save —
-                     * after Save the server-side upsert removes the
-                     * step from the policy's persisted JSONB. ux-
-                     * standards § 5.3 calls for an Undo affordance
-                     * on reversible destructive actions; the toast's
-                     * `action` renders an inline 8s Undo button.
-                     * The captured `previousSteps` snapshot restores
-                     * the exact array (including the removed step's
-                     * field values) — admin can experiment freely
-                     * before committing.
-                     */
-                    const previousSteps = [...steps];
-                    const arr = [...steps];
-                    arr.splice(idx, 1);
-                    replaceSteps(b, arr);
-                    toast.info(t('actions.stepRemoved'), {
-                      duration: 8_000,
-                      action: {
-                        label: t('actions.undo'),
-                        onClick: () => replaceSteps(b, previousSteps),
-                      },
-                    });
-                  }}
-                  onMoveUp={() => {
-                    if (idx === 0) return;
-                    const arr = [...steps];
-                    const prev = arr[idx - 1]!;
-                    const cur = arr[idx]!;
-                    arr[idx - 1] = cur;
-                    arr[idx] = prev;
-                    replaceSteps(b, arr);
-                    // I3 — new 1-based position of the step that just moved
-                    // (0-based idx-1, so 1-based is idx).
-                    setReorderAnnouncement(
-                      t('reorder.announce', { position: idx, total: steps.length }),
-                    );
-                  }}
-                  onMoveDown={() => {
-                    if (idx === steps.length - 1) return;
-                    const arr = [...steps];
-                    const cur = arr[idx]!;
-                    const nxt = arr[idx + 1]!;
-                    arr[idx] = nxt;
-                    arr[idx + 1] = cur;
-                    replaceSteps(b, arr);
-                    // I3 — new 1-based position (0-based idx+1, so 1-based
-                    // is idx+2).
-                    setReorderAnnouncement(
-                      t('reorder.announce', { position: idx + 2, total: steps.length }),
-                    );
-                  }}
-                />
-              ))}
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex flex-col text-xs text-muted-foreground">
-                  <span aria-live="polite">
-                    {t('stepCount', { count: steps.length })}
-                  </span>
-                  {lastSavedAt ? (
-                    <span>
-                      {t('lastSaved', {
-                        date: formatDatePreset(lastSavedAt, locale, 'dateTimeMedium'),
-                      })}
-                    </span>
-                  ) : null}
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={readOnly || pending}
-                    onClick={() => replaceSteps(b, [...steps, emptyStep(b, steps)])}
-                  >
-                    <Plus aria-hidden="true" className="mr-1 h-4 w-4" />
-                    {t('actions.addStep')}
-                  </Button>
-                  <Button
-                    type="button"
-                    disabled={readOnly || pending || steps.length === 0}
-                    aria-busy={pending}
-                    onClick={() => handleSave(b)}
-                  >
-                    {pending ? (
-                      <>
-                        <Loader2
-                          aria-hidden="true"
-                          className="mr-1 h-4 w-4 motion-safe:animate-spin"
-                        />
-                        {t('actions.saving')}
-                      </>
-                    ) : (
-                      t('actions.save')
-                    )}
-                  </Button>
-                </div>
-              </div>
-              {saveError ? (
-                <div
-                  role="alert"
-                  aria-live="assertive"
-                  className="text-sm text-destructive"
+  // 122 US7b-2 (T738), boards `Admin-renewal-schedules` (+`-mobile`): the
+  // tiers are AURA Tabs named "Member tier". Every panel stays mounted
+  // (`keepMounted`) because each tier keeps its own unsaved edits.
+  const tabs: TabItem[] = TIER_BUCKETS.map((b) => {
+    const steps = stepsFor(b);
+    const lastSavedAt = byBucket[b]?.updated_at;
+    const status = [
+      t('stepCount', { count: steps.length }),
+      ...(lastSavedAt
+        ? [t('lastSaved', { date: formatDatePreset(lastSavedAt, locale, 'dateTimeMedium') })]
+        : []),
+    ].join(' · ');
+    return {
+      id: b,
+      label: t(`tabs.${b}`),
+      content: (
+        <div className="flex flex-col gap-[var(--aura-space-4)] pt-[var(--aura-space-4)]">
+          <h2 className="m-0 text-base font-semibold text-[var(--aura-fg-primary)]">{t(`tabs.${b}`)}</h2>
+          <ReminderTimeline tierBucket={b} steps={steps} />
+          {steps.length === 0 ? (
+            // J8-M28: the standard EmptyState (icon, title, description,
+            // CTA); the CTA adds the first step locally.
+            <EmptyState
+              icon={CalendarPlus}
+              title={t('empty.noPoliciesTitle')}
+              description={t('empty.noPoliciesDescription')}
+              action={
+                <Button
+                  variant="secondary"
+                  icon="plus"
+                  disabled={readOnly}
+                  onClick={() => replaceSteps(b, [emptyStep(b, steps)])}
                 >
-                  {saveError}
-                </div>
-              ) : null}
-            </div>
-          </TabsContent>
-        );
-      })}
-    </Tabs>
+                  {t('actions.addStep')}
+                </Button>
+              }
+            />
+          ) : (
+            <ol className="m-0 flex list-none flex-col gap-[var(--aura-space-3)] p-0">
+              {steps.map((step, idx) => (
+                // Keyed by `_uiKey`, generated once per step: `step_id` is
+                // recomposed on every timing edit, and an index key would
+                // swap field values on a reorder (K5, v3 Change 3).
+                <li key={step._uiKey} aria-label={t('stepItem', { n: idx + 1 })}>
+                  <StepCard
+                    tierBucket={b}
+                    step={step}
+                    index={idx}
+                    total={steps.length}
+                    readOnly={readOnly}
+                    siblingSteps={steps.filter((_, i) => i !== idx)}
+                    onChange={(next) => {
+                      const arr = [...steps];
+                      arr[idx] = next;
+                      replaceSteps(b, arr);
+                    }}
+                    onRemove={() => {
+                      /*
+                       * J8-M26: Remove-step is locally destructive (the
+                       * step disappears from the editor's draft list)
+                       * but reversible until the admin clicks Save —
+                       * after Save the server-side upsert removes the
+                       * step from the policy's persisted JSONB. ux-
+                       * standards § 5.3 calls for an Undo affordance
+                       * on reversible destructive actions; the toast's
+                       * `action` renders an inline 8s Undo button.
+                       * The captured `previousSteps` snapshot restores
+                       * the exact array (including the removed step's
+                       * field values) — admin can experiment freely
+                       * before committing.
+                       */
+                      const previousSteps = [...steps];
+                      const arr = [...steps];
+                      arr.splice(idx, 1);
+                      replaceSteps(b, arr);
+                      toast.info(t('actions.stepRemoved'), {
+                        duration: 8_000,
+                        action: {
+                          label: t('actions.undo'),
+                          onClick: () => replaceSteps(b, previousSteps),
+                        },
+                      });
+                    }}
+                    onMoveUp={() => {
+                      if (idx === 0) return;
+                      const arr = [...steps];
+                      const prev = arr[idx - 1]!;
+                      const cur = arr[idx]!;
+                      arr[idx - 1] = cur;
+                      arr[idx] = prev;
+                      replaceSteps(b, arr);
+                      // I3 — new 1-based position of the step that just moved
+                      // (0-based idx-1, so 1-based is idx).
+                      setReorderAnnouncement(
+                        t('reorder.announce', { position: idx, total: steps.length }),
+                      );
+                    }}
+                    onMoveDown={() => {
+                      if (idx === steps.length - 1) return;
+                      const arr = [...steps];
+                      const cur = arr[idx]!;
+                      const nxt = arr[idx + 1]!;
+                      arr[idx] = nxt;
+                      arr[idx + 1] = cur;
+                      replaceSteps(b, arr);
+                      // I3 — new 1-based position (0-based idx+1, so 1-based
+                      // is idx+2).
+                      setReorderAnnouncement(
+                        t('reorder.announce', { position: idx + 2, total: steps.length }),
+                      );
+                    }}
+                  />
+                </li>
+              ))}
+            </ol>
+          )}
+          {/* One error for the editor, shown in the tier being saved. */}
+          {saveError && b === activeBucket ? (
+            <Alert tone="danger" role="alert">
+              {saveError}
+            </Alert>
+          ) : null}
+          {/* The save bar: under the steps from 640px, pinned to the bottom of
+              a phone screen (globals.css, `.schedule-actions`). */}
+          <ActionBar
+            label={t('saveBarLabel')}
+            status={status}
+            className="chamber-viewport-actionbar schedule-actions"
+          >
+            <Button
+              variant="secondary"
+              icon="plus"
+              disabled={readOnly || pending}
+              onClick={() => replaceSteps(b, [...steps, emptyStep(b, steps)])}
+            >
+              {t('actions.addStep')}
+            </Button>
+            <Button
+              variant="primary"
+              loading={pending}
+              disabled={readOnly || steps.length === 0}
+              onClick={() => handleSave(b)}
+            >
+              {pending ? t('actions.saving') : t('actions.save')}
+            </Button>
+          </ActionBar>
+        </div>
+      ),
+    };
+  });
+
+  return (
+    <div className="flex flex-col gap-[var(--aura-space-3)]">
+      {/* I3 — always mounted; a conditionally-mounted live region is not
+          announced by most screen readers. Updated by onMoveUp/onMoveDown. */}
+      <LiveRegion politeness="polite">{reorderAnnouncement}</LiveRegion>
+      {readOnly ? (
+        // I2 — informational ("you're in read-only mode"), not a warning.
+        <Alert tone="info" role="status">
+          {t('manager.readOnlyNotice')}
+        </Alert>
+      ) : null}
+      <Tabs
+        label={t('tierTabsLabel')}
+        tabs={tabs}
+        value={activeBucket}
+        onChange={(v) => setActiveBucket(v as TierBucket)}
+        keepMounted
+      />
+    </div>
   );
 }

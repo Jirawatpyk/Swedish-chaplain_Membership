@@ -28,8 +28,6 @@ import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 import { randomUUID } from 'node:crypto';
 import { getTranslations } from 'next-intl/server';
-import { AlertTriangle } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { env } from '@/lib/env';
@@ -41,7 +39,7 @@ import {
   makeRenewalsDeps,
   reminderStepToJson,
 } from '@/modules/renewals';
-import { ErrorCardActions } from '@/components/shell/error-card-actions';
+import { renderSchedulesStateView } from './_components/schedules-state-view';
 import {
   ScheduleEditor,
   type SchedulePolicyWire,
@@ -57,19 +55,10 @@ export default async function RenewalSchedulesSettingsPage() {
   await requirePagePermission('settings.renewal_schedules');
 
   if (!env.features.f8Renewals) {
-    const tShared = await getTranslations('admin.renewals');
     return (
       <FormContainer>
         <PageHeader title={t('title')} subtitle={t('subtitle')} />
-        <Card>
-          <CardContent
-            role="status"
-            aria-live="polite"
-            className="py-12 text-center text-muted-foreground"
-          >
-            {tShared('error.featureDisabled')}
-          </CardContent>
-        </Card>
+        {await renderSchedulesStateView({ kind: 'disabled' })}
       </FormContainer>
     );
   }
@@ -95,43 +84,10 @@ export default async function RenewalSchedulesSettingsPage() {
       },
       'renewals schedule-settings page: loadSchedulePolicies failed',
     );
-    const tShared = await getTranslations('admin.renewals');
     return (
       <FormContainer>
         <PageHeader title={t('title')} subtitle={t('subtitle')} />
-        <Card>
-          <CardContent
-            role="alert"
-            aria-live="assertive"
-            className="flex flex-col items-center gap-4 py-12 text-center"
-          >
-            <AlertTriangle
-              aria-hidden="true"
-              className="h-10 w-10 text-destructive"
-            />
-            <div className="text-base font-medium text-destructive">
-              {tShared('error.loadFailed')}
-            </div>
-            {/*
-              K3-BLK-2 + K12-1 (UX-K-3): error state was missing a
-              Retry CTA. K3 added one as a `<Link>` with `_retry`
-              query param — K12-1 replaces that with the shared
-              `ErrorCardActions` client component which runs
-              `router.refresh()` inside `useTransition`. Semantic
-              button, no URL pollution, pending state during the
-              RSC re-fetch.
-            */}
-            <ErrorCardActions
-              correlationId={correlationId}
-              goBackHref="/admin/renewals"
-              retryLabel={tShared('error.retry')}
-              pendingLabel={tShared('error.retrying')}
-              retryFailedLabel={tShared('error.retryFailed')}
-              goBackLabel={tShared('error.goBack')}
-              referenceLabel={tShared('error.referenceLabel')}
-            />
-          </CardContent>
-        </Card>
+        {await renderSchedulesStateView({ kind: 'failed', correlationId })}
       </FormContainer>
     );
   }

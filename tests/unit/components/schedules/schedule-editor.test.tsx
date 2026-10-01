@@ -742,7 +742,7 @@ describe('<ScheduleEditor> on AURA (T738)', () => {
     renderEditor();
     fireEvent.click(screen.getAllByRole('button', { name: /add step/i })[0]!);
     const bar = screen.getByRole('region', { name: messages.admin.renewals.settings.schedules.saveBarLabel });
-    expect(bar).toHaveClass('aura-action-bar');
+    expect(bar.closest('.aura-actionbar') ?? bar.querySelector('.aura-actionbar')).not.toBeNull();
     expect(bar).toHaveTextContent('1 step');
     expect(within(bar).getByRole('button', { name: 'Add step' })).toBeInTheDocument();
     expect(within(bar).getByRole('button', { name: 'Save schedule' })).toHaveClass('aura-btn--primary');

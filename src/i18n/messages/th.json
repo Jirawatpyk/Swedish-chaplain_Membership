@@ -4422,7 +4422,10 @@
             "announce": "ย้ายขั้นตอนไปตำแหน่งที่ {position} จาก {total}"
           },
           "lastSaved": "บันทึกล่าสุด {date}",
-          "stepCount": "{count, plural, =0 {ไม่มีขั้นตอน} other {{count} ขั้นตอน}}"
+          "stepCount": "{count, plural, =0 {ไม่มีขั้นตอน} other {{count} ขั้นตอน}}",
+          "tierTabsLabel": "ระดับสมาชิก",
+          "saveBarLabel": "บันทึก",
+          "stepItem": "ขั้นที่ {n}"
         }
       },
       "workQueue": {

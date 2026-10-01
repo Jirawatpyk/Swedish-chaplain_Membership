@@ -4422,7 +4422,10 @@
             "announce": "Steg flyttat till position {position} av {total}"
           },
           "lastSaved": "Senast sparad {date}",
-          "stepCount": "{count, plural, =0 {Inga steg} one {1 steg} other {{count} steg}}"
+          "stepCount": "{count, plural, =0 {Inga steg} one {1 steg} other {{count} steg}}",
+          "tierTabsLabel": "Medlemsnivå",
+          "saveBarLabel": "Spara",
+          "stepItem": "Steg {n}"
         }
       },
       "workQueue": {
