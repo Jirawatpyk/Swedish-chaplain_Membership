@@ -174,6 +174,8 @@ describe('TierUpgradeQueueClient — WP6', () => {
   it('renders the shared empty state when there are no items', () => {
     renderQueue([]);
     expect(screen.getByTestId('tier-upgrades-empty')).toBeInTheDocument();
+    // 122 US7b-1 (T726): the settings link is an AURA secondary button.
+    expect(screen.getByRole('link', { name: T.empty_state.cta })).toHaveClass('aura-btn', 'aura-btn--secondary');
     expect(
       screen.getByText(
         enMessages.admin.renewals.tier_upgrades.empty_state.title,

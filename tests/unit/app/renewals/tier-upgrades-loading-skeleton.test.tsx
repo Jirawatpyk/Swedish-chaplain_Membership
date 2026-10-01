@@ -1,10 +1,10 @@
 /**
  * WP8 (BP5 item 2) — tier-upgrade loading skeleton CLS parity.
  *
- * The live page renders the queue in a `rounded-md border` wrapper (NOT a
- * Card) beneath a tab strip. The skeleton must mirror that shape so the loaded
- * table doesn't shift the layout. Async RSC body is invoked directly (mirrors
- * the portal dashboard-loading test).
+ * 122 US7b-1 (T726): the live page renders the section tabs and the queue in
+ * one AURA card (frameless on a phone), so the skeleton draws the same card
+ * with a static tab strip ahead of the rows, on AURA skeleton blocks. Async
+ * RSC body is invoked directly (mirrors the portal dashboard-loading test).
  */
 import { describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -18,42 +18,38 @@ vi.mock('next-intl/server', () => ({
 
 import Loading from '@/app/(staff)/admin/renewals/tier-upgrades/loading';
 
-async function html(): Promise<string> {
-  return renderToStaticMarkup((await Loading()) as ReactElement);
+async function dom(): Promise<HTMLElement> {
+  const host = document.createElement('div');
+  host.innerHTML = renderToStaticMarkup((await Loading()) as ReactElement);
+  return host;
 }
 
 describe('tier-upgrades loading skeleton', () => {
-  it('uses the rounded-md border wrapper the live page uses, not a Card', async () => {
-    const out = await html();
-    expect(out).not.toContain('data-slot="card"');
-    expect(out).toContain('rounded-md border');
+  it('draws the page card, frameless on a phone, on AURA skeleton blocks', async () => {
+    const host = await dom();
+    const card = host.querySelector('.aura-card');
+    expect(card).toHaveClass('aura-card--flush-below-sm', 'max-sm:border-0', 'max-sm:p-0');
+    expect(host.querySelector('[data-slot="skeleton"]')).toBeNull();
+    expect(host.querySelectorAll('[data-slot="skeleton-block"]').length).toBeGreaterThan(0);
   });
 
-  it('renders a static tab-strip skeleton ahead of the table', async () => {
-    const out = await html();
-    const tabIdx = out.indexOf('data-slot="tab-strip-skeleton"');
-    const tableIdx = out.indexOf('rounded-md border');
-    expect(tabIdx).toBeGreaterThanOrEqual(0);
-    expect(tableIdx).toBeGreaterThan(tabIdx);
+  it('renders a static tab-strip skeleton ahead of the rows, inside the card', async () => {
+    const host = await dom();
+    const card = host.querySelector('.aura-card') as HTMLElement;
+    const tabs = card.querySelector('[data-slot="tab-strip-skeleton"]');
+    const firstRow = card.querySelector('[data-slot="reason-skeleton"]');
+    expect(tabs).not.toBeNull();
+    expect(firstRow).not.toBeNull();
+    expect(tabs!.compareDocumentPosition(firstRow!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it('announces loading via a role=status live region', async () => {
-    expect(await html()).toContain('role="status"');
+  it('announces loading via one role=status live region', async () => {
+    const host = await dom();
+    expect(host.querySelectorAll('[role="status"]')).toHaveLength(1);
   });
 
   it('keeps the table layout container (structural parity with the page)', async () => {
-    const out = await html();
-    expect(out).toContain('data-slot="layout-container"');
-    expect(out).toContain('data-variant="table"');
-  });
-
-  it('mirrors the live 2-line reason cell to hold CLS (WP-P5)', async () => {
-    const out = await html();
-    // The reason column renders a dedicated 2-line skeleton block (reason label
-    // + evidence sub-line), not a single line — one line under-measured the row.
-    expect(out).toContain('data-slot="reason-skeleton"');
-    // Proportional columns (grid-cols-12) replaced equal grid-cols-6.
-    expect(out).toContain('grid-cols-12');
-    expect(out).not.toContain('grid-cols-6');
+    const host = await dom();
+    expect(host.querySelector('[data-slot="layout-container"]')).toHaveAttribute('data-variant', 'table');
   });
 });

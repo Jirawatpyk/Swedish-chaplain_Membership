@@ -48,6 +48,15 @@ describe('tier-upgrades error boundary', () => {
     expect(reset).toHaveBeenCalledTimes(1);
   });
 
+  it('shows the shared AURA error panel, not the legacy card (122 US7b-1, T726)', () => {
+    const { container } = renderErr(TierUpgradesError, {
+      error: new Error('x'),
+      reset: vi.fn(),
+    });
+    expect(container.querySelector('[role="alert"] .aura-empty')).not.toBeNull();
+    expect(container.querySelector('[data-slot="card"]')).toBeNull();
+  });
+
   it('renders inside the table layout container', () => {
     const { container } = renderErr(TierUpgradesError, {
       error: new Error('x'),
