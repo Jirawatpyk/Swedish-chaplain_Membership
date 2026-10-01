@@ -126,7 +126,7 @@ describeBlock('plan-change UX — portal renewal downgrade gate', () => {
 
     const dialog = page.getByRole('alertdialog');
     await expect(dialog).toBeVisible();
-    // AlertDialogTitle IS a heading (base-ui), unlike shadcn CardTitle.
+    // 122 US7c: the AURA alertdialog's title is an h2.
     await expect(
       dialog.getByRole('heading', { name: /confirm a lower-priced plan/i }),
     ).toBeVisible();
