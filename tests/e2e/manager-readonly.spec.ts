@@ -191,7 +191,6 @@ test.describe('T271 — F8 manager read-only (Constitution RBAC + FR-003)', () =
 
   test('direct POST to F8 mutating endpoint → 403 forbidden', async ({
     page,
-    request,
   }) => {
     // Sign in via the page so the session cookie is set on the
     // shared context.
@@ -206,11 +205,25 @@ test.describe('T271 — F8 manager read-only (Constitution RBAC + FR-003)', () =
     // corrected from `/send-reminder` (404) to `/send-reminder-now`,
     // and 404 dropped from the accept-array so a future route rename
     // surfaces as a real failure.
+    //
+    // Two things this request MUST get right, or the 403 it asserts comes
+    // from somewhere else entirely (both were wrong until R22, 1 Oct 2026):
+    //  1. `page.request`, never the top-level `request` fixture — only the
+    //     page's context carries the manager session cookie. The bare
+    //     fixture has an empty jar and yields 401 `no_session`.
+    //  2. An `Origin` header — `src/lib/csrf.ts` rejects a state-changing
+    //     `/api/**` request without one, with its OWN 403
+    //     (`{"error":"csrf-rejected","reason":"missing-origin"}`), so the
+    //     status assertion below passed while the route was never reached.
+    // Same shape as `manager-read-only.spec.ts` and ~20 other call sites.
     const cycleId = E2E_RENEWAL_CYCLE_ID ?? '00000000-0000-0000-0000-000000000000';
-    const resp = await request.post(
+    const resp = await page.request.post(
       `/api/admin/renewals/${cycleId}/send-reminder-now`,
       {
-        headers: { 'content-type': 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          Origin: new URL(page.url()).origin,
+        },
         data: {},
         failOnStatusCode: false,
       },
@@ -218,7 +231,13 @@ test.describe('T271 — F8 manager read-only (Constitution RBAC + FR-003)', () =
     // Expect 403 (forbidden) — NOT 401 (manager IS authenticated)
     // NOT 404 (route exists). 200 would be a security failure.
     expect(resp.status()).toBe(403);
-    const body = await resp.json().catch(() => ({}));
-    expect(JSON.stringify(body)).toMatch(/forbidden|role|rbac/i);
+    // Assert the ROUTE's own envelope, not a regex over the whole JSON:
+    // `requireRenewalAdminContext` denies with `{ error: { code:
+    // 'forbidden' }, correlationId }`. A CSRF reject carries
+    // `error: 'csrf-rejected'`, which this cannot satisfy.
+    const body = (await resp.json().catch(() => ({}))) as {
+      error?: { code?: string };
+    };
+    expect(body.error?.code).toBe('forbidden');
   });
 });

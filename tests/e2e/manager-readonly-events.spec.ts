@@ -59,39 +59,61 @@ test.describe('T140 — F6 manager read-only (Constitution RBAC + FR-035)', () =
     ).toHaveCount(0);
   });
 
-  test('manager request to /admin/settings/integrations/eventcreate returns 404 (FR-035)', async ({
+  test('manager request to /admin/settings/integrations/eventcreate is denied (FR-035)', async ({
     page,
   }) => {
     await signInAsManager(page);
     // Correct URL — page lives at /admin/settings/integrations/eventcreate
-    // (not /admin/integrations/eventcreate as the previous test asserted).
-    // FR-035: page.tsx calls notFound() when session.role !== 'admin'.
-    // Surface disclosure is denied at navigation, not via hiding buttons —
-    // the prior `toHaveCount(0)` assertion passed for the WRONG reason
-    // (404 page contains zero of those buttons).
-    const response = await page.goto(
+    // (not /admin/integrations/eventcreate as a still earlier version
+    // asserted). FR-035: the page calls `requirePagePermission(
+    // 'settings.integrations')`, which a manager does not hold, so it ends in
+    // `notFound()`.
+    //
+    // R22 (1 Oct 2026) — do NOT assert `status() === 404`. The staff shell
+    // streams before the guard resolves, so the document response is a 200
+    // that CARRIES the not-found marker; the settled page reads "Page not
+    // available … it isn't available to your role". Asserting the status was
+    // the third wrong-reason pass this one test has had. Use the repo idiom
+    // (`rbac-admin-persona.spec.ts` `assertDenied`): accept 200 or 404 and
+    // require the marker in the body.
+    const res = await page.context().request.get(
       '/admin/settings/integrations/eventcreate',
+      { failOnStatusCode: false, maxRedirects: 0 },
     );
-    expect(response?.status()).toBe(404);
+    expect(
+      [200, 404],
+      'must be a not-found, not a redirect',
+    ).toContain(res.status());
+    expect(await res.text()).toMatch(
+      /<meta\s+name="next-error"\s+content="not-found"|NEXT_HTTP_ERROR_FALLBACK;404/,
+    );
   });
 
-  test('direct API POST to /api/admin/events/[eventId]/archive returns 403/404', async ({
+  test('direct API POST to /api/admin/events/[eventId]/archive returns 403', async ({
     page,
-    request,
   }) => {
     await signInAsManager(page);
-    // Reuse manager's session cookies via the test request context
-    const cookies = await page.context().cookies();
-    const cookieHeader = cookies
-      .map((c) => `${c.name}=${c.value}`)
-      .join('; ');
-    const res = await request.post(
+    // `page.request` shares the browser context's cookie jar, so the
+    // manager session travels with the POST — no hand-built `cookie`
+    // header. The `Origin` header is required: `src/lib/csrf.ts` rejects
+    // a state-changing `/api/**` request without one, with its own 403,
+    // which is what the old `[403, 404]` assertion was satisfied by.
+    const res = await page.request.post(
       '/api/admin/events/00000000-0000-4000-8000-000000000000/archive',
       {
-        headers: { cookie: cookieHeader, 'content-type': 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          Origin: new URL(page.url()).origin,
+        },
         data: {},
+        failOnStatusCode: false,
       },
     );
-    expect([403, 404]).toContain(res.status());
+    // `adminOnlyWriterGuard` gives a manager 403 + RFC 7807 before the
+    // event is looked up, so the id need not exist. One status, not a
+    // set: a set is how the CSRF reject hid here.
+    expect(res.status()).toBe(403);
+    const body = (await res.json().catch(() => ({}))) as { title?: string };
+    expect(body.title).toBe('Forbidden');
   });
 });

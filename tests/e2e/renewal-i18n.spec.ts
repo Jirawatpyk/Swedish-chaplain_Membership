@@ -169,54 +169,46 @@ test.describe('@i18n T268 — TH locale length-expansion at 320px + 1280px', () 
       // S10 — waitUntil:'domcontentloaded' (parity with the BE-display goto);
       // the redundant follow-on waitForLoadState is dropped.
       await page.goto('/admin/renewals', { waitUntil: 'domcontentloaded' });
-      const overflow = await page.evaluate(() => {
-        // Look for any element whose scrollWidth exceeds the viewport.
-        // Skip elements that are horizontally-scrollable OR live inside a
-        // horizontally-scrollable ancestor (overflow-x: scroll/auto). That
-        // content — the pipeline data table and the urgency tab rail — is
-        // INTENTIONALLY sideways-scrollable, and WCAG 1.4.10 exempts such 2D
-        // content (data tables / toolbars) from the no-horizontal-scroll rule.
-        // The original check inspected only the element itself, so a wide
-        // <table>/<Tabs> nested in an overflow-x:auto wrapper was wrongly
-        // flagged even though the wrapper scrolls it and the page never
-        // overflows. A genuine bug — an over-wide element with NO scrollable
-        // ancestor that forces the whole PAGE to scroll sideways — is still
-        // caught (its ancestor chain up to <body> has no overflow-x scroller).
-        // S11 — an `overflow-y:auto` container computes `overflow-x:auto` too,
-        // so a vertical-only scroller would wrongly exempt a real horizontal
-        // overflow nested inside it. Require the scrollable ancestor to ALSO
-        // actually overflow horizontally (`scrollWidth > clientWidth`) before
-        // treating it as the intentional sideways-scroll container that earns
-        // the WCAG 1.4.10 exemption. A y-only container (no x-overflow) no
-        // longer masks a genuine page-level x-overflow beneath it.
-        const scrollableSelfOrAncestor = (start: HTMLElement): boolean => {
-          for (
-            let node: HTMLElement | null = start;
-            node;
-            node = node.parentElement
-          ) {
-            const ox = window.getComputedStyle(node).overflowX;
-            if (
-              (ox === 'scroll' || ox === 'auto') &&
-              node.scrollWidth > node.clientWidth
-            ) {
-              return true;
-            }
-          }
-          return false;
+      // R22 (1 Oct 2026) — measure the PAGE, which is what WCAG 1.4.10 and
+      // this test's own name are about. This used to walk every element's
+      // ancestor chain looking for an `overflow-x: scroll|auto` scroller to
+      // exempt the wide-but-intentionally-scrollable content (the data table,
+      // the tab rail). That heuristic had already been patched twice (S10,
+      // S11) and broke a third time on AURA 5.20.0, whose `.aura-table-box`
+      // computes `overflow-x: clip` — clip cannot scroll the page, yet the
+      // walk reported the box as a violation while `documentElement`
+      // measured 305px inside a 320px viewport. The two sibling specs
+      // (`broadcast-i18n.spec.ts`, `locale-switcher.spec.ts`) have always
+      // asserted the page directly; this one was the outlier. Do not
+      // reintroduce the walk — any per-element taxonomy has to be kept in
+      // step with whatever the design system does next.
+      const { overflows, widest } = await page.evaluate(() => {
+        const root = document.documentElement;
+        // Diagnostics only — never asserted on. Names the widest offenders so
+        // a real failure says WHICH element forced the page sideways.
+        // `html`, `body` and the shell wrapper always inherit the width, so
+        // listing them first would point at nothing; report the DEEPEST wide
+        // elements instead — those are the ones actually too wide.
+        const widestEls = [...document.querySelectorAll<HTMLElement>('*')]
+          .filter(
+            (el) =>
+              el.scrollWidth > window.innerWidth + 2 &&
+              ![...el.children].some(
+                (child) => child.scrollWidth > window.innerWidth + 2,
+              ),
+          )
+          .sort((a, b) => b.scrollWidth - a.scrollWidth)
+          .slice(0, 3)
+          .map((el) => `${el.tagName}.${el.className}: scrollWidth=${el.scrollWidth}`);
+        return {
+          overflows: root.scrollWidth > root.clientWidth + 1,
+          widest: widestEls,
         };
-        const all = document.querySelectorAll<HTMLElement>('*');
-        const violations: string[] = [];
-        for (const el of all) {
-          if (scrollableSelfOrAncestor(el)) continue;
-          if (el.scrollWidth > window.innerWidth + 2) {
-            violations.push(`${el.tagName}.${el.className}: scrollWidth=${el.scrollWidth}`);
-            if (violations.length >= 3) break;
-          }
-        }
-        return violations;
       });
-      expect(overflow, `${width}px overflow violations`).toEqual([]);
+      expect(
+        overflows,
+        `${width}px: the page scrolls horizontally; widest elements: ${widest.join(' | ') || '(none wider than the viewport)'}`,
+      ).toBe(false);
     });
   }
 });

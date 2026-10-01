@@ -35,6 +35,7 @@
 import { expect, test } from './fixtures';
 import { signInAsAdmin } from './helpers/admin-session';
 import { signInAsManager } from './helpers/manager-session';
+import en from '../../src/i18n/messages/en.json';
 import {
   seedF6RelinkFixture,
   type SeedRelinkFixtureResult,
@@ -84,14 +85,24 @@ test.describe('@a11y @e2e F6 US6 manual relink', () => {
     await page.waitForLoadState('networkidle');
 
     // Round-1 test-M8 — stronger no-reload assertion: capture URL +
-    // attach a navigation listener BEFORE the relink action. AS1
+    // attach a document-identity marker BEFORE the relink action. AS1
     // explicitly states "shows the new match status without a page
     // reload"; `networkidle` after the click is too weak (fires for
     // router.refresh() too).
-    let navigated = false;
-    page.on('framenavigated', (frame) => {
-      if (frame === page.mainFrame()) navigated = true;
-    });
+    //
+    // R23 (1 Oct 2026) — this used to count `framenavigated` on the main
+    // frame and require zero. That cannot tell a reload from a soft
+    // navigation, so it flagged the very thing the comment above calls
+    // acceptable: `router.refresh()` emits one same-document
+    // `framenavigated` to the SAME url. Measured on the real flow — 1
+    // framenavigated (url unchanged), 0 `load` events, and this marker
+    // still alive afterwards: the document was never replaced. The marker
+    // is the honest test of "no page reload", because a real reload is
+    // exactly what wipes `window`.
+    const RELOAD_MARKER = '__as1_document_identity';
+    await page.evaluate((key) => {
+      (window as unknown as Record<string, unknown>)[key] = 'alive';
+    }, RELOAD_MARKER);
     const urlBefore = page.url();
 
     // Locate the Relink button on the non_member row. The dialog mounts
@@ -131,9 +142,13 @@ test.describe('@a11y @e2e F6 US6 manual relink', () => {
       .locator('xpath=ancestor::tr');
     await expect(updatedRow).toContainText(/verified contact/i);
 
-    // Round-1 test-M8 — no full navigation fired AND URL unchanged
-    // (router.refresh() is fine, page.goto/push is not).
-    expect(navigated).toBe(false);
+    // Round-1 test-M8 — the document was never replaced AND the URL is
+    // unchanged (router.refresh() is fine, page.goto/push is not).
+    const survived = await page.evaluate(
+      (key) => (window as unknown as Record<string, unknown>)[key] ?? null,
+      RELOAD_MARKER,
+    );
+    expect(survived, 'the page reloaded — window was wiped').toBe('alive');
     expect(page.url()).toBe(urlBefore);
   });
 
@@ -216,8 +231,22 @@ test.describe('@a11y @e2e F6 US6 manual relink', () => {
       `relink-disallowed-${fixture.pseudonymisedRegistrationId}`,
     );
     await expect(disallowed).toBeVisible();
-    // i18n-localised FR-014 message — EN default substring.
-    await expect(disallowed).toContainText(/retention-purged/i);
+    // R22 (1 Oct 2026) — assert the right property. The element's VISIBLE
+    // text is the short label (`relink.disallowedShort`, "PII purged —
+    // cannot relink"); the full FR-014 sentence lives in its `aria-label`
+    // and in the tooltip, exactly as `relink-registration-dialog.tsx`
+    // documents ("assertion target is the … `aria-label`, which carries the
+    // full sentence"). This used to `toContainText(/retention-purged/i)`,
+    // which reads the visible text and so could never match — the copy it
+    // looked for is not in either locale file under that spelling.
+    // Both strings come from `en.json` so the test cannot drift from the
+    // copy again.
+    const relinkCopy = en.admin.events.detail.relink;
+    await expect(disallowed).toHaveText(relinkCopy.disallowedShort);
+    await expect(disallowed).toHaveAttribute(
+      'aria-label',
+      relinkCopy.disallowedPseudonymised,
+    );
 
     // And the Relink CTA must be ABSENT for this row.
     const trigger = page.getByTestId(
@@ -333,6 +362,10 @@ test.describe('@a11y @e2e F6 US6 manual relink', () => {
     const response = await page.request.post(
       `/api/admin/events/${fixture.eventId}/registrations/${fixture.nonMemberRegistrationId}/relink`,
       {
+        // `Origin` is mandatory: `src/lib/csrf.ts` rejects a state-changing
+        // `/api/**` request without one, with its own 403 whose body has no
+        // `title` — so the assertions below were unreachable.
+        headers: { Origin: new URL(page.url()).origin },
         data: { newMatchedMemberId: fixture.relinkTargetMemberId },
         failOnStatusCode: false,
       },
