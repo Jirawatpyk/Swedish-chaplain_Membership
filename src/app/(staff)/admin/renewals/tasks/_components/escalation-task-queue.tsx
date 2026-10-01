@@ -552,7 +552,7 @@ export function EscalationTaskQueue({
           onPress={(a) => setSearchParam('assignment', a === 'all' ? null : a)}
         />
         {distinctTaskTypes.length > 1 ? (
-          <div className="w-full sm:w-56">
+          <div className="w-full sm:ms-auto sm:w-56">
             <Select
               label={t('task_type_filter_label')}
               value={taskTypeFilter}

@@ -181,7 +181,7 @@ describe('<EscalationTaskQueue> — task type (AURA Select)', () => {
 
   it('sits at the end of the filter row from 640px, keeping its visible "Task type" label (board)', () => {
     renderQueue(ONE, ['director_call', 'phone_call']);
-    const field = screen.getByRole('combobox', { name: 'Task type' }).closest('.aura-select')?.parentElement;
+    const field = screen.getByRole('combobox', { name: 'Task type' }).closest('.aura-field')?.parentElement;
     expect(field).toHaveClass('sm:ms-auto');
     expect(screen.getByText('Task type', { selector: 'label' })).toBeVisible();
   });
