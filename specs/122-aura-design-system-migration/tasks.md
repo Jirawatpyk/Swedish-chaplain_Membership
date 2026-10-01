@@ -349,8 +349,8 @@ US7b ships as two PRs (spec Clarifications, Session 2026-10-01 US7b start). It i
 
 #### US7b-1 — cycle detail and tier upgrades (PR 11)
 
-- [ ] T720 [US7] Spec Clarifications "Session 2026-10-01 (maintainer, US7b start)" with the two-PR split and the board decisions; these tasks.
-- [ ] T721 [US7] Cycle detail view on AURA:
+- [x] T720 [US7] Spec Clarifications "Session 2026-10-01 (maintainer, US7b start)" with the two-PR split and the board decisions; these tasks.
+- [x] T721 [US7] Cycle detail view on AURA:
   - header "Cycle detail · {company}" with the status as an AURA `StatusPill`, using the tone map shared with the member-detail Renewal health card;
   - the four cards (Member & plan as one list, Linked invoice, Period & timeline, Activity) as AURA `Card`s;
   - the state notices as AURA `Alert`s;
@@ -358,30 +358,30 @@ US7b ships as two PRs (spec Clarifications, Session 2026-10-01 US7b start). It i
   - on a phone, Linked invoice first;
   - the page view is `renderCycleDetailView`, shared with the preview.
   - RED: `cycle-detail-view`, `cycle-status-badge`.
-- [ ] T722 [US7] Cycle actions in the page header:
+- [x] T722 [US7] Cycle actions in the page header:
   - "Record payment on {bill}" / "Mark paid offline" primary, "Cancel cycle" danger;
   - the cancel confirm is an AURA alertdialog with the same reason field and request;
   - on a phone, Cancel cycle sits in a danger zone at the end of the page.
   - RED: `cycle-admin-actions`.
-- [ ] T723 [US7] Pending reactivation:
+- [x] T723 [US7] Pending reactivation:
   - the warning `Alert`;
   - Approve reactivation and Reject & refund in the header, their dialogs on AURA with the same requests and toasts.
   - RED: `pending-reactivation-actions`.
-- [ ] T724 [US7] Cycle detail `loading.tsx` on AURA skeletons, matching the card layout. RED: `cycle-detail-loading`.
-- [ ] T725 [US7] Tier upgrade queue:
+- [x] T724 [US7] Cycle detail `loading.tsx` on AURA skeletons, matching the card layout. RED: `cycle-detail-loading`.
+- [x] T725 [US7] Tier upgrade queue:
   - one AURA table that stacks into cards below 640px;
   - plan cells with the annual fee "{fee} excl. VAT";
   - Accept plus a ⋯ menu (Escalate, Dismiss) named for its row;
   - Accept and Dismiss confirm in AURA alertdialogs, with "Fees exclude VAT." in Accept;
   - status as `StatusPill`; the `ui/status-badge` type import goes.
   - RED: `tier-upgrade-queue`, `tier-upgrade-status-tone`.
-- [ ] T726 [US7] Tier upgrades frame:
+- [x] T726 [US7] Tier upgrades frame:
   - the page card with the section tabs;
   - the phone caption;
   - the error card, empty state and `loading.tsx` on AURA;
   - the page view is `renderTierUpgradesView`.
   - RED: `tier-upgrades-error-boundary`, `tier-upgrades-loading-skeleton`, `tier-upgrades-view`.
-- [ ] T727 [US7] Ratchet and preview:
+- [x] T727 [US7] Ratchet and preview:
   - `MIGRATED_PATHS` gains the cycle-detail and tier-upgrade paths; `ui-import-ratchet` gets a US7b-1 block (the tasks-page control stays);
   - preview views `renewal-cycle`, `renewal-cycle-reminded`, `renewal-cycle-pending`, `tier-upgrades`, `tier-upgrade-accept`;
   - `preview-shares-page-views` covers them;
@@ -391,6 +391,10 @@ US7b ships as two PRs (spec Clarifications, Session 2026-10-01 US7b start). It i
   - the parity page (board vs live at 1440 and 390, dark, TH, SV);
   - reviews: financial-integrity, enterprise-ux, i18n;
   - draft PR; relay R24 for the cycle-detail and tier-upgrade e2e specs.
+  - Done so far:
+    - typecheck, full lint and the static gates clean; `next build` passes; `/admin/renewals/[cycleId]` re-baselined 1140 → 910 KB (806.8 measured) and `/admin/renewals/tier-upgrades` 1250 → 950 KB (841.9 measured);
+    - reviews: financial-integrity PASS (no blockers; four LOW, all pre-existing); i18n no HIGH (SV/TH danger-zone names and the SV fee sentence fixed); enterprise-ux no blockers — H1 (320px payment action), M1–M5, M7, M8 and L1, L5, L8, L10 fixed, M6 decided in the spec (Reject & refund joins the phone danger zone);
+    - AURA handoff Addendum 23: #120 (a full-width field in the stacked card), open in `docs/aura-adoption.md`.
 
 #### US7b-2 — escalation tasks and reminder schedules (PR 12)
 

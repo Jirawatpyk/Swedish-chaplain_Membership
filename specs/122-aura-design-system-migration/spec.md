@@ -167,7 +167,7 @@ The US7b boards were read against the code before the tasks were written: `Admin
 - **Decided from the boards (US7b-1), applying the Session 2026-09-27 rule that the board decides content and copy:**
   - **Cycle detail header:**
     - The actions sit in the page header, as the board draws them: "Record payment on {bill}" or "Mark paid offline" as the primary action, then "Cancel cycle" in the danger style. On a pending cycle the actions are "Approve reactivation" and "Reject & refund".
-    - On a phone, only the primary action stays in the header, full width. "Cancel cycle" moves to a danger zone at the end of the page.
+    - On a phone, only the primary action stays in the header, full width. "Cancel cycle" moves to a danger zone at the end of the page, and on a pending cycle so does "Reject & refund" (no `-pending-mobile` board is drawn; the UX review asked that the refund never sit beside the primary action on a phone).
     - The pending notice is a warning `Alert` under the header.
   - **Cycle detail cards:**
     - "Member & plan" is one list (Company, Primary contact, Tier, Plan name, Frozen price, Term, Currency); the Member and Plan sub-headings go.
