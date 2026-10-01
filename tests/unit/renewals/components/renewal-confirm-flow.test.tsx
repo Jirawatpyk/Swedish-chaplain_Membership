@@ -249,6 +249,18 @@ describe('<RenewalConfirmFlow> — price visibility (WP5)', () => {
     expect(nativePlanSelect().value).toBe('plan-current');
   });
 
+  it('when the current plan is not in this year\'s list, the select still shows the current plan, not the first option (financial review)', () => {
+    renderFlow({ plans: [HIGHER, LOWER], frozenPriceMinorUnits: 1_500_000 });
+    const native = nativePlanSelect();
+    expect(native.value).toBe('plan-current');
+    const selected = native.options[native.selectedIndex]!;
+    expect(selected.textContent).toBe('Current plan');
+    expect(selected.disabled).toBe(true);
+    // AURA's closed field reads the chosen option, so it names the current plan.
+    expect(screen.getByRole('combobox', { name: 'Choose a plan' })).toHaveTextContent('Current plan');
+    expect(screen.getByTestId('price-new').textContent).toContain('15,000.00');
+  });
+
   it('selecting a higher-priced plan updates the New + Difference rows', async () => {
     renderFlow({ plans: [CURRENT, HIGHER], frozenPriceMinorUnits: 1_500_000 });
     await pickPlan(/Higher plan/);
