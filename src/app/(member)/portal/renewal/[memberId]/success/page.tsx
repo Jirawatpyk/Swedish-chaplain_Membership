@@ -218,21 +218,13 @@ export async function renderRenewalSuccessView({
               )}
             </dl>
           ) : (
-            // Round-3 UX H1: the wait is announced (WCAG 4.1.3); M4: a
-            // back-to-portal CTA so a member whose webhook never arrives is
-            // not left at a dead end.
-            <div role="status" aria-live="polite" className="flex flex-col gap-[var(--aura-space-3)]">
+            // Round-3 UX H1: the wait is announced (WCAG 4.1.3). The M4
+            // back-to-portal CTA lives in the actions row below (board).
+            <div role="status" aria-live="polite">
               <p className="flex items-start gap-[var(--aura-space-2)] text-sm text-[var(--aura-fg-secondary)]">
                 <LoaderCircle className="mt-0.5 size-4 shrink-0 motion-safe:animate-spin" aria-hidden />
                 <span>{t('processing')}</span>
               </p>
-              <Link
-                href="/portal"
-                className={actionClass('secondary')}
-                data-testid="processing-back-to-portal"
-              >
-                {t('backToPortal')}
-              </Link>
             </div>
           )}
         </Card>
@@ -347,14 +339,16 @@ export async function renderRenewalSuccessView({
               </Link>
             );
           })()}
-          {/* In the processing state the details card already offers
-              `processing-back-to-portal`, so this one is suppressed there
-              (UX R2-I4). */}
-          {activeCycle ? (
-            <Link href="/portal" className={actionClass('secondary')}>
-              {t('backToPortal')}
-            </Link>
-          ) : null}
+          {/* Round-3 UX M4: a member whose webhook never arrives is not left
+              at a dead end. One back CTA in every state, at the end of the
+              actions row; the processing test id is kept for e2e. */}
+          <Link
+            href="/portal"
+            className={actionClass('secondary')}
+            {...(activeCycle ? {} : { 'data-testid': 'processing-back-to-portal' })}
+          >
+            {t('backToPortal')}
+          </Link>
         </div>
       </div>
     </DetailContainer>

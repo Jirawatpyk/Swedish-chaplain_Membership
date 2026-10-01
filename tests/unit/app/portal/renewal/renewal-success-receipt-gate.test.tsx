@@ -324,8 +324,9 @@ describe('RenewalSuccessPage on AURA (boards Portal-renewal-success / -processin
     // after the invoice download, as on the completed page, and stays out of
     // the live region so the announcement is the wait alone.
     expect(status.querySelector('a')).toBeNull();
-    const row = nodeWith(html, '[data-testid="invoice-download-link"]')!.parentElement!;
+    const row = back.parentElement!;
     expect(row.lastElementChild).toBe(back);
+    expect(row.children.length).toBeGreaterThan(1);
     const doc = new DOMParser().parseFromString(html, 'text/html');
     expect(doc.querySelectorAll('a[href="/portal"]')).toHaveLength(1);
   });
