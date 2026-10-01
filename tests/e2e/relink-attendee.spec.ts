@@ -85,14 +85,24 @@ test.describe('@a11y @e2e F6 US6 manual relink', () => {
     await page.waitForLoadState('networkidle');
 
     // Round-1 test-M8 — stronger no-reload assertion: capture URL +
-    // attach a navigation listener BEFORE the relink action. AS1
+    // attach a document-identity marker BEFORE the relink action. AS1
     // explicitly states "shows the new match status without a page
     // reload"; `networkidle` after the click is too weak (fires for
     // router.refresh() too).
-    let navigated = false;
-    page.on('framenavigated', (frame) => {
-      if (frame === page.mainFrame()) navigated = true;
-    });
+    //
+    // R23 (1 Oct 2026) — this used to count `framenavigated` on the main
+    // frame and require zero. That cannot tell a reload from a soft
+    // navigation, so it flagged the very thing the comment above calls
+    // acceptable: `router.refresh()` emits one same-document
+    // `framenavigated` to the SAME url. Measured on the real flow — 1
+    // framenavigated (url unchanged), 0 `load` events, and this marker
+    // still alive afterwards: the document was never replaced. The marker
+    // is the honest test of "no page reload", because a real reload is
+    // exactly what wipes `window`.
+    const RELOAD_MARKER = '__as1_document_identity';
+    await page.evaluate((key) => {
+      (window as unknown as Record<string, unknown>)[key] = 'alive';
+    }, RELOAD_MARKER);
     const urlBefore = page.url();
 
     // Locate the Relink button on the non_member row. The dialog mounts
@@ -132,9 +142,13 @@ test.describe('@a11y @e2e F6 US6 manual relink', () => {
       .locator('xpath=ancestor::tr');
     await expect(updatedRow).toContainText(/verified contact/i);
 
-    // Round-1 test-M8 — no full navigation fired AND URL unchanged
-    // (router.refresh() is fine, page.goto/push is not).
-    expect(navigated).toBe(false);
+    // Round-1 test-M8 — the document was never replaced AND the URL is
+    // unchanged (router.refresh() is fine, page.goto/push is not).
+    const survived = await page.evaluate(
+      (key) => (window as unknown as Record<string, unknown>)[key] ?? null,
+      RELOAD_MARKER,
+    );
+    expect(survived, 'the page reloaded — window was wiped').toBe('alive');
     expect(page.url()).toBe(urlBefore);
   });
 
