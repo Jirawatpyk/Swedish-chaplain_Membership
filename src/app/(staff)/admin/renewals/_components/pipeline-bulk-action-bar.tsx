@@ -87,7 +87,9 @@
  * Send reminder · Mark paid · Clear selection"), sticky in the page flow
  * after the table — no fixed bar, no measured spacer — and idle (its live
  * region kept) while nothing is selected, as the members bar (US5a). The
- * results panel sits in the flow just above it.
+ * results panel sits in the flow just above it. While a selection is active
+ * the bar's measured height (plus the gap it sticks above the screen edge)
+ * is the page's scroll padding, so the last card scrolls clear of it.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -97,6 +99,7 @@ import { ActionBar, AuraProvider, Button } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
 import { useDialogFinalFocus } from '@/components/broadcast/reason-confirmation-dialog';
+import { useFixedBarScrollPadding } from '@/hooks/use-fixed-bar-scroll-padding';
 import { BulkProgressIndicator } from '../../members/_components/bulk-progress-indicator';
 import { BULK_CAP } from '@/lib/members-bulk-constants';
 import {
@@ -353,6 +356,31 @@ export function PipelineBulkActionBar({
 
   const resultsPanelRef = useRef<HTMLDivElement | null>(null);
 
+  // WCAG 2.2 SC 2.4.11 — the sticky bar must not cover the card a focus or a
+  // scroll-into-view lands on. Measured, not guessed: on a phone the bar
+  // wraps to two or three lines (locale, the over-cap note). The reserve is
+  // the bar plus the gap AURA sticks it above the screen edge (`bottom`).
+  const barRef = useRef<HTMLDivElement | null>(null);
+  const [barBlock, setBarBlock] = useState(64);
+  useEffect(() => {
+    const el = barRef.current;
+    if (!el || !hasSelection) return undefined;
+    const measure = (height: number): void => {
+      const offset = Number.parseFloat(getComputedStyle(el).bottom);
+      setBarBlock(Math.ceil(height + (Number.isFinite(offset) ? offset : 0)));
+    };
+    if (typeof ResizeObserver === 'undefined') {
+      measure(el.offsetHeight);
+      return undefined;
+    }
+    const ro = new ResizeObserver(([entry]) => {
+      measure(entry?.borderBoxSize?.[0]?.blockSize ?? el.offsetHeight);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [hasSelection]);
+  useFixedBarScrollPadding(hasSelection, barBlock);
+
   // MUST-FIX (review round 1, WCAG 2.1 AA SC 4.1.3) — when a run leaves an
   // issues/not-bulk-payable trail, the persisted results panel is the ONLY
   // durable record of who did NOT settle; a transient (~4s) toast alone
@@ -550,6 +578,7 @@ export function PipelineBulkActionBar({
       )}
       <AuraProvider strings={barStrings}>
         <ActionBar
+          ref={barRef}
           // The app's marker for a viewport ActionBar: globals.css keeps a
           // focused field clear of it by this class, not AURA's modifier.
           className="chamber-viewport-actionbar"
