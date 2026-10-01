@@ -369,7 +369,11 @@ function ActivityList({
       <h3 id={headingId} className="m-0 pb-[var(--aura-space-2)] text-sm font-semibold">
         {heading}
       </h3>
-      <ul className="m-0 list-none p-0">{children}</ul>
+      {/* One grid for the list, its rows on a subgrid, so the columns line
+          up from row to row and size to their content (UX review L1). */}
+      <ul className="m-0 list-none p-0 sm:grid sm:grid-cols-[minmax(0,1fr)_auto_auto_auto] sm:gap-x-[var(--aura-space-3)]">
+        {children}
+      </ul>
     </section>
   );
 }
@@ -390,7 +394,7 @@ function ActivityRow({
 }) {
   const parts = meta.filter((m): m is string => m !== null && m !== '');
   return (
-    <li className="flex flex-col gap-1 border-t border-[var(--aura-border-default)] py-2.5 text-[13px] sm:grid sm:min-h-11 sm:grid-cols-[minmax(0,1fr)_5.5rem_12rem_9rem] sm:items-center sm:gap-x-[var(--aura-space-3)] sm:py-1">
+    <li className="flex flex-col gap-1 border-t border-[var(--aura-border-default)] py-2.5 text-[13px] sm:col-span-4 sm:grid sm:min-h-11 sm:grid-cols-subgrid sm:items-center sm:py-1">
       <span className="flex min-w-0 items-center justify-between gap-[var(--aura-space-2)] sm:contents">
         <span className="min-w-0 text-sm sm:text-[13px]">{name}</span>
         <span className="shrink-0">{pill}</span>
