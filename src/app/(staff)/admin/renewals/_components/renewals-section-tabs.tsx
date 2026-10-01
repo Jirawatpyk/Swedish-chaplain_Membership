@@ -202,12 +202,16 @@ export function RenewalsSectionTabs({
         className="max-sm:hidden"
       />
       {/* The phone board draws the sections as a select; choosing one goes
-          to the same href as its tab. */}
+          to the same href as its tab, and a counted section carries its
+          count as the tab does ("Tier upgrades (2)"). */}
       <div className="sm:hidden">
         <Select
           label={t('tabs.selectLabel')}
           value={current}
-          options={tabs.map((tab) => ({ value: tab.id, label: tab.label }))}
+          options={tabs.map((tab) => ({
+            value: tab.id,
+            label: tab.count === undefined ? tab.label : `${tab.label} (${tab.count})`,
+          }))}
           onChange={(e) => {
             const next = tabs.find((tab) => tab.id === e.target.value);
             if (next?.href) router.push(next.href);
