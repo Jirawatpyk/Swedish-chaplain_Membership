@@ -163,7 +163,12 @@ function PressedGroup<V extends string>({
   return (
     <div role="group" aria-label={label} className="flex max-w-full flex-wrap gap-[var(--aura-space-2)]">
       {options.map((option) => (
-        <Tag key={option.value} selected={option.value === value} onClick={() => onPress(option.value)}>
+        <Tag
+          key={option.value}
+          selected={option.value === value}
+          onClick={() => onPress(option.value)}
+          touchHeight
+        >
           {option.label}
         </Tag>
       ))}
