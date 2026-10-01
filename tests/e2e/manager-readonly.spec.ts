@@ -130,8 +130,10 @@ test.describe('T271 — F8 manager read-only (Constitution RBAC + FR-003)', () =
     await expect(
       page.getByRole('heading', { level: 1 }).first(),
     ).toBeVisible();
-    // Done / Skip / Reassign actions are admin-only.
-    const doneBtn = page.getByRole('button', { name: /^done$/i });
+    // Done / Skip / Reassign actions are admin-only. 122 US7b-2: the
+    // Status filter has a "Done" button of its own, so look in the queue.
+    const queue = page.locator('#main-content [role="grid"]');
+    const doneBtn = queue.getByRole('button', { name: /^done$/i });
     const skipBtn = page.getByRole('button', { name: /^skip$/i });
     const reassignBtn = page.getByRole('button', { name: /reassign/i });
     expect(await doneBtn.count()).toBe(0);

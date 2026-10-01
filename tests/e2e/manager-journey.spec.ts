@@ -96,7 +96,10 @@ test.describe('Journey — manager read-only golden path across module seams @jo
         timeout: 10_000,
       });
       // Read-only banner present; no Done/Skip/Reassign action buttons rendered for a manager.
-      await expect(page.getByRole('button', { name: /^(done|skip|reassign)$/i })).toHaveCount(0);
+      // 122 US7b-2: the Status filter has a "Done" button, so look in the queue.
+      await expect(
+        page.locator('#main-content [role="grid"]').getByRole('button', { name: /^(done|skip|reassign)$/i }),
+      ).toHaveCount(0);
     });
 
     if (skipped.length > 0) {
