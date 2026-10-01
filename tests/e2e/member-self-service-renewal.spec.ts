@@ -90,11 +90,14 @@ test.describe('F8 — member self-service renewal portal (US3 AS1+AS2+AS3+AS6, T
     // Benefit summary card. 122 US7c / R27: the old "benefitsAvailable=false
     // in MVP" premise is stale — the seeded `regular` plan now carries an
     // E-Blast quota, so the card shows its rows, not the "unavailable"
-    // fallback. Assert the card itself (an AURA card headed by an h2), which
-    // renders on either data path.
+    // fallback. The card (an AURA card headed by an h2) renders on either
+    // data path, so it alone cannot tell rows from the fallback (R27b): also
+    // assert the fallback is absent, which holds for any quota and goes red
+    // the day the F8→F9 consumption reader regresses.
     await expect(
       page.getByRole('region', { name: /benefit summary/i }),
     ).toBeVisible();
+    await expect(page.getByText(/benefit summary unavailable/i)).toHaveCount(0);
 
     // AS6 — confirm CTA visible + enabled.
     const confirmBtn = page.getByRole('button', { name: /confirm renewal/i });
