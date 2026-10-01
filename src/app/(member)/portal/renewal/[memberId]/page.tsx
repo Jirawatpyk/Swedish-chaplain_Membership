@@ -16,9 +16,6 @@
  */
 import { notFound, redirect } from 'next/navigation';
 import { getLocale, getTranslations } from 'next-intl/server';
-import { DetailContainer } from '@/components/layout';
-import { PageHeader } from '@/components/layout/page-header';
-import { Card, CardContent } from '@/components/ui/card';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { deriveFiscalYear } from '@/lib/fiscal-year';
@@ -32,9 +29,8 @@ import { buildMembersDeps } from '@/modules/members/members-deps';
 import { asPlanYear, listPlans } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import { loadRenewalSummary, makeRenewalsDeps } from '@/modules/renewals';
-import { BenefitSummary } from './_components/benefit-summary';
-import { OnboardingBanner } from './_components/onboarding-banner';
-import { RenewalConfirmFlow, type RenewalPlanOption } from './_components/renewal-confirm-flow';
+import type { RenewalPlanOption } from './_components/renewal-confirm-flow';
+import { RenewalPageView, type RenewalGate } from './_components/renewal-page-view';
 // Round-3 test-coverage I1 fix: locale fallback resolver extracted
 // to a testable utility module so the en/th/sv branching is covered
 // by a unit test instead of relying on E2E for behavioural pinning.
@@ -45,7 +41,6 @@ import { resolvePlanName } from '@/lib/resolve-plan-name';
 // dashboard's "Renew now" CTA gates on the SAME predicate, so the two can
 // never disagree. Lives in `portal/_lib` (not this route's `_lib`).
 import { isRenewalPayable } from '../../_lib/is-renewal-payable';
-import { formatDatePreset } from '@/lib/format-date-localised';
 
 export default async function RenewalPortalPage({
   params,
@@ -55,11 +50,6 @@ export default async function RenewalPortalPage({
   const { memberId: urlMemberId } = await params;
   const { user } = await requireSession('member');
   const tenant = resolveTenantFromRequest();
-  const t = await getTranslations('portal.renewal.page');
-  const tField = await getTranslations('portal.renewal.fields');
-  // G4 (F8-completion slice 2.6) — payability-gate copy lives one level
-  // up under `portal.renewal.*` (flat keys notYetOpen*/pendingReview*).
-  const tGate = await getTranslations('portal.renewal');
   // UX R5/C2: tier slug → human-readable label via the same i18n
   // namespace admin surfaces use; loud-fail to slug if a future tier
   // is added without a matching key (matches K28 cycle-detail pattern).
@@ -221,124 +211,53 @@ export default async function RenewalPortalPage({
     },
   };
 
+  // G4 (F8-completion slice 2.6) — payability gate, EXTENDED by
+  // 059-membership-suspension Task 9 item 4. The Confirm flow renders for an
+  // `awaiting_payment` cycle (the payable state) OR a non-terminal
+  // `upcoming`/`reminded` cycle whose period has already ended — the exact
+  // condition `deriveMembershipAccess` uses to put the member into
+  // `suspended`/`unpaid` (closes the 06:15-cron gap; the suspended card's
+  // "pay to restore benefits" CTA links HERE). `isRenewalPayable` is the
+  // single source of truth. A `pending_admin_reactivation` cycle shows the
+  // "awaiting admin verification" notice, or — when the async
+  // reject-with-refund marker is set — the rejected-refund notice (UX-A Bug 2).
+  // The server gate (`confirmRenewal` → 409 cycle_not_payable) stays the
+  // backstop; this only stops a member seeing a Confirm they can't use, or
+  // hiding one they can. Reviewer note (superseded): do NOT reinstate the old
+  // note claiming an expired upcoming/reminded cycle "correctly" shows
+  // not-yet-open.
+  const gate: RenewalGate = isRenewalPayable(summary.status, summary.expiresAt, new Date())
+    ? {
+        kind: 'payable',
+        flow: {
+          memberId: urlMemberId,
+          cycleId: summary.cycleId,
+          currentPlanId: summary.planIdAtCycleStart,
+          currentPlanLabel,
+          availablePlans,
+          frozenPriceMinorUnits,
+          benefitUsage,
+        },
+      }
+    : summary.status === 'pending_admin_reactivation'
+      ? { kind: summary.rejectRefundInitiatedAt !== null ? 'rejected_refund' : 'pending_review' }
+      : { kind: 'not_yet_open' };
+
+  // Spec 122 US7c — the layout lives in <RenewalPageView> (board
+  // `Portal-renewal`), shared with the preview harness.
   return (
-    <DetailContainer>
-      {/* Staff-Review-2026-05-09 WRN-7 fix: replaced handrolled
-          <header><h1><p></header> with the shared <PageHeader> primitive
-          used by all other portal pages (F3 self-service). PageHeader
-          bakes in skip-to-content wiring, responsive margin, and the
-          mobile-first stack→sm:row layout — handrolled markup made the
-          visual rhythm here inconsistent with sibling portal pages. */}
-      <PageHeader title={t('title')} subtitle={t('subtitle')} />
-
-      {/* I18 review-fix: OnboardingBanner moved AFTER <header> so h1 precedes
-          h2 (WCAG 2.4.6 heading order) — banner only renders for first-time
-          renewers; otherwise the page's heading ladder stays h1 → h2 → h2. */}
-      {summary.isFirstTimeRenewer && <OnboardingBanner />}
-
-      <Card role="region" aria-labelledby="plan-summary-heading">
-        <CardContent className="flex flex-col gap-3">
-          <h2 id="plan-summary-heading" className="text-h4">
-            {t('membershipPlanHeading')}
-          </h2>
-          {/* UX R5 / Mobile #1: `grid-cols-1` base + `sm:grid-cols-2` so
-              the dl reflows into a single column at <640px viewports
-              where Thai plan names ("Premium Plus / สมาชิกระดับพรีเมี่ยม")
-              would otherwise overflow the 136px column on a 320px
-              device (WCAG 1.4.10 Reflow). */}
-          <dl className="grid grid-cols-1 gap-y-2 text-sm sm:grid-cols-2 sm:gap-x-4">
-            <dt className="text-muted-foreground">{tField('plan')}</dt>
-            <dd>{currentPlanLabel}</dd>
-            <dt className="text-muted-foreground">{tField('tier')}</dt>
-            <dd>{tierLabel}</dd>
-            {/* WP5 — the frozen price moved to the confirm flow's
-                <PriceDiffPanel>, where it reads as current-vs-new money. */}
-            <dt className="text-muted-foreground">{tField('term')}</dt>
-            <dd>{tField('termMonths', { count: summary.frozenPlanTermMonths })}</dd>
-            <dt className="text-muted-foreground">{tField('expiry')}</dt>
-            <dd>
-              <time dateTime={summary.expiresAt}>
-                {formatDatePreset(summary.expiresAt, locale, 'dateLong')}
-              </time>
-            </dd>
-          </dl>
-        </CardContent>
-      </Card>
-
-      <BenefitSummary benefits={summary.benefits} benefitsAvailable={summary.benefitsAvailable} />
-
-      {/* G4 (F8-completion slice 2.6) — payability gate, EXTENDED by
-          059-membership-suspension Task 9 item 4. The Confirm flow renders
-          for an `awaiting_payment` cycle (the payable state) OR a
-          non-terminal `upcoming`/`reminded` cycle whose period has already
-          ended — the exact condition `deriveMembershipAccess` uses to put
-          the member into `suspended`/`unpaid` (closes the 06:15-cron gap).
-          Before this fix, that expired-but-not-yet-`awaiting_payment`
-          cohort landed on the read-only "renewal window not yet open" card
-          below — a dead end directly contradicting the suspended card's
-          "pay to restore benefits" CTA, which links HERE.
-          `isRenewalPayable` (`_lib/is-renewal-payable.ts`) is the single
-          source of truth for this predicate. A `pending_admin_reactivation`
-          cycle shows a separate "awaiting admin verification" notice. The
-          server gate (`confirmRenewal` → 409 cycle_not_payable, with the
-          lazy `upcoming|reminded → awaiting_payment` self-transition) stays
-          the backstop — this presentation gate just stops a member ever
-          seeing a Confirm button they can't use, and now also stops it from
-          HIDING one they legitimately can.
-
-          Reviewer note (superseded — do NOT reinstate the old note claiming
-          an expired upcoming/reminded cycle "correctly" shows not-yet-open;
-          under the 059 policy that member is suspended and the Confirm flow
-          MUST render for them). */}
-      {isRenewalPayable(summary.status, summary.expiresAt, new Date()) ? (
-        /* Confirm flow wrapped in a Card so the renewal page reads as a
-           consistent 3-card stack (plan summary · benefits · confirm) and
-           matches the loading skeleton — was a card-less control group that
-           flashed on hydration (UX R2-I2). */
-        <Card>
-          <CardContent>
-            <RenewalConfirmFlow
-              memberId={urlMemberId}
-              cycleId={summary.cycleId}
-              currentPlanId={summary.planIdAtCycleStart}
-              currentPlanLabel={currentPlanLabel}
-              availablePlans={availablePlans}
-              frozenPriceMinorUnits={frozenPriceMinorUnits}
-              benefitUsage={benefitUsage}
-            />
-          </CardContent>
-        </Card>
-      ) : summary.status === 'pending_admin_reactivation' ? (
-        /* UX-A Bug 2: when the async reject-with-refund marker is set, the
-           reactivation was NOT approved — a refund is being processed — so the
-           "our team is verifying it / no action needed" copy is factually
-           false during that window. Show the rejected-refund copy instead. */
-        <Card role="region" aria-labelledby="renewal-gate-heading">
-          <CardContent className="flex flex-col gap-2">
-            <h2 id="renewal-gate-heading" className="text-h4">
-              {summary.rejectRefundInitiatedAt !== null
-                ? tGate('rejectedRefundTitle')
-                : tGate('pendingReviewTitle')}
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              {summary.rejectRefundInitiatedAt !== null
-                ? tGate('rejectedRefundBody')
-                : tGate('pendingReviewBody')}
-            </p>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card role="region" aria-labelledby="renewal-gate-heading">
-          <CardContent className="flex flex-col gap-2">
-            <h2 id="renewal-gate-heading" className="text-h4">
-              {tGate('notYetOpenTitle')}
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              {tGate('notYetOpenBody')}
-            </p>
-          </CardContent>
-        </Card>
-      )}
-    </DetailContainer>
+    <RenewalPageView
+      locale={locale}
+      isFirstTimeRenewer={summary.isFirstTimeRenewer}
+      plan={{
+        label: currentPlanLabel,
+        tierLabel,
+        termMonths: summary.frozenPlanTermMonths,
+        expiresAt: summary.expiresAt,
+      }}
+      benefits={summary.benefits}
+      benefitsAvailable={summary.benefitsAvailable}
+      gate={gate}
+    />
   );
 }

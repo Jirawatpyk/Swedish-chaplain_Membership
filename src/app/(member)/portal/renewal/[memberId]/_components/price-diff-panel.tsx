@@ -23,23 +23,25 @@ export function PriceDiffPanel({
   const format = useFormatter();
   const delta = newPriceMinorUnits - currentPriceMinorUnits;
 
+  // Spec 122 US7c — the board's price band: the surface-hover ground,
+  // tabular figures and a bold Difference row (tokens only).
   return (
     <div
       data-testid="price-diff-panel"
-      className="flex flex-col gap-2 rounded-md border bg-muted/40 p-3 text-sm"
+      className="flex flex-col gap-[var(--aura-space-2)] rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface-hover)] p-[var(--aura-space-3)] text-sm"
     >
-      <p className="font-medium">{t('priceHeading')}</p>
-      <dl className="grid grid-cols-2 gap-x-4 gap-y-1">
-        <dt className="text-muted-foreground">{t('priceCurrent')}</dt>
-        <dd className="text-right tabular-nums" data-testid="price-current">
+      <p className="text-xs font-semibold text-[var(--aura-fg-secondary)]">{t('priceHeading')}</p>
+      <dl className="grid grid-cols-[1fr_auto] gap-x-[var(--aura-space-4)] gap-y-[var(--aura-space-1)]">
+        <dt className="text-[var(--aura-fg-secondary)]">{t('priceCurrent')}</dt>
+        <dd className="text-end tabular-nums" data-testid="price-current">
           {formatThbMinorUnits(format, currentPriceMinorUnits)}
         </dd>
-        <dt className="text-muted-foreground">{t('priceNew')}</dt>
-        <dd className="text-right tabular-nums" data-testid="price-new">
+        <dt className="text-[var(--aura-fg-secondary)]">{t('priceNew')}</dt>
+        <dd className="text-end tabular-nums" data-testid="price-new">
           {formatThbMinorUnits(format, newPriceMinorUnits)}
         </dd>
-        <dt className="text-muted-foreground">{t('priceDelta')}</dt>
-        <dd className="text-right font-medium tabular-nums" data-testid="price-delta">
+        <dt className="font-semibold">{t('priceDelta')}</dt>
+        <dd className="text-end font-semibold tabular-nums" data-testid="price-delta">
           {formatThbMinorUnits(format, delta, { signDisplay: 'exceptZero' })}
         </dd>
       </dl>

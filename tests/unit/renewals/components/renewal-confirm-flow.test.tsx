@@ -338,10 +338,14 @@ describe('<RenewalConfirmFlow> — confirm card (board Portal-renewal, US7c)', (
     renderFlow();
     const steps = screen.getByRole('list', { name: 'Renewal steps' });
     const items = within(steps).getAllByRole('listitem');
-    expect(items.map((li) => li.textContent?.replace(/\s+/g, ' ').trim())).toEqual([
-      '1 Confirm renewal',
-      '2 Pay invoice',
-    ]);
+    // The step numbers are decoration (aria-hidden); the labels are what is read.
+    const readable = (li: HTMLElement) =>
+      [...li.childNodes]
+        .filter((n) => !(n instanceof HTMLElement && n.getAttribute('aria-hidden') === 'true'))
+        .map((n) => n.textContent)
+        .join('')
+        .trim();
+    expect(items.map(readable)).toEqual(['Confirm renewal', 'Pay invoice']);
     expect(items[0]).toHaveAttribute('aria-current', 'step');
     expect(items[1]).not.toHaveAttribute('aria-current');
   });

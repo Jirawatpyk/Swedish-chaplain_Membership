@@ -15,6 +15,11 @@
  *     member confirms does the POST carry `acknowledgeDowngrade: true`. This
  *     mirrors the server gate (`confirmRenewal` → 409), classified by the
  *     SAME `classifyPlanPriceChange` predicate so the two cannot diverge.
+ *
+ * Spec 122 US7c (board `Portal-renewal`, Confirm card): the two-step stepper,
+ * the AURA select (option groups kept, the board's option text), the change
+ * warning, the price panel, the full-width primary CTA and the next-step line.
+ * The request, its body and every error mapping are unchanged.
  */
 'use client';
 
@@ -24,23 +29,11 @@ import {
   classifyPlanPriceChange,
   requiresDowngradeAck,
 } from '@/modules/renewals/client';
-import { Button } from '@/components/ui/button';
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  TranslatedSelectValue,
-} from '@/components/ui/select';
-import { Label } from '@/components/ui/label';
-import { AlertDialog } from '@/components/ui/alert-dialog';
-import { InlineAlert, InlineAlertDescription } from '@/components/ui/inline-alert';
+import { Alert, Button, Select } from '@jirawatpyk/aura-react';
 import { groupPlanOptions } from '../_lib/group-plan-options';
 import { formatThbMinorUnits } from '../_lib/format-thb';
 import { PriceDiffPanel } from './price-diff-panel';
-import { DowngradeConfirmDialogBody } from './downgrade-confirm-dialog-body';
+import { DowngradeConfirmDialog } from './downgrade-confirm-dialog';
 import { isReadOnlyRefusal } from '@/lib/http/read-only-refusal';
 
 /**
@@ -84,7 +77,7 @@ export interface RenewalPlanOption {
   };
 }
 
-interface RenewalConfirmFlowProps {
+export interface RenewalConfirmFlowProps {
   readonly memberId: string;
   readonly cycleId: string;
   readonly currentPlanId: string;
@@ -247,14 +240,20 @@ export function RenewalConfirmFlow({
     currentPriceMinorUnits: frozenPriceMinorUnits,
   });
 
-  const renderOption = (p: RenewalPlanOption) => (
-    <SelectItem key={p.planId} value={p.planId}>
-      {tSelector('optionWithPrice', {
-        label: p.label,
-        price: formatThbMinorUnits(format, p.annualFeeMinorUnits),
-      })}
-    </SelectItem>
-  );
+  const renderOption = (p: RenewalPlanOption) => {
+    const price = formatThbMinorUnits(format, p.annualFeeMinorUnits);
+    return (
+      <option key={p.planId} value={p.planId}>
+        {p.planId === currentPlanId
+          ? tSelector('optionWithPriceCurrent', {
+              label: p.label,
+              price,
+              current: tSelector('currentSuffix'),
+            })
+          : tSelector('optionWithPrice', { label: p.label, price })}
+      </option>
+    );
+  };
 
   // Downgrade dialog quota deltas — only when the (target) plan carries quotas.
   const bodyQuotaProps = selectedPlan?.quotas
@@ -273,55 +272,53 @@ export function RenewalConfirmFlow({
     : {};
 
   return (
-    <div className="flex flex-col gap-4">
-      {hasAlternatives && (
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="renewal-plan-select" className="font-medium">
-            {tSelector('label')}
-          </Label>
-          <Select
-            value={selectedPlanId}
-            onValueChange={(value: string | null) => {
-              if (value) setSelectedPlanId(value);
-            }}
-            disabled={isPending}
+    <div className="flex flex-col gap-[var(--aura-space-4)]">
+      {/* Board stepper: this page is step 1; paying the invoice is step 2. */}
+      <ol aria-label={t('stepsLabel')} className="flex items-center gap-[var(--aura-space-2)] text-sm">
+        <li aria-current="step" className="flex items-center gap-[var(--aura-space-2)] font-semibold">
+          <span
+            aria-hidden
+            className="grid size-6 shrink-0 place-items-center rounded-full bg-[var(--aura-accent)] text-xs text-[var(--aura-fg-on-accent)]"
           >
-            <SelectTrigger id="renewal-plan-select" className="w-full">
-              {/* Base UI's <Select.Value> renders the raw value (plan id); map
-                  it back to the localised name via TranslatedSelectValue so the
-                  collapsed trigger shows the NAME only (prices live in the open
-                  list). */}
-              <TranslatedSelectValue
-                placeholder={tSelector('placeholder', {
-                  defaultLabel: currentPlanLabel,
-                })}
-                translate={(value) =>
-                  availablePlans.find((p) => p.planId === value)?.label ?? value
-                }
-              />
-            </SelectTrigger>
-            <SelectContent>
-              {grouped.upgrade.length > 0 && (
-                <SelectGroup>
-                  <SelectLabel>{tSelector('groupUpgrade')}</SelectLabel>
-                  {grouped.upgrade.map(renderOption)}
-                </SelectGroup>
-              )}
-              {grouped.current.length > 0 && (
-                <SelectGroup>
-                  <SelectLabel>{tSelector('groupCurrent')}</SelectLabel>
-                  {grouped.current.map(renderOption)}
-                </SelectGroup>
-              )}
-              {grouped.downgrade.length > 0 && (
-                <SelectGroup>
-                  <SelectLabel>{tSelector('groupDowngrade')}</SelectLabel>
-                  {grouped.downgrade.map(renderOption)}
-                </SelectGroup>
-              )}
-            </SelectContent>
-          </Select>
-        </div>
+            1
+          </span>
+          {t('stepConfirm')}
+        </li>
+        <li className="flex flex-1 items-center gap-[var(--aura-space-2)] text-[var(--aura-fg-secondary)]">
+          <span aria-hidden className="h-px min-w-4 flex-1 bg-[var(--aura-border-default)]" />
+          <span
+            aria-hidden
+            className="grid size-6 shrink-0 place-items-center rounded-full border border-[var(--aura-border-default)] text-xs"
+          >
+            2
+          </span>
+          {t('stepPay')}
+        </li>
+      </ol>
+
+      {hasAlternatives && (
+        <Select
+          label={tSelector('label')}
+          value={selectedPlanId}
+          onChange={(e) => setSelectedPlanId(e.target.value)}
+          disabled={isPending}
+        >
+          {grouped.upgrade.length > 0 && (
+            <optgroup label={tSelector('groupUpgrade')}>{grouped.upgrade.map(renderOption)}</optgroup>
+          )}
+          {grouped.current.length > 0 && (
+            <optgroup label={tSelector('groupCurrent')}>{grouped.current.map(renderOption)}</optgroup>
+          )}
+          {grouped.downgrade.length > 0 && (
+            <optgroup label={tSelector('groupDowngrade')}>{grouped.downgrade.map(renderOption)}</optgroup>
+          )}
+        </Select>
+      )}
+
+      {isChange && (
+        <Alert tone="warning" role="status">
+          {tSelector('changeNotice')}
+        </Alert>
       )}
 
       {/* C-6 — mounted ALWAYS (outside `hasAlternatives`) so the price never
@@ -331,41 +328,35 @@ export function RenewalConfirmFlow({
         newPriceMinorUnits={newPriceMinorUnits}
       />
 
-      {isChange && (
-        <InlineAlert tone="warning" role="status">
-          <InlineAlertDescription>{tSelector('changeNotice')}</InlineAlertDescription>
-        </InlineAlert>
-      )}
-
-      <Button onClick={onConfirm} disabled={isPending} aria-busy={isPending}>
-        {isPending ? t('busy') : t('cta')}
-      </Button>
+      <div className="flex flex-col gap-[var(--aura-space-2)]">
+        <Button
+          icon="arrow-right"
+          className="w-full"
+          onClick={onConfirm}
+          loading={isPending}
+        >
+          {isPending ? t('busy') : t('cta')}
+        </Button>
+        <p className="text-xs text-[var(--aura-fg-secondary)]">{t('nextStep')}</p>
+      </div>
 
       {error && (
-        <InlineAlert
-          ref={errorRef}
-          tone="destructive"
-          tabIndex={-1}
-          data-testid="confirm-error"
-        >
-          <InlineAlertDescription>
-            {t(ERROR_CODE_TO_I18N_KEY[error] ?? 'errorGeneric')}
-          </InlineAlertDescription>
-        </InlineAlert>
+        <Alert ref={errorRef} tone="danger" role="alert" tabIndex={-1} data-testid="confirm-error">
+          {t(ERROR_CODE_TO_I18N_KEY[error] ?? 'errorGeneric')}
+        </Alert>
       )}
 
-      <AlertDialog open={downgradeDialogOpen} onOpenChange={setDowngradeDialogOpen}>
-        <DowngradeConfirmDialogBody
-          currentLabel={currentPlanLabel}
-          newLabel={selectedPlan?.label ?? selectedPlanId}
-          currentPriceMinorUnits={frozenPriceMinorUnits}
-          newPriceMinorUnits={newPriceMinorUnits}
-          submitting={isPending}
-          onConfirm={() => submitConfirm(true)}
-          onCancel={() => setDowngradeDialogOpen(false)}
-          {...bodyQuotaProps}
-        />
-      </AlertDialog>
+      <DowngradeConfirmDialog
+        open={downgradeDialogOpen}
+        currentLabel={currentPlanLabel}
+        newLabel={selectedPlan?.label ?? selectedPlanId}
+        currentPriceMinorUnits={frozenPriceMinorUnits}
+        newPriceMinorUnits={newPriceMinorUnits}
+        submitting={isPending}
+        onConfirm={() => submitConfirm(true)}
+        onCancel={() => setDowngradeDialogOpen(false)}
+        {...bodyQuotaProps}
+      />
     </div>
   );
 }
