@@ -318,9 +318,16 @@ describe('RenewalSuccessPage on AURA (boards Portal-renewal-success / -processin
     expect(hero.textContent).toContain('processingSubtitle');
     const status = nodeWith(html, '[role="status"][aria-live="polite"]')!;
     expect(status.textContent).toContain('processing');
-    expect(nodeWith(html, '[data-testid="processing-back-to-portal"]')?.className).toMatch(
-      /aura-btn--secondary/,
-    );
+    const back = nodeWith(html, '[data-testid="processing-back-to-portal"]')!;
+    expect(back.className).toMatch(/aura-btn--secondary/);
+    // Board: the card holds only the wait; the back CTA ends the actions row
+    // after the invoice download, as on the completed page, and stays out of
+    // the live region so the announcement is the wait alone.
+    expect(status.querySelector('a')).toBeNull();
+    const row = nodeWith(html, '[data-testid="invoice-download-link"]')!.parentElement!;
+    expect(row.lastElementChild).toBe(back);
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    expect(doc.querySelectorAll('a[href="/portal"]')).toHaveLength(1);
   });
 
   it('a cycle that is not completed yet gets the processing hero, never "Renewal complete" (financial review)', async () => {
