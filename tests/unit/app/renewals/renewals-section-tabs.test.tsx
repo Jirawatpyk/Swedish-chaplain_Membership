@@ -329,6 +329,24 @@ describe('<RenewalsSectionTabs> AURA link tabs and the phone select', () => {
     ]);
   });
 
+  it('the select carries each counted section\'s pending work, as the tabs do (board "Tier upgrades (2)")', () => {
+    nav.pathname = '/admin/renewals/tier-upgrades';
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <RenewalsSectionTabs pendingReviewCount={1} tasksCount={5} tierUpgradeCount={2} />
+      </NextIntlClientProvider>,
+    );
+    const select = screen.getByRole('combobox', { name: 'Section' });
+    expect(select).toHaveTextContent('Tier upgrades (2)');
+    const native = select.closest('.aura-select')?.querySelector('select');
+    expect([...(native?.options ?? [])].map((o) => o.textContent)).toEqual([
+      'Pipeline',
+      'Pending review (1)',
+      'Tasks (5)',
+      'Tier upgrades (2)',
+    ]);
+  });
+
   it('choosing a section in the select navigates to that tab\'s href', () => {
     push.mockClear();
     nav.searchParams = new URLSearchParams('tier=premium&urgency=t-30');
