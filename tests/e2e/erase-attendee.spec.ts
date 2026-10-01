@@ -138,10 +138,20 @@ test.describe('@e2e DV-6 F6 erase-attendee-PII row action', () => {
     const response = await page.request.post(
       `/api/admin/events/${fixture.eventId}/registrations/${fixture.nonMemberRegistrationId}/erase`,
       {
+        // `Origin` is mandatory: `src/lib/csrf.ts` rejects a state-changing
+        // `/api/**` request without one, with its OWN 403, so a status-only
+        // assertion here was satisfied without reaching the writer guard.
+        headers: { Origin: new URL(page.url()).origin },
         data: { reasonText: 'manager attempt — should be refused' },
         failOnStatusCode: false,
       },
     );
     expect(response.status()).toBe(403);
+    // `adminOnlyWriterGuard` answers a manager with RFC 7807 `Forbidden`;
+    // a CSRF reject has no `title` at all.
+    const body = (await response.json().catch(() => ({}))) as {
+      title?: string;
+    };
+    expect(body.title).toBe('Forbidden');
   });
 });

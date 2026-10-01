@@ -35,6 +35,7 @@
 import { expect, test } from './fixtures';
 import { signInAsAdmin } from './helpers/admin-session';
 import { signInAsManager } from './helpers/manager-session';
+import en from '../../src/i18n/messages/en.json';
 import {
   seedF6RelinkFixture,
   type SeedRelinkFixtureResult,
@@ -216,8 +217,22 @@ test.describe('@a11y @e2e F6 US6 manual relink', () => {
       `relink-disallowed-${fixture.pseudonymisedRegistrationId}`,
     );
     await expect(disallowed).toBeVisible();
-    // i18n-localised FR-014 message — EN default substring.
-    await expect(disallowed).toContainText(/retention-purged/i);
+    // R22 (1 Oct 2026) — assert the right property. The element's VISIBLE
+    // text is the short label (`relink.disallowedShort`, "PII purged —
+    // cannot relink"); the full FR-014 sentence lives in its `aria-label`
+    // and in the tooltip, exactly as `relink-registration-dialog.tsx`
+    // documents ("assertion target is the … `aria-label`, which carries the
+    // full sentence"). This used to `toContainText(/retention-purged/i)`,
+    // which reads the visible text and so could never match — the copy it
+    // looked for is not in either locale file under that spelling.
+    // Both strings come from `en.json` so the test cannot drift from the
+    // copy again.
+    const relinkCopy = en.admin.events.detail.relink;
+    await expect(disallowed).toHaveText(relinkCopy.disallowedShort);
+    await expect(disallowed).toHaveAttribute(
+      'aria-label',
+      relinkCopy.disallowedPseudonymised,
+    );
 
     // And the Relink CTA must be ABSENT for this row.
     const trigger = page.getByTestId(
@@ -333,6 +348,10 @@ test.describe('@a11y @e2e F6 US6 manual relink', () => {
     const response = await page.request.post(
       `/api/admin/events/${fixture.eventId}/registrations/${fixture.nonMemberRegistrationId}/relink`,
       {
+        // `Origin` is mandatory: `src/lib/csrf.ts` rejects a state-changing
+        // `/api/**` request without one, with its own 403 whose body has no
+        // `title` — so the assertions below were unreachable.
+        headers: { Origin: new URL(page.url()).origin },
         data: { newMatchedMemberId: fixture.relinkTargetMemberId },
         failOnStatusCode: false,
       },

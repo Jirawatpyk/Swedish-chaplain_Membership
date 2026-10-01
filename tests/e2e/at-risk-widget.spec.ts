@@ -149,11 +149,16 @@ test.describe('F8 — at-risk widget (US4)', () => {
       page.getByText(/loading at-risk member summary/i),
     ).toBeHidden({ timeout: 15_000 });
 
-    // The beforeEach seedOneAtRiskMember guarantees ≥1 at-risk row at
-    // score=78 (at-risk band). If the Snooze button is missing the
-    // dialog flow is broken — that is the regression this hardening
-    // catches (was previously accepted as a no-op pass).
-    const snoozeButton = page.getByRole('button', { name: /snooze/i }).first();
+    // Target the SEEDED row by name, never `.first()`. R22 (1 Oct 2026):
+    // `.first()` took the highest-scoring at-risk row in the shared
+    // `swecham` tenant, which was the seeded member (score 78) only by
+    // coincidence — any real member scoring higher would have taken the
+    // click, and `cleanup()` only reverts the seeded member's own rows, so
+    // a stray snooze would have hidden a real member for 30 days. The row
+    // buttons carry `aria-label` "Snooze {company}".
+    const snoozeButton = page.getByRole('button', {
+      name: `Snooze ${seeded!.companyName}`,
+    });
     await expect(snoozeButton).toBeVisible({ timeout: 10_000 });
     await snoozeButton.click();
 
@@ -168,11 +173,25 @@ test.describe('F8 — at-risk widget (US4)', () => {
 
     // Pick 30 days option.
     await page.getByRole('radio', { name: /30 days/i }).click();
-    await page.getByRole('button', { name: /confirm snooze/i }).click();
 
-    // Success toast appears (sonner — visible briefly).
+    // Wait for the POST itself, not a wall-clock budget. R22: on the first
+    // project of a run this is the first hit on the snooze route, so the
+    // click pays Turbopack's on-demand compile — which `playwright.config.ts`
+    // itself notes can exceed 45 s per route. The old 5 s toast assertion
+    // bracketed that compile and timed out with the dialog still showing
+    // "Snoozing…", green on the second project only because the route was
+    // warm by then.
+    const snoozed = page.waitForResponse(
+      (res) =>
+        res.url().includes(`/at-risk/${seeded!.memberId}/snooze`) &&
+        res.request().method() === 'POST',
+    );
+    await page.getByRole('button', { name: /confirm snooze/i }).click();
+    expect((await snoozed).status()).toBe(200);
+
+    // Success toast appears (AURA toast via `@/lib/toast`, top centre).
     await expect(page.getByText(/snoozed for 30 days/i)).toBeVisible({
-      timeout: 5_000,
+      timeout: 10_000,
     });
   });
 
@@ -194,8 +213,10 @@ test.describe('F8 — at-risk widget (US4)', () => {
       page.getByText(/loading at-risk member summary/i),
     ).toBeHidden({ timeout: 15_000 });
 
-    // beforeEach seed guarantees an actionable row — assert hard.
-    const contactButton = page.getByRole('button', { name: /contact/i }).first();
+    // Target the seeded row by name, not `.first()` — see AS3 for why.
+    const contactButton = page.getByRole('button', {
+      name: `Contact ${seeded!.companyName}`,
+    });
     await expect(contactButton).toBeVisible({ timeout: 10_000 });
     await contactButton.click();
 
@@ -212,9 +233,19 @@ test.describe('F8 — at-risk widget (US4)', () => {
     await page
       .getByPlaceholder(/brief note/i)
       .fill('Reached out by email about Q2 events.');
+
+    // Wait for the POST, not a wall-clock budget — see AS3 for the
+    // cold-compile rationale. The route answers 201 on success.
+    const recorded = page.waitForResponse(
+      (res) =>
+        res.url().includes(`/at-risk/${seeded!.memberId}/outreach`) &&
+        res.request().method() === 'POST',
+    );
     await page.getByRole('button', { name: /record outreach/i }).click();
+    expect((await recorded).status()).toBe(201);
+
     await expect(page.getByText(/outreach recorded/i)).toBeVisible({
-      timeout: 5_000,
+      timeout: 10_000,
     });
   });
 
