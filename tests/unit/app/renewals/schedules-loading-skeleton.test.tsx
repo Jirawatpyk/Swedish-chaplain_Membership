@@ -33,6 +33,9 @@ describe('reminder schedules loading skeleton', () => {
       host.querySelector(`[data-slot="${slot}"]`),
     );
     order.forEach((n) => expect(n).not.toBeNull());
+    // The chart is a fixed 80px tall at every width, so its placeholder is too
+    // (an aspect ratio shrank it to ~41px on a phone and the page jumped).
+    expect(order[1]!.querySelector('.h-20')).not.toBeNull();
     for (let i = 1; i < order.length; i++) {
       expect(order[i - 1]!.compareDocumentPosition(order[i]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     }

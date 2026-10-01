@@ -15,7 +15,10 @@ import { render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import messages from '@/i18n/messages/en.json';
 import type { EditorStep } from '@/app/(staff)/admin/settings/renewals/schedules/_components/schedule-editor';
-import { ReminderTimeline } from '@/app/(staff)/admin/settings/renewals/schedules/_components/reminder-timeline';
+import {
+  ReminderTimeline,
+  placeAxisLabels,
+} from '@/app/(staff)/admin/settings/renewals/schedules/_components/reminder-timeline';
 
 const S = messages.admin.renewals.settings.schedules;
 
@@ -104,5 +107,35 @@ describe('<ReminderTimeline> chart', () => {
     expect(chart.getAttribute('viewBox')).toBeNull();
     expect(container.querySelector('[data-lane="email"]')?.getAttribute('cx')).toMatch(/%$/);
     expect(screen.queryByRole('region')).toBeNull();
+  });
+});
+
+describe('placeAxisLabels — thins by each label\'s width, at the chart\'s real width', () => {
+  const days = [0, -90, -60, -30, -7, 14];
+  const text = (d: number) => (d === 0 ? 'ครบกำหนด' : d < 0 ? `T${d}` : `T+${d}`);
+  // The chart's own scale: 5% padding either side of -90 … +14.
+  const xAt = (width: number) => (d: number) => ((5 + ((d + 90) / 104) * 90) / 100) * width;
+
+  it.each([320, 390, 1280])('at %ipx no two labels overlap and none leaves the chart', (width) => {
+    const placed = placeAxisLabels(days, text, xAt(width), width);
+    const sorted = [...placed].sort((a, b) => a.left - b.left);
+    for (let i = 1; i < sorted.length; i++) expect(sorted[i]!.left).toBeGreaterThan(sorted[i - 1]!.right);
+    for (const label of placed) {
+      expect(label.left).toBeGreaterThanOrEqual(0);
+      expect(label.right).toBeLessThanOrEqual(width);
+    }
+  });
+
+  it('always keeps the renewal date, and keeps more labels when there is room', () => {
+    const narrow = placeAxisLabels(days, text, xAt(320), 320);
+    const wide = placeAxisLabels(days, text, xAt(1280), 1280);
+    expect(narrow.map((l) => l.day)).toContain(0);
+    expect(wide.length).toBeGreaterThan(narrow.length);
+  });
+
+  it('anchors a label at the chart\'s edge to that edge instead of letting it spill out', () => {
+    const edgeDays = [0, -90];
+    const placed = placeAxisLabels(edgeDays, (d) => (d === 0 ? 'Förfallodag' : 'T-90'), (d) => (d === 0 ? 304 : 16), 320);
+    expect(placed.find((l) => l.day === 0)?.anchor).toBe('end');
   });
 });

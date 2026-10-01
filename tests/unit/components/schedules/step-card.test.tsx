@@ -88,13 +88,55 @@ beforeEach(() => {
 describe('<StepCard> header', () => {
   it('reads the timing as a sentence, with AURA icon buttons to move and remove the step', () => {
     const { onRemove } = renderCard({ index: 0, total: 3 });
-    expect(screen.getByText('30 days before renewal', { selector: 'p' })).toBeInTheDocument();
+    expect(screen.getByText('30 days before renewal', { selector: 'h3' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: S.actions.moveUp })).toBeDisabled();
     expect(screen.getByRole('button', { name: S.actions.moveDown })).toBeEnabled();
     const remove = screen.getByRole('button', { name: S.actions.removeStep });
     expect(remove).toHaveClass('aura-icon-btn');
     fireEvent.click(remove);
     expect(onRemove).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('<StepCard> step identity and focus', () => {
+  it('heads the card with its timing, and names each icon button for that step', () => {
+    renderCard({ index: 1, total: 3 });
+    expect(screen.getByRole('heading', { level: 3, name: '30 days before renewal' })).toBeInTheDocument();
+    for (const name of [S.actions.moveUp, S.actions.moveDown, S.actions.removeStep]) {
+      expect(screen.getByRole('button', { name })).toHaveAccessibleDescription('30 days before renewal');
+    }
+  });
+
+  it('moving a step to the top hands focus to Move later, so focus never drops to the page', () => {
+    const step: EditorStep = {
+      _uiKey: 'regular-0',
+      step_id: 't-30.email',
+      offset_days: -30,
+      channel: 'email',
+      template_id: 'renewal.t-30.regular',
+    };
+    const card = (index: number) => (
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <StepCard
+          tierBucket="regular"
+          step={step}
+          index={index}
+          total={3}
+          readOnly={false}
+          siblingSteps={[]}
+          onChange={vi.fn()}
+          onRemove={vi.fn()}
+          onMoveUp={vi.fn()}
+          onMoveDown={vi.fn()}
+        />
+      </NextIntlClientProvider>
+    );
+    const { rerender } = render(card(1));
+    const up = screen.getByRole('button', { name: S.actions.moveUp });
+    up.focus();
+    fireEvent.click(up);
+    rerender(card(0));
+    expect(screen.getByRole('button', { name: S.actions.moveDown })).toHaveFocus();
   });
 });
 
