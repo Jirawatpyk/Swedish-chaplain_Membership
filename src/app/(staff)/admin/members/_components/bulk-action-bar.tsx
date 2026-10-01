@@ -55,7 +55,8 @@ import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useFixedBarScrollPadding } from '@/hooks/use-fixed-bar-scroll-padding';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { ActionBar, AuraProvider, Button } from '@jirawatpyk/aura-react';
+import { AuraProvider, Button } from '@jirawatpyk/aura-react';
+import { TouchClearActionBar } from '@/components/shell/touch-clear-action-bar';
 import { ArchiveIcon, BellIcon, FileTextIcon, FileMinusIcon, MailIcon } from 'lucide-react';
 import { toast } from '@/lib/toast';
 import { ArchiveConfirmDialog } from './archive-confirm-dialog';
@@ -393,11 +394,11 @@ export function BulkActionBar({
     }, 0);
   }, [onClear]);
 
-  // The ActionBar's own count and Clear, in this bar's words.
+  // The ActionBar's own count, in this bar's words (Clear is the stand-in's,
+  // labelled below).
   const barStrings = useMemo(
     () => ({
       selectedCount: (n: number) => t('selectedCount', { count: n }),
-      clear: () => t('clear'),
     }),
     [t],
   );
@@ -405,7 +406,7 @@ export function BulkActionBar({
   return (
     <>
       <AuraProvider strings={barStrings}>
-        <ActionBar
+        <TouchClearActionBar
           ref={barRef}
           // The app's marker for a viewport ActionBar: globals.css keeps a
           // focused field clear of it by this class, not AURA's modifier.
@@ -413,6 +414,8 @@ export function BulkActionBar({
           label={t('toolbarLabel')}
           selected={count}
           onClearSelection={handleClearSelection}
+          // AURA handoff #122: AURA's own Clear is 32px; the stand-in's is 44px.
+          clearLabel={t('clear')}
           status={
             overCap ? (
               <span className="flex flex-col gap-0.5" role="alert">
@@ -437,6 +440,7 @@ export function BulkActionBar({
               <Button
                 variant="danger-secondary"
                 size="sm"
+                touchHeight
                 icon={<ArchiveIcon aria-hidden="true" />}
                 disabled={overCap}
                 onClick={(e) => {
@@ -453,6 +457,7 @@ export function BulkActionBar({
               <Button
                 variant="secondary"
                 size="sm"
+                touchHeight
                 icon={<MailIcon aria-hidden="true" />}
                 disabled={overCap}
                 onClick={(e) => {
@@ -472,6 +477,7 @@ export function BulkActionBar({
               <Button
                 variant="secondary"
                 size="sm"
+                touchHeight
                 icon={<FileTextIcon aria-hidden="true" />}
                 disabled={overCap}
                 onClick={(e) => {
@@ -488,6 +494,7 @@ export function BulkActionBar({
               <Button
                 variant="secondary"
                 size="sm"
+                touchHeight
                 icon={<FileMinusIcon aria-hidden="true" />}
                 disabled={overCap}
                 onClick={(e) => {
@@ -503,6 +510,7 @@ export function BulkActionBar({
               <Button
                 variant="secondary"
                 size="sm"
+                touchHeight
                 icon={<BellIcon aria-hidden="true" />}
                 disabled={overCap}
                 onClick={(e) => {
@@ -515,7 +523,7 @@ export function BulkActionBar({
               </Button>
             </>
           )}
-        </ActionBar>
+        </TouchClearActionBar>
       </AuraProvider>
 
       <ArchiveConfirmDialog

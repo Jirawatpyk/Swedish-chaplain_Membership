@@ -95,7 +95,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { BanknoteIcon } from 'lucide-react';
-import { ActionBar, AuraProvider, Button } from '@jirawatpyk/aura-react';
+import { AuraProvider, Button } from '@jirawatpyk/aura-react';
+import { TouchClearActionBar } from '@/components/shell/touch-clear-action-bar';
 import { toast } from '@/lib/toast';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
 import { useDialogFinalFocus } from '@/components/broadcast/reason-confirmation-dialog';
@@ -558,11 +559,11 @@ export function PipelineBulkActionBar({
     onClear();
   }, [onClear]);
 
-  // The ActionBar's own count and Clear, in this bar's words.
+  // The ActionBar's own count, in this bar's words (Clear is the stand-in's,
+  // labelled below).
   const barStrings = useMemo(
     () => ({
       selectedCount: (n: number) => t('selectedCount', { count: n }),
-      clear: () => t('clear'),
     }),
     [t],
   );
@@ -577,7 +578,7 @@ export function PipelineBulkActionBar({
         />
       )}
       <AuraProvider strings={barStrings}>
-        <ActionBar
+        <TouchClearActionBar
           ref={barRef}
           // The app's marker for a viewport ActionBar: globals.css keeps a
           // focused field clear of it by this class, not AURA's modifier.
@@ -585,6 +586,8 @@ export function PipelineBulkActionBar({
           label={t('toolbarLabel')}
           selected={count}
           onClearSelection={handleClearClick}
+          // AURA handoff #122: AURA's own Clear is 32px; the stand-in's is 44px.
+          clearLabel={t('clear')}
           status={
             overCap ? (
               <span className="flex flex-col gap-0.5">
@@ -603,6 +606,7 @@ export function PipelineBulkActionBar({
               <Button
                 variant="secondary"
                 size="sm"
+                touchHeight
                 icon="mail"
                 disabled={executing || overCap}
                 onClick={(e) => {
@@ -616,6 +620,7 @@ export function PipelineBulkActionBar({
               <Button
                 variant="secondary"
                 size="sm"
+                touchHeight
                 icon={<BanknoteIcon aria-hidden="true" />}
                 disabled={executing || overCap}
                 onClick={(e) => {
@@ -628,7 +633,7 @@ export function PipelineBulkActionBar({
               </Button>
             </>
           )}
-        </ActionBar>
+        </TouchClearActionBar>
       </AuraProvider>
 
       <ConfirmationDialog

@@ -105,6 +105,7 @@ No item is open (the ratchet in `tests/unit/architecture/aura-internal-class-rat
 |---|---|---|
 | #120 | `DataTable` stacked card: a field that takes the card's full width (the `Admin-tier-upgrades-mobile` board's reason and evidence line, and its "from → to" plan line). Fields sit two to a line, so a long one is squeezed into half the card | The tier upgrade queue's reason and plan cells set `whitespace-normal`, so they wrap inside the half-width field instead of clipping (US7b-1) |
 | #121 | `Tabs` underline variant: the active tab's 2px indicator shows as 1px. `.aura-tab` overlaps the list's 1px track with `margin-bottom: -1px`, but `.aura-tabs__list` has `overflow-x: auto`, which clips the overlapping row (5.22). The boards draw the full 2px | None in the app: the indicator belongs to AURA's `.aura-*` styles, which the app does not override (US7b-1 parity, the renewals section tabs) |
+| #122 | `ActionBar` bulk Clear: the Clear it draws for `onClearSelection` is a 32px ghost button with no way to give it `touchHeight`, so a bulk bar whose own buttons are 44px still has one 32px target (WCAG 2.5.5; `renewal-a11y` "44px targets", relay R24, 5.22) | `TouchClearActionBar` (`src/components/shell/touch-clear-action-bar.tsx`) renders the Clear itself with `touchHeight`, first among the actions, keeping AURA's focus return; used by the members and renewal pipeline bulk bars. Drop it when AURA ships the fix |
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 
