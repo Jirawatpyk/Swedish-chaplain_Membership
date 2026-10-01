@@ -134,6 +134,15 @@ describe('<EscalationTaskQueue> — status and assignment groups (board Admin-re
     }
   });
 
+  it('gives all six chips the 44px touch height on a phone or touch screen (AURA #124, 5.25)', () => {
+    renderQueue(ONE);
+    const chips = ['Status', 'Assignment'].flatMap((name) =>
+      within(screen.getByRole('group', { name })).getAllByRole('button'),
+    );
+    expect(chips).toHaveLength(6);
+    for (const chip of chips) expect(chip).toHaveClass('aura-tag--touch');
+  });
+
   it('presses the status the URL carries', () => {
     searchParamsStub = new URLSearchParams('status=skipped');
     renderQueue(ONE);
