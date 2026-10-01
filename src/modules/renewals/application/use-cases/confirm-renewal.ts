@@ -103,7 +103,10 @@ import {
 import { loadClassificationCounts } from './_lib/classification-input';
 import { LIVE_MEMBERSHIP_BILL_STATUSES } from './_lib/live-membership-bill';
 import { logSupersedeWarnings } from './_lib/log-supersede-warnings';
-import { findOverlappingMembershipCoverageBill } from '../../domain/membership-bill-coverage';
+import {
+  findOverlappingMembershipCoverageBill,
+  type InvoiceStatusLiteral,
+} from '../../domain/membership-bill-coverage';
 import {
   parseCycleId,
   cycleFrozenPriceSatang,
@@ -178,6 +181,13 @@ export type ConfirmRenewalError =
        */
       readonly kind: 'invoice_already_exists';
       readonly invoiceId: string | null;
+      /**
+       * The covering bill's status, so the portal can tell the member the
+       * truth: a `draft` (a 107 auto-draft still awaiting staff review) is
+       * hidden from the portal and not yet payable; a `paid` bill needs no
+       * payment; `issued` / `partially_credited` are there to pay.
+       */
+      readonly invoiceStatus: InvoiceStatusLiteral;
     }
   | {
       // WP4 — the member chose a lower-priced plan without the explicit
@@ -444,6 +454,7 @@ export async function confirmRenewal(
       return err({
         kind: 'invoice_already_exists' as const,
         invoiceId: reportInvoiceId,
+        invoiceStatus: liveBill.status,
       });
     }
 

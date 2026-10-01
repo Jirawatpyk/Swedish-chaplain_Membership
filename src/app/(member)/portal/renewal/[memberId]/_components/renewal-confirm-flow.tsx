@@ -140,7 +140,13 @@ export function RenewalConfirmFlow({
   // queue. The member should pay THAT bill, so the note links to it (the
   // invoice list when the server names none) instead of the generic error.
   // No automatic redirect: the member chooses (maintainer, 1 Oct).
-  const [existingInvoiceHref, setExistingInvoiceHref] = useState<string | null>(null);
+  // The bill's status picks the copy: a `draft` is still being prepared (the
+  // portal hides drafts, so no link), a `paid` bill needs no payment, and
+  // anything else is there to pay.
+  const [existingInvoice, setExistingInvoice] = useState<{
+    readonly href: string;
+    readonly state: 'draft' | 'paid' | 'payable';
+  } | null>(null);
   const [downgradeDialogOpen, setDowngradeDialogOpen] = useState(false);
   const errorRef = useRef<HTMLDivElement>(null);
 
@@ -166,7 +172,7 @@ export function RenewalConfirmFlow({
   const submitConfirm = (acknowledge: boolean) => {
     setDowngradeDialogOpen(false);
     setError(null);
-    setExistingInvoiceHref(null);
+    setExistingInvoice(null);
     startTransition(async () => {
       try {
         const body: {
@@ -190,7 +196,7 @@ export function RenewalConfirmFlow({
         );
         if (!r.ok) {
           const payload = (await r.json().catch(() => ({}))) as {
-            error?: { code?: string; invoice_id?: unknown };
+            error?: { code?: string; invoice_id?: unknown; invoice_status?: unknown };
           };
           const code = isReadOnlyRefusal(r.status, payload)
             ? 'read_only_mode'
@@ -204,11 +210,15 @@ export function RenewalConfirmFlow({
           });
           if (code === 'invoice_already_exists') {
             const invoiceId = payload.error?.invoice_id;
-            setExistingInvoiceHref(
-              typeof invoiceId === 'string' && invoiceId.length > 0
-                ? `/portal/invoices/${encodeURIComponent(invoiceId)}`
-                : '/portal/invoices',
-            );
+            const invoiceStatus = payload.error?.invoice_status;
+            setExistingInvoice({
+              href:
+                typeof invoiceId === 'string' && invoiceId.length > 0
+                  ? `/portal/invoices/${encodeURIComponent(invoiceId)}`
+                  : '/portal/invoices',
+              state:
+                invoiceStatus === 'draft' ? 'draft' : invoiceStatus === 'paid' ? 'paid' : 'payable',
+            });
           }
           setError(code);
           return;
@@ -367,20 +377,39 @@ export function RenewalConfirmFlow({
         <p className="text-xs text-[var(--aura-fg-secondary)]">{t('nextStep')}</p>
       </div>
 
-      {error && existingInvoiceHref ? (
+      {error && existingInvoice ? (
         <Alert
           ref={errorRef}
           tone="info"
           role="alert"
           tabIndex={-1}
-          title={t('existingInvoiceTitle')}
+          title={t(
+            existingInvoice.state === 'draft'
+              ? 'existingInvoiceDraftTitle'
+              : existingInvoice.state === 'paid'
+                ? 'existingInvoicePaidTitle'
+                : 'existingInvoiceTitle',
+          )}
           data-testid="confirm-existing-invoice"
         >
           <div className="flex flex-col items-start gap-[var(--aura-space-3)]">
-            <p>{t('existingInvoiceBody')}</p>
-            <Link href={existingInvoiceHref} className={buttonClass({ variant: 'primary', touchHeight: true })}>
-              {t('existingInvoiceCta')}
-            </Link>
+            <p>
+              {t(
+                existingInvoice.state === 'draft'
+                  ? 'existingInvoiceDraftBody'
+                  : existingInvoice.state === 'paid'
+                    ? 'existingInvoicePaidBody'
+                    : 'existingInvoiceBody',
+              )}
+            </p>
+            {existingInvoice.state !== 'draft' && (
+              <Link
+                href={existingInvoice.href}
+                className={buttonClass({ variant: 'primary', touchHeight: true })}
+              >
+                {t('existingInvoiceCta')}
+              </Link>
+            )}
           </div>
         </Alert>
       ) : error ? (
