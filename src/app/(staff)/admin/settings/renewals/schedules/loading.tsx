@@ -32,7 +32,7 @@ export default async function Loading() {
           {/* The tier heading, the chart and its legend. */}
           <div data-slot="chart-skeleton" className="flex flex-col gap-[var(--aura-space-2)]">
             <SkeletonBlock className="h-5 w-24" />
-            <SkeletonBlock className="aspect-[7/1] w-full" />
+            <SkeletonBlock className="h-20 w-full" />
             <SkeletonBlock className="h-3 w-28" />
           </div>
           {/* Step cards: timing and three icon buttons, then channel and timing. */}

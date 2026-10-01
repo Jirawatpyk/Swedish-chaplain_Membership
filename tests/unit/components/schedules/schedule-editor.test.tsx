@@ -409,13 +409,15 @@ describe('<ScheduleEditor> — two consecutive "Add step" clicks (guards Issue 3
     // offsets among the step nodes is direct evidence of two DISTINCT
     // step_ids (the bug this guards against: two IDENTICAL `t-30.email`
     // entries would render identical timing-sentence text here).
-    // 122 US7b-2 — each step is an item of the steps list, named "Step N",
-    // headed by its timing sentence. Two DISTINCT headings are direct
-    // evidence of two DISTINCT step_ids (two identical `t-30.email` steps
-    // would read the same timing).
-    const items = screen.getAllByRole('listitem', { name: /^Step \d$/ });
+    // 122 US7b-2 — each step is an item of the steps list, headed (h3) by
+    // its timing sentence. Two DISTINCT headings are direct evidence of two
+    // DISTINCT step_ids (two identical `t-30.email` steps would read the
+    // same timing).
+    // The steps list is the panel's ordered list (the chart legend is a <ul>).
+    const steps = screen.getByRole('tabpanel').querySelector('ol') as HTMLElement;
+    const items = within(steps).getAllByRole('listitem');
     expect(items).toHaveLength(2);
-    const headings = items.map((li) => li.querySelector('p')?.textContent ?? '');
+    const headings = items.map((li) => within(li).getByRole('heading', { level: 3 }).textContent ?? '');
     expect(headings[0]).not.toBe(headings[1]);
   });
 });

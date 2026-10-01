@@ -11,7 +11,9 @@
  *     the lower lane, both in the chart colour; a dashed line marks the
  *     renewal date.
  *   - The axis reads "T-90 … Due … T+14": the step offsets plus the renewal
- *     date, thinned where two labels would collide (Due always stays).
+ *     date, thinned by each label's estimated width at the chart's measured
+ *     width, so "ครบกำหนด" or "Förfallodag" never runs into a neighbour on a
+ *     phone (Due always stays); a label at either edge anchors to that edge.
  *   - One `role="img"` SVG named by a sentence listing the email and task
  *     timings, so a screen reader hears the whole schedule at once; the
  *     legend names the two marker shapes.
@@ -23,6 +25,7 @@
  * Markers are keyed by the editor's stable `_uiKey`, never by `step_id`
  * (recomposed on every timing edit).
  */
+import { useLayoutEffect, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import type { EditorStep } from './schedule-editor';
 import type { TierBucket } from '@/modules/renewals/client';
@@ -41,14 +44,79 @@ const TASK_Y = 42;
 const AXIS_Y = 32;
 const LABEL_Y = 70;
 const RADIUS = 6;
-/** Closest two axis labels may sit, in percent of the width, before one is dropped. */
-const MIN_LABEL_GAP = 9;
+const LABEL_SIZE = 11;
+/** A generous average glyph width at 11px, so the estimate errs wide. */
+const LABEL_CHAR_PX = 7;
+/** Space kept between two axis labels, in pixels. */
+const LABEL_GAP_PX = 6;
+/** Width assumed until the chart is measured (server render, tests). */
+const DEFAULT_WIDTH = 640;
 /** Days shown either side of the renewal date when there are no other steps. */
 const EMPTY_SPAN = 30;
+
+export interface PlacedAxisLabel {
+  readonly day: number;
+  readonly text: string;
+  readonly anchor: 'start' | 'middle' | 'end';
+  /** The label's estimated extent, in pixels from the chart's left edge. */
+  readonly left: number;
+  readonly right: number;
+}
+
+/**
+ * Picks the axis labels that fit: each label's width is estimated from its
+ * length, a label that would cross the chart's edge anchors to that edge, and
+ * a label that would overlap one already kept is dropped. `days` is in
+ * priority order (the renewal date first, so it always stays).
+ */
+export function placeAxisLabels(
+  days: ReadonlyArray<number>,
+  textOf: (day: number) => string,
+  xOf: (day: number) => number,
+  width: number,
+): PlacedAxisLabel[] {
+  const kept: PlacedAxisLabel[] = [];
+  for (const day of days) {
+    const text = textOf(day);
+    const w = text.length * LABEL_CHAR_PX;
+    const x = xOf(day);
+    let anchor: PlacedAxisLabel['anchor'] = 'middle';
+    let left = x - w / 2;
+    let right = x + w / 2;
+    if (left < 0) {
+      anchor = 'start';
+      left = x;
+      right = x + w;
+    } else if (right > width) {
+      anchor = 'end';
+      left = x - w;
+      right = x;
+    }
+    if (left < 0 || right > width) continue;
+    if (kept.every((k) => right + LABEL_GAP_PX <= k.left || left >= k.right + LABEL_GAP_PX)) {
+      kept.push({ day, text, anchor, left, right });
+    }
+  }
+  return kept;
+}
 
 export function ReminderTimeline({ tierBucket, steps }: ReminderTimelineProps) {
   const t = useTranslations('admin.renewals.settings.schedules');
   const locale = useLocale();
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [width, setWidth] = useState(DEFAULT_WIDTH);
+  useLayoutEffect(() => {
+    const svg = svgRef.current;
+    if (!svg || typeof ResizeObserver === 'undefined') return;
+    const measure = () => {
+      const w = svg.getBoundingClientRect().width;
+      if (w > 0) setWidth(w);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(svg);
+    return () => observer.disconnect();
+  }, []);
   const sorted = [...steps].sort((a, b) => a.offset_days - b.offset_days);
 
   const offsets = sorted.map((s) => s.offset_days);
@@ -62,11 +130,8 @@ export function ReminderTimeline({ tierBucket, steps }: ReminderTimelineProps) {
   // Axis labels: every distinct offset plus the renewal date, Due first so it
   // always survives the thinning.
   const axisDays = [0, ...[...new Set(offsets)].filter((d) => d !== 0)];
-  const kept: number[] = [];
-  for (const d of axisDays) {
-    if (kept.every((k) => Math.abs(pct(k) - pct(d)) >= MIN_LABEL_GAP)) kept.push(d);
-  }
   const axisLabel = (d: number) => (d === 0 ? t('timeline.dueShort') : d < 0 ? `T${d}` : `T+${d}`);
+  const labels = placeAxisLabels(axisDays, axisLabel, (d) => (pct(d) / 100) * width, width);
 
   const list = new Intl.ListFormat(locale, { style: 'long', type: 'conjunction' });
   const timings = (channel: EditorStep['channel']) => {
@@ -82,6 +147,7 @@ export function ReminderTimeline({ tierBucket, steps }: ReminderTimelineProps) {
   return (
     <div className="flex flex-col gap-[var(--aura-space-2)]">
       <svg
+        ref={svgRef}
         role="img"
         aria-label={chartName}
         width="100%"
@@ -122,17 +188,17 @@ export function ReminderTimeline({ tierBucket, steps }: ReminderTimelineProps) {
             />
           ),
         )}
-        {kept.map((d) => (
+        {labels.map((label) => (
           <text
-            key={d}
+            key={label.day}
             data-axis-label=""
-            x={x(d)}
+            x={x(label.day)}
             y={LABEL_Y}
-            textAnchor="middle"
-            fontSize={11}
+            textAnchor={label.anchor}
+            fontSize={LABEL_SIZE}
             fill="var(--aura-fg-secondary)"
           >
-            {axisLabel(d)}
+            {label.text}
           </text>
         ))}
       </svg>

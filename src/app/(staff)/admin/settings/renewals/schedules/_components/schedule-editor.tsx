@@ -502,7 +502,7 @@ export function ScheduleEditor({
                 // Keyed by `_uiKey`, generated once per step: `step_id` is
                 // recomposed on every timing edit, and an index key would
                 // swap field values on a reorder (K5, v3 Change 3).
-                <li key={step._uiKey} aria-label={t('stepItem', { n: idx + 1 })}>
+                <li key={step._uiKey}>
                   <StepCard
                     tierBucket={b}
                     step={step}

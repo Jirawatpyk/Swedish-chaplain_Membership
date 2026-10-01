@@ -58,7 +58,7 @@
  * both identifiers so an admin editing plain-language controls can
  * never produce a malformed wire shape.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import {
   Combobox,
@@ -144,6 +144,20 @@ export function StepCard({
   // be namespaced per-tier-per-row or duplicate ids collide across the
   // 5 concurrently-mounted panels (WCAG 4.1.1).
   const idPrefix = `${tierBucket}-${index}`;
+  // The timing heading names the card: each icon button is described by it,
+  // so "Move up" says which step it moves (nine cards repeat the same three).
+  const headingId = useId();
+  const upRef = useRef<HTMLButtonElement>(null);
+  const downRef = useRef<HTMLButtonElement>(null);
+  const lastMove = useRef<'up' | 'down' | null>(null);
+  // A step moved to either end disables the button just pressed; hand focus to
+  // the other arrow so it never drops to the page (WCAG 2.4.3).
+  useEffect(() => {
+    const pressed = lastMove.current;
+    lastMove.current = null;
+    if (pressed === 'up' && index === 0) downRef.current?.focus();
+    else if (pressed === 'down' && index === total - 1) upRef.current?.focus();
+  }, [index, total]);
 
   // v3 Change 1 — has the admin explicitly opened the "Custom…" branch
   // this session? Needed because selecting "Custom…" does NOT itself
@@ -298,26 +312,39 @@ export function StepCard({
     <div className="flex flex-col gap-[var(--aura-space-3)] rounded-[var(--aura-radius-lg)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] p-[var(--aura-space-4)]">
       <div className="flex flex-wrap items-center justify-between gap-[var(--aura-space-2)]">
         {/* The timing in plain language, not "T-30". */}
-        <p className="m-0 text-sm font-semibold text-[var(--aura-fg-primary)]">{timingSentence(step.offset_days, t)}</p>
+        <h3 id={headingId} className="m-0 text-sm font-semibold text-[var(--aura-fg-primary)]">
+          {timingSentence(step.offset_days, t)}
+        </h3>
         <div className="flex items-center gap-[var(--aura-space-1)]">
           <IconButton
+            ref={upRef}
             icon="arrow-up"
             label={t('actions.moveUp')}
+            aria-describedby={headingId}
             touchHeight
             disabled={readOnly || index === 0}
-            onClick={onMoveUp}
+            onClick={() => {
+              lastMove.current = 'up';
+              onMoveUp();
+            }}
           />
           <IconButton
+            ref={downRef}
             icon="arrow-down"
             label={t('actions.moveDown')}
+            aria-describedby={headingId}
             touchHeight
             disabled={readOnly || index === total - 1}
-            onClick={onMoveDown}
+            onClick={() => {
+              lastMove.current = 'down';
+              onMoveDown();
+            }}
           />
           <IconButton
             icon="trash-2"
             tone="danger"
             label={t('actions.removeStep')}
+            aria-describedby={headingId}
             touchHeight
             disabled={readOnly}
             onClick={onRemove}

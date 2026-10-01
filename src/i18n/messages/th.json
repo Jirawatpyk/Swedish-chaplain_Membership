@@ -4424,8 +4424,7 @@
           "lastSaved": "บันทึกล่าสุด {date}",
           "stepCount": "{count, plural, =0 {ไม่มีขั้นตอน} other {{count} ขั้นตอน}}",
           "tierTabsLabel": "ระดับสมาชิก",
-          "saveBarLabel": "การดำเนินการกับตาราง",
-          "stepItem": "ขั้นตอนที่ {n}"
+          "saveBarLabel": "การดำเนินการกับตาราง"
         }
       },
       "workQueue": {

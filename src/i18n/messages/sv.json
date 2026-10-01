@@ -4424,8 +4424,7 @@
           "lastSaved": "Senast sparad {date}",
           "stepCount": "{count, plural, =0 {Inga steg} one {1 steg} other {{count} steg}}",
           "tierTabsLabel": "Medlemsnivå",
-          "saveBarLabel": "Schemaåtgärder",
-          "stepItem": "Steg {n}"
+          "saveBarLabel": "Schemaåtgärder"
         }
       },
       "workQueue": {
