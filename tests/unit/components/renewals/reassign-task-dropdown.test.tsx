@@ -19,7 +19,7 @@
  * and its i18n keys are guaranteed present by `check:i18n`.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { ReassignTaskDropdown } from '@/app/(staff)/admin/renewals/tasks/_components/reassign-task-dropdown';
@@ -71,23 +71,19 @@ describe('<ReassignTaskDropdown> #5b', () => {
       </NextIntlClientProvider>,
     );
 
-    // The lazy-load effect fires on open → the trigger shows the loading copy
-    // (NOT a bare disabled control) while the fetch is pending. This fails if
-    // `isLoadingUsers` is unwired from the trigger.
-    expect(
-      await screen.findByText(reassign.loading, undefined, { timeout: 4000 }),
-    ).toBeInTheDocument();
+    // The lazy-load effect fires on open → the field says "Loading staff…"
+    // (NOT a bare disabled control) while the fetch is pending. 122 US7b-2:
+    // the AURA Combobox carries it as its placeholder.
+    const box = await screen.findByRole('combobox', { name: reassign.assignee_label });
+    await waitFor(() => expect(box).toHaveAttribute('placeholder', reassign.loading), { timeout: 4000 });
 
     // Resolving clears the loading copy back to the placeholder — proves the
-    // spinner is bound to the in-flight state, not always-on.
+    // loading state is bound to the in-flight fetch, not always-on.
     d.resolve({
       ok: true,
       json: async () => ({ users: STAFF }),
     } as unknown as Response);
-    expect(
-      await screen.findByText(reassign.placeholder, undefined, { timeout: 4000 }),
-    ).toBeInTheDocument();
-    expect(screen.queryByText(reassign.loading)).not.toBeInTheDocument();
+    await waitFor(() => expect(box).toHaveAttribute('placeholder', reassign.placeholder), { timeout: 4000 });
   });
 
   it('routes the staff role through the shared assigneeRole i18n key, not the raw enum (#5b, structural — visible render is E2E-only, see header)', () => {
@@ -102,3 +98,86 @@ describe('<ReassignTaskDropdown> #5b', () => {
     expect(src.includes('retryToken')).toBe(true);
   });
 });
+
+/**
+ * 122 US7b-2 (T734) — the staff picker is an AURA `Combobox` (cmdk and the
+ * Base UI popover go): each option shows the name, then email · role, and the
+ * current assignee is marked and cannot be picked. The request is unchanged.
+ */
+describe('<ReassignTaskDropdown> on AURA Combobox', () => {
+  const TWO = [
+    ...STAFF,
+    { id: '22222222-2222-4222-8222-222222222222', email: 'b@x.io', display_name: 'Bo Berg', role: 'manager' as const },
+  ];
+
+  beforeEach(() => {
+    vi.useRealTimers();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: true, json: async () => ({ users: TWO }) }) as unknown as Response),
+    );
+  });
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  function renderPicker(onSubmit = vi.fn().mockResolvedValue(undefined)) {
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <ReassignTaskDropdown
+          open
+          onOpenChange={() => {}}
+          currentAssigneeUserId={STAFF[0]!.id}
+          onSubmit={onSubmit}
+        />
+      </NextIntlClientProvider>,
+    );
+    return onSubmit;
+  }
+
+  it('is an AURA combobox named "Assignee"', async () => {
+    renderPicker();
+    const box = await screen.findByRole('combobox', { name: reassign.assignee_label });
+    expect(box.closest('.aura-field, .aura-combobox')).not.toBeNull();
+  });
+
+  it('lists each staff member with email · role, the current assignee marked and disabled', async () => {
+    renderPicker();
+    const box = await screen.findByRole('combobox', { name: reassign.assignee_label });
+    await waitFor(() => expect(box).not.toBeDisabled());
+    fireEvent.focus(box);
+    fireEvent.change(box, { target: { value: '' } });
+    fireEvent.keyDown(box, { key: 'ArrowDown' });
+    const options = await screen.findAllByRole('option');
+    expect(options).toHaveLength(2);
+    const ada = options.find((o) => o.textContent?.includes('Ada Admin'))!;
+    expect(ada).toHaveTextContent('a@x.io · Admin');
+    expect(ada).toHaveTextContent(reassign.current_assignee_badge);
+    expect(ada).toHaveAttribute('aria-disabled', 'true');
+    expect(options.find((o) => o.textContent?.includes('Bo Berg'))).toHaveTextContent('b@x.io · Manager');
+  });
+
+  it('a failed staff load is announced as an alert with a Retry button', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 500, json: async () => ({}) }) as unknown as Response));
+    renderPicker();
+    const alert = await screen.findByRole('alert');
+    expect(alert.closest('.aura-alert')).not.toBeNull();
+    expect(within(alert).getByRole('button', { name: reassign.retry })).toBeInTheDocument();
+  });
+
+  it('picking a colleague enables Reassign and submits their id', async () => {
+    const onSubmit = renderPicker();
+    const box = await screen.findByRole('combobox', { name: reassign.assignee_label });
+    await waitFor(() => expect(box).not.toBeDisabled());
+    expect(screen.getByRole('button', { name: reassign.confirm })).toBeDisabled();
+    fireEvent.focus(box);
+    fireEvent.change(box, { target: { value: 'Bo' } });
+    fireEvent.click(await screen.findByRole('option', { name: /Bo Berg/ }));
+    const confirm = screen.getByRole('button', { name: reassign.confirm });
+    await waitFor(() => expect(confirm).not.toBeDisabled());
+    fireEvent.click(confirm);
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith(TWO[1]!.id));
+  });
+});
+

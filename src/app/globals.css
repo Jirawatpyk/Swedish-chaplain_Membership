@@ -302,7 +302,7 @@ html:has(.chamber-viewport-actionbar) {
    are read, never AURA's own classes. The bar never shows a status, so its
    empty status cell gives the actions the whole row on a phone. */
 @media (max-width: 639.98px) {
-  :is(.member-form-actions, .plan-form-actions) {
+  :is(.member-form-actions, .plan-form-actions, .schedule-actions) {
     bottom: 0;
     margin-inline: calc(-1 * var(--page-padding-x));
     border-inline: 0;
@@ -316,20 +316,20 @@ html:has(.chamber-viewport-actionbar) {
   }
   /* AURA pads the bar's row 16px at its start and 12px at its end; pinned
      edge to edge, the buttons sit 16px from both screen edges, as drawn. */
-  :is(.member-form-actions, .plan-form-actions) > div {
+  :is(.member-form-actions, .plan-form-actions, .schedule-actions) > div {
     padding-inline: var(--aura-space-4);
   }
-  :is(.member-form-actions, .plan-form-actions) > div > :first-child:empty {
+  :is(.member-form-actions, .plan-form-actions, .schedule-actions) > div > :first-child:empty {
     display: none;
   }
-  :is(.member-form-actions, .plan-form-actions) > div > :last-child {
+  :is(.member-form-actions, .plan-form-actions, .schedule-actions) > div > :last-child {
     flex: 1 1 auto;
     flex-wrap: nowrap;
   }
-  :is(.member-form-actions, .plan-form-actions) > div > :last-child > * {
+  :is(.member-form-actions, .plan-form-actions, .schedule-actions) > div > :last-child > * {
     flex: 2 1 0;
   }
-  :is(.member-form-actions, .plan-form-actions) > div > :last-child > :first-child:not(:last-child) {
+  :is(.member-form-actions, .plan-form-actions, .schedule-actions) > div > :last-child > :first-child:not(:last-child) {
     flex: 1 1 0;
   }
   /* The clone bar sits inside its card (board `Admin-plans-clone-mobile`):
@@ -348,7 +348,7 @@ html:has(.chamber-viewport-actionbar) {
   }
 }
 @media (min-width: 640px) {
-  :is(.member-form-actions, .plan-form-actions) {
+  :is(.member-form-actions, .plan-form-actions, .schedule-actions) {
     position: static;
     margin-top: 0;
     border: 0;
@@ -356,7 +356,7 @@ html:has(.chamber-viewport-actionbar) {
     background: transparent;
     box-shadow: none;
   }
-  :is(.member-form-actions, .plan-form-actions) > div {
+  :is(.member-form-actions, .plan-form-actions, .schedule-actions) > div {
     min-height: 0;
     padding: 0;
   }

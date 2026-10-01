@@ -329,8 +329,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the renewal tasks page keeps the legacy kit until US7b', async () => {
-      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/renewals/tasks/page.tsx')).toEqual([]);
+    it('the renewal tasks page is on AURA too since US7b-2', async () => {
+      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/renewals/tasks/page.tsx')).toHaveLength(1);
     });
   });
 
@@ -350,10 +350,28 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the escalation task queue keeps the legacy kit until US7b-2', async () => {
-      expect(
-        await ratchetHits(legacy, 'src/app/(staff)/admin/renewals/tasks/_components/escalation-task-queue.tsx'),
-      ).toEqual([]);
+  });
+
+  describe('the US7b-2 escalation tasks and reminder schedules are on AURA (the real MIGRATED_PATHS)', () => {
+    const legacy = "import { Button } from '@/components/ui/button';\nexport const B = Button;\n";
+
+    it.each([
+      'src/app/(staff)/admin/renewals/tasks/page.tsx',
+      'src/app/(staff)/admin/renewals/tasks/loading.tsx',
+      'src/app/(staff)/admin/renewals/tasks/error.tsx',
+      'src/app/(staff)/admin/renewals/tasks/_components/escalation-task-queue.tsx',
+      'src/app/(staff)/admin/renewals/tasks/_components/reassign-task-dropdown.tsx',
+      'src/app/(staff)/admin/settings/renewals/schedules/page.tsx',
+      'src/app/(staff)/admin/settings/renewals/schedules/loading.tsx',
+      'src/app/(staff)/admin/settings/renewals/schedules/error.tsx',
+      'src/app/(staff)/admin/settings/renewals/schedules/_components/step-card.tsx',
+      'src/app/(staff)/admin/settings/renewals/schedules/_components/schedule-editor.tsx',
+    ])('%s cannot import the legacy kit', async (path) => {
+      expect(await ratchetHits(legacy, path)).toHaveLength(1);
+    });
+
+    it('control: the settings hub keeps the legacy kit until US10', async () => {
+      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/settings/page.tsx')).toEqual([]);
     });
   });
 });

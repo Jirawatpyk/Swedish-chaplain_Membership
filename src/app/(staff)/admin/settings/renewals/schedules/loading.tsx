@@ -6,47 +6,66 @@
  *
  * Wrapped in `<FormContainer>` so `pnpm check:layout` invariant
  * (page+loading both use the same variant) holds.
+ *
+ * 122 US7b-2 (T738): the editor's shape on AURA skeleton blocks — tier tabs,
+ * the tier heading and chart, step cards, then the save bar.
  */
+
 import { getTranslations } from 'next-intl/server';
-import { Card, CardContent } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
+import { PageSkeletonShell, SkeletonBlock } from '@/components/shell/page-skeletons';
 
 export default async function Loading() {
   const t = await getTranslations('admin.renewals.settings.schedules');
   return (
-    <FormContainer>
-      <PageHeader title={t('title')} subtitle={t('subtitle')} />
-      <div className="flex flex-col gap-3" aria-hidden>
-        {/* 5-tab placeholder */}
-        <div className="flex flex-wrap gap-1.5">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-9 w-28" />
-          ))}
-        </div>
-        {/* timeline-strip placeholder (horizontal journey Stepper) */}
-        <Skeleton className="h-28 w-full rounded-md" />
-        {/* 3 step-row placeholders */}
-        {Array.from({ length: 3 }).map((_, i) => (
-          <Card key={i}>
-            <CardContent className="flex flex-col gap-3 p-3">
+    <PageSkeletonShell ariaLabel={t('title')}>
+      <FormContainer aria-busy="true">
+        <PageHeader title={t('title')} subtitle={t('subtitle')} />
+        <div className="flex flex-col gap-[var(--aura-space-4)]" aria-hidden>
+          {/* The five tier tabs. */}
+          <div data-slot="tabs-skeleton" className="flex gap-[var(--aura-space-4)] overflow-hidden">
+            {Array.from({ length: 5 }, (_, i) => (
+              <SkeletonBlock key={i} className="h-6 w-20 shrink-0" />
+            ))}
+          </div>
+          {/* The tier heading, the chart and its legend. */}
+          <div data-slot="chart-skeleton" className="flex flex-col gap-[var(--aura-space-2)]">
+            <SkeletonBlock className="h-5 w-24" />
+            <SkeletonBlock className="h-20 w-full" />
+            <SkeletonBlock className="h-3 w-28" />
+          </div>
+          {/* Step cards: timing and three icon buttons, then channel and timing. */}
+          {Array.from({ length: 3 }, (_, i) => (
+            <div
+              key={i}
+              data-slot="step-skeleton"
+              className="flex flex-col gap-[var(--aura-space-3)] rounded-[var(--aura-radius-lg)] border border-[var(--aura-border-default)] p-[var(--aura-space-4)]"
+            >
               <div className="flex items-center justify-between">
-                <Skeleton className="h-6 w-32" />
-                <div className="flex gap-1">
-                  <Skeleton className="h-8 w-8" />
-                  <Skeleton className="h-8 w-8" />
-                  <Skeleton className="h-8 w-8" />
+                <SkeletonBlock className="h-5 w-40" />
+                <div className="flex gap-[var(--aura-space-1)]">
+                  <SkeletonBlock className="size-8" />
+                  <SkeletonBlock className="size-8" />
+                  <SkeletonBlock className="size-8" />
                 </div>
               </div>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <Skeleton className="h-9 w-full" />
-                <Skeleton className="h-9 w-full" />
+              <div className="grid grid-cols-1 gap-[var(--aura-space-3)] sm:grid-cols-2">
+                <SkeletonBlock className="h-14 w-full" />
+                <SkeletonBlock className="h-14 w-full" />
               </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-    </FormContainer>
+            </div>
+          ))}
+          {/* The save bar: status, Add step, Save schedule. */}
+          <div data-slot="save-bar-skeleton" className="flex flex-wrap items-center justify-between gap-[var(--aura-space-3)]">
+            <SkeletonBlock className="h-4 w-48" />
+            <div className="flex gap-[var(--aura-space-2)]">
+              <SkeletonBlock className="h-9 w-28" />
+              <SkeletonBlock className="h-9 w-32" />
+            </div>
+          </div>
+        </div>
+      </FormContainer>
+    </PageSkeletonShell>
   );
 }

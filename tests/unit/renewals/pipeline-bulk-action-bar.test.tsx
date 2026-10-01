@@ -741,6 +741,21 @@ describe('PipelineBulkActionBar — accessibility + selection wiring', () => {
     }
   });
 
+  it('every control in the bar, Clear included, is a 44px touch target (WCAG 2.5.5, renewal-a11y)', () => {
+    render(
+      wrap(
+        <PipelineBulkActionBar
+          selectedCycles={[{ cycleId: 'c1', companyName: 'Acme' }]}
+          totalMatching={1}
+          onClear={vi.fn()}
+        />,
+      ),
+    );
+    const buttons = within(screen.getByRole('region', { name: B.toolbarLabel })).getAllByRole('button');
+    expect(buttons.map((b) => b.textContent)).toEqual([B.clear, B.actions.sendReminder, B.actions.markPaid]);
+    for (const button of buttons) expect(button).toHaveClass('aura-btn--touch');
+  });
+
   it('renders no spacer: the bar is in the flow, not fixed over the page', () => {
     const { container } = render(
       wrap(

@@ -14,8 +14,7 @@
 
 import { useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+import { Textarea } from '@jirawatpyk/aura-react';
 import { TaskActionDialog } from './task-action-dialog';
 
 export interface DoneTaskDialogProps {
@@ -23,7 +22,7 @@ export interface DoneTaskDialogProps {
   readonly onOpenChange: (open: boolean) => void;
   readonly onSubmit: (outcomeNote: string | undefined) => Promise<void>;
   /** UX-audit PR-A #5a — focus-return resolver; forwarded to the shared shell. */
-  readonly finalFocus?: (() => HTMLElement | false | null) | undefined;
+  readonly finalFocus?: (() => HTMLElement | null) | undefined;
 }
 
 const MAX_NOTE_LENGTH = 1000;
@@ -62,31 +61,19 @@ export function DoneTaskDialog({
       onSubmit={handleSubmit}
       finalFocus={finalFocus}
     >
-      <div className="grid gap-2">
-        <Label htmlFor="outcome-note">{t('outcome_note_label')}</Label>
-        <Textarea
-          id="outcome-note"
-          value={outcomeNote}
-          onChange={(e) =>
-            setOutcomeNote(e.target.value.slice(0, MAX_NOTE_LENGTH))
-          }
-          placeholder={t('outcome_note_placeholder')}
-          disabled={isPending}
-          rows={4}
-          maxLength={MAX_NOTE_LENGTH}
-          aria-describedby="outcome-note-counter"
-        />
-        {/* R10 W1 close — dropped aria-live="polite" so SR doesn't
-            announce on every keystroke. The aria-describedby wiring on
-            the textarea above already exposes this counter to AT on
-            focus per ux-standards § 16. */}
-        <p
-          id="outcome-note-counter"
-          className="text-right text-xs text-muted-foreground"
-        >
-          {t('chars_remaining', { count: charsRemaining })}
-        </p>
-      </div>
+      {/* AURA's Textarea: the label names it, the counter is its hint
+          (read with the field, not announced on every keystroke). */}
+      <Textarea
+        id="outcome-note"
+        label={t('outcome_note_label')}
+        hint={t('chars_remaining', { count: charsRemaining })}
+        value={outcomeNote}
+        onChange={(e) => setOutcomeNote(e.target.value.slice(0, MAX_NOTE_LENGTH))}
+        placeholder={t('outcome_note_placeholder')}
+        readOnly={isPending}
+        rows={4}
+        maxLength={MAX_NOTE_LENGTH}
+      />
     </TaskActionDialog>
   );
 }

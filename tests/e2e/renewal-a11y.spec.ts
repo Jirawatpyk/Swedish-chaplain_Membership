@@ -154,15 +154,19 @@ test.describe('@a11y T267 — F8 axe-core scan', () => {
       const toolbar = page.getByRole('region', { name: 'Bulk actions' });
       await expect(toolbar).toBeVisible();
 
-      // WCAG 2.5.5 — every actionable control inside the toolbar (the two
-      // action buttons + Clear) meets the 44px minimum target size.
+      // Target size for every control in the toolbar (the two actions +
+      // Clear). docs/ux-standards.md requires 44px on mobile (WCAG 2.5.5),
+      // and AURA's `touchHeight` is 44px below 640px by design (5.15; the
+      // bar's Clear from 5.23). On a wider screen, WCAG 2.5.8's 24px applies.
+      const viewportWidth = page.viewportSize()?.width ?? 1280;
+      const minHeight = viewportWidth < 640 ? 44 : 24;
       const targets = toolbar.getByRole('button');
       const targetCount = await targets.count();
       for (let i = 0; i < targetCount; i++) {
         const box = await targets.nth(i).boundingBox();
         expect(box, `toolbar button ${i} has a bounding box`).not.toBeNull();
         if (box) {
-          expect(box.height, `toolbar button ${i} height >= 44px`).toBeGreaterThanOrEqual(44);
+          expect(box.height, `toolbar button ${i} height >= ${minHeight}px at ${viewportWidth}px`).toBeGreaterThanOrEqual(minHeight);
         }
       }
 

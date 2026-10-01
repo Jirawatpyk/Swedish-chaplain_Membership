@@ -17,21 +17,7 @@
 import { useEffect, useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
 import { z } from 'zod';
-import { Check, ChevronsUpDown, Loader2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from '@/components/ui/command';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
+import { Alert, Button, Combobox, type ComboboxOption } from '@jirawatpyk/aura-react';
 import { TaskActionDialog } from './task-action-dialog';
 
 /**
@@ -66,7 +52,7 @@ export interface ReassignTaskDropdownProps {
   readonly currentAssigneeUserId: string | null;
   readonly onSubmit: (toUserId: string) => Promise<void>;
   /** UX-audit PR-A #5a — focus-return resolver; forwarded to the shared shell. */
-  readonly finalFocus?: (() => HTMLElement | false | null) | undefined;
+  readonly finalFocus?: (() => HTMLElement | null) | undefined;
 }
 
 export function ReassignTaskDropdown({
@@ -85,7 +71,6 @@ export function ReassignTaskDropdown({
   const [loadError, setLoadError] = useState(false);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
-  const [popoverOpen, setPopoverOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   /**
    * R8 R4-C1 close — retry-counter forces the lazy-load effect to
@@ -146,11 +131,23 @@ export function ReassignTaskDropdown({
     });
   }
 
-  const selectedUser = users?.find((u) => u.id === selectedUserId) ?? null;
-  const triggerLabel =
-    selectedUser !== null
-      ? selectedUser.display_name ?? selectedUser.email
-      : t('placeholder');
+  // 122 US7b-2 (T734) — AURA's Combobox searches the label, the description
+  // and the keywords. The current assignee is marked and cannot be picked:
+  // reassigning to them is a no-op the confirm already refused.
+  const options: ComboboxOption[] = (users ?? []).map((u) => {
+    const current = u.id === currentAssigneeUserId;
+    return {
+      value: u.id,
+      label: u.display_name ?? u.email,
+      description: [
+        ...(u.display_name !== null ? [u.email] : []),
+        tRole(`assigneeRole.${u.role}`),
+        ...(current ? [t('current_assignee_badge')] : []),
+      ].join(' · '),
+      keywords: [u.email],
+      disabled: current,
+    };
+  });
   const canSubmit =
     selectedUserId !== null && selectedUserId !== currentAssigneeUserId;
 
@@ -160,7 +157,6 @@ export function ReassignTaskDropdown({
       onOpenChange={onOpenChange}
       onClose={() => {
         setSelectedUserId(null);
-        setPopoverOpen(false);
         // R8 close — also reset error/retry state so a re-open
         // after a fetch error gets a fresh attempt.
         setLoadError(false);
@@ -176,127 +172,41 @@ export function ReassignTaskDropdown({
       onSubmit={handleSubmit}
       finalFocus={finalFocus}
     >
-      <div className="grid gap-2">
-        <span id="assignee-label" className="text-sm font-medium">
-          {t('assignee_label')}
-        </span>
-        {loadError ? (
-          // R8 R4-C1 + R4-IMP-7 close — Retry button now bumps a
-          // counter so the lazy-load useEffect actually re-runs
-          // (prior state-set was a no-op because `users` was already
-          // null). Loading state shows the spinner so admin sees
-          // async progress, not a disabled button with no signal.
-          <div className="flex items-center gap-2">
-            <p className="text-sm text-destructive">{t('load_error')}</p>
+      {loadError ? (
+        // An alert, so a screen reader hears the failure where the picker was.
+        <Alert
+          tone="danger"
+          role="alert"
+          action={
             <Button
-              type="button"
               size="sm"
-              variant="outline"
-              disabled={isLoadingUsers}
-              aria-busy={isLoadingUsers}
+              variant="secondary"
+              loading={isLoadingUsers}
               onClick={() => {
                 setLoadError(false);
                 setUsers(null);
                 setRetryToken((n) => n + 1);
               }}
             >
-              {isLoadingUsers && (
-                <Loader2 className="mr-2 size-3.5 motion-safe:animate-spin" aria-hidden />
-              )}
               {t('retry')}
             </Button>
-          </div>
-        ) : (
-          <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
-            <PopoverTrigger
-              render={
-                <Button
-                  type="button"
-                  variant="outline"
-                  role="combobox"
-                  aria-expanded={popoverOpen}
-                  aria-labelledby="assignee-label"
-                  className="w-full justify-between"
-                  disabled={isPending || users === null}
-                  aria-busy={isLoadingUsers}
-                >
-                  {/* UX-audit PR-A #5b — the trigger showed a bare disabled
-                      state during the initial staff fetch (a "dead" control).
-                      Surface async progress: spinner + "Loading staff…" while
-                      the list loads, then the selected user / placeholder. */}
-                  <span className="flex min-w-0 items-center truncate">
-                    {isLoadingUsers ? (
-                      <>
-                        <Loader2
-                          className="mr-2 size-4 shrink-0 motion-safe:animate-spin"
-                          aria-hidden
-                        />
-                        {t('loading')}
-                      </>
-                    ) : (
-                      triggerLabel
-                    )}
-                  </span>
-                  <ChevronsUpDown
-                    className="ml-2 size-4 shrink-0 opacity-50"
-                    aria-hidden
-                  />
-                </Button>
-              }
-            />
-            {/* Round 5 C-2 close — base-ui Positioner exposes
-                `--anchor-width`, NOT Radix's `--radix-popover-trigger-width`. */}
-            <PopoverContent
-              align="start"
-              className="w-[var(--anchor-width)] max-w-[calc(100vw-2rem)] p-0"
-            >
-              <Command>
-                <CommandInput placeholder={t('search_placeholder')} />
-                <CommandList>
-                  <CommandEmpty>{t('no_results')}</CommandEmpty>
-                  <CommandGroup>
-                    {(users ?? []).map((u) => (
-                      <CommandItem
-                        key={u.id}
-                        value={`${u.display_name ?? ''} ${u.email}`}
-                        onSelect={() => {
-                          setSelectedUserId(u.id);
-                          setPopoverOpen(false);
-                        }}
-                      >
-                        <Check
-                          className={`mr-2 size-4 ${
-                            u.id === selectedUserId ? 'opacity-100' : 'opacity-0'
-                          }`}
-                          aria-hidden
-                        />
-                        <span className="truncate">
-                          <span className="font-medium">
-                            {u.display_name ?? u.email}
-                          </span>
-                          {u.display_name !== null && (
-                            <span className="ml-2 text-xs text-muted-foreground">
-                              {u.email}
-                            </span>
-                          )}
-                          <span className="ml-2 text-xs uppercase tracking-wide text-muted-foreground">
-                            · {tRole(`assigneeRole.${u.role}`)}
-                          </span>
-                          {u.id === currentAssigneeUserId && (
-                            <span className="ml-2 rounded-full bg-secondary px-1.5 py-0.5 text-xs font-medium text-secondary-foreground">
-                              {t('current_assignee_badge')}
-                            </span>
-                          )}
-                        </span>
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                </CommandList>
-              </Command>
-            </PopoverContent>
-          </Popover>
-        )}
-      </div>
+          }
+        >
+          {t('load_error')}
+        </Alert>
+      ) : (
+        <Combobox
+          label={t('assignee_label')}
+          options={options}
+          value={selectedUserId}
+          onChange={setSelectedUserId}
+          placeholder={isLoadingUsers ? t('loading') : t('placeholder')}
+          loading={isLoadingUsers}
+          loadingText={t('loading')}
+          emptyText={t('no_results')}
+          disabled={isPending || users === null}
+        />
+      )}
     </TaskActionDialog>
   );
 }

@@ -58,23 +58,16 @@
  * both identifiers so an admin editing plain-language controls can
  * never produce a malformed wire shape.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Mail, ListTodo, ChevronUp, ChevronDown, Trash2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import {
+  Combobox,
+  IconButton,
+  NumberField,
+  RadioGroup,
   Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  TranslatedSelectValue,
-} from '@/components/ui/select';
-import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { cn } from '@/lib/utils';
+  type ComboboxOption,
+} from '@jirawatpyk/aura-react';
 import {
   TIER_REMINDER_OFFSETS,
   offsetKeyFromDays,
@@ -126,42 +119,13 @@ function clampMagnitude(n: number): number {
 // `t+N` (see `reminder-offsets.ts`), never a bare word.
 const CUSTOM_SENTINEL = 'custom';
 
-// Segmented-control segment shared styling.
-function segmentClass(selected: boolean, disabled: boolean): string {
-  return cn(
-    'relative flex min-h-11 flex-1 cursor-pointer items-center justify-center gap-2 rounded-md border px-3 text-sm font-medium transition-colors',
-    'focus-within:border-ring focus-within:ring-2 focus-within:ring-ring',
-    selected
-      ? 'border-primary bg-primary text-primary-foreground'
-      : 'border-input bg-transparent hover:bg-muted',
-    disabled && 'cursor-not-allowed opacity-50',
-  );
-}
-
-// v2 rework Issue 1 (confirmed alignment bug) — the previous
-// `'sr-only focus-visible:ring-ring focus-visible:border-ring'` did NOT
-// collapse the hidden `RadioGroupItem` out of flow. `sr-only` and the
-// base `RadioGroupItem` classes (`relative flex size-4 shrink-0
-// rounded-full border ...`) belong to DIFFERENT twMerge class groups
-// (`sr-only` is its own group — not the `position`/`size` groups), so
-// twMerge keeps BOTH class sets. Tailwind's generated stylesheet then
-// happens to order `.relative { position: relative }` AFTER
-// `.sr-only`'s `position: absolute`, so `position: relative` wins the
-// cascade and the "hidden" radio stayed a 16px in-flow box — shoving
-// the centred icon+label ~10-13px right inside each segment.
-//
-// Fix: make the radio a full-bleed, absolutely-positioned, fully
-// transparent OVERLAY instead. It covers the whole segment `<label>`
-// (which needs its own `relative` — see `segmentClass` above) so it
-// stays clickable/keyboard-focusable everywhere in the segment,
-// contributes ZERO layout box of its own, and the segment's flex
-// content (icon+label) is genuinely centred. The focus ring lives on
-// the wrapping `<label>` via `focus-within:ring-2 focus-within:ring-ring
-// focus-within:border-ring` (full-opacity — WCAG 2.1 SC 1.4.11 non-text
-// contrast / SC 2.4.7 focus visible; never the half-opacity
-// `ring-ring/50` the base `RadioGroupItem` style uses).
-const HIDDEN_RADIO_CLASS = 'absolute inset-0 size-full cursor-pointer opacity-0';
-
+/**
+ * 122 US7b-2 (T736), boards `Admin-renewal-schedules` (+`-mobile`): the card on
+ * AURA controls — `RadioGroup` for the channel and the custom direction,
+ * `Select` for the timing and the assignee role, `NumberField` for custom
+ * days, a `Combobox` with `allowCustomValue` for the task type, and
+ * `IconButton`s to move and remove. The derived-identifier logic is unchanged.
+ */
 export function StepCard({
   tierBucket,
   step,
@@ -180,6 +144,20 @@ export function StepCard({
   // be namespaced per-tier-per-row or duplicate ids collide across the
   // 5 concurrently-mounted panels (WCAG 4.1.1).
   const idPrefix = `${tierBucket}-${index}`;
+  // The timing heading names the card: each icon button is described by it,
+  // so "Move up" says which step it moves (nine cards repeat the same three).
+  const headingId = useId();
+  const upRef = useRef<HTMLButtonElement>(null);
+  const downRef = useRef<HTMLButtonElement>(null);
+  const lastMove = useRef<'up' | 'down' | null>(null);
+  // A step moved to either end disables the button just pressed; hand focus to
+  // the other arrow so it never drops to the page (WCAG 2.4.3).
+  useEffect(() => {
+    const pressed = lastMove.current;
+    lastMove.current = null;
+    if (pressed === 'up' && index === 0) downRef.current?.focus();
+    else if (pressed === 'down' && index === total - 1) upRef.current?.focus();
+  }, [index, total]);
 
   // v3 Change 1 — has the admin explicitly opened the "Custom…" branch
   // this session? Needed because selecting "Custom…" does NOT itself
@@ -312,284 +290,157 @@ export function StepCard({
       : known;
   }, [t, step.task_type]);
 
+  const timingValue = showCustomTiming ? CUSTOM_SENTINEL : currentOffsetKey;
+  const timingOptions = [
+    ...standardOffsetKeys.map((key) => {
+      const days = daysFromOffsetKey(key);
+      // The current step's own offset is NEVER disabled, even if a
+      // pre-existing sibling duplicate shares it — only an OTHER step's use
+      // of this offset blocks it.
+      return {
+        value: key,
+        label: timingSentence(days, t),
+        disabled: days !== step.offset_days && usedOffsetsForChannel.has(days),
+      };
+    }),
+    // Never disabled: collisions among custom values are resolved by
+    // `composeUniqueStepId` once a day is picked.
+    { value: CUSTOM_SENTINEL, label: t('stepCard.timing.customOption') },
+  ];
+
   return (
-    <div className="rounded-md border bg-card p-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        {/* Header sentence — v2 rework Issue 4: plain language, not the
-            cryptic "T-30" form. */}
-        <Badge variant="outline" className="font-normal">
+    <div className="flex flex-col gap-[var(--aura-space-3)] rounded-[var(--aura-radius-lg)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] p-[var(--aura-space-4)]">
+      <div className="flex flex-wrap items-center justify-between gap-[var(--aura-space-2)]">
+        {/* The timing in plain language, not "T-30". */}
+        <h3 id={headingId} className="m-0 text-sm font-semibold text-[var(--aura-fg-primary)]">
           {timingSentence(step.offset_days, t)}
-        </Badge>
-        {/* Reorder/remove block — verbatim from schedule-editor.tsx's
-            StepRow (lines ~184-215): same aria-labels, same disabled
-            rules (readOnly OR at either end of the list). */}
-        {/* M1 follow-up fix (`.superpowers/sdd/followup-reminder-uxwave-
-            brief.md`) — `size="icon"` alone is a 32px box; `min-h-11
-            min-w-11` (the established ≥44px pattern, cf.
-            portal-sign-out-button.tsx) floors it to the WCAG 2.5.5/
-            ux-standards § 9.1 touch-target minimum without changing the
-            visible icon size. `gap-2` (was `gap-1`) gives the now-larger
-            buttons breathing room in the header row. */}
-        <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            size="icon"
-            variant="ghost"
-            className="min-h-11 min-w-11"
+        </h3>
+        <div className="flex items-center gap-[var(--aura-space-1)]">
+          <IconButton
+            ref={upRef}
+            icon="arrow-up"
+            label={t('actions.moveUp')}
+            aria-describedby={headingId}
+            touchHeight
             disabled={readOnly || index === 0}
-            onClick={onMoveUp}
-            aria-label={t('actions.moveUp')}
-          >
-            <ChevronUp aria-hidden="true" className="h-4 w-4" />
-          </Button>
-          <Button
-            type="button"
-            size="icon"
-            variant="ghost"
-            className="min-h-11 min-w-11"
+            onClick={() => {
+              lastMove.current = 'up';
+              onMoveUp();
+            }}
+          />
+          <IconButton
+            ref={downRef}
+            icon="arrow-down"
+            label={t('actions.moveDown')}
+            aria-describedby={headingId}
+            touchHeight
             disabled={readOnly || index === total - 1}
-            onClick={onMoveDown}
-            aria-label={t('actions.moveDown')}
-          >
-            <ChevronDown aria-hidden="true" className="h-4 w-4" />
-          </Button>
-          <Button
-            type="button"
-            size="icon"
-            variant="ghost"
-            className="min-h-11 min-w-11"
+            onClick={() => {
+              lastMove.current = 'down';
+              onMoveDown();
+            }}
+          />
+          <IconButton
+            icon="trash-2"
+            tone="danger"
+            label={t('actions.removeStep')}
+            aria-describedby={headingId}
+            touchHeight
             disabled={readOnly}
             onClick={onRemove}
-            aria-label={t('actions.removeStep')}
-          >
-            <Trash2 aria-hidden="true" className="h-4 w-4" />
-          </Button>
+          />
         </div>
       </div>
 
-      <div className="mt-3 flex flex-col gap-4">
-        {/* Channel — segmented control (Email / Task). */}
-        <div>
-          <Label id={`channel-group-label-${idPrefix}`}>
-            {t('stepCard.channelLabel')}
-          </Label>
+      <div className="grid grid-cols-1 gap-[var(--aura-space-3)] sm:grid-cols-2 sm:items-start">
+        <RadioGroup
+          id={`channel-${idPrefix}`}
+          label={t('stepCard.channelLabel')}
+          orientation="horizontal"
+          options={[
+            { value: 'email', label: t('stepCard.channel.email') },
+            { value: 'task', label: t('stepCard.channel.task') },
+          ]}
+          value={step.channel}
+          disabled={readOnly}
+          onChange={(v) => handleChannelChange(v as EditorStep['channel'])}
+        />
+        <Select
+          id={`timing-${idPrefix}`}
+          label={t('stepCard.timing.label')}
+          value={timingValue}
+          options={timingOptions}
+          disabled={readOnly}
+          onChange={(e) => handleTimingSelect(e.target.value)}
+        />
+      </div>
+
+      {showCustomTiming ? (
+        <div className="grid grid-cols-1 gap-[var(--aura-space-3)] sm:grid-cols-2 sm:items-start">
+          <NumberField
+            id={`custom-days-${idPrefix}`}
+            label={t('stepCard.timing.customDaysLabel')}
+            min={0}
+            max={OFFSET_MAX}
+            step={1}
+            value={customDaysMagnitude}
+            disabled={readOnly}
+            onChange={(n) => applyCustomDays(clampMagnitude(n ?? 0), customBefore)}
+          />
           <RadioGroup
-            aria-labelledby={`channel-group-label-${idPrefix}`}
-            value={step.channel}
+            id={`direction-${idPrefix}`}
+            label={t('stepCard.timing.direction.label')}
+            orientation="horizontal"
+            options={[
+              { value: 'before', label: t('stepCard.timing.direction.before') },
+              { value: 'after', label: t('stepCard.timing.direction.after') },
+            ]}
+            value={customBefore ? 'before' : 'after'}
             disabled={readOnly}
-            onValueChange={(v) =>
-              handleChannelChange(v as EditorStep['channel'])
-            }
-            className="grid-cols-2 gap-2"
-          >
-            {(['email', 'task'] as const).map((ch) => {
-              const selected = step.channel === ch;
-              const segId = `channel-${idPrefix}-${ch}`;
-              const Icon = ch === 'email' ? Mail : ListTodo;
-              return (
-                <label
-                  key={ch}
-                  htmlFor={segId}
-                  className={segmentClass(selected, readOnly)}
-                >
-                  <RadioGroupItem id={segId} value={ch} className={HIDDEN_RADIO_CLASS} />
-                  <Icon aria-hidden="true" className="h-4 w-4" />
-                  {t(`stepCard.channel.${ch}`)}
-                </label>
-              );
-            })}
-          </RadioGroup>
+            onChange={(v) => applyCustomDays(customDaysMagnitude, v === 'before')}
+          />
         </div>
+      ) : null}
 
-        {/* Timing — v2 rework Issue 2: ONE plain-language "Send timing"
-            dropdown of the tier's standard reminder points, replacing
-            the day-stepper + separate Before/After toggle. v3 rework
-            Change 1: a "Custom…" option at the end reveals a numeric
-            day input + before/after toggle for an arbitrary offset. */}
-        <div>
-          <Label htmlFor={`timing-${idPrefix}`}>{t('stepCard.timing.label')}</Label>
+      {step.channel === 'email' ? (
+        <EmailPreview tierBucket={tierBucket} offsetDays={step.offset_days} />
+      ) : (
+        <div className="grid grid-cols-1 gap-[var(--aura-space-3)] sm:grid-cols-2 sm:items-start">
+          {/* The known catalogue is suggestions only: many more real task
+              types exist, so a typed type is kept (`allowCustomValue`), and
+              the hint says so. */}
+          <Combobox
+            id={`task-type-${idPrefix}`}
+            label={t('stepCard.taskType.label')}
+            hint={t('stepCard.taskType.hint')}
+            options={taskTypeOptions}
+            value={step.task_type ?? 'phone_call'}
+            onChange={(v) => {
+              if (v) handleTaskTypeChange(v);
+            }}
+            emptyText={t('stepCard.taskType.emptyMessage')}
+            clearable={false}
+            disabled={readOnly}
+            allowCustomValue
+          />
           <Select
-            value={showCustomTiming ? CUSTOM_SENTINEL : currentOffsetKey}
+            id={`assignee-${idPrefix}`}
+            label={t('stepCard.assigneeLabel')}
+            value={step.assignee_role ?? 'admin'}
+            options={(['admin', 'manager', 'executive_director'] as const).map((role) => ({
+              value: role,
+              label: t(`stepCard.assigneeRole.${role}`),
+            }))}
             disabled={readOnly}
-            onValueChange={(v) => handleTimingSelect(v as string)}
-          >
-            <SelectTrigger id={`timing-${idPrefix}`} className="w-full">
-              <TranslatedSelectValue
-                placeholder={t('stepCard.timing.label')}
-                translate={(v) => {
-                  if (!v) return null;
-                  if (v === CUSTOM_SENTINEL) return t('stepCard.timing.customOption');
-                  return timingSentence(daysFromOffsetKey(v), t);
-                }}
-              />
-            </SelectTrigger>
-            <SelectContent>
-              {standardOffsetKeys.map((key) => {
-                const days = daysFromOffsetKey(key);
-                // The current step's own offset is NEVER disabled, even
-                // if a pre-existing sibling duplicate happens to share
-                // it (a legacy/collision edge case) — only an OTHER
-                // step's use of this offset blocks selection.
-                const disabled = days !== step.offset_days && usedOffsetsForChannel.has(days);
-                return (
-                  <SelectItem key={key} value={key} disabled={disabled}>
-                    {timingSentence(days, t)}
-                  </SelectItem>
-                );
-              })}
-              {/* v3 Change 1 — ONE more option at the end. Never
-                  disabled: an arbitrary custom offset can't collide the
-                  way a standard one can (collisions among custom values
-                  are resolved by `composeUniqueStepId` once the admin
-                  picks a day). */}
-              <SelectItem value={CUSTOM_SENTINEL}>
-                {t('stepCard.timing.customOption')}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-
-          {showCustomTiming ? (
-            <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div>
-                <Label htmlFor={`custom-days-${idPrefix}`}>
-                  {t('stepCard.timing.customDaysLabel')}
-                </Label>
-                <Input
-                  id={`custom-days-${idPrefix}`}
-                  type="number"
-                  inputMode="numeric"
-                  min={0}
-                  max={OFFSET_MAX}
-                  step={1}
-                  value={customDaysMagnitude}
-                  disabled={readOnly}
-                  onChange={(e) =>
-                    applyCustomDays(clampMagnitude(Number(e.target.value)), customBefore)
-                  }
-                />
-              </div>
-              <div>
-                <Label id={`direction-group-label-${idPrefix}`}>
-                  {t('stepCard.timing.direction.label')}
-                </Label>
-                <RadioGroup
-                  aria-labelledby={`direction-group-label-${idPrefix}`}
-                  value={customBefore ? 'before' : 'after'}
-                  disabled={readOnly}
-                  onValueChange={(v) => applyCustomDays(customDaysMagnitude, v === 'before')}
-                  className="grid-cols-2 gap-2"
-                >
-                  {(['before', 'after'] as const).map((dir) => {
-                    const selected = customBefore === (dir === 'before');
-                    const segId = `direction-${idPrefix}-${dir}`;
-                    return (
-                      <label
-                        key={dir}
-                        htmlFor={segId}
-                        className={segmentClass(selected, readOnly)}
-                      >
-                        <RadioGroupItem id={segId} value={dir} className={HIDDEN_RADIO_CLASS} />
-                        {t(`stepCard.timing.direction.${dir}`)}
-                      </label>
-                    );
-                  })}
-                </RadioGroup>
-              </div>
-            </div>
-          ) : null}
+            onChange={(e) =>
+              onChange({
+                ...step,
+                assignee_role: e.target.value as Exclude<EditorStep['assignee_role'], undefined>,
+              })
+            }
+          />
         </div>
-
-        {/* Channel-specific fields. */}
-        {step.channel === 'email' ? (
-          <EmailPreview tierBucket={tierBucket} offsetDays={step.offset_days} />
-        ) : (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div>
-              {/* The Combobox trigger is a <button>, not an <input> —
-                  `htmlFor` alone does not NAME it (only associates
-                  click-to-focus), so `aria-labelledby` below does the
-                  actual naming. */}
-              <Label id={`task-type-label-${idPrefix}`} htmlFor={`task-type-${idPrefix}`}>
-                {t('stepCard.taskType.label')}
-              </Label>
-              <Combobox
-                id={`task-type-${idPrefix}`}
-                aria-labelledby={`task-type-label-${idPrefix}`}
-                aria-describedby={`task-type-hint-${idPrefix}`}
-                options={taskTypeOptions}
-                value={step.task_type ?? 'phone_call'}
-                onChange={handleTaskTypeChange}
-                placeholder={t('stepCard.taskType.label')}
-                searchPlaceholder={t('stepCard.taskType.searchPlaceholder')}
-                emptyMessage={t('stepCard.taskType.emptyMessage')}
-                disabled={readOnly}
-                // Known catalogue is SUGGESTIONS only (see client.ts) — many
-                // more real task types exist than the list can enumerate,
-                // so free custom entry is required (never a closed
-                // enumerable set, unlike e.g. the ISO country field).
-                allowCustomValue
-                customValueLabel={(typed) =>
-                  t('stepCard.taskType.customValue', { value: typed })
-                }
-              />
-              {/* I5 follow-up fix — the combobox gives no visible cue that
-                  a value not in the list can be typed. Caption pattern
-                  matches address-section.tsx's postalCodeUnknownHint. */}
-              <p
-                id={`task-type-hint-${idPrefix}`}
-                className="mt-1 text-xs text-muted-foreground"
-              >
-                {t('stepCard.taskType.hint')}
-              </p>
-            </div>
-            <div>
-              <Label htmlFor={`assignee-${idPrefix}`}>
-                {t('stepCard.assigneeLabel')}
-              </Label>
-              <Select
-                value={step.assignee_role ?? 'admin'}
-                disabled={readOnly}
-                onValueChange={(v) =>
-                  onChange({
-                    ...step,
-                    assignee_role: v as Exclude<
-                      EditorStep['assignee_role'],
-                      undefined
-                    >,
-                  })
-                }
-              >
-                <SelectTrigger id={`assignee-${idPrefix}`} className="w-full">
-                  <TranslatedSelectValue
-                    placeholder={t('stepCard.assigneeLabel')}
-                    translate={(v) => {
-                      if (!v) return null;
-                      try {
-                        return t(
-                          `stepCard.assigneeRole.${v}` as 'stepCard.assigneeRole.admin',
-                        );
-                      } catch {
-                        return v;
-                      }
-                    }}
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="admin">
-                    {t('stepCard.assigneeRole.admin')}
-                  </SelectItem>
-                  <SelectItem value="manager">
-                    {t('stepCard.assigneeRole.manager')}
-                  </SelectItem>
-                  <SelectItem value="executive_director">
-                    {t('stepCard.assigneeRole.executive_director')}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        )}
-      </div>
+      )}
     </div>
   );
 }

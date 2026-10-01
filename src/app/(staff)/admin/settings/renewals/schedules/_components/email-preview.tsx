@@ -36,6 +36,7 @@
 import { useTranslations } from 'next-intl';
 import { TIER_REMINDER_OFFSETS, offsetKeyFromDays } from '@/modules/renewals/client';
 import type { TierBucket } from '@/modules/renewals/client';
+import { CircleCheck, TriangleAlert } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export interface EmailPreviewProps {
@@ -48,16 +49,21 @@ export function EmailPreview({ tierBucket, offsetDays }: EmailPreviewProps) {
   const key = offsetKeyFromDays(offsetDays);
   const covered = (TIER_REMINDER_OFFSETS[tierBucket] as readonly string[]).includes(key);
 
+  // 122 US7b-2 (T736): the board's check line when the timing has a message,
+  // a warning line when it has none — one live region across both, so a
+  // timing change re-announces rather than remounting it.
+  const Icon = covered ? CircleCheck : TriangleAlert;
   return (
     <div
       role="status"
       aria-live="polite"
       className={cn(
-        'mt-2 rounded-md px-3 py-2 text-xs',
-        covered ? 'bg-muted/50 text-muted-foreground' : 'bg-destructive/10 text-destructive',
+        'flex items-start gap-[var(--aura-space-2)] text-sm',
+        covered ? 'text-[var(--aura-fg-secondary)]' : 'text-[var(--aura-fg-warning)]',
       )}
     >
-      {covered ? t('stepCard.preview.heading') : t('stepCard.preview.noCopyWarning')}
+      <Icon aria-hidden className="mt-0.5 size-4 shrink-0" />
+      <span>{covered ? t('stepCard.preview.heading') : t('stepCard.preview.noCopyWarning')}</span>
     </div>
   );
 }

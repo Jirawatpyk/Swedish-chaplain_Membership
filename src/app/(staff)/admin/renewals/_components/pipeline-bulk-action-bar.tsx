@@ -585,6 +585,9 @@ export function PipelineBulkActionBar({
           label={t('toolbarLabel')}
           selected={count}
           onClearSelection={handleClearClick}
+          // AURA 5.23 (handoff #122): Clear takes the same 44px touch height
+          // on a phone as the bar's own buttons.
+          touchHeight
           status={
             overCap ? (
               <span className="flex flex-col gap-0.5">
@@ -603,6 +606,7 @@ export function PipelineBulkActionBar({
               <Button
                 variant="secondary"
                 size="sm"
+                touchHeight
                 icon="mail"
                 disabled={executing || overCap}
                 onClick={(e) => {
@@ -616,6 +620,7 @@ export function PipelineBulkActionBar({
               <Button
                 variant="secondary"
                 size="sm"
+                touchHeight
                 icon={<BanknoteIcon aria-hidden="true" />}
                 disabled={executing || overCap}
                 onClick={(e) => {

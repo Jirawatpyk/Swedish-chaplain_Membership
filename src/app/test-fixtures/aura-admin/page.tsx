@@ -69,6 +69,9 @@ import {
   CYCLE_FIXTURES,
   CYCLE_PREVIEW_ID,
   TIER_UPGRADE_ITEMS,
+  TASK_ITEMS,
+  TASK_TYPES,
+  SCHEDULE_POLICIES,
   type CycleFixtureKind,
 } from './renewal-fixtures';
 import { AtRiskFixture, MarkPaidDialogPreview, TierUpgradeAcceptPreview } from './renewal-previews';
@@ -77,6 +80,10 @@ import { CycleAdminActions } from '@/app/(staff)/admin/renewals/[cycleId]/_compo
 import { PendingReactivationActions } from '@/app/(staff)/admin/renewals/[cycleId]/_components/pending-reactivation-actions';
 import { renderTierUpgradesView } from '@/app/(staff)/admin/renewals/tier-upgrades/_components/tier-upgrades-view';
 import { TierUpgradeQueueClient } from '@/app/(staff)/admin/renewals/tier-upgrades/_components/tier-upgrade-queue';
+import { renderTasksQueueView } from '@/app/(staff)/admin/renewals/tasks/_components/tasks-queue-view';
+import { EscalationTaskQueue } from '@/app/(staff)/admin/renewals/tasks/_components/escalation-task-queue';
+import { renderSchedulesStateView } from '@/app/(staff)/admin/settings/renewals/schedules/_components/schedules-state-view';
+import { ScheduleEditor } from '@/app/(staff)/admin/settings/renewals/schedules/_components/schedule-editor';
 import { DetailContainer } from '@/components/layout';
 import { PlanBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
 
@@ -98,6 +105,8 @@ export const dynamic = 'force-dynamic';
  *   ?view=member-timeline
  *   ?view=member-benefits
  *   ?view=member-new                                                   (US5b-2)
+ *   ?view=renewal-tasks|renewal-tasks-manager|renewal-tasks-empty|renewal-tasks-error (US7b-2)
+ *   ?view=renewal-schedules|renewal-schedules-error                    (US7b-2)
  *   ?view=member-edit&state=default|complete
  *   ?view=member-edit&dialog=plan-change|bundle|override|duplicate
  *
@@ -977,6 +986,64 @@ export default async function AuraAdminPreviewPage({
           <PageHeader title={t('title')} subtitle={t('subtitle')} />
           {body}
         </TableContainer>
+      </StaffFrame>
+    );
+  }
+
+  // ── US7b-2: the escalation tasks queue (`Admin-renewal-tasks`, `-mobile`,
+  // `Admin-state-tasks-manager`), with the empty and failed-read states.
+  if (
+    view === 'renewal-tasks' ||
+    view === 'renewal-tasks-manager' ||
+    view === 'renewal-tasks-empty' ||
+    view === 'renewal-tasks-error'
+  ) {
+    const t = await getTranslations('admin.renewals.tasks');
+    const empty = view === 'renewal-tasks-empty' || view === 'renewal-tasks-manager';
+    const body = await renderTasksQueueView({
+      sectionTabs: (
+        <RenewalsSectionTabs
+          {...RENEWALS_SECTION_COUNTS}
+          {...(view === 'renewal-tasks-manager' ? { tasksCount: 0 } : {})}
+          pathname="/admin/renewals/tasks"
+        />
+      ),
+      loadFailed: view === 'renewal-tasks-error',
+      nextHref: empty ? null : '/admin/renewals/tasks?cursor=preview',
+      queue: (
+        <EscalationTaskQueue
+          canMutate={view !== 'renewal-tasks-manager'}
+          actorUserId="00000000-0000-4000-8000-00000000a001"
+          overdueCount={empty ? 0 : 4}
+          distinctTaskTypes={empty ? [] : [...TASK_TYPES]}
+          items={empty ? [] : TASK_ITEMS}
+        />
+      ),
+    });
+    return (
+      <StaffFrame path="/admin/renewals/tasks">
+        <TableContainer>
+          <PageHeader title={t('title')} subtitle={t('subtitle')} />
+          {body}
+        </TableContainer>
+      </StaffFrame>
+    );
+  }
+
+  // ── US7b-2: the reminder schedules (`Admin-renewal-schedules`, `-mobile`),
+  // opened on Premium as the boards draw it, with the failed-read state.
+  if (view === 'renewal-schedules' || view === 'renewal-schedules-error') {
+    const t = await getTranslations('admin.renewals.settings.schedules');
+    return (
+      <StaffFrame path="/admin/settings/renewals/schedules">
+        <FormContainer>
+          <PageHeader title={t('title')} subtitle={t('subtitle')} />
+          {view === 'renewal-schedules-error' ? (
+            await renderSchedulesStateView({ kind: 'failed', correlationId: '3f2a9c1e-preview' })
+          ) : (
+            <ScheduleEditor initialPolicies={SCHEDULE_POLICIES} readOnly={false} defaultBucket="premium" />
+          )}
+        </FormContainer>
       </StaffFrame>
     );
   }

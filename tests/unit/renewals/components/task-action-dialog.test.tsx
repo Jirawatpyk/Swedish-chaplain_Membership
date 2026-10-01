@@ -16,9 +16,14 @@
  * onClose) would silently drift form-reset and unmount-cleanup
  * semantics across all 3 dialog consumers (Done, Skip, Reassign).
  */
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { render, cleanup } from '@testing-library/react';
 import { TaskActionDialog } from '@/app/(staff)/admin/renewals/tasks/_components/task-action-dialog';
+
+// AURA's dialog animates on real timers.
+beforeEach(() => {
+  vi.useRealTimers();
+});
 
 function renderShell(props: Partial<React.ComponentProps<typeof TaskActionDialog>> = {}) {
   const defaults: React.ComponentProps<typeof TaskActionDialog> = {
@@ -150,6 +155,73 @@ describe('<TaskActionDialog> mount-guard (R10 S10)', () => {
     expect(() =>
       rerender(<TaskActionDialog open={false} {...baseProps} />),
     ).not.toThrow();
+    cleanup();
+  });
+});
+
+/**
+ * 122 US7b-2 (T733) — the shell is an AURA `Dialog role="alertdialog"`:
+ * Cancel takes the initial focus, the confirm shows its submitting label while
+ * the request runs, and the dialog cannot be dismissed meanwhile.
+ */
+describe('<TaskActionDialog> on AURA', () => {
+  it('renders an AURA alertdialog with the title, description and body', () => {
+    const { getByRole } = renderShell({ open: true });
+    const dialog = getByRole('alertdialog', { name: 'Mark as done' });
+    expect(dialog.closest('.aura-dialog') ?? dialog.querySelector('.aura-dialog') ?? dialog).toBeTruthy();
+    expect(dialog).toHaveTextContent('Confirm the action');
+    expect(dialog.querySelector('[data-testid="body"]')).not.toBeNull();
+    cleanup();
+  });
+
+  it('puts the initial focus on Cancel', () => {
+    const { getByRole } = renderShell({ open: true });
+    expect(getByRole('button', { name: 'Cancel' })).toHaveAttribute('data-autofocus');
+    cleanup();
+  });
+
+  it('confirm calls onSubmit, Cancel closes, and the confirm is disabled until it can submit', () => {
+    const onSubmit = vi.fn();
+    const onOpenChange = vi.fn();
+    const { getByRole, rerender } = renderShell({ open: true, onSubmit, onOpenChange });
+    getByRole('button', { name: 'Confirm' }).click();
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    getByRole('button', { name: 'Cancel' }).click();
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    rerender(
+      <TaskActionDialog
+        open
+        onOpenChange={onOpenChange}
+        title="Mark as done"
+        description="d"
+        cancelLabel="Cancel"
+        confirmLabel="Confirm"
+        submittingLabel="Submitting…"
+        isPending={false}
+        canSubmit={false}
+        onSubmit={onSubmit}
+      >
+        <div />
+      </TaskActionDialog>,
+    );
+    expect(getByRole('button', { name: 'Confirm' })).toBeDisabled();
+    cleanup();
+  });
+
+  it('while pending, shows the submitting label, disables Cancel and cannot be dismissed', () => {
+    const { getByRole, queryByRole } = renderShell({ open: true, isPending: true });
+    const dialog = getByRole('alertdialog');
+    expect(getByRole('button', { name: /Submitting…/ })).toHaveAttribute('aria-busy', 'true');
+    expect(getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    // Not dismissible: AURA drops its close button.
+    expect(queryByRole('button', { name: /close/i })).toBeNull();
+    expect(dialog).toBeInTheDocument();
+    cleanup();
+  });
+
+  it('the destructive variant uses the danger button', () => {
+    const { getByRole } = renderShell({ open: true, variant: 'destructive' });
+    expect(getByRole('button', { name: 'Confirm' })).toHaveClass('aura-btn--danger');
     cleanup();
   });
 });

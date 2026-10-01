@@ -19,37 +19,18 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { Loader2 } from 'lucide-react';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import { Button, Dialog } from '@jirawatpyk/aura-react';
 
 export interface TaskActionDialogProps {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   /**
-   * Called WHEN the dialog is closing (`open` prop transitions from
-   * true → false), regardless of who initiated the close. Use to
-   * reset dialog-internal form state (textarea / combobox / touched
-   * flag).
+   * Called WHEN the dialog is closing (`open` goes true → false), whoever
+   * closed it. Use it to reset the dialog's own form state.
    *
    * R6 IMP-6 + R8 C3-4 close — fires exactly ONCE per close, via a
-   * `useRef`-guarded `useEffect`. The fix:
-   *   1. Skips initial mount (`open=false` is the default state, not
-   *      a close transition).
-   *   2. Eliminates the prior double-fire on user-driven close
-   *      (`onOpenChange(false)` + useEffect both ran the handler).
-   *   Now `onClose` fires for both paths:
-   *     - Base-ui internal close (Escape, click outside)
-   *     - Parent flipping `open={false}` after successful submit
-   *   ...via the single useEffect transition watcher.
+   * ref-guarded effect: not on the initial mount, and not twice when a
+   * user close is followed by the parent's `open={false}`.
    */
   readonly onClose?: () => void;
   readonly title: string;
@@ -61,34 +42,25 @@ export interface TaskActionDialogProps {
   /** Disables the confirm button when `false`. Cancel is always enabled (until pending). */
   readonly canSubmit: boolean;
   readonly onSubmit: () => void;
-  /**
-   * Confirm-button visual variant (R6 IMP-10 close).
-   * `'destructive'` renders red for irreversible actions (Skip).
-   * Default: regular primary button.
-   */
+  /** `'destructive'` uses the danger button for irreversible actions (Skip). */
   readonly variant?: 'default' | 'destructive';
   /**
-   * UX-audit PR-A #5a — focus-return target on close (WCAG 2.1 AA SC 2.4.3).
-   * These dialogs launch from a row's ⋯ `DropdownMenuItem` which unmounts on
-   * select, and on a Done/Skip success the whole row unmounts too — Base UI's
-   * default restore would then drop focus to `<body>`. Callers pass the
-   * resolver built by `useDialogFinalFocus` (returns the ⋯ trigger on cancel,
-   * #main-content when the row is gone). Optional — omitting it keeps Base UI's
-   * default restore behaviour. Forwarded to the AlertDialog popup.
-   *
-   * Base UI reads its `returnFocus` (from this `finalFocus` prop) LIVE at close,
-   * not snapshotted at open — so a nullable prop sourced from the dialog's own
-   * open-state (`…DialogTarget?.finalFocus`) would already be `undefined` on the
-   * close render and leave the whole focus-return chain inert. The always-mounted
-   * lifted queue therefore passes a STABLE, always-defined callback that reads
-   * the launching row's resolver from a ref (see `escalation-task-queue.tsx`
-   * `activeFinalFocusRef`). `| undefined` stays explicit
-   * (exactOptionalPropertyTypes) so callers may still omit the prop entirely.
+   * UX-audit PR-A #5a — where focus goes on close (WCAG 2.1 AA SC 2.4.3). The
+   * queue passes one stable resolver: the control that opened the dialog on
+   * Cancel, `#main-content` once a success has unmounted the row. AURA reads
+   * it at close, so it must stay defined while the dialog closes.
    */
-  readonly finalFocus?: (() => HTMLElement | false | null) | undefined;
+  readonly finalFocus?: (() => HTMLElement | null) | undefined;
   readonly children: React.ReactNode;
 }
 
+/**
+ * 122 US7b-2 (T733) — the shared shell of the Done / Skip / Reassign confirms,
+ * on AURA's `Dialog role="alertdialog"`. Cancel takes the initial focus
+ * (ux-standards § 7.2: the safe default for an action with side effects); the
+ * confirm shows its submitting label while the request runs, and the dialog
+ * cannot be dismissed meanwhile (§ 6.4).
+ */
 export function TaskActionDialog({
   open,
   onOpenChange,
@@ -105,23 +77,8 @@ export function TaskActionDialog({
   finalFocus,
   children,
 }: TaskActionDialogProps) {
-  // ux-standards § 7.2/§ 6.2: focus Cancel on open for dialogs with
-  // side-effects (prefer safety default over convenience). Base UI's
-  // FloatingFocusManager ignores `autoFocus`/`data-autofocus` — only
-  // `initialFocus` on the Popup (AlertDialogContent) moves initial focus.
-  // Pattern matches `src/components/shell/confirmation-dialog.tsx:81`.
-  const cancelRef = useRef<HTMLButtonElement>(null);
-
-  // R6 IMP-6 + R8 C3-4 close — fire onClose exactly once per close,
-  // via a `wasOpen` ref-guarded `useEffect`. The ref skips initial
-  // mount (when `open=false` is the default state, not a close
-  // transition) and ensures both close paths (base-ui internal close
-  // OR parent-flipped success path) trigger the same single handler.
-  // The `onOpenChange` wrapper is now a clean pass-through — no
-  // duplicate `onClose?.()` invocation.
-  //
-  // `onCloseRef` captures the latest `onClose` so callers passing
-  // inline closures don't get a stale view.
+  // Fire onClose once per close edge; the latest closure is read through a ref
+  // so callers can pass inline functions.
   const wasOpenRef = useRef(false);
   const onCloseRef = useRef(onClose);
   useEffect(() => {
@@ -136,35 +93,31 @@ export function TaskActionDialog({
   }, [open]);
 
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent initialFocus={cancelRef} finalFocus={finalFocus}>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{title}</AlertDialogTitle>
-          <AlertDialogDescription>{description}</AlertDialogDescription>
-        </AlertDialogHeader>
-
-        {children}
-
-        <AlertDialogFooter>
-          <AlertDialogCancel
-            ref={cancelRef}
-            disabled={isPending}
-          >
+    <Dialog
+      open={open}
+      onClose={() => onOpenChange(false)}
+      role="alertdialog"
+      dismissible={!isPending}
+      {...(finalFocus ? { finalFocus } : {})}
+      title={title}
+      description={description}
+      footer={
+        <>
+          <Button variant="secondary" data-autofocus="" disabled={isPending} onClick={() => onOpenChange(false)}>
             {cancelLabel}
-          </AlertDialogCancel>
-          <AlertDialogAction
-            variant={variant}
-            disabled={isPending || !canSubmit}
-            aria-busy={isPending}
+          </Button>
+          <Button
+            variant={variant === 'destructive' ? 'danger' : 'primary'}
+            loading={isPending}
+            disabled={!canSubmit}
             onClick={onSubmit}
           >
-            {isPending && (
-              <Loader2 className="mr-2 size-3.5 motion-safe:animate-spin" aria-hidden />
-            )}
             {isPending ? submittingLabel : confirmLabel}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+          </Button>
+        </>
+      }
+    >
+      {children}
+    </Dialog>
   );
 }

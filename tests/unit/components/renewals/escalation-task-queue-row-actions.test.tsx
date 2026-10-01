@@ -1,18 +1,21 @@
 /**
- * UX-audit PR-A #4/#5a — escalation-queue row actions collapse to
- * Done + a ⋯ overflow menu, and the launched dialogs receive a `finalFocus`.
+ * `<EscalationTaskQueue>` table and row actions — 122 US7b-2 (T732), boards
+ * `Admin-renewal-tasks` (+`-mobile`).
  *
- * Base UI's DropdownMenu portal + AlertDialog lock up jsdom (see the sibling
- * `reassign-task-dropdown.test.tsx` note), so the dropdown-menu primitive is
- * mocked to render trigger + content eagerly, and the three dialog children are
- * mocked to a marker that exposes the `finalFocus` prop TYPE when open. That
- * keeps the assertions on THIS component's wiring (which action is a visible
- * button, which live in the menu, and that each dialog is handed a focus-return
- * resolver) without dragging Base UI's focus machinery into jsdom.
+ * - One AURA DataTable that stacks into cards below 640px; the actions column
+ *   exists only for someone who can act.
+ * - Each row: "Done" (secondary) plus a ⋯ menu (Skip, Reassign, View timeline)
+ *   named "Skip, reassign or view timeline — {type}, {member}".
+ * - The member cell holds one link (the timeline link moved into the menu).
+ * - Done / Skip / Reassign open their dialogs with one stable focus-return
+ *   resolver: after a success it lands on #main-content (the row unmounts on
+ *   refresh); on Cancel it returns to the control that opened the dialog.
+ *
+ * The three dialog modules are replaced by markers that record the props they
+ * receive, so these tests read this component's wiring only.
  */
-import type { ReactNode } from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, act, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { buildFormats } from '@/i18n/formats';
@@ -26,157 +29,59 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 
-// postAction toasts on success/failure — stub sonner so the success path in the
-// close-time regression test below runs without a mounted <Toaster>.
 vi.mock('@/lib/toast', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }));
 
-// R3 — a spy standing in for Base UI's OWN trigger ref (arrives inside the
-// render-prop `props` in React 19). The component must forward the DOM node to
-// it via `mergeRefs(baseRef, rowMenuTriggerRef)`; a regression to
-// `ref={rowMenuTriggerRef}` alone (the Base-UI ref-override trap that stops the
-// menu from opening) would never call this spy. Hoisted so the vi.mock factory
-// below can close over it.
-const { baseRefSpy } = vi.hoisted(() => ({ baseRefSpy: vi.fn() }));
-
-// Close-time capture for the Done dialog. Base UI reads `finalFocus` LIVE at
-// close, so the ONLY way to catch a `finalFocus={doneDialogTarget?.finalFocus}`
-// regression (the prop evaporates to `undefined` the instant the dialog closes
-// on success) is to observe the value AFTER close. The mock records `finalFocus`
-// + `onSubmit` on EVERY render, including the `open=false` close render.
-const { doneCapture } = vi.hoisted(() => ({
-  doneCapture: {
-    finalFocus: undefined as unknown,
-    onSubmit: undefined as
-      | ((note: string | undefined) => Promise<void>)
-      | undefined,
+type FinalFocus = () => HTMLElement | null;
+interface Capture {
+  open: boolean;
+  finalFocus?: FinalFocus | undefined;
+  onSubmit?: ((value: never) => Promise<void>) | undefined;
+}
+const { cap } = vi.hoisted(() => ({
+  cap: {
+    done: { open: false } as Capture,
+    skip: { open: false } as Capture,
+    reassign: { open: false } as Capture,
   },
 }));
 
-// Render the ⋯ menu trigger (function render-prop) + content eagerly so both
-// the icon trigger and the Skip/Reassign items are queryable without opening a
-// Base UI portal.
-vi.mock('@/components/ui/dropdown-menu', async () => {
-  const React = await import('react');
-  return {
-    DropdownMenu: ({ children }: { children: ReactNode }) =>
-      React.createElement(React.Fragment, null, children),
-    DropdownMenuTrigger: ({
-      render,
-    }: {
-      render:
-        | ((props: { ref: (el: unknown) => void }) => ReactNode)
-        | ReactNode;
-    }) =>
-      typeof render === 'function'
-        ? render({ ref: baseRefSpy })
-        : (render ?? null),
-    DropdownMenuContent: ({ children }: { children: ReactNode }) =>
-      React.createElement('div', { role: 'menu' }, children),
-    DropdownMenuItem: ({
-      children,
-      onClick,
-    }: {
-      children: ReactNode;
-      onClick?: () => void;
-    }) =>
-      React.createElement(
-        'button',
-        { type: 'button', role: 'menuitem', onClick },
-        children,
-      ),
+function marker(name: 'done' | 'skip' | 'reassign') {
+  return function DialogMarker(props: { open: boolean; finalFocus?: FinalFocus; onSubmit?: (v: never) => Promise<void> }) {
+    // Recorded on every render, the closing one too, so a resolver that
+    // evaporates when the dialog closes is caught.
+    cap[name].open = props.open;
+    cap[name].finalFocus = props.finalFocus;
+    cap[name].onSubmit = props.onSubmit;
+    return props.open ? <div data-testid={`${name}-dialog`} /> : null;
   };
-});
+}
 
-vi.mock(
-  '@/app/(staff)/admin/renewals/tasks/_components/done-task-dialog',
-  async () => {
-    const React = await import('react');
-    return {
-      DoneTaskDialog: ({
-        open,
-        finalFocus,
-        onSubmit,
-      }: {
-        open: boolean;
-        finalFocus?: unknown;
-        onSubmit?: (note: string | undefined) => Promise<void>;
-      }) => {
-        // Capture on EVERY render (including the close render, open=false) so a
-        // regression to `doneDialogTarget?.finalFocus` — undefined once the
-        // target is nulled on success — is observable at close time.
-        doneCapture.finalFocus = finalFocus;
-        doneCapture.onSubmit = onSubmit;
-        return open
-          ? React.createElement('div', {
-              'data-testid': 'done-dialog',
-              'data-finalfocus-type': typeof finalFocus,
-            })
-          : null;
-      },
-    };
-  },
-);
+vi.mock('@/app/(staff)/admin/renewals/tasks/_components/done-task-dialog', () => ({
+  DoneTaskDialog: marker('done'),
+}));
+vi.mock('@/app/(staff)/admin/renewals/tasks/_components/skip-task-dialog', () => ({
+  SkipTaskDialog: marker('skip'),
+}));
+vi.mock('@/app/(staff)/admin/renewals/tasks/_components/reassign-task-dropdown', () => ({
+  ReassignTaskDropdown: marker('reassign'),
+}));
 
-vi.mock(
-  '@/app/(staff)/admin/renewals/tasks/_components/skip-task-dialog',
-  async () => {
-    const React = await import('react');
-    return {
-      SkipTaskDialog: ({
-        open,
-        finalFocus,
-      }: {
-        open: boolean;
-        finalFocus?: unknown;
-      }) =>
-        open
-          ? React.createElement('div', {
-              'data-testid': 'skip-dialog',
-              'data-finalfocus-type': typeof finalFocus,
-            })
-          : null,
-    };
-  },
-);
+const T = enMessages.admin.renewals.tasks;
 
-vi.mock(
-  '@/app/(staff)/admin/renewals/tasks/_components/reassign-task-dropdown',
-  async () => {
-    const React = await import('react');
-    return {
-      ReassignTaskDropdown: ({
-        open,
-        finalFocus,
-      }: {
-        open: boolean;
-        finalFocus?: unknown;
-      }) =>
-        open
-          ? React.createElement('div', {
-              'data-testid': 'reassign-dialog',
-              'data-finalfocus-type': typeof finalFocus,
-            })
-          : null,
-    };
-  },
-);
-
-function makeTask(
-  overrides: Partial<EscalationTaskQueueItem> & { taskId: string },
-): EscalationTaskQueueItem {
+function makeTask(overrides: Partial<EscalationTaskQueueItem> & { taskId: string }): EscalationTaskQueueItem {
   return {
     memberId: `member-${overrides.taskId}`,
     memberCompanyName: 'Acme Co',
-    memberTierBucket: null,
+    memberTierBucket: 'premium',
     cycleId: null,
-    cycleExpiresAt: null,
-    taskType: 'manual_outreach_required',
+    cycleExpiresAt: '2026-09-30T00:00:00.000Z',
+    taskType: 'phone_call',
     assignedToRole: 'admin',
-    assignedToUserId: null,
-    assignedToDisplayName: null,
-    assignedToEmail: null,
+    assignedToUserId: 'u-1',
+    assignedToDisplayName: 'Karin Ek',
+    assignedToEmail: 'karin@example.com',
     dueAt: '2026-04-10T00:00:00.000Z',
     status: 'open',
     createdAt: '2026-04-01T00:00:00.000Z',
@@ -186,145 +91,191 @@ function makeTask(
   };
 }
 
-// 016 T033 — the component no longer derives write rights from a role
-// literal; the server passes `canMutate`. The helper takes the same shape so
-// the read-only case still has real coverage.
-function renderQueue(canMutate = true) {
+function renderQueue(canMutate = true, items = [makeTask({ taskId: 't1' })]) {
   return render(
-    <NextIntlClientProvider
-      locale="en"
-      messages={enMessages}
-      formats={buildFormats('en')}
-      timeZone="Asia/Bangkok"
-    >
-      {/* The real staff layout provides `<main id="main-content" tabIndex={-1}>`
-          as the focus-return landmark; mirror it so the finalFocus resolver's
-          `document.getElementById('main-content')` fallback resolves. */}
+    <NextIntlClientProvider locale="en" messages={enMessages} formats={buildFormats('en')} timeZone="Asia/Bangkok">
       <main id="main-content" tabIndex={-1} />
       <EscalationTaskQueue
         canMutate={canMutate}
         actorUserId="actor-1"
         overdueCount={0}
-        // length 1 → the task-type filter Select stays hidden (no need to mock it).
-        distinctTaskTypes={['manual_outreach_required']}
-        items={[makeTask({ taskId: 't1' })]}
+        distinctTaskTypes={['phone_call']}
+        items={items}
       />
     </NextIntlClientProvider>,
   );
 }
 
+const MENU = 'Skip, reassign or view timeline — Phone call, Acme Co';
+const TIMELINE = 'View timeline — Phone call, Acme Co';
+/** The row's Done button (the Status filter has a "Done" button too). */
+function rowDone(): HTMLElement {
+  return within(screen.getByRole('grid')).getByRole('button', { name: 'Done' });
+}
+function openMenu(): void {
+  fireEvent.click(screen.getByRole('button', { name: MENU }));
+}
+
+let fetchMock: ReturnType<typeof vi.fn>;
 beforeEach(() => {
-  vi.clearAllMocks();
-  doneCapture.finalFocus = undefined;
-  doneCapture.onSubmit = undefined;
+  vi.useRealTimers();
+  for (const c of Object.values(cap)) {
+    c.open = false;
+    delete c.finalFocus;
+    delete c.onSubmit;
+  }
+  fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
+  vi.stubGlobal('fetch', fetchMock);
+});
+afterEach(() => vi.unstubAllGlobals());
+
+describe('<EscalationTaskQueue> table (AURA DataTable)', () => {
+  it('renders an AURA DataTable named "Escalation tasks" that stacks below 640px', () => {
+    renderQueue();
+    const grid = screen.getByRole('grid', { name: T.table_caption });
+    expect(grid.closest('.aura-table')).not.toBeNull();
+  });
+
+  it('shows the board columns, with Actions only for someone who can act', () => {
+    renderQueue();
+    expect(screen.getAllByRole('columnheader').map((h) => h.textContent)).toEqual([
+      'Member',
+      'Tier',
+      'Expiry',
+      'Task type',
+      'Due',
+      'Assigned to',
+      'Status',
+      expect.any(String),
+    ]);
+  });
+
+  it('a manager gets no row controls, only a link to each row\'s timeline', () => {
+    renderQueue(false);
+    expect(screen.getAllByRole('columnheader')).toHaveLength(8);
+    expect(within(screen.getByRole('grid')).queryByRole('button', { name: 'Done' })).toBeNull();
+    expect(screen.queryByRole('button', { name: MENU })).toBeNull();
+    expect(screen.getByRole('link', { name: TIMELINE })).toHaveAttribute('href', '/admin/members/member-t1/timeline');
+  });
+
+  it('the member cell holds one link, to the member', () => {
+    renderQueue();
+    const cell = screen.getByRole('link', { name: 'Acme Co' }).closest('[role="gridcell"]') as HTMLElement;
+    expect(within(cell).getAllByRole('link')).toHaveLength(1);
+    expect(within(cell).getByRole('link')).toHaveAttribute('href', '/admin/members/member-t1');
+  });
+
+  it('shows the tier badge, the assignee name over the role, and the status pill', () => {
+    renderQueue();
+    // In its column, and again beside the task type on a phone card.
+    expect(screen.getAllByText(enMessages.admin.renewals.tierBadge.premium)[0]?.closest('.aura-badge')).not.toBeNull();
+    expect(screen.getByText('Karin Ek')).toBeInTheDocument();
+    expect(screen.getByText(T.assigneeRole.admin)).toBeInTheDocument();
+    expect(screen.getByText(T.status.open, { selector: '.aura-pill *, .aura-pill' })).toBeInTheDocument();
+  });
+
+  it('gives the task type line and the due line the full width of a phone card (board; AURA 5.23, #120)', () => {
+    renderQueue();
+    const typeCell = screen.getByText('Phone call').closest('[role="gridcell"]');
+    const dueCell = screen.getByText('Karin Ek (Admin)', { exact: false, selector: 'span' }).closest('[role="gridcell"]');
+    expect(typeCell).toHaveAttribute('data-card', 'wide');
+    expect(dueCell).toHaveAttribute('data-card', 'wide');
+  });
+
+  it('marks a task more than three days late with a danger "Overdue" badge', () => {
+    renderQueue(true, [makeTask({ taskId: 't1', dueAt: '2020-01-01T00:00:00.000Z' })]);
+    expect(screen.getByText(T.overdue_badge).closest('.aura-badge')).toHaveClass('aura-badge--danger');
+  });
 });
 
-describe('<EscalationTaskQueue> row actions — Done + ⋯ overflow (UX-audit #4/#5a)', () => {
-  it('renders Done as the single visible primary button', () => {
+describe('<EscalationTaskQueue> row actions — Done + ⋯ menu', () => {
+  it('Done is the row\'s secondary button', () => {
     renderQueue();
-    expect(screen.getByRole('button', { name: 'Done' })).toBeTruthy();
+    expect(rowDone()).toHaveClass('aura-btn--secondary');
   });
 
-  it('moves Skip and Reassign into the ⋯ menu (not standalone buttons)', () => {
+  it('the ⋯ menu holds Skip, Reassign and View timeline, none of them standalone', () => {
     renderQueue();
-    expect(screen.getByRole('menuitem', { name: 'Skip' })).toBeTruthy();
-    expect(screen.getByRole('menuitem', { name: 'Reassign' })).toBeTruthy();
-    // They are NOT top-level buttons anymore — only Done is.
     expect(screen.queryByRole('button', { name: 'Skip' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Reassign' })).toBeNull();
+    openMenu();
+    expect(screen.getByRole('menuitem', { name: 'Skip' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Reassign' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'View timeline' })).toBeInTheDocument();
   });
 
-  it('opens the Done dialog with a finalFocus resolver', () => {
+  it('View timeline is a link item to the member timeline', () => {
     renderQueue();
-    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
-    const dialog = screen.getByTestId('done-dialog');
-    expect(dialog.getAttribute('data-finalfocus-type')).toBe('function');
+    openMenu();
+    const item = screen.getByRole('menuitem', { name: 'View timeline' });
+    expect(item.closest('a') ?? item).toHaveAttribute('href', '/admin/members/member-t1/timeline');
   });
 
-  it('keeps a STABLE finalFocus that survives close-on-success and returns #main-content (regression: the prop must not evaporate to undefined at close)', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
-    vi.stubGlobal('fetch', fetchMock);
-    try {
-      renderQueue();
-      // Open the Done dialog — it receives the launching row's focus-return
-      // resolver via the stable `stableFinalFocus` callback.
-      fireEvent.click(screen.getByRole('button', { name: 'Done' }));
-      expect(typeof doneCapture.finalFocus).toBe('function');
-      expect(typeof doneCapture.onSubmit).toBe('function');
-
-      // Simulate a Done SUCCESS. postAction raises `closedViaSuccessRef` and the
-      // queue nulls `doneDialogTarget` in the SAME commit that closes the dialog.
-      await act(async () => {
-        await doneCapture.onSubmit?.(undefined);
-      });
-
-      // The row's Done route was POSTed (proves the success path ran).
-      expect(fetchMock).toHaveBeenCalledWith(
-        '/api/admin/renewals/tasks/t1/done',
-        expect.objectContaining({ method: 'POST' }),
-      );
-
-      // CLOSE-TIME GUARD. Base UI reads `finalFocus` LIVE at close. With the bug
-      // (`finalFocus={doneDialogTarget?.finalFocus}`) the prop is `undefined` on
-      // the close render, so this reads 'undefined' and FAILS. The fix passes a
-      // stable callback, so it is STILL a function after the dialog closes.
-      expect(typeof doneCapture.finalFocus).toBe('function');
-
-      // ...and invoking it (as Base UI does at close) returns the surviving
-      // #main-content landmark — NOT the now-unmounting ⋯ trigger, NOT
-      // null/<body> — because `closedViaSuccessRef` was raised before close.
-      const mainContent = document.getElementById('main-content');
-      expect(mainContent).not.toBeNull();
-      // 2026-09-10 — the resolver no longer RETURNS the landmark. Base UI
-      // applies a returned element as `getFirstTabbableElement(el)`, and the
-      // `tabIndex={-1}` landmark is not tabbable, so focus landed on its first
-      // link. The hook now focuses the landmark itself (after Base UI's own
-      // microtask) and answers `false` = "move nothing".
-      const resolve = doneCapture.finalFocus as () => HTMLElement | false | null;
-      expect(resolve()).toBe(false);
-      await Promise.resolve();
-      await Promise.resolve();
-      await Promise.resolve();
-      expect(document.activeElement).toBe(mainContent);
-    } finally {
-      vi.unstubAllGlobals();
-    }
-  });
-
-  it('opens the Skip dialog (from the menu) with a finalFocus resolver', () => {
+  it('Done opens its dialog; a success POSTs the same route and body, and focus lands on #main-content', async () => {
     renderQueue();
+    fireEvent.click(rowDone());
+    expect(screen.getByTestId('done-dialog')).toBeInTheDocument();
+    expect(typeof cap.done.finalFocus).toBe('function');
+    await act(async () => {
+      await (cap.done.onSubmit as unknown as (n: string | undefined) => Promise<void>)('Called, renewing');
+    });
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/renewals/tasks/t1/done', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ outcome_note: 'Called, renewing' }),
+    });
+    // The resolver survives the close and steers off the vanishing row.
+    expect(cap.done.open).toBe(false);
+    expect(cap.done.finalFocus?.()).toBe(document.getElementById('main-content'));
+  });
+
+  it('a cancelled Done returns focus to the Done button', () => {
+    renderQueue();
+    const done = rowDone();
+    fireEvent.click(done);
+    expect(cap.done.finalFocus?.()).toBe(done);
+  });
+
+  it('Skip from the menu returns focus to that row\'s ⋯ button and posts {skipped_reason}', async () => {
+    renderQueue();
+    openMenu();
     fireEvent.click(screen.getByRole('menuitem', { name: 'Skip' }));
-    const dialog = screen.getByTestId('skip-dialog');
-    expect(dialog.getAttribute('data-finalfocus-type')).toBe('function');
-  });
-
-  it('opens the Reassign dialog (from the menu) with a finalFocus resolver', () => {
-    renderQueue();
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Reassign' }));
-    const dialog = screen.getByTestId('reassign-dialog');
-    expect(dialog.getAttribute('data-finalfocus-type')).toBe('function');
-  });
-
-  it('renders no action controls for a read-only manager', () => {
-    renderQueue(false);
-    expect(screen.queryByRole('button', { name: 'Done' })).toBeNull();
-    expect(screen.queryByRole('menuitem', { name: 'Skip' })).toBeNull();
-  });
-
-  it('forwards the trigger node to BOTH the Base UI ref and the row menu ref (mergeRefs regression guard)', () => {
-    renderQueue();
-    // The trigger wires `ref={mergeRefs(baseRef, rowMenuTriggerRef)}`. mergeRefs
-    // forwards the DOM node to EACH ref, so Base UI's own ref (baseRefSpy) must
-    // receive the trigger element. A regression to `ref={rowMenuTriggerRef}`
-    // alone drops baseRef entirely → this spy is never called with a node, and
-    // the menu would stop anchoring in production (the Base-UI ref-override
-    // trap the mocked menu can't otherwise exercise).
-    expect(baseRefSpy).toHaveBeenCalled();
-    const receivedElement = baseRefSpy.mock.calls.some(
-      ([node]) => node instanceof HTMLElement,
+    expect(screen.getByTestId('skip-dialog')).toBeInTheDocument();
+    expect(cap.skip.finalFocus?.()).toBe(screen.getByRole('button', { name: MENU }));
+    await act(async () => {
+      await (cap.skip.onSubmit as unknown as (r: string) => Promise<void>)('Unreachable');
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/admin/renewals/tasks/t1/skip',
+      expect.objectContaining({ body: JSON.stringify({ skipped_reason: 'Unreachable' }) }),
     );
-    expect(receivedElement).toBe(true);
+  });
+
+  it('Reassign from the menu posts {to_user_id}', async () => {
+    renderQueue();
+    openMenu();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Reassign' }));
+    expect(screen.getByTestId('reassign-dialog')).toBeInTheDocument();
+    await act(async () => {
+      await (cap.reassign.onSubmit as unknown as (u: string) => Promise<void>)('u-2');
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/admin/renewals/tasks/t1/reassign',
+      expect.objectContaining({ body: JSON.stringify({ to_user_id: 'u-2' }) }),
+    );
+  });
+
+  it('a closed task has no Done or menu, and still links to its timeline', () => {
+    renderQueue(true, [makeTask({ taskId: 't1', status: 'done' })]);
+    expect(within(screen.getByRole('grid')).queryByRole('button', { name: 'Done' })).toBeNull();
+    expect(screen.queryByRole('button', { name: MENU })).toBeNull();
+    expect(screen.getByRole('link', { name: TIMELINE })).toHaveAttribute('href', '/admin/members/member-t1/timeline');
+  });
+});
+
+describe('<EscalationTaskQueue> empty states', () => {
+  it('an empty open queue offers the history', () => {
+    renderQueue(true, []);
+    expect(screen.getByText(T.empty_state.title)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: T.empty_state.cta_history })).toBeInTheDocument();
   });
 });

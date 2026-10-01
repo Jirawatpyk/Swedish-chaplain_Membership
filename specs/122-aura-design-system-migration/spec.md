@@ -187,6 +187,35 @@ The US7b boards were read against the code before the tasks were written: `Admin
     - The phone board puts the reason and the plan move on full-width lines. An AURA stacked card has no full-width field, so these cells wrap inside their half of the card. This is AURA handoff #120, recorded in `docs/aura-adoption.md`.
   - **The actions follow the routes' own guards, not the boards' samples:** the `-reminded` board draws "Mark paid offline", but the mark-paid route accepts only an upcoming or awaiting-payment cycle, so a reminded cycle offers Cancel cycle alone (unchanged from today).
 
+### Session 2026-10-01 (maintainer, US7b-2 start)
+
+The maintainer approved the US7b-2 plan. Its boards were read against the code: `Admin-renewal-tasks` (+`-mobile`), `Admin-state-tasks-manager`, `Admin-renewal-schedules` (+`-mobile`). US7b-2 touches no money, so it gets UX and i18n reviews and no financial review. It is a UI swap: the done, skip and reassign requests and the schedule save keep their bodies, endpoints and toasts.
+
+- **Decided from the boards, applying the Session 2026-09-27 rule that the board decides content and copy:**
+  - **Escalation tasks, rows:**
+    - "Done" (secondary) plus a ⋯ menu with Skip, Reassign and View timeline, named for its row: "Skip, reassign or view timeline — {type}, {member}".
+    - "View timeline" moves from the member cell into the menu, so the member cell holds one link.
+    - Due shows the date with a danger "Overdue" badge; Assigned to shows the name over the role.
+  - **Escalation tasks, layout:**
+    - One table that stacks into cards below 640px. A card shows the member, the tier with the task type, then the due date with the assignee; Expiry and Status stay in the table only.
+    - Done fills the card's last row beside the ⋯ menu.
+  - **Escalation tasks, filters:**
+    - The overdue toggle card, then Status (Open, Done, Skipped) and Assignment (All, Mine, Unassigned) as segmented groups, then the Task type select.
+    - A link that already carries a colleague's id in `assignment` keeps working (no button is pressed). The board draws three buttons.
+    - For a manager, the read-only note sits above the filters, with no Done button and no ⋯ menu. The overdue toggle stays, since it only filters: the `Admin-state-tasks-manager` board draws an empty queue, where there is nothing overdue to toggle.
+    - Status and Assignment are AURA toggle chips (`Tag selected`, `aria-pressed`), so the pressed chip carries a check, not only a fill. A hand-built pill track read at about 1.2:1 in dark mode (UX review).
+  - **Escalation tasks, the timeline after the move (UX review):** moving "View timeline" into the menu must not take it away from anyone. A row that is closed (Done or Skipped), or any row for a manager, shows a "View timeline" link in the actions column ("View timeline — {type}, {member}" for screen readers) instead of Done and the menu, which would have nothing to act on. So the actions column renders for every role.
+  - **Out of scope, filed separately:** once the overdue toggle is pressed, the page stops counting overdue tasks, so the toggle disappears and only Back turns the filter off. The count is a server read in `page.tsx` that also feeds the overdue gauge. That is a logic change, so it ships in its own PR (Session 2026-09-27 rule).
+  - **Reminder schedules, chart:** the timeline is a chart on a day scale (email markers on the upper lane, task markers on the lower one, a dashed line at the renewal date), replacing the step strip. It names the schedule in one sentence for screen readers. Axis labels are kept or dropped by each label's width at the chart's measured width, and a label at either edge anchors to that edge, so a long TH or SV "Due" never collides on a phone.
+  - **Reminder schedules, step card:**
+    - Delivery channel (Email or Task) as a radio group, and Send timing as a select ending in "Custom…".
+    - A task step has a Task type combobox that accepts a typed type, with the hint "Can't find the task type? Type to add your own.", and an Assignee role select.
+    - The email preview keeps today's copy in the board's check-line form; its no-copy warning stays a warning.
+    - The timing sentence heads each card (h3), and the move and remove buttons are described by it, so nine cards no longer read as nine identical "Move up" buttons. A step moved to either end hands focus to the other arrow.
+  - **Reminder schedules, editing:**
+    - Removing a step keeps its Undo toast; no confirm is added.
+    - The save bar holds "{n} steps · Last saved …", "Add step" and "Save schedule". It sits under the steps from 640px and sticks to the bottom of a phone screen.
+
 ## User Scenarios & Testing *(mandatory)*
 
 Every story below is one phase and one pull request. A story is done when its screens use only AURA components, match their canvas boards, and pass the per-module definition of done (FR-010).

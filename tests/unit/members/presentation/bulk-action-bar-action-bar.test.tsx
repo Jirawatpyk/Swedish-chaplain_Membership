@@ -9,7 +9,7 @@
  * selection is announced.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 
@@ -67,6 +67,13 @@ describe('BulkActionBar on AURA ActionBar (T504)', () => {
     ]) {
       expect(screen.getByRole('button', { name: action })).toBeInTheDocument();
     }
+  });
+
+  it('every control in the bar, Clear included, is a 44px touch target (WCAG 2.5.5)', () => {
+    renderBar(['11111111-2222-3333-4444-555555555555']);
+    const buttons = within(screen.getByRole('region', { name: BULK.toolbarLabel })).getAllByRole('button');
+    expect(buttons[0]).toHaveTextContent(BULK.clear);
+    for (const button of buttons) expect(button).toHaveClass('aura-btn--touch');
   });
 
   it('renders no spacer: the bar is in the flow, not fixed over the page', () => {

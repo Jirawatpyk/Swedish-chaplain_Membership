@@ -60,3 +60,19 @@ it('keeps the SAME role="status" live-region node across a coverage-state change
   expect(coveredNode).toBe(notCoveredNode);
   expect(coveredNode).toHaveAttribute('aria-live', 'polite');
 });
+
+// 122 US7b-2 (T736) — the board draws the covered state as a check line
+// ("Reminder email is configured for this timing" after a circle-check), and
+// the no-copy state stays a warning; both inside the same live region.
+it('draws the covered state as a check line and the no-copy state as a warning line', () => {
+  const { rerender, container } = wrap(<EmailPreview tierBucket="regular" offsetDays={-30} />);
+  expect(container.querySelector('[role="status"] svg.lucide-circle-check')).not.toBeNull();
+  rerender(
+    <NextIntlClientProvider locale="en" messages={messages}>
+      <EmailPreview tierBucket="regular" offsetDays={-45} />
+    </NextIntlClientProvider>,
+  );
+  const status = screen.getByRole('status');
+  expect(status.querySelector('svg.lucide-triangle-alert')).not.toBeNull();
+  expect(status.className).toContain('--aura-fg-warning');
+});

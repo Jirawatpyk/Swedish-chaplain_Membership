@@ -4387,7 +4387,10 @@
             "dueLabel": "วันครบกำหนด",
             "legendEmail": "อีเมล",
             "legendTask": "งานติดตาม",
-            "emptyDue": "ยังไม่มีการแจ้งเตือน — แสดงเฉพาะวันครบกำหนดเท่านั้น"
+            "emptyDue": "ยังไม่มีการแจ้งเตือน — แสดงเฉพาะวันครบกำหนดเท่านั้น",
+            "chartLabel": "ตารางการแจ้งเตือนระดับ{tier} อีเมล: {email} งานติดตาม: {task}",
+            "none": "ไม่มี",
+            "dueShort": "ครบกำหนด"
           },
           "actions": {
             "save": "บันทึกตาราง",
@@ -4419,7 +4422,9 @@
             "announce": "ย้ายขั้นตอนไปตำแหน่งที่ {position} จาก {total}"
           },
           "lastSaved": "บันทึกล่าสุด {date}",
-          "stepCount": "{count, plural, =0 {ไม่มีขั้นตอน} other {{count} ขั้นตอน}}"
+          "stepCount": "{count, plural, =0 {ไม่มีขั้นตอน} other {{count} ขั้นตอน}}",
+          "tierTabsLabel": "ระดับสมาชิก",
+          "saveBarLabel": "การดำเนินการกับตาราง"
         }
       },
       "workQueue": {
@@ -4832,14 +4837,14 @@
         "loading": "กำลังโหลดงานติดตาม…",
         "manager_read_only_notice": "คุณกำลังดูคิวนี้ในฐานะผู้จัดการ — เฉพาะผู้ดูแลระบบเท่านั้นที่สามารถทำเครื่องหมายเสร็จ ข้าม หรือเปลี่ยนผู้รับผิดชอบงานได้",
         "view_timeline": "ดูประวัติเหตุการณ์",
-        "view_timeline_for": "ดูประวัติเหตุการณ์ของ {company}",
-        "table_caption": "งานติดตามด่วนของผู้เช่าระบบปัจจุบัน — เรียงลำดับตามสถานะ ผู้รับผิดชอบ และวันครบกำหนด",
+        "table_caption": "งานติดตามด่วน",
         "overdue_banner": "{count, plural, other {มีงานเกินกำหนด # รายการ}}",
         "overdue_banner_cta": "แสดงเฉพาะงานเกินกำหนด",
         "overdue_badge": "เกินกำหนด",
-        "status_tabs_aria": "กรองตามสถานะของงาน",
-        "assignment_filter_aria": "กรองตามผู้รับผิดชอบ",
-        "task_type_filter_aria": "กรองตามประเภทของงาน",
+        "filters_aria": "กรองงาน",
+        "status_filter_aria": "สถานะ",
+        "assignment_filter_aria": "ผู้รับผิดชอบ",
+        "task_type_filter_label": "ประเภทงาน",
         "task_type_filter_all": "ทุกประเภท",
         "pagination": {
           "showingFirst": "แสดง 50 รายการต่อหน้า",
@@ -4922,7 +4927,8 @@
         },
         "actions": {
           "menu_label": "การดำเนินการ",
-          "row_menu_for": "การดำเนินการสำหรับ {company}",
+          "row_menu_for": "ข้าม เปลี่ยนผู้รับผิดชอบ หรือดูประวัติเหตุการณ์ — {type} ของ {company}",
+          "view_timeline_for": "ดูประวัติเหตุการณ์ — {type} ของ {company}",
           "errors": {
             "task_not_open": "ผู้ดูแลคนอื่นปิดงานนี้ไปแล้ว — โปรดรีเฟรชเพื่อดูสถานะล่าสุด",
             "task_not_found": "ไม่พบงานนี้แล้ว — โปรดรีเฟรชรายการ",
@@ -4975,7 +4981,6 @@
           "reason_label": "เหตุผล",
           "reason_placeholder": "เช่น ติดต่อสมาชิกไม่ได้ จะกลับมาดำเนินการที่ T-30",
           "reason_required": "ต้องระบุเหตุผลก่อนข้ามงานนี้",
-          "required_marker": "จำเป็นต้องระบุ",
           "chars_remaining": "เหลืออีก {count} ตัวอักษร",
           "cancel": "ยกเลิก",
           "confirm": "ข้ามงาน",
@@ -4987,7 +4992,6 @@
           "assignee_label": "ผู้รับผิดชอบ",
           "placeholder": "เลือกพนักงาน",
           "loading": "กำลังโหลดรายชื่อพนักงาน…",
-          "search_placeholder": "ค้นหาด้วยชื่อหรืออีเมล…",
           "no_results": "ไม่พบพนักงานที่ตรงกับการค้นหา",
           "load_error": "ไม่สามารถโหลดรายชื่อพนักงานได้ โปรดลองใหม่อีกครั้ง",
           "retry": "ลองใหม่",

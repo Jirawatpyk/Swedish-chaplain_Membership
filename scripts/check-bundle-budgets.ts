@@ -130,6 +130,13 @@
  *     /admin/renewals/[cycleId]        806.8 KB measured → ≤ 910 KB (was 1140)
  *     /admin/renewals/tier-upgrades    841.9 KB measured → ≤ 950 KB (was 1250)
  *
+ *   Spec 122 US7b-2 (AURA escalation tasks + reminder schedules,
+ *   2026-10-01, AURA 5.22.0) — both routes off the legacy kit (the last
+ *   renewals users of cmdk and the legacy Stepper), re-baselined on the
+ *   branch build:
+ *     /admin/renewals/tasks               913.3 KB measured → ≤ 1020 KB (was 1420)
+ *     /admin/settings/renewals/schedules  813.8 KB measured → ≤  920 KB (was 1160)
+ *
  * Run as a post-build step:
  *
  *   pnpm build
@@ -177,7 +184,8 @@ const BUDGETS: ReadonlyArray<RouteBudget> = [
   { route: '/admin/renewals', maxKb: 1160 },
   // Spec 122 US7b-1 re-baseline (AURA cycle detail + tier queue) — see docblock.
   { route: '/admin/renewals/[cycleId]', maxKb: 910 },
-  { route: '/admin/renewals/tasks', maxKb: 1420 },
+  // Spec 122 US7b-2 re-baseline (AURA escalation tasks) — see docblock.
+  { route: '/admin/renewals/tasks', maxKb: 1020 },
   { route: '/admin/renewals/tier-upgrades', maxKb: 950 },
   { route: '/portal/renewal/[memberId]', maxKb: 1090 },
   { route: '/portal/preferences/renewals', maxKb: 1040 },
@@ -186,7 +194,8 @@ const BUDGETS: ReadonlyArray<RouteBudget> = [
   // budget here a future refactor could silently regress JS payload.
   // The `/portal/renewal/[memberId]/success` page is fully server-
   // rendered and has no client JS, so no budget entry is needed.
-  { route: '/admin/settings/renewals/schedules', maxKb: 1160 },
+  // Spec 122 US7b-2 re-baseline (AURA schedule editor) — see docblock.
+  { route: '/admin/settings/renewals/schedules', maxKb: 920 },
   // --- Members (058 / PR-B) --------------------------------------------
   // The Thai postal dataset (367 KB uncompressed) is server-only, behind
   // /api/geo/postal/[code] and an `import 'server-only'` guard. If it ever

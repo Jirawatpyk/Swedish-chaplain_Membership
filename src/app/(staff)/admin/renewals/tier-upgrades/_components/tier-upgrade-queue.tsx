@@ -252,10 +252,10 @@ export function TierUpgradeQueueClient({
         key: 'reason',
         label: t('columns.reason'),
         minWidth: 240,
+        // The phone card gives the reason and its evidence a line of their own
+        // at full width (board Admin-tier-upgrades-mobile; AURA 5.23, #120).
+        card: 'wide',
         render: (item) => (
-          // AURA's stacked card keeps its cells on one line; the reason and its
-          // evidence wrap instead of clipping (a full-width card field is
-          // AURA handoff #120).
           <span className="flex flex-col gap-0.5 whitespace-normal">
             <span className="text-sm">{t(`reason.${item.reasonCode}`)}</span>
             <span className="text-xs text-[var(--aura-fg-secondary)]">

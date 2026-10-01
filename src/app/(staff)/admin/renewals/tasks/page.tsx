@@ -26,9 +26,6 @@ import { Suspense } from 'react';
 import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { headers } from 'next/headers';
-import { AlertTriangle } from 'lucide-react';
-import { buttonVariants } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { env } from '@/lib/env';
@@ -45,7 +42,7 @@ import {
 } from '@/modules/renewals';
 import { EscalationTaskQueue } from './_components/escalation-task-queue';
 import { buildTasksQueueNextHref } from './_lib/build-tasks-queue-next-href';
-import { RenewalsErrorRetry } from '../_components/renewals-error-retry';
+import { renderTasksQueueView } from './_components/tasks-queue-view';
 import { RenewalsSectionTabs } from '../_components/renewals-section-tabs';
 import { RenewalsSectionTabsWithCounts } from '../_components/renewals-section-tabs-with-counts';
 
@@ -249,39 +246,17 @@ export default async function EscalationTaskQueuePage({
   return (
     <TableContainer>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
-      {/* C3 (#8) — carry the sibling-queue count badges (Pending review /
-          Tasks / Tier upgrades) here too, streamed in a Suspense island whose
-          fallback is the bare strip. showPipelineHelp is omitted (defaults
-          false): the Tasks page renders the strip without the help button. */}
-      <Suspense fallback={<RenewalsSectionTabs />}>
-        <RenewalsSectionTabsWithCounts tenantSlug={tenantCtx.slug} />
-      </Suspense>
-      {hasError ? (
-        <Card
-          className="border-destructive/40 bg-destructive/5"
-          role="alert"
-        >
-          <CardContent className="flex items-start gap-3 py-6">
-            <AlertTriangle
-              className="mt-0.5 size-5 shrink-0 text-destructive"
-              aria-hidden
-            />
-            <div className="flex-1">
-              <p className="text-base font-medium text-destructive">
-                {t('error_state.title')}
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {t('error_state.subtitle')}
-              </p>
-              <RenewalsErrorRetry
-                label={t('error_state.retry')}
-                retryingLabel={t('error_state.retrying')}
-              />
-            </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <>
+      {await renderTasksQueueView({
+        // C3 (#8) — the sibling-queue count badges stream in a Suspense
+        // island whose fallback is the bare strip.
+        sectionTabs: (
+          <Suspense fallback={<RenewalsSectionTabs />}>
+            <RenewalsSectionTabsWithCounts tenantSlug={tenantCtx.slug} />
+          </Suspense>
+        ),
+        loadFailed: hasError,
+        nextHref,
+        queue: hasError ? null : (
           <EscalationTaskQueue
             canMutate={canPerform(role, 'renewals.write')}
             actorUserId={session.user.id}
@@ -316,28 +291,8 @@ export default async function EscalationTaskQueuePage({
               createdAt: task.createdAt,
             }))}
           />
-          {/* UX-audit PR-A #1 — keyset "Next 50" footer. Rendered only when
-              the repo returned a nextCursor (page capped at 50). A plain
-              server-rendered <a> (works without JS) mirroring the pipeline's
-              pagination footer; the visible per-page hint tells all users the
-              list is capped per page (R2 — page-position-neutral copy so it
-              isn't false on page 2+). The queue's `setSearchParam` deletes
-              `cursor` on any filter change so a stale cursor can't mis-page. */}
-          {nextHref ? (
-            <div className="flex items-center justify-between gap-4 pt-1">
-              <p className="text-xs text-muted-foreground">
-                {t('pagination.showingFirst')}
-              </p>
-              <a
-                href={nextHref}
-                className={buttonVariants({ variant: 'outline' })}
-              >
-                {t('pagination.next')}
-              </a>
-            </div>
-          ) : null}
-        </>
-      )}
+        ),
+      })}
     </TableContainer>
   );
 }

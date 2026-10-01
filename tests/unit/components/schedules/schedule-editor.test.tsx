@@ -17,7 +17,7 @@
  *     the end-to-end guard for the same Issue 3 regression.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { NextIntlClientProvider, createTranslator } from 'next-intl';
 import messages from '@/i18n/messages/en.json';
 import thMessages from '@/i18n/messages/th.json';
@@ -368,7 +368,7 @@ describe('<ScheduleEditor> — `_uiKey` React-key stability (Change 3 remount-bu
     // `{ selector: 'label' }` disambiguates from `ReminderTimeline`'s
     // "Task" legend entry (a <span>, always rendered) — only the
     // channel segment's <label> should receive the click.
-    fireEvent.click(screen.getByText('Task', { selector: 'label' }));
+    fireEvent.click(screen.getByRole('radio', { name: /^task$/i }));
 
     await waitFor(() => {
       expect(screen.getByRole('radio', { name: /task/i })).toBeChecked();
@@ -409,13 +409,16 @@ describe('<ScheduleEditor> — two consecutive "Add step" clicks (guards Issue 3
     // offsets among the step nodes is direct evidence of two DISTINCT
     // step_ids (the bug this guards against: two IDENTICAL `t-30.email`
     // entries would render identical timing-sentence text here).
-    const items = screen.getAllByRole('listitem');
-    expect(items).toHaveLength(3);
-    const stepLabels = items
-      .map((li) => li.textContent ?? '')
-      .filter((text) => !text.includes('Due date'));
-    expect(stepLabels).toHaveLength(2);
-    expect(stepLabels[0]).not.toBe(stepLabels[1]);
+    // 122 US7b-2 — each step is an item of the steps list, headed (h3) by
+    // its timing sentence. Two DISTINCT headings are direct evidence of two
+    // DISTINCT step_ids (two identical `t-30.email` steps would read the
+    // same timing).
+    // The steps list is the panel's ordered list (the chart legend is a <ul>).
+    const steps = screen.getByRole('tabpanel').querySelector('ol') as HTMLElement;
+    const items = within(steps).getAllByRole('listitem');
+    expect(items).toHaveLength(2);
+    const headings = items.map((li) => within(li).getByRole('heading', { level: 3 }).textContent ?? '');
+    expect(headings[0]).not.toBe(headings[1]);
   });
 });
 
@@ -579,7 +582,7 @@ describe('<ScheduleEditor> — mid-save edit is not clobbered by a stale snapsho
       // ReminderTimeline's static "Task" legend entry (a <span>, always
       // rendered). Same pattern as the "`_uiKey` React-key stability"
       // describe block above.
-      fireEvent.click(screen.getByText('Task', { selector: 'label' }));
+      fireEvent.click(screen.getByRole('radio', { name: /^task$/i }));
       await waitFor(() => {
         expect(screen.getByRole('radio', { name: /^task$/i })).toBeChecked();
       });
@@ -622,7 +625,7 @@ describe('<ScheduleEditor> — mid-save edit is not clobbered by a stale snapsho
 // (inline-alert.tsx), the cleanest discriminator for "which semantic tone
 // actually rendered" without asserting on Tailwind class strings.
 describe('<ScheduleEditor> — manager read-only banner uses the info tone, not amber (I2)', () => {
-  it('renders the notice as an InlineAlert tone="info" role="status"', () => {
+  it('renders the notice as an AURA info Alert with role="status"', () => {
     render(
       <NextIntlClientProvider
         locale="en"
@@ -634,9 +637,9 @@ describe('<ScheduleEditor> — manager read-only banner uses the info tone, not 
       </NextIntlClientProvider>,
     );
     const notice = screen.getByText(/read-only access to renewal schedules/i);
-    const alertRoot = notice.closest('[data-slot="inline-alert"]');
+    const alertRoot = notice.closest('.aura-alert');
     expect(alertRoot).not.toBeNull();
-    expect(alertRoot).toHaveAttribute('data-tone', 'info');
+    expect(alertRoot).toHaveClass('aura-alert--info');
     expect(alertRoot).toHaveAttribute('role', 'status');
   });
 
@@ -696,3 +699,70 @@ describe('<ScheduleEditor> — reorder announces the new position to screen read
     expect(announcement).toHaveAttribute('role', 'status');
   });
 });
+
+/**
+ * 122 US7b-2 (T738), boards `Admin-renewal-schedules` (+`-mobile`): the tier
+ * tabs are AURA Tabs named "Member tier", each panel headed by its tier; the
+ * steps are a numbered list; the save bar is an AURA ActionBar ("{n} steps ·
+ * Last saved …", Add step, Save schedule) that sticks to the bottom of a phone
+ * screen; a failed save is an AURA danger Alert.
+ */
+describe('<ScheduleEditor> on AURA (T738)', () => {
+  beforeEach(() => {
+    vi.useRealTimers();
+  });
+  afterEach(() => {
+    vi.useFakeTimers();
+  });
+
+  function renderEditor(initialPolicies: Parameters<typeof ScheduleEditor>[0]['initialPolicies'] = []) {
+    return render(
+      <NextIntlClientProvider locale="en" messages={messages} formats={buildFormats('en')} timeZone="Asia/Bangkok">
+        <ScheduleEditor initialPolicies={initialPolicies} readOnly={false} />
+      </NextIntlClientProvider>,
+    );
+  }
+
+  it('shows the tiers as AURA tabs named "Member tier", the panel headed by its tier', () => {
+    renderEditor();
+    const tablist = screen.getByRole('tablist', { name: messages.admin.renewals.settings.schedules.tierTabsLabel });
+    expect(tablist.closest('.aura-tabs')).not.toBeNull();
+    const first = screen.getAllByRole('tab')[0]!;
+    expect(first).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('heading', { level: 2, name: first.textContent ?? '' })).toBeInTheDocument();
+  });
+
+  it('switching tier shows that tier\'s panel and heading', () => {
+    renderEditor();
+    const premium = screen.getByRole('tab', { name: messages.admin.renewals.settings.schedules.tabs.premium });
+    fireEvent.click(premium);
+    expect(premium).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('heading', { level: 2, name: messages.admin.renewals.settings.schedules.tabs.premium })).toBeInTheDocument();
+  });
+
+  it('puts the step count, Add step and Save schedule in an AURA ActionBar', () => {
+    renderEditor();
+    fireEvent.click(screen.getAllByRole('button', { name: /add step/i })[0]!);
+    const bar = screen.getByRole('region', { name: messages.admin.renewals.settings.schedules.saveBarLabel });
+    expect(bar.closest('.aura-actionbar') ?? bar.querySelector('.aura-actionbar')).not.toBeNull();
+    expect(bar).toHaveTextContent('1 step');
+    expect(within(bar).getByRole('button', { name: 'Add step' })).toBeInTheDocument();
+    expect(within(bar).getByRole('button', { name: 'Save schedule' })).toHaveClass('aura-btn--primary');
+  });
+
+  it('shows a failed save as an AURA danger Alert', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 500 })));
+    try {
+      renderEditor();
+      fireEvent.click(screen.getAllByRole('button', { name: /add step/i })[0]!);
+      fireEvent.click(screen.getByRole('button', { name: 'Save schedule' }));
+      const msg = await screen.findByText(messages.admin.renewals.settings.schedules.error.saveFailed, {
+        selector: '.aura-alert *',
+      });
+      expect(msg.closest('.aura-alert')).toHaveClass('aura-alert--danger');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+

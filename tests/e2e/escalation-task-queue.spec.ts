@@ -57,13 +57,14 @@ test.describe('F8 — escalation task queue (US6) @a11y', () => {
     await expect(
       page.getByRole('heading', { name: /escalation tasks/i }),
     ).toBeVisible();
-    // Round 5 C-6 — assert all 3 status tabs are present and Open is
-    // selected by default. Drops the prior `count === 0` early-return.
+    // Round 5 C-6 — all 3 statuses are present and Open is pressed by
+    // default. 122 US7b-2: a pressed-button group, as the board draws it.
+    const statusGroup = page.getByRole('group', { name: /^status$/i });
     await expect(
-      page.getByRole('tab', { name: /^open$/i, selected: true }),
+      statusGroup.getByRole('button', { name: /^open$/i, pressed: true }),
     ).toBeVisible();
-    await expect(page.getByRole('tab', { name: /^done$/i })).toBeVisible();
-    await expect(page.getByRole('tab', { name: /^skipped$/i })).toBeVisible();
+    await expect(statusGroup.getByRole('button', { name: /^done$/i })).toBeVisible();
+    await expect(statusGroup.getByRole('button', { name: /^skipped$/i })).toBeVisible();
   });
 
   test('AS1: 8 column headers render in admin mode', async ({ page }) => {
@@ -107,7 +108,11 @@ test.describe('F8 — escalation task queue (US6) @a11y', () => {
   test('AS2: Done dialog opens + Cancel keeps task open', async ({ page }) => {
     await signInAsAdmin(page);
     await page.goto('/admin/renewals/tasks');
-    const doneBtn = page.getByRole('button', { name: /^done$/i }).first();
+    // In the queue: the Status filter has a "Done" button too.
+    const doneBtn = page
+      .locator('#main-content [role="grid"]')
+      .getByRole('button', { name: /^done$/i })
+      .first();
     if ((await doneBtn.count()) === 0) {
       test
         .info()
@@ -137,12 +142,11 @@ test.describe('F8 — escalation task queue (US6) @a11y', () => {
     await page.goto('/admin/renewals/tasks');
     // UX-audit PR-A #4 — Reassign moved from a standalone row button into the
     // row's ⋯ overflow menu (Done stays the one visible primary). Open the
-    // menu via its ⋯ trigger. S3 gave the trigger a per-row accessible name
-    // (`actions.row_menu_for` → "Actions for {company}") so each row's menu is
-    // distinguishable to AT; match its prefix rather than the old bare
-    // "Actions".
+    // menu via its ⋯ trigger. S3 gave the trigger a per-row accessible name;
+    // 122 US7b-2 names it as the board does ("Skip, reassign or view
+    // timeline — {type}, {member}"), so match its prefix.
     const menuTrigger = page
-      .getByRole('button', { name: /^actions for /i })
+      .getByRole('button', { name: /^(skip, reassign or view timeline|ข้าม เปลี่ยนผู้รับผิดชอบ|hoppa över, tilldela om) /i })
       .first();
     if ((await menuTrigger.count()) === 0) {
       test
@@ -184,7 +188,7 @@ test.describe('F8 — escalation task queue (US6) @a11y', () => {
     // (mirrors AS2/AS3), so the suite passes even when the queue is empty.
     await page.goto('/admin/renewals/tasks?assignment=mine');
     const menuTrigger = page
-      .getByRole('button', { name: /^actions for /i })
+      .getByRole('button', { name: /^(skip, reassign or view timeline|ข้าม เปลี่ยนผู้รับผิดชอบ|hoppa över, tilldela om) /i })
       .first();
     if ((await menuTrigger.count()) === 0) {
       test.info().annotations.push({
@@ -301,15 +305,17 @@ test.describe('F8 — escalation task queue (US6) @a11y', () => {
     const managerNotice = page.getByRole('note').first();
     await expect(managerNotice).toBeVisible();
     await expect(managerNotice).toContainText(/manager|chef|ผู้จัดการ/i);
-    // Actions column header MUST NOT be present for the manager render
-    // (FR-052a — manager `read` only, mutations are admin-only).
+    // FR-052a — manager `read` only, mutations are admin-only. 122 US7b-2:
+    // the actions column stays, holding only each row's "View timeline"
+    // link, so no Done button and no ⋯ menu may appear in any row.
+    // In the queue: the Status filter has a "Done" button of its own.
+    const queue = page.locator('#main-content [role="grid"]');
     await expect(
-      page.getByRole('columnheader', { name: /actions|åtgärder|การดำเนินการ/i }),
+      queue.getByRole('button', { name: /^(skip, reassign or view timeline|ข้าม เปลี่ยนผู้รับผิดชอบ|hoppa över, tilldela om) /i }),
     ).toHaveCount(0);
-    // No Done / Skip / Reassign action buttons rendered in any row.
-    await expect(page.getByRole('button', { name: /^done$/i })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: /^skip$/i })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: /^reassign$/i })).toHaveCount(0);
+    await expect(queue.getByRole('button', { name: /^done$/i })).toHaveCount(0);
+    await expect(queue.getByRole('button', { name: /^skip$/i })).toHaveCount(0);
+    await expect(queue.getByRole('button', { name: /^reassign$/i })).toHaveCount(0);
   });
 
   test('W8: clicking a member row link navigates to /admin/members/[id]', async ({
@@ -322,9 +328,10 @@ test.describe('F8 — escalation task queue (US6) @a11y', () => {
     // link in the table; if no rows are seeded, annotate-and-skip
     // (don't fail) — the same skip-with-annotation policy as AS2/AS3.
     const memberLink = page
-      .getByRole('cell')
+      // 122 US7b-2: an AURA DataTable, whose cells are gridcells.
+      .getByRole('gridcell')
       .getByRole('link')
-      .filter({ hasNotText: /timeline|view/i })
+      .filter({ hasNotText: /timeline|view|tidslinje|ประวัติเหตุการณ์/i })
       .first();
     if ((await memberLink.count()) === 0) {
       test.info().annotations.push({

@@ -413,6 +413,9 @@ export function BulkActionBar({
           label={t('toolbarLabel')}
           selected={count}
           onClearSelection={handleClearSelection}
+          // AURA 5.23 (handoff #122): Clear takes the same 44px touch height
+          // on a phone as the bar's own buttons.
+          touchHeight
           status={
             overCap ? (
               <span className="flex flex-col gap-0.5" role="alert">
@@ -437,6 +440,7 @@ export function BulkActionBar({
               <Button
                 variant="danger-secondary"
                 size="sm"
+                touchHeight
                 icon={<ArchiveIcon aria-hidden="true" />}
                 disabled={overCap}
                 onClick={(e) => {
@@ -453,6 +457,7 @@ export function BulkActionBar({
               <Button
                 variant="secondary"
                 size="sm"
+                touchHeight
                 icon={<MailIcon aria-hidden="true" />}
                 disabled={overCap}
                 onClick={(e) => {
@@ -472,6 +477,7 @@ export function BulkActionBar({
               <Button
                 variant="secondary"
                 size="sm"
+                touchHeight
                 icon={<FileTextIcon aria-hidden="true" />}
                 disabled={overCap}
                 onClick={(e) => {
@@ -488,6 +494,7 @@ export function BulkActionBar({
               <Button
                 variant="secondary"
                 size="sm"
+                touchHeight
                 icon={<FileMinusIcon aria-hidden="true" />}
                 disabled={overCap}
                 onClick={(e) => {
@@ -503,6 +510,7 @@ export function BulkActionBar({
               <Button
                 variant="secondary"
                 size="sm"
+                touchHeight
                 icon={<BellIcon aria-hidden="true" />}
                 disabled={overCap}
                 onClick={(e) => {
