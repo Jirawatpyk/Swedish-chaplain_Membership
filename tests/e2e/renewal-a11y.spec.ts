@@ -66,6 +66,54 @@ async function expectNoAxeViolations(
   expect(seriousOrWorse, `${surface}: serious/critical axe violations`).toHaveLength(0);
 }
 
+/**
+ * Opens the renewal pipeline's bulk bar (selects the first row) and checks
+ * every control in it meets its target size. Skips when the seeded tenant
+ * has no pipeline row to select.
+ */
+async function expectBulkToolbarTargets(page: Page): Promise<void> {
+  // Selection checkboxes only render for isAdmin AND at least one row on
+  // the current page — if the seeded tenant has zero pipeline rows in
+  // the default (all-urgency) view, there is nothing to select. Skip
+  // with a clear message rather than a confusing timeout (mirrors the
+  // #renewal-prefs R2-9 guard above).
+  const rowCheckboxes = page.getByRole('checkbox');
+  const checkboxCount = await rowCheckboxes.count();
+  test.skip(
+    checkboxCount < 2,
+    'No pipeline rows on the seeded tenant\'s default view — seed at least one renewal cycle to run the bulk-toolbar a11y scan',
+  );
+
+  // Index 0 is the header "select all" checkbox; index 1 is the first
+  // row's own checkbox (same convention as pipeline-table-selection
+  // component tests).
+  await rowCheckboxes.nth(1).click();
+
+  // 122 US7a: the bar is an AURA ActionBar region.
+  const toolbar = page.getByRole('region', { name: 'Bulk actions' });
+  await expect(toolbar).toBeVisible();
+
+  // Target size for every control in the toolbar (the two actions +
+  // Clear). docs/ux-standards.md requires 44px on mobile (WCAG 2.5.5).
+  // AURA's `touchHeight` gives 44px below 640px or on a coarse pointer
+  // (5.24, handoff #123), so ask the page which rule applies. With a
+  // mouse on a wider screen, WCAG 2.5.8's 24px applies.
+  const viewportWidth = page.viewportSize()?.width ?? 1280;
+  const touchRule = await page.evaluate(
+    () => window.matchMedia('(max-width: 639.98px), (pointer: coarse)').matches,
+  );
+  const minHeight = touchRule ? 44 : 24;
+  const targets = toolbar.getByRole('button');
+  const targetCount = await targets.count();
+  for (let i = 0; i < targetCount; i++) {
+    const box = await targets.nth(i).boundingBox();
+    expect(box, `toolbar button ${i} has a bounding box`).not.toBeNull();
+    if (box) {
+      expect(box.height, `toolbar button ${i} height >= ${minHeight}px at ${viewportWidth}px`).toBeGreaterThanOrEqual(minHeight);
+    }
+  }
+}
+
 async function setTheme(page: Page, theme: 'light' | 'dark'): Promise<void> {
   // R4 review M3 fix: corrected mechanism description.
   // next-themes' pre-hydration script reads `localStorage.theme` and
@@ -132,45 +180,33 @@ test.describe('@a11y T267 — F8 axe-core scan', () => {
       await signInAsAdmin(page);
       await page.goto('/admin/renewals');
       await page.waitForLoadState('domcontentloaded');
-
-      // Selection checkboxes only render for isAdmin AND at least one row on
-      // the current page — if the seeded tenant has zero pipeline rows in
-      // the default (all-urgency) view, there is nothing to select. Skip
-      // with a clear message rather than a confusing timeout (mirrors the
-      // #renewal-prefs R2-9 guard above).
-      const rowCheckboxes = page.getByRole('checkbox');
-      const checkboxCount = await rowCheckboxes.count();
-      test.skip(
-        checkboxCount < 2,
-        'No pipeline rows on the seeded tenant\'s default view — seed at least one renewal cycle to run the bulk-toolbar a11y scan',
-      );
-
-      // Index 0 is the header "select all" checkbox; index 1 is the first
-      // row's own checkbox (same convention as pipeline-table-selection
-      // component tests).
-      await rowCheckboxes.nth(1).click();
-
-      // 122 US7a: the bar is an AURA ActionBar region.
-      const toolbar = page.getByRole('region', { name: 'Bulk actions' });
-      await expect(toolbar).toBeVisible();
-
-      // Target size for every control in the toolbar (the two actions +
-      // Clear). docs/ux-standards.md requires 44px on mobile (WCAG 2.5.5),
-      // and AURA's `touchHeight` is 44px below 640px by design (5.15; the
-      // bar's Clear from 5.23). On a wider screen, WCAG 2.5.8's 24px applies.
-      const viewportWidth = page.viewportSize()?.width ?? 1280;
-      const minHeight = viewportWidth < 640 ? 44 : 24;
-      const targets = toolbar.getByRole('button');
-      const targetCount = await targets.count();
-      for (let i = 0; i < targetCount; i++) {
-        const box = await targets.nth(i).boundingBox();
-        expect(box, `toolbar button ${i} has a bounding box`).not.toBeNull();
-        if (box) {
-          expect(box.height, `toolbar button ${i} height >= ${minHeight}px at ${viewportWidth}px`).toBeGreaterThanOrEqual(minHeight);
-        }
-      }
+      await expectBulkToolbarTargets(page);
 
       await expectNoAxeViolations(page, '/admin/renewals (bulk toolbar open)');
+    });
+
+    test('122 #123 — PipelineBulkActionBar keeps 44px targets on a touch tablet (1024px, coarse pointer)', async ({
+      browser,
+    }) => {
+      // A tablet is wider than 640px but used with a finger. A touch context
+      // reports `pointer: coarse`, which AURA 5.24 treats like a phone.
+      const ctx = await browser.newContext({
+        viewport: { width: 1024, height: 768 },
+        hasTouch: true,
+      });
+      const page = await ctx.newPage();
+      try {
+        await signInAsAdmin(page);
+        await page.goto('/admin/renewals');
+        await page.waitForLoadState('domcontentloaded');
+        expect(
+          await page.evaluate(() => window.matchMedia('(pointer: coarse)').matches),
+          'touch context reports a coarse pointer',
+        ).toBe(true);
+        await expectBulkToolbarTargets(page);
+      } finally {
+        await ctx.close();
+      }
     });
 
     test('admin pipeline with prefers-reduced-motion', async ({ browser }) => {
