@@ -335,6 +335,12 @@ Boards: `Admin-renewals` (+`-mobile`), `Admin-renewals-needs-action`, `Admin-ren
     - AURA handoff Addendum 22: #118 (stacked-card action row) and #119 (stacked title that wraps).
     - Fixed on the way: `aura-foundation-css` had been red since T702 because the #118 stand-in sat before the shell's `@layer components` block.
     - PR #483 (draft); relay R22 for the ten renewal e2e specs.
+- [ ] T712 [US7] Round 2, from R22 and the maintainer's review of the parity page (spec Clarifications, Session 2026-10-01 US7a review, third question):
+  - adopt AURA 5.22: the actions column is `card: 'footer'`, and the #118/#119 stand-ins go (RED: `pipeline-table`, the internal-class ratchet);
+  - the bulk bar reserves its measured height plus its sticky offset as scroll padding, so the last phone card is never under it (R22 #1; RED: `pipeline-bulk-action-bar`);
+  - the work-queue card is frameless with no padding on a phone, "Tier" is shown only on a phone, Last reminder shows at 1440 (RED: `renewals-pipeline-view`, `tier-filter-select`, `pipeline-table`);
+  - `renewal-pipeline-dashboard.spec.ts` drives the phone Urgency select (R22 #3);
+  - the boards are updated, the parity page is re-captured, and relay R23 re-runs the R22 specs.
 
 ### US7b — cycle detail, tasks, tier upgrades, schedules (PR 11)
 
