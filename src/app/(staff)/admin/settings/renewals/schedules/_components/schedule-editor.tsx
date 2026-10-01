@@ -111,6 +111,8 @@ export function toWireSteps(steps: ReadonlyArray<EditorStep>): ScheduleStepWire[
 export interface ScheduleEditorProps {
   readonly initialPolicies: ReadonlyArray<SchedulePolicyWire>;
   readonly readOnly: boolean;
+  /** The tier shown first (the no-DB preview opens on Premium, as the boards do). */
+  readonly defaultBucket?: TierBucket;
 }
 
 // ---------------------------------------------------------------------------
@@ -211,6 +213,7 @@ function policiesByBucket(
 export function ScheduleEditor({
   initialPolicies,
   readOnly,
+  defaultBucket = TIER_BUCKETS[0],
 }: ScheduleEditorProps) {
   const t = useTranslations('admin.renewals.settings.schedules');
   // J1-B8: locale-aware date formatter (next-intl) replaces raw
@@ -229,9 +232,7 @@ export function ScheduleEditor({
   useEffect(() => {
     byBucketRef.current = byBucket;
   }, [byBucket]);
-  const [activeBucket, setActiveBucket] = useState<TierBucket>(
-    TIER_BUCKETS[0],
-  );
+  const [activeBucket, setActiveBucket] = useState<TierBucket>(defaultBucket);
   const [pending, startTransition] = useTransition();
   const [saveError, setSaveError] = useState<string | null>(null);
   // C1 (`.superpowers/sdd/followup-reminder-uxwave-brief.md`) — unsaved-

@@ -286,3 +286,135 @@ export const TIER_UPGRADE_ITEMS = [
     createdAt: '2026-09-21T00:00:00.000Z',
   },
 ] as const;
+
+// ── 122 US7b-2 ──────────────────────────────────────────────────────────
+
+/** An ISO date `days` from now, so overdue rows stay overdue on any day. */
+function fromNow(days: number): string {
+  return new Date(Date.now() + days * DAY_MS).toISOString();
+}
+
+/** The escalation queue's rows (board `Admin-renewal-tasks`), as the page maps them. */
+export const TASK_ITEMS = [
+  {
+    taskId: '00000000-0000-4000-8000-00000000f001',
+    memberId: '00000000-0000-4000-8000-00000000f101',
+    memberCompanyName: 'Gamla Stan Coffee Roasters',
+    memberTierBucket: 'start_up',
+    cycleId: null,
+    cycleExpiresAt: fromNow(-78),
+    taskType: 'admin_notify_lapsed',
+    assignedToRole: 'admin',
+    assignedToUserId: '00000000-0000-4000-8000-00000000a001',
+    assignedToDisplayName: 'Malin Berg',
+    assignedToEmail: 'malin.berg@example.com',
+    dueAt: fromNow(-71),
+    status: 'open',
+    createdAt: fromNow(-80),
+    yearInCycle: 1,
+    totalYears: 1,
+  },
+  {
+    taskId: '00000000-0000-4000-8000-00000000f002',
+    memberId: '00000000-0000-4000-8000-00000000f102',
+    memberCompanyName: 'Andaman Marine Tech Co., Ltd.',
+    memberTierBucket: 'partnership',
+    cycleId: null,
+    cycleExpiresAt: fromNow(91),
+    taskType: 'quarterly_review_meeting',
+    assignedToRole: 'executive_director',
+    assignedToUserId: null,
+    assignedToDisplayName: null,
+    assignedToEmail: null,
+    dueAt: fromNow(-29),
+    status: 'open',
+    createdAt: fromNow(-35),
+    yearInCycle: 2,
+    totalYears: 3,
+  },
+  {
+    taskId: '00000000-0000-4000-8000-00000000f003',
+    memberId: '00000000-0000-4000-8000-00000000f103',
+    memberCompanyName: 'Öresund Medical Supplies Co., Ltd.',
+    memberTierBucket: 'premium',
+    cycleId: null,
+    cycleExpiresAt: fromNow(29),
+    taskType: 'phone_call',
+    assignedToRole: 'admin',
+    assignedToUserId: '00000000-0000-4000-8000-00000000a002',
+    assignedToDisplayName: 'Karin Ek',
+    assignedToEmail: 'karin.ek@example.com',
+    dueAt: fromNow(2),
+    status: 'open',
+    createdAt: fromNow(-5),
+    yearInCycle: 1,
+    totalYears: 1,
+  },
+  {
+    taskId: '00000000-0000-4000-8000-00000000f004',
+    memberId: '00000000-0000-4000-8000-00000000f104',
+    memberCompanyName: 'Nordvik Logistics (Thailand) Co., Ltd.',
+    memberTierBucket: 'regular',
+    cycleId: null,
+    cycleExpiresAt: fromNow(14),
+    taskType: 'phone_call',
+    assignedToRole: 'admin',
+    assignedToUserId: '00000000-0000-4000-8000-00000000a001',
+    assignedToDisplayName: 'Malin Berg',
+    assignedToEmail: 'malin.berg@example.com',
+    dueAt: fromNow(-5),
+    status: 'open',
+    createdAt: fromNow(-12),
+    yearInCycle: 1,
+    totalYears: 1,
+  },
+  {
+    taskId: '00000000-0000-4000-8000-00000000f005',
+    memberId: '00000000-0000-4000-8000-00000000f105',
+    memberCompanyName: 'Scandia Health Partners Ltd.',
+    memberTierBucket: 'premium',
+    cycleId: null,
+    cycleExpiresAt: fromNow(45),
+    taskType: 'in_person_meeting',
+    assignedToRole: 'manager',
+    assignedToUserId: null,
+    assignedToDisplayName: null,
+    assignedToEmail: null,
+    dueAt: fromNow(9),
+    status: 'open',
+    createdAt: fromNow(-2),
+    yearInCycle: 1,
+    totalYears: 1,
+  },
+] as const;
+
+/** The distinct task types the server reads for the Task type select. */
+export const TASK_TYPES = ['admin_notify_lapsed', 'in_person_meeting', 'phone_call', 'quarterly_review_meeting'] as const;
+
+/** One saved policy per tier (board `Admin-renewal-schedules`, Premium drawn). */
+export const SCHEDULE_POLICIES = [
+  {
+    tier_bucket: 'premium',
+    updated_at: '2026-09-02T07:20:00.000Z',
+    steps: [
+      { step_id: 't-90.email', offset_days: -90, channel: 'email', template_id: 'renewal.t-90.premium' },
+      { step_id: 't-60.email', offset_days: -60, channel: 'email', template_id: 'renewal.t-60.premium' },
+      { step_id: 't-60.task.phone_call', offset_days: -60, channel: 'task', task_type: 'phone_call', assignee_role: 'admin' },
+      { step_id: 't-30.email', offset_days: -30, channel: 'email', template_id: 'renewal.t-30.premium' },
+      { step_id: 't-14.email', offset_days: -14, channel: 'email', template_id: 'renewal.t-14.premium' },
+      { step_id: 't-7.email', offset_days: -7, channel: 'email', template_id: 'renewal.t-7.premium' },
+      { step_id: 't-7.task.quarterly_review_meeting', offset_days: -7, channel: 'task', task_type: 'quarterly_review_meeting', assignee_role: 'executive_director' },
+      { step_id: 't+0.email', offset_days: 0, channel: 'email', template_id: 'renewal.t+0.premium' },
+      { step_id: 't+14.task.phone_call', offset_days: 14, channel: 'task', task_type: 'phone_call', assignee_role: 'admin' },
+    ],
+  },
+  {
+    tier_bucket: 'regular',
+    updated_at: '2026-08-20T03:00:00.000Z',
+    steps: [
+      { step_id: 't-60.email', offset_days: -60, channel: 'email', template_id: 'renewal.t-60.regular' },
+      { step_id: 't-30.email', offset_days: -30, channel: 'email', template_id: 'renewal.t-30.regular' },
+      { step_id: 't-7.email', offset_days: -7, channel: 'email', template_id: 'renewal.t-7.regular' },
+    ],
+  },
+] as const;
