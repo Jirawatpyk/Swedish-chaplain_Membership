@@ -1,14 +1,18 @@
 /**
  * Unit tests for `<RenewalConfirmFlow>`.
  *
- * Covers the original R4-I1 client error-handling contract (malformed 200 +
- * missing pay_url) PLUS the WP5 plan-change UX: the always-on price panel
- * (C-6), grouped priced options, the downgrade acknowledgement gate, the
- * inline-alert polish, and the 409 downgrade error mapping.
+ * Covers the R4-I1 client error-handling contract (malformed 200, missing
+ * pay_url), the WP5 plan-change UX (always-on price panel, grouped priced
+ * options, the downgrade acknowledgement gate, the 409 downgrade mapping)
+ * and, since spec 122 US7c, the AURA confirm card: the board's stepper,
+ * the full-width CTA, the next-step line, AURA alerts and the AURA select.
+ *
+ * The confirm request is a money request, so the POST is asserted
+ * byte-for-byte for no change, an upgrade and an acknowledged downgrade.
  *
  * Rendered against the REAL en.json (G2) so the copy the member sees is what
- * ships. The base-ui Select + AlertDialog portals open reliably here under
- * real timers (`vi.useRealTimers()` in beforeEach).
+ * ships. AURA's Select keeps a real <select> under its listbox, so a plan is
+ * picked by changing that element (US5a precedent).
  */
 import {
   describe,
@@ -28,30 +32,6 @@ import {
 } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
-
-// jsdom cannot drive Base UI's pointer-based Select popup selection (same
-// precedent as tests/unit/components/schedules/step-card.test.tsx). Mock the
-// Select so a click on a `role="option"` genuinely fires `onValueChange`; the
-// real grouped popup + prices are covered by the e2e spec. Options render
-// eagerly (no portal) so they are always queryable.
-vi.mock('@/components/ui/select', async () => {
-  const React = await import('react');
-  const OnChange = React.createContext<(v: string) => void>(() => {});
-  return {
-    Select: ({ onValueChange, children }: { onValueChange: (v: string) => void; children: React.ReactNode }) =>
-      React.createElement(OnChange.Provider, { value: onValueChange }, children),
-    SelectTrigger: ({ id, children }: { id?: string; children: React.ReactNode }) =>
-      React.createElement('button', { type: 'button', role: 'combobox', id }, children),
-    SelectContent: ({ children }: { children: React.ReactNode }) => React.createElement(React.Fragment, null, children),
-    SelectGroup: ({ children }: { children: React.ReactNode }) => React.createElement('div', { role: 'group' }, children),
-    SelectLabel: ({ children }: { children: React.ReactNode }) => React.createElement('div', null, children),
-    SelectItem: ({ value, children }: { value: string; children: React.ReactNode }) => {
-      const onChange = React.useContext(OnChange);
-      return React.createElement('div', { role: 'option', tabIndex: 0, onClick: () => onChange(value) }, children);
-    },
-    TranslatedSelectValue: ({ placeholder }: { placeholder?: string }) => React.createElement('span', null, placeholder),
-  };
-});
 
 import {
   RenewalConfirmFlow,
@@ -148,10 +128,31 @@ async function blobToObject(blob: Blob): Promise<Record<string, unknown>> {
   return JSON.parse(text) as Record<string, unknown>;
 }
 
-/** Pick the plan option whose text matches (mocked Select renders options eagerly). */
+/** The real <select> AURA keeps under its listbox. */
+function nativePlanSelect(): HTMLSelectElement {
+  const native = screen
+    .getByRole('combobox', { name: 'Choose a plan' })
+    .closest('.aura-select')
+    ?.querySelector('select');
+  if (!native) throw new Error('no native plan select');
+  return native;
+}
+
+/** Pick the plan whose option text matches. */
 async function pickPlan(optionMatcher: RegExp) {
-  const option = await screen.findByRole('option', { name: optionMatcher });
-  fireEvent.click(option);
+  const native = nativePlanSelect();
+  const option = [...native.options].find((o) => optionMatcher.test(o.textContent ?? ''));
+  if (!option) throw new Error(`no plan option matching ${optionMatcher}`);
+  fireEvent.change(native, { target: { value: option.value } });
+}
+
+const CYCLE_ID = '00000000-0000-0000-0000-000000000001';
+const okPay = (url: string) => ({ ok: true, status: 200, json: async () => ({ pay_url: url }) });
+
+/** The confirm POST exactly as sent: URL, method, headers and the raw body string. */
+function sentRequest(i = 0) {
+  const [url, init] = fetchMock.mock.calls[i]! as [string, RequestInit];
+  return { url, method: init.method, headers: init.headers, body: init.body };
 }
 
 const GENERIC_ERROR =
@@ -234,14 +235,18 @@ describe('<RenewalConfirmFlow> — price visibility (WP5)', () => {
     expect(screen.getByTestId('price-new').textContent).toContain('15,000.00');
   });
 
-  it('each option in the open list contains its formatted price', async () => {
+  it('groups the options as the code does and writes them as the board does (US7c)', () => {
     renderFlow({ plans: [CURRENT, HIGHER, LOWER] });
-    fireEvent.click(screen.getByRole('combobox', { name: 'Choose a plan' }));
-    expect(await screen.findByRole('option', { name: /Higher plan/ })).toHaveTextContent(
-      /30,000\.00/,
-    );
-    expect(screen.getByRole('option', { name: /Lower plan/ })).toHaveTextContent(/8,000\.00/);
-    expect(screen.getByRole('option', { name: /Current plan/ })).toHaveTextContent(/15,000\.00/);
+    const groups = [...nativePlanSelect().querySelectorAll('optgroup')].map((g) => ({
+      label: g.label,
+      options: [...g.querySelectorAll('option')].map((o) => o.textContent),
+    }));
+    expect(groups).toEqual([
+      { label: 'Higher-priced plans', options: ['Higher plan — ฿30,000.00'] },
+      { label: 'Your current plan', options: ['Current plan — ฿15,000.00 (current)'] },
+      { label: 'Lower-priced plans', options: ['Lower plan — ฿8,000.00'] },
+    ]);
+    expect(nativePlanSelect().value).toBe('plan-current');
   });
 
   it('selecting a higher-priced plan updates the New + Difference rows', async () => {
@@ -301,19 +306,19 @@ describe('<RenewalConfirmFlow> — downgrade gate (WP5)', () => {
   });
 });
 
-describe('<RenewalConfirmFlow> — inline-alert polish (WP5)', () => {
-  it('the change-notice is an InlineAlert with role="status" and no muted-foreground', async () => {
+describe('<RenewalConfirmFlow> — AURA alerts (WP5, US7c)', () => {
+  it('the change notice is an AURA warning alert with role="status"', async () => {
     renderFlow({ plans: [CURRENT, HIGHER], frozenPriceMinorUnits: 1_500_000 });
     await pickPlan(/Higher plan/);
     const notice = await screen.findByText(
       /Switching to a different plan will lock the new price/,
     );
-    const alert = notice.closest('[data-slot="inline-alert"]');
+    const alert = notice.closest('.aura-alert');
     expect(alert?.getAttribute('role')).toBe('status');
-    expect(alert?.className ?? '').not.toContain('text-muted-foreground');
+    expect(alert?.className ?? '').toMatch(/aura-alert--warning/);
   });
 
-  it('the error alert has role="alert", NO aria-live, and receives focus', async () => {
+  it('the error alert is an AURA danger alert with role="alert", NO aria-live, and receives focus', async () => {
     fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
     renderFlow();
     fireEvent.click(screen.getByRole('button', { name: /confirm renewal/i }));
@@ -322,8 +327,94 @@ describe('<RenewalConfirmFlow> — inline-alert polish (WP5)', () => {
       const errorEl = screen.getByTestId('confirm-error');
       expect(errorEl.getAttribute('role')).toBe('alert');
       expect(errorEl.getAttribute('aria-live')).toBeNull();
+      expect(errorEl.className).toMatch(/aura-alert--danger/);
       expect(document.activeElement).toBe(errorEl);
     });
+  });
+});
+
+describe('<RenewalConfirmFlow> — confirm card (board Portal-renewal, US7c)', () => {
+  it('shows the two-step stepper with "Confirm renewal" as the current step', () => {
+    renderFlow();
+    const steps = screen.getByRole('list', { name: 'Renewal steps' });
+    const items = within(steps).getAllByRole('listitem');
+    expect(items.map((li) => li.textContent?.replace(/\s+/g, ' ').trim())).toEqual([
+      '1 Confirm renewal',
+      '2 Pay invoice',
+    ]);
+    expect(items[0]).toHaveAttribute('aria-current', 'step');
+    expect(items[1]).not.toHaveAttribute('aria-current');
+  });
+
+  it('the CTA is a full-width primary AURA button, and says where the member goes next', () => {
+    renderFlow();
+    const cta = screen.getByRole('button', { name: 'Confirm renewal' });
+    expect(cta.className).toMatch(/aura-btn--primary/);
+    expect(cta.className).toMatch(/w-full/);
+    expect(
+      screen.getByText('Next, you go straight to the invoice to pay by card or PromptPay.'),
+    ).toBeInTheDocument();
+  });
+
+  it('while the request runs, the CTA is busy and the plan select is disabled', async () => {
+    let resolve!: (v: unknown) => void;
+    fetchMock.mockReturnValueOnce(new Promise((r) => { resolve = r; }));
+    renderFlow({ plans: [CURRENT, HIGHER] });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm renewal' }));
+    const busy = await screen.findByRole('button', { name: /Confirming/ });
+    expect(busy).toHaveAttribute('aria-busy', 'true');
+    expect(nativePlanSelect()).toBeDisabled();
+    resolve(okPay('https://example.test/pay/1'));
+    await waitFor(() => expect(locationAssignMock).toHaveBeenCalled());
+  });
+});
+
+describe('<RenewalConfirmFlow> — the confirm request, byte-for-byte (money, US7c)', () => {
+  it('no change: only the cycle id', async () => {
+    fetchMock.mockResolvedValueOnce(okPay('https://example.test/pay/1'));
+    renderFlow({ plans: [CURRENT, HIGHER] });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm renewal' }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(sentRequest()).toEqual({
+      url: '/api/portal/renewal/member-1/confirm',
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: `{"cycleId":"${CYCLE_ID}"}`,
+    });
+  });
+
+  it('an upgrade: the cycle id and the new plan, no acknowledgement', async () => {
+    fetchMock.mockResolvedValueOnce(okPay('https://example.test/pay/2'));
+    renderFlow({ plans: [CURRENT, HIGHER] });
+    await pickPlan(/Higher plan/);
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm renewal' }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(sentRequest().body).toBe(`{"cycleId":"${CYCLE_ID}","newPlanId":"plan-higher"}`);
+  });
+
+  it('a downgrade: nothing until the dialog is confirmed, then the acknowledgement rides along', async () => {
+    fetchMock.mockResolvedValueOnce(okPay('https://example.test/pay/3'));
+    renderFlow({ plans: [CURRENT, LOWER] });
+    await pickPlan(/Lower plan/);
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm renewal' }));
+    const dialog = await screen.findByRole('alertdialog', { name: 'Confirm a lower-priced plan' });
+    expect(fetchMock).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Yes, switch to this plan' }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(sentRequest().body).toBe(
+      `{"cycleId":"${CYCLE_ID}","newPlanId":"plan-lower","acknowledgeDowngrade":true}`,
+    );
+    await waitFor(() => expect(locationAssignMock).toHaveBeenCalledWith('https://example.test/pay/3'));
+  });
+
+  it('a downgrade cancelled in the dialog sends nothing', async () => {
+    renderFlow({ plans: [CURRENT, LOWER] });
+    await pickPlan(/Lower plan/);
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm renewal' }));
+    const dialog = await screen.findByRole('alertdialog', { name: 'Confirm a lower-priced plan' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Keep my current plan' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 
