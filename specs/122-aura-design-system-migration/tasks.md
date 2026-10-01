@@ -340,6 +340,7 @@ Boards: `Admin-renewals` (+`-mobile`), `Admin-renewals-needs-action`, `Admin-ren
   - the bulk bar reserves its measured height plus its sticky offset as scroll padding, so the last phone card is never under it (R22 #1; RED: `pipeline-bulk-action-bar`);
   - the work-queue card is frameless with no padding on a phone, "Tier" is shown only on a phone, Last reminder shows at 1440 (RED: `renewals-pipeline-view`, `tier-filter-select`, `pipeline-table`);
   - `renewal-pipeline-dashboard.spec.ts` drives the phone Urgency select (R22 #3);
+  - the plans list's table card follows the same phone rule, at the maintainer's request (RED: `plans-list-view`);
   - the boards are updated, the parity page is re-captured, and relay R23 re-runs the R22 specs.
 
 ### US7b — cycle detail, tasks, tier upgrades, schedules (PR 11)
