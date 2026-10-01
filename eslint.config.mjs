@@ -369,6 +369,13 @@ export const MIGRATED_PATHS = [
   'src/app/(staff)/admin/renewals/loading.tsx',
   'src/app/(staff)/admin/renewals/_components/**',
   'src/components/renewals/**',
+  // US7b-1 — cycle detail (page, loading, actions, view) and the tier
+  // upgrade queue (page, loading, error, queue, view). Tasks and the reminder
+  // schedules are US7b-2.
+  'src/app/(staff)/admin/renewals/\\[cycleId\\]/page.tsx',
+  'src/app/(staff)/admin/renewals/\\[cycleId\\]/loading.tsx',
+  'src/app/(staff)/admin/renewals/\\[cycleId\\]/_components/**',
+  'src/app/(staff)/admin/renewals/tier-upgrades/**',
 ];
 
 /**
