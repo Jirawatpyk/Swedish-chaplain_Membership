@@ -368,7 +368,9 @@ export function EscalationTaskQueue({
         key: 'taskType',
         label: t('columns.taskType'),
         minWidth: 150,
-        cardOrder: 1,
+        // The phone card's tier + type line, at full width (board
+        // Admin-renewal-tasks-mobile; AURA 5.23, #120).
+        card: 'wide',
         render: (task) => (
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1 whitespace-normal">
             {isTierBucket(task.memberTierBucket) ? (
@@ -391,7 +393,8 @@ export function EscalationTaskQueue({
         key: 'dueAt',
         label: t('columns.dueAt'),
         width: 165,
-        cardOrder: 2,
+        // The phone card's due + assignee line, at full width.
+        card: 'wide',
         render: (task) => (
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1 whitespace-normal">
             <time dateTime={task.dueAt}>{formatShortDate(task.dueAt) ?? '—'}</time>
