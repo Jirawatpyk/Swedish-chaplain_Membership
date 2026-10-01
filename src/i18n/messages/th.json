@@ -4975,7 +4975,6 @@
           "reason_label": "เหตุผล",
           "reason_placeholder": "เช่น ติดต่อสมาชิกไม่ได้ จะกลับมาดำเนินการที่ T-30",
           "reason_required": "ต้องระบุเหตุผลก่อนข้ามงานนี้",
-          "required_marker": "จำเป็นต้องระบุ",
           "chars_remaining": "เหลืออีก {count} ตัวอักษร",
           "cancel": "ยกเลิก",
           "confirm": "ข้ามงาน",

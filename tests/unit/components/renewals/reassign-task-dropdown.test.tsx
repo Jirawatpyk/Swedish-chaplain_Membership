@@ -19,7 +19,7 @@
  * and its i18n keys are guaranteed present by `check:i18n`.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { ReassignTaskDropdown } from '@/app/(staff)/admin/renewals/tasks/_components/reassign-task-dropdown';
@@ -102,3 +102,78 @@ describe('<ReassignTaskDropdown> #5b', () => {
     expect(src.includes('retryToken')).toBe(true);
   });
 });
+
+/**
+ * 122 US7b-2 (T734) — the staff picker is an AURA `Combobox` (cmdk and the
+ * Base UI popover go): each option shows the name, then email · role, and the
+ * current assignee is marked and cannot be picked. The request is unchanged.
+ */
+describe('<ReassignTaskDropdown> on AURA Combobox', () => {
+  const TWO = [
+    ...STAFF,
+    { id: '22222222-2222-4222-8222-222222222222', email: 'b@x.io', display_name: 'Bo Berg', role: 'manager' as const },
+  ];
+
+  beforeEach(() => {
+    vi.useRealTimers();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: true, json: async () => ({ users: TWO }) }) as unknown as Response),
+    );
+  });
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  function renderPicker(onSubmit = vi.fn().mockResolvedValue(undefined)) {
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <ReassignTaskDropdown
+          open
+          onOpenChange={() => {}}
+          currentAssigneeUserId={STAFF[0]!.id}
+          onSubmit={onSubmit}
+        />
+      </NextIntlClientProvider>,
+    );
+    return onSubmit;
+  }
+
+  it('is an AURA combobox named "Assignee"', async () => {
+    renderPicker();
+    const box = await screen.findByRole('combobox', { name: reassign.assignee_label });
+    expect(box.closest('.aura-field, .aura-combobox')).not.toBeNull();
+  });
+
+  it('lists each staff member with email · role, the current assignee marked and disabled', async () => {
+    renderPicker();
+    const box = await screen.findByRole('combobox', { name: reassign.assignee_label });
+    await waitFor(() => expect(box).not.toBeDisabled());
+    fireEvent.focus(box);
+    fireEvent.change(box, { target: { value: '' } });
+    fireEvent.keyDown(box, { key: 'ArrowDown' });
+    const options = await screen.findAllByRole('option');
+    expect(options).toHaveLength(2);
+    const ada = options.find((o) => o.textContent?.includes('Ada Admin'))!;
+    expect(ada).toHaveTextContent('a@x.io · Admin');
+    expect(ada).toHaveTextContent(reassign.current_assignee_badge);
+    expect(ada).toHaveAttribute('aria-disabled', 'true');
+    expect(options.find((o) => o.textContent?.includes('Bo Berg'))).toHaveTextContent('b@x.io · Manager');
+  });
+
+  it('picking a colleague enables Reassign and submits their id', async () => {
+    const onSubmit = renderPicker();
+    const box = await screen.findByRole('combobox', { name: reassign.assignee_label });
+    await waitFor(() => expect(box).not.toBeDisabled());
+    expect(screen.getByRole('button', { name: reassign.confirm })).toBeDisabled();
+    fireEvent.focus(box);
+    fireEvent.change(box, { target: { value: 'Bo' } });
+    fireEvent.click(await screen.findByRole('option', { name: /Bo Berg/ }));
+    const confirm = screen.getByRole('button', { name: reassign.confirm });
+    await waitFor(() => expect(confirm).not.toBeDisabled());
+    fireEvent.click(confirm);
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith(TWO[1]!.id));
+  });
+});
+
