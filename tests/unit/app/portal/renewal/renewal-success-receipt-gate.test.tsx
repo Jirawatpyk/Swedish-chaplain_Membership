@@ -264,6 +264,9 @@ describe('RenewalSuccessPage on AURA (boards Portal-renewal-success / -processin
     expect(hero.textContent).toContain('subtitle');
     expect(hero.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
     expect(hero.querySelector('header')?.getAttribute('data-autofocus-title')).toBe('true');
+    // A title shorter than its subtitle (TH "ต่ออายุสำเร็จ") sits in a
+    // wider flex row; auto margins keep it centred under the check circle.
+    expect(hero.className).toContain('[&_h1]:mx-auto');
   });
 
   it('complete: "Renewal details" is an AURA card with the new expiry and a "Completed" ready pill', async () => {
