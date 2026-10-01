@@ -58,7 +58,7 @@ export function RenewalPageView({
       {/* After the h1, so the heading order stays h1 → h2 (I18). */}
       {isFirstTimeRenewer && <OnboardingBanner />}
 
-      <div className="grid gap-[var(--aura-space-6)] lg:grid-cols-[minmax(0,1fr)_420px] lg:items-start">
+      <div className="grid grid-cols-1 gap-[var(--aura-space-6)] lg:grid-cols-[minmax(0,1fr)_420px] lg:items-start">
         <div className="flex min-w-0 flex-col gap-[var(--aura-space-6)]">
           <Card
             as="section"

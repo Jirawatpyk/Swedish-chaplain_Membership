@@ -86,7 +86,7 @@ export default async function RenewalPortalLoading() {
             welcome, reserved unconditionally — a first renewer is the most
             sensitive to layout shift. */}
         <SkeletonBlock className="h-16 w-full" />
-        <div className="grid gap-[var(--aura-space-6)] lg:grid-cols-[minmax(0,1fr)_420px] lg:items-start">
+        <div className="grid grid-cols-1 gap-[var(--aura-space-6)] lg:grid-cols-[minmax(0,1fr)_420px] lg:items-start">
           <div className="flex min-w-0 flex-col gap-[var(--aura-space-6)]">
             {/* Membership plan card: four label/value rows. */}
             <Card header={<SkeletonBlock className="h-6 w-40" />}>
