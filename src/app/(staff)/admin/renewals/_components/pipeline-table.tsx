@@ -223,7 +223,8 @@ export function PipelineTable({
         key: 'lastReminderAt',
         label: t('columns.lastReminder'),
         width: 120,
-        hideBelow: 1080,
+        // Shown at 1440 (a 1071px table), as the board draws it.
+        hideBelow: 1040,
         render: (row) =>
           row.lastReminderAt ? (
             <RelativeTime
@@ -250,7 +251,9 @@ export function PipelineTable({
         key: 'linkedInvoiceId',
         label: t('columns.invoice'),
         width: 96,
-        hideBelow: 980,
+        // The first to go: most rows read "—", and an issued bill already
+        // shows as the "Bill issued" badge beside the urgency pill.
+        hideBelow: 1180,
         card: 'hide',
         render: (row) =>
           row.linkedInvoiceId ? (
@@ -284,8 +287,9 @@ export function PipelineTable({
         // An empty label: AURA names the header "Actions" for screen readers.
         key: 'actions',
         label: '',
-        // Fits the longest "Send reminder" (SV "Skicka påminnelse") beside ⋯.
-        width: 216,
+        // Fits the longest "Send reminder" (SV "Skicka påminnelse", 142px)
+        // beside the ⋯ and the cell's end padding.
+        width: 200,
         actions: true,
         align: 'end',
         // The phone card's last row, full width (board Admin-renewals-mobile).

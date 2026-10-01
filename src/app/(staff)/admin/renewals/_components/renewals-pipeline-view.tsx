@@ -56,7 +56,11 @@ export function renderRenewalsPipelineView({
   return (
     <>
       {moneyBand}
-      <Card>
+      {/* One card on a desktop (board Admin-renewals); on a phone the rows are
+          cards of their own, so it drops its frame (AURA flushBelow) and its
+          16px phone padding, putting them on the page gutter as
+          Admin-renewals-mobile and the members list do. */}
+      <Card flushBelow="sm" className="max-sm:border-0 max-sm:p-0">
         <div className="flex flex-col gap-[var(--aura-space-4)]">
           {sectionTabs}
           {/* Wave 2 Task 7 — the pipeline and the at-risk widget are the two

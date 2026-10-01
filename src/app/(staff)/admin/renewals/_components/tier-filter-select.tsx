@@ -6,8 +6,11 @@
  * paginator restarts at page 1 on filter change. The "All tiers"
  * option deletes the param entirely.
  *
- * 122 US7a (T703): an AURA `Select` labelled "Tier", as both pipeline
- * boards draw it.
+ * 122 US7a (T703): an AURA `Select` named "Tier". On a phone it shows the
+ * label above it, beside the Urgency select (board `Admin-renewals-mobile`);
+ * on a desktop it sits at the end of the stage tabs with no visible label
+ * (maintainer, 1 Oct: "All tiers" already says what it filters, and the label
+ * row widened the gap above the tabs), its name kept for screen readers.
  */
 'use client';
 
@@ -57,17 +60,21 @@ export function TierFilterSelect({ current }: TierFilterSelectProps) {
     [searchParams, router, pathname],
   );
 
+  const options = [
+    { value: ALL, label: t('all') },
+    ...TIER_BUCKETS.map((bucket) => ({ value: bucket, label: tBadge(bucket) })),
+  ];
+  const onChange = (e: React.ChangeEvent<HTMLSelectElement>) => pushUrl(e.target.value);
+  const label = tTable('columns.tier');
+
   return (
-    <div className="w-full sm:w-[14rem]">
-      <Select
-        label={tTable('columns.tier')}
-        value={current}
-        options={[
-          { value: ALL, label: t('all') },
-          ...TIER_BUCKETS.map((bucket) => ({ value: bucket, label: tBadge(bucket) })),
-        ]}
-        onChange={(e) => pushUrl(e.target.value)}
-      />
-    </div>
+    <>
+      <div className="w-full sm:hidden">
+        <Select label={label} value={current} options={options} onChange={onChange} />
+      </div>
+      <div className="hidden sm:block sm:w-[14rem]">
+        <Select aria-label={label} value={current} options={options} onChange={onChange} />
+      </div>
+    </>
   );
 }

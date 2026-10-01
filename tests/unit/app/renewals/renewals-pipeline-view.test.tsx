@@ -12,7 +12,7 @@ import en from '@/i18n/messages/en.json';
 import { renderRenewalsPipelineView } from '@/app/(staff)/admin/renewals/_components/renewals-pipeline-view';
 
 describe('renderRenewalsPipelineView — the work-queue card', () => {
-  it('drops its frame and its padding below 640px (AURA flushBelow + the card-padding token)', () => {
+  it('drops its frame and its padding below 640px (AURA flushBelow, no padding or border)', () => {
     render(
       <NextIntlClientProvider locale="en" messages={en}>
         {renderRenewalsPipelineView({
@@ -27,6 +27,6 @@ describe('renderRenewalsPipelineView — the work-queue card', () => {
     );
     const card = screen.getByText('SECTION TABS').closest('.aura-card');
     expect(card).toHaveClass('aura-card--flush-below-sm');
-    expect(card?.className).toContain('max-sm:[--aura-card-padding:0px]');
+    expect(card).toHaveClass('max-sm:p-0', 'max-sm:border-0');
   });
 });

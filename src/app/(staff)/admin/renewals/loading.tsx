@@ -88,7 +88,8 @@ export default async function Loading() {
     <TableContainer>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
       <PipelineMoneyBandSkeleton />
-      <Card>
+      {/* The page's work-queue card: frameless with no padding on a phone. */}
+      <Card flushBelow="sm" className="max-sm:border-0 max-sm:p-0">
         <div className="flex flex-col gap-[var(--aura-space-4)]" aria-hidden>
           {/* Section tabs — a static shimmer the height of the AURA link
               tabs (44px). MUST stay hook-free — see the 3a docstring note
