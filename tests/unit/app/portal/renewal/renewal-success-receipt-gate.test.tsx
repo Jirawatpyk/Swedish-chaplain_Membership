@@ -13,6 +13,12 @@
  * rendered with renderToStaticMarkup; the two download buttons are stubbed to
  * markers that echo their `data-testid` (`receipt-download-link` vs
  * `invoice-download-link`) so the assertion isolates which branch fired.
+ *
+ * Spec 122 US7c (boards `Portal-renewal-success` / `-processing`): the hero,
+ * the "Renewal details" AURA card and the AURA link buttons render for real
+ * (`@jirawatpyk/aura-react/server`); only the shell and the download buttons
+ * are stubbed. The download stubs echo their className so the primary vs
+ * secondary treatment is asserted too.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -54,16 +60,15 @@ vi.mock('@/modules/members/members-deps', () => ({
     },
   }),
 }));
+const findMostRecentForMemberMock = vi.fn();
 vi.mock('@/modules/renewals', () => ({
   makeRenewalsDeps: () => ({
     cyclesRepo: {
-      findMostRecentForMember: async () => ({
-        status: 'completed',
-        expiresAt: '2027-06-01T00:00:00Z',
-      }),
+      findMostRecentForMember: (...args: unknown[]) => findMostRecentForMemberMock(...args),
     },
   }),
 }));
+const COMPLETED_CYCLE = { status: 'completed', expiresAt: '2027-06-01T00:00:00Z' };
 
 const getInvoiceMock = vi.fn();
 vi.mock('@/modules/invoicing', () => ({
@@ -86,23 +91,31 @@ vi.mock('@/components/layout', () => ({
   DetailContainer: ({ children }: { children?: unknown }) => children as ReactElement,
 }));
 vi.mock('@/components/layout/page-header', () => ({
-  PageHeader: () => null,
-}));
-vi.mock('@/components/ui/card', () => ({
-  Card: ({ children }: { children?: unknown }) => children as ReactElement,
-  CardContent: ({ children }: { children?: unknown }) => children as ReactElement,
-}));
-vi.mock('@/components/ui/button', () => ({
-  buttonVariants: () => 'btn',
+  PageHeader: (props: { title: string; subtitle: string; autoFocusTitle?: boolean }) => (
+    <header data-autofocus-title={String(props.autoFocusTitle ?? false)}>
+      <h1>{props.title}</h1>
+      <p>{props.subtitle}</p>
+    </header>
+  ),
 }));
 vi.mock('@/app/(member)/portal/invoices/_components/portal-pdf-download-button', () => ({
   // Echo the branch-specific data-testid so the test can tell which download
   // (receipt vs bill/invoice) the page chose to render.
   PortalReceiptDownloadButton: (props: Record<string, unknown>) => (
-    <button type="button" data-testid={props['data-testid'] as string} data-kind="receipt" />
+    <button
+      type="button"
+      data-testid={props['data-testid'] as string}
+      data-kind="receipt"
+      className={props.className as string}
+    />
   ),
   PortalInvoiceDownloadButton: (props: Record<string, unknown>) => (
-    <button type="button" data-testid={props['data-testid'] as string} data-kind="invoice" />
+    <button
+      type="button"
+      data-testid={props['data-testid'] as string}
+      data-kind="invoice"
+      className={props.className as string}
+    />
   ),
 }));
 
@@ -123,16 +136,24 @@ function invoiceWith(status: string) {
   };
 }
 
-async function renderPage(): Promise<string> {
+async function renderPage(invoice: string | undefined = 'inv-1'): Promise<string> {
   const tree = await RenewalSuccessPage({
     params: Promise.resolve({ memberId: 'm1' }),
-    searchParams: Promise.resolve({ invoice: 'inv-1' }),
+    searchParams: Promise.resolve(invoice === undefined ? {} : { invoice }),
   });
   return renderToStaticMarkup(tree as ReactElement);
 }
 
+/** The element whose opening tag carries `marker`, as a DOM node. */
+function nodeWith(html: string, selector: string): Element | null {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  return doc.querySelector(selector);
+}
+
 beforeEach(() => {
   getInvoiceMock.mockReset();
+  findMostRecentForMemberMock.mockReset();
+  findMostRecentForMemberMock.mockResolvedValue(COMPLETED_CYCLE);
 });
 
 describe('RenewalSuccessPage — §86/4 receipt stays downloadable after a credit note (092)', () => {
@@ -229,5 +250,75 @@ describe('RenewalSuccessPage — paid, receipt still rendering', () => {
     expect(html).toContain('data-testid="invoice-download-link"');
     expect(html).toContain('data-kind="invoice"');
     expect(html).toContain('receiptPreparing');
+  });
+});
+
+describe('RenewalSuccessPage on AURA (boards Portal-renewal-success / -processing, US7c)', () => {
+  it('complete: the hero reads "Renewal complete" with a check, focus lands on the h1', async () => {
+    getInvoiceMock.mockResolvedValue({ ok: true, value: invoiceWith('paid') });
+    const html = await renderPage();
+    const hero = nodeWith(html, '[data-testid="renewal-hero"]')!;
+    expect(hero.querySelector('h1')?.textContent).toBe('title');
+    expect(hero.textContent).toContain('subtitle');
+    expect(hero.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
+    expect(hero.querySelector('header')?.getAttribute('data-autofocus-title')).toBe('true');
+  });
+
+  it('complete: "Renewal details" is an AURA card with the new expiry and a "Completed" ready pill', async () => {
+    getInvoiceMock.mockResolvedValue({ ok: true, value: invoiceWith('paid') });
+    const html = await renderPage();
+    const card = nodeWith(html, 'section[aria-labelledby="renewal-details-heading"]')!;
+    expect(card.className).toMatch(/aura-card/);
+    expect(card.querySelector('#renewal-details-heading')?.textContent).toBe('detailsHeading');
+    expect(card.querySelector('time')?.getAttribute('datetime')).toBe('2027-06-01T00:00:00Z');
+    const pill = card.querySelector('.aura-pill');
+    expect(pill?.textContent).toBe('completed');
+    expect(pill?.className).toMatch(/aura-pill--ready/);
+  });
+
+  it('complete: the receipt download is the primary button, Back to portal the secondary one', async () => {
+    getInvoiceMock.mockResolvedValue({ ok: true, value: invoiceWith('paid') });
+    const html = await renderPage();
+    expect(nodeWith(html, '[data-testid="receipt-download-link"]')?.className).toMatch(
+      /aura-btn--primary/,
+    );
+    const back = nodeWith(html, 'a[href="/portal"]');
+    expect(back?.textContent).toBe('backToPortal');
+    expect(back?.className).toMatch(/aura-btn--secondary/);
+  });
+
+  it('receipt still rendering: the invoice download (secondary) and a busy "Receipt preparing…" placeholder', async () => {
+    getInvoiceMock.mockResolvedValue({
+      ok: true,
+      value: { ...invoiceWith('paid'), receiptPdfStatus: 'pending', receiptPdf: null, pdfDocKind: 'invoice' },
+    });
+    const html = await renderPage();
+    expect(nodeWith(html, '[data-testid="invoice-download-link"]')?.className).toMatch(
+      /aura-btn--secondary/,
+    );
+    const preparing = nodeWith(html, '[aria-busy="true"]')!;
+    expect(preparing.textContent).toContain('receiptPreparing');
+    expect(preparing.getAttribute('role')).toBe('status');
+  });
+
+  it('processing (no cycle yet): the hero reads "Payment received", the details card announces the wait', async () => {
+    findMostRecentForMemberMock.mockResolvedValue(null);
+    getInvoiceMock.mockResolvedValue({ ok: true, value: invoiceWith('paid') });
+    const html = await renderPage();
+    const hero = nodeWith(html, '[data-testid="renewal-hero"]')!;
+    expect(hero.querySelector('h1')?.textContent).toBe('processingTitle');
+    expect(hero.textContent).toContain('processingSubtitle');
+    const status = nodeWith(html, '[role="status"][aria-live="polite"]')!;
+    expect(status.textContent).toContain('processing');
+    expect(nodeWith(html, '[data-testid="processing-back-to-portal"]')?.className).toMatch(
+      /aura-btn--secondary/,
+    );
+  });
+
+  it('no invoice id: the "View all invoices" fallback as a secondary AURA link', async () => {
+    const html = await renderPage(undefined);
+    const fallback = nodeWith(html, '[data-testid="view-invoices-fallback"]');
+    expect(fallback?.getAttribute('href')).toBe('/portal/invoices');
+    expect(fallback?.className).toMatch(/aura-btn--secondary/);
   });
 });
