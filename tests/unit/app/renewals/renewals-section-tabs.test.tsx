@@ -47,10 +47,10 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push }),
 }));
 
-function renderTabs() {
+function renderTabs(pathname?: string) {
   return render(
     <NextIntlClientProvider locale="en" messages={en}>
-      <RenewalsSectionTabs />
+      <RenewalsSectionTabs {...(pathname ? { pathname } : {})} />
     </NextIntlClientProvider>,
   );
 }
@@ -96,6 +96,12 @@ describe('<RenewalsSectionTabs> active-state derivation (aria-current="page")', 
   it('pathname starting /admin/renewals/tier-upgrades → Tier upgrades is current', () => {
     nav.pathname = '/admin/renewals/tier-upgrades';
     const { container } = renderTabs();
+    expect(activeEntryText(container)).toBe('Tier upgrades');
+  });
+
+  it('an explicit pathname (the no-DB preview, 122 US7b-1) decides the current entry', () => {
+    nav.pathname = '/test-fixtures/aura-admin';
+    const { container } = renderTabs('/admin/renewals/tier-upgrades');
     expect(activeEntryText(container)).toBe('Tier upgrades');
   });
 
