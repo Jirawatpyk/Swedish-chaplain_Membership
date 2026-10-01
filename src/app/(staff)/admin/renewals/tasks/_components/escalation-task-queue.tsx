@@ -339,7 +339,7 @@ export function EscalationTaskQueue({
       {
         key: 'member',
         label: t('columns.member'),
-        minWidth: 180,
+        minWidth: 160,
         card: 'title',
         render: (task) => (
           <Link
@@ -354,7 +354,7 @@ export function EscalationTaskQueue({
       {
         key: 'tier',
         label: t('columns.tier'),
-        width: 120,
+        width: 110,
         // The phone card reads the tier with the task type on one line
         // (board Admin-renewal-tasks-mobile).
         card: 'hide',
@@ -363,7 +363,7 @@ export function EscalationTaskQueue({
       {
         key: 'expiresAt',
         label: t('columns.expiresAt'),
-        width: 120,
+        width: 110,
         card: 'hide',
         render: (task) => {
           const label = task.cycleExpiresAt === null ? null : formatShortDate(task.cycleExpiresAt);
@@ -373,7 +373,7 @@ export function EscalationTaskQueue({
       {
         key: 'taskType',
         label: t('columns.taskType'),
-        minWidth: 170,
+        minWidth: 150,
         cardOrder: 1,
         render: (task) => (
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1 whitespace-normal">
@@ -396,7 +396,7 @@ export function EscalationTaskQueue({
       {
         key: 'dueAt',
         label: t('columns.dueAt'),
-        width: 170,
+        width: 165,
         cardOrder: 2,
         render: (task) => (
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1 whitespace-normal">
@@ -417,7 +417,7 @@ export function EscalationTaskQueue({
       {
         key: 'assignedTo',
         label: t('columns.assignedTo'),
-        width: 160,
+        width: 150,
         card: 'hide',
         render: (task) => (
           <span className="flex flex-col whitespace-normal" title={task.assignedToEmail ?? undefined}>
@@ -429,7 +429,7 @@ export function EscalationTaskQueue({
       {
         key: 'status',
         label: t('columns.status'),
-        width: 96,
+        width: 84,
         card: 'hide',
         render: (task) => <StatusPill tone={STATUS_TONE[task.status]}>{t(`status.${task.status}`)}</StatusPill>,
       },
@@ -441,7 +441,7 @@ export function EscalationTaskQueue({
       // An empty label: AURA names the header "Actions" for screen readers.
       key: 'actions',
       label: '',
-      width: 128,
+      width: 116,
       actions: true,
       align: 'end',
       // The phone card's last row: Done grows across it beside the ⋯.

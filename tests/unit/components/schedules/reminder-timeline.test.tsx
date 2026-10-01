@@ -69,10 +69,10 @@ describe('<ReminderTimeline> chart', () => {
 
   it('places markers on a linear day scale, earlier to the left', () => {
     const { container } = renderTimeline(PREMIUM);
-    const xs = [...container.querySelectorAll('[data-lane="email"]')].map((c) => Number(c.getAttribute('cx')));
+    const xs = [...container.querySelectorAll('[data-lane="email"]')].map((c) => parseFloat(c.getAttribute('cx') ?? ''));
     expect(xs).toEqual([...xs].sort((a, b) => a - b));
-    // -90 → -60 is twice as far as -60 → -30… no: both are 30 days, so equal gaps.
-    expect(Math.round(xs[1]! - xs[0]!)).toBe(Math.round(xs[2]! - xs[1]!));
+    // -90 → -60 and -60 → -30 are both 30 days: equal gaps.
+    expect(xs[1]! - xs[0]!).toBeCloseTo(xs[2]! - xs[1]!, 1);
   });
 
   it('marks the renewal date with a dashed line and labels the axis T-90 … Due … T+14', () => {
@@ -97,11 +97,12 @@ describe('<ReminderTimeline> chart', () => {
     expect(container.querySelectorAll('[data-lane]')).toHaveLength(0);
   });
 
-  it('scales with its box instead of scrolling sideways', () => {
-    renderTimeline(PREMIUM);
+  it('fills its box instead of scrolling sideways, with positions in percent so labels keep their size', () => {
+    const { container } = renderTimeline(PREMIUM);
     const chart = screen.getByRole('img');
-    expect(chart.getAttribute('viewBox')).toBeTruthy();
     expect(chart.getAttribute('width')).toBe('100%');
+    expect(chart.getAttribute('viewBox')).toBeNull();
+    expect(container.querySelector('[data-lane="email"]')?.getAttribute('cx')).toMatch(/%$/);
     expect(screen.queryByRole('region')).toBeNull();
   });
 });

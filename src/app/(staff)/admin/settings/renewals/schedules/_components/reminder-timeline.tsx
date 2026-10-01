@@ -15,7 +15,10 @@
  *   - One `role="img"` SVG named by a sentence listing the email and task
  *     timings, so a screen reader hears the whole schedule at once; the
  *     legend names the two marker shapes.
- *   - The SVG scales with its box (no sideways scroll at 320px).
+ *   - Horizontal positions are percentages of the chart's width and vertical
+ *     ones are pixels, so the chart fills its box at any width (no sideways
+ *     scroll at 320px) while the labels stay 11px and the markers round,
+ *     where a scaled viewBox would shrink the text on a phone.
  *
  * Markers are keyed by the editor's stable `_uiKey`, never by `step_id`
  * (recomposed on every timing edit).
@@ -30,16 +33,16 @@ export interface ReminderTimelineProps {
   readonly steps: ReadonlyArray<EditorStep>;
 }
 
-const WIDTH = 560;
 const HEIGHT = 80;
-const PAD_X = 24;
+/** Side padding, in percent of the width, so the outermost labels fit. */
+const PAD_X = 5;
 const EMAIL_Y = 22;
 const TASK_Y = 42;
 const AXIS_Y = 32;
 const LABEL_Y = 70;
 const RADIUS = 6;
-/** Closest two axis labels may sit, in viewBox units, before one is dropped. */
-const MIN_LABEL_GAP = 36;
+/** Closest two axis labels may sit, in percent of the width, before one is dropped. */
+const MIN_LABEL_GAP = 9;
 /** Days shown either side of the renewal date when there are no other steps. */
 const EMPTY_SPAN = 30;
 
@@ -53,14 +56,15 @@ export function ReminderTimeline({ tierBucket, steps }: ReminderTimelineProps) {
   const max = Math.max(0, ...offsets);
   const lo = min === max ? -EMPTY_SPAN : min;
   const hi = min === max ? EMPTY_SPAN : max;
-  const x = (days: number) => PAD_X + ((days - lo) / (hi - lo)) * (WIDTH - 2 * PAD_X);
+  const pct = (days: number) => PAD_X + ((days - lo) / (hi - lo)) * (100 - 2 * PAD_X);
+  const x = (days: number) => `${pct(days).toFixed(2)}%`;
 
   // Axis labels: every distinct offset plus the renewal date, Due first so it
   // always survives the thinning.
   const axisDays = [0, ...[...new Set(offsets)].filter((d) => d !== 0)];
   const kept: number[] = [];
   for (const d of axisDays) {
-    if (kept.every((k) => Math.abs(x(k) - x(d)) >= MIN_LABEL_GAP)) kept.push(d);
+    if (kept.every((k) => Math.abs(pct(k) - pct(d)) >= MIN_LABEL_GAP)) kept.push(d);
   }
   const axisLabel = (d: number) => (d === 0 ? t('timeline.dueShort') : d < 0 ? `T${d}` : `T+${d}`);
 
@@ -80,11 +84,11 @@ export function ReminderTimeline({ tierBucket, steps }: ReminderTimelineProps) {
       <svg
         role="img"
         aria-label={chartName}
-        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
         width="100%"
-        className="block h-auto max-w-full overflow-visible"
+        height={HEIGHT}
+        className="block max-w-full overflow-visible"
       >
-        <line x1={PAD_X} x2={WIDTH - PAD_X} y1={AXIS_Y} y2={AXIS_Y} stroke="var(--aura-chart-grid)" strokeWidth={1} />
+        <line x1={`${PAD_X}%`} x2={`${100 - PAD_X}%`} y1={AXIS_Y} y2={AXIS_Y} stroke="var(--aura-chart-grid)" strokeWidth={1} />
         <line
           data-due-line=""
           x1={x(0)}
