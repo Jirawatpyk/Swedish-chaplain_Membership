@@ -124,6 +124,12 @@
  *     /admin/renewals                 1056.8 KB measured → ≤ 1160 KB
  *   (the cycle detail, tasks and tier-upgrade routes move with US7b).
  *
+ *   Spec 122 US7b-1 (AURA cycle detail + tier upgrade queue, 2026-10-01,
+ *   AURA 5.22.0) — both routes off the legacy kit, re-baselined on the
+ *   branch build:
+ *     /admin/renewals/[cycleId]        806.8 KB measured → ≤ 910 KB (was 1140)
+ *     /admin/renewals/tier-upgrades    841.9 KB measured → ≤ 950 KB (was 1250)
+ *
  * Run as a post-build step:
  *
  *   pnpm build
@@ -169,9 +175,10 @@ const BUDGETS: ReadonlyArray<RouteBudget> = [
   // --- F8 renewals (Phase 9 / T255) ------------------------------------
   // Spec 122 US7a re-baseline (AURA pipeline) — see docblock.
   { route: '/admin/renewals', maxKb: 1160 },
-  { route: '/admin/renewals/[cycleId]', maxKb: 1140 },
+  // Spec 122 US7b-1 re-baseline (AURA cycle detail + tier queue) — see docblock.
+  { route: '/admin/renewals/[cycleId]', maxKb: 910 },
   { route: '/admin/renewals/tasks', maxKb: 1420 },
-  { route: '/admin/renewals/tier-upgrades', maxKb: 1250 },
+  { route: '/admin/renewals/tier-upgrades', maxKb: 950 },
   { route: '/portal/renewal/[memberId]', maxKb: 1090 },
   { route: '/portal/preferences/renewals', maxKb: 1040 },
   // PR #24 review-fix — schedule editor is the only F8 admin surface
