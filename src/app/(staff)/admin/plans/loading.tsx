@@ -31,7 +31,8 @@ export default async function Loading() {
             </>
           }
         />
-        <Card flushBelow="sm">
+        {/* The page's table card: frameless with no padding on a phone. */}
+        <Card flushBelow="sm" className="max-sm:border-0 max-sm:p-0">
           <div className="flex flex-col gap-4">
             {/* The filter row — matches PlansTable: search, category and year
                 selects, 2 switch + label pairs (122 US6 T608). */}
