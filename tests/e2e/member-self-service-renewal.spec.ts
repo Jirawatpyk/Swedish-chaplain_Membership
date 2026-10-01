@@ -87,9 +87,13 @@ test.describe('F8 — member self-service renewal portal (US3 AS1+AS2+AS3+AS6, T
     await expect(page.getByTestId('price-current')).toContainText(/50,000\.00/);
     await expect(page.getByText('12 months')).toBeVisible();
 
-    // Benefit summary fallback (benefitsAvailable=false in MVP).
+    // Benefit summary card. 122 US7c / R27: the old "benefitsAvailable=false
+    // in MVP" premise is stale — the seeded `regular` plan now carries an
+    // E-Blast quota, so the card shows its rows, not the "unavailable"
+    // fallback. Assert the card itself (an AURA card headed by an h2), which
+    // renders on either data path.
     await expect(
-      page.getByText(/benefit summary unavailable/i),
+      page.getByRole('region', { name: /benefit summary/i }),
     ).toBeVisible();
 
     // AS6 — confirm CTA visible + enabled.
