@@ -374,4 +374,25 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, 'src/app/(staff)/admin/settings/page.tsx')).toEqual([]);
     });
   });
+
+  describe('the US7c portal renewal pages are on AURA (the real MIGRATED_PATHS)', () => {
+    const legacy = "import { Button } from '@/components/ui/button';\nexport const B = Button;\n";
+
+    it.each([
+      'src/app/(member)/portal/renewal/[memberId]/page.tsx',
+      'src/app/(member)/portal/renewal/[memberId]/loading.tsx',
+      'src/app/(member)/portal/renewal/[memberId]/error.tsx',
+      'src/app/(member)/portal/renewal/[memberId]/_components/renewal-confirm-flow.tsx',
+      'src/app/(member)/portal/renewal/[memberId]/_components/downgrade-confirm-dialog.tsx',
+      'src/app/(member)/portal/renewal/[memberId]/_components/renewal-page-view.tsx',
+      'src/app/(member)/portal/renewal/[memberId]/success/page.tsx',
+      'src/app/(member)/portal/renewal/[memberId]/success/loading.tsx',
+    ])('%s cannot import the legacy kit', async (path) => {
+      expect(await ratchetHits(legacy, path)).toHaveLength(1);
+    });
+
+    it('control: the member E-Blast pages keep the legacy kit until US12', async () => {
+      expect(await ratchetHits(legacy, 'src/app/(member)/portal/broadcasts/[id]/page.tsx')).toEqual([]);
+    });
+  });
 });

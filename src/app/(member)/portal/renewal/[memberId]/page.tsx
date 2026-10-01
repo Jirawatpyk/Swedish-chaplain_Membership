@@ -260,7 +260,7 @@ export default async function RenewalPortalPage({
         benefits={summary.benefits}
         benefitsAvailable={summary.benefitsAvailable}
         gate={gate}
-        />
+      />
     </DetailContainer>
   );
 }
