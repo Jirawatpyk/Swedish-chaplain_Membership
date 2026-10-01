@@ -370,13 +370,17 @@ export const MIGRATED_PATHS = [
   'src/app/(staff)/admin/renewals/_components/**',
   'src/components/renewals/**',
   // US7b-1 — cycle detail (page, loading, actions, view) and the tier
-  // upgrade queue (page, loading, error, queue, view). Tasks and the reminder
-  // schedules are US7b-2.
+  // upgrade queue (page, loading, error, queue, view).
   'src/app/(staff)/admin/renewals/\\[cycleId\\]/page.tsx',
   'src/app/(staff)/admin/renewals/\\[cycleId\\]/loading.tsx',
   'src/app/(staff)/admin/renewals/\\[cycleId\\]/error.tsx',
   'src/app/(staff)/admin/renewals/\\[cycleId\\]/_components/**',
   'src/app/(staff)/admin/renewals/tier-upgrades/**',
+  // US7b-2 — the escalation tasks queue (page, loading, error, queue,
+  // dialogs, reassign picker, view) and the reminder schedules settings
+  // (page, loading, error, editor, step card, chart, state view).
+  'src/app/(staff)/admin/renewals/tasks/**',
+  'src/app/(staff)/admin/settings/renewals/schedules/**',
 ];
 
 /**
