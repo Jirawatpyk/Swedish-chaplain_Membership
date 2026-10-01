@@ -37,6 +37,14 @@ function pickNative(label: string, value: string) {
   fireEvent.change(native, { target: { value } });
 }
 
+/** The value behind an option, read by its text (the "All types" value is the component's own). */
+function optionValue(label: string, text: string): string {
+  const native = screen.getByRole('combobox', { name: label }).closest('.aura-select')?.querySelector('select');
+  const found = [...(native?.options ?? [])].find((o) => o.textContent === text);
+  if (!found) throw new Error(`no option ${text}`);
+  return found.value;
+}
+
 function nativeOptions(label: string): string[] {
   const native = screen.getByRole('combobox', { name: label }).closest('.aura-select')?.querySelector('select');
   return [...(native?.options ?? [])].map((o) => o.textContent ?? '');
@@ -179,6 +187,13 @@ describe('<EscalationTaskQueue> — task type (AURA Select)', () => {
     expect(nativeOptions('Task type')).toEqual(['All types', 'Director call', 'Phone call']);
   });
 
+  it('shows "All types" as a chosen value, not in the grey of a placeholder (board)', () => {
+    renderQueue(ONE, ['director_call', 'phone_call']);
+    const shown = screen.getByRole('combobox', { name: 'Task type' }).querySelector('.aura-select__value');
+    expect(shown).toHaveTextContent('All types');
+    expect(shown).not.toHaveClass('is-placeholder');
+  });
+
   it('sits at the end of the filter row from 640px, keeping its visible "Task type" label (board)', () => {
     renderQueue(ONE, ['director_call', 'phone_call']);
     const field = screen.getByRole('combobox', { name: 'Task type' }).closest('.aura-field')?.parentElement;
@@ -196,7 +211,7 @@ describe('<EscalationTaskQueue> — task type (AURA Select)', () => {
   it('"All types" clears the param rather than setting it literally', () => {
     searchParamsStub = new URLSearchParams('task_type=phone_call');
     renderQueue(ONE, ['director_call', 'phone_call']);
-    pickNative('Task type', '');
+    pickNative('Task type', optionValue('Task type', 'All types'));
     expect(lastUrl()).not.toContain('task_type');
   });
 });
