@@ -318,6 +318,46 @@ describe('<RenewalConfirmFlow> — downgrade gate (WP5)', () => {
   });
 });
 
+describe('<RenewalConfirmFlow> — a bill already issued (409 invoice_already_exists)', () => {
+  const existing = (invoiceId: string | null) => ({
+    ok: false,
+    status: 409,
+    json: async () => ({ error: { code: 'invoice_already_exists', invoice_id: invoiceId } }),
+  });
+
+  it('says the invoice was already issued and links straight to it, without navigating', async () => {
+    fetchMock.mockResolvedValueOnce(existing('inv-0042'));
+    renderFlow();
+    fireEvent.click(screen.getByRole('button', { name: /confirm renewal/i }));
+
+    const note = await screen.findByTestId('confirm-existing-invoice');
+    expect(note).toHaveAttribute('role', 'alert');
+    expect(note.className).toMatch(/aura-alert--info/);
+    expect(note).toHaveTextContent('An invoice for this renewal has already been issued');
+    expect(note).toHaveTextContent('Pay it to complete your renewal.');
+    expect(within(note).getByRole('link', { name: 'View invoice' })).toHaveAttribute(
+      'href',
+      '/portal/invoices/inv-0042',
+    );
+    await waitFor(() => expect(document.activeElement).toBe(note));
+    // Not the generic error, and no automatic redirect (maintainer, 1 Oct).
+    expect(screen.queryByTestId('confirm-error')).not.toBeInTheDocument();
+    expect(locationAssignMock).not.toHaveBeenCalled();
+  });
+
+  it('links to the invoice list when the server names no invoice', async () => {
+    fetchMock.mockResolvedValueOnce(existing(null));
+    renderFlow();
+    fireEvent.click(screen.getByRole('button', { name: /confirm renewal/i }));
+
+    const note = await screen.findByTestId('confirm-existing-invoice');
+    expect(within(note).getByRole('link', { name: 'View invoice' })).toHaveAttribute(
+      'href',
+      '/portal/invoices',
+    );
+  });
+});
+
 describe('<RenewalConfirmFlow> — AURA alerts (WP5, US7c)', () => {
   it('the change notice is an AURA warning alert with role="status"', async () => {
     renderFlow({ plans: [CURRENT, HIGHER], frozenPriceMinorUnits: 1_500_000 });
