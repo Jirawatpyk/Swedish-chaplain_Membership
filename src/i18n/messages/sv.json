@@ -4564,7 +4564,7 @@
         },
         "pendingNoticeBody": "Den här medlemmen betalade för att återaktivera ett utgånget medlemskap, men automatisk återaktivering är spärrad. Godkänn för att slutföra förnyelsen, eller avslå för att avbryta den och återbetala betalningen.",
         "refundSettlingBadge": "Återbetalning behandlas",
-        "dangerZone": "Farozon",
+        "dangerZone": "Oåterkalleliga åtgärder",
         "refundSettlingNoticeTitle": "Avslagen — återbetalning behandlas",
         "refundSettlingNoticeBody": "Den här återaktiveringen avslogs och återbetalningen behandlas hos betalningsleverantören. Den stängs automatiskt när den bekräftas — ingen åtgärd behövs.",
         "pendingReactivation": {
@@ -4735,7 +4735,7 @@
         "subtitle": "Medlemmar som kvalificerar för en uppgradering baserat på deklarerad omsättning eller betalda fakturor.",
         "tableCaption": "Lista över medlemmar som kvalificerar för en nivåhöjning.",
         "fee_excl_vat": "{fee} exkl. moms",
-        "fees_exclude_vat": "Avgifterna är exkl. moms.",
+        "fees_exclude_vat": "Avgifterna anges exklusive moms.",
         "breadcrumbs": {
           "renewals": "Förnyelser",
           "tier_upgrades": "Nivåhöjningar"
