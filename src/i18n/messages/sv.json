@@ -4734,6 +4734,8 @@
         "title": "Kö för medlemsnivåhöjning",
         "subtitle": "Medlemmar som kvalificerar för en uppgradering baserat på deklarerad omsättning eller betalda fakturor.",
         "tableCaption": "Lista över medlemmar som kvalificerar för en nivåhöjning.",
+        "fee_excl_vat": "{fee} exkl. moms",
+        "fees_exclude_vat": "Avgifterna är exkl. moms.",
         "breadcrumbs": {
           "renewals": "Förnyelser",
           "tier_upgrades": "Nivåhöjningar"
@@ -4780,7 +4782,7 @@
           "cancel": "Avbryt"
         },
         "actions": {
-          "row_menu_aria": "Öppna radåtgärder",
+          "row_menu": "Eskalera eller avvisa — {member}",
           "accept": {
             "label": "Acceptera",
             "dialog_title": "Acceptera nivåhöjning?",

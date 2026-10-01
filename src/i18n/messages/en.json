@@ -4734,6 +4734,8 @@
         "title": "Tier upgrade queue",
         "subtitle": "Members eligible for an upgrade based on declared turnover or paid invoice volume.",
         "tableCaption": "List of members eligible for a tier upgrade.",
+        "fee_excl_vat": "{fee} excl. VAT",
+        "fees_exclude_vat": "Fees exclude VAT.",
         "breadcrumbs": {
           "renewals": "Renewals",
           "tier_upgrades": "Tier upgrades"
@@ -4780,7 +4782,7 @@
           "cancel": "Cancel"
         },
         "actions": {
-          "row_menu_aria": "Open row actions menu",
+          "row_menu": "Escalate or dismiss — {member}",
           "accept": {
             "label": "Accept",
             "dialog_title": "Accept tier upgrade?",
