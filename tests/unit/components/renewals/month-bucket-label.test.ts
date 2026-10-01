@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  bandForBucketIndex,
   formatMonthKeyLabel,
   formatMonthKeyShort,
 } from '@/components/renewals/month-bucket-label';
@@ -51,25 +50,5 @@ describe('formatMonthKeyShort (compact axis label)', () => {
     const label = formatMonthKeyShort('2027-01', 'th');
     expect(label).toContain('70'); // BE 2570
     expect(label).not.toContain('27');
-  });
-});
-
-describe('bandForBucketIndex', () => {
-  it('index 0 (overdue) → red (t-0)', () => {
-    expect(bandForBucketIndex(0)).toBe('t-0');
-  });
-
-  it('index 1 (current month) → orange (t-7)', () => {
-    expect(bandForBucketIndex(1)).toBe('t-7');
-  });
-
-  it('indices 2 and 3 (next 1-2 months) → amber (t-14)', () => {
-    expect(bandForBucketIndex(2)).toBe('t-14');
-    expect(bandForBucketIndex(3)).toBe('t-14');
-  });
-
-  it('later indices → slate (t-90)', () => {
-    expect(bandForBucketIndex(4)).toBe('t-90');
-    expect(bandForBucketIndex(13)).toBe('t-90');
   });
 });

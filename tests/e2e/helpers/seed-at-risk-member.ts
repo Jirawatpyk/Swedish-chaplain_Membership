@@ -5,11 +5,12 @@
  * (writes go to the LIVE tenant — silent orphans would corrupt
  * production data).
  *
- * Pattern mirrors `renewals-seed.ts`: raw `postgres` client, runs
- * outside the Next.js request lifecycle.
+ * Opens its client through `openSeedClient`, which runs the shared
+ * `assertDbHostNotBlocklisted` guard — this helper used to construct
+ * `postgres(dbUrl, …)` itself and so could have written to prod.
  */
 import { randomUUID } from 'node:crypto';
-import postgres from 'postgres';
+import { openSeedClient } from './open-seed-client';
 
 const TENANT_ID = process.env.E2E_TENANT_SLUG ?? 'swecham';
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -32,13 +33,13 @@ export async function seedOneAtRiskMember(
   planId: string,
   planYear: number,
 ): Promise<SeededAtRiskMember> {
-  const dbUrl = process.env.DATABASE_URL;
-  if (!dbUrl) {
+  const client = openSeedClient('e2e seed at-risk');
+  if (!client) {
     throw new Error(
       '[e2e seed at-risk] DATABASE_URL missing — cannot seed.',
     );
   }
-  const sql = postgres(dbUrl, { ssl: 'require', max: 1 });
+  const { sql } = client;
   const memberId = randomUUID();
   // `members.member_number` is NOT NULL since migration 0209 (055) with no
   // default — a raw insert must supply it, and this seed did not, so every

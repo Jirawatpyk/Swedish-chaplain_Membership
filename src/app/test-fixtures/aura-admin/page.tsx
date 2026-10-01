@@ -45,6 +45,29 @@ import {
 } from '@/app/(staff)/admin/plans/_components/plan-form-views';
 import { renderPlanDetailView } from '@/app/(staff)/admin/plans/[year]/[planId]/_components/plan-detail-view';
 import { CLONE_SOURCE_PLANS, PLAN_ID, PLAN_ROWS, PLAN_YEAR, PREMIUM_PLAN, premiumPlanInput } from './plan-fixtures';
+import {
+  renderPipelineLens,
+  renderPipelineLoadError,
+  renderRenewalsPipelineView,
+} from '@/app/(staff)/admin/renewals/_components/renewals-pipeline-view';
+import { PipelineMoneyBand } from '@/app/(staff)/admin/renewals/_components/pipeline-money-band';
+import { RenewalsSectionTabs } from '@/app/(staff)/admin/renewals/_components/renewals-section-tabs';
+import { AtRiskWidget } from '@/app/(staff)/admin/renewals/_components/at-risk-widget';
+import { RenewalsByMonthSection } from '@/app/(staff)/admin/renewals/_components/renewals-by-month-section';
+import { MembersWithoutCycleTray } from '@/app/(staff)/admin/renewals/_components/members-without-cycle-tray';
+import {
+  MEMBERS_WITHOUT_CYCLE,
+  RENEWALS_BY_MONTH,
+  RENEWALS_BY_MONTH_EMPTY_WINDOW,
+  RENEWALS_MONEY,
+  RENEWALS_NEEDS_ACTION_COUNT,
+  RENEWALS_NOW_ISO,
+  RENEWALS_SECTION_COUNTS,
+  RENEWALS_SUMMARY,
+  RENEWALS_SUMMARY_EMPTY,
+  RENEWAL_ROWS,
+} from './renewal-fixtures';
+import { AtRiskFixture, MarkPaidDialogPreview } from './renewal-previews';
 
 // Request-time evaluation so the guard runs per request (see button-matrix).
 export const dynamic = 'force-dynamic';
@@ -731,6 +754,78 @@ export default async function AuraAdminPreviewPage({
           canWrite,
           canDecide: canWrite && !decided,
         })}
+      </StaffFrame>
+    );
+  }
+
+  // ── US7a: the renewals pipeline (`Admin-renewals*`, `Admin-state-renewals-*`,
+  // `Admin-renewal-mark-paid`) — the page's own view with sample data; the
+  // money band, section counts, chart and tray get settled fixture reads.
+  if (
+    view === 'renewals' ||
+    view === 'renewals-needs-action' ||
+    view === 'renewals-empty' ||
+    view === 'renewals-error' ||
+    view === 'renewals-mark-paid'
+  ) {
+    const tr = await getTranslations('admin.renewals');
+    const canMutate = state !== 'manager';
+    const empty = view === 'renewals-empty';
+    const summary = empty ? RENEWALS_SUMMARY_EMPTY : RENEWALS_SUMMARY;
+    const body =
+      view === 'renewals-error'
+        ? await renderPipelineLoadError('7c9e6679-7425-40de-944b-e07fc1f90ae7')
+        : renderRenewalsPipelineView({
+            moneyBand: <PipelineMoneyBand money={RENEWALS_MONEY} windowDays={90} />,
+            sectionTabs: <RenewalsSectionTabs {...RENEWALS_SECTION_COUNTS} />,
+            pipeline: await renderPipelineLens({
+              rows: empty ? [] : RENEWAL_ROWS,
+              summary,
+              urgency: 't-30',
+              tier: undefined,
+              monthLensActive: false,
+              monthKind: undefined,
+              monthLabel: undefined,
+              sort: 'expires_at_asc',
+              sortHrefs: {
+                expires: '/admin/renewals?urgency=t-30&sort=expires_at_desc',
+                tier: '/admin/renewals?urgency=t-30&sort=tier_asc',
+              },
+              nextHref: empty ? null : '/admin/renewals?urgency=t-30&cursor=preview',
+              showEmptyState: empty,
+              canMutate,
+              canManageSchedules: canMutate,
+            }),
+            needsAction: (
+              <>
+                <AtRiskFixture />
+                <AtRiskWidget canSnooze={canMutate} />
+              </>
+            ),
+            needsActionCount: RENEWALS_NEEDS_ACTION_COUNT,
+            ...(view === 'renewals-needs-action' ? { defaultLens: 'needsAction' as const } : {}),
+            byMonth: (
+              <RenewalsByMonthSection
+                tenantSlug="preview"
+                nowIso={RENEWALS_NOW_ISO}
+                selectedMonth={null}
+                summaryPromise={Promise.resolve({ ok: true, v: { ok: true, value: empty ? RENEWALS_BY_MONTH_EMPTY_WINDOW : RENEWALS_BY_MONTH } } as const)}
+              />
+            ),
+            tray: (
+              <MembersWithoutCycleTray
+                tenantSlug="preview"
+                resultPromise={Promise.resolve({ ok: true, v: { ok: true, value: MEMBERS_WITHOUT_CYCLE } } as const)}
+              />
+            ),
+          });
+    return (
+      <StaffFrame path="/admin/renewals">
+        <TableContainer>
+          <PageHeader title={tr('title')} subtitle={tr('subtitle')} />
+          {body}
+          {view === 'renewals-mark-paid' ? <MarkPaidDialogPreview /> : null}
+        </TableContainer>
       </StaffFrame>
     );
   }

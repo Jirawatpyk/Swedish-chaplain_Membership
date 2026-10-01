@@ -219,16 +219,14 @@ describe('RecentExports on AURA (T506)', () => {
     },
   ];
 
-  // RED until AURA ships open item #117 (docs/aura-adoption.md): a row with
-  // Download (32px `sm` button + cell padding) stands taller than a pill-only
-  // row, and the static Table has no density row height yet. Once it ships,
-  // pass the prop, rename the class below to AURA's, and flip `it.fails` to `it`.
-  it.fails('#117: every row follows the density row height through an AURA Table prop', () => {
+  // #117 (AURA 5.21.0): a row with Download (32px `sm` button) and a pill-only
+  // row come out the same height through AURA's `rowHeight="density"`.
+  it('#117: every row follows the density row height through an AURA Table prop', () => {
     render(<RecentExports labels={exportLabels} rows={mixedRows} />);
-    expect(screen.getByRole('table')).toHaveClass('aura-tbl--rows-density');
+    expect(screen.getByRole('table')).toHaveClass('aura-tbl--row-density');
   });
 
-  it('sets no row height by hand while #117 is open', () => {
+  it('sets no row height by hand (AURA owns it, #117)', () => {
     render(<RecentExports labels={exportLabels} rows={mixedRows} />);
     const cells = within(screen.getByRole('table'))
       .getAllByRole('row')

@@ -1,23 +1,29 @@
 /**
  * F8 Phase 3 Wave H4 · T071 — `UrgencyBucketTabs` client component.
  *
- * 8-tab navigation for `/admin/renewals` filtered by urgency bucket.
- * Each tab shows a count badge from `summary.by_urgency`. Selecting a
- * tab pushes a new URL `?urgency=<bucket>` so the server re-renders
- * with the filtered page. The lapsed tab is visually segregated from
- * the upcoming buckets to mirror its different operational meaning
- * (FR-046 + spec.md AS3).
+ * The stage chips for `/admin/renewals`: T-90 … T-0, Suspended and
+ * Terminated, each with its count (Terminated counts the lapsed cycles).
+ * A chip is a link to `?urgency=<bucket>`, so the server re-renders the
+ * filtered page; choosing one exits the month lens and resets the paging
+ * cursor and its `nowIso` anchor.
+ *
+ * 122 US7a (T703): AURA link tabs on a desktop (board `Admin-renewals`) and
+ * an "Urgency" select on a phone (board `Admin-renewals-mobile`). Links
+ * rather than tabs: with a month lens active no chip is current, which a
+ * tablist cannot express. Neither control scrolls the page to the top
+ * (operator report: the jump yanked the user away from the strip). While a
+ * month lens is active the chips show a visible "Paused" badge and each is
+ * described by the hint explaining why (item ③).
  */
 'use client';
 
+import { forwardRef, type ComponentProps } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { PauseCircle } from 'lucide-react';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { cn } from '@/lib/utils';
+import { Badge, Select, Tabs, type TabItem } from '@jirawatpyk/aura-react';
 // Client-safe sub-barrel — see `tier-filter-select.tsx` for rationale.
 import type { UrgencyBucket } from '@/modules/renewals/client';
-import { VARIANT_CLASSES } from '@/components/renewals/urgency-pill';
 
 const TAB_ORDER: ReadonlyArray<UrgencyBucket> = [
   't-90',
@@ -30,31 +36,27 @@ const TAB_ORDER: ReadonlyArray<UrgencyBucket> = [
   'terminated',
 ];
 
-/**
- * K8-M5: derive the i18n-key literal union from `TAB_ORDER` so adding
- * a 9th bucket becomes a one-line `TAB_ORDER` change rather than two
- * (the const tuple AND the inline literal cast at the `t()` call).
- * The transform mirrors what the `bucket.replace('-', '_')` runtime
- * call does at the type level: 't-90' → 't_90'.
- */
 type DashToUnderscore<S extends string> = S extends `${infer A}-${infer B}`
   ? `${A}_${DashToUnderscore<B>}`
   : S;
 type UrgencyI18nKey = DashToUnderscore<(typeof TAB_ORDER)[number]>;
 
+const MONTH_LENS_HINT_ID = 'urgency-month-lens-hint';
+
+/** A chip link that keeps the scroll position (same-page filter). */
+const NoScrollLink = forwardRef<HTMLAnchorElement, ComponentProps<typeof Link>>(
+  function NoScrollLink(props, ref) {
+    return <Link ref={ref} {...props} scroll={false} />;
+  },
+);
+
 export interface UrgencyBucketTabsProps {
+  /** The current bucket; `null` while a month lens is active (no chip current). */
   readonly current: UrgencyBucket | null;
   readonly counts: Readonly<Record<UrgencyBucket, number>>;
+  /** Terminated shows the lapsed-cycle count. */
   readonly lapsedCount: number;
-  /**
-   * Item ③ — TRUE when a `?month` lens supersedes urgency (mutually
-   * exclusive). Presentation only: renders a full-contrast "Paused" badge
-   * beside the tab strip + an sr-only hint explaining why (WCAG 1.4.3
-   * review-fix — dimming the strip via `opacity-60` dropped label/pill
-   * contrast below AA even though the tabs stayed clickable; the strip now
-   * renders at full token contrast in both states). Tabs stay
-   * clickable/keyboard-navigable and STILL exit the lens on activation.
-   */
+  /** Item ③ — a month lens is active, so the chips are paused. */
   readonly monthLensActive?: boolean;
 }
 
@@ -68,158 +70,77 @@ export function UrgencyBucketTabs({
   const pathname = usePathname();
   const params = useSearchParams();
   const t = useTranslations('admin.renewals.urgencyBuckets');
+  const tTable = useTranslations('admin.renewals.table');
 
-  function handleChange(value: string) {
-    if (!TAB_ORDER.includes(value as UrgencyBucket)) return;
+  const hrefFor = (bucket: UrgencyBucket): string => {
     const next = new URLSearchParams(params.toString());
-    next.set('urgency', value);
+    next.set('urgency', bucket);
     next.delete('month'); // mutually-exclusive lens — exit the month lens
-    next.delete('cursor'); // reset pagination on tab switch
+    next.delete('cursor'); // reset pagination on a chip change
     next.delete('nowIso'); // drop the pagination-session anchor (leaves with cursor)
-    // `scroll: false` — this is a SAME-PAGE filter, not a page switch: the
-    // router's default scroll-to-top yanked the viewport away from the tab
-    // strip the admin just clicked (operator-reported). The rule across
-    // /admin/renewals: filter/lens/selection navigations preserve scroll;
-    // view switches (section tabs → Tasks/Tier-upgrades) keep the default.
-    router.push(`${pathname}?${next.toString()}`, { scroll: false });
-  }
+    return `${pathname}?${next.toString()}`;
+  };
+
+  const chips = TAB_ORDER.map((bucket) => {
+    const count = bucket === 'terminated' ? lapsedCount : (counts[bucket] ?? 0);
+    const i18nKey = bucket.replaceAll('-', '_') as UrgencyI18nKey;
+    const label = t.has(i18nKey) ? t(i18nKey) : `${i18nKey} (untranslated)`;
+    return { bucket, count, label };
+  });
+
+  const tabs: TabItem[] = chips.map(({ bucket, count, label }) => ({
+    id: bucket,
+    label,
+    count,
+    href: hrefFor(bucket),
+    // The name reads "T-90, 6 members" (the label first, WCAG 2.5.3).
+    tabProps: {
+      'aria-label': `${label}, ${t('countSr', { count })}`,
+      ...(monthLensActive ? { 'aria-describedby': MONTH_LENS_HINT_ID } : {}),
+    },
+  }));
 
   return (
     <>
-      {/* Item ③ — sr-only hint the dimmed region's aria-describedby points
-          at, explaining why urgency tabs are paused while a month lens is
-          active. Only mounted when the hint is actually referenced. */}
       {monthLensActive ? (
-        <span id="urgency-month-lens-hint" className="sr-only">
+        <span id={MONTH_LENS_HINT_ID} className="sr-only">
           {t('monthLensHint')}
         </span>
       ) : null}
-      {/* Outer wrapper handles horizontal scroll at narrow viewports
-          (WCAG 1.4.10 Reflow). TabsList itself is `inline-flex w-fit` from
-          base-ui, so `overflow-x-auto` only takes effect on the wrapper.
-
-          `overflow-y-hidden` is required: per CSS overflow spec, setting
-          `overflow-x: auto` implicitly forces `overflow-y` to `auto` too
-          (the spec disallows mixing `visible` with any non-visible
-          value on the other axis). The TabsList's content is `33px` tall
-          due to `p-[3px]` + `h-8` rounding, which overflows the 32px
-          wrapper by 1px and triggers vertical scroll-arrow chevrons
-          ("^" / "v") when the user clicks a tab. Forcing Y-hidden clips
-          that 1px ghost overflow without affecting any visible tab
-          content (the default-variant `:after` indicator is opacity-0).
-
-          `py-0.5` adds 2px breathing room above + below so a focus ring
-          on edge-row tabs isn't clipped by the Y-hidden boundary
-          (WCAG 2.4.11 Focus Not Obscured).
-          067 a11y (WCAG 2.1.1 scrollable-region-focusable, deterministic on
-          WebKit) — an overflow-x-auto container that scrolls must be keyboard-
-          pan-scrollable. Mirror src/components/ui/table.tsx: tabIndex makes the
-          region focusable (arrow keys scroll it), role=region + aria-label name
-          the landmark, focus ring meets WCAG 2.4.7.
-          067 #4 review-fix — the scroll region uses a DISTINCT label from the
-          inner TabsList (`aria_label`); two nested named landmarks announcing the
-          same phrase ("Filter by renewal urgency") was a double-announce nit.
-          Item ③ (WCAG 1.4.3 Critical review-fix) — `opacity-60` dimming was
-          REMOVED: group-opacity on still-interactive text/pills dropped label
-          contrast to ~2.3:1(light)/~2.9:1(dark) and count-pill contrast to
-          ~3.1:1, all below AA, and the "inactive component" exception doesn't
-          apply because the tabs stay clickable. The region now renders at
-          full token contrast in both states; the visible "Paused" badge
-          (sibling, OUTSIDE this scroll region so it can't scroll away) +
-          the sr-only hint below explain the lens instead. `handleChange`
-          below is UNCHANGED, so a tab still exits the lens on click. */}
-      <div className="flex items-center gap-2">
-        <div
-          role="region"
-          aria-label={t('aria_label_scroll')}
-          tabIndex={0}
-          className="min-w-0 flex-1 overflow-x-auto overflow-y-hidden py-0.5 focus-visible:rounded-md focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring"
-          {...(monthLensActive
-            ? { 'aria-describedby': 'urgency-month-lens-hint' }
-            : {})}
-        >
-          <Tabs value={current ?? ''} onValueChange={handleChange}>
-            {/* `gap-1` separates adjacent triggers — without it the count
-                badge of one tab visually butts against the next tab's
-                label, producing the unreadable "T-90 0T-60 0T-14 0" run.
-                shadcn's default TabsList variant has no inter-trigger gap
-                because shadcn assumes each trigger is a single short word;
-                pairs of <label, badge> need explicit breathing room. */}
-            {/* Phase 6 review-round 2 Cmt7 — arrow-key navigation provided by
-                shadcn `<Tabs>` automatically (Base UI Tabs primitive,
-                `@base-ui/react/tabs`). No need to duplicate the manual
-                `tablist` arrow handler used by `at-risk-widget.tsx` (custom
-                `<div role="tablist">`-based tabs); both surfaces meet the
-                same WCAG outcome via different implementations. */}
-            <TabsList className="min-w-max gap-1" aria-label={t('aria_label')}>
-              {TAB_ORDER.map((bucket) => {
-              // The 'terminated' tab shows the whole-tenant status='lapsed' count
-              // (`lapsedCount`, no 90-day window) — the field keeps its status-keyed
-              // name because it counts lapsed-STATUS cycles; only the user-facing
-              // bucket vocabulary was renamed 'lapsed'→'terminated'.
-              const count =
-                bucket === 'terminated' ? lapsedCount : (counts[bucket] ?? 0);
-              // Phase 6 review-round 2 UX-M3 — replaceAll is future-proof
-              // for multi-hyphen bucket strings (current set has at most
-              // one hyphen, so behaviour is identical today).
-              const i18nKey = bucket.replaceAll('-', '_') as UrgencyI18nKey;
-              // Phase 6 review-round 2 F8 — loud-fail when a TAB_ORDER
-              // entry is added without the matching i18n key. next-intl's
-              // default `getMessageFallback` returns the key string,
-              // silently rendering "t_45" instead of localized text.
-              const label = t.has(i18nKey)
-                ? t(i18nKey)
-                : `${i18nKey} (untranslated)`;
-              return (
-                <TabsTrigger
-                  key={bucket}
-                  value={bucket}
-                  className={cn(
-                    bucket === 'terminated' && 'ml-2 border-l border-border pl-3',
-                  )}
-                >
-                  <span>{label}</span>
-                  <span
-                    className={cn(
-                      'ml-1.5 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-xs font-medium ring-1 ring-inset tabular-nums',
-                      VARIANT_CLASSES[bucket],
-                    )}
-                    aria-hidden
-                  >
-                    {count}
-                  </span>
-                  {/* Leading space so the tab's accessible name reads
-                      "T-90 0 members", never a run-together "T-900 members" —
-                      matches the section-tab TabCountBadge sr-only idiom. */}
-                  <span className="sr-only">
-                    {' '}
-                    {t('countSr', { count })}
-                  </span>
-                </TabsTrigger>
-              );
-            })}
-            </TabsList>
-          </Tabs>
-        </div>
-        {/* Item ③ (WCAG 1.4.3 review-fix) — visible "Paused" indicator,
-            rendered as a NON-shrinking sibling OUTSIDE the overflow-x-auto
-            scroll region so it can never scroll out of view. `aria-hidden`
-            because the sr-only hint (above, wired via `aria-describedby`)
-            already carries the full explanation to screen-reader users —
-            this badge would otherwise double-announce the same fact. Not
-            focusable (no tabIndex/role), so it adds no tab stop and doesn't
-            perturb the tablist's roving tabindex. `text-foreground` (not
-            `text-muted-foreground`) on `bg-muted` is the AA-safe pairing —
-            the whole point of this fix is a token combo that clears 4.5:1. */}
+      <div className="flex min-w-0 items-center gap-[var(--aura-space-2)] max-sm:hidden">
+        <Tabs
+          label={t('aria_label')}
+          tabs={tabs}
+          linkComponent={NoScrollLink}
+          {...(current !== null ? { value: current } : {})}
+        />
+        {/* Item ③ — visible "Paused" badge beside the chips; hidden from
+            screen readers, which hear the hint on each chip instead. */}
         {monthLensActive ? (
-          <span
-            aria-hidden
-            className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-foreground ring-1 ring-inset ring-border"
-          >
-            <PauseCircle className="h-3 w-3" aria-hidden />
-            {t('monthLensBadge')}
+          <span aria-hidden className="shrink-0">
+            <Badge tone="neutral" icon="clock">
+              {t('monthLensBadge')}
+            </Badge>
           </span>
         ) : null}
+      </div>
+      {/* The phone board draws the stages as a select. */}
+      <div className="sm:hidden">
+        <Select
+          label={tTable('columns.urgency')}
+          value={current ?? ''}
+          placeholder={monthLensActive ? t('monthLensBadge') : undefined}
+          // Same hint the chips carry: why no stage is chosen.
+          {...(monthLensActive ? { 'aria-describedby': MONTH_LENS_HINT_ID } : {})}
+          options={chips.map(({ bucket, count, label }) => ({
+            value: bucket,
+            label: `${label} (${count})`,
+          }))}
+          onChange={(e) => {
+            const bucket = TAB_ORDER.find((b) => b === e.target.value);
+            if (bucket) router.push(hrefFor(bucket), { scroll: false });
+          }}
+        />
       </div>
     </>
   );

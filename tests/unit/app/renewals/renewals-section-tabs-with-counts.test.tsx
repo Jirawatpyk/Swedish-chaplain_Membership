@@ -67,11 +67,8 @@ function pendingOk(openCount: number, settlingCount = 0) {
   return { ok: true as const, value: { cycles } };
 }
 
-async function renderWithCounts(showPipelineHelp = false) {
-  const el = await RenewalsSectionTabsWithCounts({
-    tenantSlug: 'tenant-a',
-    showPipelineHelp,
-  });
+async function renderWithCounts() {
+  const el = await RenewalsSectionTabsWithCounts({ tenantSlug: 'tenant-a' });
   render(
     <NextIntlClientProvider locale="en" messages={en}>
       {el}
@@ -97,15 +94,15 @@ describe('<RenewalsSectionTabsWithCounts> wires the three reads into the badges'
     expect(
       screen.getByRole('link', { name: /pending review/i }).textContent,
     ).toContain('2');
-    expect(screen.getByText(/2 cycles awaiting review/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /2 cycles awaiting review/i })).toBeInTheDocument();
     expect(
       screen.getByRole('link', { name: /^tasks/i }).textContent,
     ).toContain('7');
-    expect(screen.getByText(/7 open tasks/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /7 open tasks/i })).toBeInTheDocument();
     expect(
       screen.getByRole('link', { name: /tier upgrades/i }).textContent,
     ).toContain('3');
-    expect(screen.getByText(/3 tier-upgrade suggestions/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /3 tier-upgrade suggestions/i })).toBeInTheDocument();
   });
 
   it('passes the open status filter + the 50-row queue cap to the reads', async () => {
@@ -133,10 +130,10 @@ describe('<RenewalsSectionTabsWithCounts> best-effort degradation (one read thro
     await renderWithCounts();
 
     // Tasks badge absent (count degraded to 0)…
-    expect(screen.queryByText(/open tasks?/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /open tasks?/i })).not.toBeInTheDocument();
     // …while the other two still render.
-    expect(screen.getByText(/2 cycles awaiting review/i)).toBeInTheDocument();
-    expect(screen.getByText(/1 tier-upgrade suggestion/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /2 cycles awaiting review/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /1 tier-upgrade suggestion/i })).toBeInTheDocument();
     // A distinct errorId is logged for SRE triage.
     expect(mocks.loggerError).toHaveBeenCalledWith(
       expect.objectContaining({ errorId: 'F8.ADMIN.TASKS_COUNT' }),
@@ -151,8 +148,8 @@ describe('<RenewalsSectionTabsWithCounts> best-effort degradation (one read thro
 
     await renderWithCounts();
 
-    expect(screen.queryByText(/awaiting review/i)).not.toBeInTheDocument();
-    expect(screen.getByText(/4 open tasks/i)).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /awaiting review/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /4 open tasks/i })).toBeInTheDocument();
     expect(mocks.loggerError).toHaveBeenCalledWith(
       expect.objectContaining({ errorId: 'F8.ADMIN.PENDING_REVIEW_COUNT' }),
       expect.any(String),
@@ -168,29 +165,15 @@ describe('<RenewalsSectionTabsWithCounts> best-effort degradation (one read thro
 
     // Tier-upgrades badge absent (count degraded to 0)…
     expect(
-      screen.queryByText(/tier-upgrade suggestions?/i),
+      screen.queryByRole('link', { name: /tier-upgrade suggestions?/i }),
     ).not.toBeInTheDocument();
     // …while the other two still render.
-    expect(screen.getByText(/2 cycles awaiting review/i)).toBeInTheDocument();
-    expect(screen.getByText(/4 open tasks/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /2 cycles awaiting review/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /4 open tasks/i })).toBeInTheDocument();
     // A distinct errorId is logged for SRE triage.
     expect(mocks.loggerError).toHaveBeenCalledWith(
       expect.objectContaining({ errorId: 'F8.ADMIN.TIER_UPGRADE_COUNT' }),
       expect.any(String),
     );
-  });
-});
-
-describe('<RenewalsSectionTabsWithCounts> help popover pass-through', () => {
-  it('forwards showPipelineHelp so the help trigger only renders when asked', async () => {
-    mocks.loadPendingReactivationReview.mockResolvedValue(pendingOk(0));
-    mocks.countMatching.mockResolvedValue(0);
-    mocks.listForAdminQueue.mockResolvedValue({ items: [] });
-
-    await renderWithCounts(true);
-
-    expect(
-      screen.getByRole('button', { name: 'About the renewal pipeline' }),
-    ).toBeInTheDocument();
   });
 });

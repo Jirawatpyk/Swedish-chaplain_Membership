@@ -59,10 +59,32 @@ describe('<TierBadge>', () => {
     expect(el.getAttribute('aria-label')).toBeNull();
   });
 
-  it('applies tier-specific colour classes', () => {
-    const { container } = renderBadge('premium');
-    const el = container.querySelector('span')!;
-    expect(el.className).toMatch(/bg-purple/);
+  it.each([
+    ['partnership', 'Partnership', 'aura-badge--accent'],
+    ['premium', 'Premium', 'aura-badge--neutral'],
+    ['regular', 'Regular', 'aura-badge--neutral'],
+    ['start_up', 'Start-up', 'aura-badge--neutral'],
+    ['thai_alumni', 'Thai alumni', 'aura-badge--neutral'],
+  ] as const)(
+    '122 US7a: %s is a soft AURA badge — accent for Partnership (as on the plans list), neutral otherwise',
+    (tier, label, tone) => {
+      renderBadge(tier);
+      const el = screen.getByText(label);
+      expect(el).toHaveClass('aura-badge', tone);
+      expect(el).not.toHaveClass('is-outline');
+      expect(el).not.toHaveClass('is-solid');
+    },
+  );
+
+  it('never takes a status tone: warning, success and danger stay for urgency and risk', () => {
+    for (const tier of ['thai_alumni', 'start_up', 'regular', 'premium', 'partnership'] as const) {
+      const { container, unmount } = renderBadge(tier);
+      const badge = container.querySelector('.aura-badge');
+      for (const status of ['aura-badge--warning', 'aura-badge--success', 'aura-badge--danger']) {
+        expect(badge).not.toHaveClass(status);
+      }
+      unmount();
+    }
   });
 
   it('merges custom className', () => {

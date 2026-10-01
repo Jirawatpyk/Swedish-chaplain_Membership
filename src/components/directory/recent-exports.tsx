@@ -45,10 +45,9 @@ export function RecentExports({
   // (`Admin-directory-mobile`) a one-line list instead: the name, the time
   // under it, and the status pill — or, once ready, "· Ready" in the time line
   // and an icon-only download. The table hides below 640px and the list above
-  // it, so assistive tech meets only the one on screen. A row with Download
-  // stands taller than a pill-only row (the 32px `sm` button plus the cell
-  // padding) until AURA's static Table can follow the density's row height
-  // (open item #117); no height is set here.
+  // it, so assistive tech meets only the one on screen. Every row is the
+  // density's row height, whether it holds Download or only a pill: AURA's
+  // `rowHeight="density"` (#117, 5.21.0).
   const downloadHref = (row: RecentExportRow) => `/api/admin/directory/exports/${row.jobId}/download`;
   // H2: contextual label so SR users hear which export each "Download" link
   // targets (WCAG 2.4.6), not "Download" ×N.
@@ -66,7 +65,7 @@ export function RecentExports({
       ) : (
         <>
           <div className="max-sm:hidden">
-            <Table caption={labels.caption} captionHidden align="middle" bordered={false}>
+            <Table caption={labels.caption} captionHidden align="middle" bordered={false} rowHeight="density">
               <THead>
                 <Tr>
                   <Th>{labels.kindLabel}</Th>

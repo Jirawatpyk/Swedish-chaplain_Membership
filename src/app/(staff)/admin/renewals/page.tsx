@@ -23,8 +23,7 @@ import { Suspense } from 'react';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { headers } from 'next/headers';
 import { randomUUID } from 'node:crypto';
-import { Card, CardContent } from '@/components/ui/card';
-import { buttonVariants } from '@/components/ui/button';
+import { Card } from '@jirawatpyk/aura-react/server';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { renewalsMetrics } from '@/lib/metrics';
@@ -63,29 +62,24 @@ import {
   RenewalsByMonthSection,
   RenewalsByMonthSectionSkeleton,
 } from './_components/renewals-by-month-section';
-import { RenewalsEmptyState } from './_components/empty-state';
-import { SuspendedBridgeStrip } from './_components/suspended-bridge-strip';
 import { shouldShowRenewalsEmptyState } from './_lib/should-show-empty-state';
-import { UrgencyBucketTabs } from './_components/urgency-bucket-tabs';
 import {
   PipelineMoneyBand,
   PipelineMoneyBandSkeleton,
 } from './_components/pipeline-money-band';
-import { PipelineWithBulk } from './_components/pipeline-with-bulk';
 import { LoadErrorCard } from '@/components/shell/load-error-card';
-import { LapsedTab } from './_components/lapsed-tab';
-import { TierFilterSelect } from './_components/tier-filter-select';
 import { ErrorCardActions } from '@/components/shell/error-card-actions';
 import { AtRiskWidget } from './_components/at-risk-widget';
-import { WorkQueueTabs } from './_components/work-queue-tabs';
+import {
+  renderPipelineLens,
+  renderPipelineLoadError,
+  renderRenewalsPipelineView,
+} from './_components/renewals-pipeline-view';
 import {
   MembersWithoutCycleTray,
   MembersWithoutCycleTraySkeleton,
 } from './_components/members-without-cycle-tray';
-import {
-  RenewalsSectionTabs,
-  TabCountBadge,
-} from './_components/renewals-section-tabs';
+import { RenewalsSectionTabs } from './_components/renewals-section-tabs';
 import {
   RenewalsSectionTabsWithCounts,
   loadSectionTabCounts,
@@ -98,8 +92,6 @@ import {
   fetchPendingReviewCompanyNames,
   type PendingReviewMemberInfo,
 } from './_lib/pending-review-enrichment';
-import { ResultCountAnnouncer } from '@/components/renewals/result-count-announcer';
-import { ResultCountLabel } from '@/components/renewals/result-count-label';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.renewals');
@@ -178,13 +170,13 @@ export default async function RenewalsPipelinePage({
     return (
       <RenewalsPageShell title={t('title')} subtitle={t('subtitle')}>
         <Card>
-          <CardContent
+          <p
             role="status"
             aria-live="polite"
-            className="py-12 text-center text-muted-foreground"
+            className="py-[var(--aura-space-8)] text-center text-[var(--aura-fg-secondary)]"
           >
             {t('error.featureDisabled')}
-          </CardContent>
+          </p>
         </Card>
       </RenewalsPageShell>
     );
@@ -262,16 +254,13 @@ export default async function RenewalsPipelinePage({
     return (
       <RenewalsPageShell title={t('title')} subtitle={t('subtitle')}>
         <Card>
-          <CardContent className="flex flex-col gap-4">
+          <div className="flex flex-col gap-[var(--aura-space-4)]">
             {/* C3 (#8) — the Pending-review view now also carries the sibling-
                 queue count badges (Tasks / Tier upgrades / its own Pending
                 review), streamed in a Suspense island whose fallback is the
                 bare strip (CLS-safe, only the badges appear once resolved). */}
-            <Suspense fallback={<RenewalsSectionTabs showPipelineHelp />}>
-              <RenewalsSectionTabsWithCounts
-                tenantSlug={tenantCtx.slug}
-                showPipelineHelp
-              />
+            <Suspense fallback={<RenewalsSectionTabs />}>
+              <RenewalsSectionTabsWithCounts tenantSlug={tenantCtx.slug} />
             </Suspense>
             <PendingReviewSection
               tenantSlug={tenantCtx.slug}
@@ -282,7 +271,7 @@ export default async function RenewalsPipelinePage({
               // literal went false for every human after Migration C).
               canApprove={canPerform(currentUser.role, 'renewals.write')}
             />
-          </CardContent>
+          </div>
         </Card>
       </RenewalsPageShell>
     );
@@ -377,26 +366,7 @@ export default async function RenewalsPipelinePage({
     );
     return (
       <RenewalsPageShell title={t('title')} subtitle={t('subtitle')}>
-        <LoadErrorCard message={t('error.loadFailed')}>
-          {/*
-            K12-1 (UX-K-3): Retry was a `<Link>` with `?_retry=${id}`
-            query-string cache-bust which (a) read as "navigation" to
-            AT (WCAG SC 4.1.2) and (b) polluted browser history with
-            accumulating retry IDs. ErrorCardActions runs
-            `router.refresh()` inside `useTransition` — semantic
-            button, no URL mutation, pending state for the in-flight
-            RSC re-fetch.
-          */}
-          <ErrorCardActions
-            correlationId={correlationId}
-            goBackHref="/admin"
-            retryLabel={t('error.retry')}
-            pendingLabel={t('error.retrying')}
-            retryFailedLabel={t('error.retryFailed')}
-            goBackLabel={t('error.goBack')}
-            referenceLabel={t('error.referenceLabel')}
-          />
-        </LoadErrorCard>
+        {await renderPipelineLoadError(correlationId)}
       </RenewalsPageShell>
     );
   }
@@ -514,226 +484,90 @@ export default async function RenewalsPipelinePage({
   // every mutation CTA from a promoted super_admin while the API allowed it).
   const canMutate = canPerform(currentUser.role, 'renewals.write');
 
-  // Sighted result-count (aria-hidden twin of `ResultCountAnnouncer`). Computed
-  // once so the same element can be the LEFT item of the pipeline table's
-  // toolbar row (see `PipelineTable resultCount`) and the standalone caption
-  // above the terminated `LapsedTab` (which has no toolbar of its own).
-  const resultCountLabel = (
-    <ResultCountLabel
-      count={rows.length}
-      {...(monthLensActive
-        ? {
-            monthKind: monthKind as 'overdue' | 'later' | 'month',
-            ...(monthLabel !== undefined ? { monthLabel } : {}),
-          }
-        : { urgencyKey: urgency })}
-    />
+  // The needs-action count rides on the work-queue tab (AURA's numeric
+  // `count`), so it is resolved here; its read started beside `loadPipeline`.
+  const needsActionCount = await resolveNeedsActionCount(
+    tenantCtx.slug,
+    needsActionCountPromise,
   );
 
   return (
     <RenewalsPageShell title={t('title')} subtitle={t('subtitle')}>
-      {/* DV-Wave2 ⑥ — THB money KPI band. Best-effort Suspense island: it
-          streams in independently of the pipeline table and a load throw
-          degrades it to nothing (never crashes the pipeline). Reuses the
-          already-computed `nowIso` so its FY/BKK boundaries reconcile with the
-          month lens. Fix round 1 #1 — the fallback was `null`, so the band
-          appearing pushed the whole pipeline card down (a real CLS hit);
-          `PipelineMoneyBandSkeleton` reserves the identical footprint. */}
-      <Suspense fallback={<PipelineMoneyBandSkeleton />}>
-        <PipelineMoneyBandSection
-          tenantSlug={tenantCtx.slug}
-          moneyPromise={moneyBandPromise}
-        />
-      </Suspense>
-      <Card>
-        <CardContent className="flex flex-col gap-4">
-          {/* 070 F8 item #18 (extended, nav-orphans follow-up) — section
-              nav reachable from the pipeline so admins can navigate to
-              the pending-review discovery list, plus Tasks and Tier
-              upgrades. Item ④ (plan-wide decision) — each tab's pending-
-              work count is streamed in a Suspense island (reusing the
-              EXISTING loadPendingReactivationReview use-case +
-              escalationTaskRepo.countMatching + tierUpgradeRepo.
-              listForAdminQueue — zero new queries) so the urgency-
-              pipeline hot path stays query-free; the fallback renders
-              the identical tab strip with NO badges (CLS-safe — only the
-              badges appear once resolved). Best-effort per count: a load
-              throw degrades that ONE badge to hidden rather than
-              blanking all three. */}
-          <Suspense fallback={<RenewalsSectionTabs showPipelineHelp />}>
+      {renderRenewalsPipelineView({
+        // DV-Wave2 ⑥ — THB money KPI band. Best-effort Suspense island: it
+        // streams in independently of the pipeline table and a load throw
+        // degrades it to its caption (never crashes the pipeline). Reuses the
+        // already-computed `nowIso` so its FY/BKK boundaries reconcile with
+        // the month lens. `PipelineMoneyBandSkeleton` reserves the identical
+        // footprint (fix round 1 #1 — a `null` fallback was a real CLS hit).
+        moneyBand: (
+          <Suspense fallback={<PipelineMoneyBandSkeleton />}>
+            <PipelineMoneyBandSection
+              tenantSlug={tenantCtx.slug}
+              moneyPromise={moneyBandPromise}
+            />
+          </Suspense>
+        ),
+        // 070 F8 item #18 — section nav reachable from the pipeline. Item ④ —
+        // each tab's pending-work count streams in a Suspense island (the
+        // EXISTING use-cases, zero new queries) so the pipeline hot path stays
+        // query-free; the fallback is the identical strip with NO badges
+        // (CLS-safe). Best-effort per count: a throw hides that ONE badge.
+        sectionTabs: (
+          <Suspense fallback={<RenewalsSectionTabs />}>
             <RenewalsSectionTabsWithCounts
               tenantSlug={tenantCtx.slug}
-              showPipelineHelp
               countsPromise={sectionCountsPromise}
             />
           </Suspense>
-          {/* Wave 2 Task 7 — the pipeline body + `AtRiskWidget` are now the
-              two lenses of ONE `WorkQueueTabs` control (below the section
-              tabs above) instead of two stacked cards. `pipeline` carries
-              the SAME filter-row/urgency-tabs/table/pagination block that
-              used to render directly here; `needsAction` mounts the
-              unchanged `AtRiskWidget` — its own nested 3-band tablist is
-              preserved intact (a valid nested-tablist per WAI-ARIA). Pure
-              client state (no URL param), so the `admin-pipeline-route` /
-              `renewal-pipeline-dashboard` / `renewal-i18n` contracts are
-              untouched. */}
-          <WorkQueueTabs
-            pipeline={
-              showEmptyState ? (
-                // A2 — the empty state must not swallow the suspended
-                // bridge: the launch-shaped tenant (every member a
-                // first-bill collection case outside the window) hits
-                // exactly this branch.
-                <RenewalsEmptyState
-                  canManageSchedules={canPerform(
-                    currentUser.role,
-                    'settings.renewal_schedules',
-                  )}
-                  // A3 — tenant-global pair (NOT the tier-sliced badge):
-                  // the bridge reconciles against the Members page's
-                  // global Suspended number.
-                  suspendedInWindowCount={summary.suspendedInWindowGlobalCount}
-                  suspendedOutsideWindowCount={
-                    summary.suspendedOutsideWindowCount
-                  }
-                />
-              ) : (
-                // Table-caption layout — the sighted result-count renders as
-                // the pipeline table's own caption directly above the rows
-                // (the toolbar it used to share with the row-density toggle
-                // is gone; the toggle itself was removed). `gap-3` gives the
-                // filter row / table block / pagination even vertical rhythm
-                // matching the tabs' own `pt-3`/`mb-3`.
-                <div className="flex flex-col gap-3">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <UrgencyBucketTabs
-                      current={monthLensActive ? null : urgency}
-                      counts={summary.byUrgency}
-                      lapsedCount={summary.lapsedCount}
-                      monthLensActive={monthLensActive}
-                    />
-                    <TierFilterSelect current={tier ?? 'all'} />
-                  </div>
-                  {/* renewals-suspended-visibility-audit — the suspended
-                      population bridge, rendered on the Suspended tab only
-                      (the exact surface where the Members-page total vs tab
-                      count mismatch confuses admins). The strip itself
-                      renders nothing when no suspended cycles sit outside
-                      the work window. */}
-                  {!monthLensActive && urgency === 'suspended' ? (
-                    // A3 — tenant-global pair (NOT the tier-sliced badge):
-                    // the strip's three numbers must keep summing to the
-                    // Members page's global Suspended count even while the
-                    // badges are sliced by tier.
-                    <SuspendedBridgeStrip
-                      inWindowCount={summary.suspendedInWindowGlobalCount}
-                      outsideWindowCount={summary.suspendedOutsideWindowCount}
-                    />
-                  ) : null}
-                  <ResultCountAnnouncer
-                    count={rows.length}
-                    {...(monthLensActive
-                      ? {
-                          monthKind: monthKind as 'overdue' | 'later' | 'month',
-                          ...(monthLabel !== undefined ? { monthLabel } : {}),
-                        }
-                      : { urgencyKey: urgency })}
-                  />
-                  {urgency === 'terminated' ? (
-                    // LapsedTab has no toolbar of its own, so the sighted count
-                    // stays a standalone caption hugging the table above it.
-                    <div className="flex flex-col gap-2">
-                      {resultCountLabel}
-                      <LapsedTab rows={rows} />
-                    </div>
-                  ) : (
-                    // Task 10 (US3 scaffolding) — PipelineWithBulk wraps
-                    // PipelineTable, layering admin-only row selection on
-                    // top (foundation for Task 11's bulk action bar). Pure
-                    // render-order change: forwards the same props
-                    // PipelineTable took directly before, plus
-                    // isAdmin={canMutate} for the selection gate. No URL
-                    // param name/default/semantics touched.
-                    <PipelineWithBulk
-                      rows={rows}
-                      isAdmin={canMutate}
-                      sort={sort}
-                      sortHrefs={sortHrefs}
-                      resultCount={resultCountLabel}
-                      {...(monthKind !== undefined ? { monthKind } : {})}
-                      {...(monthLabel !== undefined ? { monthLabel } : {})}
-                    />
-                  )}
-                  {nextHref ? (
-                    // Keyset cursor pagination: when the repo returns
-                    // nextCursor != null the page was capped at 50 rows.
-                    // Render a "Next 50 →" link (same pattern as
-                    // /admin/audit) + a visible "Showing first 50" hint
-                    // so all users know the list is truncated. The
-                    // UrgencyBucketTabs already deletes the cursor param
-                    // on tab switch (line 63), so stale cursors are
-                    // auto-cleared on urgency change.
-                    <div className="flex items-center justify-between gap-4 pt-1">
-                      <p className="text-xs text-muted-foreground">
-                        {t('table.pagination.showingFirst')}
-                      </p>
-                      <a
-                        href={nextHref}
-                        className={buttonVariants({ variant: 'outline' })}
-                      >
-                        {t('table.pagination.next')}
-                      </a>
-                    </div>
-                  ) : null}
-                </div>
-              )
-            }
-            // Waterfall audit: `AtRiskWidget` is a CLIENT component that
-            // fetches `/api/admin/renewals/at-risk` on mount — not a server
-            // Suspense island, so the eager-promise pattern does not apply
-            // (its fetch already starts client-side, independent of
-            // `loadPipeline`). Intentionally left as-is.
-            needsAction={<AtRiskWidget canSnooze={canMutate} />}
-            needsActionBadge={
-              <Suspense fallback={null}>
-                <NeedsActionCountBadge
-                  tenantSlug={tenantCtx.slug}
-                  countPromise={needsActionCountPromise}
-                />
-              </Suspense>
-            }
-          />
-        </CardContent>
-      </Card>
-      {/* Renewals-by-month year view. Rendered BELOW the work-queue Card as a
-          secondary lens and NOT gated behind `showEmptyState`: the urgency
-          window can be empty while the 14-month chart still shows future
-          renewals. Suspense-wrapped so its aggregation streams in without
-          blocking the pipeline render; `nowIso` is the SAME instant threaded
-          into `loadPipeline` above so the chart buckets and any
-          month-filtered pipeline rows reconcile exactly. Wave 2 Task 7 moved
-          this block below `WorkQueueTabs` (previously it sat between the
-          pipeline Card and `AtRiskWidget`) so the two lenses stay adjacent. */}
-      <Suspense fallback={<RenewalsByMonthSectionSkeleton />}>
-        <RenewalsByMonthSection
-          tenantSlug={tenantCtx.slug}
-          nowIso={nowIso}
-          selectedMonth={month}
-          summaryPromise={byMonthSummaryPromise}
-        />
-      </Suspense>
-      {/* DV-18 — read-only "Members without renewal cycle" tray. Best-effort:
-          the sub-component catches an infra throw + renders a load-error card,
-          so it NEVER crashes the pipeline page. Mounted on the pipeline view
-          only (not the pending-review discovery view). Suspense-wrapped so its
-          anti-join query streams in instead of running as a serial waterfall
-          after loadPipeline (keeps it off the pipeline's blocking render). */}
-      <Suspense fallback={<MembersWithoutCycleTraySkeleton />}>
-        <MembersWithoutCycleTray
-          tenantSlug={tenantCtx.slug}
-          resultPromise={membersWithoutCyclePromise}
-        />
-      </Suspense>
+        ),
+        pipeline: await renderPipelineLens({
+          rows,
+          summary,
+          urgency,
+          tier,
+          monthLensActive,
+          monthKind,
+          monthLabel,
+          sort,
+          sortHrefs,
+          nextHref,
+          showEmptyState,
+          canMutate,
+          canManageSchedules: canPerform(currentUser.role, 'settings.renewal_schedules'),
+        }),
+        // Waterfall audit: `AtRiskWidget` is a CLIENT component that fetches
+        // `/api/admin/renewals/at-risk` on mount — its fetch already starts
+        // client-side, independent of `loadPipeline`.
+        needsAction: <AtRiskWidget canSnooze={canMutate} />,
+        needsActionCount,
+        // Renewals-by-month year view — BELOW the work-queue card, NOT gated
+        // behind `showEmptyState`: the urgency window can be empty while the
+        // 14-month chart still shows future renewals. `nowIso` is the SAME
+        // instant threaded into `loadPipeline`, so the chart buckets and any
+        // month-filtered pipeline rows reconcile exactly.
+        byMonth: (
+          <Suspense fallback={<RenewalsByMonthSectionSkeleton />}>
+            <RenewalsByMonthSection
+              tenantSlug={tenantCtx.slug}
+              nowIso={nowIso}
+              selectedMonth={month}
+              summaryPromise={byMonthSummaryPromise}
+            />
+          </Suspense>
+        ),
+        // DV-18 — read-only "Members without renewal cycle" tray. Best-effort
+        // (an infra throw renders its own load-error card) and streamed, so
+        // its anti-join never runs as a serial waterfall after loadPipeline.
+        tray: (
+          <Suspense fallback={<MembersWithoutCycleTraySkeleton />}>
+            <MembersWithoutCycleTray
+              tenantSlug={tenantCtx.slug}
+              resultPromise={membersWithoutCyclePromise}
+            />
+          </Suspense>
+        ),
+      })}
     </RenewalsPageShell>
   );
 }
@@ -844,9 +678,10 @@ async function PipelineMoneyBandSection({
 }
 
 /**
- * Fix I-1 (review round 1) — best-effort count badge for the `WorkQueueTabs`
- * "Needs action" tab, streamed in a Suspense island so it never blocks the
- * pipeline render. Restores the at-risk discoverability that regressed when
+ * Fix I-1 (review round 1) — best-effort count for the `WorkQueueTabs`
+ * "Needs action" tab. 122 US7a (T703): resolved by the page (the read starts
+ * before `await loadPipeline`, so it adds no serial wait) because AURA's tab
+ * takes a numeric `count`; streaming it into the tab would remount the lens. Restores the at-risk discoverability that regressed when
  * Task 7 folded the always-visible `AtRiskWidget` behind an inactive tab:
  * without a count, an admin has no signal that the "Needs action" lens has
  * work in it.
@@ -861,28 +696,22 @@ async function PipelineMoneyBandSection({
  * set) — `warning` is intentionally excluded, matching the widget's own
  * default band tab of `at-risk` rather than `warning`.
  *
- * Best-effort: a read failure logs a distinct errorId and renders `null` —
+ * Best-effort: a read failure logs a distinct errorId and yields no count —
  * the tab itself always renders regardless (never crashes the page).
  */
-async function NeedsActionCountBadge({
-  tenantSlug,
-  countPromise,
-}: {
-  readonly tenantSlug: string;
+async function resolveNeedsActionCount(
+  tenantSlug: string,
   /**
    * Waterfall fix (eager-island pattern, `_lib/settled.ts`) — the page fires
    * the `listAtRiskWidgetMembers limit:1` summary read BEFORE `await
-   * loadPipeline`. Settled at creation; a failure keeps the exact
-   * pre-existing best-effort branch (log + render null — the tab itself
-   * always renders regardless).
+   * loadPipeline`. Settled at creation.
    */
-  readonly countPromise: Promise<
+  countPromise: Promise<
     Settled<{
       readonly summary: { readonly critical: number; readonly atRisk: number };
     }>
-  >;
-}) {
-  const t = await getTranslations('admin.renewals.workQueue');
+  >,
+): Promise<number | undefined> {
   const settled = await countPromise;
   if (!settled.ok) {
     const e = settled.e;
@@ -894,13 +723,9 @@ async function NeedsActionCountBadge({
       },
       '[admin/renewals] needs-action badge count load failed',
     );
-    return null;
+    return undefined;
   }
-  const count = settled.v.summary.critical + settled.v.summary.atRisk;
-  if (count <= 0) return null;
-  return (
-    <TabCountBadge count={count} label={t('needsActionCountSr', { count })} />
-  );
+  return settled.v.summary.critical + settled.v.summary.atRisk;
 }
 
 /**

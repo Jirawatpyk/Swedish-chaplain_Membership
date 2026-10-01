@@ -93,3 +93,24 @@ describe('RenewalsEmptyState × settings.renewal_schedules', () => {
     ).toHaveAttribute('href', '/admin/settings/renewals/schedules');
   });
 });
+
+/** 122 US7a — `Admin-state-renewals-empty`: a primary AURA button, then the settings link. */
+describe('RenewalsEmptyState on AURA', () => {
+  it('draws "View all members" as a primary AURA button', () => {
+    renderEmpty();
+    expect(screen.getByRole('link', { name: en.admin.renewals.empty.cta })).toHaveClass(
+      'aura-btn',
+      'aura-btn--primary',
+    );
+  });
+
+  it('puts the settings link below the button, as a plain link', () => {
+    renderEmpty();
+    const cta = screen.getByRole('link', { name: en.admin.renewals.empty.cta });
+    const settings = screen.getByRole('link', { name: en.admin.renewals.empty.settingsLink });
+    expect(settings).not.toHaveClass('aura-btn');
+    expect(cta.compareDocumentPosition(settings) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Not in the button row: the board stacks it under the buttons.
+    expect(cta.parentElement).not.toContainElement(settings);
+  });
+});

@@ -24,41 +24,22 @@
  *      b. work-queue lens strip      → same-footprint shimmer (2 tabs,
  *         `WorkQueueTabs` markup mirrored: mb-3/border-b strip + pt-3
  *         min-h-[320px] panel)
- *      c. filter row + result count + table/card-stack → shimmer, mirroring
- *         `pipeline-table.tsx` + `pipeline-card-list.tsx` (see the audit
- *         note below)
+ *      c. filter row + result count + table → shimmer, mirroring
+ *         `pipeline-table.tsx` (see the audit note below)
  *   4. By-month year view            → `RenewalsByMonthSectionSkeleton`
  *   5. Members-without-cycle tray    → `MembersWithoutCycleTraySkeleton`
  *
- * Table-portion parity audit (renewals-loading-skeleton-parity follow-up) —
- * MIRROR SOURCE: `_components/pipeline-table.tsx` (desktop `<table>`,
- * `hidden md:block`) + `_components/pipeline-card-list.tsx` (mobile
- * card-stack, `md:hidden`). What the T068 block got wrong and how this
- * version tracks the real thing:
- *   - Result-count caption: `PipelineTable` renders `ResultCountLabel` (one
- *     text-sm line) above the rows inside its own `gap-2` block — T068
- *     reserved nothing, so the caption inserted above the table on swap.
- *   - Columns: 9 on desktop for the common admin case (selection checkbox +
- *     7 data columns + ⋯ actions), not 8 equal — the narrow checkbox (24px
- *     visible box) and actions slots are sized, the 7 data columns stay
- *     equal-width shimmer.
- *   - Row height: rows reuse the REAL geometry classes
- *     (`px/py-[var(--table-cell-padding-*)]`, header
- *     `h-[var(--table-row-height)]` — same tokens as the shared
- *     `TableSkeleton` in `page-skeletons.tsx`) and each body row carries an
- *     h-11 actions shimmer because the real row's height driver is the 44px
- *     ⋯ trigger (`row-actions.tsx` `h-11 w-11`): 44px content + 2×8px cell
- *     padding ≈ 60px/row, not T068's ~36px (which under-reserved ~240px
- *     over 10 rows).
- *   - Responsive: the grid is now `hidden md:block`; below `md` a 3-card
- *     stack mirrors `PipelineCardList`'s anatomy (name+tier / urgency pill
- *     header row, three labelled value lines, ⋯ actions row) — T068 showed
- *     the 8-col grid on phones where no table exists.
+ * Table-portion parity (122 US7a): the pipeline is ONE AURA `DataTable`
+ * (`_components/pipeline-table.tsx`) that stacks into cards below 640px, so
+ * the shimmer is a grid from `sm` up and a 3-card stack below it — never
+ * both lists at once:
+ *   - Result-count caption: one text-sm line above the rows.
+ *   - Columns: the selection checkbox, 7 data columns and the actions slot
+ *     (Send reminder + ⋯, 216px). Rows carry a 44px action shimmer, the
+ *     real row's height driver (`touchHeight` buttons).
  *   - Row count: the page requests `limit: 50`, but the shimmer stays
- *     capped at 10 rows (3 cards on mobile) — 50 shimmer rows would bloat
- *     the DOM and over-reserve far past the viewport; the swap difference
- *     lands below the fold where it cannot displace what the user is
- *     looking at.
+ *     capped at 10 rows (3 cards on a phone) — the swap difference lands
+ *     below the fold where it cannot displace what the user is looking at.
  *
  * The three section skeletons are imported from the same modules the page
  * uses as its Suspense fallbacks — single source of truth, so a section
@@ -89,11 +70,12 @@
  *
  * Wrapped in `<TableContainer>` (via the same components the page's
  * `RenewalsPageShell` uses) so the `pnpm check:layout` page+loading
- * same-variant invariant holds.
+ * same-variant invariant holds. 122 US7a (T709): AURA `Card` and the shell's
+ * `SkeletonBlock`, in the page's new order.
  */
 import { getTranslations } from 'next-intl/server';
-import { Card, CardContent } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Card } from '@jirawatpyk/aura-react/server';
+import { SkeletonBlock } from '@/components/shell/page-skeletons';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { PipelineMoneyBandSkeleton } from './_components/pipeline-money-band';
@@ -106,110 +88,83 @@ export default async function Loading() {
     <TableContainer>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
       <PipelineMoneyBandSkeleton />
-      <Card>
-        <CardContent className="flex flex-col gap-4">
-          {/* Section tab strip — static shimmer mirroring the real strip's
-              footprint (outer flex row · TabsList h-8 rounded-lg p-[3px]
-              track with 4 whitespace-nowrap triggers · sibling 24px help ⓘ).
-              MUST stay hook-free — see the 3a docstring note (the real
-              strip's useSearchParams suspends inside a loading fallback and
-              freezes the route transition). */}
-          <div className="flex items-center gap-1.5" aria-hidden>
-            <div className="inline-flex h-8 w-fit items-center gap-1 rounded-lg p-[3px]">
-              <Skeleton className="h-6 w-20" />
-              <Skeleton className="h-6 w-32" />
-              <Skeleton className="h-6 w-36" />
-              <Skeleton className="h-6 w-28" />
-            </div>
-            <Skeleton className="size-6 rounded-full" />
+      {/* The page's work-queue card: frameless with no padding on a phone. */}
+      <Card flushBelow="sm" className="max-sm:border-0 max-sm:p-0">
+        <div className="flex flex-col gap-[var(--aura-space-4)]" aria-hidden>
+          {/* Section tabs — a static shimmer the height of the AURA link
+              tabs (44px). MUST stay hook-free — see the 3a docstring note
+              (the real strip's useSearchParams suspends inside a loading
+              fallback and freezes the route transition). */}
+          <div className="flex h-11 items-end gap-[var(--aura-space-2)] border-b border-[var(--aura-border-default)] pb-[var(--aura-space-2)]">
+            <SkeletonBlock className="h-6 w-20" />
+            <SkeletonBlock className="h-6 w-32" />
+            <SkeletonBlock className="h-6 w-24" />
+            <SkeletonBlock className="h-6 w-28" />
           </div>
-          <div>
-            {/* Work-queue lens strip (Pipeline | Needs action) — mirrors
-                `WorkQueueTabs`' tablist wrapper + `px-3 py-1.5` tab height
-                (~h-8) so the real strip swaps in without moving the filter
-                row below it. */}
-            <div className="mb-3 flex flex-wrap gap-1 border-b" aria-hidden>
-              <Skeleton className="h-8 w-24" />
-              <Skeleton className="h-8 w-28" />
-            </div>
-            {/* Panel mirror — same `pt-3 min-h-[320px]` as the real
-                work-queue tabpanel; `gap-3` matches the pipeline lens's own
-                `flex flex-col gap-3` root (page.tsx). */}
-            <div className="flex min-h-[320px] flex-col gap-3 pt-3">
-              {/* Filter row — 8 urgency tabs + tier filter select. Stacks on
-                  mobile, row on sm+. (Unchanged from the T068 skeleton.) */}
-              <div
-                className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
-                aria-hidden
-              >
-                <div className="flex gap-1.5 overflow-x-auto">
-                  {Array.from({ length: 8 }).map((_, i) => (
-                    <Skeleton key={i} className="h-8 w-20 shrink-0" />
-                  ))}
-                </div>
-                <Skeleton className="h-9 w-full sm:w-56" />
+          {/* All renewals / Needs action — the segmented control, with the
+              help button at the end of the row. */}
+          <div className="flex items-center justify-between gap-[var(--aura-space-2)]">
+            <SkeletonBlock className="h-9 w-64" />
+            <SkeletonBlock className="size-8 rounded-full" />
+          </div>
+          {/* Panel mirror — the real panel's `min-h-[320px]`. */}
+          <div className="flex min-h-[320px] flex-col gap-[var(--aura-space-3)]">
+            {/* Filter row: stage chips + tier select; two selects on a phone. */}
+            <div className="grid grid-cols-2 items-end gap-[var(--aura-space-3)] sm:flex sm:justify-between">
+              <div className="hidden gap-[var(--aura-space-2)] sm:flex">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <SkeletonBlock key={i} className="h-9 w-20 shrink-0" />
+                ))}
               </div>
-              {/* PipelineTable mirror — its root is `flex flex-col gap-2`:
-                  result-count caption, then the responsive table/card-stack
-                  pair. See the module docstring's parity-audit note. */}
-              <div className="flex flex-col gap-2" aria-hidden>
-                {/* Result-count caption (`ResultCountLabel`, one text-sm line). */}
-                <Skeleton className="h-5 w-56" />
-                {/* Desktop ≥md — 9-column grid: 24px selection checkbox +
-                    7 equal data columns + the ⋯ actions slot. Header reuses
-                    `h-[var(--table-row-height)]`; body rows reuse the real
-                    cell-padding tokens, and the h-11 actions bar reproduces
-                    the real row-height driver (44px ⋯ trigger → ~60px/row). */}
-                <div className="hidden md:block">
-                  <div className="flex h-[var(--table-row-height)] items-center gap-4 border-b px-[var(--table-cell-padding-x)]">
-                    <Skeleton className="size-6 shrink-0" />
-                    {Array.from({ length: 7 }).map((_, i) => (
-                      <Skeleton key={i} className="h-4 flex-1" />
+              <SkeletonBlock className="h-9 w-full sm:hidden" />
+              <SkeletonBlock className="h-9 w-full sm:w-56" />
+            </div>
+            <div className="flex flex-col gap-[var(--aura-space-2)]">
+              {/* Result-count caption. */}
+              <SkeletonBlock className="h-5 w-56" />
+              {/* From 640px: the grid. */}
+              <div className="hidden sm:block">
+                <div className="flex h-10 items-center gap-[var(--aura-space-4)] border-b border-[var(--aura-border-default)] px-[var(--aura-space-3)]">
+                  <SkeletonBlock className="size-5 shrink-0" />
+                  {Array.from({ length: 7 }).map((_, i) => (
+                    <SkeletonBlock key={i} className="h-4 flex-1" />
+                  ))}
+                  <div className="w-54 shrink-0" />
+                </div>
+                {Array.from({ length: 10 }).map((_, rowIdx) => (
+                  <div
+                    key={rowIdx}
+                    className="flex items-center gap-[var(--aura-space-4)] border-b border-[var(--aura-border-default)] px-[var(--aura-space-3)] py-[var(--aura-space-2)] last:border-b-0"
+                  >
+                    <SkeletonBlock className="size-5 shrink-0" />
+                    {Array.from({ length: 7 }).map((_, colIdx) => (
+                      <SkeletonBlock key={colIdx} className="h-5 flex-1" />
                     ))}
-                    <div className="w-11 shrink-0" />
+                    <SkeletonBlock className="h-11 w-54 shrink-0" />
                   </div>
-                  {Array.from({ length: 10 }).map((_, rowIdx) => (
-                    <div
-                      key={rowIdx}
-                      className="flex items-center gap-4 border-b px-[var(--table-cell-padding-x)] py-[var(--table-cell-padding-y)] last:border-b-0"
-                    >
-                      <Skeleton className="size-6 shrink-0" />
-                      {Array.from({ length: 7 }).map((_, colIdx) => (
-                        <Skeleton key={colIdx} className="h-5 flex-1" />
-                      ))}
-                      <Skeleton className="h-11 w-11 shrink-0" />
+                ))}
+              </div>
+              {/* Below 640px: the same table stacked into cards. */}
+              <div className="flex flex-col gap-[var(--aura-space-3)] sm:hidden">
+                {Array.from({ length: 3 }).map((_, cardIdx) => (
+                  <div
+                    key={cardIdx}
+                    className="flex flex-col gap-[var(--aura-space-3)] rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)] p-[var(--aura-space-4)]"
+                  >
+                    <div className="flex items-start justify-between gap-[var(--aura-space-3)]">
+                      <SkeletonBlock className="h-5 w-40" />
+                      <SkeletonBlock className="h-6 w-20 shrink-0 rounded-full" />
                     </div>
-                  ))}
-                </div>
-                {/* Mobile <md — card-stack mirror of `PipelineCardList`
-                    (`ul` gap-3; card = name+tier / urgency-pill header row,
-                    labelled value lines, ⋯ actions row). 3 cards ≈ one
-                    phone viewport. */}
-                <div className="flex flex-col gap-3 md:hidden">
-                  {Array.from({ length: 3 }).map((_, cardIdx) => (
-                    <Card key={cardIdx}>
-                      <CardContent className="flex flex-col gap-3">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex min-w-0 flex-col gap-1">
-                            <Skeleton className="h-5 w-40" />
-                            <Skeleton className="h-4 w-24" />
-                          </div>
-                          <Skeleton className="h-6 w-16 shrink-0 rounded-full" />
-                        </div>
-                        <Skeleton className="h-4 w-3/4" />
-                        <Skeleton className="h-4 w-2/3" />
-                        <Skeleton className="h-4 w-1/2" />
-                        <div className="flex justify-end">
-                          <Skeleton className="h-11 w-28" />
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
+                    <SkeletonBlock className="h-4 w-3/4" />
+                    <SkeletonBlock className="h-4 w-2/3" />
+                    <SkeletonBlock className="h-4 w-1/2" />
+                    <SkeletonBlock className="h-11 w-full" />
+                  </div>
+                ))}
               </div>
             </div>
           </div>
-        </CardContent>
+        </div>
       </Card>
       <RenewalsByMonthSectionSkeleton />
       <MembersWithoutCycleTraySkeleton />

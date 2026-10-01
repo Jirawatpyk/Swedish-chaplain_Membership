@@ -50,4 +50,16 @@ describe('aura-admin preview renders the pages’ own views', () => {
     // The list renders through the page's own table, never a copy.
     expect(preview).toContain('<PlansTable');
   });
+
+  it('the renewals pipeline through the page’s own view, framed at its real path (US7a)', () => {
+    const page = readFileSync('src/app/(staff)/admin/renewals/page.tsx', 'utf8');
+    for (const view of ['renderRenewalsPipelineView(', 'renderPipelineLens(', 'renderPipelineLoadError(']) {
+      expect(page).toContain(view);
+      expect(preview).toContain(view);
+    }
+    expect(preview).toContain('<StaffFrame path="/admin/renewals">');
+    // No copy of the lens: the filters and table come only from the view.
+    expect(preview).not.toContain('<PipelineWithBulk');
+    expect(preview).not.toContain('<UrgencyBucketTabs');
+  });
 });

@@ -133,7 +133,11 @@ test.describe('F8 DV-5 — admin cycle admin actions (cancel + mark-paid)', () =
     // Still incomplete — date missing.
     await expect(confirm).toBeDisabled();
 
-    await dialog.getByLabel(cd.markPaidOffline.paymentDateLabel).fill('2026-01-15');
+    // 122 US7a: an AURA DatePicker — type the ISO date, then leave the field
+    // (it commits on blur). The required label ends " *", hence no `exact`.
+    const dateField = dialog.getByLabel(cd.markPaidOffline.paymentDateLabel);
+    await dateField.fill('2026-01-15');
+    await dateField.blur();
     // All three present → enabled. NOT submitted (a real submit issues an F4
     // invoice + completes the cycle — out of scope; see file header).
     await expect(confirm).toBeEnabled();

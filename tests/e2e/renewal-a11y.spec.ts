@@ -150,7 +150,8 @@ test.describe('@a11y T267 — F8 axe-core scan', () => {
       // component tests).
       await rowCheckboxes.nth(1).click();
 
-      const toolbar = page.getByRole('toolbar', { name: 'Bulk actions' });
+      // 122 US7a: the bar is an AURA ActionBar region.
+      const toolbar = page.getByRole('region', { name: 'Bulk actions' });
       await expect(toolbar).toBeVisible();
 
       // WCAG 2.5.5 — every actionable control inside the toolbar (the two

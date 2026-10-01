@@ -49,8 +49,12 @@ export async function renderPlansListView({ canWrite, children }: PlansListViewP
       />
 
       {/* One card on a desktop; on a phone the rows are cards of their own,
-          so this one drops its frame (AURA `flushBelow`). */}
-      <Card flushBelow="sm">{children}</Card>
+          so this one drops its frame (AURA `flushBelow`) and its 16px phone
+          padding, putting them on the page gutter as `Admin-plans-mobile`
+          and the members list do. */}
+      <Card flushBelow="sm" className="max-sm:border-0 max-sm:p-0">
+        {children}
+      </Card>
     </>
   );
 }

@@ -18,7 +18,7 @@
  * `members-table-selection.test.tsx`.
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
 import { PipelineTable } from '@/app/(staff)/admin/renewals/_components/pipeline-table';
@@ -74,7 +74,7 @@ function wrap(ui: React.ReactNode) {
   );
 }
 
-describe('<PipelineTable> row selection (Task 10 — US3 scaffolding)', () => {
+describe('<PipelineTable> row selection (AURA DataTable)', () => {
   it('renders no checkbox when enableSelection is absent', () => {
     render(wrap(<PipelineTable rows={ROWS} canMutate />));
     expect(screen.queryByRole('checkbox')).toBeNull();
@@ -93,17 +93,39 @@ describe('<PipelineTable> row selection (Task 10 — US3 scaffolding)', () => {
       ),
     );
 
-    // Task 12 — `<PipelineTable>` now dual-renders the desktop `<table>`
-    // (`hidden md:block`) AND `<PipelineCardList>` (`md:hidden`); both
-    // mount unconditionally in jsdom (no CSS media queries), so scope to
-    // the desktop `<table>` to keep addressing the SAME 2 checkboxes
-    // (header "select all" + the one row) this test pinned before the
-    // mobile card-stack existed.
-    // [0] is the header "select all" checkbox; [1] is the first row.
-    const checkboxes = within(screen.getByRole('table')).getAllByRole('checkbox');
-    expect(checkboxes).toHaveLength(2);
-    fireEvent.click(checkboxes[1]!);
+    // AURA names each row checkbox after the company (`rowSelectLabel`).
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Acme' }));
 
     expect(onSelectionChange).toHaveBeenLastCalledWith(['c1']);
+  });
+
+  it('a parent Clear (clearSelectionNonce bump) unchecks the rows and reports an empty selection', () => {
+    const onSelectionChange = vi.fn();
+    const { rerender } = render(
+      wrap(
+        <PipelineTable
+          rows={ROWS}
+          canMutate
+          enableSelection
+          onSelectionChange={onSelectionChange}
+          clearSelectionNonce={0}
+        />,
+      ),
+    );
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Acme' }));
+    expect(screen.getByRole('checkbox', { name: 'Select Acme' })).toBeChecked();
+    rerender(
+      wrap(
+        <PipelineTable
+          rows={ROWS}
+          canMutate
+          enableSelection
+          onSelectionChange={onSelectionChange}
+          clearSelectionNonce={1}
+        />,
+      ),
+    );
+    expect(screen.getByRole('checkbox', { name: 'Select Acme' })).not.toBeChecked();
+    expect(onSelectionChange).toHaveBeenLastCalledWith([]);
   });
 });

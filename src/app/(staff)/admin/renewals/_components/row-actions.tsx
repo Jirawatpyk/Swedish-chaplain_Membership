@@ -1,51 +1,26 @@
 'use client';
 
 /**
- * Task 12 review round 1 (FIX 1) — `RowActions` + `PipelineEmptyMessage`,
- * extracted OUT of `pipeline-table.tsx` to break a circular import.
+ * The renewal pipeline's row actions and its empty-table copy.
  *
- * Before this file existed: `pipeline-table.tsx` imported `PipelineCardList`
- * (to render the mobile card-stack — see that component's docstring), and
- * `pipeline-card-list.tsx` imported `RowActions` + `PipelineEmptyMessage` +
- * the `OutreachTarget`/`MarkPaidTarget` types back FROM `pipeline-table.tsx`
- * — a 2-module cycle (untested under Turbopack). Both `pipeline-table.tsx`
- * and `pipeline-card-list.tsx` now import these from THIS module instead:
- * `pipeline-table.tsx` imports `PipelineCardList` one-way, and this module
- * has no dependency on either of them — the cycle is gone by construction.
- *
- * Everything below is moved VERBATIM out of `pipeline-table.tsx` (same
- * house precedent as `060-member-portal-d4`'s `PortalInvoiceCardList`,
- * which sources its shared row bits from separate modules, never a cycle) —
- * behavior is byte-identical; see git history / `pipeline-table.tsx`'s own
- * review-round comments for the context behind each piece.
+ * 122 US7a (T702): AURA `Button` + `DropdownMenu`. The pipeline is one AURA
+ * `DataTable` that stacks into cards below 640px, so these render once per
+ * row; in a phone card they are the card's last row (the column's AURA
+ * `card: 'footer'`, 5.22), as the `Admin-renewals-mobile` board draws it.
  */
 import { useRef, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
 import { useTranslations, useLocale } from 'next-intl';
+import { Button, DropdownMenu, IconButton, type MenuItem } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
-import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Loader2Icon, MoreHorizontal } from 'lucide-react';
-import { mergeRefs } from '@/lib/merge-refs';
 import {
   shouldOfferMarkPaid,
   shouldOfferRecordPaymentOnBill,
 } from '../_lib/mark-paid-gate';
-// Client-safe sub-barrel — see `tier-filter-select.tsx` for the
-// rationale (Turbopack 16 + F8 barrel + server-only deps).
 import type { CycleStatus } from '@/modules/renewals/client';
 
 /**
- * Task 12 — shared shape for the lifted "Record outreach" dialog target.
- * Exported so `PipelineCardList` can type its `onRecordOutreach` prop
- * identically to `RowActions`' own callback without re-declaring the
- * shape (both ultimately feed the SAME `setOutreachFor` state in
- * `PipelineTable`).
+ * The lifted "Record outreach" dialog target: `PipelineTable` holds it so the
+ * dialog outlives the ⋯ menu closing.
  */
 export interface OutreachTarget {
   readonly memberId: string;
@@ -53,7 +28,7 @@ export interface OutreachTarget {
   readonly finalFocus: React.RefObject<HTMLElement | null>;
 }
 
-/** Task 12 — same rationale as {@link OutreachTarget}, for "Mark paid". */
+/** Same as {@link OutreachTarget}, for "Mark paid". */
 export interface MarkPaidTarget {
   readonly cycleId: string;
   readonly companyName: string;
@@ -61,46 +36,25 @@ export interface MarkPaidTarget {
 }
 
 /**
- * Task 12 — the "no rows in this bucket" copy, extracted verbatim out of
- * the `<table>`'s empty `<TableCell>` (was inline JSX there) so
- * `PipelineCardList`'s own empty state renders the EXACT same
- * month-lens-aware copy without re-deriving the `monthKind`/`monthLabel`
- * branching a second time. Pure text — no table-specific markup — so it
- * drops into either presentation's empty-state container unchanged.
+ * The empty table's copy for AURA `DataTable`'s `empty` (title + optional
+ * description). `overdue` / `later` get their own grammatical strings instead
+ * of composing the lens label into the generic "renew in {month}" frame
+ * (deferred fix-wave-2 #4); without a month lens the bucket copy points the
+ * admin at the urgency tabs (J8-M30).
  */
-export function PipelineEmptyMessage({
-  monthKind,
-  monthLabel,
-}: {
-  readonly monthKind?: 'overdue' | 'later' | 'month';
-  readonly monthLabel?: string;
-}): React.JSX.Element {
+export function usePipelineEmptyCopy(
+  monthKind: 'overdue' | 'later' | 'month' | undefined,
+  monthLabel: string | undefined,
+): { readonly title: string; readonly description?: string } {
   const t = useTranslations('admin.renewals.table');
-  if (monthKind === 'overdue') {
-    return (
-      <p className="text-sm font-medium text-foreground">{t('noRowsOverdue')}</p>
-    );
-  }
+  if (monthKind === 'overdue') return { title: t('noRowsOverdue') };
   if (monthKind === 'later' && monthLabel !== undefined) {
-    return (
-      <p className="text-sm font-medium text-foreground">
-        {t('noRowsLater', { month: monthLabel })}
-      </p>
-    );
+    return { title: t('noRowsLater', { month: monthLabel }) };
   }
   if ((monthKind === 'month' || monthKind === undefined) && monthLabel !== undefined) {
-    return (
-      <p className="text-sm font-medium text-foreground">
-        {t('noRowsInMonth', { month: monthLabel })}
-      </p>
-    );
+    return { title: t('noRowsInMonth', { month: monthLabel }) };
   }
-  return (
-    <>
-      <p className="text-sm font-medium text-foreground">{t('noRows')}</p>
-      <p className="mt-1 text-xs">{t('noRowsInBucket')}</p>
-    </>
-  );
+  return { title: t('noRows'), description: t('noRowsInBucket') };
 }
 
 // ---------------------------------------------------------------------------
@@ -124,11 +78,6 @@ export function PipelineEmptyMessage({
  * paid" (both admin-only at the route) to `false` for a read-only manager.
  * "Open" and "Mark contacted" are unconditional — see `pipeline-table.tsx`'s
  * module docstring.
- *
- * Task 12 — exported (from this module, since review round 1 — see the
- * module docstring above) so `PipelineCardList` can reuse this UNCHANGED
- * per card instead of re-implementing the ⋯ menu / send-reminder button /
- * finalFocus contract for the mobile presentation.
  */
 export function RowActions({
   cycleId,
@@ -153,20 +102,9 @@ export function RowActions({
   const tToast = useTranslations('admin.renewals.sendReminderNow.toast');
   const locale = useLocale();
   const [isPending, startTransition] = useTransition();
-  // Round-3 UX M3 fix: client-side router so the "Open" action
-  // performs a soft navigation to /admin/renewals/[cycleId] instead
-  // of triggering a full-page reload via native <a href>. Soft nav
-  // preserves admin filter state (?urgency, ?tier) and avoids the
-  // ~300ms blank-screen flash on every row jump.
-  const router = useRouter();
-  // Review fix #5 — persistent ref to this row's ⋯ trigger button.
-  // Merged (not overridden) with Base UI's own DropdownMenuTrigger ref
-  // below (see `mergeRefs` docstring: a bare `ref=` on the render-prop
-  // element replaces Base UI's ref and the menu stops anchoring). Handed
-  // to `onRecordOutreach` as `finalFocus` so the shared `OutreachDialog`
-  // returns focus to this row's ⋯ button on close, rather than the
-  // default target (the "Mark contacted" menu item, which has just
-  // unmounted — dropping focus to `<body>`).
+  // This row's ⋯ trigger, handed to the lifted dialogs as `finalFocus` so
+  // focus returns here on close rather than to the menu item that opened
+  // them (gone with the menu), which would drop it to `<body>`.
   const rowMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
 
   const handleSendReminder = (): void => {
@@ -243,211 +181,70 @@ export function RowActions({
     });
   };
 
-  return (
-    <div className="flex items-center justify-end gap-1">
-      {/* Item ② — primary outreach action promoted to a one-click visible
-          button. h-9 matches the app's text-button convention (Button
-          `default` size — also used by the at-risk widget's Contact
-          button on this same page and the broadcasts primary CTA); the
-          44px (`h-11 w-11`) treatment below is reserved for icon-only ⋯
-          row-triggers, where a mis-tap routes to the wrong row — a
-          different concern than a wide labelled text button.
+  // The ⋯ menu. "Open" and "Mark contacted" for everyone ("Mark contacted" is
+  // FR-033 + FR-052a's one manager mutation); "Mark paid" or "Record payment
+  // on invoice" for an admin only — both routes 403 a manager. Links go
+  // through AuraProvider's router link (soft navigation, new-tab still works).
+  const openOutreach = (): void =>
+    onRecordOutreach({ memberId, companyName, finalFocus: rowMenuTriggerRef });
+  // Opens the SAME mark-paid-offline dialog/route the cycle detail page uses
+  // (Principle IV, no second settlement path).
+  const openMarkPaid = (): void =>
+    onMarkPaid({ cycleId, companyName, finalFocus: rowMenuTriggerRef });
+  const items: MenuItem[] = [
+    { label: tActions('open'), href: `/admin/renewals/${cycleId}` },
+    { label: tActions('markContacted'), onSelect: openOutreach },
+    ...(canMutate && shouldOfferMarkPaid(status, linkedInvoiceId)
+      ? [{ label: tActions('markPaid'), onSelect: openMarkPaid }]
+      : []),
+    // A payable row with a live linked bill: mark-paid would be refused
+    // (`membership_bill_already_exists`), so link to that bill's F4 Record
+    // payment flow instead.
+    ...(canMutate && shouldOfferRecordPaymentOnBill(status, linkedInvoiceId)
+      ? [
+          {
+            label: tActions('recordPaymentOnInvoice'),
+            href: `/admin/invoices/${encodeURIComponent(linkedInvoiceId)}`,
+          },
+        ]
+      : []),
+  ];
+  const menuLabel = tActions('rowMenu', { company: companyName });
 
-          Fix round 3 — admin-only (`canMutate`): the route 403s a manager,
-          so this was a mint-a-403 CTA on a read-only surface. Not rendered
-          at all for manager (vs disabled-with-tooltip) — matches F8's
-          existing "absent, not disabled" convention for manager-blocked
-          affordances (spec FR-052a / `docs/ux-standards.md`). */}
+  // A fragment, not a wrapper: the Button and the ⋯ sit straight in AURA's
+  // cell, so the stacked card's footer grows "Send reminder" across the row
+  // and keeps the ⋯ its own size. In the grid the column is end-aligned.
+  return (
+    <>
+      {/* "Send reminder" is a one-click visible button (item ②), admin only:
+          the route 403s a manager, so it is absent rather than disabled
+          (FR-052a). Small in the grid row; 44px tall on a phone. */}
       {canMutate ? (
         <Button
-          variant="outline"
+          variant="secondary"
           size="sm"
-          className="h-9"
-          disabled={isPending}
-          aria-busy={isPending}
+          touchHeight
+          loading={isPending}
           onClick={handleSendReminder}
           aria-label={tActions('sendReminderAriaLabel', { company: companyName })}
+          className="me-[var(--aura-space-1)]"
         >
-          {/* Review fix #4 — progress affordance now that this action is a
-              persistent button (was a one-shot menu item). Icon is
-              `aria-hidden`; `aria-busy` on the Button itself is what SR
-              users get, mirroring the `Loader2` + `aria-busy` pattern used
-              across the app's other pending-submit buttons (e.g.
-              invoice-settings-form.tsx). */}
-          {isPending && (
-            <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden />
-          )}
           {tActions('sendReminder')}
         </Button>
       ) : null}
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          render={({ ref: baseRef, ...props }) => (
-            <Button
-              {...props}
-              // Base UI passes its OWN ref inside `props` (React 19). A bare
-              // `ref={rowMenuTriggerRef}` here would OVERRIDE that ref (only
-              // the rightmost ref survives a plain assignment) and the
-              // Positioner would lose its anchor — the menu would stop
-              // opening. `mergeRefs` forwards both. See that helper's
-              // docstring for the full "Base UI render-prop ref trap".
-              ref={mergeRefs(baseRef, rowMenuTriggerRef)}
-              variant="ghost"
-              size="icon"
-              // 44×44px tap target — WCAG 2.5.5 Target Size (AAA) +
-              // iOS HIG 44pt minimum. F3 baseline adopted WCAG 2.5.8
-              // (24×24, AA); F8 row-action triggers go a step further
-              // because they sit inside a dense data table where
-              // mis-taps would route to the wrong row.
-              className="h-11 w-11"
-              aria-label={tActions('rowMenu', { company: companyName })}
-              // J8-M31: native browser tooltip on hover (sighted-mouse
-              // users) complementing the aria-label that SR users get
-              // on focus. Wrapping in `<Tooltip>` primitive would
-              // collide with the DropdownMenu popup positioning; the
-              // native `title` attr is simpler + universally supported
-              // for an icon-only trigger like this row-actions button.
-              title={tActions('rowMenu', { company: companyName })}
-            >
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
-          )}
-        />
-        {/*
-         * J7-H15: `min-w-56 whitespace-nowrap` per ux-standards § 19.
-         * Without this the dropdown's default `min-w-32` (128px) wraps
-         * the long Thai/Swedish action labels mid-word
-         * ("ส่งอีเมลเตือนการต่ออายุ" / "Skicka förnyelsepåminnelse").
-         */}
-        <DropdownMenuContent align="end" className="min-w-56 whitespace-nowrap">
-          {/* UX R5 / Mobile #5: contextual `aria-label` so screen-reader
-              users hear which company's cycle they're opening (the
-              bare label "Open" on every row was indistinguishable in
-              a long pipeline).
-              Round-3 UX M3 fix: use `router.push()` for soft client-
-              side navigation. The previous `<a href>` form was kept
-              for type-compat with Base UI's `render`-prop pattern but
-              forced full-page reloads that lost the admin's tab+tier
-              filter URL state on every row jump. Now the visible
-              anchor is a real `<a>` that retains right-click + open-
-              in-new-tab affordances, but `onClick` calls
-              `router.push()` + `e.preventDefault()` for the standard
-              Next.js soft-nav path. */}
-          <DropdownMenuItem
-            render={(props) => (
-              <a
-                {...props}
-                href={`/admin/renewals/${cycleId}`}
-                aria-label={tActions('openAriaLabel', { company: companyName })}
-                onClick={(event: React.MouseEvent<HTMLAnchorElement>) => {
-                  // Honour the user's intent for new-tab / new-window
-                  // affordances (cmd/ctrl + click, middle-click) by
-                  // letting the browser take the native path.
-                  if (
-                    event.defaultPrevented ||
-                    event.metaKey ||
-                    event.ctrlKey ||
-                    event.shiftKey ||
-                    event.altKey ||
-                    event.button !== 0
-                  ) {
-                    return;
-                  }
-                  event.preventDefault();
-                  router.push(`/admin/renewals/${cycleId}`);
-                }}
-              >
-                {tActions('open')}
-              </a>
-            )}
-          />
-          {/* Item ② — was a permanently-disabled US4 stub; now opens the
-              already-shipped OutreachDialog (same "Mark contacted" label +
-              wiring as lapsed-tab.tsx:254). State is lifted to PipelineTable
-              so the dialog outlives this menu closing. */}
-          <DropdownMenuItem
-            onClick={() =>
-              onRecordOutreach({
-                memberId,
-                companyName,
-                finalFocus: rowMenuTriggerRef,
-              })
-            }
-          >
-            {tActions('markContacted')}
-          </DropdownMenuItem>
-          {/* Task 5 (Wave 2) — brings COLLECT onto the pipeline: opens the
-              SAME mark-paid-offline dialog/route the cycle-detail page uses
-              (Principle IV, no second settlement path), lifted to
-              PipelineTable so it survives this menu closing. `finalFocus`
-              carries this row's own ⋯ trigger — see mark-paid-offline-
-              dialog.tsx for why the dialog falls back to #main-content
-              instead when a settlement's refresh unmounts this row.
-
-              Fix round 3 — additionally admin-only (`canMutate`): mints a
-              §86/4 tax invoice + completes the cycle (a money mutation),
-              and the route 403s a manager — same mint-a-403 rationale as
-              the "Send reminder" button above. */}
-          {canMutate && shouldOfferMarkPaid(status, linkedInvoiceId) ? (
-            <DropdownMenuItem
-              onClick={() =>
-                onMarkPaid({
-                  cycleId,
-                  companyName,
-                  finalFocus: rowMenuTriggerRef,
-                })
-              }
-            >
-              {tActions('markPaid')}
-            </DropdownMenuItem>
-          ) : null}
-          {/* A payable row that already has a live linked bill: mark-paid
-              would be refused (`membership_bill_already_exists`), so link to
-              that bill's F4 Record payment flow instead. Same soft-nav shape
-              as "Open" above; admin-only for the same reason as Mark paid. */}
-          {canMutate &&
-          shouldOfferRecordPaymentOnBill(status, linkedInvoiceId) ? (
-            <DropdownMenuItem
-              render={(props) => (
-                <a
-                  {...props}
-                  href={`/admin/invoices/${encodeURIComponent(linkedInvoiceId)}`}
-                  aria-label={tActions('recordPaymentOnInvoiceAriaLabel', {
-                    company: companyName,
-                  })}
-                  onClick={(event: React.MouseEvent<HTMLAnchorElement>) => {
-                    if (
-                      event.defaultPrevented ||
-                      event.metaKey ||
-                      event.ctrlKey ||
-                      event.shiftKey ||
-                      event.altKey ||
-                      event.button !== 0
-                    ) {
-                      return;
-                    }
-                    event.preventDefault();
-                    router.push(
-                      `/admin/invoices/${encodeURIComponent(linkedInvoiceId)}`,
-                    );
-                  }}
-                >
-                  {tActions('recordPaymentOnInvoice')}
-                </a>
-              )}
-            />
-          ) : null}
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
+      {/* The trigger keeps a ref so a dialog opened from the menu returns
+          focus here when it closes (the menu item it came from is gone). */}
+      <DropdownMenu
+        label={menuLabel}
+        items={items}
+        trigger={
+          <IconButton ref={rowMenuTriggerRef} icon="ellipsis" label={menuLabel} size="sm" touchHeight />
+        }
+      />
+    </>
   );
 }
 
-/**
- * Render an ISO timestamp as a relative-time phrase ("5 minutes ago" /
- * "ก่อน 5 นาที" / "5 minuter sedan"). Falls back to the raw ISO when
- * `Intl.RelativeTimeFormat` is unavailable.
- */
 function formatRelativeAgo(iso: string, locale: string): string {
   const rtfLocale = mapToRtfLocale(locale);
   let target: number;

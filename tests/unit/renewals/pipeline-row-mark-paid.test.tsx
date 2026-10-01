@@ -15,7 +15,7 @@
  * (see `user-menu.test.tsx` for the same override).
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, within } from '@testing-library/react';
+import { render, screen, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
@@ -68,13 +68,8 @@ describe('pipeline row — Mark paid affordance', () => {
 
   it('shows "Mark paid" for a payable (awaiting_payment) row', async () => {
     renderTable('awaiting_payment');
-    // Task 12 — the row's ⋯ trigger now also exists in `PipelineCardList`'s
-    // (`md:hidden`) card for the SAME row; scope to the desktop `<table>`
-    // (`hidden md:block`) so this keeps addressing the one it always did.
-    // The resulting menu (Base UI Portal, only mounted while open) stays
-    // unambiguous — the card list's own ⋯ trigger was never clicked.
     await userEvent.click(
-      within(screen.getByRole('table')).getByRole('button', { name: /actions for/i }),
+      screen.getByRole('button', { name: /actions for/i }),
     );
     expect(await screen.findByRole('menuitem', { name: /mark paid/i })).toBeInTheDocument();
   });
@@ -82,7 +77,7 @@ describe('pipeline row — Mark paid affordance', () => {
   it('hides "Mark paid" for a terminal (completed) row', async () => {
     renderTable('completed');
     await userEvent.click(
-      within(screen.getByRole('table')).getByRole('button', { name: /actions for/i }),
+      screen.getByRole('button', { name: /actions for/i }),
     );
     // "Open" survives on every status — wait for the menu to actually be
     // open before asserting the negative, so this can't pass on a menu that

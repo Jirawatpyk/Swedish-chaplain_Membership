@@ -1,118 +1,166 @@
-import { describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+/**
+ * `<UrgencyBucketTabs>` — the stage chips T-90 … T-0, Suspended and
+ * Terminated (spec 122 US7a, T703; board `Admin-renewals`).
+ *
+ * AURA link tabs: each chip is a link to the pipeline URL with `urgency`
+ * set and the month lens, cursor and `nowIso` anchor dropped (same URL
+ * contract as before, FR-015), without a scroll to the top (operator
+ * report: the jump yanked the user away from the strip). With a month lens
+ * active no chip is current, and each one says why the chips are paused.
+ * On a phone the board draws an "Urgency" select with the same choices.
+ */
+import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import { UrgencyBucketTabs } from '@/app/(staff)/admin/renewals/_components/urgency-bucket-tabs';
 import en from '@/i18n/messages/en.json';
 
-// Module-level spy (not a fresh vi.fn() per useRouter() call) so tests can
-// assert on push() invocations — a per-call spy can't be asserted because
-// the component captures a different instance than the test observes.
-// `month=2027-02` models a stale month-lens URL: it's a valid default for
-// every test here since setting urgency + deleting month is correct
-// regardless of whether month was present, and it's what the new
-// exit-the-month-lens test needs to prove `?month` gets dropped.
-const push = vi.fn();
+/** AURA Select keeps a real <select> under its listbox: pick by changing it (US5a precedent). */
+function pickNative(label: string, value: string) {
+  const native = screen.getByRole('combobox', { name: label }).closest('.aura-select')?.querySelector('select');
+  if (!native) throw new Error(`no native select for ${label}`);
+  fireEvent.change(native, { target: { value } });
+}
+
+// `month=2027-02` models a stale month-lens URL: choosing a chip must drop it.
+const push = vi.hoisted(() => vi.fn());
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push }),
   usePathname: () => '/admin/renewals',
-  useSearchParams: () => new URLSearchParams('month=2027-02'),
+  useSearchParams: () => new URLSearchParams('month=2027-02&cursor=abc&nowIso=x'),
+}));
+
+// Records the `scroll` prop each chip link is rendered with.
+vi.mock('next/link', () => ({
+  default: ({
+    href,
+    scroll,
+    children,
+    ...rest
+  }: {
+    href: string;
+    scroll?: boolean;
+    children?: React.ReactNode;
+  }) => (
+    <a href={href} data-scroll={String(scroll)} {...rest}>
+      {children}
+    </a>
+  ),
 }));
 
 const COUNTS = { 't-90': 1, 't-60': 2, 't-30': 3, 't-14': 4, 't-7': 5, 't-0': 6, suspended: 7, terminated: 0 };
 
-function renderTabs(current: 't-30' | null) {
+function renderTabs(current: 't-30' | null, monthLensActive = false) {
   return render(
     <NextIntlClientProvider locale="en" messages={en}>
-      <UrgencyBucketTabs current={current} counts={COUNTS} lapsedCount={9} />
+      <UrgencyBucketTabs
+        current={current}
+        counts={COUNTS}
+        lapsedCount={9}
+        monthLensActive={monthLensActive}
+      />
     </NextIntlClientProvider>,
   );
 }
 
-describe('UrgencyBucketTabs colour + All state', () => {
-  it('tints the t-0 count badge with the red pill band class', () => {
+function chips(): HTMLElement {
+  return screen.getByRole('navigation', { name: 'Filter by renewal urgency' });
+}
+
+beforeEach(() => push.mockClear());
+
+describe('<UrgencyBucketTabs> AURA link tabs', () => {
+  it('renders the eight chips in board order as AURA tabs, each with its count', () => {
     renderTabs('t-30');
-    // The t-0 badge (count 6) carries a red-family class from VARIANT_CLASSES.
-    const badge = screen.getByText('6');
-    expect(badge.className).toMatch(/red/);
+    expect(chips()).toHaveClass('aura-tabs');
+    const links = within(chips()).getAllByRole('link');
+    expect(links.map((l) => l.textContent)).toEqual([
+      'T-901',
+      'T-602',
+      'T-303',
+      'T-144',
+      'T-75',
+      'T-06',
+      'Suspended7',
+      // Terminated counts the lapsed cycles.
+      'Terminated9',
+    ]);
   });
 
-  it('marks exactly the current tab active when current is a bucket', () => {
-    const { container } = renderTabs('t-30');
-    // Base UI Tabs (`@base-ui/react/tabs`) marks the active tab with
-    // `aria-selected="true"` (NOT Radix's `data-state="active"`). This
-    // positive case proves the selector is real + discriminating: it
-    // finds exactly one active tab, and it's the T-30 trigger.
-    const active = container.querySelectorAll('[aria-selected="true"]');
-    expect(active).toHaveLength(1);
-    expect(active[0]).toHaveTextContent('T-30');
+  it('names each chip with its label first, then the member count', () => {
+    renderTabs('t-30');
+    expect(within(chips()).getByRole('link', { name: 'T-30, 3 members' })).toBeInTheDocument();
+    expect(within(chips()).getByRole('link', { name: 'T-90, 1 member' })).toBeInTheDocument();
   });
 
-  it('renders with no active tab when current is null (month lens active)', () => {
-    const { container } = renderTabs(null);
-    // `current ?? ''` → empty Tabs value → no tab is aria-selected.
-    expect(container.querySelectorAll('[aria-selected="true"]')).toHaveLength(0);
+  it('marks exactly the current chip with aria-current', () => {
+    renderTabs('t-30');
+    const current = within(chips())
+      .getAllByRole('link')
+      .filter((l) => l.getAttribute('aria-current') === 'page');
+    expect(current).toHaveLength(1);
+    expect(current[0]).toHaveTextContent('T-30');
   });
 
-  it('clicking an urgency tab exits the month lens (drops ?month)', () => {
-    push.mockClear();
-    renderTabs(null); // month lens active → tabs render "All" state
-    fireEvent.click(screen.getByText('T-30'));
-    expect(push).toHaveBeenCalledTimes(1);
-    const url = push.mock.calls[0]![0] as string;
-    expect(url).not.toContain('month=');
-    expect(url).toContain('urgency=t-30');
-    // Same-page filter → viewport must stay put (operator-reported: the
-    // default scroll-to-top yanked the user away from the tab strip).
-    expect(push.mock.calls[0]![1]).toEqual({ scroll: false });
+  it('links each chip to its urgency, dropping the month lens, cursor and anchor, without scrolling to the top', () => {
+    renderTabs('t-30');
+    const link = within(chips()).getByRole('link', { name: /^T-14/ });
+    expect(link).toHaveAttribute('href', '/admin/renewals?urgency=t-14');
+    expect(link).toHaveAttribute('data-scroll', 'false');
   });
 });
 
-function renderDimmed() {
-  return render(
-    <NextIntlClientProvider locale="en" messages={en}>
-      <UrgencyBucketTabs current={null} counts={COUNTS} lapsedCount={9} monthLensActive />
-    </NextIntlClientProvider>,
-  );
-}
-
-describe('UrgencyBucketTabs month-lens paused state (item ③ — WCAG 1.4.3 review-fix)', () => {
-  it('does NOT dim the urgency region (no opacity-60) while a month lens is active', () => {
-    const { container } = renderDimmed();
-    const region = container.querySelector('[role="region"]') as HTMLElement;
-    expect(region.className).not.toMatch(/opacity-60/);
+describe('<UrgencyBucketTabs> month lens (item ③)', () => {
+  it('no chip is current while a month lens is active', () => {
+    renderTabs(null, true);
+    for (const link of within(chips()).getAllByRole('link')) {
+      expect(link).not.toHaveAttribute('aria-current');
+    }
   });
 
-  it('exposes a visible "Paused" badge (aria-hidden) while a month lens is active', () => {
-    renderDimmed();
-    const badge = screen.getByText(en.admin.renewals.urgencyBuckets.monthLensBadge);
+  it('shows a visible "Paused" badge, hidden from screen readers', () => {
+    renderTabs(null, true);
+    // The chips row's badge (the phone select shows the same words as its placeholder).
+    const badge = within(chips().parentElement!).getByText(en.admin.renewals.urgencyBuckets.monthLensBadge);
     expect(badge.closest('[aria-hidden]')).not.toBeNull();
   });
 
-  it('still exposes the aria-describedby hint (screen-reader channel) while a month lens is active', () => {
-    const { container } = renderDimmed();
-    const region = container.querySelector('[role="region"]') as HTMLElement;
-    const hintId = region.getAttribute('aria-describedby');
-    expect(hintId).toBeTruthy();
+  it('each chip is described by the paused hint, and still exits the lens', () => {
+    renderTabs(null, true);
+    const link = within(chips()).getByRole('link', { name: /^T-30/ });
+    const hintId = link.getAttribute('aria-describedby');
     expect(document.getElementById(hintId!)?.textContent).toMatch(/month filter/i);
+    expect(link).toHaveAttribute('href', '/admin/renewals?urgency=t-30');
   });
 
-  it('a paused tab is still clickable and exits the month lens (URL logic preserved)', () => {
-    push.mockClear();
-    renderDimmed();
-    fireEvent.click(screen.getByText('T-30'));
-    const url = push.mock.calls[0]![0] as string;
-    expect(url).not.toContain('month=');
-    expect(url).toContain('urgency=t-30');
-    expect(push.mock.calls[0]![1]).toEqual({ scroll: false });
+  it('no badge and no description without a month lens', () => {
+    renderTabs('t-30');
+    expect(screen.queryByText(en.admin.renewals.urgencyBuckets.monthLensBadge)).toBeNull();
+    expect(within(chips()).getByRole('link', { name: /^T-30/ })).not.toHaveAttribute(
+      'aria-describedby',
+    );
+  });
+});
+
+describe('<UrgencyBucketTabs> phone select (board Admin-renewals-mobile)', () => {
+  it('an "Urgency" select lists each stage with its count, the current one chosen', () => {
+    renderTabs('t-30');
+    const select = screen.getByRole('combobox', { name: 'Urgency' });
+    expect(select).toHaveTextContent('T-30 (3)');
+    const native = select.closest('.aura-select')?.querySelector('select');
+    expect([...(native?.options ?? [])].map((o) => o.textContent)).toContain('Terminated (9)');
   });
 
-  it('renders NO badge and NO aria-describedby when monthLensActive is absent', () => {
-    const { container } = renderTabs('t-30');
-    const region = container.querySelector('[role="region"]') as HTMLElement;
-    expect(region.className).not.toMatch(/opacity-60/);
-    expect(region.getAttribute('aria-describedby')).toBeNull();
-    expect(
-      screen.queryByText(en.admin.renewals.urgencyBuckets.monthLensBadge),
-    ).toBeNull();
+  it('choosing a stage navigates like its chip, without scrolling', () => {
+    renderTabs('t-30');
+    pickNative('Urgency', 'suspended');
+    expect(push).toHaveBeenCalledWith('/admin/renewals?urgency=suspended', { scroll: false });
+  });
+
+  it('while a month lens is active the select is described by the paused hint too', () => {
+    renderTabs(null, true);
+    expect(screen.getByRole('combobox', { name: 'Urgency' })).toHaveAccessibleDescription(
+      /month filter/i,
+    );
   });
 });

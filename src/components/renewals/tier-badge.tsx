@@ -15,21 +15,23 @@
  * so the same component renders in EN/TH/SV without prop drilling.
  */
 import { useTranslations } from 'next-intl';
-import { cn } from '@/lib/utils';
+import { Badge, type BadgeProps } from '@jirawatpyk/aura-react/server';
 // Client-safe sub-barrel — see `tier-filter-select.tsx` for rationale.
 import type { TierBucket } from '@/modules/renewals/client';
 
-const VARIANT_CLASSES: Record<TierBucket, string> = {
-  thai_alumni:
-    'bg-amber-50 text-amber-900 ring-amber-200 dark:bg-amber-950 dark:text-amber-200 dark:ring-amber-900',
-  start_up:
-    'bg-blue-50 text-blue-900 ring-blue-200 dark:bg-blue-950 dark:text-blue-200 dark:ring-blue-900',
-  regular:
-    'bg-slate-50 text-slate-900 ring-slate-200 dark:bg-slate-900 dark:text-slate-200 dark:ring-slate-700',
-  premium:
-    'bg-purple-50 text-purple-900 ring-purple-200 dark:bg-purple-950 dark:text-purple-200 dark:ring-purple-900',
-  partnership:
-    'bg-emerald-50 text-emerald-900 ring-emerald-200 dark:bg-emerald-950 dark:text-emerald-200 dark:ring-emerald-900',
+/**
+ * 122 US7a (maintainer decision, 1 Oct 2026) — a tier is a category, not a
+ * state, so it never takes a status tone: warning, success and danger stay
+ * for the urgency pill and the risk badge beside it in the same row.
+ * Partnership is `accent`, as on the plans list (`plans-table.tsx`); every
+ * other tier is `neutral`. The label names the tier.
+ */
+const TIER_TONE: Record<TierBucket, BadgeProps['tone']> = {
+  partnership: 'accent',
+  premium: 'neutral',
+  regular: 'neutral',
+  start_up: 'neutral',
+  thai_alumni: 'neutral',
 };
 
 export interface TierBadgeProps {
@@ -46,14 +48,8 @@ export function TierBadge({ tier, className }: TierBadgeProps) {
   // label lets the text content serve as the accessible name (WCAG
   // recommends NOT setting aria-label when visible text is sufficient).
   return (
-    <span
-      className={cn(
-        'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset',
-        VARIANT_CLASSES[tier],
-        className,
-      )}
-    >
+    <Badge tone={TIER_TONE[tier]} {...(className ? { className } : {})}>
       {label}
-    </span>
+    </Badge>
   );
 }

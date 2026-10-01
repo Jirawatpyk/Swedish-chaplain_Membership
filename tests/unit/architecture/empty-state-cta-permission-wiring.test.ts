@@ -107,6 +107,18 @@ describe('empty-state CTA gate uses the target page permission', () => {
     );
 
     const caller = read(cta.caller);
+    // 122 US7a: the renewals page hands its gates to a shared view as an
+    // object (`prop: canPerform(…)`) rather than a JSX attribute.
+    const objectProp = new RegExp(
+      `\\b${escapeRe(cta.prop)}:\\s*canPerform\\(\\s*[^,()]+,\\s*'([^']+)',?\\s*\\)`,
+      'g',
+    );
+    if ([...caller.matchAll(objectProp)].length > 0) {
+      expect(captureOnce(caller, objectProp, `${cta.caller} ${cta.prop}: canPerform(…)`)).toBe(
+        requiredKey,
+      );
+      return;
+    }
     const propValue = captureOnce(
       caller,
       new RegExp(`\\b${escapeRe(cta.prop)}=\\{([\\s\\S]*?)\\}\\s*(?:/>|\\n)`, 'g'),

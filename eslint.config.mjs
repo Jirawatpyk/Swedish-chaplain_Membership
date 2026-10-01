@@ -361,6 +361,14 @@ export const MIGRATED_PATHS = [
   // year) and clone pages, and every plan component.
   'src/app/(staff)/admin/plans/**',
   'src/components/plans/**',
+  // US7a — the renewals pipeline page (its loading skeleton and every
+  // `_components` piece: table, filters, money band, month chart, at-risk,
+  // pending review, lapsed tab, tray, bulk bar, mark-paid dialogs) and the
+  // shared renewals badges. Cycle detail, tasks and tier upgrades are US7b.
+  'src/app/(staff)/admin/renewals/page.tsx',
+  'src/app/(staff)/admin/renewals/loading.tsx',
+  'src/app/(staff)/admin/renewals/_components/**',
+  'src/components/renewals/**',
 ];
 
 /**

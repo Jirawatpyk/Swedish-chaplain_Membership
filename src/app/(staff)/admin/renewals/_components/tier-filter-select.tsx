@@ -5,19 +5,19 @@
  * AS2). Adds a `?tier=<bucket>` query param + clears the cursor so the
  * paginator restarts at page 1 on filter change. The "All tiers"
  * option deletes the param entirely.
+ *
+ * 122 US7a (T703): an AURA `Select` named "Tier". On a phone it shows the
+ * label above it, beside the Urgency select (board `Admin-renewals-mobile`);
+ * on a desktop it sits at the end of the stage tabs with no visible label
+ * (maintainer, 1 Oct: "All tiers" already says what it filters, and the label
+ * row widened the gap above the tabs), its name kept for screen readers.
  */
 'use client';
 
-import { useCallback, useId, useTransition } from 'react';
+import { useCallback, useTransition } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  TranslatedSelectValue,
-} from '@/components/ui/select';
+import { Select } from '@jirawatpyk/aura-react';
 // Use the client-safe sub-barrel (`@/modules/renewals/client`).
 // Importing the full F8 barrel from a client component drags every
 // server-only use-case (cancel-cycle → @/lib/db → postgres → fs) into
@@ -33,18 +33,16 @@ export interface TierFilterSelectProps {
 export function TierFilterSelect({ current }: TierFilterSelectProps) {
   const t = useTranslations('admin.renewals.tierFilter');
   const tBadge = useTranslations('admin.renewals.tierBadge');
+  const tTable = useTranslations('admin.renewals.table');
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [, startTransition] = useTransition();
-  // useId() per-instance — guarantees uniqueness if the component is
-  // ever rendered twice on the same page (e.g. in a modal filter bar).
-  const labelId = `tier-filter-label-${useId()}`;
 
   const pushUrl = useCallback(
-    (next: string | null) => {
+    (next: string) => {
       const params = new URLSearchParams(searchParams.toString());
-      if (next === null || next === ALL) {
+      if (next === ALL) {
         params.delete('tier');
       } else {
         params.set('tier', next);
@@ -54,9 +52,6 @@ export function TierFilterSelect({ current }: TierFilterSelectProps) {
       params.delete('nowIso'); // drop the pagination-session anchor (leaves with cursor)
       const query = params.toString();
       startTransition(() => {
-        // `scroll: false` — same-page filter (`router.replace` also
-        // scroll-resets by default); see `urgency-bucket-tabs.tsx` for the
-        // page-wide filter-vs-view-switch rule.
         router.replace(query ? `${pathname}?${query}` : pathname, {
           scroll: false,
         });
@@ -65,46 +60,21 @@ export function TierFilterSelect({ current }: TierFilterSelectProps) {
     [searchParams, router, pathname],
   );
 
-  // Use aria-labelledby + a visually-hidden label. `aria-label` would
-  // replace the trigger's accessible *name* (the label text) and most
-  // SR comboboxes pair name + value when announcing — pointing at a
-  // hidden span via aria-labelledby keeps both the label and the
-  // current SelectValue audible (WCAG 4.1.2 Name, Role, Value).
-  //
-  // UX R5 / Mobile S5: wrapper drops `flex-col` — single visible child
-  // (the Select); `sr-only` span is out of visual flow. Width sizing
-  // (`w-full sm:w-[14rem]`) is the only structural class needed.
+  const options = [
+    { value: ALL, label: t('all') },
+    ...TIER_BUCKETS.map((bucket) => ({ value: bucket, label: tBadge(bucket) })),
+  ];
+  const onChange = (e: React.ChangeEvent<HTMLSelectElement>) => pushUrl(e.target.value);
+  const label = tTable('columns.tier');
+
   return (
-    <div className="w-full sm:w-[14rem]">
-      <span id={labelId} className="sr-only">
-        {t('aria_label')}
-      </span>
-      <Select value={current} onValueChange={pushUrl}>
-        <SelectTrigger
-          aria-labelledby={labelId}
-          className="w-full"
-        >
-          <TranslatedSelectValue
-            translate={(value) => {
-              if (!value || value === ALL) return t('all');
-              return tBadge(value as TierBucket);
-            }}
-          />
-        </SelectTrigger>
-        {/* `align="end"` anchors the popup to the trigger's right edge
-            so it doesn't overflow the viewport — this trigger sits on
-            the right side of the filter row, and the default
-            `align="start"` (left-edge) pushed the popup off-screen and
-            obscured the pipeline table's INVOICE column header. */}
-        <SelectContent align="end">
-          <SelectItem value={ALL}>{t('all')}</SelectItem>
-          {TIER_BUCKETS.map((bucket) => (
-            <SelectItem key={bucket} value={bucket}>
-              {tBadge(bucket)}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
+    <>
+      <div className="w-full sm:hidden">
+        <Select label={label} value={current} options={options} onChange={onChange} />
+      </div>
+      <div className="hidden sm:block sm:w-[14rem]">
+        <Select aria-label={label} value={current} options={options} onChange={onChange} />
+      </div>
+    </>
   );
 }

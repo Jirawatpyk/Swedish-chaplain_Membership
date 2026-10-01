@@ -149,14 +149,25 @@ test.describe('@e2e DV-4 admin proxy-submit (AS9 dual-actor + RBAC)', () => {
 
   let fixtures: Fixtures | null = null;
 
+  // R22 (1 Oct 2026) — wipe the member this spec actually proxies.
+  // `wipeE2EMemberBroadcasts()` defaults to `E2E_MEMBER_EMAIL`, but the
+  // proxied identity is `E2E_MEMBER_EMAIL_EMPTY` (`resolveFixtures` above;
+  // `E2E_MEMBER_EMAIL` is the LAPSED persona). So neither hook ever cleaned
+  // the row this spec creates: the first run succeeded, left a broadcast
+  // behind, and every run after it hit the member's E-Blast cap and came
+  // back 422 `broadcast_quota_blocked` — the submit stayed on
+  // /admin/broadcasts/new and the URL assertion timed out. A test that can
+  // only pass once per quota year.
+  const PROXIED_MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL_EMPTY;
+
   test.beforeAll(async () => {
     await clearE2ERateLimits();
-    await wipeE2EMemberBroadcasts();
+    await wipeE2EMemberBroadcasts(PROXIED_MEMBER_EMAIL);
     fixtures = await resolveFixtures();
   });
 
   test.afterAll(async () => {
-    await wipeE2EMemberBroadcasts();
+    await wipeE2EMemberBroadcasts(PROXIED_MEMBER_EMAIL);
   });
 
   test('admin submits a broadcast on a member behalf (AS9 dual-actor)', async ({
@@ -252,6 +263,10 @@ test.describe('@e2e DV-4 admin proxy-submit (AS9 dual-actor + RBAC)', () => {
     // Sign in so the session cookie is on the shared context.
     await signInAsManager(page);
     const res = await page.request.post('/api/admin/broadcasts/proxy-submit', {
+      // `Origin` is mandatory: `src/lib/csrf.ts` rejects a state-changing
+      // `/api/**` request without one, with its OWN 403, so a status-only
+      // assertion here was satisfied without the route being reached.
+      headers: { Origin: new URL(page.url()).origin },
       data: {
         requestedByMemberId: '00000000-0000-4000-8000-000000000000',
         subject: 'x',
@@ -265,6 +280,10 @@ test.describe('@e2e DV-4 admin proxy-submit (AS9 dual-actor + RBAC)', () => {
     // authenticated), NOT 404 (route exists), NOT 400 (the guard fires
     // before body validation). 200 would be a security failure.
     expect(res.status()).toBe(403);
+    // `requireApiPermission` denies with `{ error: 'forbidden' }`; the
+    // CSRF reject carries `{ error: 'csrf-rejected' }` instead.
+    const body = (await res.json().catch(() => ({}))) as { error?: unknown };
+    expect(body.error).toBe('forbidden');
   });
 
   test('member cannot reach /admin/broadcasts/new', async ({ page }) => {
@@ -293,6 +312,9 @@ test.describe('@e2e DV-4 admin proxy-submit (AS9 dual-actor + RBAC)', () => {
     // probe. NOT 200 (security failure), NOT 404 (route exists).
     await signInAsMember(page);
     const res = await page.request.post('/api/admin/broadcasts/proxy-submit', {
+      // See the manager probe above — without `Origin` the CSRF check
+      // answers 403 first and the route is never reached.
+      headers: { Origin: new URL(page.url()).origin },
       data: {
         requestedByMemberId: '00000000-0000-4000-8000-000000000000',
         subject: 'x',
@@ -303,6 +325,8 @@ test.describe('@e2e DV-4 admin proxy-submit (AS9 dual-actor + RBAC)', () => {
       failOnStatusCode: false,
     });
     expect(res.status()).toBe(403);
+    const body = (await res.json().catch(() => ({}))) as { error?: unknown };
+    expect(body.error).toBe('forbidden');
   });
 });
 

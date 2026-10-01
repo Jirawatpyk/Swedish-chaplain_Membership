@@ -15,6 +15,7 @@
  * screen-reader users the same reason sighted users get from `title`.
  */
 import { useTranslations } from 'next-intl';
+import { Badge } from '@jirawatpyk/aura-react/server';
 import { cn } from '@/lib/utils';
 import type { CycleStatus, UrgencyBucket } from '@/modules/renewals/client';
 import { isPastDeadlineUrgency } from './urgency';
@@ -41,16 +42,16 @@ export function BillIssuedBadge({
   ) {
     return null;
   }
+  // 122 US7a: a neutral outline badge — quieter than the urgency pill beside it.
   return (
-    <span
-      className={cn(
-        'inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground ring-1 ring-inset ring-border whitespace-nowrap',
-        className,
-      )}
+    <Badge
+      tone="neutral"
+      variant="outline"
+      className={cn('whitespace-nowrap', className)}
       title={t('billIssuedTitle')}
     >
       {t('billIssuedLabel')}
       <span className="sr-only"> — {t('billIssuedTitle')}</span>
-    </span>
+    </Badge>
   );
 }
