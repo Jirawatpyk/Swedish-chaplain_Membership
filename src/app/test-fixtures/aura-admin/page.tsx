@@ -960,7 +960,7 @@ export default async function AuraAdminPreviewPage({
       loadFailed: view === 'tier-upgrades-error',
       queue:
         view === 'tier-upgrade-accept' ? (
-          <TierUpgradeAcceptPreview items={items} />
+          <TierUpgradeAcceptPreview items={items} acceptLabel={t('actions.accept.label')} />
         ) : (
           <TierUpgradeQueueClient items={items} />
         ),

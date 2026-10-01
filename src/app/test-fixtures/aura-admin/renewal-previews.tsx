@@ -61,13 +61,17 @@ export function MarkPaidDialogPreview() {
  */
 export function TierUpgradeAcceptPreview({
   items,
+  acceptLabel,
 }: {
   readonly items: ComponentProps<typeof TierUpgradeQueueClient>['items'];
+  /** The Accept button's label in the preview's locale. */
+  readonly acceptLabel: string;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    ref.current?.querySelector<HTMLButtonElement>('.aura-btn--primary')?.click();
-  }, []);
+    const buttons = Array.from(ref.current?.querySelectorAll('button') ?? []);
+    buttons.find((b) => b.textContent?.trim() === acceptLabel)?.click();
+  }, [acceptLabel]);
   return (
     <div ref={ref}>
       <TierUpgradeQueueClient items={items} />

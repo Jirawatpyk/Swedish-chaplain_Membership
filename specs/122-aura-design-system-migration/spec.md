@@ -184,6 +184,8 @@ The US7b boards were read against the code before the tasks were written: `Admin
     - The Current plan and Suggested plan cells show the annual fee under the plan name ("{fee} excl. VAT"), from the plan read the page already makes.
     - Amounts keep their current format.
   - **Tier upgrade queue, layout:** one table that stacks into cards below 640px.
+    - The phone board puts the reason and the plan move on full-width lines. An AURA stacked card has no full-width field, so these cells wrap inside their half of the card. This is AURA handoff #120, recorded in `docs/aura-adoption.md`.
+  - **The actions follow the routes' own guards, not the boards' samples:** the `-reminded` board draws "Mark paid offline", but the mark-paid route accepts only an upcoming or awaiting-payment cycle, so a reminded cycle offers Cancel cycle alone (unchanged from today).
 
 ## User Scenarios & Testing *(mandatory)*
 

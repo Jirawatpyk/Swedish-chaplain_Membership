@@ -102,6 +102,7 @@ Open items (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.
 
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
+| #120 | `DataTable` stacked card: a field that takes the card's full width (the `Admin-tier-upgrades-mobile` board's reason and evidence line, and its "from → to" plan line). Fields sit two to a line, so a long one is squeezed into half the card | The tier upgrade queue's reason and plan cells set `whitespace-normal`, so they wrap inside the half-width field instead of clipping (US7b-1) |
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 
