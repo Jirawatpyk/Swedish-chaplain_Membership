@@ -27,7 +27,9 @@ import type { ReactElement } from 'react';
 // --- infra / boundary mocks ----------------------------------------------
 
 vi.mock('next/link', () => ({
-  default: ({ children }: { children?: unknown }) => children as ReactElement,
+  default: ({ children, ...rest }: Record<string, unknown> & { children?: unknown }) => (
+    <a {...(rest as Record<string, string>)}>{children as ReactElement}</a>
+  ),
 }));
 vi.mock('next/navigation', () => ({
   notFound: () => {
@@ -136,15 +138,15 @@ function invoiceWith(status: string) {
   };
 }
 
-async function renderPage(invoice: string | undefined = 'inv-1'): Promise<string> {
+async function renderPage(invoice: string | null = 'inv-1'): Promise<string> {
   const tree = await RenewalSuccessPage({
     params: Promise.resolve({ memberId: 'm1' }),
-    searchParams: Promise.resolve(invoice === undefined ? {} : { invoice }),
+    searchParams: Promise.resolve(invoice === null ? {} : { invoice }),
   });
   return renderToStaticMarkup(tree as ReactElement);
 }
 
-/** The element whose opening tag carries `marker`, as a DOM node. */
+/** The first element matching `selector` in the rendered markup. */
 function nodeWith(html: string, selector: string): Element | null {
   const doc = new DOMParser().parseFromString(html, 'text/html');
   return doc.querySelector(selector);
@@ -316,7 +318,7 @@ describe('RenewalSuccessPage on AURA (boards Portal-renewal-success / -processin
   });
 
   it('no invoice id: the "View all invoices" fallback as a secondary AURA link', async () => {
-    const html = await renderPage(undefined);
+    const html = await renderPage(null);
     const fallback = nodeWith(html, '[data-testid="view-invoices-fallback"]');
     expect(fallback?.getAttribute('href')).toBe('/portal/invoices');
     expect(fallback?.className).toMatch(/aura-btn--secondary/);
