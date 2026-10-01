@@ -160,3 +160,129 @@ export const AT_RISK_RESPONSE = {
   next_cursor: null,
   summary: { warning: 5, 'at-risk': 6, critical: 1, f6_active: true, active_max: 100 },
 } as const;
+
+// ── US7b-1: cycle detail (`Admin-renewal-cycle*`) and the tier upgrade
+// queue (`Admin-tier-upgrades*`). Values the page would format (money in
+// next-intl's THB currency style, dates `dateStyle: 'long'`) are given
+// formatted; labels come from the messages in the preview page.
+
+export const CYCLE_PREVIEW_ID = '00000000-0000-4000-8000-00000000c101';
+
+export type CycleFixtureKind = 'bill-issued' | 'reminded' | 'pending';
+
+export interface CycleFixture {
+  readonly status: 'awaiting_payment' | 'reminded' | 'pending_admin_reactivation';
+  readonly company: string;
+  readonly primaryContact: string;
+  readonly tier: 'partnership' | 'premium' | 'start_up';
+  readonly planName: string;
+  readonly frozenPrice: string;
+  readonly subtitleDate: string;
+  readonly invoice: { readonly number: string; readonly status: 'issued' | 'paid'; readonly total: string } | null;
+  readonly period: { readonly from: string; readonly to: string; readonly expires: string; readonly enteredPending?: string };
+  readonly reminders: ReadonlyArray<{ readonly stepId: string; readonly status: 'sent'; readonly date: string; readonly channel: 'email' | 'task' }>;
+  readonly escalations: ReadonlyArray<{
+    readonly taskType: 'quarterly_review_meeting' | 'phone_call';
+    readonly status: 'open' | 'done';
+    readonly date: string;
+    readonly role: 'executive_director' | 'admin';
+  }>;
+}
+
+export const CYCLE_FIXTURES: Readonly<Record<CycleFixtureKind, CycleFixture>> = {
+  'bill-issued': {
+    status: 'awaiting_payment',
+    company: 'Lindqvist & Chai Group Co., Ltd.',
+    primaryContact: 'Mattias Lindqvist',
+    tier: 'partnership',
+    planName: 'Gold Partnership',
+    frozenPrice: 'THB 100,000.00',
+    subtitleDate: '31 December 2026',
+    invoice: { number: 'SC-2026-000130', status: 'issued', total: 'THB 107,000.00' },
+    period: { from: '1 January 2027', to: '31 December 2027', expires: '31 December 2026' },
+    reminders: [
+      { stepId: 't-120.task.quarterly_review', status: 'sent', date: '2 September 2026 at 09:00', channel: 'task' },
+    ],
+    escalations: [
+      { taskType: 'quarterly_review_meeting', status: 'done', date: '2 September 2026 at 09:00', role: 'executive_director' },
+    ],
+  },
+  reminded: {
+    status: 'reminded',
+    company: 'Scandia Health Partners Ltd.',
+    primaryContact: 'Karin Holm',
+    tier: 'premium',
+    planName: 'Premium Corporate',
+    frozenPrice: 'THB 36,000.00',
+    subtitleDate: '15 October 2026',
+    invoice: null,
+    period: { from: '16 October 2026', to: '15 October 2027', expires: '15 October 2026' },
+    reminders: [
+      { stepId: 't-90.email', status: 'sent', date: '17 July 2026 at 09:00', channel: 'email' },
+      { stepId: 't-60.email', status: 'sent', date: '16 August 2026 at 09:00', channel: 'email' },
+      { stepId: 't-60.task.phone_call', status: 'sent', date: '16 August 2026 at 09:00', channel: 'task' },
+      { stepId: 't-30.email', status: 'sent', date: '15 September 2026 at 09:00', channel: 'email' },
+    ],
+    escalations: [{ taskType: 'phone_call', status: 'open', date: '16 August 2026 at 09:00', role: 'admin' }],
+  },
+  pending: {
+    status: 'pending_admin_reactivation',
+    company: 'Gamla Stan Coffee Roasters',
+    primaryContact: 'Nattapong Wongsa',
+    tier: 'start_up',
+    planName: 'Start-up',
+    frozenPrice: 'THB 10,000.00',
+    subtitleDate: '21 September 2026',
+    invoice: { number: 'SC-2026-000131', status: 'paid', total: 'THB 10,700.00' },
+    period: {
+      from: '16 July 2025',
+      to: '15 July 2026',
+      expires: '15 July 2026',
+      enteredPending: '21 September 2026 at 10:12',
+    },
+    reminders: [],
+    escalations: [],
+  },
+};
+
+/** The queue's rows, as the page hands them to `TierUpgradeQueueClient`. */
+export const TIER_UPGRADE_ITEMS = [
+  {
+    suggestionId: '00000000-0000-4000-8000-00000000e001',
+    memberId: '00000000-0000-4000-8000-00000000e101',
+    companyName: 'Baltic Bay Consulting Co., Ltd.',
+    status: 'open',
+    fromPlanId: 'large-corporate',
+    fromPlanName: 'Large Corporate',
+    fromFeeMinorUnits: 2_600_000,
+    toPlanId: 'premium-corporate',
+    toPlanName: 'Premium Corporate',
+    toFeeMinorUnits: 3_600_000,
+    reasonCode: 'declared_turnover_above_threshold',
+    evidence: {
+      reasonCode: 'declared_turnover_above_threshold',
+      turnoverThb: 142_000_000,
+      thresholdMetAtLabel: '14 Sep 2026',
+    },
+    createdAt: '2026-09-14T00:00:00.000Z',
+  },
+  {
+    suggestionId: '00000000-0000-4000-8000-00000000e002',
+    memberId: '00000000-0000-4000-8000-00000000e102',
+    companyName: 'Chao Phraya Design Studio Co., Ltd.',
+    status: 'open',
+    fromPlanId: 'regular-corporate',
+    fromPlanName: 'Regular Corporate',
+    fromFeeMinorUnits: 1_600_000,
+    toPlanId: 'large-corporate',
+    toPlanName: 'Large Corporate',
+    toFeeMinorUnits: 2_600_000,
+    reasonCode: 'paid_invoice_volume_above_threshold',
+    evidence: {
+      reasonCode: 'paid_invoice_volume_above_threshold',
+      invoiceVolumeThb: 34_240,
+      thresholdMetAtLabel: '21 Sep 2026',
+    },
+    createdAt: '2026-09-21T00:00:00.000Z',
+  },
+] as const;

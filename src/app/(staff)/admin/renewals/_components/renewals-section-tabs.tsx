@@ -123,14 +123,22 @@ export interface RenewalsSectionTabsProps {
   readonly pendingReviewCount?: number;
   readonly tasksCount?: number;
   readonly tierUpgradeCount?: number;
+  /**
+   * The route the strip is on, when it is not the browser's: the no-DB preview
+   * (`/test-fixtures/aura-admin`) renders each renewals page at its real path.
+   * Pages leave it out.
+   */
+  readonly pathname?: string;
 }
 
 export function RenewalsSectionTabs({
   pendingReviewCount,
   tasksCount,
   tierUpgradeCount,
+  pathname: pathnameOverride,
 }: RenewalsSectionTabsProps) {
-  const pathname = usePathname();
+  const browserPathname = usePathname();
+  const pathname = pathnameOverride ?? browserPathname;
   const params = useSearchParams();
   const router = useRouter();
   const t = useTranslations('admin.renewals');
