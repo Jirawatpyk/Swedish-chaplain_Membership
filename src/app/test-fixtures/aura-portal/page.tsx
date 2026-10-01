@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { getTranslations } from 'next-intl/server';
+import { getLocale, getTranslations } from 'next-intl/server';
 import { CircleCheck, FileText, TrendingUp } from 'lucide-react';
 
 import { PortalBenefitsPanel } from '@/components/benefits/portal-benefits-panel';
@@ -553,6 +553,9 @@ export default async function AuraPortalPreviewPage({
   // US7c — the `Portal-renewal` boards' data: Premium Corporate at its
   // locked-in price, with a cheaper and a much cheaper plan to switch to.
   if (view === 'renewal' || view === 'renewal-gate') {
+    // US7c parity shots run in TH/SV too, so these views follow the request
+    // locale (dates in BE for th) like the real page's getLocale().
+    const locale = await getLocale();
     const gateParam = typeof sp.gate === 'string' ? sp.gate : 'not_yet_open';
     const gate: RenewalGate =
       view === 'renewal'
@@ -579,7 +582,7 @@ export default async function AuraPortalPreviewPage({
       <MemberFrame path="/portal">
         <DetailContainer>
           <RenewalPageView
-            locale="en"
+            locale={locale}
             isFirstTimeRenewer={view === 'renewal'}
             plan={{ label: 'Premium Corporate', tierLabel: 'Premium', termMonths: 12, expiresAt: '2026-12-31T00:00:00.000Z' }}
             benefits={[
@@ -596,6 +599,7 @@ export default async function AuraPortalPreviewPage({
   }
 
   if (view === 'renewal-processing' || view === 'renewal-success') {
+    const locale = await getLocale();
     const preparing = sp.receipt === 'preparing';
     const invoice = {
       invoiceId: '00000000-0000-4000-8000-0000000000a9',
@@ -611,7 +615,7 @@ export default async function AuraPortalPreviewPage({
     return (
       <MemberFrame path="/portal">
         {await renderRenewalSuccessView({
-          locale: 'en',
+          locale,
           cycle: view === 'renewal-success' ? { status: 'completed', expiresAt: '2027-12-31T00:00:00.000Z' } : null,
           invoiceId: '00000000-0000-4000-8000-0000000000a9',
           invoice,
