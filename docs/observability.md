@@ -1648,7 +1648,7 @@ load only.
 |---|---|---|---|---|
 | `renewals.escalation_task.queue_load_duration_ms` | histogram | `tenant_id`, `assignment_filter`, `status_filter` | `tasks/page.tsx` server component (R10 forward — not yet wired) | F8-SLO-Esc-1 |
 | `renewals.escalation_task.action_total` | counter | `tenant_id`, `action ∈ {done,skip,reassign}`, `outcome ∈ {success,task_not_found,task_not_open,server_error}` | `tasks/[taskId]/{done,skip,reassign}/route.ts` (R10 forward) | — |
-| `renewals.escalation_task.overdue_count` | gauge | `tenant_id` | per page-load summary (existing port `countMatching`) | — |
+| `renewals.escalation_task.overdue_count` | gauge | `tenant_id` | per page-load summary (existing port `countMatching`) — emitted on every Open-tab load of `tasks/page.tsx`, with or without `?overdue_only` (the tenant's backlog doesn't depend on the filter) | — |
 | `renewals.escalation_task.audit_emit_failed_total` | counter | `event_type ∈ {completed,skipped,reassigned}` | use-case catch arm (existing pino warn breadcrumb) | F8-A2 (rolls up into the existing audit-emit alarm) |
 
 #### 23.1.5 Reconcile-pending-reactivations — timeout outcome counters (branch 063)

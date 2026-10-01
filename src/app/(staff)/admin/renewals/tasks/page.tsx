@@ -187,9 +187,12 @@ export default async function EscalationTaskQueuePage({
     distinctTaskTypes = distinctTypes;
     nextCursor = page.nextCursor;
 
-    // Overdue banner only meaningful when status='open' and we're not
-    // already filtered to overdue-only.
-    if (status === 'open' && !overdueOnly) {
+    // Overdue toggle only meaningful when status='open'. The count is read
+    // whether or not `overdue_only` is set: it labels the toggle and keeps
+    // it mounted while the filter is on (spec 122 US7b-2 — previously the
+    // count was skipped under the filter, the toggle unmounted on press and
+    // focus fell to <body>).
+    if (status === 'open') {
       // R10 W4 close — overdueThresholdDays: 3 aligns the banner
       // count with the row-level red highlight (FR-045/AS4 mandate
       // ">3 days past due" for both). Without this, banner counts
@@ -204,7 +207,9 @@ export default async function EscalationTaskQueuePage({
         },
       );
       // R10 T277g close — emit overdue-count gauge with the filtered
-      // value. Cardinality bound by (tenant_id) only; safe.
+      // value. Cardinality bound by (tenant_id) only; safe. The value is
+      // the tenant's overdue backlog — independent of `overdue_only` — so
+      // it is emitted on every Open-tab load, filtered or not.
       renewalsMetrics.observeEscalationTaskOverdueCount(
         tenantCtx.slug,
         overdueCount,
