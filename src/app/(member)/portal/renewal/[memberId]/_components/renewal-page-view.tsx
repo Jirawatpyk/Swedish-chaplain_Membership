@@ -3,14 +3,14 @@
  *
  * Split from `page.tsx`, which keeps the session guard, the data loading and
  * the payability decision, so the same layout renders in the preview harness
- * and in unit tests. Top to bottom: the page header, the first-renewal
+ * and in unit tests (the page wraps it in its `DetailContainer`, which
+ * `check:layout` reads there). Top to bottom: the page header, the first-renewal
  * welcome, then the board's grid — "Membership plan" and "Benefit summary"
  * on the left and the Confirm card (or the gate notice that replaces it) in a
  * 420px column on the right from `lg`; one column below.
  */
 import { useTranslations } from 'next-intl';
 import { Alert, Badge, Card } from '@jirawatpyk/aura-react/server';
-import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { formatDatePreset } from '@/lib/format-date-localised';
 import type { BenefitConsumptionEntry } from '@/modules/renewals';
@@ -53,7 +53,7 @@ export function RenewalPageView({
   const tConfirm = useTranslations('portal.renewal.confirm');
 
   return (
-    <DetailContainer>
+    <>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
 
       {/* After the h1, so the heading order stays h1 → h2 (I18). */}
@@ -134,6 +134,6 @@ export function RenewalPageView({
           </Alert>
         )}
       </div>
-    </DetailContainer>
+    </>
   );
 }

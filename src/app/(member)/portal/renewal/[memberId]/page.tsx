@@ -16,6 +16,7 @@
  */
 import { notFound, redirect } from 'next/navigation';
 import { getLocale, getTranslations } from 'next-intl/server';
+import { DetailContainer } from '@/components/layout';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { deriveFiscalYear } from '@/lib/fiscal-year';
@@ -246,18 +247,20 @@ export default async function RenewalPortalPage({
   // Spec 122 US7c — the layout lives in <RenewalPageView> (board
   // `Portal-renewal`), shared with the preview harness.
   return (
-    <RenewalPageView
-      locale={locale}
-      isFirstTimeRenewer={summary.isFirstTimeRenewer}
-      plan={{
-        label: currentPlanLabel,
-        tierLabel,
-        termMonths: summary.frozenPlanTermMonths,
-        expiresAt: summary.expiresAt,
-      }}
-      benefits={summary.benefits}
-      benefitsAvailable={summary.benefitsAvailable}
-      gate={gate}
-    />
+    <DetailContainer>
+      <RenewalPageView
+        locale={locale}
+        isFirstTimeRenewer={summary.isFirstTimeRenewer}
+        plan={{
+          label: currentPlanLabel,
+          tierLabel,
+          termMonths: summary.frozenPlanTermMonths,
+          expiresAt: summary.expiresAt,
+        }}
+        benefits={summary.benefits}
+        benefitsAvailable={summary.benefitsAvailable}
+        gate={gate}
+        />
+    </DetailContainer>
   );
 }

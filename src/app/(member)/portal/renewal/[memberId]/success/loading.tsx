@@ -5,11 +5,14 @@
  * section per `pnpm check:layout` requirement (FR-007 / 006-layout-
  * container-tier2). Container variant matches the page (DetailContainer
  * = 72rem) so CLS-0 holds across the route transition.
+ *
+ * Spec 122 US7c: the board's shape — the centred hero, the "Renewal
+ * details" AURA card and the action row.
  */
 import { getTranslations } from 'next-intl/server';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card } from '@jirawatpyk/aura-react/server';
 import { PageSkeletonShell, SkeletonBlock } from '@/components/shell/page-skeletons';
 
 export default async function Loading() {
@@ -18,20 +21,30 @@ export default async function Loading() {
   return (
     <PageSkeletonShell ariaLabel={tLayout('loadingPage')}>
       <DetailContainer>
-        <PageHeader title={t('title')} subtitle={<SkeletonBlock className="h-4 w-80" />} />
-        <Card>
-          <CardContent className="flex flex-col gap-3">
-            <SkeletonBlock className="h-5 w-40" />
-            <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-              <SkeletonBlock className="h-4 w-32" />
-              <SkeletonBlock className="h-4 w-48" />
-              <SkeletonBlock className="h-4 w-32" />
-              <SkeletonBlock className="h-4 w-48" />
-              <SkeletonBlock className="h-4 w-32" />
-              <SkeletonBlock className="h-4 w-48" />
+        <div className="mx-auto flex w-full max-w-[720px] flex-col gap-[var(--aura-space-6)]">
+          <div
+            data-testid="renewal-skeleton-hero"
+            className="flex flex-col items-center gap-[var(--aura-space-3)] text-center [&_header]:items-center [&_header]:text-center"
+          >
+            <SkeletonBlock className="size-16 rounded-full" />
+            <PageHeader title={t('title')} subtitle={<SkeletonBlock className="h-4 w-64" />} />
+          </div>
+          <Card header={<SkeletonBlock className="h-6 w-40" />}>
+            <div className="grid grid-cols-1 gap-x-[var(--aura-space-4)] gap-y-[var(--aura-space-3)] sm:grid-cols-[auto_1fr]">
+              <SkeletonBlock className="h-4 w-28" />
+              <SkeletonBlock className="h-4 w-44" />
+              <SkeletonBlock className="h-4 w-28" />
+              <SkeletonBlock className="h-6 w-24 rounded-full" />
             </div>
-          </CardContent>
-        </Card>
+          </Card>
+          <div
+            data-testid="renewal-skeleton-actions"
+            className="flex flex-col gap-[var(--aura-space-2)] sm:flex-row sm:justify-center"
+          >
+            <SkeletonBlock className="h-9 w-full sm:w-48" />
+            <SkeletonBlock className="h-9 w-full sm:w-40" />
+          </div>
+        </div>
       </DetailContainer>
     </PageSkeletonShell>
   );
