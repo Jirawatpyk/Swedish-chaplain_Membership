@@ -287,6 +287,9 @@ export function PipelineTable({
         // Fits the longest "Send reminder" (SV "Skicka påminnelse") beside ⋯.
         width: 216,
         actions: true,
+        align: 'end',
+        // The phone card's last row, full width (board Admin-renewals-mobile).
+        card: 'footer',
         render: (row) => (
           <RowActions
             cycleId={row.cycleId}

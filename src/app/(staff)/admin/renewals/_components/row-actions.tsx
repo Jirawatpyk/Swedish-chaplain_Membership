@@ -5,9 +5,8 @@
  *
  * 122 US7a (T702): AURA `Button` + `DropdownMenu`. The pipeline is one AURA
  * `DataTable` that stacks into cards below 640px, so these render once per
- * row; in a phone card they are a full-width row at the end of the card, as
- * the `Admin-renewals-mobile` board draws it (a stand-in until AURA #118 in
- * `globals.css`, keyed on `data-pipeline-row-actions`).
+ * row; in a phone card they are the card's last row (the column's AURA
+ * `card: 'footer'`, 5.22), as the `Admin-renewals-mobile` board draws it.
  */
 import { useRef, useTransition } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
@@ -212,18 +211,14 @@ export function RowActions({
   ];
   const menuLabel = tActions('rowMenu', { company: companyName });
 
-  // In a phone card the actions take the full row: `in-[.aura-table--stacked]`
-  // reads AURA's stacked class — a stand-in until AURA #118 (a card slot for a
-  // full-width action row).
+  // A fragment, not a wrapper: the Button and the ⋯ sit straight in AURA's
+  // cell, so the stacked card's footer grows "Send reminder" across the row
+  // and keeps the ⋯ its own size. In the grid the column is end-aligned.
   return (
-    <div
-      data-pipeline-row-actions=""
-      className="flex items-center justify-end gap-[var(--aura-space-1)] in-[.aura-table--stacked]:w-full"
-    >
+    <>
       {/* "Send reminder" is a one-click visible button (item ②), admin only:
           the route 403s a manager, so it is absent rather than disabled
-          (FR-052a). Small in the grid row; 44px tall on a phone. AURA app
-          content: in a phone card it takes the row's width beside the ⋯. */}
+          (FR-052a). Small in the grid row; 44px tall on a phone. */}
       {canMutate ? (
         <Button
           variant="secondary"
@@ -232,8 +227,7 @@ export function RowActions({
           loading={isPending}
           onClick={handleSendReminder}
           aria-label={tActions('sendReminderAriaLabel', { company: companyName })}
-          // Full-width beside the ⋯ in a phone card: stand-in until AURA #118.
-          className="in-[.aura-table--stacked]:flex-1"
+          className="me-[var(--aura-space-1)]"
         >
           {tActions('sendReminder')}
         </Button>
@@ -247,7 +241,7 @@ export function RowActions({
           <IconButton ref={rowMenuTriggerRef} icon="ellipsis" label={menuLabel} size="sm" touchHeight />
         }
       />
-    </div>
+    </>
   );
 }
 
