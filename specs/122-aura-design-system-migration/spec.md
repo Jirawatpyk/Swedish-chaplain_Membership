@@ -261,6 +261,48 @@ The maintainer approved the US7c plan. Its boards were read against the code: `P
   - The success hero centres a title shorter than its subtitle (TH).
 - **Out of scope, filed separately:** the confirm route's `invoice_already_exists` 409 has no message of its own, so the member sees the generic error. Mapping it is a behaviour change (Session 2026-09-27 rule).
 
+### Session 2026-10-02 (maintainer, US8 start)
+
+The maintainer approved the US8 plan. Its boards were read against the code:
+- **Lists:** `Admin-invoices`, `Admin-state-invoices-setup`, `Admin-credit-notes`.
+- **Invoice detail:** `Admin-invoice-draft`, `-issued` (+`-mobile`), `-overdue`, `-paid`, `-credited`, `-manager`, `-auto-refund-failed`, `Admin-voided`.
+- **Create, issue and pay:** `Admin-invoice-new`, `Admin-invoice-issue`, `Admin-record-payment` (+`-mobile`).
+- **Refunds:** `Admin-refund-full`, `-partial`, `-settling`, `-settled`, `-failed`, `-waived`.
+- **Void and credit:** `Admin-void` (+`-mobile`), `Admin-credit-note` (+`-mobile`), `Admin-credit-note-detail`.
+- **Registers:** `Admin-invoice-registers` (+`-mobile`), `Admin-registers-empty`, `-invalid-range`, `-load-failed`, `-re`, `-zero-rate`.
+- **Settings:** `Admin-invoice-settings`.
+
+`Invoices`, `Invoices-mobile` and `Invoice-paid` are member-portal boards (US4). `Proposal-void-reissue` is a proposal for the voided page.
+
+US8 is a money phase, so each of its PRs gets a financial-integrity review as well as the UX and i18n reviews. It is a UI swap: every fetch URL and body, typed phrase, router push and refresh, error-code router, toast, amount formatter and date helper is unchanged. None of these requests sends an idempotency header today, and none is added.
+
+- Q: US8 covers 61 files on the old kit (about 17k lines) and 36 boards, more than US7. → A: **Three PRs:**
+  - **US8a:** the invoice list (table, row menu, auto-renewal review queue, record payment, CSV export, setup and empty states) and the new-invoice page (membership and event fee).
+  - **US8b:** the invoice detail page with its dialogs (issue, delete draft, refund, email-failure and auto-refund alerts), the payment activity timeline, the void page and the new-credit-note page.
+  - **US8c:** the credit-notes list and detail, the tax-document registers and the invoice settings.
+- Q: The invoice detail boards are drawn two ways. Some show the bare number with a badge over an unframed list; others show "Invoice {number}" with a status pill over a "Details" card. → A: **One layout: "Invoice {number}" with an AURA status pill, then a "Details" card holding the fields, then a separate totals block** (subtotal, VAT, total). A draft reads "Draft invoice". The pill tones are the list's: Paid `ready`, Issued `progress`, Overdue `blocked`, every other status `neutral`. The badge-style boards are updated to match.
+- Q: Three phone boards are marked "proposed": record payment as a bottom sheet, a bottom action bar on the invoice page, and stacked buttons on the void page. → A: **Adopt all three.** They are layout only:
+  - below 640px, record payment opens in an AURA drawer from the bottom; wider screens keep the centred dialog;
+  - on a phone the invoice page ends in a bar with the total (incl. VAT) and due date, the main action and the ⋯ menu, and Void moves into that menu;
+  - on a phone the void page stacks full-width buttons, Void above Cancel.
+- Q: The user story says the registers have a sticky totals footer, but the board and the code both put the summary line above the table. → A: **Keep the summary line above the table, with no footer.** On a phone the register rows become cards, as the board draws them. The user story is corrected.
+- **Decided from the boards** (Session 2026-09-27 rule: the board decides content and order):
+  - **Invoice list columns**, in order:
+    - Invoice No.: the number link, with "Issued {date}" and the credit-note count under it. The separate Issued column goes.
+    - Buyer: the name, the Event chip and the subtitle.
+    - Status, Due.
+    - Receipt No.: with "PDF generating…" (busy) or the online payment method under it.
+    - Total; Actions.
+  - **The queue and method columns stay where they are.** The review-queue column (auto-renewal view) and the Method column (online-payments view) still appear only in those views.
+  - **Row actions:** "Record payment…" on issued and overdue bills for admins, and a ⋯ menu holding the invoice, bill or receipt downloads. A receipt whose PDF failed shows a "Receipt failed" link to the invoice under its number. In the review-queue view the issue and discard actions stay in the row.
+  - On a phone the table stacks into cards (the US7a rule): number as the title, then buyer, due and total, with the actions in the card footer.
+  - **Setup state:** the "Finish invoice setup" sentence, and "Configure Invoicing" for admins only.
+- **Kept from the code over the boards:**
+  - **Typed confirmations** keep their phrases: refund `REFUND {company}` (case-sensitive), credit note `CREDIT`, void the bill number. The boards type the receipt number; changing a phrase changes what the server-side guard and the e2e expect, so it would be a behaviour change.
+  - **List filters** stay on the AURA filter bar from US4, which the portal shares. The board draws hand-built dropdown buttons.
+  - **Amounts and dates** keep their current formats.
+  - **Settings sections** the board does not draw (document notes, payment, branding and logo) keep their content on AURA's defaults.
+
 ## User Scenarios & Testing *(mandatory)*
 
 Every story below is one phase and one pull request. A story is done when its screens use only AURA components, match their canvas boards, and pass the per-module definition of done (FR-010).
@@ -375,7 +417,7 @@ The renewals pipeline (table and phone card list become one AURA data table), cy
 
 ### User Story 8 - Invoicing administration (Priority: P2)
 
-Invoice list/detail, tax registers (with sticky totals footer), credit-note, refund, record-payment and void dialogs.
+Invoice list/detail, tax registers (summary line above the table), credit-note, refund, record-payment and void dialogs.
 
 **Independent Test**: issue, pay, credit and void test invoices; register totals and CSV export equal the pre-migration output.
 

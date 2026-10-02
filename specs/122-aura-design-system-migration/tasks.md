@@ -494,9 +494,61 @@ Boards: `Portal-renewal`, `Portal-renewal-processing`, `Portal-renewal-success`,
   - UX, i18n and financial reviews;
   - draft PR; relay R27.
 
+## Phase 10: User Story 8 — Invoicing administration (Priority: P2) — PRs 14–16 (US8a, US8b, US8c; T800)
+
+US8 is a money phase: each PR gets the UX, i18n and financial-integrity reviews. Every fetch URL and body, typed phrase, router push and refresh, error-code router, toast and amount formatter stays as it is (spec Clarifications, Session 2026-10-02). After US8c the full e2e suite runs locally (Session 2026-09-26 checkpoint).
+
+### US8a — invoice list and new invoice (PR 14)
+
+Boards: `Admin-invoices`, `Admin-state-invoices-setup`, `Admin-invoice-new`, `Admin-record-payment` (+`-mobile`).
+
+- [x] T800 [US8] Spec Clarifications "Session 2026-10-02 (maintainer, US8 start)"; the registers line in the user story; these tasks.
+- [ ] T801 [US8] One invoice status tone map shared by the portal list, the member invoices table and the admin list and detail: Paid `ready`, Issued `progress`, Overdue `blocked`, the rest `neutral`. RED: a unit test of the map.
+- [ ] T802 [US8] The invoice table is an AURA `DataTable` with the board's columns and phone cards:
+  - Invoice No. carries "Issued {date}" and the credit-note count;
+  - Receipt No. carries "PDF generating…" (busy) or the online method, and a "Receipt failed" link;
+  - "Record payment…" plus a ⋯ menu with the downloads;
+  - the queue and method columns only in their views.
+  RED: the table test on AURA (headers, row actions, menu items, busy receipt, pill tones).
+- [ ] T803 [US8] The ⋯ menus and the auto-renewal queue actions are AURA `DropdownMenu`s, with an AURA alertdialog for discard and AURA alerts for errors. Resend `{variant}`, `issue-auto-drafted` `{sendEmail}`, `discard-auto-draft` and the 429 path are unchanged. RED: the menu and queue-action tests on AURA (item names, POST URLs and bodies, focus after refresh).
+- [ ] T804 [US8] Record payment is an AURA dialog on wider screens and an AURA drawer below 640px. Both carry the board's summary box, the method select, reference, payment date (clamp kept) and notes. The POST body is unchanged. RED: dialog-versus-drawer, the POST body, the error alert.
+- [ ] T805 [US8] The CSV export dialog is an AURA dialog with two date fields; the export URL and its `window.open` are unchanged. RED: a test for the URL and the range check.
+- [ ] T806 [US8] The list page frame:
+  - the header actions;
+  - a frameless table card on phones;
+  - the count line;
+  - the setup state (admin-only "Configure Invoicing");
+  - the empty and filtered-empty states;
+  - the error boundary on `RouteErrorPanel`;
+  - skeletons in the new shape.
+  RED: the load-error, setup-state and skeleton tests.
+- [ ] T807 [US8] New invoice:
+  - "What is this invoice for?" as an AURA radio group;
+  - the membership card (member combobox, plan block, renewal-period info alert);
+  - the event-fee form, attendee picker and non-member buyer fields on AURA fields, with the duplicate warning as an AURA alertdialog.
+  Every request body and push is unchanged. RED: the switcher, event-fee, attendee-picker, buyer-fields and renewal-context tests on AURA.
+- [ ] T808 [US8] Ratchet and preview:
+  - `MIGRATED_PATHS` gains the list page, its components except the detail-only dialogs, `_lib`, the loading and error files, and `new/**`;
+  - a US8a block in `ui-import-ratchet`, with the control moved to the detail page;
+  - preview views for the list (plain, setup, empty, manager), new invoice (membership, event fee) and record payment.
+- [ ] T809 [US8] Exit:
+  - e2e selectors where roles or names changed;
+  - gates;
+  - `next build`, adding bundle budgets for `/admin/invoices` and `/admin/invoices/new`;
+  - the parity page;
+  - UX, i18n and financial reviews;
+  - draft PR; relay R29.
+
+### US8b — invoice detail, dialogs, void and new credit note (PR 15; tasks written at its start)
+
+- [ ] T820 [US8] Detail page in the one layout, payment activity, the issue/delete/refund dialogs, the email-failure and auto-refund alerts, the phone action bar, the void page and the new-credit-note page.
+
+### US8c — credit notes, registers and settings (PR 16; tasks written at its start)
+
+- [ ] T840 [US8] Credit-notes list and detail, the tax-document registers (row count, totals and CSV equal `main`), the invoice settings; then the full local e2e checkpoint.
+
 ## Later phases (one PR each; tasks written when the phase starts)
 
-- [ ] T800 [US8] Invoicing admin: registers with sticky footer; refund, void, credit and record-payment dialogs. Financial-integrity review.
 - [ ] T900 [US9] Events: DatePicker/TimePicker (`Asia/Bangkok`), Combobox, FileUpload, erasure pages.
 - [ ] T1000 [US10] Users, audit, compliance, settings: DataTable, Menu danger items.
 - [ ] T1100 [US11] Dashboard: Stat tiles; recharts recoloured with `--aura-chart-*`.
