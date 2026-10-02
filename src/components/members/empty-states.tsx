@@ -17,27 +17,30 @@
  * failure without a page change (ux-standards § 7.3).
  *
  * 122 US5a (T503) — AURA `EmptyState` (boards `Admin-state-members-empty`,
- * `-filtered`, `-error`); the live-region role sits on a wrapper.
+ * `-filtered`, `-error`); the live-region role sits on a wrapper. The
+ * filtered and all-invited states sit in the list card (US8a list card
+ * rule), so they draw no frame of their own; the error keeps its danger
+ * frame, and the zero state stands alone with its border.
  */
 
 import type { ReactNode } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { Button, EmptyState } from '@jirawatpyk/aura-react';
+import { Button, Card, EmptyState } from '@jirawatpyk/aura-react';
 import { BuildingIcon, MailCheckIcon, SearchXIcon } from 'lucide-react';
 
 /**
- * The state boards (`Admin-state-members-filtered`, `-error`) frame the
- * filters and the empty / error state in one card.
+ * The members list's one card (the list card rule, spec 122 US8a): the
+ * filters with the table, the empty state or the error (boards
+ * `Admin-state-members-filtered`, `-error`). Below 640px it drops its frame
+ * and padding, so the phone rows, which are cards of their own, sit on the
+ * page gutter (as on Plans, Renewals and Invoices).
  */
 export function MembersStateCard({ children }: { readonly children: ReactNode }) {
   return (
-    <div
-      data-members-state-card=""
-      className="flex flex-col gap-4 rounded-[var(--aura-card-radius)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] p-6 max-sm:p-4"
-    >
-      {children}
-    </div>
+    <Card data-members-state-card="" flushBelow="sm" className="max-sm:border-0 max-sm:p-0">
+      <div className="flex flex-col gap-4">{children}</div>
+    </Card>
   );
 }
 
@@ -75,7 +78,6 @@ export function MembersFilteredEmptyState() {
   return (
     <div role="status">
       <EmptyState
-        bordered
         headingLevel={2}
         icon={<SearchXIcon aria-hidden="true" />}
         title={t('title')}
@@ -98,7 +100,6 @@ export function MembersAllInvitedEmptyState() {
   return (
     <div role="status">
       <EmptyState
-        bordered
         headingLevel={2}
         icon={<MailCheckIcon aria-hidden="true" />}
         title={t('title')}

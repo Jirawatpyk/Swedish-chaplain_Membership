@@ -6,23 +6,16 @@
  * list/detail data fetch that escapes the Result channel (e.g. a Neon read
  * failure) renders a recoverable, page-scoped error with a Retry CTA + the
  * `error.digest` to correlate with server logs — instead of falling through to
- * the generic staff-shell boundary (ux-standards § 4.3). Mirrors the directory/
- * audit siblings. Must be a Client Component (Next.js requires `error.tsx` to
- * expose client-side `reset()`).
+ * the generic staff-shell boundary (ux-standards § 4.3). Spec 122 US8 (T806):
+ * the shared AURA `RouteErrorPanel`, as the renewals routes use it. Must be a
+ * Client Component (Next.js requires `error.tsx` to expose client-side
+ * `reset()`).
  */
 import { useEffect } from 'react';
 import { useTranslations } from 'next-intl';
-import { AlertCircleIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
+import { RouteErrorPanel } from '@/components/shell/route-error-panel';
 
 export default function InvoicesError({
   error,
@@ -32,7 +25,6 @@ export default function InvoicesError({
   reset: () => void;
 }): React.JSX.Element {
   const t = useTranslations('errors');
-  const tButtons = useTranslations('buttons');
 
   useEffect(() => {
     console.error('[invoices error boundary]', error);
@@ -41,20 +33,7 @@ export default function InvoicesError({
   return (
     <TableContainer>
       <PageHeader title={t('generic')} />
-      <Card>
-        <CardHeader className="flex flex-row items-start gap-3">
-          <AlertCircleIcon className="size-6 text-destructive" aria-hidden />
-          <div>
-            <CardTitle>{t('generic')}</CardTitle>
-            <CardDescription>
-              {error.digest ? t('errorId', { id: error.digest }) : null}
-            </CardDescription>
-          </div>
-        </CardHeader>
-        <CardContent className="flex gap-2">
-          <Button onClick={reset}>{tButtons('retry')}</Button>
-        </CardContent>
-      </Card>
+      <RouteErrorPanel digest={error.digest} onRetry={reset} />
     </TableContainer>
   );
 }

@@ -132,6 +132,7 @@ export function ErrorCardActions({
           type="button"
           variant="primary"
           size="sm"
+          icon="rotate-ccw"
           onClick={handleRetry}
           disabled={isPending}
           aria-busy={isPending}

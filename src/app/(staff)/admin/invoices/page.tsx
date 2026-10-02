@@ -12,7 +12,6 @@
  */
 import type { Metadata } from 'next';
 import { randomUUID } from 'node:crypto';
-import Link from 'next/link';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { headers } from 'next/headers';
 import { logger } from '@/lib/logger';
@@ -22,7 +21,6 @@ export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.invoices.meta');
   return { title: t('title') };
 }
-import { PlusIcon } from 'lucide-react';
 import { canPerform, requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
@@ -53,15 +51,11 @@ import { formatCalendarYear } from '@/lib/format-date-localised';
 import { parseThbDecimal, parseThbDecimalToSatang } from '@/lib/money';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { TablePagination } from '@/components/layout/table-pagination';
-import { Card, CardContent } from '@/components/ui/card';
-import { buttonVariants } from '@/components/ui/button';
 import { LoadErrorCard } from '@/components/shell/load-error-card';
 import { ErrorCardActions } from '@/components/shell/error-card-actions';
-import { InvoicesTable, type InvoicesTableRow } from './_components/invoice-table';
+import type { InvoicesTableRow } from './_components/invoice-table';
 import { isAutoRenewalQueueView } from './_components/queue-view';
-import { InvoiceFilters } from './_components/invoice-filters';
-import { CsvExportDialog } from './_components/csv-export-dialog';
+import { renderInvoicesListView, renderInvoicesSetupView } from './_components/invoices-list-view';
 
 const VALID_STATUSES = new Set([
   'draft',
@@ -214,7 +208,6 @@ export default async function AdminInvoicesPage({
   searchParams: Promise<SearchParams>;
 }) {
   const t = await getTranslations('admin.invoices');
-  const tShared = await getTranslations('shared');
   const locale = await getLocale();
   const query = await searchParams;
 
@@ -234,24 +227,7 @@ export default async function AdminInvoicesPage({
   // (B2 — ships alongside this guard).
   const setupComplete = await isTenantInvoiceSetupComplete(tenantCtx.slug);
   if (!setupComplete) {
-    return (
-      <TableContainer>
-        <PageHeader title={t('list.title')} subtitle={t('list.description')} />
-        <Card>
-          <CardContent className="py-12 text-center">
-            <p className="text-muted-foreground">{t('list.setupRequired')}</p>
-            {isAdmin && (
-              <Link
-                href="/admin/settings/invoicing"
-                className={buttonVariants({ variant: 'default', className: 'mt-4' })}
-              >
-                {t('list.actions.configureInvoicing')}
-              </Link>
-            )}
-          </CardContent>
-        </Card>
-      </TableContainer>
-    );
+    return <TableContainer>{await renderInvoicesSetupView({ isAdmin })}</TableContainer>;
   }
 
   const qTrim = query.q?.trim();
@@ -766,134 +742,27 @@ export default async function AdminInvoicesPage({
 
   return (
     <TableContainer>
-      <PageHeader
-        title={isQueueView ? t('queueView.title') : t('list.title')}
-        subtitle={isQueueView ? t('queueView.description') : t('list.description')}
-        actions={
-          isAdmin ? (
-            // flex-wrap: three actions (Registers + Export CSV + New Invoice)
-            // must wrap on a 320px viewport rather than overflow it
-            // (WCAG 1.4.10 reflow — B2 review FINDING 3).
-            <div className="flex flex-wrap items-center gap-2">
-              {/* 088 T065b (FR-031) — period tax-document registers (§86/4 RC
-                  register + §80/1(5) zero-rate sales + §105 RE register) for
-                  ภ.พ.30. Admin + flag gated; the register page 404s when the
-                  flag is off. */}
-              {f088TaxAtPayment ? (
-                <Link
-                  href="/admin/invoices/registers"
-                  className={buttonVariants({ variant: 'outline' })}
-                >
-                  {t('registers.entry')}
-                </Link>
-              ) : null}
-              <CsvExportDialog />
-              <Link
-                href="/admin/invoices/new"
-                className={buttonVariants({ variant: 'default' })}
-              >
-                <PlusIcon className="size-4" />
-                {t('list.actions.new')}
-              </Link>
-            </div>
-          ) : null
-        }
-      />
-      <Card>
-        <CardContent className="flex flex-col gap-4">
-          {/* 088 T065b — the three tax-document filters render only when the
-              tax-at-payment flag is on (flag-off renders today's filter set).
-              107-auto-invoice Task 13 — the origin filter renders only when
-              FEATURE_AUTO_INVOICE is on. */}
-          <InvoiceFilters
-            show088Filters={f088TaxAtPayment}
-            showAutoInvoiceFilter={autoInvoiceEnabled}
-            // Task 3 — generic filter, not flag-gated (see the prop doc).
-            showDueBeforeFilter
-          />
-          {/* SC 4.1.3 (Status Messages) — announce the filtered result count to
-              screen readers after a filter/page change WITHOUT moving focus.
-              `role="status"` (aria-live=polite) + a STABLE tree position (outside
-              the empty/non-empty branch below) so the node persists across
-              re-renders and only its text changes → announced. `total` is the
-              full match count across pages (the same value the pagination uses),
-              not just this page's rows. Mirrors the audit / directory /
-              erasure-log list pages (the members directory does not render
-              this region). Initial render is not announced (aria-live only
-              speaks changes). */}
-          <p role="status" className="sr-only">
-            {t('list.resultCount', { count: total })}
-          </p>
-          {payIntent && isAdmin && rows.length > 0 ? (
-            // FR-035 — realise the palette `?pay=1` deep-link: guide the admin
-            // to the per-row Record payment button (role=status = polite, this
-            // is guidance not an error).
-            <div
-              role="status"
-              className="rounded-md border border-primary/30 bg-primary/5 px-4 py-3 text-sm text-foreground"
-              data-testid="record-payment-intent-hint"
-            >
-              {t('list.recordPaymentIntentHint')}
-            </div>
-          ) : null}
-          {rows.length === 0 ? (
-            <div className="py-12 text-center">
-              <p className="text-muted-foreground">
-                {hasFilters ? t('list.filteredEmpty') : t('list.empty')}
-              </p>
-              {hasFilters && (
-                // Filtered-empty state — provide an explicit escape
-                // hatch back to the unfiltered list. The filter bar
-                // above has its own clear button, but on long tables
-                // it may have scrolled off the viewport by the time
-                // the user reaches the empty state (UX-M1).
-                <Link
-                  href="/admin/invoices"
-                  className={buttonVariants({ variant: 'outline', className: 'mt-4' })}
-                >
-                  {t('list.actions.clearFilters')}
-                </Link>
-              )}
-              {!hasFilters && isAdmin && (
-                <Link
-                  href="/admin/invoices/new"
-                  className={buttonVariants({ variant: 'default', className: 'mt-4' })}
-                >
-                  {t('list.actions.new')}
-                </Link>
-              )}
-            </div>
-          ) : (
-            <>
-              <InvoicesTable
-                rows={rows}
-                showMethodColumn={paidOnlineOnly}
-                // 107-auto-invoice Task 13 — the queue-context column renders
-                // only in the auto-renewal review-queue view.
-                showQueueMetaColumn={isQueueView}
-                // 088 T021c / FR-035 — per-row Record payment quick action.
-                // Admin-only (money mutation); managers are read-only on
-                // finance. `todayIso` is the tenant-timezone (Bangkok) today —
-                // the SAME value the detail page threads to the dialog so the
-                // payment-date clamp never off-by-ones for ~7h/day.
-                canRecordPayment={isAdmin}
-                // 107-auto-invoice Task 14 — per-row Issue+Send / Issue
-                // silently / Discard queue actions. Admin-only, same
-                // rationale as `canRecordPayment`.
-                canManageQueueActions={isAdmin}
-                todayIso={bangkokLocalDate(nowUtcIso)}
-              />
-              <TablePagination
-                page={page}
-                pageSize={PAGE_SIZE}
-                total={total}
-                baseHref="/admin/invoices"
-              />
-            </>
-          )}
-        </CardContent>
-      </Card>
-      <span className="sr-only">{tShared('loaded')}</span>
+      {await renderInvoicesListView({
+        isAdmin,
+        isQueueView,
+        showRegisters: f088TaxAtPayment,
+        show088Filters: f088TaxAtPayment,
+        // 107-auto-invoice Task 13 — the origin filter only with FEATURE_AUTO_INVOICE.
+        showAutoInvoiceFilter: autoInvoiceEnabled,
+        rows,
+        total,
+        page,
+        pageSize: PAGE_SIZE,
+        hasFilters,
+        draftsHidden: !includeDrafts,
+        payIntent,
+        // F5 T096 — the Method column in the `?paidOnline=1` view.
+        showMethodColumn: paidOnlineOnly,
+        // The tenant-timezone (Bangkok) today — the SAME value the detail
+        // page threads to the dialog, so the payment-date clamp never
+        // off-by-ones for ~7h/day.
+        todayIso: bangkokLocalDate(nowUtcIso),
+      })}
     </TableContainer>
   );
 }

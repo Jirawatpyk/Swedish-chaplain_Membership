@@ -425,7 +425,8 @@ test.describe('@us1 invoice draft → issue', () => {
     // filtered empty-state message is visible. `poll` waits until
     // one side becomes true, with a generous timeout for CI
     // cold-start where layout can take a few seconds.
-    const draftCell = page.getByRole('cell', { name: /^draft$/i }).first();
+    // AURA DataTable cells are gridcells (spec 122 US8).
+    const draftCell = page.getByRole('gridcell', { name: /^draft$/i }).first();
     const emptyState = page.getByText(/no invoices? found|no results/i).first();
     await expect
       .poll(

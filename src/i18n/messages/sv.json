@@ -2644,12 +2644,16 @@
           "receiptPreparing": "Förbereder kvitto…",
           "receiptGenerating": "Kvitto genereras…",
           "receiptRenderFailed": "Kvittot kunde inte genereras",
-          "receiptRenderFailedAria": "Kvitto-PDF kunde inte genereras för faktura {number} — öppna för att granska",
+          "receiptRenderFailedAria": "Kvittot kunde inte genereras — öppna faktura {number} för att granska",
           "recordPayment": "Registrera betalning…",
           "recordPaymentAria": "Registrera betalning för faktura {number}",
           "clearFilters": "Rensa filter",
           "configureInvoicing": "Konfigurera fakturering",
-          "openDraftAria": "Öppna fakturautkast för {name}"
+          "openDraftAria": "Öppna fakturautkast för {name}",
+          "moreAria": "Fler åtgärder för {number}",
+          "moreDraftAria": "Fler åtgärder för fakturautkast för {name}",
+          "moreHeaderAria": "Fler fakturaåtgärder",
+          "view": "Visa faktura"
         },
         "columns": {
           "documentNumber": "Fakturanr.",
@@ -2687,6 +2691,8 @@
         "filteredEmpty": "Inga fakturor matchar filtren.",
         "loadFailed": "Det gick inte att ladda fakturorna. Försök igen.",
         "resultCount": "{count, plural, =0 {Inga fakturor matchar filtren} one {# faktura matchar filtren} other {# fakturor matchar filtren}}",
+        "countLine": "{count, plural, one {# faktura} other {# fakturor}}",
+        "countLineDraftsHint": "{count, plural, one {# faktura} other {# fakturor}} · välj Utkast i statusfiltret för att se utkast",
         "recordPaymentIntentHint": "Välj en faktura nedan och använd dess knapp 'Registrera betalning' (kolumnen Åtgärder) för att registrera betalning.",
         "filters": {
           "allStatuses": "Alla status",
@@ -2738,6 +2744,8 @@
         },
         "creditedSuffix": "{count, plural, one {+# kreditnota} other {+# kreditnotor}}",
         "creditedTooltip": "{count, plural, one {# kreditnota} other {# kreditnotor}} · {amount} THB krediterat",
+        "issuedOn": "Utfärdad {date}",
+        "creditNoteCount": "{count, plural, one {# kreditnota} other {# kreditnotor}}",
         "creditedAria": "{count, plural, one {# kreditnota utställd} other {# kreditnotor utställda}} mot denna faktura, {amount} thailändska baht krediterat",
         "tableCaption": "Lista över fakturor för de valda filtren.",
         "queueTableCaption": "Lista över utkast för automatisk förnyelse som väntar på granskning.",
@@ -2859,6 +2867,7 @@
         "cancel": "Tillbaka",
         "type": {
           "legend": "Vad avser denna faktura?",
+          "label": "Fakturatyp",
           "membership": "Medlemskap",
           "membershipHint": "Årlig medlemsavgift för en medlem.",
           "event": "Evenemangsavgift",
@@ -2994,6 +3003,7 @@
       },
       "form": {
         "submit": "Skapa utkast",
+        "cancel": "Avbryt",
         "submitting": "Skapar…",
         "success": {
           "created": "Utkast skapat"
@@ -3328,6 +3338,9 @@
         "title": "Registrera betalning",
         "description": "Registrera betalningen för denna faktura. §86/4-skattekvittot utfärdas och skickas till medlemmen om en e-postadress finns registrerad.",
         "payingForDocument": "Registrerar betalning för {number}",
+        "payingForDocumentMember": "Registrerar betalning för {number} · {member}",
+        "invoiceTotal": "Fakturans totalbelopp (inkl. moms)",
+        "fullTotalNote": "Hela fakturabeloppet — delbetalningar kan inte registreras.",
         "submit": "Registrera",
         "submitting": "Registrerar…",
         "success": "Betalning registrerad",

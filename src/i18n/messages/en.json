@@ -2644,12 +2644,16 @@
           "receiptPreparing": "Receipt preparing…",
           "receiptGenerating": "Receipt generating…",
           "receiptRenderFailed": "Receipt render failed",
-          "receiptRenderFailedAria": "Receipt PDF render failed for invoice {number} — open to review",
+          "receiptRenderFailedAria": "Receipt render failed — open invoice {number} to review",
           "recordPayment": "Record payment…",
           "recordPaymentAria": "Record payment for invoice {number}",
           "clearFilters": "Clear filters",
           "configureInvoicing": "Configure Invoicing",
-          "openDraftAria": "Open draft invoice for {name}"
+          "openDraftAria": "Open draft invoice for {name}",
+          "moreAria": "More actions for {number}",
+          "moreDraftAria": "More actions for draft invoice for {name}",
+          "moreHeaderAria": "More invoice actions",
+          "view": "View invoice"
         },
         "columns": {
           "documentNumber": "Invoice No.",
@@ -2687,6 +2691,8 @@
         "filteredEmpty": "No invoices match the current filters.",
         "loadFailed": "Couldn't load invoices. Please try again.",
         "resultCount": "{count, plural, =0 {No invoices match the filters} one {# invoice matches the filters} other {# invoices match the filters}}",
+        "countLine": "{count, plural, one {# invoice} other {# invoices}}",
+        "countLineDraftsHint": "{count, plural, one {# invoice} other {# invoices}} · to see drafts, choose Draft in the Status filter",
         "recordPaymentIntentHint": "Choose a bill below and use its Record payment button (Actions column) to record a payment.",
         "filters": {
           "allStatuses": "All statuses",
@@ -2738,6 +2744,8 @@
         },
         "creditedSuffix": "{count, plural, one {+# CN} other {+# CN}}",
         "creditedTooltip": "{count, plural, one {# credit note} other {# credit notes}} · {amount} THB credited",
+        "issuedOn": "Issued {date}",
+        "creditNoteCount": "{count, plural, one {# credit note} other {# credit notes}}",
         "creditedAria": "{count, plural, one {# credit note} other {# credit notes}} issued against this invoice, {amount} Thai baht credited",
         "tableCaption": "List of invoices for the selected filters.",
         "queueTableCaption": "List of auto-renewal drafts awaiting review.",
@@ -2859,6 +2867,7 @@
         "cancel": "Back to list",
         "type": {
           "legend": "What is this invoice for?",
+          "label": "Invoice type",
           "membership": "Membership",
           "membershipHint": "Annual membership fee for a member.",
           "event": "Event fee",
@@ -2994,6 +3003,7 @@
       },
       "form": {
         "submit": "Create draft",
+        "cancel": "Cancel",
         "submitting": "Creating…",
         "success": {
           "created": "Draft created"
@@ -3328,6 +3338,9 @@
         "title": "Record payment",
         "description": "Record the payment received for this invoice. The §86/4 tax receipt is issued and, if an email is on file, sent to the member.",
         "payingForDocument": "Recording payment for {number}",
+        "payingForDocumentMember": "Recording payment for {number} · {member}",
+        "invoiceTotal": "Invoice total (incl. VAT)",
+        "fullTotalNote": "The full invoice total — part payments can't be recorded.",
         "submit": "Record payment",
         "submitting": "Recording…",
         "success": "Payment recorded",

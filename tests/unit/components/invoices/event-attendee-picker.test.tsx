@@ -101,8 +101,9 @@ describe('<EventAttendeePicker>', () => {
     expect(screen.queryByRole('option')).toBeNull();
     expect(screen.getAllByRole('button')).toHaveLength(2);
     expect(screen.getByText('Alice')).toBeInTheDocument();
-    expect(screen.getByText('Matched member')).toBeInTheDocument();
-    expect(screen.getByText('Non-member')).toBeInTheDocument();
+    // AURA badges: a matched member in the accent tone, others neutral.
+    expect(screen.getByText('Matched member').closest('.aura-badge')).toHaveClass('aura-badge--accent');
+    expect(screen.getByText('Non-member').closest('.aura-badge')).toHaveClass('aura-badge--neutral');
     expect(screen.getByText('1,000 THB')).toBeInTheDocument();
     expect(screen.getByText('2,500 THB')).toBeInTheDocument();
   });
@@ -188,6 +189,9 @@ describe('<EventAttendeePicker>', () => {
 describe('<EventAttendeePickerSkeleton>', () => {
   it('renders a shimmer placeholder', () => {
     render(<EventAttendeePickerSkeleton />);
-    expect(screen.getByTestId('attendee-picker-skeleton')).toBeInTheDocument();
+    const skeleton = screen.getByTestId('attendee-picker-skeleton');
+    // The shared pulse block, never the legacy kit's skeleton.
+    expect(skeleton.querySelector('[data-slot="skeleton"]')).toBeNull();
+    expect(skeleton.querySelectorAll('[data-slot="skeleton-block"], .aura-skeleton').length).toBeGreaterThan(0);
   });
 });

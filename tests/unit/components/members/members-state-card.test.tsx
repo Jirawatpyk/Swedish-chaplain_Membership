@@ -7,7 +7,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import messages from '@/i18n/messages/en.json';
-import { MembersErrorState, MembersStateCard } from '@/components/members/empty-states';
+import {
+  MembersAllInvitedEmptyState,
+  MembersErrorState,
+  MembersFilteredEmptyState,
+  MembersStateCard,
+} from '@/components/members/empty-states';
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ replace: vi.fn(), refresh: vi.fn() }),
@@ -31,9 +36,12 @@ describe('members state card (US5a)', () => {
         <p>state</p>
       </MembersStateCard>,
     );
-    const card = screen.getByText('filters').parentElement;
-    expect(card).toBe(screen.getByText('state').parentElement);
-    expect(card).toHaveAttribute('data-members-state-card');
+    const card = screen.getByText('filters').closest('[data-members-state-card]');
+    expect(card).not.toBeNull();
+    expect(card).toBe(screen.getByText('state').closest('[data-members-state-card]'));
+    // The list card rule: an AURA card that drops its frame below 640px,
+    // where the rows become cards of their own.
+    expect(card).toHaveClass('aura-card', 'aura-card--flush-below-sm');
   });
 
   it('draws the error state in the danger colours', () => {
@@ -42,5 +50,17 @@ describe('members state card (US5a)', () => {
     // itself — no wrapper restyling AURA's classes.
     const alert = screen.getByRole('alert');
     expect(alert).toHaveClass('aura-empty', 'is-danger', 'is-bordered');
+  });
+
+  it('draws the neutral empty states inside the card without a frame of their own (list card rule)', () => {
+    renderIntl(
+      <>
+        <MembersFilteredEmptyState />
+        <MembersAllInvitedEmptyState />
+      </>,
+    );
+    const empties = screen.getAllByRole('status').map((s) => s.querySelector('.aura-empty'));
+    expect(empties).toHaveLength(2);
+    for (const empty of empties) expect(empty).not.toHaveClass('is-bordered');
   });
 });

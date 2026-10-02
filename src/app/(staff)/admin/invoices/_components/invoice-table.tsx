@@ -1,56 +1,42 @@
 /**
  * T057 — Invoices admin table (F4).
  *
- * Visual parity with members-table: shadcn `Table` primitive + `Badge`
- * variants, cell `align-middle`, row hover `bg-accent/40`, header
- * `text-xs uppercase tracking-wide text-muted-foreground`. Kept plain
- * (no TanStack/selection) for MVP — SweCham has < 200 active invoices
- * per year; sort/selection arrive in a later polish pass.
+ * Spec 122 US8 (T802): one AURA `DataTable` that stacks into cards below
+ * 640px, laid out as the `Admin-invoices` board draws it (spec
+ * Clarifications, Session 2026-10-02):
+ *   Invoice No. (+ "Issued {date}" · credit notes) · Buyer · Status ·
+ *   [Queue] · [Method] · Due · Receipt No. · Total · Actions
  *
- * Columns (identity-first per AccRevo / Thai bookkeeper workflow):
- *   Number · Receipt No. · Member · Status · [Method?] · Issued ·
- *   Due · Total · Actions
- *
- *   - Receipt No. sits right after Number so the bookkeeper can scan
- *     both §87 document numbers (invoice + receipt) without crossing
- *     the Member column. Shows `receiptDocumentNumberRaw` when the row
- *     has one; em-dash otherwise (e.g. unpaid rows).
- *   - All columns use `whitespace-nowrap` so dates / numbers / badges
- *     stay on one line. Column widths rely on auto-layout (no w-px)
- *     so slack distributes proportionally across columns instead of
- *     piling into the only flex column.
- *   - Method column is opt-in via `?paidOnline=1` (F5 reconciliation
- *     filter).
- * Download link is suppressed on drafts (no PDF yet) to avoid 404s.
+ *   - Queue shows only in the auto-renewal review queue (`?origin=
+ *     auto_renewal`), Method only in the `?paidOnline=1` reconciliation view.
+ *   - Actions: "Record payment…" on issued/overdue bills (admins), then a ⋯
+ *     menu with the row's documents. A draft has no PDF, so its menu only
+ *     opens it.
+ *   - On a phone each row is a card: the number as its title, the status
+ *     pill, then buyer, due and total, with the actions as its last row.
  */
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useTranslations, useLocale } from 'next-intl';
+import {
+  Badge,
+  DataTable,
+  DropdownMenu,
+  Icon,
+  IconButton,
+  StatusPill,
+  type DataTableColumn,
+  type MenuItem,
+} from '@jirawatpyk/aura-react';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 import { toast } from '@/lib/toast';
-import { AlertCircleIcon, Loader2 } from 'lucide-react';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
-import { buttonVariants } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { invoiceStatusTone } from '@/components/invoices/invoice-status-tone';
 import { downloadInvoice, downloadReceipt } from '../_lib/download-receipt-client';
 import { RecordPaymentDialog } from './record-payment-dialog';
+import { INVOICES_COLUMN_LAYOUT } from './invoices-table-columns';
 import {
   AutoRenewalQueueBadges,
   type AutoRenewalQueueMeta,
@@ -208,39 +194,6 @@ export type InvoicesTableRow = {
   readonly queueMeta?: AutoRenewalQueueMeta | null;
 };
 
-type BadgeVariant = 'default' | 'secondary' | 'outline' | 'destructive';
-
-function statusVariant(status: RowStatus): BadgeVariant {
-  switch (status) {
-    case 'paid':
-      return 'default';
-    case 'issued':
-      return 'secondary';
-    case 'overdue':
-      return 'destructive';
-    case 'void':
-    case 'credited':
-    case 'partially_credited':
-    case 'draft':
-      return 'outline';
-  }
-}
-
-function StatusBadge({ status }: { status: RowStatus }) {
-  const t = useTranslations('admin.invoices.list.statuses');
-  return (
-    <Badge variant={statusVariant(status)}>
-      {/* Icon on overdue so WCAG 1.4.1 "Use of Color" is satisfied:
-          state is not conveyed by color alone. Icon aria-hidden;
-          text label is canonical. */}
-      {status === 'overdue' && (
-        <AlertCircleIcon className="mr-1 size-3" aria-hidden="true" />
-      )}
-      {t(status)}
-    </Badge>
-  );
-}
-
 function formatSatang(satang: string): string {
   const n = BigInt(satang);
   const abs = n < 0n ? -n : n;
@@ -252,33 +205,18 @@ function formatSatang(satang: string): string {
   return `${sign}${whole.toLocaleString('en-US')}.${rem.toString().padStart(2, '0')}`;
 }
 
-const headCls = 'text-xs uppercase tracking-wide text-muted-foreground';
-
-// Shared base for the Number-column open-detail link (both the real-number
-// row and the draft placeholder row). `inline-flex min-h-6 items-center`
-// guarantees a ≥24px vertical hit target (WCAG 2.5.8) — the ~20px `text-sm`
-// line-box alone is short of it. The real-number branch appends
-// `font-medium`; the draft branch stays normal-weight `text-foreground`
-// (see the Number-cell comment for why it is neither italic nor muted).
+// The open-detail link in the Invoice No. column (real number or the draft
+// placeholder). `inline-flex min-h-6` keeps a ≥24px hit target (WCAG 2.5.8).
+// The draft branch is normal weight: never italic (Thai has no true italic —
+// faux-oblique bends "ร่าง"'s marks) and never muted (that colour is this
+// table's "empty" sentinel), so it reads as a link, not a document number.
 const numberLinkBase =
-  'inline-flex min-h-6 items-center cursor-pointer underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-ring rounded-sm';
+  'inline-flex min-h-6 items-center rounded-sm text-[var(--aura-fg-primary)] underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-[var(--aura-focus-ring)]';
+const subLine = 'text-xs text-[var(--aura-fg-secondary)]';
+const dash = <span className="text-sm text-[var(--aura-fg-tertiary)]">—</span>;
 
-function MethodBadge({ method }: { method: 'card' | 'promptpay' }) {
-  const t = useTranslations('admin.paymentReconciliation.methodBadge');
-  const tCol = useTranslations('admin.invoices.list.columns');
-  return (
-    <Badge
-      variant="secondary"
-      data-testid={`method-badge-${method}`}
-      className="font-normal"
-      // SR users hearing only "Card" without column context get an
-      // ambiguous label. aria-label prepends the column name so
-      // row-by-row reading produces "Method: Card" / "Method: PromptPay".
-      aria-label={`${tCol('method')}: ${t(method)}`}
-    >
-      {t(method)}
-    </Badge>
-  );
+function formatListDate(iso: string, locale: string): string {
+  return formatLocalisedDate(iso, locale, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
 }
 
 export function InvoicesTable({
@@ -332,6 +270,8 @@ export function InvoicesTable({
   // tax088 namespace). Rendered only for rows whose `taxDocumentKind` is
   // non-'none' (page.tsx bakes the flag into that field).
   const tTax088 = useTranslations('admin.invoices.tax088');
+  const tStatus = useTranslations('admin.invoices.list.statuses');
+  const tMethod = useTranslations('admin.paymentReconciliation.methodBadge');
   const locale = useLocale();
   // Per-row spinner state keyed by `${variant}:${invoiceId}` so two
   // downloads on different rows don't overwrite each other's loader.
@@ -359,7 +299,7 @@ export function InvoicesTable({
   // fetch window). `try/finally` guards against a throw inside the
   // helpers leaking a stuck spinner — the helpers themselves swallow
   // documented 4xx/5xx via their own catch, but defensive cleanup
-  // matches the invoice-more-menu pattern.
+  // matches the detail page's download pattern.
   const handleRowDownload = async (
     variant: 'invoice' | 'receipt',
     invoiceId: string,
@@ -404,557 +344,375 @@ export function InvoicesTable({
       removeDownloading(key);
     }
   };
-  return (
-    // Inset shadow on the right edge cues mobile users that the table
-    // scrolls horizontally (8 cols with Method on; 7 otherwise);
-    // without it the overflow was invisible. Dual-tone (light + dark)
-    // so the cue stays visible — the rgba(0,0,0,0.08) ink disappears
-    // on `bg-card` dark surfaces alone.
-    <div className="overflow-x-auto shadow-[inset_-12px_0_8px_-12px_rgba(0,0,0,0.08)] dark:shadow-[inset_-12px_0_8px_-12px_rgba(255,255,255,0.10)]">
-      {/* Review A8 — the queue view gets its own table caption so screen-
-          reader users navigating straight to the table get the same
-          "this is the review queue, not the general list" context sighted
-          users get from the page heading. */}
-      <Table
-        aria-label={
-          showQueueMetaColumn ? t('queueTableCaption') : t('tableCaption')
-        }
-      >
-        <TableHeader>
-          <TableRow>
-            <TableHead scope="col" className={`${headCls} whitespace-nowrap`}>
-              {t('columns.documentNumber')}
-            </TableHead>
-            <TableHead scope="col" className={`${headCls} whitespace-nowrap`}>
-              {t('columns.receiptNumber')}
-            </TableHead>
-            <TableHead scope="col" className={headCls}>
-              {t('columns.buyer')}
-            </TableHead>
-            <TableHead scope="col" className={`${headCls} whitespace-nowrap`}>
-              {t('columns.status')}
-            </TableHead>
-            {showQueueMetaColumn && (
-              <TableHead
-                scope="col"
-                className={headCls}
-                data-testid="column-header-queue"
-              >
-                {t('columns.queue')}
-              </TableHead>
-            )}
-            {showMethodColumn && (
-              <TableHead
-                scope="col"
-                className={`${headCls} whitespace-nowrap`}
-                data-testid="column-header-method"
-              >
-                {t('columns.method')}
-              </TableHead>
-            )}
-            <TableHead scope="col" className={`${headCls} whitespace-nowrap`}>
-              {t('columns.issueDate')}
-            </TableHead>
-            <TableHead scope="col" className={`${headCls} whitespace-nowrap`}>
-              {t('columns.dueDate')}
-            </TableHead>
-            <TableHead scope="col" className={`${headCls} whitespace-nowrap text-right`}>
-              {t('columns.total')}
-            </TableHead>
-            <TableHead scope="col" className={`${headCls} whitespace-nowrap text-right`}>
-              {t('columns.actions')}
-            </TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.map((r) => (
-            <TableRow
-              key={r.invoiceId}
-              className="hover:bg-accent/40 focus-within:bg-accent/40"
-            >
-              <TableCell className="align-middle whitespace-nowrap">
-                {/* 088 A-refined (FR-016) — the Number column ALWAYS carries the
-                    invoice's OWN number: the SC bill for a real 088 bill (paid or
-                    unpaid — page.tsx resolves it), the §87 invoice number for
-                    legacy rows. The "SC-/IN-" prefix + the renamed "Invoice No."
-                    column header are self-documenting; the RC §86/4 tax receipt is
-                    a clickable link in the Receipt No. column. No per-row tag.
+  // The Actions cell: "Record payment…" on issued/overdue bills (admin), then
+  // the ⋯ menu with the row's documents — or, in the review-queue view, the
+  // draft's issue/discard actions (a draft has no PDF, so no download menu).
+  // Memoised with the columns: a fresh `columns` array on every render
+  // remounts each cell, and an open menu closed on the click that opened it
+  // (R18).
+  const renderRowActions = useCallback(
+    (r: InvoicesTableRow) => {
+      const showRecordPayment =
+        canRecordPayment && todayIso !== undefined && (r.status === 'issued' || r.status === 'overdue');
+      const showQueueActions = canManageQueueActions && showQueueMetaColumn && r.status === 'draft';
+      if (showQueueActions) {
+        const qm = r.queueMeta;
+        const issueCaution =
+          qm == null
+            ? null
+            : qm.unresolved
+              ? ('unresolved' as const)
+              : qm.priceUnverifiable
+                ? ('priceUnverifiable' as const)
+                : qm.priceChanged
+                  ? ('priceChanged' as const)
+                  : null;
+        return (
+          <AutoRenewalQueueActions
+            invoiceId={r.invoiceId}
+            memberName={r.memberName}
+            status={r.status}
+            issueCaution={issueCaution}
+          />
+        );
+      }
+      // FR-015 — every document control names its own document: the main
+      // pdf is the SC bill on an 088 bill, the §105 receipt on a β as-paid
+      // row, else the tax invoice; the RC receipt once it has rendered (092:
+      // a credit note does not cancel it, so credited rows keep it).
+      const mainDownloadNumber =
+        r.taxDocumentKind === 'tax_receipt' && r.billDocumentNumberRaw ? r.billDocumentNumberRaw : r.documentNumber;
+      const receiptNumber = r.receiptDocumentNumberRaw ?? r.documentNumber;
+      const items: MenuItem[] = [{ label: t('actions.view'), href: `/admin/invoices/${r.invoiceId}`, icon: 'file-text' }];
+      if (r.hasPdf) {
+        items.push({
+          label: t(
+            r.mainDownloadIsReceipt
+              ? 'actions.downloadReceiptAria'
+              : r.mainDownloadIsBill
+                ? 'actions.downloadBillAria'
+                : 'actions.downloadInvoiceAria',
+            { number: mainDownloadNumber },
+          ),
+          icon: 'download',
+          disabled: downloadingKeys.has(`invoice:${r.invoiceId}`),
+          onSelect: () => void handleRowDownload('invoice', r.invoiceId, `${mainDownloadNumber}.pdf`),
+        });
+      }
+      if (r.hasReceiptPdf) {
+        items.push({
+          label: t('actions.downloadReceiptAria', { number: receiptNumber }),
+          icon: 'download',
+          disabled: downloadingKeys.has(`receipt:${r.invoiceId}`),
+          onSelect: () => void handleRowDownload('receipt', r.invoiceId, `${receiptNumber}-receipt.pdf`),
+        });
+      }
+      // A draft has no number yet, so its ⋯ is named for the member (like the
+      // number link), never a bare "Draft" shared by every draft row.
+      const menuName =
+        r.status === 'draft'
+          ? t('actions.moreDraftAria', { name: r.memberName })
+          : t('actions.moreAria', { number: r.documentNumber });
+      // Record payment on the left and the ⋯ on the right (the board). On a
+      // phone card the button grows to fill the footer row beside the ⋯.
+      return (
+        <div className="flex w-full items-center justify-between gap-1">
+          {showRecordPayment ? (
+            <RecordPaymentDialog
+              invoiceId={r.invoiceId}
+              documentNumber={r.documentNumber === '—' ? null : r.documentNumber}
+              issueDate={r.issueDate}
+              todayIso={todayIso}
+              triggerLabel={t('actions.recordPayment')}
+              triggerAriaLabel={t('actions.recordPaymentAria', { number: r.documentNumber })}
+              memberName={r.memberName}
+              {...(r.totalSatang !== null ? { totalDisplay: `${formatSatang(r.totalSatang)} THB` } : {})}
+              triggerVariant="ghost"
+              triggerSize="sm"
+              triggerId={`record-payment-${r.invoiceId}`}
+              triggerTestId="row-record-payment-trigger"
+              triggerClassName="max-sm:flex-1"
+              // The refresh turns the row paid and the trigger unmounts; the ⋯ stays.
+              finalFocusFallbackId={`row-menu-${r.invoiceId}`}
+            />
+          ) : (
+            <span />
+          )}
+          <DropdownMenu
+            label={menuName}
+            trigger={
+              <IconButton id={`row-menu-${r.invoiceId}`} icon="ellipsis" size="sm" touchHeight label={menuName} />
+            }
+            items={items}
+          />
+        </div>
+      );
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- handleRowDownload only reads the setters and translators
+    [t, canRecordPayment, canManageQueueActions, showQueueMetaColumn, todayIso, downloadingKeys],
+  );
 
-                    draft-number-label — a draft correctly has NO §87 number
-                    (Thai RD §87 allocates only at ISSUE), so `documentNumber`
-                    is the sentinel "—" here. Rendering that bare em-dash as the
-                    ONLY click-to-open affordance failed WCAG 2.5.8 (sub-24px
-                    target) and 2.4.4 (empty link name). Gate on the semantic
-                    `status === 'draft'` (never string-match "—" — other
-                    non-issued states never carry this sentinel) and render a
-                    localised "Draft" placeholder link instead — normal-weight
-                    `text-foreground` via `numberLinkBase` (NOT `font-medium`, so
-                    it never reads as a real document number; NOT italic — Thai
-                    has no true italic, and the browser's faux-oblique bends
-                    "ร่าง"'s tone/vowel marks; NOT muted — that colour is this
-                    table's "empty / non-actionable" sentinel used by the adjacent
-                    "—" cells, so a muted link would blend into them). The visible
-                    "Draft" word + the Status=Draft badge carry the placeholder
-                    meaning; the shared underline + focus ring + `min-h-6` keep it
-                    a real, ≥24px-target link (WCAG 2.5.8), with an aria-label
-                    naming the member for screen readers. `r.documentNumber`
-                    itself is left untouched — the record-payment gate at
-                    `documentNumber === '—'` (issued/overdue-only) never sees
-                    a draft row, but the data value stays as-is regardless. */}
-                {r.status === 'draft' ? (
+  // The receipt's async state (088 T066b): a "generating" line while the
+  // §86/4 receipt renders, a link to the invoice when it failed (actionable,
+  // never a forever-pending state). Plain text, not a live region or
+  // aria-busy: the words state the status. Drawn in the Receipt No. column,
+  // and again under the number on a phone card, where that column is hidden.
+  const renderReceiptState = useCallback(
+    (r: InvoicesTableRow, withTestIds: boolean) => {
+      if (r.status !== 'paid') return null;
+      if (r.receiptPdfStatus === 'pending') {
+        return (
+          <span className={subLine} {...(withTestIds ? { 'data-testid': 'row-receipt-generating' } : {})}>
+            {t('actions.receiptGenerating')}
+          </span>
+        );
+      }
+      if (r.receiptPdfStatus === 'failed') {
+        return (
+          <Link
+            href={`/admin/invoices/${r.invoiceId}`}
+            aria-label={t('actions.receiptRenderFailedAria', { number: r.documentNumber })}
+            className="inline-flex min-h-6 items-center gap-1 rounded-sm text-xs font-medium text-[var(--aura-fg-danger)] underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-[var(--aura-focus-ring)]"
+            {...(withTestIds ? { 'data-testid': 'row-receipt-render-failed' } : {})}
+          >
+            <Icon name="circle-alert" size={14} />
+            {t('actions.receiptRenderFailed')}
+          </Link>
+        );
+      }
+      return null;
+    },
+    [t],
+  );
+
+  const columns = useMemo<DataTableColumn<InvoicesTableRow>[]>(() => {
+    const cols: DataTableColumn<InvoicesTableRow>[] = [
+      {
+        // 088 A-refined (FR-016): the Invoice No. column always carries the
+        // invoice's OWN number (the SC bill on an 088 bill, paid or unpaid);
+        // the RC tax receipt is the Receipt No. column. A draft has no §87
+        // number yet (allocated only at issue), so it shows a localised
+        // "Draft" link named for the member — never a bare "—" link (WCAG
+        // 2.4.4 / 2.5.8). Gated on the status, never on the "—" string.
+        key: 'documentNumber',
+        label: t('columns.documentNumber'),
+        ...INVOICES_COLUMN_LAYOUT.documentNumber,
+        render: (r) => (
+          <div className="flex flex-col gap-0.5 leading-snug">
+            {r.status === 'draft' ? (
+              <Link
+                href={`/admin/invoices/${r.invoiceId}`}
+                aria-label={t('actions.openDraftAria', { name: r.memberName })}
+                className={numberLinkBase}
+              >
+                {t('draftNumberLabel')}
+              </Link>
+            ) : (
+              <Link
+                href={`/admin/invoices/${r.invoiceId}`}
+                className={cn(numberLinkBase, 'font-mono text-xs font-medium')}
+              >
+                {r.documentNumber}
+              </Link>
+            )}
+            {r.issueDate || r.creditNoteCount > 0 ? (
+              <span className={cn(subLine, 'flex flex-wrap gap-1')}>
+                {r.issueDate ? <span>{t('issuedOn', { date: formatListDate(r.issueDate, locale) })}</span> : null}
+                {r.issueDate && r.creditNoteCount > 0 ? <span aria-hidden="true">·</span> : null}
+                {r.creditNoteCount > 0 ? (
                   <Link
                     href={`/admin/invoices/${r.invoiceId}`}
-                    aria-label={t('actions.openDraftAria', { name: r.memberName })}
-                    className={numberLinkBase}
-                  >
-                    {t('draftNumberLabel')}
-                  </Link>
-                ) : (
-                  <Link
-                    href={`/admin/invoices/${r.invoiceId}`}
-                    className={cn(numberLinkBase, 'font-medium')}
-                  >
-                    {r.documentNumber}
-                  </Link>
-                )}
-              </TableCell>
-              <TableCell className="align-middle whitespace-nowrap">
-                {r.taxDocumentKind === 'tax_receipt' && r.receiptDocumentNumberRaw ? (
-                  // 088 A-refined (FR-016) — the RC §86/4 tax receipt lives on the
-                  // SAME invoice row, so it links to the invoice detail (same
-                  // target as the Number link). The aria-label names the document
-                  // so the two same-target links in a row are distinguishable to
-                  // screen readers; the "Receipt No." column header conveys the
-                  // ใบกำกับภาษี meaning (no per-row chip). This is the fix for the
-                  // "Receipt No. can't be clicked" report.
-                  <Link
-                    href={`/admin/invoices/${r.invoiceId}`}
-                    aria-label={tTax088('seeReceiptLink', {
-                      number: r.receiptDocumentNumberRaw,
+                    aria-label={t('creditedAria', {
+                      count: r.creditNoteCount,
+                      amount: formatSatang(r.creditedTotalSatang),
                     })}
-                    className="cursor-pointer font-medium underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
+                    title={t('creditedTooltip', {
+                      count: r.creditNoteCount,
+                      amount: formatSatang(r.creditedTotalSatang),
+                    })}
+                    className="rounded-sm text-[var(--aura-fg-accent)] underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-[var(--aura-focus-ring)]"
                   >
-                    {r.receiptDocumentNumberRaw}
+                    {t('creditNoteCount', { count: r.creditNoteCount })}
                   </Link>
-                ) : r.receiptDocumentNumberRaw ? (
-                  <span className="font-mono text-sm tabular-nums">
-                    {r.receiptDocumentNumberRaw}
-                  </span>
-                ) : (
-                  <span className="text-sm text-muted-foreground">—</span>
-                )}
-              </TableCell>
-              <TableCell className="align-middle whitespace-normal">
-                {/* 054-event-fee-invoices — buyer column. First line: the
-                    buyer name (+ Event chip on event rows). Second line
-                    (Task 14): the muted subtitle describing the invoice —
-                    event name + CE date, or "Membership {year}".
-
-                    renewals-suspended-visibility-audit Task 4 — long legal
-                    names (e.g. "TOYOTA MATERIAL HANDLING WAREHOUSE
-                    SOLUTIONS (THAILAND) CO., LTD.") used to ride the
-                    TableCell base `whitespace-nowrap` and stretch the whole
-                    table into a horizontal scrollbar. The cell now opts
-                    into wrapping (`whitespace-normal` override) and the
-                    name is bounded `max-w-[32ch]` + clamped to TWO lines
-                    (`line-clamp-2`); the full name stays reachable via
-                    `title` — the members-directory company-cell convention
-                    (`members-table.tsx` company column: bounded width +
-                    `break-words whitespace-normal` + `title`), plus the
-                    2-line cap this dense table needs. `align-middle` on the
-                    cell is unchanged, so a wrapped 2-line name centres
-                    against its row like every other cell. */}
-                <div className="flex flex-col gap-0.5">
-                  <div className="flex flex-wrap items-start gap-1.5">
-                    {/* Membership invoices (and matched-member event
-                        invoices) link to the F3 member; event NON-member
-                        buyers have no member row, so the name renders as
-                        plain text — NOT a broken `/admin/members/` link
-                        with an empty id. */}
-                    {r.buyerHasMemberLink ? (
-                      <Link
-                        href={`/admin/members/${r.memberId}`}
-                        title={r.memberName}
-                        className="max-w-[32ch] break-words line-clamp-2 focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
-                      >
-                        {r.memberName}
-                      </Link>
-                    ) : (
-                      <span
-                        title={r.memberName}
-                        className="max-w-[32ch] break-words line-clamp-2"
-                      >
-                        {r.memberName}
-                      </span>
-                    )}
-                    {r.invoiceSubject === 'event' && (
-                      // Event chip — surfaces event-fee invoices at a glance.
-                      // aria-label gives SR users the full "Event-fee invoice"
-                      // context (the visible "Event" chip is terse for layout).
-                      // The subtitle below carries the event NAME + date.
-                      <Badge
-                        variant="secondary"
-                        className="font-normal"
-                        aria-label={t('subjectChip.eventAria')}
-                      >
-                        {t('subjectChip.event')}
-                      </Badge>
-                    )}
-                  </div>
-                  {r.buyerSubtitle !== null && (
-                    // Muted detail line. `block` so it stacks under the
-                    // name; `text-xs text-muted-foreground` keeps it a
-                    // secondary scan cue. Task 4 + A3 — same bound +
-                    // 2-line clamp + `title` treatment as the name above
-                    // (the cell now wraps, so an unbounded subtitle would
-                    // make row heights erratic).
-                    <span
-                      title={r.buyerSubtitle}
-                      className="block max-w-[32ch] line-clamp-2 text-xs text-muted-foreground"
-                    >
-                      {r.buyerSubtitle}
-                    </span>
-                  )}
-                </div>
-              </TableCell>
-              <TableCell className="align-middle whitespace-nowrap">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <StatusBadge status={r.status} />
-                  {r.creditNoteCount > 0 && (
-                    // CN indicator chip. Shows only when ≥1 CN exists
-                    // on the row. shadcn Tooltip (not the legacy
-                    // `title` attribute) so the hint reaches mobile/
-                    // touch + keyboard focus + SR accessibility tree.
-                    <TooltipProvider delay={200}>
-                      <Tooltip>
-                        <TooltipTrigger
-                          render={(props) => (
-                            <Badge
-                              {...props}
-                              variant="outline"
-                              className="font-mono text-[10px] tabular-nums"
-                              aria-label={t('creditedAria', {
-                                count: r.creditNoteCount,
-                                amount: formatSatang(r.creditedTotalSatang),
-                              })}
-                            >
-                              {t('creditedSuffix', { count: r.creditNoteCount })}
-                            </Badge>
-                          )}
-                        />
-                        <TooltipContent>
-                          {t('creditedTooltip', {
-                            count: r.creditNoteCount,
-                            amount: formatSatang(r.creditedTotalSatang),
-                          })}
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  )}
-                </div>
-              </TableCell>
-              {showQueueMetaColumn && (
-                <TableCell className="align-middle" data-testid="queue-meta-cell">
-                  {r.queueMeta ? (
-                    <AutoRenewalQueueBadges meta={r.queueMeta} />
-                  ) : (
-                    <span className="text-sm text-muted-foreground">—</span>
-                  )}
-                </TableCell>
-              )}
-              {showMethodColumn && (
-                <TableCell className="align-middle whitespace-nowrap">
-                  {r.onlinePaymentMethod ? (
-                    <MethodBadge method={r.onlinePaymentMethod} />
-                  ) : (
-                    <span className="text-sm text-muted-foreground">—</span>
-                  )}
-                </TableCell>
-              )}
-              <TableCell className="align-middle whitespace-nowrap">
-                {r.issueDate ? formatLocalisedDate(r.issueDate, locale, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' }) : '—'}
-              </TableCell>
-              <TableCell className="align-middle whitespace-nowrap">
-                {r.dueDate ? formatLocalisedDate(r.dueDate, locale, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' }) : '—'}
-              </TableCell>
-              <TableCell
-                className="align-middle whitespace-nowrap text-right tabular-nums"
-                data-testid="invoice-total"
+                ) : null}
+              </span>
+            ) : null}
+            {/* Phone cards leave Receipt No. out (the board), and a table under
+                1000px hides that column, so the receipt's state reads here
+                then. A container query on the table's wrapper, the same width
+                AURA's hideBelow measures. */}
+            {r.status === 'paid' && (r.receiptPdfStatus === 'pending' || r.receiptPdfStatus === 'failed') ? (
+              <span className="@min-[1000px]:hidden" data-testid="row-receipt-state-card">
+                {renderReceiptState(r, false)}
+              </span>
+            ) : null}
+          </div>
+        ),
+      },
+      {
+        // 054 — the buyer: a member links to F3; an event NON-member buyer has
+        // no member row, so the name is plain text (never an empty-id link).
+        // Long legal names wrap to two lines with the full name in `title`.
+        key: 'memberName',
+        label: t('columns.buyer'),
+        ...INVOICES_COLUMN_LAYOUT.memberName,
+        render: (r) => (
+          // `whitespace-normal`: AURA's stacked-card cells are nowrap.
+          <div className="flex min-w-0 flex-col gap-0.5 leading-snug whitespace-normal">
+            {r.buyerHasMemberLink ? (
+              <Link
+                href={`/admin/members/${r.memberId}`}
+                title={r.memberName}
+                className="line-clamp-2 max-w-[32ch] break-words rounded-sm focus-visible:outline-2 focus-visible:outline-[var(--aura-focus-ring)]"
               >
-                {r.totalSatang === null ? (
-                  <>
-                    <span className="text-muted-foreground" aria-hidden="true">
-                      —
-                    </span>
-                    <span className="sr-only">{t('columns.totalPending')}</span>
-                  </>
-                ) : (
-                  <>{formatSatang(r.totalSatang)} THB</>
-                )}
-              </TableCell>
-              <TableCell className="align-middle whitespace-nowrap text-right">
-                {/* Action mix mirrors the invoice-detail "⋯" menu:
-                      - paid  → Invoice (the SC bill on an 088 bill,
-                        FR-015) + Receipt once rendered
-                      - issued / void → Invoice only
-                    Plain <a download> — PDF endpoint returns binary
-                    bytes; Next.js <Link> would misinterpret as RSC
-                    payload. */}
-                {(() => {
-                  // The retired pre-088 combined-mode rule (hide the issue-time
-                  // PDF of a paid invoice with no RC) is gone: prod has no such
-                  // rows and the 088 flag is permanently on.
-                  const showInvoice = r.hasPdf;
-                  // 088 T066b (FR-019) — async receipt-PDF resilience. The
-                  // former single "preparing…" affordance conflated pending +
-                  // failed, so a permanent render failure showed a perpetual
-                  // in-progress spinner (the portal S1 problem). Split into two
-                  // DISTINCT terminal-aware states (mirrors the portal VM):
-                  //   - pending  → a SHIMMER "receipt generating" placeholder
-                  //     (shipped <Skeleton> primitive → reduced-motion-safe via
-                  //     the skeleton-shimmer CSS) in a role=status live region.
-                  //   - failed   → a visually-distinct inline ALERT-state link
-                  //     to the invoice detail (actionable; the reconcile cron
-                  //     re-renders the SAME pre-allocated RC — never a re-alloc).
-                  // null/rendered fall into neither (rendered shows the Receipt
-                  // download; paid+null can't occur — CHECK enforces non-null).
-                  const receiptGenerating =
-                    r.status === 'paid' && r.receiptPdfStatus === 'pending';
-                  const receiptRenderFailed =
-                    r.status === 'paid' && r.receiptPdfStatus === 'failed';
-                  // 088 T021c / FR-035 — per-row "Record payment" quick action
-                  // on issued / overdue bills (admin-only). Opens the SAME
-                  // money-mutation `RecordPaymentDialog` used on the detail page
-                  // (defaults today + bank-transfer). FR-028 — this is a
-                  // §87-minting mutation, so the dialog contract (no optimistic
-                  // close / no undo toast) is inherited unchanged; the row NEVER
-                  // reuses the bulk-mark-paid optimistic pattern.
-                  const showRecordPayment =
-                    canRecordPayment &&
-                    todayIso !== undefined &&
-                    (r.status === 'issued' || r.status === 'overdue');
-                  // 107-auto-invoice Task 14 — per-row queue actions. Only on
-                  // `status='draft'` auto-renewal rows (mutually exclusive
-                  // with every OTHER control in this cell — a draft has no
-                  // PDF, no receipt, and isn't issued/overdue, so `AutoRenewalQueueActions`
-                  // is the ONLY thing this cell ever renders for such a row).
-                  // `showQueueMetaColumn` gates on the queue VIEW being active
-                  // (not merely `queueMeta` being non-null — Task 13's queue
-                  // view can also list already-issued `origin='auto_renewal'`
-                  // rows when the admin clears the status filter, and those
-                  // must fall through to the ordinary download/record-payment
-                  // controls above, never these).
-                  const showQueueActions =
-                    canManageQueueActions &&
-                    showQueueMetaColumn &&
-                    r.status === 'draft';
-                  // 2026-07 UX audit — the highest-priority PRICE/enrichment
-                  // caution for this row, surfaced inside the Issue dialog at
-                  // the §87-mint commit point. `refusalReason` is deliberately
-                  // NOT a caution (the server refuses those outright). Priority
-                  // unresolved > priceUnverifiable > priceChanged.
-                  const qm = r.queueMeta;
-                  const issueCaution = qm == null
-                    ? null
-                    : qm.unresolved
-                      ? ('unresolved' as const)
-                      : qm.priceUnverifiable
-                        ? ('priceUnverifiable' as const)
-                        : qm.priceChanged
-                          ? ('priceChanged' as const)
-                          : null;
-                  // 088 A-refined — the MAIN download serves the issue-time PDF =
-                  // the SC bill on a paid 088 bill. `documentNumber` already IS the
-                  // SC number (the row identity), so the control names it directly;
-                  // the `billDocumentNumberRaw` fallback is a belt-and-suspenders
-                  // guard for the (impossible) NULL-bill case.
-                  const mainDownloadNumber =
-                    r.taxDocumentKind === 'tax_receipt' && r.billDocumentNumberRaw
-                      ? r.billDocumentNumberRaw
-                      : r.documentNumber;
-                  if (
-                    !showInvoice &&
-                    !r.hasReceiptPdf &&
-                    !receiptGenerating &&
-                    !receiptRenderFailed &&
-                    !showRecordPayment &&
-                    !showQueueActions
-                  ) {
-                    return <span className="text-sm text-muted-foreground">—</span>;
-                  }
-                  return (
-                    <div className="flex items-center justify-end gap-1">
-                      {showQueueActions && (
-                        <AutoRenewalQueueActions
-                          invoiceId={r.invoiceId}
-                          memberName={r.memberName}
-                          status={r.status}
-                          issueCaution={issueCaution}
-                        />
-                      )}
-                      {showRecordPayment && todayIso !== undefined && (
-                        <RecordPaymentDialog
-                          invoiceId={r.invoiceId}
-                          // The row's display number is the bill number (SC-…)
-                          // or legacy invoice number; '—' means a true draft
-                          // (never issued) which can't appear here anyway →
-                          // pass null so the dialog's fallback copy stays clean.
-                          documentNumber={r.documentNumber === '—' ? null : r.documentNumber}
-                          issueDate={r.issueDate}
-                          todayIso={todayIso}
-                          triggerLabel={t('actions.recordPayment')}
-                          // a11y — number-bearing accessible name so a screen
-                          // reader (button-list nav strips row context) knows
-                          // which bill this money-mutation targets; mirrors the
-                          // sibling download buttons' aria in this same cell.
-                          triggerAriaLabel={t('actions.recordPaymentAria', {
-                            number: r.documentNumber,
-                          })}
-                          triggerVariant="ghost"
-                          triggerSize="sm"
-                          triggerClassName="min-h-11 px-3 gap-1"
-                          // Per-row unique id — many dialogs render on one page;
-                          // the default 'record-payment' id must not collide.
-                          triggerId={`record-payment-${r.invoiceId}`}
-                          triggerTestId="row-record-payment-trigger"
-                        />
-                      )}
-                      {showInvoice && (
-                        // Button (not <a download>) routes through
-                        // the shared fetch+blob helper so 4xx/5xx
-                        // surface as toasts instead of JSON in a new
-                        // tab. aria-label via t() interpolation so
-                        // the dash separator is locale-controlled
-                        // (TH/SV read naturally; English string-concat
-                        // would force "Invoice — INV-2026-0001"
-                        // literally).
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleRowDownload(
-                              'invoice',
-                              r.invoiceId,
-                              `${mainDownloadNumber}.pdf`,
-                            )
-                          }
-                          disabled={downloadingKeys.has(`invoice:${r.invoiceId}`)}
-                          // 064 remediation S7 — β rows: the main pdf IS the
-                          // §105 receipt, so label + aria flip to the receipt
-                          // wording (the endpoint/testid stay the main-pdf
-                          // ones; only the presentation changes). 088 — on a paid
-                          // bill the main pdf is the SC bill, so the aria names
-                          // the SC number (mainDownloadNumber), not the RC.
-                          aria-label={t(
-                            r.mainDownloadIsReceipt
-                              ? 'actions.downloadReceiptAria'
-                              : r.mainDownloadIsBill
-                                ? 'actions.downloadBillAria'
-                                : 'actions.downloadInvoiceAria',
-                            {
-                              number: mainDownloadNumber,
-                            },
-                          )}
-                          className={cn(
-                            buttonVariants({ variant: 'ghost', size: 'sm' }),
-                            'min-h-11 px-3 gap-1',
-                          )}
-                          data-testid="row-download-invoice"
-                        >
-                          {downloadingKeys.has(`invoice:${r.invoiceId}`) && (
-                            <Loader2
-                              className="size-4 motion-safe:animate-spin"
-                              aria-hidden="true"
-                            />
-                          )}
-                          {r.mainDownloadIsReceipt
-                            ? t('actions.downloadReceipt')
-                            : r.mainDownloadIsBill
-                              ? t('actions.downloadBill')
-                              : t('actions.download')}
-                        </button>
-                      )}
-                      {r.hasReceiptPdf && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleRowDownload(
-                              'receipt',
-                              r.invoiceId,
-                              `${r.receiptDocumentNumberRaw ?? r.documentNumber}-receipt.pdf`,
-                            )
-                          }
-                          disabled={downloadingKeys.has(`receipt:${r.invoiceId}`)}
-                          aria-label={t('actions.downloadReceiptAria', {
-                            number:
-                              r.receiptDocumentNumberRaw ?? r.documentNumber,
-                          })}
-                          className={cn(
-                            buttonVariants({ variant: 'ghost', size: 'sm' }),
-                            'min-h-11 px-3 gap-1',
-                          )}
-                          data-testid="row-download-receipt"
-                        >
-                          {downloadingKeys.has(`receipt:${r.invoiceId}`) && (
-                            <Loader2
-                              className="size-4 motion-safe:animate-spin"
-                              aria-hidden="true"
-                            />
-                          )}
-                          {t('actions.downloadReceipt')}
-                        </button>
-                      )}
-                      {receiptGenerating && (
-                        // 088 T066b — paid + receipt-render in flight. SHIMMER
-                        // "generating" placeholder using the shipped <Skeleton>
-                        // primitive (reduced-motion-safe: skeleton-shimmer CSS
-                        // swaps the sweep for a gentle pulse under
-                        // prefers-reduced-motion). `role=status aria-live=polite`
-                        // so SR users hear the async state when scanning the table.
-                        <span
-                          role="status"
-                          aria-live="polite"
-                          aria-busy="true"
-                          className="inline-flex min-h-11 items-center gap-2 px-1"
-                          data-testid="row-receipt-generating"
-                        >
-                          <Skeleton className="h-4 w-4 rounded-full" />
-                          <span className="text-sm text-muted-foreground">
-                            {t('actions.receiptGenerating')}
-                          </span>
-                        </span>
-                      )}
-                      {receiptRenderFailed && (
-                        // 088 T066b — TERMINAL render failure (permanently
-                        // failed after the reconcile cron exhausted retries, or
-                        // in flight before the next re-enqueue). Visually
-                        // distinct (destructive-tinted) + ACTIONABLE: links to
-                        // the invoice detail where the admin can review the
-                        // FR-026 delivery banner / the reconcile status. NOT the
-                        // in-progress shimmer — a permanent failure must never be
-                        // mislabelled as forever-generating (portal S1 parity).
-                        <Link
-                          href={`/admin/invoices/${r.invoiceId}`}
-                          aria-label={t('actions.receiptRenderFailedAria', {
-                            number: r.documentNumber,
-                          })}
-                          className={cn(
-                            buttonVariants({ variant: 'outline', size: 'sm' }),
-                            'min-h-11 gap-1 border-destructive/40 bg-destructive/5 px-3 text-destructive hover:bg-destructive/10',
-                          )}
-                          data-testid="row-receipt-render-failed"
-                        >
-                          <AlertCircleIcon className="size-4" aria-hidden="true" />
-                          {t('actions.receiptRenderFailed')}
-                        </Link>
-                      )}
-                    </div>
-                  );
-                })()}
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+                {r.memberName}
+              </Link>
+            ) : (
+              <span title={r.memberName} className="line-clamp-2 max-w-[32ch] break-words">
+                {r.memberName}
+              </span>
+            )}
+            {r.invoiceSubject === 'event' || r.buyerSubtitle !== null ? (
+              <span className="flex flex-wrap items-center gap-1.5">
+                {r.invoiceSubject === 'event' ? (
+                  <Badge tone="neutral" variant="outline" aria-label={t('subjectChip.eventAria')}>
+                    {t('subjectChip.event')}
+                  </Badge>
+                ) : null}
+                {r.buyerSubtitle !== null ? (
+                  <span title={r.buyerSubtitle} className={cn(subLine, 'line-clamp-2 block max-w-[32ch]')}>
+                    {r.buyerSubtitle}
+                  </span>
+                ) : null}
+              </span>
+            ) : null}
+          </div>
+        ),
+      },
+      {
+        key: 'status',
+        label: t('columns.status'),
+        ...INVOICES_COLUMN_LAYOUT.status,
+        render: (r) => <StatusPill tone={invoiceStatusTone(r.status)}>{tStatus(r.status)}</StatusPill>,
+      },
+    ];
+    if (showQueueMetaColumn) {
+      // 107 Task 13 — the review-queue decision context, only in that view.
+      cols.push({
+        key: 'queue',
+        label: t('columns.queue'),
+        card: 'wide',
+        render: (r) =>
+          r.queueMeta ? (
+            <span data-testid="queue-meta-cell">
+              <AutoRenewalQueueBadges meta={r.queueMeta} />
+            </span>
+          ) : (
+            <span data-testid="queue-meta-cell">{dash}</span>
+          ),
+      });
+    }
+    if (showMethodColumn) {
+      // F5 T096 — the Method column, only in the `?paidOnline=1` view.
+      cols.push({
+        key: 'method',
+        label: t('columns.method'),
+        width: 120,
+        render: (r) =>
+          r.onlinePaymentMethod ? (
+            <Badge
+              tone="neutral"
+              variant="soft"
+              data-testid={`method-badge-${r.onlinePaymentMethod}`}
+              aria-label={`${t('columns.method')}: ${tMethod(r.onlinePaymentMethod)}`}
+            >
+              {tMethod(r.onlinePaymentMethod)}
+            </Badge>
+          ) : (
+            dash
+          ),
+      });
+    }
+    cols.push(
+      {
+        key: 'dueDate',
+        label: t('columns.dueDate'),
+        ...INVOICES_COLUMN_LAYOUT.dueDate,
+        render: (r) => (r.dueDate ? formatListDate(r.dueDate, locale) : '—'),
+      },
+      {
+        // 088 A-refined — a paid 088 bill's RC links to the invoice (named for
+        // the receipt, so the row's two same-target links differ for screen
+        // readers). Under it: the busy "generating" line while the receipt
+        // renders, a link to the invoice when it failed (actionable, never a
+        // forever-pending state), or the online method.
+        key: 'receipt',
+        label: t('columns.receiptNumber'),
+        ...INVOICES_COLUMN_LAYOUT.receipt,
+        render: (r) => {
+          const receiptState = renderReceiptState(r, true);
+          return (
+            <div className="flex flex-col gap-0.5 leading-snug">
+              {r.taxDocumentKind === 'tax_receipt' && r.receiptDocumentNumberRaw ? (
+                <Link
+                  href={`/admin/invoices/${r.invoiceId}`}
+                  aria-label={tTax088('seeReceiptLink', { number: r.receiptDocumentNumberRaw })}
+                  className={cn(numberLinkBase, 'font-mono text-xs font-medium')}
+                >
+                  {r.receiptDocumentNumberRaw}
+                </Link>
+              ) : r.receiptDocumentNumberRaw ? (
+                <span className="font-mono text-xs tabular-nums">{r.receiptDocumentNumberRaw}</span>
+              ) : (
+                dash
+              )}
+              {receiptState ?? (r.onlinePaymentMethod && !showMethodColumn ? (
+                <span className={subLine}>{tMethod(r.onlinePaymentMethod)}</span>
+              ) : null)}
+            </div>
+          );
+        },
+      },
+      {
+        key: 'total',
+        label: t('columns.total'),
+        ...INVOICES_COLUMN_LAYOUT.total,
+        render: (r) =>
+          r.totalSatang === null ? (
+            <span data-testid="invoice-total">
+              <span className="text-[var(--aura-fg-tertiary)]" aria-hidden="true">
+                —
+              </span>
+              <span className="sr-only">{t('columns.totalPending')}</span>
+            </span>
+          ) : (
+            <span data-testid="invoice-total" className="font-medium tabular-nums">
+              {formatSatang(r.totalSatang)} THB
+            </span>
+          ),
+      },
+      {
+        key: 'actions',
+        label: t('columns.actions'),
+        ...INVOICES_COLUMN_LAYOUT.actions,
+        render: renderRowActions,
+      },
+    );
+    return cols;
+  }, [t, tStatus, tTax088, tMethod, locale, showMethodColumn, showQueueMetaColumn, renderRowActions, renderReceiptState]);
+
+  return (
+    // Review A8 — the review-queue view names its table for itself, so a
+    // screen-reader user who jumps straight to it hears which list it is.
+    <div className="@container">
+      <DataTable<InvoicesTableRow>
+        label={showQueueMetaColumn ? t('queueTableCaption') : t('tableCaption')}
+        rows={rows}
+        columns={columns}
+        rowKey="invoiceId"
+        rowHeight="auto"
+        stackBelow={640}
+      />
     </div>
   );
 }

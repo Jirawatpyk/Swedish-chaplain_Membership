@@ -533,11 +533,12 @@ describe('<EventFeeForm>', () => {
       enMessages.admin.invoices.eventFeeForm.duplicateDialog.title,
     );
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    // The footer's Close (AURA's own close button shares the name).
     expect(
-      screen.getByRole('button', {
+      screen.getAllByRole('button', {
         name: enMessages.admin.invoices.eventFeeForm.duplicateDialog.cancel,
-      }),
-    ).toBeInTheDocument();
+      }).length,
+    ).toBeGreaterThanOrEqual(1);
   });
 
   it('non-member with empty buyer → inline errors + no POST', async () => {
@@ -590,7 +591,7 @@ describe('<EventFeeForm>', () => {
     ).toBeChecked();
     // Payment-date (defaulted to Bangkok today, max-clamped) + method select.
     const dateInput = screen.getByLabelText(
-      enMessages.admin.invoices.pay.fields.date,
+      new RegExp(`^${enMessages.admin.invoices.pay.fields.date}`),
     ) as HTMLInputElement;
     expect(dateInput.value).toBe(bangkokToday());
     expect(dateInput.max).toBe(bangkokToday());
@@ -937,7 +938,7 @@ describe('<EventFeeForm>', () => {
     // First attendee (paid → as-paid fields visible) + backdate.
     fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
     const dateInput = screen.getByLabelText(
-      enMessages.admin.invoices.pay.fields.date,
+      new RegExp(`^${enMessages.admin.invoices.pay.fields.date}`),
     ) as HTMLInputElement;
     fireEvent.change(dateInput, { target: { value: '2020-01-10' } });
     expect(dateInput.value).toBe('2020-01-10');
@@ -946,7 +947,7 @@ describe('<EventFeeForm>', () => {
     // back to today (the field default) and the stale ภ.พ.30 warning goes.
     fireEvent.click(screen.getByRole('button', { name: /Dora/ }));
     expect(
-      (screen.getByLabelText(enMessages.admin.invoices.pay.fields.date) as HTMLInputElement)
+      (screen.getByLabelText(new RegExp(`^${enMessages.admin.invoices.pay.fields.date}`)) as HTMLInputElement)
         .value,
     ).toBe(bangkokToday());
     expect(screen.queryByTestId('payment-date-vat-warning')).toBeNull();
@@ -1060,14 +1061,9 @@ describe('<EventFeeForm>', () => {
     const billFirst = screen.getByRole('radio', {
       name: new RegExp(modeMessages.billFirst.label),
     });
-    expect(billFirst).toHaveAttribute('aria-disabled', 'true');
-    expect(billFirst).toHaveAttribute(
-      'aria-describedby',
-      'mode-bill-first-needs-tin',
-    );
-    expect(screen.getByTestId('mode-bill-first-needs-tin')).toHaveTextContent(
-      modeMessages.billFirstNeedsTin,
-    );
+    // AURA radio: natively disabled, the reason read with the option.
+    expect(billFirst).toBeDisabled();
+    expect(billFirst).toHaveAccessibleName(new RegExp(modeMessages.billFirstNeedsTin));
   });
 
   it('B5: matched member with buyerIsVatRegistrant=true → bill_first selectable (explicit server truth)', async () => {
@@ -1078,13 +1074,13 @@ describe('<EventFeeForm>', () => {
     renderForm({ initialEventId: 'ev-1' });
     fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
 
-    fireEvent.click(screen.getByText(modeMessages.billFirst.label));
+    fireEvent.click(screen.getByRole('radio', { name: new RegExp(modeMessages.billFirst.label) }));
     await waitFor(() =>
       expect(
         screen.getByRole('radio', { name: new RegExp(modeMessages.billFirst.label) }),
       ).toBeChecked(),
     );
-    expect(screen.queryByTestId('mode-bill-first-needs-tin')).toBeNull();
+    expect(screen.queryByText(modeMessages.billFirstNeedsTin)).toBeNull();
   });
 
   it('B5: buyerIsVatRegistrant ABSENT (older API shape) → legacy matched⇒has-TIN guess keeps bill_first selectable', async () => {
@@ -1097,8 +1093,8 @@ describe('<EventFeeForm>', () => {
     const billFirst = screen.getByRole('radio', {
       name: new RegExp(modeMessages.billFirst.label),
     });
-    expect(billFirst).not.toHaveAttribute('aria-disabled', 'true');
-    expect(screen.queryByTestId('mode-bill-first-needs-tin')).toBeNull();
+    expect(billFirst).toBeEnabled();
+    expect(screen.queryByText(modeMessages.billFirstNeedsTin)).toBeNull();
   });
 
   it('refunded registration → hard-block card, no mode selector, submit disabled', async () => {
@@ -1133,25 +1129,14 @@ describe('<EventFeeForm>', () => {
     expect(screen.getByTestId('mode-waiting-explainer')).toHaveTextContent(
       modeMessages.waitingExplainer,
     );
-    expect(screen.getByTestId('mode-bill-first-needs-tin')).toHaveTextContent(
-      modeMessages.billFirstNeedsTin,
-    );
     const billFirstRadio = screen.getByRole('radio', {
       name: new RegExp(modeMessages.billFirst.label),
     });
-    // Base UI renders a disabled radio as <span role="radio"
-    // aria-disabled="true"> (not a natively-disabled element), so jest-dom's
-    // toBeDisabled() does not apply — assert the ARIA state directly.
-    expect(billFirstRadio).toHaveAttribute('aria-disabled', 'true');
-    // The visible disabled-option reason is programmatically associated with
-    // the radio (SR users hear WHY it is disabled, not just that it is).
-    expect(billFirstRadio).toHaveAttribute(
-      'aria-describedby',
-      'mode-bill-first-needs-tin',
-    );
-    expect(document.getElementById('mode-bill-first-needs-tin')).toBe(
-      screen.getByTestId('mode-bill-first-needs-tin'),
-    );
+    // Spec 122 US8 (T807) — an AURA radio: natively disabled, and the
+    // disabled-option reason is the option's own description, so a screen
+    // reader hears WHY with the option itself (AURA reads it in the name).
+    expect(billFirstRadio).toBeDisabled();
+    expect(billFirstRadio).toHaveAccessibleName(new RegExp(modeMessages.billFirstNeedsTin));
     expect(
       screen.getByRole('button', {
         name: enMessages.admin.invoices.eventFeeForm.submit,
@@ -1195,31 +1180,14 @@ describe('<EventFeeForm>', () => {
     );
   });
 
-  it('mode-radio label wiring produces no duplicate "-label" ids (duplicate-id-aria)', async () => {
-    // Base UI's labelable provider assigns `label.id = "{radioId}-label"` to
-    // an id-less associated <label> — colliding with the hardcoded ids on the
-    // inner name-spans. The explicit `aria-labelledby` prop on each
-    // RadioGroupItem suppresses that assignment. jsdom runs the same layout
-    // effect, so a regression reproduces here; the authoritative proof for
-    // real browsers is the axe (`duplicate-id-aria`) run in Task 14.
+  it('each mode radio is named by its label, with its hint read after it (AURA RadioGroup)', async () => {
     vi.stubGlobal('fetch', mockFetchRegistrations([matchedRegistration]));
-    const { container } = renderForm({ initialEventId: 'ev-1' });
+    renderForm({ initialEventId: 'ev-1' });
     fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
     expect(screen.getByTestId('mode-selector')).toBeInTheDocument();
-
-    const labelIds = Array.from(container.querySelectorAll('[id$="-label"]')).map(
-      (el) => el.id,
-    );
-    const duplicates = labelIds.filter((id, i) => labelIds.indexOf(id) !== i);
-    expect(duplicates).toEqual([]);
-
-    // Each mode radio is named by its span (not the whole label incl. hint).
-    expect(
-      screen.getByRole('radio', { name: modeMessages.alreadyPaid.label }),
-    ).toHaveAttribute('aria-labelledby', 'issuance-mode-already-paid-label');
-    expect(
-      screen.getByRole('radio', { name: modeMessages.billFirst.label }),
-    ).toHaveAttribute('aria-labelledby', 'issuance-mode-bill-first-label');
+    const radio = screen.getAllByRole('radio')[0]!;
+    expect(radio.closest('label')).toHaveTextContent(modeMessages.alreadyPaid.label);
+    expect(radio.closest('label')).toHaveTextContent(modeMessages.alreadyPaid.hint);
   });
 
   // ── I3 — noValidate: inline i18n date errors instead of native bubbles ──
@@ -1235,7 +1203,7 @@ describe('<EventFeeForm>', () => {
     // attributes stay for picker clamping + semantics).
     expect(container.querySelector('form')).toHaveProperty('noValidate', true);
 
-    const dateInput = screen.getByLabelText(enMessages.admin.invoices.pay.fields.date);
+    const dateInput = screen.getByLabelText(new RegExp(`^${enMessages.admin.invoices.pay.fields.date}`));
     fireEvent.change(dateInput, { target: { value: '' } });
     fireEvent.click(
       screen.getByRole('button', {
@@ -1259,7 +1227,7 @@ describe('<EventFeeForm>', () => {
     renderForm({ initialEventId: 'ev-1' });
     fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
 
-    const dateInput = screen.getByLabelText(enMessages.admin.invoices.pay.fields.date);
+    const dateInput = screen.getByLabelText(new RegExp(`^${enMessages.admin.invoices.pay.fields.date}`));
     // Beyond the `max` clamp — jsdom (like a paste/manual entry in some
     // browsers) accepts it; the manual validator must catch it inline.
     fireEvent.change(dateInput, { target: { value: '2099-01-01' } });
@@ -1290,7 +1258,7 @@ describe('<EventFeeForm>', () => {
     expect(screen.queryByTestId('payment-date-vat-warning')).toBeNull();
 
     // Backdate far into a closed VAT period.
-    fireEvent.change(screen.getByLabelText(enMessages.admin.invoices.pay.fields.date), {
+    fireEvent.change(screen.getByLabelText(new RegExp(`^${enMessages.admin.invoices.pay.fields.date}`)), {
       target: { value: '2020-01-10' },
     });
 
@@ -1306,16 +1274,93 @@ describe('<EventFeeForm>', () => {
     ).not.toBeDisabled();
   });
 
+  it('the submit button carries an icon like the membership form (check when paid now)', async () => {
+    vi.stubGlobal('fetch', mockFetchRegistrations([matchedRegistration]));
+    renderForm({ initialEventId: 'ev-1' });
+    fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+    const submit = screen.getByRole('button', { name: enMessages.admin.invoices.eventFeeForm.recordAndIssue });
+    expect(submit.querySelector('svg.aura-icon')).not.toBeNull();
+  });
+
+  it('the payment date names its hint and the ภ.พ.30 warning once each (no duplicate describedby ids)', async () => {
+    vi.stubGlobal('fetch', mockFetchRegistrations([matchedRegistration]));
+    renderForm({ initialEventId: 'ev-1' });
+    fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+    const dateInput = screen.getByLabelText(new RegExp(`^${enMessages.admin.invoices.pay.fields.date}`));
+    fireEvent.change(dateInput, { target: { value: '2020-01-10' } });
+    const ids = (dateInput.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean);
+    expect(ids).toContain('payment-date-vat-warning');
+    expect(ids).toContain('payment-date-hint');
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
   it("today's payment date → no ภ.พ.30 warning; warning clears when the date returns to an open period", async () => {
     vi.stubGlobal('fetch', mockFetchRegistrations([matchedRegistration]));
     renderForm({ initialEventId: 'ev-1' });
     fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
 
-    const dateInput = screen.getByLabelText(enMessages.admin.invoices.pay.fields.date);
+    const dateInput = screen.getByLabelText(new RegExp(`^${enMessages.admin.invoices.pay.fields.date}`));
     fireEvent.change(dateInput, { target: { value: '2020-01-10' } });
     expect(screen.getByTestId('payment-date-vat-warning')).toBeInTheDocument();
 
     fireEvent.change(dateInput, { target: { value: bangkokToday() } });
     expect(screen.queryByTestId('payment-date-vat-warning')).toBeNull();
+  });
+});
+
+/**
+ * Spec 122 US8 (T807) — the event-fee form's controls on AURA: the event
+ * combobox, the issuance-mode radio group, the payment method select, the
+ * amount field, the refunded block and the duplicate dialog.
+ */
+describe('<EventFeeForm> on AURA (T807)', () => {
+  beforeEach(() => {
+    vi.useRealTimers();
+    pushMock.mockReset();
+  });
+  afterEach(() => {
+    vi.useFakeTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('the event picker is an AURA combobox', () => {
+    vi.stubGlobal('fetch', mockFetchRegistrations([]));
+    renderForm();
+    const picker = screen.getByRole('combobox', { name: enMessages.admin.invoices.eventFeeForm.eventPicker.label });
+    expect(picker.closest('.aura-field')).not.toBeNull();
+  });
+
+  it('the mode choice is an AURA radio group; the as-paid fields are AURA fields', async () => {
+    vi.stubGlobal('fetch', mockFetchRegistrations([matchedRegistration]));
+    renderForm({ initialEventId: 'ev-1' });
+    fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+    expect(screen.getByRole('group', { name: modeMessages.label })).toHaveClass('aura-radio-group');
+    expect(screen.getByRole('combobox', { name: enMessages.admin.invoices.pay.fields.method })).toBeInTheDocument();
+    const method = document.getElementById('payment-method-select') as HTMLSelectElement;
+    expect([...method.options].map((o) => o.value)).toEqual(['bank_transfer', 'cheque', 'cash', 'other']);
+    expect(screen.getByLabelText(/Amount/).closest('.aura-field')).not.toBeNull();
+    expect(screen.getByTestId('doc-type-badge')).toHaveClass('aura-badge');
+  });
+
+  it('a refunded registration is blocked by an AURA danger alert', async () => {
+    vi.stubGlobal('fetch', mockFetchRegistrations([refundedRegistration]));
+    renderForm({ initialEventId: 'ev-1' });
+    fireEvent.click(await screen.findByRole('button', { name: /Carol/ }));
+    expect(screen.getByTestId('mode-refunded-blocked')).toHaveClass('aura-alert--danger');
+  });
+
+  it('the duplicate notice is an AURA dialog', async () => {
+    const fetchMock = mockFetchRegistrations([matchedRegistration]);
+    vi.stubGlobal('fetch', fetchMock);
+    renderForm({ initialEventId: 'ev-1' });
+    fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+    fetchMock.mockImplementationOnce(
+      async () => new Response(JSON.stringify({ error: { code: 'duplicate' }, existing_invoice_id: null }), { status: 409 }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: enMessages.admin.invoices.eventFeeForm.recordAndIssue }));
+    const dialog = await screen.findByRole('alertdialog', {
+      name: enMessages.admin.invoices.eventFeeForm.duplicateDialog.title,
+    });
+    expect(dialog).toHaveClass('aura-dialog');
   });
 });

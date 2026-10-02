@@ -42,7 +42,7 @@ import {
   listChangeRequestQueue,
   type ChangeRequestQueueItem,
 } from '@/modules/members';
-import { Alert, buttonClass } from '@jirawatpyk/aura-react/server';
+import { Alert, Card, buttonClass } from '@jirawatpyk/aura-react/server';
 import { EmptyState } from '@/components/shell/empty-state';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
@@ -286,46 +286,53 @@ export async function renderChangeRequestQueueView({
         </Alert>
       ) : null}
 
-      <ChangeRequestQueueFilters resultCount={items.length} hasMore={hasMore} timeZone={timeZone} />
-      {memberChip || submitterChip ? (
-        <div className="space-y-1">
-          {memberChip ? (
-            <p className="text-sm" data-testid="queue-member-chip">
-              {tFilters('memberChip', { company: memberChip.company })}{' '}
-              <Link href={memberChip.removeHref} className="inline-flex items-center gap-1 text-[var(--aura-fg-accent)] underline underline-offset-4 hover:no-underline">
-                <XIcon className="size-3" aria-hidden="true" />
-                {tFilters('removeMember')}
-              </Link>
-            </p>
+      {/* The list card rule: the filters, the result count, the table and
+          its paging in one card, frameless below 640px where the rows are
+          cards of their own. */}
+      <Card flushBelow="sm" className="max-sm:border-0 max-sm:p-0">
+        <div className="flex flex-col gap-4">
+          <ChangeRequestQueueFilters resultCount={items.length} hasMore={hasMore} timeZone={timeZone} />
+          {memberChip || submitterChip ? (
+            <div className="space-y-1">
+              {memberChip ? (
+                <p className="text-sm" data-testid="queue-member-chip">
+                  {tFilters('memberChip', { company: memberChip.company })}{' '}
+                  <Link href={memberChip.removeHref} className="inline-flex items-center gap-1 text-[var(--aura-fg-accent)] underline underline-offset-4 hover:no-underline">
+                    <XIcon className="size-3" aria-hidden="true" />
+                    {tFilters('removeMember')}
+                  </Link>
+                </p>
+              ) : null}
+              {submitterChip ? (
+                <p className="text-sm" data-testid="queue-submitter-chip">
+                  {tFilters('submitterChip')}{' '}
+                  <Link href={submitterChip.removeHref} className="inline-flex items-center gap-1 text-[var(--aura-fg-accent)] underline underline-offset-4 hover:no-underline">
+                    <XIcon className="size-3" aria-hidden="true" />
+                    {tFilters('removeSubmitter')}
+                  </Link>
+                </p>
+              ) : null}
+            </div>
           ) : null}
-          {submitterChip ? (
-            <p className="text-sm" data-testid="queue-submitter-chip">
-              {tFilters('submitterChip')}{' '}
-              <Link href={submitterChip.removeHref} className="inline-flex items-center gap-1 text-[var(--aura-fg-accent)] underline underline-offset-4 hover:no-underline">
-                <XIcon className="size-3" aria-hidden="true" />
-                {tFilters('removeSubmitter')}
-              </Link>
-            </p>
-          ) : null}
-        </div>
-      ) : null}
 
-      {items.length === 0 ? (
-        deepLinkNotice ? null : (
-          <div data-testid="queue-empty">
-            <EmptyState icon={InboxIcon} title={filtered ? t('emptyFiltered') : t('empty')} {...(filtered ? {} : { description: t('emptyHint') })} bordered />
-          </div>
-        )
-      ) : (
-        <ChangeRequestQueueTable items={items} />
-      )}
-      {nextHref ? (
-        <div className="flex justify-center">
-          <Link href={nextHref} className={buttonClass({ variant: 'secondary' })} data-testid="queue-next">
-            {t('nextPage')}
-          </Link>
+          {items.length === 0 ? (
+            deepLinkNotice ? null : (
+              <div data-testid="queue-empty">
+                <EmptyState bordered={false} icon={InboxIcon} title={filtered ? t('emptyFiltered') : t('empty')} {...(filtered ? {} : { description: t('emptyHint') })} />
+              </div>
+            )
+          ) : (
+            <ChangeRequestQueueTable items={items} />
+          )}
+          {nextHref ? (
+            <div className="flex justify-center">
+              <Link href={nextHref} className={buttonClass({ variant: 'secondary' })} data-testid="queue-next">
+                {t('nextPage')}
+              </Link>
+            </div>
+          ) : null}
         </div>
-      ) : null}
+      </Card>
     </TableContainer>
   );
 }

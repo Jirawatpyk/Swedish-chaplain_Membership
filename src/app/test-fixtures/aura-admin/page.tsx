@@ -75,6 +75,10 @@ import {
   type CycleFixtureKind,
 } from './renewal-fixtures';
 import { AtRiskFixture, MarkPaidDialogPreview, TierUpgradeAcceptPreview } from './renewal-previews';
+import { renderInvoicesListView, renderInvoicesSetupView } from '@/app/(staff)/admin/invoices/_components/invoices-list-view';
+import { InvoiceCreateSwitcher } from '@/app/(staff)/admin/invoices/new/_components/invoice-create-switcher';
+import { INVOICE_EVENTS, INVOICE_MEMBERS, INVOICE_PLANS, INVOICE_ROWS, INVOICES_TODAY_ISO } from './invoice-fixtures';
+import { OpenFirstMatchingButton } from './invoice-previews';
 import { CycleDetailBadges, renderCycleDetailView } from '@/app/(staff)/admin/renewals/[cycleId]/_components/cycle-detail-view';
 import { CycleAdminActions } from '@/app/(staff)/admin/renewals/[cycleId]/_components/cycle-admin-actions';
 import { PendingReactivationActions } from '@/app/(staff)/admin/renewals/[cycleId]/_components/pending-reactivation-actions';
@@ -1043,6 +1047,72 @@ export default async function AuraAdminPreviewPage({
           ) : (
             <ScheduleEditor initialPolicies={SCHEDULE_POLICIES} readOnly={false} defaultBucket="premium" />
           )}
+        </FormContainer>
+      </StaffFrame>
+    );
+  }
+
+  // ── US8a: the invoice list and new invoice (`Admin-invoices`,
+  // `Admin-state-invoices-setup`, `Admin-invoice-new`, `Admin-record-payment`) ─
+  if (
+    view === 'invoices' ||
+    view === 'invoices-empty' ||
+    view === 'invoices-filtered' ||
+    view === 'invoices-setup' ||
+    view === 'record-payment'
+  ) {
+    const isAdmin = state !== 'manager';
+    if (view === 'invoices-setup') {
+      return (
+        <StaffFrame path="/admin/invoices">
+          <TableContainer>{await renderInvoicesSetupView({ isAdmin })}</TableContainer>
+        </StaffFrame>
+      );
+    }
+    const empty = view === 'invoices-empty' || view === 'invoices-filtered';
+    const list = await renderInvoicesListView({
+      isAdmin,
+      isQueueView: false,
+      showRegisters: true,
+      show088Filters: true,
+      showAutoInvoiceFilter: true,
+      rows: empty ? [] : INVOICE_ROWS,
+      total: empty ? 0 : INVOICE_ROWS.length,
+      page: 1,
+      pageSize: 50,
+      hasFilters: view === 'invoices-filtered',
+      draftsHidden: true,
+      payIntent: false,
+      showMethodColumn: false,
+      todayIso: INVOICES_TODAY_ISO,
+    });
+    return (
+      <StaffFrame path="/admin/invoices">
+        <TableContainer>
+          {view === 'record-payment' ? (
+            <OpenFirstMatchingButton testId="row-record-payment-trigger">{list}</OpenFirstMatchingButton>
+          ) : (
+            list
+          )}
+        </TableContainer>
+      </StaffFrame>
+    );
+  }
+
+  if (view === 'invoice-new' || view === 'invoice-new-event') {
+    const tNew = await getTranslations('admin.invoices.new');
+    return (
+      <StaffFrame path="/admin/invoices/new">
+        <FormContainer>
+          <PageHeader title={tNew('title')} subtitle={tNew('description')} />
+          <InvoiceCreateSwitcher
+            members={INVOICE_MEMBERS}
+            plans={INVOICE_PLANS}
+            events={INVOICE_EVENTS}
+            taxAtPayment
+            initialMemberId={view === 'invoice-new' ? 'm-3' : undefined}
+            {...(view === 'invoice-new-event' ? { initialRegistrationId: 'preview-reg', initialEventId: 'ev-crayfish' } : {})}
+          />
         </FormContainer>
       </StaffFrame>
     );

@@ -60,6 +60,55 @@ A server component that needs a static AURA component imports it from **`@jirawa
 
 **Board parity rule (US5a, 28 Sep 2026).** AURA's component defaults (spacing, sizes, radius, type scale) win over a board's pixel values. The board wins on content, structure, order, icons and copy. When a board value is clearly better, it goes to the AURA handoff, never into a per-page override. Styling that reaches into AURA's internal classes (`.aura-table__*`, `.aura-tbl__*`, `.aura-empty*`, `.aura-filterbar__*`, `.aura-card__*`, `.aura-alert*`, `.aura-stat*`, `.aura-progress*`, `.aura-nav*`, `.aura-shell*`, `.aura-bottomnav*`, a hand-applied `aura-icon`) is a stand-in: it gets a `stand-in until AURA #NN` comment naming an item open below. A reach AURA's owner agreed is app content (e.g. hiding part of a cell only on a stacked phone card) is labelled `AURA app content: <why>` instead. `tests/unit/architecture/aura-internal-class-ratchet.test.ts` enforces both over every `MIGRATED_PATHS` entry and `globals.css`, and fails on a label naming an item that is no longer open: when AURA ships an item, its stand-ins are swapped in the same PR that bumps the pin.
 
+**Button icons (US8a, 2 Oct 2026).** The boards disagree with each other on button icons: 15 labels carry different icons on different boards. "Board wins on icons" therefore needs one rule, and this is it:
+- **These actions carry an icon:**
+  - create or add: `plus`;
+  - download or export: `download`;
+  - send or remind: `mail` or `send`;
+  - confirm a money step: `check`, e.g. Record payment, or an as-paid issue;
+  - retry: `rotate-ccw`;
+  - destructive actions, with their own icons: Archive, Erase, Reject & refund.
+- **These carry none:** Cancel, Save, Apply, Done, Review, Go back, and in-row text actions such as the invoice list's "Record payment…".
+- **Exception:** a Cancel that works as "back" in a form header keeps the board's `arrow-left`, as on the member forms.
+- **How to apply it:**
+  - The same label carries the same icon on every screen.
+  - On an AURA `Button`, use its `icon` prop.
+  - On a link styled with `buttonClass`, put a lucide icon (`aria-hidden`, `size-4`) or the `/server` `Icon` before the text.
+- **Where it was checked:** the 2 Oct audit compared every preview view with the boards. It found four buttons that broke the rule: Try again on the shared load-error card, Send reminder in the renewal pipeline, Invite colleague on the portal profile, and the invoice list's empty-state New invoice. `tests/unit/app/button-icon-rule.test.tsx` pins each one.
+
+**List card (US8a, 2 Oct 2026).** The boards disagree on whether a list sits in a card: of the 14 admin list boards, 10 frame the filters and the table in one card; Members and Invoices do not, Credit notes does not, and Change requests does on some boards and not others. The rule:
+- **A page whose main content is a list** puts its filters, result count, table (or empty state, or load error) and paging in one AURA `Card` with `flushBelow="sm"` and `max-sm:border-0 max-sm:p-0`. Below 640px the card drops its frame and padding, so the phone rows, which are cards of their own, sit on the page gutter.
+- **A list that is one section of a page** (such as the invoices on a member's page) keeps that section's card; it gets no second one.
+- **Inside the card** an empty state has no border of its own (`bordered={false}` on the shell `EmptyState`, no `bordered` on AURA's), so there is never a frame in a frame. A load error keeps its danger frame: the red border is how it reads as an alert (board `Admin-state-members-error`).
+- **The route's `loading.tsx`** draws the same card, for CLS 0.
+- **Where it applies today:** Plans, the renewals pipeline, escalation tasks, tier upgrades, Invoices, Members and Change requests. Lists still on the legacy kit take it in their own phase.
+- **The table runs edge to edge inside the card** (maintainer, 2 Oct, the Polaris / GitHub pattern): no side borders or radius, the header band and rules kept, the filters on the card's padding. AURA has no way to do this yet, so until #127 ships the tables keep their own frame.
+
+**Filters (decided 2 Oct 2026, not yet applied).** The migrated lists use four different filter rows, and the boards disagree: Members draws AURA's `FilterBar`, while Change requests and Plans draw labelled form fields with an Apply button. The maintainer chose the pattern the large SaaS dashboards share (Stripe, Shopify Polaris, Vercel, GitHub, Jira):
+- **One row:** the search first, if the list searches, then one compact `FilterSelect` per closed-set filter ("Status All"). The chosen value shows on its face, with no label above it.
+- **Filter as you pick:** no Apply button for the row.
+- **Dates:** one date-range control, not two date fields.
+- **On/off filters:** a toggle chip, like Members' "Needs portal invite".
+- **More than four filters:** the rest go behind a "More filters" popover.
+- **Always:** the result count through `FilterBar`'s `resultCount`, and "Clear all" while a filter is set.
+- **On a phone:** the chips wrap, as on Members.
+- **Not covered:** a report form, which is a query someone runs on purpose (Tax registers' "View register"), keeps its labelled fields and button.
+- **Where it changes:**
+  - Members already follows it.
+  - Invoices, shared with the portal list: plain `Select` becomes `FilterSelect`.
+  - Change requests: Status becomes a `FilterSelect` and the two dates one range. The Apply button goes, and the URL parameters stay the same, including the inclusive end date.
+  - Plans: search, Category and Year become `FilterSelect`s, and "Active only" and "Show deleted" become toggle chips.
+- **Layout review of the mock** (UX, 2 Oct), carried into the filter PR:
+  - **Result count:** always through `FilterBar`'s `resultCount`, at the right of the row, even with no search field. AURA moves it to its own line on a phone, and it is already a polite live region. Members gains one.
+  - **Invoices:** "Status All" is untrue while drafts are hidden. The first status option says so ("All except drafts", admin only), and the drafts hint becomes a quiet line under the row, never part of the count, which does not wrap. The applied secondary filters move to `FilterBar`'s `filters` chips, and the popover button reads "More filters".
+  - **Plans:** the order is Search → Year → Category → Active only → Show deleted. Year always has a value and stays put when the others hide for an empty year.
+  - **Touch:** every toggle `Tag` (Plans and Members) and the Invoices "More filters" button take `touchHeight`, so the row is 44px on touch, like the `FilterSelect`s.
+  - **A selected toggle chip** shows a check icon (`icon="check"` while selected, as the escalation queue's chips do), so selection is not shown by colour alone.
+  - **Clear all** appears only for a non-default value. The change-request default status and the plans' current year do not count.
+  - **Change requests:** Outcome appears right after Status, only under Decided, and focus stays on Status.
+- **Dates need AURA #128**, a compact date-range filter. The mock showed that composing one from `Popover` + `DateRangePicker` takes three clicks to reach the calendar and borrows an internal class.
+- **When:** its own PR, after AURA ships #127 and #128. The mock was reviewed on 2 Oct.
+
 **Type scale.** Text sizes on AURA surfaces use AURA's type classes (`aura-text-label` 13/500, `aura-text-table-cell` 13/400, `aura-text-caption` 12, `aura-text-mono` 12 mono, `aura-text-pill-label` 11, `aura-text-h2` 24), not `text-[Npx]`. They load in the `aura-tokens` layer, below Tailwind's preflight, so on a `<button>`, `<kbd>` or heading (where preflight resets the font) the class goes on the inner text span; Tailwind `font-*` / `leading-*` utilities still win over it. Page titles keep the app's shared `--font-size-h1` step.
 
 ## Phases
@@ -104,10 +153,13 @@ The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requ
 | 123 | 5.24.0: `touchHeight` applies under `(max-width: 639.98px), (pointer: coarse)`, so a tablet or other touch-first screen wider than 640px gets 44px targets too; a mouse at 640px and up keeps today's sizes | Nothing to change in the screens: every touch control already passes `touchHeight`. `renewal-a11y` asks the page which rule applies and adds a 1024px touch-context test |
 | 124 | 5.25.0: a toggle `Tag` (`selected` + `onClick`) takes `touchHeight`, 44px under the same rule as #123; a plain or removable Tag ignores it | The escalation queue's six Status and Assignment chips (`PressedGroup`) pass `touchHeight` |
 
-No item is open (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.test.ts` reads this table; a new gap goes here as `| #N | … |`):
+Three items are open (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.test.ts` reads this table; a new gap goes here as `| #N | … |`):
 
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
+| #125 | Addendum 28 (US8a): a `RadioGroup` option's `description` sits inside its `<label>`, so it is read as part of the radio's name instead of as its description | None needed in markup: the new-invoice type switcher and the event-fee issuance mode keep `description`; their tests match the name with a start-anchored regex until AURA ships, then tighten to the exact name plus `toHaveAccessibleDescription` |
+| #127 | Addendum 30 (US8a): a table inside a padded `Card` keeps its own border and radius and cannot run edge to edge, so a list page shows a frame in a frame on desktop. Ask: `bleed` on `DataTable` / `Table` (no side borders or radius, pulled out by the card's padding, header band and rules kept, off below the card's `flushBelow`), plus `DataTable bordered={false}` | None (maintainer, 2 Oct: wait for AURA). The seven list-card pages (members, invoices, change requests, plans, renewal pipeline, escalation tasks, tier upgrades) and their skeletons take `bleed` in the PR that bumps the pin |
+| #128 | Addendum 31 (filter pattern): no compact date-range filter for `FilterBar`. `DateRangePicker` is a labelled form field, so a date filter cannot sit in the "Status All" row. Ask: a `FilterDateRange` (or `DateRangePicker variant="filter"`) with a `FilterSelect`-style face that opens the range calendar in one click, optional presets, the same date handling, and a name of both parts | None: the filter PR (§ Filters) waits for #127 and #128. The change-request queue keeps its two `DatePicker`s and Apply until then |
 
 **#126 (Addendum 29) is open but is deliberately NOT in that table**, because it
 has no stand-in to retire: it is not a reach into AURA's internals but a request

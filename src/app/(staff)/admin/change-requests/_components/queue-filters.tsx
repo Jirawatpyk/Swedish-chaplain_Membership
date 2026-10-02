@@ -225,12 +225,14 @@ export function ChangeRequestQueueFilters({ resultCount, hasMore, timeZone }: Ch
           </span>
         </span>
       </button>
-      {/* The controls sit in a card, the result count under it (board
-          `Admin-change-requests`). From 1024px they sit in one row at their
-          own widths with Apply right after the dates, as on the board. */}
+      {/* The controls, then the result count (board `Admin-change-requests`),
+          inside the queue's list card; on a phone, where that card has no
+          frame, they keep their own collapsible framed panel. From 1024px
+          they sit in one row at their own widths with Apply right after the
+          dates, as on the board. */}
       <div
         id={panelId}
-        className={`grid gap-3 rounded-[var(--aura-card-radius)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] p-4 sm:grid-cols-2 lg:flex lg:flex-wrap lg:items-end ${openOnPhone ? '' : 'max-sm:hidden'}`}
+        className={`grid gap-3 max-sm:rounded-[var(--aura-card-radius)] max-sm:border max-sm:border-[var(--aura-border-default)] max-sm:bg-[var(--aura-bg-surface)] max-sm:p-4 sm:grid-cols-2 lg:flex lg:flex-wrap lg:items-end ${openOnPhone ? '' : 'max-sm:hidden'}`}
       >
       <Select
         className="lg:w-56"

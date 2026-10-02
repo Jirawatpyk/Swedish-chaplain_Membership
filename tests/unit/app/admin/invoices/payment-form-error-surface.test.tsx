@@ -98,8 +98,8 @@ describe('PaymentForm — concurrent 409 inline recovery (FR-032)', () => {
       ];
       expect(url).toBe(`/api/invoices/${INVOICE_ID}/pay`);
       expect(init.method).toBe('POST');
-      // A stale-write 409 is NOT the admin's error → neutral, not destructive.
-      expect(alert).toHaveAttribute('data-tone', 'neutral');
+      // A stale-write 409 is NOT the admin's error → info, not danger.
+      expect(alert).toHaveClass('aura-alert--info');
       expect(alert).toHaveAttribute('role', 'alert');
       expect(alert).toHaveTextContent(
         'This invoice was already paid or changed in another session. Refresh to see the latest status and the receipt (RC) number.',
@@ -127,7 +127,7 @@ describe('PaymentForm — failure branch is focused + destructive (FR-032)', () 
       submitPayment();
 
       const alert = await screen.findByTestId('record-payment-error');
-      expect(alert).toHaveAttribute('data-tone', 'destructive');
+      expect(alert).toHaveClass('aura-alert--danger');
       expect(alert).toHaveTextContent('Error code: pdf_render_failed');
       // The irreversible §87-mint failure must not be missable: the component
       // parks focus on the alert (tabIndex={-1} + focus effect).
@@ -157,7 +157,7 @@ describe('PaymentForm — failure branch is focused + destructive (FR-032)', () 
       submitPayment();
 
       const alert = await screen.findByTestId('record-payment-error');
-      expect(alert).toHaveAttribute('data-tone', 'destructive');
+      expect(alert).toHaveClass('aura-alert--danger');
       expect(alert).toHaveTextContent(
         'An unknown error occurred. Please try again.',
       );
@@ -165,5 +165,72 @@ describe('PaymentForm — failure branch is focused + destructive (FR-032)', () 
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+/**
+ * Spec 122 US8 (T804) — the request is byte-identical after the AURA swap:
+ * the same URL, method, header and JSON body, with blank optional fields
+ * left out (never sent as "").
+ */
+describe('PaymentForm — the POST is unchanged on AURA (T804)', () => {
+  function okFetch() {
+    return vi.fn(async (_url: string, _init: RequestInit) => ({
+      ok: true,
+      json: async () => ({ receipt_document_number_raw: 'RC-2030-000001', email_dispatch: 'sent' }),
+    }));
+  }
+
+  it('defaults: bank transfer, today, no reference or notes', async () => {
+    const fetchMock = okFetch();
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      renderForm();
+      submitPayment();
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+      const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+      expect(url).toBe(`/api/invoices/${INVOICE_ID}/pay`);
+      expect(init.method).toBe('POST');
+      expect(init.headers).toEqual({ 'Content-Type': 'application/json' });
+      expect(init.body).toBe(JSON.stringify({ paymentMethod: 'bank_transfer', paymentDate: TODAY_ISO }));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('every field filled: method, trimmed reference and notes, the chosen date', async () => {
+    const fetchMock = okFetch();
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      renderForm();
+      // AURA's select names a combobox button and keeps a hidden native
+      // <select> (`#method-select`) that carries the value and onChange.
+      fireEvent.change(document.getElementById('method-select') as HTMLSelectElement, {
+        target: { value: 'cheque' },
+      });
+      fireEvent.change(screen.getByLabelText('Reference'), { target: { value: '  CHQ-77  ' } });
+      fireEvent.change(screen.getByLabelText(/Payment date/), { target: { value: ISSUE_DATE } });
+      fireEvent.change(screen.getByLabelText('Notes'), { target: { value: ' paid at the gala ' } });
+      submitPayment();
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+      const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+      expect(init.body).toBe(
+        JSON.stringify({
+          paymentMethod: 'cheque',
+          paymentReference: 'CHQ-77',
+          paymentNotes: 'paid at the gala',
+          paymentDate: ISSUE_DATE,
+        }),
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('the method is an AURA select with the four methods in order', () => {
+    renderForm();
+    expect(screen.getByRole('combobox', { name: 'Payment method' }).closest('.aura-select')).not.toBeNull();
+    const select = document.getElementById('method-select') as HTMLSelectElement;
+    expect([...select.options].map((o) => o.value)).toEqual(['bank_transfer', 'cheque', 'cash', 'other']);
   });
 });

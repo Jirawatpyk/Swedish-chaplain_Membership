@@ -36,6 +36,12 @@ vi.mock('@/modules/members', async () => {
   };
 });
 
+// The queue table is an async Server Component, which a client render cannot
+// mount; its own tests cover it. Here it is a stand-in table.
+vi.mock('@/app/(staff)/admin/change-requests/_components/queue-table', () => ({
+  ChangeRequestQueueTable: () => <table data-testid="queue-table-stub" />,
+}));
+
 const { renderChangeRequestQueueView } = await import('@/app/(staff)/admin/change-requests/page');
 
 const Q = enMessages.admin.changeRequests.queue;
@@ -76,5 +82,39 @@ describe('renderChangeRequestQueueView', () => {
   it('shows the pending summary only when the page passes one', async () => {
     await renderView({ ...base, pendingSummary: { count: 3, oldestDays: 6 } });
     expect(screen.getByTestId('queue-pending-count')).toBeInTheDocument();
+  });
+
+  it('one card holds the filters and the table (list card rule), frameless on a phone', async () => {
+    const item = {
+      row: {
+        request: {
+          id: '00000000-0000-4000-9000-000000000012',
+          state: 'pending',
+          outcome: null,
+          withdrawnReason: null,
+          submitterRoleAtSubmission: 'primary',
+          submittedAt: new Date('2026-09-22T13:16:00Z'),
+          decidedAt: null,
+          fields: [{ affectsTaxDocuments: false }],
+        },
+        member: { companyName: 'Midsommar Hospitality Co., Ltd.', memberNumber: 12, status: 'active', archived: false },
+        submitter: { displayName: 'Anders Nilsson' },
+        decidedBy: null,
+      },
+      waitingSeconds: 86_400,
+      overdue: false,
+    };
+    await renderView({ ...base, items: [item] as never });
+    const card = screen.getByTestId('queue-filters').closest('.aura-card');
+    expect(card).not.toBeNull();
+    expect(card).toHaveClass('aura-card--flush-below-sm');
+    expect(card?.contains(screen.getByTestId('queue-table-stub'))).toBe(true);
+  });
+
+  it('the empty state sits in the same card, without a second border', async () => {
+    await renderView(base);
+    const card = screen.getByTestId('queue-filters').closest('.aura-card');
+    expect(card?.contains(screen.getByTestId('queue-empty'))).toBe(true);
+    expect(screen.getByTestId('queue-empty').querySelector('.aura-empty')).not.toHaveClass('is-bordered');
   });
 });

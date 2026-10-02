@@ -182,7 +182,8 @@ test.describe('admin payment reconciliation view — @payment @e2e (T095, US3)',
     // there as much as the column. It read "present whether or not any row
     // matches" until 2026-09-30, which is why a missing fixture looked like
     // a column regression.
-    const methodHeader = page.getByTestId('column-header-method');
+    // The AURA DataTable's column header (spec 122 US8).
+    const methodHeader = page.getByRole('columnheader', { name: 'Method' });
     await expect(methodHeader).toBeVisible({ timeout: 5_000 });
 
     // `beforeAll` seeds one card + one promptpay row, so at least one badge

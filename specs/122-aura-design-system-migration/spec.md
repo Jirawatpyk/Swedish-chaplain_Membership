@@ -261,6 +261,64 @@ The maintainer approved the US7c plan. Its boards were read against the code: `P
   - The success hero centres a title shorter than its subtitle (TH).
 - **Out of scope, filed separately:** the confirm route's `invoice_already_exists` 409 has no message of its own, so the member sees the generic error. Mapping it is a behaviour change (Session 2026-09-27 rule).
 
+### Session 2026-10-02 (maintainer, US8 start)
+
+The maintainer approved the US8 plan. Its boards were read against the code:
+- **Lists:** `Admin-invoices`, `Admin-state-invoices-setup`, `Admin-credit-notes`.
+- **Invoice detail:** `Admin-invoice-draft`, `-issued` (+`-mobile`), `-overdue`, `-paid`, `-credited`, `-manager`, `-auto-refund-failed`, `Admin-voided`.
+- **Create, issue and pay:** `Admin-invoice-new`, `Admin-invoice-issue`, `Admin-record-payment` (+`-mobile`).
+- **Refunds:** `Admin-refund-full`, `-partial`, `-settling`, `-settled`, `-failed`, `-waived`.
+- **Void and credit:** `Admin-void` (+`-mobile`), `Admin-credit-note` (+`-mobile`), `Admin-credit-note-detail`.
+- **Registers:** `Admin-invoice-registers` (+`-mobile`), `Admin-registers-empty`, `-invalid-range`, `-load-failed`, `-re`, `-zero-rate`.
+- **Settings:** `Admin-invoice-settings`.
+
+`Invoices`, `Invoices-mobile` and `Invoice-paid` are member-portal boards (US4). `Proposal-void-reissue` is a proposal for the voided page.
+
+US8 is a money phase, so each of its PRs gets a financial-integrity review as well as the UX and i18n reviews. It is a UI swap: every fetch URL and body, typed phrase, router push and refresh, error-code router, toast, amount formatter and date helper is unchanged. None of these requests sends an idempotency header today, and none is added.
+
+- Q: US8 covers 61 files on the old kit (about 17k lines) and 36 boards, more than US7. → A: **Three PRs:**
+  - **US8a:** the invoice list (table, row menu, auto-renewal review queue, record payment, CSV export, setup and empty states) and the new-invoice page (membership and event fee).
+  - **US8b:** the invoice detail page with its dialogs (issue, delete draft, refund, email-failure and auto-refund alerts), the payment activity timeline, the void page and the new-credit-note page.
+  - **US8c:** the credit-notes list and detail, the tax-document registers and the invoice settings.
+- Q: The invoice detail boards are drawn two ways. Some show the bare number with a badge over an unframed list; others show "Invoice {number}" with a status pill over a "Details" card. → A: **One layout: "Invoice {number}" with an AURA status pill, then a "Details" card holding the fields, then a separate totals block** (subtotal, VAT, total). A draft reads "Draft invoice". The pill tones are the list's: Paid `ready`, Issued `progress`, Overdue `blocked`, every other status `neutral`. The badge-style boards are updated to match.
+- Q: Three phone boards are marked "proposed": record payment as a bottom sheet, a bottom action bar on the invoice page, and stacked buttons on the void page. → A: **Adopt all three.** They are layout only:
+  - below 640px, record payment opens as a bottom sheet; wider screens keep the centred dialog. AURA's dialog is itself a bottom sheet below 640px (up to 92% of the height, rounded top corners), so both are one AURA dialog;
+  - on a phone the invoice page ends in a bar with the total (incl. VAT) and due date, the main action and the ⋯ menu, and Void moves into that menu;
+  - on a phone the void page stacks full-width buttons, Void above Cancel.
+- Q: The user story says the registers have a sticky totals footer, but the board and the code both put the summary line above the table. → A: **Keep the summary line above the table, with no footer.** On a phone the register rows become cards, as the board draws them. The user story is corrected.
+- **Decided from the boards** (Session 2026-09-27 rule: the board decides content and order):
+  - **Invoice list columns**, in order:
+    - Invoice No.: the number link, with "Issued {date}" and the credit-note count under it. The separate Issued column goes.
+    - Buyer: the name, the Event chip and the subtitle.
+    - Status, Due.
+    - Receipt No.: with "Receipt generating…" or the online payment method under it.
+    - Total; Actions.
+  - **The queue and method columns stay where they are.** The review-queue column (auto-renewal view) and the Method column (online-payments view) still appear only in those views.
+  - **Row actions:** "Record payment…" on issued and overdue bills for admins, and a ⋯ menu holding the invoice, bill or receipt downloads. A receipt whose PDF failed shows a "Receipt failed" link to the invoice under its number. In the review-queue view the issue and discard actions stay in the row.
+  - On a phone the table stacks into cards (the US7a rule): number as the title, then buyer, due and total, with the actions in the card footer.
+  - **Setup state:** the "Finish invoice setup" sentence, and "Configure Invoicing" for admins only.
+- **Kept from the code over the boards:**
+  - **Typed confirmations** keep their phrases: refund `REFUND {company}` (case-sensitive), credit note `CREDIT`, void the bill number. The boards type the receipt number; changing a phrase changes what the server-side guard and the e2e expect, so it would be a behaviour change.
+  - **List filters** stay on the AURA filter bar from US4, which the portal shares. The board draws hand-built dropdown buttons.
+  - **Amounts and dates** keep their current formats.
+  - **Settings sections** the board does not draw (document notes, payment, branding and logo) keep their content on AURA's defaults.
+- **US8a review outcomes** (UX, i18n and financial reviews of PR #496):
+  - **Record payment's summary box** labels the figure "Invoice total (incl. VAT)", not "Amount received". An event buyer may withhold 3% tax, so the money that arrives can be less than the total.
+  - **The receipt's state wherever Receipt No. is not shown.** The board's phone card leaves out Receipt No. The grid also hides that column when the table is narrower than 1000px (a 1280px laptop), so the other columns fit the card without scrolling sideways. In both cases "Receipt generating…" or the "Receipt render failed" link appears under the number.
+  - **Record payment cannot be dismissed while the payment is being sent.** A tap on the scrim never closes it. After a successful payment, focus moves to the row's ⋯ menu.
+  - **Sorting stays out of scope.** The board marks Invoice No. and Due as sortable, but the list has never sorted. Adding it would be a behaviour change, so it is not part of this UI swap.
+  - **On a phone the list header keeps only "New invoice" in its row.** Tax registers and Export CSV… move into a ⋯ menu beside it, the US5a members header and US5b-1 ⋯ precedent (maintainer comment on the parity page, 2 Oct). The export dialog opens from the menu, and focus returns to the ⋯ button. From 640px up, the three buttons show as before. The filters stay on the shared AURA filter bar.
+  - **One button icon rule for every migrated screen** (maintainer, 2 Oct, applied in this PR). The rule is in `docs/aura-adoption.md` § Button icons. An audit of every preview view against the boards found four buttons that broke it, all fixed here:
+    - Try again on the shared load-error card;
+    - Send reminder in the renewal pipeline;
+    - Invite colleague on the portal profile;
+    - the invoice list's empty-state New invoice.
+
+    Record payment and Create draft were fixed earlier in this PR.
+  - **One list card rule** (maintainer, 2 Oct: "follow what the design should be"). The boards disagree, so the rule is in `docs/aura-adoption.md` § List card: a page whose main content is a list frames its filters and table in one card, frameless below 640px; a list that is one section of a page keeps its section card. Members and Change requests, the two migrated lists that broke it, take the card in this PR, with their skeletons.
+  - **One filter pattern, applied in its own PR** (maintainer, 2 Oct). The boards disagree, so the rule is in `docs/aura-adoption.md` § Filters: AURA `FilterBar` with `FilterSelect`, one date-range control, toggle chips, filtering as you pick, a "More filters" popover past four. Report forms keep a run button. Change requests, Plans and the invoice filters move to it in a PR after AURA ships #127 (tables edge to edge inside the list card) and #128 (a compact date-range filter). The mock was reviewed on 2 Oct. The URL parameters each page sends stay the same.
+  - **The new-invoice Back button stays where it is.** It is a secondary header button on desktop, and below 1024px the shell's back link replaces it, as on the member pages (US5a). The board's link above the h1 is not followed.
+
 ## User Scenarios & Testing *(mandatory)*
 
 Every story below is one phase and one pull request. A story is done when its screens use only AURA components, match their canvas boards, and pass the per-module definition of done (FR-010).
@@ -375,7 +433,7 @@ The renewals pipeline (table and phone card list become one AURA data table), cy
 
 ### User Story 8 - Invoicing administration (Priority: P2)
 
-Invoice list/detail, tax registers (with sticky totals footer), credit-note, refund, record-payment and void dialogs.
+Invoice list/detail, tax registers (summary line above the table), credit-note, refund, record-payment and void dialogs.
 
 **Independent Test**: issue, pay, credit and void test invoices; register totals and CSV export equal the pre-migration output.
 

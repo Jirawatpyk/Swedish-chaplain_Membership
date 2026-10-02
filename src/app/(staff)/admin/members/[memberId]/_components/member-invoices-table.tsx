@@ -15,6 +15,7 @@
 import { useMemo } from 'react';
 import { DataTable, DropdownMenu, IconButton, StatusPill, type DataTableColumn, type MenuItem } from '@jirawatpyk/aura-react';
 import type { InvoiceStatus } from '@/modules/invoicing';
+import { invoiceStatusTone } from '@/components/invoices/invoice-status-tone';
 
 export interface MemberInvoiceRow {
   readonly invoiceId: string;
@@ -53,15 +54,6 @@ export interface MemberInvoicesTableLabels {
   readonly disabledForManager: string;
 }
 
-const STATUS_TONE: Readonly<Record<InvoiceStatus, 'neutral' | 'progress' | 'ready'>> = {
-  draft: 'neutral',
-  issued: 'progress',
-  paid: 'ready',
-  void: 'neutral',
-  credited: 'neutral',
-  partially_credited: 'neutral',
-};
-
 function menuItems(row: MemberInvoiceRow, labels: MemberInvoicesTableLabels, canMutate: boolean): MenuItem[] {
   const base = `/admin/invoices/${row.invoiceId}`;
   const gated = (label: string, href: string, extra: Partial<MenuItem> = {}): MenuItem =>
@@ -99,7 +91,7 @@ export function MemberInvoicesTable({
       label: labels.status,
       width: 140,
       card: 'pill',
-      render: (row) => <StatusPill tone={STATUS_TONE[row.status]}>{row.statusLabel}</StatusPill>,
+      render: (row) => <StatusPill tone={invoiceStatusTone(row.status)}>{row.statusLabel}</StatusPill>,
     },
     // The phone board's card shows Due, Total and Remaining only.
     { key: 'issued', label: labels.issued, width: 120, hideBelow: 'lg', card: 'hide' },

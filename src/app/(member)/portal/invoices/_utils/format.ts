@@ -24,12 +24,11 @@
 // will update to the canonical lib path in a follow-up.
 export { formatSatangThb } from '@/lib/format-thb';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
-import type { InvoiceStatus } from '@/modules/invoicing';
-import type { StatusTone } from '@jirawatpyk/aura-react/server';
+import type { InvoiceDisplayStatus } from '@/components/invoices/invoice-status-tone';
 
 /**
  * Presentation status surfaced to an invoice row/badge — the stored
- * {@link InvoiceStatus} widened with the derived `'overdue'` value
+ * `InvoiceStatus` widened with the derived `'overdue'` value
  * (T109 / FR-028). `'overdue'` is presentation-only; the stored status is
  * never `'overdue'`. Defined here (the leaf presentation util) so the
  * status-helper params below can be tied to the union, and re-exported
@@ -37,7 +36,7 @@ import type { StatusTone } from '@jirawatpyk/aura-react/server';
  * public surface is unchanged. Single source of truth for the row status
  * vocabulary — passing a stale/typo status to a helper is a COMPILE error.
  */
-export type InvoiceRowDisplayStatus = InvoiceStatus | 'overdue';
+export type InvoiceRowDisplayStatus = InvoiceDisplayStatus;
 
 /**
  * Medium-style date formatter tolerant of null inputs. Routes the locale
@@ -75,21 +74,5 @@ export function formatLineQuantity(quantity: string, locale: string): string {
   return new Intl.NumberFormat(locale, { maximumFractionDigits: 4 }).format(Number(quantity));
 }
 
-/**
- * The AURA status-pill tone per invoice status (spec 122 US4, `Invoices`
- * board): paid ready, issued in progress, overdue blocked, and the rest
- * (void, draft, credited) neutral. The pill carries its own icon beside the
- * word, so colour is never the only signal.
- */
-export function invoiceStatusTone(status: InvoiceRowDisplayStatus): StatusTone {
-  switch (status) {
-    case 'paid':
-      return 'ready';
-    case 'issued':
-      return 'progress';
-    case 'overdue':
-      return 'blocked';
-    default:
-      return 'neutral';
-  }
-}
+/** The shared invoice status tone map (spec 122 US8, T801). */
+export { invoiceStatusTone } from '@/components/invoices/invoice-status-tone';

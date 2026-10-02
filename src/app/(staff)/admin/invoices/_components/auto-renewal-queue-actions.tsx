@@ -14,23 +14,17 @@
  * download / record-payment controls that occupy the same cell on
  * non-draft rows (mutually exclusive by `status`).
  *
- * 320px density: ONE `ghost`/`icon` 32×32 "⋯" trigger (ux-standards.md §19
- * "Table row action cell" zone — the SAME trigger size `plans-table.tsx`
- * and the members bulk-row use), mirroring `invoice-more-menu.tsx`'s
- * established pattern in THIS exact table for "several actions, one row
- * cell". Zero extra horizontal footprint vs. three separate labelled
- * buttons, and the menu is tap/click-driven (Base UI DropdownMenu), never
- * hover-only. Discard sits inside the SAME menu as a
- * `DropdownMenuItem variant="destructive"` — ux-standards.md §19's
- * "Destructive actions in an overflow menu" clause explicitly permits this
- * exact shape ("Only `DropdownMenuItem variant="destructive"` with
- * `ConfirmationDialog` gating is allowed inside a menu, and only for
- * low-irreversibility items") — Discard is recoverable (the next auto-draft
- * cron pass re-drafts, or the treasurer bills manually), unlike a permanent
- * erasure.
+ * 320px density: ONE "⋯" `IconButton` opening an AURA `DropdownMenu`
+ * (spec 122 US8 T803) — the same shape as the row's own ⋯ menu in this
+ * table. Zero extra horizontal footprint vs. three separate labelled
+ * buttons, and the menu is tap/click-driven, never hover-only. Discard sits
+ * in the SAME menu as a `tone: 'danger'` item after a separator, gated by a
+ * `ConfirmationDialog` — allowed in a menu only for low-irreversibility
+ * items (ux-standards.md §19): Discard is recoverable (the next auto-draft
+ * cron pass re-drafts, or the treasurer bills manually).
  *
- * Each of the 3 items opens its OWN `ConfirmationDialog` (built on shadcn
- * `AlertDialog` — ux-standards.md §6.2: focus starts on Cancel, destructive
+ * Each of the 3 items opens its OWN `ConfirmationDialog` (AURA's
+ * alertdialog — ux-standards.md §6.2: focus starts on Cancel, destructive
  * Confirm is red, spinner while submitting, dialog stays open on failure).
  * `closeOnConfirm={false}` on both — the parent (this component) owns the
  * close so a FAILED issue/discard keeps the dialog open with an inline,
@@ -49,47 +43,26 @@
  * DELETE and a successful Issue flips `status` away from `'draft'` — either
  * way `router.refresh()` removes THIS component's own trigger button from
  * the actionable set (this component itself re-renders `null` once the
- * refreshed `status` prop is no longer `'draft'`). Base UI's DEFAULT
+ * refreshed `status` prop is no longer `'draft'`). The dialog's DEFAULT
  * focus-return targets the original trigger; if it has unmounted by the
  * time focus-return runs, focus silently drops to `<body>` — a real problem
  * in a row-by-row batch workflow (dozens of rows/sitting, the feature's
- * whole reason for existing). Fixed by wiring `finalFocus` via
- * `useDialogFinalFocus` — REUSED verbatim from
- * `@/components/broadcast/reason-confirmation-dialog` (the identical
- * unmount-after-close problem the broadcast Approve/Reject/Cancel dialogs
- * already solved; see that hook's own docstring), not reimplemented. On
- * Cancel/ESC the trigger survives and gets focus back (Base UI's own
- * default, unaffected). On a SUCCESSFUL close, `closedViaSuccessRef` is
- * raised BEFORE the close so the resolver skips the about-to-unmount
- * trigger and lands on the `#main-content` landmark instead.
+ * whole reason for existing). Fixed by wiring `finalFocus` through
+ * `resolveDialogFinalFocus` (the resolver the broadcast and renewal dialogs
+ * share). On Cancel/ESC the trigger survives and gets focus back. On a
+ * SUCCESSFUL close, `closedViaSuccessRef` is raised BEFORE the close so the
+ * resolver skips the about-to-unmount trigger and lands on the
+ * `#main-content` landmark instead.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { Alert, DropdownMenu, IconButton, buttonClass, type MenuItem } from '@jirawatpyk/aura-react';
+import { FileCheckIcon, MailIcon } from 'lucide-react';
 import { toast } from '@/lib/toast';
-import {
-  MoreHorizontalIcon,
-  AlertTriangleIcon,
-  FileCheckIcon,
-  MailIcon,
-  Trash2Icon,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { InlineAlert, InlineAlertDescription } from '@/components/ui/inline-alert';
-import { buttonVariants } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
-import { mergeRefs } from '@/lib/merge-refs';
-import Link from 'next/link';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
-import { useDialogFinalFocus } from '@/components/broadcast/reason-confirmation-dialog';
+import { resolveDialogFinalFocus } from '@/components/broadcast/resolve-dialog-final-focus';
 import {
   routeDiscardAutoDraftError,
   routeIssueAutoDraftError,
@@ -180,20 +153,23 @@ export function AutoRenewalQueueActions({
   // (the only closes that unmount the trigger via `router.refresh()`).
   const triggerRef = useRef<HTMLButtonElement>(null);
   const closedViaSuccessRef = useRef<boolean>(false);
-  const finalFocus = useDialogFinalFocus(triggerRef, undefined, closedViaSuccessRef);
+  const finalFocus = useCallback(
+    (): HTMLElement | null =>
+      resolveDialogFinalFocus({
+        closedViaSuccess: closedViaSuccessRef.current,
+        trigger: triggerRef.current,
+        fallback: null,
+        mainContent: typeof document !== 'undefined' ? document.getElementById('main-content') : null,
+      }),
+    [],
+  );
 
   // FR-032 / §6.4 pattern (mirrors `issue-invoice-form.tsx`'s `formError`
   // effect) — a plain synchronous `errorRef.current?.focus()` right after
   // `setError(...)` targets the ref while it is still `null` (the DOM
-  // hasn't committed the new Alert yet), a silent no-op. An effect fixes
-  // the ordering, but is NOT sufficient on its own here: the error Alert
-  // mounts as a NEW child of the still-open `ConfirmationDialog`, and Base
-  // UI's own focus-management re-asserts its `initialFocus` (Cancel) in
-  // response to that same content change, winning the race against a
-  // same-tick `.focus()` call (verified empirically — Cancel silently
-  // reclaimed focus within one tick). Chained double-RAF defers past Base
-  // UI's own re-assertion, mirroring `reason-confirmation-dialog.tsx`'s
-  // identical "auto-focus inside an open Base UI dialog" pattern.
+  // hasn't committed the new Alert yet), a silent no-op. The chained
+  // double-RAF also defers past the open dialog's own initial-focus pass,
+  // so Cancel never reclaims focus from the error.
   useEffect(() => {
     if (!error) return undefined;
     let raf2 = 0;
@@ -315,101 +291,63 @@ export function AutoRenewalQueueActions({
   // so the irreversible §87 mint carries the caution at the commit point. Not
   // rendered for Discard (discarding a flagged row is exactly the safe action).
   const cautionAlert = issueCaution && (
-    <InlineAlert tone="warning" data-testid="queue-row-issue-caution">
-      <AlertTriangleIcon className="size-4" aria-hidden="true" />
-      <InlineAlertDescription>
-        {t(`issueCaution.${issueCaution}`)}
-      </InlineAlertDescription>
-    </InlineAlert>
+    <Alert tone="warning" role="note" data-testid="queue-row-issue-caution">
+      {t(`issueCaution.${issueCaution}`)}
+    </Alert>
   );
 
   const errorAlert = error && (
     <Alert
       ref={errorRef}
       tabIndex={-1}
-      variant="destructive"
+      tone="danger"
       role="alert"
       className="outline-none"
       data-testid="queue-row-action-error"
-    >
-      <AlertTriangleIcon className="size-4" aria-hidden="true" />
-      <AlertDescription className="flex flex-col items-start gap-2">
-        <span>{error.message}</span>
-        {error.conflictingInvoiceId && (
-          // Review round 1 SHOULD-FIX — 44×44 target, matching the IDENTICAL
-          // link in `auto-renewal-queue-badges.tsx` (Task 13 review A7):
-          // same key, same page, same meaning, so the same target-size
-          // standard applies.
+      action={
+        error.conflictingInvoiceId ? (
+          // The same 44×44 target as the identical link in
+          // `auto-renewal-queue-badges.tsx` (Task 13 review A7).
           <Link
             href={`/admin/invoices/${error.conflictingInvoiceId}`}
-            className={cn(
-              buttonVariants({ variant: 'outline', size: 'sm' }),
-              'min-h-11 gap-1 px-3',
-            )}
+            className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}
           >
             {tQueue('viewConflictingInvoice')}
           </Link>
-        )}
-      </AlertDescription>
+        ) : undefined
+      }
+    >
+      {error.message}
     </Alert>
   );
 
+  // Review round 1 SHOULD-FIX — visual weight matches real risk: "Issue
+  // silently" first (the lower external impact), "Issue and email" (mints a
+  // §87 document AND emails a member) second with the mail icon, then
+  // Discard last after a separator in the danger tone.
+  const items: MenuItem[] = [
+    { label: t('issueSilently'), icon: <FileCheckIcon />, onSelect: () => openDialog('silent') },
+    { label: t('issueAndSend'), icon: <MailIcon />, onSelect: () => openDialog('send') },
+    { separator: true },
+    { label: t('discard'), icon: 'trash-2', tone: 'danger', onSelect: () => openDialog('discard') },
+  ];
+
   return (
     <>
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          render={({ ref: baseRef, ...props }) => (
-            <Button
-              {...props}
-              // Base UI passes its OWN ref in `props` (React 19). Merge it with
-              // our `triggerRef` — a bare `ref={triggerRef}` here would override
-              // Base UI's ref and the menu would never open (its Positioner
-              // loses the anchor). See mergeRefs' docstring.
-              ref={mergeRefs(baseRef, triggerRef)}
-              variant="ghost"
-              size="icon"
-              aria-label={t('menuAria', { member: memberName })}
-              data-testid="queue-row-actions-trigger"
-            >
-              <MoreHorizontalIcon aria-hidden="true" />
-            </Button>
-          )}
-        />
-        {/* Review round 1 SHOULD-FIX — visual weight now matches real risk,
-            not the reverse. "Issue and email" mints an irreversible §87
-            document AND emails a real member; it previously sat icon-less
-            at the top with no more visual weight than "Issue silently".
-            Reordered (silently first — the lower-external-impact choice)
-            and iconified every item (mirrors `invoice-more-menu.tsx`'s
-            icon-per-item convention on this same page) so the Mail icon on
-            "Issue and email" makes its externally-visible side effect
-            legible without reading the label. */}
-        <DropdownMenuContent align="end" className="min-w-56 whitespace-nowrap">
-          <DropdownMenuItem
-            onClick={() => openDialog('silent')}
-            data-testid="queue-row-issue-silent"
-          >
-            <FileCheckIcon aria-hidden="true" />
-            {t('issueSilently')}
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            onClick={() => openDialog('send')}
-            data-testid="queue-row-issue-send"
-          >
-            <MailIcon aria-hidden="true" />
-            {t('issueAndSend')}
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            variant="destructive"
-            onClick={() => openDialog('discard')}
-            data-testid="queue-row-discard"
-          >
-            <Trash2Icon aria-hidden="true" />
-            {t('discard')}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <DropdownMenu
+        label={t('menuAria', { member: memberName })}
+        trigger={
+          <IconButton
+            ref={triggerRef}
+            icon="ellipsis"
+            size="sm"
+            touchHeight
+            label={t('menuAria', { member: memberName })}
+            data-testid="queue-row-actions-trigger"
+          />
+        }
+        items={items}
+      />
 
       <ConfirmationDialog
         open={active === 'send' || active === 'silent'}

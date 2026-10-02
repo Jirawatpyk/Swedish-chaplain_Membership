@@ -8,8 +8,8 @@
  *      date defaults to today (Asia/Bangkok) + method select; submit runs the
  *      TWO-STEP create-draft → issue-as-paid flow and lands on the invoice
  *      detail showing Paid; the persisted row carries the COMBINED doc kind.
- *   2. no-TIN buyer — bill-first radio `aria-disabled="true"` with the
- *      visible reason wired via `aria-describedby`; arrow keys / Space can
+ *   2. no-TIN buyer — bill-first radio disabled, the visible reason read
+ *      with the option itself; arrow keys / Space can
  *      never select it (Base UI skips disabled items).
  *   3. pending no-TIN — waiting explainer visible; the admin can still
  *      OVERRIDE to already-paid (F6 data may lag reality).
@@ -67,21 +67,19 @@ const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
 const FAKE_TIN = '1234512345123';
 
 /**
- * Accessible names of the issuance-mode radios. Base UI forwards `id` to the
- * HIDDEN native `<input type="radio" aria-hidden tabindex="-1">` (that is
- * what makes the Label `htmlFor` work), while `aria-checked` /
- * `aria-disabled` / `aria-describedby` live on the VISIBLE `role="radio"`
- * span — so `#issuance-mode-*` locators resolve to an element that NEVER
- * carries the asserted aria state. Every radio-state assertion below targets
- * the role=radio element by its accessible name instead (the title-span
- * text only, via the explicit `aria-labelledby`).
+ * Accessible names of the issuance-mode radios. Since spec 122 US8 they are
+ * AURA's native `<input type="radio">` inside a `<label>`, so the name is the
+ * option's label followed by its description (the hint, or — when bill-first
+ * is unavailable — the reason). Match on the label at the start; assert the
+ * native checked / disabled state.
  */
 const MODE_ALREADY_PAID = 'Already paid — record & issue receipt';
 const MODE_BILL_FIRST = 'Bill first — issue an unpaid invoice';
 
-/** The VISIBLE issuance-mode radio (role=radio span) by accessible name. */
+/** The issuance-mode radio whose label starts with `name`. */
 function modeRadio(page: Page, name: string) {
-  return page.getByRole('radio', { name, exact: true });
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return page.getByRole('radio', { name: new RegExp(`^${escaped}`) });
 }
 
 /**
@@ -153,10 +151,7 @@ test.describe('064 event-fee as-paid form modes @f4', () => {
     await openEventFeeForm(page, fixture.registrationIds.paidTin, AS_PAID_ATTENDEES.paidTin);
 
     // Mode pre-selected from the F6 'paid' status.
-    await expect(modeRadio(page, MODE_ALREADY_PAID)).toHaveAttribute(
-      'aria-checked',
-      'true',
-    );
+    await expect(modeRadio(page, MODE_ALREADY_PAID)).toBeChecked();
     // Payment fields render with date defaulted to today (Asia/Bangkok) and
     // the method select on its default.
     await expect(page.getByTestId('as-paid-fields')).toBeVisible();
@@ -201,7 +196,7 @@ test.describe('064 event-fee as-paid form modes @f4', () => {
     expect(row!.paymentDate).toBe(today);
   });
 
-  test('no-TIN: bill-first radio aria-disabled with aria-describedby reason; arrows/Space cannot select it', async ({
+  test('no-TIN: bill-first radio disabled with its reason in its name; arrows/Space cannot select it', async ({
     page,
   }) => {
     await signInAsAdmin(page);
@@ -211,21 +206,18 @@ test.describe('064 event-fee as-paid form modes @f4', () => {
       AS_PAID_ATTENDEES.paidNoTin,
     );
 
-    // No TIN typed → bill_first is disabled with the VISIBLE reason wired
-    // up for SR users via aria-describedby (no hover-only tooltip).
+    // No TIN typed → bill_first is disabled, its VISIBLE reason under the
+    // option and in its accessible name (no hover-only tooltip).
     const billFirst = modeRadio(page, MODE_BILL_FIRST);
-    await expect(billFirst).toHaveAttribute('aria-disabled', 'true');
-    await expect(billFirst).toHaveAttribute(
-      'aria-describedby',
-      'mode-bill-first-needs-tin',
-    );
-    await expect(page.getByTestId('mode-bill-first-needs-tin')).toHaveText(
-      "Not recorded as VAT-registered — record the fee as already paid; a bill can't be issued before payment. Tick VAT-registered on the member record first if applicable.",
+    await expect(billFirst).toBeDisabled();
+    // The reason is the option's own description, read with its name.
+    await expect(billFirst).toHaveAccessibleName(
+      /Not recorded as VAT-registered — record the fee as already paid; a bill can't be issued before payment\. Tick VAT-registered on the member record first if applicable\./,
     );
 
     // paid status → already_paid is the (checked) default.
     const alreadyPaid = modeRadio(page, MODE_ALREADY_PAID);
-    await expect(alreadyPaid).toHaveAttribute('aria-checked', 'true');
+    await expect(alreadyPaid).toBeChecked();
 
     // Keyboard: arrow keys inside the radio group skip the disabled item;
     // Space on the focused (checked) item is a no-op. bill_first must never
@@ -234,8 +226,8 @@ test.describe('064 event-fee as-paid form modes @f4', () => {
     await page.keyboard.press('ArrowDown');
     await page.keyboard.press('ArrowRight');
     await page.keyboard.press('Space');
-    await expect(alreadyPaid).toHaveAttribute('aria-checked', 'true');
-    await expect(billFirst).not.toHaveAttribute('aria-checked', 'true');
+    await expect(alreadyPaid).toBeChecked();
+    await expect(billFirst).not.toBeChecked();
     // And the payment fields stayed on the as-paid path.
     await expect(page.getByTestId('as-paid-fields')).toBeVisible();
   });
@@ -253,13 +245,13 @@ test.describe('064 event-fee as-paid form modes @f4', () => {
     await expect(explainer).toContainText('wait for the money');
     await expect(page.getByTestId('as-paid-fields')).toHaveCount(0);
     const alreadyPaid = modeRadio(page, MODE_ALREADY_PAID);
-    await expect(alreadyPaid).not.toHaveAttribute('aria-checked', 'true');
+    await expect(alreadyPaid).not.toBeChecked();
 
     // Override — the admin attests the funds were received (F6 may lag).
     // Click the VISIBLE role=radio span — the `#issuance-mode-already-paid`
     // native input is off-viewport (Base UI hides it) and never clickable.
     await alreadyPaid.click();
-    await expect(alreadyPaid).toHaveAttribute('aria-checked', 'true');
+    await expect(alreadyPaid).toBeChecked();
     await expect(page.getByTestId('as-paid-fields')).toBeVisible();
     await expect(explainer).toHaveCount(0);
     await expect(
@@ -310,15 +302,15 @@ test.describe('064 event-fee as-paid form modes @f4', () => {
     // pick; payment fields stay hidden (bill_first has none).
     await fillField(page.locator('#buyer-tax-id'), FAKE_TIN);
     const billFirst = modeRadio(page, MODE_BILL_FIRST);
-    await expect(billFirst).toHaveAttribute('aria-checked', 'true');
+    await expect(billFirst).toBeChecked();
     await expect(page.getByTestId('as-paid-fields')).toHaveCount(0);
     await expect(page.getByTestId('mode-waiting-explainer')).toHaveCount(0);
 
     // Clear the TIN → flips back: explainer returns, bill_first disabled.
     await page.locator('#buyer-tax-id').fill('');
     await expect(page.getByTestId('mode-waiting-explainer')).toBeVisible();
-    await expect(billFirst).toHaveAttribute('aria-disabled', 'true');
-    await expect(billFirst).not.toHaveAttribute('aria-checked', 'true');
+    await expect(billFirst).toBeDisabled();
+    await expect(billFirst).not.toBeChecked();
   });
 
   test('event-fee tab passes axe in paid-default / pending-no-TIN / refunded states — no duplicate-id-aria + no critical @a11y', async ({

@@ -21,9 +21,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+import { TextField, Textarea } from '@jirawatpyk/aura-react';
 
 export type NonMemberBuyer = {
   readonly legalName: string;
@@ -63,7 +61,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  * `createEventInvoiceDraftSchema.buyer.primary_contact_name` is a bare
  * `z.string()`: it accepts an empty string (optional pre-fill, per spec) and
  * imposes NO length bound that the server rejects. The form's `maxLength={500}`
- * on the contact-name `<Input>` is a soft UI cap (matching the legal-name
+ * on the contact-name field is a soft UI cap (matching the legal-name
  * field), not a server-enforced rule, so there is nothing for the client to
  * surface an inline error about. `contactEmail` IS validated (the server
  * requires a valid address when non-empty). If the server ever adds a
@@ -119,122 +117,82 @@ export function NonMemberBuyerFields({
     onChange({ ...value, [field]: next });
   }
 
+  // Spec 122 US8 (T807) — AURA fields: the required "*" (hidden from screen
+  // readers, who get aria-required), the error replacing the hint and wired
+  // through aria-invalid + aria-describedby (`{id}-error`). The form focuses
+  // the first field in error on submit, so the error is read on arrival.
   return (
     <fieldset
-      className="flex flex-col gap-[var(--page-section-gap)] rounded-md border p-4"
+      className="flex flex-col gap-[var(--aura-space-4)] rounded-[var(--aura-radius-md)] border border-[var(--aura-border-subtle)] p-[var(--aura-space-4)]"
       data-testid="non-member-buyer"
     >
-      <legend className="px-1 text-sm font-medium">{t('nonMemberLegend')}</legend>
+      <legend className="px-1 text-sm font-medium text-[var(--aura-fg-primary)]">{t('nonMemberLegend')}</legend>
 
-      <div className="flex flex-col gap-[var(--field-label-gap)]">
-        <Label htmlFor="buyer-legal-name">
-          {t('legalName')}
-          <span aria-hidden="true" className="ml-0.5 text-destructive">
-            *
-          </span>
-        </Label>
-        <Input
-          id="buyer-legal-name"
-          value={value.legalName}
-          onChange={(e) => patch('legalName', e.target.value)}
-          placeholder={t('legalNamePlaceholder')}
-          maxLength={500}
-          disabled={disabled}
-          autoComplete="organization"
-          aria-required="true"
-          aria-invalid={errors.legalName ? true : undefined}
-          aria-describedby={errors.legalName ? 'buyer-legal-name-error' : undefined}
-        />
-        {errors.legalName && (
-          <p id="buyer-legal-name-error" className="text-xs text-destructive" role="alert">
-            {errors.legalName}
-          </p>
-        )}
-      </div>
+      <TextField
+        id="buyer-legal-name"
+        label={t('legalName')}
+        required
+        aria-required="true"
+        value={value.legalName}
+        onChange={(e) => patch('legalName', e.target.value)}
+        placeholder={t('legalNamePlaceholder')}
+        maxLength={500}
+        disabled={disabled}
+        autoComplete="organization"
+        error={errors.legalName}
+      />
 
-      <div className="flex flex-col gap-[var(--field-label-gap)]">
-        <Label htmlFor="buyer-address">
-          {t('address')}
-          <span aria-hidden="true" className="ml-0.5 text-destructive">
-            *
-          </span>
-        </Label>
-        <Textarea
-          id="buyer-address"
-          value={value.address}
-          onChange={(e) => patch('address', e.target.value)}
-          placeholder={t('addressPlaceholder')}
-          maxLength={1000}
-          disabled={disabled}
-          autoComplete="street-address"
-          aria-required="true"
-          aria-invalid={errors.address ? true : undefined}
-          aria-describedby={errors.address ? 'buyer-address-error' : undefined}
-        />
-        {errors.address && (
-          <p id="buyer-address-error" className="text-xs text-destructive" role="alert">
-            {errors.address}
-          </p>
-        )}
-      </div>
+      <Textarea
+        id="buyer-address"
+        label={t('address')}
+        required
+        aria-required="true"
+        value={value.address}
+        onChange={(e) => patch('address', e.target.value)}
+        placeholder={t('addressPlaceholder')}
+        maxLength={1000}
+        disabled={disabled}
+        autoComplete="street-address"
+        error={errors.address}
+      />
 
-      <div className="flex flex-col gap-[var(--field-label-gap)]">
-        <Label htmlFor="buyer-tax-id">{t('taxId')}</Label>
-        <Input
-          id="buyer-tax-id"
-          value={value.taxId}
-          onChange={(e) => patch('taxId', e.target.value)}
-          placeholder={t('taxIdPlaceholder')}
-          inputMode="numeric"
-          maxLength={13}
-          disabled={disabled}
-          aria-invalid={errors.taxId ? true : undefined}
-          aria-describedby={errors.taxId ? 'buyer-tax-id-error' : undefined}
-        />
-        {errors.taxId && (
-          <p id="buyer-tax-id-error" className="text-xs text-destructive" role="alert">
-            {errors.taxId}
-          </p>
-        )}
-      </div>
+      <TextField
+        id="buyer-tax-id"
+        label={t('taxId')}
+        value={value.taxId}
+        onChange={(e) => patch('taxId', e.target.value)}
+        placeholder={t('taxIdPlaceholder')}
+        inputMode="numeric"
+        maxLength={13}
+        disabled={disabled}
+        error={errors.taxId}
+      />
 
       {/*
         LOW-10 — contact name is an OPTIONAL pre-fill. The server schema
         (`primary_contact_name: z.string()`) accepts empty + any length, so
         there is no inline error to surface; `maxLength` is a soft UI cap only.
-        Hence no `aria-invalid` / error `<p>` wiring (unlike the validated
-        legal-name / address / tax-id / contact-email fields).
       */}
-      <div className="flex flex-col gap-[var(--field-label-gap)]">
-        <Label htmlFor="buyer-contact-name">{t('contactName')}</Label>
-        <Input
-          id="buyer-contact-name"
-          value={value.contactName}
-          onChange={(e) => patch('contactName', e.target.value)}
-          maxLength={500}
-          disabled={disabled}
-          autoComplete="name"
-        />
-      </div>
+      <TextField
+        id="buyer-contact-name"
+        label={t('contactName')}
+        value={value.contactName}
+        onChange={(e) => patch('contactName', e.target.value)}
+        maxLength={500}
+        disabled={disabled}
+        autoComplete="name"
+      />
 
-      <div className="flex flex-col gap-[var(--field-label-gap)]">
-        <Label htmlFor="buyer-contact-email">{t('contactEmail')}</Label>
-        <Input
-          id="buyer-contact-email"
-          type="email"
-          value={value.contactEmail}
-          onChange={(e) => patch('contactEmail', e.target.value)}
-          disabled={disabled}
-          autoComplete="email"
-          aria-invalid={errors.contactEmail ? true : undefined}
-          aria-describedby={errors.contactEmail ? 'buyer-contact-email-error' : undefined}
-        />
-        {errors.contactEmail && (
-          <p id="buyer-contact-email-error" className="text-xs text-destructive" role="alert">
-            {errors.contactEmail}
-          </p>
-        )}
-      </div>
+      <TextField
+        id="buyer-contact-email"
+        type="email"
+        label={t('contactEmail')}
+        value={value.contactEmail}
+        onChange={(e) => patch('contactEmail', e.target.value)}
+        disabled={disabled}
+        autoComplete="email"
+        error={errors.contactEmail}
+      />
     </fieldset>
   );
 }

@@ -6,20 +6,8 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { InlineAlert, InlineAlertDescription } from '@/components/ui/inline-alert';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  TranslatedSelectValue,
-} from '@/components/ui/select';
+import { Alert, Button, Select, TextField, Textarea } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
-import { Loader2Icon, TriangleAlertIcon } from 'lucide-react';
 import { routeRecordPaymentError } from './record-payment-error-routing';
 
 const METHODS = ['bank_transfer', 'cheque', 'cash', 'other'] as const;
@@ -31,6 +19,7 @@ export function PaymentForm({
   todayIso,
   onSuccess,
   onCancel,
+  onPendingChange,
 }: {
   invoiceId: string;
   documentNumber: string | null;
@@ -71,10 +60,19 @@ export function PaymentForm({
    * Esc / outside-click). Legacy full-page callers omit it.
    */
   onCancel?: () => void;
+  /**
+   * Spec 122 US8 (T809) — tells the dialog wrapper a payment is in flight,
+   * so it can refuse Escape and the scrim until the POST settles (an error
+   * must land in a mounted form, and a stray tap must not drop what was typed).
+   */
+  onPendingChange?: (pending: boolean) => void;
 }) {
   const t = useTranslations('admin.invoices.pay');
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  useEffect(() => {
+    onPendingChange?.(pending);
+  }, [pending, onPendingChange]);
   const [paymentMethod, setPaymentMethod] = useState<(typeof METHODS)[number]>('bank_transfer');
   const [paymentReference, setPaymentReference] = useState('');
   const [paymentNotes, setPaymentNotes] = useState('');
@@ -202,7 +200,7 @@ export function PaymentForm({
       // — `noValidate` suppresses the browser's native bubble so the
       // admin gets a single, consistent, screen-reader-friendly message.
       noValidate
-      className="flex flex-col gap-[var(--page-section-gap)]"
+      className="flex flex-col gap-[var(--aura-space-4)]"
     >
       {/* 088 FR-028/FR-032 — inline, focused failure surface for the §87-mint
           mutation (never a transient toast). `tabIndex={-1}` + the focus effect
@@ -210,124 +208,70 @@ export function PaymentForm({
           complete. `outline-none` because focus is programmatic (the visible
           state IS the alert). */}
       {formError && (
-        <InlineAlert
+        <Alert
           ref={errorRef}
           tabIndex={-1}
-          tone={formError.kind === 'failure' ? 'destructive' : 'neutral'}
+          // A stale-write 409 is not the admin's error → info, not danger.
+          tone={formError.kind === 'failure' ? 'danger' : 'info'}
+          role="alert"
           className="outline-none"
           data-testid="record-payment-error"
-        >
-          <TriangleAlertIcon className="size-4" aria-hidden="true" />
-          {formError.kind === 'concurrent' ? (
-            <InlineAlertDescription className="flex flex-col items-start gap-2">
-              <span>{t('errors.concurrent')}</span>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="min-h-[44px]"
-                onClick={() => router.refresh()}
-              >
+          action={
+            formError.kind === 'concurrent' ? (
+              <Button type="button" variant="secondary" size="sm" touchHeight onClick={() => router.refresh()}>
                 {t('errors.refreshAction')}
               </Button>
-            </InlineAlertDescription>
-          ) : (
-            <InlineAlertDescription>{formError.message}</InlineAlertDescription>
-          )}
-        </InlineAlert>
-      )}
-      <div>
-        <Label htmlFor="method">{t('fields.method')}</Label>
-        <Select
-          value={paymentMethod}
-          onValueChange={(v) => v && setPaymentMethod(v as (typeof METHODS)[number])}
+            ) : undefined
+          }
         >
-          <SelectTrigger id="method" className="w-full" aria-label={t('fields.method')}>
-            <TranslatedSelectValue
-              placeholder={t('fields.method')}
-              translate={(v) => (v ? t(`methods.${v}`) : null)}
-            />
-          </SelectTrigger>
-          <SelectContent>
-            {METHODS.map((m) => (
-              <SelectItem key={m} value={m}>
-                {t(`methods.${m}`)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <div>
-        <Label htmlFor="reference">{t('fields.reference')}</Label>
-        <Input
-          id="reference"
-          value={paymentReference}
-          onChange={(e) => setPaymentReference(e.target.value)}
-          placeholder={t('fields.referencePlaceholder')}
-        />
-      </div>
-      <div>
-        <Label htmlFor="date">{t('fields.date')}</Label>
-        <Input
-          ref={dateInputRef}
-          id="date"
-          type="date"
-          value={paymentDate}
-          onChange={(e) => setPaymentDate(e.target.value)}
-          required
-          // Clamp [issueDate, today] — prevents typos like 2062-04-19
-          // and ensures payment cannot pre-date the tax document
-          // (§87 temporal consistency). `min`/`max` still clamp the
-          // native date-picker UI even with the form's `noValidate`.
-          {...(issueDate ? { min: issueDate } : {})}
-          {...(todayIso ? { max: todayIso } : {})}
-          aria-invalid={showDateError || undefined}
-          aria-describedby={showDateError ? 'date-error date-hint' : 'date-hint'}
-        />
-        <p id="date-hint" className="mt-1 text-xs text-muted-foreground">
-          {t('fields.dateHint')}
-        </p>
-        {dateErrorText && (
-          <p id="date-error" role="alert" className="mt-1 text-xs text-destructive">
-            {dateErrorText}
-          </p>
-        )}
-      </div>
-      <div>
-        <Label htmlFor="notes">{t('fields.notes')}</Label>
-        <Textarea
-          id="notes"
-          value={paymentNotes}
-          onChange={(e) => setPaymentNotes(e.target.value)}
-          rows={3}
-        />
-      </div>
-      <div className="flex justify-end gap-2">
+          {formError.kind === 'concurrent' ? t('errors.concurrent') : formError.message}
+        </Alert>
+      )}
+      <Select
+        id="method"
+        label={t('fields.method')}
+        value={paymentMethod}
+        onChange={(e) => setPaymentMethod(e.target.value as (typeof METHODS)[number])}
+        options={METHODS.map((m) => ({ value: m, label: t(`methods.${m}`) }))}
+      />
+      <TextField
+        id="reference"
+        label={t('fields.reference')}
+        value={paymentReference}
+        onChange={(e) => setPaymentReference(e.target.value)}
+        placeholder={t('fields.referencePlaceholder')}
+      />
+      {/* The CE hint, replaced by the range error after a failed submit;
+          AURA points the input's aria-describedby at whichever shows, and
+          focus moves here on an invalid submit so it is read on arrival. */}
+      <TextField
+        ref={dateInputRef}
+        id="date"
+        type="date"
+        label={t('fields.date')}
+        value={paymentDate}
+        onChange={(e) => setPaymentDate(e.target.value)}
+        required
+        {...(issueDate ? { min: issueDate } : {})}
+        {...(todayIso ? { max: todayIso } : {})}
+        hint={t('fields.dateHint')}
+        error={dateErrorText ?? undefined}
+      />
+      <Textarea
+        id="notes"
+        label={t('fields.notes')}
+        value={paymentNotes}
+        onChange={(e) => setPaymentNotes(e.target.value)}
+        rows={3}
+      />
+      <div className="flex flex-wrap justify-end gap-[var(--aura-space-2)] max-sm:[&>*]:flex-1">
         {onCancel && (
-          // F5R2-UX-F2 — `cancel` key copy ("Back to invoice") was
-          // written for the now-deleted full-page route. Inside a
-          // dialog, `cancelDialog` ("Cancel" / "ยกเลิก" / "Avbryt")
-          // is the standard dismiss copy. F5R2-UX-F3 — min-h-[44px]
-          // satisfies WCAG 2.5.8 touch-target on mobile.
-          <Button
-            type="button"
-            variant="outline"
-            className="min-h-[44px]"
-            onClick={onCancel}
-            disabled={pending}
-          >
+          <Button type="button" variant="secondary" touchHeight onClick={onCancel} disabled={pending}>
             {t('cancelDialog')}
           </Button>
         )}
-        <Button
-          type="submit"
-          className="min-h-[44px]"
-          disabled={pending}
-          aria-busy={pending}
-        >
-          {pending && (
-            <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" />
-          )}
+        {/* The board's check: this mints the §86/4 receipt. */}
+        <Button type="submit" variant="primary" icon="check" touchHeight loading={pending}>
           {pending ? t('submitting') : t('submit')}
         </Button>
       </div>

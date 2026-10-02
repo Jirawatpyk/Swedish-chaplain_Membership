@@ -36,8 +36,8 @@
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { CheckIcon } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@jirawatpyk/aura-react';
+import { SkeletonBlock } from '@/components/shell/page-skeletons';
 import { useMinDelay } from '@/hooks/use-min-delay';
 import { cn } from '@/lib/utils';
 
@@ -102,14 +102,14 @@ export function EventAttendeePickerSkeleton() {
       aria-hidden="true"
     >
       {[0, 1, 2].map((i) => (
-        <div key={i} className="flex items-center gap-3 rounded-md border p-3">
-          <Skeleton className="h-4 w-4 rounded-full" />
+        <div key={i} className="flex items-center gap-3 rounded-[var(--aura-radius-md)] border border-[var(--aura-border-subtle)] p-3">
+          <SkeletonBlock className="h-4 w-4 rounded-full" />
           <div className="flex flex-1 flex-col gap-2">
-            <Skeleton className="h-4 w-40" />
-            <Skeleton className="h-3 w-24" />
+            <SkeletonBlock className="h-4 w-40" />
+            <SkeletonBlock className="h-3 w-24" />
           </div>
-          <Skeleton className="h-5 w-20" />
-          <Skeleton className="h-4 w-16" />
+          <SkeletonBlock className="h-5 w-20" />
+          <SkeletonBlock className="h-4 w-16" />
         </div>
       ))}
     </div>
@@ -142,7 +142,7 @@ export function EventAttendeePicker({
 
   if (rows.length === 0) {
     return (
-      <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+      <p className="rounded-[var(--aura-radius-md)] border border-dashed border-[var(--aura-border-control)] p-6 text-center text-sm text-[var(--aura-fg-secondary)]">
         {t('empty.none')}
       </p>
     );
@@ -151,7 +151,7 @@ export function EventAttendeePicker({
   const allErased = rows.every((r) => r.isPseudonymised);
   if (allErased) {
     return (
-      <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+      <p className="rounded-[var(--aura-radius-md)] border border-dashed border-[var(--aura-border-control)] p-6 text-center text-sm text-[var(--aura-fg-secondary)]">
         {t('empty.allErased')}
       </p>
     );
@@ -176,11 +176,11 @@ export function EventAttendeePicker({
         const paymentLabel = row.paymentStatus || t('noPaymentStatus');
 
         const rowClassName = cn(
-          'flex w-full items-center gap-3 rounded-md border p-3 text-left transition-colors',
-          selected && 'border-primary bg-primary/5',
+          'flex w-full items-center gap-3 rounded-[var(--aura-radius-md)] border border-[var(--aura-border-subtle)] p-3 text-left transition-colors',
+          selected && 'border-[var(--aura-border-strong)] bg-[var(--aura-bg-selected)]',
           disabled
             ? 'cursor-not-allowed opacity-60'
-            : 'hover:bg-muted/50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50',
+            : 'hover:bg-[var(--aura-bg-surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)]',
         );
 
         // The full row content (name + company + badge + price + payment).
@@ -197,16 +197,18 @@ export function EventAttendeePicker({
             <span className="flex min-w-0 flex-1 flex-col">
               <span className="text-sm font-medium">{row.attendeeName}</span>
               {row.attendeeCompany && (
-                <span className="text-xs text-muted-foreground">{row.attendeeCompany}</span>
+                <span className="text-xs text-[var(--aura-fg-secondary)]">{row.attendeeCompany}</span>
               )}
             </span>
-            <Badge variant={kind === 'matched' ? 'secondary' : 'outline'}>
+            {/* A matched member in the accent tone; non-member and unmatched
+                stay neutral (a category, not a status). */}
+            <Badge tone={kind === 'matched' ? 'accent' : 'neutral'} variant={kind === 'matched' ? 'soft' : 'outline'}>
               {t(`matchBadge.${kind}`)}
             </Badge>
             <span className="hidden w-20 shrink-0 text-right text-sm tabular-nums sm:block">
               {priceLabel}
             </span>
-            <span className="hidden w-16 shrink-0 text-right text-xs text-muted-foreground sm:block">
+            <span className="hidden w-16 shrink-0 text-right text-xs text-[var(--aura-fg-secondary)] sm:block">
               {paymentLabel}
             </span>
           </>

@@ -101,8 +101,8 @@ describe('<AutoRenewalQueueBadges> — would-be-refused (3 distinct reasons, rev
     ).toBeInTheDocument();
     const link = screen.getByRole('link', { name: 'View existing bill' });
     expect(link).toHaveAttribute('href', '/admin/invoices/inv-conflict-1');
-    // Review A7 — 44×44 minimum tappable target.
-    expect(link.className).toContain('min-h-11');
+    // Review A7 — 44×44 minimum tappable target (AURA's touch height).
+    expect(link).toHaveClass('aura-btn--touch');
   });
 
   it('plan_year_drift renders its OWN copy and NO conflicting-invoice link', () => {
@@ -206,8 +206,14 @@ describe('<AutoRenewalQueueBadges> — bill-year staleness (review A1 redefiniti
   });
 });
 
+/**
+ * Review A4 severity ladder on AURA badges (spec 122 US8 T803): refused =
+ * danger > unresolved / price unverifiable = solid warning > price changed =
+ * soft warning > fiscal year changed = neutral (an informational note, never
+ * green — AURA has no orange, so "at risk" is the solid warning).
+ */
 describe('<AutoRenewalQueueBadges> — severity ladder colour tokens (review A4)', () => {
-  it('refused=critical(red) > unresolved/priceUnverifiable=at-risk(orange) > priceChanged=warning(amber) > billYearStale=healthy(emerald)', () => {
+  it('refused=danger > priceChanged=soft warning > billYearStale=neutral', () => {
     renderBadges(
       baseMeta({
         refusalReason: { kind: 'plan_year_drift' },
@@ -215,19 +221,31 @@ describe('<AutoRenewalQueueBadges> — severity ladder colour tokens (review A4)
         billYearStale: true,
       }),
     );
-    expect(screen.getByTestId('queue-would-be-refused').className).toContain('red');
-    expect(screen.getByTestId('queue-price-changed').className).toContain('amber');
-    expect(screen.getByTestId('queue-bill-year-stale').className).toContain('emerald');
+    expect(screen.getByTestId('queue-would-be-refused')).toHaveClass('aura-badge--danger');
+    const changed = screen.getByTestId('queue-price-changed');
+    expect(changed).toHaveClass('aura-badge--warning');
+    expect(changed).not.toHaveClass('is-solid');
+    expect(screen.getByTestId('queue-bill-year-stale')).toHaveClass('aura-badge--neutral');
   });
 
-  it('unresolved uses the orange at-risk tier (NOT the faintest styling)', () => {
+  it('unresolved uses the solid warning tier (NOT the faintest styling)', () => {
     renderBadges(baseMeta({ unresolved: true }));
-    expect(screen.getByTestId('queue-unresolved').className).toContain('orange');
+    const badge = screen.getByTestId('queue-unresolved');
+    expect(badge).toHaveClass('aura-badge--warning');
+    expect(badge).toHaveClass('is-solid');
   });
 
-  it('priceUnverifiable uses the SAME orange at-risk tier as unresolved (both are "uncertain" signals)', () => {
+  it('priceUnverifiable uses the SAME solid warning tier as unresolved (both are "uncertain" signals)', () => {
     renderBadges(baseMeta({ priceUnverifiable: true }));
-    expect(screen.getByTestId('queue-price-unverifiable').className).toContain('orange');
+    const badge = screen.getByTestId('queue-price-unverifiable');
+    expect(badge).toHaveClass('aura-badge--warning');
+    expect(badge).toHaveClass('is-solid');
+  });
+
+  it('the unresolved and fiscal-year notes keep their tooltip text on a focusable trigger', () => {
+    renderBadges(baseMeta({ billYearStale: true, currentFiscalYear: 2027 }));
+    const trigger = screen.getByTestId('queue-bill-year-stale').parentElement as HTMLElement;
+    expect(trigger).toHaveAttribute('tabindex', '0');
   });
 });
 

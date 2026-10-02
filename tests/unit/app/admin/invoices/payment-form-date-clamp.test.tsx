@@ -13,7 +13,7 @@
  * `todayIso` so `min ≤ max` always holds.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, fireEvent } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { PaymentForm } from '@/app/(staff)/admin/invoices/_components/payment-form';
@@ -93,12 +93,14 @@ describe('PaymentForm out-of-range date feedback (not native-only)', () => {
     fireEvent.change(date, { target: { value: '2030-03-20' } });
     fireEvent.submit(form);
 
-    // App-rendered inline error (role=alert), NOT just the browser's
-    // native validation bubble.
-    const alert = await screen.findByRole('alert');
-    expect(alert.textContent).toMatch(/payment date must be on or after/i);
-    expect(alert.textContent).toContain('2030-03-15'); // the {max} bound
-    // a11y: the field is marked invalid + points at the error.
+    // App-rendered inline error (AURA's field error, which replaces the hint),
+    // NOT just the browser's native validation bubble.
+    const error = container.querySelector('#date-error');
+    expect(error?.textContent).toMatch(/payment date must be on or after/i);
+    expect(error?.textContent).toContain('2030-03-15'); // the {max} bound
+    // a11y: focus moves to the field, which is marked invalid and points at
+    // the error, so a screen reader reads it on arrival.
+    expect(date).toHaveFocus();
     expect(date.getAttribute('aria-invalid')).toBe('true');
     expect(date.getAttribute('aria-describedby') ?? '').toContain('date-error');
   });

@@ -12,20 +12,7 @@
  */
 import * as React from 'react';
 import { useTranslations } from 'next-intl';
-import { DownloadIcon } from 'lucide-react';
-
-import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
+import { Button, Dialog, TextField } from '@jirawatpyk/aura-react';
 
 const MAX_DAYS = 366;
 
@@ -52,9 +39,35 @@ function daysBetween(fromYmd: string, toYmd: string): number {
   return Math.round((to - from) / 86_400_000) + 1;
 }
 
-export function CsvExportDialog(): React.JSX.Element {
+interface CsvExportDialogProps {
+  /**
+   * Spec 122 US8 (T809) — controlled open state, for a second opener (the
+   * invoice list's phone ⋯ menu). Uncontrolled when omitted.
+   */
+  readonly open?: boolean;
+  readonly onOpenChange?: (open: boolean) => void;
+  /** Extra classes for the trigger, e.g. `max-sm:hidden` where a phone menu opens it instead. */
+  readonly triggerClassName?: string;
+  /** Where focus goes on close when the trigger is hidden; null falls back to the trigger. */
+  readonly finalFocus?: () => HTMLElement | null;
+}
+
+export function CsvExportDialog({
+  open: openProp,
+  onOpenChange,
+  triggerClassName,
+  finalFocus,
+}: CsvExportDialogProps = {}): React.JSX.Element {
   const t = useTranslations('admin.invoices.csvExport');
-  const [open, setOpen] = React.useState(false);
+  const [openState, setOpenState] = React.useState(false);
+  const open = openProp ?? openState;
+  const setOpen = React.useCallback(
+    (next: boolean) => {
+      setOpenState(next);
+      onOpenChange?.(next);
+    },
+    [onOpenChange],
+  );
   const [from, setFrom] = React.useState<string>(firstOfMonthBangkokYmd);
   const [to, setTo] = React.useState<string>(todayBangkokYmd);
   const [error, setError] = React.useState<string | null>(null);
@@ -91,70 +104,75 @@ export function CsvExportDialog(): React.JSX.Element {
     [from, to, t],
   );
 
+  const invalid = error !== null;
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger
-        render={
-          <Button variant="outline" type="button">
-            <DownloadIcon className="size-4" aria-hidden />
-            {t('trigger')}
+    // Spec 122 US8 (T805) — AURA's dialog (a bottom sheet on phones). The
+    // footer buttons submit the form through its id, so Enter in a field
+    // still exports.
+    <Dialog
+      open={open}
+      onOpen={() => setOpen(true)}
+      onClose={() => setOpen(false)}
+      {...(finalFocus ? { finalFocus } : {})}
+      trigger={
+        <Button
+          variant="secondary"
+          icon="download"
+          type="button"
+          {...(triggerClassName ? { className: triggerClassName } : {})}
+        >
+          {t('trigger')}
+        </Button>
+      }
+      title={t('dialog.title')}
+      description={t('dialog.description')}
+      footer={
+        <>
+          <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
+            {t('actions.cancel')}
           </Button>
-        }
-      />
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{t('dialog.title')}</DialogTitle>
-          <DialogDescription>{t('dialog.description')}</DialogDescription>
-        </DialogHeader>
-        <form onSubmit={onSubmit} className="space-y-4" noValidate>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="csv-export-from">{t('fields.from')}</Label>
-              <Input
-                id="csv-export-from"
-                type="date"
-                value={from}
-                onChange={(e) => setFrom(e.currentTarget.value)}
-                required
-                aria-invalid={error !== null}
-                aria-describedby={error !== null ? 'csv-export-error-msg' : undefined}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="csv-export-to">{t('fields.to')}</Label>
-              <Input
-                id="csv-export-to"
-                type="date"
-                value={to}
-                onChange={(e) => setTo(e.currentTarget.value)}
-                required
-                aria-invalid={error !== null}
-                aria-describedby={error !== null ? 'csv-export-error-msg' : undefined}
-              />
-            </div>
-          </div>
-          {error !== null ? (
-            <p
-              id="csv-export-error-msg"
-              className="text-xs text-destructive"
-              role="alert"
-              data-testid="csv-export-error"
-            >
-              {error}
-            </p>
-          ) : null}
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setOpen(false)}
-            >
-              {t('actions.cancel')}
-            </Button>
-            <Button type="submit">{t('actions.download')}</Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
+          <Button type="submit" variant="primary" form="csv-export-form">
+            {t('actions.download')}
+          </Button>
+        </>
+      }
+    >
+      <form id="csv-export-form" onSubmit={onSubmit} className="flex flex-col gap-[var(--aura-space-3)]" noValidate>
+        <div className="grid grid-cols-1 gap-[var(--aura-space-4)] sm:grid-cols-2">
+          <TextField
+            id="csv-export-from"
+            type="date"
+            label={t('fields.from')}
+            value={from}
+            onChange={(e) => setFrom(e.currentTarget.value)}
+            required
+            aria-invalid={invalid || undefined}
+            aria-describedby={invalid ? 'csv-export-error-msg' : undefined}
+          />
+          <TextField
+            id="csv-export-to"
+            type="date"
+            label={t('fields.to')}
+            value={to}
+            onChange={(e) => setTo(e.currentTarget.value)}
+            required
+            aria-invalid={invalid || undefined}
+            aria-describedby={invalid ? 'csv-export-error-msg' : undefined}
+          />
+        </div>
+        {/* One message for the pair: an inverted or over-long range is about
+            both dates, so both fields point at it. */}
+        {invalid ? (
+          <p
+            id="csv-export-error-msg"
+            className="text-sm text-[var(--aura-fg-danger)]"
+            role="alert"
+            data-testid="csv-export-error"
+          >
+            {error}
+          </p>
+        ) : null}
+      </form>
     </Dialog>
   );
 }

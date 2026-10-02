@@ -11,7 +11,7 @@
  *   - the Event chip appears ONLY on `invoiceSubject === 'event'` rows.
  */
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 
@@ -27,6 +27,10 @@ import {
   InvoicesTable,
   type InvoicesTableRow,
 } from '@/app/(staff)/admin/invoices/_components/invoice-table';
+import {
+  INVOICES_COLUMN_LAYOUT,
+  RECEIPT_COLUMN_MIN_TABLE_PX,
+} from '@/app/(staff)/admin/invoices/_components/invoices-table-columns';
 
 const messages = {
   admin: {
@@ -64,6 +68,8 @@ const messages = {
         creditedSuffix: '+{count} CN',
         creditedTooltip: '{count} credit notes · {amount} THB credited',
         creditedAria: '{count} credit notes, {amount} credited',
+        creditNoteCount: '{count, plural, one {# credit note} other {# credit notes}}',
+        issuedOn: 'Issued {date}',
         draftNumberLabel: 'Draft',
         tableCaption: 'List of invoices for the selected filters.',
         queueTableCaption: 'List of auto-renewal drafts awaiting review.',
@@ -104,6 +110,11 @@ const messages = {
           receiptRenderFailedAria:
             'Receipt PDF render failed for invoice {number} — open to review',
           openDraftAria: 'Open draft invoice for {name}',
+          moreAria: 'More actions for {number}',
+          moreDraftAria: 'More actions for draft invoice for {name}',
+          view: 'View invoice',
+          recordPayment: 'Record payment…',
+          recordPaymentAria: 'Record payment for invoice {number}',
         },
       },
       autoRenewalQueue: {
@@ -203,6 +214,12 @@ function renderTable(rows: InvoicesTableRow[]) {
   );
 }
 
+/** Opens a row's ⋯ menu (spec 122 US8 T802: the downloads live there). */
+function openRowMenu(number: string) {
+  fireEvent.click(screen.getByRole('button', { name: `More actions for ${number}` }));
+  return screen.getByRole('menu');
+}
+
 function renderTableWithLocale(rows: InvoicesTableRow[], locale: string) {
   return render(
     <NextIntlClientProvider locale={locale} messages={messages}>
@@ -291,10 +308,9 @@ describe('<InvoicesTable> buyer column', () => {
     expect(link.className).toContain('break-words');
     // Full name stays reachable when visually clamped.
     expect(link).toHaveAttribute('title', LONG);
-    // The cell opted OUT of the TableCell base nowrap — without this the
-    // clamp can never wrap and the table stretches anyway.
-    const cell = link.closest('td');
-    expect(cell?.className).toContain('whitespace-normal');
+    // The rows grow to fit wrapped content (AURA rowHeight="auto") — without
+    // it the clamp can never wrap and the cell ends in an ellipsis.
+    expect(link.closest('[role="gridcell"]')).toHaveClass('aura-table__td--auto');
   });
 
   it('clamps a long NON-member buyer name the same way (plain-text span)', () => {
@@ -464,9 +480,10 @@ describe('<InvoicesTable> — receipt stays downloadable after a credit note (09
         receiptPdfStatus: 'rendered',
       }),
     ]);
-    expect(screen.getByTestId('row-download-receipt')).toBeInTheDocument();
+    const menu = openRowMenu('INV-2026-0001');
+    expect(within(menu).getByRole('menuitem', { name: 'Download receipt RC-2026-0009' })).toBeInTheDocument();
     // Separate-mode → the bill/tax-invoice PDF is a distinct doc, still shown.
-    expect(screen.getByTestId('row-download-invoice')).toBeInTheDocument();
+    expect(within(menu).getByRole('menuitem', { name: 'Download invoice INV-2026-0001' })).toBeInTheDocument();
   });
 
   it('partially_credited separate-mode → receipt download shown', () => {
@@ -478,7 +495,8 @@ describe('<InvoicesTable> — receipt stays downloadable after a credit note (09
         receiptPdfStatus: 'rendered',
       }),
     ]);
-    expect(screen.getByTestId('row-download-receipt')).toBeInTheDocument();
+    const menu = openRowMenu('INV-2026-0001');
+    expect(within(menu).getByRole('menuitem', { name: 'Download receipt RC-2026-0010' })).toBeInTheDocument();
   });
 
   it('void row (hasReceiptPdf=false from serialiser) → NO receipt download (void keeps its own path)', () => {
@@ -487,7 +505,8 @@ describe('<InvoicesTable> — receipt stays downloadable after a credit note (09
     renderTable([
       baseRow({ status: 'void', hasReceiptPdf: false, receiptDocumentNumberRaw: null }),
     ]);
-    expect(screen.queryByTestId('row-download-receipt')).toBeNull();
+    const menu = openRowMenu('INV-2026-0001');
+    expect(within(menu).queryByRole('menuitem', { name: /Download receipt/ })).toBeNull();
   });
 });
 
@@ -520,30 +539,27 @@ describe('<InvoicesTable> β as-paid main download (064 remediation S7)', () => 
       screen.getByRole('link', { name: 'RC-2026-000777' }),
     ).toHaveAttribute('href', '/admin/invoices/inv-1');
 
-    const btn = screen.getByTestId('row-download-invoice');
-    expect(btn).toHaveTextContent('Receipt');
-    expect(btn).toHaveAttribute('aria-label', 'Download receipt RC-2026-000777');
-
-    // No second receipt button (no receipt blob) and no preparing affordance
-    // (receiptPdfStatus is 'rendered').
-    expect(screen.queryByTestId('row-download-receipt')).toBeNull();
-    expect(screen.queryByTestId('row-receipt-pending')).toBeNull();
+    const menu = openRowMenu('RC-2026-000777');
+    const downloads = within(menu).getAllByRole('menuitem', { name: /^Download/ });
+    // The main pdf IS the §105 receipt: one item, named as a receipt; no second
+    // receipt item (no receipt blob) and no preparing affordance ('rendered').
+    expect(downloads.map((d) => d.textContent)).toEqual(['Download receipt RC-2026-000777']);
+    expect(screen.queryByTestId('row-receipt-generating')).toBeNull();
   });
 
   it('088 SC- bill rows wear the bill label + aria, never the tax-invoice one', () => {
     renderTable([
       baseRow({ documentNumber: 'SC-2026-000045', mainDownloadIsBill: true }),
     ]);
-    const btn = screen.getByTestId('row-download-invoice');
-    expect(btn).toHaveTextContent('Bill label');
-    expect(btn).toHaveAttribute('aria-label', 'Download bill SC-2026-000045');
+    const menu = openRowMenu('SC-2026-000045');
+    expect(within(menu).getByRole('menuitem', { name: 'Download bill SC-2026-000045' })).toBeInTheDocument();
+    expect(within(menu).queryByRole('menuitem', { name: /Download invoice/ })).toBeNull();
   });
 
   it('default rows keep the plain Invoice label + invoice aria (byte-identical pre-064 behaviour)', () => {
     renderTable([baseRow({})]);
-    const btn = screen.getByTestId('row-download-invoice');
-    expect(btn).toHaveTextContent('Invoice');
-    expect(btn).toHaveAttribute('aria-label', 'Download invoice INV-2026-0001');
+    const menu = openRowMenu('INV-2026-0001');
+    expect(within(menu).getByRole('menuitem', { name: 'Download invoice INV-2026-0001' })).toBeInTheDocument();
   });
 });
 
@@ -563,7 +579,7 @@ describe('<InvoicesTable> β as-paid main download (064 remediation S7)', () => 
  *     neither the shimmer nor the alert.
  */
 describe('<InvoicesTable> receipt async-resilience (088 T066b)', () => {
-  it('paid + pending → shimmer "receipt generating" (role=status), no failed alert', () => {
+  it('paid + pending → a busy "receipt generating" line under the receipt number, no failed alert', () => {
     renderTable([
       baseRow({
         status: 'paid',
@@ -573,11 +589,12 @@ describe('<InvoicesTable> receipt async-resilience (088 T066b)', () => {
       }),
     ]);
     const generating = screen.getByTestId('row-receipt-generating');
-    expect(generating).toHaveAttribute('role', 'status');
-    expect(generating).toHaveAttribute('aria-live', 'polite');
-    // Uses the shipped Skeleton shimmer primitive (reduced-motion handled in CSS).
-    expect(generating.querySelector('[data-slot="skeleton"]')).not.toBeNull();
-    expect(screen.getByText('Receipt generating…')).toBeInTheDocument();
+    // Plain text, not a live region (US7c UX rule) and not aria-busy (the
+    // text states the status itself), under the RC number.
+    expect(generating).not.toHaveAttribute('aria-busy');
+    expect(generating).not.toHaveAttribute('role', 'status');
+    expect(generating).toHaveTextContent('Receipt generating…');
+    expect(generating.closest('[role="gridcell"]')).toHaveTextContent('RC-2026-0002');
     // NOT the terminal failed alert.
     expect(screen.queryByTestId('row-receipt-render-failed')).toBeNull();
   });
@@ -609,7 +626,8 @@ describe('<InvoicesTable> receipt async-resilience (088 T066b)', () => {
         receiptPdfStatus: 'rendered',
       }),
     ]);
-    expect(screen.getByTestId('row-download-receipt')).toBeInTheDocument();
+    const menu = openRowMenu('INV-2026-0001');
+    expect(within(menu).getByRole('menuitem', { name: 'Download receipt RC-2026-0004' })).toBeInTheDocument();
     expect(screen.queryByTestId('row-receipt-generating')).toBeNull();
     expect(screen.queryByTestId('row-receipt-render-failed')).toBeNull();
   });
@@ -629,7 +647,9 @@ describe('<InvoicesTable> receipt async-resilience (088 T066b)', () => {
           receiptPdfStatus,
         }),
       ]);
-      expect(screen.getByTestId('row-download-invoice')).toBeInTheDocument();
+      expect(
+        within(openRowMenu('INV-2026-0001')).getByRole('menuitem', { name: 'Download invoice INV-2026-0001' }),
+      ).toBeInTheDocument();
       expect(
         screen.getByTestId(
           receiptPdfStatus === 'pending' ? 'row-receipt-generating' : 'row-receipt-render-failed',
@@ -653,10 +673,9 @@ describe('<InvoicesTable> receipt async-resilience (088 T066b)', () => {
       }),
     ]);
     expect(screen.getByTestId('row-receipt-generating')).toBeInTheDocument();
-    expect(screen.getByTestId('row-download-invoice')).toHaveAttribute(
-      'aria-label',
-      'Download bill SC-2026-000045',
-    );
+    expect(
+      within(openRowMenu('SC-2026-000045')).getByRole('menuitem', { name: 'Download bill SC-2026-000045' }),
+    ).toBeInTheDocument();
   });
 
   it('failed receipt with NO invoice pdf still surfaces the alert (row does not collapse to em-dash)', () => {
@@ -807,10 +826,9 @@ describe('<InvoicesTable> — 088 tax-at-payment disambiguation (A-refined)', ()
 
     // FR-015 — every document control names its OWN document. The MAIN download
     // serves the SC bill PDF (names the SC); the receipt download names the RC.
-    const billDownload = screen.getByTestId('row-download-invoice');
-    expect(billDownload).toHaveAttribute('aria-label', 'Download invoice SC-2026-000045');
-    const receiptDownload = screen.getByTestId('row-download-receipt');
-    expect(receiptDownload).toHaveAttribute('aria-label', 'Download receipt RC-2026-000123');
+    const menu = openRowMenu('SC-2026-000045');
+    expect(within(menu).getByRole('menuitem', { name: 'Download invoice SC-2026-000045' })).toBeInTheDocument();
+    expect(within(menu).getByRole('menuitem', { name: 'Download receipt RC-2026-000123' })).toBeInTheDocument();
   });
 });
 
@@ -842,23 +860,21 @@ describe('<InvoicesTable> — auto-renewal review-queue column (107-auto-invoice
         },
       }),
     ]);
-    expect(screen.queryByTestId('column-header-queue')).toBeNull();
+    expect(screen.queryByRole('columnheader', { name: 'Queue' })).toBeNull();
     expect(screen.queryByTestId('queue-price-changed')).toBeNull();
-    // A8 — the default view keeps the generic table caption, not the queue
-    // one. shadcn's `<Table>` puts the `aria-label` on the OUTER
-    // `role="region"` scroll wrapper, not the `<table>` element itself.
+    // A8 — the default view keeps the generic table caption, not the queue one.
     expect(
-      screen.getByRole('region', { name: 'List of invoices for the selected filters.' }),
+      screen.getByRole('grid', { name: 'List of invoices for the selected filters.' }),
     ).toBeInTheDocument();
   });
 
   it('showQueueMetaColumn=true + queueMeta=null → renders the column with a plain em-dash, and swaps the table caption (review A8)', () => {
     renderQueueTable([baseRow({ queueMeta: null })], true);
-    expect(screen.getByTestId('column-header-queue')).toHaveTextContent('Queue');
+    expect(screen.getByRole('columnheader', { name: 'Queue' })).toBeInTheDocument();
     const cell = screen.getByTestId('queue-meta-cell');
     expect(cell).toHaveTextContent('—');
     expect(
-      screen.getByRole('region', {
+      screen.getByRole('grid', {
         name: 'List of auto-renewal drafts awaiting review.',
       }),
     ).toBeInTheDocument();
@@ -1007,5 +1023,208 @@ describe('<InvoicesTable> — draft total', () => {
   it('an issued invoice keeps its grouped THB total', () => {
     renderTable([baseRow({ totalSatang: '3852000' })]);
     expect(screen.getByTestId('invoice-total')).toHaveTextContent('38,520.00 THB');
+  });
+});
+
+/**
+ * Spec 122 US8 (T802) — the `Admin-invoices` board on AURA's DataTable
+ * (spec Clarifications, Session 2026-10-02): the board's column order, the
+ * shared status tones, "Issued {date}" and the credit-note count under the
+ * number, and the row actions ("Record payment…" + a ⋯ menu).
+ */
+describe('<InvoicesTable> — the Admin-invoices board (US8 T802)', () => {
+  it('an AURA grid with the board columns in order; the Issued column is gone', () => {
+    renderTable([baseRow({})]);
+    const grid = screen.getByRole('grid', { name: 'List of invoices for the selected filters.' });
+    const headers = within(grid)
+      .getAllByRole('columnheader')
+      .map((h) => h.textContent?.trim());
+    expect(headers).toEqual(['Invoice No.', 'Buyer', 'Status', 'Due', 'Receipt No.', 'Total', 'Actions']);
+  });
+
+  it('the view columns keep their place: Queue and Method follow Status', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <InvoicesTable rows={[baseRow({})]} showQueueMetaColumn showMethodColumn />
+      </NextIntlClientProvider>,
+    );
+    const headers = screen.getAllByRole('columnheader').map((h) => h.textContent?.trim());
+    expect(headers).toEqual([
+      'Invoice No.',
+      'Buyer',
+      'Status',
+      'Queue',
+      'Method',
+      'Due',
+      'Receipt No.',
+      'Total',
+      'Actions',
+    ]);
+  });
+
+  it('"Issued {date}" and the credit-note count sit under the number', () => {
+    renderTable([baseRow({ issueDate: '2026-06-01', creditNoteCount: 2, creditedTotalSatang: '535000' })]);
+    const numberCell = screen.getByRole('link', { name: 'INV-2026-0001' }).closest('[role="gridcell"]');
+    expect(numberCell).toHaveTextContent('Issued 1 Jun 2026');
+    const cn = within(numberCell as HTMLElement).getByRole('link', { name: '2 credit notes, 5,350.00 credited' });
+    expect(cn).toHaveTextContent('2 credit notes');
+    expect(cn).toHaveAttribute('href', '/admin/invoices/inv-1');
+  });
+
+  it.each([
+    ['paid', 'ready'],
+    ['issued', 'progress'],
+    ['overdue', 'blocked'],
+    ['void', 'neutral'],
+    ['partially_credited', 'neutral'],
+  ] as const)('a %s row wears the %s status pill', (status, tone) => {
+    renderTable([baseRow({ status })]);
+    const statusLabel = messages.admin.invoices.list.statuses[status];
+    expect(screen.getByText(statusLabel).closest('.aura-pill')).toHaveClass(`aura-pill--${tone}`);
+  });
+
+  it('the online method reads under the receipt number', () => {
+    renderTable([
+      baseRow({
+        status: 'paid',
+        receiptDocumentNumberRaw: 'RC-2026-0001',
+        hasReceiptPdf: true,
+        receiptPdfStatus: 'rendered',
+        onlinePaymentMethod: 'promptpay',
+      }),
+    ]);
+    expect(screen.getByText('RC-2026-0001').closest('[role="gridcell"]')).toHaveTextContent('PromptPay');
+  });
+
+  it('a failed receipt is a "Receipt render failed" link under the receipt number', () => {
+    renderTable([
+      baseRow({
+        status: 'paid',
+        receiptDocumentNumberRaw: 'RC-2026-0003',
+        receiptPdfStatus: 'failed',
+      }),
+    ]);
+    const failed = screen.getByTestId('row-receipt-render-failed');
+    expect(failed.closest('[role="gridcell"]')).toHaveTextContent('RC-2026-0003');
+  });
+
+  it('every row has a ⋯ menu that opens the invoice', () => {
+    renderTable([baseRow({ status: 'void', hasPdf: false })]);
+    const menu = openRowMenu('INV-2026-0001');
+    expect(within(menu).getByRole('menuitem', { name: 'View invoice' })).toHaveAttribute(
+      'href',
+      '/admin/invoices/inv-1',
+    );
+  });
+
+  it('"Record payment…" shows for an admin on issued and overdue rows only', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <InvoicesTable
+          rows={[
+            baseRow({ invoiceId: 'a', documentNumber: 'SC-2026-000001', status: 'issued' }),
+            baseRow({ invoiceId: 'b', documentNumber: 'SC-2026-000002', status: 'overdue' }),
+            baseRow({ invoiceId: 'c', documentNumber: 'SC-2026-000003', status: 'paid' }),
+          ]}
+          canRecordPayment
+          todayIso="2026-06-20"
+        />
+      </NextIntlClientProvider>,
+    );
+    const triggers = screen.getAllByTestId('row-record-payment-trigger');
+    expect(triggers.map((t) => t.getAttribute('aria-label'))).toEqual([
+      'Record payment for invoice SC-2026-000001',
+      'Record payment for invoice SC-2026-000002',
+    ]);
+  });
+
+  it('a manager (no canRecordPayment) sees no "Record payment…"', () => {
+    renderTable([baseRow({ status: 'issued' })]);
+    expect(screen.queryByTestId('row-record-payment-trigger')).toBeNull();
+  });
+
+  it('the review-queue draft row keeps its own actions and has no download menu', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <InvoicesTable
+          rows={[baseRow({ status: 'draft', documentNumber: '—', hasPdf: false })]}
+          showQueueMetaColumn
+          canManageQueueActions
+        />
+      </NextIntlClientProvider>,
+    );
+    expect(screen.getByTestId('queue-row-actions-trigger')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'More actions for —' })).toBeNull();
+  });
+});
+
+describe('<InvoicesTable> — review fixes (US8 T809)', () => {
+  it('the failed-receipt link name starts with its visible text (WCAG 2.5.3)', () => {
+    renderTableRealMessages([
+      baseRow({ status: 'paid', receiptDocumentNumberRaw: 'RC-2026-0003', receiptPdfStatus: 'failed' }),
+    ]);
+    const failed = screen.getByTestId('row-receipt-render-failed');
+    const visible = enMessages.admin.invoices.list.actions.receiptRenderFailed;
+    expect(failed).toHaveTextContent(visible);
+    expect(failed.getAttribute('aria-label')?.startsWith(visible)).toBe(true);
+  });
+
+  it.each([
+    ['pending', 'Receipt generating…'],
+    ['failed', 'Receipt render failed'],
+  ] as const)(
+    'a phone card (Receipt No. hidden) still says the receipt is %s, under the number',
+    (receiptPdfStatus, text) => {
+      renderTable([baseRow({ status: 'paid', receiptDocumentNumberRaw: 'RC-2026-0009', receiptPdfStatus })]);
+      const numberCell = screen.getByRole('link', { name: 'INV-2026-0001' }).closest('[role="gridcell"]');
+      const cardLine = within(numberCell as HTMLElement).getByTestId('row-receipt-state-card');
+      expect(cardLine).toHaveTextContent(text);
+      // Only where Receipt No. is not shown: phone cards and tables under
+      // 1000px (the column's hideBelow), by a container query on the wrapper.
+      // Tailwind needs the literal class; it must match the column's hideBelow.
+      expect(cardLine).toHaveClass(`@min-[${RECEIPT_COLUMN_MIN_TABLE_PX}px]:hidden`);
+      expect(INVOICES_COLUMN_LAYOUT.receipt.hideBelow).toBe(RECEIPT_COLUMN_MIN_TABLE_PX);
+      expect(cardLine.closest('.\\@container')).not.toBeNull();
+      if (receiptPdfStatus === 'failed') {
+        expect(within(cardLine).getByRole('link')).toHaveAttribute('href', '/admin/invoices/inv-1');
+      }
+    },
+  );
+
+  it('no receipt state → no phone card line', () => {
+    renderTable([baseRow({ status: 'paid', receiptPdfStatus: 'rendered', hasReceiptPdf: true })]);
+    expect(screen.queryByTestId('row-receipt-state-card')).toBeNull();
+  });
+
+  it('on a phone card the buyer takes a full-width line and wraps (AURA card cells are nowrap)', () => {
+    renderTable([baseRow({ memberName: 'Baltic Bay Consulting Co., Ltd.', buyerSubtitle: 'Membership 2026' })]);
+    expect(INVOICES_COLUMN_LAYOUT.memberName).toMatchObject({ card: 'wide' });
+    const buyer = screen.getByRole('link', { name: 'Baltic Bay Consulting Co., Ltd.' });
+    expect(buyer.closest('.whitespace-normal')).not.toBeNull();
+  });
+
+  it("a draft row's ⋯ is named for its member, not the bare word Draft", () => {
+    renderTableRealMessages([
+      baseRow({ status: 'draft', documentNumber: '—', hasPdf: false, memberName: 'Nordic Trade Co.' }),
+    ]);
+    expect(screen.getByRole('button', { name: 'More actions for draft invoice for Nordic Trade Co.' })).toBeInTheDocument();
+  });
+
+  it('the ⋯ trigger is 44px on touch (touchHeight) and carries a per-row id for focus return', () => {
+    renderTable([baseRow({})]);
+    const trigger = screen.getByRole('button', { name: 'More actions for INV-2026-0001' });
+    expect(trigger).toHaveClass('aura-icon-btn--touch');
+    expect(trigger).toHaveAttribute('id', 'row-menu-inv-1');
+  });
+
+  it('Record payment grows to fill the phone card footer beside the ⋯, and keeps its size in the grid', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <InvoicesTable rows={[baseRow({ status: 'issued' })]} canRecordPayment todayIso="2026-06-20" />
+      </NextIntlClientProvider>,
+    );
+    const trigger = screen.getByTestId('row-record-payment-trigger');
+    expect(trigger).toHaveClass('aura-btn', 'max-sm:flex-1');
+    expect(trigger).not.toHaveClass('flex-1');
   });
 });

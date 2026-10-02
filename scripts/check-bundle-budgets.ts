@@ -142,6 +142,12 @@
  *   and InlineAlert), re-baselined on the branch build:
  *     /portal/renewal/[memberId]          733.7 KB measured → ≤  840 KB (was 1090)
  *
+ *   Spec 122 US8a (AURA invoice list + new invoice, 2026-10-02, AURA
+ *   5.25.0) — both routes off the legacy kit and budgeted for the first
+ *   time (money screens; a regression here was previously unwatched):
+ *     /admin/invoices                     853.8 KB measured → ≤  960 KB
+ *     /admin/invoices/new                 833.6 KB measured → ≤  940 KB
+ *
  * Run as a post-build step:
  *
  *   pnpm build
@@ -219,6 +225,9 @@ const BUDGETS: ReadonlyArray<RouteBudget> = [
   { route: '/admin/plans/new', maxKb: 1060 },
   { route: '/admin/plans/[year]/[planId]/edit', maxKb: 1070 },
   { route: '/admin/plans/clone', maxKb: 1070 },
+  // --- Spec 122 US8a invoicing (AURA) — see docblock --------------------
+  { route: '/admin/invoices', maxKb: 960 },
+  { route: '/admin/invoices/new', maxKb: 940 },
 ];
 
 const NEXT_DIR = join(process.cwd(), '.next');
