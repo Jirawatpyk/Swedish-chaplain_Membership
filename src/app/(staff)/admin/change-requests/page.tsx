@@ -26,7 +26,7 @@ import { headers } from 'next/headers';
 import { notFound, redirect } from 'next/navigation';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { z } from 'zod';
-import { InboxIcon, XIcon } from 'lucide-react';
+import { InboxIcon } from 'lucide-react';
 import { env } from '@/lib/env';
 import { requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
@@ -190,24 +190,17 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
   }
   const defaultView = !filtered && !q.cursor;
 
-  // This view's filters as query params, minus the one a chip drops — the
-  // chips and the "Next page" link rebuild the SAME view (never the cursor:
-  // a chip restarts paging, and "Next page" sets its own).
-  const filterParams = (drop?: 'memberId' | 'submitter') => {
+  // This view's filters as query params — the "Next page" link rebuilds the
+  // SAME view and sets its own cursor.
+  const filterParams = () => {
     const params = new URLSearchParams();
     if (q.state) params.set('state', q.state);
     if (outcome) params.set('outcome', outcome);
-    if (q.memberId && drop !== 'memberId') params.set('memberId', q.memberId);
-    if (q.submitter && drop !== 'submitter') params.set('submitter', q.submitter);
+    if (q.memberId) params.set('memberId', q.memberId);
+    if (q.submitter) params.set('submitter', q.submitter);
     if (q.from) params.set('from', q.from);
     if (q.to) params.set('to', q.to);
     return params;
-  };
-
-  // a chip's "show all" link keeps every OTHER filter (UX I3)
-  const hrefWithout = (drop: 'memberId' | 'submitter') => {
-    const qs = filterParams(drop).toString();
-    return qs ? `/admin/change-requests?${qs}` : '/admin/change-requests';
   };
 
   // the "Next page" link keeps every filter, swaps the cursor
@@ -233,8 +226,7 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
         : null,
     deepLinkNotice,
     filtered,
-    memberChip: q.memberId ? { company: memberChip ?? '', removeHref: hrefWithout('memberId') } : null,
-    submitterChip: q.submitter ? { removeHref: hrefWithout('submitter') } : null,
+    memberCompany: memberChip,
     timeZone: env.tenant.timezone,
   });
 }
@@ -251,8 +243,7 @@ export async function renderChangeRequestQueueView({
   pendingSummary,
   deepLinkNotice,
   filtered,
-  memberChip,
-  submitterChip,
+  memberCompany,
   timeZone,
 }: {
   readonly items: readonly ChangeRequestQueueItem[];
@@ -261,12 +252,11 @@ export async function renderChangeRequestQueueView({
   readonly pendingSummary: { readonly count: number; readonly oldestDays: number } | null;
   readonly deepLinkNotice: string | null;
   readonly filtered: boolean;
-  readonly memberChip: { readonly company: string; readonly removeHref: string } | null;
-  readonly submitterChip: { readonly removeHref: string } | null;
+  /** `?memberId=`'s company, for its chip in the filter bar. */
+  readonly memberCompany: string | null;
   readonly timeZone: string;
 }) {
   const t = await getTranslations('admin.changeRequests.queue');
-  const tFilters = await getTranslations('admin.changeRequests.filters');
   return (
     <TableContainer>
       <PageHeader
@@ -291,29 +281,9 @@ export async function renderChangeRequestQueueView({
           cards of their own. */}
       <Card flushBelow="sm" className="max-sm:border-0 max-sm:p-0">
         <div className="flex flex-col gap-4">
-          <ChangeRequestQueueFilters resultCount={items.length} hasMore={hasMore} timeZone={timeZone} />
-          {memberChip || submitterChip ? (
-            <div className="space-y-1">
-              {memberChip ? (
-                <p className="text-sm" data-testid="queue-member-chip">
-                  {tFilters('memberChip', { company: memberChip.company })}{' '}
-                  <Link href={memberChip.removeHref} className="inline-flex items-center gap-1 text-[var(--aura-fg-accent)] underline underline-offset-4 hover:no-underline">
-                    <XIcon className="size-3" aria-hidden="true" />
-                    {tFilters('removeMember')}
-                  </Link>
-                </p>
-              ) : null}
-              {submitterChip ? (
-                <p className="text-sm" data-testid="queue-submitter-chip">
-                  {tFilters('submitterChip')}{' '}
-                  <Link href={submitterChip.removeHref} className="inline-flex items-center gap-1 text-[var(--aura-fg-accent)] underline underline-offset-4 hover:no-underline">
-                    <XIcon className="size-3" aria-hidden="true" />
-                    {tFilters('removeSubmitter')}
-                  </Link>
-                </p>
-              ) : null}
-            </div>
-          ) : null}
+          {/* The filter row, its count and the applied filters as chips —
+              the member and submitter scoping included. */}
+          <ChangeRequestQueueFilters resultCount={items.length} hasMore={hasMore} timeZone={timeZone} memberCompany={memberCompany} />
 
           {items.length === 0 ? (
             deepLinkNotice ? null : (

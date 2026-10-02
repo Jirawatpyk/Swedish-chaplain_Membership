@@ -1129,18 +1129,24 @@
           "state": "Status",
           "outcome": "Beslut",
           "anyOutcome": "Alla beslut",
-          "from": "Skickad från",
-          "to": "Skickad till och med",
-          "apply": "Tillämpa",
+          "submitted": "Skickad",
+          "anyShort": "Alla",
+          "chip": "{label}: {value}",
+          "removeChip": "Ta bort filter: {filter}",
+          "member": "Medlem",
           "clear": "Rensa filter",
-          "memberChip": "Visar begäranden för {company}.",
-          "removeMember": "Visa alla medlemmar",
-          "submitterChip": "Visar en persons begäranden.",
-          "removeSubmitter": "Visa allas begäranden",
+          "submitterChip": "En persons begäranden",
           "unknownMember": "en medlem som inte kunde hittas",
+          "dateRange": "{from} – {to}",
+          "dateFrom": "från {from}",
+          "dateTo": "till och med {to}",
           "resultCount": "{count, plural, =0 {Inga begäranden att visa} one {Visar # begäran} other {Visar # begäranden}}",
           "resultCountMore": "Visar de första {count} begärandena – fler på nästa sida",
-          "toggle": "Filter"
+          "presets": {
+            "last7": "Senaste 7 dagarna",
+            "last30": "Senaste 30 dagarna",
+            "thisMonth": "Den här månaden"
+          }
         },
       "queue": {
           "emptyFiltered": "Inga ändringsbegäranden matchar dessa filter.",

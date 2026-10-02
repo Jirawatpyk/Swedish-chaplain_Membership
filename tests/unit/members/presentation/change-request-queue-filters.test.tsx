@@ -57,8 +57,13 @@ function renderBar(query = '', props: BarProps = {}) {
 }
 
 const region = () => screen.getByRole('region', { name: F.label });
-const pick = (label: string, value: string) =>
-  fireEvent.change(screen.getByRole('combobox', { name: label }), { target: { value } });
+/** AURA FilterSelect keeps a native `<select>` beside its combobox: drive and read that. */
+function native(label: string): HTMLSelectElement {
+  const el = screen.getByRole('combobox', { name: label }).closest('.aura-filterselect')?.querySelector('select');
+  if (!el) throw new Error(`no native select beside ${label}`);
+  return el;
+}
+const pick = (label: string, value: string) => fireEvent.change(native(label), { target: { value } });
 const lastUrl = () => nav.replaceMock.mock.calls.at(-1);
 
 beforeEach(() => {
@@ -71,7 +76,7 @@ describe('<ChangeRequestQueueFilters> — the filter pattern', () => {
   it('is one FilterBar row: Status on Pending, a "Submitted" range on Any time; no Apply, no form, no Clear on the default view', () => {
     renderBar();
     const bar = region();
-    expect(within(bar).getByRole('combobox', { name: F.state })).toHaveValue('pending');
+    expect(native(F.state)).toHaveValue('pending');
     expect(within(bar).queryByRole('combobox', { name: F.outcome })).toBeNull();
     expect(within(bar).getByRole('button', { name: `${F.submitted}: Any time` })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^apply$/i })).toBeNull();
@@ -102,7 +107,7 @@ describe('<ChangeRequestQueueFilters> — the filter pattern', () => {
       within(region()).getByRole('combobox', { name: F.state }),
       within(region()).getByRole('combobox', { name: F.outcome }),
     ]);
-    expect(boxes[1]).toHaveValue('approved');
+    expect(native(F.outcome)).toHaveValue('approved');
     pick(F.outcome, 'rejected');
     expect(lastUrl()?.[0]).toBe('/admin/change-requests?state=decided&outcome=rejected');
     pick(F.state, 'withdrawn');
@@ -125,7 +130,7 @@ describe('<ChangeRequestQueueFilters> — the filter pattern', () => {
     expect(chips).toHaveTextContent(`${F.outcome}: ${R.outcome.approved}`);
     expect(chips).toHaveTextContent(`${F.member}: Siam Nordic Trading`);
     expect(chips).toHaveTextContent(F.submitterChip);
-    expect(chips).toHaveTextContent(`${F.submitted}: Sep 1, 2026 – Sep 10, 2026`);
+    expect(chips).toHaveTextContent(`${F.submitted}: 1 Sept 2026 – 10 Sept 2026`);
     fireEvent.click(screen.getByRole('button', { name: `Remove filter: ${F.member}: Siam Nordic Trading` }));
     expect(lastUrl()?.[0]).toBe(
       `/admin/change-requests?state=decided&outcome=approved&submitter=${SUBMITTER}&from=2026-09-01&to=2026-09-10`,

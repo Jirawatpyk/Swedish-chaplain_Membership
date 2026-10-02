@@ -53,21 +53,13 @@ const MANAGER_PASSWORD = process.env.E2E_MANAGER_PASSWORD;
 const copy = en.portal.changeRequests;
 const adminCopy = en.admin.changeRequests;
 
-/** 122 US5a — below 640px the queue folds its filters behind a "Filters · Status: …" toggle; open it first. */
-async function openQueueFiltersOnPhone(page: Page): Promise<void> {
-  // The queue streams in behind `loading.tsx` and `isVisible()` does not wait:
-  // checked before the form arrived, the toggle read as absent and the panel
-  // was never opened (R17 flake on both projects). Wait for the form first.
-  await expect(page.getByRole('form', { name: adminCopy.filters.label })).toBeVisible();
-  const toggle = page.getByRole('button', { name: new RegExp(`^${adminCopy.filters.toggle}`) });
-  if (!(await toggle.isVisible())) return;
-  // A tap before hydration is lost, and hydration can reset the panel: open
-  // it until the Status field is really there (R16 flake on mobile-chrome;
-  // the pattern #466 used for the staff nav drawer).
-  await expect(async () => {
-    if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
-    await expect(page.getByRole('combobox', { name: 'Status' })).toBeVisible({ timeout: 2_000 });
-  }).toPass({ timeout: 15_000 });
+/**
+ * The filter pattern (spec 122): the queue's filters are one FilterBar row on
+ * every width (no phone toggle). The queue streams in behind `loading.tsx`,
+ * so wait for the bar before reading it.
+ */
+async function waitForQueueFilters(page: Page): Promise<void> {
+  await expect(page.getByRole('region', { name: adminCopy.filters.label })).toBeVisible();
 }
 
 test.describe.configure({ timeout: 180_000 });
@@ -604,14 +596,9 @@ test.describe('@change-requests US4 — history is complete and visible', () => 
     // The bar renders on every view, rows or not — the Outcome trigger only
     // under `decided`, so the two accessible names are read there first.
     await page.goto('/admin/change-requests?state=decided');
-    await openQueueFiltersOnPhone(page);
-    // the filter triggers are Base UI buttons: `<label for>` names a native
-    // select, not a button, so each trigger carries its own aria-label. This
-    // is a smoke check of the rendered name against the copy — Playwright's
-    // accname (like jsdom's) still honours `label[for]` → button, so the
-    // regression guard is the unit test's `toHaveAttribute('aria-label', …)`;
-    // axe's `aria-input-field-name` skips buttons altogether
-    // the ids are `useId()`-minted (PR-3 L5), so the triggers are found by their accessible name
+    await waitForQueueFilters(page);
+    // each FilterSelect is named by its filter's label (AURA's own name; the
+    // unit tests pin it too)
     await expect(page.getByRole('combobox', { name: adminCopy.filters.state })).toHaveAccessibleName(adminCopy.filters.state);
     await expect(page.getByRole('combobox', { name: adminCopy.filters.outcome })).toHaveAccessibleName(adminCopy.filters.outcome);
     await page.goto('/admin/change-requests');
@@ -630,21 +617,15 @@ test.describe('@change-requests US4 — history is complete and visible', () => 
     expect(cardBox!.height).toBeLessThan(400);
     expect(reviewBox!.x).toBeGreaterThanOrEqual(cardBox!.x);
     expect(reviewBox!.x + reviewBox!.width).toBeLessThanOrEqual(cardBox!.x + cardBox!.width + 1);
-    await openQueueFiltersOnPhone(page);
-    // Apply is a same-page navigation: the pressed button keeps focus — the bar
-    // is never remounted on a filter change (UX re-review N1 / R2)
-    const applyButton = page.getByRole('button', { name: adminCopy.filters.apply });
-    await applyButton.focus();
-    await applyButton.press('Enter');
-    // Apply is a router.replace: Next keeps the PREVIOUS segment's DOM in the
-    // page, hidden, after a client navigation (measured 2026-09-16: two
-    // `queue-table` elements, one `hidden`), so the strict check is scoped to
-    // the VISIBLE table — axe ignores hidden content as well.
+    await waitForQueueFilters(page);
+    // Filtering is a same-page navigation as you pick: focus stays on Status —
+    // the bar is never remounted on a filter change (UX re-review N1 / R2).
+    const status = page.getByRole('combobox', { name: adminCopy.filters.state });
+    await status.click();
+    await page.getByRole('option', { name: en.admin.changeRequests.review.state.decided }).click();
+    await expect(page).toHaveURL(/[?&]state=decided/);
     await page.waitForLoadState('networkidle');
-    const visibleTable = page.locator('[data-testid="queue-table"]:visible');
-    await expect(visibleTable).toHaveCount(1, { timeout: 30_000 });
-    await expect(visibleTable).toBeVisible();
-    await expect(applyButton).toBeFocused();
+    await expect(status).toBeFocused();
     await runAxeScan(page, testInfo, { include: 'main' });
     await page.goto(`/admin/members/${member!.memberId}`);
     await expect(page.getByTestId('member-change-requests-section')).toBeVisible();

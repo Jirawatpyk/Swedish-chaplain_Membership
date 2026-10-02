@@ -1129,18 +1129,24 @@
           "state": "สถานะ",
           "outcome": "ผลการพิจารณา",
           "anyOutcome": "ทุกผลการพิจารณา",
-          "from": "ส่งตั้งแต่",
-          "to": "ส่งจนถึง (รวมวันนั้น)",
-          "apply": "ใช้ตัวกรอง",
+          "submitted": "วันที่ส่ง",
+          "anyShort": "ทั้งหมด",
+          "chip": "{label}: {value}",
+          "removeChip": "ลบตัวกรอง: {filter}",
+          "member": "สมาชิก",
           "clear": "ล้างตัวกรอง",
-          "memberChip": "กำลังแสดงคำขอของ {company}",
-          "removeMember": "แสดงทุกสมาชิก",
-          "submitterChip": "กำลังแสดงคำขอของบุคคลหนึ่ง",
-          "removeSubmitter": "แสดงคำขอของทุกคน",
+          "submitterChip": "คำขอของบุคคลหนึ่ง",
           "unknownMember": "สมาชิกที่ไม่พบ",
+          "dateRange": "{from} – {to}",
+          "dateFrom": "ตั้งแต่ {from}",
+          "dateTo": "จนถึง {to}",
           "resultCount": "{count, plural, =0 {ไม่มีคำขอที่จะแสดง} other {กำลังแสดงคำขอ # รายการ}}",
           "resultCountMore": "กำลังแสดงคำขอ {count} รายการแรก — มีเพิ่มเติมในหน้าถัดไป",
-          "toggle": "ตัวกรอง"
+          "presets": {
+            "last7": "7 วันที่ผ่านมา",
+            "last30": "30 วันที่ผ่านมา",
+            "thisMonth": "เดือนนี้"
+          }
         },
       "queue": {
           "emptyFiltered": "ไม่มีคำขอแก้ไขข้อมูลที่ตรงกับตัวกรองนี้",

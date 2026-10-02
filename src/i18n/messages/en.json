@@ -1129,18 +1129,24 @@
           "state": "Status",
           "outcome": "Outcome",
           "anyOutcome": "Any outcome",
-          "from": "Submitted from",
-          "to": "Submitted up to and including",
-          "apply": "Apply",
+          "submitted": "Submitted",
+          "anyShort": "Any",
+          "chip": "{label}: {value}",
+          "removeChip": "Remove filter: {filter}",
+          "member": "Member",
           "clear": "Clear filters",
-          "memberChip": "Showing requests for {company}.",
-          "removeMember": "Show all members",
-          "submitterChip": "Showing one person's requests.",
-          "removeSubmitter": "Show everyone's requests",
+          "submitterChip": "One person's requests",
           "unknownMember": "a member that could not be found",
+          "dateRange": "{from} – {to}",
+          "dateFrom": "from {from}",
+          "dateTo": "up to {to}",
           "resultCount": "{count, plural, =0 {No requests to show} one {Showing # request} other {Showing # requests}}",
           "resultCountMore": "Showing the first {count} requests — more on the next page",
-          "toggle": "Filters"
+          "presets": {
+            "last7": "Last 7 days",
+            "last30": "Last 30 days",
+            "thisMonth": "This month"
+          }
         },
       "queue": {
           "emptyFiltered": "No change requests match these filters.",

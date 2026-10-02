@@ -249,10 +249,12 @@ describe('US4 portal invoices and pay sheet', () => {
 });
 
 describe('US5a follow-up', () => {
-  it('the change-request queue filters size each AURA field through its className, not `.aura-field`', () => {
+  // The filter pattern (2 Oct 2026) replaced the labelled fields with one
+  // FilterBar row of compact filters at their own width.
+  it('the change-request queue filters reach into no AURA internals', () => {
     const s = src('src/app/(staff)/admin/change-requests/_components/queue-filters.tsx');
     expect(s).not.toMatch(/\.aura-field/);
-    expect(s).toMatch(/className="lg:w-56"/);
+    expect(s).toContain('<FilterBar');
   });
 });
 

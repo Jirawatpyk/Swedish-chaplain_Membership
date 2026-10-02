@@ -84,7 +84,7 @@ A server component that needs a static AURA component imports it from **`@jirawa
 - **Where it applies today:** Plans, the renewals pipeline, escalation tasks, tier upgrades, Invoices, Members and Change requests. Lists still on the legacy kit take it in their own phase.
 - **The table runs edge to edge inside the card** (maintainer, 2 Oct, the Polaris / GitHub pattern): no side borders or radius, the header band and rules kept, the filters on the card's padding. AURA 5.26 shipped `bleed` (#127), but only for a table that is a direct child of the Card body, and every list card has wrappers in between (the gap div, `div[data-members-table]`, the invoices `@container` div, the pipeline's tabpanel). Until AURA lets it reach through them (#130), the tables keep their own frame.
 
-**Filters (decided 2 Oct 2026, not yet applied).** The migrated lists use four different filter rows, and the boards disagree: Members draws AURA's `FilterBar`, while Change requests and Plans draw labelled form fields with an Apply button. The maintainer chose the pattern the large SaaS dashboards share (Stripe, Shopify Polaris, Vercel, GitHub, Jira):
+**Filters (decided and applied 2 Oct 2026).** The migrated lists use four different filter rows, and the boards disagree: Members draws AURA's `FilterBar`, while Change requests and Plans draw labelled form fields with an Apply button. The maintainer chose the pattern the large SaaS dashboards share (Stripe, Shopify Polaris, Vercel, GitHub, Jira):
 - **One row:** the search first, if the list searches, then one compact `FilterSelect` per closed-set filter ("Status All"). The chosen value shows on its face, with no label above it.
 - **Filter as you pick:** no Apply button for the row.
 - **Dates:** one date-range control, not two date fields.
@@ -107,7 +107,7 @@ A server component that needs a static AURA component imports it from **`@jirawa
   - **Clear all** appears only for a non-default value. The change-request default status and the plans' current year do not count.
   - **Change requests:** Outcome appears right after Status, only under Decided, and focus stays on Status.
 - **Dates:** AURA `FilterDateRange` (5.26, #128): a `FilterSelect`-style face that opens the range calendar in one click, with presets.
-- **When:** its own PR on AURA 5.26. The mock was reviewed on 2 Oct.
+- **Applied:** in its own PR on AURA 5.26, after the mock review on 2 Oct. Every applied filter, select values included, is a removable chip in the bar (`filters`), which is what brings its "Clear filters"; a toggle chip in the row is not repeated, so when it is the only filter on, a ghost "Clear filters" sits beside it, as on Members. The change-request queue has no pre-hydration submit any more: `FilterDateRange` has no form field and nothing in the bar is typed.
 
 **Type scale.** Text sizes on AURA surfaces use AURA's type classes (`aura-text-label` 13/500, `aura-text-table-cell` 13/400, `aura-text-caption` 12, `aura-text-mono` 12 mono, `aura-text-pill-label` 11, `aura-text-h2` 24), not `text-[Npx]`. They load in the `aura-tokens` layer, below Tailwind's preflight, so on a `<button>`, `<kbd>` or heading (where preflight resets the font) the class goes on the inner text span; Tailwind `font-*` / `leading-*` utilities still win over it. Page titles keep the app's shared `--font-size-h1` step.
 

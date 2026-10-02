@@ -743,8 +743,7 @@ export default async function AuraAdminPreviewPage({
           pendingSummary: empty ? null : { count: 3, oldestDays: 6 },
           deepLinkNotice: null,
           filtered: false,
-          memberChip: null,
-          submitterChip: null,
+          memberCompany: null,
           timeZone: 'Asia/Bangkok',
         })}
       </StaffFrame>
