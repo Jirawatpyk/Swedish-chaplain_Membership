@@ -7,7 +7,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import messages from '@/i18n/messages/en.json';
-import { MembersErrorState, MembersStateCard } from '@/components/members/empty-states';
+import {
+  MembersAllInvitedEmptyState,
+  MembersErrorState,
+  MembersFilteredEmptyState,
+  MembersStateCard,
+} from '@/components/members/empty-states';
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ replace: vi.fn(), refresh: vi.fn() }),
@@ -45,5 +50,17 @@ describe('members state card (US5a)', () => {
     // itself — no wrapper restyling AURA's classes.
     const alert = screen.getByRole('alert');
     expect(alert).toHaveClass('aura-empty', 'is-danger', 'is-bordered');
+  });
+
+  it('draws the neutral empty states inside the card without a frame of their own (list card rule)', () => {
+    renderIntl(
+      <>
+        <MembersFilteredEmptyState />
+        <MembersAllInvitedEmptyState />
+      </>,
+    );
+    const empties = screen.getAllByRole('status').map((s) => s.querySelector('.aura-empty'));
+    expect(empties).toHaveLength(2);
+    for (const empty of empties) expect(empty).not.toHaveClass('is-bordered');
   });
 });
