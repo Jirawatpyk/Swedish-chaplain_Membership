@@ -754,7 +754,7 @@ export default async function AdminInvoicesPage({
         page,
         pageSize: PAGE_SIZE,
         hasFilters,
-        draftsHidden: !statusFilter,
+        draftsHidden: !includeDrafts,
         payIntent,
         // F5 T096 — the Method column in the `?paidOnline=1` view.
         showMethodColumn: paidOnlineOnly,
