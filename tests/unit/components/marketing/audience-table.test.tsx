@@ -126,7 +126,13 @@ function contentWidthAt(viewport: number): number {
     return Number(m[1]) * REM;
   };
   const sidebarWidth = rem(/const SIDEBAR_WIDTH = "([\d.]+)rem"/, sidebar);
-  const pagePadding = rem(/--page-padding-x:\s*([\d.]+)rem/, css);
+  // The gutter reads AURA's spacing token (`var(--aura-space-6)` = 24px).
+  const auraCss = readFileSync(resolve(process.cwd(), 'node_modules/@jirawatpyk/aura-tokens/aura.css'), 'utf8');
+  const spaceStep = /--page-padding-x:\s*var\(--aura-space-(\d+)\)/.exec(css)?.[1];
+  if (!spaceStep) throw new Error('token not found: --page-padding-x');
+  const pagePaddingPx = new RegExp(`--aura-space-${spaceStep}:\\s*([\\d.]+)px`).exec(auraCss)?.[1];
+  if (!pagePaddingPx) throw new Error(`token not found: --aura-space-${spaceStep}`);
+  const pagePadding = Number(pagePaddingPx);
   const cardPadding = rem(/--card-padding:\s*([\d.]+)rem/, css);
   const SCROLLBAR = 16;
   return viewport - sidebarWidth - 2 * pagePadding - 2 * cardPadding - SCROLLBAR;

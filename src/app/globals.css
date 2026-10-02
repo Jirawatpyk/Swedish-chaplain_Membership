@@ -200,7 +200,7 @@
      for. Form (720) and detail (1280) take AURA's own sizes
      (--aura-container-narrow, --aura-container-max; spec 122, 2 Oct 2026). */
   --layout-max-width-table: 96rem;
-  --page-padding-x: 1.5rem;           /* 24px */
+  --page-padding-x: var(--aura-space-6); /* 24px; the shells set AURA's steps below */
   --page-padding-y: 1.5rem;           /* 24px — top padding; the shells set the board steps */
   --page-padding-bottom: var(--page-padding-y);
   --page-section-gap: 1.5rem;         /* 24px — gap between content sections (PageHeader → Card, Card → Card). Owned by layout containers' `flex flex-col gap-*` default. */
@@ -632,7 +632,7 @@ summary,
      and portal; 2 Oct 2026), the table our 1536. The home, benefits and edit boards
      draw a larger page (PageHeader size="hero", see page-header.tsx). */
   .chamber-shell {
-    --page-padding-x: 1rem;
+    --page-padding-x: var(--aura-space-4);
     --page-padding-y: 18px;
     --page-padding-bottom: 2rem;
     --page-section-gap: 1rem;
@@ -649,12 +649,12 @@ summary,
   .chamber-portal {
     --page-padding-y: 20px;
   }
-  /* The side gutter takes AURA Container's steps (16 / 24 / 32px at 640 and
-     1024; maintainer, 2 Oct 2026), so the containers' own padding and ours
-     never disagree. The top padding keeps its 768px step. */
+  /* The side gutter takes AURA Container's steps and values (--aura-space-4 /
+     -6 / -8 at 640 and 1024; maintainer, 2 Oct 2026), so the containers' own
+     padding and ours never disagree. The top padding keeps its 768px step. */
   @media (min-width: 640px) {
     .chamber-shell {
-      --page-padding-x: 1.5rem;
+      --page-padding-x: var(--aura-space-6);
     }
   }
   @media (min-width: 768px) {
@@ -664,7 +664,7 @@ summary,
   }
   @media (min-width: 1024px) {
     .chamber-shell {
-      --page-padding-x: 2rem;
+      --page-padding-x: var(--aura-space-8);
       --page-padding-y: 1.75rem;
     }
     .chamber-portal {
