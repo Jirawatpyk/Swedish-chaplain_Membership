@@ -268,7 +268,8 @@ export default async function AuraPortalPreviewPage({
     const t = await getTranslations('portal.edit');
     return (
       <MemberFrame path="/portal/edit">
-        <FormContainer>
+        {/* the page's 880px column (portal/edit/page.tsx) */}
+        <FormContainer className="max-w-[calc(55rem+2*var(--page-padding-x))]">
           <PageHeader title={t('pageTitle')} size="hero" />
           <PortalEditForm
             initialValues={{ firstName: 'Anna', lastName: 'Lindqvist', phone: '+66 81 234 5678', website: 'https://nordic.example', description: '' }}

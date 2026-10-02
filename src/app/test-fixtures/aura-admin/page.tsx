@@ -321,6 +321,22 @@ const REVIEW_FIELDS = [
   },
 ] as unknown as ChangeRequestReviewFieldView[];
 
+const LOADING_ROUTES = {
+  members: { path: '/admin/members', load: async () => (await import('@/app/(staff)/admin/members/loading')).default() },
+  plans: { path: '/admin/plans', load: async () => (await import('@/app/(staff)/admin/plans/loading')).default() },
+  invoices: { path: '/admin/invoices', load: async () => (await import('@/app/(staff)/admin/invoices/loading')).default() },
+  'change-requests': {
+    path: '/admin/change-requests',
+    load: async () => (await import('@/app/(staff)/admin/change-requests/loading')).default(),
+  },
+  renewals: { path: '/admin/renewals', load: async () => (await import('@/app/(staff)/admin/renewals/loading')).default() },
+  'tier-upgrades': {
+    path: '/admin/renewals/tier-upgrades',
+    load: async () => (await import('@/app/(staff)/admin/renewals/tier-upgrades/loading')).default(),
+  },
+  tasks: { path: '/admin/renewals/tasks', load: async () => (await import('@/app/(staff)/admin/renewals/tasks/loading')).default() },
+} as const;
+
 function StaffFrame({ path, children }: { readonly path: string; readonly children: React.ReactNode }) {
   // The staff frame as the admin layout composes it (see /test-fixtures/aura-shell).
   return (
@@ -415,6 +431,13 @@ export default async function AuraAdminPreviewPage({
 }) {
   if (!process.env.ALLOW_TEST_ROUTES) notFound();
   const { view = 'members', state = 'default' } = await searchParams;
+
+  // The list routes' own loading.tsx, in the staff frame, so the skeleton can
+  // be compared with the loaded page (`view=loading&state=<route>`).
+  if (view === 'loading') {
+    const route = LOADING_ROUTES[state as keyof typeof LOADING_ROUTES] ?? LOADING_ROUTES.members;
+    return <StaffFrame path={route.path}>{await route.load()}</StaffFrame>;
+  }
 
   if (view === 'member') {
     const manager = state === 'manager';
