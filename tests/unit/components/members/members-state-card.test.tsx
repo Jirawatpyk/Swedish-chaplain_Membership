@@ -34,6 +34,9 @@ describe('members state card (US5a)', () => {
     const card = screen.getByText('filters').parentElement;
     expect(card).toBe(screen.getByText('state').parentElement);
     expect(card).toHaveAttribute('data-members-state-card');
+    // The list card rule: an AURA card that drops its frame below 640px,
+    // where the rows become cards of their own.
+    expect(card).toHaveClass('aura-card', 'aura-card--flush-below-sm');
   });
 
   it('draws the error state in the danger colours', () => {
