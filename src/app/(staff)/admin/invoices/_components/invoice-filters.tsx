@@ -425,11 +425,13 @@ export function InvoiceFilters({
   }));
 
   // --- Controls ---------------------------------------------------------------
-  // Admin's default view leaves drafts out (`includeDrafts:false` unless the
-  // status filter says Draft), so its first option says so; the portal never
-  // lists drafts, so "All statuses" is true there. The face shows the short
-  // "All" only where that is the whole truth.
-  const draftsHiddenByDefault = statusOptions.some((s) => s === 'draft');
+  // Admin's default view leaves drafts out (the page's `includeDrafts` is off
+  // unless the status says Draft or the origin is the auto-renewal queue,
+  // which IS drafts), so its first option says so; the portal never lists
+  // drafts, so "All statuses" is true there, as it is in the queue. The face
+  // shows the short "All" only where that is the whole truth.
+  const draftsHiddenByDefault =
+    statusOptions.some((s) => s === 'draft') && currentOrigin !== 'auto_renewal';
   const statusSelect = (
     <FilterSelect
       label={t('columns.status')}
