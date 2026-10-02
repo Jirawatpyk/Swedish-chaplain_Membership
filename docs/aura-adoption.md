@@ -123,6 +123,20 @@ a written guarantee that utilities may override `Container`, not a new feature.
 Nothing in the repo is labelled `#126`; when it is answered, the migration is a
 component swap, not a stand-in removal.
 
+**#129 (Addendum 32) is open and also outside that table**, for the same reason:
+there is no stand-in to retire. AURA `Table` has no sticky-header option, and the
+only `position` on `.aura-tbl__head` is the visually-hidden rule under
+`--stack-sm` / `--stack-md`, so a list page that moves off the legacy kit stops
+pinning its column labels. Measured 2 Oct 2026: `thead` is `sticky` on
+`/admin/users`, `/admin/invoices` and `/admin/events` (legacy kit) and `static` on
+`/admin/plans` and `/admin/directory` (AURA `Table`), while AURA `DataTable`
+keeps its `.aura-table__head` sticky on `/admin/members`. FR-020
+(`specs/004-page-layout-standard/spec.md:232`) requires the sticky header, so it is
+unmet on those two pages until AURA ships `stickyHeader`. A local `sticky top-0`
+is not available as a stand-in — it would have to reach `.aura-tbl__head`, which
+the internal-class ratchet forbids. `tests/e2e/table-consistency.spec.ts` no longer
+asserts stickiness (it was never part of SC-013) and names this item instead.
+
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 
 | # | Shipped in | Used by |
