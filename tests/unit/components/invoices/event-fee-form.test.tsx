@@ -1133,25 +1133,14 @@ describe('<EventFeeForm>', () => {
     expect(screen.getByTestId('mode-waiting-explainer')).toHaveTextContent(
       modeMessages.waitingExplainer,
     );
-    expect(screen.getByTestId('mode-bill-first-needs-tin')).toHaveTextContent(
-      modeMessages.billFirstNeedsTin,
-    );
     const billFirstRadio = screen.getByRole('radio', {
       name: new RegExp(modeMessages.billFirst.label),
     });
-    // Base UI renders a disabled radio as <span role="radio"
-    // aria-disabled="true"> (not a natively-disabled element), so jest-dom's
-    // toBeDisabled() does not apply — assert the ARIA state directly.
-    expect(billFirstRadio).toHaveAttribute('aria-disabled', 'true');
-    // The visible disabled-option reason is programmatically associated with
-    // the radio (SR users hear WHY it is disabled, not just that it is).
-    expect(billFirstRadio).toHaveAttribute(
-      'aria-describedby',
-      'mode-bill-first-needs-tin',
-    );
-    expect(document.getElementById('mode-bill-first-needs-tin')).toBe(
-      screen.getByTestId('mode-bill-first-needs-tin'),
-    );
+    // Spec 122 US8 (T807) — an AURA radio: natively disabled, and the
+    // disabled-option reason is the option's own description, so a screen
+    // reader hears WHY with the option itself (AURA reads it in the name).
+    expect(billFirstRadio).toBeDisabled();
+    expect(billFirstRadio).toHaveAccessibleName(new RegExp(modeMessages.billFirstNeedsTin));
     expect(
       screen.getByRole('button', {
         name: enMessages.admin.invoices.eventFeeForm.submit,
@@ -1317,5 +1306,62 @@ describe('<EventFeeForm>', () => {
 
     fireEvent.change(dateInput, { target: { value: bangkokToday() } });
     expect(screen.queryByTestId('payment-date-vat-warning')).toBeNull();
+  });
+});
+
+/**
+ * Spec 122 US8 (T807) — the event-fee form's controls on AURA: the event
+ * combobox, the issuance-mode radio group, the payment method select, the
+ * amount field, the refunded block and the duplicate dialog.
+ */
+describe('<EventFeeForm> on AURA (T807)', () => {
+  beforeEach(() => {
+    vi.useRealTimers();
+    pushMock.mockReset();
+  });
+  afterEach(() => {
+    vi.useFakeTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('the event picker is an AURA combobox', () => {
+    vi.stubGlobal('fetch', mockFetchRegistrations([]));
+    renderForm();
+    const picker = screen.getByRole('combobox', { name: enMessages.admin.invoices.eventFeeForm.eventPicker.label });
+    expect(picker.closest('.aura-field')).not.toBeNull();
+  });
+
+  it('the mode choice is an AURA radio group; the as-paid fields are AURA fields', async () => {
+    vi.stubGlobal('fetch', mockFetchRegistrations([matchedRegistration]));
+    renderForm({ initialEventId: 'ev-1' });
+    fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+    expect(screen.getByRole('group', { name: modeMessages.label })).toHaveClass('aura-radio-group');
+    expect(screen.getByRole('combobox', { name: enMessages.admin.invoices.pay.fields.method })).toBeInTheDocument();
+    const method = document.getElementById('payment-method-select') as HTMLSelectElement;
+    expect([...method.options].map((o) => o.value)).toEqual(['bank_transfer', 'cheque', 'cash', 'other']);
+    expect(screen.getByLabelText(/Amount/).closest('.aura-field')).not.toBeNull();
+    expect(screen.getByTestId('doc-type-badge')).toHaveClass('aura-badge');
+  });
+
+  it('a refunded registration is blocked by an AURA danger alert', async () => {
+    vi.stubGlobal('fetch', mockFetchRegistrations([refundedRegistration]));
+    renderForm({ initialEventId: 'ev-1' });
+    fireEvent.click(await screen.findByRole('button', { name: /Carol/ }));
+    expect(screen.getByTestId('mode-refunded-blocked')).toHaveClass('aura-alert--danger');
+  });
+
+  it('the duplicate notice is an AURA dialog', async () => {
+    const fetchMock = mockFetchRegistrations([matchedRegistration]);
+    vi.stubGlobal('fetch', fetchMock);
+    renderForm({ initialEventId: 'ev-1' });
+    fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+    fetchMock.mockImplementationOnce(
+      async () => new Response(JSON.stringify({ error: { code: 'duplicate' }, existing_invoice_id: null }), { status: 409 }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: enMessages.admin.invoices.eventFeeForm.recordAndIssue }));
+    const dialog = await screen.findByRole('alertdialog', {
+      name: enMessages.admin.invoices.eventFeeForm.duplicateDialog.title,
+    });
+    expect(dialog).toHaveClass('aura-dialog');
   });
 });
