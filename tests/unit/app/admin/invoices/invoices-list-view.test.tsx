@@ -122,6 +122,8 @@ describe('renderInvoicesListView (T806)', () => {
     const empty = d.querySelector('.aura-empty');
     expect(empty?.textContent).toContain(list.empty);
     expect(empty?.querySelector('a[href="/admin/invoices/new"]')).not.toBeNull();
+    // The plus the header's New invoice carries (button icon rule).
+    expect(empty?.querySelector('a[href="/admin/invoices/new"] svg')).not.toBeNull();
     expect(d.querySelector('[data-marker="invoices-table"]')).toBeNull();
   });
 
