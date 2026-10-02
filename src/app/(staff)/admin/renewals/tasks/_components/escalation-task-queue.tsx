@@ -616,6 +616,9 @@ export function EscalationTaskQueue({
           rowKey="taskId"
           rowHeight="auto"
           stackBelow={640}
+          // Edge to edge inside the list card from 640px up (AURA 5.27, #130);
+          // "Next 50" can follow, so it does not end the card.
+          bleed
         />
       )}
 

@@ -712,6 +712,9 @@ export function InvoicesTable({
         rowKey="invoiceId"
         rowHeight="auto"
         stackBelow={640}
+        // Edge to edge inside the list card from 640px up (AURA 5.27, #130);
+        // the pager follows, so it does not end the card.
+        bleed
       />
     </div>
   );

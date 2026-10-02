@@ -40,7 +40,9 @@ export async function ChangeRequestQueueTable({
   const locale = await getLocale();
   const fmt = (d: Date) => formatLocalisedDate(d.toISOString(), locale, { dateStyle: 'medium', timeStyle: 'short' });
   return (
-    <Table data-testid="queue-table" caption={t('tableCaption')} captionHidden stackBelow="sm" stackStyle="cards" align="middle">
+    // Edge to edge inside the list card from 640px up (AURA 5.27, #130); a
+    // "Next" link can follow, so it does not end the card.
+    <Table data-testid="queue-table" caption={t('tableCaption')} captionHidden stackBelow="sm" stackStyle="cards" align="middle" bleed>
       <THead>
         <Tr>
           <Th>{t('columns.member')}</Th>

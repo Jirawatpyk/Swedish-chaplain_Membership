@@ -399,6 +399,10 @@ export function TierUpgradeQueueClient({
         rowKey="suggestionId"
         rowHeight="auto"
         stackBelow={640}
+        // Edge to edge inside the list card from 640px up (AURA 5.27, #130),
+        // and the card's last content, so the card's radius closes it.
+        bleed
+        bleedEnd
       />
       <Dialog
         open={dialog !== null}
