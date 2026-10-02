@@ -14,6 +14,7 @@
  *
  * Registered via `globalSetup` in `playwright.config.ts`.
  */
+import { execFileSync } from 'node:child_process';
 import postgres from 'postgres';
 import { resetE2eIssuedFixture } from '../../scripts/lib/e2e-issued-fixture-reset';
 import { clearE2ERateLimits } from './helpers/rate-limit';
@@ -144,6 +145,49 @@ async function resolvePaidOnlineInvoice(): Promise<void> {
   }
 }
 
+/**
+ * Top the single-use F4 admin fixtures back up.
+ *
+ * `credit-note-full` AS1 credits a paid SC-2026-995xxx invoice, which spends
+ * it. The seeder keeps THREE, so one pass over chromium + mobile-chrome costs
+ * two and two consecutive runs exhaust the pool — after which the spec failed
+ * on a bare locator timeout that reads like a selector break or a UI
+ * regression. In R29 that cost an hour of bisecting a PR which had changed
+ * nothing on that surface, and it is why the same spec was already red on
+ * `main`. The spec's own note has named this fix since F4: "fold seeder into
+ * tests/e2e/global-setup.ts" (PVR-1).
+ *
+ * Spawned rather than imported, because the seeder is a CLI that calls
+ * `process.exit` at top level, and it owns logic no raw-SQL helper should
+ * duplicate for a money fixture: it renders the invoice PDF, uploads the blob
+ * and satisfies the `invoices_paid_has_receipt_status` CHECK (migration 0056).
+ * `process.execPath` + tsx's own CLI keeps it cross-platform with no shell.
+ *
+ * Idempotent: with three unmutated invoices present it prints "skip" and
+ * writes nothing, so the common case costs a few queries.
+ */
+function topUpAdminFixtures(): boolean {
+  if (!process.env.DATABASE_URL) {
+    console.warn('[e2e global setup] skipping F4 admin fixtures — DATABASE_URL missing');
+    return false;
+  }
+  const out = execFileSync(
+    process.execPath,
+    ['node_modules/tsx/dist/cli.mjs', 'scripts/seed-f4-e2e-admin-fixtures.ts'],
+    {
+      env: { ...process.env, TSX_TSCONFIG_PATH: 'tsconfig.scripts.json' },
+      encoding: 'utf8',
+      timeout: 180_000,
+    },
+  );
+  for (const line of out.split(/\r?\n/)) {
+    if (/credit-target|pay-target/.test(line)) {
+      console.log(`[e2e global setup] F4 fixtures:${line.replace(/^\s+/, ' ')}`);
+    }
+  }
+  return true;
+}
+
 async function globalSetup(): Promise<void> {
   // FIRST: compile the sign-in routes while nobody's test clock is running.
   await warmAdminRoutes();
@@ -161,6 +205,15 @@ async function globalSetup(): Promise<void> {
     await resetF5IssuedInvoice();
   } catch (error) {
     console.warn('[e2e global setup] F5 invoice reset failed:', String(error));
+  }
+
+  try {
+    // Before any spec reads them: the credit-target pool is single-use.
+    // Succeeds => the AS1 gate below can rely on the fixtures being present,
+    // so it no longer depends on a hand-added .env.local flag (PVR-1).
+    if (topUpAdminFixtures()) process.env.E2E_HAS_ADMIN_FIXTURES = '1';
+  } catch (error) {
+    console.warn('[e2e global setup] F4 admin fixture top-up failed:', String(error));
   }
 
   try {
