@@ -2689,6 +2689,8 @@
         "filteredEmpty": "Inga fakturor matchar filtren.",
         "loadFailed": "Det gick inte att ladda fakturorna. Försök igen.",
         "resultCount": "{count, plural, =0 {Inga fakturor matchar filtren} one {# faktura matchar filtren} other {# fakturor matchar filtren}}",
+        "countLine": "{count, plural, one {# faktura} other {# fakturor}}",
+        "countLineDraftsHint": "{count, plural, one {# faktura} other {# fakturor}} · utkast finns under Status → Utkast",
         "recordPaymentIntentHint": "Välj en faktura nedan och använd dess knapp 'Registrera betalning' (kolumnen Åtgärder) för att registrera betalning.",
         "filters": {
           "allStatuses": "Alla status",

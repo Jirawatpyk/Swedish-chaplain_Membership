@@ -2689,6 +2689,8 @@
         "filteredEmpty": "No invoices match the current filters.",
         "loadFailed": "Couldn't load invoices. Please try again.",
         "resultCount": "{count, plural, =0 {No invoices match the filters} one {# invoice matches the filters} other {# invoices match the filters}}",
+        "countLine": "{count, plural, one {# invoice} other {# invoices}}",
+        "countLineDraftsHint": "{count, plural, one {# invoice} other {# invoices}} · drafts are under Status → Draft",
         "recordPaymentIntentHint": "Choose a bill below and use its Record payment button (Actions column) to record a payment.",
         "filters": {
           "allStatuses": "All statuses",
