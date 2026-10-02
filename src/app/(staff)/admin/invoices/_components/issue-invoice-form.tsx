@@ -38,18 +38,9 @@ import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { formatCalendarYear } from '@/lib/format-date-localised';
 import { toast } from '@/lib/toast';
-import { InfoIcon, Loader2Icon, TriangleAlertIcon } from 'lucide-react';
-import {
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogFooter,
-} from '@/components/ui/alert-dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { InlineAlert, InlineAlertDescription } from '@/components/ui/inline-alert';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { Alert, Badge, Button, RadioGroup, TextField } from '@jirawatpyk/aura-react';
 import { computeIssueReviewModel } from '../_lib/issue-review';
+import { TOUCH_CHOICES, TOUCH_FIELD } from '../_lib/touch-targets';
 import {
   buildIssueRequestBody,
   isZeroRateLowAmount,
@@ -101,6 +92,8 @@ export type IssueInvoiceFormProps = {
   readonly subtotalSatang?: number | null;
   /** Close the enclosing dialog (wired by the wrapper to `setOpen(false)`). */
   readonly onClose: () => void;
+  /** The POST is in flight: the dialog stays open (no Escape or scrim close). */
+  readonly onPendingChange?: (pending: boolean) => void;
 };
 
 export function IssueInvoiceForm({
@@ -115,6 +108,7 @@ export function IssueInvoiceForm({
   billNumberPrefix = 'SC',
   subtotalSatang = null,
   onClose,
+  onPendingChange,
 }: IssueInvoiceFormProps) {
   const t = useTranslations('admin.invoices.issue');
   const tForm = useTranslations('admin.invoices.issue.form');
@@ -123,6 +117,9 @@ export function IssueInvoiceForm({
   const router = useRouter();
   const [typed, setTyped] = useState('');
   const [pending, startTransition] = useTransition();
+  useEffect(() => {
+    onPendingChange?.(pending);
+  }, [pending, onPendingChange]);
 
   // 088 T021a / FR-032 — issue failure surfaces INLINE via a focused
   // role="alert" (never a transient toast); a concurrent 409 shows an inline
@@ -306,35 +303,36 @@ export function IssueInvoiceForm({
     <>
       {/* Pre-confirm summary — inside dialog body so SR narrates these numbers
           as part of the dialog content. */}
+      <div className="flex flex-col gap-[var(--aura-space-4)]">
       <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
         <div>
-          <dt className="text-muted-foreground">{tDetail('fields.memberId')}</dt>
+          <dt className="text-[var(--aura-fg-secondary)]">{tDetail('fields.memberId')}</dt>
           <dd className="font-medium">{summary.memberName}</dd>
         </div>
         <div>
-          <dt className="text-muted-foreground">{tDetail('fields.plan')}</dt>
+          <dt className="text-[var(--aura-fg-secondary)]">{tDetail('fields.plan')}</dt>
           <dd className="font-medium">
             {summary.planDisplayName}
-            <span className="ml-1 text-xs text-muted-foreground">
+            <span className="ms-1 text-xs text-[var(--aura-fg-secondary)]">
               / {formatCalendarYear(summary.planYear, locale)}
             </span>
           </dd>
         </div>
         <div>
-          <dt className="text-muted-foreground">{tDetail('fields.subtotal')}</dt>
+          <dt className="text-[var(--aura-fg-secondary)]">{tDetail('fields.subtotal')}</dt>
           <dd className="tabular-nums">{summary.subtotalText} THB</dd>
         </div>
         <div>
-          <dt className="text-muted-foreground">
+          <dt className="text-[var(--aura-fg-secondary)]">
             {tDetail('fields.vat')}
             {summary.vatPercent && (
-              <span className="ml-1 text-xs">({summary.vatPercent})</span>
+              <span className="ms-1 text-xs">({summary.vatPercent})</span>
             )}
           </dt>
           <dd className="tabular-nums">{summary.vatText} THB</dd>
         </div>
-        <div className="col-span-2 border-t pt-2">
-          <dt className="text-muted-foreground">{tDetail('fields.total')}</dt>
+        <div className="border-t border-[var(--aura-border-default)] pt-2 sm:col-span-2">
+          <dt className="text-[var(--aura-fg-secondary)]">{tDetail('fields.total')}</dt>
           <dd className="text-lg font-semibold tabular-nums">
             {summary.totalText} THB
           </dd>
@@ -344,44 +342,22 @@ export function IssueInvoiceForm({
       {/* 088 US8 (FR-023) — VAT-treatment control (non-membership) or the
           error-prevention caption (membership). Flag-gated. */}
       {taxAtPayment && showVatTreatmentControl && (
-        <fieldset className="grid gap-2 rounded-md border p-3">
-          <legend className="px-1 text-sm font-medium">
-            {tForm('vatTreatment.label')}
-          </legend>
-          <p id="vat-treatment-help" className="text-xs text-muted-foreground">
-            {tForm('vatTreatment.help')}
-          </p>
-          <div className="grid gap-1.5 pt-1">
-            <label className="flex min-h-11 items-center gap-2 text-sm">
-              <input
-                type="radio"
-                name="vat-treatment"
-                value="standard"
-                checked={vatTreatment === 'standard'}
-                onChange={() => handleVatTreatmentChange('standard')}
-                aria-describedby="vat-treatment-help"
-                className="size-4 accent-primary outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
-              />
-              <span>{tForm('vatTreatment.standard')}</span>
-            </label>
-            <label className="flex min-h-11 items-center gap-2 text-sm">
-              <input
-                type="radio"
-                name="vat-treatment"
-                value="zero_rated_80_1_5"
-                checked={vatTreatment === 'zero_rated_80_1_5'}
-                onChange={() => handleVatTreatmentChange('zero_rated_80_1_5')}
-                aria-describedby="vat-treatment-help"
-                className="size-4 accent-primary outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
-              />
-              <span>{tForm('vatTreatment.zeroRated')}</span>
-            </label>
-          </div>
-        </fieldset>
+        <RadioGroup
+          label={tForm('vatTreatment.label')}
+          hint={tForm('vatTreatment.help')}
+          name="vat-treatment"
+          value={vatTreatment}
+          onChange={(v) => handleVatTreatmentChange(v === 'zero_rated_80_1_5' ? 'zero_rated_80_1_5' : 'standard')}
+          options={[
+            { value: 'standard', label: tForm('vatTreatment.standard') },
+            { value: 'zero_rated_80_1_5', label: tForm('vatTreatment.zeroRated') },
+          ]}
+          className={TOUCH_CHOICES}
+        />
       )}
       {taxAtPayment && isMembership && (
         <p
-          className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground"
+          className="rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface-hover)] p-3 text-xs text-[var(--aura-fg-secondary)]"
           data-testid="vat-treatment-membership-caption"
         >
           {tForm('vatTreatment.membershipCaption')}
@@ -396,70 +372,53 @@ export function IssueInvoiceForm({
       {/* 088 US8 (FR-024) — MFA-certificate fields, revealed only on zero-rate. */}
       {isZeroRated && (
         <fieldset
-          className="grid gap-3 rounded-md border p-3"
+          className="flex flex-col gap-[var(--aura-space-3)] rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)] p-3"
           data-testid="zero-rate-cert-fields"
         >
           <legend className="px-1 text-sm font-medium">
             {tForm('cert.legend')}
           </legend>
-          <div className="grid gap-1.5">
-            <Label htmlFor="zero-rate-cert-no">
-              {tForm('cert.noLabel')}
-              <span aria-hidden="true" className="ml-0.5 text-destructive">
-                *
-              </span>
-            </Label>
-            <Input
+          <div className="flex flex-col gap-1">
+            <TextField
               id="zero-rate-cert-no"
               ref={certNoRef}
+              label={tForm('cert.noLabel')}
+              required
+              aria-required="true"
               value={certNo}
               onChange={(e) => setCertNo(e.target.value)}
               placeholder={tForm('cert.noPlaceholder')}
-              // T072b (FR-036) — ≥44px touch target on this new feature input;
-              // the shared Input is 36px and is NOT changed (bumped inline here).
-              className="min-h-11"
+              // T072b (FR-036) — ≥44px touch target on this new feature input.
+              className={TOUCH_FIELD}
               // T061g — mobile keyboard hint for the free-text cert number.
               inputMode="text"
               enterKeyHint="next"
               autoComplete="off"
               maxLength={CERT_NO_MAX}
-              aria-required="true"
               aria-invalid={certErrors.certNo ? true : undefined}
-              aria-describedby={
-                certErrors.certNo ? 'zero-rate-cert-no-error' : undefined
-              }
+              aria-describedby={certErrors.certNo ? 'zero-rate-cert-no-error' : undefined}
             />
             {certErrors.certNo && (
-              <p
-                id="zero-rate-cert-no-error"
-                role="alert"
-                className="text-xs text-destructive"
-              >
+              <p id="zero-rate-cert-no-error" role="alert" className="text-xs text-[var(--aura-fg-danger)]">
                 {tForm('cert.noRequired')}
               </p>
             )}
           </div>
-          <div className="grid gap-1.5">
-            <Label htmlFor="zero-rate-cert-date">{tForm('cert.dateLabel')}</Label>
-            <Input
+          <div className="flex flex-col gap-1">
+            <TextField
               id="zero-rate-cert-date"
               ref={certDateRef}
               type="date"
+              label={tForm('cert.dateLabel')}
               value={certDate}
               onChange={(e) => setCertDate(e.target.value)}
               // T072b (FR-036) — ≥44px touch target (new feature input).
-              className="min-h-11"
+              className={TOUCH_FIELD}
               aria-invalid={certErrors.certDate ? true : undefined}
-              aria-describedby={
-                certErrors.certDate ? 'zero-rate-cert-date-error' : undefined
-              }
+              aria-describedby={certErrors.certDate ? 'zero-rate-cert-date-error' : undefined}
             />
             {certErrors.certDate && (
-              <p
-                id="zero-rate-cert-date-error"
-                role="alert"
-                className="text-xs text-destructive"
-              >
+              <p id="zero-rate-cert-date-error" role="alert" className="text-xs text-[var(--aura-fg-danger)]">
                 {tForm('cert.dateFormat')}
               </p>
             )}
@@ -480,14 +439,9 @@ export function IssueInvoiceForm({
           />
           {/* 088 T061d — non-blocking ≥ 5,000 THB advisory (WARN, not a block). */}
           {lowAmountWarn && (
-            <InlineAlert
-              role="status"
-              tone="warning"
-              data-testid="zero-rate-low-amount-warning"
-            >
-              <TriangleAlertIcon className="size-4" aria-hidden="true" />
-              <InlineAlertDescription>{tForm('lowAmountWarning')}</InlineAlertDescription>
-            </InlineAlert>
+            <Alert role="status" tone="warning" data-testid="zero-rate-low-amount-warning">
+              {tForm('lowAmountWarning')}
+            </Alert>
           )}
         </fieldset>
       )}
@@ -496,18 +450,18 @@ export function IssueInvoiceForm({
       {taxAtPayment && review && (
         <section
           aria-labelledby="issue-review-heading"
-          className="grid gap-3 rounded-md border bg-muted/30 p-3 text-sm"
+          className="flex flex-col gap-3 rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface-hover)] p-3 text-sm"
         >
           <h3
             id="issue-review-heading"
-            className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+            className="text-xs font-medium uppercase tracking-wide text-[var(--aura-fg-secondary)]"
           >
             {t('review.heading')}
           </h3>
           <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {isMembership && (
               <div>
-                <dt className="text-muted-foreground">
+                <dt className="text-[var(--aura-fg-secondary)]">
                   {t('review.fields.branchLine')}
                 </dt>
                 <dd className="font-medium">
@@ -518,14 +472,14 @@ export function IssueInvoiceForm({
               </div>
             )}
             <div>
-              <dt className="text-muted-foreground">
+              <dt className="text-[var(--aura-fg-secondary)]">
                 {t('review.fields.vatTreatment')}
               </dt>
               <dd>
                 {isZeroRated ? (
                   // Text-badge (not colour-only) so a 0% sale is never pinned
                   // by accident — WCAG 1.4.1.
-                  <Badge variant="destructive" className="font-semibold">
+                  <Badge tone="danger" variant="solid">
                     {t('review.vatTreatmentValue.zeroRated')}
                   </Badge>
                 ) : (
@@ -537,7 +491,7 @@ export function IssueInvoiceForm({
             </div>
             {isZeroRated && certNo.trim() !== '' && (
               <div className="sm:col-span-2">
-                <dt className="text-muted-foreground">
+                <dt className="text-[var(--aura-fg-secondary)]">
                   {t('review.fields.cert')}
                 </dt>
                 <dd className="font-medium">
@@ -548,7 +502,7 @@ export function IssueInvoiceForm({
             )}
             {isMembership && whtNoteWillPrint !== undefined && (
               <div>
-                <dt className="text-muted-foreground">
+                <dt className="text-[var(--aura-fg-secondary)]">
                   {t('review.fields.whtNote')}
                 </dt>
                 <dd className="font-medium">
@@ -559,19 +513,16 @@ export function IssueInvoiceForm({
               </div>
             )}
           </dl>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-[var(--aura-fg-secondary)]">
             {t('review.billStreamNote', { prefix: billNumberPrefix })}
           </p>
 
           {review.warnings.length > 0 && (
-            <div className="grid gap-2">
+            <div className="flex flex-col gap-2">
               {review.warnings.includes('no_payment_path') && (
-                <InlineAlert role="status" tone="warning">
-                  <TriangleAlertIcon className="size-4" aria-hidden="true" />
-                  <InlineAlertDescription>
-                    {t('review.warnings.noPaymentPath')}
-                  </InlineAlertDescription>
-                </InlineAlert>
+                <Alert role="status" tone="warning">
+                  {t('review.warnings.noPaymentPath')}
+                </Alert>
               )}
               {/* Gated on `isMembership` to match the branch-line ROW above: a
                   non-membership (event-fee) sale renders no §86/4 branch line at
@@ -580,12 +531,9 @@ export function IssueInvoiceForm({
                   sentinel used to provide at the model's input. */}
               {isMembership &&
                 review.warnings.includes('no_branch_line_not_vat_registrant') && (
-                  <InlineAlert role="status" tone="warning">
-                    <TriangleAlertIcon className="size-4" aria-hidden="true" />
-                    <InlineAlertDescription>
-                      {t('review.warnings.notVatRegistrant')}
-                    </InlineAlertDescription>
-                  </InlineAlert>
+                  <Alert role="status" tone="warning">
+                    {t('review.warnings.notVatRegistrant')}
+                  </Alert>
                 )}
             </div>
           )}
@@ -593,62 +541,54 @@ export function IssueInvoiceForm({
       )}
 
       {showNoTaxIdHint && (
-        <InlineAlert tone="warning">
-          <InfoIcon className="size-4" aria-hidden="true" />
-          <InlineAlertDescription>
+        <Alert tone="warning" role="note" icon="info">
             {/* 088 (FR-014/SC-005) — under the bill→payment flow the issued
                 doc is a non-tax ใบแจ้งหนี้; the §86/4 tax invoice/receipt is
                 minted at payment. Legacy flow (flag OFF) still issues a §87
                 tax invoice at issue → keep the original copy. */}
             {t(taxAtPayment ? 'noTaxIdHint088' : 'noTaxIdHint')}
-          </InlineAlertDescription>
-        </InlineAlert>
+        </Alert>
       )}
 
       {/* FR-032 — inline, focused failure surface for the irreversible issue
           mutation (never a transient toast). */}
       {formError && (
-        <InlineAlert
+        // The wrapper is the live region and takes focus; the AURA alert
+        // inside only draws it (`role="none"`, so it is announced once).
+        <div
           ref={errorRef}
           tabIndex={-1}
-          tone={formError.kind === 'failure' ? 'destructive' : 'neutral'}
+          role="alert"
+          data-tone={formError.kind === 'failure' ? 'destructive' : 'neutral'}
           className="outline-none"
           data-testid="issue-invoice-error"
         >
-          <TriangleAlertIcon className="size-4" aria-hidden="true" />
-          {formError.kind === 'concurrent' ? (
-            <InlineAlertDescription className="flex flex-col items-start gap-2">
-              <span>{t('errors.concurrent')}</span>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="min-h-[44px]"
-                onClick={() => router.refresh()}
-              >
-                {t('errors.refreshAction')}
-              </Button>
-            </InlineAlertDescription>
-          ) : (
-            <InlineAlertDescription>{formError.message}</InlineAlertDescription>
-          )}
-        </InlineAlert>
+          <Alert
+            role="none"
+            tone={formError.kind === 'failure' ? 'danger' : 'info'}
+            action={
+              formError.kind === 'concurrent' ? (
+                <Button type="button" variant="secondary" size="sm" touchHeight onClick={() => router.refresh()}>
+                  {t('errors.refreshAction')}
+                </Button>
+              ) : undefined
+            }
+          >
+            {formError.kind === 'concurrent' ? t('errors.concurrent') : formError.message}
+          </Alert>
+        </div>
       )}
 
-      <div className="grid gap-2">
-        <Label htmlFor="issue-confirm">
-          {t('confirmCopy', { phrase: confirmPhrase })}
-        </Label>
-        <Input
+      <div className="flex flex-col gap-1">
+        <TextField
           id="issue-confirm"
+          label={t('confirmCopy', { phrase: confirmPhrase })}
           value={typed}
           onChange={(e) => setTyped(e.target.value)}
           placeholder={confirmPhrase}
-          // T072b (FR-036) — this typed-phrase gate predates 088 (F4), but it
-          // is bumped to ≥44px for intra-dialog target-size uniformity: it sits
-          // among the new 44px cert inputs and is the critical irreversible
-          // issue gate. One-class change; the shared Input primitive is unchanged.
-          className="min-h-11"
+          // T072b (FR-036) — the irreversible issue gate is 44px, as the cert
+          // inputs beside it are.
+          className={TOUCH_FIELD}
           autoComplete="off"
           inputMode="text"
           enterKeyHint="done"
@@ -656,40 +596,32 @@ export function IssueInvoiceForm({
           autoCapitalize="characters"
           spellCheck={false}
           aria-invalid={typed.length > 0 && !matches}
-          aria-describedby={
-            typed.length > 0 && !matches ? 'issue-confirm-error' : undefined
-          }
+          aria-describedby={typed.length > 0 && !matches ? 'issue-confirm-error' : undefined}
         />
         {typed.length > 0 && !matches && (
-          <p
-            id="issue-confirm-error"
-            role="alert"
-            className="text-xs text-destructive"
-          >
+          <p id="issue-confirm-error" role="alert" className="text-xs text-[var(--aura-fg-danger)]">
             {t('confirmMismatch', { phrase: confirmPhrase })}
           </p>
         )}
       </div>
 
-      <AlertDialogFooter>
-        <AlertDialogCancel disabled={pending}>{t('cancel')}</AlertDialogCancel>
-        <AlertDialogAction
-          onClick={(e) => {
-            e.preventDefault();
-            confirm();
-          }}
+      <div className="flex flex-wrap justify-end gap-[var(--aura-space-2)] max-sm:[&>*]:flex-1">
+        {/* Cancel takes the first focus (ux-standards § 6, the safe action). */}
+        <Button type="button" variant="secondary" touchHeight data-autofocus disabled={pending} onClick={onClose}>
+          {t('cancel')}
+        </Button>
+        <Button
+          type="button"
+          variant="primary"
+          touchHeight
+          loading={pending}
           disabled={!matches || pending}
-          aria-busy={pending}
+          onClick={confirm}
         >
-          {pending && (
-            <Loader2Icon
-              className="size-4 motion-safe:animate-spin"
-              aria-hidden="true"
-            />
-          )}
           {pending ? t('issuing') : t('issueButton')}
-        </AlertDialogAction>
-      </AlertDialogFooter>
+        </Button>
+      </div>
+      </div>
     </>
   );
 }

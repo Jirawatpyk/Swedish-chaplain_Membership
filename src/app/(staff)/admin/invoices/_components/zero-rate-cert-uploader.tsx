@@ -24,8 +24,7 @@
 import { useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { PaperclipIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
+import { Button } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
 
 /** Mirrors the use-case cap (5 MB) + accepted MIME allowlist. */
@@ -120,9 +119,9 @@ export function ZeroRateCertUploader({
     return (
       <div className="flex flex-col gap-2" data-testid="zero-rate-cert-attached">
         <span className="text-sm font-medium">{t('label')}</span>
-        <div className="flex items-center gap-2 rounded-md border bg-muted/30 p-2 text-sm">
+        <div className="flex items-center gap-2 rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface-hover)] p-2 text-sm">
           <PaperclipIcon
-            className="size-4 shrink-0 text-muted-foreground"
+            className="size-4 shrink-0 text-[var(--aura-fg-secondary)]"
             aria-hidden="true"
           />
           <span className="min-w-0 flex-1 truncate">
@@ -132,7 +131,8 @@ export function ZeroRateCertUploader({
             type="button"
             variant="ghost"
             size="sm"
-            className="min-h-[44px]"
+            // FR-036 — 44px at every width.
+            className="min-h-11"
             onClick={onRemove}
             disabled={uploading}
           >
@@ -146,9 +146,9 @@ export function ZeroRateCertUploader({
   return (
     <div className="flex flex-col gap-2">
       <span className="text-sm font-medium">{t('label')}</span>
-      <Label htmlFor="zero-rate-cert-file" className="sr-only">
+      <label htmlFor="zero-rate-cert-file" className="sr-only">
         {t('pickerLabel')}
-      </Label>
+      </label>
       <input
         id="zero-rate-cert-file"
         ref={fileRef}
@@ -159,11 +159,12 @@ export function ZeroRateCertUploader({
       />
       <Button
         type="button"
-        variant="outline"
+        variant="secondary"
+        icon="paperclip"
         onClick={handlePick}
         disabled={uploading}
-        // FR-036 — ≥44px touch target for the file-picker trigger.
-        className="min-h-[44px] self-start"
+        // FR-036 — ≥44px touch target for the file-picker trigger, at every width.
+        className="min-h-11 self-start"
       >
         {uploading ? t('uploadingLabel') : t('uploadButton')}
       </Button>
@@ -171,11 +172,11 @@ export function ZeroRateCertUploader({
         <progress aria-label={t('uploadingAria')} className="w-full" />
       )}
       {error && (
-        <div role="alert" className="text-caption text-destructive">
+        <div role="alert" className="text-xs text-[var(--aura-fg-danger)]">
           {error}
         </div>
       )}
-      <p className="text-caption text-muted-foreground">{t('helpText')}</p>
+      <p className="text-xs text-[var(--aura-fg-secondary)]">{t('helpText')}</p>
     </div>
   );
 }

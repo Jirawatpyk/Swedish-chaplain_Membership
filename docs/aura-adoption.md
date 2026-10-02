@@ -163,10 +163,11 @@ The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requ
 | 133 | 5.28.0: the bar's own "Clear all" reaches the touch target height | Nothing to change: the row is 44px on touch end to end |
 | 134 | 5.29.0: `DataTable` loading rows follow `rowHeight="auto"`; a column's `skeletonLines` draws one bar per text line, stacked skeleton cards keep their `data-label`, and `skeletonTouch` gives a touch-height footer a 44px bar | The renewal pipeline, tier upgrade and escalation task skeletons drop their own phone cards and the `max-sm:hidden` on `DataTableSkeleton`; the shared column layouts (`*-columns.ts`, `invoices-table-columns.ts`) carry `skeletonLines: 2` on two-line cells and `skeletonTouch` on touch-height actions |
 
-No item is open (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.test.ts` reads this table; a new gap goes here as `| #N | … |`):
+One item is open (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.test.ts` reads this table; a new gap goes here as `| #N | … |`):
 
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
+| #135 | Addendum 38 (US8b, the issue dialog): 088 FR-036 asks for 44px targets on the zero-rate radio rows, the certificate fields and the typed-phrase field at every width. AURA's fields are 32–36px, its radio rows 20px, and `touchHeight` exists on buttons only, below 640px or on a coarse pointer. Ask: a 44px size for TextField, RadioGroup and Checkbox rows that applies at every width | `src/app/(staff)/admin/invoices/_lib/touch-targets.ts`: a utility on the field root grows `.aura-input` and `.aura-choice` to 44px |
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 
