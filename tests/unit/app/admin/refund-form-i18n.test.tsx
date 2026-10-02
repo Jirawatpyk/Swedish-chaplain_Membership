@@ -382,3 +382,11 @@ describe('RefundForm — Track B: the waived-refund toast tells the truth', () =
     }
   });
 });
+
+describe('RefundForm — the buttons stay in view (spec 122 US8b, UX review)', () => {
+  it('keeps Cancel and Confirm in a row stuck to the bottom of the scrolling dialog body, stacked full width on a phone', () => {
+    renderForm();
+    const row = screen.getByTestId('refund-form-confirm').parentElement!;
+    expect(row).toHaveClass('sticky', 'bottom-0', 'max-sm:flex-col-reverse', 'max-sm:[&>*]:w-full');
+  });
+});

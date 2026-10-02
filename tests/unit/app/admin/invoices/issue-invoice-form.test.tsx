@@ -510,3 +510,11 @@ describe('IssueInvoiceDialog — AURA alertdialog', () => {
     expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 });
+
+describe('IssueInvoiceForm — the buttons stay in view (spec 122 US8b, UX review)', () => {
+  it('keeps Cancel and Issue in a row stuck to the bottom of the scrolling dialog body, stacked full width on a phone', () => {
+    renderForm();
+    const row = screen.getByRole('button', { name: enMessages.admin.invoices.issue.cancel }).parentElement!;
+    expect(row).toHaveClass('sticky', 'bottom-0', 'max-sm:flex-col-reverse', 'max-sm:[&>*]:w-full');
+  });
+});
