@@ -159,3 +159,15 @@ describe('change-request queue loading in the list card', () => {
     expect(container.querySelector('.aura-card .rounded-\\[var\\(--aura-radius-md\\)\\].border')).toBeNull();
   });
 });
+
+// UX review M1: on a phone the skeleton's cards take the real row's parts.
+describe('change-request queue loading on a phone', () => {
+  it('gives each skeleton row the real card parts: company as title, Review as a touch-height action', async () => {
+    const { default: Loading } = await import('@/app/(staff)/admin/change-requests/loading');
+    const { container } = render((await Loading()) as ReactElement);
+    const cells = [...container.querySelectorAll('[data-testid="queue-table-skeleton"] tbody tr:first-child td')];
+    expect(cells[0]).toHaveAttribute('data-card', 'title');
+    expect(cells[6]).toHaveAttribute('data-card', 'action');
+    expect(cells[6]?.querySelector('.h-11')).not.toBeNull();
+  });
+});

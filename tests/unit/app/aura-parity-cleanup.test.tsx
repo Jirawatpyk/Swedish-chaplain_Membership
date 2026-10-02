@@ -318,6 +318,9 @@ describe('US6 plans (parity-page comments)', () => {
       'src/app/(staff)/admin/members/new/loading.tsx',
       'src/app/(staff)/admin/members/[memberId]/edit/page.tsx',
       'src/app/(staff)/admin/members/[memberId]/edit/loading.tsx',
+      // their error boundaries draw the same column (UX review L1)
+      'src/app/(staff)/admin/members/[memberId]/edit/error.tsx',
+      'src/app/(staff)/admin/plans/clone/error.tsx',
     ];
     for (const page of pages) {
       const code = src(page);

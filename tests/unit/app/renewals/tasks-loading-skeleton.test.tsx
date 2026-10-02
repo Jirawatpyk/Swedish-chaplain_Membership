@@ -64,3 +64,16 @@ describe('escalation tasks loading in the list card', () => {
     ]);
   });
 });
+
+// UX review H1: AURA's loading rows are one 48px line (handoff #134), far
+// shorter than the queue's phone cards, so the phone keeps its own cards.
+describe('escalation tasks loading on a phone', () => {
+  it('draws the queue\'s own cards below 640px, ending in Done and ⋯ at touch height, and hides AURA\'s table there', async () => {
+    const host = await dom();
+    const cards = host.querySelector('[data-slot="phone-cards-skeleton"]');
+    expect(cards).toHaveClass('sm:hidden');
+    const actions = cards?.querySelector('[data-slot="row-actions-skeleton"]');
+    expect(actions?.querySelectorAll('[data-slot="skeleton-block"]')).toHaveLength(2);
+    expect(host.querySelector('.aura-bleed')?.closest('[aria-hidden="true"]')).toHaveClass('max-sm:hidden');
+  });
+});

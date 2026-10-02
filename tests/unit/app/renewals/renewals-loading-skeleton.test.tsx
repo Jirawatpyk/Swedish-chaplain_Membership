@@ -32,4 +32,19 @@ describe('renewal pipeline loading', () => {
     const heads = [...host.querySelectorAll('.aura-card [role="columnheader"]')].map((h) => h.textContent?.trim());
     expect(heads.slice(0, 4)).toEqual(['columns.tier', 'columns.company', 'columns.expires', 'columns.urgency']);
   });
+
+  it('draws the admin\'s checkbox column, keeps its own phone cards, and announces the load once (UX review M2, H1, L2)', async () => {
+    const host = document.createElement('div');
+    host.innerHTML = renderToStaticMarkup(
+      <NextIntlClientProvider locale="en" messages={en}>
+        {(await Loading()) as ReactElement}
+      </NextIntlClientProvider>,
+    );
+    expect(host.querySelector('.aura-bleed .aura-table__sel')).not.toBeNull();
+    expect(host.querySelector('.aura-bleed')?.closest('[aria-hidden="true"]')).toHaveClass('max-sm:hidden');
+    expect(host.querySelector('[data-slot="phone-cards-skeleton"]')).toHaveClass('sm:hidden');
+    const announced = [...host.querySelectorAll('[role="status"]')].filter((el) => !el.closest('[aria-hidden="true"]'));
+    expect(announced).toHaveLength(1);
+    expect(host.querySelector('[data-slot="layout-container"]')).toHaveAttribute('aria-busy', 'true');
+  });
 });
