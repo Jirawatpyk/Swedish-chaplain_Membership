@@ -34,6 +34,11 @@
  */
 import { test, expect } from '@playwright/test';
 import { signInAsAdmin } from './helpers/admin-session';
+import en from '../../src/i18n/messages/en.json';
+
+// The picker is named by its visible <Label> (csv-mapping-form.tsx:687 passes
+// `triggerAriaLabelledBy`), so read the label from the message file.
+const EVENT_PICKER_LABEL = en.admin.events.import.eventPicker.fieldLabel;
 
 // Navigations are RELATIVE so Playwright resolves them against the config's
 // `baseURL`. The old `PLAYWRIGHT_BASE_URL` constant is a name nothing sets —
@@ -111,11 +116,49 @@ test.describe.serial('F6 CSV fallback import — US5 AS1–AS3', () => {
 
   let sharedContext: import('@playwright/test').BrowserContext;
   let sharedPage: import('@playwright/test').Page;
+  /** Name of the event seeded in `beforeAll`, used to pick it in the dropdown. */
+  let seededEventName: string;
+
+  /**
+   * Seed one event through the real route so the picker has something to
+   * select. Done ONCE before any navigation: the picker loads its list on
+   * mount, and a reload after upload would throw the preview away.
+   */
+  async function seedEvent(page: import('@playwright/test').Page): Promise<string> {
+    const ts = Date.now();
+    const name = `CSV Fallback ${ts}`;
+    const res = await page.request.post('/api/admin/events', {
+      // `src/lib/csrf.ts` rejects a state-changing /api/** request with no
+      // Origin; derive it from the page so any port works.
+      headers: { Origin: new URL(page.url()).origin },
+      data: {
+        externalId: `csv-fallback-${ts}`,
+        name,
+        startDate: new Date(ts + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        category: null,
+      },
+    });
+    if (![200, 201].includes(res.status())) {
+      throw new Error(`seedEvent failed: ${res.status()} ${await res.text()}`);
+    }
+    return name;
+  }
+
+  /** Satisfy the F6.1 event-binding gate: open the picker, choose the seed. */
+  async function selectSeededEvent(
+    page: import('@playwright/test').Page,
+  ): Promise<void> {
+    await page
+      .getByRole('combobox', { name: EVENT_PICKER_LABEL, exact: true })
+      .click();
+    await page.getByRole('option', { name: new RegExp(seededEventName) }).click();
+  }
 
   test.beforeAll(async ({ browser }) => {
     sharedContext = await browser.newContext();
     sharedPage = await sharedContext.newPage();
     await signInAsAdmin(sharedPage);
+    seededEventName = await seedEvent(sharedPage);
   });
 
   test.afterAll(async () => {
@@ -149,8 +192,16 @@ test.describe.serial('F6 CSV fallback import — US5 AS1–AS3', () => {
       sharedPage.locator('[data-testid="column-mapping-attendee_email"]'),
     ).toBeVisible();
 
-    // Confirm CTA enabled when all required columns mapped.
+    // F6.1 (T028, 4-phase wizard): mapping alone no longer enables Confirm —
+    // `csv-mapping-form.tsx:593` gates it on `selectedEventId !== null`, because
+    // the dropdown selection is the authoritative event binding and overrides
+    // any event column in the CSV. So assert the gate first, then satisfy it,
+    // then assert the CTA. Before this, the test asserted `toBeEnabled()` on a
+    // button F6.1 had made permanently disabled at that point.
     const confirmCta = sharedPage.getByRole('button', { name: /import|confirm|upload/i });
+    await expect(confirmCta).toBeDisabled();
+
+    await selectSeededEvent(sharedPage);
     await expect(confirmCta).toBeEnabled();
   });
 
@@ -186,6 +237,9 @@ test.describe.serial('F6 CSV fallback import — US5 AS1–AS3', () => {
 
     // Confirm preview → kick off import.
     const t0 = Date.now();
+    // F6.1 gate: the dropdown selection is the authoritative event binding,
+    // so Confirm stays disabled until one is chosen (csv-mapping-form.tsx:593).
+    await selectSeededEvent(sharedPage);
     await sharedPage.getByRole('button', { name: /import|confirm|upload/i }).click();
 
     // Result card surfaces. 90s timeout covers the worst-case
@@ -272,6 +326,9 @@ test.describe.serial('F6 CSV fallback import — US5 AS1–AS3', () => {
       mimeType: 'text/csv',
       buffer: buildSeededCsv(),
     });
+    // F6.1 gate: the dropdown selection is the authoritative event binding,
+    // so Confirm stays disabled until one is chosen (csv-mapping-form.tsx:593).
+    await selectSeededEvent(sharedPage);
     await sharedPage.getByRole('button', { name: /import|confirm|upload/i }).click();
     await expect(
       sharedPage.locator('[data-testid="csv-import-result"]'),
@@ -289,6 +346,9 @@ test.describe.serial('F6 CSV fallback import — US5 AS1–AS3', () => {
       mimeType: 'text/csv',
       buffer: buildSeededCsv(),
     });
+    // F6.1 gate: the dropdown selection is the authoritative event binding,
+    // so Confirm stays disabled until one is chosen (csv-mapping-form.tsx:593).
+    await selectSeededEvent(sharedPage);
     await sharedPage.getByRole('button', { name: /import|confirm|upload/i }).click();
     await expect(
       sharedPage.locator('[data-testid="csv-import-result"]'),
