@@ -25,7 +25,6 @@ import {
 import { computeRemainingRefundable } from '@/modules/payments';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { Card, CardContent } from '@/components/ui/card';
 import { getInvoicePaymentActivity } from '../../_lib/cached-payment-activity';
 import {
   CreditNoteForm,
@@ -149,10 +148,16 @@ export default async function NewCreditNotePage({
 
   return (
     <FormContainer>
+      {/* The back link above the title, as on the void page and the board. */}
+      <Link
+        href={`/admin/invoices/${invoiceId}`}
+        className="inline-flex items-center gap-1 self-start text-sm text-[var(--aura-fg-accent)] hover:underline"
+      >
+        <ArrowLeftIcon className="size-4" aria-hidden="true" />
+        {t('backToInvoice')}
+      </Link>
       <PageHeader title={t('title')} subtitle={t('description')} />
-      <Card>
-        <CardContent>
-          <CreditNoteForm
+      <CreditNoteForm
             invoiceId={invoiceId}
             // documentNumber-FIRST so legacy IN-…/separate-mode keep their
             // §87 number; a paid 088 invoice (documentNumber NULL) falls
@@ -167,15 +172,6 @@ export default async function NewCreditNotePage({
             paymentChannel={paymentChannel}
             onlineRefundState={onlineRefundState}
           />
-        </CardContent>
-      </Card>
-      <Link
-        href={`/admin/invoices/${invoiceId}`}
-        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:underline"
-      >
-        <ArrowLeftIcon className="size-4" aria-hidden="true" />
-        {t('backToInvoice')}
-      </Link>
     </FormContainer>
   );
 }

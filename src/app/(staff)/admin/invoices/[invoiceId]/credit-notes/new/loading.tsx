@@ -1,15 +1,14 @@
 import { getTranslations } from 'next-intl/server';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card } from '@jirawatpyk/aura-react/server';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import {
-  PageSkeletonShell,
-  SkeletonBlock,
-} from '@/components/shell/page-skeletons';
+import { PageSkeletonShell, SkeletonBlock } from '@/components/shell/page-skeletons';
 
 /**
- * T080 — /admin/invoices/[invoiceId]/credit-notes/new loading skeleton.
- * Reserves the 3-field form shape (amount, reason, typed confirm).
+ * T080 — /admin/invoices/[invoiceId]/credit-notes/new loading skeleton, on
+ * AURA (spec 122 US8b, T827; board `Admin-credit-note`): the card with the
+ * invoice summary and the three fields (amount, reason, typed confirm), then
+ * the button row.
  */
 export default async function Loading() {
   const t = await getTranslations('admin.creditNotes.new');
@@ -18,27 +17,29 @@ export default async function Loading() {
     <PageSkeletonShell ariaLabel={tLayout('loadingForm')}>
       <FormContainer>
         <PageHeader title={t('title')} subtitle={t('description')} />
-        <Card>
-          <CardContent className="flex flex-col gap-6">
-            <SkeletonBlock className="h-14 w-full" />
-            <div className="grid gap-2">
-              <SkeletonBlock className="h-3 w-24" />
-              <SkeletonBlock className="h-9 w-full" />
+        <div className="flex flex-col gap-[var(--aura-space-5)]" aria-hidden="true">
+          <Card>
+            <div className="flex flex-col gap-[var(--aura-space-5)]">
+              <SkeletonBlock className="h-16 w-full" />
+              <div className="flex flex-col gap-[var(--aura-space-2)]">
+                <SkeletonBlock className="h-4 w-24" />
+                <SkeletonBlock className="h-[var(--aura-input-height)] w-full" />
+              </div>
+              <div className="flex flex-col gap-[var(--aura-space-2)]">
+                <SkeletonBlock className="h-4 w-24" />
+                <SkeletonBlock className="h-20 w-full" />
+              </div>
+              <div className="flex flex-col gap-[var(--aura-space-2)]">
+                <SkeletonBlock className="h-4 w-48" />
+                <SkeletonBlock className="h-[var(--aura-input-height)] w-full" />
+              </div>
             </div>
-            <div className="grid gap-2">
-              <SkeletonBlock className="h-3 w-24" />
-              <SkeletonBlock className="h-20 w-full" />
-            </div>
-            <div className="grid gap-2">
-              <SkeletonBlock className="h-3 w-48" />
-              <SkeletonBlock className="h-9 w-full" />
-            </div>
-            <div className="flex gap-2">
-              <SkeletonBlock className="h-9 w-32" />
-              <SkeletonBlock className="h-9 w-24" />
-            </div>
-          </CardContent>
-        </Card>
+          </Card>
+          <div className="flex justify-end gap-[var(--aura-space-2)]">
+            <SkeletonBlock className="h-11 w-24" />
+            <SkeletonBlock className="h-11 w-36" />
+          </div>
+        </div>
       </FormContainer>
     </PageSkeletonShell>
   );

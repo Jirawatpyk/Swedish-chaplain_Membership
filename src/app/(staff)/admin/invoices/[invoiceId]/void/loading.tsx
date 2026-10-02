@@ -1,15 +1,14 @@
 import { getTranslations } from 'next-intl/server';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card } from '@jirawatpyk/aura-react/server';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import {
-  PageSkeletonShell,
-  SkeletonBlock,
-} from '@/components/shell/page-skeletons';
+import { PageSkeletonShell, SkeletonBlock } from '@/components/shell/page-skeletons';
 
 /**
- * T102 — /admin/invoices/[invoiceId]/void loading skeleton.
- * Reserves the 2-field form shape (reason textarea, typed confirm).
+ * T102 — /admin/invoices/[invoiceId]/void loading skeleton, on AURA (spec
+ * 122 US8b, T827; board `Admin-void`): the warning, then the card with the
+ * reason (and its helper line, UX-6) and the typed confirmation, then the
+ * button row — stacked full width below 640px with Void on top, as the page.
  */
 export default async function Loading() {
   const t = await getTranslations('admin.invoices.void');
@@ -18,28 +17,26 @@ export default async function Loading() {
     <PageSkeletonShell ariaLabel={tLayout('loadingForm')}>
       <FormContainer>
         <PageHeader title={t('title')} subtitle={t('description')} />
-        <Card>
-          <CardContent className="flex flex-col gap-6">
-            <SkeletonBlock className="h-14 w-full" />
-            <div className="grid gap-2">
-              <SkeletonBlock className="h-3 w-24" />
-              <SkeletonBlock className="h-20 w-full" />
-              {/* UX-6 — reserve helper-line shape to prevent CLS. */}
-              <SkeletonBlock className="h-3 w-40" />
+        <div className="flex flex-col gap-[var(--aura-space-5)]" aria-hidden="true">
+          <SkeletonBlock className="h-16 w-full" />
+          <Card>
+            <div className="flex flex-col gap-[var(--aura-space-5)]">
+              <div className="flex flex-col gap-[var(--aura-space-2)]">
+                <SkeletonBlock className="h-4 w-24" />
+                <SkeletonBlock className="h-20 w-full" />
+                <SkeletonBlock className="h-3 w-40" />
+              </div>
+              <div className="flex flex-col gap-[var(--aura-space-2)]">
+                <SkeletonBlock className="h-4 w-48" />
+                <SkeletonBlock className="h-[var(--aura-input-height)] w-full" />
+              </div>
             </div>
-            <div className="grid gap-2">
-              <SkeletonBlock className="h-3 w-48" />
-              <SkeletonBlock className="h-9 w-full" />
-            </div>
-            {/* R2 F-5: mirror the real VoidConfirmDialog button row.
-                `flex-row-reverse` on mobile so destructive Submit
-                renders on the right; sm: reverts to row order. */}
-            <div className="flex flex-row-reverse items-center justify-end gap-2 sm:flex-row sm:justify-start">
-              <SkeletonBlock className="h-9 w-24" />
-              <SkeletonBlock className="h-9 w-32" />
-            </div>
-          </CardContent>
-        </Card>
+          </Card>
+          <div className="flex justify-end gap-[var(--aura-space-2)] max-sm:flex-col">
+            <SkeletonBlock className="h-11 w-32 max-sm:w-full" />
+            <SkeletonBlock className="h-11 w-24 max-sm:w-full" />
+          </div>
+        </div>
       </FormContainer>
     </PageSkeletonShell>
   );

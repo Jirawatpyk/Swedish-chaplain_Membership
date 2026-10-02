@@ -24,20 +24,8 @@ import { useEffect, useMemo, useRef, useState, useTransition, useCallback } from
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
-import { Loader2Icon, TriangleAlertIcon } from 'lucide-react';
+import { Alert, Button, Card, Checkbox, RadioGroup, TextField, Textarea, buttonClass } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Button, buttonVariants } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import {
-  InlineAlert,
-  InlineAlertDescription,
-  InlineAlertTitle,
-} from '@/components/ui/inline-alert';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { cn } from '@/lib/utils';
 import { formatSatangThb } from '@/lib/format-thb';
 import { routeCreditNoteError } from './credit-note-error-routing';
 
@@ -277,36 +265,37 @@ export function CreditNoteForm({
           effect move focus here so the admin cannot miss it. A concurrent 409
           shows a "refresh" prompt; other failures show a destructive alert. */}
       {formError && (
-        <InlineAlert
+        // The wrapper is the live region and takes focus; the AURA alert
+        // inside only draws it (`role="none"`, so it is announced once).
+        <div
           ref={errorRef}
           tabIndex={-1}
-          tone={formError.kind === 'failure' ? 'destructive' : 'neutral'}
+          role="alert"
+          data-tone={formError.kind === 'failure' ? 'destructive' : 'neutral'}
           className="outline-none"
           data-testid="credit-note-error"
         >
-          <TriangleAlertIcon className="size-4" aria-hidden="true" />
-          {formError.kind === 'concurrent' ? (
-            <InlineAlertDescription className="flex flex-col items-start gap-2">
-              <span>{t('errors.concurrent')}</span>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="min-h-[44px]"
-                onClick={() => router.refresh()}
-              >
-                {t('errors.refreshAction')}
-              </Button>
-            </InlineAlertDescription>
-          ) : (
-            <InlineAlertDescription>{formError.message}</InlineAlertDescription>
-          )}
-        </InlineAlert>
+          <Alert
+            role="none"
+            tone={formError.kind === 'failure' ? 'danger' : 'info'}
+            action={
+              formError.kind === 'concurrent' ? (
+                <Button type="button" variant="secondary" size="sm" touchHeight onClick={() => router.refresh()}>
+                  {t('errors.refreshAction')}
+                </Button>
+              ) : undefined
+            }
+          >
+            {formError.kind === 'concurrent' ? t('errors.concurrent') : formError.message}
+          </Alert>
+        </div>
       )}
-      <div className="rounded-md border bg-muted/40 p-3 text-sm">
-        <p className="text-muted-foreground">
+      <Card>
+      <div className="flex flex-col gap-[var(--aura-space-5)]">
+      <div className="rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface-hover)] p-3 text-sm">
+        <p className="text-[var(--aura-fg-secondary)]">
           {t('againstInvoice')}{' '}
-          <span className="font-mono font-medium text-foreground">
+          <span className="font-mono font-medium text-[var(--aura-fg-primary)]">
             {documentNumber}
           </span>
         </p>
@@ -328,72 +317,50 @@ export function CreditNoteForm({
           the Issue refund action (it issues its own credit note); a manual
           credit note here also shrinks what that action can still refund. */}
       {requiresOnlineAck && (
-        <InlineAlert tone="warning" role="note" data-testid="cn-online-payment-warning">
-          <TriangleAlertIcon className="size-4" aria-hidden="true" />
-          <InlineAlertTitle>
-            {onlineRefundState === 'unknown'
-              ? t('onlinePayment.unknownTitle')
-              : t('onlinePayment.title')}
-          </InlineAlertTitle>
-          <InlineAlertDescription className="flex flex-col items-start gap-3 text-foreground">
-            <p>
-              {onlineRefundState === 'unknown'
-                ? t('onlinePayment.unknownBody')
-                : t('onlinePayment.body')}
-            </p>
+        <Alert
+          tone="warning"
+          role="note"
+          data-testid="cn-online-payment-warning"
+          title={onlineRefundState === 'unknown' ? t('onlinePayment.unknownTitle') : t('onlinePayment.title')}
+        >
+          <div className="flex flex-col items-start gap-3">
+            <p>{onlineRefundState === 'unknown' ? t('onlinePayment.unknownBody') : t('onlinePayment.body')}</p>
             <Link
               href={`/admin/invoices/${invoiceId}?refund=1`}
-              className={cn(
-                buttonVariants({ variant: 'outline', size: 'sm' }),
-                'min-h-[44px]',
-              )}
+              className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}
             >
               {t('onlinePayment.refundAction')}
             </Link>
-            {/* A real <label> so the sentence is clickable too (44px row); the
-                visible text stays aria-hidden so the name isn't read twice. */}
-            <label className="flex min-h-[44px] cursor-pointer items-start gap-2">
-              <Checkbox
-                className="mt-0.5"
-                // Base UI's visible role=checkbox element carries its own
-                // generated id, so name it directly (same fix as the member
-                // form's art14_attested checkbox).
-                aria-label={t('onlinePayment.acknowledge')}
-                checked={onlineRefundAcknowledged}
-                onCheckedChange={(checked: boolean) =>
-                  setOnlineRefundAcknowledged(checked)
-                }
-              />
-              <span aria-hidden="true" className="text-sm">
-                {t('onlinePayment.acknowledge')}
-              </span>
-            </label>
-          </InlineAlertDescription>
-        </InlineAlert>
+            <Checkbox
+              checked={onlineRefundAcknowledged}
+              onChange={(checked: boolean) => setOnlineRefundAcknowledged(checked)}
+            >
+              {t('onlinePayment.acknowledge')}
+            </Checkbox>
+          </div>
+        </Alert>
       )}
 
-      <div className="grid gap-2">
-        <Label htmlFor="cn-amount">{t('amountLabel')}</Label>
-        <div className="flex items-center gap-2">
-          <Input
-            id="cn-amount"
-            type="number"
-            inputMode="decimal"
-            step="0.01"
-            min="0"
-            value={amountThb}
-            onChange={(e) => setAmountThb(e.target.value)}
-            required
-            aria-describedby="cn-amount-help"
-            aria-invalid={exceedsRemainder || (amountThb.length > 0 && !amountValid)}
-          />
-          <span className="text-sm text-muted-foreground">{currencySymbol}</span>
-        </div>
-        <p id="cn-amount-help" className="text-xs text-muted-foreground">
+      <div className="flex flex-col gap-1">
+        <TextField
+          id="cn-amount"
+          label={t('amountLabel')}
+          required
+          type="number"
+          inputMode="decimal"
+          step="0.01"
+          min="0"
+          value={amountThb}
+          onChange={(e) => setAmountThb(e.target.value)}
+          suffix={currencySymbol}
+          aria-describedby="cn-amount-help"
+          aria-invalid={exceedsRemainder || (amountThb.length > 0 && !amountValid)}
+        />
+        <p id="cn-amount-help" className="text-xs text-[var(--aura-fg-secondary)]">
           {t('amountHelp')}
         </p>
         {exceedsRemainder && (
-          <p role="alert" className="text-xs text-destructive">
+          <p role="alert" className="text-xs text-[var(--aura-fg-danger)]">
             {t('exceedsRemainder', {
               remaining: formatRemaining(remainingSatang, locale, currencySymbol),
             })}
@@ -413,102 +380,50 @@ export function CreditNoteForm({
           legend alone give the group an accessible name (WCAG) — that is
           sufficient since a valid selection always exists. */}
       {showMembershipEffect && (
-        <fieldset
-          className="flex flex-col gap-2 rounded-md border p-3"
-          data-testid="cn-membership-effect-fieldset"
-        >
-          <legend className="mb-1 text-sm font-medium">
-            {t('membershipEffect.legend')}
-          </legend>
+        <div data-testid="cn-membership-effect-fieldset">
           <RadioGroup
+            label={t('membershipEffect.legend')}
+            name="cn-membership-effect"
             value={membershipEffect}
-            onValueChange={(v) =>
-              setMembershipEffect(v === 'cancel_membership' ? 'cancel_membership' : 'keep')
-            }
-            className="gap-3"
-          >
-            <div className="flex items-start gap-2 rounded-md border p-3">
-              <RadioGroupItem
-                id="cn-membership-effect-keep"
-                value="keep"
-                className="mt-0.5"
-                aria-labelledby="cn-membership-effect-keep-label"
-                aria-describedby="cn-membership-effect-keep-desc"
-              />
-              <Label
-                htmlFor="cn-membership-effect-keep"
-                className="flex cursor-pointer flex-col gap-0.5"
-              >
-                <span id="cn-membership-effect-keep-label" className="font-medium">
-                  {t('membershipEffect.keep.label')}
-                </span>
-                {/* Option 1b — make the coverage meaning explicit: a 'keep' is a
-                    paperwork correction where the member was NOT refunded, so
-                    renewal coverage is retained. */}
-                <span
-                  id="cn-membership-effect-keep-desc"
-                  className="text-xs text-muted-foreground"
-                >
-                  {t('membershipEffect.keep.description')}
-                </span>
-              </Label>
-            </div>
-            <div className="flex items-start gap-2 rounded-md border p-3">
-              <RadioGroupItem
-                id="cn-membership-effect-cancel"
-                value="cancel_membership"
-                className="mt-0.5"
-                aria-labelledby="cn-membership-effect-cancel-label"
-                aria-describedby="cn-membership-effect-cancel-desc"
-              />
-              <Label
-                htmlFor="cn-membership-effect-cancel"
-                className="flex cursor-pointer flex-col gap-0.5"
-              >
-                {/* Warning-styled — this option triggers an F8 cascade that
-                    cancels the member's in-flight renewal cycles. */}
-                <span
-                  id="cn-membership-effect-cancel-label"
-                  className="font-medium text-amber-900 dark:text-amber-200"
-                >
-                  {t('membershipEffect.cancelMembership.label')}
-                </span>
-                <span
-                  id="cn-membership-effect-cancel-desc"
-                  className="text-xs text-muted-foreground"
-                >
-                  {t('membershipEffect.cancelMembership.description')}
-                </span>
-              </Label>
-            </div>
-          </RadioGroup>
-        </fieldset>
+            onChange={(v) => setMembershipEffect(v === 'cancel_membership' ? 'cancel_membership' : 'keep')}
+            options={[
+              // Option 1b — 'keep' is a paperwork correction where the member
+              // was NOT refunded, so renewal coverage is retained.
+              { value: 'keep', label: t('membershipEffect.keep.label'), description: t('membershipEffect.keep.description') },
+              // This option triggers an F8 cascade that cancels the member's
+              // in-flight renewal cycles; its description says so.
+              {
+                value: 'cancel_membership',
+                label: t('membershipEffect.cancelMembership.label'),
+                description: t('membershipEffect.cancelMembership.description'),
+              },
+            ]}
+          />
+        </div>
       )}
 
-      <div className="grid gap-2">
-        <Label htmlFor="cn-reason">{t('reasonLabel')}</Label>
+      <div className="flex flex-col gap-1">
         <Textarea
           id="cn-reason"
+          label={t('reasonLabel')}
+          required
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           rows={3}
           maxLength={500}
-          required
           aria-describedby="cn-reason-help"
           // W1-10 (a11y): surface validity to AT like the amount/confirm fields.
           aria-invalid={reason.length > 0 && !reasonValid}
         />
-        <p id="cn-reason-help" className="text-xs text-muted-foreground">
+        <p id="cn-reason-help" className="text-xs text-[var(--aura-fg-secondary)]">
           {t('reasonHelp')} ({reason.length}/500)
         </p>
       </div>
 
-      <div className="grid gap-2">
-        <Label htmlFor="cn-confirm">
-          {t('confirmCopy', { phrase: confirmPhrase })}
-        </Label>
-        <Input
+      <div className="flex flex-col gap-1">
+        <TextField
           id="cn-confirm"
+          label={t('confirmCopy', { phrase: confirmPhrase })}
           value={typed}
           onChange={(e) => setTyped(e.target.value)}
           placeholder={confirmPhrase}
@@ -519,36 +434,36 @@ export function CreditNoteForm({
           autoCapitalize="characters"
           spellCheck={false}
           aria-invalid={typed.length > 0 && !matches}
-          aria-describedby={
-            typed.length > 0 && !matches ? 'cn-confirm-error' : undefined
-          }
+          aria-describedby={typed.length > 0 && !matches ? 'cn-confirm-error' : undefined}
         />
         {typed.length > 0 && !matches && (
-          <p id="cn-confirm-error" role="alert" className="text-xs text-destructive">
+          <p id="cn-confirm-error" role="alert" className="text-xs text-[var(--aura-fg-danger)]">
             {t('confirmMismatch', { phrase: confirmPhrase })}
           </p>
         )}
       </div>
+      </div>
+      </Card>
 
-      <div className="flex items-center gap-2">
-        <Button type="submit" disabled={!canSubmit} aria-busy={pending}>
-          {pending && (
-            <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" />
-          )}
-          {pending ? t('submitting') : t('submit')}
-        </Button>
+      {/* Cancel then the primary action, at the card's end (board
+          Admin-credit-note); full width on a phone. */}
+      <div className="flex justify-end gap-[var(--aura-space-2)] max-sm:[&>*]:flex-1">
         <Button
           type="button"
-          variant="ghost"
+          variant="secondary"
+          touchHeight
           onClick={() => router.push(`/admin/invoices/${invoiceId}`)}
           disabled={pending}
         >
           {t('cancel')}
         </Button>
+        <Button type="submit" variant="primary" icon="check" touchHeight loading={pending} disabled={!canSubmit}>
+          {pending ? t('submitting') : t('submit')}
+        </Button>
       </div>
       {/* A disabled button can't take focus, so say why it is disabled. */}
       {requiresOnlineAck && !onlineRefundAcknowledged && (
-        <p className="-mt-4 text-xs text-muted-foreground" data-testid="cn-ack-required-hint">
+        <p className="-mt-4 text-end text-xs text-[var(--aura-fg-secondary)]" data-testid="cn-ack-required-hint">
           {t('onlinePayment.ackRequiredHint')}
         </p>
       )}
