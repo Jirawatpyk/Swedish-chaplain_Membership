@@ -56,7 +56,9 @@ export function InvoiceCreateSwitcher({
     <div className="flex flex-col gap-[var(--aura-space-6)]">
       {/* Spec 122 US8 (T807, `Admin-invoice-new`) — the question as the card's
           title, an AURA radio group named "Invoice type" with each option's
-          hint as its description (read after the name, never in it). */}
+          hint as its description. AURA 5.25 puts the description inside the
+          option's label, so it is read as part of the name (AURA handoff #125
+          asks for aria-describedby). */}
       <Card title={t('legend')} headingLevel={2}>
         <RadioGroup
           name="invoice-type"

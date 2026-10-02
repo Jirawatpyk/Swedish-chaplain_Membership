@@ -109,6 +109,11 @@ describe('<AutoRenewalQueueActions> — visibility gate', () => {
     );
   });
 
+  it('the trigger is 44px on touch, like every card ⋯ (touchHeight)', () => {
+    renderActions();
+    expect(screen.getByTestId('queue-row-actions-trigger')).toHaveClass('aura-icon-btn--touch');
+  });
+
   it('the menu lists all three actions, each with an icon; Discard is the danger item', () => {
     renderActions();
     const menu = openMenu();

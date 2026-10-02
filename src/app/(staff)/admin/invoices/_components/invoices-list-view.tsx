@@ -110,7 +110,9 @@ export async function renderInvoicesListView({
               ? draftsHidden
                 ? t('list.countLineDraftsHint', { count: total })
                 : t('list.countLine', { count: total })
-              : t('list.resultCount', { count: total })}
+              : hasFilters
+                ? t('list.resultCount', { count: total })
+                : t('list.empty')}
           </p>
           {payIntent && isAdmin && hasRows ? (
             // FR-035 — guidance to the per-row Record payment button, not an

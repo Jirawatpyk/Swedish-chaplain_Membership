@@ -36,6 +36,7 @@ import { cn } from '@/lib/utils';
 import { invoiceStatusTone } from '@/components/invoices/invoice-status-tone';
 import { downloadInvoice, downloadReceipt } from '../_lib/download-receipt-client';
 import { RecordPaymentDialog } from './record-payment-dialog';
+import { INVOICES_COLUMN_LAYOUT } from './invoices-table-columns';
 import {
   AutoRenewalQueueBadges,
   type AutoRenewalQueueMeta,
@@ -406,9 +407,16 @@ export function InvoicesTable({
           onSelect: () => void handleRowDownload('receipt', r.invoiceId, `${receiptNumber}-receipt.pdf`),
         });
       }
-      const menuName = t('actions.moreAria', { number: r.status === 'draft' ? t('draftNumberLabel') : r.documentNumber });
+      // A draft has no number yet, so its ⋯ is named for the member (like the
+      // number link), never a bare "Draft" shared by every draft row.
+      const menuName =
+        r.status === 'draft'
+          ? t('actions.moreDraftAria', { name: r.memberName })
+          : t('actions.moreAria', { number: r.documentNumber });
+      // A fragment, so the button sits directly in AURA's cell and its card
+      // footer rule can grow it to the row's width on a phone.
       return (
-        <div className="flex w-full items-center justify-between gap-1">
+        <>
           {showRecordPayment ? (
             <RecordPaymentDialog
               invoiceId={r.invoiceId}
@@ -423,20 +431,55 @@ export function InvoicesTable({
               triggerSize="sm"
               triggerId={`record-payment-${r.invoiceId}`}
               triggerTestId="row-record-payment-trigger"
+              // The refresh turns the row paid and the trigger unmounts; the ⋯ stays.
+              finalFocusFallbackId={`row-menu-${r.invoiceId}`}
             />
-          ) : (
-            <span />
-          )}
+          ) : null}
           <DropdownMenu
             label={menuName}
-            trigger={<IconButton icon="ellipsis" size="sm" label={menuName} />}
+            trigger={
+              <IconButton id={`row-menu-${r.invoiceId}`} icon="ellipsis" size="sm" touchHeight label={menuName} />
+            }
             items={items}
           />
-        </div>
+        </>
       );
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- handleRowDownload only reads the setters and translators
     [t, canRecordPayment, canManageQueueActions, showQueueMetaColumn, todayIso, downloadingKeys],
+  );
+
+  // The receipt's async state (088 T066b): a "generating" line while the
+  // §86/4 receipt renders, a link to the invoice when it failed (actionable,
+  // never a forever-pending state). Plain text, not a live region or
+  // aria-busy: the words state the status. Drawn in the Receipt No. column,
+  // and again under the number on a phone card, where that column is hidden.
+  const renderReceiptState = useCallback(
+    (r: InvoicesTableRow, withTestIds: boolean) => {
+      if (r.status !== 'paid') return null;
+      if (r.receiptPdfStatus === 'pending') {
+        return (
+          <span className={subLine} {...(withTestIds ? { 'data-testid': 'row-receipt-generating' } : {})}>
+            {t('actions.receiptGenerating')}
+          </span>
+        );
+      }
+      if (r.receiptPdfStatus === 'failed') {
+        return (
+          <Link
+            href={`/admin/invoices/${r.invoiceId}`}
+            aria-label={t('actions.receiptRenderFailedAria', { number: r.documentNumber })}
+            className="inline-flex min-h-6 items-center gap-1 rounded-sm text-xs font-medium text-[var(--aura-fg-danger)] underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-[var(--aura-focus-ring)]"
+            {...(withTestIds ? { 'data-testid': 'row-receipt-render-failed' } : {})}
+          >
+            <Icon name="circle-alert" size={14} />
+            {t('actions.receiptRenderFailed')}
+          </Link>
+        );
+      }
+      return null;
+    },
+    [t],
   );
 
   const columns = useMemo<DataTableColumn<InvoicesTableRow>[]>(() => {
@@ -450,8 +493,7 @@ export function InvoicesTable({
         // 2.4.4 / 2.5.8). Gated on the status, never on the "—" string.
         key: 'documentNumber',
         label: t('columns.documentNumber'),
-        width: 208,
-        card: 'title',
+        ...INVOICES_COLUMN_LAYOUT.documentNumber,
         render: (r) => (
           <div className="flex flex-col gap-0.5 leading-snug">
             {r.status === 'draft' ? (
@@ -492,6 +534,12 @@ export function InvoicesTable({
                 ) : null}
               </span>
             ) : null}
+            {/* Phone cards leave Receipt No. out (the board), so its state reads here. */}
+            {r.status === 'paid' && (r.receiptPdfStatus === 'pending' || r.receiptPdfStatus === 'failed') ? (
+              <span className="sm:hidden" data-testid="row-receipt-state-card">
+                {renderReceiptState(r, false)}
+              </span>
+            ) : null}
           </div>
         ),
       },
@@ -501,7 +549,7 @@ export function InvoicesTable({
         // Long legal names wrap to two lines with the full name in `title`.
         key: 'memberName',
         label: t('columns.buyer'),
-        minWidth: 200,
+        ...INVOICES_COLUMN_LAYOUT.memberName,
         render: (r) => (
           <div className="flex min-w-0 flex-col gap-0.5 leading-snug">
             {r.buyerHasMemberLink ? (
@@ -537,8 +585,7 @@ export function InvoicesTable({
       {
         key: 'status',
         label: t('columns.status'),
-        width: 146,
-        card: 'pill',
+        ...INVOICES_COLUMN_LAYOUT.status,
         render: (r) => <StatusPill tone={invoiceStatusTone(r.status)}>{tStatus(r.status)}</StatusPill>,
       },
     ];
@@ -583,7 +630,7 @@ export function InvoicesTable({
       {
         key: 'dueDate',
         label: t('columns.dueDate'),
-        width: 112,
+        ...INVOICES_COLUMN_LAYOUT.dueDate,
         render: (r) => (r.dueDate ? formatListDate(r.dueDate, locale) : '—'),
       },
       {
@@ -594,11 +641,9 @@ export function InvoicesTable({
         // forever-pending state), or the online method.
         key: 'receipt',
         label: t('columns.receiptNumber'),
-        width: 160,
-        card: 'hide',
+        ...INVOICES_COLUMN_LAYOUT.receipt,
         render: (r) => {
-          const generating = r.status === 'paid' && r.receiptPdfStatus === 'pending';
-          const failed = r.status === 'paid' && r.receiptPdfStatus === 'failed';
+          const receiptState = renderReceiptState(r, true);
           return (
             <div className="flex flex-col gap-0.5 leading-snug">
               {r.taxDocumentKind === 'tax_receipt' && r.receiptDocumentNumberRaw ? (
@@ -614,23 +659,9 @@ export function InvoicesTable({
               ) : (
                 dash
               )}
-              {generating ? (
-                <span aria-busy="true" className={subLine} data-testid="row-receipt-generating">
-                  {t('actions.receiptGenerating')}
-                </span>
-              ) : failed ? (
-                <Link
-                  href={`/admin/invoices/${r.invoiceId}`}
-                  aria-label={t('actions.receiptRenderFailedAria', { number: r.documentNumber })}
-                  className="inline-flex min-h-6 items-center gap-1 rounded-sm text-xs font-medium text-[var(--aura-fg-danger)] underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-[var(--aura-focus-ring)]"
-                  data-testid="row-receipt-render-failed"
-                >
-                  <Icon name="circle-alert" size={14} />
-                  {t('actions.receiptRenderFailed')}
-                </Link>
-              ) : r.onlinePaymentMethod && !showMethodColumn ? (
+              {receiptState ?? (r.onlinePaymentMethod && !showMethodColumn ? (
                 <span className={subLine}>{tMethod(r.onlinePaymentMethod)}</span>
-              ) : null}
+              ) : null)}
             </div>
           );
         },
@@ -638,8 +669,7 @@ export function InvoicesTable({
       {
         key: 'total',
         label: t('columns.total'),
-        width: 136,
-        align: 'end',
+        ...INVOICES_COLUMN_LAYOUT.total,
         render: (r) =>
           r.totalSatang === null ? (
             <span data-testid="invoice-total">
@@ -657,15 +687,12 @@ export function InvoicesTable({
       {
         key: 'actions',
         label: t('columns.actions'),
-        width: 184,
-        actions: true,
-        // The phone card's last row, full width (the US7a rule).
-        card: 'footer',
+        ...INVOICES_COLUMN_LAYOUT.actions,
         render: renderRowActions,
       },
     );
     return cols;
-  }, [t, tStatus, tTax088, tMethod, locale, showMethodColumn, showQueueMetaColumn, renderRowActions]);
+  }, [t, tStatus, tTax088, tMethod, locale, showMethodColumn, showQueueMetaColumn, renderRowActions, renderReceiptState]);
 
   return (
     // Review A8 — the review-queue view names its table for itself, so a

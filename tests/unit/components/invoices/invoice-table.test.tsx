@@ -107,6 +107,7 @@ const messages = {
             'Receipt PDF render failed for invoice {number} — open to review',
           openDraftAria: 'Open draft invoice for {name}',
           moreAria: 'More actions for {number}',
+          moreDraftAria: 'More actions for draft invoice for {name}',
           view: 'View invoice',
           recordPayment: 'Record payment…',
           recordPaymentAria: 'Record payment for invoice {number}',
@@ -1197,7 +1198,7 @@ describe('<InvoicesTable> — review fixes (US8 T809)', () => {
   it('the ⋯ trigger is 44px on touch (touchHeight) and carries a per-row id for focus return', () => {
     renderTable([baseRow({})]);
     const trigger = screen.getByRole('button', { name: 'More actions for INV-2026-0001' });
-    expect(trigger).toHaveClass('aura-btn--touch');
+    expect(trigger).toHaveClass('aura-icon-btn--touch');
     expect(trigger).toHaveAttribute('id', 'row-menu-inv-1');
   });
 

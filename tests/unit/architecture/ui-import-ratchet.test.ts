@@ -406,6 +406,8 @@ describe('UI import ratchet (spec 122)', () => {
       'src/app/(staff)/admin/invoices/_lib/download-receipt-client.ts',
       'src/app/(staff)/admin/invoices/_components/invoices-list-view.tsx',
       'src/app/(staff)/admin/invoices/_components/invoice-table.tsx',
+      'src/app/(staff)/admin/invoices/_components/invoices-table-skeleton.tsx',
+      'src/app/(staff)/admin/invoices/_components/invoices-table-columns.ts',
       'src/app/(staff)/admin/invoices/_components/auto-renewal-queue-actions.tsx',
       'src/app/(staff)/admin/invoices/_components/auto-renewal-queue-badges.tsx',
       'src/app/(staff)/admin/invoices/_components/csv-export-dialog.tsx',

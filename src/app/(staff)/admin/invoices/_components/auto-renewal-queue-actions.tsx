@@ -341,6 +341,7 @@ export function AutoRenewalQueueActions({
             ref={triggerRef}
             icon="ellipsis"
             size="sm"
+            touchHeight
             label={t('menuAria', { member: memberName })}
             data-testid="queue-row-actions-trigger"
           />

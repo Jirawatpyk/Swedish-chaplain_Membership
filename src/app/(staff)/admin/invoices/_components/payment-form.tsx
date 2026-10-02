@@ -19,6 +19,7 @@ export function PaymentForm({
   todayIso,
   onSuccess,
   onCancel,
+  onPendingChange,
 }: {
   invoiceId: string;
   documentNumber: string | null;
@@ -59,10 +60,19 @@ export function PaymentForm({
    * Esc / outside-click). Legacy full-page callers omit it.
    */
   onCancel?: () => void;
+  /**
+   * Spec 122 US8 (T809) — tells the dialog wrapper a payment is in flight,
+   * so it can refuse Escape and the scrim until the POST settles (an error
+   * must land in a mounted form, and a stray tap must not drop what was typed).
+   */
+  onPendingChange?: (pending: boolean) => void;
 }) {
   const t = useTranslations('admin.invoices.pay');
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  useEffect(() => {
+    onPendingChange?.(pending);
+  }, [pending, onPendingChange]);
   const [paymentMethod, setPaymentMethod] = useState<(typeof METHODS)[number]>('bank_transfer');
   const [paymentReference, setPaymentReference] = useState('');
   const [paymentNotes, setPaymentNotes] = useState('');

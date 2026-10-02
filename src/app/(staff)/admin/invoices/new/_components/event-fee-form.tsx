@@ -386,12 +386,9 @@ function AsPaidPaymentFields({
           {...(todayBkk ? { max: todayBkk } : {})}
           hint={t('payment.dateHint')}
           error={paymentDateError ?? undefined}
-          // AURA points at the hint or the error; the closed-period warning
-          // below is described too (064 H-1).
-          aria-describedby={[
-            paymentDateError ? 'payment-date-error' : 'payment-date-hint',
-            ...(showVatPeriodWarning ? ['payment-date-vat-warning'] : []),
-          ].join(' ')}
+          // AURA points at the hint or the error itself and adds this: the
+          // closed-period warning below (064 H-1).
+          {...(showVatPeriodWarning ? { 'aria-describedby': 'payment-date-vat-warning' } : {})}
         />
         {/* 064 H-1 — a non-blocking warning: role="status" (polite), NOT alert. */}
         {showVatPeriodWarning && (
@@ -935,7 +932,7 @@ export function EventFeeForm({
 
         {/* 2. Attendee picker */}
         {eventId !== '' && (
-          <div className="flex flex-col gap-[var(--field-label-gap)]">
+          <div className="flex flex-col gap-[var(--aura-space-2)]">
             {/* Names the picker's group of attendee buttons (not a form
                 control, so a styled span rather than a <label>). */}
             <span id="attendee-picker-label" className="text-sm font-medium text-[var(--aura-fg-primary)]">

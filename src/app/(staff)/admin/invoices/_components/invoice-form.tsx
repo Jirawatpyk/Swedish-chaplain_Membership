@@ -457,17 +457,19 @@ export function CreateDraftForm({
                   : `${formatSatang(Number(duplicate.totalSatang))} THB`}
               </dd>
             </div>
-            <div>
-              <Link
-                href={`/admin/invoices/${duplicate.invoiceId}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm text-[var(--aura-fg-accent)] underline underline-offset-2"
-              >
-                {tDup('viewExisting')}
-              </Link>
-            </div>
           </dl>
+        )}
+        {duplicate && (
+          // After the <dl> (which holds only dt/dd groups); the name already
+          // says it opens in a new tab.
+          <Link
+            href={`/admin/invoices/${duplicate.invoiceId}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-[var(--aura-space-2)] inline-block text-sm text-[var(--aura-fg-accent)] underline underline-offset-2"
+          >
+            {tDup('viewExisting')}
+          </Link>
         )}
       </Dialog>
     </form>

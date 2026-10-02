@@ -24,9 +24,10 @@
  * `onOpenChange(false)` handled in PaymentForm.
  */
 
-import { useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Button, Dialog } from '@jirawatpyk/aura-react';
+import { resolveDialogFinalFocus } from '@/components/broadcast/resolve-dialog-final-focus';
 import { PaymentForm } from './payment-form';
 
 type Props = {
@@ -72,6 +73,13 @@ type Props = {
   readonly triggerSize?: 'sm' | 'md';
   readonly triggerId?: string;
   readonly triggerTestId?: string;
+  /**
+   * Spec 122 US8 (T809) — where focus goes after a successful payment. The
+   * refresh turns the bill into a paid one and the trigger unmounts, so
+   * focus would drop to `<body>`; the list passes the row's ⋯ (which
+   * survives), and without one focus lands on `#main-content`.
+   */
+  readonly finalFocusFallbackId?: string;
 };
 
 /**
@@ -93,16 +101,40 @@ export function RecordPaymentDialog({
   triggerSize,
   triggerId = 'record-payment',
   triggerTestId = 'record-payment-trigger',
+  finalFocusFallbackId,
 }: Props) {
   const t = useTranslations('admin.invoices.pay');
   const tDetail = useTranslations('admin.invoices.detail');
   const [open, setOpen] = useState(false);
+  const [pending, setPending] = useState(false);
+  // Raised right before the success close: the refresh that follows unmounts
+  // the trigger, so focus must skip it (WCAG 2.4.3).
+  const closedViaSuccessRef = useRef(false);
+  const finalFocus = useCallback(
+    (): HTMLElement | null =>
+      resolveDialogFinalFocus({
+        closedViaSuccess: closedViaSuccessRef.current,
+        trigger: document.getElementById(triggerId),
+        fallback: finalFocusFallbackId ? document.getElementById(finalFocusFallbackId) : null,
+        mainContent: document.getElementById('main-content'),
+      }),
+    [triggerId, finalFocusFallbackId],
+  );
 
   return (
     <Dialog
       open={open}
       onClose={() => setOpen(false)}
-      onOpen={() => setOpen(true)}
+      onOpen={() => {
+        closedViaSuccessRef.current = false;
+        setOpen(true);
+      }}
+      // No Escape or scrim close while the POST is in flight: a failure must
+      // land in a mounted form. A scrim tap never closes it, so a stray tap on
+      // the phone sheet cannot drop the reference and notes.
+      dismissible={!pending}
+      dismissOnScrim={false}
+      finalFocus={finalFocus}
       // The `id="record-payment"` (default) stays so the payment-timeline
       // empty state (`href="#record-payment"`) scrolls to the trigger.
       trigger={
@@ -138,7 +170,8 @@ export function RecordPaymentDialog({
             {totalDisplay ? (
               <>
                 <p className="flex flex-wrap items-baseline justify-between gap-x-4">
-                  <span className="text-[var(--aura-fg-secondary)]">{t('amountReceived')}</span>
+                  {/* The invoice's total, not what arrived: an event buyer may withhold 3% WHT. */}
+                  <span className="text-[var(--aura-fg-secondary)]">{t('invoiceTotal')}</span>
                   <span className="font-semibold tabular-nums text-[var(--aura-fg-primary)]">{totalDisplay}</span>
                 </p>
                 <p className="text-xs text-[var(--aura-fg-secondary)]">{t('fullTotalNote')}</p>
@@ -151,8 +184,12 @@ export function RecordPaymentDialog({
           documentNumber={documentNumber}
           issueDate={issueDate}
           todayIso={todayIso}
-          onSuccess={() => setOpen(false)}
+          onSuccess={() => {
+            closedViaSuccessRef.current = true;
+            setOpen(false);
+          }}
           onCancel={() => setOpen(false)}
+          onPendingChange={setPending}
         />
       </div>
     </Dialog>

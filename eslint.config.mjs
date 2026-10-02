@@ -396,6 +396,8 @@ export const MIGRATED_PATHS = [
   'src/app/(staff)/admin/invoices/new/**',
   'src/app/(staff)/admin/invoices/_components/invoices-list-view.tsx',
   'src/app/(staff)/admin/invoices/_components/invoice-table.tsx',
+  'src/app/(staff)/admin/invoices/_components/invoices-table-skeleton.tsx',
+  'src/app/(staff)/admin/invoices/_components/invoices-table-columns.ts',
   'src/app/(staff)/admin/invoices/_components/auto-renewal-queue-actions.tsx',
   'src/app/(staff)/admin/invoices/_components/auto-renewal-queue-badges.tsx',
   'src/app/(staff)/admin/invoices/_components/queue-view.ts',
