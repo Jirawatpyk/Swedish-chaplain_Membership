@@ -191,8 +191,8 @@ describe('<InvoiceFilters> — dueBefore chip (Task 3)', () => {
   it('a valid ?dueBefore surfaces a localized chip whose ✕ clears just that param', () => {
     searchParamsStub = new URLSearchParams('dueBefore=2026-01-01&status=overdue');
     renderWithDueBefore({});
-    // A4 — the date IS the chip's payload, so it is never cut short: AURA's
-    // chips take their text's own width.
+    // A4 — the date IS the chip's payload: no local truncation on top of
+    // AURA's 24ch chip, which the label fits in every locale.
     const chipLabel = screen.getByText('Due before 2026-01-01');
     expect(chipLabel.closest('.aura-filterbar__chips')).not.toBeNull();
     expect(chipLabel.className).not.toContain('truncate');

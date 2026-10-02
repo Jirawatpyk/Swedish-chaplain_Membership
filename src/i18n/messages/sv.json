@@ -1137,7 +1137,6 @@
           "clear": "Rensa filter",
           "submitterChip": "En persons begäranden",
           "unknownMember": "en medlem som inte kunde hittas",
-          "dateRange": "{from} – {to}",
           "dateFrom": "från {from}",
           "dateTo": "till och med {to}",
           "resultCount": "{count, plural, =0 {Inga begäranden att visa} one {Visar # begäran} other {Visar # begäranden}}",

@@ -1137,7 +1137,6 @@
           "clear": "Clear filters",
           "submitterChip": "One person's requests",
           "unknownMember": "a member that could not be found",
-          "dateRange": "{from} – {to}",
           "dateFrom": "from {from}",
           "dateTo": "up to {to}",
           "resultCount": "{count, plural, =0 {No requests to show} one {Showing # request} other {Showing # requests}}",

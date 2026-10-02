@@ -39,7 +39,7 @@ import {
   type DateRangePreset,
   type ISODate,
 } from '@jirawatpyk/aura-react';
-import { formatLocalisedDate } from '@/lib/format-date-localised';
+import { formatLocalisedDate, getDateFormatLocale } from '@/lib/format-date-localised';
 // the Domain file, not the module barrel — the barrel re-exports server-only
 // use cases (the review client imports the same way)
 import {
@@ -144,7 +144,14 @@ export function ChangeRequestQueueFilters({ resultCount, hasMore, timeZone, memb
     });
   };
 
+  // Calendar days (UTC-anchored ISO dates), so no timezone shifts them. The
+  // range reads compactly ("1–10 Sept 2026"): AURA's chips stop at 24ch.
   const day = (iso: string) => formatLocalisedDate(iso, locale, { dateStyle: 'medium', timeZone: 'UTC' });
+  const dayRange = (a: string, b: string) =>
+    new Intl.DateTimeFormat(getDateFormatLocale(locale), { dateStyle: 'medium', timeZone: 'UTC' }).formatRange(
+      new Date(`${a}T00:00:00Z`),
+      new Date(`${b}T00:00:00Z`),
+    );
   const chip = (label: string, value: string) => tFilters('chip', { label, value });
   const chips: { readonly id: string; readonly label: string; readonly patch: Parameters<typeof write>[0] }[] = [];
   if (state !== DEFAULT_STATE) {
@@ -160,7 +167,7 @@ export function ChangeRequestQueueFilters({ resultCount, hasMore, timeZone, memb
   if (from || to) {
     const value =
       from && to
-        ? tFilters('dateRange', { from: day(from), to: day(to) })
+        ? dayRange(from, to)
         : from
           ? tFilters('dateFrom', { from: day(from) })
           : tFilters('dateTo', { to: day(to) });

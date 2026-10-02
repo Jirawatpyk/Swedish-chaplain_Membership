@@ -395,8 +395,8 @@ export function InvoiceFilters({
   // visible representation and clear affordance besides Clear filters, in
   // both layouts. {date} stays the raw ISO `YYYY-MM-DD`: a technical filter
   // echo an admin may copy back into a URL (BE is display-only for
-  // member-facing dates). AURA's chips take their text's own width, so the
-  // date is never cut short.
+  // member-facing dates). The label fits AURA's 24ch chip in every locale,
+  // so the date is not cut short.
   const dueBeforeChip =
     currentDueBefore !== null
       ? {

@@ -130,7 +130,8 @@ describe('<ChangeRequestQueueFilters> — the filter pattern', () => {
     expect(chips).toHaveTextContent(`${F.outcome}: ${R.outcome.approved}`);
     expect(chips).toHaveTextContent(`${F.member}: Siam Nordic Trading`);
     expect(chips).toHaveTextContent(F.submitterChip);
-    expect(chips).toHaveTextContent(`${F.submitted}: 1 Sept 2026 – 10 Sept 2026`);
+    // One compact range (Intl's own range format; the dash spacing is ICU's).
+    expect(chips).toHaveTextContent(new RegExp(`${F.submitted}: 1\\s?–\\s?10 Sept 2026`));
     fireEvent.click(screen.getByRole('button', { name: `Remove filter: ${F.member}: Siam Nordic Trading` }));
     expect(lastUrl()?.[0]).toBe(
       `/admin/change-requests?state=decided&outcome=approved&submitter=${SUBMITTER}&from=2026-09-01&to=2026-09-10`,

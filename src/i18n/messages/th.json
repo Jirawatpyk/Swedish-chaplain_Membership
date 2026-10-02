@@ -1137,7 +1137,6 @@
           "clear": "ล้างตัวกรอง",
           "submitterChip": "คำขอของบุคคลหนึ่ง",
           "unknownMember": "สมาชิกที่ไม่พบ",
-          "dateRange": "{from} – {to}",
           "dateFrom": "ตั้งแต่ {from}",
           "dateTo": "จนถึง {to}",
           "resultCount": "{count, plural, =0 {ไม่มีคำขอที่จะแสดง} other {กำลังแสดงคำขอ # รายการ}}",
