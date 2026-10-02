@@ -188,8 +188,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the rest of the staff invoice screens keep the legacy kit until US8', async () => {
-      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/invoices/page.tsx')).toEqual([]);
+    it('control: the staff invoice detail keeps the legacy kit until US8b', async () => {
+      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/invoices/[invoiceId]/page.tsx')).toEqual([]);
     });
   });
 
@@ -393,6 +393,39 @@ describe('UI import ratchet (spec 122)', () => {
 
     it('control: the member E-Blast pages keep the legacy kit until US12', async () => {
       expect(await ratchetHits(legacy, 'src/app/(member)/portal/broadcasts/[id]/page.tsx')).toEqual([]);
+    });
+  });
+
+  describe('the US8a invoice list and new invoice are on AURA (the real MIGRATED_PATHS)', () => {
+    const legacy = "import { Button } from '@/components/ui/button';\nexport const B = Button;\n";
+
+    it.each([
+      'src/app/(staff)/admin/invoices/page.tsx',
+      'src/app/(staff)/admin/invoices/loading.tsx',
+      'src/app/(staff)/admin/invoices/error.tsx',
+      'src/app/(staff)/admin/invoices/_lib/download-receipt-client.ts',
+      'src/app/(staff)/admin/invoices/_components/invoices-list-view.tsx',
+      'src/app/(staff)/admin/invoices/_components/invoice-table.tsx',
+      'src/app/(staff)/admin/invoices/_components/auto-renewal-queue-actions.tsx',
+      'src/app/(staff)/admin/invoices/_components/auto-renewal-queue-badges.tsx',
+      'src/app/(staff)/admin/invoices/_components/csv-export-dialog.tsx',
+      'src/app/(staff)/admin/invoices/_components/record-payment-dialog.tsx',
+      'src/app/(staff)/admin/invoices/_components/payment-form.tsx',
+      'src/app/(staff)/admin/invoices/_components/invoice-form.tsx',
+      'src/app/(staff)/admin/invoices/_components/record-payment-error-routing.ts',
+      'src/app/(staff)/admin/invoices/new/page.tsx',
+      'src/app/(staff)/admin/invoices/new/loading.tsx',
+      'src/app/(staff)/admin/invoices/new/_components/invoice-create-switcher.tsx',
+      'src/app/(staff)/admin/invoices/new/_components/event-fee-form.tsx',
+      'src/app/(staff)/admin/invoices/new/_components/event-attendee-picker.tsx',
+      'src/app/(staff)/admin/invoices/new/_components/non-member-buyer-fields.tsx',
+      'src/components/invoices/invoice-status-tone.ts',
+    ])('%s cannot import the legacy kit', async (path) => {
+      expect(await ratchetHits(legacy, path)).toHaveLength(1);
+    });
+
+    it('control: the detail page dialogs keep the legacy kit until US8b', async () => {
+      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/invoices/_components/issue-invoice-dialog.tsx')).toEqual([]);
     });
   });
 });
