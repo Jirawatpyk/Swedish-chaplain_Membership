@@ -28,7 +28,7 @@ import { MemberDataExportCard } from '@/app/(staff)/admin/members/[memberId]/_co
 import { PendingChangeRequestAlert } from '@/app/(staff)/admin/members/[memberId]/_components/member-change-requests-section';
 import { renderMemberTimelineView } from '@/app/(staff)/admin/members/[memberId]/_components/member-timeline-view';
 import { renderMemberBenefitsView } from '@/app/(staff)/admin/members/[memberId]/_components/member-benefits-view';
-import { MEMBER_FORM_COLUMN, MemberFormFrame } from '@/app/(staff)/admin/members/_components/member-form-frame';
+import { MemberFormFrame } from '@/app/(staff)/admin/members/_components/member-form-frame';
 import { FormContainer, TableContainer } from '@/components/layout';
 import { CreateMemberClient } from '@/components/members/create-member-client';
 import { EditMemberClient } from '@/components/members/edit-member-client';
@@ -38,7 +38,6 @@ import { MemberFormDialogPreview } from './member-form-previews';
 import { PlansTable } from '@/components/plans/plans-table';
 import { renderPlansListView } from '@/app/(staff)/admin/plans/_components/plans-list-view';
 import {
-  PLAN_FORM_COLUMN,
   renderCloneYearView,
   renderNewPlanView,
   renderPlanEditView,
@@ -322,6 +321,22 @@ const REVIEW_FIELDS = [
   },
 ] as unknown as ChangeRequestReviewFieldView[];
 
+const LOADING_ROUTES = {
+  members: { path: '/admin/members', load: async () => (await import('@/app/(staff)/admin/members/loading')).default() },
+  plans: { path: '/admin/plans', load: async () => (await import('@/app/(staff)/admin/plans/loading')).default() },
+  invoices: { path: '/admin/invoices', load: async () => (await import('@/app/(staff)/admin/invoices/loading')).default() },
+  'change-requests': {
+    path: '/admin/change-requests',
+    load: async () => (await import('@/app/(staff)/admin/change-requests/loading')).default(),
+  },
+  renewals: { path: '/admin/renewals', load: async () => (await import('@/app/(staff)/admin/renewals/loading')).default() },
+  'tier-upgrades': {
+    path: '/admin/renewals/tier-upgrades',
+    load: async () => (await import('@/app/(staff)/admin/renewals/tier-upgrades/loading')).default(),
+  },
+  tasks: { path: '/admin/renewals/tasks', load: async () => (await import('@/app/(staff)/admin/renewals/tasks/loading')).default() },
+} as const;
+
 function StaffFrame({ path, children }: { readonly path: string; readonly children: React.ReactNode }) {
   // The staff frame as the admin layout composes it (see /test-fixtures/aura-shell).
   return (
@@ -416,6 +431,13 @@ export default async function AuraAdminPreviewPage({
 }) {
   if (!process.env.ALLOW_TEST_ROUTES) notFound();
   const { view = 'members', state = 'default' } = await searchParams;
+
+  // The list routes' own loading.tsx, in the staff frame, so the skeleton can
+  // be compared with the loaded page (`view=loading&state=<route>`).
+  if (view === 'loading') {
+    const route = LOADING_ROUTES[state as keyof typeof LOADING_ROUTES] ?? LOADING_ROUTES.members;
+    return <StaffFrame path={route.path}>{await route.load()}</StaffFrame>;
+  }
 
   if (view === 'member') {
     const manager = state === 'manager';
@@ -515,7 +537,7 @@ export default async function AuraAdminPreviewPage({
       const t = await getTranslations('admin.members.create');
       return (
         <StaffFrame path="/admin/members/new">
-          <FormContainer className={MEMBER_FORM_COLUMN}>
+          <FormContainer align="start">
             <MemberFormFrame title={t('title')} subtitle={t('subtitle')} cancelHref="/admin/members" cancelLabel={t('cancel')}>
               <CreateMemberClient plans={FORM_PLANS} defaultPlanYear={2026} />
             </MemberFormFrame>
@@ -528,7 +550,7 @@ export default async function AuraAdminPreviewPage({
     const { dialog } = await searchParams;
     return (
       <StaffFrame path={`/admin/members/${MEMBER_ID}/edit`}>
-        <FormContainer className={MEMBER_FORM_COLUMN}>
+        <FormContainer align="start">
           <MemberFormFrame
             title={t('title')}
             subtitle="Siam Nordic Trading Co., Ltd."
@@ -633,7 +655,7 @@ export default async function AuraAdminPreviewPage({
   if (view === 'plan-new') {
     return (
       <StaffFrame path="/admin/plans/new">
-        <FormContainer className={PLAN_FORM_COLUMN}>
+        <FormContainer align="start">
           {await renderNewPlanView({ currentYear: PLAN_YEAR, currencyCode: 'THB', vatRatePercent: 7 })}
         </FormContainer>
       </StaffFrame>
@@ -644,7 +666,7 @@ export default async function AuraAdminPreviewPage({
     const year = view === 'plan-edit-locked' ? PLAN_YEAR - 1 : PLAN_YEAR;
     return (
       <StaffFrame path={`/admin/plans/${year}/${PLAN_ID}/edit`}>
-        <FormContainer className={PLAN_FORM_COLUMN}>
+        <FormContainer align="start">
           {await renderPlanEditView({
             initialValues: premiumPlanInput(year),
             currentYear: PLAN_YEAR,
@@ -660,7 +682,7 @@ export default async function AuraAdminPreviewPage({
   if (view === 'plans-clone') {
     return (
       <StaffFrame path="/admin/plans/clone">
-        <FormContainer className={PLAN_FORM_COLUMN}>
+        <FormContainer align="start">
           {await renderCloneYearView({
             sourceYear: PLAN_YEAR,
             targetYear: PLAN_YEAR + 1,

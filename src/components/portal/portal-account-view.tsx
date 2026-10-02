@@ -15,8 +15,9 @@ import { RenewalRemindersToggle } from '@/app/(member)/portal/preferences/renewa
  * preview harness renders the same markup from sample data; a plain async
  * function, like `renderPortalProfileView`.
  *
- * The boards' page: the caller's `DetailContainer` (the 1200px portal
- * column), the cards in an 880px column under the header, 16px apart. Section ids and h2s are the account
+ * The boards' page: the caller's `DetailContainer`, capped at the board's
+ * 880px column and centred like the edit page's, the cards under the header,
+ * 16px apart. Section ids and h2s are the account
  * menu's deep links (`#account`, `#language`, `#renewal-prefs`,
  * `#data-privacy`).
  */
@@ -62,7 +63,7 @@ export async function renderPortalAccountView({
     <>
       <PageHeader title={tPage('title')} subtitle={tPage('subtitle')} badge={<Badge variant="outline">{roleLabel}</Badge>} />
 
-      <div className="flex max-w-[880px] flex-col gap-4">
+      <div className="flex flex-col gap-4">
         <HubCard id="account" title={tPage('sections.account')} contentClassName="flex flex-col gap-4">
           <dl className="m-0">
             <div className="flex flex-col gap-0.5">

@@ -12,7 +12,8 @@ export default async function Loading() {
   const tLayout = await getTranslations('layout');
   return (
     <PageSkeletonShell ariaLabel={tLayout('loadingForm')}>
-      <FormContainer>
+      {/* the change-request form's 880px column, as page.tsx draws it */}
+      <FormContainer className="max-w-[calc(55rem+2*var(--page-padding-x))]">
         <PageHeader
           title={t('pageTitle')}
           subtitle={<SkeletonBlock className="h-4 w-48" />}

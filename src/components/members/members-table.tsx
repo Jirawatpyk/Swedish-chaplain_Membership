@@ -886,6 +886,9 @@ export function MembersTable({
           // stays on wider screens (maintainer's decision, 28 Sep 2026).
           stackBelow={640}
           hideSelectionInCards
+          // Edge to edge inside the list card from 640px up (AURA 5.27, #130);
+          // the pager follows, so it does not end the card.
+          bleed
           {...(enableSelection
             ? {
                 selectable: true,

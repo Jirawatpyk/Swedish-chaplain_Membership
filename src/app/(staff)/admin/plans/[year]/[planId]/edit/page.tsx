@@ -23,7 +23,7 @@ import {
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import { FormContainer } from '@/components/layout';
 import type { CurrentYearPlanStatus } from '@/components/plans/prior-year-lock-banner';
-import { PLAN_FORM_COLUMN, renderPlanEditView } from '../../../_components/plan-form-views';
+import { renderPlanEditView } from '../../../_components/plan-form-views';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.plans.edit');
@@ -124,7 +124,7 @@ export default async function EditPlanPage({
   return (
     // 122 US6 (T606): the start-edge 672px column, the form's cards straight
     // under the title (boards `Admin-plan-edit`, `-locked`).
-    <FormContainer className={PLAN_FORM_COLUMN}>
+    <FormContainer align="start">
       {await renderPlanEditView({
         initialValues,
         currentYear,

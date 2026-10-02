@@ -933,7 +933,6 @@
           "planId": "รหัสแพ็กเกจ (slug)",
           "planIdHelp": "ตัวพิมพ์เล็ก ตัวเลข และเครื่องหมายขีดเท่านั้น (เช่น diamond, start-up)",
           "planIdPlaceholder": "เช่น premium",
-          "loadingLabel": "กำลังโหลดรายการแพ็กเกจ…",
           "planYear": "ปีแพ็กเกจ",
           "planName": "ชื่อแพ็กเกจ",
           "description": "คำอธิบาย",

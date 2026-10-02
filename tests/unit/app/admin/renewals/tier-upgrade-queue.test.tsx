@@ -318,3 +318,12 @@ describe('TierUpgradeQueueClient — UX review fixes', () => {
     expect(screen.queryByText(T.fees_exclude_vat)).toBeNull();
   });
 });
+
+// The list card rule (docs/aura-adoption.md § List card): from 640px up the table
+// runs edge to edge inside the card (AURA `bleed`, 5.27 #130), keeping its header band.
+describe('tier upgrade queue in the list card', () => {
+  it('bleeds to the card edges and ends the card (nothing follows it), so the card closes it', () => {
+    const { container } = renderQueue([makeItem()]);
+    expect(container.querySelector('.aura-bleed.aura-bleed-end')).not.toBeNull();
+  });
+});

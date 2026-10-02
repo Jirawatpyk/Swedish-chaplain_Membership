@@ -3,8 +3,9 @@
  *
  * Per-category width assertions based on Content-Type Mapping:
  *   - [data-variant="table"]  → ≤ 1536px (96rem cap)
- *   - [data-variant="detail"] → 1152±4px (72rem pixel parity)
- *   - [data-variant="form"]   → 672±8px  (42rem)
+ *   - [data-variant="detail"] → 1280px (AURA's default Container), or the content width when less
+ *   - [data-variant="form"]   → 720px (AURA's narrow Container)
+ * (spec 122, 2 Oct 2026: the containers are AURA's `Container`.)
  *
  * Also asserts every page has a h1 with font-size 30px (F4 typography scale).
  */
@@ -38,14 +39,17 @@ const PAGES: Array<{ path: string; variant: Variant }> = [
 // phones, 32px from 640px, #435), so the h1 is read against the token in
 // force at that h1 — see typography-scale.spec.ts for the same check.
 
-function rangeFor(variant: Variant): [number, number] {
+/** The width band at 1440px, given the parent's content width (the staff nav takes some of the 1440). */
+function rangeFor(variant: Variant, parentContent: number): [number, number] {
   switch (variant) {
     case 'table':
       return [0, 1536];
-    case 'detail':
-      return [1148, 1156];
+    case 'detail': {
+      const expected = Math.min(1280, parentContent);
+      return [expected - 1, expected + 1];
+    }
     case 'form':
-      return [664, 680];
+      return [719, 721];
   }
 }
 
@@ -106,15 +110,20 @@ test.describe('F5 layout consistency @layout', () => {
         .first();
       await expect(container, `${path} has ${variant} container`).toBeVisible();
 
-      const [lo, hi] = rangeFor(variant);
       // Retry the measurement the way the h1 check above does. `/admin/plans/clone`
       // measured 0 once: it passed `toBeVisible`, then re-rendered as its plan list
       // resolved, and the width was read mid-render. A single read of a page that is
       // still settling is a flake generator, not an assertion.
       await expect(async () => {
-        const boxWidth = await container.evaluate(
-          (el) => (el as HTMLElement).getBoundingClientRect().width,
-        );
+        const { boxWidth, parentContent } = await container.evaluate((el) => {
+          const parent = el.parentElement!;
+          const cs = getComputedStyle(parent);
+          return {
+            boxWidth: el.getBoundingClientRect().width,
+            parentContent: parent.clientWidth - parseFloat(cs.paddingInlineStart) - parseFloat(cs.paddingInlineEnd),
+          };
+        });
+        const [lo, hi] = rangeFor(variant, parentContent);
         expect(
           boxWidth,
           `${path} ${variant} container width must be in [${lo}, ${hi}]`,

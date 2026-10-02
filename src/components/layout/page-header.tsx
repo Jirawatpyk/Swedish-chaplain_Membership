@@ -80,7 +80,10 @@ export function PageHeader({
         className,
       )}
     >
-      <div className="min-w-0 flex-1">
+      {/* From 640px the row wraps. The title column's zero basis would let the
+          actions squeeze it to a few characters (the member page at 700px);
+          its minimum width makes the actions drop under it instead. */}
+      <div className="min-w-0 flex-1 sm:min-w-[min(100%,18rem)]">
         {eyebrow ? (
           <div data-slot="page-header-eyebrow" className="flex flex-wrap items-center gap-2 pb-2">
             {eyebrow}

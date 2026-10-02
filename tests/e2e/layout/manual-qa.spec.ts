@@ -55,8 +55,8 @@ test.describe('F5 manual-QA automation @qa', () => {
 
       // FORM pages only, as the title says. `/admin/settings/invoicing` was
       // here and is a documented DetailContainer exception
-      // (docs/ux-standards.md § 18.2 *), so it measured a 72rem column
-      // against a form budget. `/admin/members/new` is the canonical 672
+      // (docs/ux-standards.md § 18.2 *), so it measured a detail column
+      // against a form budget. `/admin/members/new` is the canonical staff
       // form column, which keeps two samples on this route set.
       const adminRoutes = ['/admin/plans/new', '/admin/members/new'];
       const samples: Array<{
@@ -243,7 +243,7 @@ test.describe('F5 manual-QA automation @qa', () => {
     }
   });
 
-  test('TC-011 (T059) — plan-detail page reads cleanly inside 72rem with embedded table', async ({
+  test('TC-011 (T059) — plan-detail page reads cleanly inside the detail column with embedded table', async ({
     browser,
   }) => {
     test.setTimeout(60_000);
@@ -269,9 +269,17 @@ test.describe('F5 manual-QA automation @qa', () => {
         .first();
       await expect(container).toBeVisible();
 
-      const containerWidth = await container.evaluate(
-        (el) => (el as HTMLElement).getBoundingClientRect().width,
-      );
+      const { containerWidth, parentContent } = await container.evaluate((el) => {
+        const parent = el.parentElement!;
+        const cs = getComputedStyle(parent);
+        return {
+          containerWidth: el.getBoundingClientRect().width,
+          parentContent: parent.clientWidth - parseFloat(cs.paddingInlineStart) - parseFloat(cs.paddingInlineEnd),
+        };
+      });
+      // AURA's default Container (1280px), or the whole content width when the
+      // staff nav leaves less (spec 122, 2 Oct 2026).
+      const expectedWidth = Math.min(1280, parentContent);
 
       // Probe for any inner <table>; if present, verify it has an
       // overflow-x-auto wrapper (shadcn <Table> default).
@@ -302,22 +310,20 @@ test.describe('F5 manual-QA automation @qa', () => {
       const evidence = {
         route,
         containerWidthPx: Math.round(containerWidth),
-        expectedRangePx: { min: 1148, max: 1156 },
+        expectedRangePx: { min: expectedWidth - 1, max: expectedWidth + 1 },
         tableCount,
         tableWrapperOverflow,
         tableScrollWidthPx: tableScrollWidth,
         bodyHorizontallyOverflows: containerOverflows,
         verdict:
-          containerWidth >= 1148 &&
-          containerWidth <= 1156 &&
+          Math.abs(containerWidth - expectedWidth) <= 1 &&
           !containerOverflows
-            ? 'reads-cleanly-inside-72rem'
+            ? 'reads-cleanly-inside-the-detail-column'
             : 'NEEDS-REVIEW',
       };
       writeEvidence('tc-011-plan-detail-readability.json', evidence);
 
-      expect(containerWidth, 'detail container = 72rem ±4px @1440').toBeGreaterThanOrEqual(1148);
-      expect(containerWidth).toBeLessThanOrEqual(1156);
+      expect(containerWidth, 'detail container = AURA default (1280) or the content width @1440').toBeCloseTo(expectedWidth, 0);
       expect(containerOverflows, 'no body horizontal overflow').toBe(false);
     } finally {
       await context.close();

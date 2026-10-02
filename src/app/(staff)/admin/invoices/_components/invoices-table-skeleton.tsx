@@ -35,6 +35,8 @@ export function InvoicesTableSkeleton({ caption, labels }: InvoicesTableSkeleton
         skeletonRows={10}
         rowHeight="auto"
         stackBelow={640}
+        // edge to edge inside the list card, as the table is
+        bleed
       />
     </div>
   );

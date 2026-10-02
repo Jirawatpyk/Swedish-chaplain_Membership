@@ -12,7 +12,7 @@ import {
  * Skeleton mirrors the real /admin/plans page shape for CLS 0:
  *   - PageHeader with two action buttons (Clone + New plan)
  *   - Filter bar: search + Year and Category faces + 2 toggle chips + count
- *   - Border-wrapped table (PlanListSkeleton)
+ *   - The table (PlanListSkeleton: AURA's Table, edge to edge in the card)
  *   - Trailing VAT note
  */
 export default async function Loading() {
@@ -47,7 +47,18 @@ export default async function Loading() {
               <SkeletonBlock className="h-8 w-28 rounded-full" data-skeleton="toggle-chip" />
               <SkeletonBlock className="ml-auto h-4 w-20" data-skeleton="result-count" />
             </div>
-            <PlanListSkeleton />
+            {/* AURA's table with the real heads, edge to edge inside the card. */}
+            <PlanListSkeleton
+              caption={t('tableCaption')}
+              heads={[
+                t('columns.name'),
+                t('columns.category'),
+                t('columns.annualFee'),
+                t('columns.memberType'),
+                t('columns.year'),
+                t('columns.status'),
+              ]}
+            />
             {/* "Fees exclude {rate}% VAT" note */}
             <SkeletonBlock className="h-3 w-56" />
           </div>

@@ -268,7 +268,8 @@ export default async function AuraPortalPreviewPage({
     const t = await getTranslations('portal.edit');
     return (
       <MemberFrame path="/portal/edit">
-        <FormContainer>
+        {/* the page's 880px column (portal/edit/page.tsx) */}
+        <FormContainer className="max-w-[calc(55rem+2*var(--page-padding-x))]">
           <PageHeader title={t('pageTitle')} size="hero" />
           <PortalEditForm
             initialValues={{ firstName: 'Anna', lastName: 'Lindqvist', phone: '+66 81 234 5678', website: 'https://nordic.example', description: '' }}
@@ -314,7 +315,7 @@ export default async function AuraPortalPreviewPage({
     ];
     return (
       <MemberFrame path="/portal/account">
-        <DetailContainer>
+        <DetailContainer className="max-w-[calc(55rem+2*var(--page-padding-x))]">
           {await renderPortalAccountView({
             email: 'anna.lindqvist@lindqvist.example',
             roleLabel: 'Member',
@@ -339,12 +340,10 @@ export default async function AuraPortalPreviewPage({
     // As /portal/contacts/invite renders it (page.tsx `InviteFrame`).
     return (
       <MemberFrame path="/portal/contacts/invite">
-        <DetailContainer>
+        <DetailContainer className="max-w-[calc(45rem+2*var(--page-padding-x))]">
           <BackLink href="/portal/profile">{tHistory('backToProfile')}</BackLink>
-          <div className="flex max-w-[720px] flex-col gap-[var(--page-section-gap)]">
-            <PageHeader title={t('pageTitle')} subtitle="Lindqvist & Partners Co., Ltd." />
-            <InviteColleagueForm privacyNoticeHref="https://swecham.example/privacy" />
-          </div>
+          <PageHeader title={t('pageTitle')} subtitle="Lindqvist & Partners Co., Ltd." />
+          <InviteColleagueForm privacyNoticeHref="https://swecham.example/privacy" />
         </DetailContainer>
       </MemberFrame>
     );

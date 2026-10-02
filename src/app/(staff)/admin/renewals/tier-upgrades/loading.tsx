@@ -6,7 +6,9 @@
  * one AURA card that is frameless on a phone, so the skeleton draws the same
  * card: a static tab strip (the live `RenewalsSectionTabs` calls
  * `useSearchParams()` and cannot render in a route-level `loading.tsx`), then
- * rows with the 2-line reason cell (WP-P5: one line under-measured the row).
+ * AURA's `DataTable` in its loading state with the queue's columns
+ * (`tier-upgrade-queue-columns.ts`), edge to edge and ending the card as the
+ * queue does (`bleed`, `bleedEnd`).
  * `PageSkeletonShell` is the one live region that announces the load.
  *
  * Wrapped in `<TableContainer>` so the `pnpm check:layout` invariant (page +
@@ -17,9 +19,27 @@ import { Card } from '@jirawatpyk/aura-react/server';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { PageSkeletonShell, SkeletonBlock } from '@/components/shell/page-skeletons';
+import { DataTableSkeleton } from '@/components/shell/data-table-skeleton';
+import {
+  TIER_UPGRADE_COLUMN_LAYOUT,
+  type TierUpgradeColumnKey,
+} from './_components/tier-upgrade-queue-columns';
+
+const LABEL_KEYS = {
+  member: 'columns.member',
+  fromPlan: 'columns.from_plan',
+  toPlan: 'columns.to_plan',
+  reason: 'columns.reason',
+  status: 'columns.status',
+  actions: null,
+} as const satisfies Record<TierUpgradeColumnKey, string | null>;
 
 export default async function Loading() {
   const t = await getTranslations('admin.renewals.tier_upgrades');
+  const columns = (Object.keys(TIER_UPGRADE_COLUMN_LAYOUT) as TierUpgradeColumnKey[]).map((key) => {
+    const labelKey = LABEL_KEYS[key];
+    return { key, label: labelKey === null ? '' : t(labelKey), ...TIER_UPGRADE_COLUMN_LAYOUT[key] };
+  });
   return (
     <PageSkeletonShell ariaLabel={t('loading')}>
       <TableContainer aria-busy="true">
@@ -36,37 +56,31 @@ export default async function Loading() {
             </div>
             {/* The phone's "Fees exclude VAT." caption above the cards. */}
             <SkeletonBlock className="h-3 w-32 sm:hidden" />
-            {/* Rows: member · current plan · suggested plan · reason (2
-                lines) · status · Accept and ⋯. From 640px a grid with its
-                header row; on a phone, bordered cards as the queue stacks. */}
-            <div className="flex flex-col max-sm:gap-[var(--aura-space-3)]" aria-hidden>
-              <div className="hidden grid-cols-12 gap-[var(--aura-space-4)] py-[var(--aura-space-3)] sm:grid">
-                <SkeletonBlock className="col-span-2 h-4 w-20" />
-                <SkeletonBlock className="col-span-2 h-4 w-24" />
-                <SkeletonBlock className="col-span-2 h-4 w-28" />
-                <SkeletonBlock className="col-span-3 h-4 w-16" />
-                <SkeletonBlock className="col-span-1 h-4 w-14" />
-              </div>
-              {Array.from({ length: 6 }, (_, i) => (
+            {/* On a phone, the queue's own cards (AURA's loading rows are too
+                short for them, handoff #134): member, plan, a two-line
+                reason, then Accept and ⋯ at touch height. */}
+            <div data-slot="phone-cards-skeleton" className="flex flex-col gap-[var(--aura-space-3)] sm:hidden" aria-hidden>
+              {Array.from({ length: 4 }, (_, i) => (
                 <div
                   key={i}
-                  className="flex flex-col gap-[var(--aura-space-2)] rounded-[var(--aura-radius-lg)] border border-[var(--aura-border-default)] p-[var(--aura-space-4)] sm:grid sm:grid-cols-12 sm:items-start sm:gap-[var(--aura-space-4)] sm:rounded-none sm:border-x-0 sm:border-b-0 sm:px-0 sm:py-[var(--aura-space-3)]"
+                  className="flex flex-col gap-[var(--aura-space-2)] rounded-[var(--aura-radius-lg)] border border-[var(--aura-border-default)] p-[var(--aura-space-4)]"
                 >
-                  <SkeletonBlock className="h-5 w-40 sm:col-span-2 sm:w-full" />
-                  <SkeletonBlock className="h-9 w-full sm:col-span-2" />
-                  <SkeletonBlock className="hidden h-9 w-full sm:col-span-2 sm:block" />
-                  <div className="flex flex-col gap-1 sm:col-span-3" data-slot="reason-skeleton">
+                  <SkeletonBlock className="h-5 w-40" />
+                  <SkeletonBlock className="h-9 w-full" />
+                  <div className="flex flex-col gap-1" data-slot="reason-skeleton">
                     <SkeletonBlock className="h-5 w-full" />
                     <SkeletonBlock className="h-3 w-3/4" />
                   </div>
-                  <SkeletonBlock className="hidden h-6 w-full sm:col-span-1 sm:block" />
-                  <div className="flex gap-[var(--aura-space-2)] sm:col-span-2 sm:justify-end">
-                    <SkeletonBlock className="h-11 flex-1 sm:h-8 sm:w-16 sm:flex-none" />
-                    <SkeletonBlock className="size-11 sm:size-8" />
+                  <div className="flex gap-[var(--aura-space-2)]">
+                    <SkeletonBlock className="h-11 flex-1" />
+                    <SkeletonBlock className="size-11" />
                   </div>
                 </div>
               ))}
             </div>
+            {/* From 640px, the queue as the page draws it: AURA's table, edge
+                to edge and ending the card like the queue. */}
+            <DataTableSkeleton label={t('tableCaption')} columns={columns} rows={6} bleedEnd className="max-sm:hidden" />
           </div>
         </Card>
       </TableContainer>

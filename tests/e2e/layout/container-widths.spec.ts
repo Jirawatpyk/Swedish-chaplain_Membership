@@ -3,8 +3,12 @@
  *
  * Populated across Phases 3-5:
  *   - TableContainer block (Phase 3, US1): 375/1280/1440/1920 px → ≤1536px cap
- *   - FormContainer block (Phase 4, US2):  375/1280/1440/1920 px → 672±8px
- *   - DetailContainer block (Phase 5):      375/1440 px → 1152±4px (SC-003 pixel parity)
+ *   - FormContainer block (Phase 4, US2):  375/1280/1440/1920 px → 720px (AURA narrow), at the start edge
+ *   - DetailContainer block (Phase 5):      375/1440 px → 1280px (AURA default), or the content width below it
+ *
+ * Spec 122 (2 Oct 2026): the three containers are AURA's `Container` — form
+ * `narrow` (720), detail and the portal column the default (1280), table our
+ * own 1536 override; the staff forms sit at the page's start edge.
  *
  * In all cases we assert NO horizontal body scroll and the correct
  * `[data-variant]` is present.
@@ -16,7 +20,7 @@
  * Task-8 HIGH (settings-ux-invoice-reminders wave B) — `/admin/settings/
  * invoicing` moved OUT of the form block and into the detail block below:
  * its two-column sticky-nav shell now renders `DetailContainer`
- * (`data-variant="detail"`, ~1152px), not `FormContainer` (see
+ * (`data-variant="detail"`), not `FormContainer` (see
  * `docs/ux-standards.md` §18.2's documented exception row).
  */
 import type { Locator, Page } from '@playwright/test';
@@ -40,18 +44,18 @@ const VIEWPORTS_DETAIL = [375, 1440] as const;
 const ADMIN_FORM_ROUTES = ['/admin/plans/new'] as const;
 /**
  * Portal pages that render a `FormContainer`, each with the band its own board
- * sets — they are NOT all the 672px staff form column.
+ * sets — they are NOT all the 720px staff form column.
  *
  * `/portal/account` and `/portal/contacts/invite` used to be listed here and
  * have been `DetailContainer` since 122 US3 (`570b8c3c6`): the account page is a
  * hub of independent forms, which `docs/ux-standards.md § 18.1` puts in
  * `DetailContainer`, and the invite page draws a 720px inner column inside the
  * portal frame (`portal/contacts/invite/page.tsx:18-19`, `tasks.md:159`). They
- * moved to `PORTAL_DETAIL_ROUTES`; asserting them as 672 forms could never pass.
+ * moved to `PORTAL_DETAIL_ROUTES`; asserting them as staff forms could never pass.
  */
 const PORTAL_FORM_ROUTES = [
   // 880px content column (`portal/edit/page.tsx:212`) → 944 outer at desktop,
-  // wider than the staff 672 by design.
+  // wider than the staff 720 by design.
   { route: '/portal/edit', min: 936, max: 952 },
 ] as const;
 // Task-8 HIGH — /admin/settings/invoicing renders DetailContainer (its
@@ -59,18 +63,23 @@ const PORTAL_FORM_ROUTES = [
 // §18.2's documented exception row.
 const ADMIN_DETAIL_ROUTES = ['/admin', '/admin/settings/invoicing'] as const;
 /**
- * Portal detail pages. `.chamber-portal` overrides the detail token to
- * `calc(1200px + 2 * var(--page-padding-x))` (`globals.css:649`), a faithful
- * transcription of spec 122's "a 1200 px portal **content** column"
- * (`spec.md:45`), so these measure 1264 outer at 1440 — NOT the admin's 1152.
- * This block asserted the admin band until 2026-10-02.
+ * Portal detail pages: AURA's default `Container`, 1280px outer at 1440 like
+ * the admin's (spec 122, 2 Oct 2026; the portal had its own 1200px content
+ * column before).
  */
 const PORTAL_DETAIL_ROUTES = [
   '/portal/profile',
   '/portal/account',
   '/portal/contacts/invite',
 ] as const;
-const PORTAL_DETAIL_BAND = { min: 1256, max: 1272 } as const;
+/** The account hub and the invite page cap the whole column at their board's width, centred (2 Oct 2026). */
+const PORTAL_DETAIL_CAPS: Partial<Record<(typeof PORTAL_DETAIL_ROUTES)[number], number>> = {
+  '/portal/account': 944,
+  '/portal/contacts/invite': 784,
+};
+/** AURA's `--aura-container-max` and `--aura-container-narrow`. */
+const DETAIL_MAX = 1280;
+const FORM_MAX = 720;
 
 async function signInAdmin(page: Page): Promise<void> {
   await signInViaForm(page, '/admin/sign-in', ADMIN_EMAIL!, ADMIN_PASSWORD!, /^\/admin(\/|$)/);
@@ -100,6 +109,16 @@ async function parentContentWidth(container: Locator): Promise<number> {
       Number.parseFloat(cs.paddingInlineStart) -
       Number.parseFloat(cs.paddingInlineEnd)
     );
+  });
+}
+
+/** How far the container's left edge sits from its parent's content-box left edge. */
+async function startOffset(container: Locator): Promise<number> {
+  return container.evaluate((el) => {
+    const parent = el.parentElement;
+    if (parent === null) throw new Error('container has no parent element');
+    const parentLeft = parent.getBoundingClientRect().left + Number.parseFloat(getComputedStyle(parent).paddingInlineStart);
+    return Math.abs(el.getBoundingClientRect().left - parentLeft);
   });
 }
 
@@ -150,8 +169,9 @@ test.describe('F5 container widths @layout', () => {
 
           const boxWidth = await container.evaluate((el) => (el as HTMLElement).getBoundingClientRect().width);
           if (width >= 1280) {
-            expect(boxWidth, 'form container sits near 42rem (≈672px) at desktop').toBeGreaterThanOrEqual(650);
-            expect(boxWidth, 'form container sits near 42rem (≈672px) at desktop').toBeLessThanOrEqual(680);
+            expect(boxWidth, 'form container is AURA narrow (720px) at desktop').toBeCloseTo(FORM_MAX, 0);
+            // The staff form boards put the column at the page's start edge.
+            expect(await startOffset(container), 'form column sits at the start edge').toBeLessThanOrEqual(1);
           } else {
             expect(
               boxWidth,
@@ -198,9 +218,9 @@ test.describe('F5 container widths @layout', () => {
 
           const boxWidth = await container.evaluate((el) => (el as HTMLElement).getBoundingClientRect().width);
           if (width === 1440) {
-            // SC-003 pixel parity with legacy admin ContentContainer (72rem = 1152px).
-            expect(boxWidth).toBeGreaterThanOrEqual(1148);
-            expect(boxWidth).toBeLessThanOrEqual(1156);
+            // AURA's default Container (1280px), or the whole content width
+            // when the shell's nav leaves less than that.
+            expect(boxWidth).toBeCloseTo(Math.min(DETAIL_MAX, await parentContentWidth(container)), 0);
           } else {
             expect(
               boxWidth,
@@ -228,8 +248,15 @@ test.describe('F5 container widths @layout', () => {
         const boxWidth = await container.evaluate(
           (el) => (el as HTMLElement).getBoundingClientRect().width,
         );
-        expect(boxWidth).toBeGreaterThanOrEqual(PORTAL_DETAIL_BAND.min);
-        expect(boxWidth).toBeLessThanOrEqual(PORTAL_DETAIL_BAND.max);
+        const parent = await parentContentWidth(container);
+        expect(boxWidth).toBeCloseTo(Math.min(PORTAL_DETAIL_CAPS[route] ?? DETAIL_MAX, parent), 0);
+        // centred in the portal frame: the same gap either side
+        const gaps = await container.evaluate((el) => {
+          const p = el.parentElement!.getBoundingClientRect();
+          const r = el.getBoundingClientRect();
+          return Math.abs(r.left - p.left - (p.right - r.right));
+        });
+        expect(gaps, 'portal column is centred').toBeLessThanOrEqual(2);
 
         await assertNoHorizontalScroll(page);
       });

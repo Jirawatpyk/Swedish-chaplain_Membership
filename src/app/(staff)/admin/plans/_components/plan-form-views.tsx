@@ -5,27 +5,10 @@
  * so the screenshots show the pages themselves, never a copy of their layout.
  *
  * Each page wraps its view in its own `FormContainer` (check:layout reads the
- * page file) with `PLAN_FORM_COLUMN`: the boards set the 672px column at the
- * page's start edge, not centred (spec 122 `spec.md:118`). That is all the
- * start-edge alignment needs — `FormContainer` already caps the column at
- * `--layout-max-width-form`.
- *
- * The 672 is the container's OWN width, not its content width: each container
- * puts its page padding and its max-width utility on the SAME element, and
- * Tailwind's preflight is `box-sizing: border-box`, so the padding sits inside
- * the cap. form / detail / table therefore measure 672 / 1152 / 1536 outer.
- * (Do not write the max-width utility literally here — Tailwind's JIT scans
- * comments, and a wildcard inside one generates invalid CSS.) The boards never say which box they mean (`spec.md:116`, `:118` just
- * say "one 672px column"), so the system's single definition wins, and the
- * member forms have shipped that way since US5b-2: `MEMBER_FORM_COLUMN` is
- * `'mx-0'` and nothing else, screenshot-reviewed against five boards at T580.
- *
- * This constant used to add `+2*var(--page-padding-x)`, which made these three
- * pages 736 outer — a second definition of the same board sentence, and 48–64px
- * of extra measure past the 80-character budget in `docs/ux-standards.md`.
- * `.chamber-portal`'s `calc(1200px + 2*--page-padding-x)` is NOT the same
- * thing: it derives an outer width from a content figure the spec states
- * verbatim (`spec.md:45`, "a 1200 px portal content column").
+ * page file) with `align="start"`: the boards set the form column at the
+ * page's start edge, not centred (spec 122 `spec.md:118`), as on the member
+ * forms. The column is AURA's narrow `Container` (720px outer, the page gutter
+ * inside it; the maintainer's width decision of 2 Oct 2026).
  */
 import { getLocale, getTranslations } from 'next-intl/server';
 import { Card } from '@jirawatpyk/aura-react/server';
@@ -37,8 +20,6 @@ import type { CurrentYearPlanStatus } from '@/components/plans/prior-year-lock-b
 import { NewPlanClient } from '../new/new-plan-client';
 import { EditPlanClient } from '../[year]/[planId]/edit/edit-plan-client';
 import { CloneYearClient, type CloneSourcePlan } from '../clone/clone-year-client';
-
-export const PLAN_FORM_COLUMN = 'mx-0';
 
 /** Board `Admin-plan-new`: the stepper and one card per step under the title. */
 export async function renderNewPlanView({

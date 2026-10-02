@@ -66,6 +66,8 @@ export function MembersTableSkeleton({ withSelection = false }: MembersTableSkel
         rowHeight="auto"
         stackBelow={640}
         hideSelectionInCards
+        // edge to edge inside the list card, as the table is
+        bleed
       />
     </div>
   );

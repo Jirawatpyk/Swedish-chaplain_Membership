@@ -16,7 +16,7 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { listPlans, asPlanYear } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import { FormContainer } from '@/components/layout';
-import { PLAN_FORM_COLUMN, renderCloneYearView } from '../_components/plan-form-views';
+import { renderCloneYearView } from '../_components/plan-form-views';
 import { parseCloneYearParam } from './clone-year-params';
 
 interface SearchParams {
@@ -67,7 +67,7 @@ export default async function CloneYearPage({
   return (
     // 122 US6 (T607): one card in the start-edge 672px column (board
     // `Admin-plans-clone`).
-    <FormContainer className={PLAN_FORM_COLUMN}>
+    <FormContainer align="start">
       {await renderCloneYearView({ sourceYear, targetYear, currencyCode, sourcePlans })}
     </FormContainer>
   );

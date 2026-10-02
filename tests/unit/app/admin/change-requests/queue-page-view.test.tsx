@@ -147,3 +147,27 @@ describe('change-request queue loading', () => {
     expect(filters.querySelectorAll('.h-4.w-20')).toHaveLength(0);
   });
 });
+
+// The skeleton draws the list table as the page does: AURA's table, edge to
+// edge inside the card (`bleed`), so nothing moves when the rows arrive.
+describe('change-request queue loading in the list card', () => {
+  it('draws AURA\'s table with the queue\'s column heads, edge to edge, no bordered box', async () => {
+    const { default: Loading } = await import('@/app/(staff)/admin/change-requests/loading');
+    const { container } = render((await Loading()) as ReactElement);
+    expect(container.querySelector('.aura-card .aura-bleed')).not.toBeNull();
+    expect(container.querySelectorAll('.aura-card th')).toHaveLength(7);
+    expect(container.querySelector('.aura-card .rounded-\\[var\\(--aura-radius-md\\)\\].border')).toBeNull();
+  });
+});
+
+// UX review M1: on a phone the skeleton's cards take the real row's parts.
+describe('change-request queue loading on a phone', () => {
+  it('gives each skeleton row the real card parts: company as title, Review as a touch-height action', async () => {
+    const { default: Loading } = await import('@/app/(staff)/admin/change-requests/loading');
+    const { container } = render((await Loading()) as ReactElement);
+    const cells = [...container.querySelectorAll('[data-testid="queue-table-skeleton"] tbody tr:first-child td')];
+    expect(cells[0]).toHaveAttribute('data-card', 'title');
+    expect(cells[6]).toHaveAttribute('data-card', 'action');
+    expect(cells[6]?.querySelector('.h-11')).not.toBeNull();
+  });
+});

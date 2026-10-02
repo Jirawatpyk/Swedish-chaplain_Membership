@@ -933,7 +933,6 @@
           "planId": "Plan ID (slug)",
           "planIdHelp": "Lowercase letters, digits, and hyphens only (e.g. diamond, start-up).",
           "planIdPlaceholder": "e.g. premium",
-          "loadingLabel": "Loading plan list…",
           "planYear": "Plan year",
           "planName": "Plan name",
           "description": "Description",

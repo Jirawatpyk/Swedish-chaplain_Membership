@@ -50,6 +50,7 @@ import {
 // Client-safe sub-barrel — see `tier-filter-select.tsx` for the
 // rationale (Turbopack 16 + F8 barrel + server-only deps).
 import type { CycleStatus, PipelineRow, PipelineSort } from '@/modules/renewals/client';
+import { PIPELINE_COLUMN_LAYOUT } from './pipeline-table-columns';
 
 export interface PipelineTableProps {
   readonly rows: ReadonlyArray<PipelineRow>;
@@ -175,15 +176,14 @@ export function PipelineTable({
       {
         key: SORT_COLUMN.tier,
         label: t('columns.tier'),
-        width: 104,
+        ...PIPELINE_COLUMN_LAYOUT.tierBucket,
         sortable,
         render: (row) => <CycleTierCell tier={row.tierBucket} />,
       },
       {
         key: 'companyName',
         label: t('columns.company'),
-        minWidth: 150,
-        card: 'title',
+        ...PIPELINE_COLUMN_LAYOUT.companyName,
         render: (row) => (
           <CycleCompanyCell
             memberId={row.memberId}
@@ -195,7 +195,7 @@ export function PipelineTable({
       {
         key: SORT_COLUMN.expires,
         label: t('columns.expires'),
-        width: 112,
+        ...PIPELINE_COLUMN_LAYOUT.expiresAt,
         sortable,
         render: (row) => <CycleExpiresCell expiresAt={row.expiresAt} />,
       },
@@ -204,8 +204,7 @@ export function PipelineTable({
         // stays full until expiry); the badge says the bill is already out.
         key: 'urgency',
         label: t('columns.urgency'),
-        width: 136,
-        card: 'pill',
+        ...PIPELINE_COLUMN_LAYOUT.urgency,
         render: (row) => (
           <span className="inline-flex flex-wrap items-center gap-1">
             <UrgencyPill urgency={row.urgency} />
@@ -222,9 +221,7 @@ export function PipelineTable({
         // to relative time after hydration (no SSR/CSR text mismatch).
         key: 'lastReminderAt',
         label: t('columns.lastReminder'),
-        width: 120,
-        // Shown at 1440 (a 1071px table), as the board draws it.
-        hideBelow: 1040,
+        ...PIPELINE_COLUMN_LAYOUT.lastReminderAt,
         render: (row) =>
           row.lastReminderAt ? (
             <RelativeTime
@@ -238,7 +235,7 @@ export function PipelineTable({
       {
         key: 'status',
         label: t('columns.status'),
-        width: 104,
+        ...PIPELINE_COLUMN_LAYOUT.status,
         render: (row) => (
           <span className="text-[var(--aura-fg-secondary)]">
             {/* The template-literal type tracks CycleStatus, so a new status
@@ -250,11 +247,7 @@ export function PipelineTable({
       {
         key: 'linkedInvoiceId',
         label: t('columns.invoice'),
-        width: 96,
-        // The first to go: most rows read "—", and an issued bill already
-        // shows as the "Bill issued" badge beside the urgency pill.
-        hideBelow: 1180,
-        card: 'hide',
+        ...PIPELINE_COLUMN_LAYOUT.linkedInvoiceId,
         render: (row) =>
           row.linkedInvoiceId ? (
             <Link
@@ -287,13 +280,7 @@ export function PipelineTable({
         // An empty label: AURA names the header "Actions" for screen readers.
         key: 'actions',
         label: '',
-        // Fits the longest "Send reminder" (SV "Skicka påminnelse", 142px)
-        // beside the ⋯ and the cell's end padding.
-        width: 200,
-        actions: true,
-        align: 'end',
-        // The phone card's last row, full width (board Admin-renewals-mobile).
-        card: 'footer',
+        ...PIPELINE_COLUMN_LAYOUT.actions,
         render: (row) => (
           <RowActions
             cycleId={row.cycleId}
@@ -332,6 +319,9 @@ export function PipelineTable({
           onSortChange={handleSortChange}
           rowHeight="auto"
           stackBelow={640}
+          // Edge to edge inside the list card from 640px up (AURA 5.27, #130);
+          // the bulk bar and "Next 50" can follow, so it does not end the card.
+          bleed
           empty={empty}
           {...(enableSelection
             ? {

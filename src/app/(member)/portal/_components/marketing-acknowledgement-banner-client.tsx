@@ -108,7 +108,7 @@ export function AcknowledgementBannerClient({
         // px-[var(--page-padding-x)]` so the warning-banner edges align
         // with the page content cards below on narrow viewports (was
         // flush to viewport edges < 1152px).
-        <div className="mx-auto w-full max-w-(--layout-max-width-detail) px-[var(--page-padding-x)] pt-[var(--page-padding-y)]">
+        <div className="mx-auto w-full max-w-(--aura-container-max) px-[var(--page-padding-x)] pt-[var(--page-padding-y)]">
           {/* A named region, not an alert: it is a standing request, announced
               by its landmark. Inside, AURA's warning Alert with role="none"
               (spec 122; 5.8 role override, handoff #66). */}

@@ -556,3 +556,17 @@ describe('<PipelineTable> column breakpoints (maintainer, 1 Oct: Last reminder a
   });
 });
 
+
+// The list card rule (docs/aura-adoption.md § List card): from 640px up the table
+// runs edge to edge inside the card (AURA `bleed`, 5.27 #130), keeping its header band.
+describe('<PipelineTable> in the list card', () => {
+  it('bleeds to the card edges; the bulk bar and "Next 50" can follow it, so it does not end the card', () => {
+    const { container } = render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <PipelineTable rows={ONE_ROW} canMutate />
+      </NextIntlClientProvider>,
+    );
+    expect(container.querySelector('.aura-bleed')).not.toBeNull();
+    expect(container.querySelector('.aura-bleed-end')).toBeNull();
+  });
+});

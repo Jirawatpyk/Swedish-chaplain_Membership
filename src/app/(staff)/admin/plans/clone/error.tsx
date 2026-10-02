@@ -3,8 +3,8 @@
 /**
  * Segment-level error boundary for `/admin/plans/clone` (form page).
  *
- * Renders inside `<FormContainer>` (42rem) to match the clone wizard's
- * width. Post-ship R6 I12.
+ * Renders in the clone wizard's own form column (`FormContainer`, 720px, at
+ * the start edge). Post-ship R6 I12.
  *
  * 122 US6 (T608): the shared AURA RouteErrorPanel (error id and Retry), as
  * every migrated route shows a failure.
@@ -29,7 +29,7 @@ export default function PlansCloneError({
   }, [error]);
 
   return (
-    <FormContainer className="mx-0">
+    <FormContainer align="start">
       <PageHeader title={t('generic')} />
       <RouteErrorPanel digest={error.digest} onRetry={reset} />
     </FormContainer>

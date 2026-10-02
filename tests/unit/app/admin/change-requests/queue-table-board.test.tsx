@@ -87,3 +87,13 @@ describe('change-request queue as on the board (US5a)', () => {
   });
 });
 
+
+// The list card rule (docs/aura-adoption.md § List card): from 640px up the table
+// runs edge to edge inside the card (AURA `bleed`, 5.27 #130), keeping its header band.
+describe('change-request queue table in the list card', () => {
+  it('bleeds to the card edges; a "Next" link can follow it, so it does not end the card', async () => {
+    const { container } = render(await ChangeRequestQueueTable({ items: [item] }));
+    expect(container.querySelector('.aura-bleed')).not.toBeNull();
+    expect(container.querySelector('.aura-bleed-end')).toBeNull();
+  });
+});

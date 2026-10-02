@@ -67,7 +67,7 @@ export default async function Loading() {
 
         {/* The fee and benefit-matrix cards, side by side from 1024px
             (board `Admin-plan-detail`; 122 US6 T608). */}
-        <div className="grid items-start gap-[var(--aura-space-4)] lg:grid-cols-[1fr_1.4fr]">
+        <div className="grid items-start gap-[var(--aura-space-4)] xl:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
           <Card
             header={
               <div className="space-y-2">

@@ -1,11 +1,10 @@
 /**
  * T043 (rewritten for F5) — E2E: portal pages use content-type-based containers.
  *
- *   /portal           → DetailContainer (72rem = 1152px at 1440px viewport)
- *   /portal/profile   → DetailContainer (same)
- *   /portal/account   → FormContainer  (42rem ≈ 672±8px)
- *   /portal/edit      → FormContainer
- *   /portal/contacts/invite → FormContainer
+ *   /portal, /portal/profile → DetailContainer: AURA's default Container, 1280px at 1440
+ *   /portal/account          → DetailContainer capped at the board's 880px column (944 outer), centred
+ *   /portal/contacts/invite  → DetailContainer capped at the board's 720px column (784 outer), centred
+ *   /portal/edit             → FormContainer, widened to the boards' 880px column (944 outer)
  */
 import { expect, test } from './fixtures';
 import { signInViaForm, waitForLayoutContainer } from './helpers/layout';
@@ -53,12 +52,12 @@ test.describe('F5 portal layout @layout', () => {
         (el) => (el as HTMLElement).getBoundingClientRect().width,
       );
       if (variant === 'detail') {
-        // `.chamber-portal` widens the detail container to
-        // `1200px + 2 * --page-padding-x` (globals.css), i.e. 1264px at
-        // 1440px wide. The admin shell keeps the 1152px token, which
-        // layout-consistency.spec.ts covers.
-        expect(boxWidth).toBeGreaterThanOrEqual(1256);
-        expect(boxWidth).toBeLessThanOrEqual(1272);
+        // AURA's default Container (spec 122, 2 Oct 2026), except the account
+        // hub and the invite page, whose whole column takes the board's width
+        // and is centred like the edit page's.
+        const expected = path === '/portal/account' ? 944 : path === '/portal/contacts/invite' ? 784 : 1280;
+        expect(boxWidth).toBeGreaterThanOrEqual(expected - 1);
+        expect(boxWidth).toBeLessThanOrEqual(expected + 1);
       } else {
         // `/portal/edit` widens its FormContainer to the boards' 880px
         // column (`55rem + 2 * --page-padding-x`), so 944px at 1440.

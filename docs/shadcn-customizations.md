@@ -123,9 +123,9 @@ one of the three primitives, and the pair must match (FR-007 CLS-0).
 
 | File                                             | Summary                                                                                                         | Rationale (spec) |
 | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- | ---------------- |
-| `src/components/layout/table-container.tsx`      | Thin `<div data-slot="layout-container" data-variant="table">` capping at `var(--layout-max-width-table)` (96rem).  | 006 FR-001, FR-002 |
-| `src/components/layout/form-container.tsx`       | Same shape, `data-variant="form"`, `var(--layout-max-width-form)` (42rem).                                       | 006 FR-003       |
-| `src/components/layout/detail-container.tsx`     | Same shape, `data-variant="detail"`, `var(--layout-max-width-detail)` (72rem — pixel-parity with the old admin ContentContainer). | 006 FR-004       |
+| `src/components/layout/table-container.tsx`      | AURA `Container` (`/server`) with `data-slot="layout-container" data-variant="table"`, widened to `var(--layout-max-width-table)` (96rem). | 006 FR-001, FR-002 |
+| `src/components/layout/form-container.tsx`       | Same shape, `data-variant="form"`, AURA `size="narrow"` (720px); `align="start"` on the staff forms. | 006 FR-003       |
+| `src/components/layout/detail-container.tsx`     | Same shape, `data-variant="detail"`, AURA's default width (1280px; spec 122, 2 Oct 2026). | 006 FR-004       |
 | `src/components/layout/index.ts`                 | Barrel export of all three. Import via `@/components/layout`, never via `@/components/layout/<variant>-container`. | 006 FR-014       |
 | `scripts/check-layout-container-usage.ts`        | Static CI gate (wired into `.husky/pre-push` + full-CI chain in `CLAUDE.md`).                                    | 006 FR-005, FR-006, FR-007 |
 

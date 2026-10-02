@@ -301,20 +301,34 @@ describe('US6 plans (parity-page comments)', () => {
     );
   });
 
-  it('the plan form column is start-edge only, the same as the member form column', () => {
-    // One board sentence, one implementation. `PLAN_FORM_COLUMN` briefly added
-    // `+2*var(--page-padding-x)`, which made the three plans pages 736 outer
-    // while `/admin/members/new` stayed at 672 — two definitions of the same
-    // 672. `FormContainer` already caps the column, so start-edge alignment
-    // needs `mx-0` and nothing more. Asserting both files agree is what catches
-    // a re-fork; asserting one literal is what let the fork through.
-    const plans = src('src/app/(staff)/admin/plans/_components/plan-form-views.tsx');
-    const members = src('src/app/(staff)/admin/members/_components/member-form-frame.tsx');
-    expect(plans).toContain("export const PLAN_FORM_COLUMN = 'mx-0';");
-    expect(members).toContain("export const MEMBER_FORM_COLUMN = 'mx-0';");
-    // And neither re-derives the column width from the page padding.
-    expect(plans).not.toContain('--layout-max-width-form)+2*var(--page-padding-x)');
-    expect(members).not.toContain('--layout-max-width-form)+2*var(--page-padding-x)');
+  it('the plan and member form columns sit at the start edge the same way', () => {
+    // One board sentence, one implementation: every staff form page and its
+    // loading skeleton asks FormContainer for `align="start"` (AURA Container,
+    // 5.26 #126), and no page re-derives the column with its own classes —
+    // the old `*_FORM_COLUMN = 'mx-0'` constants and a fork that added the
+    // page padding to the width are gone.
+    const pages = [
+      'src/app/(staff)/admin/plans/new/page.tsx',
+      'src/app/(staff)/admin/plans/new/loading.tsx',
+      'src/app/(staff)/admin/plans/[year]/[planId]/edit/page.tsx',
+      'src/app/(staff)/admin/plans/[year]/[planId]/edit/loading.tsx',
+      'src/app/(staff)/admin/plans/clone/page.tsx',
+      'src/app/(staff)/admin/plans/clone/loading.tsx',
+      'src/app/(staff)/admin/members/new/page.tsx',
+      'src/app/(staff)/admin/members/new/loading.tsx',
+      'src/app/(staff)/admin/members/[memberId]/edit/page.tsx',
+      'src/app/(staff)/admin/members/[memberId]/edit/loading.tsx',
+      // their error boundaries draw the same column (UX review L1)
+      'src/app/(staff)/admin/members/[memberId]/edit/error.tsx',
+      'src/app/(staff)/admin/plans/clone/error.tsx',
+    ];
+    for (const page of pages) {
+      const code = src(page);
+      const forms = code.match(/<FormContainer\b[^>]*>/g) ?? [];
+      expect(forms.length, page).toBeGreaterThan(0);
+      for (const tag of forms) expect(tag, page).toContain('align="start"');
+      expect(code, page).not.toMatch(/_FORM_COLUMN|className="mx-0"/);
+    }
   });
 
   it('#113–#116 (AURA 5.19 / 5.20): no plans stand-in is left', () => {
@@ -328,5 +342,32 @@ describe('US6 plans (parity-page comments)', () => {
       expect(src(path)).not.toMatch(/Stand-in until AURA #11[3-6]/);
     }
     expect(src('src/app/globals.css')).not.toContain('plan-form-actions--split');
+  });
+});
+
+describe('PR B consistency (maintainer, 2 Oct)', () => {
+  it('the portal account and invite pages centre their whole column (header and cards), as the edit page does', () => {
+    // The account hub's 880px and the invite page's 720px columns used to sit
+    // at the start of the 1280px portal column, with the header above them;
+    // the edit page centres its 880px column. One rule: the container itself
+    // takes the board's width, so the header and the cards move together.
+    const account = src('src/app/(member)/portal/account/page.tsx');
+    const accountLoading = src('src/app/(member)/portal/account/loading.tsx');
+    const invite = src('src/app/(member)/portal/contacts/invite/page.tsx');
+    const inviteLoading = src('src/app/(member)/portal/contacts/invite/loading.tsx');
+    for (const code of [account, accountLoading]) expect(code).toContain('<DetailContainer className="max-w-[calc(55rem+2*var(--page-padding-x))]"');
+    for (const code of [invite, inviteLoading]) expect(code).toContain('<DetailContainer className="max-w-[calc(45rem+2*var(--page-padding-x))]"');
+    for (const code of [src('src/components/portal/portal-account-view.tsx'), accountLoading]) expect(code).not.toContain('max-w-[880px] flex-col');
+    for (const code of [invite, inviteLoading]) expect(code).not.toContain('max-w-[720px] flex-col');
+  });
+
+  it('the plan detail page goes two columns from 1280px, its tracks able to shrink (no sideways scroll at 1024)', () => {
+    // At 1024 the staff content is ~705px; the fee card's 220px label column
+    // pushed the first track past it and the page scrolled 12px sideways.
+    for (const path of ['src/app/(staff)/admin/plans/[year]/[planId]/_components/plan-detail-view.tsx', 'src/app/(staff)/admin/plans/[year]/[planId]/loading.tsx']) {
+      const code = src(path);
+      expect(code, path).toContain('xl:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]');
+      expect(code, path).not.toContain('lg:grid-cols-[1fr_1.4fr]');
+    }
   });
 });

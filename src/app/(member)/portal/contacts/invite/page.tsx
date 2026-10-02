@@ -20,9 +20,11 @@ import { env } from '@/lib/env';
  */
 function InviteFrame({ back, children }: { readonly back: string; readonly children: React.ReactNode }) {
   return (
-    <DetailContainer>
+    // The board's 720px column, centred like the edit page's (back link,
+    // header and form together).
+    <DetailContainer className="max-w-[calc(45rem+2*var(--page-padding-x))]">
       <BackLink href="/portal/profile">{back}</BackLink>
-      <div className="flex max-w-[720px] flex-col gap-[var(--page-section-gap)]">{children}</div>
+      {children}
     </DetailContainer>
   );
 }

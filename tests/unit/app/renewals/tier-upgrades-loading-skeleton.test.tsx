@@ -37,7 +37,7 @@ describe('tier-upgrades loading skeleton', () => {
     const host = await dom();
     const card = host.querySelector('.aura-card') as HTMLElement;
     const tabs = card.querySelector('[data-slot="tab-strip-skeleton"]');
-    const firstRow = card.querySelector('[data-slot="reason-skeleton"]');
+    const firstRow = card.querySelector('.aura-table');
     expect(tabs).not.toBeNull();
     expect(firstRow).not.toBeNull();
     expect(tabs!.compareDocumentPosition(firstRow!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -45,11 +45,39 @@ describe('tier-upgrades loading skeleton', () => {
 
   it('announces loading via one role=status live region', async () => {
     const host = await dom();
-    expect(host.querySelectorAll('[role="status"]')).toHaveLength(1);
+    // AURA's DataTable keeps its own loading status inside the hidden placeholder.
+    const announced = [...host.querySelectorAll('[role="status"]')].filter((el) => !el.closest('[aria-hidden="true"]'));
+    expect(announced).toHaveLength(1);
   });
 
   it('keeps the table layout container (structural parity with the page)', async () => {
     const host = await dom();
     expect(host.querySelector('[data-slot="layout-container"]')).toHaveAttribute('data-variant', 'table');
+  });
+});
+
+// The skeleton draws the list table as the page does: AURA's table, edge to
+// edge inside the card (`bleed`), so nothing moves when the rows arrive.
+describe('tier-upgrades loading in the list card', () => {
+  it('draws AURA\'s DataTable in its loading state with the queue\'s columns, ending the card like the queue', async () => {
+    const host = await dom();
+    const table = host.querySelector('.aura-card .aura-bleed.aura-bleed-end');
+    expect(table).not.toBeNull();
+    expect(table?.closest('[aria-hidden="true"]')).not.toBeNull();
+    const heads = [...host.querySelectorAll('.aura-card [role="columnheader"]')].map((h) => h.textContent?.trim());
+    expect(heads.slice(0, 5)).toEqual(['columns.member', 'columns.from_plan', 'columns.to_plan', 'columns.reason', 'columns.status']);
+  });
+});
+
+// UX review H1: AURA's loading rows are one 48px line (handoff #134), far
+// shorter than the queue's phone cards, so the phone keeps its own cards.
+describe('tier-upgrades loading on a phone', () => {
+  it('draws the queue\'s own cards below 640px (a two-line reason, touch-height actions) and hides AURA\'s table there', async () => {
+    const host = await dom();
+    const cards = host.querySelector('[data-slot="phone-cards-skeleton"]');
+    expect(cards).toHaveClass('sm:hidden');
+    expect(cards?.querySelector('[data-slot="reason-skeleton"]')?.children).toHaveLength(2);
+    expect(cards?.querySelector('.h-11')).not.toBeNull();
+    expect(host.querySelector('.aura-bleed')?.closest('[aria-hidden="true"]')).toHaveClass('max-sm:hidden');
   });
 });
