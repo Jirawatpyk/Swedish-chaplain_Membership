@@ -743,14 +743,33 @@ been **removed** and its two tokens (`--content-max-width-admin`,
 | `/admin/members/[memberId]`                         | `DetailContainer` | 72rem |
 | `/admin/members/[memberId]/edit`                    | `FormContainer`   | 42rem |
 | `/admin/members/[memberId]/timeline`                | `DetailContainer` | 72rem |
-| `/portal`                                           | `DetailContainer` | 72rem |
-| `/portal/profile`                                   | `DetailContainer` | 72rem |
-| `/portal/account`                                   | `FormContainer`   | 42rem |
-| `/portal/edit`                                      | `FormContainer`   | 42rem |
-| `/portal/contacts/invite`                           | `FormContainer`   | 42rem |
+| `/portal`                                           | `DetailContainer`‡ | 1200px |
+| `/portal/profile`                                   | `DetailContainer`‡ | 1200px |
+| `/portal/account`                                   | `DetailContainer`‡ § | 1200px |
+| `/portal/edit`                                      | `FormContainer`§  | 880px |
+| `/portal/contacts/invite`                           | `DetailContainer`‡ § | 1200px |
 | `/portal/broadcasts/new`                            | `DetailContainer`† | 72rem |
 | `/admin/broadcasts/new`                             | `DetailContainer`† | 72rem |
 | `/admin/broadcasts/[id]`                            | `DetailContainer`  | 72rem |
+
+‡ **Portal column** — spec 122 US3 (`570b8c3c6`) set the shared tokens to the
+boards' portal frame, so `.chamber-portal` overrides detail AND table to
+`calc(1200px + 2 * var(--page-padding-x))` (`globals.css:649-650`). That is
+spec 122 `spec.md:45`'s "a 1200 px portal **content** column" expressed as an
+outer width, so a portal detail page measures 1264 at desktop, not the admin's
+1152. The `Width` column above said 72rem for every portal row until
+2026-10-02.
+
+§ **Inner column** — these three cap their content inside the portal frame
+rather than with a narrower container: `/portal/account` at 880px
+(`portal-account-view.tsx:65`, with the password form at 480), `/portal/edit`
+at 880px (`portal/edit/page.tsx:212`), `/portal/contacts/invite` at 720px
+(`portal/contacts/invite/page.tsx:25`, the board's invite column per
+`tasks.md:159`). `/portal/account` and `/portal/contacts/invite` are listed as
+`DetailContainer` because they are: an account **hub** of independently saved
+forms is § 18.1's "mixed content", and the invite page uses the portal frame
+with its own inner column. They were listed as 42rem `FormContainer` until
+2026-10-02, which no e2e band could satisfy.
 
 \* **Documented exception** — `/admin/settings/invoicing` is a settings/edit
 form, which the §18.1 one-liner would default to `FormContainer` (42rem).

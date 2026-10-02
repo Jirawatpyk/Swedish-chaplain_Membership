@@ -292,10 +292,20 @@ describe('US6 plans (parity-page comments)', () => {
     );
   });
 
-  it('the plan form column is the boards\' 672px of content, inside the page padding', () => {
-    expect(src('src/app/(staff)/admin/plans/_components/plan-form-views.tsx')).toContain(
-      'max-w-[calc(var(--layout-max-width-form)+2*var(--page-padding-x))]',
-    );
+  it('the plan form column is start-edge only, the same as the member form column', () => {
+    // One board sentence, one implementation. `PLAN_FORM_COLUMN` briefly added
+    // `+2*var(--page-padding-x)`, which made the three plans pages 736 outer
+    // while `/admin/members/new` stayed at 672 — two definitions of the same
+    // 672. `FormContainer` already caps the column, so start-edge alignment
+    // needs `mx-0` and nothing more. Asserting both files agree is what catches
+    // a re-fork; asserting one literal is what let the fork through.
+    const plans = src('src/app/(staff)/admin/plans/_components/plan-form-views.tsx');
+    const members = src('src/app/(staff)/admin/members/_components/member-form-frame.tsx');
+    expect(plans).toContain("export const PLAN_FORM_COLUMN = 'mx-0';");
+    expect(members).toContain("export const MEMBER_FORM_COLUMN = 'mx-0';");
+    // And neither re-derives the column width from the page padding.
+    expect(plans).not.toContain('--layout-max-width-form)+2*var(--page-padding-x)');
+    expect(members).not.toContain('--layout-max-width-form)+2*var(--page-padding-x)');
   });
 
   it('#113–#116 (AURA 5.19 / 5.20): no plans stand-in is left', () => {

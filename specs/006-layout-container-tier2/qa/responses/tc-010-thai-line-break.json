@@ -1,6 +1,6 @@
 [
   {
-    "route": "/admin/settings/fees",
+    "route": "/admin/settings/invoicing",
     "htmlLang": "th",
     "bodyLineBreak": "loose",
     "bodyWordBreak": "normal",
