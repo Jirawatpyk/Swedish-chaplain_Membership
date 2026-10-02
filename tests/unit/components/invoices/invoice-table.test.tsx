@@ -1196,6 +1196,13 @@ describe('<InvoicesTable> — review fixes (US8 T809)', () => {
     expect(screen.queryByTestId('row-receipt-state-card')).toBeNull();
   });
 
+  it('on a phone card the buyer takes a full-width line and wraps (AURA card cells are nowrap)', () => {
+    renderTable([baseRow({ memberName: 'Baltic Bay Consulting Co., Ltd.', buyerSubtitle: 'Membership 2026' })]);
+    expect(INVOICES_COLUMN_LAYOUT.memberName).toMatchObject({ card: 'wide' });
+    const buyer = screen.getByRole('link', { name: 'Baltic Bay Consulting Co., Ltd.' });
+    expect(buyer.closest('.whitespace-normal')).not.toBeNull();
+  });
+
   it("a draft row's ⋯ is named for its member, not the bare word Draft", () => {
     renderTableRealMessages([
       baseRow({ status: 'draft', documentNumber: '—', hasPdf: false, memberName: 'Nordic Trade Co.' }),
