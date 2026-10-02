@@ -44,6 +44,7 @@
 
 import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
+import { Badge, Tooltip, buttonClass } from '@jirawatpyk/aura-react';
 import { formatCalendarYear } from '@/lib/format-date-localised';
 import {
   AlertCircleIcon,
@@ -51,35 +52,29 @@ import {
   AlertTriangleIcon,
   InfoIcon,
 } from 'lucide-react';
-import { buttonVariants } from '@/components/ui/button';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
-import { cn } from '@/lib/utils';
 
-/** The 4-tier severity ladder, borrowed verbatim from `risk-score-badge.tsx`. */
 type SeverityTier = 'critical' | 'atRisk' | 'warning' | 'healthy';
 
-const TIER_CLASSES: Record<SeverityTier, string> = {
-  critical:
-    'bg-red-100 text-red-900 ring-red-300 dark:bg-red-950 dark:text-red-200 dark:ring-red-800',
-  atRisk:
-    'bg-orange-100 text-orange-900 ring-orange-300 dark:bg-orange-950 dark:text-orange-200 dark:ring-orange-800',
-  warning:
-    'bg-amber-50 text-amber-800 ring-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:ring-amber-900',
-  healthy:
-    'bg-emerald-50 text-emerald-800 ring-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:ring-emerald-900',
+/**
+ * Review A4 — the severity ladder on AURA badges (spec 122 US8 T803):
+ * refused (critical) danger > unresolved / price unverifiable (at risk) solid
+ * warning > price changed soft warning > fiscal year changed (healthy, an
+ * informational note) neutral. AURA has no orange, so "at risk" is the solid
+ * warning; the informational note is never green, which would read as "fine".
+ */
+const TIER_BADGE: Record<SeverityTier, { tone: 'danger' | 'warning' | 'neutral'; variant: 'soft' | 'solid' }> = {
+  critical: { tone: 'danger', variant: 'soft' },
+  atRisk: { tone: 'warning', variant: 'solid' },
+  warning: { tone: 'warning', variant: 'soft' },
+  healthy: { tone: 'neutral', variant: 'soft' },
 };
 
-/** A single severity-coded pill. `role="img"` + `aria-label` mirrors
+/** A single severity-coded badge. `role="img"` + `aria-label` mirrors
  * `RiskScoreBadge` (ARIA prohibits `aria-label` on a roleless span, and the
- * icon is `aria-hidden` so the badge reads as one labelled unit). */
+ * icon is hidden so the badge reads as one labelled unit). */
 function SeverityBadge({
   tier,
-  icon: Icon,
+  icon: TierIcon,
   label,
   ariaLabel,
   testId,
@@ -91,18 +86,17 @@ function SeverityBadge({
   readonly testId: string;
 }) {
   return (
-    <span
+    <Badge
+      tone={TIER_BADGE[tier].tone}
+      variant={TIER_BADGE[tier].variant}
+      icon={<TierIcon />}
       role="img"
       aria-label={ariaLabel}
       data-testid={testId}
-      className={cn(
-        'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset whitespace-nowrap',
-        TIER_CLASSES[tier],
-      )}
+      className="whitespace-nowrap"
     >
-      <Icon className="size-3" aria-hidden="true" />
       <span aria-hidden="true">{label}</span>
-    </span>
+    </Badge>
   );
 }
 
@@ -157,16 +151,13 @@ export function AutoRenewalQueueBadges({ meta }: { meta: AutoRenewalQueueMeta })
             ariaLabel={t('wouldBeRefusedAria')}
             testId="queue-would-be-refused"
           />
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-[var(--aura-fg-secondary)]">
             {refusalCopy(meta.refusalReason)}
           </p>
           {meta.refusalReason.kind === 'duplicate_live_bill' && (
             <Link
               href={`/admin/invoices/${meta.refusalReason.conflictingInvoiceId}`}
-              className={cn(
-                buttonVariants({ variant: 'outline', size: 'sm' }),
-                'min-h-11 gap-1 px-3',
-              )}
+              className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}
             >
               {t('viewConflictingInvoice')}
             </Link>
@@ -175,24 +166,19 @@ export function AutoRenewalQueueBadges({ meta }: { meta: AutoRenewalQueueMeta })
       )}
 
       {meta.unresolved ? (
-        <TooltipProvider delay={200}>
-          <Tooltip>
-            <TooltipTrigger
-              render={(props) => (
-                <span {...props}>
-                  <SeverityBadge
-                    tier="atRisk"
-                    icon={HelpCircleIcon}
-                    label={t('unresolved')}
-                    ariaLabel={t('unresolvedAria')}
-                    testId="queue-unresolved"
-                  />
-                </span>
-              )}
+        // AURA's Tooltip needs one focusable child, so the badge sits in a
+        // tab stop: keyboard users reach the explanation too.
+        <Tooltip content={t('unresolvedTooltip')} delay={200}>
+          <span tabIndex={0} className="rounded-full focus-visible:outline-2 focus-visible:outline-[var(--aura-focus-ring)]">
+            <SeverityBadge
+              tier="atRisk"
+              icon={HelpCircleIcon}
+              label={t('unresolved')}
+              ariaLabel={t('unresolvedAria')}
+              testId="queue-unresolved"
             />
-            <TooltipContent>{t('unresolvedTooltip')}</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+          </span>
+        </Tooltip>
       ) : (
         <>
           {meta.priceUnverifiable && (
@@ -206,7 +192,7 @@ export function AutoRenewalQueueBadges({ meta }: { meta: AutoRenewalQueueMeta })
               />
               {meta.frozenPriceDisplay && (
                 <span
-                  className="text-xs tabular-nums text-muted-foreground"
+                  className="text-xs tabular-nums text-[var(--aura-fg-secondary)]"
                   data-testid="queue-price-figures"
                 >
                   {t('priceFrozenOnly', { frozen: meta.frozenPriceDisplay })}
@@ -228,7 +214,7 @@ export function AutoRenewalQueueBadges({ meta }: { meta: AutoRenewalQueueMeta })
               />
               {/* Review A5 — decision numbers, always visible (never tooltip-only). */}
               <span
-                className="text-xs tabular-nums text-muted-foreground"
+                className="text-xs tabular-nums text-[var(--aura-fg-secondary)]"
                 data-testid="queue-price-figures"
               >
                 {meta.frozenPriceDisplay} → {meta.currentCataloguePriceDisplay}
@@ -236,37 +222,31 @@ export function AutoRenewalQueueBadges({ meta }: { meta: AutoRenewalQueueMeta })
             </div>
           )}
           {meta.billYearStale && (
-            <TooltipProvider delay={200}>
-              <Tooltip>
-                <TooltipTrigger
-                  render={(props) => (
-                    <span {...props}>
-                      <SeverityBadge
-                        tier="healthy"
-                        icon={InfoIcon}
-                        label={t('billYearStale')}
-                        ariaLabel={t('billYearStaleAria', {
-                          currentFiscalYear: formatCalendarYear(meta.currentFiscalYear, locale),
-                        })}
-                        testId="queue-bill-year-stale"
-                      />
-                    </span>
-                  )}
-                />
-                <TooltipContent>
-                  {t('billYearStaleTooltip', {
-                    planYear: formatCalendarYear(meta.planYear, locale),
+            <Tooltip
+              content={t('billYearStaleTooltip', {
+                planYear: formatCalendarYear(meta.planYear, locale),
+                currentFiscalYear: formatCalendarYear(meta.currentFiscalYear, locale),
+              })}
+              delay={200}
+            >
+              <span tabIndex={0} className="rounded-full focus-visible:outline-2 focus-visible:outline-[var(--aura-focus-ring)]">
+                <SeverityBadge
+                  tier="healthy"
+                  icon={InfoIcon}
+                  label={t('billYearStale')}
+                  ariaLabel={t('billYearStaleAria', {
                     currentFiscalYear: formatCalendarYear(meta.currentFiscalYear, locale),
                   })}
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+                  testId="queue-bill-year-stale"
+                />
+              </span>
+            </Tooltip>
           )}
         </>
       )}
 
       <span
-        className="text-xs text-muted-foreground"
+        className="text-xs text-[var(--aura-fg-secondary)]"
         data-testid="queue-staleness"
       >
         {t('staleness', { days: meta.stalenessDays })}
