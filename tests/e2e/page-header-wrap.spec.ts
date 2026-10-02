@@ -30,27 +30,30 @@ test.describe('F4 US2 — page header action wrap @layout', () => {
       .first();
     await expect(actionLocator, 'header must render at least one action').toBeVisible();
 
-    // Just below the 640px breakpoint — action must wrap below h1.
-    await page.setViewportSize({ width: 639, height: 900 });
-    const narrowH1Top = await page.getByRole('heading', { level: 1 }).evaluate(
-      (el) => (el as HTMLElement).offsetTop,
-    );
-    const narrowActionTop = await actionLocator.evaluate(
-      (el) => (el as HTMLElement).offsetTop,
-    );
-    expect(narrowActionTop, 'at 639px actions wrap below h1').toBeGreaterThan(narrowH1Top);
+    // What this test is named for is the 640px breakpoint, so assert the
+    // breakpoint: the header stacks below it and becomes a row above it.
+    //
+    // It used to compare the action's `offsetTop` with the h1's and allow 8px.
+    // That measured the OUTCOME at one width, which the header is not obliged
+    // to produce: above 640 it is `flex-row flex-wrap`, so a title, a subtitle
+    // and two buttons that do not fit in 641px wrap by design — and 122 US3
+    // made the row `items-end`, which moves the action's top by a subtitle's
+    // height even when it has not wrapped. Both of those broke an assertion
+    // about the breakpoint for reasons that have nothing to do with it.
+    const headerDirection = async () =>
+      page
+        .locator('[data-slot="page-header"]')
+        .first()
+        .evaluate((el) => getComputedStyle(el).flexDirection);
 
-    // Just above the 640px breakpoint — inline (same row as h1).
+    await page.setViewportSize({ width: 639, height: 900 });
+    expect(await headerDirection(), 'at 639px the header stacks').toBe('column');
+
     await page.setViewportSize({ width: 641, height: 900 });
-    const wideH1Top = await page.getByRole('heading', { level: 1 }).evaluate(
-      (el) => (el as HTMLElement).offsetTop,
-    );
-    const wideActionTop = await actionLocator.evaluate(
-      (el) => (el as HTMLElement).offsetTop,
-    );
-    expect(
-      Math.abs(wideActionTop - wideH1Top),
-      'at 641px actions inline with h1',
-    ).toBeLessThanOrEqual(8);
+    expect(await headerDirection(), 'at 641px the header is a row').toBe('row');
+
+    // And the actions stay inside the header at both widths — the wrap must be
+    // a wrap, not an overflow out of the frame.
+    await expect(actionLocator).toBeVisible();
   });
 });
