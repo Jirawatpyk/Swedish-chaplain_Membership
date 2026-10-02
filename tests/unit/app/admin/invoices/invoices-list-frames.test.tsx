@@ -75,3 +75,12 @@ describe('/admin/invoices error boundary (T806)', () => {
     expect(reset).toHaveBeenCalledTimes(1);
   });
 });
+
+// The skeleton draws the list table as the page does: AURA's table, edge to
+// edge inside the card (`bleed`), so nothing moves when the rows arrive.
+describe('/admin/invoices loading in the list card', () => {
+  it('the skeleton table bleeds to the card edges like the table', async () => {
+    const d = new DOMParser().parseFromString(renderToStaticMarkup((await Loading()) as ReactElement), 'text/html');
+    expect(d.querySelector('[data-testid="invoices-table-skeleton"] .aura-bleed')).not.toBeNull();
+  });
+});

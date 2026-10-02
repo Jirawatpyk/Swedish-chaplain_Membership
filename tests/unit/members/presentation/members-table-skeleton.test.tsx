@@ -55,3 +55,12 @@ describe('MembersTableSkeleton has the live table shape', () => {
     expect(skeleton).toHaveAttribute('inert');
   });
 });
+
+// The skeleton draws the list table as the page does: AURA's table, edge to
+// edge inside the card (`bleed`), so nothing moves when the rows arrive.
+describe('MembersTableSkeleton in the list card', () => {
+  it('bleeds to the card edges like the table', () => {
+    const { container } = renderSkeleton();
+    expect(container.querySelector('.aura-bleed')).not.toBeNull();
+  });
+});

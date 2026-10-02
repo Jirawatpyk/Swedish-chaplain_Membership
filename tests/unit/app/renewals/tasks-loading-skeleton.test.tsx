@@ -53,3 +53,18 @@ describe('escalation tasks loading skeleton', () => {
     expect(host.querySelector('[data-slot="layout-container"]')).toHaveAttribute('data-variant', 'table');
   });
 });
+
+// The skeleton draws the list table as the page does: AURA's table, edge to
+// edge inside the card (`bleed`), so nothing moves when the rows arrive.
+describe('escalation tasks loading in the list card', () => {
+  it('draws AURA\'s DataTable in its loading state with the queue\'s columns, edge to edge', async () => {
+    const host = await dom();
+    const table = host.querySelector('.aura-card .aura-bleed');
+    expect(table).not.toBeNull();
+    expect(host.querySelector('.aura-card .aura-bleed-end')).toBeNull();
+    const heads = [...host.querySelectorAll('.aura-card [role="columnheader"]')].map((h) => h.textContent?.trim());
+    expect(heads.slice(0, 7)).toEqual([
+      'columns.member', 'columns.tier', 'columns.expiresAt', 'columns.taskType', 'columns.dueAt', 'columns.assignedTo', 'columns.status',
+    ]);
+  });
+});

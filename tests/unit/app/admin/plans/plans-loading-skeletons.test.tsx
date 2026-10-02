@@ -97,3 +97,16 @@ describe('plans loading skeletons', () => {
     expect(container.querySelector('[data-slot="card"]')).toBeNull();
   });
 });
+
+// The skeleton draws the list table as the page does: AURA's table, edge to
+// edge inside the card (`bleed`), so nothing moves when the rows arrive.
+describe('plans list loading in the list card', () => {
+  it('draws AURA\'s table with the real column heads, edge to edge, before the VAT note', async () => {
+    const { container } = renderUi(await ListLoading());
+    const table = container.querySelector('.aura-card .aura-bleed');
+    expect(table).not.toBeNull();
+    const heads = [...container.querySelectorAll('.aura-card th')].map((th) => th.textContent?.trim());
+    expect(heads).toEqual(['columns.name', 'columns.category', 'columns.annualFee', 'columns.memberType', 'columns.year', 'columns.status']);
+    expect(container.querySelector('[data-plan-list-skeleton] .border-b')).toBeNull();
+  });
+});

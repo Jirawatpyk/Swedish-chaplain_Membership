@@ -54,6 +54,7 @@ import { ReassignTaskDropdown } from './reassign-task-dropdown';
 import { selectActionErrorKey } from './describe-error';
 import { resolveTaskTypeLabel } from './resolve-task-type-label';
 import { YearInCyclePill } from '../../_components/year-in-cycle-pill';
+import { ESCALATION_TASK_COLUMN_LAYOUT } from './escalation-task-queue-columns';
 
 export interface EscalationTaskQueueItem {
   readonly taskId: string;
@@ -338,8 +339,7 @@ export function EscalationTaskQueue({
       {
         key: 'member',
         label: t('columns.member'),
-        minWidth: 160,
-        card: 'title',
+        ...ESCALATION_TASK_COLUMN_LAYOUT.member,
         render: (task) => (
           <Link
             href={`/admin/members/${task.memberId}`}
@@ -353,17 +353,13 @@ export function EscalationTaskQueue({
       {
         key: 'tier',
         label: t('columns.tier'),
-        width: 110,
-        // The phone card reads the tier with the task type on one line
-        // (board Admin-renewal-tasks-mobile).
-        card: 'hide',
+        ...ESCALATION_TASK_COLUMN_LAYOUT.tier,
         render: (task) => (isTierBucket(task.memberTierBucket) ? <TierBadge tier={task.memberTierBucket} /> : dash),
       },
       {
         key: 'expiresAt',
         label: t('columns.expiresAt'),
-        width: 110,
-        card: 'hide',
+        ...ESCALATION_TASK_COLUMN_LAYOUT.expiresAt,
         render: (task) => {
           const label = task.cycleExpiresAt === null ? null : formatShortDate(task.cycleExpiresAt);
           return label && task.cycleExpiresAt ? <time dateTime={task.cycleExpiresAt}>{label}</time> : dash;
@@ -372,10 +368,7 @@ export function EscalationTaskQueue({
       {
         key: 'taskType',
         label: t('columns.taskType'),
-        minWidth: 150,
-        // The phone card's tier + type line, at full width (board
-        // Admin-renewal-tasks-mobile; AURA 5.23, #120).
-        card: 'wide',
+        ...ESCALATION_TASK_COLUMN_LAYOUT.taskType,
         render: (task) => (
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1 whitespace-normal">
             {isTierBucket(task.memberTierBucket) ? (
@@ -397,9 +390,7 @@ export function EscalationTaskQueue({
       {
         key: 'dueAt',
         label: t('columns.dueAt'),
-        width: 165,
-        // The phone card's due + assignee line, at full width.
-        card: 'wide',
+        ...ESCALATION_TASK_COLUMN_LAYOUT.dueAt,
         render: (task) => (
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1 whitespace-normal">
             <time dateTime={task.dueAt}>{formatShortDate(task.dueAt) ?? '—'}</time>
@@ -422,8 +413,7 @@ export function EscalationTaskQueue({
       {
         key: 'assignedTo',
         label: t('columns.assignedTo'),
-        width: 150,
-        card: 'hide',
+        ...ESCALATION_TASK_COLUMN_LAYOUT.assignedTo,
         render: (task) => (
           <span className="flex flex-col whitespace-normal" title={task.assignedToEmail ?? undefined}>
             <span>{assignee(task)}</span>
@@ -434,8 +424,7 @@ export function EscalationTaskQueue({
       {
         key: 'status',
         label: t('columns.status'),
-        width: 84,
-        card: 'hide',
+        ...ESCALATION_TASK_COLUMN_LAYOUT.status,
         render: (task) => <StatusPill tone={STATUS_TONE[task.status]}>{t(`status.${task.status}`)}</StatusPill>,
       },
     ];
@@ -444,11 +433,7 @@ export function EscalationTaskQueue({
       // An empty label: AURA names the header "Actions" for screen readers.
       key: 'actions',
       label: '',
-      width: 116,
-      actions: true,
-      align: 'end',
-      // The phone card's last row: Done grows across it beside the ⋯.
-      card: 'footer',
+      ...ESCALATION_TASK_COLUMN_LAYOUT.actions,
       render: (task) => {
         const company = task.memberCompanyName ?? task.memberId;
         const timelineHref = `/admin/members/${task.memberId}/timeline`;

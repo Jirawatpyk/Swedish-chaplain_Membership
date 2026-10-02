@@ -56,6 +56,7 @@ import {
 } from '../_lib/evidence-message';
 import { normalizeTierUpgradeErrorCode } from '../_lib/tier-upgrade-error-codes';
 import type { TierUpgradeEvidenceView } from '../_lib/tier-upgrade-queue-item';
+import { TIER_UPGRADE_COLUMN_LAYOUT } from './tier-upgrade-queue-columns';
 
 type TierUpgradeQueueItem = {
   readonly suggestionId: string;
@@ -203,8 +204,7 @@ export function TierUpgradeQueueClient({
       {
         key: 'member',
         label: t('columns.member'),
-        minWidth: 160,
-        card: 'title',
+        ...TIER_UPGRADE_COLUMN_LAYOUT.member,
         // P1-9 — the resolved company name links to the member detail; the
         // 8-char id slice when the SSR lookup returned nothing. enterprise-ux
         // C3: no sr-only full UUID (its href carries the id).
@@ -222,7 +222,7 @@ export function TierUpgradeQueueClient({
       {
         key: 'fromPlan',
         label: t('columns.from_plan'),
-        width: 180,
+        ...TIER_UPGRADE_COLUMN_LAYOUT.fromPlan,
         render: (item) => (
           <PlanCell
             name={item.fromPlanName}
@@ -235,7 +235,7 @@ export function TierUpgradeQueueClient({
       {
         key: 'toPlan',
         label: t('columns.to_plan'),
-        width: 180,
+        ...TIER_UPGRADE_COLUMN_LAYOUT.toPlan,
         render: (item) => (
           <PlanCell
             name={item.toPlanName}
@@ -251,10 +251,7 @@ export function TierUpgradeQueueClient({
         // before approving a fee increase; a null view says "verify manually".
         key: 'reason',
         label: t('columns.reason'),
-        minWidth: 240,
-        // The phone card gives the reason and its evidence a line of their own
-        // at full width (board Admin-tier-upgrades-mobile; AURA 5.23, #120).
-        card: 'wide',
+        ...TIER_UPGRADE_COLUMN_LAYOUT.reason,
         render: (item) => (
           <span className="flex flex-col gap-0.5 whitespace-normal">
             <span className="text-sm">{t(`reason.${item.reasonCode}`)}</span>
@@ -267,8 +264,7 @@ export function TierUpgradeQueueClient({
       {
         key: 'status',
         label: t('columns.status'),
-        width: 128,
-        card: 'pill',
+        ...TIER_UPGRADE_COLUMN_LAYOUT.status,
         render: (item) => (
           <StatusPill tone={tierUpgradeStatusTone(item.status)}>{t(`status.${item.status}`)}</StatusPill>
         ),
@@ -277,11 +273,7 @@ export function TierUpgradeQueueClient({
         // An empty label: AURA names the header "Actions" for screen readers.
         key: 'actions',
         label: '',
-        width: 152,
-        actions: true,
-        align: 'end',
-        // The phone card's last row, full width (board Admin-tier-upgrades-mobile).
-        card: 'footer',
+        ...TIER_UPGRADE_COLUMN_LAYOUT.actions,
         render: (item) => {
           const busy = pending?.suggestionId === item.suggestionId;
           const closed = item.status !== 'open';

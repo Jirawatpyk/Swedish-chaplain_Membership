@@ -53,3 +53,16 @@ describe('tier-upgrades loading skeleton', () => {
     expect(host.querySelector('[data-slot="layout-container"]')).toHaveAttribute('data-variant', 'table');
   });
 });
+
+// The skeleton draws the list table as the page does: AURA's table, edge to
+// edge inside the card (`bleed`), so nothing moves when the rows arrive.
+describe('tier-upgrades loading in the list card', () => {
+  it('draws AURA\'s DataTable in its loading state with the queue\'s columns, ending the card like the queue', async () => {
+    const host = await dom();
+    const table = host.querySelector('.aura-card .aura-bleed.aura-bleed-end');
+    expect(table).not.toBeNull();
+    expect(table?.closest('[aria-hidden="true"]')).not.toBeNull();
+    const heads = [...host.querySelectorAll('.aura-card [role="columnheader"]')].map((h) => h.textContent?.trim());
+    expect(heads.slice(0, 5)).toEqual(['columns.member', 'columns.from_plan', 'columns.to_plan', 'columns.reason', 'columns.status']);
+  });
+});

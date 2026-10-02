@@ -147,3 +147,15 @@ describe('change-request queue loading', () => {
     expect(filters.querySelectorAll('.h-4.w-20')).toHaveLength(0);
   });
 });
+
+// The skeleton draws the list table as the page does: AURA's table, edge to
+// edge inside the card (`bleed`), so nothing moves when the rows arrive.
+describe('change-request queue loading in the list card', () => {
+  it('draws AURA\'s table with the queue\'s column heads, edge to edge, no bordered box', async () => {
+    const { default: Loading } = await import('@/app/(staff)/admin/change-requests/loading');
+    const { container } = render((await Loading()) as ReactElement);
+    expect(container.querySelector('.aura-card .aura-bleed')).not.toBeNull();
+    expect(container.querySelectorAll('.aura-card th')).toHaveLength(7);
+    expect(container.querySelector('.aura-card .rounded-\\[var\\(--aura-radius-md\\)\\].border')).toBeNull();
+  });
+});
