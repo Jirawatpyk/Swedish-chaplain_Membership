@@ -59,6 +59,7 @@ import { LocaleTextDisplay } from './locale-text-display';
 import { usePlanActions } from './use-plan-actions';
 import type { PlanListItem } from '@/modules/plans';
 import { formatCalendarYear } from '@/lib/format-date-localised';
+import { HIDE_IN_CARD } from './plans-table-card';
 
 export interface PlansTableProps {
   readonly plans: ReadonlyArray<PlanListItem>;
@@ -75,12 +76,6 @@ export interface PlansTableProps {
   };
 }
 
-/**
- * A card hides the year: the page is already one year (`Admin-plans-mobile`).
- * AURA app content: which of this page's fields a phone card leaves out (the
- * static Table's `Td` has title / action / field slots, no "hide").
- */
-export const HIDE_IN_CARD = '@max-[640px]/aura-tbl:hidden';
 
 export function PlansTable({
   plans,

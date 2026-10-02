@@ -18,7 +18,7 @@
  */
 import { Table, TBody, THead, Td, Th, Tr } from '@jirawatpyk/aura-react';
 import { SkeletonBlock } from '@/components/shell/page-skeletons';
-import { HIDE_IN_CARD } from './plans-table';
+import { HIDE_IN_CARD } from './plans-table-card';
 
 const DEFAULT_ROW_COUNT = 9; // matches the SweCham 2026 seed row count
 
