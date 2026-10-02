@@ -84,6 +84,22 @@ A server component that needs a static AURA component imports it from **`@jirawa
 - **Where it applies today:** Plans, the renewals pipeline, escalation tasks, tier upgrades, Invoices, Members and Change requests. Lists still on the legacy kit take it in their own phase.
 - **The table runs edge to edge inside the card** (maintainer, 2 Oct, the Polaris / GitHub pattern): no side borders or radius, the header band and rules kept, the filters on the card's padding. AURA has no way to do this yet, so until #127 ships the tables keep their own frame.
 
+**Filters (decided 2 Oct 2026, not yet applied).** The migrated lists use four different filter rows, and the boards disagree: Members draws AURA's `FilterBar`, while Change requests and Plans draw labelled form fields with an Apply button. The maintainer chose the pattern the large SaaS dashboards share (Stripe, Shopify Polaris, Vercel, GitHub, Jira):
+- **One row:** the search first, if the list searches, then one compact `FilterSelect` per closed-set filter ("Status All"). The chosen value shows on its face, with no label above it.
+- **Filter as you pick:** no Apply button for the row.
+- **Dates:** one date-range control, not two date fields.
+- **On/off filters:** a toggle chip, like Members' "Needs portal invite".
+- **More than four filters:** the rest go behind a "More filters" popover.
+- **Always:** the result count through `FilterBar`'s `resultCount`, and "Clear all" while a filter is set.
+- **On a phone:** the chips wrap, as on Members.
+- **Not covered:** a report form, which is a query someone runs on purpose (Tax registers' "View register"), keeps its labelled fields and button.
+- **Where it changes:**
+  - Members already follows it.
+  - Invoices, shared with the portal list: plain `Select` becomes `FilterSelect`.
+  - Change requests: Status becomes a `FilterSelect` and the two dates one range. The Apply button goes, and the URL parameters stay the same, including the inclusive end date.
+  - Plans: search, Category and Year become `FilterSelect`s, and "Active only" and "Show deleted" become toggle chips.
+- **When:** its own PR, after AURA ships #127, with a mock reviewed first.
+
 **Type scale.** Text sizes on AURA surfaces use AURA's type classes (`aura-text-label` 13/500, `aura-text-table-cell` 13/400, `aura-text-caption` 12, `aura-text-mono` 12 mono, `aura-text-pill-label` 11, `aura-text-h2` 24), not `text-[Npx]`. They load in the `aura-tokens` layer, below Tailwind's preflight, so on a `<button>`, `<kbd>` or heading (where preflight resets the font) the class goes on the inner text span; Tailwind `font-*` / `leading-*` utilities still win over it. Page titles keep the app's shared `--font-size-h1` step.
 
 ## Phases
