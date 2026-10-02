@@ -20,15 +20,12 @@ export default async function Loading() {
         <PageHeader title={t('title')} subtitle={t('subtitle')} />
         <Card flushBelow="sm" className="max-sm:border-0 max-sm:p-0">
           <div className="flex flex-col gap-4">
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[repeat(4,minmax(0,1fr))_auto] lg:items-end" aria-hidden="true">
-              {/* the default view: state + from + to (the outcome control exists only under `decided`) */}
-              {Array.from({ length: 3 }, (_, i) => (
-                <div key={i} className="flex flex-col gap-1.5">
-                  <SkeletonBlock className="h-4 w-20" />
-                  <SkeletonBlock className="h-9 w-full" />
-                </div>
-              ))}
-              <SkeletonBlock className="h-9 w-20 lg:col-start-5" />
+            {/* the filter row (the filter pattern): the Status and Submitted
+                faces, the count at the end; Outcome exists only under Decided */}
+            <div className="flex flex-wrap items-center gap-2" aria-hidden="true" data-skeleton="filters">
+              <SkeletonBlock className="h-[var(--aura-input-height)] w-36" data-skeleton="filter-face" />
+              <SkeletonBlock className="h-[var(--aura-input-height)] w-44" data-skeleton="filter-face" />
+              <SkeletonBlock className="ml-auto h-4 w-32" data-skeleton="result-count" />
             </div>
             <div className="divide-y divide-[var(--aura-border-default)] rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)]" aria-hidden="true">
               {Array.from({ length: 5 }, (_, i) => (
