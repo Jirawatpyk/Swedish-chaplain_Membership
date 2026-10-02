@@ -13,10 +13,10 @@
  * Origin + Document type + Tax point + VAT + Paid-online) that the single
  * FilterBar row overflowed. In that view ONLY (`collapseSecondary`), the
  * SECONDARY filters (Subject / Document type / Tax point / VAT / Paid-online)
- * collapse into a "Filters" popover with an active-count badge, and the
- * applied ones surface as removable chips below the bar. Every OTHER call
- * site (member portal, or a flag-off admin) renders EXACTLY the prior LAYOUT
- * — no popover, no chips, secondary filters inline (same DOM order + widths).
+ * collapse into a "More filters" popover with an active-count badge, and the
+ * applied ones surface as removable chips in the bar. Every OTHER call
+ * site (member portal, or a flag-off admin) keeps Subject and Paid online in
+ * the row, with no popover.
  *
  * Two shared-search BEHAVIOURS changed for ALL paths (portal included), both
  * net-positive and mirroring `directory-filters.tsx`: the search input is now
@@ -26,18 +26,33 @@
  * unchanged; only these two search interactions differ from the prior version.
  *
  * Spec 122 US4 — on AURA (shared by the member portal and `/admin/invoices`):
- * the FilterBar's own search (debounced, synced from the URL `q`), AURA
- * Selects with the same values and test ids, the "Filters" popover and the
- * paid-online toggle on AURA Popover / Button / Tooltip. The URL contract,
- * the clamps and the chips are unchanged.
+ * the FilterBar's own search (debounced, synced from the URL `q`) and the
+ * popover on AURA Popover / Button / Tooltip.
+ *
+ * The filter pattern (spec 122, 2 Oct 2026; docs/aura-adoption.md § Filters):
+ * one FilterBar row of compact `FilterSelect`s (Status, Origin, and Subject
+ * where it is not in the popover), Paid online as a toggle `Tag`, the
+ * secondaries behind "More filters", the count at the end of the row, and
+ * every applied filter as a removable chip in the bar, which brings its own
+ * "Clear filters". The URL contract, the clamps and the test ids are
+ * unchanged.
  */
 
-import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { Badge, Button, FilterBar, Icon, Popover, Select, Tooltip } from '@jirawatpyk/aura-react';
+import {
+  AuraProvider,
+  Badge,
+  Button,
+  FilterBar,
+  FilterSelect,
+  Popover,
+  Select,
+  Tag,
+  Tooltip,
+} from '@jirawatpyk/aura-react';
 import { originFilterPatch } from './queue-view';
-import { cn } from '@/lib/utils';
 
 /**
  * The status values the filter dropdown can render. This is the
@@ -110,6 +125,12 @@ interface InvoiceFiltersProps {
    * page passes `true` unconditionally (generic filter, not flag-gated).
    */
   readonly showDueBeforeFilter?: boolean;
+  /**
+   * The filter pattern (spec 122): the matches across every page, shown at
+   * the end of the row by AURA's FilterBar (worded and announced politely).
+   * Omitted when there is nothing to count (no invoices, no filter).
+   */
+  readonly resultCount?: number;
 }
 
 export function InvoiceFilters({
@@ -118,6 +139,7 @@ export function InvoiceFilters({
   show088Filters = false,
   showAutoInvoiceFilter = false,
   showDueBeforeFilter = false,
+  resultCount,
 }: InvoiceFiltersProps = {}) {
   const t = useTranslations('admin.invoices.list');
   const tStatus = useTranslations('admin.invoices.list.statuses');
@@ -272,140 +294,177 @@ export function InvoiceFilters({
     pushUrl({ paidOnline: paidOnlineActive ? null : '1' });
   };
 
-  // Option A — collapse the SECONDARY filters into a popover ONLY in the
-  // cluttered admin-tax view. When false (member portal, or admin with the
-  // 088 flag off) the layout is byte-for-byte today's inline layout: the two
+  // Option A — collapse the SECONDARY filters into the "More filters" popover
+  // ONLY in the cluttered admin-tax view. When false (member portal, or admin
+  // with the 088 flag off) Subject and Paid online stay in the row: the two
   // are gated on the SAME flag, so the 088 selects never render inline anyway.
   const collapseSecondary = show088Filters;
 
-  // Removable secondary-filter chips (ux-standards §9.4) — a data array so the
-  // list is DRY. Each `clear` reuses the same `pushUrl({ key: null })` the
-  // Selects use, so there is no new URL wiring. Only rendered in the collapsed
-  // view; `secondaryActiveCount` (the popover badge) is its length. Guards on
-  // each filter (`show088Filters` / `showPaidOnlineChip`) already fold the
-  // clamped values to 'all' / false, so this list is empty on the inline view.
-  const secondaryChips: {
-    readonly key: string;
-    readonly label: string;
-    readonly clear: () => void;
-    /**
-     * A4 (UX review) — per-chip label width override. The default 24ch is
-     * right for the value-label chips, but the dueBefore chip's payload IS
-     * the date: in SV/TH the localized prefix + `YYYY-MM-DD` overruns 24ch
-     * and truncates the one part that matters.
-     */
-    readonly labelClassName?: string;
-  }[] = [];
+  // Remounts the FilterBar: its unmount drops a search still waiting on the
+  // debounce (which would otherwise land 300 ms later with the old params and
+  // re-apply itself) and its draft restarts from the URL. Focus follows to
+  // the new search input (the effect on `searchResetKey`).
+  const resetSearch = () => setSearchResetKey((k) => k + 1);
+
+  // The filter pattern (spec 122, ux-standards §9.4): every applied filter is
+  // a removable chip in the FilterBar, named "{filter}: {value}", which is
+  // also what makes the bar's own "Clear filters" appear. Paid online is a
+  // toggle chip in the row, so it is not repeated as a chip there; inside the
+  // popover (admin-tax view) it is hidden, so it gets one. The guards on each
+  // filter (`show088Filters` / `showPaidOnlineChip` / the clamps) already
+  // fold an unreachable value to 'all' / false, so no phantom chip appears.
+  const chip = (label: string, value: string) => t('filters.chip', { label, value });
+  const chips: { readonly id: string; readonly label: string; readonly clear: () => void }[] = [];
+  if (currentQ.trim() !== '') {
+    chips.push({
+      id: 'q',
+      label: t('filters.chipSearch', { q: currentQ.trim() }),
+      clear: () => {
+        resetSearch();
+        pushUrl({ q: null });
+      },
+    });
+  }
+  if (effectiveStatus !== 'all') {
+    chips.push({
+      id: 'status',
+      label: chip(t('columns.status'), tStatus(effectiveStatus)),
+      clear: () => pushUrl({ status: null }),
+    });
+  }
+  if (currentOrigin !== 'all') {
+    chips.push({
+      id: 'origin',
+      label: chip(
+        t('filters.origin.label'),
+        currentOrigin === 'manual' ? t('filters.origin.manual') : t('filters.origin.autoRenewal'),
+      ),
+      // The same patch the Origin select sends for "all": leaving the queue
+      // also drops the draft status it imposed.
+      clear: () => pushUrl(originFilterPatch('all', searchParams.get('status'))),
+    });
+  }
+  // The popover's filters: their count is the trigger's badge.
+  const secondaryChips: typeof chips = [];
   if (currentSubject !== 'all') {
     secondaryChips.push({
-      key: 'subject',
-      label:
-        currentSubject === 'membership'
-          ? t('filters.subject.membership')
-          : t('filters.subject.event'),
+      id: 'subject',
+      label: chip(
+        t('filters.subject.label'),
+        currentSubject === 'membership' ? t('filters.subject.membership') : t('filters.subject.event'),
+      ),
       clear: () => pushUrl({ subject: null }),
     });
   }
   if (currentDocType !== 'all') {
     secondaryChips.push({
-      key: 'docType',
-      label: t(`filters.documentType.${currentDocType}`),
+      id: 'docType',
+      label: chip(t('filters.documentType.label'), t(`filters.documentType.${currentDocType}`)),
       clear: () => pushUrl({ docType: null }),
     });
   }
   if (currentTaxPoint !== 'all') {
     secondaryChips.push({
-      key: 'taxPoint',
-      label:
-        currentTaxPoint === 'pre_payment'
-          ? t('filters.taxPoint.prePayment')
-          : t('filters.taxPoint.atPayment'),
+      id: 'taxPoint',
+      label: chip(
+        t('filters.taxPoint.label'),
+        currentTaxPoint === 'pre_payment' ? t('filters.taxPoint.prePayment') : t('filters.taxPoint.atPayment'),
+      ),
       clear: () => pushUrl({ taxPoint: null }),
     });
   }
   if (currentVat !== 'all') {
     secondaryChips.push({
-      key: 'vat',
-      label:
-        currentVat === 'standard'
-          ? t('filters.vatTreatment.standard')
-          : t('filters.vatTreatment.zeroRated'),
+      id: 'vat',
+      label: chip(
+        t('filters.vatTreatment.label'),
+        currentVat === 'standard' ? t('filters.vatTreatment.standard') : t('filters.vatTreatment.zeroRated'),
+      ),
       clear: () => pushUrl({ vat: null }),
     });
   }
-  if (paidOnlineActive) {
+  if (paidOnlineActive && collapseSecondary) {
     secondaryChips.push({
-      key: 'paidOnline',
+      id: 'paidOnline',
       label: tReconciliation('label'),
       clear: () => pushUrl({ paidOnline: null }),
     });
   }
-  // renewals-suspended-visibility-audit Task 3 — the dueBefore chip. Unlike
-  // the other secondaries it has NO Select control (URL-only filter from
-  // drill-down links), so the chip is its ONLY visible representation +
-  // clear affordance besides clear-all. Pushed into `secondaryChips` for
-  // the collapsed view AND rendered as a standalone chip row in the inline
-  // view below (the inline view otherwise ignores `secondaryChips` — every
-  // other secondary shows its state in its own inline control there).
+  // renewals-suspended-visibility-audit Task 3 — the dueBefore filter has NO
+  // control (URL-only, from drill-down links), so its chip is its only
+  // visible representation and clear affordance besides Clear filters, in
+  // both layouts. {date} stays the raw ISO `YYYY-MM-DD`: a technical filter
+  // echo an admin may copy back into a URL (BE is display-only for
+  // member-facing dates). AURA's chips take their text's own width, so the
+  // date is never cut short.
   const dueBeforeChip =
     currentDueBefore !== null
       ? {
-          key: 'dueBefore',
-          // {date} stays the raw ISO `YYYY-MM-DD` — a technical filter
-          // echo, unambiguous across locales (BE conversion is display-only
-          // for member-facing dates, not for a filter token an admin may
-          // copy back into a URL).
+          id: 'dueBefore',
           label: t('filters.dueBefore.chip', { date: currentDueBefore }),
           clear: () => pushUrl({ dueBefore: null }),
-          // A4 — see `labelClassName` doc: the DATE must never truncate.
-          labelClassName: 'max-w-[28ch]',
         }
       : null;
-  if (dueBeforeChip) secondaryChips.push(dueBeforeChip);
+  if (dueBeforeChip && collapseSecondary) secondaryChips.push(dueBeforeChip);
+  // The popover badge: the secondaries in the popover, dueBefore included
+  // (#292 review A1 — the popover shows it as a read-only row).
   const secondaryActiveCount = secondaryChips.length;
+  const allChips = [
+    ...chips,
+    ...(collapseSecondary ? secondaryChips : dueBeforeChip ? [dueBeforeChip] : []),
+  ];
+  const activeFilters = allChips.map((c) => ({
+    id: c.id,
+    label: c.label,
+    // Removing a chip unmounts it; focus moves to the search input so it
+    // never drops to <body> (the q chip's remount refocuses on its own).
+    onRemove: () => {
+      c.clear();
+      if (c.id !== 'q') focusSearch();
+    },
+  }));
 
-  // --- Shared inline controls (identical in both layouts) -------------------
+  // --- Controls ---------------------------------------------------------------
+  // Admin's default view leaves drafts out (`includeDrafts:false` unless the
+  // status filter says Draft), so its first option says so; the portal never
+  // lists drafts, so "All statuses" is true there. The face shows the short
+  // "All" only where that is the whole truth.
+  const draftsHiddenByDefault = statusOptions.some((s) => s === 'draft');
   const statusSelect = (
-    <Select
-      aria-label={t('columns.status')}
+    <FilterSelect
+      label={t('columns.status')}
+      {...(draftsHiddenByDefault ? {} : { allLabel: t('filters.allShort') })}
       value={effectiveStatus}
-      onChange={(e) => pushUrl({ status: e.target.value !== 'all' ? e.target.value : null })}
+      onChange={(v) => pushUrl({ status: v !== 'all' ? v : null })}
       options={[
-        { value: 'all', label: t('filters.allStatuses') },
+        { value: 'all', label: draftsHiddenByDefault ? t('filters.allExceptDrafts') : t('filters.allStatuses') },
         ...statusOptions.map((s) => ({ value: s, label: tStatus(s) })),
       ]}
     />
   );
 
   // 054-event-fee-invoices — subject filter (All types / Membership / Event).
-  // URL `?subject=` is the source of truth; "all" clears the param. The width
-  // is a parameter so the SAME wiring serves the inline bar and the popover.
-  const subjectSelect = (className: string) => (
-    <Select
-      aria-label={t('filters.subject.label')}
-      data-testid="invoice-subject-filter"
-      className={className}
-      value={currentSubject}
-      onChange={(e) => pushUrl({ subject: e.target.value !== 'all' ? e.target.value : null })}
-      options={[
-        { value: 'all', label: t('filters.subject.all') },
-        { value: 'membership', label: t('filters.subject.membership') },
-        { value: 'event', label: t('filters.subject.event') },
-      ]}
-    />
-  );
+  // URL `?subject=` is the source of truth; "all" clears the param. A compact
+  // FilterSelect in the row; a labelled Select in the popover's form.
+  const subjectOptions = [
+    { value: 'all', label: t('filters.subject.all') },
+    { value: 'membership', label: t('filters.subject.membership') },
+    { value: 'event', label: t('filters.subject.event') },
+  ];
+  const onSubject = (v: string) => pushUrl({ subject: v !== 'all' ? v : null });
 
   // 107-auto-invoice Task 13 — origin filter (All origins / Manual /
   // Auto-renewal queue), only with FEATURE_AUTO_INVOICE. Choosing the queue
   // pushes `status=draft` with it (the queue IS drafts, verdict F1); leaving
-  // it clears only that imposed draft. A primary filter: inline in both
+  // it clears only that imposed draft. A primary filter: in the row in both
   // layouts.
   const originSelect = showAutoInvoiceFilter ? (
-    <Select
-      aria-label={t('filters.origin.label')}
+    <FilterSelect
+      label={t('filters.origin.label')}
+      allLabel={t('filters.allShort')}
       data-testid="invoice-origin-filter"
       value={currentOrigin}
-      onChange={(e) => pushUrl(originFilterPatch(e.target.value, searchParams.get('status')))}
+      onChange={(v) => pushUrl(originFilterPatch(v, searchParams.get('status')))}
       options={[
         { value: 'all', label: t('filters.origin.all') },
         { value: 'manual', label: t('filters.origin.manual') },
@@ -414,32 +473,26 @@ export function InvoiceFilters({
     />
   ) : null;
 
-  // Paid-online reconciliation toggle (admin only). A pressed-state button;
-  // the tooltip explains its scope on hover / focus, and the aria-label
-  // carries the same scope for screen-reader and voice-control users.
+  // Paid-online reconciliation toggle (admin only): a toggle chip, 44px on
+  // touch, that AURA marks with a check while on. The tooltip explains its
+  // scope on hover / focus, and the aria-label carries the same scope for
+  // screen-reader and voice-control users.
   const paidOnlineToggle = showPaidOnlineChip ? (
     <Tooltip content={tReconciliation('tooltip')}>
-      <Button
-        type="button"
-        variant={paidOnlineActive ? 'primary' : 'secondary'}
-        size="sm"
+      <Tag
+        selected={paidOnlineActive}
         onClick={togglePaidOnline}
-        className="flex-none"
+        touchHeight
         data-testid="paid-online-filter-chip"
-        aria-pressed={paidOnlineActive}
         aria-label={tReconciliation('ariaLabel')}
-        {...(paidOnlineActive ? { icon: 'check' as const } : {})}
       >
         {tReconciliation('label')}
-      </Button>
+      </Tag>
     </Tooltip>
   ) : null;
 
   const clearAll = () => {
-    // Remount the FilterBar: its unmount clears a search still waiting on
-    // the debounce (which would otherwise land 300 ms later with the old
-    // params and re-apply itself) and its draft restarts from the URL.
-    setSearchResetKey((k) => k + 1);
+    resetSearch();
     pushUrl({
       q: null,
       status: null,
@@ -451,233 +504,192 @@ export function InvoiceFilters({
       origin: null,
       dueBefore: null,
     });
-    // Clearing flips `hasAnyFilter` false → this button unmounts itself;
-    // focus moves to the always-present search input (the remounted one —
-    // see the effect on `searchResetKey`) so it never drops to <body>.
   };
 
-  const clearButton = hasAnyFilter ? (
-    <Button variant="ghost" size="sm" icon="x" className="flex-none" onClick={clearAll} aria-label={t('filters.clearAll')}>
-      {t('filters.clearAll')}
-    </Button>
-  ) : null;
-
-  // Shared removable-chip markup (collapsed chips row + the inline dueBefore
-  // chip) — one renderer so the two can't drift. The remove button is named
-  // after its filter ("Remove filter: …").
-  const renderChip = (chip: {
-    readonly key: string;
-    readonly label: string;
-    readonly clear: () => void;
-    readonly labelClassName?: string;
-  }) => (
-    <span
-      key={chip.key}
-      className="inline-flex items-center gap-1 rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface-hover)] py-0.5 pl-2 pr-1 text-xs text-[var(--aura-fg-primary)]"
-    >
-      <span className={cn('max-w-[24ch] truncate', chip.labelClassName)} title={chip.label}>
-        {chip.label}
-      </span>
-      <button
-        type="button"
-        // Removing a chip unmounts it; focus moves to the search input first.
-        onClick={() => {
-          chip.clear();
-          focusSearch();
-        }}
-        aria-label={t('filters.more.removeAria', { label: chip.label })}
-        // `-my-1 p-1.5` gives a 24×24 hit target (WCAG 2.5.8) around the 12px
-        // icon without growing the chip.
-        className="-my-1 inline-flex rounded-[var(--aura-radius-sm)] p-1.5 text-[var(--aura-fg-secondary)] hover:text-[var(--aura-fg-primary)]"
-      >
-        <Icon name="x" size={12} />
-      </button>
-    </span>
+  // The bar's own "Clear filters" and chip × labels, in this page's words.
+  const barStrings = useMemo(
+    () => ({
+      clearFilters: t('filters.clearAll'),
+      remove: (label: string) => t('filters.more.removeAria', { label }),
+    }),
+    [t],
   );
 
-  const chipsRow = (chips: ReadonlyArray<Parameters<typeof renderChip>[0]>) =>
-    chips.length > 0 ? (
-      // `role="group"` + label so a screen reader announces the run as the
-      // active filters (parity with directory-filters.tsx).
-      <div role="group" aria-label={t('filters.more.activeGroup')} className="flex flex-wrap gap-2">
-        {chips.map(renderChip)}
-      </div>
-    ) : null;
-
-  // Spec 122 US4 — below 1024px the search takes its own row and the filters
-  // share the next one evenly, so their edges line up with the search; from
-  // 1024px search and filters share one row (AURA `controlsLayout="fill"`,
-  // `stackBelow="lg"`, #92). The buttons keep their own width (`flex-none`).
-  const bar = (children: React.ReactNode) => (
-    <FilterBar
-      key={searchResetKey}
-      ref={barRef}
-      controlsLayout="fill"
-      stackBelow="lg"
-      search={currentQ}
-      // Untrimmed on purpose: the FilterBar compares the URL back against
-      // what it sent, so a trimmed "Acme " would rewrite the box while the
-      // member types. Both pages trim `q` server-side.
-      onSearchChange={(v) => pushUrl({ q: v || null })}
-      searchLabel={t('searchLabel')}
-      searchPlaceholder={t('searchPlaceholder')}
-    >
-      {children}
-    </FilterBar>
-  );
-
-  // --- Inline layout (member portal / flag-off admin) ------------------------
-  // Subject + Paid-online inline, no popover. The URL-only dueBefore filter
-  // (a flag-off admin following a drill-down link) gets a chip row below the
-  // bar; the portal never enables it.
-  if (!collapseSecondary) {
-    return (
-      <div className="flex flex-col gap-2">
-        {bar(
-          <>
-            {statusSelect}
-            {subjectSelect('')}
-            {originSelect}
-            {paidOnlineToggle}
-            {clearButton}
-          </>,
-        )}
-        {dueBeforeChip ? chipsRow([dueBeforeChip]) : null}
-      </div>
-    );
-  }
-
-  // --- Collapsed layout (admin tax view) — "Filters" popover + chips row ----
+  // --- Collapsed layout only: the "More filters" popover ---------------------
   const field = (label: string, control: React.ReactNode) => (
     <div className="grid gap-1.5">
       <span className="text-xs font-medium text-[var(--aura-fg-primary)]">{label}</span>
       {control}
     </div>
   );
+  const morePopover = collapseSecondary ? (
+    <Popover
+      title={t('filters.more.title')}
+      placement="bottom-start"
+      width="min(18rem, calc(100vw - 2rem))"
+      trigger={
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          icon="filter"
+          // 44px on touch, like the FilterSelects beside it.
+          touchHeight
+          // No "(0 active)" noise: annotate the count only when there is
+          // something to announce.
+          aria-label={
+            secondaryActiveCount > 0
+              ? t('filters.more.ariaOpen', { count: secondaryActiveCount })
+              : t('filters.more.button')
+          }
+          data-testid="invoice-more-filters-trigger"
+        >
+          {t('filters.more.button')}
+          {secondaryActiveCount > 0 && (
+            <Badge data-testid="invoice-more-filters-count" className="ml-1">
+              {secondaryActiveCount}
+            </Badge>
+          )}
+        </Button>
+      }
+    >
+      <div className="grid gap-3" data-testid="filters-popover-content">
+        {field(
+          t('filters.subject.label'),
+          <Select
+            aria-label={t('filters.subject.label')}
+            data-testid="invoice-subject-filter"
+            className="w-full"
+            value={currentSubject}
+            onChange={(e) => onSubject(e.target.value)}
+            options={subjectOptions}
+          />,
+        )}
+        {/* 088 T065b (FR-031) — the three admin-only tax-document filters;
+            this popover only exists when `show088Filters` is true. */}
+        {field(
+          t('filters.documentType.label'),
+          <Select
+            aria-label={t('filters.documentType.label')}
+            data-testid="invoice-document-type-filter"
+            className="w-full"
+            value={currentDocType}
+            onChange={(e) => pushUrl({ docType: e.target.value !== 'all' ? e.target.value : null })}
+            options={[
+              { value: 'all', label: t('filters.documentType.all') },
+              { value: 'sc', label: t('filters.documentType.sc') },
+              { value: 'rc', label: t('filters.documentType.rc') },
+              { value: 're', label: t('filters.documentType.re') },
+              { value: 'cn', label: t('filters.documentType.cn') },
+            ]}
+          />,
+        )}
+        {field(
+          t('filters.taxPoint.label'),
+          <Select
+            aria-label={t('filters.taxPoint.label')}
+            data-testid="invoice-tax-point-filter"
+            className="w-full"
+            value={currentTaxPoint}
+            onChange={(e) => pushUrl({ taxPoint: e.target.value !== 'all' ? e.target.value : null })}
+            options={[
+              { value: 'all', label: t('filters.taxPoint.all') },
+              { value: 'pre_payment', label: t('filters.taxPoint.prePayment') },
+              { value: 'at_payment', label: t('filters.taxPoint.atPayment') },
+            ]}
+          />,
+        )}
+        {field(
+          t('filters.vatTreatment.label'),
+          <Select
+            aria-label={t('filters.vatTreatment.label')}
+            data-testid="invoice-vat-treatment-filter"
+            className="w-full"
+            value={currentVat}
+            onChange={(e) => pushUrl({ vat: e.target.value !== 'all' ? e.target.value : null })}
+            options={[
+              { value: 'all', label: t('filters.vatTreatment.all') },
+              { value: 'standard', label: t('filters.vatTreatment.standard') },
+              { value: 'zero_rated_80_1_5', label: t('filters.vatTreatment.zeroRated') },
+            ]}
+          />,
+        )}
+        {/* Paid-online toggle — self-labelled, no field label. */}
+        {paidOnlineToggle}
+        {/* #292 review A1 — the badge counts an active dueBefore, so the
+            popover shows it too: a read-only row (the filter is URL-only, no
+            picker by design) with a clear button reusing the chip's handler. */}
+        {dueBeforeChip &&
+          field(
+            t('filters.dueBefore.label'),
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm tabular-nums" data-testid="invoice-due-before-readout">
+                {currentDueBefore}
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                icon="x"
+                onClick={dueBeforeChip.clear}
+                aria-label={t('filters.more.removeAria', { label: dueBeforeChip.label })}
+              >
+                {t('filters.dueBefore.clear')}
+              </Button>
+            </div>,
+          )}
+      </div>
+    </Popover>
+  ) : null;
+
+  // The filter pattern: one FilterBar row — search (growing), Status, Origin,
+  // then Subject and Paid online in the row (portal / flag-off admin) or the
+  // "More filters" popover (admin tax view); the count at the end; the
+  // applied filters as chips below. On a phone the controls wrap (AURA's own
+  // breakpoint), as on Members.
   return (
-    <div className="flex flex-col gap-2">
-      {bar(
-        <>
-          {statusSelect}
-          {originSelect}
-          {/* The trigger keeps its own width in the filled row. */}
-          <span className="flex flex-none">
-            <Popover
-              title={t('filters.more.title')}
-              placement="bottom-start"
-              width="min(18rem, calc(100vw - 2rem))"
-              trigger={
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  icon="filter"
-                  // No "(0 active)" noise: annotate the count only when there
-                  // is something to announce.
-                  aria-label={
-                    secondaryActiveCount > 0
-                      ? t('filters.more.ariaOpen', { count: secondaryActiveCount })
-                      : t('filters.more.button')
-                  }
-                  data-testid="invoice-more-filters-trigger"
-                >
-                  {t('filters.more.button')}
-                  {secondaryActiveCount > 0 && (
-                    <Badge data-testid="invoice-more-filters-count" className="ml-1">
-                      {secondaryActiveCount}
-                    </Badge>
-                  )}
-                </Button>
-              }
-            >
-              <div className="grid gap-3" data-testid="filters-popover-content">
-                {field(t('filters.subject.label'), subjectSelect('w-full'))}
-                {/* 088 T065b (FR-031) — the three admin-only tax-document
-                    filters; `show088Filters` is always true in this branch
-                    (collapseSecondary === show088Filters), kept defensive. */}
-                {show088Filters && (
-                  <>
-                    {field(
-                      t('filters.documentType.label'),
-                      <Select
-                        aria-label={t('filters.documentType.label')}
-                        data-testid="invoice-document-type-filter"
-                        className="w-full"
-                        value={currentDocType}
-                        onChange={(e) => pushUrl({ docType: e.target.value !== 'all' ? e.target.value : null })}
-                        options={[
-                          { value: 'all', label: t('filters.documentType.all') },
-                          { value: 'sc', label: t('filters.documentType.sc') },
-                          { value: 'rc', label: t('filters.documentType.rc') },
-                          { value: 're', label: t('filters.documentType.re') },
-                          { value: 'cn', label: t('filters.documentType.cn') },
-                        ]}
-                      />,
-                    )}
-                    {field(
-                      t('filters.taxPoint.label'),
-                      <Select
-                        aria-label={t('filters.taxPoint.label')}
-                        data-testid="invoice-tax-point-filter"
-                        className="w-full"
-                        value={currentTaxPoint}
-                        onChange={(e) => pushUrl({ taxPoint: e.target.value !== 'all' ? e.target.value : null })}
-                        options={[
-                          { value: 'all', label: t('filters.taxPoint.all') },
-                          { value: 'pre_payment', label: t('filters.taxPoint.prePayment') },
-                          { value: 'at_payment', label: t('filters.taxPoint.atPayment') },
-                        ]}
-                      />,
-                    )}
-                    {field(
-                      t('filters.vatTreatment.label'),
-                      <Select
-                        aria-label={t('filters.vatTreatment.label')}
-                        data-testid="invoice-vat-treatment-filter"
-                        className="w-full"
-                        value={currentVat}
-                        onChange={(e) => pushUrl({ vat: e.target.value !== 'all' ? e.target.value : null })}
-                        options={[
-                          { value: 'all', label: t('filters.vatTreatment.all') },
-                          { value: 'standard', label: t('filters.vatTreatment.standard') },
-                          { value: 'zero_rated_80_1_5', label: t('filters.vatTreatment.zeroRated') },
-                        ]}
-                      />,
-                    )}
-                  </>
-                )}
-                {/* Paid-online toggle — self-labelled, no field label. */}
-                {paidOnlineToggle}
-                {/* #292 review A1 — the badge counts an active dueBefore, so
-                    the popover shows it too: a read-only row (the filter is
-                    URL-only, no picker by design) with a clear button reusing
-                    the chip's handler. */}
-                {dueBeforeChip &&
-                  field(
-                    t('filters.dueBefore.label'),
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm tabular-nums" data-testid="invoice-due-before-readout">
-                        {currentDueBefore}
-                      </span>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        icon="x"
-                        onClick={dueBeforeChip.clear}
-                        aria-label={t('filters.more.removeAria', { label: dueBeforeChip.label })}
-                      >
-                        {t('filters.dueBefore.clear')}
-                      </Button>
-                    </div>,
-                  )}
-              </div>
-            </Popover>
-          </span>
-          {clearButton}
-        </>,
-      )}
-      {chipsRow(secondaryChips)}
-    </div>
+    <AuraProvider strings={barStrings}>
+      <FilterBar
+        key={searchResetKey}
+        ref={barRef}
+        searchGrow
+        search={currentQ}
+        // Untrimmed on purpose: the FilterBar compares the URL back against
+        // what it sent, so a trimmed "Acme " would rewrite the box while the
+        // member types. Both pages trim `q` server-side.
+        onSearchChange={(v) => pushUrl({ q: v || null })}
+        searchLabel={t('searchLabel')}
+        searchPlaceholder={t('searchPlaceholder')}
+        filters={activeFilters}
+        {...(hasAnyFilter ? { onClearAll: clearAll } : {})}
+        {...(resultCount !== undefined ? { resultCount } : {})}
+      >
+        {statusSelect}
+        {originSelect}
+        {collapseSecondary ? (
+          morePopover
+        ) : (
+          <>
+            <FilterSelect
+              label={t('filters.subject.label')}
+              allLabel={t('filters.allShort')}
+              data-testid="invoice-subject-filter"
+              value={currentSubject}
+              onChange={onSubject}
+              options={subjectOptions}
+            />
+            {paidOnlineToggle}
+          </>
+        )}
+        {/* Paid online is not repeated as a chip in the row, so when it is
+            the ONLY filter applied the bar's own "Clear filters" (chips row)
+            is absent: offer it here, as Members does. */}
+        {hasAnyFilter && activeFilters.length === 0 && (
+          <Button variant="ghost" size="sm" icon="x" onClick={clearAll}>
+            {t('filters.clearAll')}
+          </Button>
+        )}
+      </FilterBar>
+    </AuraProvider>
   );
 }

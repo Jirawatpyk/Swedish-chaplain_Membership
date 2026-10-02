@@ -2694,12 +2694,14 @@
         "loadMore": "โหลดเพิ่ม",
         "filteredEmpty": "ไม่พบใบแจ้งหนี้ที่ตรงกับตัวกรอง",
         "loadFailed": "ไม่สามารถโหลดใบแจ้งหนี้ได้ โปรดลองอีกครั้ง",
-        "resultCount": "{count, plural, =0 {ไม่พบใบแจ้งหนี้ที่ตรงกับตัวกรอง} other {ใบแจ้งหนี้ # ฉบับตรงกับตัวกรอง}}",
-        "countLine": "{count, plural, other {ใบแจ้งหนี้ # ฉบับ}}",
-        "countLineDraftsHint": "{count, plural, other {ใบแจ้งหนี้ # ฉบับ}} · ดูฉบับร่างได้โดยเลือก ร่าง ในตัวกรองสถานะ",
+        "draftsHint": "ดูฉบับร่างได้โดยเลือก ร่าง ในตัวกรองสถานะ",
         "recordPaymentIntentHint": "เลือกใบแจ้งหนี้ด้านล่าง แล้วกดปุ่ม 'บันทึกการชำระเงิน' ในคอลัมน์การดำเนินการ เพื่อบันทึกการชำระเงิน",
         "filters": {
           "allStatuses": "ทุกสถานะ",
+          "allExceptDrafts": "ทุกสถานะยกเว้นฉบับร่าง",
+          "allShort": "ทั้งหมด",
+          "chip": "{label}: {value}",
+          "chipSearch": "ค้นหา: {q}",
           "clearAll": "ล้างตัวกรอง",
           "subject": {
             "label": "ประเภทใบแจ้งหนี้",
@@ -2739,11 +2741,10 @@
             "clear": "ล้าง"
           },
           "more": {
-            "button": "ตัวกรอง",
-            "ariaOpen": "ตัวกรอง (ใช้อยู่ {count})",
+            "button": "ตัวกรองเพิ่มเติม",
+            "ariaOpen": "ตัวกรองเพิ่มเติม (ใช้อยู่ {count})",
             "title": "ตัวกรองเพิ่มเติม",
-            "removeAria": "ลบตัวกรอง: {label}",
-            "activeGroup": "ตัวกรองที่ใช้อยู่"
+            "removeAria": "ลบตัวกรอง: {label}"
           }
         },
         "creditedSuffix": "+{count} ใบลดหนี้",

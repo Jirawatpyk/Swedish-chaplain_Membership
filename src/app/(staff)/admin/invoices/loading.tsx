@@ -43,7 +43,7 @@ export default async function Loading() {
               <SkeletonBlock className="h-[var(--aura-input-height)] w-36" />
               <SkeletonBlock className="h-[var(--aura-input-height)] w-36" />
             </div>
-            {/* "{n} invoices · to see drafts, choose Draft in the Status filter" */}
+            {/* The quiet drafts hint under the filter row. */}
             <SkeletonBlock className="h-4 w-64" />
             <InvoicesTableSkeleton
               caption={t('tableCaption')}

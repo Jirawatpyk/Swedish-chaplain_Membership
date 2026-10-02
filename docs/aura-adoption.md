@@ -225,7 +225,7 @@ How Chamber-OS uses the Addendum 5 – 15 items (US1 to US5a and T512 dropped th
 | 89 | 5.15.0: `Progress` `secondaryValue` | The home benefits card's reserved E-Blasts, striped after the used ones |
 | 90 | 5.15.0: underline `Tabs` `fullWidth="below-lg"` | The benefits tabs share the width on phones and tablets |
 | 91 | 5.14.0: Drawer body scroll padding | The pay sheet's local `scroll-pt-4` is gone |
-| 92 | 5.15.0: `FilterBar` `controlsLayout="fill"`, `stackBelow="lg"` | The invoice filters (search on its own row below 1024px) and the timeline filters (equal columns) |
+| 92 | 5.15.0: `FilterBar` `controlsLayout="fill"`, `stackBelow="lg"` | The timeline filters (equal columns); the invoice filters used it until the filter pattern (2 Oct 2026) |
 | 93 | 5.15.0: `Card` `flushBelow="lg"` | The portal invoices list drops its frame where the rows become cards |
 | 94 | 5.15.0: `Breadcrumb` `collapseBelow`, `itemProps` | `BreadcrumbNav`: the e2e `data-slot`s ride `itemProps`, the list slot a wrapper. The trail shows from 1024px only, so it needs no collapse |
 | 95 | 5.16.0: `SideNav` action rows, `collapseToggle="row"` | The staff rail's labelled Collapse row and the phone drawer's Sign out |

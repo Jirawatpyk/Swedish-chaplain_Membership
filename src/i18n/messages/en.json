@@ -2694,12 +2694,14 @@
         "loadMore": "Load more",
         "filteredEmpty": "No invoices match the current filters.",
         "loadFailed": "Couldn't load invoices. Please try again.",
-        "resultCount": "{count, plural, =0 {No invoices match the filters} one {# invoice matches the filters} other {# invoices match the filters}}",
-        "countLine": "{count, plural, one {# invoice} other {# invoices}}",
-        "countLineDraftsHint": "{count, plural, one {# invoice} other {# invoices}} · to see drafts, choose Draft in the Status filter",
+        "draftsHint": "To see drafts, choose Draft in the Status filter.",
         "recordPaymentIntentHint": "Choose a bill below and use its Record payment button (Actions column) to record a payment.",
         "filters": {
           "allStatuses": "All statuses",
+          "allExceptDrafts": "All except drafts",
+          "allShort": "All",
+          "chip": "{label}: {value}",
+          "chipSearch": "Search: {q}",
           "clearAll": "Clear filters",
           "subject": {
             "label": "Invoice type",
@@ -2739,11 +2741,10 @@
             "clear": "Clear"
           },
           "more": {
-            "button": "Filters",
-            "ariaOpen": "Filters ({count} active)",
+            "button": "More filters",
+            "ariaOpen": "More filters ({count} active)",
             "title": "More filters",
-            "removeAria": "Remove filter: {label}",
-            "activeGroup": "Active filters"
+            "removeAria": "Remove filter: {label}"
           }
         },
         "creditedSuffix": "{count, plural, one {+# CN} other {+# CN}}",

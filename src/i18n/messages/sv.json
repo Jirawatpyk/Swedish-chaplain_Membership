@@ -2694,12 +2694,14 @@
         "loadMore": "Ladda fler",
         "filteredEmpty": "Inga fakturor matchar filtren.",
         "loadFailed": "Det gick inte att ladda fakturorna. Försök igen.",
-        "resultCount": "{count, plural, =0 {Inga fakturor matchar filtren} one {# faktura matchar filtren} other {# fakturor matchar filtren}}",
-        "countLine": "{count, plural, one {# faktura} other {# fakturor}}",
-        "countLineDraftsHint": "{count, plural, one {# faktura} other {# fakturor}} · välj Utkast i statusfiltret för att se utkast",
+        "draftsHint": "Välj Utkast i statusfiltret för att se utkast.",
         "recordPaymentIntentHint": "Välj en faktura nedan och använd dess knapp 'Registrera betalning' (kolumnen Åtgärder) för att registrera betalning.",
         "filters": {
           "allStatuses": "Alla status",
+          "allExceptDrafts": "Alla utom utkast",
+          "allShort": "Alla",
+          "chip": "{label}: {value}",
+          "chipSearch": "Sök: {q}",
           "clearAll": "Rensa filter",
           "subject": {
             "label": "Fakturatyp",
@@ -2739,11 +2741,10 @@
             "clear": "Rensa"
           },
           "more": {
-            "button": "Filter",
-            "ariaOpen": "Filter ({count} aktiva)",
+            "button": "Fler filter",
+            "ariaOpen": "Fler filter ({count} aktiva)",
             "title": "Fler filter",
-            "removeAria": "Ta bort filter: {label}",
-            "activeGroup": "Aktiva filter"
+            "removeAria": "Ta bort filter: {label}"
           }
         },
         "creditedSuffix": "{count, plural, one {+# kreditnota} other {+# kreditnotor}}",
