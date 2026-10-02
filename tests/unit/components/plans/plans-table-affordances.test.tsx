@@ -187,6 +187,13 @@ describe('PlansTable on AURA (board Admin-plans)', () => {
     expect(staff.container.querySelector('.aura-tbl-wrap')).toHaveAttribute('data-density', 'compact');
   });
 
+  // FR-020 (spec 004): the column labels stay in view while the rows scroll.
+  // AURA 5.26 (#129): Table stickyHeader pins the header row to the page.
+  it('pins its header row to the page while the rows scroll (stickyHeader)', () => {
+    const { container } = renderRows();
+    expect(container.querySelector('.aura-tbl-wrap')).toHaveClass('is-sticky');
+  });
+
   it('ends with the count and the VAT note under the table', () => {
     renderRows();
     expect(screen.getByText('3 plans in 2026 · fees exclude 7% VAT')).toBeInTheDocument();
