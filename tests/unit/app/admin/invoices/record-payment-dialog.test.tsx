@@ -92,6 +92,13 @@ describe('RecordPaymentDialog — review fixes (US8 T809)', () => {
     expect(summary).not.toHaveTextContent('Amount received');
   });
 
+  it('the submit button carries the board\'s check icon', () => {
+    renderDialog();
+    fireEvent.click(screen.getByTestId('record-payment-trigger'));
+    const submit = within(screen.getByRole('dialog', { name: pay.title })).getByRole('button', { name: pay.submit });
+    expect(submit.querySelector('svg.aura-icon')).not.toBeNull();
+  });
+
   it('cannot be dismissed with Escape while the payment is in flight', async () => {
     let settle: (r: Response) => void = () => {};
     vi.spyOn(globalThis, 'fetch').mockReturnValue(new Promise<Response>((resolve) => (settle = resolve)));

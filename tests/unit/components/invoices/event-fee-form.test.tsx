@@ -1274,6 +1274,14 @@ describe('<EventFeeForm>', () => {
     ).not.toBeDisabled();
   });
 
+  it('the submit button carries an icon like the membership form (check when paid now)', async () => {
+    vi.stubGlobal('fetch', mockFetchRegistrations([matchedRegistration]));
+    renderForm({ initialEventId: 'ev-1' });
+    fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+    const submit = screen.getByRole('button', { name: enMessages.admin.invoices.eventFeeForm.recordAndIssue });
+    expect(submit.querySelector('svg.aura-icon')).not.toBeNull();
+  });
+
   it('the payment date names its hint and the ภ.พ.30 warning once each (no duplicate describedby ids)', async () => {
     vi.stubGlobal('fetch', mockFetchRegistrations([matchedRegistration]));
     renderForm({ initialEventId: 'ev-1' });

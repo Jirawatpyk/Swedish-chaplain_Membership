@@ -69,6 +69,13 @@ describe('CreateDraftForm on AURA (T807)', () => {
     expect(note).toHaveClass('aura-alert--info');
   });
 
+  it('Create draft carries the board\'s plus icon; Cancel has none', () => {
+    stubFetch([]);
+    renderForm();
+    expect(screen.getByRole('button', { name: form.submit }).querySelector('svg.aura-icon')).not.toBeNull();
+    expect(screen.getByRole('link', { name: form.cancel }).querySelector('svg')).toBeNull();
+  });
+
   it('Create draft posts the same body, then opens the new draft', async () => {
     stubFetch([]);
     renderForm();
