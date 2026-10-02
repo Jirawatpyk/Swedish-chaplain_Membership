@@ -3067,7 +3067,7 @@
         "draftTitle": "Utkast",
         "title": "Faktura {number}",
         "detailsTitle": "Detaljer",
-        "totalsLabel": "Summering",
+        "totalsLabel": "Belopp",
         "phoneBar": {
           "totalDue": "Totalt {total} THB inkl. moms · förfaller {date}",
           "total": "Totalt {total} THB inkl. moms"
@@ -3083,14 +3083,9 @@
           "issueCreditNoteRefundSettling": "Inte tillgängligt medan en återbetalning behandlas — försök igen när den är klar.",
           "resendInvoice": "Skicka faktura-mejl igen",
           "resendReceipt": "Skicka kvitto-mejl igen",
-          "resendInvoiceAria": "Mejla en ny kopia av faktura {number} till medlemmens primära kontakt",
-          "resendReceiptAria": "Mejla en ny kopia av kvitto {number} till medlemmens primära kontakt",
           "downloadReceipt": "Ladda ner kvitto-PDF",
           "downloadCombined": "Ladda ner faktura/kvitto",
-          "downloadReceiptAria": "Ladda ner kvitto-PDF för faktura {number}",
-          "downloadInvoiceAria": "Ladda ner faktura-PDF för faktura {number}",
           "downloadBill": "Ladda ner faktura-PDF",
-          "downloadBillAria": "Ladda ner faktura-PDF för {number}",
           "more": "Fler",
           "moreAria": "Fler åtgärder för {number}"
         },
@@ -3343,7 +3338,6 @@
         "description": "Utkastfakturan och dess rader tas bort permanent. Inget sekventiellt skattedokumentnummer har tilldelats än, så inget nummer återkallas. Åtgärden loggas i audit.",
         "cancel": "Avbryt",
         "deleteButton": "Ta bort utkast",
-        "deleting": "Tar bort…",
         "success": "Utkast borttaget",
         "errors": {
           "failed": "Kunde inte ta bort utkast",

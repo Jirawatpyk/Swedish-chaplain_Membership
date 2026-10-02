@@ -3083,14 +3083,9 @@
           "issueCreditNoteRefundSettling": "Unavailable while a refund is settling — try again once it completes.",
           "resendInvoice": "Resend invoice email",
           "resendReceipt": "Resend receipt email",
-          "resendInvoiceAria": "Email a fresh copy of invoice {number} to the member's primary contact",
-          "resendReceiptAria": "Email a fresh copy of receipt {number} to the member's primary contact",
           "downloadReceipt": "Download receipt PDF",
           "downloadCombined": "Download invoice/receipt",
-          "downloadReceiptAria": "Download the official tax receipt PDF for invoice {number}",
-          "downloadInvoiceAria": "Download the tax invoice PDF for invoice {number}",
           "downloadBill": "Download invoice PDF",
-          "downloadBillAria": "Download the invoice PDF for {number}",
           "more": "More",
           "moreAria": "More actions for {number}"
         },
@@ -3343,7 +3338,6 @@
         "description": "The draft invoice and its line items will be permanently removed. No sequential tax-document number has been allocated yet, so nothing will be retired. This action is audited.",
         "cancel": "Cancel",
         "deleteButton": "Delete draft",
-        "deleting": "Deleting…",
         "success": "Draft deleted",
         "errors": {
           "failed": "Could not delete draft",
