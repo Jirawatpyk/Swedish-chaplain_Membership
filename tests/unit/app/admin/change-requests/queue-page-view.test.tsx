@@ -136,3 +136,14 @@ describe('renderChangeRequestQueueView', () => {
     expect(screen.getByTestId('queue-empty').querySelector('.aura-empty')).not.toHaveClass('is-bordered');
   });
 });
+
+describe('change-request queue loading', () => {
+  it('reserves the filter row: Status and Submitted faces and the count, no labelled fields or Apply', async () => {
+    const { default: Loading } = await import('@/app/(staff)/admin/change-requests/loading');
+    const { container } = render((await Loading()) as ReactElement);
+    const filters = container.querySelector('[data-skeleton="filters"]')!;
+    expect(filters.querySelectorAll('[data-skeleton="filter-face"]')).toHaveLength(2);
+    expect(filters.querySelector('[data-skeleton="result-count"]')).not.toBeNull();
+    expect(filters.querySelectorAll('.h-4.w-20')).toHaveLength(0);
+  });
+});
