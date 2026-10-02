@@ -527,7 +527,7 @@ Boards: `Admin-invoices`, `Admin-state-invoices-setup`, `Admin-invoice-new`, `Ad
   - the membership card (member combobox, plan block, renewal-period info alert);
   - the event-fee form, attendee picker and non-member buyer fields on AURA fields, with the duplicate warning as an AURA alertdialog.
   Every request body and push is unchanged. RED: the switcher, event-fee, attendee-picker, buyer-fields and renewal-context tests on AURA.
-- [ ] T808 [US8] Ratchet and preview:
+- [x] T808 [US8] Ratchet and preview:
   - `MIGRATED_PATHS` gains the list page, its components except the detail-only dialogs, `_lib`, the loading and error files, and `new/**`;
   - a US8a block in `ui-import-ratchet`, with the control moved to the detail page;
   - preview views for the list (plain, setup, empty, manager), new invoice (membership, event fee) and record payment.

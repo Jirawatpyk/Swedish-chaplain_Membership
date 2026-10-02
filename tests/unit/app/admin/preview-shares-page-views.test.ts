@@ -92,4 +92,18 @@ describe('aura-admin preview renders the pages’ own views', () => {
     expect(preview).toContain('<StaffFrame path="/admin/renewals/tasks">');
     expect(preview).toContain('<StaffFrame path="/admin/settings/renewals/schedules">');
   });
+
+  it('the invoice list and new invoice through the pages’ own views and components (US8a)', () => {
+    const list = readFileSync('src/app/(staff)/admin/invoices/page.tsx', 'utf8');
+    const create = readFileSync('src/app/(staff)/admin/invoices/new/page.tsx', 'utf8');
+    for (const view of ['renderInvoicesListView(', 'renderInvoicesSetupView(']) {
+      expect(list).toContain(view);
+      expect(preview).toContain(view);
+    }
+    expect(create).toContain('<InvoiceCreateSwitcher');
+    expect(preview).toContain('<InvoiceCreateSwitcher');
+    expect(preview).not.toContain('<InvoicesTable');
+    expect(preview).toContain('<StaffFrame path="/admin/invoices">');
+    expect(preview).toContain('<StaffFrame path="/admin/invoices/new">');
+  });
 });
