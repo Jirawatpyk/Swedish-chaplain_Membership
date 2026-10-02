@@ -428,4 +428,10 @@ describe('CreditNoteForm — AURA layout', () => {
     expect(cancel.compareDocumentPosition(submit) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(submit).toHaveClass('aura-btn');
   });
+
+  it('on a phone stacks the buttons full width, the primary action on top (ux-standards § 11.1, as the void page)', () => {
+    renderForm();
+    const row = screen.getByRole('button', { name: cnMessages.cancel }).parentElement!;
+    expect(row).toHaveClass('max-sm:flex-col-reverse', 'max-sm:[&>*]:w-full');
+  });
 });

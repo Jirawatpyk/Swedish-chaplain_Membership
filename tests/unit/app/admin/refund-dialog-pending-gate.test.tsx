@@ -58,6 +58,14 @@ describe('RefundDialog — pending-refund gate (Gap E)', () => {
     expect(screen.queryByTestId('refund-form-amount')).toBeNull();
   });
 
+  it('on a phone the settling hint stays the trigger\'s description but is not drawn, so the action bar stays one row (spec 122 US8b)', () => {
+    renderDialog(true);
+    const trigger = screen.getByTestId('refund-dialog-trigger');
+    const hint = screen.getByText('A refund is settling — no action needed until it completes.');
+    expect(hint).toHaveClass('max-sm:sr-only');
+    expect(trigger).toHaveAccessibleDescription('A refund is settling — no action needed until it completes.');
+  });
+
   it('renders the active, enabled refund trigger when no pending refund exists', () => {
     renderDialog(false);
     const trigger = screen.getByTestId('refund-dialog-trigger');

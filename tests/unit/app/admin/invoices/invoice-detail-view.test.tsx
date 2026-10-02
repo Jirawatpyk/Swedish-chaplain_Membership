@@ -337,6 +337,14 @@ describe('invoice detail — the phone action bar', () => {
     expect(screen.queryByTestId('void-invoice-trigger')).toBeNull();
   });
 
+  it('draws no bar when there is nothing to put in it (a manager on a draft, a void bill with no PDF)', async () => {
+    await view(props({ isAdmin: false, invoice: invoice({ status: 'draft', billDocumentNumberRaw: null }), displayStatus: 'draft', headerNumber: null }));
+    expect(document.querySelector('[data-slot="invoice-action-bar"]')).toBeNull();
+    document.body.innerHTML = '';
+    await view(props({ isAdmin: false, invoice: invoice({ status: 'void', pdf: null }), displayStatus: 'void' }));
+    expect(document.querySelector('[data-slot="invoice-action-bar"]')).toBeNull();
+  });
+
   it('leaves room at the page end for the bar', async () => {
     await view(props());
     expect(document.querySelector('[data-slot="invoice-action-bar-spacer"]')).toHaveClass('sm:hidden');

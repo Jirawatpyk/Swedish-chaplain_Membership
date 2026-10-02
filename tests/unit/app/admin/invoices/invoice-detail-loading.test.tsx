@@ -49,6 +49,12 @@ describe.each([
     expect(host.querySelector('[data-slot="layout-container"]')).toHaveAttribute('data-variant', 'form');
     expect(announced(host)).toHaveLength(1);
   });
+
+  it('reserves the back link above the title, as the page draws it', async () => {
+    const host = await dom(Loading);
+    const container = host.querySelector('[data-slot="layout-container"]')!;
+    expect(container.firstElementChild).toHaveAttribute('data-slot', 'skeleton-block');
+  });
 });
 
 describe('invoice not found', () => {

@@ -39,4 +39,15 @@ describe('<IssueCreditNoteAction>', () => {
     expect(button).toHaveAccessibleDescription(actions.issueCreditNoteRefundSettling);
     expect(button).toHaveClass('aura-btn');
   });
+
+  it('keeps the 44px touch height, and on a phone the reason is its description only (spec 122 US8b)', () => {
+    renderAction(true);
+    expect(screen.getByRole('button', { name: actions.issueCreditNote })).toHaveClass('aura-btn--touch');
+    expect(screen.getByText(actions.issueCreditNoteRefundSettling)).toHaveClass('max-sm:sr-only');
+  });
+
+  it('the link takes the touch height too', () => {
+    renderAction(false);
+    expect(screen.getByRole('link', { name: actions.issueCreditNote })).toHaveClass('aura-btn--touch');
+  });
 });
