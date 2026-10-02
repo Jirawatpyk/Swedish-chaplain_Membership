@@ -304,7 +304,7 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - **Settings sections** the board does not draw (document notes, payment, branding and logo) keep their content on AURA's defaults.
 - **US8a review outcomes** (UX, i18n and financial reviews of PR #496):
   - **Record payment's summary box** labels the figure "Invoice total (incl. VAT)", not "Amount received". An event buyer may withhold 3% tax, so the money that arrives can be less than the total.
-  - **The receipt's state on a phone card.** The board's card leaves out Receipt No., so "Receipt generating…" or the "Receipt render failed" link appears under the number on phone cards only.
+  - **The receipt's state wherever Receipt No. is not shown.** The board's phone card leaves out Receipt No. The grid also hides that column when the table is narrower than 1000px (a 1280px laptop), so the other columns fit the card without scrolling sideways. In both cases "Receipt generating…" or the "Receipt render failed" link appears under the number.
   - **Record payment cannot be dismissed while the payment is being sent.** A tap on the scrim never closes it. After a successful payment, focus moves to the row's ⋯ menu.
   - **Sorting stays out of scope.** The board marks Invoice No. and Due as sortable, but the list has never sorted. Adding it would be a behaviour change, so it is not part of this UI swap.
   - **The new-invoice Back button stays where it is.** It is a secondary header button on desktop, and below 1024px the shell's back link replaces it, as on the member pages (US5a). The board's link above the h1 is not followed.
