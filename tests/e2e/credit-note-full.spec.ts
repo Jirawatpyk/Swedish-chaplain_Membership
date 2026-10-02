@@ -192,17 +192,30 @@ test.describe('@us6 credit-note full-credit flow', () => {
     test.setTimeout(90_000);
     await signInAdmin(page);
 
-    // Filter to paid + find the 995xxx credit-target row. The seeder
-    // keeps exactly one unmutated paid SC-2026-995xxx invoice under
-    // "E2E Mutation Co" at any time. Filter by document-number prefix
-    // because the admin list renders "—" (no member name) for this
-    // member, so matching on company name does not converge.
+    // Filter to paid + find the 995xxx credit-target row. Filter by
+    // document-number prefix because the admin list renders "—" (no member
+    // name) for this member, so matching on company name does not converge.
+    //
+    // THE FIXTURE IS SINGLE-USE. `scripts/seed-f4-e2e-admin-fixtures.ts`
+    // tops up to THREE unmutated paid SC-2026-995xxx invoices under "E2E
+    // Mutation Co", and this test spends one each time it runs — so one pass
+    // over chromium + mobile-chrome costs two, and two consecutive runs
+    // exhaust the set. A bare `waitFor` then fails with nothing but a locator
+    // timeout, which reads like a selector or a DOM regression; it cost an
+    // hour of bisecting a PR that had changed nothing here (R29, 2026-10-02).
+    // So assert it with the reason attached.
     await page.goto('/admin/invoices?status=paid');
     await waitForLayoutContainer(page);
     const mutationRow = page
       .getByRole('row')
       .filter({ hasText: /SC-2026-995\d{3}/ });
-    await mutationRow.first().waitFor({ state: 'visible', timeout: 10_000 });
+    await expect(
+      mutationRow.first(),
+      'no unmutated paid SC-2026-995xxx invoice is left — the credit-target fixture is ' +
+        'single-use and this test spends one per run. The page itself rendered (the layout ' +
+        'container resolved above), so this is exhaustion, not a selector or a UI change. ' +
+        'Top it up with: pnpm tsx --env-file=.env.local scripts/seed-f4-e2e-admin-fixtures.ts',
+    ).toBeVisible({ timeout: 10_000 });
     const docLink = mutationRow.first().getByRole('link').first();
     await docLink.click();
     await page.waitForURL(/\/admin\/invoices\/[0-9a-f-]+$/);
