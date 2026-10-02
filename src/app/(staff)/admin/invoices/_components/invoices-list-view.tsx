@@ -15,7 +15,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { TablePagination } from '@/components/layout/table-pagination';
 import { InvoicesTable, type InvoicesTableRow } from './invoice-table';
 import { InvoiceFilters } from './invoice-filters';
-import { CsvExportDialog } from './csv-export-dialog';
+import { InvoicesExportActions } from './invoices-export-actions';
 
 export interface InvoicesListViewProps {
   /** `invoicing.write`: the header actions, Record payment and the queue actions. */
@@ -72,14 +72,22 @@ export async function renderInvoicesListView({
           isAdmin ? (
             <>
               {/* 088 T065b (FR-031) — the period tax-document registers for
-                  ภ.พ.30; the register page 404s when the flag is off. */}
+                  ภ.พ.30; the register page 404s when the flag is off. On a
+                  phone it sits in the ⋯ menu with Export CSV… (the US5a
+                  members header keeps only its primary action there). */}
               {showRegisters ? (
-                <Link href="/admin/invoices/registers" className={buttonClass({ variant: 'secondary' })}>
+                <Link
+                  href="/admin/invoices/registers"
+                  className={buttonClass({ variant: 'secondary', className: 'max-sm:hidden' })}
+                >
                   {t('registers.entry')}
                 </Link>
               ) : null}
-              <CsvExportDialog />
-              <Link href="/admin/invoices/new" className={buttonClass({ variant: 'primary' })}>
+              <InvoicesExportActions showRegisters={showRegisters} />
+              <Link
+                href="/admin/invoices/new"
+                className={buttonClass({ variant: 'primary', className: 'max-sm:order-first' })}
+              >
                 <PlusIcon aria-hidden="true" className="size-4" />
                 {t('list.actions.new')}
               </Link>

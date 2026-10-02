@@ -131,8 +131,8 @@ vi.mock('@/app/(staff)/admin/invoices/_components/invoice-filters', () => ({
   InvoiceFilters: () => null,
 }));
 vi.mock('@/components/layout/table-pagination', () => ({ TablePagination: () => null }));
-vi.mock('@/app/(staff)/admin/invoices/_components/csv-export-dialog', () => ({
-  CsvExportDialog: () => null,
+vi.mock('@/app/(staff)/admin/invoices/_components/invoices-export-actions', () => ({
+  InvoicesExportActions: () => null,
 }));
 
 import AdminInvoicesPage from '@/app/(staff)/admin/invoices/page';

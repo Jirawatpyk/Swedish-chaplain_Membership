@@ -2652,6 +2652,7 @@
           "openDraftAria": "Open draft invoice for {name}",
           "moreAria": "More actions for {number}",
           "moreDraftAria": "More actions for draft invoice for {name}",
+          "moreHeaderAria": "More invoice actions",
           "view": "View invoice"
         },
         "columns": {

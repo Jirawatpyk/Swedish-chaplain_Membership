@@ -2652,6 +2652,7 @@
           "openDraftAria": "Öppna fakturautkast för {name}",
           "moreAria": "Fler åtgärder för {number}",
           "moreDraftAria": "Fler åtgärder för fakturautkast för {name}",
+          "moreHeaderAria": "Fler fakturaåtgärder",
           "view": "Visa faktura"
         },
         "columns": {

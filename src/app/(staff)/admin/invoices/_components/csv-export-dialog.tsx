@@ -39,9 +39,35 @@ function daysBetween(fromYmd: string, toYmd: string): number {
   return Math.round((to - from) / 86_400_000) + 1;
 }
 
-export function CsvExportDialog(): React.JSX.Element {
+interface CsvExportDialogProps {
+  /**
+   * Spec 122 US8 (T809) — controlled open state, for a second opener (the
+   * invoice list's phone ⋯ menu). Uncontrolled when omitted.
+   */
+  readonly open?: boolean;
+  readonly onOpenChange?: (open: boolean) => void;
+  /** Extra classes for the trigger, e.g. `max-sm:hidden` where a phone menu opens it instead. */
+  readonly triggerClassName?: string;
+  /** Where focus goes on close when the trigger is hidden; null falls back to the trigger. */
+  readonly finalFocus?: () => HTMLElement | null;
+}
+
+export function CsvExportDialog({
+  open: openProp,
+  onOpenChange,
+  triggerClassName,
+  finalFocus,
+}: CsvExportDialogProps = {}): React.JSX.Element {
   const t = useTranslations('admin.invoices.csvExport');
-  const [open, setOpen] = React.useState(false);
+  const [openState, setOpenState] = React.useState(false);
+  const open = openProp ?? openState;
+  const setOpen = React.useCallback(
+    (next: boolean) => {
+      setOpenState(next);
+      onOpenChange?.(next);
+    },
+    [onOpenChange],
+  );
   const [from, setFrom] = React.useState<string>(firstOfMonthBangkokYmd);
   const [to, setTo] = React.useState<string>(todayBangkokYmd);
   const [error, setError] = React.useState<string | null>(null);
@@ -87,8 +113,14 @@ export function CsvExportDialog(): React.JSX.Element {
       open={open}
       onOpen={() => setOpen(true)}
       onClose={() => setOpen(false)}
+      {...(finalFocus ? { finalFocus } : {})}
       trigger={
-        <Button variant="secondary" icon="download" type="button">
+        <Button
+          variant="secondary"
+          icon="download"
+          type="button"
+          {...(triggerClassName ? { className: triggerClassName } : {})}
+        >
           {t('trigger')}
         </Button>
       }
