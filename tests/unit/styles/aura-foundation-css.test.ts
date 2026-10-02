@@ -152,14 +152,16 @@ describe('globals.css — AURA foundation (spec 122)', () => {
     // takes `contentPadding={false}` (AURA #97) and no rule reaches its content.
     expect(css).not.toMatch(/aura-shell__content/);
     expect(readFileSync('src/components/layout/staff-shell.tsx', 'utf8')).toContain('contentPadding={false}');
-    expect(layer).toMatch(/\.chamber-shell\s*\{[^}]*--page-padding-x:\s*1rem;/);
+    // The gutter reads AURA's spacing tokens, not numbers of its own (2 Oct 2026).
+    expect(layer).toMatch(/\.chamber-shell\s*\{[^}]*--page-padding-x:\s*var\(--aura-space-4\);/);
     // Sticky page parts stop below the sticky bar (whole-branch review M2).
     expect(layer).toMatch(/\.chamber-shell\s*\{[^}]*--shell-bar-height:\s*56px;/);
     // The gutter takes AURA Container's steps (maintainer, 2 Oct 2026): 24px
     // from 640, not 768, so the two never disagree.
-    expect(layer).toMatch(/min-width:\s*640px\)\s*\{\s*\.chamber-shell\s*\{\s*--page-padding-x:\s*1\.5rem;/);
+    expect(layer).toMatch(/min-width:\s*640px\)\s*\{\s*\.chamber-shell\s*\{\s*--page-padding-x:\s*var\(--aura-space-6\);/);
     expect(layer).not.toMatch(/min-width:\s*768px\)\s*\{\s*\.chamber-shell\s*\{[^}]*--page-padding-x/);
-    expect(layer).toMatch(/min-width:\s*1024px\)\s*\{\s*\.chamber-shell\s*\{\s*--page-padding-x:\s*2rem;/);
+    expect(layer).toMatch(/min-width:\s*1024px\)\s*\{\s*\.chamber-shell\s*\{\s*--page-padding-x:\s*var\(--aura-space-8\);/);
+    expect(css).not.toMatch(/--page-padding-x:\s*[\d.]+(rem|px)/);
   });
 
   it('takes the 44px touch rows for shell nav from AURA 5.7, with no local override (FR-013; handoff #62)', () => {
