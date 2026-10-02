@@ -415,7 +415,8 @@ describe('<AutoRenewalQueueActions> — refusal-reason parity with Task 13 queue
     // Review round 1 SHOULD-FIX — 44×44 target, matching the IDENTICAL link
     // in <AutoRenewalQueueBadges> (Task 13 review A7): same key, same page,
     // same meaning.
-    expect(link.className).toContain('min-h-11');
+    // AURA's touch height: 44px on phones and coarse pointers.
+    expect(link).toHaveClass('aura-btn--touch');
   });
 
   it('member_terminated renders the SAME copy as the queue badge', async () => {
@@ -622,7 +623,7 @@ describe('<AutoRenewalQueueActions> — Issue-dialog caution (2026-07 UX audit)'
     openMenuAndClick('queue-row-issue-silent');
     const caution = screen.getByTestId('queue-row-issue-caution');
     expect(caution).toHaveTextContent(t.issueCaution.priceChanged);
-    expect(caution).toHaveAttribute('data-tone', 'warning');
+    expect(caution).toHaveClass('aura-alert--warning');
   });
 
   it('shows the priceUnverifiable / unresolved copy for those kinds', () => {
