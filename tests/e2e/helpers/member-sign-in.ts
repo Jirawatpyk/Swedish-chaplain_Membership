@@ -20,9 +20,19 @@ import type { Page } from '@playwright/test';
 import { expect } from '@playwright/test';
 import { signInLandingSettled } from './sign-in-landing';
 
-export async function signInAsMember(page: Page): Promise<void> {
-  const email = process.env.E2E_MEMBER_EMAIL;
-  const password = process.env.E2E_MEMBER_PASSWORD;
+/**
+ * `credentials` overrides the default persona. The default stays
+ * `E2E_MEMBER_EMAIL`, which ~149 references depend on; pass
+ * `goodStandingMemberCredentials()` from `./member-session` for a route the
+ * lapsed scope redirects (the global setup's F8 seed lapses whatever
+ * `E2E_MEMBER_EMAIL` names, so overriding that variable does not work).
+ */
+export async function signInAsMember(
+  page: Page,
+  credentials?: { readonly email: string; readonly password: string },
+): Promise<void> {
+  const email = credentials?.email ?? process.env.E2E_MEMBER_EMAIL;
+  const password = credentials?.password ?? process.env.E2E_MEMBER_PASSWORD;
   if (!email || !password) {
     throw new Error(
       'signInAsMember requires E2E_MEMBER_EMAIL + E2E_MEMBER_PASSWORD env vars',

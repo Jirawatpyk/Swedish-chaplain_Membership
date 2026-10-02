@@ -33,6 +33,7 @@ import {
   SENT_FIXTURE_SUBJECT,
 } from './helpers/broadcasts-seed';
 import { signInAsMember as signIn } from './helpers/member-sign-in';
+import { goodStandingMemberCredentials } from './helpers/member-session';
 
 const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL;
 const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD;
@@ -85,7 +86,20 @@ test.describe('US3 — Member quota + history (T129 RED)', () => {
   test('AS1 — benefits page shows quota counters + Next-reset date copy', async ({
     page,
   }) => {
-    await signIn(page);
+    // The GOOD-STANDING persona: `/portal/benefits` is not on the lapsed
+    // allowlist, and the default `e2e-member` is lapsed by the F8 seed, so this
+    // test was asserting `quota-display` while the browser sat on `/portal`.
+    // Because this describe is serial, its failure also skipped the eleven
+    // tests after it — they have not run since. Only this test moves persona:
+    // AS2 and AS6-AS8 read seeds that hardcode `E2E_MEMBER_EMAIL`
+    // (`seedF7PlanChangedAudit`, `resetF7AckSeed`), so switching them would
+    // decouple the seeded row from the signed-in member.
+    const goodStanding = goodStandingMemberCredentials();
+    test.skip(
+      !goodStanding,
+      'Set E2E_MEMBER_EMAIL_EMPTY / E2E_MEMBER_PASSWORD_EMPTY — a lapsed member cannot open /portal/benefits',
+    );
+    await signIn(page, goodStanding!);
     const res = await page.goto('/portal/benefits?tab=broadcasts');
     expect(res?.status()).toBeLessThan(400);
 
