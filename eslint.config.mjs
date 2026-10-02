@@ -387,26 +387,18 @@ export const MIGRATED_PATHS = [
   // US8a — the staff invoice list (page, loading, error, view, table, the
   // auto-renewal queue actions and badges, record payment, CSV export) and
   // the new-invoice page (switcher, membership and event-fee forms, buyer
-  // fields, attendee picker). The detail page's own dialogs and alerts move
-  // with US8b, so they are listed one by one rather than `_components/**`.
+  // fields, attendee picker).
   'src/app/(staff)/admin/invoices/page.tsx',
   'src/app/(staff)/admin/invoices/loading.tsx',
   'src/app/(staff)/admin/invoices/error.tsx',
   'src/app/(staff)/admin/invoices/_lib/**',
   'src/app/(staff)/admin/invoices/new/**',
-  'src/app/(staff)/admin/invoices/_components/invoices-list-view.tsx',
-  'src/app/(staff)/admin/invoices/_components/invoice-table.tsx',
-  'src/app/(staff)/admin/invoices/_components/invoices-table-skeleton.tsx',
-  'src/app/(staff)/admin/invoices/_components/invoices-table-columns.ts',
-  'src/app/(staff)/admin/invoices/_components/invoices-export-actions.tsx',
-  'src/app/(staff)/admin/invoices/_components/auto-renewal-queue-actions.tsx',
-  'src/app/(staff)/admin/invoices/_components/auto-renewal-queue-badges.tsx',
-  'src/app/(staff)/admin/invoices/_components/queue-view.ts',
-  'src/app/(staff)/admin/invoices/_components/csv-export-dialog.tsx',
-  'src/app/(staff)/admin/invoices/_components/record-payment-dialog.tsx',
-  'src/app/(staff)/admin/invoices/_components/payment-form.tsx',
-  'src/app/(staff)/admin/invoices/_components/invoice-form.tsx',
-  'src/app/(staff)/admin/invoices/_components/*-error-routing.ts',
+  // US8b — the invoice detail (view, phone action bar, payment activity,
+  // refund dialog), void and new credit note, and with them the rest of the
+  // shared `_components` (issue, delete draft, alerts, ⋯ menu). Only the
+  // registers (US8c) remain on the legacy kit under admin/invoices.
+  'src/app/(staff)/admin/invoices/\\[invoiceId\\]/**',
+  'src/app/(staff)/admin/invoices/_components/**',
   'src/components/invoices/invoice-status-tone.ts',
 ];
 
