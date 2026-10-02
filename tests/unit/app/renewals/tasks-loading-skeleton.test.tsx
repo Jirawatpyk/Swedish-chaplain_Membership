@@ -65,15 +65,23 @@ describe('escalation tasks loading in the list card', () => {
   });
 });
 
-// UX review H1: AURA's loading rows are one 48px line (handoff #134), far
-// shorter than the queue's phone cards, so the phone keeps its own cards.
+// AURA 5.29 (handoff #134): the loading rows match the queue's rows, so the
+// phone uses AURA's own stacked cards instead of hand-drawn ones.
 describe('escalation tasks loading on a phone', () => {
-  it('draws the queue\'s own cards below 640px, ending in Done and ⋯ at touch height, and hides AURA\'s table there', async () => {
+  it('uses AURA\'s stacked cards at every width: no own phone cards, the table not hidden below 640px', async () => {
     const host = await dom();
-    const cards = host.querySelector('[data-slot="phone-cards-skeleton"]');
-    expect(cards).toHaveClass('sm:hidden');
-    const actions = cards?.querySelector('[data-slot="row-actions-skeleton"]');
-    expect(actions?.querySelectorAll('[data-slot="skeleton-block"]')).toHaveLength(2);
-    expect(host.querySelector('.aura-bleed')?.closest('[aria-hidden="true"]')).toHaveClass('max-sm:hidden');
+    expect(host.querySelector('[data-slot="phone-cards-skeleton"]')).toBeNull();
+    expect(host.querySelector('.aura-bleed')?.closest('[aria-hidden="true"]')).not.toHaveClass('max-sm:hidden');
+  });
+
+  it('labels the card lines, draws the assignee and role as two lines, and Done and ⋯ at touch height', async () => {
+    const host = await dom();
+    const row = host.querySelector('.aura-table__row--skeleton') as HTMLElement;
+    expect(row.querySelector('[data-label="columns.taskType"]')).not.toBeNull();
+    expect(row.querySelector('[data-label="columns.dueAt"]')).not.toBeNull();
+    // the Assigned to cell: the name over the role
+    expect(row.querySelectorAll('.aura-skel-lines')).toHaveLength(1);
+    expect(row.querySelector('.aura-skel-lines')?.children).toHaveLength(2);
+    expect(row.querySelector('.aura-skel--action.is-footer.is-touch')).not.toBeNull();
   });
 });
