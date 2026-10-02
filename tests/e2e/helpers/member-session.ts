@@ -127,3 +127,30 @@ export const memberTest = baseTest.extend({
     await runTest(page);
   },
 });
+
+/**
+ * The same fixture, signed in as the GOOD-STANDING persona. Use it for a route
+ * the lapsed scope does not allow: there `requireMemberContext` answers
+ * `403 membership_access_restricted` before the code under test runs, so a spec
+ * on `memberTest` ends up asserting against the gate instead of its subject.
+ *
+ * It throws rather than falling back to the default persona when the `_EMPTY`
+ * vars are unset. A silent fallback would put the spec back on the lapsed
+ * member and let it pass or fail for the wrong reason, which is the whole bug
+ * this fixture exists to avoid. Pair it with a
+ * `test.skip(!goodStandingMemberCredentials(), …)` in the spec so a machine
+ * without the fixtures skips loudly instead of erroring.
+ */
+export const goodStandingMemberTest = baseTest.extend({
+  page: async ({ page }, runTest) => {
+    const credentials = goodStandingMemberCredentials();
+    if (!credentials) {
+      throw new Error(
+        'goodStandingMemberTest: E2E_MEMBER_EMAIL_EMPTY / E2E_MEMBER_PASSWORD_EMPTY must be set. ' +
+          'Run `pnpm tsx scripts/seed-e2e-portal-invoices.ts` and re-pull env vars.',
+      );
+    }
+    await signInAsMember(page, credentials);
+    await runTest(page);
+  },
+});

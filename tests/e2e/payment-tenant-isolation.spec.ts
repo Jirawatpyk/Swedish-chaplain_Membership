@@ -35,7 +35,18 @@
  *
  * workers=1 — per project memory; default 3 hangs the dev workstation.
  */
-import { memberTest as test, expect } from './helpers/member-session';
+// The GOOD-STANDING persona, not the default `memberTest`. `POST
+// /api/payments/initiate` is not on the lapsed allowlist, so with the default
+// (lapsed) `e2e-member` `requireMemberContext` answers
+// `403 membership_access_restricted` before the invoice lookup — AS1's status
+// assertion matched by coincidence while its body assertion
+// (`invoice_not_accessible`) could never hold. The probe uses a random UUID, so
+// it needs no seeded invoice and this persona costs it nothing.
+import {
+  goodStandingMemberCredentials,
+  goodStandingMemberTest as test,
+  expect,
+} from './helpers/member-session';
 import { db } from '@/lib/db';
 import { payments } from '@/modules/payments/infrastructure/schema';
 import { eq } from 'drizzle-orm';
@@ -45,6 +56,10 @@ test.describe('@us-f5 @principle-I F5 tenant isolation — pay-other-tenant prob
   test.skip(
     process.env.E2E_X_TENANT_HEADER_ENABLED !== '1',
     'E2E_X_TENANT_HEADER_ENABLED=1 required for tenant-isolation tests',
+  );
+  test.skip(
+    !goodStandingMemberCredentials(),
+    'Set E2E_MEMBER_EMAIL_EMPTY / E2E_MEMBER_PASSWORD_EMPTY — the default persona is lapsed and the membership gate answers before this route',
   );
 
   test('AS1: nonexistent invoice id (random UUID) → 403 invoice_not_accessible + zero payment rows', async ({

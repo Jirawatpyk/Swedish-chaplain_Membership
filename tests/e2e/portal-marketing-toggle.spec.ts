@@ -16,13 +16,25 @@
  * invariant behind the primary's note (FR-033) is proved on live Neon in
  * tests/integration/members/contact-marketing-opt-out.test.ts.
  *
- * Env vars: E2E_MEMBER_EMAIL / E2E_MEMBER_PASSWORD (scripts/seed-e2e-user.ts).
+ * Env vars: E2E_MEMBER_EMAIL_EMPTY / E2E_MEMBER_PASSWORD_EMPTY — the
+ * good-standing persona. Every test here opens `/portal/profile`, which the
+ * lapsed scope (`lapsed-portal-scope.ts`) redirects to `/portal`, and the
+ * global setup's F8 renewals seed always lapses whatever `E2E_MEMBER_EMAIL`
+ * points at. On the default persona test 1 failed on a `portal-marketing`
+ * region that was never on screen, and because this describe is serial, tests
+ * 2 and 3 were skipped behind it rather than run.
+ *
+ * The persona choice is used for the seed and the suppression target too, not
+ * only the sign-in: test 2 suppresses `seed.contactEmail`, so signing in as
+ * one member while suppressing another's contact would assert on the wrong
+ * row.
+ *
  * Run with `--workers=1`.
  */
 import AxeBuilder from '@axe-core/playwright';
 import en from '@/i18n/messages/en.json';
 import { expect, test } from './fixtures';
-import { signInAsMember } from './helpers/member-session';
+import { goodStandingMemberCredentials, signInAsMember } from './helpers/member-session';
 import { clearE2ERateLimits } from './helpers/rate-limit';
 import { openSeedClient } from './helpers/open-seed-client';
 import {
@@ -31,7 +43,11 @@ import {
   type PortalMarketingSeed,
 } from './helpers/portal-marketing-seed';
 
-const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL;
+// The good-standing persona, for the reason in the file header. It is the
+// persona for the SEED and the suppression target too, so sign-in and data
+// always name the same member.
+const MEMBER = goodStandingMemberCredentials();
+const MEMBER_EMAIL = MEMBER?.email;
 const TENANT_ID = process.env.E2E_TENANT_SLUG ?? 'swecham';
 const AXE_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'] as const;
 const t = en.portal.profile.marketing;
@@ -60,7 +76,11 @@ async function setSuppressed(email: string, suppressed: boolean): Promise<void> 
 test.describe.configure({ mode: 'serial', timeout: 90_000 });
 
 test.describe('108 PR-D — portal self marketing toggle (US6) @a11y', () => {
-  test.skip(!MEMBER_EMAIL, 'Set E2E_MEMBER_EMAIL / E2E_MEMBER_PASSWORD (seeded by scripts/seed-e2e-user.ts)');
+  test.skip(
+    !MEMBER,
+    'Set E2E_MEMBER_EMAIL_EMPTY / E2E_MEMBER_PASSWORD_EMPTY (seeded by scripts/seed-e2e-portal-invoices.ts) — '
+      + 'the default persona is lapsed and cannot open /portal/profile',
+  );
 
   let seed: PortalMarketingSeed | null = null;
 
@@ -82,7 +102,7 @@ test.describe('108 PR-D — portal self marketing toggle (US6) @a11y', () => {
   });
 
   test('1. switch off → "off (by contact)"; switch on → "on"', async ({ page }) => {
-    await signInAsMember(page);
+    await signInAsMember(page, MEMBER!);
     await page.goto('/portal/profile', { waitUntil: 'domcontentloaded' });
     const region = page.getByTestId('portal-marketing');
     await expect(region).toBeVisible();
@@ -108,7 +128,7 @@ test.describe('108 PR-D — portal self marketing toggle (US6) @a11y', () => {
     const email = seed!.contactEmail;
     await setSuppressed(email, true);
     try {
-      await signInAsMember(page);
+      await signInAsMember(page, MEMBER!);
       await page.goto('/portal/profile', { waitUntil: 'domcontentloaded' });
       const region = page.getByTestId('portal-marketing');
       await expect(region).toHaveAttribute('data-marketing-state', 'unsubscribed');
@@ -121,7 +141,7 @@ test.describe('108 PR-D — portal self marketing toggle (US6) @a11y', () => {
   });
 
   test('3. no axe violations on the profile page with the toggle @a11y', async ({ page }) => {
-    await signInAsMember(page);
+    await signInAsMember(page, MEMBER!);
     await page.goto('/portal/profile', { waitUntil: 'networkidle' });
     await expect(page.getByTestId('portal-marketing')).toBeVisible();
     const results = await new AxeBuilder({ page }).withTags([...AXE_TAGS]).analyze();

@@ -12,6 +12,18 @@
  * covered by their own dedicated specs rather than forced into this authed session — asserting
  * them here against a different member would only test RBAC denial, not the golden path.
  * Run with `--workers=1`.
+ *
+ * KNOWN RED, and deliberately not fixed by the lapsed-persona pass: this walk
+ * crosses the lapsed boundary in both directions. `/portal/invoices` and
+ * `/portal/invoices/[id]` are on the lapsed allowlist and their fixture
+ * (`E2E_ISSUED_INVOICE_ID`, seeded against "E2E Alpha Co") belongs to the
+ * DEFAULT persona, while `/portal/profile` and `/portal/benefits` are not on
+ * that allowlist and need the good-standing one — which owns no invoices by
+ * design (`scripts/seed-e2e-portal-invoices.ts`, "No invoices for Echo"). So
+ * neither persona can complete the walk, and the fix is a decision rather than
+ * an edit: either seed an issued invoice for the good-standing member, or let
+ * the journey re-sign-in mid-walk and accept that it then covers two members
+ * instead of one. Recorded, not chosen here.
  */
 import { expect, test } from './fixtures';
 import { signInAsMember } from './helpers/member-session';

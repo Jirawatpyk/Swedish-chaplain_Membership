@@ -43,6 +43,15 @@
  *   - Body text references "automatically refunded"
  *
  * workers=1 per project memory.
+ *
+ * This spec stays on the DEFAULT (lapsed) persona on purpose, and its red is
+ * NOT the lapsed-persona class: `/portal/invoices/[invoiceId]` IS on the lapsed
+ * allowlist (`lapsed-portal-scope.ts` — a lapsed member must still be able to
+ * read their own tax records), so the page is reachable. Its fixtures are bound
+ * to that persona hard (`scripts/seed-f5-e2e-stale-invoice.ts` pins
+ * `e2e-member@swecham.test` / "E2E Alpha Co"), and the good-standing member owns
+ * no invoices, so switching would turn both tests into 404s. Whatever makes the
+ * "invoice voided" heading not render here is still unexplained.
  */
 import { memberTest as test, expect } from './helpers/member-session';
 
