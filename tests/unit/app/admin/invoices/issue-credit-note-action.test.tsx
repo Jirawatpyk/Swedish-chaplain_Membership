@@ -27,6 +27,8 @@ describe('<IssueCreditNoteAction>', () => {
       'href',
       '/admin/invoices/inv-1/credit-notes/new',
     );
+    // Spec 122 US8b (T826) — drawn as an AURA secondary button.
+    expect(screen.getByRole('link', { name: actions.issueCreditNote })).toHaveClass('aura-btn');
   });
 
   it('is disabled (not a link) with an explanation while a refund is settling', () => {
@@ -35,5 +37,6 @@ describe('<IssueCreditNoteAction>', () => {
     const button = screen.getByRole('button', { name: actions.issueCreditNote });
     expect(button).toBeDisabled();
     expect(button).toHaveAccessibleDescription(actions.issueCreditNoteRefundSettling);
+    expect(button).toHaveClass('aura-btn');
   });
 });
