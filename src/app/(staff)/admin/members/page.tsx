@@ -582,8 +582,9 @@ export function renderMembersDirectoryBody({
       // client component that calls useSearchParams — prevents the whole
       // route from bailing out of server rendering. The fallback is the same
       // skeleton as /members loading.tsx, with the current role's columns.
+      // The list card rule: the filters and the table share the same card.
       return (
-        <>
+        <MembersStateCard>
           {filters}
           <Suspense fallback={<MembersTableSkeleton withSelection={isAdmin} />}>
             <DirectoryWithBulk
@@ -595,7 +596,7 @@ export function renderMembersDirectoryBody({
               filtered={state.filtered}
             />
           </Suspense>
-        </>
+        </MembersStateCard>
       );
     default: {
       const unknownState: never = state;

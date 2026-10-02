@@ -31,9 +31,9 @@ describe('members state card (US5a)', () => {
         <p>state</p>
       </MembersStateCard>,
     );
-    const card = screen.getByText('filters').parentElement;
-    expect(card).toBe(screen.getByText('state').parentElement);
-    expect(card).toHaveAttribute('data-members-state-card');
+    const card = screen.getByText('filters').closest('[data-members-state-card]');
+    expect(card).not.toBeNull();
+    expect(card).toBe(screen.getByText('state').closest('[data-members-state-card]'));
     // The list card rule: an AURA card that drops its frame below 640px,
     // where the rows become cards of their own.
     expect(card).toHaveClass('aura-card', 'aura-card--flush-below-sm');

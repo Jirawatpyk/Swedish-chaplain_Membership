@@ -315,6 +315,7 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
     - the invoice list's empty-state New invoice.
 
     Record payment and Create draft were fixed earlier in this PR.
+  - **One list card rule** (maintainer, 2 Oct: "follow what the design should be"). The boards disagree, so the rule is in `docs/aura-adoption.md` § List card: a page whose main content is a list frames its filters and table in one card, frameless below 640px; a list that is one section of a page keeps its section card. Members and Change requests, the two migrated lists that broke it, take the card in this PR, with their skeletons.
   - **The new-invoice Back button stays where it is.** It is a secondary header button on desktop, and below 1024px the shell's back link replaces it, as on the member pages (US5a). The board's link above the h1 is not followed.
 
 ## User Scenarios & Testing *(mandatory)*

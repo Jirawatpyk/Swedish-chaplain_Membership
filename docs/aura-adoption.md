@@ -76,6 +76,13 @@ A server component that needs a static AURA component imports it from **`@jirawa
   - On a link styled with `buttonClass`, put a lucide icon (`aria-hidden`, `size-4`) or the `/server` `Icon` before the text.
 - **Where it was checked:** the 2 Oct audit compared every preview view with the boards. It found four buttons that broke the rule: Try again on the shared load-error card, Send reminder in the renewal pipeline, Invite colleague on the portal profile, and the invoice list's empty-state New invoice. `tests/unit/app/button-icon-rule.test.tsx` pins each one.
 
+**List card (US8a, 2 Oct 2026).** The boards disagree on whether a list sits in a card: of the 14 admin list boards, 10 frame the filters and the table in one card; Members and Invoices do not, Credit notes does not, and Change requests does on some boards and not others. The rule:
+- **A page whose main content is a list** puts its filters, result count, table (or empty state, or load error) and paging in one AURA `Card` with `flushBelow="sm"` and `max-sm:border-0 max-sm:p-0`. Below 640px the card drops its frame and padding, so the phone rows, which are cards of their own, sit on the page gutter.
+- **A list that is one section of a page** (such as the invoices on a member's page) keeps that section's card; it gets no second one.
+- **Inside the card** an empty state has no border of its own (`bordered={false}` on the shell `EmptyState`), so there is never a frame in a frame.
+- **The route's `loading.tsx`** draws the same card, for CLS 0.
+- **Where it applies today:** Plans, the renewals pipeline, Invoices, Members and Change requests. Lists still on the legacy kit take it in their own phase.
+
 **Type scale.** Text sizes on AURA surfaces use AURA's type classes (`aura-text-label` 13/500, `aura-text-table-cell` 13/400, `aura-text-caption` 12, `aura-text-mono` 12 mono, `aura-text-pill-label` 11, `aura-text-h2` 24), not `text-[Npx]`. They load in the `aura-tokens` layer, below Tailwind's preflight, so on a `<button>`, `<kbd>` or heading (where preflight resets the font) the class goes on the inner text span; Tailwind `font-*` / `leading-*` utilities still win over it. Page titles keep the app's shared `--font-size-h1` step.
 
 ## Phases
