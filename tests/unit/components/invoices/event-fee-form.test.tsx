@@ -1274,6 +1274,18 @@ describe('<EventFeeForm>', () => {
     ).not.toBeDisabled();
   });
 
+  it('the payment date names its hint and the ภ.พ.30 warning once each (no duplicate describedby ids)', async () => {
+    vi.stubGlobal('fetch', mockFetchRegistrations([matchedRegistration]));
+    renderForm({ initialEventId: 'ev-1' });
+    fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+    const dateInput = screen.getByLabelText(new RegExp(`^${enMessages.admin.invoices.pay.fields.date}`));
+    fireEvent.change(dateInput, { target: { value: '2020-01-10' } });
+    const ids = (dateInput.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean);
+    expect(ids).toContain('payment-date-vat-warning');
+    expect(ids).toContain('payment-date-hint');
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
   it("today's payment date → no ภ.พ.30 warning; warning clears when the date returns to an open period", async () => {
     vi.stubGlobal('fetch', mockFetchRegistrations([matchedRegistration]));
     renderForm({ initialEventId: 'ev-1' });

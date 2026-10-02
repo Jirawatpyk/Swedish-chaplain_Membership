@@ -104,10 +104,10 @@ describe('CreateDraftForm on AURA (T807)', () => {
     expect(dialog).toHaveClass('aura-dialog');
     expect(dialog).toHaveTextContent('SC-2026-000100');
     expect(dialog).toHaveTextContent('38,520.00 THB');
-    expect(within(dialog).getByRole('link', { name: form.duplicateConfirm.viewExisting })).toHaveAttribute(
-      'href',
-      '/admin/invoices/inv-old',
-    );
+    const existing = within(dialog).getByRole('link', { name: form.duplicateConfirm.viewExisting });
+    expect(existing).toHaveAttribute('href', '/admin/invoices/inv-old');
+    // Valid HTML: a <dl> holds only dt/dd groups, so the link sits after it.
+    expect(existing.closest('dl')).toBeNull();
     fireEvent.click(await within(dialog).findByRole('button', { name: form.duplicateConfirm.createAnyway }));
     await waitFor(() => expect(posts()).toHaveLength(2));
     expect(posts()[1]![1]?.body).toBe(

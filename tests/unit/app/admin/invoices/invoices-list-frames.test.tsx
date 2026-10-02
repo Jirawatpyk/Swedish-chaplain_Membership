@@ -31,9 +31,30 @@ describe('/admin/invoices loading (T806)', () => {
     expect(html).toContain(en.admin.invoices.list.title);
     const card = d.querySelector('.aura-card');
     expect(card?.className).toContain('max-sm:border-0');
-    // Invoice No. · Buyer · Status · Due · Receipt No. · Total · Actions
-    expect(d.querySelector('[data-slot="table-skeleton"]')?.firstElementChild?.children).toHaveLength(7);
+    // AURA's own DataTable in its loading state with the real columns (keys,
+    // widths, phone-card parts), so the grid lands in place (CLS 0) and turns
+    // into cards below 640px like the real one.
+    const skeleton = d.querySelector('[data-testid="invoices-table-skeleton"]');
+    expect(skeleton?.getAttribute('aria-hidden')).toBe('true');
+    expect(skeleton?.querySelector('.aura-table')).not.toBeNull();
+    const headers = [...(skeleton?.querySelectorAll('[role="columnheader"]') ?? [])].map((h) => h.textContent?.trim());
+    const cols = en.admin.invoices.list.columns;
+    expect(headers).toEqual([
+      cols.documentNumber,
+      cols.buyer,
+      cols.status,
+      cols.dueDate,
+      cols.receiptNumber,
+      cols.total,
+      cols.actions,
+    ]);
     expect(html).not.toContain('data-slot="skeleton"');
+    expect(html).not.toContain('data-slot="table-skeleton"');
+    // Only "New invoice" is reserved in the header: a manager, or a tenant
+    // without the registers flag, gets fewer buttons, never more.
+    expect(d.querySelector('[data-slot="page-header-actions"]')?.children).toHaveLength(1);
+    // AURA's input height, not the legacy kit's token.
+    expect(html).not.toContain('--input-height');
     expect(html).not.toContain('MISSING_KEY');
   });
 });

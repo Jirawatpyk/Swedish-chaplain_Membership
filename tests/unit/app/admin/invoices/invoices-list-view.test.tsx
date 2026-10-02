@@ -100,7 +100,8 @@ describe('renderInvoicesListView (T806)', () => {
   it('the visible count line names the drafts filter in the default view', async () => {
     const d = doc(await renderInvoicesListView(base));
     const status = d.querySelector('[role="status"]');
-    expect(status?.textContent).toBe('8 invoices · drafts are under Status → Draft');
+    // No arrow: a screen reader reads "→" aloud as "right arrow".
+    expect(status?.textContent).toBe('8 invoices · to see drafts, choose Draft in the Status filter');
     expect(status?.className).not.toContain('sr-only');
   });
 
@@ -115,6 +116,17 @@ describe('renderInvoicesListView (T806)', () => {
     expect(empty?.textContent).toContain(list.empty);
     expect(empty?.querySelector('a[href="/admin/invoices/new"]')).not.toBeNull();
     expect(d.querySelector('[data-marker="invoices-table"]')).toBeNull();
+  });
+
+  it('no invoices yet: the screen-reader count says so, not "no matches"', async () => {
+    const d = doc(await renderInvoicesListView({ ...base, rows: [], total: 0 }));
+    expect(d.querySelector('[role="status"]')?.textContent).toBe(list.empty);
+  });
+
+  it('nothing matches: the screen-reader count names the filters', async () => {
+    const d = doc(await renderInvoicesListView({ ...base, rows: [], total: 0, hasFilters: true }));
+    // (This stub translator has no ICU `=0` branch; the shipped copy says "No invoices match the filters".)
+    expect(d.querySelector('[role="status"]')?.textContent).toMatch(/match the filters$/);
   });
 
   it('nothing matches the filters: the filtered empty state with Clear filters', async () => {

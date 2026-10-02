@@ -584,8 +584,9 @@ describe('<InvoicesTable> receipt async-resilience (088 T066b)', () => {
       }),
     ]);
     const generating = screen.getByTestId('row-receipt-generating');
-    // A busy placeholder, not a live region (US7c UX rule), under the RC number.
-    expect(generating).toHaveAttribute('aria-busy', 'true');
+    // Plain text, not a live region (US7c UX rule) and not aria-busy (the
+    // text states the status itself), under the RC number.
+    expect(generating).not.toHaveAttribute('aria-busy');
     expect(generating).not.toHaveAttribute('role', 'status');
     expect(generating).toHaveTextContent('Receipt generating…');
     expect(generating.closest('[role="gridcell"]')).toHaveTextContent('RC-2026-0002');
@@ -1149,5 +1150,64 @@ describe('<InvoicesTable> — the Admin-invoices board (US8 T802)', () => {
     );
     expect(screen.getByTestId('queue-row-actions-trigger')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'More actions for —' })).toBeNull();
+  });
+});
+
+describe('<InvoicesTable> — review fixes (US8 T809)', () => {
+  it('the failed-receipt link name starts with its visible text (WCAG 2.5.3)', () => {
+    renderTableRealMessages([
+      baseRow({ status: 'paid', receiptDocumentNumberRaw: 'RC-2026-0003', receiptPdfStatus: 'failed' }),
+    ]);
+    const failed = screen.getByTestId('row-receipt-render-failed');
+    const visible = enMessages.admin.invoices.list.actions.receiptRenderFailed;
+    expect(failed).toHaveTextContent(visible);
+    expect(failed.getAttribute('aria-label')?.startsWith(visible)).toBe(true);
+  });
+
+  it.each([
+    ['pending', 'Receipt generating…'],
+    ['failed', 'Receipt render failed'],
+  ] as const)(
+    'a phone card (Receipt No. hidden) still says the receipt is %s, under the number',
+    (receiptPdfStatus, text) => {
+      renderTable([baseRow({ status: 'paid', receiptDocumentNumberRaw: 'RC-2026-0009', receiptPdfStatus })]);
+      const numberCell = screen.getByRole('link', { name: 'INV-2026-0001' }).closest('[role="gridcell"]');
+      const cardLine = within(numberCell as HTMLElement).getByTestId('row-receipt-state-card');
+      expect(cardLine).toHaveTextContent(text);
+      // Phone cards only: the grid's Receipt No. column says it on wider screens.
+      expect(cardLine).toHaveClass('sm:hidden');
+      if (receiptPdfStatus === 'failed') {
+        expect(within(cardLine).getByRole('link')).toHaveAttribute('href', '/admin/invoices/inv-1');
+      }
+    },
+  );
+
+  it('no receipt state → no phone card line', () => {
+    renderTable([baseRow({ status: 'paid', receiptPdfStatus: 'rendered', hasReceiptPdf: true })]);
+    expect(screen.queryByTestId('row-receipt-state-card')).toBeNull();
+  });
+
+  it("a draft row's ⋯ is named for its member, not the bare word Draft", () => {
+    renderTableRealMessages([
+      baseRow({ status: 'draft', documentNumber: '—', hasPdf: false, memberName: 'Nordic Trade Co.' }),
+    ]);
+    expect(screen.getByRole('button', { name: 'More actions for draft invoice for Nordic Trade Co.' })).toBeInTheDocument();
+  });
+
+  it('the ⋯ trigger is 44px on touch (touchHeight) and carries a per-row id for focus return', () => {
+    renderTable([baseRow({})]);
+    const trigger = screen.getByRole('button', { name: 'More actions for INV-2026-0001' });
+    expect(trigger).toHaveClass('aura-btn--touch');
+    expect(trigger).toHaveAttribute('id', 'row-menu-inv-1');
+  });
+
+  it("Record payment sits directly in the actions cell, so AURA's card footer can grow it", () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <InvoicesTable rows={[baseRow({ status: 'issued' })]} canRecordPayment todayIso="2026-06-20" />
+      </NextIntlClientProvider>,
+    );
+    const trigger = screen.getByTestId('row-record-payment-trigger');
+    expect(trigger.parentElement).toHaveClass('aura-table__cell');
   });
 });
