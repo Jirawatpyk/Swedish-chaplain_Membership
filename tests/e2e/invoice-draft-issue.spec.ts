@@ -100,6 +100,15 @@ test.describe('@us1 invoice draft → issue', () => {
     );
 
     test('AS1 admin creates draft from member page', async ({ page }) => {
+      // Provisions a throwaway tenant with settings, a member and a plan,
+      // signs in, then walks member -> new invoice -> draft detail. Measured
+      // in isolation on 2026-10-02 it takes 21.6-30.0s against Playwright's
+      // default 30s (`playwright.config.ts` sets no per-test timeout), so it
+      // was a coin-flip that went red inside a full run while passing alone.
+      // `test.slow()` triples the budget rather than naming a number: an
+      // explicit `test.setTimeout(30_000)` would equal the default and only
+      // ever subtract from a slower machine's allowance.
+      test.slow();
       const tenant = await createThrowawayTenant({
         seedSettings: true,
         seedMember: true,
