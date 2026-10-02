@@ -80,9 +80,7 @@ describe('<InvoiceCreateSwitcher>', () => {
 
   it('switches to the event-fee form when Event fee is selected', async () => {
     renderSwitcher();
-    // base-ui Radio toggles via its associated <label>, not a click on the
-    // role=radio element itself — click the "Event fee" label text.
-    fireEvent.click(screen.getByText('Event fee'));
+    fireEvent.click(screen.getByRole('radio', { name: 'Event fee' }));
 
     await waitFor(() =>
       expect(screen.getByRole('radio', { name: 'Event fee' })).toBeChecked(),
@@ -110,30 +108,27 @@ describe('<InvoiceCreateSwitcher>', () => {
     ).toBeInTheDocument();
   });
 
-  it('radio label wiring produces no duplicate "-label" ids (duplicate-id-aria)', () => {
-    // Base UI's labelable provider assigns `label.id = "{radioId}-label"` to
-    // an id-less associated <label> — colliding with the hardcoded ids on the
-    // inner name-spans. The explicit `aria-labelledby` prop on each
-    // RadioGroupItem suppresses that assignment. jsdom runs the same layout
-    // effect, so a regression reproduces here; the authoritative proof for
-    // real browsers is the axe (`duplicate-id-aria`) run in Task 14.
-    const { container } = renderSwitcher();
-    const labelIds = Array.from(container.querySelectorAll('[id$="-label"]')).map(
-      (el) => el.id,
+  it('the choice is an AURA radio group named "Invoice type", in a card titled by the question (Admin-invoice-new)', () => {
+    renderSwitcher();
+    const group = screen.getByRole('radiogroup', { name: enMessages.admin.invoices.new.type.label });
+    expect(group.closest('.aura-card')).not.toBeNull();
+    expect(
+      screen.getByRole('heading', { level: 2, name: enMessages.admin.invoices.new.type.legend }),
+    ).toBeInTheDocument();
+    // Each option keeps its hint as its description, not in its name.
+    expect(screen.getByRole('radio', { name: 'Membership' })).toHaveAccessibleDescription(
+      enMessages.admin.invoices.new.type.membershipHint,
     );
-    const duplicates = labelIds.filter((id, i) => labelIds.indexOf(id) !== i);
-    expect(duplicates).toEqual([]);
+    expect(screen.getByRole('radio', { name: 'Event fee' })).toHaveAccessibleDescription(
+      enMessages.admin.invoices.new.type.eventHint,
+    );
+  });
 
-    // Each radio is named by its span (not the whole label incl. hint).
-    const [membership, event] = screen.getAllByRole('radio');
-    expect(membership).toHaveAttribute(
-      'aria-labelledby',
-      'invoice-type-membership-label',
-    );
-    expect(event).toHaveAttribute('aria-labelledby', 'invoice-type-event-label');
-    expect(document.getElementById('invoice-type-membership-label')?.tagName).toBe(
-      'SPAN',
-    );
-    expect(document.getElementById('invoice-type-event-label')?.tagName).toBe('SPAN');
+  it('the membership form sits in its own "Membership" card', () => {
+    renderSwitcher();
+    const combobox = screen.getByRole('combobox', { name: enMessages.admin.invoices.form.fields.memberId });
+    const card = combobox.closest('.aura-card');
+    expect(card).not.toBeNull();
+    expect(card?.querySelector('h2')?.textContent).toBe(enMessages.admin.invoices.new.type.membership);
   });
 });
