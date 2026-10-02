@@ -2865,6 +2865,7 @@
         "cancel": "Tillbaka",
         "type": {
           "legend": "Vad avser denna faktura?",
+          "label": "Fakturatyp",
           "membership": "Medlemskap",
           "membershipHint": "Årlig medlemsavgift för en medlem.",
           "event": "Evenemangsavgift",
@@ -3000,6 +3001,7 @@
       },
       "form": {
         "submit": "Skapa utkast",
+        "cancel": "Avbryt",
         "submitting": "Skapar…",
         "success": {
           "created": "Utkast skapat"

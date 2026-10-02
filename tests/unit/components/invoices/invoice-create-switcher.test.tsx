@@ -58,8 +58,8 @@ describe('<InvoiceCreateSwitcher>', () => {
     renderSwitcher();
     const radios = screen.getAllByRole('radio');
     expect(radios).toHaveLength(2);
-    expect(screen.getByRole('radio', { name: 'Membership' })).toBeChecked();
-    expect(screen.getByRole('radio', { name: 'Event fee' })).not.toBeChecked();
+    expect(screen.getByRole('radio', { name: /^Membership/ })).toBeChecked();
+    expect(screen.getByRole('radio', { name: /^Event fee/ })).not.toBeChecked();
   });
 
   it('shows the membership member picker by default', () => {
@@ -80,10 +80,10 @@ describe('<InvoiceCreateSwitcher>', () => {
 
   it('switches to the event-fee form when Event fee is selected', async () => {
     renderSwitcher();
-    fireEvent.click(screen.getByRole('radio', { name: 'Event fee' }));
+    fireEvent.click(screen.getByRole('radio', { name: /^Event fee/ }));
 
     await waitFor(() =>
-      expect(screen.getByRole('radio', { name: 'Event fee' })).toBeChecked(),
+      expect(screen.getByRole('radio', { name: /^Event fee/ })).toBeChecked(),
     );
     expect(
       screen.getByRole('combobox', {
@@ -100,7 +100,7 @@ describe('<InvoiceCreateSwitcher>', () => {
 
   it('starts on the Event tab when an eventRegistration deep-link is present', () => {
     renderSwitcher({ initialEventId: 'ev-1', initialRegistrationId: 'reg-1' });
-    expect(screen.getByRole('radio', { name: 'Event fee' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: /^Event fee/ })).toBeChecked();
     expect(
       screen.getByRole('combobox', {
         name: enMessages.admin.invoices.eventFeeForm.eventPicker.label,
@@ -110,16 +110,18 @@ describe('<InvoiceCreateSwitcher>', () => {
 
   it('the choice is an AURA radio group named "Invoice type", in a card titled by the question (Admin-invoice-new)', () => {
     renderSwitcher();
-    const group = screen.getByRole('radiogroup', { name: enMessages.admin.invoices.new.type.label });
+    // AURA's RadioGroup is a fieldset (role "group") named by its legend.
+    const group = screen.getByRole('group', { name: enMessages.admin.invoices.new.type.label });
+    expect(group).toHaveClass('aura-radio-group');
     expect(group.closest('.aura-card')).not.toBeNull();
     expect(
       screen.getByRole('heading', { level: 2, name: enMessages.admin.invoices.new.type.legend }),
     ).toBeInTheDocument();
-    // Each option keeps its hint as its description, not in its name.
-    expect(screen.getByRole('radio', { name: 'Membership' })).toHaveAccessibleDescription(
+    // Each option shows its hint under its name.
+    expect(screen.getByRole('radio', { name: /^Membership/ }).closest('label')).toHaveTextContent(
       enMessages.admin.invoices.new.type.membershipHint,
     );
-    expect(screen.getByRole('radio', { name: 'Event fee' })).toHaveAccessibleDescription(
+    expect(screen.getByRole('radio', { name: /^Event fee/ }).closest('label')).toHaveTextContent(
       enMessages.admin.invoices.new.type.eventHint,
     );
   });

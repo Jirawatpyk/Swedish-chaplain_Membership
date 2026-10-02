@@ -2865,6 +2865,7 @@
         "cancel": "Back to list",
         "type": {
           "legend": "What is this invoice for?",
+          "label": "Invoice type",
           "membership": "Membership",
           "membershipHint": "Annual membership fee for a member.",
           "event": "Event fee",
@@ -3000,6 +3001,7 @@
       },
       "form": {
         "submit": "Create draft",
+        "cancel": "Cancel",
         "submitting": "Creating…",
         "success": {
           "created": "Draft created"

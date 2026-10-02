@@ -13,8 +13,7 @@
 
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Label } from '@/components/ui/label';
+import { Card, RadioGroup } from '@jirawatpyk/aura-react';
 import {
   CreateDraftForm,
   type MemberOption,
@@ -54,58 +53,23 @@ export function InvoiceCreateSwitcher({
   );
 
   return (
-    <div className="flex flex-col gap-[var(--page-section-gap)]">
-      <fieldset className="flex flex-col gap-2">
-        <legend className="mb-1 text-sm font-medium">{t('legend')}</legend>
+    <div className="flex flex-col gap-[var(--aura-space-6)]">
+      {/* Spec 122 US8 (T807, `Admin-invoice-new`) — the question as the card's
+          title, an AURA radio group named "Invoice type" with each option's
+          hint as its description (read after the name, never in it). */}
+      <Card title={t('legend')} headingLevel={2}>
         <RadioGroup
+          name="invoice-type"
+          label={t('label')}
+          orientation="horizontal"
           value={type}
-          onValueChange={(v) => setType(v === 'event' ? 'event' : 'membership')}
-          className="gap-3 sm:grid-cols-2"
-        >
-          <div className="flex items-start gap-2 rounded-md border p-3">
-            {/* Explicit `aria-labelledby` → the name-span (the hint stays out
-                of the accessible name). Without it, Base UI's labelable
-                fallback ASSIGNS `{id}-label` to the (id-less) <label> itself,
-                duplicating the span's hardcoded id (axe duplicate-id-aria). */}
-            <RadioGroupItem
-              id="invoice-type-membership"
-              value="membership"
-              className="mt-0.5"
-              aria-labelledby="invoice-type-membership-label"
-            />
-            <Label
-              htmlFor="invoice-type-membership"
-              className="flex cursor-pointer flex-col gap-0.5"
-            >
-              <span id="invoice-type-membership-label" className="font-medium">
-                {t('membership')}
-              </span>
-              <span className="text-xs font-normal text-muted-foreground">
-                {t('membershipHint')}
-              </span>
-            </Label>
-          </div>
-          <div className="flex items-start gap-2 rounded-md border p-3">
-            <RadioGroupItem
-              id="invoice-type-event"
-              value="event"
-              className="mt-0.5"
-              aria-labelledby="invoice-type-event-label"
-            />
-            <Label
-              htmlFor="invoice-type-event"
-              className="flex cursor-pointer flex-col gap-0.5"
-            >
-              <span id="invoice-type-event-label" className="font-medium">
-                {t('event')}
-              </span>
-              <span className="text-xs font-normal text-muted-foreground">
-                {t('eventHint')}
-              </span>
-            </Label>
-          </div>
-        </RadioGroup>
-      </fieldset>
+          onChange={(v) => setType(v === 'event' ? 'event' : 'membership')}
+          options={[
+            { value: 'membership', label: t('membership'), description: t('membershipHint') },
+            { value: 'event', label: t('event'), description: t('eventHint') },
+          ]}
+        />
+      </Card>
 
       {type === 'membership' ? (
         <CreateDraftForm

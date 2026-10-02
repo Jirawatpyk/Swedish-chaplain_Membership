@@ -24,25 +24,18 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState, useTransition, useMemo } from 'react';
 import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
-import { InfoIcon, Loader2Icon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
+import {
+  Alert,
+  Button,
+  Card,
+  Combobox,
+  Dialog,
+  buttonClass,
+  type ComboboxOption,
+} from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
 import { addMonthsUtc } from '@/lib/dates';
 import { formatCalendarYear } from '@/lib/format-date-localised';
-import { Combobox } from '@/components/ui/combobox';
-import type { ComboboxOption } from '@/components/ui/combobox';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { buttonVariants } from '@/components/ui/button';
 
 export type MemberOption = {
   readonly memberId: string;
@@ -76,9 +69,8 @@ export type ExistingDuplicate = {
  * duplicate refusal, and if so extract the existing document to show.
  *
  * Extracted as a pure function because it carries the only real branching in
- * the duplicate flow, and the AlertDialog around it cannot be exercised in
- * jsdom (Base UI dialog portals do not mount there — this repo covers dialog
- * mechanics in Playwright, see tests/e2e/destructive-confirm.spec.ts).
+ * the duplicate flow (the AURA alertdialog around it renders in jsdom since
+ * spec 122 US8, and `create-draft-form.test.tsx` drives it end to end).
  *
  * Returns null for every other error code AND for a duplicate response whose
  * `existing` block is incomplete: a confirmation dialog rendered with blanks
@@ -173,14 +165,12 @@ export function RenewalContextPanel({ context }: { readonly context: RenewalCont
   // "another paid bill buys a further year" soft-warning was removed: it was
   // wrong under the fixed-anchor model (a second same-year bill is a duplicate,
   // not "a further year") and contradicted the #243 hard guard.
+  // `Admin-invoice-new` — the renewal period as an AURA info note (a
+  // standing notice, not a live region).
   return (
-    <p
-      className="flex items-start gap-2 text-xs text-muted-foreground"
-      data-testid="renewal-context-line"
-    >
-      <InfoIcon className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-      <span>{contextText}</span>
-    </p>
+    <Alert tone="info" role="note" data-testid="renewal-context-line">
+      {contextText}
+    </Alert>
   );
 }
 
@@ -353,70 +343,64 @@ export function CreateDraftForm({
     create(false);
   }
 
+  const tType = useTranslations('admin.invoices.new.type');
+
   return (
-    <form
-      onSubmit={submit}
-      // method="post" — CWE-598; see tests/unit/components/pii-forms-post-method.test.tsx
-      method="post"
-      className="flex flex-col gap-[var(--page-section-gap)]"
-    >
-      <div className="flex flex-col gap-[var(--field-label-gap)]">
-        <Label id="memberId-label" htmlFor="memberId">
-          {t('fields.memberId')}
-        </Label>
-        <Combobox
-          id="memberId"
-          options={memberOptions}
-          value={memberId}
-          onChange={setMemberId}
-          placeholder={noMembers ? tPicker('noActiveMembers') : tPicker('placeholder')}
-          searchPlaceholder={tPicker('search')}
-          emptyMessage={tPicker('empty')}
-          aria-labelledby="memberId-label"
-          disabled={noMembers}
-        />
-      </div>
+    <form onSubmit={submit} method="post" className="flex flex-col gap-[var(--aura-space-6)]">
+      {/* Spec 122 US8 (T807, `Admin-invoice-new`) — the "Membership" card:
+          AURA's member combobox, the read-only plan block, the renewal note. */}
+      <Card title={tType('membership')} headingLevel={2}>
+        <div className="flex flex-col gap-[var(--aura-space-4)]">
+          <Combobox
+            id="memberId"
+            label={t('fields.memberId')}
+            options={memberOptions}
+            value={memberId || null}
+            onChange={(v) => setMemberId(v ?? '')}
+            placeholder={noMembers ? tPicker('noActiveMembers') : tPicker('placeholder')}
+            emptyText={tPicker('empty')}
+            disabled={noMembers}
+          />
 
-      {selectedMember && (
-        <div className="rounded-md border bg-muted/30 p-4">
-          <div className="flex items-baseline justify-between">
-            <div>
-              <div className="text-xs text-muted-foreground">{t('fields.planId')}</div>
-              <div className="text-base font-medium">
-                {selectedPlan?.label ?? planId}
-                <span className="ml-2 text-sm text-muted-foreground">
-                  / {formatCalendarYear(planYear, locale)}
-                </span>
-              </div>
-              {selectedPlan && (
-                <div className="mt-1 text-xs text-muted-foreground">
-                  {tPlan('annualFee', {
-                    amount: formatSatang(selectedPlan.annualFeeMinorUnits),
-                  })}
+          {selectedMember && (
+            <div className="flex flex-wrap items-start justify-between gap-[var(--aura-space-3)] rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface-hover)] p-[var(--aura-space-4)]">
+              <div>
+                <div className="text-xs text-[var(--aura-fg-secondary)]">{t('fields.planId')}</div>
+                <div className="text-base font-medium text-[var(--aura-fg-primary)]">
+                  {selectedPlan?.label ?? planId}
+                  <span className="ml-2 text-sm font-normal text-[var(--aura-fg-secondary)]">
+                    / {formatCalendarYear(planYear, locale)}
+                  </span>
                 </div>
-              )}
+                {selectedPlan && (
+                  <div className="mt-1 text-xs tabular-nums text-[var(--aura-fg-secondary)]">
+                    {tPlan('annualFee', { amount: formatSatang(selectedPlan.annualFeeMinorUnits) })}
+                  </div>
+                )}
+              </div>
+              <Link
+                href={`/admin/members/${memberId}/edit`}
+                className="inline-flex min-h-6 items-center rounded-sm text-sm text-[var(--aura-fg-accent)] underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-[var(--aura-focus-ring)]"
+              >
+                {tPlan('changePlan')}
+              </Link>
             </div>
-            <Link
-              href={`/admin/members/${memberId}/edit`}
-              className="text-xs text-muted-foreground underline-offset-2 hover:underline"
-            >
-              {tPlan('changePlan')}
-            </Link>
-          </div>
+          )}
+
+          {selectedMember && <RenewalContextLoader key={memberId} memberId={memberId} />}
         </div>
-      )}
+      </Card>
 
-      {selectedMember && <RenewalContextLoader key={memberId} memberId={memberId} />}
-
-      <div className="flex justify-end gap-3">
+      <div className="flex flex-wrap justify-end gap-[var(--aura-space-2)] max-sm:[&>*]:flex-1">
+        <Link href="/admin/invoices" className={buttonClass({ variant: 'secondary' })}>
+          {t('cancel')}
+        </Link>
         <Button
           type="submit"
-          disabled={pending || noMembers || !memberId || !selectedPlan}
-          aria-busy={pending}
+          variant="primary"
+          loading={pending}
+          disabled={noMembers || !memberId || !selectedPlan}
         >
-          {pending && (
-            <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" />
-          )}
           {pending ? t('submitting') : t('submit')}
         </Button>
       </div>
@@ -427,89 +411,65 @@ export function CreateDraftForm({
         shown are the server's authoritative answer, not a guess.
 
         This is a money action: it mints a second §86/4 tax document for one
-        membership year. Per docs/ux-standards.md the confirm is an
-        AlertDialog (not a toast-with-undo), the destructive-intent action is
-        NOT the default focus, and the existing document is presented as
-        inspectable facts + a link rather than a bare "are you sure?". The
-        link opens in a new tab so the admin can read the existing invoice
-        WITHOUT losing the form they are mid-way through.
+        membership year, so it is an AURA alertdialog: Cancel takes first
+        focus, the confirm is the danger button, and it cannot be dismissed
+        while the request is in flight.
+
+        \`year\` is passed as a STRING on purpose: ICU formats a numeric
+        argument with the locale's number rules, which would print the plan
+        year as "2,026". A year is an identifier, not a quantity.
       */}
-      <AlertDialog
+      <Dialog
         open={duplicate !== null}
-        onOpenChange={(next) => {
-          if (!next) setDuplicate(null);
-        }}
-      >
-        <AlertDialogContent className="max-w-lg">
-          <AlertDialogHeader>
-            {/*
-              `year` is passed as a STRING on purpose: ICU formats a numeric
-              argument with the locale's number rules, which would print the
-              plan year as "2,026". A year is an identifier, not a quantity.
-              Caught by the real-en.json render convention, not by typecheck.
-            */}
-            <AlertDialogTitle>
-              {tDup('title', { year: formatCalendarYear(planYear, locale) })}
-            </AlertDialogTitle>
-            <AlertDialogDescription>{tDup('description')}</AlertDialogDescription>
-          </AlertDialogHeader>
-
-          {duplicate && (
-            <dl className="rounded-md border bg-muted/30 p-4 text-sm">
-              <div className="flex items-baseline justify-between gap-4">
-                <dt className="text-muted-foreground">{tDup('fields.documentNumber')}</dt>
-                <dd className="font-medium">
-                  {duplicate.documentNumber ?? tDup('notYetNumbered')}
-                </dd>
-              </div>
-              <div className="mt-2 flex items-baseline justify-between gap-4">
-                <dt className="text-muted-foreground">{tDup('fields.status')}</dt>
-                <dd className="font-medium">
-                  {tStatus.has(duplicate.status)
-                    ? tStatus(duplicate.status)
-                    : duplicate.status}
-                </dd>
-              </div>
-              <div className="mt-2 flex items-baseline justify-between gap-4">
-                <dt className="text-muted-foreground">{tDup('fields.amount')}</dt>
-                <dd className="font-medium">
-                  {duplicate.totalSatang === null
-                    ? tDup('notYetTotalled')
-                    : `${formatSatang(Number(duplicate.totalSatang))} THB`}
-                </dd>
-              </div>
-              <div className="mt-3">
-                <Link
-                  href={`/admin/invoices/${duplicate.invoiceId}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm underline underline-offset-2"
-                >
-                  {tDup('viewExisting')}
-                </Link>
-              </div>
-            </dl>
-          )}
-
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={pending}>{tDup('cancel')}</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => {
-                e.preventDefault();
-                create(true);
-              }}
-              disabled={pending}
-              aria-busy={pending}
-              className={buttonVariants({ variant: 'destructive' })}
-            >
-              {pending && (
-                <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" />
-              )}
+        onClose={() => setDuplicate(null)}
+        role="alertdialog"
+        dismissible={!pending}
+        title={tDup('title', { year: formatCalendarYear(planYear, locale) })}
+        description={tDup('description')}
+        footer={
+          <>
+            <Button type="button" variant="secondary" data-autofocus disabled={pending} onClick={() => setDuplicate(null)}>
+              {tDup('cancel')}
+            </Button>
+            <Button type="button" variant="danger" loading={pending} onClick={() => create(true)}>
               {pending ? t('submitting') : tDup('createAnyway')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+            </Button>
+          </>
+        }
+      >
+        {duplicate && (
+          <dl className="flex flex-col gap-[var(--aura-space-2)] rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface-hover)] p-[var(--aura-space-4)] text-sm">
+            <div className="flex items-baseline justify-between gap-4">
+              <dt className="text-[var(--aura-fg-secondary)]">{tDup('fields.documentNumber')}</dt>
+              <dd className="font-medium">{duplicate.documentNumber ?? tDup('notYetNumbered')}</dd>
+            </div>
+            <div className="flex items-baseline justify-between gap-4">
+              <dt className="text-[var(--aura-fg-secondary)]">{tDup('fields.status')}</dt>
+              <dd className="font-medium">
+                {tStatus.has(duplicate.status) ? tStatus(duplicate.status) : duplicate.status}
+              </dd>
+            </div>
+            <div className="flex items-baseline justify-between gap-4">
+              <dt className="text-[var(--aura-fg-secondary)]">{tDup('fields.amount')}</dt>
+              <dd className="font-medium tabular-nums">
+                {duplicate.totalSatang === null
+                  ? tDup('notYetTotalled')
+                  : `${formatSatang(Number(duplicate.totalSatang))} THB`}
+              </dd>
+            </div>
+            <div>
+              <Link
+                href={`/admin/invoices/${duplicate.invoiceId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-[var(--aura-fg-accent)] underline underline-offset-2"
+              >
+                {tDup('viewExisting')}
+              </Link>
+            </div>
+          </dl>
+        )}
+      </Dialog>
     </form>
   );
 }

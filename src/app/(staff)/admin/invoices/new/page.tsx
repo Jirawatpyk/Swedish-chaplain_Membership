@@ -19,7 +19,7 @@ import { logger } from '@/lib/logger';
 import { runListEvents, runResolveRegistrationEventId } from '@/lib/events-admin-deps';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { Card, CardContent } from '@/components/ui/card';
+import { buttonClass } from '@jirawatpyk/aura-react/server';
 import { listPlans } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import { directorySearch } from '@/modules/members';
@@ -160,28 +160,24 @@ export default async function NewInvoiceDraftPage({
         title={t('title')}
         subtitle={t('description')}
         actions={
-          <Link
-            href="/admin/invoices"
-            className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:underline"
-          >
+          // Below 1024px the shell's "← Invoices" back link takes its place.
+          <Link href="/admin/invoices" className={buttonClass({ variant: 'secondary', className: 'max-lg:hidden' })}>
             <ArrowLeftIcon className="size-4" aria-hidden="true" />
             {t('cancel')}
           </Link>
         }
       />
-      <Card>
-        <CardContent>
-          <InvoiceCreateSwitcher
-            members={members}
-            plans={plans}
-            events={events}
-            taxAtPayment={env.features.f088TaxAtPayment}
-            {...(initialMemberId ? { initialMemberId } : {})}
-            {...(initialEventId ? { initialEventId } : {})}
-            {...(initialRegistrationId ? { initialRegistrationId } : {})}
-          />
-        </CardContent>
-      </Card>
+      {/* Spec 122 US8 (T807, `Admin-invoice-new`) — the switcher draws the
+          board's cards: "What is this invoice for?", then the chosen form. */}
+      <InvoiceCreateSwitcher
+        members={members}
+        plans={plans}
+        events={events}
+        taxAtPayment={env.features.f088TaxAtPayment}
+        {...(initialMemberId ? { initialMemberId } : {})}
+        {...(initialEventId ? { initialEventId } : {})}
+        {...(initialRegistrationId ? { initialRegistrationId } : {})}
+      />
     </FormContainer>
   );
 }

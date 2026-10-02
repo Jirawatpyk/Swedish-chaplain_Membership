@@ -108,7 +108,7 @@ describe('CreateDraftForm on AURA (T807)', () => {
       'href',
       '/admin/invoices/inv-old',
     );
-    fireEvent.click(within(dialog).getByRole('button', { name: form.duplicateConfirm.createAnyway }));
+    fireEvent.click(await within(dialog).findByRole('button', { name: form.duplicateConfirm.createAnyway }));
     await waitFor(() => expect(posts()).toHaveLength(2));
     expect(posts()[1]![1]?.body).toBe(
       JSON.stringify({
