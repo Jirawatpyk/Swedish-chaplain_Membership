@@ -20,7 +20,7 @@ import {
  * Each card is self-titled: a title-height SkeletonBlock INSIDE the AURA card
  * head (mirroring the real `HubCard`'s h2 in its card head, so the title
  * doesn't shift when content arrives) + body SkeletonBlocks in the card body.
- * DetailContainer + the 880px card column match the real page (spec 122 US3,
+ * DetailContainer capped at the 880px column, centred, matches the real page (spec 122 US3,
  * `Portal-account`) so width never reflows.
  *
  * Flag-gated cards (R2-1): the page renders Data & privacy only when
@@ -56,14 +56,14 @@ export default async function Loading() {
   const tLayout = await getTranslations('layout');
   return (
     <PageSkeletonShell ariaLabel={tLayout('loadingForm')}>
-      <DetailContainer>
+      <DetailContainer className="max-w-[calc(55rem+2*var(--page-padding-x))]">
         <PageHeader
           title={<SkeletonBlock className="h-7 w-40" />}
           subtitle={<SkeletonBlock className="h-4 w-56" />}
           badge={<SkeletonBlock className="h-6 w-20" />}
         />
 
-        <div className="flex max-w-[880px] flex-col gap-4">
+        <div className="flex flex-col gap-4">
         {/* Account: the email field, the 480px change-password form, the
             sessions note (sign-out is top-bar-only since 063). */}
         <HubCardSkeleton>

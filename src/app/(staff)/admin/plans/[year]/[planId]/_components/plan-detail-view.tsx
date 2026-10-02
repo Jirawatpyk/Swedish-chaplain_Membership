@@ -113,7 +113,7 @@ export async function renderPlanDetailView({
         }
       />
 
-      <div className="grid items-start gap-[var(--aura-space-4)] lg:grid-cols-[1fr_1.4fr]">
+      <div className="grid items-start gap-[var(--aura-space-4)] xl:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
         <Card
           title={t('create.labels.annualFee')}
           description={tDetail('yearLine', { year: formatCalendarYear(plan.plan_year, locale) })}

@@ -211,7 +211,8 @@ export default async function MemberAccountPage() {
   }
 
   return (
-    <DetailContainer>
+    // The board's 880px column, centred like the edit page's (header and cards together).
+    <DetailContainer className="max-w-[calc(55rem+2*var(--page-padding-x))]">
       {await renderPortalAccountView({
     email: user.email,
     roleLabel: tShell(user.role),

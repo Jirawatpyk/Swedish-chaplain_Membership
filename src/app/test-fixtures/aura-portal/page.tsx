@@ -315,7 +315,7 @@ export default async function AuraPortalPreviewPage({
     ];
     return (
       <MemberFrame path="/portal/account">
-        <DetailContainer>
+        <DetailContainer className="max-w-[calc(55rem+2*var(--page-padding-x))]">
           {await renderPortalAccountView({
             email: 'anna.lindqvist@lindqvist.example',
             roleLabel: 'Member',
@@ -340,12 +340,10 @@ export default async function AuraPortalPreviewPage({
     // As /portal/contacts/invite renders it (page.tsx `InviteFrame`).
     return (
       <MemberFrame path="/portal/contacts/invite">
-        <DetailContainer>
+        <DetailContainer className="max-w-[calc(45rem+2*var(--page-padding-x))]">
           <BackLink href="/portal/profile">{tHistory('backToProfile')}</BackLink>
-          <div className="flex max-w-[720px] flex-col gap-[var(--page-section-gap)]">
-            <PageHeader title={t('pageTitle')} subtitle="Lindqvist & Partners Co., Ltd." />
-            <InviteColleagueForm privacyNoticeHref="https://swecham.example/privacy" />
-          </div>
+          <PageHeader title={t('pageTitle')} subtitle="Lindqvist & Partners Co., Ltd." />
+          <InviteColleagueForm privacyNoticeHref="https://swecham.example/privacy" />
         </DetailContainer>
       </MemberFrame>
     );

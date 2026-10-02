@@ -745,9 +745,9 @@ been **removed** and its two tokens (`--content-max-width-admin`,
 | `/admin/members/[memberId]/timeline`                | `DetailContainer` | 1280px |
 | `/portal`                                           | `DetailContainer`‡ | 1280px |
 | `/portal/profile`                                   | `DetailContainer`‡ | 1280px |
-| `/portal/account`                                   | `DetailContainer`‡ § | 1280px |
+| `/portal/account`                                   | `DetailContainer`‡ § | 880px |
 | `/portal/edit`                                      | `FormContainer`§  | 880px |
-| `/portal/contacts/invite`                           | `DetailContainer`‡ § | 1280px |
+| `/portal/contacts/invite`                           | `DetailContainer`‡ § | 720px |
 | `/portal/broadcasts/new`                            | `DetailContainer`† | 1280px |
 | `/admin/broadcasts/new`                             | `DetailContainer`† | 1280px |
 | `/admin/broadcasts/[id]`                            | `DetailContainer`  | 1280px |
@@ -766,16 +766,15 @@ default as the admin's (spec 122, 2 Oct 2026). Until then `.chamber-portal`
 overrode the column to `calc(1200px + 2 * var(--page-padding-x))`, spec 122
 `spec.md:45`'s 1200px content column.
 
-§ **Inner column** — these three cap their content inside the portal frame
-rather than with a narrower container: `/portal/account` at 880px
-(`portal-account-view.tsx:65`, with the password form at 480), `/portal/edit`
-at 880px (`portal/edit/page.tsx:212`), `/portal/contacts/invite` at 720px
-(`portal/contacts/invite/page.tsx:25`, the board's invite column per
-`tasks.md:159`). `/portal/account` and `/portal/contacts/invite` are listed as
-`DetailContainer` because they are: an account **hub** of independently saved
-forms is § 18.1's "mixed content", and the invite page uses the portal frame
-with its own inner column. They were listed as narrow `FormContainer` pages until
-2026-10-02, which no e2e band could satisfy.
+§ **Board column** — these three take their board's column width, and the whole
+column (header, cards or form) is centred in the portal frame, so the three pages
+line up (maintainer, 2 Oct 2026): `/portal/account` at 880px (its password form at
+480), `/portal/edit` at 880px, `/portal/contacts/invite` at 720px, each as
+`max-w-[calc(<width>+2*var(--page-padding-x))]` on the container. `/portal/account`
+and `/portal/contacts/invite` stay `DetailContainer` because they are: an account
+**hub** of independently saved forms is § 18.1's "mixed content". Until then the
+account and invite pages put an inner column at the start of the 1280px column,
+under a header that sat at the column's edge.
 
 \* **Documented exception** — `/admin/settings/invoicing` is a settings/edit
 form, which the §18.1 one-liner would default to `FormContainer` (720px).

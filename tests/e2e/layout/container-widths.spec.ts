@@ -72,6 +72,11 @@ const PORTAL_DETAIL_ROUTES = [
   '/portal/account',
   '/portal/contacts/invite',
 ] as const;
+/** The account hub and the invite page cap the whole column at their board's width, centred (2 Oct 2026). */
+const PORTAL_DETAIL_CAPS: Partial<Record<(typeof PORTAL_DETAIL_ROUTES)[number], number>> = {
+  '/portal/account': 944,
+  '/portal/contacts/invite': 784,
+};
 /** AURA's `--aura-container-max` and `--aura-container-narrow`. */
 const DETAIL_MAX = 1280;
 const FORM_MAX = 720;
@@ -243,7 +248,15 @@ test.describe('F5 container widths @layout', () => {
         const boxWidth = await container.evaluate(
           (el) => (el as HTMLElement).getBoundingClientRect().width,
         );
-        expect(boxWidth).toBeCloseTo(Math.min(DETAIL_MAX, await parentContentWidth(container)), 0);
+        const parent = await parentContentWidth(container);
+        expect(boxWidth).toBeCloseTo(Math.min(PORTAL_DETAIL_CAPS[route] ?? DETAIL_MAX, parent), 0);
+        // centred in the portal frame: the same gap either side
+        const gaps = await container.evaluate((el) => {
+          const p = el.parentElement!.getBoundingClientRect();
+          const r = el.getBoundingClientRect();
+          return Math.abs(r.left - p.left - (p.right - r.right));
+        });
+        expect(gaps, 'portal column is centred').toBeLessThanOrEqual(2);
 
         await assertNoHorizontalScroll(page);
       });
