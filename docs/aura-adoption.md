@@ -88,7 +88,7 @@ A server component that needs a static AURA component imports it from **`@jirawa
 - **One row:** the search first, if the list searches, then one compact `FilterSelect` per closed-set filter ("Status All"). The chosen value shows on its face, with no label above it.
 - **Filter as you pick:** no Apply button for the row.
 - **Dates:** one date-range control, not two date fields.
-- **On/off filters:** a toggle chip, like Members' "Needs portal invite".
+- **On/off filters:** a toggle chip (`Tag` with `selected` and `touchHeight`), like Members' "Needs portal invite".
 - **More than four filters:** the rest go behind a "More filters" popover.
 - **Always:** the result count through `FilterBar`'s `resultCount`, and "Clear all" while a filter is set.
 - **On a phone:** the chips wrap, as on Members.
@@ -103,7 +103,7 @@ A server component that needs a static AURA component imports it from **`@jirawa
   - **Invoices:** "Status All" is untrue while drafts are hidden. The first status option says so ("All except drafts", admin only), and the drafts hint becomes a quiet line under the row, never part of the count, which does not wrap. The applied secondary filters move to `FilterBar`'s `filters` chips, and the popover button reads "More filters".
   - **Plans:** the order is Search → Year → Category → Active only → Show deleted. Year always has a value and stays put when the others hide for an empty year.
   - **Touch:** every toggle `Tag` (Plans and Members) and the Invoices "More filters" button take `touchHeight`, so the row is 44px on touch, like the `FilterSelect`s.
-  - **A selected toggle chip** shows a check icon (`icon="check"` while selected, as the escalation queue's chips do), so selection is not shown by colour alone.
+  - **A selected toggle chip** shows a check: AURA's toggle `Tag` swaps its icon for one while selected, so selection is not shown by colour alone and nothing extra is needed.
   - **Clear all** appears only for a non-default value. The change-request default status and the plans' current year do not count.
   - **Change requests:** Outcome appears right after Status, only under Decided, and focus stays on Status.
 - **Dates:** AURA `FilterDateRange` (5.26, #128): a `FilterSelect`-style face that opens the range calendar in one click, with presets.

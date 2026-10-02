@@ -551,7 +551,17 @@ export function renderMembersDirectoryBody({
   readonly isAdmin: boolean;
   readonly state: MembersDirectoryBodyState;
 }): ReactNode {
-  const filters = <DirectoryFilters plans={plans} portalInviteCount={portalInviteCount} />;
+  // The result count at the end of the filter row: the list's total, none
+  // filtered, and nothing while the list failed to load or is still empty.
+  const resultCount =
+    state.kind === 'list' ? state.total : state.kind === 'filtered' || state.kind === 'all-invited' ? 0 : undefined;
+  const filters = (
+    <DirectoryFilters
+      plans={plans}
+      portalInviteCount={portalInviteCount}
+      {...(resultCount !== undefined ? { resultCount } : {})}
+    />
+  );
   switch (state.kind) {
     case 'error':
       return (
