@@ -140,7 +140,9 @@ test.describe('F4 SC-013 — data table consistency @layout', () => {
     // A short window, so the plans list is longer than the viewport.
     await page.setViewportSize({ width: 1280, height: 420 });
     await page.goto('/admin/plans');
-    const head = page.locator('thead:visible').first();
+    // AURA pins the header CELLS (`.aura-tbl__th { position: sticky }`), not
+    // the `thead`, whose own box scrolls away with the page (R30): measure a cell.
+    const head = page.locator('th.aura-tbl__th:visible').first();
     await head.waitFor({ timeout: 15_000 });
     const before = await head.boundingBox();
     await page.mouse.wheel(0, 600);
