@@ -21,7 +21,9 @@ type ColumnLayout = Pick<DataTableColumn, 'width' | 'minWidth' | 'card' | 'align
 
 export const INVOICES_COLUMN_LAYOUT = {
   documentNumber: { width: 160, card: 'title' },
-  memberName: { minWidth: 160 },
+  // A line of its own on a phone card, after Due and Total, so a long legal
+  // name wraps instead of being cut at the half-width column.
+  memberName: { minWidth: 160, card: 'wide' },
   status: { width: 136, card: 'pill' },
   dueDate: { width: 100 },
   receipt: { width: 136, card: 'hide', hideBelow: RECEIPT_COLUMN_MIN_TABLE_PX },

@@ -557,7 +557,8 @@ export function InvoicesTable({
         label: t('columns.buyer'),
         ...INVOICES_COLUMN_LAYOUT.memberName,
         render: (r) => (
-          <div className="flex min-w-0 flex-col gap-0.5 leading-snug">
+          // `whitespace-normal`: AURA's stacked-card cells are nowrap.
+          <div className="flex min-w-0 flex-col gap-0.5 leading-snug whitespace-normal">
             {r.buyerHasMemberLink ? (
               <Link
                 href={`/admin/members/${r.memberId}`}
