@@ -1158,10 +1158,11 @@ describe('<EventFeeForm>', () => {
     );
     expect(screen.queryByTestId('mode-waiting-explainer')).toBeNull();
     expect(screen.queryByTestId('mode-bill-first-needs-tin')).toBeNull();
-    // The reason is gone → the describedby reference must go with it.
-    expect(
-      screen.getByRole('radio', { name: new RegExp(modeMessages.billFirst.label) }),
-    ).not.toHaveAttribute('aria-describedby');
+    // The reason is gone: the option is described by its normal hint again
+    // (AURA 5.26 describes every option by its own hint), never the reason.
+    const enabledBillFirst = screen.getByRole('radio', { name: modeMessages.billFirst.label });
+    expect(enabledBillFirst).toHaveAccessibleDescription(/Requires the buyer's tax ID\./);
+    expect(enabledBillFirst).not.toHaveAccessibleDescription(modeMessages.billFirstNeedsTin);
   });
 
   it('paid non-member with a TIN → combined Tax Invoice/Receipt badge (as-paid kind)', async () => {

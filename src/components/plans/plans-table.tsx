@@ -304,6 +304,9 @@ export function PlansTable({
         stackBelow="sm"
         stackStyle="cards"
         align="middle"
+        // FR-020 (spec 004): the column labels stay in view while the rows
+        // scroll, pinned under the shell's top bar (AURA 5.26, #129).
+        stickyHeader
       >
         <THead>
           <Tr>

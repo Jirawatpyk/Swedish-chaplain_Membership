@@ -191,7 +191,7 @@ describe('PlansTable on AURA (board Admin-plans)', () => {
   // AURA 5.26 (#129): Table stickyHeader pins the header row to the page.
   it('pins its header row to the page while the rows scroll (stickyHeader)', () => {
     const { container } = renderRows();
-    expect(container.querySelector('.aura-tbl-wrap')).toHaveClass('is-sticky');
+    expect(container.querySelector('.aura-tbl-wrap')).toHaveClass('is-sticky-page');
   });
 
   it('ends with the count and the VAT note under the table', () => {

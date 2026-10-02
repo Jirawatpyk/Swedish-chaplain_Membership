@@ -34,11 +34,13 @@
  *    two different AURA table components on purpose, and "identical cell
  *    padding" across them is not a thing either component promises.
  *
- * Sticky headers are NOT part of SC-013's wording; the assertion this spec used
- * to carry was its own addition. It is also a real finding — AURA `Table` has no
- * sticky-header option at all, so `/admin/plans` and `/admin/directory` lost the
- * one the legacy kit gave them, while AURA `DataTable` keeps its head sticky —
- * so it is filed as an AURA handoff item instead of asserted here.
+ * Sticky headers are NOT part of SC-013's wording, but FR-020 (spec 004) asks
+ * for them. AURA 5.26 (#129) gave `Table` a `stickyHeader` that pins the header
+ * row to the page under the shell's top bar, and `/admin/plans` passes it: the
+ * last test scrolls the page and checks the header row stays in view. (AURA
+ * `DataTable`'s head pins only inside its own scroll box, which needs a fixed
+ * `height`, so `/admin/directory` and the other DataTable lists do not pin to
+ * the page; that is a separate decision.)
  */
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
@@ -131,5 +133,25 @@ test.describe('F4 SC-013 — data table consistency @layout', () => {
     const plans = await probeRow(page, '/admin/plans');
 
     expect(users.cellPaddingX, 'horizontal cell padding').toBe(plans.cellPaddingX);
+  });
+
+  test('Plans keeps its header row in view while the page scrolls (FR-020)', async ({ page }) => {
+    await signInAsSuperAdmin(page);
+    // A short window, so the plans list is longer than the viewport.
+    await page.setViewportSize({ width: 1280, height: 420 });
+    await page.goto('/admin/plans');
+    const head = page.locator('thead:visible').first();
+    await head.waitFor({ timeout: 15_000 });
+    const before = await head.boundingBox();
+    await page.mouse.wheel(0, 600);
+    await page.waitForTimeout(300);
+    const after = await head.boundingBox();
+    expect(before, 'the plans table renders a header row').not.toBeNull();
+    expect(after, 'the header row is still laid out after scrolling').not.toBeNull();
+    // It moved up with the page, then stopped under the top bar instead of
+    // leaving the viewport.
+    expect(after!.y, `header top after scrolling: ${after!.y}px`).toBeGreaterThanOrEqual(0);
+    expect(after!.y).toBeLessThan(before!.y);
+    expect(after!.y).toBeLessThanOrEqual(80);
   });
 });

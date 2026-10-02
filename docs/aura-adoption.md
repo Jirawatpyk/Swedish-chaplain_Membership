@@ -82,7 +82,7 @@ A server component that needs a static AURA component imports it from **`@jirawa
 - **Inside the card** an empty state has no border of its own (`bordered={false}` on the shell `EmptyState`, no `bordered` on AURA's), so there is never a frame in a frame. A load error keeps its danger frame: the red border is how it reads as an alert (board `Admin-state-members-error`).
 - **The route's `loading.tsx`** draws the same card, for CLS 0.
 - **Where it applies today:** Plans, the renewals pipeline, escalation tasks, tier upgrades, Invoices, Members and Change requests. Lists still on the legacy kit take it in their own phase.
-- **The table runs edge to edge inside the card** (maintainer, 2 Oct, the Polaris / GitHub pattern): no side borders or radius, the header band and rules kept, the filters on the card's padding. AURA has no way to do this yet, so until #127 ships the tables keep their own frame.
+- **The table runs edge to edge inside the card** (maintainer, 2 Oct, the Polaris / GitHub pattern): no side borders or radius, the header band and rules kept, the filters on the card's padding. AURA 5.26 shipped `bleed` (#127), but only for a table that is a direct child of the Card body, and every list card has wrappers in between (the gap div, `div[data-members-table]`, the invoices `@container` div, the pipeline's tabpanel). Until AURA lets it reach through them (#130), the tables keep their own frame.
 
 **Filters (decided 2 Oct 2026, not yet applied).** The migrated lists use four different filter rows, and the boards disagree: Members draws AURA's `FilterBar`, while Change requests and Plans draw labelled form fields with an Apply button. The maintainer chose the pattern the large SaaS dashboards share (Stripe, Shopify Polaris, Vercel, GitHub, Jira):
 - **One row:** the search first, if the list searches, then one compact `FilterSelect` per closed-set filter ("Status All"). The chosen value shows on its face, with no label above it.
@@ -106,8 +106,8 @@ A server component that needs a static AURA component imports it from **`@jirawa
   - **A selected toggle chip** shows a check icon (`icon="check"` while selected, as the escalation queue's chips do), so selection is not shown by colour alone.
   - **Clear all** appears only for a non-default value. The change-request default status and the plans' current year do not count.
   - **Change requests:** Outcome appears right after Status, only under Decided, and focus stays on Status.
-- **Dates need AURA #128**, a compact date-range filter. The mock showed that composing one from `Popover` + `DateRangePicker` takes three clicks to reach the calendar and borrows an internal class.
-- **When:** its own PR, after AURA ships #127 and #128. The mock was reviewed on 2 Oct.
+- **Dates:** AURA `FilterDateRange` (5.26, #128): a `FilterSelect`-style face that opens the range calendar in one click, with presets.
+- **When:** its own PR on AURA 5.26. The mock was reviewed on 2 Oct.
 
 **Type scale.** Text sizes on AURA surfaces use AURA's type classes (`aura-text-label` 13/500, `aura-text-table-cell` 13/400, `aura-text-caption` 12, `aura-text-mono` 12 mono, `aura-text-pill-label` 11, `aura-text-h2` 24), not `text-[Npx]`. They load in the `aura-tokens` layer, below Tailwind's preflight, so on a `<button>`, `<kbd>` or heading (where preflight resets the font) the class goes on the inner text span; Tailwind `font-*` / `leading-*` utilities still win over it. Page titles keep the app's shared `--font-size-h1` step.
 
@@ -136,7 +136,7 @@ Phases 2–12 each depend on 1 and can land in any order.
 
 ## AURA gaps (the handoff doc)
 
-The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, items 52–56 (Addendum 4) in 5.6.0, items 57–62 (Addendum 5, found in US1) in 5.7.0, item 63 in 5.7.1, item 64 (Addendum 6) in 5.7.2, item 65 (Addendum 7, found in US2) in 5.7.3, items 66–69 (Addendum 8, found in US3) in 5.8.0, items 70–71 (Addendum 9, found in US4) in 5.9.0, items 72–74 (Addendum 10, found adopting 5.9.0 in US4) in 5.10.0, items 75–78 (Addendum 11, found in US5a) in 5.11.0, item 79 (Addendum 12) in 5.12.0 and items 80–84 (Addendum 13) in 5.13.0, items 85–100 (Addenda 14–15) in 5.14.0–5.16.0, items 101–108 (Addendum 16, found in US5b-1) in 5.14.0 and 5.16.0, item 109 (Addendum 17) in 5.16.1, items 110–111 (Addendum 18) in 5.17.0 and item 112 (Addendum 19, found in US6) in 5.18.0, items 113–116 (Addendum 20, found in US6) in 5.19.0 and 5.20.0 and items 118–119 (Addendum 22, found in US7a) in 5.22.0 and items 120–122 (Addenda 23–25, found in US7b) in 5.23.0 and item 123 (Addendum 26) in 5.24.0 and item 124 (Addendum 27) in 5.25.0 — **5.25.0** is the current pin. Items 85–100 (Addenda 14–15, found adopting 5.13.0 and applying the parity rule to US1–US5a) shipped in 5.14.0 (86, 88, 91, 97), 5.15.0 (85, 87, 89, 90, 92–94, 99, 100) and 5.16.0 (95, 96, 98), and are adopted below (T512). The two gaps found adopting them (Addendum 18: #110 `Stat`, #111 `Progress`) shipped in 5.17.0, and 5.16.1 fixed #109 (a custom `Select` painted with the disabled ground). Addendum 20 (items 113–116, found in US6: #113–#114 from the UX review, #115–#116 from the board check) shipped in 5.19.0 and 5.20.0, and US6 dropped each stand-in. Addendum 21 (#117, the directory's Recent exports rows) shipped in 5.21.0, and Addendum 22 (#118–#119, found in US7a) in 5.22.0:
+The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requirements") is the contract between Chamber-OS and AURA. Items 1–51 shipped in 5.5.0, items 52–56 (Addendum 4) in 5.6.0, items 57–62 (Addendum 5, found in US1) in 5.7.0, item 63 in 5.7.1, item 64 (Addendum 6) in 5.7.2, item 65 (Addendum 7, found in US2) in 5.7.3, items 66–69 (Addendum 8, found in US3) in 5.8.0, items 70–71 (Addendum 9, found in US4) in 5.9.0, items 72–74 (Addendum 10, found adopting 5.9.0 in US4) in 5.10.0, items 75–78 (Addendum 11, found in US5a) in 5.11.0, item 79 (Addendum 12) in 5.12.0 and items 80–84 (Addendum 13) in 5.13.0, items 85–100 (Addenda 14–15) in 5.14.0–5.16.0, items 101–108 (Addendum 16, found in US5b-1) in 5.14.0 and 5.16.0, item 109 (Addendum 17) in 5.16.1, items 110–111 (Addendum 18) in 5.17.0 and item 112 (Addendum 19, found in US6) in 5.18.0, items 113–116 (Addendum 20, found in US6) in 5.19.0 and 5.20.0 and items 118–119 (Addendum 22, found in US7a) in 5.22.0 and items 120–122 (Addenda 23–25, found in US7b) in 5.23.0 and item 123 (Addendum 26) in 5.24.0 and item 124 (Addendum 27) in 5.25.0 and items 125–129 (Addenda 28–32) in 5.26.0 — **5.26.0** is the current pin. Items 85–100 (Addenda 14–15, found adopting 5.13.0 and applying the parity rule to US1–US5a) shipped in 5.14.0 (86, 88, 91, 97), 5.15.0 (85, 87, 89, 90, 92–94, 99, 100) and 5.16.0 (95, 96, 98), and are adopted below (T512). The two gaps found adopting them (Addendum 18: #110 `Stat`, #111 `Progress`) shipped in 5.17.0, and 5.16.1 fixed #109 (a custom `Select` painted with the disabled ground). Addendum 20 (items 113–116, found in US6: #113–#114 from the UX review, #115–#116 from the board check) shipped in 5.19.0 and 5.20.0, and US6 dropped each stand-in. Addendum 21 (#117, the directory's Recent exports rows) shipped in 5.21.0, and Addendum 22 (#118–#119, found in US7a) in 5.22.0:
 
 | Item | Shipped | Chamber-OS change |
 |---|---|---|
@@ -152,42 +152,19 @@ The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requ
 | 122 | 5.23.0: `ActionBar touchHeight` gives the bar's own Clear the 44px touch height below 640px | The members and renewal pipeline bulk bars pass `touchHeight`; the `TouchClearActionBar` stand-in goes |
 | 123 | 5.24.0: `touchHeight` applies under `(max-width: 639.98px), (pointer: coarse)`, so a tablet or other touch-first screen wider than 640px gets 44px targets too; a mouse at 640px and up keeps today's sizes | Nothing to change in the screens: every touch control already passes `touchHeight`. `renewal-a11y` asks the page which rule applies and adds a 1024px touch-context test |
 | 124 | 5.25.0: a toggle `Tag` (`selected` + `onClick`) takes `touchHeight`, 44px under the same rule as #123; a plain or removable Tag ignores it | The escalation queue's six Status and Assignment chips (`PressedGroup`) pass `touchHeight` |
+| 125 | 5.26.0: a RadioGroup option (and a labelled Checkbox) is named by its label alone, its description read after it; Accordion, Combobox and Command items follow | The new-invoice type and event-fee mode tests match exact names plus `toHaveAccessibleDescription`; the command palette's member option is named by the company, its number the description |
+| 126 | 5.26.0: `Container` `align="start"`, attributes (`id`, `aria-*`, `data-*`) reach the element, and utilities overriding `max-width` / `margin` are guaranteed under `styles.layer.css` | Not adopted yet: `Container` is exported only from the root, and our containers render in Server Components (#131). AURA's answer on widths (no new sizes; 672 → `narrow` 720, 1152 and 1200 into the 1280 default) is with the maintainer |
+| 127 | 5.26.0: `bleed` on DataTable / Table (edge to edge inside a Card), DataTable `bordered={false}` | Not adopted yet: `bleed` applies only to a direct child of the Card body, and the seven list cards have wrappers in between (#130) |
+| 128 | 5.26.0: `FilterDateRange`, a compact date-range filter for `FilterBar` with presets | The change-request queue's "Submitted" filter (the filter pattern, § Filters) |
+| 129 | 5.26.0: Table `stickyHeader` (pins to the page under the shell's bar) and `maxHeight` | `/admin/plans` passes `stickyHeader` (FR-020); `table-consistency.spec.ts` checks the header stays in view while the page scrolls. DataTable's head pins only inside its own scroll box, so the DataTable lists do not pin to the page |
 
-Three items are open (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.test.ts` reads this table; a new gap goes here as `| #N | … |`):
+One item is open (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.test.ts` reads this table; a new gap goes here as `| #N | … |`):
 
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
-| #125 | Addendum 28 (US8a): a `RadioGroup` option's `description` sits inside its `<label>`, so it is read as part of the radio's name instead of as its description | None needed in markup: the new-invoice type switcher and the event-fee issuance mode keep `description`; their tests match the name with a start-anchored regex until AURA ships, then tighten to the exact name plus `toHaveAccessibleDescription` |
-| #127 | Addendum 30 (US8a): a table inside a padded `Card` keeps its own border and radius and cannot run edge to edge, so a list page shows a frame in a frame on desktop. Ask: `bleed` on `DataTable` / `Table` (no side borders or radius, pulled out by the card's padding, header band and rules kept, off below the card's `flushBelow`), plus `DataTable bordered={false}` | None (maintainer, 2 Oct: wait for AURA). The seven list-card pages (members, invoices, change requests, plans, renewal pipeline, escalation tasks, tier upgrades) and their skeletons take `bleed` in the PR that bumps the pin |
-| #128 | Addendum 31 (filter pattern): no compact date-range filter for `FilterBar`. `DateRangePicker` is a labelled form field, so a date filter cannot sit in the "Status All" row. Ask: a `FilterDateRange` (or `DateRangePicker variant="filter"`) with a `FilterSelect`-style face that opens the range calendar in one click, optional presets, the same date handling, and a name of both parts | None: the filter PR (§ Filters) waits for #127 and #128. The change-request queue keeps its two `DatePicker`s and Apply until then |
+| #130 | Addendum 33 (adopting 5.26): `bleed` applies only to a table that is a direct child of `.aura-card__body`; every list card has a wrapper of ours in between (the gap div, `div[data-members-table]`, the invoices `@container` div, the pipeline's tabpanel). Ask: let it reach through unpadded, unframed descendants, keeping the last-content radius for a direct child | None (maintainer, 2 Oct: ask AURA rather than restructure). The seven list cards and their skeletons take `bleed` in the PR that adopts it |
 
-**#126 (Addendum 29) is open but is deliberately NOT in that table**, because it
-has no stand-in to retire: it is not a reach into AURA's internals but a request
-about AURA's own `Container`. AURA offers two page-column widths (`default` 1280,
-`narrow` 720) where Chamber-OS uses four — 672 form, 1152 detail, 1536 table, and
-the portal's 1200 content column — and centres with `margin: 0 auto`, while the
-staff form boards put the 672 column at the page's start edge (`spec.md:118`). So
-`src/components/layout/{form,detail,table}-container.tsx` stay for now. A live
-cascade test (2 Oct 2026) shows `.aura-container` + `mx-0` +
-`max-w-[var(--layout-max-width-form)]` already yields 672 at the start edge, and
-AURA's container padding ladder already matches `--page-padding-x`, so the ask is
-a written guarantee that utilities may override `Container`, not a new feature.
-Nothing in the repo is labelled `#126`; when it is answered, the migration is a
-component swap, not a stand-in removal.
-
-**#129 (Addendum 32) is open and also outside that table**, for the same reason:
-there is no stand-in to retire. AURA `Table` has no sticky-header option, and the
-only `position` on `.aura-tbl__head` is the visually-hidden rule under
-`--stack-sm` / `--stack-md`, so a list page that moves off the legacy kit stops
-pinning its column labels. Measured 2 Oct 2026: `thead` is `sticky` on
-`/admin/users`, `/admin/invoices` and `/admin/events` (legacy kit) and `static` on
-`/admin/plans` and `/admin/directory` (AURA `Table`), while AURA `DataTable`
-keeps its `.aura-table__head` sticky on `/admin/members`. FR-020
-(`specs/004-page-layout-standard/spec.md:232`) requires the sticky header, so it is
-unmet on those two pages until AURA ships `stickyHeader`. A local `sticky top-0`
-is not available as a stand-in — it would have to reach `.aura-tbl__head`, which
-the internal-class ratchet forbids. `tests/e2e/table-consistency.spec.ts` no longer
-asserts stickiness (it was never part of SC-013) and names this item instead.
+**#131 (Addendum 34) is open and outside that table**, because it has no stand-in to retire. AURA 5.26 answered #126 (`align="start"`, attribute pass-through, the override guarantee), but `Container` is exported only from the package root, a client module. Our three containers render in Server Components at 212 call sites, and `tests/unit/architecture/aura-server-imports.test.ts` forbids a root import there. The ask is `Container` in `@jirawatpyk/aura-react/server`, and padding in the override guarantee: AURA's container steps at 640 and 1024px, our `--page-padding-x` at 768 and 1024px. AURA's answer on widths (no new sizes: 672 → `narrow` 720, 1152 and 1200 into the 1280 default, the table column full width or our own override) is a design decision for the maintainer. Until then `src/components/layout/{form,detail,table}-container.tsx` stay as they are.
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 

@@ -292,9 +292,9 @@ function IssuanceModeFieldset({
 }) {
   const t = useTranslations('admin.invoices.eventFeeForm');
   // Spec 122 US8 (T807) — an AURA radio group. A disabled option's reason
-  // is its own description, so a screen reader hears WHY with the option
-  // itself (AURA reads the description with the name); a sighted user sees
-  // it under the option instead of the usual hint.
+  // is its own description, so a screen reader hears WHY right after the
+  // option's name (AURA 5.26, handoff #125); a sighted user sees it under the
+  // option instead of the usual hint.
   return (
     <div className="flex flex-col gap-[var(--aura-space-2)]" data-testid="mode-selector">
       <RadioGroup
