@@ -196,9 +196,10 @@
   --brand-accent-foreground: oklch(0.205 0 0);  /* near-black on gold — 6.3:1 */
 
   /* --- Page layout tokens --- */
-  --layout-max-width-form: 42rem;     /* 672px — FormContainer (F5) */
-  --layout-max-width-detail: 72rem;   /* 1152px — DetailContainer (F5) */
-  --layout-max-width-table: 96rem;    /* 1536px — TableContainer (F5) */
+  /* 1536px — TableContainer, the one column AURA's Container has no size
+     for. Form (720) and detail (1280) take AURA's own sizes
+     (--aura-container-narrow, --aura-container-max; spec 122, 2 Oct 2026). */
+  --layout-max-width-table: 96rem;
   --page-padding-x: 1.5rem;           /* 24px */
   --page-padding-y: 1.5rem;           /* 24px — top padding; the shells set the board steps */
   --page-padding-bottom: var(--page-padding-y);
@@ -626,8 +627,9 @@ summary,
 @layer components {
   /* Page padding, section gap and column on the boards' steps (spec 122,
      Session 2026-09-27): staff 18 / 24 / 28px top and 32px bottom with a
-     16px section gap; the portal 20 / 32px top, 32 / 64px bottom, a 16px
-     gap and a 1200px content column. The home, benefits and edit boards
+     16px section gap; the portal 20 / 32px top, 32 / 64px bottom and a
+     16px gap. The columns are AURA's Container sizes (720 form, 1280 detail
+     and portal; 2 Oct 2026), the table our 1536. The home, benefits and edit boards
      draw a larger page (PageHeader size="hero", see page-header.tsx). */
   .chamber-shell {
     --page-padding-x: 1rem;
@@ -646,8 +648,6 @@ summary,
   }
   .chamber-portal {
     --page-padding-y: 20px;
-    --layout-max-width-detail: calc(1200px + 2 * var(--page-padding-x));
-    --layout-max-width-table: calc(1200px + 2 * var(--page-padding-x));
   }
   @media (min-width: 768px) {
     .chamber-shell {

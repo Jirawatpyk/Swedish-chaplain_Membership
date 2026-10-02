@@ -15,7 +15,7 @@ import { RenewalRemindersToggle } from '@/app/(member)/portal/preferences/renewa
  * preview harness renders the same markup from sample data; a plain async
  * function, like `renderPortalProfileView`.
  *
- * The boards' page: the caller's `DetailContainer` (the 1200px portal
+ * The boards' page: the caller's `DetailContainer` (AURA's 1280px
  * column), the cards in an 880px column under the header, 16px apart. Section ids and h2s are the account
  * menu's deep links (`#account`, `#language`, `#renewal-prefs`,
  * `#data-privacy`).

@@ -10,7 +10,7 @@ import { render, screen, fireEvent, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { MemberForm } from '@/components/members/member-form';
-import { MEMBER_FORM_COLUMN, MemberFormFrame } from '@/app/(staff)/admin/members/_components/member-form-frame';
+import { MemberFormFrame } from '@/app/(staff)/admin/members/_components/member-form-frame';
 import { FormContainer } from '@/components/layout';
 
 const T = enMessages.admin.members.create;
@@ -37,7 +37,7 @@ function renderForm(onCancel?: () => void) {
 describe('MemberFormFrame (T572)', () => {
   it('puts Cancel at the top right as an AURA secondary link, hidden below 1024px', () => {
     render(
-      <FormContainer className={MEMBER_FORM_COLUMN}>
+      <FormContainer align="start">
         <MemberFormFrame title="Add member" subtitle="Create a member" cancelHref="/admin/members" cancelLabel="Cancel">
           <p>form</p>
         </MemberFormFrame>
@@ -50,8 +50,8 @@ describe('MemberFormFrame (T572)', () => {
     expect(cancel).toHaveClass('max-lg:hidden');
     const column = screen.getByText('form').closest('[data-slot="layout-container"][data-variant="form"]');
     expect(column).not.toBeNull();
-    // The staff form boards set the 672px column at the page's start edge.
-    expect(column).toHaveClass('mx-0');
+    // The staff form boards set the form column at the page's start edge.
+    expect(column).toHaveClass('is-start');
   });
 });
 

@@ -12,7 +12,7 @@ export default async function Loading() {
   const tLayout = await getTranslations('layout');
   return (
     <PageSkeletonShell ariaLabel={tLayout('loadingForm')}>
-      <FormContainer className="mx-0">
+      <FormContainer align="start">
         <PageHeader title={t('title')} />
         <Card title={t('title')} headingLevel={2}>
           <FormSkeleton fields={4} footerButtons={2} withHeader={false} />

@@ -29,7 +29,7 @@ import { EditMemberClient } from '@/components/members/edit-member-client';
 import { AdminPreferredLocaleCard } from '@/components/admin/admin-preferred-locale-card';
 import { buildPlanOptions, type PlanOption } from '@/components/members/member-form';
 import { FormContainer } from '@/components/layout';
-import { MEMBER_FORM_COLUMN, MemberFormFrame } from '../../_components/member-form-frame';
+import { MemberFormFrame } from '../../_components/member-form-frame';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -128,7 +128,7 @@ export default async function EditMemberPage({ params }: PageProps) {
   );
 
   return (
-    <FormContainer className={MEMBER_FORM_COLUMN}>
+    <FormContainer align="start">
       <MemberFormFrame
         title={t('title')}
         subtitle={member.companyName}

@@ -7,14 +7,14 @@ import { getTranslations } from 'next-intl/server';
 import { PageSkeletonShell, SkeletonBlock } from '@/components/shell/page-skeletons';
 import { MemberFormSkeleton } from '@/components/members/member-form-skeleton';
 import { FormContainer } from '@/components/layout';
-import { MEMBER_FORM_COLUMN, MemberFormFrame } from '../../_components/member-form-frame';
+import { MemberFormFrame } from '../../_components/member-form-frame';
 
 export default async function Loading() {
   const t = await getTranslations('admin.members.edit');
   const tLayout = await getTranslations('layout');
   return (
     <PageSkeletonShell ariaLabel={tLayout('loadingPage')}>
-      <FormContainer className={MEMBER_FORM_COLUMN}>
+      <FormContainer align="start">
         <MemberFormFrame title={t('title')} subtitle={<SkeletonBlock className="h-4 w-56" />}>
           <MemberFormSkeleton withLocaleCard />
         </MemberFormFrame>

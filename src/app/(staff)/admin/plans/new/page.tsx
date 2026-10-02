@@ -21,7 +21,7 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { vatRatePercent } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import { FormContainer } from '@/components/layout';
-import { PLAN_FORM_COLUMN, renderNewPlanView } from '../_components/plan-form-views';
+import { renderNewPlanView } from '../_components/plan-form-views';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.plans.create');
@@ -42,7 +42,7 @@ export default async function NewPlanPage() {
   return (
     // 122 US6 (T605): the 672px column at the page's start edge, the stepper
     // and one card per step straight under the title (board `Admin-plan-new`).
-    <FormContainer className={PLAN_FORM_COLUMN}>
+    <FormContainer align="start">
       {await renderNewPlanView({
         currentYear,
         currencyCode,

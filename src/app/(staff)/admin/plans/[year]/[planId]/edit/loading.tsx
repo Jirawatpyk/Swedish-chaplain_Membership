@@ -15,7 +15,7 @@ export default async function Loading() {
   const tLayout = await getTranslations('layout');
   return (
     <PageSkeletonShell ariaLabel={tLayout('loadingForm')}>
-      <FormContainer className="mx-0">
+      <FormContainer align="start">
         <PageHeader title={t('edit.titleGeneric')} />
         <PlanEditFormSkeleton />
       </FormContainer>

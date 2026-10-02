@@ -23,7 +23,7 @@ export async function ReadOnlyModeBanner(): Promise<React.ReactElement | null> {
   const t = await getTranslations('errors');
 
   return (
-    <div className="mx-auto w-full max-w-(--layout-max-width-detail) px-[var(--page-padding-x)] pt-[var(--page-padding-y)]">
+    <div className="mx-auto w-full max-w-(--aura-container-max) px-[var(--page-padding-x)] pt-[var(--page-padding-y)]">
       <Alert
         tone="warning"
         role="status"

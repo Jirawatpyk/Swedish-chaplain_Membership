@@ -18,7 +18,7 @@ export function StickySaveBar({
       {/* I6 (wave B) — same width token as DetailContainer (the shell this
           bar sits over) instead of a magic-number copy, so the two stay
           aligned if the token ever changes. */}
-      <div className="mx-auto flex max-w-[var(--layout-max-width-detail)] items-center justify-between gap-3 px-4 py-3">
+      <div className="mx-auto flex max-w-[var(--aura-container-max)] items-center justify-between gap-3 px-4 py-3">
         <span className="text-sm text-muted-foreground">{t('stickyBar.unsaved')}</span>
         <Button type="button" onClick={onSave} disabled={submitting} aria-busy={submitting} className="min-h-11">
           {submitting && <Loader2Icon aria-hidden className="mr-2 h-4 w-4 motion-safe:animate-spin" />}
