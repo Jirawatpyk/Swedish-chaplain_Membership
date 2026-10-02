@@ -69,7 +69,7 @@ function renderDialog() {
  * lowercase to prove that arm stays intact alongside the error-surface work.
  */
 function fillAndSubmit() {
-  fireEvent.change(screen.getByLabelText('Reason'), {
+  fireEvent.change(screen.getByLabelText(/^Reason/), {
     target: { value: VOID_REASON },
   });
   fireEvent.change(screen.getByLabelText(/to confirm/i), {
@@ -309,7 +309,7 @@ describe('VoidConfirmDialog — CR-6 mount focus survives the effect split', () 
   // regress in the other direction: focus still starts on the reason field.
   it('focuses the reason textarea on mount', () => {
     renderDialog();
-    expect(screen.getByLabelText('Reason')).toHaveFocus();
+    expect(screen.getByLabelText(/^Reason/)).toHaveFocus();
   });
 });
 
@@ -328,7 +328,7 @@ describe('VoidConfirmDialog — submit gating guards the error surface', () => {
       expect(fetchMock).not.toHaveBeenCalled();
 
       // Reason alone is not enough.
-      fireEvent.change(screen.getByLabelText('Reason'), {
+      fireEvent.change(screen.getByLabelText(/^Reason/), {
         target: { value: 'Wrong member.' },
       });
       expect(submit).toBeDisabled();
@@ -353,5 +353,29 @@ describe('VoidConfirmDialog — submit gating guards the error surface', () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+// Spec 122 US8b (T827) — the void page on AURA (boards Admin-void, -mobile):
+// the terminal warning is an AURA danger alert naming the bill, the fields
+// sit in an AURA card, and the buttons are Cancel then Void in the DOM
+// (the safe action first), shown Void-above-Cancel and full width on a phone.
+describe('VoidConfirmDialog — AURA layout', () => {
+  it('warns in an AURA danger alert naming the document, with the fields in a card', () => {
+    renderDialog();
+    const warning = screen.getByText(DOC_NUMBER).closest('.aura-alert');
+    expect(warning).not.toBeNull();
+    expect(screen.getByLabelText(/^Reason/).closest('.aura-card')).not.toBeNull();
+  });
+
+  it('keeps Cancel first in the DOM and stacks Void above it, full width, on a phone', () => {
+    renderDialog();
+    const cancel = screen.getByRole('button', { name: 'Cancel' });
+    const submit = screen.getByRole('button', { name: /^Void invoice$/ });
+    expect(cancel.compareDocumentPosition(submit) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const row = cancel.parentElement!;
+    expect(row).toBe(submit.parentElement);
+    expect(row).toHaveClass('max-sm:flex-col-reverse', 'max-sm:[&>*]:w-full');
+    expect(submit).toHaveClass('aura-btn');
   });
 });
