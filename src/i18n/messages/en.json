@@ -3065,6 +3065,9 @@
       },
       "detail": {
         "draftTitle": "Draft invoice",
+        "title": "Invoice {number}",
+        "detailsTitle": "Details",
+        "totalsLabel": "Totals",
         "status": "Status",
         "actions": {
           "preview": "Preview",

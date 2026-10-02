@@ -3065,6 +3065,9 @@
       },
       "detail": {
         "draftTitle": "ใบแจ้งหนี้ (ฉบับร่าง)",
+        "title": "ใบแจ้งหนี้ {number}",
+        "detailsTitle": "รายละเอียด",
+        "totalsLabel": "สรุปยอด",
         "status": "สถานะ",
         "actions": {
           "preview": "พรีวิว",

@@ -3065,6 +3065,9 @@
       },
       "detail": {
         "draftTitle": "Utkast",
+        "title": "Faktura {number}",
+        "detailsTitle": "Detaljer",
+        "totalsLabel": "Summering",
         "status": "Status",
         "actions": {
           "preview": "Förhandsgranska",
