@@ -65,7 +65,7 @@ describe('RecordPaymentDialog on AURA (T804)', () => {
     fireEvent.click(screen.getByTestId('record-payment-trigger'));
     const dialog = screen.getByRole('dialog', { name: pay.title });
     for (const label of [pay.fields.method, pay.fields.reference, pay.fields.date, pay.fields.notes]) {
-      expect(within(dialog).getByLabelText(label)).toBeInTheDocument();
+      expect(within(dialog).getByLabelText(new RegExp(label))).toBeInTheDocument();
     }
     fireEvent.click(within(dialog).getByRole('button', { name: pay.cancelDialog }));
     expect(screen.queryByRole('dialog', { name: pay.title })).toBeNull();

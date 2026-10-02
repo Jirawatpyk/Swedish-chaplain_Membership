@@ -504,14 +504,14 @@ Boards: `Admin-invoices`, `Admin-state-invoices-setup`, `Admin-invoice-new`, `Ad
 
 - [x] T800 [US8] Spec Clarifications "Session 2026-10-02 (maintainer, US8 start)"; the registers line in the user story; these tasks.
 - [ ] T801 [US8] One invoice status tone map shared by the portal list, the member invoices table and the admin list and detail: Paid `ready`, Issued `progress`, Overdue `blocked`, the rest `neutral`. RED: a unit test of the map.
-- [ ] T802 [US8] The invoice table is an AURA `DataTable` with the board's columns and phone cards:
+- [x] T802 [US8] The invoice table is an AURA `DataTable` with the board's columns and phone cards:
   - Invoice No. carries "Issued {date}" and the credit-note count;
   - Receipt No. carries "PDF generating…" (busy) or the online method, and a "Receipt failed" link;
   - "Record payment…" plus a ⋯ menu with the downloads;
   - the queue and method columns only in their views.
   RED: the table test on AURA (headers, row actions, menu items, busy receipt, pill tones).
-- [ ] T803 [US8] The auto-renewal queue actions are an AURA `DropdownMenu`, with AURA alerts for the caution and errors, and the queue badges are AURA badges (the severity ladder: refused danger, unverified solid warning, price changed soft warning, fiscal year changed neutral) with keyboard-reachable tooltips. The invoice's own ⋯ menu (`invoice-more-menu`) is used only on the detail page, so it moves to US8b. Resend `{variant}`, `issue-auto-drafted` `{sendEmail}`, `discard-auto-draft` and the 429 path are unchanged. RED: the queue-action and badge tests on AURA (item names, the danger item, POST URLs and bodies, focus after refresh, badge tones).
-- [ ] T804 [US8] Record payment is an AURA dialog on wider screens and an AURA drawer below 640px. Both carry the board's summary box, the method select, reference, payment date (clamp kept) and notes. The POST body is unchanged. RED: dialog-versus-drawer, the POST body, the error alert.
+- [x] T803 [US8] The auto-renewal queue actions are an AURA `DropdownMenu`, with AURA alerts for the caution and errors, and the queue badges are AURA badges (the severity ladder: refused danger, unverified solid warning, price changed soft warning, fiscal year changed neutral) with keyboard-reachable tooltips. The invoice's own ⋯ menu (`invoice-more-menu`) is used only on the detail page, so it moves to US8b. Resend `{variant}`, `issue-auto-drafted` `{sendEmail}`, `discard-auto-draft` and the 429 path are unchanged. RED: the queue-action and badge tests on AURA (item names, the danger item, POST URLs and bodies, focus after refresh, badge tones).
+- [x] T804 [US8] Record payment is one AURA dialog, which is a bottom sheet below 640px by itself. It carries the board's summary box (bill · member, amount received, the full-total note), the method select, reference, payment date (clamp kept) and notes. The POST body is unchanged. RED: the dialog and summary, the POST bodies byte for byte, the error alert tones.
 - [ ] T805 [US8] The CSV export dialog is an AURA dialog with two date fields; the export URL and its `window.open` are unchanged. RED: a test for the URL and the range check.
 - [ ] T806 [US8] The list page frame:
   - the header actions;

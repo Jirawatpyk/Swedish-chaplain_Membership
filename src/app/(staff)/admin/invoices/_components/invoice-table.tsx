@@ -298,7 +298,7 @@ export function InvoicesTable({
   // fetch window). `try/finally` guards against a throw inside the
   // helpers leaking a stuck spinner — the helpers themselves swallow
   // documented 4xx/5xx via their own catch, but defensive cleanup
-  // matches the invoice-more-menu pattern.
+  // matches the detail page's download pattern.
   const handleRowDownload = async (
     variant: 'invoice' | 'receipt',
     invoiceId: string,
@@ -417,9 +417,10 @@ export function InvoicesTable({
               todayIso={todayIso}
               triggerLabel={t('actions.recordPayment')}
               triggerAriaLabel={t('actions.recordPaymentAria', { number: r.documentNumber })}
+              memberName={r.memberName}
+              {...(r.totalSatang !== null ? { totalDisplay: `${formatSatang(r.totalSatang)} THB` } : {})}
               triggerVariant="ghost"
               triggerSize="sm"
-              triggerClassName="min-h-11 px-3 gap-1"
               triggerId={`record-payment-${r.invoiceId}`}
               triggerTestId="row-record-payment-trigger"
             />

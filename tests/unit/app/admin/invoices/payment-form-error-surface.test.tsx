@@ -203,9 +203,13 @@ describe('PaymentForm — the POST is unchanged on AURA (T804)', () => {
     vi.stubGlobal('fetch', fetchMock);
     try {
       renderForm();
-      fireEvent.change(screen.getByLabelText('Payment method'), { target: { value: 'cheque' } });
+      // AURA's select names a combobox button and keeps a hidden native
+      // <select> (`#method-select`) that carries the value and onChange.
+      fireEvent.change(document.getElementById('method-select') as HTMLSelectElement, {
+        target: { value: 'cheque' },
+      });
       fireEvent.change(screen.getByLabelText('Reference'), { target: { value: '  CHQ-77  ' } });
-      fireEvent.change(screen.getByLabelText('Payment date'), { target: { value: ISSUE_DATE } });
+      fireEvent.change(screen.getByLabelText(/Payment date/), { target: { value: ISSUE_DATE } });
       fireEvent.change(screen.getByLabelText('Notes'), { target: { value: ' paid at the gala ' } });
       submitPayment();
       await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
@@ -225,8 +229,8 @@ describe('PaymentForm — the POST is unchanged on AURA (T804)', () => {
 
   it('the method is an AURA select with the four methods in order', () => {
     renderForm();
-    const select = screen.getByLabelText('Payment method') as HTMLSelectElement;
-    expect(select.closest('.aura-select')).not.toBeNull();
+    expect(screen.getByRole('combobox', { name: 'Payment method' }).closest('.aura-select')).not.toBeNull();
+    const select = document.getElementById('method-select') as HTMLSelectElement;
     expect([...select.options].map((o) => o.value)).toEqual(['bank_transfer', 'cheque', 'cash', 'other']);
   });
 });
