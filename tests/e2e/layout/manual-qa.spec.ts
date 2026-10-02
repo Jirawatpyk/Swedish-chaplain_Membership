@@ -53,7 +53,12 @@ test.describe('F5 manual-QA automation @qa', () => {
         /^\/admin(\/|$)/,
       );
 
-      const adminRoutes = ['/admin/settings/invoicing', '/admin/plans/new'];
+      // FORM pages only, as the title says. `/admin/settings/invoicing` was
+      // here and is a documented DetailContainer exception
+      // (docs/ux-standards.md § 18.2 *), so it measured a 72rem column
+      // against a form budget. `/admin/members/new` is the canonical 672
+      // form column, which keeps two samples on this route set.
+      const adminRoutes = ['/admin/plans/new', '/admin/members/new'];
       const samples: Array<{
         route: string;
         text: string;
@@ -68,7 +73,11 @@ test.describe('F5 manual-QA automation @qa', () => {
         // Sample first 3 body-text nodes inside the layout container.
         const nodes = await page
           .locator(
-            '[data-slot="layout-container"] p, [data-slot="layout-container"] label, [data-slot="layout-container"] .text-body',
+            // The page-header subtitle is excluded: it is a full-width <div> by
+            // design (page-header.tsx:121-129, a ReactNode slot), so a 62-char
+            // one-line subtitle reported the container's entire width and
+            // scored 171 chars/line. It is not prose and never wraps.
+            '[data-slot="layout-container"] p:not([data-slot="page-header-subtitle"] *), [data-slot="layout-container"] label, [data-slot="layout-container"] .text-body:not([data-slot="page-header-subtitle"]):not([data-slot="page-header-subtitle"] *)',
           )
           .all();
         let n = 0;
@@ -113,7 +122,11 @@ test.describe('F5 manual-QA automation @qa', () => {
         await waitForLayoutContainer(memberPage);
         const nodes = await memberPage
           .locator(
-            '[data-slot="layout-container"] p, [data-slot="layout-container"] label, [data-slot="layout-container"] .text-body',
+            // The page-header subtitle is excluded: it is a full-width <div> by
+            // design (page-header.tsx:121-129, a ReactNode slot), so a 62-char
+            // one-line subtitle reported the container's entire width and
+            // scored 171 chars/line. It is not prose and never wraps.
+            '[data-slot="layout-container"] p:not([data-slot="page-header-subtitle"] *), [data-slot="layout-container"] label, [data-slot="layout-container"] .text-body:not([data-slot="page-header-subtitle"]):not([data-slot="page-header-subtitle"] *)',
           )
           .all();
         let n = 0;

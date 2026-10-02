@@ -26,23 +26,51 @@ import { assertNoHorizontalScroll, signInViaForm, waitForLayoutContainer } from 
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
-const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL;
-const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD;
+// The GOOD-STANDING member, not `E2E_MEMBER_EMAIL`. That persona is LAPSED, and
+// a membership gate redirects it off /portal/edit, /portal/contacts/invite and
+// /portal/profile to the portal home — so those three cases were measuring the
+// home page's container, or failing to find one, instead of the page named in
+// the test title.
+const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL_EMPTY;
+const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD_EMPTY;
 
 const VIEWPORTS_FULL = [375, 1280, 1440, 1920] as const;
 const VIEWPORTS_DETAIL = [375, 1440] as const;
 
 const ADMIN_FORM_ROUTES = ['/admin/plans/new'] as const;
+/**
+ * Portal pages that render a `FormContainer`, each with the band its own board
+ * sets — they are NOT all the 672px staff form column.
+ *
+ * `/portal/account` and `/portal/contacts/invite` used to be listed here and
+ * have been `DetailContainer` since 122 US3 (`570b8c3c6`): the account page is a
+ * hub of independent forms, which `docs/ux-standards.md § 18.1` puts in
+ * `DetailContainer`, and the invite page draws a 720px inner column inside the
+ * portal frame (`portal/contacts/invite/page.tsx:18-19`, `tasks.md:159`). They
+ * moved to `PORTAL_DETAIL_ROUTES`; asserting them as 672 forms could never pass.
+ */
 const PORTAL_FORM_ROUTES = [
-  '/portal/account',
-  '/portal/edit',
-  '/portal/contacts/invite',
+  // 880px content column (`portal/edit/page.tsx:212`) → 944 outer at desktop,
+  // wider than the staff 672 by design.
+  { route: '/portal/edit', min: 936, max: 952 },
 ] as const;
 // Task-8 HIGH — /admin/settings/invoicing renders DetailContainer (its
 // two-column sticky-nav shell), not FormContainer. See docs/ux-standards.md
 // §18.2's documented exception row.
 const ADMIN_DETAIL_ROUTES = ['/admin', '/admin/settings/invoicing'] as const;
-const PORTAL_DETAIL_ROUTES = ['/portal/profile'] as const;
+/**
+ * Portal detail pages. `.chamber-portal` overrides the detail token to
+ * `calc(1200px + 2 * var(--page-padding-x))` (`globals.css:649`), a faithful
+ * transcription of spec 122's "a 1200 px portal **content** column"
+ * (`spec.md:45`), so these measure 1264 outer at 1440 — NOT the admin's 1152.
+ * This block asserted the admin band until 2026-10-02.
+ */
+const PORTAL_DETAIL_ROUTES = [
+  '/portal/profile',
+  '/portal/account',
+  '/portal/contacts/invite',
+] as const;
+const PORTAL_DETAIL_BAND = { min: 1256, max: 1272 } as const;
 
 async function signInAdmin(page: Page): Promise<void> {
   await signInViaForm(page, '/admin/sign-in', ADMIN_EMAIL!, ADMIN_PASSWORD!, /^\/admin(\/|$)/);
@@ -136,9 +164,9 @@ test.describe('F5 container widths @layout', () => {
       }
     }
 
-    for (const route of PORTAL_FORM_ROUTES) {
+    for (const { route, min, max } of PORTAL_FORM_ROUTES) {
       test(`FormContainer on ${route} @ 1440px`, async ({ page }) => {
-        test.skip(!MEMBER_EMAIL || !MEMBER_PASSWORD, 'E2E_MEMBER_* not set');
+        test.skip(!MEMBER_EMAIL || !MEMBER_PASSWORD, 'E2E_MEMBER_*_EMPTY not set');
         await page.setViewportSize({ width: 1440, height: 900 });
         await signInMember(page);
         await page.goto(route);
@@ -148,8 +176,8 @@ test.describe('F5 container widths @layout', () => {
         await expect(container).toBeVisible();
 
         const boxWidth = await container.evaluate((el) => (el as HTMLElement).getBoundingClientRect().width);
-        expect(boxWidth).toBeGreaterThanOrEqual(650);
-        expect(boxWidth).toBeLessThanOrEqual(680);
+        expect(boxWidth).toBeGreaterThanOrEqual(min);
+        expect(boxWidth).toBeLessThanOrEqual(max);
 
         await assertNoHorizontalScroll(page);
       });
@@ -188,7 +216,7 @@ test.describe('F5 container widths @layout', () => {
     // Portal detail routes — additional SC-003 coverage beyond /admin.
     for (const route of PORTAL_DETAIL_ROUTES) {
       test(`DetailContainer on ${route} @ 1440px`, async ({ page }) => {
-        test.skip(!MEMBER_EMAIL || !MEMBER_PASSWORD, 'E2E_MEMBER_* not set');
+        test.skip(!MEMBER_EMAIL || !MEMBER_PASSWORD, 'E2E_MEMBER_*_EMPTY not set');
         await page.setViewportSize({ width: 1440, height: 900 });
         await signInMember(page);
         await page.goto(route);
@@ -200,8 +228,8 @@ test.describe('F5 container widths @layout', () => {
         const boxWidth = await container.evaluate(
           (el) => (el as HTMLElement).getBoundingClientRect().width,
         );
-        expect(boxWidth).toBeGreaterThanOrEqual(1148);
-        expect(boxWidth).toBeLessThanOrEqual(1156);
+        expect(boxWidth).toBeGreaterThanOrEqual(PORTAL_DETAIL_BAND.min);
+        expect(boxWidth).toBeLessThanOrEqual(PORTAL_DETAIL_BAND.max);
 
         await assertNoHorizontalScroll(page);
       });

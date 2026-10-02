@@ -98,15 +98,32 @@ test.describe('F5 layout consistency @layout', () => {
         expect(fontSize, `${path} h1 font-size`).toBeCloseTo(token, 0);
       }).toPass({ timeout: 15_000 });
 
+      // `:visible` because Next keeps the PREVIOUS segment's DOM around, hidden,
+      // after a client navigation — this loop walks nine routes, so an unscoped
+      // `.first()` can match the route before this one.
       const container = page
-        .locator(`[data-slot="layout-container"][data-variant="${variant}"]`)
+        .locator(`[data-slot="layout-container"][data-variant="${variant}"]:visible`)
         .first();
       await expect(container, `${path} has ${variant} container`).toBeVisible();
 
-      const boxWidth = await container.evaluate((el) => (el as HTMLElement).getBoundingClientRect().width);
       const [lo, hi] = rangeFor(variant);
-      expect(boxWidth, `${path} ${variant} container width must be in [${lo}, ${hi}]`).toBeGreaterThanOrEqual(lo);
-      expect(boxWidth, `${path} ${variant} container width must be in [${lo}, ${hi}]`).toBeLessThanOrEqual(hi);
+      // Retry the measurement the way the h1 check above does. `/admin/plans/clone`
+      // measured 0 once: it passed `toBeVisible`, then re-rendered as its plan list
+      // resolved, and the width was read mid-render. A single read of a page that is
+      // still settling is a flake generator, not an assertion.
+      await expect(async () => {
+        const boxWidth = await container.evaluate(
+          (el) => (el as HTMLElement).getBoundingClientRect().width,
+        );
+        expect(
+          boxWidth,
+          `${path} ${variant} container width must be in [${lo}, ${hi}]`,
+        ).toBeGreaterThanOrEqual(lo);
+        expect(
+          boxWidth,
+          `${path} ${variant} container width must be in [${lo}, ${hi}]`,
+        ).toBeLessThanOrEqual(hi);
+      }).toPass({ timeout: 15_000 });
     }
   });
 });

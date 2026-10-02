@@ -1,49 +1,70 @@
 {
   "budget": 80,
-  "mean": 78,
+  "mean": 76,
   "passed": true,
   "samples": [
     {
-      "route": "/admin/settings/fees",
-      "text": "Per-tenant currency, VAT rate, and registration fee.",
-      "widthPx": 559,
-      "fontSizePx": 14,
-      "approxCharsPerLine": 80
-    },
-    {
-      "route": "/admin/settings/fees",
-      "text": "The currency is locked at THB until a future release adds mi",
-      "widthPx": 576,
-      "fontSizePx": 12,
-      "approxCharsPerLine": 96
-    },
-    {
       "route": "/admin/plans/new",
       "text": "Lowercase letters, digits, and hyphens only (e.g. diamond, s",
-      "widthPx": 280,
-      "fontSizePx": 14,
-      "approxCharsPerLine": 40
+      "widthPx": 271,
+      "fontSizePx": 12,
+      "approxCharsPerLine": 45
     },
     {
       "route": "/admin/plans/new",
-      "text": "Lower numbers appear first in dropdowns.",
-      "widthPx": 576,
+      "text": "Plan name (English) *",
+      "widthPx": 558,
+      "fontSizePx": 13,
+      "approxCharsPerLine": 86
+    },
+    {
+      "route": "/admin/plans/new",
+      "text": "Description (English) *",
+      "widthPx": 558,
+      "fontSizePx": 13,
+      "approxCharsPerLine": 86
+    },
+    {
+      "route": "/admin/members/new",
+      "text": "* fields are required",
+      "widthPx": 608,
       "fontSizePx": 14,
-      "approxCharsPerLine": 82
+      "approxCharsPerLine": 87
+    },
+    {
+      "route": "/admin/members/new",
+      "text": "Country (ISO code) *",
+      "widthPx": 271,
+      "fontSizePx": 13,
+      "approxCharsPerLine": 42
+    },
+    {
+      "route": "/admin/members/new",
+      "text": "Thai 13-digit tax ID with checksum",
+      "widthPx": 271,
+      "fontSizePx": 12,
+      "approxCharsPerLine": 45
     },
     {
       "route": "/portal/account",
-      "text": "e2e-member@swecham.test",
-      "widthPx": 624,
-      "fontSizePx": 14,
-      "approxCharsPerLine": 89
+      "text": "At least 12 characters. Passwords found in known data breach",
+      "widthPx": 480,
+      "fontSizePx": 12,
+      "approxCharsPerLine": 80
     },
     {
       "route": "/portal/account",
       "text": "Confirm new password",
-      "widthPx": 576,
-      "fontSizePx": 14,
-      "approxCharsPerLine": 82
+      "widthPx": 480,
+      "fontSizePx": 13,
+      "approxCharsPerLine": 74
+    },
+    {
+      "route": "/portal/account",
+      "text": "Changing your password signs you out on every other device.",
+      "widthPx": 830,
+      "fontSizePx": 12,
+      "approxCharsPerLine": 138
     }
   ]
 }
