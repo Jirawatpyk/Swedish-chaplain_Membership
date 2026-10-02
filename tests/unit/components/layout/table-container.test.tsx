@@ -24,14 +24,15 @@ describe('<TableContainer>', () => {
     expect(wrapper.getAttribute('data-variant')).toBe('table');
   });
 
-  it('applies the 96rem max-width token (--layout-max-width-table)', () => {
+  it('is AURA\'s Container widened to the 96rem table column (the one override)', () => {
     const { container } = render(
       <TableContainer>
         <p>body</p>
       </TableContainer>,
     );
     const wrapper = container.firstElementChild as HTMLElement;
-    expect(wrapper.className).toMatch(/layout-max-width-table/);
+    expect(wrapper).toHaveClass('aura-container');
+    expect(wrapper.className).toMatch(/max-w-\[var\(--layout-max-width-table\)\]/);
   });
 
   it('merges custom className', () => {

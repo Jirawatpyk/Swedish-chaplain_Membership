@@ -24,14 +24,17 @@ describe('<DetailContainer>', () => {
     expect(wrapper.getAttribute('data-variant')).toBe('detail');
   });
 
-  it('applies the 72rem max-width token (--layout-max-width-detail)', () => {
+  it('is AURA\'s Container at its default width (1280px), with the app\'s gutter', () => {
     const { container } = render(
       <DetailContainer>
         <p>body</p>
       </DetailContainer>,
     );
     const wrapper = container.firstElementChild as HTMLElement;
-    expect(wrapper.className).toMatch(/layout-max-width-detail/);
+    expect(wrapper).toHaveClass('aura-container');
+    expect(wrapper).not.toHaveClass('is-narrow');
+    expect(wrapper.className).not.toMatch(/max-w-/);
+    expect(wrapper.className).toContain('px-[var(--page-padding-x)]');
   });
 
   it('merges custom className', () => {
