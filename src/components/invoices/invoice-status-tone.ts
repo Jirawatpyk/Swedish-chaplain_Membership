@@ -19,7 +19,18 @@ export function invoiceStatusTone(status: InvoiceDisplayStatus): StatusTone {
       return 'progress';
     case 'overdue':
       return 'blocked';
-    default:
+    case 'draft':
+    case 'void':
+    case 'credited':
+    case 'partially_credited':
       return 'neutral';
+    default: {
+      // A status added to the enum fails typecheck here until it gets a
+      // tone. At runtime a value outside the union still renders neutral:
+      // `return _exhaustive` would hand the raw string back as a tone.
+      const _exhaustive: never = status;
+      void _exhaustive;
+      return 'neutral';
+    }
   }
 }

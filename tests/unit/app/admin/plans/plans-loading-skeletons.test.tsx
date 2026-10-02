@@ -76,9 +76,13 @@ describe('plans loading skeletons', () => {
     expect(filters.querySelector('[data-skeleton="year-select"]')).not.toBeNull();
     expect(filters.closest('.aura-card')).not.toBeNull();
     expect(container.querySelector('[data-slot="filter-bar"], [data-slot="card"]')).toBeNull();
-    // UX review (US6): search, category and year are labelled AURA fields, so
-    // each slot reserves its label line too (no shift when the page loads).
-    expect(filters.querySelectorAll('[data-skeleton="labelled-field"]')).toHaveLength(3);
+    // The filter pattern: one FilterBar row — the search, the Year and
+    // Category faces and two toggle chips, no label lines above them — and
+    // the count at the end of the row.
+    expect(filters.querySelectorAll('[data-skeleton="labelled-field"]')).toHaveLength(0);
+    expect(filters.querySelectorAll('[data-skeleton="filter-face"]')).toHaveLength(2);
+    expect(filters.querySelectorAll('[data-skeleton="toggle-chip"]')).toHaveLength(2);
+    expect(filters.querySelector('[data-skeleton="result-count"]')).not.toBeNull();
   });
 
   it('detail shows only the always-present benefit sections', async () => {

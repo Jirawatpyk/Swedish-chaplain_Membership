@@ -14,10 +14,11 @@ vi.mock('next-intl/server', () => ({
   getTranslations: async (namespace: string) => createTranslator({ locale: 'en', messages: enMessages, namespace: namespace as never }),
   getLocale: async () => 'en',
 }));
+const url = vi.hoisted(() => ({ current: new URLSearchParams() }));
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ replace: vi.fn(), push: vi.fn(), refresh: vi.fn() }),
   usePathname: () => '/admin/change-requests',
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => url.current,
   notFound: vi.fn(),
   redirect: vi.fn(),
 }));
@@ -62,8 +63,7 @@ const base = {
   pendingSummary: null,
   deepLinkNotice: null,
   filtered: false,
-  memberChip: null,
-  submitterChip: null,
+  memberCompany: null,
   timeZone: 'Asia/Bangkok',
 } as const;
 
@@ -111,10 +111,39 @@ describe('renderChangeRequestQueueView', () => {
     expect(card?.contains(screen.getByTestId('queue-table-stub'))).toBe(true);
   });
 
+  // The filter pattern: the member and submitter scoping are chips in the
+  // filter bar, not sentences under it.
+  it('the member and submitter scoping are chips in the filter bar', async () => {
+    url.current = new URLSearchParams(
+      'memberId=11111111-1111-4111-8111-111111111111&submitter=22222222-2222-4222-8222-222222222222',
+    );
+    try {
+      await renderView({ ...base, filtered: true, memberCompany: 'Siam Nordic Trading' });
+      const chips = screen.getByTestId('queue-filters').querySelector('.aura-filterbar__chips');
+      expect(chips).toHaveTextContent('Member: Siam Nordic Trading');
+      expect(chips).toHaveTextContent(enMessages.admin.changeRequests.filters.submitterChip);
+      expect(screen.queryByTestId('queue-member-chip')).toBeNull();
+      expect(screen.queryByTestId('queue-submitter-chip')).toBeNull();
+    } finally {
+      url.current = new URLSearchParams();
+    }
+  });
+
   it('the empty state sits in the same card, without a second border', async () => {
     await renderView(base);
     const card = screen.getByTestId('queue-filters').closest('.aura-card');
     expect(card?.contains(screen.getByTestId('queue-empty'))).toBe(true);
     expect(screen.getByTestId('queue-empty').querySelector('.aura-empty')).not.toHaveClass('is-bordered');
+  });
+});
+
+describe('change-request queue loading', () => {
+  it('reserves the filter row: Status and Submitted faces and the count, no labelled fields or Apply', async () => {
+    const { default: Loading } = await import('@/app/(staff)/admin/change-requests/loading');
+    const { container } = render((await Loading()) as ReactElement);
+    const filters = container.querySelector('[data-skeleton="filters"]')!;
+    expect(filters.querySelectorAll('[data-skeleton="filter-face"]')).toHaveLength(2);
+    expect(filters.querySelector('[data-skeleton="result-count"]')).not.toBeNull();
+    expect(filters.querySelectorAll('.h-4.w-20')).toHaveLength(0);
   });
 });

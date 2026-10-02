@@ -50,9 +50,9 @@ import type { InvoiceStatus } from '@/modules/invoicing';
  * enum. The list page replaces `'issued'` with `'overdue'` when the
  * Bangkok-today read-time rule fires. Keeping the union here (rather
  * than widening to `string`) means a new domain status (e.g.
- * `'refunded'`) will fail typecheck on `statusVariant`/`StatusBadge`
- * exhaustiveness, surfacing the gap at compile time instead of
- * silently falling into the `default: outline` branch.
+ * `'refunded'`) fails typecheck in `invoiceStatusTone`'s exhaustive
+ * switch (`src/components/invoices/invoice-status-tone.ts`), surfacing
+ * the gap at compile time instead of rendering a neutral pill.
  */
 type RowStatus = InvoiceStatus | 'overdue';
 

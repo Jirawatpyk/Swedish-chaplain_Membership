@@ -2,7 +2,7 @@
  * Spec 122 US8 (T806) — the invoices list page's view, shared by the page and
  * the no-DB preview route (`/test-fixtures/aura-admin?view=invoices`), so the
  * screenshots show the page itself. Board `Admin-invoices`: the header with
- * "Export CSV" and "New invoice", the filters, the count line, then the table
+ * "Export CSV" and "New invoice", the filters (with the count), then the table
  * in one card (frameless on a phone, where the rows are cards of their own).
  * `Admin-state-invoices-setup` is {@link renderInvoicesSetupView}. The page
  * wraps both in its own `TableContainer` (check:layout reads the page file).
@@ -28,12 +28,12 @@ export interface InvoicesListViewProps {
   /** 107 Task 13 — the origin filter (FEATURE_AUTO_INVOICE). */
   readonly showAutoInvoiceFilter: boolean;
   readonly rows: readonly InvoicesTableRow[];
-  /** Matches across every page (the pagination's and the count line's figure). */
+  /** Matches across every page (the pagination's and the filter row's count). */
   readonly total: number;
   readonly page: number;
   readonly pageSize: number;
   readonly hasFilters: boolean;
-  /** No status filter: the default view leaves drafts out, and the count line says where they are. */
+  /** No status filter: the default view leaves drafts out, and a quiet line under the filters says where they are. */
   readonly draftsHidden: boolean;
   /** FR-035 — the palette's `?pay=1` deep link. */
   readonly payIntent: boolean;
@@ -105,23 +105,19 @@ export async function renderInvoicesListView({
             showAutoInvoiceFilter={showAutoInvoiceFilter}
             // Task 3 — generic filter, not flag-gated.
             showDueBeforeFilter
+            // The filter pattern: the count at the end of the row, announced
+            // politely by AURA's FilterBar. Zero when the filters match
+            // nothing; none beside the "no invoices yet" empty state.
+            {...(hasRows || hasFilters ? { resultCount: total } : {})}
           />
-          {/* SC 4.1.3 — the count, announced after a filter or page change
-              without moving focus: a stable `role="status"` node whose text
-              changes. Visible above the rows as the board draws it; with no
-              rows the empty state speaks, so this stays for screen readers. */}
-          <p
-            role="status"
-            className={hasRows ? 'text-sm text-[var(--aura-fg-secondary)]' : 'sr-only'}
-          >
-            {hasRows
-              ? draftsHidden
-                ? t('list.countLineDraftsHint', { count: total })
-                : t('list.countLine', { count: total })
-              : hasFilters
-                ? t('list.resultCount', { count: total })
-                : t('list.empty')}
-          </p>
+          {/* The default view leaves drafts out, and "All except drafts" on
+              the Status filter says so; this quiet line says where they are.
+              Never part of the count, and not a live region. */}
+          {hasRows && draftsHidden ? (
+            <p data-testid="invoices-drafts-hint" className="m-0 text-sm text-[var(--aura-fg-secondary)]">
+              {t('list.draftsHint')}
+            </p>
+          ) : null}
           {payIntent && isAdmin && hasRows ? (
             // FR-035 — guidance to the per-row Record payment button, not an
             // error: a polite info note.

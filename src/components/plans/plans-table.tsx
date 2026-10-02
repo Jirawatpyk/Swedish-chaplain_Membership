@@ -6,11 +6,13 @@
  * URL), category badges, and a row menu for the US4 actions
  * (Activate / Deactivate / Delete / Restore).
  *
- * 122 US6 (T602): on AURA as the `Admin-plans` board draws it — the filters
- * as one labelled group of AURA fields, AURA's table (each row keeps its
+ * 122 US6 (T602): on AURA as the `Admin-plans` board draws it — AURA's table (each row keeps its
  * `data-plan-id` / `data-plan-year` for the e2e, which DataTable cannot
- * carry), badges, status pills, an IconButton menu per row, and the count
- * with the VAT note under it. Below 640px each row is a card: the name as
+ * carry), badges, status pills, an IconButton menu per row, and the VAT
+ * note under it. The filter row follows the one filter pattern
+ * (docs/aura-adoption.md § Filters): AURA's FilterBar with the search, then
+ * Year and Category, then the two toggle chips, the result count at its end
+ * and a chip for each applied value. Below 640px each row is a card: the name as
  * its title with the status and the menu beside it, the year left out
  * (`Admin-plans-mobile`).
  *
@@ -19,28 +21,29 @@
  *
  * **NO inline edit** — US7 deferred to F3 per critique X1c.
  *
- * Client component because the filter row updates URL query params via
- * `useRouter().push`, which requires client-side navigation.
+ * Client component because the filter row updates URL query params in place
+ * (`router.replace`, no scroll), which requires client-side navigation.
  */
 'use client';
 
-import { useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { CopyIcon, PlusIcon, SearchXIcon } from 'lucide-react';
 import {
+  AuraProvider,
   Badge,
   Button,
   DropdownMenu,
+  FilterBar,
+  FilterSelect,
   IconButton,
-  Select,
   StatusPill,
-  Switch,
   Table,
+  Tag,
   TBody,
   Td,
-  TextField,
   Th,
   THead,
   Tr,
@@ -87,6 +90,7 @@ export function PlansTable({
   initialFilter,
 }: PlansTableProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const t = useTranslations('admin.plans');
   // Plan years are stored CE; every visible year goes through the locale
@@ -94,7 +98,7 @@ export function PlansTable({
   const locale = useLocale();
   const tActions = useTranslations('admin.plans.actions');
   const tOptions = useTranslations('admin.plans.create.options');
-  const [isPending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
 
   const [category, setCategory] = useState<'corporate' | 'partnership' | null>(
     initialFilter.category,
@@ -105,11 +109,7 @@ export function PlansTable({
 
   // Row actions (Activate / Deactivate / Delete / Restore) + their
   // confirmation dialog — shared with the plan detail header.
-  const {
-    openAction: openDialog,
-    isPending: actionPending,
-    dialog: actionDialog,
-  } = usePlanActions();
+  const { openAction: openDialog, dialog: actionDialog } = usePlanActions();
 
   const sorted = useMemo(() => {
     return [...plans].sort((a, b) => {
@@ -155,10 +155,13 @@ export function PlansTable({
       if (v === null || v === '') params.delete(k);
       else params.set(k, v);
     }
+    const query = params.toString();
     startTransition(() => {
-      router.push(`/admin/plans?${params.toString()}`);
+      // In place, as every list's filters: no history entry per pick, no jump.
+      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
     });
   }
+
 
   // Filters beyond the year that the shown rows were loaded with: when they
   // hide every plan, the empty state says so and offers to clear them, not a
@@ -173,7 +176,22 @@ export function PlansTable({
   // Year filter, and Show deleted — nothing else can narrow an empty year.
   const yearEmpty = sorted.length === 0 && !filtered;
 
+  // A chip × or Clear unmounts itself; AURA's FilterBar leaves focus to the
+  // page, so it moves to the search (or Year, when an empty year has no
+  // search) instead of dropping to <body> (UX review H1).
+  const barRef = useRef<HTMLDivElement>(null);
+  // Bumped by a chip × or Clear; the effect moves focus once the bar has
+  // re-rendered without the control that was pressed.
+  const [focusRequest, setFocusRequest] = useState(0);
+  const focusBar = () => setFocusRequest((n) => n + 1);
+  useEffect(() => {
+    if (focusRequest === 0) return;
+    const bar = barRef.current;
+    (bar?.querySelector<HTMLElement>('input[type="search"]') ?? bar?.querySelector<HTMLElement>('[role="combobox"]'))?.focus();
+  }, [focusRequest]);
+
   function clearFilters() {
+    focusBar();
     setCategory(null);
     setQ('');
     setActiveOnly(false);
@@ -201,102 +219,110 @@ export function PlansTable({
     ];
   }
 
-  const busy = isPending || actionPending;
+  // Applied values as removable chips (the search and the category); the
+  // toggles show their own state, and Year always has one.
+  const chips = [
+    ...(q.trim()
+      ? [{ id: 'q', label: t('filters.chip.search', { q: q.trim() }), onRemove: () => { setQ(''); updateFilter({ q: null }); focusBar(); } }]
+      : []),
+    ...(category
+      ? [{ id: 'category', label: t('filters.chip.category', { value: t(`filters.category.${category}`) }), onRemove: () => { setCategory(null); updateFilter({ category: null }); focusBar(); } }]
+      : []),
+  ];
+  // The bar's Clear and chip × in this app's words.
+  const barStrings = useMemo(
+    () => ({
+      clearFilters: t('empty.clearFilters'),
+      remove: (label: string) => t('filters.removeChip', { filter: label }),
+    }),
+    [t],
+  );
+
 
   return (
     <div className="space-y-4" data-plans-table>
-      {/* The board's filter row: labelled AURA fields in one group. On a
-          phone the search takes its own row, category and year share the
-          next, and the switches stack (`Admin-plans-mobile`). */}
-      <div
-        role="group"
-        aria-label={t('filters.groupLabel')}
-        className="grid grid-cols-2 items-end gap-3 sm:flex sm:flex-wrap"
-      >
-        {yearEmpty ? null : (
-          <TextField
-            id="plans-search"
-            type="search"
-            label={t('filters.search.label')}
-            placeholder={t('filters.search.placeholder')}
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            onBlur={() => updateFilter({ q: q || null })}
-            // Commit the search on Enter too — there is no <form> around the
-            // filters, so there is no implicit submit and, without this, the
-            // term only applied on blur (BUG-007). Ignore Enter during an IME
-            // composition (it confirms the candidate, not the search).
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-                e.preventDefault();
-                updateFilter({ q: q || null });
-              }
-            }}
-            disabled={busy}
-            className="col-span-2 sm:min-w-60 sm:flex-1"
+      {/* The filter pattern (docs/aura-adoption.md § Filters): search, Year
+          (it always has a value, so it leads and stays put when an empty year
+          hides the rest), Category, then the toggle chips; the count at the
+          end, a chip per applied value. */}
+      <AuraProvider strings={barStrings}>
+        <FilterBar
+          ref={barRef}
+          label={t('filters.groupLabel')}
+          searchGrow
+          {...(yearEmpty
+            ? {}
+            : {
+                search: q,
+                searchLabel: t('filters.search.label'),
+                searchPlaceholder: t('filters.search.placeholder'),
+                onSearchChange: (value: string) => {
+                  setQ(value);
+                  updateFilter({ q: value.trim() || null });
+                },
+              })}
+          filters={chips}
+          {...(chips.length > 0 ? { onClearAll: clearFilters } : {})}
+          // No "0 results" beside "No plans for this year" (UX review L2).
+          {...(yearEmpty ? {} : { resultCount: sorted.length })}
+        >
+          <FilterSelect
+            label={t('filters.year')}
+            value={String(year)}
+            onChange={(v) => updateFilter({ year: v })}
+            options={yearOptions.map((y) => ({ value: String(y), label: formatCalendarYear(y, locale) }))}
           />
-        )}
-        {yearEmpty ? null : (
-          <Select
-            id="plans-category"
-            label={t('filters.category.label')}
-            value={category ?? 'all'}
-            onChange={(e) => {
-              const v = e.target.value;
-              const next = v === 'all' ? null : (v as 'corporate' | 'partnership');
-              setCategory(next);
-              updateFilter({ category: next });
-            }}
-            options={[
-              { value: 'all', label: t('filters.all') },
-              { value: 'corporate', label: t('filters.category.corporate') },
-              { value: 'partnership', label: t('filters.category.partnership') },
-            ]}
-            className="sm:w-44"
-          />
-        )}
-        <Select
-          id="plans-year"
-          label={t('filters.year')}
-          value={String(year)}
-          onChange={(e) => updateFilter({ year: e.target.value })}
-          options={yearOptions.map((y) => ({ value: String(y), label: formatCalendarYear(y, locale) }))}
-          className="sm:w-36"
-        />
-        {/* Both switches in one box: on a phone they stack 44px apart (the
-            board's two rows) — AURA's touch rows are 44px, so no gap there;
-            from 640px the box is an input's height on the fields' line, the
-            switches centred in it. */}
-        {yearEmpty && !canWritePlans ? null : (
-          <div
-            data-plans-switches
-            className="col-span-2 flex flex-col gap-[var(--aura-space-3)] max-sm:pointer-coarse:gap-0 sm:h-[var(--aura-input-height)] sm:flex-row sm:items-center sm:gap-[var(--aura-space-4)] sm:self-end"
-          >
-            {yearEmpty ? null : (
-              <Switch
-                id="plans-active-only"
-                label={t('filters.activeOnly')}
-                checked={activeOnly}
-                onChange={(v) => {
-                  setActiveOnly(v);
-                  updateFilter({ activeOnly: v ? 'true' : null });
-                }}
-              />
-            )}
-            {canWritePlans ? (
-              <Switch
-                id="plans-show-deleted"
-                label={t('filters.showDeleted')}
-                checked={showDeleted}
-                onChange={(v) => {
-                  setShowDeleted(v);
-                  updateFilter({ showDeleted: v ? 'true' : null });
-                }}
-              />
-            ) : null}
-          </div>
-        )}
-      </div>
+          {yearEmpty ? null : (
+            <FilterSelect
+              label={t('filters.category.label')}
+              allLabel={t('filters.all')}
+              value={category ?? 'all'}
+              onChange={(v) => {
+                const next = v === 'all' ? null : (v as 'corporate' | 'partnership');
+                setCategory(next);
+                updateFilter({ category: next });
+              }}
+              options={[
+                { value: 'all', label: t('filters.all') },
+                { value: 'corporate', label: t('filters.category.corporate') },
+                { value: 'partnership', label: t('filters.category.partnership') },
+              ]}
+            />
+          )}
+          {yearEmpty ? null : (
+            <Tag
+              selected={activeOnly}
+              touchHeight
+              onClick={() => {
+                setActiveOnly(!activeOnly);
+                updateFilter({ activeOnly: activeOnly ? null : 'true' });
+              }}
+            >
+              {t('filters.activeOnly')}
+            </Tag>
+          )}
+          {canWritePlans ? (
+            <Tag
+              selected={showDeleted}
+              touchHeight
+              onClick={() => {
+                setShowDeleted(!showDeleted);
+                updateFilter({ showDeleted: showDeleted ? null : 'true' });
+              }}
+            >
+              {t('filters.showDeleted')}
+            </Tag>
+          ) : null}
+          {/* A toggle chip is not repeated as a removable chip (one control,
+              one name), so when only toggles are on, the bar's own Clear has
+              nothing to hang on: offer it here (as on the members list). */}
+          {(activeOnly || showDeleted) && chips.length === 0 ? (
+            <Button variant="ghost" size="sm" icon="x" touchHeight onClick={clearFilters}>
+              {t('empty.clearFilters')}
+            </Button>
+          ) : null}
+        </FilterBar>
+      </AuraProvider>
 
       <Table
         caption={t('tableCaption')}
@@ -304,6 +330,9 @@ export function PlansTable({
         stackBelow="sm"
         stackStyle="cards"
         align="middle"
+        // FR-020 (spec 004): the column labels stay in view while the rows
+        // scroll, pinned under the shell's top bar (AURA 5.26, #129).
+        stickyHeader
       >
         <THead>
           <Tr>
@@ -429,15 +458,9 @@ export function PlansTable({
         </TBody>
       </Table>
 
-      {sorted.length > 0 ? (
+      {sorted.length > 0 && vatPercent !== null ? (
         <p className="aura-text-caption text-[var(--aura-fg-secondary)]">
-          {vatPercent !== null
-            ? t('subtitleWithVat', {
-                total: sorted.length,
-                year: formatCalendarYear(year, locale),
-                rate: vatPercent,
-              })
-            : t('subtitle', { total: sorted.length, year: formatCalendarYear(year, locale) })}
+          {t('vatNote', { rate: vatPercent })}
         </p>
       ) : null}
 

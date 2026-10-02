@@ -165,7 +165,7 @@ test.describe('plans deactivate / delete / undelete — US4', () => {
     await expect(page.locator(`[data-plan-id="${PLAN_ID}"]`)).toHaveCount(0);
 
     // 3. Show-deleted toggle reveals row again
-    await page.getByRole('switch', { name: /show deleted/i }).click();
+    await page.getByRole('button', { name: /show deleted/i }).click();
     await expect(page.locator(`[data-plan-id="${PLAN_ID}"]`)).toBeVisible();
 
     // 4. Undelete

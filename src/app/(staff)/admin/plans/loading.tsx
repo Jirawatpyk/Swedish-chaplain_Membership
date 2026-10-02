@@ -11,9 +11,9 @@ import {
 /**
  * Skeleton mirrors the real /admin/plans page shape for CLS 0:
  *   - PageHeader with two action buttons (Clone + New plan)
- *   - Filter bar: search + category select + year select + 2 switches
+ *   - Filter bar: search + Year and Category faces + 2 toggle chips + count
  *   - Border-wrapped table (PlanListSkeleton)
- *   - Trailing total-count line
+ *   - Trailing VAT note
  */
 export default async function Loading() {
   const t = await getTranslations('admin.plans');
@@ -34,41 +34,25 @@ export default async function Loading() {
         {/* The page's table card: frameless with no padding on a phone. */}
         <Card flushBelow="sm" className="max-sm:border-0 max-sm:p-0">
           <div className="flex flex-col gap-4">
-            {/* The filter row — matches PlansTable: search, category and year
-                selects, 2 switch + label pairs (122 US6 T608). */}
-            <div
-              aria-hidden
-              data-skeleton="filters"
-              className="grid grid-cols-2 items-end gap-3 sm:flex sm:flex-wrap"
-            >
-              <LabelledFieldSkeleton className="col-span-2 min-w-0 sm:min-w-60 sm:flex-1" />
-              <LabelledFieldSkeleton className="sm:w-44" />
-              <LabelledFieldSkeleton className="sm:w-36" slot="year-select" />
-              <div className="col-span-2 flex items-center gap-2 sm:col-auto">
-                <SkeletonBlock className="h-5 w-9 rounded-full" />
-                <SkeletonBlock className="h-4 w-20" />
-              </div>
-              <div className="col-span-2 flex items-center gap-2 sm:col-auto">
-                <SkeletonBlock className="h-5 w-9 rounded-full" />
-                <SkeletonBlock className="h-4 w-24" />
-              </div>
+            {/* The filter row — matches PlansTable's FilterBar: the search,
+                the Year and Category faces, the two toggle chips and the
+                count at the end (the filter pattern). */}
+            <div aria-hidden data-skeleton="filters" className="flex flex-wrap items-center gap-2">
+              <SkeletonBlock className="h-[var(--aura-input-height)] w-full sm:w-auto sm:min-w-60 sm:flex-1" />
+              <span data-skeleton="year-select" className="contents">
+                <SkeletonBlock className="h-[var(--aura-input-height)] w-28" data-skeleton="filter-face" />
+              </span>
+              <SkeletonBlock className="h-[var(--aura-input-height)] w-36" data-skeleton="filter-face" />
+              <SkeletonBlock className="h-8 w-24 rounded-full" data-skeleton="toggle-chip" />
+              <SkeletonBlock className="h-8 w-28 rounded-full" data-skeleton="toggle-chip" />
+              <SkeletonBlock className="ml-auto h-4 w-20" data-skeleton="result-count" />
             </div>
             <PlanListSkeleton />
-            {/* "{total} plans in {year} · fees exclude VAT" caption */}
+            {/* "Fees exclude {rate}% VAT" note */}
             <SkeletonBlock className="h-3 w-56" />
           </div>
         </Card>
       </TableContainer>
     </PageSkeletonShell>
-  );
-}
-
-/** A labelled AURA field's slot: its label line, then the control. */
-function LabelledFieldSkeleton({ className, slot }: { readonly className: string; readonly slot?: string }) {
-  return (
-    <div data-skeleton="labelled-field" className={`flex flex-col gap-1 ${className}`}>
-      <SkeletonBlock className="h-4 w-16" />
-      <SkeletonBlock className="h-[var(--input-height)] w-full" {...(slot ? { 'data-skeleton': slot } : {})} />
-    </div>
   );
 }

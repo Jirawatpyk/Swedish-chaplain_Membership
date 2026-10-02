@@ -108,8 +108,8 @@ test.describe('keyboard-only plans admin — T158', () => {
     // Focus the first interactive element in the table by tabbing
     let foundTableLink = false;
     // 40 iterations covers the deepest path: skip-link + nav (3 sidebar
-    // items + collapse) + header (theme + user menu) + filters
-    // (search + category + active-only + show-deleted) + 9 plan rows
+    // items + collapse) + header (theme + user menu) + the filter bar
+    // (search + year + category + active-only + show-deleted) + 9 plan rows
     // (each with action menu) before reaching the first plan-name link.
     for (let i = 0; i < 40; i += 1) {
       await page.keyboard.press('Tab');

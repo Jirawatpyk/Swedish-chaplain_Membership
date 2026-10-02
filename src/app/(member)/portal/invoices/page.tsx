@@ -314,8 +314,8 @@ export async function renderPortalInvoicesView({
       <Card flushBelow="lg">
         <div className="flex flex-col gap-4">
           {/* Reuse the admin InvoiceFilters client component for UI parity
-              (same shadcn Select, same debounced search, same X-clear
-              affordance), but configured for self-service:
+              (same FilterBar row, debounced search and Clear filters), but
+              configured for self-service:
               - statusOptions drops 'draft' (members never see drafts —
                 includeDrafts:false at the use-case level — so a draft option
                 would only ever yield an unexplained empty state). 'overdue'
@@ -327,6 +327,9 @@ export async function renderPortalInvoicesView({
           <InvoiceFilters
             statusOptions={PORTAL_STATUS_OPTIONS}
             showPaidOnlineChip={false}
+            // The filter pattern: the count at the end of the row; none
+            // beside the "no invoices yet" line.
+            {...(rows.length > 0 || hasActiveFilter ? { resultCount: total } : {})}
           />
           {rows.length === 0 ? (
             <div className="py-12 text-center">

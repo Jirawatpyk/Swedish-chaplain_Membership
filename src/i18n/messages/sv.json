@@ -805,8 +805,7 @@
     },
     "plans": {
       "title": "Medlemspaket",
-      "subtitle": "{total} paket år {year}",
-      "subtitleWithVat": "{total} paket år {year} · avgifter exkl. {rate} % moms",
+      "vatNote": "Avgifter exkl. {rate} % moms",
       "listDescription": "Hantera nivådefinitioner, årliga avgifter och förmånsmatriser. Föregående års paket är delvis låsta för revisionsintegritet.",
       "tableCaption": "Lista över medlemspaket för det valda året.",
       "empty": {
@@ -842,7 +841,12 @@
           "label": "Sök"
         },
         "activeOnly": "Endast aktiva",
-        "showDeleted": "Visa borttagna"
+        "showDeleted": "Visa borttagna",
+        "chip": {
+          "search": "Sök: {q}",
+          "category": "Kategori: {value}"
+        },
+        "removeChip": "Ta bort filter: {filter}"
       },
       "badges": {
         "active": "Aktiv",
@@ -1125,18 +1129,22 @@
           "state": "Status",
           "outcome": "Beslut",
           "anyOutcome": "Alla beslut",
-          "from": "Skickad från",
-          "to": "Skickad till och med",
-          "apply": "Tillämpa",
+          "submitted": "Skickad",
+          "anyShort": "Alla",
+          "chip": "{label}: {value}",
+          "removeChip": "Ta bort filter: {filter}",
+          "member": "Medlem",
           "clear": "Rensa filter",
-          "memberChip": "Visar begäranden för {company}.",
-          "removeMember": "Visa alla medlemmar",
-          "submitterChip": "Visar en persons begäranden.",
-          "removeSubmitter": "Visa allas begäranden",
-          "unknownMember": "en medlem som inte kunde hittas",
-          "resultCount": "{count, plural, =0 {Inga begäranden att visa} one {Visar # begäran} other {Visar # begäranden}}",
-          "resultCountMore": "Visar de första {count} begärandena – fler på nästa sida",
-          "toggle": "Filter"
+          "submitterChip": "Inskickare: en person",
+          "unknownMember": "Hittades inte",
+          "dateFrom": "från {from}",
+          "dateTo": "till och med {to}",
+          "resultCountMore": "De första {count} resultaten, fler på nästa sida",
+          "presets": {
+            "last7": "Senaste 7 dagarna",
+            "last30": "Senaste 30 dagarna",
+            "thisMonth": "Den här månaden"
+          }
         },
       "queue": {
           "emptyFiltered": "Inga ändringsbegäranden matchar dessa filter.",
@@ -1339,7 +1347,7 @@
         "searchPlaceholder": "Sök på företag, kontakt, e-post eller medlemsnummer",
         "searchSrLabel": "Sök medlemmar",
         "clearFilters": "Rensa filter",
-        "removeFilter": "Ta bort {filter}",
+        "removeFilter": "Ta bort filter: {filter}",
         "filterChip": {
           "search": "Sök: {q}",
           "status": "Status: {value}",
@@ -1367,7 +1375,8 @@
             "at-risk": "I riskzon",
             "critical": "Kritisk"
           },
-          "allShort": "Alla"
+          "allShort": "Alla",
+          "groupLabel": "Filtrera medlemmar"
         },
         "resultsCount": "{count, plural, =0 {Inga medlemmar} one {# medlem} other {# medlemmar}}",
         "resultsCountOfTotal": "Visar {count} av {total, plural, one {# medlem} other {# medlemmar}}",
@@ -2690,12 +2699,15 @@
         "loadMore": "Ladda fler",
         "filteredEmpty": "Inga fakturor matchar filtren.",
         "loadFailed": "Det gick inte att ladda fakturorna. Försök igen.",
-        "resultCount": "{count, plural, =0 {Inga fakturor matchar filtren} one {# faktura matchar filtren} other {# fakturor matchar filtren}}",
-        "countLine": "{count, plural, one {# faktura} other {# fakturor}}",
-        "countLineDraftsHint": "{count, plural, one {# faktura} other {# fakturor}} · välj Utkast i statusfiltret för att se utkast",
+        "draftsHint": "Välj Utkast i statusfiltret för att se utkast.",
         "recordPaymentIntentHint": "Välj en faktura nedan och använd dess knapp 'Registrera betalning' (kolumnen Åtgärder) för att registrera betalning.",
         "filters": {
           "allStatuses": "Alla status",
+          "groupLabel": "Filtrera fakturor",
+          "allExceptDrafts": "Alla utom utkast",
+          "allShort": "Alla",
+          "chip": "{label}: {value}",
+          "chipSearch": "Sök: {q}",
           "clearAll": "Rensa filter",
           "subject": {
             "label": "Fakturatyp",
@@ -2735,11 +2747,10 @@
             "clear": "Rensa"
           },
           "more": {
-            "button": "Filter",
-            "ariaOpen": "Filter ({count} aktiva)",
+            "button": "Fler filter",
+            "ariaOpen": "Fler filter ({count} aktiva)",
             "title": "Fler filter",
-            "removeAria": "Ta bort filter: {label}",
-            "activeGroup": "Aktiva filter"
+            "removeAria": "Ta bort filter: {label}"
           }
         },
         "creditedSuffix": "{count, plural, one {+# kreditnota} other {+# kreditnotor}}",
@@ -5128,7 +5139,7 @@
       "title": "Betalningsavstämning",
       "filterChip": {
         "label": "Betald online",
-        "ariaLabel": "Filtrera till fakturor betalda online",
+        "ariaLabel": "Filtrera fakturor: Betald online",
         "tooltip": "Visa endast fakturor som betalats via kort eller PromptPay"
       },
       "methodBadge": {

@@ -198,8 +198,8 @@ describe('AdminInvoicesPage — invoice read failure renders the load-error stat
   });
 });
 
-describe('AdminInvoicesPage — the count line (US8 T809)', () => {
-  it('the auto-renewal origin filter already lists drafts, so the count line gives no drafts hint', async () => {
+describe('AdminInvoicesPage — the drafts hint (US8 T809)', () => {
+  it('the auto-renewal origin filter already lists drafts, so there is no drafts hint', async () => {
     const { env } = await import('@/lib/env');
     (env.features as { autoInvoice: boolean }).autoInvoice = true;
     const { directorySearch } = await import('@/modules/members');
@@ -228,10 +228,11 @@ describe('AdminInvoicesPage — the count line (US8 T809)', () => {
           total: 1,
         },
       });
+      // Positive control: the default view does show the hint.
+      expect(await renderPage({})).toContain('data-testid="invoices-drafts-hint"');
       const html = await renderPage({ origin: 'auto_renewal' });
-      // (This stub translator does not resolve ICU plurals, so only the hint is asserted.)
-      expect(html).toMatch(/<p role="status"[^>]*>[^<]*invoice/);
-      expect(html).not.toContain('to see drafts');
+      expect(html).not.toContain('data-testid="invoices-drafts-hint"');
+      expect(html).not.toContain(en.admin.invoices.list.draftsHint);
     } finally {
       (env.features as { autoInvoice: boolean }).autoInvoice = false;
     }

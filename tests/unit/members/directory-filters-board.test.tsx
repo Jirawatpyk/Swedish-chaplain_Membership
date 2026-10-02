@@ -32,10 +32,10 @@ function phone(matches: boolean) {
 
 afterEach(() => vi.unstubAllGlobals());
 
-function renderFilters() {
+function renderFilters(props: { resultCount?: number } = {}) {
   return render(
     <NextIntlClientProvider locale="en" messages={messages}>
-      <DirectoryFilters plans={[]} portalInviteCount={7} />
+      <DirectoryFilters plans={[]} portalInviteCount={7} {...props} />
     </NextIntlClientProvider>,
   );
 }
@@ -63,5 +63,19 @@ describe('members filters as on the board (US5a)', () => {
     phone(false);
     renderFilters();
     expect(screen.getByRole('searchbox')).toHaveAttribute('placeholder', D.searchPlaceholder);
+  });
+
+  // The filter pattern (docs/aura-adoption.md § Filters, layout review 2 Oct).
+  it('makes the needs-invite chip a 44px touch target', () => {
+    phone(false);
+    renderFilters();
+    const chip = screen.getByRole('button', { name: new RegExp(D.portalChip.label.split(' ')[0]!, 'i') });
+    expect(chip).toHaveClass('aura-tag--touch');
+  });
+
+  it('shows the result count at the end of the filter row', () => {
+    phone(false);
+    const { container } = renderFilters({ resultCount: 131 });
+    expect(container.querySelector('.aura-filterbar__count')).toHaveTextContent('131 results');
   });
 });

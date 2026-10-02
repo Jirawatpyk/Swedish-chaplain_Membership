@@ -67,9 +67,11 @@ type Props = {
    * than claiming zero (an absent chip means "no work left").
    */
   readonly portalInviteCount?: number | null;
+  /** Members matching the filters, shown at the end of the row; omitted while the list could not load. */
+  readonly resultCount?: number;
 };
 
-export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
+export function DirectoryFilters({ plans = [], portalInviteCount, resultCount }: Props) {
   const t = useTranslations('admin.members.directory');
   const locale = useLocale();
   const router = useRouter();
@@ -234,6 +236,7 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
         <FilterBar
           key={barKey}
           ref={barRef}
+          label={t('filters.groupLabel')}
           // As on the `Admin-members` boards: the search fills the row beside
           // the filters, and takes its own row on a phone, where the three
           // filters share the next (AURA's own breakpoint and gaps).
@@ -246,6 +249,9 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
           searchPlaceholder={isPhone ? t('searchPlaceholderShort') : t('searchPlaceholder')}
           filters={activeChips}
           {...(hasAnyFilter ? { onClearAll: clearAll } : {})}
+          // The filter pattern: the result count at the end of the row
+          // (AURA words and announces it).
+          {...(resultCount !== undefined ? { resultCount } : {})}
         >
           <FilterSelect
             label={t('filters.status.label')}
@@ -288,9 +294,12 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
 
           {showChip && (
             <Tag
+              // AURA swaps the envelope for a check while the filter is on, so
+              // selection is not shown by colour alone; 44px on touch.
               icon={<MailIcon aria-hidden="true" />}
               selected={portalActive}
               onClick={onPortalToggle}
+              touchHeight
               // Disable only when the count is unavailable AND the filter is
               // OFF — the user would be entering the filter blind. When the
               // filter is already ON, a failed count must NOT trap them in the
@@ -317,7 +326,7 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
               control, one name), so when it is the ONLY filter applied the
               bar's own "Clear filters" (chips row) is absent: offer it here. */}
           {portalActive && activeChips.length === 0 && (
-            <Button variant="ghost" size="sm" icon="x" onClick={clearAll}>
+            <Button variant="ghost" size="sm" icon="x" touchHeight onClick={clearAll}>
               {t('clearFilters')}
             </Button>
           )}

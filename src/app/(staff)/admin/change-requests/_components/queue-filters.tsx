@@ -4,50 +4,42 @@
  * F114 US4 — the /admin/change-requests filter bar (state · outcome · date range).
  *
  * URL is the source of truth (the page validates `?state=&outcome=&from=&to=`
- * and applies the tenant-day bounds); the four controls STAGE locally and the
- * URL is patched on Apply — the `credit-note-filters` / member-page invoice
- * filter shape, so typing a date never churns the router. 122 US5a (T507):
- * AURA `Select`s and `DatePicker`s (board `Admin-change-requests`), each an
- * AURA field with its visible label; the dates take the tenant's timezone
- * for "today" — the same one the page turns ?from/?to into day bounds with.
+ * and applies the tenant-day bounds). The filter pattern (spec 122, 2 Oct
+ * 2026; docs/aura-adoption.md § Filters): one AURA FilterBar row that filters
+ * as you pick — Status, then Outcome right after it only under Decided (the
+ * only state that has an outcome), then one "Submitted" `FilterDateRange`
+ * whose range writes `from` and the inclusive `to`. A filter change restarts
+ * paging (never the cursor) and keeps the scroll position.
  *
- * The outcome control exists only while the STAGED state is `decided` — the
- * only state that has an outcome — and leaving `decided` resets the staged
- * outcome, so a later return to `decided` never re-applies a choice the admin
- * did not make again. The member and submitter scoping (`?memberId=`,
- * `?submitter=`) belong to the chips the page renders under this bar; Apply
- * keeps them, Clear drops everything (the page's "clear" always meant the
- * default pending view). When the URL's filters change under this instance
- * (Back / Forward, a chip link) the controls re-stage from the URL — adjusted
- * DURING render, never by re-keying the component: a remount on every Apply
- * would destroy the button the admin just pressed and drop focus to `<body>`
- * (the re-review's N1).
+ * Every non-default value is a removable chip in the bar — the status
+ * (pending is the default view, so it never counts), the outcome, the range,
+ * and the member / submitter scoping that the member record's link and the
+ * staff email's deep link set — which is also what makes the bar's own
+ * "Clear filters" appear; it drops everything, as the page's "clear" always
+ * did. The result count sits at the end of the row in AURA's polite live
+ * region, updated in place on every pick.
  *
- * A11y (the UX review of this bar): each combobox is named by its visible
- * label. Apply / Clear are never `disabled` while pending (a focused
- * button that turns disabled drops focus to `<body>`); `aria-busy` + a
- * re-entry guard do that job, and Clear hands focus to Apply before it
- * unmounts itself.
+ * Decision (2 Oct 2026): no pre-hydration submit. The bar used to be a real
+ * GET `<form>` with hidden inputs so an Enter before hydration sent the same
+ * query; `FilterDateRange` has no form field and nothing here is typed, so
+ * the bar is plain client UI, like the other filter rows.
  *
- * PR-3 polish: the control ids are `useId()`-minted (L5 — the bar is one
- * instance today, a second would collide on a literal id); the applied result
- * is announced through ONE `role="status"` / `aria-live="polite"` line
- * ("Showing N requests") the page feeds from its result, updated in place on
- * every Apply so the announcement never steals focus (H2); and the bar is a
- * REAL `<form method="get" action={pathname}>` — `usePathname()`, so the
- * target is the route the bar is mounted on and never a literal that could
- * drift from it; the value is framework-supplied and same-origin by
- * construction, so there is no redirect surface here (PR-3 review SEC-6,
- * which read the earlier docblock's hardcoded `/admin/change-requests` as the
- * code). Its named controls — hidden `state` / `outcome` / scope / date
- * inputs mirroring what `apply()` writes (the DatePickers show a formatted
- * day, so they carry no name) — make a pre-hydration Enter submit the same
- * query natively (N4).
+ * The range takes the tenant's timezone for "today" and the presets — the
+ * same one the page turns ?from/?to into day bounds with.
  */
-import { useCallback, useId, useRef, useState, useTransition } from 'react';
+import { useCallback, useMemo, useRef, useTransition } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useTranslations } from 'next-intl';
-import { Button, DatePicker, Select, type ISODate } from '@jirawatpyk/aura-react';
+import { useLocale, useTranslations } from 'next-intl';
+import {
+  AuraProvider,
+  FilterBar,
+  FilterDateRange,
+  FilterSelect,
+  todayIn,
+  type DateRangePreset,
+  type ISODate,
+} from '@jirawatpyk/aura-react';
+import { formatLocalisedDate, getDateFormatLocale } from '@/lib/format-date-localised';
 // the Domain file, not the module barrel — the barrel re-exports server-only
 // use cases (the review client imports the same way)
 import {
@@ -59,8 +51,9 @@ import {
 
 const ANY_OUTCOME = 'any' as const;
 const DEFAULT_STATE: ChangeRequestState = 'pending';
-/** Member / submitter scoping — the chips own it: Apply keeps it, Clear drops it. */
-const SCOPE_PARAMS = ['memberId', 'submitter'] as const;
+const DAY_MS = 86_400_000;
+/** Every param the page reads, in the order the queue writes them (never the cursor). */
+const PARAM_ORDER = ['state', 'outcome', 'memberId', 'submitter', 'from', 'to'] as const;
 
 function isState(v: string | null): v is ChangeRequestState {
   return v !== null && (CHANGE_REQUEST_STATES as readonly string[]).includes(v);
@@ -68,81 +61,57 @@ function isState(v: string | null): v is ChangeRequestState {
 function isOutcome(v: string | null): v is ChangeRequestOutcome {
   return v !== null && (CHANGE_REQUEST_OUTCOMES as readonly string[]).includes(v);
 }
-// what the controls STAGE for a raw URL value — the initial mount and the
-// re-stage below must agree, so both read it from here
-function stagedState(v: string | null): ChangeRequestState {
-  return isState(v) ? v : DEFAULT_STATE;
-}
-function stagedOutcome(v: string | null): ChangeRequestOutcome | typeof ANY_OUTCOME {
-  return isOutcome(v) ? v : ANY_OUTCOME;
-}
 // the page's rule (`isYmd`: a REAL calendar day, not only the shape — the
 // tenant-day helper throws on `2026-02-30`) without js-joda in the client
 // bundle: a UTC round-trip is exact for `YYYY-MM-DD`. A date the page would
-// refuse is never echoed as a staged filter (re-review R1).
+// refuse is never shown as a filter (re-review R1).
 const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
 function ymd(v: string | null): string {
   if (v === null || !YMD_RE.test(v)) return '';
   const d = new Date(`${v}T00:00:00Z`);
   return Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== v ? '' : v;
 }
-
-export interface ChangeRequestQueueFiltersProps {
-  /** The rows the page is showing — announced after each Apply (H2). */
-  readonly resultCount: number;
-  /** A next page exists — the announcement says "the first N". */
-  readonly hasMore: boolean;
-  /** The tenant's IANA timezone (`env.tenant.timezone`), for the date fields' "today". */
-  readonly timeZone: string;
+/** A calendar day `days` before `iso` (pure calendar arithmetic, UTC-anchored). */
+function daysBefore(iso: string, days: number): ISODate {
+  return new Date(Date.parse(`${iso}T00:00:00Z`) - days * DAY_MS).toISOString().slice(0, 10);
 }
 
-export function ChangeRequestQueueFilters({ resultCount, hasMore, timeZone }: ChangeRequestQueueFiltersProps) {
+export interface ChangeRequestQueueFiltersProps {
+  /** The rows the page is showing — the count at the end of the row. */
+  readonly resultCount: number;
+  /** A next page exists — the count says "the first N". */
+  readonly hasMore: boolean;
+  /** The tenant's IANA timezone (`env.tenant.timezone`), for the range's "today" and presets. */
+  readonly timeZone: string;
+  /** `?memberId=`'s company, resolved by the page, for its chip. */
+  readonly memberCompany?: string | null;
+}
+
+export function ChangeRequestQueueFilters({ resultCount, hasMore, timeZone, memberCompany = null }: ChangeRequestQueueFiltersProps) {
   const tFilters = useTranslations('admin.changeRequests.filters');
   const tReview = useTranslations('admin.changeRequests.review');
+  const locale = useLocale();
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
   const [pending, startTransition] = useTransition();
-  const applyRef = useRef<HTMLButtonElement>(null);
-  // Phones fold the controls behind a "Filters · Status: …" row (board
-  // `Admin-change-requests-mobile`); the card always shows from 640px.
-  const [openOnPhone, setOpenOnPhone] = useState(false);
-  const panelId = useId();
 
-  const urlState = params.get('state');
-  const urlOutcome = params.get('outcome');
-  const [state, setState] = useState<ChangeRequestState>(stagedState(urlState));
-  const [outcome, setOutcome] = useState<ChangeRequestOutcome | typeof ANY_OUTCOME>(stagedOutcome(urlOutcome));
-  const urlFrom = ymd(params.get('from'));
-  const urlTo = ymd(params.get('to'));
-  const [from, setFrom] = useState(urlFrom);
-  const [to, setTo] = useState(urlTo);
-
-  // re-stage from the URL when its filters change under this same instance
-  // (React's "adjust state during render" — no effect, no remount)
-  const urlKey = `${urlState ?? ''}|${urlOutcome ?? ''}|${urlFrom}|${urlTo}`;
-  const [stagedFor, setStagedFor] = useState(urlKey);
-  if (stagedFor !== urlKey) {
-    setStagedFor(urlKey);
-    setState(stagedState(urlState));
-    setOutcome(stagedOutcome(urlOutcome));
-    setFrom(urlFrom);
-    setTo(urlTo);
-  }
-
-  // the page's `filtered`, read the way the page reads it: a value the page
-  // would drop (`?state=bogus`) is no filter, `state=pending` is the default
-  // view, an outcome counts only under `decided`, member and submitter
-  // scoping count
-  const hasFilters =
-    (isState(urlState) && urlState !== DEFAULT_STATE) ||
-    (urlState === 'decided' && isOutcome(urlOutcome)) ||
-    SCOPE_PARAMS.some((k) => Boolean(params.get(k))) ||
-    urlFrom !== '' ||
-    urlTo !== '';
+  // the URL, read the way the page reads it: a value the page would drop
+  // (`?state=bogus`, `2026-02-30`) is no filter, and an outcome counts only
+  // under `decided`
+  const rawState = params.get('state');
+  const state: ChangeRequestState = isState(rawState) ? rawState : DEFAULT_STATE;
+  const rawOutcome = params.get('outcome');
+  const outcome = state === 'decided' && isOutcome(rawOutcome) ? rawOutcome : ANY_OUTCOME;
+  const from = ymd(params.get('from'));
+  const to = ymd(params.get('to'));
+  const memberId = params.get('memberId');
+  const submitter = params.get('submitter');
 
   const replaceUrl = useCallback(
-    (qs: string) => {
+    (next: URLSearchParams) => {
+      // a filter change restarts paging — `write` never carries the cursor
+      const qs = next.toString();
       startTransition(() => {
         // same-page filter → keep the scroll position (the renewals
         // `urgency-bucket-tabs.tsx` rule)
@@ -152,143 +121,158 @@ export function ChangeRequestQueueFilters({ resultCount, hasMore, timeZone }: Ch
     [pathname, router],
   );
 
-  const apply = () => {
-    if (pending) return;
+  /**
+   * The current filters with `patch` applied (`null` drops a param), written
+   * in the order the queue always wrote them, so a view has one URL.
+   */
+  const write = (patch: Partial<Record<(typeof PARAM_ORDER)[number], string | null>>) => {
     const next = new URLSearchParams();
-    // the pending default writes no param — the page's default view is the
-    // URL-less one (`defaultView` gates the pending summary)
-    if (state !== DEFAULT_STATE) next.set('state', state);
-    if (state === 'decided' && outcome !== ANY_OUTCOME) next.set('outcome', outcome);
-    for (const keep of SCOPE_PARAMS) {
-      const v = params.get(keep);
-      if (v) next.set(keep, v);
+    for (const key of PARAM_ORDER) {
+      const v = key in patch ? patch[key] : params.get(key);
+      if (v) next.set(key, v);
     }
-    if (from) next.set('from', from);
-    if (to) next.set('to', to);
-    // a filter change restarts paging — never carry the cursor
-    replaceUrl(next.toString());
+    replaceUrl(next);
   };
 
-  const clear = () => {
-    if (pending) return;
-    // this button unmounts once the URL is empty — park focus on Apply first
-    applyRef.current?.focus();
-    setState(DEFAULT_STATE);
-    setOutcome(ANY_OUTCOME);
-    setFrom('');
-    setTo('');
-    replaceUrl('');
+  const onStateChange = (v: string) => {
+    const nextState = isState(v) ? v : DEFAULT_STATE;
+    // the pending default writes no param; leaving `decided` drops its
+    // outcome, so a later return never re-applies a choice not made again
+    write({
+      state: nextState === DEFAULT_STATE ? null : nextState,
+      ...(nextState === 'decided' ? {} : { outcome: null }),
+    });
   };
 
-  const onStateChange = (v: string | null) => {
-    const nextState = stagedState(v);
-    setState(nextState);
-    if (nextState !== 'decided') setOutcome(ANY_OUTCOME);
-  };
+  // Calendar days (UTC-anchored ISO dates), so no timezone shifts them. The
+  // range reads compactly ("1–10 Sept 2026"): AURA's chips stop at 24ch.
+  const day = (iso: string) => formatLocalisedDate(iso, locale, { dateStyle: 'medium', timeZone: 'UTC' });
+  const dayRange = (a: string, b: string) =>
+    new Intl.DateTimeFormat(getDateFormatLocale(locale), { dateStyle: 'medium', timeZone: 'UTC' }).formatRange(
+      new Date(`${a}T00:00:00Z`),
+      new Date(`${b}T00:00:00Z`),
+    );
+  const chip = (label: string, value: string) => tFilters('chip', { label, value });
+  const chips: { readonly id: string; readonly label: string; readonly patch: Parameters<typeof write>[0] }[] = [];
+  if (state !== DEFAULT_STATE) {
+    chips.push({
+      id: 'state',
+      label: chip(tFilters('state'), tReview(`state.${state}`)),
+      patch: { state: null, outcome: null },
+    });
+  }
+  if (outcome !== ANY_OUTCOME) {
+    chips.push({ id: 'outcome', label: chip(tFilters('outcome'), tReview(`outcome.${outcome}`)), patch: { outcome: null } });
+  }
+  if (from || to) {
+    const value =
+      from && to
+        ? dayRange(from, to)
+        : from
+          ? tFilters('dateFrom', { from: day(from) })
+          : tFilters('dateTo', { to: day(to) });
+    chips.push({ id: 'dates', label: chip(tFilters('submitted'), value), patch: { from: null, to: null } });
+  }
+  if (memberId) {
+    chips.push({
+      id: 'memberId',
+      label: chip(tFilters('member'), memberCompany ?? tFilters('unknownMember')),
+      patch: { memberId: null },
+    });
+  }
+  if (submitter) {
+    chips.push({ id: 'submitter', label: tFilters('submitterChip'), patch: { submitter: null } });
+  }
+  // A chip × or Clear unmounts itself; AURA's FilterBar leaves focus to the
+  // page, so it moves to Status, which is always there (UX review H1).
+  const barRef = useRef<HTMLDivElement>(null);
+  const focusStatus = () => barRef.current?.querySelector<HTMLElement>('[role="combobox"]')?.focus();
+  const activeFilters = chips.map((c) => ({
+    id: c.id,
+    label: c.label,
+    onRemove: () => {
+      focusStatus();
+      write(c.patch);
+    },
+  }));
+
+  // The presets count back from today in the tenant's timezone, today
+  // included; "This month" runs from its first day to today.
+  const today = todayIn(timeZone);
+  const presets: DateRangePreset[] = [
+    { label: tFilters('presets.last7'), range: { start: daysBefore(today, 6), end: today } },
+    { label: tFilters('presets.last30'), range: { start: daysBefore(today, 29), end: today } },
+    { label: tFilters('presets.thisMonth'), range: { start: `${today.slice(0, 8)}01`, end: today } },
+  ];
+
+  // The bar's own "Clear filters" and chip × labels, in this page's words.
+  const barStrings = useMemo(
+    () => ({
+      clearFilters: tFilters('clear'),
+      remove: (label: string) => tFilters('removeChip', { filter: label }),
+    }),
+    [tFilters],
+  );
 
   return (
-    <form
-      method="get"
-      action={pathname}
-      className="flex flex-col gap-3"
-      aria-label={tFilters('label')}
-      aria-busy={pending}
-      data-testid="queue-filters"
-      onSubmit={(e) => {
-        e.preventDefault();
-        apply();
-      }}
-    >
-      {/* the native (pre-hydration) submit carries exactly what apply() writes —
-          the pending default writes no state, an outcome only under decided,
-          the scope params as they stand, the ISO dates; never the cursor */}
-      {state !== DEFAULT_STATE ? <input type="hidden" name="state" value={state} /> : null}
-      {state === 'decided' && outcome !== ANY_OUTCOME ? <input type="hidden" name="outcome" value={outcome} /> : null}
-      {SCOPE_PARAMS.map((keep) => {
-        const v = params.get(keep);
-        return v ? <input key={keep} type="hidden" name={keep} value={v} /> : null;
-      })}
-      {from ? <input type="hidden" name="from" value={from} /> : null}
-      {to ? <input type="hidden" name="to" value={to} /> : null}
-      <button
-        type="button"
-        aria-expanded={openOnPhone}
-        aria-controls={panelId}
-        onClick={() => setOpenOnPhone((v) => !v)}
-        className="flex min-h-12 w-full items-center justify-between gap-3 rounded-[var(--aura-card-radius)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] px-4 py-3 text-left focus-visible:outline-2 focus-visible:outline-[var(--aura-focus-ring)] sm:hidden"
-      >
-        <span className="text-sm font-semibold">{tFilters('toggle')}</span>
-        <span className="min-w-0 text-sm text-[var(--aura-fg-secondary)]">
-          <span className="block truncate">
-            {tFilters('state')}: {tReview(`state.${stagedState(urlState)}`)}
-            {urlState === 'decided' && isOutcome(urlOutcome) ? ` · ${tReview(`outcome.${urlOutcome}`)}` : null}
-          </span>
-        </span>
-      </button>
-      {/* The controls, then the result count (board `Admin-change-requests`),
-          inside the queue's list card; on a phone, where that card has no
-          frame, they keep their own collapsible framed panel. From 1024px
-          they sit in one row at their own widths with Apply right after the
-          dates, as on the board. */}
-      <div
-        id={panelId}
-        className={`grid gap-3 max-sm:rounded-[var(--aura-card-radius)] max-sm:border max-sm:border-[var(--aura-border-default)] max-sm:bg-[var(--aura-bg-surface)] max-sm:p-4 sm:grid-cols-2 lg:flex lg:flex-wrap lg:items-end ${openOnPhone ? '' : 'max-sm:hidden'}`}
-      >
-      <Select
-        className="lg:w-56"
-        label={tFilters('state')}
-        data-testid="queue-filter-state"
-        value={state}
-        onChange={(e) => onStateChange(e.target.value)}
-        options={CHANGE_REQUEST_STATES.map((s) => ({ value: s, label: tReview(`state.${s}`) }))}
-      />
-      {state === 'decided' ? (
-        <Select
-          className="lg:w-56"
-          label={tFilters('outcome')}
-          data-testid="queue-filter-outcome"
-          value={outcome}
-          onChange={(e) => setOutcome(stagedOutcome(e.target.value))}
-          options={[
-            { value: ANY_OUTCOME, label: tFilters('anyOutcome') },
-            ...CHANGE_REQUEST_OUTCOMES.map((o) => ({ value: o, label: tReview(`outcome.${o}`) })),
-          ]}
-        />
-      ) : null}
-      <DatePicker
-        className="lg:w-56"
-        label={tFilters('from')}
-        timeZone={timeZone}
-        value={from ? (from as ISODate) : null}
-        onChange={(v) => setFrom(v ?? '')}
-      />
-      <DatePicker
-        className="lg:w-56"
-        label={tFilters('to')}
-        timeZone={timeZone}
-        value={to ? (to as ISODate) : null}
-        onChange={(v) => setTo(v ?? '')}
-      />
-      {/* the buttons follow the last date; on a phone they fill the row like
-          the sibling filter bars */}
-      <div className={`grid gap-2 sm:flex sm:items-center ${hasFilters ? 'grid-cols-2' : ''}`}>
-        {/* `aria-busy` alone has no styling anywhere in the app — the dim is the
-            visible "working" signal the old `disabled` used to give (re-review N2) */}
-        <Button ref={applyRef} type="submit" aria-busy={pending} className="aria-busy:opacity-70">
-          {tFilters('apply')}
-        </Button>
-        {hasFilters ? (
-          <Button type="button" variant="ghost" aria-busy={pending} className="aria-busy:opacity-70" onClick={clear}>
-            {tFilters('clear')}
-          </Button>
-        ) : null}
-      </div>
-      </div>
-      {/* the applied result, announced politely — one region that lives across
-          every Apply (a fresh element per navigation would not be announced) */}
-      <p role="status" aria-live="polite" className="text-sm text-[var(--aura-fg-secondary)]" data-testid="queue-result-count">
-        {hasMore ? tFilters('resultCountMore', { count: resultCount }) : tFilters('resultCount', { count: resultCount })}
-      </p>
-    </form>
+    <div data-testid="queue-filters" aria-busy={pending}>
+      <AuraProvider strings={barStrings}>
+        <FilterBar
+          label={tFilters('label')}
+          filters={activeFilters}
+          ref={barRef}
+          {...(activeFilters.length > 0
+            ? {
+                onClearAll: () => {
+                  focusStatus();
+                  replaceUrl(new URLSearchParams());
+                },
+              }
+            : {})}
+          // AURA words a plain count as on the other lists ("3 results"); only
+          // a page with more after it says so, and that longer line may wrap
+          // (AURA keeps the count on one line) so it fits a 320px screen.
+          resultCount={
+            hasMore ? (
+              <span data-testid="queue-result-count" className="whitespace-normal">
+                {tFilters('resultCountMore', { count: resultCount })}
+              </span>
+            ) : (
+              resultCount
+            )
+          }
+        >
+          <FilterSelect
+            label={tFilters('state')}
+            data-testid="queue-filter-state"
+            value={state}
+            onChange={onStateChange}
+            options={CHANGE_REQUEST_STATES.map((s) => ({ value: s, label: tReview(`state.${s}`) }))}
+          />
+          {state === 'decided' ? (
+            <FilterSelect
+              label={tFilters('outcome')}
+              allLabel={tFilters('anyShort')}
+              data-testid="queue-filter-outcome"
+              value={outcome}
+              onChange={(v) => write({ outcome: isOutcome(v) ? v : null })}
+              options={[
+                { value: ANY_OUTCOME, label: tFilters('anyOutcome') },
+                ...CHANGE_REQUEST_OUTCOMES.map((o) => ({ value: o, label: tReview(`outcome.${o}`) })),
+              ]}
+            />
+          ) : null}
+          <FilterDateRange
+            label={tFilters('submitted')}
+            timeZone={timeZone}
+            presets={presets}
+            value={{ start: from || null, end: to || null }}
+            // Runs on a complete range, a preset or "Any time" — never on a
+            // lone start day — so the URL only ever gets a whole range.
+            onChange={(r) => write({ from: r.start, to: r.end })}
+          />
+        </FilterBar>
+      </AuraProvider>
+    </div>
   );
 }

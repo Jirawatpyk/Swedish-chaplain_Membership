@@ -249,10 +249,12 @@ describe('US4 portal invoices and pay sheet', () => {
 });
 
 describe('US5a follow-up', () => {
-  it('the change-request queue filters size each AURA field through its className, not `.aura-field`', () => {
+  // The filter pattern (2 Oct 2026) replaced the labelled fields with one
+  // FilterBar row of compact filters at their own width.
+  it('the change-request queue filters reach into no AURA internals', () => {
     const s = src('src/app/(staff)/admin/change-requests/_components/queue-filters.tsx');
     expect(s).not.toMatch(/\.aura-field/);
-    expect(s).toMatch(/className="lg:w-56"/);
+    expect(s).toContain('<FilterBar');
   });
 });
 
@@ -261,7 +263,6 @@ describe('AURA 5.14–5.16 adoption (T512)', () => {
   it.each([
     ['#85', 'src/app/(staff)/admin/change-requests/_components/queue-table.tsx', 'stackStyle="cards"'],
     ['#90', 'src/app/(member)/portal/benefits/_components/benefits-tabs.tsx', 'fullWidth="below-lg"'],
-    ['#92', 'src/app/(staff)/admin/invoices/_components/invoice-filters.tsx', 'controlsLayout="fill"'],
     ['#92', 'src/components/members/timeline-filters.tsx', 'controlsLayout="fill"'],
     ['#93', 'src/app/(member)/portal/invoices/page.tsx', 'flushBelow="lg"'],
     ['#95', 'src/components/layout/staff-nav.tsx', 'collapseToggle="row"'],
@@ -271,6 +272,14 @@ describe('AURA 5.14–5.16 adoption (T512)', () => {
     ['#99', 'src/components/members/change-requests/change-request-decision-table.tsx', 'hitArea={{ x: 12, y: 8 }}'],
   ])('%s: %s uses %s', (_item, path, prop) => {
     expect(src(path)).toContain(prop);
+  });
+
+  // The filter pattern (spec 122) supersedes the US4 equal-column row on
+  // the invoices filters: compact FilterSelects at their own width.
+  it('#92: the invoices filters no longer share their row in equal columns', () => {
+    const s = src('src/app/(staff)/admin/invoices/_components/invoice-filters.tsx');
+    expect(s).not.toContain('controlsLayout="fill"');
+    expect(s).toContain('searchGrow');
   });
 
   it('#91 / #100: the pay sheet keeps no local scroll padding or 44px hack', () => {

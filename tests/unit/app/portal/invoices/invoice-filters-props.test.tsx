@@ -19,7 +19,7 @@
  * are read straight from the DOM (`optionValues`).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 
@@ -163,17 +163,82 @@ describe('<InvoiceFilters> — member portal config', () => {
   });
 });
 
-describe('<InvoiceFilters> — row layout (spec 122 US4)', () => {
+// The filter pattern (spec 122, docs/aura-adoption.md § Filters): one
+// FilterBar row of compact FilterSelects and toggle chips, filtering as you
+// pick, the count at the end and a removable chip per applied filter.
+describe('<InvoiceFilters> — the filter pattern', () => {
+  const PORTAL: Parameters<typeof InvoiceFilters>[0] = {
+    statusOptions: ['issued', 'paid', 'overdue', 'void', 'credited', 'partially_credited'],
+    showPaidOnlineChip: false,
+  };
+  const f = enMessages.admin.invoices.list.filters;
+
   beforeEach(() => {
+    replace.mockClear();
     searchParamsStub = new URLSearchParams();
   });
 
-  it('below 1024px the search takes its own row and the filters share the next one evenly; from 1024px it is one row', () => {
-    renderFilters({ statusOptions: ['issued', 'paid'], showPaidOnlineChip: false });
+  it('is one row: the search grows, Status is a compact FilterSelect, no equal-column phone grid', () => {
+    renderFilters(PORTAL);
     const bar = document.querySelector('.aura-filterbar');
-    expect(bar).not.toBeNull();
-    // AURA #92 (5.15): FilterBar's own props, no reach into its parts
-    expect(bar).toHaveClass('aura-filterbar--fill', 'aura-filterbar--stack-lg');
-    expect(bar!.className).not.toContain('[&_.aura-filterbar');
+    expect(bar).toHaveClass('aura-filterbar--grow');
+    expect(bar).not.toHaveClass('aura-filterbar--fill');
+    expect(bar).not.toHaveClass('aura-filterbar--stack-lg');
+    expect(screen.getByRole('combobox', { name: enMessages.admin.invoices.list.columns.status }).closest('.aura-filterselect')).not.toBeNull();
+  });
+
+  it('says "All except drafts" for the admin, whose default view leaves drafts out; the portal keeps "All statuses"', () => {
+    const { unmount } = renderFilters();
+    expect(document.querySelector('option[value="all"]')).toHaveTextContent(f.allExceptDrafts);
+    unmount();
+    renderFilters(PORTAL);
+    expect(document.querySelector('option[value="all"]')).toHaveTextContent(f.allStatuses);
+  });
+
+  // Financial review (PR A): the auto-renewal queue lists drafts
+  // (`includeDrafts` is on for `origin=auto_renewal`), so "All except
+  // drafts" would be untrue there.
+  it('says "All statuses" in the auto-renewal queue, which lists drafts', () => {
+    searchParamsStub = new URLSearchParams('origin=auto_renewal');
+    renderFilters({ showAutoInvoiceFilter: true });
+    expect(document.querySelector('option[value="all"]')).toHaveTextContent(f.allStatuses);
+  });
+
+  it('shows the result count at the end of the row', () => {
+    renderFilters({ ...PORTAL, resultCount: 8 });
+    expect(document.querySelector('.aura-filterbar__count')).toHaveTextContent('8 results');
+  });
+
+  it('turns an applied status into a removable chip, and Clear filters empties the URL', () => {
+    searchParamsStub = new URLSearchParams('status=paid');
+    renderFilters(PORTAL);
+    expect(screen.getByText('Status: Paid')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: f.clearAll }));
+    expect(replace).toHaveBeenLastCalledWith('/portal/invoices', { scroll: false });
+  });
+
+  it('makes Paid online a toggle chip at touch height, filtering on click', () => {
+    renderFilters();
+    const chip = screen.getByTestId('paid-online-filter-chip');
+    expect(chip).toHaveAttribute('aria-pressed', 'false');
+    expect(chip).toHaveClass('aura-tag--touch');
+    fireEvent.click(chip);
+    expect(replace).toHaveBeenLastCalledWith('/portal/invoices?paidOnline=1', { scroll: false });
+  });
+
+  it('names its region like the other filter rows', () => {
+    renderFilters(PORTAL);
+    expect(screen.getByRole('region', { name: f.groupLabel })).toBeInTheDocument();
+  });
+
+  it('offers Clear filters beside the toggle when it is the only filter on (it is not repeated as a chip)', () => {
+    searchParamsStub = new URLSearchParams('paidOnline=1');
+    renderFilters();
+    // 44px on touch, like the toggle beside it (UX review M4).
+    expect(screen.getByRole('button', { name: f.clearAll })).toHaveClass('aura-btn--touch');
+    expect(screen.getByTestId('paid-online-filter-chip')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('button', { name: /^Remove filter:/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: f.clearAll }));
+    expect(replace).toHaveBeenLastCalledWith('/portal/invoices', { scroll: false });
   });
 });

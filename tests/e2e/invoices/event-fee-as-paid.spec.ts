@@ -67,19 +67,17 @@ const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
 const FAKE_TIN = '1234512345123';
 
 /**
- * Accessible names of the issuance-mode radios. Since spec 122 US8 they are
- * AURA's native `<input type="radio">` inside a `<label>`, so the name is the
- * option's label followed by its description (the hint, or — when bill-first
- * is unavailable — the reason). Match on the label at the start; assert the
- * native checked / disabled state.
+ * Accessible names of the issuance-mode radios: AURA's native
+ * `<input type="radio">`, named by its label alone since AURA 5.26 (handoff
+ * #125), with the hint, or the reason bill-first is unavailable, read after it
+ * as the description. Assert the native checked / disabled state.
  */
 const MODE_ALREADY_PAID = 'Already paid — record & issue receipt';
 const MODE_BILL_FIRST = 'Bill first — issue an unpaid invoice';
 
-/** The issuance-mode radio whose label starts with `name`. */
+/** The issuance-mode radio named `name`. */
 function modeRadio(page: Page, name: string) {
-  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return page.getByRole('radio', { name: new RegExp(`^${escaped}`) });
+  return page.getByRole('radio', { name, exact: true });
 }
 
 /**
@@ -207,11 +205,11 @@ test.describe('064 event-fee as-paid form modes @f4', () => {
     );
 
     // No TIN typed → bill_first is disabled, its VISIBLE reason under the
-    // option and in its accessible name (no hover-only tooltip).
+    // option and read as its description (no hover-only tooltip).
     const billFirst = modeRadio(page, MODE_BILL_FIRST);
     await expect(billFirst).toBeDisabled();
-    // The reason is the option's own description, read with its name.
-    await expect(billFirst).toHaveAccessibleName(
+    // The reason is the option's own description, read right after its name.
+    await expect(billFirst).toHaveAccessibleDescription(
       /Not recorded as VAT-registered — record the fee as already paid; a bill can't be issued before payment\. Tick VAT-registered on the member record first if applicable\./,
     );
 

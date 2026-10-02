@@ -1,13 +1,13 @@
 /**
  * Option A UX redesign — admin-tax (`show088Filters=true`) branch of
- * `<InvoiceFilters>`: the "Filters" popover + the removable secondary-filter
+ * `<InvoiceFilters>`: the "More filters" popover + the removable secondary-filter
  * chips.
  *
  * Its sibling `tests/unit/app/portal/invoices/invoice-filters-props.test.tsx`
  * pins the NON-collapsed layout (portal / flag-off admin — Subject + Paid-online
  * inline, no popover, no chips). This file pins the collapsed admin-tax layout:
  *   (a) the secondary Selects are NOT loose in the inline bar — they appear
- *       only after the "Filters" popover is opened;
+ *       only after the "More filters" popover is opened;
  *   (b) the trigger badge counts the active secondary filters;
  *   (c) each active secondary filter surfaces a removable chip whose ✕ clears
  *       just that param (asserted via the router push URL).
@@ -58,7 +58,7 @@ beforeEach(() => {
 });
 
 describe('<InvoiceFilters> — admin-tax secondary filters live in the popover', () => {
-  it('does not render the secondary Selects until the "Filters" popover is opened', () => {
+  it('does not render the secondary Selects until the "More filters" popover is opened', () => {
     renderAdminTax();
 
     // Not loose in the inline bar — the popover starts closed, so its content
@@ -92,7 +92,7 @@ describe('<InvoiceFilters> — admin-tax secondary filters live in the popover',
   });
 });
 
-describe('<InvoiceFilters> — the "Filters" trigger badge counts active secondaries', () => {
+describe('<InvoiceFilters> — the "More filters" trigger badge counts active secondaries', () => {
   it('shows no badge when no secondary filter is active', () => {
     renderAdminTax();
     expect(screen.queryByTestId('invoice-more-filters-count')).toBeNull();
@@ -111,11 +111,36 @@ describe('<InvoiceFilters> — the "Filters" trigger badge counts active seconda
 });
 
 describe('<InvoiceFilters> — active secondary filters surface as removable chips', () => {
-  it('renders a chip carrying the translated value label of the active filter', () => {
+  it('renders a chip naming the filter and its translated value', () => {
     searchParamsStub = new URLSearchParams('docType=sc');
     renderAdminTax();
-    // The chip text is the SAME translated value label the Select would show.
-    expect(screen.getByText(f.documentType.sc)).toBeInTheDocument();
+    // The filter's name, then the SAME translated value label the Select shows.
+    expect(screen.getByText(`${f.documentType.label}: ${f.documentType.sc}`)).toBeInTheDocument();
+  });
+
+  it('the trigger reads "More filters" and is 44px on touch', () => {
+    renderAdminTax();
+    const trigger = screen.getByTestId('invoice-more-filters-trigger');
+    expect(trigger).toHaveTextContent(f.more.button);
+    expect(f.more.button).toBe('More filters');
+    expect(trigger).toHaveClass('aura-btn--touch');
+  });
+
+  it('chips live in the FilterBar, so its own Clear filters clears every param', () => {
+    searchParamsStub = new URLSearchParams('docType=sc&status=paid');
+    renderAdminTax();
+    const chips = document.querySelector('.aura-filterbar__chips');
+    expect(chips).toHaveTextContent(`${f.documentType.label}: ${f.documentType.sc}`);
+    expect(chips).toHaveTextContent('Status: Paid');
+    fireEvent.click(screen.getByRole('button', { name: f.clearAll }));
+    expect(String(replace.mock.calls.at(-1)?.[0])).toBe('/admin/invoices');
+  });
+
+  it('Paid online is in the popover, so while on it also shows as a chip', () => {
+    searchParamsStub = new URLSearchParams('paidOnline=1');
+    renderAdminTax();
+    const label = enMessages.admin.paymentReconciliation.filterChip.label;
+    expect(screen.getByRole('button', { name: `Remove filter: ${label}` })).toBeInTheDocument();
   });
 
   it("the chip's ✕ clears just its own param (status survives) via the router", () => {
@@ -123,7 +148,7 @@ describe('<InvoiceFilters> — active secondary filters surface as removable chi
     renderAdminTax();
 
     const removeBtn = screen.getByRole('button', {
-      name: `Remove filter: ${f.documentType.sc}`,
+      name: `Remove filter: ${f.documentType.label}: ${f.documentType.sc}`,
     });
     fireEvent.click(removeBtn);
 
@@ -166,12 +191,11 @@ describe('<InvoiceFilters> — dueBefore chip (Task 3)', () => {
   it('a valid ?dueBefore surfaces a localized chip whose ✕ clears just that param', () => {
     searchParamsStub = new URLSearchParams('dueBefore=2026-01-01&status=overdue');
     renderWithDueBefore({});
+    // A4 — the date IS the chip's payload: no local truncation on top of
+    // AURA's 24ch chip, which the label fits in every locale.
     const chipLabel = screen.getByText('Due before 2026-01-01');
-    expect(chipLabel).toBeInTheDocument();
-    // A4 — the date IS the chip's payload: the default 24ch label bound
-    // truncates it under the longer SV/TH prefixes, so this chip (and only
-    // this chip) widens to 28ch (tailwind-merge lets the override win).
-    expect(chipLabel.className).toContain('max-w-[28ch]');
+    expect(chipLabel.closest('.aura-filterbar__chips')).not.toBeNull();
+    expect(chipLabel.className).not.toContain('truncate');
 
     fireEvent.click(
       screen.getByRole('button', {

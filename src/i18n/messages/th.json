@@ -805,8 +805,7 @@
     },
     "plans": {
       "title": "แพ็กเกจสมาชิก",
-      "subtitle": "มีแพ็กเกจทั้งหมด {total} รายการในปี {year}",
-      "subtitleWithVat": "มีแพ็กเกจทั้งหมด {total} รายการในปี {year} · ค่าธรรมเนียมยังไม่รวมภาษีมูลค่าเพิ่ม {rate}%",
+      "vatNote": "ค่าธรรมเนียมยังไม่รวมภาษีมูลค่าเพิ่ม {rate}%",
       "listDescription": "จัดการคำจำกัดความของแต่ละระดับสมาชิก ค่าธรรมเนียมรายปี และตารางสิทธิประโยชน์ แพ็กเกจของปีก่อนถูกล็อกบางส่วนเพื่อรักษาความถูกต้องของการตรวจสอบ",
       "tableCaption": "รายการแพ็กเกจสมาชิกของปีที่เลือก",
       "empty": {
@@ -842,7 +841,12 @@
           "label": "ค้นหา"
         },
         "activeOnly": "แสดงเฉพาะแพ็กเกจที่ใช้งาน",
-        "showDeleted": "แสดงแพ็กเกจที่ถูกลบ"
+        "showDeleted": "แสดงแพ็กเกจที่ถูกลบ",
+        "chip": {
+          "search": "ค้นหา: {q}",
+          "category": "หมวดหมู่: {value}"
+        },
+        "removeChip": "ลบตัวกรอง: {filter}"
       },
       "badges": {
         "active": "ใช้งาน",
@@ -1125,18 +1129,22 @@
           "state": "สถานะ",
           "outcome": "ผลการพิจารณา",
           "anyOutcome": "ทุกผลการพิจารณา",
-          "from": "ส่งตั้งแต่",
-          "to": "ส่งจนถึง (รวมวันนั้น)",
-          "apply": "ใช้ตัวกรอง",
+          "submitted": "วันที่ส่ง",
+          "anyShort": "ทั้งหมด",
+          "chip": "{label}: {value}",
+          "removeChip": "ลบตัวกรอง: {filter}",
+          "member": "สมาชิก",
           "clear": "ล้างตัวกรอง",
-          "memberChip": "กำลังแสดงคำขอของ {company}",
-          "removeMember": "แสดงทุกสมาชิก",
-          "submitterChip": "กำลังแสดงคำขอของบุคคลหนึ่ง",
-          "removeSubmitter": "แสดงคำขอของทุกคน",
-          "unknownMember": "สมาชิกที่ไม่พบ",
-          "resultCount": "{count, plural, =0 {ไม่มีคำขอที่จะแสดง} other {กำลังแสดงคำขอ # รายการ}}",
-          "resultCountMore": "กำลังแสดงคำขอ {count} รายการแรก — มีเพิ่มเติมในหน้าถัดไป",
-          "toggle": "ตัวกรอง"
+          "submitterChip": "ผู้ส่ง: บุคคลหนึ่ง",
+          "unknownMember": "ไม่พบ",
+          "dateFrom": "ตั้งแต่ {from}",
+          "dateTo": "ถึง {to} (รวม)",
+          "resultCountMore": "{count} รายการแรก มีต่อในหน้าถัดไป",
+          "presets": {
+            "last7": "7 วันที่ผ่านมา",
+            "last30": "30 วันที่ผ่านมา",
+            "thisMonth": "เดือนนี้"
+          }
         },
       "queue": {
           "emptyFiltered": "ไม่มีคำขอแก้ไขข้อมูลที่ตรงกับตัวกรองนี้",
@@ -1339,7 +1347,7 @@
         "searchPlaceholder": "ค้นหาด้วยชื่อบริษัท ผู้ติดต่อ อีเมล หรือหมายเลขสมาชิก",
         "searchSrLabel": "ค้นหาสมาชิก",
         "clearFilters": "ล้างตัวกรอง",
-        "removeFilter": "เอา {filter} ออก",
+        "removeFilter": "ลบตัวกรอง: {filter}",
         "filterChip": {
           "search": "ค้นหา: {q}",
           "status": "สถานะ: {value}",
@@ -1367,7 +1375,8 @@
             "at-risk": "เสี่ยง",
             "critical": "วิกฤต"
           },
-          "allShort": "ทั้งหมด"
+          "allShort": "ทั้งหมด",
+          "groupLabel": "กรองสมาชิก"
         },
         "resultsCount": "{count, plural, =0 {ไม่มีสมาชิก} other {# ราย}}",
         "resultsCountOfTotal": "แสดง {count} จาก {total} ราย",
@@ -2690,12 +2699,15 @@
         "loadMore": "โหลดเพิ่ม",
         "filteredEmpty": "ไม่พบใบแจ้งหนี้ที่ตรงกับตัวกรอง",
         "loadFailed": "ไม่สามารถโหลดใบแจ้งหนี้ได้ โปรดลองอีกครั้ง",
-        "resultCount": "{count, plural, =0 {ไม่พบใบแจ้งหนี้ที่ตรงกับตัวกรอง} other {ใบแจ้งหนี้ # ฉบับตรงกับตัวกรอง}}",
-        "countLine": "{count, plural, other {ใบแจ้งหนี้ # ฉบับ}}",
-        "countLineDraftsHint": "{count, plural, other {ใบแจ้งหนี้ # ฉบับ}} · ดูฉบับร่างได้โดยเลือก ร่าง ในตัวกรองสถานะ",
+        "draftsHint": "ดูฉบับร่างได้โดยเลือก ร่าง ในตัวกรองสถานะ",
         "recordPaymentIntentHint": "เลือกใบแจ้งหนี้ด้านล่าง แล้วกดปุ่ม 'บันทึกการชำระเงิน' ในคอลัมน์การดำเนินการ เพื่อบันทึกการชำระเงิน",
         "filters": {
           "allStatuses": "ทุกสถานะ",
+          "groupLabel": "กรองใบแจ้งหนี้",
+          "allExceptDrafts": "ทุกสถานะยกเว้นฉบับร่าง",
+          "allShort": "ทั้งหมด",
+          "chip": "{label}: {value}",
+          "chipSearch": "ค้นหา: {q}",
           "clearAll": "ล้างตัวกรอง",
           "subject": {
             "label": "ประเภทใบแจ้งหนี้",
@@ -2735,11 +2747,10 @@
             "clear": "ล้าง"
           },
           "more": {
-            "button": "ตัวกรอง",
-            "ariaOpen": "ตัวกรอง (ใช้อยู่ {count})",
+            "button": "ตัวกรองเพิ่มเติม",
+            "ariaOpen": "ตัวกรองเพิ่มเติม (ใช้อยู่ {count})",
             "title": "ตัวกรองเพิ่มเติม",
-            "removeAria": "ลบตัวกรอง: {label}",
-            "activeGroup": "ตัวกรองที่ใช้อยู่"
+            "removeAria": "ลบตัวกรอง: {label}"
           }
         },
         "creditedSuffix": "+{count} ใบลดหนี้",
