@@ -155,7 +155,10 @@ describe('globals.css — AURA foundation (spec 122)', () => {
     expect(layer).toMatch(/\.chamber-shell\s*\{[^}]*--page-padding-x:\s*1rem;/);
     // Sticky page parts stop below the sticky bar (whole-branch review M2).
     expect(layer).toMatch(/\.chamber-shell\s*\{[^}]*--shell-bar-height:\s*56px;/);
-    expect(layer).toMatch(/min-width:\s*768px\)\s*\{\s*\.chamber-shell\s*\{\s*--page-padding-x:\s*1\.5rem;/);
+    // The gutter takes AURA Container's steps (maintainer, 2 Oct 2026): 24px
+    // from 640, not 768, so the two never disagree.
+    expect(layer).toMatch(/min-width:\s*640px\)\s*\{\s*\.chamber-shell\s*\{\s*--page-padding-x:\s*1\.5rem;/);
+    expect(layer).not.toMatch(/min-width:\s*768px\)\s*\{\s*\.chamber-shell\s*\{[^}]*--page-padding-x/);
     expect(layer).toMatch(/min-width:\s*1024px\)\s*\{\s*\.chamber-shell\s*\{\s*--page-padding-x:\s*2rem;/);
   });
 
