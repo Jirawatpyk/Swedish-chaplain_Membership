@@ -2,8 +2,9 @@
  * 088 US8 (UX-A) — issue-invoice form (vat_treatment toggle + MFA-cert fields).
  *
  * Rendered against the REAL en.json (a missing key would surface as
- * MISSING_MESSAGE) inside an open <AlertDialog> — the RefundForm split pattern
- * that sidesteps the Base-UI-dialog jsdom trigger-transition hang.
+ * MISSING_MESSAGE). Spec 122 US8b (T825): the form is on AURA fields and
+ * renders its own footer, so it needs no enclosing dialog here; the dialog
+ * shell is covered at the end of this file.
  *
  * Covers: membership hides the toggle (+ caption); a non-membership sale shows
  * it; selecting zero-rate progressively reveals the cert fields (aria-live +
@@ -16,8 +17,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
-import { AlertDialog } from '@/components/ui/alert-dialog';
 import { IssueInvoiceForm } from '@/app/(staff)/admin/invoices/_components/issue-invoice-form';
+import { IssueInvoiceDialog } from '@/app/(staff)/admin/invoices/_components/issue-invoice-dialog';
 
 const refreshMock = vi.fn();
 vi.mock('next/navigation', () => ({
@@ -46,18 +47,16 @@ function renderForm(
 ) {
   return render(
     <NextIntlClientProvider locale="en" messages={enMessages}>
-      <AlertDialog open onOpenChange={() => undefined}>
-        <IssueInvoiceForm
-          invoiceId="inv-1"
-          summary={BASE_SUMMARY}
-          taxAtPayment
-          isMembership={false}
-          buyerIsVatRegistrant={false}
-          subtotalSatang={800_000}
-          onClose={() => undefined}
-          {...overrides}
-        />
-      </AlertDialog>
+      <IssueInvoiceForm
+        invoiceId="inv-1"
+        summary={BASE_SUMMARY}
+        taxAtPayment
+        isMembership={false}
+        buyerIsVatRegistrant={false}
+        subtotalSatang={800_000}
+        onClose={() => undefined}
+        {...overrides}
+      />
     </NextIntlClientProvider>,
   );
 }
@@ -362,19 +361,21 @@ describe('IssueInvoiceForm — beforeunload dirty guard (T061f-form)', () => {
 // preview-gated; this structural guard runs on every commit.
 // ---------------------------------------------------------------------------
 
-describe('IssueInvoiceForm — target-size min-h-11 on new inputs (FR-036 / SC-011)', () => {
-  it('cert number + cert date inputs carry min-h-11 (44px) once zero-rate is revealed', () => {
+describe('IssueInvoiceForm — 44px targets on the new controls (FR-036 / SC-011)', () => {
+  /** The AURA field box (`.aura-input`) or choice row grows to 44px through a utility on the field root. */
+  const touchRoot = (el: HTMLElement) => el.closest('[class*="min-h-11"]');
+
+  it('the zero-rate radio row and the cert number + date fields are 44px once zero-rate is revealed', () => {
     renderForm();
+    expect(touchRoot(screen.getByRole('radio', { name: /Zero-rated/i }))).not.toBeNull();
     fireEvent.click(screen.getByRole('radio', { name: /Zero-rated/i }));
-    expect(screen.getByLabelText(/MFA certificate number/i)).toHaveClass(
-      'min-h-11',
-    );
-    expect(screen.getByLabelText(/Certificate date/i)).toHaveClass('min-h-11');
+    expect(touchRoot(screen.getByLabelText(/MFA certificate number/i))).not.toBeNull();
+    expect(touchRoot(screen.getByLabelText(/Certificate date/i))).not.toBeNull();
   });
 
-  it('the immutable-snapshot confirm input carries min-h-11 (44px)', () => {
+  it('the immutable-snapshot confirm field is 44px', () => {
     renderForm();
-    expect(screen.getByLabelText(/to confirm/i)).toHaveClass('min-h-11');
+    expect(touchRoot(screen.getByLabelText(/to confirm/i))).not.toBeNull();
   });
 });
 
@@ -468,5 +469,34 @@ describe('IssueInvoiceForm — failure branch is focused + destructive (FR-032)'
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Spec 122 US8b (T825) — the dialog shell on AURA: "Issue…" opens an
+// alertdialog named by its title, described by the immutable-snapshot
+// acknowledgement, holding the form; Cancel closes it.
+// ---------------------------------------------------------------------------
+
+describe('IssueInvoiceDialog — AURA alertdialog', () => {
+  it('opens from "Issue…" as an alertdialog with the title and acknowledgement, and Cancel closes it', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <IssueInvoiceDialog
+          invoiceId="inv-1"
+          summary={BASE_SUMMARY}
+          taxAtPayment
+          isMembership
+          buyerIsVatRegistrant
+          subtotalSatang={800_000}
+        />
+      </NextIntlClientProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Issue…' }));
+    const dialog = screen.getByRole('alertdialog', { name: enMessages.admin.invoices.issue.title });
+    expect(dialog).toHaveAccessibleDescription(enMessages.admin.invoices.issue.review.immutableSnapshotAck);
+    expect(screen.getByRole('button', { name: /^Issue$/ })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: enMessages.admin.invoices.issue.cancel }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 });
