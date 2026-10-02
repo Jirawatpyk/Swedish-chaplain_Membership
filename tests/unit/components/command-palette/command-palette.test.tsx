@@ -84,7 +84,9 @@ describe('CommandPalette (staff, spec 122 US1)', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/plans/search?q=sia', expect.anything());
     const groups = screen.getAllByRole('group').map((g) => within(g).getAllByRole('presentation')[0]?.textContent);
     expect(groups).toEqual(['Plans', 'Members', 'Actions']);
-    expect(screen.getByRole('option', { name: /Siam Nordic Trading.*TSCC-0003/ })).toBeInTheDocument();
+    // AURA 5.26: the member number is the option's description, not its name.
+    const member = screen.getByRole('option', { name: 'Siam Nordic Trading' });
+    expect(member).toHaveAccessibleDescription(/TSCC-0003/);
     expect(screen.getByRole('option', { name: 'Create new plan' })).toBeInTheDocument();
 
     fireEvent.click(plan);

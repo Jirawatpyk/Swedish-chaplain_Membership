@@ -1061,9 +1061,11 @@ describe('<EventFeeForm>', () => {
     const billFirst = screen.getByRole('radio', {
       name: new RegExp(modeMessages.billFirst.label),
     });
-    // AURA radio: natively disabled, the reason read with the option.
+    // AURA radio: natively disabled, named by its label alone with the reason
+    // read after it as its description (AURA 5.26, handoff #125).
     expect(billFirst).toBeDisabled();
-    expect(billFirst).toHaveAccessibleName(new RegExp(modeMessages.billFirstNeedsTin));
+    expect(billFirst).toHaveAccessibleName(modeMessages.billFirst.label);
+    expect(billFirst).toHaveAccessibleDescription(modeMessages.billFirstNeedsTin);
   });
 
   it('B5: matched member with buyerIsVatRegistrant=true → bill_first selectable (explicit server truth)', async () => {
@@ -1134,9 +1136,10 @@ describe('<EventFeeForm>', () => {
     });
     // Spec 122 US8 (T807) — an AURA radio: natively disabled, and the
     // disabled-option reason is the option's own description, so a screen
-    // reader hears WHY with the option itself (AURA reads it in the name).
+    // reader hears WHY right after the option's name (AURA 5.26, #125).
     expect(billFirstRadio).toBeDisabled();
-    expect(billFirstRadio).toHaveAccessibleName(new RegExp(modeMessages.billFirstNeedsTin));
+    expect(billFirstRadio).toHaveAccessibleName(modeMessages.billFirst.label);
+    expect(billFirstRadio).toHaveAccessibleDescription(modeMessages.billFirstNeedsTin);
     expect(
       screen.getByRole('button', {
         name: enMessages.admin.invoices.eventFeeForm.submit,
@@ -1186,8 +1189,8 @@ describe('<EventFeeForm>', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
     expect(screen.getByTestId('mode-selector')).toBeInTheDocument();
     const radio = screen.getAllByRole('radio')[0]!;
-    expect(radio.closest('label')).toHaveTextContent(modeMessages.alreadyPaid.label);
-    expect(radio.closest('label')).toHaveTextContent(modeMessages.alreadyPaid.hint);
+    expect(radio).toHaveAccessibleName(modeMessages.alreadyPaid.label);
+    expect(radio).toHaveAccessibleDescription(modeMessages.alreadyPaid.hint);
   });
 
   // ── I3 — noValidate: inline i18n date errors instead of native bubbles ──
