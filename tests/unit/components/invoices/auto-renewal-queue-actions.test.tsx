@@ -59,11 +59,11 @@ function renderActions(
   );
 }
 
-const ITEM_NAME: Record<string, string> = {
+const ITEM_NAME = {
   'queue-row-issue-send': t.issueAndSend,
   'queue-row-issue-silent': t.issueSilently,
   'queue-row-discard': t.discard,
-};
+} as const;
 
 function openMenu() {
   fireEvent.click(screen.getByTestId('queue-row-actions-trigger'));
