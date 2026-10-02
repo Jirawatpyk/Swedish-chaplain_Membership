@@ -377,6 +377,16 @@ describe('IssueInvoiceForm — 44px targets on the new controls (FR-036 / SC-011
     renderForm();
     expect(touchRoot(screen.getByLabelText(/to confirm/i))).not.toBeNull();
   });
+
+  it('the input itself fills the 44px box, so the whole box takes the click (AURA centres a fixed-height control)', () => {
+    renderForm();
+    fireEvent.click(screen.getByRole('radio', { name: /Zero-rated/i }));
+    for (const field of [/MFA certificate number/i, /Certificate date/i, /to confirm/i]) {
+      const root = touchRoot(screen.getByLabelText(field))!;
+      expect(root.className).toContain('[&_.aura-input__control]:self-stretch');
+      expect(root.className).toContain('[&_.aura-input__control]:h-auto');
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
