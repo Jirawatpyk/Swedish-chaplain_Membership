@@ -81,7 +81,8 @@ A server component that needs a static AURA component imports it from **`@jirawa
 - **A list that is one section of a page** (such as the invoices on a member's page) keeps that section's card; it gets no second one.
 - **Inside the card** an empty state has no border of its own (`bordered={false}` on the shell `EmptyState`, no `bordered` on AURA's), so there is never a frame in a frame. A load error keeps its danger frame: the red border is how it reads as an alert (board `Admin-state-members-error`).
 - **The route's `loading.tsx`** draws the same card, for CLS 0.
-- **Where it applies today:** Plans, the renewals pipeline, Invoices, Members and Change requests. Lists still on the legacy kit take it in their own phase.
+- **Where it applies today:** Plans, the renewals pipeline, escalation tasks, tier upgrades, Invoices, Members and Change requests. Lists still on the legacy kit take it in their own phase.
+- **The table runs edge to edge inside the card** (maintainer, 2 Oct, the Polaris / GitHub pattern): no side borders or radius, the header band and rules kept, the filters on the card's padding. AURA has no way to do this yet, so until #127 ships the tables keep their own frame.
 
 **Type scale.** Text sizes on AURA surfaces use AURA's type classes (`aura-text-label` 13/500, `aura-text-table-cell` 13/400, `aura-text-caption` 12, `aura-text-mono` 12 mono, `aura-text-pill-label` 11, `aura-text-h2` 24), not `text-[Npx]`. They load in the `aura-tokens` layer, below Tailwind's preflight, so on a `<button>`, `<kbd>` or heading (where preflight resets the font) the class goes on the inner text span; Tailwind `font-*` / `leading-*` utilities still win over it. Page titles keep the app's shared `--font-size-h1` step.
 
@@ -127,11 +128,12 @@ The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requ
 | 123 | 5.24.0: `touchHeight` applies under `(max-width: 639.98px), (pointer: coarse)`, so a tablet or other touch-first screen wider than 640px gets 44px targets too; a mouse at 640px and up keeps today's sizes | Nothing to change in the screens: every touch control already passes `touchHeight`. `renewal-a11y` asks the page which rule applies and adds a 1024px touch-context test |
 | 124 | 5.25.0: a toggle `Tag` (`selected` + `onClick`) takes `touchHeight`, 44px under the same rule as #123; a plain or removable Tag ignores it | The escalation queue's six Status and Assignment chips (`PressedGroup`) pass `touchHeight` |
 
-One item is open (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.test.ts` reads this table; a new gap goes here as `| #N | … |`):
+Two items are open (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.test.ts` reads this table; a new gap goes here as `| #N | … |`):
 
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
 | #125 | Addendum 28 (US8a): a `RadioGroup` option's `description` sits inside its `<label>`, so it is read as part of the radio's name instead of as its description | None needed in markup: the new-invoice type switcher and the event-fee issuance mode keep `description`; their tests match the name with a start-anchored regex until AURA ships, then tighten to the exact name plus `toHaveAccessibleDescription` |
+| #127 | Addendum 30 (US8a): a table inside a padded `Card` keeps its own border and radius and cannot run edge to edge, so a list page shows a frame in a frame on desktop. Ask: `bleed` on `DataTable` / `Table` (no side borders or radius, pulled out by the card's padding, header band and rules kept, off below the card's `flushBelow`), plus `DataTable bordered={false}` | None (maintainer, 2 Oct: wait for AURA). The seven list-card pages (members, invoices, change requests, plans, renewal pipeline, escalation tasks, tier upgrades) and their skeletons take `bleed` in the PR that bumps the pin |
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 
