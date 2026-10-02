@@ -223,6 +223,7 @@ export function RowActions({
         <Button
           variant="secondary"
           size="sm"
+          icon="mail"
           touchHeight
           loading={isPending}
           onClick={handleSendReminder}

@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { getLocale, getTranslations } from 'next-intl/server';
-import { ChevronRightIcon, ExternalLinkIcon, PencilIcon } from 'lucide-react';
+import { ChevronRightIcon, ExternalLinkIcon, PencilIcon, UserPlusIcon } from 'lucide-react';
 import { Alert, Badge, Card, Icon, StatusPill, buttonClass } from '@jirawatpyk/aura-react/server';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
@@ -256,6 +256,7 @@ export async function renderPortalProfileView({
           isPrimary ? (
             // A 44px touch target on phones, as `Portal-profile-mobile` draws it.
             <Link href="/portal/contacts/invite" className={cn(buttonClass({ variant: 'secondary' }), 'max-sm:h-11')}>
+              <Icon name={<UserPlusIcon />} size={16} />
               {t('inviteColleague')}
             </Link>
           ) : undefined

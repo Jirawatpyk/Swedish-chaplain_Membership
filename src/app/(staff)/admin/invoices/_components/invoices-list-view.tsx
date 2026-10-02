@@ -156,6 +156,7 @@ export async function renderInvoicesListView({
                   </Link>
                 ) : isAdmin ? (
                   <Link href="/admin/invoices/new" className={buttonClass({ variant: 'primary' })}>
+                    <PlusIcon aria-hidden="true" className="size-4" />
                     {t('list.actions.new')}
                   </Link>
                 ) : undefined

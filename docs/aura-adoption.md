@@ -60,6 +60,22 @@ A server component that needs a static AURA component imports it from **`@jirawa
 
 **Board parity rule (US5a, 28 Sep 2026).** AURA's component defaults (spacing, sizes, radius, type scale) win over a board's pixel values. The board wins on content, structure, order, icons and copy. When a board value is clearly better, it goes to the AURA handoff, never into a per-page override. Styling that reaches into AURA's internal classes (`.aura-table__*`, `.aura-tbl__*`, `.aura-empty*`, `.aura-filterbar__*`, `.aura-card__*`, `.aura-alert*`, `.aura-stat*`, `.aura-progress*`, `.aura-nav*`, `.aura-shell*`, `.aura-bottomnav*`, a hand-applied `aura-icon`) is a stand-in: it gets a `stand-in until AURA #NN` comment naming an item open below. A reach AURA's owner agreed is app content (e.g. hiding part of a cell only on a stacked phone card) is labelled `AURA app content: <why>` instead. `tests/unit/architecture/aura-internal-class-ratchet.test.ts` enforces both over every `MIGRATED_PATHS` entry and `globals.css`, and fails on a label naming an item that is no longer open: when AURA ships an item, its stand-ins are swapped in the same PR that bumps the pin.
 
+**Button icons (US8a, 2 Oct 2026).** The boards disagree with each other on button icons: 15 labels carry different icons on different boards. "Board wins on icons" therefore needs one rule, and this is it:
+- **These actions carry an icon:**
+  - create or add: `plus`;
+  - download or export: `download`;
+  - send or remind: `mail` or `send`;
+  - confirm a money step: `check`, e.g. Record payment, or an as-paid issue;
+  - retry: `rotate-ccw`;
+  - destructive actions, with their own icons: Archive, Erase, Reject & refund.
+- **These carry none:** Cancel, Save, Apply, Done, Review, Go back, and in-row text actions such as the invoice list's "Record payment…".
+- **Exception:** a Cancel that works as "back" in a form header keeps the board's `arrow-left`, as on the member forms.
+- **How to apply it:**
+  - The same label carries the same icon on every screen.
+  - On an AURA `Button`, use its `icon` prop.
+  - On a link styled with `buttonClass`, put a lucide icon (`aria-hidden`, `size-4`) or the `/server` `Icon` before the text.
+- **Where it was checked:** the 2 Oct audit compared every preview view with the boards. It found four buttons that broke the rule: Try again on the shared load-error card, Send reminder in the renewal pipeline, Invite colleague on the portal profile, and the invoice list's empty-state New invoice. `tests/unit/app/button-icon-rule.test.tsx` pins each one.
+
 **Type scale.** Text sizes on AURA surfaces use AURA's type classes (`aura-text-label` 13/500, `aura-text-table-cell` 13/400, `aura-text-caption` 12, `aura-text-mono` 12 mono, `aura-text-pill-label` 11, `aura-text-h2` 24), not `text-[Npx]`. They load in the `aura-tokens` layer, below Tailwind's preflight, so on a `<button>`, `<kbd>` or heading (where preflight resets the font) the class goes on the inner text span; Tailwind `font-*` / `leading-*` utilities still win over it. Page titles keep the app's shared `--font-size-h1` step.
 
 ## Phases

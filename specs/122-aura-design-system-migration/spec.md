@@ -308,6 +308,13 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - **Record payment cannot be dismissed while the payment is being sent.** A tap on the scrim never closes it. After a successful payment, focus moves to the row's ⋯ menu.
   - **Sorting stays out of scope.** The board marks Invoice No. and Due as sortable, but the list has never sorted. Adding it would be a behaviour change, so it is not part of this UI swap.
   - **On a phone the list header keeps only "New invoice" in its row.** Tax registers and Export CSV… move into a ⋯ menu beside it, the US5a members header and US5b-1 ⋯ precedent (maintainer comment on the parity page, 2 Oct). The export dialog opens from the menu, and focus returns to the ⋯ button. From 640px up, the three buttons show as before. The filters stay on the shared AURA filter bar.
+  - **One button icon rule for every migrated screen** (maintainer, 2 Oct, applied in this PR). The rule is in `docs/aura-adoption.md` § Button icons. An audit of every preview view against the boards found four buttons that broke it, all fixed here:
+    - Try again on the shared load-error card;
+    - Send reminder in the renewal pipeline;
+    - Invite colleague on the portal profile;
+    - the invoice list's empty-state New invoice.
+
+    Record payment and Create draft were fixed earlier in this PR.
   - **The new-invoice Back button stays where it is.** It is a secondary header button on desktop, and below 1024px the shell's back link replaces it, as on the member pages (US5a). The board's link above the h1 is not followed.
 
 ## User Scenarios & Testing *(mandatory)*
