@@ -51,6 +51,35 @@ export default defineConfig({
   // residue doesn't trip the 5/15-min sign-in limit. See
   // tests/e2e/global-setup.ts.
   globalSetup: './tests/e2e/global-setup.ts',
+  // Per-test budget. This file used to set none, so it was Playwright's 30 s
+  // default, and a sweep of all 821 tests (2026-10-02, 14 sequential chunks)
+  // showed that is too tight for this suite UNDER LOAD. Three reds came back at
+  // 30.2-30.4 s — the signature of being killed at the ceiling rather than
+  // failing an assertion — and all three pass on a quiet machine in 16.7 s,
+  // 24.1 s and 26.8 s: `membership-suspension`'s never-block walk (and the gate
+  // it guards is fine), `layout-responsive`'s page x viewport matrix, and
+  // `admin-review-queue` AS2. So what this buys is not absolute headroom; it is
+  // the removal of a coin-flip that only appears when the machine is busy. A
+  // further 14 tests already PASS between 28 s and the old ceiling, which is the
+  // queue of tests that would have flipped next.
+  //
+  // Raising a timeout cannot make a broken test pass — a timeout is not an
+  // assertion — it only stops a slow-but-correct test being killed. The cost is
+  // that a test which hangs for a real reason takes 60 s to say so instead of
+  // 30 s. No such test is known in this suite today: the one that looked like a
+  // hang (`renewals/pipeline-mobile-cards`' last-card check, 30 s killed then
+  // 61.6 s killed) passes on its own in 5.4 s, so the longer ceiling delayed a
+  // contention flake's report rather than exposing a defect.
+  //
+  // Which is the pattern behind all of this. Six tests are now known to fail
+  // only inside a multi-spec run and pass alone: those two pipeline tests,
+  // `admin-review-queue`, `layout-responsive`, `payment-resume-on-reopen` and
+  // `rbac-navigation`. A 14-chunk sweep sharing one machine with the dev server
+  // and one Neon branch is the condition, not the pages.
+  //
+  // Specs needing more still set their own (`test.slow()`, or a
+  // `describe.configure({ timeout })`), and those stay as they are.
+  timeout: 60_000,
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   // Retry flaky specs once locally, twice in CI. The E2E suite is
