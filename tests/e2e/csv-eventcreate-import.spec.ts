@@ -16,7 +16,7 @@
  * of the upload scenario so it survives a fresh tenant.
  *
  * Selectors verified against actual components 2026-05-16:
- *   - Event-picker trigger: role=combobox + aria-label="Choose event for CSV import"
+ *   - Event-picker trigger: role=combobox named by its visible <Label>
  *   - Inline modal: shadcn Dialog with Label htmlFor → use getByLabel
  *   - Modal submit: t('submitCta') = "Create event"
  *   - File input: htmlFor={fileInputId} + Label "Choose a .csv file"
@@ -35,6 +35,14 @@ import { test, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { signInAsAdmin } from './helpers/admin-session';
+import en from '../../src/i18n/messages/en.json';
+
+// F6.1: `csv-mapping-form.tsx:687` passes `triggerAriaLabelledBy`, so the
+// picker's accessible name is its visible <Label> — NOT the `triggerAriaLabel`
+// message the old locator searched for. `event-picker.tsx:72-79` documents the
+// choice (a visible label, no duplicate accessible name). Read the label from
+// the message file so a rename fails loudly here instead of silently.
+const EVENT_PICKER_LABEL = en.admin.events.import.eventPicker.fieldLabel;
 
 const ADMIN_EMAIL = process.env['E2E_ADMIN_EMAIL'];
 const ADMIN_PASSWORD = process.env['E2E_ADMIN_PASSWORD'];
@@ -88,9 +96,10 @@ test.describe('F6.1 EventCreate CSV import — manual-gate E2E', () => {
       page.getByRole('heading', { name: /import.*csv|import attendees/i }),
     ).toBeVisible({ timeout: 15_000 });
 
-    // Event-picker uses role=combobox + aria-label "Choose event for CSV import".
+    // Event-picker is role=combobox named by its visible <Label> (see above).
     const eventCombobox = page.getByRole('combobox', {
-      name: /choose event for csv import/i,
+      name: EVENT_PICKER_LABEL,
+      exact: true,
     });
     await expect(eventCombobox).toBeVisible();
 

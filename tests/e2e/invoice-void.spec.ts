@@ -215,17 +215,24 @@ test.describe('@us5 void-invoice', () => {
       }
     });
 
-    test('AS2 a paid invoice CAN be voided (088 §F.3 error-correction edge)', async ({ page }) => {
-      // 088 §F.3 — voiding a PAID membership is a supported edge path (the
-      // ยกเลิก / same-period error-correction mechanism; the void stamps VOID on
-      // BOTH the bill + §86/4 tax-receipt blobs — see void-kind-true-golden). It
-      // is DISTINCT from a genuine refund/reduction, which goes through a §86/10
-      // ใบลดหนี้ credit note (US6). The void UI intentionally exposes only the
-      // issued-invoice path (routine reversals → credit-note); this paid-void
-      // edge is reachable via the API for admin error correction. A voided §86/4
-      // receipt is correctly EXCLUDED from the ภ.พ.30 output-VAT total (register
-      // status<>'void' filter) while staying LISTED as cancelled.
-      // (Was pre-088 "paid invoice CANNOT be voided" — stale before §F.3 landed.)
+    test('AS2 a paid MEMBERSHIP invoice CANNOT be voided → 409 paid_membership_requires_credit_note', async ({
+      page,
+    }) => {
+      // H1 (#253, 2026-07-23) refuses a void of any PAID row — see
+      // `void-invoice.ts:399`, above the first write. It deliberately reversed
+      // 088's earlier paid-void allowance, for three independent reasons:
+      //   • ภ.พ.30 period drift — `sumPeriodOutputVat` excludes void rows with no
+      //     period cutoff, so voiding today silently rewrites the output VAT of a
+      //     month already filed; a §86/10 credit note instead reduces VAT in the
+      //     month it is issued.
+      //   • the settled money is stranded — a void writes nothing to `payments`.
+      //   • restore would double-charge through the effective-paid retract (#24).
+      // The guard is already pinned by `tests/contract/invoices/void-route.
+      // contract.test.ts:193` and three integration tests; this spec was the lone
+      // holdout asserting the opposite, because e2e has no CI job.
+      // The old title cited "088 §F.3", which is about voiding an UNPAID bill
+      // (`specs/088-invoice-tax-flow-redesign/data-model.md:377`) — it never
+      // sanctioned this path. Citation dropped rather than re-pointed.
       const { tenant, invoiceId } = await setupIssuedInvoice(page);
       try {
         // Record payment via API → status flips to paid.
@@ -253,7 +260,7 @@ test.describe('@us5 void-invoice', () => {
           );
         }
 
-        // Void the PAID invoice → §F.3 supports it (2xx).
+        // Void the PAID membership invoice → refused with the H1 code.
         const voidResp = await page.context().request.post(
           `/api/invoices/${invoiceId}/void`,
           {
@@ -262,27 +269,27 @@ test.describe('@us5 void-invoice', () => {
               Origin: new URL(page.url()).origin,
               'X-Tenant': tenant.slug,
             },
-            data: { voidReason: 'E2E §F.3 — cancelling an erroneous paid record' },
+            data: { voidReason: 'E2E H1 — a paid membership must take a credit note' },
           },
         );
-        const voidStatus = voidResp.status();
-        if (!(voidStatus >= 200 && voidStatus < 300)) {
-          const body = await voidResp.text();
-          throw new Error(
-            `POST /api/invoices/${invoiceId}/void (paid, §F.3) → ${voidStatus}: ${body.slice(0, 500)}`,
-          );
-        }
+        expect(voidResp.status()).toBe(409);
+        // Assert the route's OWN code, not just the status: a CSRF reject is
+        // also a 4xx, and `src/lib/csrf.ts` would answer 403 with its own body.
+        const voidBody = (await voidResp.json().catch(() => ({}))) as {
+          error?: { code?: string };
+        };
+        expect(voidBody.error?.code).toBe('paid_membership_requires_credit_note');
 
-        // Status flips to 'void'; the paid_at / receipt fields are retained
-        // (the register excludes the VAT via its status<>'void' filter).
+        // The guard sits ABOVE the first write (`err()` inside `runInTenant`
+        // COMMITS), so the row must be untouched — no phantom half-void.
         const row = await runInTenant(tenant.ctx, async (tx) =>
           tx
             .select()
             .from(invoices)
             .where(eq(invoices.invoiceId, invoiceId)),
         );
-        expect(row[0]!.status).toBe('void');
-        expect(row[0]!.voidedAt).not.toBeNull();
+        expect(row[0]!.status).toBe('paid');
+        expect(row[0]!.voidedAt).toBeNull();
       } finally {
         await tenant.cleanup().catch(() => {});
       }

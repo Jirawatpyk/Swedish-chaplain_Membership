@@ -23,6 +23,14 @@
 import { expect, test } from './fixtures';
 import { signInAsAdmin } from './helpers/admin-session';
 import { clearE2ERateLimits } from './helpers/rate-limit';
+import en from '../../src/i18n/messages/en.json';
+
+// F6.1: `csv-mapping-form.tsx:687` passes `triggerAriaLabelledBy`, so the
+// picker's accessible name is its visible <Label> — NOT the `triggerAriaLabel`
+// message the old locator searched for. `event-picker.tsx:72-79` documents the
+// choice (a visible label, no duplicate accessible name). Read the label from
+// the message file so a rename fails loudly here instead of silently.
+const EVENT_PICKER_LABEL = en.admin.events.import.eventPicker.fieldLabel;
 import path from 'node:path';
 import fs from 'node:fs';
 
@@ -57,7 +65,8 @@ test.describe('F6.1-A CSV remap — non-canonical header admin flow', () => {
     //    (mirrors csv-eventcreate-import.spec.ts). The picker is the
     //    authoritative event binding; the CSV carries no event columns.
     const eventCombobox = page.getByRole('combobox', {
-      name: /choose event for csv import/i,
+      name: EVENT_PICKER_LABEL,
+      exact: true,
     });
     await expect(eventCombobox).toBeVisible();
 
