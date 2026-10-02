@@ -2649,7 +2649,9 @@
           "recordPaymentAria": "Record payment for invoice {number}",
           "clearFilters": "Clear filters",
           "configureInvoicing": "Configure Invoicing",
-          "openDraftAria": "Open draft invoice for {name}"
+          "openDraftAria": "Open draft invoice for {name}",
+          "moreAria": "More actions for {number}",
+          "view": "View invoice"
         },
         "columns": {
           "documentNumber": "Invoice No.",
@@ -2738,6 +2740,8 @@
         },
         "creditedSuffix": "{count, plural, one {+# CN} other {+# CN}}",
         "creditedTooltip": "{count, plural, one {# credit note} other {# credit notes}} · {amount} THB credited",
+        "issuedOn": "Issued {date}",
+        "creditNoteCount": "{count, plural, one {# credit note} other {# credit notes}}",
         "creditedAria": "{count, plural, one {# credit note} other {# credit notes}} issued against this invoice, {amount} Thai baht credited",
         "tableCaption": "List of invoices for the selected filters.",
         "queueTableCaption": "List of auto-renewal drafts awaiting review.",

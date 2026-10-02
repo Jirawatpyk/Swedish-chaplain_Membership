@@ -303,10 +303,9 @@ describe('<InvoicesTable> buyer column', () => {
     expect(link.className).toContain('break-words');
     // Full name stays reachable when visually clamped.
     expect(link).toHaveAttribute('title', LONG);
-    // The cell opted OUT of the TableCell base nowrap — without this the
-    // clamp can never wrap and the table stretches anyway.
-    const cell = link.closest('td');
-    expect(cell?.className).toContain('whitespace-normal');
+    // The rows grow to fit wrapped content (AURA rowHeight="auto") — without
+    // it the clamp can never wrap and the cell ends in an ellipsis.
+    expect(link.closest('[role="gridcell"]')).toHaveClass('aura-table__td--auto');
   });
 
   it('clamps a long NON-member buyer name the same way (plain-text span)', () => {
@@ -589,7 +588,7 @@ describe('<InvoicesTable> receipt async-resilience (088 T066b)', () => {
     expect(generating).toHaveAttribute('aria-busy', 'true');
     expect(generating).not.toHaveAttribute('role', 'status');
     expect(generating).toHaveTextContent('Receipt generating…');
-    expect(generating.closest('td')).toHaveTextContent('RC-2026-0002');
+    expect(generating.closest('[role="gridcell"]')).toHaveTextContent('RC-2026-0002');
     // NOT the terminal failed alert.
     expect(screen.queryByTestId('row-receipt-render-failed')).toBeNull();
   });
@@ -855,23 +854,21 @@ describe('<InvoicesTable> — auto-renewal review-queue column (107-auto-invoice
         },
       }),
     ]);
-    expect(screen.queryByTestId('column-header-queue')).toBeNull();
+    expect(screen.queryByRole('columnheader', { name: 'Queue' })).toBeNull();
     expect(screen.queryByTestId('queue-price-changed')).toBeNull();
-    // A8 — the default view keeps the generic table caption, not the queue
-    // one. shadcn's `<Table>` puts the `aria-label` on the OUTER
-    // `role="region"` scroll wrapper, not the `<table>` element itself.
+    // A8 — the default view keeps the generic table caption, not the queue one.
     expect(
-      screen.getByRole('region', { name: 'List of invoices for the selected filters.' }),
+      screen.getByRole('grid', { name: 'List of invoices for the selected filters.' }),
     ).toBeInTheDocument();
   });
 
   it('showQueueMetaColumn=true + queueMeta=null → renders the column with a plain em-dash, and swaps the table caption (review A8)', () => {
     renderQueueTable([baseRow({ queueMeta: null })], true);
-    expect(screen.getByTestId('column-header-queue')).toHaveTextContent('Queue');
+    expect(screen.getByRole('columnheader', { name: 'Queue' })).toBeInTheDocument();
     const cell = screen.getByTestId('queue-meta-cell');
     expect(cell).toHaveTextContent('—');
     expect(
-      screen.getByRole('region', {
+      screen.getByRole('grid', {
         name: 'List of auto-renewal drafts awaiting review.',
       }),
     ).toBeInTheDocument();
@@ -1061,8 +1058,8 @@ describe('<InvoicesTable> — the Admin-invoices board (US8 T802)', () => {
 
   it('"Issued {date}" and the credit-note count sit under the number', () => {
     renderTable([baseRow({ issueDate: '2026-06-01', creditNoteCount: 2, creditedTotalSatang: '535000' })]);
-    const numberCell = screen.getByRole('link', { name: 'INV-2026-0001' }).closest('td');
-    expect(numberCell).toHaveTextContent('Issued Jun 1, 2026');
+    const numberCell = screen.getByRole('link', { name: 'INV-2026-0001' }).closest('[role="gridcell"]');
+    expect(numberCell).toHaveTextContent('Issued 1 Jun 2026');
     const cn = within(numberCell as HTMLElement).getByRole('link', { name: '2 credit notes, 5,350.00 credited' });
     expect(cn).toHaveTextContent('2 credit notes');
     expect(cn).toHaveAttribute('href', '/admin/invoices/inv-1');
@@ -1090,7 +1087,7 @@ describe('<InvoicesTable> — the Admin-invoices board (US8 T802)', () => {
         onlinePaymentMethod: 'promptpay',
       }),
     ]);
-    expect(screen.getByText('RC-2026-0001').closest('td')).toHaveTextContent('PromptPay');
+    expect(screen.getByText('RC-2026-0001').closest('[role="gridcell"]')).toHaveTextContent('PromptPay');
   });
 
   it('a failed receipt is a "Receipt render failed" link under the receipt number', () => {
@@ -1102,7 +1099,7 @@ describe('<InvoicesTable> — the Admin-invoices board (US8 T802)', () => {
       }),
     ]);
     const failed = screen.getByTestId('row-receipt-render-failed');
-    expect(failed.closest('td')).toHaveTextContent('RC-2026-0003');
+    expect(failed.closest('[role="gridcell"]')).toHaveTextContent('RC-2026-0003');
   });
 
   it('every row has a ⋯ menu that opens the invoice', () => {

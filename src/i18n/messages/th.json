@@ -2649,7 +2649,9 @@
           "recordPaymentAria": "บันทึกการชำระเงินสำหรับใบแจ้งหนี้ {number}",
           "clearFilters": "ล้างตัวกรอง",
           "configureInvoicing": "ตั้งค่าการออกใบแจ้งหนี้",
-          "openDraftAria": "เปิดใบแจ้งหนี้ฉบับร่างของ {name}"
+          "openDraftAria": "เปิดใบแจ้งหนี้ฉบับร่างของ {name}",
+          "moreAria": "การดำเนินการเพิ่มเติมสำหรับ {number}",
+          "view": "ดูใบแจ้งหนี้"
         },
         "columns": {
           "documentNumber": "เลขที่ใบแจ้งหนี้",
@@ -2738,6 +2740,8 @@
         },
         "creditedSuffix": "+{count} ใบลดหนี้",
         "creditedTooltip": "ใบลดหนี้ {count} ฉบับ · ลดหนี้ไปแล้ว {amount} บาท",
+        "issuedOn": "ออกเมื่อ {date}",
+        "creditNoteCount": "{count, plural, other {ใบลดหนี้ # ฉบับ}}",
         "creditedAria": "ใบแจ้งหนี้นี้มีการออกใบลดหนี้ {count} ฉบับ ลดหนี้ไปแล้ว {amount} บาท",
         "tableCaption": "รายการใบแจ้งหนี้ตามตัวกรองที่เลือก",
         "queueTableCaption": "รายการฉบับร่างต่ออายุอัตโนมัติที่รอการตรวจสอบ",

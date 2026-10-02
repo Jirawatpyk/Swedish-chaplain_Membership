@@ -2649,7 +2649,9 @@
           "recordPaymentAria": "Registrera betalning för faktura {number}",
           "clearFilters": "Rensa filter",
           "configureInvoicing": "Konfigurera fakturering",
-          "openDraftAria": "Öppna fakturautkast för {name}"
+          "openDraftAria": "Öppna fakturautkast för {name}",
+          "moreAria": "Fler åtgärder för {number}",
+          "view": "Visa faktura"
         },
         "columns": {
           "documentNumber": "Fakturanr.",
@@ -2738,6 +2740,8 @@
         },
         "creditedSuffix": "{count, plural, one {+# kreditnota} other {+# kreditnotor}}",
         "creditedTooltip": "{count, plural, one {# kreditnota} other {# kreditnotor}} · {amount} THB krediterat",
+        "issuedOn": "Utfärdad {date}",
+        "creditNoteCount": "{count, plural, one {# kreditnota} other {# kreditnotor}}",
         "creditedAria": "{count, plural, one {# kreditnota utställd} other {# kreditnotor utställda}} mot denna faktura, {amount} thailändska baht krediterat",
         "tableCaption": "Lista över fakturor för de valda filtren.",
         "queueTableCaption": "Lista över utkast för automatisk förnyelse som väntar på granskning.",
