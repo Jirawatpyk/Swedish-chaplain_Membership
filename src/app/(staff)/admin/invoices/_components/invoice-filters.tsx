@@ -654,6 +654,7 @@ export function InvoiceFilters({
       <FilterBar
         key={searchResetKey}
         ref={barRef}
+        label={t('filters.groupLabel')}
         searchGrow
         search={currentQ}
         // Untrimmed on purpose: the FilterBar compares the URL back against
@@ -687,7 +688,7 @@ export function InvoiceFilters({
             the ONLY filter applied the bar's own "Clear filters" (chips row)
             is absent: offer it here, as Members does. */}
         {hasAnyFilter && activeFilters.length === 0 && (
-          <Button variant="ghost" size="sm" icon="x" onClick={clearAll}>
+          <Button variant="ghost" size="sm" icon="x" touchHeight onClick={clearAll}>
             {t('filters.clearAll')}
           </Button>
         )}

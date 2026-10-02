@@ -26,7 +26,7 @@
  */
 'use client';
 
-import { useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
@@ -176,7 +176,22 @@ export function PlansTable({
   // Year filter, and Show deleted — nothing else can narrow an empty year.
   const yearEmpty = sorted.length === 0 && !filtered;
 
+  // A chip × or Clear unmounts itself; AURA's FilterBar leaves focus to the
+  // page, so it moves to the search (or Year, when an empty year has no
+  // search) instead of dropping to <body> (UX review H1).
+  const barRef = useRef<HTMLDivElement>(null);
+  // Bumped by a chip × or Clear; the effect moves focus once the bar has
+  // re-rendered without the control that was pressed.
+  const [focusRequest, setFocusRequest] = useState(0);
+  const focusBar = () => setFocusRequest((n) => n + 1);
+  useEffect(() => {
+    if (focusRequest === 0) return;
+    const bar = barRef.current;
+    (bar?.querySelector<HTMLElement>('input[type="search"]') ?? bar?.querySelector<HTMLElement>('[role="combobox"]'))?.focus();
+  }, [focusRequest]);
+
   function clearFilters() {
+    focusBar();
     setCategory(null);
     setQ('');
     setActiveOnly(false);
@@ -208,10 +223,10 @@ export function PlansTable({
   // toggles show their own state, and Year always has one.
   const chips = [
     ...(q.trim()
-      ? [{ id: 'q', label: t('filters.chip.search', { q: q.trim() }), onRemove: () => { setQ(''); updateFilter({ q: null }); } }]
+      ? [{ id: 'q', label: t('filters.chip.search', { q: q.trim() }), onRemove: () => { setQ(''); updateFilter({ q: null }); focusBar(); } }]
       : []),
     ...(category
-      ? [{ id: 'category', label: t('filters.chip.category', { value: t(`filters.category.${category}`) }), onRemove: () => { setCategory(null); updateFilter({ category: null }); } }]
+      ? [{ id: 'category', label: t('filters.chip.category', { value: t(`filters.category.${category}`) }), onRemove: () => { setCategory(null); updateFilter({ category: null }); focusBar(); } }]
       : []),
   ];
   // The bar's Clear and chip × in this app's words.
@@ -232,6 +247,7 @@ export function PlansTable({
           end, a chip per applied value. */}
       <AuraProvider strings={barStrings}>
         <FilterBar
+          ref={barRef}
           label={t('filters.groupLabel')}
           searchGrow
           {...(yearEmpty
@@ -247,7 +263,8 @@ export function PlansTable({
               })}
           filters={chips}
           {...(chips.length > 0 ? { onClearAll: clearFilters } : {})}
-          resultCount={sorted.length}
+          // No "0 results" beside "No plans for this year" (UX review L2).
+          {...(yearEmpty ? {} : { resultCount: sorted.length })}
         >
           <FilterSelect
             label={t('filters.year')}
@@ -300,7 +317,7 @@ export function PlansTable({
               one name), so when only toggles are on, the bar's own Clear has
               nothing to hang on: offer it here (as on the members list). */}
           {(activeOnly || showDeleted) && chips.length === 0 ? (
-            <Button variant="ghost" size="sm" icon="x" onClick={clearFilters}>
+            <Button variant="ghost" size="sm" icon="x" touchHeight onClick={clearFilters}>
               {t('empty.clearFilters')}
             </Button>
           ) : null}

@@ -846,7 +846,7 @@
           "search": "Sök: {q}",
           "category": "Kategori: {value}"
         },
-        "removeChip": "Ta bort {filter}"
+        "removeChip": "Ta bort filter: {filter}"
       },
       "badges": {
         "active": "Aktiv",
@@ -1135,12 +1135,11 @@
           "removeChip": "Ta bort filter: {filter}",
           "member": "Medlem",
           "clear": "Rensa filter",
-          "submitterChip": "En persons begäranden",
-          "unknownMember": "en medlem som inte kunde hittas",
+          "submitterChip": "Inskickare: en person",
+          "unknownMember": "Hittades inte",
           "dateFrom": "från {from}",
           "dateTo": "till och med {to}",
-          "resultCount": "{count, plural, =0 {Inga begäranden att visa} one {Visar # begäran} other {Visar # begäranden}}",
-          "resultCountMore": "Visar de första {count} begärandena – fler på nästa sida",
+          "resultCountMore": "De första {count} resultaten, fler på nästa sida",
           "presets": {
             "last7": "Senaste 7 dagarna",
             "last30": "Senaste 30 dagarna",
@@ -1348,7 +1347,7 @@
         "searchPlaceholder": "Sök på företag, kontakt, e-post eller medlemsnummer",
         "searchSrLabel": "Sök medlemmar",
         "clearFilters": "Rensa filter",
-        "removeFilter": "Ta bort {filter}",
+        "removeFilter": "Ta bort filter: {filter}",
         "filterChip": {
           "search": "Sök: {q}",
           "status": "Status: {value}",
@@ -1376,7 +1375,8 @@
             "at-risk": "I riskzon",
             "critical": "Kritisk"
           },
-          "allShort": "Alla"
+          "allShort": "Alla",
+          "groupLabel": "Filtrera medlemmar"
         },
         "resultsCount": "{count, plural, =0 {Inga medlemmar} one {# medlem} other {# medlemmar}}",
         "resultsCountOfTotal": "Visar {count} av {total, plural, one {# medlem} other {# medlemmar}}",
@@ -2703,6 +2703,7 @@
         "recordPaymentIntentHint": "Välj en faktura nedan och använd dess knapp 'Registrera betalning' (kolumnen Åtgärder) för att registrera betalning.",
         "filters": {
           "allStatuses": "Alla status",
+          "groupLabel": "Filtrera fakturor",
           "allExceptDrafts": "Alla utom utkast",
           "allShort": "Alla",
           "chip": "{label}: {value}",
@@ -5138,7 +5139,7 @@
       "title": "Betalningsavstämning",
       "filterChip": {
         "label": "Betald online",
-        "ariaLabel": "Filtrera till fakturor betalda online",
+        "ariaLabel": "Filtrera fakturor: Betald online",
         "tooltip": "Visa endast fakturor som betalats via kort eller PromptPay"
       },
       "methodBadge": {

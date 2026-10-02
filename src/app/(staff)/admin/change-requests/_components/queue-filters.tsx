@@ -27,7 +27,7 @@
  * The range takes the tenant's timezone for "today" and the presets — the
  * same one the page turns ?from/?to into day bounds with.
  */
-import { useCallback, useMemo, useTransition } from 'react';
+import { useCallback, useMemo, useRef, useTransition } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import {
@@ -183,7 +183,18 @@ export function ChangeRequestQueueFilters({ resultCount, hasMore, timeZone, memb
   if (submitter) {
     chips.push({ id: 'submitter', label: tFilters('submitterChip'), patch: { submitter: null } });
   }
-  const activeFilters = chips.map((c) => ({ id: c.id, label: c.label, onRemove: () => write(c.patch) }));
+  // A chip × or Clear unmounts itself; AURA's FilterBar leaves focus to the
+  // page, so it moves to Status, which is always there (UX review H1).
+  const barRef = useRef<HTMLDivElement>(null);
+  const focusStatus = () => barRef.current?.querySelector<HTMLElement>('[role="combobox"]')?.focus();
+  const activeFilters = chips.map((c) => ({
+    id: c.id,
+    label: c.label,
+    onRemove: () => {
+      focusStatus();
+      write(c.patch);
+    },
+  }));
 
   // The presets count back from today in the tenant's timezone, today
   // included; "This month" runs from its first day to today.
@@ -209,11 +220,26 @@ export function ChangeRequestQueueFilters({ resultCount, hasMore, timeZone, memb
         <FilterBar
           label={tFilters('label')}
           filters={activeFilters}
-          {...(activeFilters.length > 0 ? { onClearAll: () => replaceUrl(new URLSearchParams()) } : {})}
+          ref={barRef}
+          {...(activeFilters.length > 0
+            ? {
+                onClearAll: () => {
+                  focusStatus();
+                  replaceUrl(new URLSearchParams());
+                },
+              }
+            : {})}
+          // AURA words a plain count as on the other lists ("3 results"); only
+          // a page with more after it says so, and that longer line may wrap
+          // (AURA keeps the count on one line) so it fits a 320px screen.
           resultCount={
-            <span data-testid="queue-result-count">
-              {hasMore ? tFilters('resultCountMore', { count: resultCount }) : tFilters('resultCount', { count: resultCount })}
-            </span>
+            hasMore ? (
+              <span data-testid="queue-result-count" className="whitespace-normal">
+                {tFilters('resultCountMore', { count: resultCount })}
+              </span>
+            ) : (
+              resultCount
+            )
           }
         >
           <FilterSelect

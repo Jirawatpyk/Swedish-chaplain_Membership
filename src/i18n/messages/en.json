@@ -846,7 +846,7 @@
           "search": "Search: {q}",
           "category": "Category: {value}"
         },
-        "removeChip": "Remove {filter}"
+        "removeChip": "Remove filter: {filter}"
       },
       "badges": {
         "active": "Active",
@@ -1135,12 +1135,11 @@
           "removeChip": "Remove filter: {filter}",
           "member": "Member",
           "clear": "Clear filters",
-          "submitterChip": "One person's requests",
-          "unknownMember": "a member that could not be found",
+          "submitterChip": "Submitter: one person",
+          "unknownMember": "Not found",
           "dateFrom": "from {from}",
-          "dateTo": "up to {to}",
-          "resultCount": "{count, plural, =0 {No requests to show} one {Showing # request} other {Showing # requests}}",
-          "resultCountMore": "Showing the first {count} requests — more on the next page",
+          "dateTo": "to {to} (incl.)",
+          "resultCountMore": "First {count} results, more on the next page",
           "presets": {
             "last7": "Last 7 days",
             "last30": "Last 30 days",
@@ -1348,7 +1347,7 @@
         "searchPlaceholder": "Search by company, contact name, email, or member number",
         "searchSrLabel": "Search members",
         "clearFilters": "Clear filters",
-        "removeFilter": "Remove {filter}",
+        "removeFilter": "Remove filter: {filter}",
         "filterChip": {
           "search": "Search: {q}",
           "status": "Status: {value}",
@@ -1376,7 +1375,8 @@
             "at-risk": "At-risk",
             "critical": "Critical"
           },
-          "allShort": "All"
+          "allShort": "All",
+          "groupLabel": "Filter members"
         },
         "resultsCount": "{count, plural, =0 {No members} one {# member} other {# members}}",
         "resultsCountOfTotal": "Showing {count} of {total, plural, one {# member} other {# members}}",
@@ -2703,6 +2703,7 @@
         "recordPaymentIntentHint": "Choose a bill below and use its Record payment button (Actions column) to record a payment.",
         "filters": {
           "allStatuses": "All statuses",
+          "groupLabel": "Filter invoices",
           "allExceptDrafts": "All except drafts",
           "allShort": "All",
           "chip": "{label}: {value}",

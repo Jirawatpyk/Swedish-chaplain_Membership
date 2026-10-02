@@ -236,6 +236,7 @@ export function DirectoryFilters({ plans = [], portalInviteCount, resultCount }:
         <FilterBar
           key={barKey}
           ref={barRef}
+          label={t('filters.groupLabel')}
           // As on the `Admin-members` boards: the search fills the row beside
           // the filters, and takes its own row on a phone, where the three
           // filters share the next (AURA's own breakpoint and gaps).
@@ -325,7 +326,7 @@ export function DirectoryFilters({ plans = [], portalInviteCount, resultCount }:
               control, one name), so when it is the ONLY filter applied the
               bar's own "Clear filters" (chips row) is absent: offer it here. */}
           {portalActive && activeChips.length === 0 && (
-            <Button variant="ghost" size="sm" icon="x" onClick={clearAll}>
+            <Button variant="ghost" size="sm" icon="x" touchHeight onClick={clearAll}>
               {t('clearFilters')}
             </Button>
           )}

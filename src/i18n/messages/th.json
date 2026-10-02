@@ -846,7 +846,7 @@
           "search": "ค้นหา: {q}",
           "category": "หมวดหมู่: {value}"
         },
-        "removeChip": "เอา {filter} ออก"
+        "removeChip": "ลบตัวกรอง: {filter}"
       },
       "badges": {
         "active": "ใช้งาน",
@@ -1135,12 +1135,11 @@
           "removeChip": "ลบตัวกรอง: {filter}",
           "member": "สมาชิก",
           "clear": "ล้างตัวกรอง",
-          "submitterChip": "คำขอของบุคคลหนึ่ง",
-          "unknownMember": "สมาชิกที่ไม่พบ",
+          "submitterChip": "ผู้ส่ง: บุคคลหนึ่ง",
+          "unknownMember": "ไม่พบ",
           "dateFrom": "ตั้งแต่ {from}",
-          "dateTo": "จนถึง {to}",
-          "resultCount": "{count, plural, =0 {ไม่มีคำขอที่จะแสดง} other {กำลังแสดงคำขอ # รายการ}}",
-          "resultCountMore": "กำลังแสดงคำขอ {count} รายการแรก — มีเพิ่มเติมในหน้าถัดไป",
+          "dateTo": "ถึง {to} (รวม)",
+          "resultCountMore": "{count} รายการแรก มีต่อในหน้าถัดไป",
           "presets": {
             "last7": "7 วันที่ผ่านมา",
             "last30": "30 วันที่ผ่านมา",
@@ -1348,7 +1347,7 @@
         "searchPlaceholder": "ค้นหาด้วยชื่อบริษัท ผู้ติดต่อ อีเมล หรือหมายเลขสมาชิก",
         "searchSrLabel": "ค้นหาสมาชิก",
         "clearFilters": "ล้างตัวกรอง",
-        "removeFilter": "เอา {filter} ออก",
+        "removeFilter": "ลบตัวกรอง: {filter}",
         "filterChip": {
           "search": "ค้นหา: {q}",
           "status": "สถานะ: {value}",
@@ -1376,7 +1375,8 @@
             "at-risk": "เสี่ยง",
             "critical": "วิกฤต"
           },
-          "allShort": "ทั้งหมด"
+          "allShort": "ทั้งหมด",
+          "groupLabel": "กรองสมาชิก"
         },
         "resultsCount": "{count, plural, =0 {ไม่มีสมาชิก} other {# ราย}}",
         "resultsCountOfTotal": "แสดง {count} จาก {total} ราย",
@@ -2703,6 +2703,7 @@
         "recordPaymentIntentHint": "เลือกใบแจ้งหนี้ด้านล่าง แล้วกดปุ่ม 'บันทึกการชำระเงิน' ในคอลัมน์การดำเนินการ เพื่อบันทึกการชำระเงิน",
         "filters": {
           "allStatuses": "ทุกสถานะ",
+          "groupLabel": "กรองใบแจ้งหนี้",
           "allExceptDrafts": "ทุกสถานะยกเว้นฉบับร่าง",
           "allShort": "ทั้งหมด",
           "chip": "{label}: {value}",

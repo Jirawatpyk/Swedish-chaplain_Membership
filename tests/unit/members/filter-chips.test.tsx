@@ -71,7 +71,7 @@ describe('active-filter chips', () => {
   it('clicking a chip × clears ONLY that filter, keeping the others', () => {
     renderFilters('status=active&plan_id=p1');
     fireEvent.click(
-      screen.getByRole('button', { name: /remove status: active/i }),
+      screen.getByRole('button', { name: /remove filter: status: active/i }),
     );
     expect(nav.replaceMock).toHaveBeenCalledTimes(1);
     const url = nav.replaceMock.mock.calls[0]?.[0] as string;
@@ -92,7 +92,7 @@ describe('active-filter chips', () => {
   it('removing the plan chip clears plan_year with plan_id', () => {
     renderFilters('status=active&plan_id=p1&plan_year=2026');
     fireEvent.click(
-      screen.getByRole('button', { name: /remove plan: premium corporate \(2026\)/i }),
+      screen.getByRole('button', { name: /remove filter: plan: premium corporate \(2026\)/i }),
     );
     const url = nav.replaceMock.mock.calls[0]?.[0] as string;
     expect(url).not.toContain('plan_id=');
@@ -109,7 +109,7 @@ describe('active-filter chips', () => {
 
   // 122 US5a (T503) — the bar is AURA FilterBar: the chips are AURA tags in
   // its chips row, the clear-all reads "Clear filters" (the board), and each
-  // chip's × is named "Remove <chip>".
+  // chip's × is named "Remove filter: <chip>".
   it('renders the filters as an AURA FilterBar with tag chips', () => {
     const { container } = renderFilters('status=active&risk_band=at-risk');
     const bar = container.querySelector('.aura-filterbar');
@@ -160,7 +160,7 @@ describe('clearing inside the search debounce', () => {
   it('removing the search chip drops the pending typed query', () => {
     renderFilters('q=acme');
     const typed = typedQueriesAfter(() =>
-      fireEvent.click(screen.getByRole('button', { name: /remove search: acme/i })),
+      fireEvent.click(screen.getByRole('button', { name: /remove filter: search: acme/i })),
     );
     expect(typed).toEqual([]);
   });
