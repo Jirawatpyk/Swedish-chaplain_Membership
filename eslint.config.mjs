@@ -384,6 +384,27 @@ export const MIGRATED_PATHS = [
   // US7c — the member's online renewal and its success page (page, loading,
   // error, the confirm flow, the downgrade dialog, the page view).
   'src/app/(member)/portal/renewal/\\[memberId\\]/**',
+  // US8a — the staff invoice list (page, loading, error, view, table, the
+  // auto-renewal queue actions and badges, record payment, CSV export) and
+  // the new-invoice page (switcher, membership and event-fee forms, buyer
+  // fields, attendee picker). The detail page's own dialogs and alerts move
+  // with US8b, so they are listed one by one rather than `_components/**`.
+  'src/app/(staff)/admin/invoices/page.tsx',
+  'src/app/(staff)/admin/invoices/loading.tsx',
+  'src/app/(staff)/admin/invoices/error.tsx',
+  'src/app/(staff)/admin/invoices/_lib/**',
+  'src/app/(staff)/admin/invoices/new/**',
+  'src/app/(staff)/admin/invoices/_components/invoices-list-view.tsx',
+  'src/app/(staff)/admin/invoices/_components/invoice-table.tsx',
+  'src/app/(staff)/admin/invoices/_components/auto-renewal-queue-actions.tsx',
+  'src/app/(staff)/admin/invoices/_components/auto-renewal-queue-badges.tsx',
+  'src/app/(staff)/admin/invoices/_components/queue-view.ts',
+  'src/app/(staff)/admin/invoices/_components/csv-export-dialog.tsx',
+  'src/app/(staff)/admin/invoices/_components/record-payment-dialog.tsx',
+  'src/app/(staff)/admin/invoices/_components/payment-form.tsx',
+  'src/app/(staff)/admin/invoices/_components/invoice-form.tsx',
+  'src/app/(staff)/admin/invoices/_components/*-error-routing.ts',
+  'src/components/invoices/invoice-status-tone.ts',
 ];
 
 /**
