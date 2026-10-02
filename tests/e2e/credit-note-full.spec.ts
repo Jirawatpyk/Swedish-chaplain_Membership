@@ -23,6 +23,34 @@
  */
 import { expect, fillField, test } from './fixtures';
 import { signInViaForm, waitForLayoutContainer } from './helpers/layout';
+import en from '../../src/i18n/messages/en.json';
+
+// The confirmation field's label, built from the message file rather than
+// hand-written. The copy is `Type "{phrase}" to confirm`, so the previous
+// /type CREDIT/i regex could not match across the quotes and stopped finding
+// the field when #230 reworded it — silently, since e2e has no CI job.
+const CREDIT_NOTE_COPY = en.admin.creditNotes.new;
+const CONFIRM_LABEL = CREDIT_NOTE_COPY.confirmCopy.replace(
+  '{phrase}',
+  CREDIT_NOTE_COPY.confirmPhrase,
+);
+
+/**
+ * Tick the 088 §F.3 online-payment acknowledgement when the form shows it.
+ * Conditional on purpose: the box renders only while online money is still
+ * refundable, so this stays correct whether the seeded invoice is paid by card
+ * or offline, instead of coupling the test to one seed state.
+ */
+async function acknowledgeOnlinePaidIfRequired(
+  page: import('@playwright/test').Page,
+): Promise<void> {
+  const ack = page.getByRole('checkbox', {
+    name: CREDIT_NOTE_COPY.onlinePayment.acknowledge,
+  });
+  if (await ack.isVisible().catch(() => false)) {
+    await ack.check();
+  }
+}
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
@@ -88,7 +116,7 @@ test.describe('@us6 credit-note full-credit flow', () => {
     ).toBeVisible();
     await expect(page.getByLabel(/reason|เหตุผล|orsak/i)).toBeVisible();
     // Typed-phrase confirm field — the label reads "Type CREDIT to confirm…"
-    await expect(page.getByLabel(/type CREDIT|พิมพ์ CREDIT|skriv CREDIT/i)).toBeVisible();
+    await expect(page.getByLabel(CONFIRM_LABEL)).toBeVisible();
   });
 
   test('AS0c — Submit stays disabled until CREDIT phrase is typed (FR-040 gate)', async ({
@@ -105,19 +133,27 @@ test.describe('@us6 credit-note full-credit flow', () => {
     // Fill amount + reason but NOT the confirm phrase.
     await fillField(page.getByLabel(/credit amount|จำนวนเงินลดหนี้|kreditbelopp/i), '100.00');
     await fillField(page.getByLabel(/reason|เหตุผล|orsak/i), 'E2E smoke test');
+    // 088 §F.3: an invoice paid online (card / PromptPay) also requires an
+    // explicit acknowledgement that a credit note refunds nothing — `canSubmit`
+    // is `(!requiresOnlineAck || onlineRefundAcknowledged) && …`
+    // (credit-note-form.tsx:157-161). The seeded invoice is paid by card, so
+    // without this the FR-040 phrase gate below can never be observed: Submit
+    // would stay disabled for the OTHER reason and the test would pass its
+    // `toBeDisabled` assertions for the wrong reason, then fail the last one.
+    await acknowledgeOnlinePaidIfRequired(page);
     const submit = page.getByRole('button', {
       name: /^(issue credit note|ออกใบลดหนี้|utfärda kreditnota)$/i,
     });
     await expect(submit).toBeDisabled();
 
     // Typing a partial phrase keeps it disabled.
-    await fillField(page.getByLabel(/type CREDIT|พิมพ์ CREDIT|skriv CREDIT/i), 'CRED');
+    await fillField(page.getByLabel(CONFIRM_LABEL), 'CRED');
     await expect(submit).toBeDisabled();
 
     // Typing the full phrase enables it (locale-case-insensitive so
     // 'credit' would match too, but we stick to CREDIT to match the
     // on-screen hint).
-    await fillField(page.getByLabel(/type CREDIT|พิมพ์ CREDIT|skriv CREDIT/i), 'CREDIT');
+    await fillField(page.getByLabel(CONFIRM_LABEL), 'CREDIT');
     await expect(submit).toBeEnabled();
   });
 
@@ -182,7 +218,7 @@ test.describe('@us6 credit-note full-credit flow', () => {
     // which is 1_070_000n satang per seed-f4-e2e-admin-fixtures.ts:151).
     await fillField(page.getByLabel(/credit amount|จำนวนเงินลดหนี้|kreditbelopp/i), '10700.00');
     await fillField(page.getByLabel(/reason|เหตุผล|orsak/i), 'E2E AS1 full credit');
-    await fillField(page.getByLabel(/type CREDIT|พิมพ์ CREDIT|skriv CREDIT/i), 'CREDIT');
+    await fillField(page.getByLabel(CONFIRM_LABEL), 'CREDIT');
 
     // Submit + wait for navigation back to the invoice detail page.
     const cnResponse = page.waitForResponse(

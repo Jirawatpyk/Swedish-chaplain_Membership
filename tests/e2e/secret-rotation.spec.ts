@@ -37,7 +37,7 @@ import { randomUUID } from 'node:crypto';
 import { expect, test } from './fixtures';
 import { signInAsAdmin } from './helpers/admin-session';
 import {
-  resetEventcreateState,
+  resetEventcreateWebhookState,
   seedKnownWebhookSecret,
   seedRotatedWebhookState,
   queryAuditEvent,
@@ -69,7 +69,7 @@ test.describe('F6 secret rotation — AS1 UI flow @workers=1', () => {
   );
 
   test.beforeEach(async ({ page }) => {
-    await resetEventcreateState(TENANT_SLUG);
+    await resetEventcreateWebhookState(TENANT_SLUG);
     await seedKnownWebhookSecret(TENANT_SLUG, F6_E2E_FIXTURE_SECRET);
     await signInAsAdmin(page);
   });
@@ -187,7 +187,7 @@ test.describe('F6 secret rotation — webhook receiver grace window @workers=1',
   }) => {
     // Seed: active=POST_ROTATION_ACTIVE, grace=F6_E2E_FIXTURE_SECRET,
     // grace_rotated_at = NOW - 12h.
-    await resetEventcreateState(TENANT_SLUG);
+    await resetEventcreateWebhookState(TENANT_SLUG);
     await seedRotatedWebhookState(TENANT_SLUG, {
       oldSecret: F6_E2E_FIXTURE_SECRET,
       newActiveSecret: POST_ROTATION_ACTIVE_SECRET,
@@ -241,7 +241,7 @@ test.describe('F6 secret rotation — webhook receiver grace window @workers=1',
     baseURL,
   }) => {
     // Seed grace_rotated_at = NOW - 25h (window expired).
-    await resetEventcreateState(TENANT_SLUG);
+    await resetEventcreateWebhookState(TENANT_SLUG);
     await seedRotatedWebhookState(TENANT_SLUG, {
       oldSecret: F6_E2E_FIXTURE_SECRET,
       newActiveSecret: POST_ROTATION_ACTIVE_SECRET,
@@ -334,7 +334,7 @@ test.describe('F6 secret rotation — webhook receiver grace window @workers=1',
     // 23.983h = 23h59m (close enough; sub-minute precision is at the
     // DB clock + cross-region RTT noise floor, so we don't chase
     // millisecond-exact boundary).
-    await resetEventcreateState(TENANT_SLUG);
+    await resetEventcreateWebhookState(TENANT_SLUG);
     await seedRotatedWebhookState(TENANT_SLUG, {
       oldSecret: F6_E2E_FIXTURE_SECRET,
       newActiveSecret: POST_ROTATION_ACTIVE_SECRET,
@@ -383,7 +383,7 @@ test.describe('F6 secret rotation — webhook receiver grace window @workers=1',
     // verifier's check is `graceAgeMs <= 24h * 60 * 60 * 1000` so
     // 24h + 1s (24.000278h) lies on the EXCLUSIVE side and must
     // reject. Mirrors verifier S2b at the E2E layer.
-    await resetEventcreateState(TENANT_SLUG);
+    await resetEventcreateWebhookState(TENANT_SLUG);
     await seedRotatedWebhookState(TENANT_SLUG, {
       oldSecret: F6_E2E_FIXTURE_SECRET,
       newActiveSecret: POST_ROTATION_ACTIVE_SECRET,

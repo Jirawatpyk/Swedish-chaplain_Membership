@@ -15,6 +15,16 @@
  */
 import { expect, fillField, test } from './fixtures';
 import { signInViaForm, waitForLayoutContainer } from './helpers/layout';
+import en from '../../src/i18n/messages/en.json';
+
+// Built from the message file, not hand-written — see the note in
+// credit-note-full.spec.ts: the label is `Type "{phrase}" to confirm`, which a
+// /type CREDIT/i regex cannot match across the quotes.
+const CREDIT_NOTE_COPY = en.admin.creditNotes.new;
+const CONFIRM_LABEL = CREDIT_NOTE_COPY.confirmCopy.replace(
+  '{phrase}',
+  CREDIT_NOTE_COPY.confirmPhrase,
+);
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
@@ -85,7 +95,7 @@ test.describe('@us6 credit-note partial-credit flow', () => {
       '999999',
     );
     await fillField(page.getByLabel(/reason|เหตุผล|orsak/i), 'E2E over-remainder smoke');
-    await fillField(page.getByLabel(/type CREDIT|พิมพ์ CREDIT|skriv CREDIT/i), 'CREDIT');
+    await fillField(page.getByLabel(CONFIRM_LABEL), 'CREDIT');
 
     const alert = page.getByText(
       /exceeds remainder|จำนวนเกินยอดคงเหลือ|överstiger återstoden/i,
@@ -154,7 +164,7 @@ test.describe('@us6 credit-note partial-credit flow', () => {
       // match the seeder's deterministic amount.
       await fillField(page.getByLabel(/credit amount|จำนวนเงินลดหนี้|kreditbelopp/i), '642.00');
       await fillField(page.getByLabel(/reason|เหตุผล|orsak/i), 'E2E AS2 partial 60%');
-      await fillField(page.getByLabel(/type CREDIT|พิมพ์ CREDIT|skriv CREDIT/i), 'CREDIT');
+      await fillField(page.getByLabel(CONFIRM_LABEL), 'CREDIT');
 
       const cnResponse = page.waitForResponse(
         (r) =>

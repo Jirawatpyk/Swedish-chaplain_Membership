@@ -8,7 +8,7 @@
  * describe blocks so each test starts from a known state:
  *
  *   1. `F6 wizard — fresh tenant (AS1)` — `beforeEach` wipes the F6
- *      surface via `resetEventcreateState` so the wizard renders Phase
+ *      surface via `resetEventcreateWebhookState` so the wizard renders Phase
  *      A "Generate webhook secret". Covers fresh-tenant flow tests.
  *
  *   2. `F6 wizard — configured tenant (AS2 / AS3 / FR-008)` —
@@ -31,7 +31,7 @@
 import { expect, test } from './fixtures';
 import { signInAsAdmin } from './helpers/admin-session';
 import {
-  resetEventcreateState,
+  resetEventcreateWebhookState,
   seedKnownWebhookSecret,
   F6_E2E_FIXTURE_SECRET,
 } from './helpers/eventcreate-seed';
@@ -56,7 +56,7 @@ test.describe('F6 wizard — fresh tenant (AS1) @workers=1', () => {
   );
 
   test.beforeEach(async ({ page }) => {
-    await resetEventcreateState(TENANT_SLUG);
+    await resetEventcreateWebhookState(TENANT_SLUG);
     await signInAsAdmin(page);
   });
 
@@ -153,7 +153,7 @@ test.describe('F6 wizard — configured tenant (AS2 / AS3 / FR-008) @workers=1',
   );
 
   test.beforeEach(async ({ page }) => {
-    await resetEventcreateState(TENANT_SLUG);
+    await resetEventcreateWebhookState(TENANT_SLUG);
     await seedKnownWebhookSecret(TENANT_SLUG);
     await signInAsAdmin(page);
   });

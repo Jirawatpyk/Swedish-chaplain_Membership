@@ -10,6 +10,10 @@ import { randomUUID } from 'node:crypto';
 import { expect, test } from './fixtures';
 import { fillField } from './fixtures';
 import { db, runInTenant } from '@/lib/db';
+// Bangkok "today", not UTC — see the note in invoice-pay.spec.ts: the server
+// guard clamps `paymentDate` to [issue_date, Bangkok today], so a UTC date is
+// a day behind for the first 7 hours of every Bangkok day.
+import { bangkokTodayIso } from '@/lib/bangkok-today';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { invoiceLines } from '@/modules/invoicing/infrastructure/db/schema-invoice-lines';
 import { auditLog, users } from '@/modules/auth/infrastructure/db/schema';
@@ -235,7 +239,7 @@ test.describe('@us5 void-invoice', () => {
             },
             data: {
               paymentMethod: 'bank_transfer',
-              paymentDate: new Date().toISOString().slice(0, 10),
+              paymentDate: bangkokTodayIso(),
               paymentReference: 'E2E-PAY',
               paymentNotes: 'E2E test payment',
             },
@@ -326,7 +330,7 @@ test.describe('@us5 void-invoice', () => {
             },
             data: {
               paymentMethod: 'bank_transfer',
-              paymentDate: new Date().toISOString().slice(0, 10),
+              paymentDate: bangkokTodayIso(),
               paymentReference: 'should-fail',
             },
           },

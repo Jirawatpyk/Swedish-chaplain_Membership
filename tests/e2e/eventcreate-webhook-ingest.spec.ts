@@ -58,7 +58,14 @@ const TENANT_SLUG =
   process.env['E2E_F6_TENANT_SLUG'] ??
   process.env['TENANT_SLUG'] ??
   'swecham';
-const BASE_URL = process.env['PLAYWRIGHT_BASE_URL'] ?? 'http://localhost:3100';
+// The webhook path is RELATIVE so Playwright resolves it against the config's
+// `baseURL`. It used to read `PLAYWRIGHT_BASE_URL`, which nothing in this repo
+// ever sets — playwright.config.ts reads `E2E_BASE_URL` — so the default
+// `http://localhost:3100` won every run and the spec ignored the configured
+// server entirely. Safe to make relative: the HMAC covers only
+// `${ts}.${rawBody}` (see signBody below), never the origin or the URL, and
+// the tenant travels as a path segment.
+const WEBHOOK_PATH = `/api/webhooks/eventcreate/v1/${TENANT_SLUG}`;
 
 function signBody(body: unknown, secret: string, timestampSeconds?: number) {
   const rawBody = JSON.stringify(body);
@@ -129,7 +136,7 @@ test.describe('F6 webhook ingest — US1 AS1-AS5 @workers=1', () => {
     const payload = makePayload();
     const signed = signBody(payload, TEST_SECRET);
     const res = await request.post(
-      `${BASE_URL}/api/webhooks/eventcreate/v1/${TENANT_SLUG}`,
+      WEBHOOK_PATH,
       {
         data: signed.rawBody,
         headers: {
@@ -176,7 +183,7 @@ test.describe('F6 webhook ingest — US1 AS1-AS5 @workers=1', () => {
       },
     });
     const signed = signBody(payload, TEST_SECRET);
-    const res = await request.post(`${BASE_URL}/api/webhooks/eventcreate/v1/${TENANT_SLUG}`, {
+    const res = await request.post(WEBHOOK_PATH, {
       data: signed.rawBody,
       headers: {
         'Content-Type': 'application/json',
@@ -201,12 +208,12 @@ test.describe('F6 webhook ingest — US1 AS1-AS5 @workers=1', () => {
       'X-Chamber-Timestamp': signed.timestamp,
       'X-Request-ID': requestId,
     };
-    const first = await request.post(`${BASE_URL}/api/webhooks/eventcreate/v1/${TENANT_SLUG}`, {
+    const first = await request.post(WEBHOOK_PATH, {
       data: signed.rawBody,
       headers,
     });
     expect(first.status()).toBe(200);
-    const second = await request.post(`${BASE_URL}/api/webhooks/eventcreate/v1/${TENANT_SLUG}`, {
+    const second = await request.post(WEBHOOK_PATH, {
       data: signed.rawBody,
       headers,
     });
@@ -215,7 +222,7 @@ test.describe('F6 webhook ingest — US1 AS1-AS5 @workers=1', () => {
 
   test('AS4 — bad signature → 401 generic body (no oracle)', async ({ request }) => {
     const payload = makePayload();
-    const res = await request.post(`${BASE_URL}/api/webhooks/eventcreate/v1/${TENANT_SLUG}`, {
+    const res = await request.post(WEBHOOK_PATH, {
       data: JSON.stringify(payload),
       headers: {
         'Content-Type': 'application/json',
@@ -233,7 +240,7 @@ test.describe('F6 webhook ingest — US1 AS1-AS5 @workers=1', () => {
     const payload = makePayload();
     const sixMinAgo = Math.floor(Date.now() / 1000) - 360;
     const signed = signBody(payload, TEST_SECRET, sixMinAgo);
-    const res = await request.post(`${BASE_URL}/api/webhooks/eventcreate/v1/${TENANT_SLUG}`, {
+    const res = await request.post(WEBHOOK_PATH, {
       data: signed.rawBody,
       headers: {
         'Content-Type': 'application/json',
