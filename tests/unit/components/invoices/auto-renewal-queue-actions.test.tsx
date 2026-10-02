@@ -6,13 +6,10 @@
  * Pattern: real `NextIntlClientProvider` + real `en.json` (so assertions
  * read the SHIPPED copy, never a hand-rolled stand-in that could drift),
  * mock `fetch` + `sonner` + `next/navigation` — mirrors
- * `cancel-broadcast-dialog.test.tsx`. `@/components/ui/dropdown-menu` is
- * mocked to plain-HTML stand-ins (Base UI Menu only renders its Popup while
- * open + models portal/pointer positioning jsdom does not support) — same
- * pattern as `invoice-more-menu.test.tsx`, the sibling component in this
- * exact table. `@/components/shell/confirmation-dialog` (the AlertDialog
- * wrapper) is DELIBERATELY left real — `confirmation-dialog.test.tsx`
- * already proves it renders + interacts correctly in jsdom.
+ * `cancel-broadcast-dialog.test.tsx`. Spec 122 US8 (T803): the menu is AURA's
+ * real `DropdownMenu` (it renders in jsdom), so the items are found by role
+ * and name; `@/components/shell/confirmation-dialog` (AURA's alertdialog) is
+ * real too.
  *
  * Real timers required (global setup enables fake timers, which hang
  * `waitFor`) — mirrors every other fetch-driven dialog test in this repo.
@@ -33,67 +30,12 @@ import en from '@/i18n/messages/en.json';
 import th from '@/i18n/messages/th.json';
 import { toast } from '@/lib/toast';
 
-// Simulate Base UI's React-19 contract: the Menu.Trigger passes its OWN ref
-// inside the render callback's `props`. The component MUST forward it (merge,
-// not override) or the popup can't anchor and the menu never opens — the exact
-// bug this file now guards against.
-const { baseUiTriggerRef } = vi.hoisted(() => ({ baseUiTriggerRef: vi.fn() }));
-
 vi.mock('@/lib/toast', () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), loading: vi.fn(), dismiss: vi.fn() },
 }));
 
 const refreshSpy = vi.fn();
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: refreshSpy }) }));
-
-// Base UI Menu renders its Popup only while open + models portal/pointer
-// positioning jsdom does not support — mocked to plain-HTML stand-ins.
-// Mirrors `invoice-more-menu.test.tsx` (the sibling table's own "more
-// actions" menu) verbatim.
-vi.mock('@/components/ui/dropdown-menu', () => {
-  function DropdownMenu({ children }: { children?: React.ReactNode }) {
-    return <div data-testid="menu-root">{children}</div>;
-  }
-  function DropdownMenuTrigger({
-    render: renderProp,
-  }: {
-    render?: (props: Record<string, unknown>) => React.ReactNode;
-  }) {
-    // Pass Base UI's own ref through `props` (React-19 shape) so the test can
-    // assert the component forwards it to the real <button>.
-    return <>{renderProp ? renderProp({ ref: baseUiTriggerRef }) : null}</>;
-  }
-  function DropdownMenuContent({ children }: { children?: React.ReactNode }) {
-    return <div role="menu">{children}</div>;
-  }
-  function DropdownMenuItem({
-    children,
-    onClick,
-    variant,
-    ...rest
-  }: {
-    children?: React.ReactNode;
-    onClick?: () => void;
-    variant?: string;
-    'data-testid'?: string;
-  }) {
-    return (
-      <button type="button" role="menuitem" onClick={onClick} data-variant={variant} {...rest}>
-        {children}
-      </button>
-    );
-  }
-  function DropdownMenuSeparator() {
-    return <hr />;
-  }
-  return {
-    DropdownMenu,
-    DropdownMenuTrigger,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuSeparator,
-  };
-});
 
 const { AutoRenewalQueueActions } = await import(
   '@/app/(staff)/admin/invoices/_components/auto-renewal-queue-actions'
@@ -117,9 +59,20 @@ function renderActions(
   );
 }
 
-function openMenuAndClick(itemTestId: string) {
+const ITEM_NAME: Record<string, string> = {
+  'queue-row-issue-send': t.issueAndSend,
+  'queue-row-issue-silent': t.issueSilently,
+  'queue-row-discard': t.discard,
+};
+
+function openMenu() {
   fireEvent.click(screen.getByTestId('queue-row-actions-trigger'));
-  fireEvent.click(screen.getByTestId(itemTestId));
+  return screen.getByRole('menu');
+}
+
+function openMenuAndClick(item: keyof typeof ITEM_NAME) {
+  const menu = openMenu();
+  fireEvent.click(within(menu).getByRole('menuitem', { name: ITEM_NAME[item] }));
 }
 
 beforeEach(() => {
@@ -130,7 +83,6 @@ beforeEach(() => {
   refreshSpy.mockReset();
   (toast.success as ReturnType<typeof vi.fn>).mockClear();
   (toast.warning as ReturnType<typeof vi.fn>).mockClear();
-  baseUiTriggerRef.mockClear();
 });
 
 afterEach(() => {
@@ -150,44 +102,33 @@ describe('<AutoRenewalQueueActions> — visibility gate', () => {
     expect(screen.getByTestId('queue-row-actions-trigger')).toBeInTheDocument();
   });
 
-  it("forwards Base UI's own trigger ref to the <button> (menu-anchor regression)", () => {
-    // The bug: `render={(props) => <Button {...props} ref={triggerRef} />}`
-    // dropped Base UI's ref (only the rightmost ref survives), so the popup's
-    // Positioner lost its anchor and the menu never opened. mergeRefs must
-    // forward Base UI's ref too — assert it reached the real button element.
+  it('the trigger is named for the member', () => {
     renderActions();
-    expect(baseUiTriggerRef).toHaveBeenCalled();
-    const el = baseUiTriggerRef.mock.calls.at(-1)?.[0] as HTMLElement | null;
-    expect(el).toBeInstanceOf(HTMLElement);
-    expect(el?.getAttribute('data-testid')).toBe('queue-row-actions-trigger');
+    expect(screen.getByTestId('queue-row-actions-trigger')).toHaveAccessibleName(
+      t.menuAria.replace('{member}', 'Acme Co Ltd'),
+    );
   });
 
-  it('the menu lists all three actions, each with an icon (mirrors invoice-more-menu.tsx)', () => {
+  it('the menu lists all three actions, each with an icon; Discard is the danger item', () => {
     renderActions();
-    fireEvent.click(screen.getByTestId('queue-row-actions-trigger'));
-    const send = screen.getByTestId('queue-row-issue-send');
-    const silent = screen.getByTestId('queue-row-issue-silent');
-    const discardItem = screen.getByTestId('queue-row-discard');
-    expect(send).toHaveTextContent(t.issueAndSend);
-    expect(silent).toHaveTextContent(t.issueSilently);
-    expect(discardItem).toHaveTextContent(t.discard);
-    expect(discardItem).toHaveAttribute('data-variant', 'destructive');
-    // Review round 1 SHOULD-FIX — every item carries an icon (previously
-    // icon-less, breaking this page's own `invoice-more-menu.tsx` convention).
-    expect(send.querySelector('svg')).toBeInTheDocument();
-    expect(silent.querySelector('svg')).toBeInTheDocument();
-    expect(discardItem.querySelector('svg')).toBeInTheDocument();
+    const menu = openMenu();
+    const silent = within(menu).getByRole('menuitem', { name: t.issueSilently });
+    const send = within(menu).getByRole('menuitem', { name: t.issueAndSend });
+    const discardItem = within(menu).getByRole('menuitem', { name: t.discard });
+    expect(discardItem).toHaveClass('aura-menu__item--danger');
+    expect(send).not.toHaveClass('aura-menu__item--danger');
+    // Review round 1 SHOULD-FIX — every item carries an icon.
+    for (const item of [silent, send, discardItem]) {
+      expect(item.querySelector('svg')).toBeInTheDocument();
+    }
   });
 
   it('reorders "Issue silently" BEFORE "Issue and email" (review round 1 SHOULD-FIX — visual weight now matches real risk: email is the higher-impact, externally-visible action)', () => {
     renderActions();
-    fireEvent.click(screen.getByTestId('queue-row-actions-trigger'));
-    const items = screen.getAllByRole('menuitem');
-    const silentIndex = items.indexOf(screen.getByTestId('queue-row-issue-silent'));
-    const sendIndex = items.indexOf(screen.getByTestId('queue-row-issue-send'));
-    const discardIndex = items.indexOf(screen.getByTestId('queue-row-discard'));
-    expect(silentIndex).toBeLessThan(sendIndex);
-    expect(sendIndex).toBeLessThan(discardIndex);
+    const names = within(openMenu())
+      .getAllByRole('menuitem')
+      .map((item) => item.textContent);
+    expect(names).toEqual([t.issueSilently, t.issueAndSend, t.discard]);
   });
 });
 
@@ -402,7 +343,7 @@ describe('<AutoRenewalQueueActions> — Issue + Send / Issue silently', () => {
         <AutoRenewalQueueActions invoiceId="inv-draft-1" memberName="Acme Co Ltd" status="draft" />
       </NextIntlClientProvider>,
     );
-    openMenuAndClick('queue-row-issue-silent');
+    fireEvent.click(within(openMenu()).getByRole('menuitem', { name: thT.issueSilently }));
     fireEvent.click(screen.getByRole('button', { name: thT.issueSilently }));
 
     await waitFor(() => expect(toast.warning).toHaveBeenCalled());
