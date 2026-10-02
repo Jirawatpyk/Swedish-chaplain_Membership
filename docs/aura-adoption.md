@@ -98,7 +98,8 @@ A server component that needs a static AURA component imports it from **`@jirawa
   - Invoices, shared with the portal list: plain `Select` becomes `FilterSelect`.
   - Change requests: Status becomes a `FilterSelect` and the two dates one range. The Apply button goes, and the URL parameters stay the same, including the inclusive end date.
   - Plans: search, Category and Year become `FilterSelect`s, and "Active only" and "Show deleted" become toggle chips.
-- **When:** its own PR, after AURA ships #127, with a mock reviewed first.
+- **Dates need AURA #128**, a compact date-range filter. The mock showed that composing one from `Popover` + `DateRangePicker` takes three clicks to reach the calendar and borrows an internal class.
+- **When:** its own PR, after AURA ships #127 and #128. The mock was reviewed on 2 Oct.
 
 **Type scale.** Text sizes on AURA surfaces use AURA's type classes (`aura-text-label` 13/500, `aura-text-table-cell` 13/400, `aura-text-caption` 12, `aura-text-mono` 12 mono, `aura-text-pill-label` 11, `aura-text-h2` 24), not `text-[Npx]`. They load in the `aura-tokens` layer, below Tailwind's preflight, so on a `<button>`, `<kbd>` or heading (where preflight resets the font) the class goes on the inner text span; Tailwind `font-*` / `leading-*` utilities still win over it. Page titles keep the app's shared `--font-size-h1` step.
 
@@ -144,12 +145,13 @@ The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requ
 | 123 | 5.24.0: `touchHeight` applies under `(max-width: 639.98px), (pointer: coarse)`, so a tablet or other touch-first screen wider than 640px gets 44px targets too; a mouse at 640px and up keeps today's sizes | Nothing to change in the screens: every touch control already passes `touchHeight`. `renewal-a11y` asks the page which rule applies and adds a 1024px touch-context test |
 | 124 | 5.25.0: a toggle `Tag` (`selected` + `onClick`) takes `touchHeight`, 44px under the same rule as #123; a plain or removable Tag ignores it | The escalation queue's six Status and Assignment chips (`PressedGroup`) pass `touchHeight` |
 
-Two items are open (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.test.ts` reads this table; a new gap goes here as `| #N | … |`):
+Three items are open (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.test.ts` reads this table; a new gap goes here as `| #N | … |`):
 
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
 | #125 | Addendum 28 (US8a): a `RadioGroup` option's `description` sits inside its `<label>`, so it is read as part of the radio's name instead of as its description | None needed in markup: the new-invoice type switcher and the event-fee issuance mode keep `description`; their tests match the name with a start-anchored regex until AURA ships, then tighten to the exact name plus `toHaveAccessibleDescription` |
 | #127 | Addendum 30 (US8a): a table inside a padded `Card` keeps its own border and radius and cannot run edge to edge, so a list page shows a frame in a frame on desktop. Ask: `bleed` on `DataTable` / `Table` (no side borders or radius, pulled out by the card's padding, header band and rules kept, off below the card's `flushBelow`), plus `DataTable bordered={false}` | None (maintainer, 2 Oct: wait for AURA). The seven list-card pages (members, invoices, change requests, plans, renewal pipeline, escalation tasks, tier upgrades) and their skeletons take `bleed` in the PR that bumps the pin |
+| #128 | Addendum 31 (filter pattern): no compact date-range filter for `FilterBar`. `DateRangePicker` is a labelled form field, so a date filter cannot sit in the "Status All" row. Ask: a `FilterDateRange` (or `DateRangePicker variant="filter"`) with a `FilterSelect`-style face that opens the range calendar in one click, optional presets, the same date handling, and a name of both parts | None: the filter PR (§ Filters) waits for #127 and #128. The change-request queue keeps its two `DatePicker`s and Apply until then |
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 
