@@ -17,7 +17,10 @@
  * failure without a page change (ux-standards § 7.3).
  *
  * 122 US5a (T503) — AURA `EmptyState` (boards `Admin-state-members-empty`,
- * `-filtered`, `-error`); the live-region role sits on a wrapper.
+ * `-filtered`, `-error`); the live-region role sits on a wrapper. The
+ * filtered and all-invited states sit in the list card (US8a list card
+ * rule), so they draw no frame of their own; the error keeps its danger
+ * frame, and the zero state stands alone with its border.
  */
 
 import type { ReactNode } from 'react';
@@ -75,7 +78,6 @@ export function MembersFilteredEmptyState() {
   return (
     <div role="status">
       <EmptyState
-        bordered
         headingLevel={2}
         icon={<SearchXIcon aria-hidden="true" />}
         title={t('title')}
@@ -98,7 +100,6 @@ export function MembersAllInvitedEmptyState() {
   return (
     <div role="status">
       <EmptyState
-        bordered
         headingLevel={2}
         icon={<MailCheckIcon aria-hidden="true" />}
         title={t('title')}

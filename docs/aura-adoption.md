@@ -79,7 +79,7 @@ A server component that needs a static AURA component imports it from **`@jirawa
 **List card (US8a, 2 Oct 2026).** The boards disagree on whether a list sits in a card: of the 14 admin list boards, 10 frame the filters and the table in one card; Members and Invoices do not, Credit notes does not, and Change requests does on some boards and not others. The rule:
 - **A page whose main content is a list** puts its filters, result count, table (or empty state, or load error) and paging in one AURA `Card` with `flushBelow="sm"` and `max-sm:border-0 max-sm:p-0`. Below 640px the card drops its frame and padding, so the phone rows, which are cards of their own, sit on the page gutter.
 - **A list that is one section of a page** (such as the invoices on a member's page) keeps that section's card; it gets no second one.
-- **Inside the card** an empty state has no border of its own (`bordered={false}` on the shell `EmptyState`), so there is never a frame in a frame.
+- **Inside the card** an empty state has no border of its own (`bordered={false}` on the shell `EmptyState`, no `bordered` on AURA's), so there is never a frame in a frame. A load error keeps its danger frame: the red border is how it reads as an alert (board `Admin-state-members-error`).
 - **The route's `loading.tsx`** draws the same card, for CLS 0.
 - **Where it applies today:** Plans, the renewals pipeline, Invoices, Members and Change requests. Lists still on the legacy kit take it in their own phase.
 
