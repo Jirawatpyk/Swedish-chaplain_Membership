@@ -254,7 +254,10 @@ export async function POST(
             status: 409,
             code: 'invoice_already_exists',
             correlationId,
-            details: { invoice_id: result.error.invoiceId },
+            // The status lets the portal tell the truth: a 107 auto-draft
+            // awaiting staff review is not yet payable (and hidden from the
+            // portal), and a paid bill needs no payment.
+            details: { invoice_id: result.error.invoiceId, invoice_status: result.error.invoiceStatus },
           });
         case 'downgrade_not_acknowledged':
           // WP4 — 409: the member must confirm the lower-priced switch. Echo

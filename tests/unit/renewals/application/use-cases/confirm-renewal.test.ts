@@ -1006,6 +1006,29 @@ describe('confirmRenewal (WP4) — downgrade acknowledgement gate', () => {
   });
 });
 
+describe('confirmRenewal (107 Task 9) — a bill already covers the period', () => {
+  it.each(['draft', 'issued', 'paid'] as const)(
+    'refuses with invoice_already_exists naming the bill AND its status (%s), and issues nothing',
+    async (status) => {
+      const cycle = buildCycle();
+      const { deps, linkAndReconcileMock } = fakeDeps({ cycle });
+      (deps.cyclesRepo.listMembershipCoverageForMemberInTx as ReturnType<typeof vi.fn>).mockResolvedValue([
+        {
+          invoiceId: 'inv-live-1',
+          status,
+          coverage: { from: '2000-01-01T00:00:00.000Z', to: '2100-01-01T00:00:00.000Z' },
+        },
+      ]);
+      const r = await confirmRenewal(deps, baseInput);
+      expect(r).toEqual({
+        ok: false,
+        error: { kind: 'invoice_already_exists', invoiceId: 'inv-live-1', invoiceStatus: status },
+      });
+      expect(linkAndReconcileMock).not.toHaveBeenCalled();
+    },
+  );
+});
+
 describe('confirmRenewal (T122) — F4 invoice creation failures', () => {
   it('create_failed → invoice_creation_failed stage=create', async () => {
     const cycle = buildCycle();

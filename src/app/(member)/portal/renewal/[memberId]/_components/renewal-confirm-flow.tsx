@@ -29,7 +29,8 @@ import {
   classifyPlanPriceChange,
   requiresDowngradeAck,
 } from '@/modules/renewals/client';
-import { Alert, Button, Select } from '@jirawatpyk/aura-react';
+import Link from 'next/link';
+import { Alert, Button, Select, buttonClass } from '@jirawatpyk/aura-react';
 import { groupPlanOptions } from '../_lib/group-plan-options';
 import { formatThbMinorUnits } from '../_lib/format-thb';
 import { PriceDiffPanel } from './price-diff-panel';
@@ -45,6 +46,7 @@ import { isReadOnlyRefusal } from '@/lib/http/read-only-refusal';
  *   feature_disabled, invalid_body, invalid_input, cycle_not_found,
  *   cycle_not_payable, plan_not_found, plan_inactive, invoice_creation_failed,
  *   downgrade_not_acknowledged, rate_limited, server_error
+ *   (`invoice_already_exists` is not an error: it renders its own note below)
  *   (+ client-side: network_error, missing_pay_url, http_<status>)
  */
 const ERROR_CODE_TO_I18N_KEY: Readonly<Record<string, string>> = {
@@ -133,6 +135,18 @@ export function RenewalConfirmFlow({
   const [selectedPlanId, setSelectedPlanId] = useState(currentPlanId);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  // 409 invoice_already_exists (107-auto-invoice Task 9): a bill for this
+  // renewal was already issued, typically by a treasurer from the review
+  // queue. The member should pay THAT bill, so the note links to it (the
+  // invoice list when the server names none) instead of the generic error.
+  // No automatic redirect: the member chooses (maintainer, 1 Oct).
+  // The bill's status picks the copy: a `draft` is still being prepared (the
+  // portal hides drafts, so no link), a `paid` bill needs no payment, and
+  // anything else is there to pay.
+  const [existingInvoice, setExistingInvoice] = useState<{
+    readonly href: string;
+    readonly state: 'draft' | 'paid' | 'payable';
+  } | null>(null);
   const [downgradeDialogOpen, setDowngradeDialogOpen] = useState(false);
   const errorRef = useRef<HTMLDivElement>(null);
 
@@ -158,6 +172,7 @@ export function RenewalConfirmFlow({
   const submitConfirm = (acknowledge: boolean) => {
     setDowngradeDialogOpen(false);
     setError(null);
+    setExistingInvoice(null);
     startTransition(async () => {
       try {
         const body: {
@@ -181,7 +196,7 @@ export function RenewalConfirmFlow({
         );
         if (!r.ok) {
           const payload = (await r.json().catch(() => ({}))) as {
-            error?: { code?: string };
+            error?: { code?: string; invoice_id?: unknown; invoice_status?: unknown };
           };
           const code = isReadOnlyRefusal(r.status, payload)
             ? 'read_only_mode'
@@ -193,6 +208,18 @@ export function RenewalConfirmFlow({
             status: r.status,
             path: window.location.pathname,
           });
+          if (code === 'invoice_already_exists') {
+            const invoiceId = payload.error?.invoice_id;
+            const invoiceStatus = payload.error?.invoice_status;
+            setExistingInvoice({
+              href:
+                typeof invoiceId === 'string' && invoiceId.length > 0
+                  ? `/portal/invoices/${encodeURIComponent(invoiceId)}`
+                  : '/portal/invoices',
+              state:
+                invoiceStatus === 'draft' ? 'draft' : invoiceStatus === 'paid' ? 'paid' : 'payable',
+            });
+          }
           setError(code);
           return;
         }
@@ -350,11 +377,46 @@ export function RenewalConfirmFlow({
         <p className="text-xs text-[var(--aura-fg-secondary)]">{t('nextStep')}</p>
       </div>
 
-      {error && (
+      {error && existingInvoice ? (
+        <Alert
+          ref={errorRef}
+          tone="info"
+          role="alert"
+          tabIndex={-1}
+          title={t(
+            existingInvoice.state === 'draft'
+              ? 'existingInvoiceDraftTitle'
+              : existingInvoice.state === 'paid'
+                ? 'existingInvoicePaidTitle'
+                : 'existingInvoiceTitle',
+          )}
+          data-testid="confirm-existing-invoice"
+        >
+          <div className="flex flex-col items-start gap-[var(--aura-space-3)]">
+            <p>
+              {t(
+                existingInvoice.state === 'draft'
+                  ? 'existingInvoiceDraftBody'
+                  : existingInvoice.state === 'paid'
+                    ? 'existingInvoicePaidBody'
+                    : 'existingInvoiceBody',
+              )}
+            </p>
+            {existingInvoice.state !== 'draft' && (
+              <Link
+                href={existingInvoice.href}
+                className={buttonClass({ variant: 'primary', touchHeight: true })}
+              >
+                {t('existingInvoiceCta')}
+              </Link>
+            )}
+          </div>
+        </Alert>
+      ) : error ? (
         <Alert ref={errorRef} tone="danger" role="alert" tabIndex={-1} data-testid="confirm-error">
           {t(ERROR_CODE_TO_I18N_KEY[error] ?? 'errorGeneric')}
         </Alert>
-      )}
+      ) : null}
 
       <DowngradeConfirmDialog
         open={downgradeDialogOpen}
