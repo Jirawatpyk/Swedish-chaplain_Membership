@@ -23,9 +23,11 @@ import { PlansTable } from '@/components/plans/plans-table';
 import type { Role } from '@/modules/auth/domain/role';
 import type { PlanListItem } from '@/modules/plans';
 
+const nav = vi.hoisted(() => ({ replace: vi.fn(), search: { current: new URLSearchParams() } }));
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
-  useSearchParams: () => new URLSearchParams(),
+  useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), replace: nav.replace }),
+  usePathname: () => '/admin/plans',
+  useSearchParams: () => nav.search.current,
 }));
 
 function renderTable(
@@ -70,7 +72,11 @@ function planRow(planId: string, isActive: boolean): PlanListItem {
   } as PlanListItem;
 }
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  nav.replace.mockClear();
+  nav.search.current = new URLSearchParams();
+});
 
 describe('PlansTable mutation affordances follow plans.write', () => {
   it.each(['admin', 'super_admin'] as const)('%s sees the CTAs', (role) => {
@@ -133,14 +139,51 @@ describe('PlansTable on AURA (board Admin-plans)', () => {
     );
   }
 
-  it('puts the filters in one named group of AURA fields, with the same ids', () => {
+  // The filter pattern (docs/aura-adoption.md § Filters, layout review 2 Oct):
+  // AURA's FilterBar — search, then Year, then Category, then toggle chips.
+  it('puts the filters in an AURA FilterBar: search, Year, Category, then the toggle chips', () => {
     renderRows();
-    const group = screen.getByRole('group', { name: en.admin.plans.filters.groupLabel });
-    expect(within(group).getByRole('searchbox', { name: en.admin.plans.filters.search.label })).toHaveAttribute('id', 'plans-search');
-    expect(within(group).getByRole('combobox', { name: en.admin.plans.filters.category.label })).toHaveAttribute('id', 'plans-category');
-    expect(within(group).getByRole('combobox', { name: en.admin.plans.filters.year })).toHaveAttribute('id', 'plans-year');
-    expect(within(group).getByRole('switch', { name: en.admin.plans.filters.activeOnly })).toHaveAttribute('id', 'plans-active-only');
-    expect(within(group).getByRole('switch', { name: SHOW_DELETED })).toHaveAttribute('id', 'plans-show-deleted');
+    const bar = screen.getByRole('region', { name: en.admin.plans.filters.groupLabel });
+    expect(within(bar).getByRole('searchbox', { name: en.admin.plans.filters.search.label })).toBeInTheDocument();
+    const year = within(bar).getByRole('combobox', { name: en.admin.plans.filters.year });
+    const category = within(bar).getByRole('combobox', { name: en.admin.plans.filters.category.label });
+    expect(year.compareDocumentPosition(category) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    for (const name of [en.admin.plans.filters.activeOnly, SHOW_DELETED]) {
+      const chip = within(bar).getByRole('button', { name });
+      expect(chip).toHaveAttribute('aria-pressed', 'false');
+      expect(chip).toHaveClass('aura-tag--touch');
+    }
+    expect(within(bar).queryByRole('switch')).toBeNull();
+  });
+
+  it('shows the result count at the end of the filter row', () => {
+    const { container } = renderRows();
+    expect(container.querySelector('.aura-filterbar__count')).toHaveTextContent('3 results');
+  });
+
+  it('filters as you pick: a toggle chip writes the URL at once, in place', () => {
+    renderRows();
+    fireEvent.click(screen.getByRole('button', { name: en.admin.plans.filters.activeOnly }));
+    expect(nav.replace).toHaveBeenCalledWith('/admin/plans?activeOnly=true', { scroll: false });
+  });
+
+  it('shows an applied category as a chip, with Clear all', () => {
+    nav.search.current = new URLSearchParams('category=corporate');
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <PlansTable
+          plans={plans}
+          currencyCode="THB"
+          year={2026}
+          currentUserRole="admin"
+          initialFilter={{ category: 'corporate', q: null, activeOnly: false, showDeleted: false }}
+        />
+      </NextIntlClientProvider>,
+    );
+    const bar = screen.getByRole('region', { name: en.admin.plans.filters.groupLabel });
+    expect(within(bar).getByText('Category: Corporate')).toBeInTheDocument();
+    fireEvent.click(within(bar).getByRole('button', { name: /clear all/i }));
+    expect(nav.replace).toHaveBeenCalledWith('/admin/plans', { scroll: false });
   });
 
   it('lists the plans in an AURA table, partnership first, with badges, pills and a right-aligned fee', () => {
@@ -194,9 +237,9 @@ describe('PlansTable on AURA (board Admin-plans)', () => {
     expect(container.querySelector('.aura-tbl-wrap')).toHaveClass('is-sticky-page');
   });
 
-  it('ends with the count and the VAT note under the table', () => {
+  it('ends with the VAT note under the table (the count is in the filter row)', () => {
     renderRows();
-    expect(screen.getByText('3 plans in 2026 · fees exclude 7% VAT')).toBeInTheDocument();
+    expect(screen.getByText('Fees exclude 7% VAT')).toBeInTheDocument();
   });
 
   // UX review (US6): the plan name is the only way into a plan from a phone
@@ -204,22 +247,6 @@ describe('PlansTable on AURA (board Admin-plans)', () => {
   it('gives the plan name link a 44px touch target on phones', () => {
     renderRows();
     expect(screen.getByRole('link', { name: 'Premium Corporate' })).toHaveClass('max-sm:min-h-11');
-  });
-
-  // Parity comments (US6): the switches sit on the fields' line from 640px
-  // and stack with no grid gap on phones; the pill centres on the name line.
-  it('keeps both switches in one wrapper that sits on the fields\' line', () => {
-    renderRows();
-    const group = screen.getByRole('group', { name: en.admin.plans.filters.groupLabel });
-    const [activeOnly, showDeleted] = within(group).getAllByRole('switch');
-    const wrapper = activeOnly?.closest('[data-plans-switches]');
-    expect(wrapper).not.toBeNull();
-    expect(showDeleted?.closest('[data-plans-switches]')).toBe(wrapper);
-    expect(wrapper).toHaveClass('col-span-2', 'sm:self-end', 'sm:h-[var(--aura-input-height)]');
-    // Stacked on a phone 44px apart, as the board draws them: AURA makes each
-    // row 44px on a touch screen, so the stack adds no gap there (as AURA's
-    // own radio list does), and a small one for a mouse's 20px rows.
-    expect(wrapper).toHaveClass('gap-[var(--aura-space-3)]', 'max-sm:pointer-coarse:gap-0', 'sm:gap-[var(--aura-space-4)]');
   });
 
   it('centres the status pill on the name line of a phone card', () => {
@@ -257,11 +284,12 @@ describe('PlansTable filtered-empty state', () => {
   // Show deleted, the one way back to plans that were all deleted.
   it('shows only the Year filter and Show deleted for a year with no plans', () => {
     renderFiltered({ category: null, q: null, activeOnly: false, showDeleted: false });
-    const group = screen.getByRole('group', { name: en.admin.plans.filters.groupLabel });
-    expect(within(group).getByRole('combobox', { name: en.admin.plans.filters.year })).toBeInTheDocument();
-    expect(within(group).queryByRole('searchbox')).not.toBeInTheDocument();
-    expect(within(group).getAllByRole('switch').map((sw) => sw.id)).toEqual(['plans-show-deleted']);
-    expect(within(group).getAllByRole('combobox')).toHaveLength(1);
+    const bar = screen.getByRole('region', { name: en.admin.plans.filters.groupLabel });
+    expect(within(bar).getByRole('combobox', { name: en.admin.plans.filters.year })).toBeInTheDocument();
+    expect(within(bar).queryByRole('searchbox')).not.toBeInTheDocument();
+    expect(within(bar).getAllByRole('combobox')).toHaveLength(1);
+    expect(within(bar).getByRole('button', { name: SHOW_DELETED })).toBeInTheDocument();
+    expect(within(bar).queryByRole('button', { name: en.admin.plans.filters.activeOnly })).toBeNull();
   });
 
   // Parity comment (US6): AURA's EmptyState pads itself, as on the members
