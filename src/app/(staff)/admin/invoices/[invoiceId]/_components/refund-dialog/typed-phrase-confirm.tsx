@@ -17,8 +17,7 @@
  */
 import { useId } from 'react';
 import { useTranslations } from 'next-intl';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { TextField } from '@jirawatpyk/aura-react';
 
 type Props = {
   readonly companyName: string;
@@ -41,12 +40,10 @@ export function TypedPhraseConfirm({ companyName, value, onChange }: Props) {
   const showError = hasInput && !matches;
 
   return (
-    <div className="grid gap-2">
-      <Label htmlFor={fieldId}>
-        {t('label', { phrase: expected })}
-      </Label>
-      <Input
+    <div className="flex flex-col gap-1">
+      <TextField
         id={fieldId}
+        label={t('label', { phrase: expected })}
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -61,7 +58,7 @@ export function TypedPhraseConfirm({ companyName, value, onChange }: Props) {
         aria-required="true"
         data-testid="refund-typed-phrase-input"
       />
-      <p id={helpId} className="text-xs text-muted-foreground">
+      <p id={helpId} className="text-xs text-[var(--aura-fg-secondary)]">
         {t('help')}
       </p>
       {showError && (
@@ -72,7 +69,7 @@ export function TypedPhraseConfirm({ companyName, value, onChange }: Props) {
         <p
           id={errorId}
           role="alert"
-          className="text-xs text-destructive"
+          className="text-xs text-[var(--aura-fg-danger)]"
           data-testid="refund-typed-phrase-error"
         >
           {t('mismatch', { phrase: expected })}
