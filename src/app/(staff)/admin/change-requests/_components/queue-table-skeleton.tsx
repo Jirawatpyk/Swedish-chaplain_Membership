@@ -19,7 +19,7 @@ interface QueueTableSkeletonProps {
   readonly rows: number;
 }
 
-/** Two-line member and submitter cells, then one line each; Review last. */
+/** Two-line member and submitter cells, then one line each; Review last, at touch height on a phone card. */
 function Cell({ index }: { readonly index: number }) {
   if (index < 2) {
     return (
@@ -29,7 +29,8 @@ function Cell({ index }: { readonly index: number }) {
       </span>
     );
   }
-  const widths = ['w-12', 'w-36', 'w-16', 'w-20', 'w-20'];
+  if (index === 6) return <SkeletonBlock className="h-11 w-full sm:h-8 sm:w-20" />;
+  const widths = ['w-12', 'w-36', 'w-16', 'w-20'];
   return <SkeletonBlock className={`h-5 ${widths[index - 2] ?? 'w-16'}`} />;
 }
 
@@ -48,7 +49,9 @@ export function QueueTableSkeleton({ caption, heads, rows }: QueueTableSkeletonP
           {Array.from({ length: rows }, (_, row) => (
             <Tr key={row}>
               {heads.map((head, i) => (
-                <Td key={head}>
+                // The real row's phone-card parts: the company as the title,
+                // Review as the action, the rest labelled fields.
+                <Td key={head} {...(i === 0 ? { card: 'title' } : i === heads.length - 1 ? { card: 'action' } : { label: head })}>
                   <Cell index={i} />
                 </Td>
               ))}

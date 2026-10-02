@@ -57,9 +57,28 @@ export default async function Loading() {
               <SkeletonBlock className="h-[38px] w-60 rounded-full" />
               <SkeletonBlock className="h-9 w-full sm:w-56" />
             </div>
-            {/* The queue as the page draws it (rows stack into cards below
-                640px), edge to edge inside the card; "Next 50" can follow it. */}
-            <DataTableSkeleton label={t('table_caption')} columns={columns} rows={8} />
+            {/* On a phone, the queue's own cards (AURA's loading rows are too
+                short for them, handoff #134): member, the tier + type line,
+                the due + assignee line, then Done and ⋯ at touch height. */}
+            <div data-slot="phone-cards-skeleton" className="flex flex-col gap-[var(--aura-space-3)] sm:hidden" aria-hidden>
+              {Array.from({ length: 4 }, (_, i) => (
+                <div
+                  key={i}
+                  className="flex flex-col gap-[var(--aura-space-2)] rounded-[var(--aura-radius-lg)] border border-[var(--aura-border-default)] p-[var(--aura-space-4)]"
+                >
+                  <SkeletonBlock className="h-5 w-48" />
+                  <SkeletonBlock className="h-5 w-40" />
+                  <SkeletonBlock className="h-4 w-56" />
+                  <div data-slot="row-actions-skeleton" className="flex gap-[var(--aura-space-2)]">
+                    <SkeletonBlock className="h-11 flex-1" />
+                    <SkeletonBlock className="size-11" />
+                  </div>
+                </div>
+              ))}
+            </div>
+            {/* From 640px, the queue as the page draws it: AURA's table, edge
+                to edge inside the card; "Next 50" can follow it. */}
+            <DataTableSkeleton label={t('table_caption')} columns={columns} rows={8} className="max-sm:hidden" />
           </div>
         </Card>
       </TableContainer>

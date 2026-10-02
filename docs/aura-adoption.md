@@ -162,10 +162,11 @@ The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requ
 | 132 | 5.28.0: `FilterBar` chips take their own width, and a cut chip shows its full text on hover and focus | Nothing to change: the change-request range and company chips show in full |
 | 133 | 5.28.0: the bar's own "Clear all" reaches the touch target height | Nothing to change: the row is 44px on touch end to end |
 
-No item is open (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.test.ts` reads this table; a new gap goes here as `| #N | … |`):
+One item is open (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.test.ts` reads this table; a new gap goes here as `| #N | … |`):
 
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
+| #134 | Addendum 37 (adopting 5.28, PR B UX review): a `DataTable` loading row is one fixed 48px line even with `rowHeight="auto"`; in stacked cards it shows no field labels and a thin bar for a `card: 'footer'` cell whose real buttons are 44px. Ask: loading rows that follow `rowHeight="auto"` (or a per-column line count), `data-label` on stacked skeleton cards, and a touch-height footer bar | The renewal pipeline, tier upgrade and escalation task skeletons draw their own phone cards below 640px and pass `className="max-sm:hidden"` to `DataTableSkeleton`; from 640px the AURA table's rows are still shorter than two-line real rows |
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 

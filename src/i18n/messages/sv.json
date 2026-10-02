@@ -933,7 +933,6 @@
           "planId": "Paket-ID (slug)",
           "planIdHelp": "Endast gemener, siffror och bindestreck (t.ex. diamond, start-up).",
           "planIdPlaceholder": "t.ex. premium",
-          "loadingLabel": "Läser in paketlista…",
           "planYear": "Paketår",
           "planName": "Paketnamn",
           "description": "Beskrivning",

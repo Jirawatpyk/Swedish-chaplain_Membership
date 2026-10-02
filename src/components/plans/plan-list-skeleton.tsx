@@ -18,6 +18,7 @@
  */
 import { Table, TBody, THead, Td, Th, Tr } from '@jirawatpyk/aura-react';
 import { SkeletonBlock } from '@/components/shell/page-skeletons';
+import { HIDE_IN_CARD } from './plans-table';
 
 const DEFAULT_ROW_COUNT = 9; // matches the SweCham 2026 seed row count
 
@@ -31,6 +32,15 @@ export interface PlanListSkeletonProps {
 
 /** Cell widths that read like a plan row: a name, a category pill, a fee, … */
 const CELL_WIDTHS = ['w-40', 'w-24', 'w-20', 'w-24', 'w-12', 'w-16'] as const;
+/** The real row's phone-card parts: the name as the title, the year left out, the status pill beside the name. */
+const CELL_PROPS = [
+  { card: 'title' },
+  {},
+  { numeric: true },
+  {},
+  { className: HIDE_IN_CARD },
+  { card: 'action', className: 'self-center' },
+] as const;
 
 export function PlanListSkeleton({ caption, heads, rowCount = DEFAULT_ROW_COUNT }: PlanListSkeletonProps) {
   return (
@@ -49,7 +59,7 @@ export function PlanListSkeleton({ caption, heads, rowCount = DEFAULT_ROW_COUNT 
           {Array.from({ length: rowCount }, (_, row) => (
             <Tr key={row}>
               {CELL_WIDTHS.map((width, i) => (
-                <Td key={i} {...(i === 2 ? { numeric: true } : {})}>
+                <Td key={i} {...CELL_PROPS[i]}>
                   <SkeletonBlock className={`inline-block h-5 max-w-full ${width}`} />
                 </Td>
               ))}

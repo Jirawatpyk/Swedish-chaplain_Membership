@@ -9,9 +9,15 @@
  *
  * A route's `loading.tsx` is a Server Component and AURA's root is a client
  * module (`tests/unit/architecture/aura-server-imports.test.ts`), so the
- * route passes the translated labels in. `inert` with `aria-hidden`: a
- * placeholder takes no keyboard focus; the route's `PageSkeletonShell`
- * announces the load.
+ * route passes the translated labels in.
+ *
+ * AURA 5.28's loading rows are one fixed 48px line, and in cards they carry
+ * no field labels and a thin bar where the real footer holds 44px buttons
+ * (handoff #134). A route whose phone cards are much taller than that keeps
+ * its own phone cards below 640px and passes `className="max-sm:hidden"`.
+ *
+ * `inert` with `aria-hidden`: a placeholder takes no keyboard focus; the
+ * route's `PageSkeletonShell` announces the load.
  */
 import { DataTable, type DataTableColumn } from '@jirawatpyk/aura-react';
 
@@ -24,12 +30,24 @@ interface DataTableSkeletonProps {
   readonly rows: number;
   /** The table is the card's last content (AURA `bleedEnd`), as on the real page. */
   readonly bleedEnd?: boolean;
+  /** The leading checkbox column, when the page's main user gets one. */
+  readonly selectable?: boolean;
+  /** On the wrapper: `max-sm:hidden` where the route draws its own phone cards (see below). */
+  readonly className?: string;
   readonly 'data-testid'?: string;
 }
 
-export function DataTableSkeleton({ label, columns, rows, bleedEnd = false, 'data-testid': testId }: DataTableSkeletonProps) {
+export function DataTableSkeleton({
+  label,
+  columns,
+  rows,
+  bleedEnd = false,
+  selectable = false,
+  className,
+  'data-testid': testId,
+}: DataTableSkeletonProps) {
   return (
-    <div aria-hidden inert data-testid={testId}>
+    <div aria-hidden inert data-testid={testId} className={className}>
       <DataTable
         label={label}
         rows={[]}
@@ -41,6 +59,7 @@ export function DataTableSkeleton({ label, columns, rows, bleedEnd = false, 'dat
         stackBelow={640}
         bleed
         bleedEnd={bleedEnd}
+        selectable={selectable}
       />
     </div>
   );

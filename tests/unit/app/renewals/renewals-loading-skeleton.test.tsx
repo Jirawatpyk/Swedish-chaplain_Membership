@@ -30,7 +30,8 @@ describe('renewal pipeline loading', () => {
     // the bulk bar and "Next 50" can follow the table, so it does not end the card
     expect(host.querySelector('.aura-card .aura-bleed-end')).toBeNull();
     const heads = [...host.querySelectorAll('.aura-card [role="columnheader"]')].map((h) => h.textContent?.trim());
-    expect(heads.slice(0, 4)).toEqual(['columns.tier', 'columns.company', 'columns.expires', 'columns.urgency']);
+    // after the checkbox column's own header
+    expect(heads.filter((h) => h?.startsWith('columns.')).slice(0, 4)).toEqual(['columns.tier', 'columns.company', 'columns.expires', 'columns.urgency']);
   });
 
   it('draws the admin\'s checkbox column, keeps its own phone cards, and announces the load once (UX review M2, H1, L2)', async () => {

@@ -720,52 +720,51 @@ been **removed** and its two tokens (`--content-max-width-admin`,
 
 ### 18.1 Decision rule (one line)
 
-**Dense data table ⇒ `TableContainer` (96rem). Form / settings / edit ⇒
-`FormContainer` (42rem). Dashboard / detail / mixed content ⇒
-`DetailContainer` (72rem).** If unsure, default to `DetailContainer`.
+**Dense data table ⇒ `TableContainer` (1536px). Form / settings / edit ⇒
+`FormContainer` (720px). Dashboard / detail / mixed content ⇒
+`DetailContainer` (1280px).** If unsure, default to `DetailContainer`.
 
 ### 18.2 Content-Type Mapping (19 current routes)
 
 | Route                                               | Container         | Width |
 |-----------------------------------------------------|-------------------|-------|
-| `/admin`                                            | `DetailContainer` | 72rem |
-| `/admin/account`                                    | `FormContainer`   | 42rem |
-| `/admin/users`                                      | `TableContainer`  | 96rem |
-| `/admin/plans`                                      | `TableContainer`  | 96rem |
-| `/admin/plans/new`                                  | `FormContainer`   | 42rem |
-| `/admin/plans/clone`                                | `FormContainer`   | 42rem |
-| `/admin/plans/[year]/[planId]`                      | `DetailContainer` | 72rem |
-| `/admin/plans/[year]/[planId]/edit`                 | `FormContainer`   | 42rem |
-| `/admin/settings/fees`                              | `FormContainer`   | 42rem |
-| `/admin/settings/invoicing`                         | `DetailContainer`\* | 72rem |
-| `/admin/members`                                    | `TableContainer`  | 96rem |
-| `/admin/members/new`                                | `FormContainer`   | 42rem |
-| `/admin/members/[memberId]`                         | `DetailContainer` | 72rem |
-| `/admin/members/[memberId]/edit`                    | `FormContainer`   | 42rem |
-| `/admin/members/[memberId]/timeline`                | `DetailContainer` | 72rem |
-| `/portal`                                           | `DetailContainer`‡ | 1200px |
-| `/portal/profile`                                   | `DetailContainer`‡ | 1200px |
-| `/portal/account`                                   | `DetailContainer`‡ § | 1200px |
+| `/admin`                                            | `DetailContainer` | 1280px |
+| `/admin/account`                                    | `FormContainer`   | 720px |
+| `/admin/users`                                      | `TableContainer`  | 1536px |
+| `/admin/plans`                                      | `TableContainer`  | 1536px |
+| `/admin/plans/new`                                  | `FormContainer`   | 720px |
+| `/admin/plans/clone`                                | `FormContainer`   | 720px |
+| `/admin/plans/[year]/[planId]`                      | `DetailContainer` | 1280px |
+| `/admin/plans/[year]/[planId]/edit`                 | `FormContainer`   | 720px |
+| `/admin/settings/fees`                              | `FormContainer`   | 720px |
+| `/admin/settings/invoicing`                         | `DetailContainer`\* | 1280px |
+| `/admin/members`                                    | `TableContainer`  | 1536px |
+| `/admin/members/new`                                | `FormContainer`   | 720px |
+| `/admin/members/[memberId]`                         | `DetailContainer` | 1280px |
+| `/admin/members/[memberId]/edit`                    | `FormContainer`   | 720px |
+| `/admin/members/[memberId]/timeline`                | `DetailContainer` | 1280px |
+| `/portal`                                           | `DetailContainer`‡ | 1280px |
+| `/portal/profile`                                   | `DetailContainer`‡ | 1280px |
+| `/portal/account`                                   | `DetailContainer`‡ § | 1280px |
 | `/portal/edit`                                      | `FormContainer`§  | 880px |
-| `/portal/contacts/invite`                           | `DetailContainer`‡ § | 1200px |
-| `/portal/broadcasts/new`                            | `DetailContainer`† | 72rem |
-| `/admin/broadcasts/new`                             | `DetailContainer`† | 72rem |
-| `/admin/broadcasts/[id]`                            | `DetailContainer`  | 72rem |
+| `/portal/contacts/invite`                           | `DetailContainer`‡ § | 1280px |
+| `/portal/broadcasts/new`                            | `DetailContainer`† | 1280px |
+| `/admin/broadcasts/new`                             | `DetailContainer`† | 1280px |
+| `/admin/broadcasts/[id]`                            | `DetailContainer`  | 1280px |
 
-The three containers are Chamber-OS's own, not AURA's. AURA ships `Container`,
-and it is the right long-term target, but it offers two widths (`default` 1280,
-`narrow` 720) against the four this table needs, and centres with no opt-out —
-handoff **#126** (Addendum 29) asks AURA to guarantee that a utility may override
-its `max-width` and `margin`, which a live cascade test shows already works.
-Until that is answered in writing, these containers stay.
+The three containers render AURA's `Container` (from `@jirawatpyk/aura-react/server`,
+AURA 5.27 #131) and keep their names, `data-slot` and `data-variant`: form is
+`size="narrow"` (720px), detail takes the default (1280px), and table is our one
+override (96rem = 1536px), the widths the maintainer accepted on 2 Oct 2026. The
+widths are outer: the page gutter (`--page-padding-x`, 16/24/32px, stepping at 768
+and 1024px) sits inside them. The staff member and plan forms pass
+`align="start"`, which puts the form column at the page's start edge as their
+boards draw it; every other form is centred.
 
-‡ **Portal column** — spec 122 US3 (`570b8c3c6`) set the shared tokens to the
-boards' portal frame, so `.chamber-portal` overrides detail AND table to
-`calc(1200px + 2 * var(--page-padding-x))` (`globals.css:649-650`). That is
-spec 122 `spec.md:45`'s "a 1200 px portal **content** column" expressed as an
-outer width, so a portal detail page measures 1264 at desktop, not the admin's
-1152. The `Width` column above said 72rem for every portal row until
-2026-10-02.
+‡ **Portal column** — the portal's detail pages take the same 1280px `Container`
+default as the admin's (spec 122, 2 Oct 2026). Until then `.chamber-portal`
+overrode the column to `calc(1200px + 2 * var(--page-padding-x))`, spec 122
+`spec.md:45`'s 1200px content column.
 
 § **Inner column** — these three cap their content inside the portal frame
 rather than with a narrower container: `/portal/account` at 880px
@@ -775,14 +774,14 @@ at 880px (`portal/edit/page.tsx:212`), `/portal/contacts/invite` at 720px
 `tasks.md:159`). `/portal/account` and `/portal/contacts/invite` are listed as
 `DetailContainer` because they are: an account **hub** of independently saved
 forms is § 18.1's "mixed content", and the invite page uses the portal frame
-with its own inner column. They were listed as 42rem `FormContainer` until
+with its own inner column. They were listed as narrow `FormContainer` pages until
 2026-10-02, which no e2e band could satisfy.
 
 \* **Documented exception** — `/admin/settings/invoicing` is a settings/edit
-form, which the §18.1 one-liner would default to `FormContainer` (42rem).
-It uses `DetailContainer` (72rem) instead because its shell is a two-column
+form, which the §18.1 one-liner would default to `FormContainer` (720px).
+It uses `DetailContainer` (1280px) instead because its shell is a two-column
 sticky-nav layout (`SectionNav` left rail + `StickySaveBar`, six field
-sections): 42rem minus the rail/overhead doesn't leave enough width for a
+sections): 720px minus the rail/overhead doesn't leave enough width for a
 legible 2-column field grid. Any other future settings page that adopts the
 same sticky-nav shell (not just a single-column form) should follow this
 same exception, not the default rule. (`settings-ux-invoice-reminders`
@@ -790,11 +789,11 @@ fix-wave, Task 7/8.)
 
 † **Documented exception** — the two E-Blast compose screens
 (`/portal/broadcasts/new`, `/admin/broadcasts/new`) are compose forms, which
-the § 18.1 one-liner would put in `FormContainer` (42rem). They use
-`DetailContainer` (72rem) instead because FR-050 requires the writing surface
+the § 18.1 one-liner would put in `FormContainer` (720px). They use
+`DetailContainer` (1280px) instead because FR-050 requires the writing surface
 and the **600 px email preview** to sit side by side on large screens: an
-email is 600 px wide by definition, so 42rem (672 px) leaves the editor
-roughly 40 px once the preview and the gutter are placed. At 72rem the pair
+email is 600 px wide by definition, so 720 px leaves the editor
+roughly 90 px once the preview and the gutter are placed. At 1280 px the pair
 fits (`lg:grid-cols-[minmax(0,1fr)_minmax(0,600px)]`) and stacks below `lg`.
 This exception is specific to a form whose output has a **fixed-width live
 preview**; an ordinary form, including every other E-Blast screen, still

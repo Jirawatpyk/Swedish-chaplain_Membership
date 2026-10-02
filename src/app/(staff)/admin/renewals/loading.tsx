@@ -34,10 +34,12 @@
  * runs edge to edge inside the card (`bleed`). The skeleton is the same
  * `DataTable` in its loading state, with the columns from
  * `pipeline-table-columns.ts` (keys, sizes, phone-card parts), so it stacks
- * and bleeds the same way. It leaves the selection column off: the route
- * runs before the role is known (the members skeleton's rule). It draws 10
- * rows although the page requests `limit: 50`, so the difference lands
- * below the fold.
+ * and bleeds the same way. It draws the checkbox column: the route runs
+ * before the role is known, and admins, who get the column, are the page's
+ * main users (a manager sees one column shift). Below 640px the route keeps
+ * its own phone cards, because AURA's loading rows are too short for them
+ * (handoff #134). It draws 10 rows although the page requests `limit: 50`,
+ * so the difference lands below the fold.
  *
  * The three section skeletons are imported from the same modules the page
  * uses as its Suspense fallbacks — single source of truth, so a section
@@ -73,7 +75,7 @@
  */
 import { getTranslations } from 'next-intl/server';
 import { Card } from '@jirawatpyk/aura-react/server';
-import { SkeletonBlock } from '@/components/shell/page-skeletons';
+import { PageSkeletonShell, SkeletonBlock } from '@/components/shell/page-skeletons';
 import { DataTableSkeleton } from '@/components/shell/data-table-skeleton';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
@@ -96,58 +98,89 @@ const PIPELINE_COLUMN_LABEL_KEYS = {
 export default async function Loading() {
   const t = await getTranslations('admin.renewals');
   const tTable = await getTranslations('admin.renewals.table');
+  const tLayout = await getTranslations('layout');
   const pipelineColumns = (Object.keys(PIPELINE_COLUMN_LAYOUT) as PipelineColumnKey[]).map((key) => ({
     key,
     label: key === 'actions' ? '' : tTable(PIPELINE_COLUMN_LABEL_KEYS[key]),
     ...PIPELINE_COLUMN_LAYOUT[key],
   }));
   return (
-    <TableContainer>
-      <PageHeader title={t('title')} subtitle={t('subtitle')} />
-      <PipelineMoneyBandSkeleton />
-      {/* The page's work-queue card: frameless with no padding on a phone. */}
-      <Card flushBelow="sm" className="max-sm:border-0 max-sm:p-0">
-        <div className="flex flex-col gap-[var(--aura-space-4)]" aria-hidden>
-          {/* Section tabs — a static shimmer the height of the AURA link
-              tabs (44px). MUST stay hook-free — see the 3a docstring note
-              (the real strip's useSearchParams suspends inside a loading
-              fallback and freezes the route transition). */}
-          <div className="flex h-11 items-end gap-[var(--aura-space-2)] border-b border-[var(--aura-border-default)] pb-[var(--aura-space-2)]">
-            <SkeletonBlock className="h-6 w-20" />
-            <SkeletonBlock className="h-6 w-32" />
-            <SkeletonBlock className="h-6 w-24" />
-            <SkeletonBlock className="h-6 w-28" />
-          </div>
-          {/* All renewals / Needs action — the segmented control, with the
-              help button at the end of the row. */}
-          <div className="flex items-center justify-between gap-[var(--aura-space-2)]">
-            <SkeletonBlock className="h-9 w-64" />
-            <SkeletonBlock className="size-8 rounded-full" />
-          </div>
-          {/* Panel mirror — the real panel's `min-h-[320px]`. */}
-          <div className="flex min-h-[320px] flex-col gap-[var(--aura-space-3)]">
-            {/* Filter row: stage chips + tier select; two selects on a phone. */}
-            <div className="grid grid-cols-2 items-end gap-[var(--aura-space-3)] sm:flex sm:justify-between">
-              <div className="hidden gap-[var(--aura-space-2)] sm:flex">
-                {Array.from({ length: 8 }).map((_, i) => (
-                  <SkeletonBlock key={i} className="h-9 w-20 shrink-0" />
-                ))}
+    // The one live region that announces the load (AURA's own loading status
+    // sits inside the hidden placeholder).
+    <PageSkeletonShell ariaLabel={tLayout('loadingTable')}>
+      <TableContainer aria-busy="true">
+        <PageHeader title={t('title')} subtitle={t('subtitle')} />
+        <PipelineMoneyBandSkeleton />
+        {/* The page's work-queue card: frameless with no padding on a phone. */}
+        <Card flushBelow="sm" className="max-sm:border-0 max-sm:p-0">
+          <div className="flex flex-col gap-[var(--aura-space-4)]" aria-hidden>
+            {/* Section tabs — a static shimmer the height of the AURA link
+                tabs (44px). MUST stay hook-free — see the 3a docstring note
+                (the real strip's useSearchParams suspends inside a loading
+                fallback and freezes the route transition). */}
+            <div className="flex h-11 items-end gap-[var(--aura-space-2)] border-b border-[var(--aura-border-default)] pb-[var(--aura-space-2)]">
+              <SkeletonBlock className="h-6 w-20" />
+              <SkeletonBlock className="h-6 w-32" />
+              <SkeletonBlock className="h-6 w-24" />
+              <SkeletonBlock className="h-6 w-28" />
+            </div>
+            {/* All renewals / Needs action — the segmented control, with the
+                help button at the end of the row. */}
+            <div className="flex items-center justify-between gap-[var(--aura-space-2)]">
+              <SkeletonBlock className="h-9 w-64" />
+              <SkeletonBlock className="size-8 rounded-full" />
+            </div>
+            {/* Panel mirror — the real panel's `min-h-[320px]`. */}
+            <div className="flex min-h-[320px] flex-col gap-[var(--aura-space-3)]">
+              {/* Filter row: stage chips + tier select; two selects on a phone. */}
+              <div className="grid grid-cols-2 items-end gap-[var(--aura-space-3)] sm:flex sm:justify-between">
+                <div className="hidden gap-[var(--aura-space-2)] sm:flex">
+                  {Array.from({ length: 8 }).map((_, i) => (
+                    <SkeletonBlock key={i} className="h-9 w-20 shrink-0" />
+                  ))}
+                </div>
+                <SkeletonBlock className="h-9 w-full sm:hidden" />
+                <SkeletonBlock className="h-9 w-full sm:w-56" />
               </div>
-              <SkeletonBlock className="h-9 w-full sm:hidden" />
-              <SkeletonBlock className="h-9 w-full sm:w-56" />
-            </div>
-            <div className="flex flex-col gap-[var(--aura-space-2)]">
-              {/* Result-count caption. */}
-              <SkeletonBlock className="h-5 w-56" />
-              {/* The pipeline table as the page draws it (rows stack into
-                  cards below 640px), edge to edge inside the card. */}
-              <DataTableSkeleton label={tTable('tableCaption')} columns={pipelineColumns} rows={10} />
+              <div className="flex flex-col gap-[var(--aura-space-2)]">
+                {/* Result-count caption. */}
+                <SkeletonBlock className="h-5 w-56" />
+                {/* On a phone, the pipeline's own cards (AURA's loading rows
+                    are too short for them, handoff #134): company and pill,
+                    three field lines, then Send reminder at touch height. */}
+                <div data-slot="phone-cards-skeleton" className="flex flex-col gap-[var(--aura-space-3)] sm:hidden">
+                  {Array.from({ length: 3 }).map((_, cardIdx) => (
+                    <div
+                      key={cardIdx}
+                      className="flex flex-col gap-[var(--aura-space-3)] rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)] p-[var(--aura-space-4)]"
+                    >
+                      <div className="flex items-start justify-between gap-[var(--aura-space-3)]">
+                        <SkeletonBlock className="h-5 w-40" />
+                        <SkeletonBlock className="h-6 w-20 shrink-0 rounded-full" />
+                      </div>
+                      <SkeletonBlock className="h-4 w-3/4" />
+                      <SkeletonBlock className="h-4 w-2/3" />
+                      <SkeletonBlock className="h-4 w-1/2" />
+                      <SkeletonBlock className="h-11 w-full" />
+                    </div>
+                  ))}
+                </div>
+                {/* From 640px, the pipeline table as the page draws it: AURA's
+                    table with the admin's checkbox column, edge to edge. */}
+                <DataTableSkeleton
+                  label={tTable('tableCaption')}
+                  columns={pipelineColumns}
+                  rows={10}
+                  selectable
+                  className="max-sm:hidden"
+                />
+              </div>
             </div>
           </div>
-        </div>
-      </Card>
-      <RenewalsByMonthSectionSkeleton />
-      <MembersWithoutCycleTraySkeleton />
-    </TableContainer>
+        </Card>
+        <RenewalsByMonthSectionSkeleton />
+        <MembersWithoutCycleTraySkeleton />
+      </TableContainer>
+    </PageSkeletonShell>
   );
 }
