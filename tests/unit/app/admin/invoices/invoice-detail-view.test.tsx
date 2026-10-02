@@ -322,7 +322,7 @@ describe('invoice detail — the phone action bar', () => {
     expect(bar).not.toBeNull();
     expect(within(bar).getAllByTestId('record-payment-trigger')).toHaveLength(1);
     expect(screen.getAllByTestId('record-payment-trigger')).toHaveLength(1);
-    expect(within(bar).getByText('Total 107,000.00 THB incl. VAT · due Oct 22, 2026')).toHaveClass('sm:hidden');
+    expect(within(bar).getByText('Total 107,000.00 THB incl. VAT · due 22 Oct 2026')).toHaveClass('sm:hidden');
   });
 
   it('gives the ⋯ menu Void… for a phone on an issued invoice the admin can void, hiding the header\'s Void there', async () => {

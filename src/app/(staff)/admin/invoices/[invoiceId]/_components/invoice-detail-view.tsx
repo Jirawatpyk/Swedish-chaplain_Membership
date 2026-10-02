@@ -40,6 +40,7 @@ import { EmailFailureAlert } from '../../_components/email-failure-alert';
 import { AutoRefundFailedAlert } from '../../_components/auto-refund-failed-alert';
 import { RefundDialog } from './refund-dialog';
 import { IssueCreditNoteAction } from './issue-credit-note-action';
+import { InvoiceActionBar } from './invoice-action-bar';
 import type { PaymentDetailsView } from '../_lib/payment-details';
 
 // F5 UX D2 — the out-of-band-refund reconciliation runbook (repo-relative doc
@@ -169,6 +170,16 @@ export async function renderInvoiceDetailView({
   const breadcrumbLabel = number ?? t('draftTitle');
   const dateOnly = { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' } as const;
   const instant = { year: 'numeric', month: 'short', day: 'numeric' } as const;
+  // The phone bar's line: what the bill comes to, and when it is due while it
+  // is still owed (board Admin-invoice-issued-mobile). No line for a draft (a
+  // preview) or a void bill.
+  const totalText = totals.totalSatang !== null ? formatSatang(totals.totalSatang) : null;
+  const phoneSummary =
+    totalText === null || isDraft || invoice.status === 'void'
+      ? null
+      : invoice.status === 'issued' && invoice.dueDate
+        ? t('phoneBar.totalDue', { total: totalText, date: formatLocalisedDate(invoice.dueDate, userLocale, dateOnly) })
+        : t('phoneBar.total', { total: totalText });
 
   return (
     <DetailContainer>
@@ -181,7 +192,7 @@ export async function renderInvoiceDetailView({
         title={number !== null ? t('title', { number }) : t('draftTitle')}
         badge={<StatusPill tone={invoiceStatusTone(displayStatus)}>{tStatus(displayStatus)}</StatusPill>}
         actions={
-          <>
+          <InvoiceActionBar summary={phoneSummary}>
             {isDraft && isAdmin && (
               <>
                 <a
@@ -239,7 +250,8 @@ export async function renderInvoiceDetailView({
               // own route for deep-linking (CP-9.3).
               <Link
                 href={`/admin/invoices/${invoice.invoiceId}/void`}
-                className={buttonClass({ variant: 'danger-secondary' })}
+                // Below 640px Void… moves into the ⋯ menu (the phone bar).
+                className={`${buttonClass({ variant: 'danger-secondary' })} max-sm:hidden`}
                 data-testid="void-invoice-trigger"
               >
                 {t('actions.void')}
@@ -298,6 +310,7 @@ export async function renderInvoiceDetailView({
                 showResendInvoice={isAdmin && invoice.status !== 'void' && Boolean(invoice.pdf)}
                 showResendReceipt={isAdmin && hasReceiptPdf}
                 showDownloadReceipt={hasReceiptPdf}
+                showVoid={invoice.status === 'issued' && isAdmin}
                 // 064 remediation A4 — what the main pdf IS.
                 mainDownloadKind={
                   invoice.pdfDocKind === 'receipt_combined'
@@ -310,7 +323,7 @@ export async function renderInvoiceDetailView({
                 }
               />
             )}
-          </>
+          </InvoiceActionBar>
         }
       />
 
@@ -594,6 +607,12 @@ export async function renderInvoiceDetailView({
       </Card>
 
       {paymentActivity}
+      {/* Room for the phone action bar, so the page's end scrolls clear of it. */}
+      <div
+        data-slot="invoice-action-bar-spacer"
+        aria-hidden="true"
+        className="h-[var(--invoice-action-bar-height,0px)] sm:hidden"
+      />
     </DetailContainer>
   );
 }

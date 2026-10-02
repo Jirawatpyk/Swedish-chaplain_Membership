@@ -16,7 +16,7 @@
  * next-intl echoes keys so label assertions read the exact key.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
 vi.mock('@/lib/toast', () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), loading: vi.fn(() => 'l'), dismiss: vi.fn() },
@@ -56,6 +56,12 @@ afterEach(() => vi.clearAllMocks());
 function open(number = 'INV-2026-000001') {
   fireEvent.click(screen.getByRole('button', { name: `actions.moreAria {"number":"${number}"}` }));
   return screen.getByRole('menu');
+}
+/** Settle the click's promises (the suite runs on fake timers, so no `waitFor`). */
+async function settle() {
+  await act(async () => {
+    await Promise.resolve();
+  });
 }
 const names = (menu: HTMLElement) => within(menu).getAllByRole('menuitem').map((i) => i.textContent);
 
@@ -108,11 +114,13 @@ describe('InvoiceMoreMenu — a paid 088 bill: bill actions name the SC, receipt
 
   it('downloads keep their filenames: the bill by its SC, the receipt by its RC', async () => {
     renderPaid088();
-    fireEvent.click(within(open('SC-2026-000045')).getByRole('menuitem', { name: /^actions\.downloadSC/ }));
-    await waitFor(() => expect(download.downloadInvoice).toHaveBeenCalledTimes(1));
+    fireEvent.click(within(open('SC-2026-000045')).getByRole('menuitem', { name: /^actions\.download\s*SC/ }));
+    await settle();
+    expect(download.downloadInvoice).toHaveBeenCalledTimes(1);
     expect(download.downloadInvoice.mock.calls[0]![0]).toMatchObject({ invoiceId: 'inv-1', fallbackFilename: 'SC-2026-000045.pdf' });
-    fireEvent.click(within(open('SC-2026-000045')).getByRole('menuitem', { name: /^actions\.downloadReceipt/ }));
-    await waitFor(() => expect(download.downloadReceipt).toHaveBeenCalledTimes(1));
+    fireEvent.click(within(open('SC-2026-000045')).getByRole('menuitem', { name: /^actions\.downloadReceipt\s*RC/ }));
+    await settle();
+    expect(download.downloadReceipt).toHaveBeenCalledTimes(1);
     expect(download.downloadReceipt.mock.calls[0]![0]).toMatchObject({ invoiceId: 'inv-1', fallbackFilename: 'RC-2026-000123-receipt.pdf' });
   });
 
@@ -120,8 +128,9 @@ describe('InvoiceMoreMenu — a paid 088 bill: bill actions name the SC, receipt
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ recipientEmail: 'a@b.example' }), { status: 202 }));
     vi.stubGlobal('fetch', fetchMock);
     renderPaid088();
-    fireEvent.click(within(open('SC-2026-000045')).getByRole('menuitem', { name: /^actions\.resendReceipt/ }));
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    fireEvent.click(within(open('SC-2026-000045')).getByRole('menuitem', { name: /^actions\.resendReceipt\s*RC/ }));
+    await settle();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledWith('/api/invoices/inv-1/resend', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

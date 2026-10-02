@@ -3068,6 +3068,10 @@
         "title": "Faktura {number}",
         "detailsTitle": "Detaljer",
         "totalsLabel": "Summering",
+        "phoneBar": {
+          "totalDue": "Totalt {total} THB inkl. moms · förfaller {date}",
+          "total": "Totalt {total} THB inkl. moms"
+        },
         "status": "Status",
         "actions": {
           "preview": "Förhandsgranska",

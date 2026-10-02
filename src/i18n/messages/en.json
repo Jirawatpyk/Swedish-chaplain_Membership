@@ -3068,6 +3068,10 @@
         "title": "Invoice {number}",
         "detailsTitle": "Details",
         "totalsLabel": "Totals",
+        "phoneBar": {
+          "totalDue": "Total {total} THB incl. VAT · due {date}",
+          "total": "Total {total} THB incl. VAT"
+        },
         "status": "Status",
         "actions": {
           "preview": "Preview",

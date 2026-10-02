@@ -3068,6 +3068,10 @@
         "title": "ใบแจ้งหนี้ {number}",
         "detailsTitle": "รายละเอียด",
         "totalsLabel": "สรุปยอด",
+        "phoneBar": {
+          "totalDue": "ยอดรวม {total} THB รวมภาษีมูลค่าเพิ่ม · ครบกำหนด {date}",
+          "total": "ยอดรวม {total} THB รวมภาษีมูลค่าเพิ่ม"
+        },
         "status": "สถานะ",
         "actions": {
           "preview": "พรีวิว",
