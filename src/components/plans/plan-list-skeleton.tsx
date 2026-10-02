@@ -1,124 +1,62 @@
+'use client';
+
 /**
  * T081 — Plan list skeleton (US1, UX standards § 2.1).
  *
- * Renders a shimmer skeleton in the EXACT shape of the final table
- * (same row count, same column widths) so the transition from loading
- * → loaded produces ZERO cumulative layout shift (CLS = 0).
+ * Spec 122: AURA's own `Table`, laid out as the real `<PlansTable>` (the same
+ * column heads, cards below 640px, centred rows) and edge to edge inside the
+ * list card (`bleed`), so the table that replaces it lands in the same place
+ * (CLS 0). The route's `loading.tsx` is a Server Component and AURA's root is
+ * a client module, so the route passes the translated heads in.
  *
- * Reduced-motion handling (UX standards § 2.2):
- *   - When the user/browser advertises `prefers-reduced-motion: reduce`,
- *     the shimmer gradient is disabled via the `data-reduced-motion`
- *     attribute which the global CSS targets with `animation: none`.
- *   - This component emits `data-reduced-motion="true"` when it detects
- *     the preference; the test `plans-reduced-motion.spec.ts` asserts
- *     this marker is present on reduced-motion runs.
- *
- * Server component — reads `prefers-reduced-motion` is not possible
- * server-side, so the attribute is set client-side on a micro-island.
+ * The heads stop before the admin's actions column: the route-level skeleton
+ * runs before the role is known, so it draws the manager's table (the
+ * members-table-skeleton `withSelection` rule). `inert` with `aria-hidden`:
+ * a placeholder takes no keyboard focus; the route's `PageSkeletonShell`
+ * announces the load. The pulse stops under reduced motion through the shared
+ * skeleton utility (UX standards § 2.2).
  */
-'use client';
-
-import { useSyncExternalStore } from 'react';
-import { useTranslations } from 'next-intl';
-import { cn } from '@/lib/utils';
+import { Table, TBody, THead, Td, Th, Tr } from '@jirawatpyk/aura-react';
+import { SkeletonBlock } from '@/components/shell/page-skeletons';
 
 const DEFAULT_ROW_COUNT = 9; // matches the SweCham 2026 seed row count
 
-function subscribeReducedMotion(callback: () => void): () => void {
-  if (typeof window === 'undefined') return () => {};
-  const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
-  mq.addEventListener('change', callback);
-  return () => mq.removeEventListener('change', callback);
-}
-
-function getReducedMotion(): boolean {
-  if (typeof window === 'undefined') return false;
-  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-}
-
-function getServerReducedMotion(): boolean {
-  return false;
-}
-
 export interface PlanListSkeletonProps {
+  /** The real table's accessible name. */
+  readonly caption: string;
+  /** The real table's column heads, in order: name, category, annual fee, member type, year, status. */
+  readonly heads: readonly [string, string, string, string, string, string];
   readonly rowCount?: number;
-  /**
-   * Whether the real table will render the trailing row-actions column
-   * (admin view — the `⋯` dropdown). The live table emits 7 columns for
-   * admins (name · category · annualFee · memberType · year · status ·
-   * actions) and 6 for managers (no actions). Defaults to `false` so the
-   * skeleton matches the manager + first-paint baseline: a non-admin
-   * always sees CLS 0, and admins see at-most a 1-column shift (the
-   * narrow `80px` actions column) on first paint. Mirrors the
-   * members-table-skeleton `withSelection` strategy.
-   */
-  readonly withActions?: boolean;
 }
 
-// Column grid templates kept 1:1 with the real <PlansTable> column set
-// so the loading → loaded transition holds CLS at 0. The 6-column
-// (manager) template is the no-actions baseline; the 7-column (admin)
-// template appends a narrow `80px` track for the row-actions `⋯` cell.
-const GRID_TEMPLATE_MANAGER = 'grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr]';
-const GRID_TEMPLATE_ADMIN = 'grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_80px]';
+/** Cell widths that read like a plan row: a name, a category pill, a fee, … */
+const CELL_WIDTHS = ['w-40', 'w-24', 'w-20', 'w-24', 'w-12', 'w-16'] as const;
 
-export function PlanListSkeleton({
-  rowCount = DEFAULT_ROW_COUNT,
-  withActions = false,
-}: PlanListSkeletonProps) {
-  const t = useTranslations('admin.plans.create.labels');
-  const gridTemplate = withActions ? GRID_TEMPLATE_ADMIN : GRID_TEMPLATE_MANAGER;
-  const columnCount = withActions ? 7 : 6;
-  // `useSyncExternalStore` is the React-recommended pattern for
-  // reading a browser media-query preference into state without the
-  // "setState in effect" cascading-render warning (lint rule
-  // react-hooks/set-state-in-effect).
-  const reducedMotion = useSyncExternalStore(
-    subscribeReducedMotion,
-    getReducedMotion,
-    getServerReducedMotion,
-  );
-
+export function PlanListSkeleton({ caption, heads, rowCount = DEFAULT_ROW_COUNT }: PlanListSkeletonProps) {
   return (
-    <div
-      data-plan-list-skeleton
-      data-reduced-motion={reducedMotion ? 'true' : 'false'}
-      // No role="status"/aria-live here — callers wrap this in
-      // <PageSkeletonShell> which owns the single live region.
-      aria-busy="true"
-      className="w-full"
-    >
-      {/* Header row — column count + grid track widths mirror the real
-          <PlansTable> header so the shell never shifts on data land. */}
-      <div className="border-b border-border bg-muted/30 px-4 py-3">
-        <div className={cn('grid gap-4', gridTemplate)}>
-          {Array.from({ length: columnCount }).map((_, c) => (
-            <SkeletonCell key={c} className="h-4" />
-          ))}
-        </div>
-      </div>
-
-      {/* Data rows — same grid as the real table */}
-      {Array.from({ length: rowCount }).map((_, idx) => (
-        <div
-          key={idx}
-          className="border-b border-border px-4 py-4 last:border-b-0"
-        >
-          <div className={cn('grid gap-4', gridTemplate)}>
-            {Array.from({ length: columnCount }).map((_, c) => (
-              <SkeletonCell key={c} className="h-5" />
+    <div aria-hidden inert data-plan-list-skeleton="">
+      <Table caption={caption} captionHidden stackBelow="sm" stackStyle="cards" align="middle" bleed>
+        <THead>
+          <Tr>
+            {heads.map((head, i) => (
+              <Th key={head} {...(i === 2 ? { numeric: true } : {})}>
+                {head}
+              </Th>
             ))}
-          </div>
-        </div>
-      ))}
-      <span className="sr-only">{t('loadingLabel')}</span>
+          </Tr>
+        </THead>
+        <TBody>
+          {Array.from({ length: rowCount }, (_, row) => (
+            <Tr key={row}>
+              {CELL_WIDTHS.map((width, i) => (
+                <Td key={i} {...(i === 2 ? { numeric: true } : {})}>
+                  <SkeletonBlock className={`inline-block h-5 max-w-full ${width}`} />
+                </Td>
+              ))}
+            </Tr>
+          ))}
+        </TBody>
+      </Table>
     </div>
   );
-}
-
-function SkeletonCell({ className }: { className?: string }) {
-  // Animation + reduced-motion handling both live in the shared
-  // `.skeleton-shimmer` utility (UX standards § 2.1 / 2.2). The root
-  // component still exposes `data-reduced-motion` for the test probe.
-  return <div className={cn('rounded-md skeleton-shimmer', className)} />;
 }

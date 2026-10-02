@@ -24,22 +24,20 @@
  *      b. work-queue lens strip      → same-footprint shimmer (2 tabs,
  *         `WorkQueueTabs` markup mirrored: mb-3/border-b strip + pt-3
  *         min-h-[320px] panel)
- *      c. filter row + result count + table → shimmer, mirroring
- *         `pipeline-table.tsx` (see the audit note below)
+ *      c. filter row + result count → shimmer; the table → AURA's
+ *         `DataTable` in its loading state (see the note below)
  *   4. By-month year view            → `RenewalsByMonthSectionSkeleton`
  *   5. Members-without-cycle tray    → `MembersWithoutCycleTraySkeleton`
  *
- * Table-portion parity (122 US7a): the pipeline is ONE AURA `DataTable`
- * (`_components/pipeline-table.tsx`) that stacks into cards below 640px, so
- * the shimmer is a grid from `sm` up and a 3-card stack below it — never
- * both lists at once:
- *   - Result-count caption: one text-sm line above the rows.
- *   - Columns: the selection checkbox, 7 data columns and the actions slot
- *     (Send reminder + ⋯, 216px). Rows carry a 44px action shimmer, the
- *     real row's height driver (`touchHeight` buttons).
- *   - Row count: the page requests `limit: 50`, but the shimmer stays
- *     capped at 10 rows (3 cards on a phone) — the swap difference lands
- *     below the fold where it cannot displace what the user is looking at.
+ * Table-portion parity (spec 122): the pipeline is ONE AURA `DataTable`
+ * (`_components/pipeline-table.tsx`) that stacks into cards below 640px and
+ * runs edge to edge inside the card (`bleed`). The skeleton is the same
+ * `DataTable` in its loading state, with the columns from
+ * `pipeline-table-columns.ts` (keys, sizes, phone-card parts), so it stacks
+ * and bleeds the same way. It leaves the selection column off: the route
+ * runs before the role is known (the members skeleton's rule). It draws 10
+ * rows although the page requests `limit: 50`, so the difference lands
+ * below the fold.
  *
  * The three section skeletons are imported from the same modules the page
  * uses as its Suspense fallbacks — single source of truth, so a section
@@ -76,14 +74,33 @@
 import { getTranslations } from 'next-intl/server';
 import { Card } from '@jirawatpyk/aura-react/server';
 import { SkeletonBlock } from '@/components/shell/page-skeletons';
+import { DataTableSkeleton } from '@/components/shell/data-table-skeleton';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { PipelineMoneyBandSkeleton } from './_components/pipeline-money-band';
 import { RenewalsByMonthSectionSkeleton } from './_components/renewals-by-month-section';
 import { MembersWithoutCycleTraySkeleton } from './_components/members-without-cycle-tray';
+import { PIPELINE_COLUMN_LAYOUT, type PipelineColumnKey } from './_components/pipeline-table-columns';
+
+const PIPELINE_COLUMN_LABEL_KEYS = {
+  tierBucket: 'columns.tier',
+  companyName: 'columns.company',
+  expiresAt: 'columns.expires',
+  urgency: 'columns.urgency',
+  lastReminderAt: 'columns.lastReminder',
+  status: 'columns.status',
+  linkedInvoiceId: 'columns.invoice',
+  actions: null,
+} as const satisfies Record<PipelineColumnKey, string | null>;
 
 export default async function Loading() {
   const t = await getTranslations('admin.renewals');
+  const tTable = await getTranslations('admin.renewals.table');
+  const pipelineColumns = (Object.keys(PIPELINE_COLUMN_LAYOUT) as PipelineColumnKey[]).map((key) => ({
+    key,
+    label: key === 'actions' ? '' : tTable(PIPELINE_COLUMN_LABEL_KEYS[key]),
+    ...PIPELINE_COLUMN_LAYOUT[key],
+  }));
   return (
     <TableContainer>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
@@ -122,46 +139,9 @@ export default async function Loading() {
             <div className="flex flex-col gap-[var(--aura-space-2)]">
               {/* Result-count caption. */}
               <SkeletonBlock className="h-5 w-56" />
-              {/* From 640px: the grid. */}
-              <div className="hidden sm:block">
-                <div className="flex h-10 items-center gap-[var(--aura-space-4)] border-b border-[var(--aura-border-default)] px-[var(--aura-space-3)]">
-                  <SkeletonBlock className="size-5 shrink-0" />
-                  {Array.from({ length: 7 }).map((_, i) => (
-                    <SkeletonBlock key={i} className="h-4 flex-1" />
-                  ))}
-                  <div className="w-54 shrink-0" />
-                </div>
-                {Array.from({ length: 10 }).map((_, rowIdx) => (
-                  <div
-                    key={rowIdx}
-                    className="flex items-center gap-[var(--aura-space-4)] border-b border-[var(--aura-border-default)] px-[var(--aura-space-3)] py-[var(--aura-space-2)] last:border-b-0"
-                  >
-                    <SkeletonBlock className="size-5 shrink-0" />
-                    {Array.from({ length: 7 }).map((_, colIdx) => (
-                      <SkeletonBlock key={colIdx} className="h-5 flex-1" />
-                    ))}
-                    <SkeletonBlock className="h-11 w-54 shrink-0" />
-                  </div>
-                ))}
-              </div>
-              {/* Below 640px: the same table stacked into cards. */}
-              <div className="flex flex-col gap-[var(--aura-space-3)] sm:hidden">
-                {Array.from({ length: 3 }).map((_, cardIdx) => (
-                  <div
-                    key={cardIdx}
-                    className="flex flex-col gap-[var(--aura-space-3)] rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)] p-[var(--aura-space-4)]"
-                  >
-                    <div className="flex items-start justify-between gap-[var(--aura-space-3)]">
-                      <SkeletonBlock className="h-5 w-40" />
-                      <SkeletonBlock className="h-6 w-20 shrink-0 rounded-full" />
-                    </div>
-                    <SkeletonBlock className="h-4 w-3/4" />
-                    <SkeletonBlock className="h-4 w-2/3" />
-                    <SkeletonBlock className="h-4 w-1/2" />
-                    <SkeletonBlock className="h-11 w-full" />
-                  </div>
-                ))}
-              </div>
+              {/* The pipeline table as the page draws it (rows stack into
+                  cards below 640px), edge to edge inside the card. */}
+              <DataTableSkeleton label={tTable('tableCaption')} columns={pipelineColumns} rows={10} />
             </div>
           </div>
         </div>

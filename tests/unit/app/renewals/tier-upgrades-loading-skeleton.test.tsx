@@ -37,7 +37,7 @@ describe('tier-upgrades loading skeleton', () => {
     const host = await dom();
     const card = host.querySelector('.aura-card') as HTMLElement;
     const tabs = card.querySelector('[data-slot="tab-strip-skeleton"]');
-    const firstRow = card.querySelector('[data-slot="reason-skeleton"]');
+    const firstRow = card.querySelector('.aura-table');
     expect(tabs).not.toBeNull();
     expect(firstRow).not.toBeNull();
     expect(tabs!.compareDocumentPosition(firstRow!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -45,7 +45,9 @@ describe('tier-upgrades loading skeleton', () => {
 
   it('announces loading via one role=status live region', async () => {
     const host = await dom();
-    expect(host.querySelectorAll('[role="status"]')).toHaveLength(1);
+    // AURA's DataTable keeps its own loading status inside the hidden placeholder.
+    const announced = [...host.querySelectorAll('[role="status"]')].filter((el) => !el.closest('[aria-hidden="true"]'));
+    expect(announced).toHaveLength(1);
   });
 
   it('keeps the table layout container (structural parity with the page)', async () => {
