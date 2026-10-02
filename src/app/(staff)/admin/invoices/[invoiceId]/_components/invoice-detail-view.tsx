@@ -181,6 +181,16 @@ export async function renderInvoiceDetailView({
         ? t('phoneBar.totalDue', { total: totalText, date: formatLocalisedDate(invoice.dueDate, userLocale, dateOnly) })
         : t('phoneBar.total', { total: totalText });
 
+  // The bar (and, from 640px, the header's action row) only when it has
+  // something to hold: a manager on a draft, or a void bill with no PDF, has
+  // no action and no summary line, and an empty fixed bar is a stray strip.
+  const hasMenu = !isDraft && (Boolean(invoice.pdf) || hasReceiptPdf || (invoice.status === 'issued' && isAdmin));
+  const hasActions =
+    (isAdmin && (isDraft || invoice.status === 'issued' || invoice.status === 'paid' || invoice.status === 'partially_credited')) ||
+    refund !== null ||
+    hasMenu;
+  const showActionBar = hasActions || phoneSummary !== null;
+
   return (
     <DetailContainer>
       <PlanBreadcrumbLabel segment={routeSegment} label={breadcrumbLabel} />
@@ -192,12 +202,13 @@ export async function renderInvoiceDetailView({
         title={number !== null ? t('title', { number }) : t('draftTitle')}
         badge={<StatusPill tone={invoiceStatusTone(displayStatus)}>{tStatus(displayStatus)}</StatusPill>}
         actions={
+          showActionBar ? (
           <InvoiceActionBar summary={phoneSummary}>
             {isDraft && isAdmin && (
               <>
                 <a
                   href={`/api/invoices/${invoice.invoiceId}/preview`}
-                  className={buttonClass({ variant: 'secondary' })}
+                  className={buttonClass({ variant: 'secondary', touchHeight: true })}
                   target="_blank"
                   rel="noopener noreferrer"
                 >
@@ -269,7 +280,7 @@ export async function renderInvoiceDetailView({
                 fallback={
                   // Reserves the button's space so the row does not shift
                   // while the dialog hydrates.
-                  <div aria-hidden="true" className="h-9 w-32 opacity-0" />
+                  <div aria-hidden="true" className="h-9 w-32 opacity-0 max-sm:h-11" />
                 }
               >
                 <RefundDialog
@@ -324,6 +335,7 @@ export async function renderInvoiceDetailView({
               />
             )}
           </InvoiceActionBar>
+          ) : undefined
         }
       />
 

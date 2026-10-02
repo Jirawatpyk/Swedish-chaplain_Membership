@@ -45,14 +45,14 @@ export default async function Loading() {
           <Card header={<SkeletonBlock className="h-6 w-24" />}>
             <div className="flex flex-col gap-[var(--aura-space-5)]">
               <div className="grid grid-cols-1 gap-x-[var(--aura-space-6)] gap-y-[var(--aura-space-4)] sm:grid-cols-2">
-                {Array.from({ length: 8 }, (_, i) => (
+                {Array.from({ length: 6 }, (_, i) => (
                   <div key={i} className="flex flex-col gap-1">
                     <SkeletonBlock className="h-3 w-20" />
                     <SkeletonBlock className="h-5 w-40 max-w-full" />
                   </div>
                 ))}
               </div>
-              <div className="ml-auto flex w-full max-w-xs flex-col gap-[var(--aura-space-2)]">
+              <div className="ms-auto flex w-full flex-col gap-[var(--aura-space-2)] sm:max-w-sm">
                 <SkeletonBlock className="h-4 w-full" />
                 <SkeletonBlock className="h-4 w-full" />
                 <SkeletonBlock className="h-6 w-full" />

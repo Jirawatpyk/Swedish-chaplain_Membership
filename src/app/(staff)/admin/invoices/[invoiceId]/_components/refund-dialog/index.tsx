@@ -117,11 +117,19 @@ export function RefundDialog({
   // (rules-of-hooks); the branch is a prop-driven render fork.
   if (pendingRefundExists) {
     return (
-      <div className="flex flex-col items-start gap-1 sm:items-end">
-        <Button variant="danger-secondary" touchHeight disabled data-testid="refund-dialog-trigger">
+      // On a phone the hint stays the trigger's description but is not drawn,
+      // so the action bar stays one row; the label already says it settles.
+      <div className="flex flex-col items-start gap-1 sm:items-end max-sm:items-stretch">
+        <Button
+          variant="danger-secondary"
+          touchHeight
+          disabled
+          aria-describedby="refund-settling-hint"
+          data-testid="refund-dialog-trigger"
+        >
           {t('button.settlingLabel')}
         </Button>
-        <p className="max-w-xs text-xs text-[var(--aura-fg-secondary)]">
+        <p id="refund-settling-hint" className="max-w-xs text-xs text-[var(--aura-fg-secondary)] max-sm:sr-only">
           {t('button.settlingHint')}
         </p>
       </div>

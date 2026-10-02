@@ -16,6 +16,8 @@ export default async function Loading() {
   return (
     <PageSkeletonShell ariaLabel={tLayout('loadingForm')}>
       <FormContainer>
+        {/* The back link above the title. */}
+        <SkeletonBlock className="h-5 w-32 self-start" />
         <PageHeader title={t('title')} subtitle={t('description')} />
         <div className="flex flex-col gap-[var(--aura-space-5)]" aria-hidden="true">
           <Card>

@@ -158,20 +158,20 @@ export default async function NewCreditNotePage({
       </Link>
       <PageHeader title={t('title')} subtitle={t('description')} />
       <CreditNoteForm
-            invoiceId={invoiceId}
-            // documentNumber-FIRST so legacy IN-…/separate-mode keep their
-            // §87 number; a paid 088 invoice (documentNumber NULL) falls
-            // through to its RC (SC-006). Display-only ("against invoice
-            // {number}" label). The guard above already proved this is non-null.
-            documentNumber={displayNumber ?? ''}
-            remainingSatang={remainingSatang}
-            currencySymbol="THB"
-            // F-2 (2026-07-08) — the form shows the membership-effect radio
-            // ONLY for a membership invoice whose amount fully credits it.
-            invoiceSubject={invoice.invoiceSubject}
-            paymentChannel={paymentChannel}
-            onlineRefundState={onlineRefundState}
-          />
+        invoiceId={invoiceId}
+        // documentNumber-FIRST so legacy IN-…/separate-mode keep their
+        // §87 number; a paid 088 invoice (documentNumber NULL) falls
+        // through to its RC (SC-006). Display-only ("against invoice
+        // {number}" label). The guard above already proved this is non-null.
+        documentNumber={displayNumber ?? ''}
+        remainingSatang={remainingSatang}
+        currencySymbol="THB"
+        // F-2 (2026-07-08) — the form shows the membership-effect radio
+        // ONLY for a membership invoice whose amount fully credits it.
+        invoiceSubject={invoice.invoiceSubject}
+        paymentChannel={paymentChannel}
+        onlineRefundState={onlineRefundState}
+      />
     </FormContainer>
   );
 }

@@ -25,10 +25,12 @@ export function IssueCreditNoteAction({
   const t = useTranslations('admin.invoices.detail.actions');
   if (refundSettling) {
     return (
-      <span className="inline-flex flex-col items-start gap-1">
+      // On a phone the reason stays the button's description but is not drawn,
+      // so the action bar stays one row.
+      <span className="inline-flex flex-col items-start gap-1 max-sm:items-stretch">
         <button
           type="button"
-          className={buttonClass({ variant: 'secondary' })}
+          className={buttonClass({ variant: 'secondary', touchHeight: true })}
           disabled
           aria-describedby="issue-credit-note-settling-hint"
         >
@@ -36,7 +38,7 @@ export function IssueCreditNoteAction({
         </button>
         <span
           id="issue-credit-note-settling-hint"
-          className="text-xs text-[var(--aura-fg-secondary)]"
+          className="text-xs text-[var(--aura-fg-secondary)] max-sm:sr-only"
         >
           {t('issueCreditNoteRefundSettling')}
         </span>
@@ -46,7 +48,7 @@ export function IssueCreditNoteAction({
   return (
     <Link
       href={`/admin/invoices/${invoiceId}/credit-notes/new`}
-      className={buttonClass({ variant: 'secondary' })}
+      className={buttonClass({ variant: 'secondary', touchHeight: true })}
     >
       {t('issueCreditNote')}
     </Link>

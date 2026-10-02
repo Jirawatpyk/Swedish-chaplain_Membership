@@ -291,163 +291,165 @@ export function CreditNoteForm({
         </div>
       )}
       <Card>
-      <div className="flex flex-col gap-[var(--aura-space-5)]">
-      <div className="rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface-hover)] p-3 text-sm">
-        <p className="text-[var(--aura-fg-secondary)]">
-          {t('againstInvoice')}{' '}
-          <span className="font-mono font-medium text-[var(--aura-fg-primary)]">
-            {documentNumber}
-          </span>
-        </p>
-        <p className="mt-1">
-          {t('remainingLabel')}{' '}
-          <span className="font-medium tabular-nums">
-            {formatRemaining(remainingSatang, locale, currencySymbol)}
-          </span>
-        </p>
-        <p className="mt-1">
-          {t('paidViaLabel')}{' '}
-          <span className="font-medium" data-testid="cn-payment-channel">
-            {t(`paymentChannel.${paymentChannel ?? 'unknown'}`)}
-          </span>
-        </p>
-      </div>
-
-      {/* A credit note moves NO money. On an online-paid invoice the refund is
-          the Issue refund action (it issues its own credit note); a manual
-          credit note here also shrinks what that action can still refund. */}
-      {requiresOnlineAck && (
-        <Alert
-          tone="warning"
-          role="note"
-          data-testid="cn-online-payment-warning"
-          title={onlineRefundState === 'unknown' ? t('onlinePayment.unknownTitle') : t('onlinePayment.title')}
-        >
-          <div className="flex flex-col items-start gap-3">
-            <p>{onlineRefundState === 'unknown' ? t('onlinePayment.unknownBody') : t('onlinePayment.body')}</p>
-            <Link
-              href={`/admin/invoices/${invoiceId}?refund=1`}
-              className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}
-            >
-              {t('onlinePayment.refundAction')}
-            </Link>
-            <Checkbox
-              checked={onlineRefundAcknowledged}
-              onChange={(checked: boolean) => setOnlineRefundAcknowledged(checked)}
-            >
-              {t('onlinePayment.acknowledge')}
-            </Checkbox>
+        <div className="flex flex-col gap-[var(--aura-space-5)]">
+          <div className="rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface-hover)] p-3 text-sm">
+            <p className="text-[var(--aura-fg-secondary)]">
+              {t('againstInvoice')}{' '}
+              <span className="font-mono font-medium text-[var(--aura-fg-primary)]">
+                {documentNumber}
+              </span>
+            </p>
+            <p className="mt-1">
+              {t('remainingLabel')}{' '}
+              <span className="font-medium tabular-nums">
+                {formatRemaining(remainingSatang, locale, currencySymbol)}
+              </span>
+            </p>
+            <p className="mt-1">
+              {t('paidViaLabel')}{' '}
+              <span className="font-medium" data-testid="cn-payment-channel">
+                {t(`paymentChannel.${paymentChannel ?? 'unknown'}`)}
+              </span>
+            </p>
           </div>
-        </Alert>
-      )}
 
-      <div className="flex flex-col gap-1">
-        <TextField
-          id="cn-amount"
-          label={t('amountLabel')}
-          required
-          type="number"
-          inputMode="decimal"
-          step="0.01"
-          min="0"
-          value={amountThb}
-          onChange={(e) => setAmountThb(e.target.value)}
-          suffix={currencySymbol}
-          aria-describedby="cn-amount-help"
-          aria-invalid={exceedsRemainder || (amountThb.length > 0 && !amountValid)}
-        />
-        <p id="cn-amount-help" className="text-xs text-[var(--aura-fg-secondary)]">
-          {t('amountHelp')}
-        </p>
-        {exceedsRemainder && (
-          <p role="alert" className="text-xs text-[var(--aura-fg-danger)]">
-            {t('exceedsRemainder', {
-              remaining: formatRemaining(remainingSatang, locale, currencySymbol),
-            })}
-          </p>
-        )}
-      </div>
+          {/* A credit note moves NO money. On an online-paid invoice the refund is
+              the Issue refund action (it issues its own credit note); a manual
+              credit note here also shrinks what that action can still refund. */}
+          {requiresOnlineAck && (
+            <Alert
+              tone="warning"
+              role="note"
+              data-testid="cn-online-payment-warning"
+              title={onlineRefundState === 'unknown' ? t('onlinePayment.unknownTitle') : t('onlinePayment.title')}
+            >
+              <div className="flex flex-col items-start gap-3">
+                <p>{onlineRefundState === 'unknown' ? t('onlinePayment.unknownBody') : t('onlinePayment.body')}</p>
+                <Link
+                  href={`/admin/invoices/${invoiceId}?refund=1`}
+                  className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}
+                >
+                  {t('onlinePayment.refundAction')}
+                </Link>
+                <Checkbox
+                  checked={onlineRefundAcknowledged}
+                  onChange={(checked: boolean) => setOnlineRefundAcknowledged(checked)}
+                >
+                  {t('onlinePayment.acknowledge')}
+                </Checkbox>
+              </div>
+            </Alert>
+          )}
 
-      {/* F-2 (2026-07-08) — mandatory intent capture, shown ONLY for a full
-          credit on a membership invoice (partial credits + event invoices
-          never touch membership). Defaults to 'keep', so the field is
-          NEVER actually "missing" a value — `required`/`aria-required` is
-          deliberately OMITTED: Base UI's hidden native radio inputs carry
-          no shared `name` attribute, so a `required` unchecked sibling
-          blocks native HTML5 form submission entirely (a real cross-
-          browser bug, not just a jsdom quirk — verified by an RTL
-          submit-never-fires regression during development). Fieldset +
-          legend alone give the group an accessible name (WCAG) — that is
-          sufficient since a valid selection always exists. */}
-      {showMembershipEffect && (
-        <div data-testid="cn-membership-effect-fieldset">
-          <RadioGroup
-            label={t('membershipEffect.legend')}
-            name="cn-membership-effect"
-            value={membershipEffect}
-            onChange={(v) => setMembershipEffect(v === 'cancel_membership' ? 'cancel_membership' : 'keep')}
-            options={[
-              // Option 1b — 'keep' is a paperwork correction where the member
-              // was NOT refunded, so renewal coverage is retained.
-              { value: 'keep', label: t('membershipEffect.keep.label'), description: t('membershipEffect.keep.description') },
-              // This option triggers an F8 cascade that cancels the member's
-              // in-flight renewal cycles; its description says so.
-              {
-                value: 'cancel_membership',
-                label: t('membershipEffect.cancelMembership.label'),
-                description: t('membershipEffect.cancelMembership.description'),
-              },
-            ]}
-          />
+          <div className="flex flex-col gap-1">
+            <TextField
+              id="cn-amount"
+              label={t('amountLabel')}
+              required
+              type="number"
+              inputMode="decimal"
+              step="0.01"
+              min="0"
+              value={amountThb}
+              onChange={(e) => setAmountThb(e.target.value)}
+              suffix={currencySymbol}
+              aria-describedby="cn-amount-help"
+              aria-invalid={exceedsRemainder || (amountThb.length > 0 && !amountValid)}
+            />
+            <p id="cn-amount-help" className="text-xs text-[var(--aura-fg-secondary)]">
+              {t('amountHelp')}
+            </p>
+            {exceedsRemainder && (
+              <p role="alert" className="text-xs text-[var(--aura-fg-danger)]">
+                {t('exceedsRemainder', {
+                  remaining: formatRemaining(remainingSatang, locale, currencySymbol),
+                })}
+              </p>
+            )}
+          </div>
+
+          {/* F-2 (2026-07-08) — mandatory intent capture, shown ONLY for a full
+              credit on a membership invoice (partial credits + event invoices
+              never touch membership). Defaults to 'keep', so the field is
+              NEVER actually "missing" a value — `required`/`aria-required` is
+              deliberately OMITTED: Base UI's hidden native radio inputs carry
+              no shared `name` attribute, so a `required` unchecked sibling
+              blocks native HTML5 form submission entirely (a real cross-
+              browser bug, not just a jsdom quirk — verified by an RTL
+              submit-never-fires regression during development). Fieldset +
+              legend alone give the group an accessible name (WCAG) — that is
+              sufficient since a valid selection always exists. */}
+          {showMembershipEffect && (
+            <div data-testid="cn-membership-effect-fieldset">
+              <RadioGroup
+                label={t('membershipEffect.legend')}
+                name="cn-membership-effect"
+                value={membershipEffect}
+                onChange={(v) => setMembershipEffect(v === 'cancel_membership' ? 'cancel_membership' : 'keep')}
+                options={[
+                  // Option 1b — 'keep' is a paperwork correction where the member
+                  // was NOT refunded, so renewal coverage is retained.
+                  { value: 'keep', label: t('membershipEffect.keep.label'), description: t('membershipEffect.keep.description') },
+                  // This option triggers an F8 cascade that cancels the member's
+                  // in-flight renewal cycles; its description says so.
+                  {
+                    value: 'cancel_membership',
+                    label: t('membershipEffect.cancelMembership.label'),
+                    description: t('membershipEffect.cancelMembership.description'),
+                  },
+                ]}
+              />
+            </div>
+          )}
+
+          <div className="flex flex-col gap-1">
+            <Textarea
+              id="cn-reason"
+              label={t('reasonLabel')}
+              required
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              rows={3}
+              maxLength={500}
+              aria-describedby="cn-reason-help"
+              // W1-10 (a11y): surface validity to AT like the amount/confirm fields.
+              aria-invalid={reason.length > 0 && !reasonValid}
+            />
+            <p id="cn-reason-help" className="text-xs text-[var(--aura-fg-secondary)]">
+              {t('reasonHelp')} ({reason.length}/500)
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <TextField
+              id="cn-confirm"
+              label={t('confirmCopy', { phrase: confirmPhrase })}
+              value={typed}
+              onChange={(e) => setTyped(e.target.value)}
+              placeholder={confirmPhrase}
+              autoComplete="off"
+              inputMode="text"
+              enterKeyHint="done"
+              autoCorrect="off"
+              autoCapitalize="characters"
+              spellCheck={false}
+              aria-invalid={typed.length > 0 && !matches}
+              aria-describedby={typed.length > 0 && !matches ? 'cn-confirm-error' : undefined}
+            />
+            {typed.length > 0 && !matches && (
+              <p id="cn-confirm-error" role="alert" className="text-xs text-[var(--aura-fg-danger)]">
+                {t('confirmMismatch', { phrase: confirmPhrase })}
+              </p>
+            )}
+          </div>
         </div>
-      )}
-
-      <div className="flex flex-col gap-1">
-        <Textarea
-          id="cn-reason"
-          label={t('reasonLabel')}
-          required
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          rows={3}
-          maxLength={500}
-          aria-describedby="cn-reason-help"
-          // W1-10 (a11y): surface validity to AT like the amount/confirm fields.
-          aria-invalid={reason.length > 0 && !reasonValid}
-        />
-        <p id="cn-reason-help" className="text-xs text-[var(--aura-fg-secondary)]">
-          {t('reasonHelp')} ({reason.length}/500)
-        </p>
-      </div>
-
-      <div className="flex flex-col gap-1">
-        <TextField
-          id="cn-confirm"
-          label={t('confirmCopy', { phrase: confirmPhrase })}
-          value={typed}
-          onChange={(e) => setTyped(e.target.value)}
-          placeholder={confirmPhrase}
-          autoComplete="off"
-          inputMode="text"
-          enterKeyHint="done"
-          autoCorrect="off"
-          autoCapitalize="characters"
-          spellCheck={false}
-          aria-invalid={typed.length > 0 && !matches}
-          aria-describedby={typed.length > 0 && !matches ? 'cn-confirm-error' : undefined}
-        />
-        {typed.length > 0 && !matches && (
-          <p id="cn-confirm-error" role="alert" className="text-xs text-[var(--aura-fg-danger)]">
-            {t('confirmMismatch', { phrase: confirmPhrase })}
-          </p>
-        )}
-      </div>
-      </div>
       </Card>
 
       {/* Cancel then the primary action, at the card's end (board
-          Admin-credit-note); full width on a phone. */}
-      <div className="flex justify-end gap-[var(--aura-space-2)] max-sm:[&>*]:flex-1">
+          Admin-credit-note). On a phone they stack full width, the primary
+          action on top (ux-standards § 11.1, as the void page); Cancel stays
+          first in the DOM, so it is first in the tab order. */}
+      <div className="flex justify-end gap-[var(--aura-space-2)] max-sm:flex-col-reverse max-sm:[&>*]:w-full">
         <Button
           type="button"
           variant="secondary"

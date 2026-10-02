@@ -92,11 +92,12 @@ export function AutoRefundFailedAlert({
           description={t('autoRefundFailed.resolveConfirm.body')}
           footer={
             <>
-              <Button variant="secondary" data-autofocus disabled={pending} onClick={() => setOpen(false)}>
+              <Button variant="secondary" touchHeight data-autofocus disabled={pending} onClick={() => setOpen(false)}>
                 {t('autoRefundFailed.resolveConfirm.cancel')}
               </Button>
               <Button
                 variant="primary"
+                touchHeight
                 loading={pending}
                 disabled={pending}
                 onClick={confirmResolve}
