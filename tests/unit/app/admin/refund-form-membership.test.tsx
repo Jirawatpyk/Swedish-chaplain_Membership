@@ -14,7 +14,6 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import { toast } from '@/lib/toast';
 import enMessages from '@/i18n/messages/en.json';
-import { AlertDialog } from '@/components/ui/alert-dialog';
 import { RefundForm } from '@/app/(staff)/admin/invoices/[invoiceId]/_components/refund-dialog/refund-form';
 
 vi.mock('next/navigation', () => ({
@@ -51,7 +50,6 @@ function renderForm(
 ) {
   return render(
     <NextIntlClientProvider locale="en" messages={enMessages}>
-      <AlertDialog open onOpenChange={() => undefined}>
         <RefundForm
           paymentId="pay_1"
           memberCompanyName="Acme AB"
@@ -61,7 +59,6 @@ function renderForm(
           invoiceHeadroomSatang={opts.headroom ?? 535000n}
           onClose={() => undefined}
         />
-      </AlertDialog>
     </NextIntlClientProvider>,
   );
 }

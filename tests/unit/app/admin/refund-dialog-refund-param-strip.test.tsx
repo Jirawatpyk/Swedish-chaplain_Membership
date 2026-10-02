@@ -12,7 +12,7 @@
  * Renders against the REAL en.json so the open-dialog form copy resolves.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { RefundDialog } from '@/app/(staff)/admin/invoices/[invoiceId]/_components/refund-dialog';
@@ -80,5 +80,26 @@ describe('RefundDialog — ?refund=1 param strip (CF-3)', () => {
   it('does not call router.replace when no ?refund param is present', () => {
     renderDialog({ search: '' });
     expect(replaceMock).not.toHaveBeenCalled();
+  });
+});
+
+// Spec 122 US8b (T825) — the dialog on AURA: an alertdialog named by its
+// title, the invoice and receipt it applies to in its header, Cancel the
+// first focus (FR-029(d)), and Cancel closes it.
+describe('RefundDialog — AURA alertdialog', () => {
+  beforeEach(() => {
+    replaceMock.mockClear();
+    currentSearch = '';
+  });
+
+  it('opens from the trigger with Cancel focused, and Cancel closes it', () => {
+    renderDialog({ search: '' });
+    fireEvent.click(screen.getByTestId('refund-dialog-trigger'));
+    const dialog = screen.getByRole('alertdialog', { name: enMessages.admin.refund.dialog.title });
+    expect(dialog).toHaveAccessibleDescription(enMessages.admin.refund.dialog.description);
+    const cancel = screen.getByRole('button', { name: enMessages.admin.refund.dialog.cancel });
+    expect(cancel).toHaveFocus();
+    fireEvent.click(cancel);
+    expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 });
