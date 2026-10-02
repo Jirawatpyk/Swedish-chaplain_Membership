@@ -536,7 +536,7 @@ Boards: `Admin-invoices`, `Admin-state-invoices-setup`, `Admin-invoice-new`, `Ad
   - gates;
   - `next build`, adding bundle budgets for `/admin/invoices` and `/admin/invoices/new`;
   - the parity page;
-  - UX, i18n and financial reviews;
+  - UX, i18n and financial reviews, with fixes RED first: the receipt state on phone cards, focus and dismissal in Record payment, the invoice-total label, copy without the arrow, the draft row's menu name, and the drafts hint following `includeDrafts`. AURA handoff #125 (RadioGroup description) is filed;
   - draft PR; relay R29.
 
 ### US8b — invoice detail, dialogs, void and new credit note (PR 15; tasks written at its start)

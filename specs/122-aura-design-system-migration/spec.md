@@ -291,7 +291,7 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
     - Invoice No.: the number link, with "Issued {date}" and the credit-note count under it. The separate Issued column goes.
     - Buyer: the name, the Event chip and the subtitle.
     - Status, Due.
-    - Receipt No.: with "PDF generating…" (busy) or the online payment method under it.
+    - Receipt No.: with "Receipt generating…" or the online payment method under it.
     - Total; Actions.
   - **The queue and method columns stay where they are.** The review-queue column (auto-renewal view) and the Method column (online-payments view) still appear only in those views.
   - **Row actions:** "Record payment…" on issued and overdue bills for admins, and a ⋯ menu holding the invoice, bill or receipt downloads. A receipt whose PDF failed shows a "Receipt failed" link to the invoice under its number. In the review-queue view the issue and discard actions stay in the row.
@@ -302,6 +302,12 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - **List filters** stay on the AURA filter bar from US4, which the portal shares. The board draws hand-built dropdown buttons.
   - **Amounts and dates** keep their current formats.
   - **Settings sections** the board does not draw (document notes, payment, branding and logo) keep their content on AURA's defaults.
+- **US8a review outcomes** (UX, i18n and financial reviews of PR #496):
+  - **Record payment's summary box** labels the figure "Invoice total (incl. VAT)", not "Amount received". An event buyer may withhold 3% tax, so the money that arrives can be less than the total.
+  - **The receipt's state on a phone card.** The board's card leaves out Receipt No., so "Receipt generating…" or the "Receipt render failed" link appears under the number on phone cards only.
+  - **Record payment cannot be dismissed while the payment is being sent.** A tap on the scrim never closes it. After a successful payment, focus moves to the row's ⋯ menu.
+  - **Sorting stays out of scope.** The board marks Invoice No. and Due as sortable, but the list has never sorted. Adding it would be a behaviour change, so it is not part of this UI swap.
+  - **The new-invoice Back button stays where it is.** It is a secondary header button on desktop, and below 1024px the shell's back link replaces it, as on the member pages (US5a). The board's link above the h1 is not followed.
 
 ## User Scenarios & Testing *(mandatory)*
 
