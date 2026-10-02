@@ -805,8 +805,7 @@
     },
     "plans": {
       "title": "Membership Plans",
-      "subtitle": "{total} plans in {year}",
-      "subtitleWithVat": "{total} plans in {year} · fees exclude {rate}% VAT",
+      "vatNote": "Fees exclude {rate}% VAT",
       "listDescription": "Manage tier definitions, annual fees, and benefit matrices. Prior-year plans are partially locked for audit integrity.",
       "tableCaption": "List of membership plans for the selected year.",
       "empty": {
@@ -842,7 +841,12 @@
           "label": "Search"
         },
         "activeOnly": "Active only",
-        "showDeleted": "Show deleted"
+        "showDeleted": "Show deleted",
+        "chip": {
+          "search": "Search: {q}",
+          "category": "Category: {value}"
+        },
+        "removeChip": "Remove {filter}"
       },
       "badges": {
         "active": "Active",

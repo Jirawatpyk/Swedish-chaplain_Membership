@@ -182,7 +182,7 @@ describe('PlansTable on AURA (board Admin-plans)', () => {
     );
     const bar = screen.getByRole('region', { name: en.admin.plans.filters.groupLabel });
     expect(within(bar).getByText('Category: Corporate')).toBeInTheDocument();
-    fireEvent.click(within(bar).getByRole('button', { name: /clear all/i }));
+    fireEvent.click(within(bar).getByRole('button', { name: /clear filters/i }));
     expect(nav.replace).toHaveBeenCalledWith('/admin/plans', { scroll: false });
   });
 
@@ -269,8 +269,9 @@ describe('PlansTable filtered-empty state', () => {
 
   it('says no plan matches and offers Clear filters instead of New / Clone', () => {
     renderFiltered({ category: null, q: 'zzz', activeOnly: false, showDeleted: false });
-    expect(screen.getByText(en.admin.plans.empty.filteredTitle)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: en.admin.plans.empty.clearFilters })).toBeInTheDocument();
+    const empty = screen.getByText(en.admin.plans.empty.filteredTitle).closest('.aura-empty') as HTMLElement;
+    // The filter bar offers the same reset; this one sits in the table's empty state.
+    expect(within(empty).getByRole('button', { name: en.admin.plans.empty.clearFilters })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: new RegExp(NEW_CTA, 'i') })).not.toBeInTheDocument();
   });
 
