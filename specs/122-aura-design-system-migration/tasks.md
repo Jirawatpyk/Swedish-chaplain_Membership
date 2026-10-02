@@ -522,7 +522,7 @@ Boards: `Admin-invoices`, `Admin-state-invoices-setup`, `Admin-invoice-new`, `Ad
   - the error boundary on `RouteErrorPanel`;
   - skeletons in the new shape.
   RED: the load-error, setup-state and skeleton tests.
-- [ ] T807 [US8] New invoice:
+- [x] T807 [US8] New invoice:
   - "What is this invoice for?" as an AURA radio group;
   - the membership card (member combobox, plan block, renewal-period info alert);
   - the event-fee form, attendee picker and non-member buyer fields on AURA fields, with the duplicate warning as an AURA alertdialog.

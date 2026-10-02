@@ -57,36 +57,20 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
-import { AlertTriangleIcon, Loader2Icon } from 'lucide-react';
 import { toast } from '@/lib/toast';
-import { Button, buttonVariants } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Badge } from '@/components/ui/badge';
-import { InlineAlert, InlineAlertDescription } from '@/components/ui/inline-alert';
 import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import {
+  Alert,
+  Badge,
+  Button,
+  Combobox,
+  Dialog,
   RadioGroup,
-  RadioGroupItem,
-} from '@/components/ui/radio-group';
-import {
   Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  TranslatedSelectValue,
-} from '@/components/ui/select';
-import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
+  TextField,
+  Textarea,
+  buttonClass,
+  type ComboboxOption,
+} from '@jirawatpyk/aura-react';
 import {
   EventAttendeePickerLoader,
   isMatchedMember,
@@ -272,24 +256,10 @@ type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 function RefundedBlockedCard() {
   const t = useTranslations('admin.invoices.eventFeeForm');
   return (
-    <Card
-      role="status"
-      className="border-destructive/40 bg-destructive/5 p-4"
-      data-testid="mode-refunded-blocked"
-    >
-      <div className="flex gap-3">
-        <AlertTriangleIcon
-          className="mt-0.5 size-5 shrink-0 text-destructive"
-          aria-hidden="true"
-        />
-        <div>
-          <p className="text-sm font-semibold">{t('mode.refundedBlockedTitle')}</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {t('mode.refundedBlocked')}
-          </p>
-        </div>
-      </div>
-    </Card>
+    // Spec 122 US8 (T807) — an AURA danger alert, a standing notice (status).
+    <Alert tone="danger" role="status" title={t('mode.refundedBlockedTitle')} data-testid="mode-refunded-blocked">
+      {t('mode.refundedBlocked')}
+    </Alert>
   );
 }
 
@@ -321,98 +291,49 @@ function IssuanceModeFieldset({
   readonly children?: React.ReactNode;
 }) {
   const t = useTranslations('admin.invoices.eventFeeForm');
+  // Spec 122 US8 (T807) — an AURA radio group. A disabled option's reason
+  // is its own description, so a screen reader hears WHY with the option
+  // itself (AURA reads the description with the name); a sighted user sees
+  // it under the option instead of the usual hint.
   return (
-    <fieldset className="flex flex-col gap-2" data-testid="mode-selector">
-      <legend className="mb-1 text-sm font-medium">{t('mode.label')}</legend>
+    <div className="flex flex-col gap-[var(--aura-space-2)]" data-testid="mode-selector">
       <RadioGroup
-        value={effectiveMode}
-        onValueChange={(v) =>
-          onModeChoice(v === 'already_paid' || v === 'bill_first' ? v : null)
-        }
-        className="gap-3 sm:grid-cols-2"
-      >
-        <div className="flex items-start gap-2 rounded-md border p-3">
-          {/* Explicit `aria-labelledby` → the name-span. Without it,
-              Base UI's labelable fallback ASSIGNS `{id}-label` to the
-              (id-less) <label> itself, duplicating the span's
-              hardcoded id (axe duplicate-id-aria). Same pattern as
-              the invoice-type switcher. */}
-          <RadioGroupItem
-            id="issuance-mode-already-paid"
-            value="already_paid"
-            className="mt-0.5"
-            disabled={disabled}
-            aria-labelledby="issuance-mode-already-paid-label"
-          />
-          <Label
-            htmlFor="issuance-mode-already-paid"
-            className="flex cursor-pointer flex-col gap-0.5"
-          >
-            <span id="issuance-mode-already-paid-label" className="font-medium">
-              {t('mode.alreadyPaid.label')}
-            </span>
-            <span className="text-xs font-normal text-muted-foreground">
-              {t('mode.alreadyPaid.hint')}
-            </span>
-          </Label>
-        </div>
-        <div className="flex items-start gap-2 rounded-md border p-3">
-          {/* When disabled for a no-TIN buyer, the visible reason
-              below is also wired up via `aria-describedby` so SR
-              users hear WHY the option is unavailable. */}
-          <RadioGroupItem
-            id="issuance-mode-bill-first"
-            value="bill_first"
-            className="mt-0.5"
-            disabled={disabled || !buyerIsVatRegistrant}
-            aria-labelledby="issuance-mode-bill-first-label"
-            {...(!buyerIsVatRegistrant ? { 'aria-describedby': 'mode-bill-first-needs-tin' } : {})}
-          />
-          <Label
-            htmlFor="issuance-mode-bill-first"
-            className={
-              buyerIsVatRegistrant
-                ? 'flex cursor-pointer flex-col gap-0.5'
-                : 'flex cursor-not-allowed flex-col gap-0.5 opacity-60'
-            }
-          >
-            <span id="issuance-mode-bill-first-label" className="font-medium">
-              {t('mode.billFirst.label')}
-            </span>
-            <span className="text-xs font-normal text-muted-foreground">
-              {taxAtPayment ? t('mode.billFirst.hint088') : t('mode.billFirst.hint')}
-            </span>
-          </Label>
-        </div>
-      </RadioGroup>
-      {/* Disabled-option reason is VISIBLE text (no hover-only
-          tooltip — same philosophy as the attendee picker's erased
-          rows: keyboard/SR/touch users must get it too). */}
-      {!buyerIsVatRegistrant && (
-        <p
-          id="mode-bill-first-needs-tin"
-          className="text-xs text-muted-foreground"
-          data-testid="mode-bill-first-needs-tin"
-        >
-          {t('mode.billFirstNeedsTin')}
-        </p>
-      )}
+        name="issuance-mode"
+        label={t('mode.label')}
+        orientation="horizontal"
+        value={effectiveMode ?? ''}
+        onChange={(v) => onModeChoice(v === 'already_paid' || v === 'bill_first' ? v : null)}
+        disabled={disabled}
+        options={[
+          { value: 'already_paid', label: t('mode.alreadyPaid.label'), description: t('mode.alreadyPaid.hint') },
+          {
+            value: 'bill_first',
+            label: t('mode.billFirst.label'),
+            description: !buyerIsVatRegistrant
+              ? t('mode.billFirstNeedsTin')
+              : taxAtPayment
+                ? t('mode.billFirst.hint088')
+                : t('mode.billFirst.hint'),
+            disabled: !buyerIsVatRegistrant,
+          },
+        ]}
+      />
       {effectiveMode === null &&
         (isWaitingNoTin ? (
           <p
             role="status"
-            className="rounded-md border border-dashed p-3 text-sm text-muted-foreground"
+            className="rounded-[var(--aura-radius-md)] border border-dashed border-[var(--aura-border-control)] p-[var(--aura-space-3)] text-sm text-[var(--aura-fg-secondary)]"
             data-testid="mode-waiting-explainer"
           >
             {t('mode.waitingExplainer')}
           </p>
         ) : (
-          <p className="text-xs text-muted-foreground" data-testid="mode-choose-hint">
+          <p className="text-xs text-[var(--aura-fg-secondary)]" data-testid="mode-choose-hint">
             {t('mode.chooseHint')}
           </p>
         ))}
       {children}
-    </fieldset>
+    </div>
   );
 }
 
@@ -452,103 +373,62 @@ function AsPaidPaymentFields({
   // Payment-method labels are shared with the record-payment form.
   const tPay = useTranslations('admin.invoices.pay');
   return (
-    <div
-      className="mt-1 grid gap-4 sm:grid-cols-2"
-      data-testid="as-paid-fields"
-      suppressHydrationWarning
-    >
-      <div className="flex flex-col gap-[var(--field-label-gap)]">
-        <Label htmlFor="payment-date">{tPay('fields.date')}</Label>
-        <Input
+    <div className="mt-1 grid gap-[var(--aura-space-4)] sm:grid-cols-2" data-testid="as-paid-fields" suppressHydrationWarning>
+      <div className="flex flex-col gap-[var(--aura-space-2)]">
+        <TextField
           id="payment-date"
           type="date"
+          label={tPay('fields.date')}
           value={paymentDate}
           onChange={(e) => onPaymentDateChange(e.target.value)}
           required
           disabled={disabled}
           {...(todayBkk ? { max: todayBkk } : {})}
-          aria-invalid={paymentDateError ? true : undefined}
+          hint={t('payment.dateHint')}
+          error={paymentDateError ?? undefined}
+          // AURA points at the hint or the error; the closed-period warning
+          // below is described too (064 H-1).
           aria-describedby={[
             paymentDateError ? 'payment-date-error' : 'payment-date-hint',
             ...(showVatPeriodWarning ? ['payment-date-vat-warning'] : []),
           ].join(' ')}
         />
-        {paymentDateError ? (
-          <p id="payment-date-error" className="text-xs text-destructive" role="alert">
-            {paymentDateError}
-          </p>
-        ) : (
-          <p id="payment-date-hint" className="text-xs text-muted-foreground">
-            {t('payment.dateHint')}
-          </p>
-        )}
-        {/* 064 H-1 — non-blocking warning callout (semantic tone="warning"),
-            so role="status" (polite live region), NOT role="alert". */}
+        {/* 064 H-1 — a non-blocking warning: role="status" (polite), NOT alert. */}
         {showVatPeriodWarning && (
-          <InlineAlert
-            id="payment-date-vat-warning"
-            role="status"
-            tone="warning"
-            data-testid="payment-date-vat-warning"
-          >
-            <AlertTriangleIcon className="size-4" aria-hidden="true" />
-            <InlineAlertDescription>{t('payment.vatPeriodWarning')}</InlineAlertDescription>
-          </InlineAlert>
+          <Alert id="payment-date-vat-warning" tone="warning" role="status" data-testid="payment-date-vat-warning">
+            {t('payment.vatPeriodWarning')}
+          </Alert>
         )}
       </div>
-      <div className="flex flex-col gap-[var(--field-label-gap)]">
-        <Label htmlFor="payment-method">{tPay('fields.method')}</Label>
-        <Select
-          value={paymentMethod}
-          onValueChange={(v) => v && onPaymentMethodChange(v as PaymentMethod)}
-        >
-          <SelectTrigger
-            id="payment-method"
-            className="w-full"
-            aria-label={tPay('fields.method')}
-            disabled={disabled}
-          >
-            <TranslatedSelectValue
-              placeholder={tPay('fields.method')}
-              translate={(v) => (v ? tPay(`methods.${v}`) : null)}
-            />
-          </SelectTrigger>
-          <SelectContent>
-            {PAYMENT_METHODS.map((m) => (
-              <SelectItem key={m} value={m}>
-                {tPay(`methods.${m}`)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      {/* W2 (064 remediation) — optional payment evidence,
-          mirrored from the record-payment dialog (same i18n
-          labels + copy). maxLength mirrors the server zod caps
-          (200 / 2000) so the inline clamp and the 400 guard
-          agree. */}
-      <div className="flex flex-col gap-[var(--field-label-gap)]">
-        <Label htmlFor="payment-reference">{tPay('fields.reference')}</Label>
-        <Input
-          id="payment-reference"
-          value={paymentReference}
-          onChange={(e) => onPaymentReferenceChange(e.target.value)}
-          placeholder={tPay('fields.referencePlaceholder')}
-          maxLength={200}
-          disabled={disabled}
-        />
-      </div>
-      <div className="flex flex-col gap-[var(--field-label-gap)]">
-        <Label htmlFor="payment-notes">{tPay('fields.notes')}</Label>
-        <Textarea
-          id="payment-notes"
-          value={paymentNotes}
-          onChange={(e) => onPaymentNotesChange(e.target.value)}
-          rows={3}
-          maxLength={2000}
-          disabled={disabled}
-        />
-      </div>
+      <Select
+        id="payment-method"
+        label={tPay('fields.method')}
+        value={paymentMethod}
+        onChange={(e) => onPaymentMethodChange(e.target.value as PaymentMethod)}
+        disabled={disabled}
+        options={PAYMENT_METHODS.map((m) => ({ value: m, label: tPay(`methods.${m}`) }))}
+      />
+      {/* W2 (064 remediation) — optional payment evidence, mirrored from the
+          record-payment dialog (same i18n labels + copy). maxLength mirrors
+          the server zod caps (200 / 2000). */}
+      <TextField
+        id="payment-reference"
+        label={tPay('fields.reference')}
+        value={paymentReference}
+        onChange={(e) => onPaymentReferenceChange(e.target.value)}
+        placeholder={tPay('fields.referencePlaceholder')}
+        maxLength={200}
+        disabled={disabled}
+      />
+      <Textarea
+        id="payment-notes"
+        label={tPay('fields.notes')}
+        value={paymentNotes}
+        onChange={(e) => onPaymentNotesChange(e.target.value)}
+        rows={3}
+        maxLength={2000}
+        disabled={disabled}
+      />
     </div>
   );
 }
@@ -876,6 +756,7 @@ export function EventFeeForm({
     setPaymentDateError(dateErr);
 
     let buyerInvalid = false;
+    let firstBuyerErrorId: string | null = null;
     if (!matched) {
       const raw = validateNonMemberBuyer(buyer);
       const resolved: NonMemberBuyerErrors = {};
@@ -885,11 +766,29 @@ export function EventFeeForm({
       if (raw.contactEmail) resolved.contactEmail = t(`buyer.errors.${raw.contactEmail}`);
       setBuyerErrors(resolved);
       buyerInvalid = !isNonMemberBuyerValid(buyer);
+      firstBuyerErrorId = resolved.legalName
+        ? 'buyer-legal-name'
+        : resolved.address
+          ? 'buyer-address'
+          : resolved.taxId
+            ? 'buyer-tax-id'
+            : resolved.contactEmail
+              ? 'buyer-contact-email'
+              : null;
     } else {
       setBuyerErrors({});
     }
 
-    if (amtErr || buyerInvalid || dateErr) return;
+    if (amtErr || buyerInvalid || dateErr) {
+      // Spec 122 US8 (T807) — focus the first field in error (in page order),
+      // so its AURA error (wired through aria-describedby) is read on
+      // arrival instead of the old per-field role="alert" paragraphs.
+      const firstInvalid = firstBuyerErrorId ?? (dateErr ? 'payment-date' : amtErr ? 'amountThb' : null);
+      if (firstInvalid) {
+        window.requestAnimationFrame(() => document.getElementById(firstInvalid)?.focus());
+      }
+      return;
+    }
 
     // Send amountOverride ONLY when the admin edited the pre-filled price.
     // Otherwise omit it so the server uses the registration's ticketPriceThb.
@@ -1020,30 +919,28 @@ export function EventFeeForm({
         // method="post" — CWE-598; see tests/unit/components/pii-forms-post-method.test.tsx
         method="post"
         noValidate
-        className="flex flex-col gap-[var(--page-section-gap)]"
+        className="flex flex-col gap-[var(--aura-space-6)]"
       >
         {/* 1. Event picker */}
-        <div className="flex flex-col gap-[var(--field-label-gap)]">
-          <Label id="eventId-label" htmlFor="eventId">
-            {t('eventPicker.label')}
-          </Label>
-          <Combobox
-            id="eventId"
-            options={eventOptions}
-            value={eventId}
-            onChange={handleEventChange}
-            placeholder={noEvents ? t('eventPicker.noEvents') : t('eventPicker.placeholder')}
-            searchPlaceholder={t('eventPicker.search')}
-            emptyMessage={t('eventPicker.empty')}
-            aria-labelledby="eventId-label"
-            disabled={noEvents}
-          />
-        </div>
+        <Combobox
+          id="eventId"
+          label={t('eventPicker.label')}
+          options={eventOptions}
+          value={eventId || null}
+          onChange={(v) => handleEventChange(v ?? '')}
+          placeholder={noEvents ? t('eventPicker.noEvents') : t('eventPicker.placeholder')}
+          emptyText={t('eventPicker.empty')}
+          disabled={noEvents}
+        />
 
         {/* 2. Attendee picker */}
         {eventId !== '' && (
           <div className="flex flex-col gap-[var(--field-label-gap)]">
-            <Label id="attendee-picker-label">{t('attendeePicker.label')}</Label>
+            {/* Names the picker's group of attendee buttons (not a form
+                control, so a styled span rather than a <label>). */}
+            <span id="attendee-picker-label" className="aura-field__label">
+              {t('attendeePicker.label')}
+            </span>
             <EventAttendeePickerLoader
               key={eventId}
               eventId={eventId}
@@ -1059,10 +956,10 @@ export function EventFeeForm({
         {attendee !== null &&
           (matched ? (
             <div
-              className="rounded-md border bg-muted/30 p-4"
+              className="rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface-hover)] p-[var(--aura-space-4)]"
               data-testid="matched-buyer-readonly"
             >
-              <div className="text-xs text-muted-foreground">{t('buyer.legend')}</div>
+              <div className="text-xs text-[var(--aura-fg-secondary)]">{t('buyer.legend')}</div>
               <p className="mt-1 text-sm">
                 {t('buyer.matchedReadonly', { name: attendee.attendeeName })}
               </p>
@@ -1117,50 +1014,39 @@ export function EventFeeForm({
 
         {/* 4. Amount */}
         {attendee !== null && (
-          <div className="flex flex-col gap-[var(--field-label-gap)]">
-            <Label htmlFor="amountThb">{t('amount.label')}</Label>
-            <Input
-              id="amountThb"
-              type="number"
-              inputMode="decimal"
-              min={MIN_THB}
-              max={MAX_THB}
-              step="0.01"
-              value={amountThb}
-              onChange={(e) => {
-                setAmountThb(e.target.value);
-                setAmountTouched(true);
-                setAmountError(null);
-              }}
-              disabled={pending}
-              aria-invalid={amountError ? true : undefined}
-              aria-describedby={amountError ? 'amount-error' : 'amount-help'}
-            />
-            {amountError ? (
-              <p id="amount-error" className="text-xs text-destructive" role="alert">
-                {amountError}
-              </p>
-            ) : (
-              <p id="amount-help" className="text-xs text-muted-foreground">
-                {t('amount.help')}
-              </p>
-            )}
-          </div>
+          <TextField
+            id="amountThb"
+            type="number"
+            inputMode="decimal"
+            label={t('amount.label')}
+            min={MIN_THB}
+            max={MAX_THB}
+            step="0.01"
+            value={amountThb}
+            onChange={(e) => {
+              setAmountThb(e.target.value);
+              setAmountTouched(true);
+              setAmountError(null);
+            }}
+            disabled={pending}
+            hint={t('amount.help')}
+            error={amountError ?? undefined}
+          />
         )}
 
         {/* 5. Live VAT-inclusive preview + 6. doc-type badge */}
         {attendee !== null && amountValid && amountNum >= MIN_THB && (
           <div
-            className="rounded-md border bg-muted/30 p-4"
+            className="rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface-hover)] p-[var(--aura-space-4)]"
             data-testid="vat-preview"
           >
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-xs font-medium text-muted-foreground">
+            <div className="mb-2 flex items-center justify-between gap-[var(--aura-space-2)]">
+              <span className="text-xs font-medium text-[var(--aura-fg-secondary)]">
                 {t('vatPreview.label')}
               </span>
               <Badge
                 role="status"
-                variant={
+                tone={
                   // 088 (FR-016) — a pre-payment ใบแจ้งหนี้ (bill_first under
                   // the flag) is NOT the final tax document, so render it
                   // secondary; keep the prominent primary variant for the
@@ -1168,8 +1054,8 @@ export function EventFeeForm({
                   // invoice at issue.
                   docType === 'taxInvoiceReceipt' ||
                   (docType === 'taxInvoice' && !taxAtPayment)
-                    ? 'default'
-                    : 'secondary'
+                    ? 'accent'
+                    : 'neutral'
                 }
                 aria-label={
                   // 088 (FR-014/SC-005) — a pre-payment `bill_first` doc is a
@@ -1194,28 +1080,25 @@ export function EventFeeForm({
             </div>
             <dl className="flex flex-col gap-1 text-sm">
               <div className="flex justify-between">
-                <dt className="text-muted-foreground">{t('vatPreview.total')}</dt>
+                <dt className="text-[var(--aura-fg-secondary)]">{t('vatPreview.total')}</dt>
                 <dd className="tabular-nums font-medium">{formatSatang(totalSatang)}</dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-muted-foreground">{t('vatPreview.subtotal')}</dt>
+                <dt className="text-[var(--aura-fg-secondary)]">{t('vatPreview.subtotal')}</dt>
                 <dd className="tabular-nums">{formatSatang(subtotal)}</dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-muted-foreground">{t('vatPreview.vat')}</dt>
+                <dt className="text-[var(--aura-fg-secondary)]">{t('vatPreview.vat')}</dt>
                 <dd className="tabular-nums">{formatSatang(vat)}</dd>
               </div>
             </dl>
           </div>
         )}
 
-        <div className="flex justify-end gap-3">
+        <div className="flex justify-end max-sm:[&>*]:flex-1">
           {/* Single button whose label switches by mode: as-paid = record &
               issue in one shot; bill_first = the unchanged draft flow. */}
-          <Button type="submit" disabled={!canSubmit} aria-busy={pending}>
-            {pending && (
-              <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" />
-            )}
+          <Button type="submit" variant="primary" disabled={!canSubmit} loading={pending}>
             {effectiveMode === 'already_paid'
               ? pending
                 ? t('recordAndIssueSubmitting')
@@ -1228,28 +1111,27 @@ export function EventFeeForm({
       </form>
 
       {/* Soft-duplicate dialog — the unique index makes a duplicate a hard
-          block, so this is informational (Cancel only). */}
-      <AlertDialog open={duplicateOpen} onOpenChange={setDuplicateOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('duplicateDialog.title')}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t('duplicateDialog.description')}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t('duplicateDialog.cancel')}</AlertDialogCancel>
+          block, so this is informational: Cancel, and a link to the existing
+          invoice when the server named it. */}
+      <Dialog
+        open={duplicateOpen}
+        onClose={() => setDuplicateOpen(false)}
+        role="alertdialog"
+        title={t('duplicateDialog.title')}
+        description={t('duplicateDialog.description')}
+        footer={
+          <>
+            <Button type="button" variant="secondary" data-autofocus onClick={() => setDuplicateOpen(false)}>
+              {t('duplicateDialog.cancel')}
+            </Button>
             {duplicateInvoiceId !== null && (
-              <Link
-                href={`/admin/invoices/${duplicateInvoiceId}`}
-                className={buttonVariants({ variant: 'default' })}
-              >
+              <Link href={`/admin/invoices/${duplicateInvoiceId}`} className={buttonClass({ variant: 'primary' })}>
                 {t('duplicateDialog.viewInvoice')}
               </Link>
             )}
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+          </>
+        }
+      />
     </>
   );
 }
