@@ -270,7 +270,8 @@ export function PaymentForm({
             {t('cancelDialog')}
           </Button>
         )}
-        <Button type="submit" variant="primary" touchHeight loading={pending}>
+        {/* The board's check: this mints the §86/4 receipt. */}
+        <Button type="submit" variant="primary" icon="check" touchHeight loading={pending}>
           {pending ? t('submitting') : t('submit')}
         </Button>
       </div>

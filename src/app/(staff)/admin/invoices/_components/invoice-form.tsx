@@ -398,6 +398,7 @@ export function CreateDraftForm({
         <Button
           type="submit"
           variant="primary"
+          icon="plus"
           loading={pending}
           disabled={noMembers || !memberId || !selectedPlan}
         >

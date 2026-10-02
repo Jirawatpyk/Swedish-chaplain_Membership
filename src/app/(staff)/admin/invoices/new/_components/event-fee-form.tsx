@@ -1095,7 +1095,15 @@ export function EventFeeForm({
         <div className="flex justify-end max-sm:[&>*]:flex-1">
           {/* Single button whose label switches by mode: as-paid = record &
               issue in one shot; bill_first = the unchanged draft flow. */}
-          <Button type="submit" variant="primary" disabled={!canSubmit} loading={pending}>
+          {/* As the membership form and Record payment: plus for a draft,
+              check when the payment is recorded and the receipt issued. */}
+          <Button
+            type="submit"
+            variant="primary"
+            icon={effectiveMode === 'already_paid' ? 'check' : 'plus'}
+            disabled={!canSubmit}
+            loading={pending}
+          >
             {effectiveMode === 'already_paid'
               ? pending
                 ? t('recordAndIssueSubmitting')
