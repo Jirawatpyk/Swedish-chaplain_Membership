@@ -756,8 +756,8 @@ The three containers render AURA's `Container` (from `@jirawatpyk/aura-react/ser
 AURA 5.27 #131) and keep their names, `data-slot` and `data-variant`: form is
 `size="narrow"` (720px), detail takes the default (1280px), and table is our one
 override (96rem = 1536px), the widths the maintainer accepted on 2 Oct 2026. The
-widths are outer: the page gutter (`--page-padding-x`, 16/24/32px, stepping at 768
-and 1024px) sits inside them. The staff member and plan forms pass
+widths are outer: the page gutter (`--page-padding-x`, 16/24/32px, stepping at 640
+and 1024px like AURA's own, 2 Oct 2026) sits inside them. The staff member and plan forms pass
 `align="start"`, which puts the form column at the page's start edge as their
 boards draw it; every other form is centred.
 

@@ -17,8 +17,8 @@ type DetailContainerProps = {
 
 /**
  * The detail page column: AURA's `Container` at its default width (1280px, the maintainer's width
- * decision of 2 Oct 2026; the portal column too), with the app's own page gutter, which steps at
- * 768 and 1024px (a utility wins under `styles.layer.css`, AURA 5.27 #131).
+ * decision of 2 Oct 2026; the portal column too), with the page gutter (`--page-padding-x`),
+ * which takes AURA's steps (16 / 24 / 32px at 640 and 1024px), so it and AURA's own padding agree.
  * `data-slot` / `data-variant` are what `check:layout`, the e2e width specs
  * and the portal hero rule select on.
  */

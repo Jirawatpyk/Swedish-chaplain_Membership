@@ -18,9 +18,9 @@ type FormContainerProps = {
 
 /**
  * The form page column: AURA's narrow `Container` (720px, the maintainer's
- * width decision of 2 Oct 2026), with the app's own page gutter, which steps
- * at 768 and 1024px (AURA's steps at 640 and 1024px; a utility wins under
- * `styles.layer.css`, AURA 5.27 #131). `data-slot` / `data-variant` are what
+ * width decision of 2 Oct 2026), with the page gutter (`--page-padding-x`), which
+ * takes AURA's steps (16 / 24 / 32px at 640 and 1024px), so it and AURA's own
+ * padding agree. `data-slot` / `data-variant` are what
  * `check:layout`, the e2e width specs and the portal hero rule select on.
  */
 export function FormContainer({ children, className, align = 'center', 'aria-busy': ariaBusy }: FormContainerProps) {

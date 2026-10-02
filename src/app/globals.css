@@ -649,9 +649,16 @@ summary,
   .chamber-portal {
     --page-padding-y: 20px;
   }
-  @media (min-width: 768px) {
+  /* The side gutter takes AURA Container's steps (16 / 24 / 32px at 640 and
+     1024; maintainer, 2 Oct 2026), so the containers' own padding and ours
+     never disagree. The top padding keeps its 768px step. */
+  @media (min-width: 640px) {
     .chamber-shell {
       --page-padding-x: 1.5rem;
+    }
+  }
+  @media (min-width: 768px) {
+    .chamber-shell {
       --page-padding-y: 1.5rem;
     }
   }
