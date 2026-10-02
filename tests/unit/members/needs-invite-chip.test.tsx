@@ -84,6 +84,16 @@ describe('needs-invite chip', () => {
     expect(chip).toHaveAttribute('aria-pressed', 'false');
   });
 
+  // Filter pattern (layout review, 2 Oct): selection is not shown by colour
+  // alone — the chip swaps its envelope for a check while the filter is on.
+  it('shows a check instead of the envelope while the filter is on', () => {
+    renderFilters({ portalInviteCount: 12, searchParams: 'portal=needs_invite' });
+    const chip = screen.getByRole('button', { name: /needs portal invite/i });
+    expect(chip).toHaveAttribute('aria-pressed', 'true');
+    expect(chip.querySelector('svg.lucide-mail')).toBeNull();
+    expect(chip.querySelector('svg')).not.toBeNull();
+  });
+
   it('is not rendered when the count is zero and the filter is off', () => {
     renderFilters({ portalInviteCount: 0 });
     expect(
