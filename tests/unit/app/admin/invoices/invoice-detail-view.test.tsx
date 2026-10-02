@@ -311,3 +311,34 @@ describe('invoice detail — the alerts sit above the Details card', () => {
     expect(screen.queryAllByRole('alert')).toHaveLength(0);
   });
 });
+
+// Spec Session 2026-10-02 US8b — below 640px the header's own actions become
+// a bar at the bottom of the screen, with the total and due date above them;
+// they are drawn once, so every action keeps one trigger and its test id.
+describe('invoice detail — the phone action bar', () => {
+  it('wraps the actions once, with the total (incl. VAT) and due date for a phone', async () => {
+    await view(props());
+    const bar = document.querySelector('[data-slot="invoice-action-bar"]') as HTMLElement;
+    expect(bar).not.toBeNull();
+    expect(within(bar).getAllByTestId('record-payment-trigger')).toHaveLength(1);
+    expect(screen.getAllByTestId('record-payment-trigger')).toHaveLength(1);
+    expect(within(bar).getByText('Total 107,000.00 THB incl. VAT · due Oct 22, 2026')).toHaveClass('sm:hidden');
+  });
+
+  it('gives the ⋯ menu Void… for a phone on an issued invoice the admin can void, hiding the header\'s Void there', async () => {
+    await view(props());
+    expect(screen.getByRole('button', { name: 'More' })).toHaveAttribute('data-show-void', 'true');
+    expect(screen.getByTestId('void-invoice-trigger')).toHaveClass('max-sm:hidden');
+  });
+
+  it('a manager\'s menu gets no Void…', async () => {
+    await view(props({ isAdmin: false }));
+    expect(screen.getByRole('button', { name: 'More' })).toHaveAttribute('data-show-void', 'false');
+    expect(screen.queryByTestId('void-invoice-trigger')).toBeNull();
+  });
+
+  it('leaves room at the page end for the bar', async () => {
+    await view(props());
+    expect(document.querySelector('[data-slot="invoice-action-bar-spacer"]')).toHaveClass('sm:hidden');
+  });
+});
