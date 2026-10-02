@@ -938,7 +938,7 @@ export function EventFeeForm({
           <div className="flex flex-col gap-[var(--field-label-gap)]">
             {/* Names the picker's group of attendee buttons (not a form
                 control, so a styled span rather than a <label>). */}
-            <span id="attendee-picker-label" className="aura-field__label">
+            <span id="attendee-picker-label" className="text-sm font-medium text-[var(--aura-fg-primary)]">
               {t('attendeePicker.label')}
             </span>
             <EventAttendeePickerLoader
