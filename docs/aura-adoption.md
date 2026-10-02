@@ -109,6 +109,20 @@ No item is open (the ratchet in `tests/unit/architecture/aura-internal-class-rat
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
 
+**#126 (Addendum 29) is open but is deliberately NOT in that table**, because it
+has no stand-in to retire: it is not a reach into AURA's internals but a request
+about AURA's own `Container`. AURA offers two page-column widths (`default` 1280,
+`narrow` 720) where Chamber-OS uses four — 672 form, 1152 detail, 1536 table, and
+the portal's 1200 content column — and centres with `margin: 0 auto`, while the
+staff form boards put the 672 column at the page's start edge (`spec.md:118`). So
+`src/components/layout/{form,detail,table}-container.tsx` stay for now. A live
+cascade test (2 Oct 2026) shows `.aura-container` + `mx-0` +
+`max-w-[var(--layout-max-width-form)]` already yields 672 at the start edge, and
+AURA's container padding ladder already matches `--page-padding-x`, so the ask is
+a written guarantee that utilities may override `Container`, not a new feature.
+Nothing in the repo is labelled `#126`; when it is answered, the migration is a
+component swap, not a stand-in removal.
+
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 
 | # | Shipped in | Used by |

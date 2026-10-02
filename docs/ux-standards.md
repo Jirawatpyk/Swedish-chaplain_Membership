@@ -752,6 +752,13 @@ been **removed** and its two tokens (`--content-max-width-admin`,
 | `/admin/broadcasts/new`                             | `DetailContainer`† | 72rem |
 | `/admin/broadcasts/[id]`                            | `DetailContainer`  | 72rem |
 
+The three containers are Chamber-OS's own, not AURA's. AURA ships `Container`,
+and it is the right long-term target, but it offers two widths (`default` 1280,
+`narrow` 720) against the four this table needs, and centres with no opt-out —
+handoff **#126** (Addendum 29) asks AURA to guarantee that a utility may override
+its `max-width` and `margin`, which a live cascade test shows already works.
+Until that is answered in writing, these containers stay.
+
 ‡ **Portal column** — spec 122 US3 (`570b8c3c6`) set the shared tokens to the
 boards' portal frame, so `.chamber-portal` overrides detail AND table to
 `calc(1200px + 2 * var(--page-padding-x))` (`globals.css:649-650`). That is
