@@ -195,6 +195,15 @@ describe('<InvoiceFilters> — the filter pattern', () => {
     expect(document.querySelector('option[value="all"]')).toHaveTextContent(f.allStatuses);
   });
 
+  // Financial review (PR A): the auto-renewal queue lists drafts
+  // (`includeDrafts` is on for `origin=auto_renewal`), so "All except
+  // drafts" would be untrue there.
+  it('says "All statuses" in the auto-renewal queue, which lists drafts', () => {
+    searchParamsStub = new URLSearchParams('origin=auto_renewal');
+    renderFilters({ showAutoInvoiceFilter: true });
+    expect(document.querySelector('option[value="all"]')).toHaveTextContent(f.allStatuses);
+  });
+
   it('shows the result count at the end of the row', () => {
     renderFilters({ ...PORTAL, resultCount: 8 });
     expect(document.querySelector('.aura-filterbar__count')).toHaveTextContent('8 results');
