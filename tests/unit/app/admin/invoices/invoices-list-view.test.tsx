@@ -39,8 +39,8 @@ vi.mock('@/app/(staff)/admin/invoices/_components/invoice-table', () => ({
 vi.mock('@/app/(staff)/admin/invoices/_components/invoice-filters', () => ({
   InvoiceFilters: () => <div data-marker="invoice-filters" />,
 }));
-vi.mock('@/app/(staff)/admin/invoices/_components/csv-export-dialog', () => ({
-  CsvExportDialog: () => <button type="button" data-marker="csv-export">Export CSV…</button>,
+vi.mock('@/app/(staff)/admin/invoices/_components/invoices-export-actions', () => ({
+  InvoicesExportActions: () => <button type="button" data-marker="csv-export">Export CSV…</button>,
 }));
 vi.mock('@/components/layout/table-pagination', () => ({
   TablePagination: () => <nav data-marker="pagination" />,
@@ -82,6 +82,13 @@ describe('renderInvoicesListView (T806)', () => {
     const registers = d.querySelector('a[href="/admin/invoices/registers"]');
     expect(registers?.className).toContain('aura-btn--secondary');
     expect(d.querySelector('[data-marker="csv-export"]')).not.toBeNull();
+  });
+
+  it('on a phone "New invoice" leads the row and Tax registers moves into the ⋯ menu', async () => {
+    const d = doc(await renderInvoicesListView(base));
+    const newLink = [...d.querySelectorAll('a')].find((a) => a.textContent === list.actions.new);
+    expect(newLink?.className).toContain('max-sm:order-first');
+    expect(d.querySelector('a[href="/admin/invoices/registers"]')?.className).toContain('max-sm:hidden');
   });
 
   it('a manager gets no header actions', async () => {
