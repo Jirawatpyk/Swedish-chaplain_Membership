@@ -98,6 +98,14 @@ A server component that needs a static AURA component imports it from **`@jirawa
   - Invoices, shared with the portal list: plain `Select` becomes `FilterSelect`.
   - Change requests: Status becomes a `FilterSelect` and the two dates one range. The Apply button goes, and the URL parameters stay the same, including the inclusive end date.
   - Plans: search, Category and Year become `FilterSelect`s, and "Active only" and "Show deleted" become toggle chips.
+- **Layout review of the mock** (UX, 2 Oct), carried into the filter PR:
+  - **Result count:** always through `FilterBar`'s `resultCount`, at the right of the row, even with no search field. AURA moves it to its own line on a phone, and it is already a polite live region. Members gains one.
+  - **Invoices:** "Status All" is untrue while drafts are hidden. The first status option says so ("All except drafts", admin only), and the drafts hint becomes a quiet line under the row, never part of the count, which does not wrap. The applied secondary filters move to `FilterBar`'s `filters` chips, and the popover button reads "More filters".
+  - **Plans:** the order is Search → Year → Category → Active only → Show deleted. Year always has a value and stays put when the others hide for an empty year.
+  - **Touch:** every toggle `Tag` (Plans and Members) and the Invoices "More filters" button take `touchHeight`, so the row is 44px on touch, like the `FilterSelect`s.
+  - **A selected toggle chip** shows a check icon (`icon="check"` while selected, as the escalation queue's chips do), so selection is not shown by colour alone.
+  - **Clear all** appears only for a non-default value. The change-request default status and the plans' current year do not count.
+  - **Change requests:** Outcome appears right after Status, only under Decided, and focus stays on Status.
 - **Dates need AURA #128**, a compact date-range filter. The mock showed that composing one from `Popover` + `DateRangePicker` takes three clicks to reach the calendar and borrows an internal class.
 - **When:** its own PR, after AURA ships #127 and #128. The mock was reviewed on 2 Oct.
 
