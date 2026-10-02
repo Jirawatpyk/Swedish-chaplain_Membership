@@ -344,3 +344,30 @@ describe('US6 plans (parity-page comments)', () => {
     expect(src('src/app/globals.css')).not.toContain('plan-form-actions--split');
   });
 });
+
+describe('PR B consistency (maintainer, 2 Oct)', () => {
+  it('the portal account and invite pages centre their whole column (header and cards), as the edit page does', () => {
+    // The account hub's 880px and the invite page's 720px columns used to sit
+    // at the start of the 1280px portal column, with the header above them;
+    // the edit page centres its 880px column. One rule: the container itself
+    // takes the board's width, so the header and the cards move together.
+    const account = src('src/app/(member)/portal/account/page.tsx');
+    const accountLoading = src('src/app/(member)/portal/account/loading.tsx');
+    const invite = src('src/app/(member)/portal/contacts/invite/page.tsx');
+    const inviteLoading = src('src/app/(member)/portal/contacts/invite/loading.tsx');
+    for (const code of [account, accountLoading]) expect(code).toContain('<DetailContainer className="max-w-[calc(55rem+2*var(--page-padding-x))]"');
+    for (const code of [invite, inviteLoading]) expect(code).toContain('<DetailContainer className="max-w-[calc(45rem+2*var(--page-padding-x))]"');
+    for (const code of [src('src/components/portal/portal-account-view.tsx'), accountLoading]) expect(code).not.toContain('max-w-[880px] flex-col');
+    for (const code of [invite, inviteLoading]) expect(code).not.toContain('max-w-[720px] flex-col');
+  });
+
+  it('the plan detail page goes two columns from 1280px, its tracks able to shrink (no sideways scroll at 1024)', () => {
+    // At 1024 the staff content is ~705px; the fee card's 220px label column
+    // pushed the first track past it and the page scrolled 12px sideways.
+    for (const path of ['src/app/(staff)/admin/plans/[year]/[planId]/_components/plan-detail-view.tsx', 'src/app/(staff)/admin/plans/[year]/[planId]/loading.tsx']) {
+      const code = src(path);
+      expect(code, path).toContain('xl:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]');
+      expect(code, path).not.toContain('lg:grid-cols-[1fr_1.4fr]');
+    }
+  });
+});
