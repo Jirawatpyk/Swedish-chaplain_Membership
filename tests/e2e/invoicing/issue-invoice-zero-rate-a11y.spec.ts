@@ -184,22 +184,18 @@ test.describe('088 zero-rate issue form a11y @a11y @f088', () => {
       .locator('label')
       .filter({ has: page.getByRole('radio', { name: /Zero-rated/i }) });
     await expectTargetSize(zeroRateLabel, 'zero-rate radio label');
-    await expectTargetSize(
-      page.getByLabel(/MFA certificate number/i),
-      'cert-no input',
-    );
-    await expectTargetSize(
-      page.getByLabel(/Certificate date/i),
-      'cert-date input',
-    );
+    // An AURA field's target is its bordered box (`.aura-input`), which the
+    // input fills (spec 122 US8b); the input inside is the box less its 1px
+    // border. Measure the box, as the legacy bordered <input> was measured.
+    const fieldBox = (label: RegExp) =>
+      page.locator('.aura-input').filter({ has: page.getByLabel(label) });
+    await expectTargetSize(fieldBox(/MFA certificate number/i), 'cert-no input');
+    await expectTargetSize(fieldBox(/Certificate date/i), 'cert-date input');
     await expectTargetSize(
       page.getByRole('button', { name: /Attach certificate scan/i }),
       'cert-scan button',
     );
-    await expectTargetSize(
-      page.getByLabel(/to confirm/i),
-      'typed-phrase confirm input',
-    );
+    await expectTargetSize(fieldBox(/to confirm/i), 'typed-phrase confirm input');
   });
 
   for (const width of [320, 375] as const) {
