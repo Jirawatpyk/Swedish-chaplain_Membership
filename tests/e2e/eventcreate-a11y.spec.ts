@@ -229,7 +229,7 @@ test.describe('@a11y T055 — F6 events list+detail axe-core scan', () => {
     const eventExternalId = `a11y-result-${ts}`;
     const eventName = `A11y Result ${ts}`;
     const seedRes = await page.request.post('/api/admin/events', {
-      headers: { Origin: 'http://localhost:3100' },
+      headers: { Origin: new URL(page.url()).origin },
       data: {
         externalId: eventExternalId,
         name: eventName,
@@ -314,7 +314,7 @@ test.describe('@a11y T055 — F6 events list+detail axe-core scan', () => {
     const errEventExternalId = `a11y-err-${ts}`;
     const errEventName = `A11y Err ${ts}`;
     const errSeedRes = await page.request.post('/api/admin/events', {
-      headers: { Origin: 'http://localhost:3100' },
+      headers: { Origin: new URL(page.url()).origin },
       data: {
         externalId: errEventExternalId,
         name: errEventName,
@@ -460,17 +460,16 @@ test.describe('@a11y T055 — F6 events list+detail axe-core scan', () => {
     // page.request.post does NOT set an Origin header automatically
     // (unlike browser fetch which sets it from the page's location).
     // The CSRF middleware in `src/lib/csrf.ts:83` rejects with
-    // `403 missing-origin` when Origin is absent. Pass an explicit
-    // Origin matching the dev server's base URL so the request
-    // passes the allow-list check.
+    // `403 missing-origin` when Origin is absent. Derive it from the page's
+    // own URL so the request passes the allow-list at any port — a hardcoded
+    // :3100 passed only because `src/lib/csrf.ts` accepts any localhost port
+    // in development, and would 403 against a production build elsewhere.
     const seedEvent = async (
       externalId: string,
       name: string,
     ): Promise<string> => {
       const res = await page.request.post('/api/admin/events', {
-        headers: {
-          Origin: 'http://localhost:3100',
-        },
+        headers: { Origin: new URL(page.url()).origin },
         data: {
           externalId,
           name,
@@ -598,7 +597,7 @@ test.describe('@a11y T055 — F6 events list+detail axe-core scan', () => {
     const evtExternalId = `a11y-r060-${ts}`;
     const evtName = `A11y R060 ${ts}`;
     const seedRes = await page.request.post('/api/admin/events', {
-      headers: { Origin: 'http://localhost:3100' },
+      headers: { Origin: new URL(page.url()).origin },
       data: {
         externalId: evtExternalId,
         name: evtName,

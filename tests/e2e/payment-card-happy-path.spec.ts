@@ -42,6 +42,10 @@ import { stubStripeConfirmSuccess } from './helpers/stripe-mock';
 import { and, eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
+// Bangkok "today", not UTC — see the note in invoice-pay.spec.ts: the server
+// guard clamps `paymentDate` to [issue_date, Bangkok today], so a UTC date is
+// a day behind for the first 7 hours of every Bangkok day.
+import { bangkokTodayIso } from '@/lib/bangkok-today';
 import { auditLog, users } from '@/modules/auth/infrastructure/db/schema';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { invoiceLines } from '@/modules/invoicing/infrastructure/db/schema-invoice-lines';
@@ -426,7 +430,7 @@ test.describe('payment card happy path — @payment @e2e (T046)', () => {
           },
           data: {
             paymentMethod: 'bank_transfer',
-            paymentDate: new Date().toISOString().slice(0, 10),
+            paymentDate: bangkokTodayIso(),
             paymentReference: 'T129',
           },
         },

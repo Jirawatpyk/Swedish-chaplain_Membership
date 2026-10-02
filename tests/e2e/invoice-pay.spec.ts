@@ -9,6 +9,11 @@ import { eq, and, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { expect, fillField, test } from './fixtures';
 import { db, runInTenant } from '@/lib/db';
+// `record-payment` validates `paymentDate` against [issue_date, Bangkok today]
+// and stamps `issue_date` in Bangkok, so a UTC "today" rejects every payment
+// between 00:00 and 07:00 Bangkok (17:00–24:00 UTC the day before) — the exact
+// 7h/day bug `record-payment.ts` warns about in its own guard comment.
+import { bangkokTodayIso } from '@/lib/bangkok-today';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { invoiceLines } from '@/modules/invoicing/infrastructure/db/schema-invoice-lines';
 import { auditLog, users } from '@/modules/auth/infrastructure/db/schema';
@@ -141,7 +146,7 @@ test.describe('@us2 record-payment', () => {
             },
             data: {
               paymentMethod: 'bank_transfer',
-              paymentDate: new Date().toISOString().slice(0, 10),
+              paymentDate: bangkokTodayIso(),
               paymentReference: 'E2E-AS1',
               paymentNotes: 'admin records bank transfer',
             },
@@ -179,7 +184,7 @@ test.describe('@us2 record-payment', () => {
             },
             data: {
               paymentMethod: 'bank_transfer',
-              paymentDate: new Date().toISOString().slice(0, 10),
+              paymentDate: bangkokTodayIso(),
               paymentReference: 'E2E-AS2',
             },
           },
@@ -223,7 +228,7 @@ test.describe('@us2 record-payment', () => {
             },
             data: {
               paymentMethod: 'bank_transfer',
-              paymentDate: new Date().toISOString().slice(0, 10),
+              paymentDate: bangkokTodayIso(),
               paymentReference: 'E2E-AS3',
             },
           },

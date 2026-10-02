@@ -3,11 +3,13 @@
  *
  * Provides two operations used by F6 Playwright specs:
  *
- *   1. `resetEventcreateState(tenantSlug)` — wipes the F6 surface for a
- *      tenant so wizard specs start from a "fresh tenant" state:
+ *   1. `resetEventcreateWebhookState(tenantSlug)` — resets the WEBHOOK/CONFIG
+ *      surface so wizard specs start from a "fresh tenant" state:
  *        • deletes `tenant_webhook_configs` row
- *        • deletes all `events` + `event_registrations` rows for tenant
  *        • deletes `eventcreate_idempotency_receipts` rows for tenant
+ *      It leaves the events catalogue alone — see that function's own note for
+ *      why deleting `events` / `event_registrations` tenant-wide was both a FK
+ *      violation and a cross-spec clobber.
  *      Audit-log entries are LEFT IN PLACE (forensic-trail integrity per
  *      Constitution Principle I — never DELETE from `audit_log`); they
  *      are filtered out at the recent-deliveries panel level when stale.
@@ -42,23 +44,36 @@ function openClient(): SeedClient | null {
 }
 
 /**
- * Wipe F6 state for a tenant. Use in `test.beforeAll` of wizard +
- * webhook-ingest specs so each run starts from a known empty state.
+ * Reset the tenant's EventCreate **webhook/config** surface, so the wizard
+ * renders Phase A and a rotation spec starts from a known secret state.
+ *
+ * It deliberately does NOT touch `events`, `event_registrations` or
+ * `csv_import_records`. It used to delete all three tenant-wide, which was
+ * wrong twice over:
+ *
+ *   1. `event_registrations` is a PARENT of `invoices`
+ *      (`invoices_event_registration_fk … ON DELETE RESTRICT`, migration
+ *      0201), so once `invoices/event-fee-as-paid.spec.ts` has issued an
+ *      event-fee invoice the delete raises a FK violation and every caller
+ *      fails in its own `beforeEach`.
+ *   2. It wiped `seedF6Events`' rows from `global-setup.ts`, which
+ *      `events-list-and-detail` and `quota-accounting` depend on
+ *      (the latter hard-fails on a missing `E2E_SEED_F6_PB_EVENT_ID`).
+ *      The FK violation was the only thing stopping that cross-spec clobber.
+ *
+ * Both callers — `integration-config-wizard` and `secret-rotation` — only ever
+ * needed the webhook config gone, so the catalogue deletes were never load
+ * bearing. Keep the RESTRICT: it is deliberate defence-in-depth over RLS on a
+ * financial record, and a fixture must not be able to destroy issued invoices.
  */
-export async function resetEventcreateState(
+export async function resetEventcreateWebhookState(
   tenantSlug: string = TENANT_ID,
 ): Promise<void> {
   const client = openClient();
   if (!client) return;
   try {
-    // Order matters: child FKs first.
-    //   - event_registrations FK → events
-    //   - csv_import_records FK → events (added F6 Phase 7)
-    //   - eventcreate_idempotency_receipts: independent of events
-    //   - tenant_webhook_configs last so the verifier reads it on next hit
-    await client.sql`DELETE FROM event_registrations WHERE tenant_id = ${tenantSlug}`;
-    await client.sql`DELETE FROM csv_import_records WHERE tenant_id = ${tenantSlug}`;
-    await client.sql`DELETE FROM events WHERE tenant_id = ${tenantSlug}`;
+    // Receipts first, then the config last so the verifier re-reads it on the
+    // next hit. Neither table has children.
     await client.sql`DELETE FROM eventcreate_idempotency_receipts WHERE tenant_id = ${tenantSlug}`;
     await client.sql`DELETE FROM tenant_webhook_configs WHERE tenant_id = ${tenantSlug}`;
   } finally {
@@ -96,14 +111,16 @@ export async function seedKnownWebhookSecret(
 }
 
 /**
- * Convenience: full reset then seed known secret. Used by webhook-
- * ingest spec which needs both a clean slate AND a known secret.
+ * Convenience: reset the webhook/config surface, then seed a known secret.
+ * Currently unused — the webhook-ingest spec this comment used to name reads
+ * the fixture secret directly — kept because it is the right composition for a
+ * spec that needs both a clean config AND a known secret.
  */
 export async function resetAndSeedKnownSecret(
   tenantSlug: string = TENANT_ID,
   secret: string = F6_E2E_FIXTURE_SECRET,
 ): Promise<void> {
-  await resetEventcreateState(tenantSlug);
+  await resetEventcreateWebhookState(tenantSlug);
   await seedKnownWebhookSecret(tenantSlug, secret);
 }
 
@@ -123,7 +140,7 @@ export async function resetAndSeedKnownSecret(
  * the authoritative source.
  *
  * Bypasses RLS via neondb_owner connection (same pattern as
- * `resetEventcreateState`).
+ * `resetEventcreateWebhookState`).
  */
 export async function seedRotatedWebhookState(
   tenantSlug: string = TENANT_ID,

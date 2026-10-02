@@ -21,8 +21,8 @@
  * Run with: pnpm test:e2e --grep "F6 CSV fallback import" --workers=1
  * (--workers=1 is mandatory per CLAUDE.md memory feedback_e2e_workers).
  *
- * Manual gate: same precedent as T037 / T054 / T069 — requires (a)
- * `pnpm dev` running on :3100, (b) test tenant seeded with admin
+ * Manual gate: same precedent as T037 / T054 / T069 — requires (a) the app
+ * running at the config's `baseURL`, (b) test tenant seeded with admin
  * credentials in E2E_ADMIN_EMAIL + E2E_ADMIN_PASSWORD env vars,
  * (c) FEATURE_F6_EVENTCREATE=true. The spec auto-skips outside CI
  * when those env vars are missing so this file does not block the
@@ -35,7 +35,12 @@
 import { test, expect } from '@playwright/test';
 import { signInAsAdmin } from './helpers/admin-session';
 
-const BASE_URL = process.env['PLAYWRIGHT_BASE_URL'] ?? 'http://localhost:3100';
+// Navigations are RELATIVE so Playwright resolves them against the config's
+// `baseURL`. The old `PLAYWRIGHT_BASE_URL` constant is a name nothing sets —
+// playwright.config.ts reads `E2E_BASE_URL` — so its `http://localhost:3100`
+// default won every run. This file is `describe.serial` on a shared page, so
+// the first unreachable goto aborted the rest of the suite.
+const IMPORT_PATH = '/admin/events/import';
 const ADMIN_EMAIL = process.env['E2E_ADMIN_EMAIL'];
 const ADMIN_PASSWORD = process.env['E2E_ADMIN_PASSWORD'];
 
@@ -118,7 +123,7 @@ test.describe.serial('F6 CSV fallback import — US5 AS1–AS3', () => {
   });
 
   test('AS1 preview — upload reveals 10-row preview + auto-detected mapping', async () => {
-    await sharedPage.goto(`${BASE_URL}/admin/events/import`);
+    await sharedPage.goto(IMPORT_PATH);
 
     // Page renders the mapping form with the file input.
     const fileInput = sharedPage.locator('input[type="file"]');
@@ -170,7 +175,7 @@ test.describe.serial('F6 CSV fallback import — US5 AS1–AS3', () => {
     test.setTimeout(180_000);
 
     const ROW_COUNT = 100;
-    await sharedPage.goto(`${BASE_URL}/admin/events/import`);
+    await sharedPage.goto(IMPORT_PATH);
 
     const csvBytes = buildValidCsv(ROW_COUNT);
     await sharedPage.locator('input[type="file"]').setInputFiles({
@@ -220,7 +225,7 @@ test.describe.serial('F6 CSV fallback import — US5 AS1–AS3', () => {
     //       route returns 400 with the same `missingColumns` payload
     //       (covered by T090 contract test).
     // This E2E validates the user-visible (a) path.
-    await sharedPage.goto(`${BASE_URL}/admin/events/import`);
+    await sharedPage.goto(IMPORT_PATH);
 
     await sharedPage.locator('input[type="file"]').setInputFiles({
       name: 'malformed-header.csv',
@@ -261,7 +266,7 @@ test.describe.serial('F6 CSV fallback import — US5 AS1–AS3', () => {
     };
 
     // First upload — fresh.
-    await sharedPage.goto(`${BASE_URL}/admin/events/import`);
+    await sharedPage.goto(IMPORT_PATH);
     await sharedPage.locator('input[type="file"]').setInputFiles({
       name: 'idempotency-100.csv',
       mimeType: 'text/csv',
