@@ -18,4 +18,8 @@ describe('invoiceStatusTone', () => {
   ] as const)('%s → %s', (status, tone) => {
     expect(invoiceStatusTone(status)).toBe(tone);
   });
+
+  it('renders a status outside the union neutral, never the raw value', () => {
+    expect(invoiceStatusTone('refunded' as never)).toBe('neutral');
+  });
 });
