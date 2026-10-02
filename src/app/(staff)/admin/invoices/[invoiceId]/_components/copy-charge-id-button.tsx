@@ -22,9 +22,8 @@
 
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { CheckIcon, CopyIcon } from 'lucide-react';
+import { IconButton } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
-import { Button } from '@/components/ui/button';
 
 export function CopyChargeIdButton({ chargeId }: { chargeId: string }) {
   const t = useTranslations('admin.paymentReconciliation.timeline.chargeId');
@@ -41,7 +40,7 @@ export function CopyChargeIdButton({ chargeId }: { chargeId: string }) {
       toast.success(t('copySuccess'));
       // Reset the icon after 2 s so the user gets visual confirmation
       // without a permanent state change. Sonner handles the toast
-      // dismissal independently.
+      // dismissal independently (AURA toast).
       setTimeout(() => setCopied(false), 2_000);
     } catch {
       toast.error(t('copyFailed'));
@@ -49,29 +48,19 @@ export function CopyChargeIdButton({ chargeId }: { chargeId: string }) {
   };
 
   return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="sm"
-      onClick={handleCopy}
-      data-testid="copy-charge-id-button"
-      aria-label={t('copyAction')}
-      // Visual density h-7 (28 px) preserved — `min-h-11 min-w-11`
-      // raises the actual touch hit-area to 44 px without growing the
-      // rendered chrome row. WCAG 2.5.5 + ux-standards § mobile-first.
-      className="h-7 min-h-11 min-w-11 px-2 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-    >
-      {copied ? (
-        <CheckIcon
-          className="size-3.5 text-success"
-          aria-hidden="true"
-        />
-      ) : (
-        <CopyIcon className="size-3.5" aria-hidden="true" />
-      )}
+    <>
+      <IconButton
+        icon={copied ? 'check' : 'copy'}
+        label={t('copyAction')}
+        size="sm"
+        // 44px touch target at every width (WCAG 2.5.5, ux-standards mobile-first).
+        className="min-h-11 min-w-11"
+        onClick={handleCopy}
+        data-testid="copy-charge-id-button"
+      />
       <span role="status" aria-live="polite" className="sr-only">
         {copied ? t('copySuccessAnnouncement') : ''}
       </span>
-    </Button>
+    </>
   );
 }

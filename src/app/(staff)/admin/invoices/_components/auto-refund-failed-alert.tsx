@@ -17,28 +17,15 @@
  * gates the action (ux-standards — money/audit action). The banner keeps its
  * destructive tone; the button resolves it.
  *
- * `<Alert>` carries role="alert". Stripe refund ids are stable identifiers — no
+ * AURA's danger `<Alert>` carries role="alert". Stripe refund ids are stable identifiers — no
  * PCI scope, no PII — so the FULL ref is shown (staff look it up in the Stripe
  * Dashboard; no member-side last-8 truncation).
  */
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { TriangleAlertIcon, Loader2Icon } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import { Alert, Button, Dialog } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
-import { buttonVariants } from '@/components/ui/button';
 
 export function AutoRefundFailedAlert({
   invoiceId,
@@ -79,65 +66,60 @@ export function AutoRefundFailedAlert({
   }
 
   return (
-    <Alert variant="destructive" data-testid="admin-invoice-auto-refund-failed-alert">
-      <TriangleAlertIcon className="size-4" aria-hidden="true" />
-      <AlertTitle>{t('autoRefundFailed.title')}</AlertTitle>
-      <AlertDescription className="flex flex-col gap-2">
+    <Alert
+      tone="danger"
+      title={t('autoRefundFailed.title')}
+      data-testid="admin-invoice-auto-refund-failed-alert"
+      action={
+        <Dialog
+          role="alertdialog"
+          open={open}
+          onOpen={() => setOpen(true)}
+          onClose={() => setOpen(false)}
+          dismissible={!pending}
+          trigger={
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              touchHeight
+              data-testid="admin-invoice-auto-refund-resolve-trigger"
+            >
+              {t('autoRefundFailed.resolve')}
+            </Button>
+          }
+          title={t('autoRefundFailed.resolveConfirm.title')}
+          description={t('autoRefundFailed.resolveConfirm.body')}
+          footer={
+            <>
+              <Button variant="secondary" data-autofocus disabled={pending} onClick={() => setOpen(false)}>
+                {t('autoRefundFailed.resolveConfirm.cancel')}
+              </Button>
+              <Button
+                variant="primary"
+                loading={pending}
+                disabled={pending}
+                onClick={confirmResolve}
+                data-testid="admin-invoice-auto-refund-resolve-confirm"
+              >
+                {pending
+                  ? t('autoRefundFailed.resolveConfirm.pending')
+                  : t('autoRefundFailed.resolveConfirm.confirm')}
+              </Button>
+            </>
+          }
+        />
+      }
+    >
+      <span className="flex flex-col gap-1">
         <span>{t('autoRefundFailed.body')}</span>
         {processorRefundId ? (
-          <span
-            className="font-mono text-xs break-all"
-            data-testid="admin-invoice-auto-refund-failed-ref"
-          >
+          <span className="break-all font-mono text-xs" data-testid="admin-invoice-auto-refund-failed-ref">
             {t('autoRefundFailed.ref', { ref: processorRefundId })}
           </span>
         ) : null}
         <span>{t('autoRefundFailed.runbook', { path: runbookUrl })}</span>
-        <div className="mt-1">
-          <AlertDialog open={open} onOpenChange={setOpen}>
-            <AlertDialogTrigger
-              className={buttonVariants({ variant: 'outline', size: 'sm' })}
-              data-testid="admin-invoice-auto-refund-resolve-trigger"
-            >
-              {t('autoRefundFailed.resolve')}
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>
-                  {t('autoRefundFailed.resolveConfirm.title')}
-                </AlertDialogTitle>
-                <AlertDialogDescription>
-                  {t('autoRefundFailed.resolveConfirm.body')}
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel disabled={pending}>
-                  {t('autoRefundFailed.resolveConfirm.cancel')}
-                </AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={(e) => {
-                    e.preventDefault();
-                    confirmResolve();
-                  }}
-                  disabled={pending}
-                  aria-busy={pending}
-                  data-testid="admin-invoice-auto-refund-resolve-confirm"
-                >
-                  {pending && (
-                    <Loader2Icon
-                      className="size-4 motion-safe:animate-spin"
-                      aria-hidden="true"
-                    />
-                  )}
-                  {pending
-                    ? t('autoRefundFailed.resolveConfirm.pending')
-                    : t('autoRefundFailed.resolveConfirm.confirm')}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </div>
-      </AlertDescription>
+      </span>
     </Alert>
   );
 }
