@@ -226,9 +226,16 @@ describe('<InvoiceFilters> — the filter pattern', () => {
     expect(replace).toHaveBeenLastCalledWith('/portal/invoices?paidOnline=1', { scroll: false });
   });
 
+  it('names its region like the other filter rows', () => {
+    renderFilters(PORTAL);
+    expect(screen.getByRole('region', { name: f.groupLabel })).toBeInTheDocument();
+  });
+
   it('offers Clear filters beside the toggle when it is the only filter on (it is not repeated as a chip)', () => {
     searchParamsStub = new URLSearchParams('paidOnline=1');
     renderFilters();
+    // 44px on touch, like the toggle beside it (UX review M4).
+    expect(screen.getByRole('button', { name: f.clearAll })).toHaveClass('aura-btn--touch');
     expect(screen.getByTestId('paid-online-filter-chip')).toHaveAttribute('aria-pressed', 'true');
     expect(screen.queryByRole('button', { name: /^Remove filter:/ })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: f.clearAll }));

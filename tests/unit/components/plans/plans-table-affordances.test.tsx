@@ -184,6 +184,41 @@ describe('PlansTable on AURA (board Admin-plans)', () => {
     expect(within(bar).getByText('Category: Corporate')).toBeInTheDocument();
     fireEvent.click(within(bar).getByRole('button', { name: /clear filters/i }));
     expect(nav.replace).toHaveBeenCalledWith('/admin/plans', { scroll: false });
+    // UX review H1: the button unmounts; focus lands on the search, not <body>.
+    expect(within(bar).getByRole('searchbox')).toHaveFocus();
+  });
+
+  it('removing a chip keeps focus in the bar, on the search; the chip × is named "Remove filter: …"', () => {
+    nav.search.current = new URLSearchParams('category=corporate');
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <PlansTable
+          plans={plans}
+          currencyCode="THB"
+          year={2026}
+          currentUserRole="admin"
+          initialFilter={{ category: 'corporate', q: null, activeOnly: false, showDeleted: false }}
+        />
+      </NextIntlClientProvider>,
+    );
+    const bar = screen.getByRole('region', { name: en.admin.plans.filters.groupLabel });
+    fireEvent.click(within(bar).getByRole('button', { name: 'Remove filter: Category: Corporate' }));
+    expect(within(bar).getByRole('searchbox')).toHaveFocus();
+  });
+
+  it('makes the ghost Clear filters beside a lone toggle 44px on touch', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <PlansTable
+          plans={plans}
+          currencyCode="THB"
+          year={2026}
+          currentUserRole="admin"
+          initialFilter={{ category: null, q: null, activeOnly: true, showDeleted: false }}
+        />
+      </NextIntlClientProvider>,
+    );
+    expect(screen.getByRole('button', { name: /clear filters/i })).toHaveClass('aura-btn--touch');
   });
 
   it('lists the plans in an AURA table, partnership first, with badges, pills and a right-aligned fee', () => {
@@ -291,6 +326,8 @@ describe('PlansTable filtered-empty state', () => {
     expect(within(bar).getAllByRole('combobox')).toHaveLength(1);
     expect(within(bar).getByRole('button', { name: SHOW_DELETED })).toBeInTheDocument();
     expect(within(bar).queryByRole('button', { name: en.admin.plans.filters.activeOnly })).toBeNull();
+    // UX review L2: no "0 results" beside "No plans for this year".
+    expect(bar.querySelector('.aura-filterbar__count')).toBeNull();
   });
 
   // Parity comment (US6): AURA's EmptyState pads itself, as on the members

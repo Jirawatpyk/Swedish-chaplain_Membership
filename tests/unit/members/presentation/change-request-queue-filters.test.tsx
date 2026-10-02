@@ -138,10 +138,17 @@ describe('<ChangeRequestQueueFilters> — the filter pattern', () => {
     );
   });
 
-  it('Clear filters drops every param', () => {
+  it('Clear filters drops every param, and focus lands on Status, not <body> (UX review H1)', () => {
     renderBar(`state=withdrawn&submitter=${SUBMITTER}`);
     fireEvent.click(screen.getByRole('button', { name: F.clear }));
     expect(lastUrl()).toEqual(['/admin/change-requests', { scroll: false }]);
+    expect(screen.getByRole('combobox', { name: F.state })).toHaveFocus();
+  });
+
+  it('removing a chip moves focus to Status, which is always there', () => {
+    renderBar(`submitter=${SUBMITTER}`);
+    fireEvent.click(screen.getByRole('button', { name: `Remove filter: ${F.submitterChip}` }));
+    expect(screen.getByRole('combobox', { name: F.state })).toHaveFocus();
   });
 
   it('a value the page would drop is no filter: no chip, no Clear (2026-02-30 is not a calendar day)', () => {
@@ -150,13 +157,21 @@ describe('<ChangeRequestQueueFilters> — the filter pattern', () => {
     expect(screen.getByRole('button', { name: `${F.submitted}: Any time` })).toBeInTheDocument();
   });
 
-  it('the result count sits at the end of the row, announced politely, with the next-page wording when there is more', () => {
+  it('the result count reads like the other lists, with the next-page wording only when there is more', () => {
     const { unmount } = renderBar('', { resultCount: 2 });
-    const count = screen.getByTestId('queue-result-count');
-    expect(count).toHaveTextContent('Showing 2 requests');
-    expect(count.closest('[aria-live="polite"]')).not.toBeNull();
+    const count = document.querySelector('.aura-filterbar__count');
+    expect(count).toHaveTextContent(/^2 results$/);
+    expect(count).toHaveAttribute('aria-live', 'polite');
     unmount();
     renderBar('', { resultCount: 50, hasMore: true });
-    expect(screen.getByTestId('queue-result-count')).toHaveTextContent('Showing the first 50 requests');
+    const more = screen.getByTestId('queue-result-count');
+    expect(more).toHaveTextContent('First 50 results, more on the next page');
+    // AURA keeps the count on one line; this longer one may wrap at 320px (UX review M2).
+    expect(more).toHaveClass('whitespace-normal');
+  });
+
+  it('the submitter chip follows "{filter}: {value}" (UX review L3)', () => {
+    renderBar(`submitter=${SUBMITTER}`);
+    expect(document.querySelector('.aura-filterbar__chips')).toHaveTextContent('Submitter: one person');
   });
 });

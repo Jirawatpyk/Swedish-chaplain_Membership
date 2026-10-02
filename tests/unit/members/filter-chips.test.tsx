@@ -124,6 +124,21 @@ describe('active-filter chips', () => {
   });
 });
 
+// UX review (filter pattern PR): one name for the region and the chip ×
+// across the four list pages, and a 44px ghost Clear on touch.
+describe('the filter pattern, across pages', () => {
+  it('names the region and each chip × the way the other lists do', () => {
+    renderFilters('status=active');
+    expect(screen.getByRole('region', { name: messages.admin.members.directory.filters.groupLabel })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Remove filter: Status: Active' })).toBeInTheDocument();
+  });
+
+  it('makes the ghost Clear filters beside the lone toggle 44px on touch', () => {
+    renderFilters('portal=needs_invite');
+    expect(screen.getByRole('button', { name: messages.admin.members.directory.clearFilters })).toHaveClass('aura-btn--touch');
+  });
+});
+
 // Whole-branch review: a Clear pressed inside the search debounce must stay
 // cleared — the pending typed query must not come back when the timer fires.
 describe('clearing inside the search debounce', () => {
