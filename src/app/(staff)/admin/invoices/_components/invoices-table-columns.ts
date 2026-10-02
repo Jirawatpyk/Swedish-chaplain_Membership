@@ -7,15 +7,25 @@
  */
 import type { DataTableColumn } from '@jirawatpyk/aura-react';
 
-type ColumnLayout = Pick<DataTableColumn, 'width' | 'minWidth' | 'card' | 'align' | 'actions'>;
+/**
+ * Sized so the table fits the staff frame's card without scrolling: all
+ * seven columns at 1440px (a 1069px box; widths plus AURA's 48px of gutters
+ * come to 1044px, and the buyer column takes the rest), and at 1280px (911px)
+ * once the Receipt No. column steps aside below a 1000px table. The receipt's
+ * state then reads under the number (`RECEIPT_COLUMN_MIN_TABLE_PX`). Narrower
+ * tables (a tablet) scroll sideways inside the box.
+ */
+export const RECEIPT_COLUMN_MIN_TABLE_PX = 1000;
+
+type ColumnLayout = Pick<DataTableColumn, 'width' | 'minWidth' | 'card' | 'align' | 'actions' | 'hideBelow'>;
 
 export const INVOICES_COLUMN_LAYOUT = {
-  documentNumber: { width: 208, card: 'title' },
-  memberName: { minWidth: 200 },
-  status: { width: 146, card: 'pill' },
-  dueDate: { width: 112 },
-  receipt: { width: 160, card: 'hide' },
-  total: { width: 136, align: 'end' },
+  documentNumber: { width: 160, card: 'title' },
+  memberName: { minWidth: 160 },
+  status: { width: 136, card: 'pill' },
+  dueDate: { width: 100 },
+  receipt: { width: 136, card: 'hide', hideBelow: RECEIPT_COLUMN_MIN_TABLE_PX },
+  total: { width: 120, align: 'end' },
   // The phone card's last row, full width (the US7a rule).
   actions: { width: 184, actions: true, card: 'footer' },
 } as const satisfies Record<string, ColumnLayout>;

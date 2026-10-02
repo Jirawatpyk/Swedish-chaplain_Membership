@@ -413,10 +413,10 @@ export function InvoicesTable({
         r.status === 'draft'
           ? t('actions.moreDraftAria', { name: r.memberName })
           : t('actions.moreAria', { number: r.documentNumber });
-      // A fragment, so the button sits directly in AURA's cell and its card
-      // footer rule can grow it to the row's width on a phone.
+      // Record payment on the left and the ⋯ on the right (the board). On a
+      // phone card the button grows to fill the footer row beside the ⋯.
       return (
-        <>
+        <div className="flex w-full items-center justify-between gap-1">
           {showRecordPayment ? (
             <RecordPaymentDialog
               invoiceId={r.invoiceId}
@@ -431,10 +431,13 @@ export function InvoicesTable({
               triggerSize="sm"
               triggerId={`record-payment-${r.invoiceId}`}
               triggerTestId="row-record-payment-trigger"
+              triggerClassName="max-sm:flex-1"
               // The refresh turns the row paid and the trigger unmounts; the ⋯ stays.
               finalFocusFallbackId={`row-menu-${r.invoiceId}`}
             />
-          ) : null}
+          ) : (
+            <span />
+          )}
           <DropdownMenu
             label={menuName}
             trigger={
@@ -442,7 +445,7 @@ export function InvoicesTable({
             }
             items={items}
           />
-        </>
+        </div>
       );
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- handleRowDownload only reads the setters and translators
@@ -534,9 +537,12 @@ export function InvoicesTable({
                 ) : null}
               </span>
             ) : null}
-            {/* Phone cards leave Receipt No. out (the board), so its state reads here. */}
+            {/* Phone cards leave Receipt No. out (the board), and a table under
+                1000px hides that column, so the receipt's state reads here
+                then. A container query on the table's wrapper, the same width
+                AURA's hideBelow measures. */}
             {r.status === 'paid' && (r.receiptPdfStatus === 'pending' || r.receiptPdfStatus === 'failed') ? (
-              <span className="sm:hidden" data-testid="row-receipt-state-card">
+              <span className="@min-[1000px]:hidden" data-testid="row-receipt-state-card">
                 {renderReceiptState(r, false)}
               </span>
             ) : null}
@@ -697,13 +703,15 @@ export function InvoicesTable({
   return (
     // Review A8 — the review-queue view names its table for itself, so a
     // screen-reader user who jumps straight to it hears which list it is.
-    <DataTable<InvoicesTableRow>
-      label={showQueueMetaColumn ? t('queueTableCaption') : t('tableCaption')}
-      rows={rows}
-      columns={columns}
-      rowKey="invoiceId"
-      rowHeight="auto"
-      stackBelow={640}
-    />
+    <div className="@container">
+      <DataTable<InvoicesTableRow>
+        label={showQueueMetaColumn ? t('queueTableCaption') : t('tableCaption')}
+        rows={rows}
+        columns={columns}
+        rowKey="invoiceId"
+        rowHeight="auto"
+        stackBelow={640}
+      />
+    </div>
   );
 }

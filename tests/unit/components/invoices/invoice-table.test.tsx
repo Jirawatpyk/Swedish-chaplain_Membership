@@ -27,6 +27,10 @@ import {
   InvoicesTable,
   type InvoicesTableRow,
 } from '@/app/(staff)/admin/invoices/_components/invoice-table';
+import {
+  INVOICES_COLUMN_LAYOUT,
+  RECEIPT_COLUMN_MIN_TABLE_PX,
+} from '@/app/(staff)/admin/invoices/_components/invoices-table-columns';
 
 const messages = {
   admin: {
@@ -1175,8 +1179,12 @@ describe('<InvoicesTable> — review fixes (US8 T809)', () => {
       const numberCell = screen.getByRole('link', { name: 'INV-2026-0001' }).closest('[role="gridcell"]');
       const cardLine = within(numberCell as HTMLElement).getByTestId('row-receipt-state-card');
       expect(cardLine).toHaveTextContent(text);
-      // Phone cards only: the grid's Receipt No. column says it on wider screens.
-      expect(cardLine).toHaveClass('sm:hidden');
+      // Only where Receipt No. is not shown: phone cards and tables under
+      // 1000px (the column's hideBelow), by a container query on the wrapper.
+      // Tailwind needs the literal class; it must match the column's hideBelow.
+      expect(cardLine).toHaveClass(`@min-[${RECEIPT_COLUMN_MIN_TABLE_PX}px]:hidden`);
+      expect(INVOICES_COLUMN_LAYOUT.receipt.hideBelow).toBe(RECEIPT_COLUMN_MIN_TABLE_PX);
+      expect(cardLine.closest('.\\@container')).not.toBeNull();
       if (receiptPdfStatus === 'failed') {
         expect(within(cardLine).getByRole('link')).toHaveAttribute('href', '/admin/invoices/inv-1');
       }
@@ -1202,13 +1210,14 @@ describe('<InvoicesTable> — review fixes (US8 T809)', () => {
     expect(trigger).toHaveAttribute('id', 'row-menu-inv-1');
   });
 
-  it("Record payment sits directly in the actions cell, so AURA's card footer can grow it", () => {
+  it('Record payment grows to fill the phone card footer beside the ⋯, and keeps its size in the grid', () => {
     render(
       <NextIntlClientProvider locale="en" messages={enMessages}>
         <InvoicesTable rows={[baseRow({ status: 'issued' })]} canRecordPayment todayIso="2026-06-20" />
       </NextIntlClientProvider>,
     );
     const trigger = screen.getByTestId('row-record-payment-trigger');
-    expect(trigger.parentElement).toHaveClass('aura-table__cell');
+    expect(trigger).toHaveClass('aura-btn', 'max-sm:flex-1');
+    expect(trigger).not.toHaveClass('flex-1');
   });
 });

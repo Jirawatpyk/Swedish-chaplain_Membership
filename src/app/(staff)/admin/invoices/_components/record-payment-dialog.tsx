@@ -73,6 +73,8 @@ type Props = {
   readonly triggerSize?: 'sm' | 'md';
   readonly triggerId?: string;
   readonly triggerTestId?: string;
+  /** Extra classes for the trigger, e.g. the list's `max-sm:flex-1` on phone cards. */
+  readonly triggerClassName?: string;
   /**
    * Spec 122 US8 (T809) — where focus goes after a successful payment. The
    * refresh turns the bill into a paid one and the trigger unmounts, so
@@ -101,6 +103,7 @@ export function RecordPaymentDialog({
   triggerSize,
   triggerId = 'record-payment',
   triggerTestId = 'record-payment-trigger',
+  triggerClassName,
   finalFocusFallbackId,
 }: Props) {
   const t = useTranslations('admin.invoices.pay');
@@ -142,6 +145,7 @@ export function RecordPaymentDialog({
           variant={triggerVariant}
           {...(triggerSize ? { size: triggerSize } : {})}
           touchHeight
+          {...(triggerClassName ? { className: triggerClassName } : {})}
           data-testid={triggerTestId}
           id={triggerId}
           aria-label={triggerAriaLabel}
