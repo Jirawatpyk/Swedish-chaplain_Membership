@@ -533,11 +533,12 @@ describe('<EventFeeForm>', () => {
       enMessages.admin.invoices.eventFeeForm.duplicateDialog.title,
     );
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    // The footer's Close (AURA's own close button shares the name).
     expect(
-      screen.getByRole('button', {
+      screen.getAllByRole('button', {
         name: enMessages.admin.invoices.eventFeeForm.duplicateDialog.cancel,
-      }),
-    ).toBeInTheDocument();
+      }).length,
+    ).toBeGreaterThanOrEqual(1);
   });
 
   it('non-member with empty buyer → inline errors + no POST', async () => {
@@ -590,7 +591,7 @@ describe('<EventFeeForm>', () => {
     ).toBeChecked();
     // Payment-date (defaulted to Bangkok today, max-clamped) + method select.
     const dateInput = screen.getByLabelText(
-      enMessages.admin.invoices.pay.fields.date,
+      new RegExp(`^${enMessages.admin.invoices.pay.fields.date}`),
     ) as HTMLInputElement;
     expect(dateInput.value).toBe(bangkokToday());
     expect(dateInput.max).toBe(bangkokToday());
@@ -937,7 +938,7 @@ describe('<EventFeeForm>', () => {
     // First attendee (paid → as-paid fields visible) + backdate.
     fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
     const dateInput = screen.getByLabelText(
-      enMessages.admin.invoices.pay.fields.date,
+      new RegExp(`^${enMessages.admin.invoices.pay.fields.date}`),
     ) as HTMLInputElement;
     fireEvent.change(dateInput, { target: { value: '2020-01-10' } });
     expect(dateInput.value).toBe('2020-01-10');
@@ -946,7 +947,7 @@ describe('<EventFeeForm>', () => {
     // back to today (the field default) and the stale ภ.พ.30 warning goes.
     fireEvent.click(screen.getByRole('button', { name: /Dora/ }));
     expect(
-      (screen.getByLabelText(enMessages.admin.invoices.pay.fields.date) as HTMLInputElement)
+      (screen.getByLabelText(new RegExp(`^${enMessages.admin.invoices.pay.fields.date}`)) as HTMLInputElement)
         .value,
     ).toBe(bangkokToday());
     expect(screen.queryByTestId('payment-date-vat-warning')).toBeNull();
@@ -1060,14 +1061,9 @@ describe('<EventFeeForm>', () => {
     const billFirst = screen.getByRole('radio', {
       name: new RegExp(modeMessages.billFirst.label),
     });
-    expect(billFirst).toHaveAttribute('aria-disabled', 'true');
-    expect(billFirst).toHaveAttribute(
-      'aria-describedby',
-      'mode-bill-first-needs-tin',
-    );
-    expect(screen.getByTestId('mode-bill-first-needs-tin')).toHaveTextContent(
-      modeMessages.billFirstNeedsTin,
-    );
+    // AURA radio: natively disabled, the reason read with the option.
+    expect(billFirst).toBeDisabled();
+    expect(billFirst).toHaveAccessibleName(new RegExp(modeMessages.billFirstNeedsTin));
   });
 
   it('B5: matched member with buyerIsVatRegistrant=true → bill_first selectable (explicit server truth)', async () => {
@@ -1078,13 +1074,13 @@ describe('<EventFeeForm>', () => {
     renderForm({ initialEventId: 'ev-1' });
     fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
 
-    fireEvent.click(screen.getByText(modeMessages.billFirst.label));
+    fireEvent.click(screen.getByRole('radio', { name: new RegExp(modeMessages.billFirst.label) }));
     await waitFor(() =>
       expect(
         screen.getByRole('radio', { name: new RegExp(modeMessages.billFirst.label) }),
       ).toBeChecked(),
     );
-    expect(screen.queryByTestId('mode-bill-first-needs-tin')).toBeNull();
+    expect(screen.queryByText(modeMessages.billFirstNeedsTin)).toBeNull();
   });
 
   it('B5: buyerIsVatRegistrant ABSENT (older API shape) → legacy matched⇒has-TIN guess keeps bill_first selectable', async () => {
@@ -1097,8 +1093,8 @@ describe('<EventFeeForm>', () => {
     const billFirst = screen.getByRole('radio', {
       name: new RegExp(modeMessages.billFirst.label),
     });
-    expect(billFirst).not.toHaveAttribute('aria-disabled', 'true');
-    expect(screen.queryByTestId('mode-bill-first-needs-tin')).toBeNull();
+    expect(billFirst).toBeEnabled();
+    expect(screen.queryByText(modeMessages.billFirstNeedsTin)).toBeNull();
   });
 
   it('refunded registration → hard-block card, no mode selector, submit disabled', async () => {
@@ -1184,31 +1180,14 @@ describe('<EventFeeForm>', () => {
     );
   });
 
-  it('mode-radio label wiring produces no duplicate "-label" ids (duplicate-id-aria)', async () => {
-    // Base UI's labelable provider assigns `label.id = "{radioId}-label"` to
-    // an id-less associated <label> — colliding with the hardcoded ids on the
-    // inner name-spans. The explicit `aria-labelledby` prop on each
-    // RadioGroupItem suppresses that assignment. jsdom runs the same layout
-    // effect, so a regression reproduces here; the authoritative proof for
-    // real browsers is the axe (`duplicate-id-aria`) run in Task 14.
+  it('each mode radio is named by its label, with its hint read after it (AURA RadioGroup)', async () => {
     vi.stubGlobal('fetch', mockFetchRegistrations([matchedRegistration]));
-    const { container } = renderForm({ initialEventId: 'ev-1' });
+    renderForm({ initialEventId: 'ev-1' });
     fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
     expect(screen.getByTestId('mode-selector')).toBeInTheDocument();
-
-    const labelIds = Array.from(container.querySelectorAll('[id$="-label"]')).map(
-      (el) => el.id,
-    );
-    const duplicates = labelIds.filter((id, i) => labelIds.indexOf(id) !== i);
-    expect(duplicates).toEqual([]);
-
-    // Each mode radio is named by its span (not the whole label incl. hint).
-    expect(
-      screen.getByRole('radio', { name: modeMessages.alreadyPaid.label }),
-    ).toHaveAttribute('aria-labelledby', 'issuance-mode-already-paid-label');
-    expect(
-      screen.getByRole('radio', { name: modeMessages.billFirst.label }),
-    ).toHaveAttribute('aria-labelledby', 'issuance-mode-bill-first-label');
+    const radio = screen.getAllByRole('radio')[0]!;
+    expect(radio.closest('label')).toHaveTextContent(modeMessages.alreadyPaid.label);
+    expect(radio.closest('label')).toHaveTextContent(modeMessages.alreadyPaid.hint);
   });
 
   // ── I3 — noValidate: inline i18n date errors instead of native bubbles ──
@@ -1224,7 +1203,7 @@ describe('<EventFeeForm>', () => {
     // attributes stay for picker clamping + semantics).
     expect(container.querySelector('form')).toHaveProperty('noValidate', true);
 
-    const dateInput = screen.getByLabelText(enMessages.admin.invoices.pay.fields.date);
+    const dateInput = screen.getByLabelText(new RegExp(`^${enMessages.admin.invoices.pay.fields.date}`));
     fireEvent.change(dateInput, { target: { value: '' } });
     fireEvent.click(
       screen.getByRole('button', {
@@ -1248,7 +1227,7 @@ describe('<EventFeeForm>', () => {
     renderForm({ initialEventId: 'ev-1' });
     fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
 
-    const dateInput = screen.getByLabelText(enMessages.admin.invoices.pay.fields.date);
+    const dateInput = screen.getByLabelText(new RegExp(`^${enMessages.admin.invoices.pay.fields.date}`));
     // Beyond the `max` clamp — jsdom (like a paste/manual entry in some
     // browsers) accepts it; the manual validator must catch it inline.
     fireEvent.change(dateInput, { target: { value: '2099-01-01' } });
@@ -1279,7 +1258,7 @@ describe('<EventFeeForm>', () => {
     expect(screen.queryByTestId('payment-date-vat-warning')).toBeNull();
 
     // Backdate far into a closed VAT period.
-    fireEvent.change(screen.getByLabelText(enMessages.admin.invoices.pay.fields.date), {
+    fireEvent.change(screen.getByLabelText(new RegExp(`^${enMessages.admin.invoices.pay.fields.date}`)), {
       target: { value: '2020-01-10' },
     });
 
@@ -1300,7 +1279,7 @@ describe('<EventFeeForm>', () => {
     renderForm({ initialEventId: 'ev-1' });
     fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
 
-    const dateInput = screen.getByLabelText(enMessages.admin.invoices.pay.fields.date);
+    const dateInput = screen.getByLabelText(new RegExp(`^${enMessages.admin.invoices.pay.fields.date}`));
     fireEvent.change(dateInput, { target: { value: '2020-01-10' } });
     expect(screen.getByTestId('payment-date-vat-warning')).toBeInTheDocument();
 

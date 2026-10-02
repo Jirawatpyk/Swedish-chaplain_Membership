@@ -129,8 +129,11 @@ describe('<NonMemberBuyerFields>', () => {
   // W4 — required labels now carry a visible "*" marker, so the label text
   // is "Legal name *" / "Address *". Match by regex (the marker is part of
   // the visible label; it's aria-hidden so SR users rely on aria-required).
-  it('renders legal name + address + tax id fields', () => {
+  it('renders legal name + address + tax id fields as AURA fields', () => {
     renderFields();
+    for (const label of [/Legal name/, /Address/, /Tax ID/, /Contact name/, /Contact email/]) {
+      expect(screen.getByLabelText(label).closest('.aura-field')).not.toBeNull();
+    }
     expect(screen.getByLabelText(/Legal name/)).toBeInTheDocument();
     expect(screen.getByLabelText(/Address/)).toBeInTheDocument();
     expect(screen.getByLabelText('Tax ID (optional)')).toBeInTheDocument();
@@ -164,12 +167,14 @@ describe('<NonMemberBuyerFields>', () => {
     const input = screen.getByLabelText(/Legal name/);
     expect(input).toHaveAttribute('aria-invalid', 'true');
     expect(input).toHaveAttribute('aria-describedby', 'buyer-legal-name-error');
-    expect(screen.getByRole('alert')).toHaveTextContent('Legal name is required.');
+    // AURA's field error (the form moves focus to the first field in error).
+    expect(document.getElementById('buyer-legal-name-error')).toHaveTextContent('Legal name is required.');
+    expect(input.closest('.aura-field')).toHaveClass('is-invalid');
   });
 
   it('has no error markup when errors are empty', () => {
     renderFields();
-    expect(screen.queryByRole('alert')).toBeNull();
+    expect(document.getElementById('buyer-legal-name-error')).toBeNull();
     expect(screen.getByLabelText(/Legal name/)).not.toHaveAttribute('aria-invalid');
   });
 });
