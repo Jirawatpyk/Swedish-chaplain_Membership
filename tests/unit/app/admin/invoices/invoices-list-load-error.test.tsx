@@ -117,6 +117,10 @@ vi.mock('@/modules/renewals', () => ({
   makeAutoRenewalQueueContextDeps: () => ({}),
 }));
 vi.mock('@/lib/events-admin-deps', () => ({ runListEventNamesByIds: vi.fn() }));
+// The best-effort credit-note count (only read when a page has rows) — its
+// failure is caught and logged, so a rejecting stand-in keeps it off the DB.
+vi.mock('@/lib/db', () => ({ runInTenant: vi.fn().mockRejectedValue(new Error('no db in unit tests')) }));
+vi.mock('@/modules/invoicing/infrastructure/db', () => ({ creditNotes: {} }));
 
 // Client components (next-intl react-client hooks have no provider under
 // renderToStaticMarkup) — irrelevant to what these tests assert.
@@ -126,6 +130,7 @@ vi.mock('@/app/(staff)/admin/invoices/_components/invoice-table', () => ({
 vi.mock('@/app/(staff)/admin/invoices/_components/invoice-filters', () => ({
   InvoiceFilters: () => null,
 }));
+vi.mock('@/components/layout/table-pagination', () => ({ TablePagination: () => null }));
 vi.mock('@/app/(staff)/admin/invoices/_components/csv-export-dialog', () => ({
   CsvExportDialog: () => null,
 }));
@@ -190,5 +195,45 @@ describe('AdminInvoicesPage — invoice read failure renders the load-error stat
     expect(html).toContain(en.admin.invoices.list.empty);
     expect(html).not.toContain(LOAD_FAILED);
     expect(errorSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('AdminInvoicesPage — the count line (US8 T809)', () => {
+  it('the auto-renewal origin filter already lists drafts, so the count line gives no drafts hint', async () => {
+    const { env } = await import('@/lib/env');
+    (env.features as { autoInvoice: boolean }).autoInvoice = true;
+    const { directorySearch } = await import('@/modules/members');
+    vi.mocked(directorySearch).mockResolvedValueOnce({ ok: false } as never);
+    try {
+      listInvoicesPagedMock.mockResolvedValue({
+        ok: true,
+        value: {
+          rows: [
+            {
+              invoiceId: 'inv-1',
+              status: 'issued',
+              invoiceSubject: 'membership',
+              memberId: null,
+              memberIdentitySnapshot: { legal_name: 'Acme Co., Ltd.' },
+              issueDate: '2026-06-01',
+              dueDate: '2026-06-15',
+              total: { satang: 100000n },
+              creditedTotal: { satang: 0n },
+              pdf: null,
+              receiptPdf: null,
+              receiptDocumentNumberRaw: null,
+              createdAt: new Date('2026-06-01T03:00:00Z'),
+            },
+          ],
+          total: 1,
+        },
+      });
+      const html = await renderPage({ origin: 'auto_renewal' });
+      // (This stub translator does not resolve ICU plurals, so only the hint is asserted.)
+      expect(html).toMatch(/<p role="status"[^>]*>[^<]*invoice/);
+      expect(html).not.toContain('to see drafts');
+    } finally {
+      (env.features as { autoInvoice: boolean }).autoInvoice = false;
+    }
   });
 });
