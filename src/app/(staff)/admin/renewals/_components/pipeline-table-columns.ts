@@ -6,7 +6,10 @@
  */
 import type { DataTableColumn } from '@jirawatpyk/aura-react';
 
-type ColumnLayout = Pick<DataTableColumn, 'width' | 'minWidth' | 'card' | 'align' | 'actions' | 'hideBelow'>;
+type ColumnLayout = Pick<
+  DataTableColumn,
+  'width' | 'minWidth' | 'card' | 'align' | 'actions' | 'hideBelow' | 'skeletonLines' | 'skeletonTouch'
+>;
 
 export const PIPELINE_COLUMN_LAYOUT = {
   tierBucket: { width: 104 },
@@ -22,7 +25,8 @@ export const PIPELINE_COLUMN_LAYOUT = {
   // Fits the longest "Send reminder" (SV "Skicka påminnelse", 142px) beside
   // the ⋯ and the cell's end padding; the phone card's last row, full width
   // (board Admin-renewals-mobile).
-  actions: { width: 200, actions: true, align: 'end', card: 'footer' },
+  // Its buttons are 44px on a phone (`touchHeight`), and so is the skeleton's bar.
+  actions: { width: 200, actions: true, align: 'end', card: 'footer', skeletonTouch: true },
 } as const satisfies Record<string, ColumnLayout>;
 
 export type PipelineColumnKey = keyof typeof PIPELINE_COLUMN_LAYOUT;
