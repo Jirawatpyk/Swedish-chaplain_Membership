@@ -69,10 +69,11 @@ export default async function VoidInvoicePage({
   return (
     <FormContainer>
       {/* UX-5 — back-link above the form card so the escape route is
-        * visible without scrolling past the destructive button. */}
+        * visible without scrolling past the destructive button. Below
+        * 1024px the shell's back link stands in (spec 122 US8b). */}
       <Link
         href={`/admin/invoices/${invoiceId}`}
-        className="inline-flex items-center gap-1 self-start text-sm text-[var(--aura-fg-accent)] hover:underline"
+        className="inline-flex items-center gap-1 self-start text-sm text-[var(--aura-fg-accent)] hover:underline max-lg:hidden"
       >
         <ArrowLeftIcon className="size-4" aria-hidden="true" />
         {t('backToInvoice')}

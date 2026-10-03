@@ -116,7 +116,11 @@ vi.mock(
   }),
 );
 vi.mock('next/link', () => ({
-  default: ({ children }: { children?: unknown }) => children as ReactElement,
+  default: ({ children, href, className }: { children?: React.ReactNode; href: string; className?: string }) => (
+    <a href={href} className={className}>
+      {children}
+    </a>
+  ),
 }));
 vi.mock('lucide-react', () => ({ ArrowLeftIcon: () => null }));
 

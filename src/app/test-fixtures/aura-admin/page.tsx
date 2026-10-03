@@ -1203,7 +1203,7 @@ export default async function AuraAdminPreviewPage({
         <FormContainer>
           <Link
             href={`/admin/invoices/${DETAIL_INVOICE_ID}`}
-            className="inline-flex items-center gap-1 self-start text-sm text-[var(--aura-fg-accent)] hover:underline"
+            className="inline-flex items-center gap-1 self-start text-sm text-[var(--aura-fg-accent)] hover:underline max-lg:hidden"
           >
             <ArrowLeftIcon className="size-4" aria-hidden="true" />
             {tVoid('backToInvoice')}
@@ -1223,7 +1223,7 @@ export default async function AuraAdminPreviewPage({
         <FormContainer>
           <Link
             href={`/admin/invoices/${DETAIL_INVOICE_ID}`}
-            className="inline-flex items-center gap-1 self-start text-sm text-[var(--aura-fg-accent)] hover:underline"
+            className="inline-flex items-center gap-1 self-start text-sm text-[var(--aura-fg-accent)] hover:underline max-lg:hidden"
           >
             <ArrowLeftIcon className="size-4" aria-hidden="true" />
             {tCn('backToInvoice')}

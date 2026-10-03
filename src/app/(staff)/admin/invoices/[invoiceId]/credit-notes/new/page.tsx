@@ -148,10 +148,11 @@ export default async function NewCreditNotePage({
 
   return (
     <FormContainer>
-      {/* The back link above the title, as on the void page and the board. */}
+      {/* The back link above the title, as on the void page and the board;
+          below 1024px the shell's back link stands in. */}
       <Link
         href={`/admin/invoices/${invoiceId}`}
-        className="inline-flex items-center gap-1 self-start text-sm text-[var(--aura-fg-accent)] hover:underline"
+        className="inline-flex items-center gap-1 self-start text-sm text-[var(--aura-fg-accent)] hover:underline max-lg:hidden"
       >
         <ArrowLeftIcon className="size-4" aria-hidden="true" />
         {t('backToInvoice')}
