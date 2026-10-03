@@ -39,6 +39,7 @@ import type { EmailDispatchOutcome } from '../email-dispatch-outcome';
 import type { MemberIdentityPort } from '../ports/member-identity-port';
 import type { ReceiptPdfRenderEnqueuePort } from '../ports/receipt-pdf-render-enqueue-port';
 import type { MembershipAccessPort } from '../ports/membership-access-port';
+import type { StepTimerPort } from '../ports/step-timer-port';
 import { asTenantContext } from '@/modules/tenants';
 import {
   asInvoiceId,
@@ -310,7 +311,17 @@ export interface RecordPaymentDeps {
   readonly onPaidCallbacks?: ReadonlyArray<
     (evt: F4InvoicePaidEvent, tx?: unknown) => Promise<void>
   >;
+  /**
+   * Optional step timer (the admin pay route passes its `Server-Timing`
+   * collector) — observation only; absent → untimed. Steps: `settings`,
+   * `invoice_read`, `membership_access`, `tx` and, inside it, `tx.lock`,
+   * `tx.sequence`, `tx.logo`, `tx.receipt_pdf` (render + blob upload),
+   * `tx.apply`, `tx.recipient`, `tx.outbox`, `tx.on_paid`.
+   */
+  readonly stepTimer?: StepTimerPort;
 }
+
+const untimed: StepTimerPort['time'] = (_step, fn) => fn();
 
 /**
  * Cluster 5 (Finding 1) — the paid invoice PLUS an observable auto-email
@@ -340,7 +351,10 @@ export async function recordPayment(
   // tenant_invoice_settings makes mid-race mutation a no-op), so reading
   // outside the tx is safe. Mirrors the identical fix + rationale in the
   // pre-`withTx` settings read in `issueCreditNote` and `voidInvoice`.
-  const settings = await deps.tenantSettingsRepo.getForIssue(input.tenantId);
+  const time = deps.stepTimer ? deps.stepTimer.time.bind(deps.stepTimer) : untimed;
+  const settings = await time('settings', () =>
+    deps.tenantSettingsRepo.getForIssue(input.tenantId),
+  );
   // R18-03 — early-exit on missing settings BEFORE opening withTx +
   // acquiring lockForUpdate. Matches the "pre-sequence early exits"
   // pattern in `issueInvoice` (its `settings_missing` guard) and saves a
@@ -373,7 +387,9 @@ export async function recordPayment(
   const isAdminDialogRail =
     eventTrigger !== 'webhook' && eventTrigger !== 'admin_offline_mark';
   if (isAdminDialogRail) {
-    const preInvoice = await deps.invoiceRepo.findById(invoiceId, input.tenantId);
+    const preInvoice = await time('invoice_read', () =>
+      deps.invoiceRepo.findById(invoiceId, input.tenantId),
+    );
     if (
       preInvoice &&
       preInvoice.invoiceSubject === 'membership' &&
@@ -388,9 +404,11 @@ export async function recordPayment(
       // above the `try` below, so the wrapper here is what keeps it Result-safe.
       let terminated = false;
       try {
-        const access = await deps.membershipAccess.getMembershipAccess(
-          asTenantContext(input.tenantId),
-          preInvoice.memberId,
+        const access = await time('membership_access', () =>
+          deps.membershipAccess.getMembershipAccess(
+            asTenantContext(input.tenantId),
+            preInvoice.memberId,
+          ),
         );
         if (access.ok) {
           terminated = access.value.access === 'terminated';
@@ -416,12 +434,14 @@ export async function recordPayment(
   }
 
   try {
-  return await deps.invoiceRepo.withTx(async (tx) => {
+  return await time('tx', () => deps.invoiceRepo.withTx(async (tx) => {
     // Row-lock first — guards against concurrent pay/void/credit-note
     // transactions on the same invoice. Branch on the locked status
     // directly so the idempotent-replay and invalid-status paths don't
     // require a second read that could race with a concurrent delete.
-    const lockedStatus = await deps.invoiceRepo.lockForUpdate(tx, invoiceId, input.tenantId);
+    const lockedStatus = await time('tx.lock', () =>
+      deps.invoiceRepo.lockForUpdate(tx, invoiceId, input.tenantId),
+    );
     if (!lockedStatus) {
       // R7-W1 — probe on not-found (RLS-hidden vs. truly-missing is
       // indistinguishable from the app layer; audit either way per
@@ -783,11 +803,13 @@ export async function recordPayment(
       // — member→advisory, the SAME order the β as-paid path takes. Do not
       // move the flip back below this allocation; see the hoisted block's
       // comment + the issue-event-invoice-as-paid.ts header.
-      const seq = await deps.sequenceAllocator.allocateNext(tx, {
-        tenantId: input.tenantId,
-        documentType: 'receipt',
-        fiscalYear: receiptFiscalYear,
-      });
+      const seq = await time('tx.sequence', () =>
+        deps.sequenceAllocator.allocateNext(tx, {
+          tenantId: input.tenantId,
+          documentType: 'receipt',
+          fiscalYear: receiptFiscalYear,
+        }),
+      );
       // 088 US7 fix — the §86/4 RC-role receipt defaults to 'RC' (NOT the stale
       // pre-088 'RE'). This must stay disjoint from the §105 `receipt_105`
       // register (issue-event-invoice-as-paid, hardcoded 'RE'): both writers land
@@ -852,19 +874,17 @@ export async function recordPayment(
     // runs with FEATURE_088_TAX_AT_PAYMENT permanently on and has no such
     // rows): every surface offers the main PDF plus the receipt once rendered.
     const receiptBlobKey = `invoicing/${input.tenantId}/${loaded.fiscalYear}/${loaded.invoiceId}_receipt_v${deps.currentTemplateVersion}.pdf`;
+    // Narrowed values are captured OUTSIDE the timer closures below —
+    // TypeScript does not carry `loaded.*` null-narrowing into a callback.
+    const logoBlobKey = loaded.tenantIdentitySnapshot.logo_blob_key;
     const tenantLogo = deps.asyncReceiptPdf
       ? null
-      : await loadTenantLogo(
-          deps.blob,
-          loaded.tenantIdentitySnapshot.logo_blob_key,
-          deps.currentTemplateVersion,
+      : await time('tx.logo', () =>
+          loadTenantLogo(deps.blob, logoBlobKey, deps.currentTemplateVersion),
         );
-    const rendered =
-      deps.asyncReceiptPdf
-        ? null
-        : await renderAndUploadPdf(
-            { pdfRender: deps.pdfRender, blob: deps.blob },
-            {
+    const receiptRenderRequest = deps.asyncReceiptPdf
+      ? null
+      : {
               renderInput: {
                 kind: receiptKind,
                 templateVersion: deps.currentTemplateVersion,
@@ -911,8 +931,16 @@ export async function recordPayment(
                   : {}),
               },
               blobKey: receiptBlobKey,
-            },
-            (code, reason) => new RecordPaymentInternalError({ code, reason }),
+            };
+    const rendered =
+      receiptRenderRequest === null
+        ? null
+        : await time('tx.receipt_pdf', () =>
+            renderAndUploadPdf(
+              { pdfRender: deps.pdfRender, blob: deps.blob },
+              receiptRenderRequest,
+              (code, reason) => new RecordPaymentInternalError({ code, reason }),
+            ),
           );
 
     // Atomic issued→paid UPDATE with payment fields + receipt PDF
@@ -922,7 +950,7 @@ export async function recordPayment(
     // raw 500.
     let updated: Invoice;
     try {
-      updated = await deps.invoiceRepo.applyPayment(tx, {
+      updated = await time('tx.apply', () => deps.invoiceRepo.applyPayment(tx, {
         tenantId: input.tenantId,
         invoiceId,
         paymentMethod: input.paymentMethod,
@@ -959,7 +987,7 @@ export async function recordPayment(
                   ? null
                   : receiptDocNumRaw,
               },
-      });
+      }));
 
       // T166-03 — async path: enqueue render task NOW (inside the same
       // tx as the `paid` flip, so the dispatcher cannot pick up a row
@@ -1148,12 +1176,14 @@ export async function recordPayment(
     //     rounds removing: the field is right, the value is a lie.
     const wantsReceiptEmail = settings.autoEmailEnabled && !input.suppressReceiptEmail;
     const moneyRecipient = wantsReceiptEmail
-      ? await resolveMoneyRecipient(
-          deps.recipientLocale,
-          tx,
-          input.tenantId,
-          memberId,
-          loaded.memberIdentitySnapshot,
+      ? await time('tx.recipient', () =>
+          resolveMoneyRecipient(
+            deps.recipientLocale,
+            tx,
+            input.tenantId,
+            memberId,
+            loaded.memberIdentitySnapshot,
+          ),
         )
       : null;
     const recipientEmail =
@@ -1213,7 +1243,7 @@ export async function recordPayment(
         moneyRecipient !== null && moneyRecipient.kind === 'member'
           ? (moneyRecipient.locale ?? undefined)
           : undefined;
-      await deps.outbox.enqueue(tx, {
+      await time('tx.outbox', () => deps.outbox.enqueue(tx, {
         tenantId: input.tenantId,
         eventType: 'invoice_paid',
         recipientEmail,
@@ -1227,7 +1257,7 @@ export async function recordPayment(
         dependsOnReceiptPdf: deps.asyncReceiptPdf === true,
         ...(recipientLocale ? { recipientLocale } : {}),
         ...(privacyFooterKind ? { privacyFooterKind } : {}),
-      });
+      }));
       emailDispatch = 'sent';
     } else if (settings.autoEmailEnabled && input.suppressReceiptEmail) {
       // 108 — this arm is now checked BEFORE the no-recipient one and no longer
@@ -1352,12 +1382,14 @@ export async function recordPayment(
         // for OTHER emitters (e.g. the as-paid path passes null).
         paymentDate: input.paymentDate,
       };
-      for (const cb of callbacks) {
-        // I3 review-fix: thread the F4-internal tx so listeners can
-        // participate atomically. Listeners that don't need it ignore
-        // the second parameter — cross-module contract stays narrow.
-        await cb(evt, tx);
-      }
+      await time('tx.on_paid', async () => {
+        for (const cb of callbacks) {
+          // I3 review-fix: thread the F4-internal tx so listeners can
+          // participate atomically. Listeners that don't need it ignore
+          // the second parameter — cross-module contract stays narrow.
+          await cb(evt, tx);
+        }
+      });
     }
 
     // `applyPayment` returns the refreshed row via RETURNING — no need
@@ -1365,7 +1397,7 @@ export async function recordPayment(
     // Cluster 5 (Finding 1) — thread the auto-email outcome alongside the paid
     // invoice (subtype of `Invoice`, so no consumer breaks).
     return ok({ ...updated, emailDispatch });
-  });
+  }));
   } catch (e) {
     if (e instanceof RecordPaymentInternalError) {
       logger.warn(

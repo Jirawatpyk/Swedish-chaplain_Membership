@@ -17,12 +17,44 @@ import { serialiseInvoice, stripReason } from '../../_serialise';
 import { logger } from '@/lib/logger';
 import { rateLimitedJson } from '@/lib/rate-limit-helpers';
 import { rateLimiter } from '@/lib/auth-deps';
+import { createServerTiming, type ServerTiming } from '@/lib/server-timing';
 
+/**
+ * Every response carries a `Server-Timing` header (DevTools → Network →
+ * Timing) and the same numbers land in one `pay.timing` log line (Vercel
+ * runtime logs), so a slow mark-paid can be attributed to a step — auth,
+ * rate limit, the renewals import, recordPayment's own steps (settings,
+ * membership gate, row lock, receipt sequence, receipt PDF render + upload,
+ * applyPayment, recipient, outbox, on-paid callbacks) and the F2 finaliser —
+ * instead of guessed. Durations only; no request data.
+ */
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ invoiceId: string }> },
+  routeCtx: { params: Promise<{ invoiceId: string }> },
 ): Promise<NextResponse> {
-  const ctx = await requireApiPermission(request, 'invoicing.write');
+  const timing = createServerTiming();
+  const res = await handlePay(request, routeCtx, timing);
+  res.headers.set('Server-Timing', timing.header());
+  const { invoiceId } = await routeCtx.params;
+  logger.info(
+    {
+      requestId: requestIdFromHeaders(request.headers),
+      invoiceId,
+      status: res.status,
+      totalMs: timing.totalMs(),
+      steps: timing.entries(),
+    },
+    'pay.timing',
+  );
+  return res;
+}
+
+async function handlePay(
+  request: NextRequest,
+  { params }: { params: Promise<{ invoiceId: string }> },
+  timing: ServerTiming,
+): Promise<NextResponse> {
+  const ctx = await timing.time('auth', () => requireApiPermission(request, 'invoicing.write'));
   if ('response' in ctx) return ctx.response;
 
   const { invoiceId } = await params;
@@ -33,10 +65,8 @@ export async function POST(
   // 5 min. Mirrors the /issue bucket — the idempotent replay path
   // inside record-payment is the safety net for legitimate retries;
   // this cap throttles misbehaving clients before they reach it.
-  const rl = await rateLimiter.check(
-    `f4:pay:${tenantCtx.slug}:${ctx.current.user.id}`,
-    20,
-    300,
+  const rl = await timing.time('rate_limit', () =>
+    rateLimiter.check(`f4:pay:${tenantCtx.slug}:${ctx.current.user.id}`, 20, 300),
   );
   if (!rl.success) {
     logger.warn(
@@ -90,14 +120,16 @@ export async function POST(
   // F8-enabled tenants pay the load cost once per process, while
   // F4-only deploys never load the barrel at all.
   const renewalsBarrel = env.features.f8Renewals
-    ? await import('@/modules/renewals')
+    ? await timing.time('renewals_import', () => import('@/modules/renewals'))
     : null;
   const f8Callbacks = renewalsBarrel
     ? renewalsBarrel.f8OnPaidCallbacks(tenantCtx.slug)
     : undefined;
-  const result = await recordPayment(
-    makeRecordPaymentDeps(tenantCtx.slug, undefined, f8Callbacks),
-    parsed.data,
+  const result = await timing.time('record_payment', () =>
+    recordPayment(
+      { ...makeRecordPaymentDeps(tenantCtx.slug, undefined, f8Callbacks), stepTimer: timing },
+      parsed.data,
+    ),
   );
   if (!result.ok) {
     logger.warn(
@@ -148,7 +180,7 @@ export async function POST(
   if (renewalsBarrel) {
     for (const cb of renewalsBarrel.f8AfterCommitCallbacks(tenantCtx.slug)) {
       try {
-        await cb(invoiceId);
+        await timing.time('f2_finalise', () => cb(invoiceId));
       } catch (finaliseErr) {
         logger.error(
           {
