@@ -24,12 +24,15 @@ const INVOICE_ID = '00000000-0000-0000-0000-000000000001';
 function makeDeps(
   taxAtPayment: TaxAtPaymentFlag,
   capture: { input?: PdfRenderInput },
+  draftOverrides: Record<string, unknown> = {},
 ): PreviewInvoiceDraftDeps {
   const draft = {
     status: 'draft' as const,
     memberId: 'mem-1',
     invoiceSubject: 'membership' as const,
+    vatInclusive: false,
     lines: [{ total: Money.fromSatangUnsafe(100_000n) }],
+    ...draftOverrides,
   };
   const settings = {
     vatRate: VatRate.ofUnsafe('0.0700'),
@@ -100,5 +103,32 @@ describe('previewInvoiceDraft — 088 billMode threading (FR-001 / FR-014)', () 
       invoiceId: INVOICE_ID,
     });
     expect(capUndef.input?.billMode).toBe(false);
+  });
+});
+
+// The preview PDF carries the figures issueInvoice will pin (standard
+// treatment — the zero-rate choice is made at issue). A matched-member EVENT
+// draft also reaches preview (the button and route do not filter on subject);
+// its all-in ticket price is the total with the VAT carved out, never the line
+// sum with 7% added on top.
+describe('previewInvoiceDraft — amounts match issuance', () => {
+  it('membership (VAT-exclusive): 1,000.00 + 7% → 1,070.00', async () => {
+    const cap: { input?: PdfRenderInput } = {};
+    await previewInvoiceDraft(makeDeps('on', cap), { tenantId: 't', invoiceId: INVOICE_ID });
+    expect(cap.input?.subtotal.satang).toBe(100_000n);
+    expect(cap.input?.vat.satang).toBe(7_000n);
+    expect(cap.input?.total.satang).toBe(107_000n);
+  });
+
+  it('matched-member event (VAT-inclusive): total = 1,000.00, VAT carved out, inclusive note on', async () => {
+    const cap: { input?: PdfRenderInput } = {};
+    await previewInvoiceDraft(
+      makeDeps('on', cap, { invoiceSubject: 'event', vatInclusive: true }),
+      { tenantId: 't', invoiceId: INVOICE_ID },
+    );
+    expect(cap.input?.total.satang).toBe(100_000n);
+    expect(cap.input?.subtotal.satang).toBe(93_458n);
+    expect(cap.input?.vat.satang).toBe(6_542n);
+    expect(cap.input?.vatInclusive).toBe(true);
   });
 });

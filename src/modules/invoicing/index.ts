@@ -57,6 +57,9 @@ export {
   type VatTreatment,
 } from './domain/policies/vat-treatment';
 export { splitVatInclusive } from './domain/value-objects/vat-inclusive';
+// The issue-time pricing (treatment-driven rate + VAT-inclusive carve-out),
+// shared by `issueInvoice`, the staff draft preview and the Issue dialog.
+export { computeIssuePricing } from './domain/policies/compute-issue-pricing';
 // 088 (T2 type-design finding) — the explicit 2-state FLOW flag for
 // tax-at-payment, replacing the tri-read `boolean | undefined`. The orthogonal
 // reconciliation axis is a separate `reconciliationPath: boolean` on the
@@ -474,6 +477,17 @@ export {
   type ProcessorPaymentMethod,
 } from './application/use-cases/mark-paid-from-processor';
 
+// Spec 122 US8b follow-up — the refund dialog's "Credit note to be issued"
+// rows: the verdict + proportional VAT split the refund's credit note will
+// carry, read server-side (never recomputed in the browser).
+export {
+  previewRefundCreditNote,
+  type PreviewRefundCreditNoteInput,
+  type PreviewRefundCreditNoteDeps,
+  type PreviewRefundCreditNoteError,
+  type RefundCreditNotePreview,
+} from './application/use-cases/preview-refund-credit-note';
+
 export {
   issueCreditNoteFromRefund,
   type IssueCreditNoteFromRefundInput,
@@ -517,6 +531,7 @@ export {
   makePreviewInvoiceDraftDeps,
   makeDeleteInvoiceDraftDeps,
   makeGetInvoiceDeps,
+  makePreviewRefundCreditNoteDeps,
   makeRecordPaymentDeps,
   makeRenderReceiptPdfDeps,
   makeVoidInvoiceDeps,

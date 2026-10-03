@@ -77,7 +77,7 @@ import { AtRiskFixture, MarkPaidDialogPreview, TierUpgradeAcceptPreview } from '
 import { renderInvoicesListView, renderInvoicesSetupView } from '@/app/(staff)/admin/invoices/_components/invoices-list-view';
 import { InvoiceCreateSwitcher } from '@/app/(staff)/admin/invoices/new/_components/invoice-create-switcher';
 import { INVOICE_EVENTS, INVOICE_MEMBERS, INVOICE_PLANS, INVOICE_ROWS, INVOICES_TODAY_ISO } from './invoice-fixtures';
-import { OpenFirstMatchingButton } from './invoice-previews';
+import { CreditNotePreviewStub, OpenFirstMatchingButton } from './invoice-previews';
 import { renderInvoiceDetailView } from '@/app/(staff)/admin/invoices/[invoiceId]/_components/invoice-detail-view';
 import { PaymentTimelineSkeleton } from '@/app/(staff)/admin/invoices/[invoiceId]/_components/payment-timeline-skeleton';
 import { VoidConfirmDialog } from '@/app/(staff)/admin/invoices/[invoiceId]/void/_components/void-confirm-dialog';
@@ -122,9 +122,11 @@ export const dynamic = 'force-dynamic';
  *   ?view=invoices|invoices-empty|invoices-filtered|invoices-setup|record-payment (US8a)
  *   ?view=invoice-new|invoice-new-event
  *   ?view=invoice&state=draft|issued|overdue|paid|credited|manager|email-failed|
- *         auto-refund-failed|refund-settling|refund-partial|voided|
- *         as-paid-tin|as-paid-receipt                                       (US8b)
- *   ?view=invoice&state=draft&dialog=issue|delete · state=paid|refund-partial&dialog=refund
+ *         auto-refund-failed|refund-settling|refund-partial|refund-full|
+ *         refund-receipt|voided|as-paid-tin|as-paid-receipt                 (US8b)
+ *   ?view=invoice&state=draft&dialog=issue|delete
+ *   ?view=invoice&state=paid|refund-full|refund-partial|refund-receipt&dialog=refund
+ *         (the credit-note preview read is answered from a fixture)
  *   ?view=invoice-void · ?view=credit-note-new&state=manual|online
  *   ?view=loading&state=members|plans|invoices|invoice|invoice-void|credit-note-new|…
  *
@@ -1192,6 +1194,7 @@ export default async function AuraAdminPreviewPage({
             : null;
     return (
       <StaffFrame path={`/admin/invoices/${DETAIL_INVOICE_ID}`}>
+        {dialog === 'refund' && <CreditNotePreviewStub waived={kind === 'refund-receipt'} />}
         {trigger ? <OpenFirstMatchingButton {...trigger}>{detail}</OpenFirstMatchingButton> : detail}
       </StaffFrame>
     );

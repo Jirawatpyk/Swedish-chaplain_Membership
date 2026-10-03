@@ -68,6 +68,7 @@ import {
 import type { PreviewInvoiceDraftDeps } from './use-cases/preview-invoice-draft';
 import type { DeleteInvoiceDraftDeps } from './use-cases/delete-invoice-draft';
 import type { GetInvoiceDeps } from './use-cases/get-invoice';
+import type { PreviewRefundCreditNoteDeps } from './use-cases/preview-refund-credit-note';
 import type { RecordPaymentDeps } from './use-cases/record-payment';
 import type { RenderReceiptPdfDeps } from './use-cases/render-receipt-pdf';
 import type { UpdateInvoiceDraftDeps } from './use-cases/update-invoice-draft';
@@ -411,6 +412,17 @@ export function makeGetInvoiceDeps(
     // supplied. Detail-page callers SHOULD pass actor; background
     // reads (sweeper, reconciliation) can omit it safely.
     audit: f4AuditAdapter,
+  };
+}
+
+/**
+ * The refund dialog's credit-note preview: the detail read (with the
+ * cross-tenant probe audit) plus earlier notes' VAT for the residual rule.
+ */
+export function makePreviewRefundCreditNoteDeps(tenantId: string): PreviewRefundCreditNoteDeps {
+  return {
+    ...makeGetInvoiceDeps(tenantId),
+    creditNoteRepo: makeDrizzleCreditNoteRepo(tenantId),
   };
 }
 

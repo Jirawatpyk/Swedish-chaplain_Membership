@@ -321,6 +321,8 @@ function makeDeps(
         ),
       ]),
       listPaged: vi.fn(),
+      // Residual rule — VAT already credited by earlier notes on the invoice.
+      sumVatByOriginalInvoiceInTx: vi.fn(async () => Money.zero()),
     } as unknown as IssueCreditNoteDeps['creditNoteRepo'],
     tenantSettingsRepo: {
       getForIssue: vi.fn(async () => settings),
@@ -597,6 +599,58 @@ describe('issueCreditNote — event-fee (non-member + matched-member) Task 8', (
     // total credited = 12500; vat+credit must equal it (exact split invariant).
     expect(insertCall.creditAmountSatang + insertCall.vatSatang).toBe(insertCall.totalSatang);
     expect(insertCall.totalSatang).toBe(12_500n);
+  });
+
+  it('the note that completes the credit takes the residual VAT, read in the locked tx — the total credited VAT equals the VAT charged', async () => {
+    // 25,000 incl. 1,636 VAT; 15,000 already credited by notes that carried
+    // 983 VAT (one satang more than proportional — a pre-rule note).
+    const invoice = makeIssuedEventInvoice({
+      status: 'partially_credited',
+      creditedTotal: Money.fromSatangUnsafe(15_000n),
+    });
+    const deps = makeDeps(invoice, makeSettings());
+    const sumVat = deps.creditNoteRepo.sumVatByOriginalInvoiceInTx as ReturnType<typeof vi.fn>;
+    sumVat.mockResolvedValueOnce(Money.fromSatangUnsafe(983n));
+
+    const r = await issueCreditNote(deps, {
+      ...baseInput,
+      requestId: 'req-cn-residual',
+      creditTotalSatang: 10_000n,
+      reason: 'final partial refund',
+    });
+
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
+    // Read on the invoice's own locked transaction, for this invoice.
+    const lockTx = (deps.invoiceRepo.lockForUpdate as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(sumVat).toHaveBeenCalledWith(lockTx, invoice.invoiceId, baseInput.tenantId);
+    const insertCall = (deps.creditNoteRepo.insertCreditNote as ReturnType<typeof vi.fn>).mock
+      .calls[0]![1];
+    // 1,636 − 983 = 653 (proportional alone would give 654 → 1,637 in total).
+    expect(insertCall.vatSatang).toBe(653n);
+    expect(insertCall.creditAmountSatang).toBe(9_347n);
+  });
+
+  it('a partial note is proportional, capped so the running VAT never passes the VAT charged', async () => {
+    const invoice = makeIssuedEventInvoice({
+      status: 'partially_credited',
+      creditedTotal: Money.fromSatangUnsafe(20_000n),
+    });
+    const deps = makeDeps(invoice, makeSettings());
+    // Earlier (pre-rule) notes already credited all 1,636.
+    (deps.creditNoteRepo.sumVatByOriginalInvoiceInTx as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      Money.fromSatangUnsafe(1_636n),
+    );
+    const r = await issueCreditNote(deps, {
+      ...baseInput,
+      requestId: 'req-cn-cap',
+      creditTotalSatang: 2_000n,
+      reason: 'partial refund',
+    });
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
+    const insertCall = (deps.creditNoteRepo.insertCreditNote as ReturnType<typeof vi.fn>).mock
+      .calls[0]![1];
+    expect(insertCall.vatSatang).toBe(0n);
+    expect(insertCall.creditAmountSatang).toBe(2_000n);
   });
 
   it('email SKIPPED when non-member buyer snapshot email is empty (no outbox enqueue despite auto-email on)', async () => {

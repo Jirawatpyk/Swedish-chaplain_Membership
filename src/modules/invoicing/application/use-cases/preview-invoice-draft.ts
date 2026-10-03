@@ -16,7 +16,7 @@ import type { ClockPort } from '../ports/clock-port';
 import type { AuditPort } from '../ports/audit-port';
 import { loadTenantLogo } from '../lib/load-tenant-logo';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
-import { calculateVat } from '@/modules/invoicing/domain/policies/calculate-vat';
+import { computeIssuePricing } from '@/modules/invoicing/domain/policies/compute-issue-pricing';
 import { asInvoiceId, type InvoiceId } from '@/modules/invoicing/domain/invoice';
 import type { TaxAtPaymentFlag } from '@/modules/invoicing/domain/tax-at-payment-flag';
 
@@ -107,10 +107,19 @@ export async function previewInvoiceDraft(
     const member = await deps.memberIdentity.getForIssue(tx, input.tenantId, draft.memberId);
     if (!member) return err({ code: 'member_not_found' });
 
-    // Pricing
-    let subtotal = Money.zero();
-    for (const line of draft.lines) subtotal = subtotal.add(line.total);
-    const { vat, total } = calculateVat(subtotal, settings.vatRate);
+    // Pricing — the shared issue-time policy, so the preview PDF carries the
+    // figures issueInvoice will pin at the standard rate (the §80/1(5)
+    // zero-rate is chosen at issue, not stored on the draft). A matched-member
+    // EVENT draft also reaches here: its all-in ticket price is the total with
+    // the VAT carved out, not the line sum + 7%.
+    let lineSum = Money.zero();
+    for (const line of draft.lines) lineSum = lineSum.add(line.total);
+    const { subtotal, vat, total } = computeIssuePricing({
+      lineSum,
+      vatInclusive: draft.vatInclusive,
+      vatTreatment: 'standard',
+      standardRate: settings.vatRate,
+    });
 
     const tenantLogo = await loadTenantLogo(
       deps.blob,
@@ -137,6 +146,9 @@ export async function previewInvoiceDraft(
       // `billMode: taxAtPayment`). Without this the draft preview mistitles the
       // bill as ใบกำกับภาษี/Tax Invoice.
       billMode: deps.taxAtPayment === 'on',
+      // An event ticket price is VAT-inclusive: print the same "price includes
+      // VAT" note the issued document carries.
+      vatInclusive: draft.vatInclusive,
       // 088 US5 (T041 / FR-012) — gate the tenant WHT note on a membership draft
       // preview so the admin sees the note that will print on the issued document.
       invoiceSubject: draft.invoiceSubject,

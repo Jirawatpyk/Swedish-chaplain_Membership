@@ -88,7 +88,7 @@ import { Money } from '@/modules/invoicing/domain/value-objects/money';
 import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/document-number';
 import type { FiscalYear } from '@/modules/invoicing/domain/value-objects/fiscal-year';
 import { fiscalYearFromUtcIso } from '@/modules/invoicing/domain/value-objects/fiscal-year';
-import { splitVatInclusive } from '@/modules/invoicing/domain/value-objects/vat-inclusive';
+import { computeIssuePricing } from '@/modules/invoicing/domain/policies/compute-issue-pricing';
 import {
   inferReceiptKind,
   resolveBuyerIsVatRegistrant,
@@ -468,13 +468,19 @@ export async function issueEventInvoiceAsPaid(
 
       // F. Pricing — the single event_fee line carries the all-in price, so
       // the line sum IS the total; back-calculate subtotal + VAT exactly
-      // (subtotal+vat===total by construction — see issueInvoice F block).
+      // (subtotal+vat===total by construction). Through the shared issue-time
+      // policy, so this path cannot drift from issueInvoice; as-paid has no
+      // §80/1(5) zero-rate, so the treatment is always 'standard'.
       let lineSum = Money.zero();
       for (const line of draft.lines) {
         lineSum = lineSum.add(line.total);
       }
-      const total = lineSum;
-      const { subtotal, vat } = splitVatInclusive(total, settings.vatRate.numerator);
+      const { subtotal, vat, total } = computeIssuePricing({
+        lineSum,
+        vatInclusive: draft.vatInclusive,
+        vatTreatment: 'standard',
+        standardRate: settings.vatRate,
+      });
 
       // D. Fiscal year — from the PAYMENT date, not now(). `T05:00:00Z` is
       // 12:00 Bangkok on the same calendar day (Bangkok has no DST), so the
