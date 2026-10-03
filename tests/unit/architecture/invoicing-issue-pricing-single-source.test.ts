@@ -12,6 +12,14 @@
  * top. The primitives stay in the invoicing domain; everything else in `src/`
  * goes through the policy. (The barrel's re-exports stay for tests, which use
  * the primitives as an independent oracle.)
+ *
+ * Known gap, by design: a client component cannot import the invoicing
+ * barrel, so the New invoice → Event fee form previews the VAT-inclusive
+ * split with its own integer arithmetic (`previewVatInclusive` in
+ * `src/app/(staff)/admin/invoices/new/_components/event-fee-form.tsx`). This
+ * scan cannot see plain arithmetic; that copy is held to the domain by a
+ * fast-check parity test against `splitVatInclusive` (added by PR #515) in
+ * `tests/unit/components/invoices/event-fee-form.test.tsx` instead.
  */
 import { describe, expect, it } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
