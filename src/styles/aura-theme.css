@@ -18,6 +18,8 @@
   --aura-chart-seq-3: #265c8f;
   --aura-chart-seq-4: #0a4476;
   --aura-chart-seq-5: #002f58;
+  --aura-control-checked-bg: #2e6397;
+  --aura-control-checked-fg: #ffffff;
   --aura-shadow-creative: 4px 4px 0px #18181b;
   --aura-shadow-creative-hover: 6px 6px 0px #18181b;
   --aura-card-shadow-creative: 8px 8px 0px #18181b;
@@ -38,6 +40,8 @@
   --aura-alert-info-border: #3d5169;
   --aura-status-progress-bg: #24303e;
   --aura-status-progress-fg: #9cc5f1;
+  --aura-control-checked-bg: #9cc5f1;
+  --aura-control-checked-fg: #18181b;
   --aura-shadow-creative: 4px 4px 0px #74a7dd;
   --aura-shadow-creative-hover: 6px 6px 0px #74a7dd;
   --aura-card-shadow-creative: 8px 8px 0px #74a7dd;
@@ -59,6 +63,8 @@
   --aura-alert-info-border: #3d5169;
   --aura-status-progress-bg: #24303e;
   --aura-status-progress-fg: #9cc5f1;
+  --aura-control-checked-bg: #9cc5f1;
+  --aura-control-checked-fg: #18181b;
   --aura-shadow-creative: 4px 4px 0px #74a7dd;
   --aura-shadow-creative-hover: 6px 6px 0px #74a7dd;
   --aura-card-shadow-creative: 8px 8px 0px #74a7dd;
