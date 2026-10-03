@@ -40,7 +40,7 @@ export function PhraseChip({
       <code
         id={id}
         data-testid={testId}
-        className="rounded-[var(--aura-radius-sm)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface-strong)] px-[var(--aura-space-2)] py-[var(--aura-space-1)] font-mono text-sm text-[var(--aura-fg-primary)] break-all"
+        className="rounded-[var(--aura-radius-sm)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface-hover)] px-[var(--aura-space-2)] py-[var(--aura-space-1)] font-mono text-sm text-[var(--aura-fg-primary)] break-all"
       >
         {phrase}
       </code>

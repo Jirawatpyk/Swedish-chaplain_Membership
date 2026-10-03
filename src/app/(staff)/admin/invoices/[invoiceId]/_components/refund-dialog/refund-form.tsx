@@ -500,7 +500,7 @@ export function RefundForm({
       {summaryAmountSatang !== null && (
         <div
           data-testid="refund-summary"
-          className="flex flex-col gap-[var(--aura-space-2)] rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface-strong)] p-[var(--aura-space-3)]"
+          className="flex flex-col gap-[var(--aura-space-2)] rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface-hover)] p-[var(--aura-space-3)]"
         >
           <p className="text-xs font-semibold text-[var(--aura-fg-secondary)]">{tForm('summary.title')}</p>
           <dl className="grid grid-cols-[1fr_auto] gap-x-[var(--aura-space-4)] gap-y-[var(--aura-space-1)] text-sm">
