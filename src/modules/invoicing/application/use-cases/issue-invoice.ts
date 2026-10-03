@@ -161,7 +161,7 @@ export const issueInvoiceSchema = z.object({
   // The total (satang, digits) the Issue dialog showed the admin. Optional:
   // present → issuance refuses `issue_total_changed` (pre-sequence) if the
   // priced total differs; absent → no check (callers that show no total).
-  expectedTotalSatang: z.string().regex(/^\d{1,15}$/).optional(),
+  expectedTotalSatang: z.string().regex(/^(0|[1-9]\d{0,14})$/).optional(),
 });
 
 export type IssueInvoiceInput = z.infer<typeof issueInvoiceSchema>;
@@ -625,6 +625,17 @@ export async function issueInvoice(
       input.expectedTotalSatang !== undefined &&
       BigInt(input.expectedTotalSatang) !== total.satang
     ) {
+      // Nothing issued → no audit row; logged so a run of these (a live
+      // page-vs-issue drift, e.g. a VAT rate changed mid-session) is visible.
+      logger.info(
+        {
+          tenantId: input.tenantId,
+          invoiceId: input.invoiceId,
+          expectedTotalSatang: input.expectedTotalSatang,
+          pricedTotalSatang: total.satang.toString(),
+        },
+        'issueInvoice: issue_total_changed — confirmed total is stale, refused pre-sequence',
+      );
       return err({ code: 'issue_total_changed' });
     }
 
