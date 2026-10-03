@@ -30,7 +30,7 @@ import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { baseHeaders, errorResponse } from '@/lib/payments-route-helpers';
-import { makeGetInvoiceDeps, previewRefundCreditNote } from '@/modules/invoicing';
+import { makePreviewRefundCreditNoteDeps, previewRefundCreditNote } from '@/modules/invoicing';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -91,7 +91,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
   let result: Awaited<ReturnType<typeof previewRefundCreditNote>>;
   try {
-    result = await previewRefundCreditNote(makeGetInvoiceDeps(tenantCtx.slug), {
+    result = await previewRefundCreditNote(makePreviewRefundCreditNoteDeps(tenantCtx.slug), {
       tenantId: tenantCtx.slug,
       invoiceId,
       creditTotalSatang: amountSatang,

@@ -169,6 +169,24 @@ function selectByOriginalInvoice(
     .orderBy(desc(creditNotes.createdAt));
 }
 
+/**
+ * Residual rule — SUM(vat_satang) over every credit note of an invoice,
+ * tenant-filtered on top of RLS. No LIMIT: the sum must see every note.
+ */
+async function sumVatByOriginalInvoice(
+  tx: TenantTx,
+  originalInvoiceId: InvoiceId,
+  tenantIdArg: string,
+): Promise<Money> {
+  const [row] = await tx
+    .select({ total: sql<string>`COALESCE(SUM(${creditNotes.vatSatang}), 0)::text` })
+    .from(creditNotes)
+    .where(
+      and(eq(creditNotes.tenantId, tenantIdArg), eq(creditNotes.originalInvoiceId, originalInvoiceId)),
+    );
+  return Money.fromSatangUnsafe(BigInt(row?.total ?? '0'));
+}
+
 export function makeDrizzleCreditNoteRepo(tenantId: string): CreditNoteRepo {
   const ctx = asTenantContext(tenantId);
 
@@ -406,6 +424,14 @@ export function makeDrizzleCreditNoteRepo(tenantId: string): CreditNoteRepo {
           ? [rowToCreditNote(r.creditNote as CreditNoteRow, r.originalInvoiceMemberId)]
           : [],
       );
+    },
+
+    async sumVatByOriginalInvoiceInTx(txUnknown, originalInvoiceId: InvoiceId, tenantIdArg: string) {
+      return sumVatByOriginalInvoice(txUnknown as TenantTx, originalInvoiceId, tenantIdArg);
+    },
+
+    async sumVatByOriginalInvoice(originalInvoiceId: InvoiceId, tenantIdArg: string) {
+      return runInTenant(ctx, (tx) => sumVatByOriginalInvoice(tx, originalInvoiceId, tenantIdArg));
     },
 
     async listPaged(input): Promise<{

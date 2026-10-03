@@ -17,9 +17,13 @@
  *      receipt, a voided invoice) owes no credit note, so no VAT is shown; a
  *      `blocked` gate refuses the refund, so none is shown either.
  *   2. The split — `enforceCreditCannotExceedRemainder` then
- *      `calculateCreditNoteVat` on the invoice's snapshotted VAT and total,
- *      steps D and E of `issue-credit-note.ts`. Each note is rounded on its
- *      own; there is no residual rule for the last partial, so none here.
+ *      `calculateCreditNoteVat` on the invoice's snapshotted VAT and total
+ *      and what its earlier notes credited, steps D and E of
+ *      `issue-credit-note.ts`: the completing note takes the residual VAT.
+ *      Earlier notes' VAT is read without the row lock `issueCreditNote`
+ *      holds — a note landing in between can change the answer, which is
+ *      fine for an advisory read; the issued note is always computed under
+ *      the lock.
  *
  * IF EITHER OF THOSE CHANGES, THIS CHANGES WITH IT.
  *
@@ -32,6 +36,7 @@
  */
 import { ok, err, type Result } from '@/lib/result';
 import { getInvoice, type GetInvoiceDeps, type GetInvoiceInput } from './get-invoice';
+import type { CreditNoteRepo } from '../ports/credit-note-repo';
 import { calculateCreditNoteVat } from '@/modules/invoicing/domain/policies/calculate-credit-note-vat';
 import { enforceCreditCannotExceedRemainder } from '@/modules/invoicing/domain/policies/enforce-credit-cannot-exceed-remainder';
 import {
@@ -74,8 +79,12 @@ export type PreviewRefundCreditNoteError =
   | { readonly code: 'exceeds_remainder'; readonly remainingSatang: bigint }
   | { readonly code: 'invoice_data_corrupt' };
 
+export interface PreviewRefundCreditNoteDeps extends GetInvoiceDeps {
+  readonly creditNoteRepo: Pick<CreditNoteRepo, 'sumVatByOriginalInvoice'>;
+}
+
 export async function previewRefundCreditNote(
-  deps: GetInvoiceDeps,
+  deps: PreviewRefundCreditNoteDeps,
   input: PreviewRefundCreditNoteInput,
 ): Promise<Result<RefundCreditNotePreview, PreviewRefundCreditNoteError>> {
   // RLS + the tenant-scoped repo make another tenant's invoice a not-found;
@@ -132,10 +141,13 @@ export async function previewRefundCreditNote(
     return err({ code: 'exceeds_remainder', remainingSatang: remainder.error.remainingSatang });
   }
 
+  const priorCreditedVat = await deps.creditNoteRepo.sumVatByOriginalInvoice(inv.invoiceId, input.tenantId);
   const split = calculateCreditNoteVat({
     creditTotal: proposed,
     originalVat: inv.vat,
     originalTotal: inv.total,
+    alreadyCredited: inv.creditedTotal,
+    priorCreditedVat,
   });
   if (!split.ok) return err({ code: 'invoice_data_corrupt' });
 

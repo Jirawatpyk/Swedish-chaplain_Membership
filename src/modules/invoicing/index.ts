@@ -483,6 +483,7 @@ export {
 export {
   previewRefundCreditNote,
   type PreviewRefundCreditNoteInput,
+  type PreviewRefundCreditNoteDeps,
   type PreviewRefundCreditNoteError,
   type RefundCreditNotePreview,
 } from './application/use-cases/preview-refund-credit-note';
@@ -530,6 +531,7 @@ export {
   makePreviewInvoiceDraftDeps,
   makeDeleteInvoiceDraftDeps,
   makeGetInvoiceDeps,
+  makePreviewRefundCreditNoteDeps,
   makeRecordPaymentDeps,
   makeRenderReceiptPdfDeps,
   makeVoidInvoiceDeps,
