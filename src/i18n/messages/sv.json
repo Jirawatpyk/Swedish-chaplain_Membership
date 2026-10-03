@@ -2853,7 +2853,8 @@
             "notAMonth": "Inte en enskild kalendermånad — ภ.พ.30 lämnas per kalendermånad.",
             "closedMonthIncomplete": "Ofullständigt belopp — {count, plural, one {# kombinerad faktura + kvitto} other {# kombinerade fakturor + kvitton}} (INV-nummer, utan RC/RE) utfärdade denna månad ingår inte i beloppet. Ta med {count, plural, one {den} other {dem}} innan ภ.พ.30 lämnas."
           },
-          "less": "minus"
+          "less": "minus",
+          "about": "Om siffran"
         },
         "summary": {
           "count": "{count, plural, one {# kvitto} other {# kvitton}}",

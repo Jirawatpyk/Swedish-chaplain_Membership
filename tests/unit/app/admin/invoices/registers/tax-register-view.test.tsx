@@ -137,7 +137,9 @@ describe('renderTaxRegisterView — the figures equal the use case output', () =
     await renderView();
     const grid = screen.getByRole('grid');
     expect(within(grid).getAllByRole('row')).toHaveLength(output.rows.length + 1);
-    const voidRow = screen.getByTestId('register-row-void');
+    // AURA's DataTable takes no per-row props, so the marker sits in the
+    // number cell; its row is the cancelled receipt's.
+    const voidRow = screen.getByTestId('register-row-void').closest<HTMLElement>('[role="row"]')!;
     expect(within(voidRow).getByText(r.cancelled)).toBeInTheDocument();
     // A legacy receipt with no payment date shows its Bangkok-local paid date.
     expect(within(voidRow).getByText(bangkokLocalDate('2026-09-15T20:30:00.000Z'))).toBeInTheDocument();

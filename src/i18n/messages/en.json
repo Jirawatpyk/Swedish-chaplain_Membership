@@ -2853,7 +2853,8 @@
             "notAMonth": "Not a single calendar month — ภ.พ.30 is filed per calendar month.",
             "closedMonthIncomplete": "Incomplete — {count, plural, one {# combined tax invoice + receipt} other {# combined tax invoices + receipts}} (INV number, no RC/RE) issued this month {count, plural, one {is} other {are}} not in this figure. Include {count, plural, one {it} other {them}} before filing ภ.พ.30."
           },
-          "less": "minus"
+          "less": "minus",
+          "about": "About this figure"
         },
         "summary": {
           "count": "{count, plural, one {# receipt} other {# receipts}}",
