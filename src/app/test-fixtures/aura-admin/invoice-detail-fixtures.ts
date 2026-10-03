@@ -126,6 +126,7 @@ const BASE: Omit<InvoiceDetailViewProps, 'invoice' | 'displayStatus' | 'paymentA
   failedEmailBanners: [],
   autoRefund: { failed: false, processorRefundId: null },
   totals: { subtotalSatang: SUBTOTAL, vatSatang: VAT, totalSatang: TOTAL, vatPercent: '7.00%' },
+  issueTotals: null,
   settlingRefundSatang: null,
   refund: null,
   bangkokTodayIso: DETAIL_TODAY_ISO,
@@ -165,6 +166,10 @@ export function detailFixture(kind: DetailFixtureKind): Omit<InvoiceDetailViewPr
         displayStatus: 'draft',
         headerNumber: null,
         taxDocKind: 'none',
+        issueTotals: {
+          standard: { subtotalSatang: Number(SUBTOTAL), vatSatang: Number(VAT), totalSatang: Number(TOTAL), vatPercent: '7.00%' },
+          zero_rated_80_1_5: { subtotalSatang: Number(SUBTOTAL), vatSatang: 0, totalSatang: Number(SUBTOTAL), vatPercent: '0.00%' },
+        },
       };
     case 'overdue':
       return {

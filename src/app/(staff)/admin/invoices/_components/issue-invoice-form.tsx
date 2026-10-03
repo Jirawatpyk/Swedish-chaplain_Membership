@@ -9,7 +9,9 @@
  * the Base-UI-dialog jsdom transition hang and makes the form RTL-testable.
  *
  * Composes, top-to-bottom:
- *   - the pre-confirm summary (numbers the SR narrates as dialog content);
+ *   - the pre-confirm summary (numbers the SR narrates as dialog content),
+ *     for the chosen VAT treatment, priced server-side by the issue use case's
+ *     own policy (`computeIssuePricing`), so it shows the figures the bill pins;
  *   - 088 US8 the `vat_treatment` control (FR-023): a standard/zero-rate
  *     radio group for a NON-membership sale, or an error-prevention caption
  *     for a membership sale (membership is always VAT 7%). Progressive-
@@ -40,6 +42,7 @@ import { formatCalendarYear } from '@/lib/format-date-localised';
 import { toast } from '@/lib/toast';
 import { Alert, Badge, Button, RadioGroup, TextField } from '@jirawatpyk/aura-react';
 import { computeIssueReviewModel } from '../_lib/issue-review';
+import { formatSatang, type IssueTotalsByTreatment } from '../_lib/issue-summary-totals';
 import { TOUCH_CHOICES, TOUCH_FIELD } from '../_lib/touch-targets';
 import {
   buildIssueRequestBody,
@@ -60,11 +63,14 @@ export type IssueInvoiceFormProps = {
     readonly memberName: string;
     readonly planDisplayName: string;
     readonly planYear: number;
-    readonly subtotalText: string;
-    readonly vatText: string;
-    readonly vatPercent: string;
-    readonly totalText: string;
   };
+  /**
+   * The draft priced per VAT treatment by the issue use case's own policy.
+   * The summary, the confirm label and the ≥ 5,000 THB zero-rate advisory use
+   * the set for the chosen treatment. `null` (no invoice settings) → the
+   * amounts read `—` and the confirm names no amount.
+   */
+  readonly totalsByTreatment: IssueTotalsByTreatment | null;
   /** 066 — informational note that a MEMBERSHIP buyer has no Tax ID. */
   readonly showNoTaxIdHint?: boolean;
   /**
@@ -84,12 +90,6 @@ export type IssueInvoiceFormProps = {
   readonly hasNoPaymentPath?: boolean;
   /** Bill-number stream prefix for the review copy (SC). */
   readonly billNumberPrefix?: string;
-  /**
-   * Draft subtotal in SATANG (plain number — a bigint cannot cross the RSC →
-   * client-prop boundary). Drives the ≥ 5,000 THB zero-rate advisory. `null`
-   * when unknown → the advisory stays dormant.
-   */
-  readonly subtotalSatang?: number | null;
   /** Close the enclosing dialog (wired by the wrapper to `setOpen(false)`). */
   readonly onClose: () => void;
   /** The POST is in flight: the dialog stays open (no Escape or scrim close). */
@@ -106,7 +106,7 @@ export function IssueInvoiceForm({
   whtNoteWillPrint,
   hasNoPaymentPath,
   billNumberPrefix = 'SC',
-  subtotalSatang = null,
+  totalsByTreatment,
   onClose,
   onPendingChange,
 }: IssueInvoiceFormProps) {
@@ -157,7 +157,9 @@ export function IssueInvoiceForm({
   const effectiveTreatment: VatTreatmentChoice = isZeroRated
     ? 'zero_rated_80_1_5'
     : 'standard';
-  const lowAmountWarn = isZeroRateLowAmount(effectiveTreatment, subtotalSatang);
+  const totals = totalsByTreatment?.[effectiveTreatment] ?? null;
+  const totalText = totals ? formatSatang(BigInt(totals.totalSatang)) : null;
+  const lowAmountWarn = isZeroRateLowAmount(effectiveTreatment, totals?.subtotalSatang ?? null);
 
   const confirmPhrase = t('confirmPhrase');
   const matches =
@@ -320,21 +322,21 @@ export function IssueInvoiceForm({
         </div>
         <div>
           <dt className="text-[var(--aura-fg-secondary)]">{tDetail('fields.subtotal')}</dt>
-          <dd className="tabular-nums">{summary.subtotalText} THB</dd>
+          <dd className="tabular-nums">{totals ? formatSatang(BigInt(totals.subtotalSatang)) : '—'} THB</dd>
         </div>
         <div>
           <dt className="text-[var(--aura-fg-secondary)]">
             {tDetail('fields.vat')}
-            {summary.vatPercent && (
-              <span className="ms-1 text-xs">({summary.vatPercent})</span>
+            {totals && (
+              <span className="ms-1 text-xs">({totals.vatPercent})</span>
             )}
           </dt>
-          <dd className="tabular-nums">{summary.vatText} THB</dd>
+          <dd className="tabular-nums">{totals ? formatSatang(BigInt(totals.vatSatang)) : '—'} THB</dd>
         </div>
         <div className="border-t border-[var(--aura-border-default)] pt-2 sm:col-span-2">
           <dt className="text-[var(--aura-fg-secondary)]">{tDetail('fields.total')}</dt>
           <dd className="text-lg font-semibold tabular-nums">
-            {summary.totalText} THB
+            {totalText ?? '—'} THB
           </dd>
         </div>
       </dl>
@@ -619,19 +621,18 @@ export function IssueInvoiceForm({
           variant="primary"
           touchHeight
           loading={pending}
-          // Board Admin-invoice-issue: the confirm names the document and, for
-          // a membership bill, its total, with the money-step check icon
-          // (§ Button icons). An event fee may be zero-rated or VAT-inclusive,
-          // while the summary's total assumes 7% on top, so it names no amount
-          // (financial review, 3 Oct).
+          // Board Admin-invoice-issue: the confirm names the document and its
+          // total, with the money-step check icon (§ Button icons). The total
+          // is priced for the chosen treatment (zero-rated, VAT-inclusive) as
+          // the issue use case pins it; an unpriced draft names no amount.
           icon="check"
           disabled={!matches || pending}
           onClick={confirm}
         >
           {pending
             ? t('issuing')
-            : isMembership
-              ? t(taxAtPayment ? 'issueBillButton' : 'issueInvoiceButton', { total: summary.totalText })
+            : totalText !== null
+              ? t(taxAtPayment ? 'issueBillButton' : 'issueInvoiceButton', { total: totalText })
               : t(taxAtPayment ? 'issueBillButtonPlain' : 'issueInvoiceButtonPlain')}
         </Button>
       </div>
