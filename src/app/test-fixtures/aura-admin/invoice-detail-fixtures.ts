@@ -20,6 +20,8 @@ export type DetailFixtureKind =
   | 'auto-refund-failed'
   | 'refund-settling'
   | 'refund-partial'
+  | 'refund-full'
+  | 'refund-receipt'
   | 'voided'
   | 'as-paid-tin'
   | 'as-paid-receipt';
@@ -132,6 +134,15 @@ const BASE: Omit<InvoiceDetailViewProps, 'invoice' | 'displayStatus' | 'paymentA
   locale: 'en',
 };
 
+/** The succeeded payment the refund dialog names: 38,520.00 THB on 20 Sep. */
+const REFUND_PAY_1 = {
+  paymentId: 'pay-1',
+  remainingRefundableSatang: TOTAL,
+  pendingRefundExists: false,
+  paidAmountSatang: TOTAL,
+  paidAt: '2026-09-20T03:12:00.000Z',
+};
+
 const paidProps = (over: Partial<InvoiceDetailViewProps> = {}): Omit<InvoiceDetailViewProps, 'paymentActivity' | 'locale'> => ({
   ...BASE,
   invoice: invoice(PAID),
@@ -141,7 +152,7 @@ const paidProps = (over: Partial<InvoiceDetailViewProps> = {}): Omit<InvoiceDeta
   hasReceiptPdf: true,
   paymentRecordedByEmail: 'malin.berg@example.com',
   paymentDetails: { methodKey: 'bank_transfer', notes: 'Transfer matched on the 20 Sep statement' } as InvoiceDetailViewProps['paymentDetails'],
-  refund: { paymentId: 'pay-1', remainingRefundableSatang: TOTAL, pendingRefundExists: false },
+  refund: REFUND_PAY_1,
   ...over,
 });
 
@@ -176,18 +187,32 @@ export function detailFixture(kind: DetailFixtureKind): Omit<InvoiceDetailViewPr
         failedEmailBanners: [{ variant: 'invoice', recipientEmail: 'erik.johansson@siamnordic.example', canResend: true }],
       };
     case 'paid':
+    // `Admin-refund-full`: the paid invoice, nothing credited yet.
+    case 'refund-full':
       return paidProps();
+    // A §105 receipt (event, buyer not VAT-registered) being refunded: no
+    // credit note is owed, so the dialog draws no VAT rows.
+    case 'refund-receipt':
+      return paidProps({
+        invoice: invoice({ ...PAID, invoiceSubject: 'event', billDocumentNumberRaw: null, receiptDocumentNumberRaw: 'RE-2026-000007', receiptPdf: null, pdfDocKind: 'receipt_separate' }),
+        headerNumber: 'RE-2026-000007',
+        displayNumber: 'RE-2026-000007',
+        taxDocKind: 'none',
+        planDisplayName: '',
+        buyerHasTaxId: false,
+        hasReceiptPdf: false,
+      });
     case 'refund-partial':
       return paidProps({
         invoice: invoice({ ...PAID, status: 'partially_credited', creditedTotal: money(535_000n) }),
         displayStatus: 'partially_credited',
         creditNotes: [CREDIT_NOTE],
-        refund: { paymentId: 'pay-1', remainingRefundableSatang: TOTAL - 535_000n, pendingRefundExists: false },
+        refund: { ...REFUND_PAY_1, remainingRefundableSatang: TOTAL - 535_000n },
       });
     case 'refund-settling':
       return paidProps({
         settlingRefundSatang: 535_000n,
-        refund: { paymentId: 'pay-1', remainingRefundableSatang: TOTAL, pendingRefundExists: true },
+        refund: { ...REFUND_PAY_1, pendingRefundExists: true },
       });
     case 'auto-refund-failed':
       return paidProps({ autoRefund: { failed: true, processorRefundId: 're_3PreviewFailed01' } });
@@ -250,6 +275,8 @@ export const DETAIL_KINDS: readonly DetailFixtureKind[] = [
   'auto-refund-failed',
   'refund-settling',
   'refund-partial',
+  'refund-full',
+  'refund-receipt',
   'voided',
   'as-paid-tin',
   'as-paid-receipt',

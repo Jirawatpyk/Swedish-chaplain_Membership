@@ -137,6 +137,9 @@ export interface InvoiceDetailViewProps {
     readonly paymentId: string;
     readonly remainingRefundableSatang: bigint;
     readonly pendingRefundExists: boolean;
+    /** The succeeded payment being refunded — named on the dialog's payment line. */
+    readonly paidAmountSatang: bigint | null;
+    readonly paidAt: string | null;
   } | null;
   /** Asia/Bangkok "today", for the Record-payment date clamp. */
   readonly bangkokTodayIso: string;
@@ -309,6 +312,8 @@ export async function renderInvoiceDetailView({
                   receiptDocumentNumberRaw={invoice.receiptDocumentNumberRaw}
                   // 088 FR-030 — bill-first for an 088 bill (documentNumber NULL).
                   invoiceDocumentNumber={billFirstDocumentNumber(invoice)}
+                  paidAmountSatang={refund.paidAmountSatang}
+                  paidAt={refund.paidAt}
                   // Gap E — disabled and "settling" while a pending async
                   // refund exists for this payment.
                   pendingRefundExists={refund.pendingRefundExists}

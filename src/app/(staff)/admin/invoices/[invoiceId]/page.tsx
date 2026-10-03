@@ -448,6 +448,8 @@ export default async function InvoiceDetailPage({
     paymentId: string;
     remainingRefundableSatang: bigint;
     pendingRefundExists: boolean;
+    paidAmountSatang: bigint | null;
+    paidAt: string | null;
   } | null = null;
   if (
     isAdmin &&
@@ -485,10 +487,16 @@ export default async function InvoiceDetailPage({
           (r) =>
             r.paymentId === remaining.paymentId && r.status === 'pending',
         );
+        // The refund dialog names the payment it returns ("… · {amount},
+        // {date}") — the same succeeded payment `computeRemainingRefundable`
+        // picked, looked up by id rather than re-sorted here.
+        const refundedPayment = activity.value.payments.find((p) => p.id === remaining.paymentId);
         refundButtonProps = {
           paymentId: remaining.paymentId,
           remainingRefundableSatang: remaining.remainingSatang,
           pendingRefundExists,
+          paidAmountSatang: refundedPayment?.amountSatang ?? null,
+          paidAt: refundedPayment?.completedAt?.toISOString() ?? null,
         };
       }
     }
