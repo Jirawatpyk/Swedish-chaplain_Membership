@@ -217,7 +217,7 @@ test.describe('064 event-fee as-paid form modes @f4', () => {
     await expect(billFirst).toBeDisabled();
     // The reason is the option's own description, read right after its name.
     await expect(billFirst).toHaveAccessibleDescription(
-      /Not recorded as VAT-registered — record the fee as already paid; a bill can't be issued before payment\. Tick VAT-registered on the member record first if applicable\./,
+      /Not recorded as VAT-registered — record the fee as already paid; an invoice can't be issued before payment\. Tick VAT-registered on the member record first if applicable\./,
     );
 
     // paid status → already_paid is the (checked) default.
