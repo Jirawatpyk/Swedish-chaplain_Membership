@@ -15,7 +15,7 @@ import { calculateCreditNoteVat } from '@/modules/invoicing/domain/policies/calc
 import { asInvoiceId, type Invoice } from '@/modules/invoicing/domain/invoice';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
 import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
-import type { GetInvoiceDeps } from '@/modules/invoicing/application/use-cases/get-invoice';
+import type { PreviewRefundCreditNoteDeps } from '@/modules/invoicing/application/use-cases/preview-refund-credit-note';
 
 const TOTAL = 3_852_000n;
 const VAT = 252_000n;
@@ -77,14 +77,15 @@ function makeInvoice(overrides: Partial<Invoice> = {}): Invoice {
   } as Invoice;
 }
 
-function depsFor(invoice: Invoice | null): GetInvoiceDeps {
+function depsFor(invoice: Invoice | null, priorCreditedVat = Money.zero()): PreviewRefundCreditNoteDeps {
   return {
-    invoiceRepo: { findById: vi.fn(async () => invoice) } as unknown as GetInvoiceDeps['invoiceRepo'],
+    invoiceRepo: { findById: vi.fn(async () => invoice) } as unknown as PreviewRefundCreditNoteDeps['invoiceRepo'],
+    creditNoteRepo: { sumVatByOriginalInvoice: vi.fn(async () => priorCreditedVat) },
   };
 }
 
-async function preview(invoice: Invoice | null, creditTotalSatang: bigint) {
-  return previewRefundCreditNote(depsFor(invoice), {
+async function preview(invoice: Invoice | null, creditTotalSatang: bigint, priorCreditedVat = Money.zero()) {
+  return previewRefundCreditNote(depsFor(invoice, priorCreditedVat), {
     tenantId: 't',
     invoiceId: 'inv-1',
     creditTotalSatang,
@@ -92,11 +93,13 @@ async function preview(invoice: Invoice | null, creditTotalSatang: bigint) {
 }
 
 /** What `issueCreditNote` will compute for this amount (`issue-credit-note.ts` step E). */
-function issuedSplit(invoice: Invoice, creditTotalSatang: bigint) {
+function issuedSplit(invoice: Invoice, creditTotalSatang: bigint, priorCreditedVat = Money.zero()) {
   const r = calculateCreditNoteVat({
     creditTotal: Money.fromSatangUnsafe(creditTotalSatang),
     originalVat: invoice.vat!,
     originalTotal: invoice.total!,
+    alreadyCredited: invoice.creditedTotal,
+    priorCreditedVat,
   });
   if (!r.ok) throw new Error('fixture: split failed');
   return { netSatang: r.value.creditAmount.satang, vatSatang: r.value.vat.satang };
@@ -123,7 +126,7 @@ describe('previewRefundCreditNote', () => {
     );
   });
 
-  it('the final partial is rounded on its own, like the issued note — not invoice VAT less earlier notes', async () => {
+  it('the final partial takes the residual VAT, like the issued note — invoice VAT less earlier notes', async () => {
     // 1,070.00 THB incl. 70.00 VAT, credited 333.33 + 333.33 already. Each
     // earlier note carried round(7,000 × 33,333 / 107,000) = 2,181 satang VAT.
     const invoice = makeInvoice({
@@ -133,14 +136,15 @@ describe('previewRefundCreditNote', () => {
       creditedTotal: Money.fromSatangUnsafe(66_666n),
       status: 'partially_credited',
     });
-    const r = await preview(invoice, 40_334n);
-    // round(7,000 × 40,334 / 107,000) = round(2,638.67) = 2,639 — NOT the
-    // 7,000 − 2 × 2,181 = 2,638 a residual rule would give.
+    const prior = Money.fromSatangUnsafe(4_362n);
+    const r = await preview(invoice, 40_334n, prior);
+    // 7,000 − 2 × 2,181 = 2,638 — not the proportional 2,639, which would
+    // credit 70.01 VAT on a 70.00 VAT invoice.
     expect(r).toEqual({
       ok: true,
-      value: { kind: 'issue', netSatang: 37_695n, vatSatang: 2_639n, vatRateRaw: '0.0700' },
+      value: { kind: 'issue', netSatang: 37_696n, vatSatang: 2_638n, vatRateRaw: '0.0700' },
     });
-    expect(r.ok && r.value.kind === 'issue' && r.value.vatSatang).toBe(issuedSplit(invoice, 40_334n).vatSatang);
+    expect(r.ok && r.value.kind === 'issue' && r.value.vatSatang).toBe(issuedSplit(invoice, 40_334n, prior).vatSatang);
   });
 
   it('a §105 receipt (event, buyer not VAT-registered) is waived — no credit note, no VAT', async () => {

@@ -10,6 +10,7 @@
 import type { Satang } from '@/lib/money';
 import type { CreditNote, CreditNoteId } from '@/modules/invoicing/domain/credit-note';
 import type { InvoiceId } from '@/modules/invoicing/domain/invoice';
+import type { Money } from '@/modules/invoicing/domain/value-objects/money';
 import type { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 
 export interface CreditNoteRepo {
@@ -108,6 +109,22 @@ export interface CreditNoteRepo {
     originalInvoiceId: InvoiceId,
     tenantId: string,
   ): Promise<readonly CreditNote[]>;
+
+  /**
+   * Residual rule — the VAT already credited against an invoice: the SUM of
+   * `vat_satang` over ALL its credit notes (no row cap, unlike
+   * `findByOriginalInvoiceInTx`'s LIMIT 20 — a capped sum would be wrong).
+   * `issueCreditNote` reads it on the tx holding the invoice's row lock, so
+   * no concurrent note can slip between the read and the insert.
+   */
+  sumVatByOriginalInvoiceInTx(
+    tx: unknown,
+    originalInvoiceId: InvoiceId,
+    tenantId: string,
+  ): Promise<Money>;
+
+  /** Non-tx variant for the refund dialog's preview read (advisory, no lock). */
+  sumVatByOriginalInvoice(originalInvoiceId: InvoiceId, tenantId: string): Promise<Money>;
 
   /**
    * G-3 — paged tenant-scoped list for the `/admin/credit-notes`
