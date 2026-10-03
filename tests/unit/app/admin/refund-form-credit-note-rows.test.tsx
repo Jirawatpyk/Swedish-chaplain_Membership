@@ -116,6 +116,37 @@ describe('RefundForm — credit note to be issued', () => {
     expect(within(screen.getByTestId('refund-summary')).getByText('Refund total')).toBeInTheDocument();
   });
 
+  it.each([
+    [
+      'section_105_receipt',
+      'No credit note — this payment has a Section 105 receipt, not a tax invoice.',
+    ],
+    ['invoice_voided', 'No credit note — this invoice has been voided.'],
+  ] as const)('a waived document (%s) says before Confirm that no credit note will be issued', async (reason, text) => {
+    respondPreview({ kind: 'waived', reason });
+    renderForm();
+    fireEvent.change(screen.getByTestId('refund-form-amount'), { target: { value: '5350' } });
+    const note = await screen.findByTestId('refund-summary-no-credit-note');
+    expect(note).toHaveTextContent(text);
+    // Inside the summary, before the refund total; a note, not an alert.
+    const summary = screen.getByTestId('refund-summary');
+    expect(summary).toContainElement(note);
+    expect(note.compareDocumentPosition(within(summary).getByText('Refund total')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(note).not.toHaveAttribute('role', 'alert');
+    // It stays for every later amount — the verdict belongs to the document.
+    fireEvent.change(screen.getByTestId('refund-form-amount'), { target: { value: '100' } });
+    expect(screen.getByTestId('refund-summary-no-credit-note')).toHaveTextContent(text);
+  });
+
+  it('a blocked gate draws no note — the refund itself is refused with its own message', async () => {
+    respondPreview({ kind: 'blocked' });
+    renderForm();
+    fireEvent.change(screen.getByTestId('refund-form-amount'), { target: { value: '5350' } });
+    await waitFor(() => expect(previewCalls()).toHaveLength(1));
+    await waitFor(() => expect(screen.queryByTestId('refund-summary-credit-note-loading')).toBeNull());
+    expect(screen.queryByTestId('refund-summary-no-credit-note')).toBeNull();
+  });
+
   it('a zero-rated invoice shows VAT 0%, from the stored rate', async () => {
     respondPreview({ kind: 'issue', netSatang: '535000', vatSatang: '0', vatRate: '0.0000' });
     renderForm();
