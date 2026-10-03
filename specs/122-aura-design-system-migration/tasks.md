@@ -552,7 +552,7 @@ Boards: `Admin-invoice-draft`, `-issued` (+`-mobile`), `-overdue`, `-paid`, `-cr
 - [x] T826 [US8] The email-failure and auto-refund-failed alerts, the payment activity and its skeleton, the copy-charge-id button and the credit-note action on AURA. RED: the alert tests (named buttons, alert/alertdialog roles) and the timeline tests on AURA.
 - [x] T827 [US8] The void page (buttons stacked on a phone, Void above Cancel) and the new-credit-note page on AURA fields; their loading files, the detail loading file and `not-found` on AURA. RED: the void and credit-note form tests on AURA; the loading tests.
 - [x] T828 [US8] Ratchet and preview: `MIGRATED_PATHS` gains `admin/invoices/[invoiceId]/**` and the rest of `admin/invoices/_components/**`; the two ratchet controls move to US8c files; preview views for the detail states, the dialogs, void and credit note.
-- [ ] T829 [US8] Exit: e2e selectors where roles changed; gates; `next build` with a bundle budget for `/admin/invoices/[invoiceId]`; the parity page; UX, i18n and financial reviews with fixes RED first; draft PR; relay R32.
+- [x] T829 [US8] Exit: e2e selectors where roles changed; gates; `next build` with a bundle budget for `/admin/invoices/[invoiceId]`; the parity page; UX, i18n and financial reviews with fixes RED first; draft PR; relay R32.
 
 ### US8c — credit notes, registers and settings (PR 16; tasks written at its start)
 
