@@ -1161,6 +1161,7 @@ export default async function AuraAdminPreviewPage({
             plans={INVOICE_PLANS}
             events={INVOICE_EVENTS}
             taxAtPayment
+            vatRateBps={700}
             initialMemberId={view === 'invoice-new' ? 'm-3' : undefined}
             {...(view === 'invoice-new-event' ? { initialRegistrationId: 'preview-reg', initialEventId: 'ev-crayfish' } : {})}
           />

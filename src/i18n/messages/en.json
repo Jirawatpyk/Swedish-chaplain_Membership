@@ -2945,7 +2945,7 @@
           "label": "VAT-inclusive / ราคารวม VAT แล้ว",
           "total": "Total (incl. VAT)",
           "subtotal": "Subtotal",
-          "vat": "VAT 7%"
+          "vat": "VAT {rate}%"
         },
         "docType": {
           "taxInvoice": "Tax Invoice / ใบกำกับภาษี",

@@ -99,28 +99,37 @@ export type EventOption = {
   readonly label: string;
 };
 
-const VAT_RATE_BPS = 700; // 7% — tenant standard rate (v1: standard only).
 const MAX_THB = 1_000_000;
 const MIN_THB = 1;
 
 /**
- * Display-only VAT-inclusive split. Mirrors the Domain
- * `splitVatInclusive` (half-away-from-zero) using integer satang so the
- * preview reconciles byte-for-byte with the server's issue-time math. NOT
- * authoritative — the server recomputes at issue.
+ * Display-only VAT-inclusive split at the tenant's rate (`rateBps`, basis
+ * points — `tenant_invoice_settings.vat_rate`, the rate both issuance paths
+ * pin). Mirrors the Domain `splitVatInclusive` (half-away-from-zero) using
+ * integer satang so the preview reconciles byte-for-byte with the server's
+ * issue-time math (a fast-check parity test pins it). NOT authoritative —
+ * the server recomputes at issue.
  *
  * total × 10000 ≤ 1,000,000,00 × 10000 = 1e12 < Number.MAX_SAFE_INTEGER —
  * safe in JS `number`.
  */
-export function previewVatInclusive(totalSatang: number): {
+export function previewVatInclusive(
+  totalSatang: number,
+  rateBps: number,
+): {
   subtotal: number;
   vat: number;
 } {
   if (totalSatang <= 0) return { subtotal: 0, vat: 0 };
-  const denom = 10_000 + VAT_RATE_BPS;
+  const denom = 10_000 + rateBps;
   const scaled = totalSatang * 10_000;
   const subtotal = Math.floor((scaled + denom / 2) / denom); // half-away (positive)
   return { subtotal, vat: totalSatang - subtotal };
+}
+
+/** Basis points → the rate as a percentage for the label: 700 → '7', 750 → '7.5'. */
+export function formatRateBps(rateBps: number): string {
+  return String(rateBps / 100);
 }
 
 function formatSatang(satang: number): string {
@@ -435,6 +444,7 @@ export function EventFeeForm({
   initialEventId,
   initialRegistrationId,
   taxAtPayment,
+  vatRateBps,
 }: {
   readonly events: readonly EventOption[];
   /** Pre-selected event from a `?eventRegistrationId=` deep-link. */
@@ -449,6 +459,12 @@ export function EventFeeForm({
    * tax invoice at issue → legacy copy stays.
    */
   readonly taxAtPayment: boolean;
+  /**
+   * The tenant's VAT rate in basis points (`tenant_invoice_settings.vat_rate`),
+   * the rate issuance pins. `null` when the tenant has no invoice settings —
+   * the preview then shows the total only (issuance refuses anyway).
+   */
+  readonly vatRateBps: number | null;
 }) {
   const t = useTranslations('admin.invoices.eventFeeForm');
   // (S25 — the shared record-payment labels moved into AsPaidPaymentFields.)
@@ -555,7 +571,7 @@ export function EventFeeForm({
   const amountNum = Number(amountThb);
   const amountValid = amountThb !== '' && Number.isFinite(amountNum);
   const totalSatang = amountValid ? Math.round(amountNum * 100) : 0;
-  const { subtotal, vat } = previewVatInclusive(totalSatang);
+  const split = vatRateBps === null ? null : previewVatInclusive(totalSatang, vatRateBps);
 
   // 059 / PR-A Task 6c — the §2.3 mode rules ask the SAME question issuance
   // asks: "is this buyer a VAT registrant?", NOT "is their tax_id non-blank".
@@ -1080,14 +1096,22 @@ export function EventFeeForm({
                 <dt className="text-[var(--aura-fg-secondary)]">{t('vatPreview.total')}</dt>
                 <dd className="tabular-nums font-medium">{formatSatang(totalSatang)}</dd>
               </div>
-              <div className="flex justify-between">
-                <dt className="text-[var(--aura-fg-secondary)]">{t('vatPreview.subtotal')}</dt>
-                <dd className="tabular-nums">{formatSatang(subtotal)}</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-[var(--aura-fg-secondary)]">{t('vatPreview.vat')}</dt>
-                <dd className="tabular-nums">{formatSatang(vat)}</dd>
-              </div>
+              {/* No tenant rate → no split to show (issuance would refuse
+                  with settings_missing); never guess one. */}
+              {split !== null && vatRateBps !== null && (
+                <>
+                  <div className="flex justify-between">
+                    <dt className="text-[var(--aura-fg-secondary)]">{t('vatPreview.subtotal')}</dt>
+                    <dd className="tabular-nums">{formatSatang(split.subtotal)}</dd>
+                  </div>
+                  <div className="flex justify-between">
+                    <dt className="text-[var(--aura-fg-secondary)]">
+                      {t('vatPreview.vat', { rate: formatRateBps(vatRateBps) })}
+                    </dt>
+                    <dd className="tabular-nums">{formatSatang(split.vat)}</dd>
+                  </div>
+                </>
+              )}
             </dl>
           </div>
         )}

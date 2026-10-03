@@ -31,6 +31,7 @@ export function InvoiceCreateSwitcher({
   initialEventId,
   initialRegistrationId,
   taxAtPayment,
+  vatRateBps,
 }: {
   readonly members: readonly MemberOption[];
   readonly plans: readonly PlanOption[];
@@ -45,6 +46,8 @@ export function InvoiceCreateSwitcher({
    * must not label a pre-payment doc "Tax Invoice". Flag OFF = legacy copy.
    */
   readonly taxAtPayment: boolean;
+  /** Tenant VAT rate in basis points for the event-fee preview; `null` = unset. */
+  readonly vatRateBps: number | null;
 }) {
   const t = useTranslations('admin.invoices.new.type');
   // Deep-link wins: an event-registration deep-link starts on the Event tab.
@@ -82,6 +85,7 @@ export function InvoiceCreateSwitcher({
         <EventFeeForm
           events={events}
           taxAtPayment={taxAtPayment}
+          vatRateBps={vatRateBps}
           {...(initialEventId ? { initialEventId } : {})}
           {...(initialRegistrationId ? { initialRegistrationId } : {})}
         />
