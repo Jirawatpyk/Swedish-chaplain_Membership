@@ -36,6 +36,8 @@ function renderDialog(pendingRefundExists: boolean) {
         currencyCode="THB"
         invoiceSubject="event"
         invoiceHeadroomSatang={535000n}
+        paidAmountSatang={535000n}
+        paidAt="2026-09-20T03:12:00.000Z"
         pendingRefundExists={pendingRefundExists}
       />
     </NextIntlClientProvider>,

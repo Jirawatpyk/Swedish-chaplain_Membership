@@ -56,7 +56,7 @@ function eventLine(totalSatang: bigint): InvoiceLine {
 }
 
 /** Non-member EVENT draft with a pinned TIN buyer snapshot (zero-rate is non-membership). */
-function eventDraft(totalSatang: bigint): Invoice {
+function eventDraft(totalSatang: bigint, vatInclusive = false): Invoice {
   return {
     tenantId: 'test-swecham',
     invoiceId: asInvoiceId(INVOICE_ID),
@@ -64,7 +64,7 @@ function eventDraft(totalSatang: bigint): Invoice {
     planId: null,
     planYear: null,
     invoiceSubject: 'event',
-    vatInclusive: false,
+    vatInclusive,
     eventId: '08800000-0000-4000-8000-0000000000f1',
     eventRegistrationId: '08800000-0000-4000-8000-0000000000f2',
     status: 'draft',
@@ -413,6 +413,26 @@ describe('issue-invoice zero-rate contract (088 US8)', () => {
     const p = issued!.payload as Record<string, unknown>;
     expect(p.vat_treatment).toBe('zero_rated_80_1_5');
     expect(p.zero_rate_cert_no).toBe('กต 0404/1234');
+  });
+
+  // A VAT-INCLUSIVE event draft zero-rated: nothing is carved out at 0%, so the
+  // line sum is subtotal AND total — the figure the Issue dialog previews for it
+  // (`computeIssuePricing`), never the line sum split at 7%.
+  it('a zero-rated VAT-INCLUSIVE event sale pins VAT 0% with subtotal = total = line sum', async () => {
+    const cap = emptyCap();
+    const r = await issueInvoice(makeDeps(eventDraft(1_000_000n, true), cap), {
+      ...baseInput,
+      vatTreatment: 'zero_rated_80_1_5',
+      zeroRateCertNo: 'กต 0404/5678',
+    });
+    expect(r.ok, r.ok ? 'ok' : JSON.stringify(r)).toBe(true);
+
+    const applied = cap.applyIssueInputs[0]!;
+    expect(applied.vatRate).toBe('0.0000');
+    expect(String(applied.vatSatang)).toBe('0');
+    expect(String(applied.subtotalSatang)).toBe('1000000');
+    expect(String(applied.totalSatang)).toBe('1000000');
+    expect(cap.renderInputs[0]!.vatRate.raw).toBe('0.0000');
   });
 
   it('UX-B1 review (SEC/CWE-639) — an INJECTED cert blob key outside this invoice cert namespace is rejected, no invoice issued', async () => {

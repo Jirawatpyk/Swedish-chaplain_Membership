@@ -294,6 +294,7 @@ export const OBSERVED_API: readonly ObservedSurface[] = [
   { surface: 'POST /api/plans/[year]/[planId]/deactivate', kind: 'api', key: 'plans.write' },
   { surface: 'POST /api/plans/[year]/[planId]/undelete', kind: 'api', key: 'plans.write' },
   { surface: 'POST /api/refunds/initiate', kind: 'api', key: 'refunds.write' },
+  { surface: 'GET /api/refunds/credit-note-preview', kind: 'api', key: 'refunds.write' },
   { surface: 'POST /api/refunds/resolve-auto-refund-failure', kind: 'api', key: 'refunds.write' },
   { surface: 'POST /api/tenant-invoice-settings/logo', kind: 'api', key: 'settings.invoicing' },
   // F119 T145 — the update verb of the staff draft route; same key as its POST

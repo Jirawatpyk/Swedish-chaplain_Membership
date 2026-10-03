@@ -31,7 +31,7 @@ import {
   getInvoice,
   makeGetInvoiceDeps,
   Money,
-  calculateVat,
+  computeIssuePricing,
   computeIsOverdue,
   displayDocumentNumber,
   invoiceStatusHasReceipt,
@@ -45,6 +45,8 @@ import {
 // the B2 settings page. This is a READ against the public port
 // `getForIssue`, not a deep reach into internals.
  
+import type { IssueTotalsByTreatment } from '../_lib/issue-summary-totals';
+import { buildIssueTotalsByTreatment } from './_lib/issue-totals-by-treatment';
 import { drizzleTenantSettingsRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-tenant-settings-repo';
 // Same escape-hatch as the tenant-settings repo read above: a public-
 // port read (`findByOriginalInvoice`) used to populate the "Credit
@@ -368,12 +370,17 @@ export default async function InvoiceDetailPage({
 
   // Drafts don't persist subtotal/vat/total on the row (those are
   // frozen snapshots set on issue). For display, compute a live
-  // preview from line totals + current F2 VAT rate. Issued invoices
-  // use their stored snapshots.
+  // preview from line totals + the invoice-settings VAT rate, through the
+  // issue use case's own `computeIssuePricing` (a VAT-inclusive event draft's
+  // total is its line sum). Issued invoices use their stored snapshots.
   let displaySubtotalSatang: bigint | null = invoice.subtotal?.satang ?? null;
   let displayVatSatang: bigint | null = invoice.vat?.satang ?? null;
   let displayTotalSatang: bigint | null = invoice.total?.satang ?? null;
   let displayVatPercent: string | null = invoice.vatRate?.toPercentString() ?? null;
+  // The Issue dialog shows the figures for the VAT treatment the admin picks,
+  // so it gets the draft priced per treatment (same policy), not the
+  // standard-rate figures above.
+  let issueTotals: IssueTotalsByTreatment | null = null;
 
   if (isDraft) {
     let sub = Money.zero();
@@ -388,10 +395,21 @@ export default async function InvoiceDetailPage({
     // produce, otherwise admin sees one number and commits another.
     const invoiceSettings = await drizzleTenantSettingsRepo.getForIssue(tenantCtx.slug);
     if (invoiceSettings) {
-      const { vat, total } = calculateVat(sub, invoiceSettings.vatRate);
-      displayVatSatang = vat.satang;
-      displayTotalSatang = total.satang;
-      displayVatPercent = invoiceSettings.vatRate.toPercentString();
+      const pricing = computeIssuePricing({
+        lineSum: sub,
+        vatInclusive: invoice.vatInclusive,
+        vatTreatment: 'standard',
+        standardRate: invoiceSettings.vatRate,
+      });
+      displaySubtotalSatang = pricing.subtotal.satang;
+      displayVatSatang = pricing.vat.satang;
+      displayTotalSatang = pricing.total.satang;
+      displayVatPercent = pricing.vatRate.toPercentString();
+      issueTotals = buildIssueTotalsByTreatment({
+        lineSum: sub,
+        vatInclusive: invoice.vatInclusive,
+        standardRate: invoiceSettings.vatRate,
+      });
     }
   }
 
@@ -430,6 +448,8 @@ export default async function InvoiceDetailPage({
     paymentId: string;
     remainingRefundableSatang: bigint;
     pendingRefundExists: boolean;
+    paidAmountSatang: bigint | null;
+    paidAt: string | null;
   } | null = null;
   if (
     isAdmin &&
@@ -467,10 +487,16 @@ export default async function InvoiceDetailPage({
           (r) =>
             r.paymentId === remaining.paymentId && r.status === 'pending',
         );
+        // The refund dialog names the payment it returns ("… · {amount},
+        // {date}") — the same succeeded payment `computeRemainingRefundable`
+        // picked, looked up by id rather than re-sorted here.
+        const refundedPayment = activity.value.payments.find((p) => p.id === remaining.paymentId);
         refundButtonProps = {
           paymentId: remaining.paymentId,
           remainingRefundableSatang: remaining.remainingSatang,
           pendingRefundExists,
+          paidAmountSatang: refundedPayment?.amountSatang ?? null,
+          paidAt: refundedPayment?.completedAt?.toISOString() ?? null,
         };
       }
     }
@@ -508,6 +534,7 @@ export default async function InvoiceDetailPage({
       totalSatang: displayTotalSatang,
       vatPercent: displayVatPercent,
     },
+    issueTotals,
     settlingRefundSatang,
     refund: refundButtonProps,
     bangkokTodayIso,

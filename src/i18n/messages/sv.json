@@ -5091,8 +5091,8 @@
         "confirm": "Utfärda återbetalning",
         "confirmAmount": "Återbetala {amount}",
         "processing": "Bearbetar återbetalning…",
-        "refsInvoice": "Faktura-nr",
-        "refsReceipt": "Kvitto-nr",
+        "paymentReceipt": "Kvitto <num>{number}</num>",
+        "paymentPaid": "{amount}, {date}",
         "refsCombinedHint": "kombinerat"
       },
       "form": {
@@ -5110,7 +5110,16 @@
         "summary": {
           "title": "Sammanfattning av återbetalningen",
           "total": "Återbetalning totalt",
-          "after": "Kvar att återbetala efteråt"
+          "after": "Kvar att återbetala efteråt",
+          "creditNoteTitle": "Kreditnota som utfärdas",
+          "creditNoteNet": "Belopp exkl. moms",
+          "creditNoteVat": "Moms {rate}",
+          "creditNoteVatPending": "Moms",
+          "creditNoteLoading": "Beräknar kreditnotan…",
+          "noCreditNote": {
+            "section105Receipt": "Ingen kreditnota — betalningen har ett kvitto enligt avsnitt 105, inte en skattefaktura.",
+            "invoiceVoided": "Ingen kreditnota — fakturan har makulerats."
+          }
         },
         "typedPhrase": {
           "label": "Skriv frasen för att bekräfta full återbetalning",

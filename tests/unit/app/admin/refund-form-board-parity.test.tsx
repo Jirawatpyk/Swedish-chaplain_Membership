@@ -25,6 +25,7 @@ function renderForm() {
     <NextIntlClientProvider locale="en" messages={enMessages}>
       <RefundForm
         paymentId="pay_1"
+        invoiceId="inv_1"
         memberCompanyName="Acme AB"
         remainingRefundableSatang={3_852_000n}
         currencyCode="THB"
