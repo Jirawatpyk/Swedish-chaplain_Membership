@@ -8,7 +8,7 @@
  * formatter the page used (`formatSatangThb`), and the summary line keeps its
  * words and order. The register form still pushes the same URL.
  */
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { NextIntlClientProvider, createTranslator } from 'next-intl';
@@ -17,10 +17,12 @@ import { formatSatangThb } from '@/lib/format-thb';
 import { bangkokLocalDate } from '@/lib/fiscal-year';
 import type { Invoice, ListTaxDocumentRegisterOutput } from '@/modules/invoicing';
 
+/** The request locale; the figures must follow it (sv groups "24 500,00"). */
+const requestLocale = vi.hoisted(() => ({ value: 'en' }));
 vi.mock('next-intl/server', () => ({
   getTranslations: async (namespace: string) =>
     createTranslator({ locale: 'en', messages: en, namespace: namespace as never }),
-  getLocale: async () => 'en',
+  getLocale: async () => requestLocale.value,
 }));
 const push = vi.fn();
 vi.mock('next/navigation', () => ({
@@ -113,6 +115,10 @@ async function renderView(over: Partial<ViewProps> = {}) {
   );
 }
 
+afterEach(() => {
+  requestLocale.value = 'en';
+});
+
 describe('renderTaxRegisterView — the figures equal the use case output', () => {
   it('shows the period output VAT, its two streams and the gross less credit notes', async () => {
     await renderView();
@@ -148,6 +154,19 @@ describe('renderTaxRegisterView — the figures equal the use case output', () =
     expect(within(grid).getByText(r.vatTreatment.zeroRated)).toBeInTheDocument();
   });
 
+  it('formats the figures in the request locale, not a fixed one', async () => {
+    requestLocale.value = 'sv';
+    await renderView();
+    // A literal, not the formatter's own output: a view that hard-coded 'en'
+    // would still pass a test that computed its expectation the same way.
+    expect(within(screen.getByTestId('period-output-vat')).getByText(/^24\s500,00 THB$/)).toBeInTheDocument();
+  });
+
+  it('announces the summary when a register loads', async () => {
+    await renderView();
+    expect(screen.getByTestId('register-summary')).toHaveAttribute('role', 'status');
+  });
+
   it('says a month to date is not the figure to report, as a warning', async () => {
     await renderView();
     const status = screen.getByTestId('period-output-vat-status');
@@ -158,6 +177,15 @@ describe('renderTaxRegisterView — the figures equal the use case output', () =
   it('confirms a closed month plainly', async () => {
     await renderView({ result: { ok: true, value: { ...output, periodStatus: 'closed_month' } } } as Partial<ViewProps>);
     expect(screen.getByTestId('period-output-vat-status')).toHaveTextContent(r.outputVat.status.closedMonth);
+  });
+
+  it('warns that a closed month with combined tax invoices is incomplete, with their count', async () => {
+    await renderView({
+      result: { ok: true, value: { ...output, periodStatus: 'closed_month_incomplete', legacyCombinedCount: 2 } },
+    } as Partial<ViewProps>);
+    const status = screen.getByTestId('period-output-vat-status');
+    expect(status).toHaveTextContent('Incomplete — 2 combined tax invoices + receipts');
+    expect(status.closest('[role="alert"], .aura-alert')).not.toBeNull();
   });
 
   it('shows the empty state when the period has no documents', async () => {
@@ -171,6 +199,7 @@ describe('renderTaxRegisterView — the figures equal the use case output', () =
   it.each([
     [{ code: 'invalid_range', reason: 'not_a_date' }, r.errors.invalidDate],
     [{ code: 'invalid_range', reason: 'inverted' }, r.errors.invalidRange],
+    [{ code: 'invalid_range', reason: 'too_wide' }, r.errors.invalidRange],
     [{ code: 'list_failed' }, r.errors.loadFailed],
   ])('routes %o to its message as an alert', async (error, message) => {
     await renderView({ result: { ok: false, error } } as Partial<ViewProps>);

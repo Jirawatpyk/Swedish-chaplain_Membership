@@ -98,7 +98,10 @@ describe('renderCreditNoteDetailView', () => {
 
   it('offers Resend email and Download PDF as header buttons, the PDF from the same URL', async () => {
     await renderView();
-    expect(screen.getByRole('button', { name: detail.actions.resendAria.replace('{number}', 'CN-2026-000014') })).toBeInTheDocument();
+    // WCAG 2.5.3 label in name: the button is named by its visible words; the
+    // longer context is its description.
+    const resendButton = screen.getByRole('button', { name: detail.actions.resendShort });
+    expect(resendButton).toHaveAccessibleDescription(detail.actions.resendAria.replace('{number}', 'CN-2026-000014'));
     expect(screen.getByRole('link', { name: detail.actions.download })).toHaveAttribute('href', '/api/credit-notes/cn-14/pdf');
     expect(screen.queryByRole('button', { name: /More actions/ })).toBeNull();
   });
@@ -147,7 +150,7 @@ describe('<CreditNoteActions> resend', () => {
       </NextIntlClientProvider>,
     );
   }
-  const resend = () => screen.getByRole('button', { name: detail.actions.resendAria.replace('{number}', 'CN-2026-000014') });
+  const resend = () => screen.getByRole('button', { name: detail.actions.resendShort });
   /** The suite runs on fake timers, so settle the handler's promise chain by hand. */
   async function clickResend() {
     await act(async () => {
@@ -180,6 +183,14 @@ describe('<CreditNoteActions> resend', () => {
     renderActions();
     await clickResend();
     expect(toast.error).toHaveBeenCalledWith(detail.toast.resendNoRecipient);
+    vi.unstubAllGlobals();
+  });
+
+  it('routes a 409 no_buyer_email to its own toast', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(reply(409, { error: { code: 'no_buyer_email' } })));
+    renderActions();
+    await clickResend();
+    expect(toast.error).toHaveBeenCalledWith(detail.toast.resendNoBuyerEmail);
     vi.unstubAllGlobals();
   });
 
