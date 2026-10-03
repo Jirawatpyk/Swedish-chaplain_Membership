@@ -566,11 +566,13 @@ export async function renderInvoiceDetailView({
                     {cn.documentNumber.raw}
                   </Td>
                   {/* A tax-document date: th renders CE + (พ.ศ.), as on the CN pages. */}
-                  <Td className="tabular-nums">{formatTaxDocDate(cn.issueDate, userLocale)}</Td>
-                  <Td className="max-w-[20rem] truncate" title={cn.reason}>
+                  <Td className="tabular-nums" label={t('creditNotesSection.col.issueDate')}>
+                    {formatTaxDocDate(cn.issueDate, userLocale)}
+                  </Td>
+                  <Td className="max-w-[20rem] truncate" title={cn.reason} label={t('creditNotesSection.col.reason')}>
                     {cn.reason}
                   </Td>
-                  <Td align="end" className="tabular-nums">
+                  <Td align="end" className="tabular-nums" label={t('creditNotesSection.col.total')}>
                     {formatSatang(cn.total.satang)} THB
                   </Td>
                   <Td align="end" card="action">
@@ -601,6 +603,8 @@ export async function renderInvoiceDetailView({
       )}
 
       <Card title={t('lines.title')} titleId="invoice-lines-heading" headingLevel={2}>
+        {/* Stacked on a phone, each field cell names itself: AURA cannot read
+            the headers of a table rendered from a server file. */}
         <Table caption={t('lines.title')} captionHidden stackBelow="sm">
           <THead>
             <Tr>
@@ -619,13 +623,13 @@ export async function renderInvoiceDetailView({
                   </span>
                   <span className="block text-xs text-[var(--aura-fg-secondary)]">{l.descriptionEn}</span>
                 </Td>
-                <Td align="end" className="tabular-nums">
+                <Td align="end" className="tabular-nums" label={t('lines.qty')}>
                   {l.quantity}
                 </Td>
-                <Td align="end" className="tabular-nums">
+                <Td align="end" className="tabular-nums" label={t('lines.unit')}>
                   {formatSatang(l.unitPrice.satang)}
                 </Td>
-                <Td align="end" className="tabular-nums">
+                <Td align="end" className="tabular-nums" label={t('lines.total')}>
                   {formatSatang(l.total.satang)}
                 </Td>
               </Tr>

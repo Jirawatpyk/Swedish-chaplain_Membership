@@ -7,7 +7,7 @@
  * `label`. The table parts are mocked to print only that prop.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { NextIntlClientProvider, createTranslator } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';

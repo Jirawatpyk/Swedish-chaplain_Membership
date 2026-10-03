@@ -52,7 +52,8 @@ export function InvoiceActionBar({ summary, children }: { readonly summary: stri
       className="flex flex-col gap-2 max-sm:fixed max-sm:inset-x-0 max-sm:bottom-0 max-sm:z-[var(--aura-z-bar)] max-sm:border-t max-sm:border-[var(--aura-border-default)] max-sm:bg-[var(--aura-bg-surface)] max-sm:px-[var(--aura-space-4)] max-sm:pt-[var(--aura-space-3)] max-sm:pb-[max(var(--aura-space-3),env(safe-area-inset-bottom,0px))]"
     >
       {summary ? <p className="text-xs tabular-nums text-[var(--aura-fg-secondary)] sm:hidden">{summary}</p> : null}
-      <div className="flex flex-wrap items-center gap-2 max-sm:[&>*]:flex-1">{children}</div>
+      {/* The actions share the row; the ⋯ menu keeps its own width. */}
+      <div className="flex flex-wrap items-center gap-2 max-sm:[&>*]:flex-1 max-sm:[&>.aura-dropdown]:flex-none">{children}</div>
     </div>
   );
 }
