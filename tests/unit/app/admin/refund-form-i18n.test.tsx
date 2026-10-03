@@ -35,6 +35,7 @@ function renderForm() {
     <NextIntlClientProvider locale="en" messages={enMessages}>
         <RefundForm
           paymentId="pay_1"
+          invoiceId="inv_1"
           memberCompanyName="Acme AB"
           remainingRefundableSatang={535000n}
           currencyCode="THB"
@@ -235,6 +236,7 @@ describe('RefundForm — I6: f4_bridge_deferred is a settled refund, not a failu
         <NextIntlClientProvider locale="en" messages={enMessages}>
             <RefundForm
               paymentId="pay_1"
+              invoiceId="inv_1"
               memberCompanyName="Acme AB"
               remainingRefundableSatang={535000n}
               currencyCode="THB"
@@ -273,6 +275,7 @@ describe('RefundForm — Track B: the waived-refund toast tells the truth', () =
       <NextIntlClientProvider locale="en" messages={enMessages}>
           <RefundForm
             paymentId="pay_1"
+            invoiceId="inv_1"
             memberCompanyName="Acme AB"
             remainingRefundableSatang={535000n}
             currencyCode="THB"

@@ -477,6 +477,16 @@ export {
   type ProcessorPaymentMethod,
 } from './application/use-cases/mark-paid-from-processor';
 
+// Spec 122 US8b follow-up — the refund dialog's "Credit note to be issued"
+// rows: the verdict + proportional VAT split the refund's credit note will
+// carry, read server-side (never recomputed in the browser).
+export {
+  previewRefundCreditNote,
+  type PreviewRefundCreditNoteInput,
+  type PreviewRefundCreditNoteError,
+  type RefundCreditNotePreview,
+} from './application/use-cases/preview-refund-credit-note';
+
 export {
   issueCreditNoteFromRefund,
   type IssueCreditNoteFromRefundInput,
