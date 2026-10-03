@@ -4,15 +4,11 @@
  * step.
  *
  * Pins what only the route decides (the real `cancelPendingPaymentsAfterManualPayment`
- * runs; only the canceller port, recordPayment, the renewals barrel and
- * Next's `after()` are mocked):
- *   - the cancel is deferred with `after()` — the response (which the admin's
- *     pay dialog waits on before toasting and closing) is sent BEFORE the
- *     Stripe round-trips; the user's manual check on f62816a found the dialog
- *     held open while the cancel ran inline;
- *   - order: F2 plan-change finaliser → response → cancel;
- *   - `after` unavailable (throws outside a request scope) → the cancel runs
- *     inline rather than being lost;
+ * runs; only the canceller port, recordPayment and the renewals barrel are
+ * mocked):
+ *   - the cancel runs AFTER the F2 plan-change finaliser (`f8AfterCommitCallbacks`)
+ *     — its Stripe round-trips must not stand between the committed payment
+ *     and that finaliser;
  *   - cause `invoice_paid_manually` for a fresh payment, `invoice_already_paid`
  *     when recordPayment reports a replay; actor = the admin, requestId;
  *   - a refused payment never cancels;
@@ -26,25 +22,6 @@ const requireApiPermissionMock = vi.fn();
 const recordPaymentMock = vi.fn();
 const cancelMock = vi.fn();
 const order: string[] = [];
-// Captured `after()` tasks; `afterThrows` simulates no request scope.
-const afterTasks: Array<() => unknown> = [];
-let afterThrows = false;
-
-vi.mock('next/server', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('next/server')>();
-  return {
-    ...actual,
-    after: (task: () => unknown) => {
-      if (afterThrows) throw new Error('`after` was called outside a request scope.');
-      order.push('after-scheduled');
-      afterTasks.push(task);
-    },
-  };
-});
-
-async function runAfterTasks() {
-  for (const t of afterTasks.splice(0)) await t();
-}
 
 vi.mock('@/lib/rbac', () => ({
   requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
@@ -168,21 +145,15 @@ describe('contract: POST /api/invoices/[invoiceId]/pay — post-commit PaymentIn
     requireApiPermissionMock.mockResolvedValue(adminContext);
     cancelMock.mockResolvedValue(undefined);
     order.length = 0;
-    afterTasks.length = 0;
-    afterThrows = false;
   });
   afterEach(() => vi.clearAllMocks());
 
-  it('fresh payment → 200 sent BEFORE the cancel; order F2 finaliser → response → cancel; cause invoice_paid_manually', async () => {
+  it('fresh payment → 200; cancel runs AFTER the F2 finaliser with cause invoice_paid_manually', async () => {
     recordPaymentMock.mockResolvedValueOnce(ok(paidInvoice(false)));
     const { POST } = await importRoute();
     const res = await POST(post(), routeParams);
     expect(res.status).toBe(200);
-    // The response is out; the Stripe cancel has NOT run yet — only scheduled.
-    expect(cancelMock).not.toHaveBeenCalled();
-    expect(order).toEqual(['f2-finalise', 'after-scheduled']);
-    await runAfterTasks();
-    expect(order).toEqual(['f2-finalise', 'after-scheduled', 'cancel']);
+    expect(order).toEqual(['f2-finalise', 'cancel']);
     expect(cancelMock).toHaveBeenCalledWith({
       tenantId: 'test-swecham',
       invoiceId: INVOICE_ID,
@@ -199,40 +170,24 @@ describe('contract: POST /api/invoices/[invoiceId]/pay — post-commit PaymentIn
     const { POST } = await importRoute();
     const res = await POST(post(), routeParams);
     expect(res.status).toBe(200);
-    await runAfterTasks();
     expect(cancelMock).toHaveBeenCalledWith(
       expect.objectContaining({ cause: 'invoice_already_paid' }),
     );
   });
 
-  it('refused payment (409) → nothing scheduled, no cancel', async () => {
+  it('refused payment (409) → no cancel', async () => {
     recordPaymentMock.mockResolvedValueOnce(err({ code: 'invalid_status', status: 'void' }));
     const { POST } = await importRoute();
     const res = await POST(post(), routeParams);
     expect(res.status).toBe(409);
-    expect(afterTasks).toHaveLength(0);
     expect(cancelMock).not.toHaveBeenCalled();
   });
 
-  it('canceller throws inside the deferred task → the task resolves (never rejects); 200 already sent', async () => {
+  it('canceller throws → still 200 (the payment is committed)', async () => {
     recordPaymentMock.mockResolvedValueOnce(ok(paidInvoice(false)));
     cancelMock.mockRejectedValueOnce(new Error('neon: connection reset'));
     const { POST } = await importRoute();
     const res = await POST(post(), routeParams);
     expect(res.status).toBe(200);
-    await expect(runAfterTasks()).resolves.toBeUndefined();
-    expect(cancelMock).toHaveBeenCalledTimes(1);
-  });
-
-  it('`after` unavailable (outside a request scope) → the cancel runs inline, still 200', async () => {
-    afterThrows = true;
-    recordPaymentMock.mockResolvedValueOnce(ok(paidInvoice(false)));
-    const { POST } = await importRoute();
-    const res = await POST(post(), routeParams);
-    expect(res.status).toBe(200);
-    expect(order).toEqual(['f2-finalise', 'cancel']);
-    expect(cancelMock).toHaveBeenCalledWith(
-      expect.objectContaining({ cause: 'invoice_paid_manually' }),
-    );
   });
 });

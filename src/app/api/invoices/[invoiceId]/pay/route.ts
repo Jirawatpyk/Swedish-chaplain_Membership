@@ -1,7 +1,7 @@
 /**
  * T066 — POST /api/invoices/[invoiceId]/pay.
  */
-import { after, NextResponse, type NextRequest } from 'next/server';
+import { NextResponse, type NextRequest } from 'next/server';
 import { requireApiPermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
@@ -172,27 +172,16 @@ export async function POST(
 
   // #452 financial-integrity review (M1) — LAST post-commit step: cancel the
   // invoice's still-live PaymentIntents so a card clientSecret the member's
-  // PaySheet cached cannot capture a second payment. Runs AFTER the response is
-  // sent (`after()`): the Stripe retrieve/cancel round-trips (10 s timeout +
-  // SDK retries) must neither hold the admin's pay dialog open — it waits for
-  // this response before toasting and closing — nor stand between the
-  // committed payment and the F2 finaliser above. Order: commit → F2 finalise
-  // → response → cancel. Best-effort (never throws); the hourly sweep retries.
-  // `after` throws outside a request scope — then run it inline rather than
-  // lose the cancel.
-  const cancelPendingTask = () =>
-    cancelPendingPaymentsAfterManualPayment(deps, {
-      tenantId: tenantCtx.slug,
-      invoiceId,
-      actorUserId: ctx.current.user.id,
-      requestId,
-      replayed: result.value.replayed,
-    });
-  try {
-    after(cancelPendingTask);
-  } catch {
-    await cancelPendingTask();
-  }
+  // PaySheet cached cannot capture a second payment. After the F2 finaliser on
+  // purpose — its Stripe round-trips must not stand between the committed
+  // payment and that finaliser. Best-effort; never throws.
+  await cancelPendingPaymentsAfterManualPayment(deps, {
+    tenantId: tenantCtx.slug,
+    invoiceId,
+    actorUserId: ctx.current.user.id,
+    requestId,
+    replayed: result.value.replayed,
+  });
 
   // Cluster 5 (Finding 1) — surface the auto-email dispatch outcome so the
   // pay dialog can warn the admin when the receipt was NOT emailed (member has
