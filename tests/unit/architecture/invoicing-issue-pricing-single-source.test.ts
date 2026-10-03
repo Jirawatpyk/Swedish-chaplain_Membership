@@ -5,46 +5,62 @@
  * draft's subtotal / VAT / total: the treatment-driven rate plus the
  * VAT-inclusive carve-out. `issueInvoice`, `issueEventInvoiceAsPaid`, the
  * draft PDF preview and the staff Issue dialog all price through it, so what
- * the admin previews is what the bill pins. A use case calling the primitives
- * (`calculateVat`, `splitVatInclusive`) directly is a second copy of the rule
+ * the admin previews is what the bill pins. Any other file importing or
+ * calling the primitives (`calculateVat`, `splitVatInclusive`), or doing the
+ * rate maths inline (`Money.multiplyByFraction`), is a second copy of the rule
  * that can drift — e.g. pricing a zero-rated or VAT-inclusive draft at 7% on
- * top. The primitives stay in the domain; the application layer goes through
- * the policy.
+ * top. The primitives stay in the invoicing domain; everything else in `src/`
+ * goes through the policy. (The barrel's re-exports stay for tests, which use
+ * the primitives as an independent oracle.)
  */
 import { describe, expect, it } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 const PROJECT_ROOT = join(__dirname, '..', '..', '..');
-const APP_DIR = join(PROJECT_ROOT, 'src', 'modules', 'invoicing', 'application');
+const SRC_DIR = join(PROJECT_ROOT, 'src');
+// The primitives live here (and the policy that composes them); nothing else
+// may re-derive issue pricing.
+const PRICING_HOME = 'src/modules/invoicing/domain/';
 
 function listTs(dir: string): string[] {
   const out: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const p = join(dir, entry.name);
     if (entry.isDirectory()) out.push(...listTs(p));
-    else if (entry.name.endsWith('.ts')) out.push(p);
+    else if (/\.tsx?$/.test(entry.name)) out.push(p);
   }
   return out;
 }
 
 const PRIMITIVE_CALL = /\b(calculateVat|splitVatInclusive)\s*\(/;
+// A named import of a primitive, aliased or not, single- or multi-line (`[^}]`
+// spans newlines; no `\n` anchor, so a CRLF checkout parses the same).
+const PRIMITIVE_IMPORT = /\bimport\s+(?:type\s+)?\{[^}]*\b(?:calculateVat|splitVatInclusive)\b[^}]*\}\s*from\b/;
+// The rate maths itself, written inline on a Money.
+const INLINE_RATE_MATHS = /\.multiplyByFraction\s*\(/;
+// Comments are prose, not code: a rationale naming a primitive is not a bypass.
+const BLOCK_COMMENT = /\/\*[\s\S]*?\*\//g;
+const LINE_COMMENT = /(^|[^:'"`])\/\/[^\r\n]*/g;
 
 /** The files the guard scans, project-relative. */
 function scannedFiles(): string[] {
-  return listTs(APP_DIR).map((f) => relative(PROJECT_ROOT, f));
+  return listTs(SRC_DIR)
+    .map((f) => relative(PROJECT_ROOT, f).split('\\').join('/'))
+    .filter((f) => !f.startsWith(PRICING_HOME));
 }
 
 /** Does this source re-derive issue pricing instead of calling the policy? */
 function bypassesPricing(source: string): boolean {
-  return PRIMITIVE_CALL.test(source);
+  const code = source.replace(BLOCK_COMMENT, '').replace(LINE_COMMENT, '$1');
+  return PRIMITIVE_CALL.test(code) || PRIMITIVE_IMPORT.test(code) || INLINE_RATE_MATHS.test(code);
 }
 
-describe('invoicing application layer — issue pricing goes through computeIssuePricing', () => {
-  it('no application file calls calculateVat / splitVatInclusive directly', () => {
-    const offenders = listTs(APP_DIR)
-      .filter((f) => bypassesPricing(readFileSync(f, 'utf8')))
-      .map((f) => relative(PROJECT_ROOT, f));
+describe('issue pricing goes through computeIssuePricing', () => {
+  it('no file outside the invoicing domain imports or calls the VAT primitives', () => {
+    const offenders = scannedFiles().filter((f) =>
+      bypassesPricing(readFileSync(join(PROJECT_ROOT, f), 'utf8')),
+    );
     expect(offenders).toEqual([]);
   });
 });
