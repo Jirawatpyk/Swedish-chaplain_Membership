@@ -653,6 +653,19 @@ describe('issueCreditNote — event-fee (non-member + matched-member) Task 8', (
     // reconciles: original − previously reduced − correct = difference.
     expect(v.previouslyReduced.satang).toBe(14_017n);
     expect(v.originalValue.satang - v.previouslyReduced.satang - v.correctValue.satang).toBe(v.difference.satang);
+    // The same statement is kept in the `credit_note_issued` audit row, so it
+    // can be reproduced without the PDF blob.
+    const cnEmit = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.find(
+      ([, ev]) => ev.eventType === 'credit_note_issued',
+    );
+    expect((cnEmit![1].payload as Record<string, unknown>)['section_86_10']).toEqual({
+      original_value_satang: '23364',
+      previously_reduced_satang: '14017',
+      correct_value_satang: '0',
+      difference_satang: '9347',
+      difference_vat_satang: '653',
+      template_version: deps.currentTemplateVersion,
+    });
     expect([v.originalValue.satang, v.correctValue.satang, v.difference.satang, v.differenceVat.satang]).toEqual([
       23_364n,
       0n,
