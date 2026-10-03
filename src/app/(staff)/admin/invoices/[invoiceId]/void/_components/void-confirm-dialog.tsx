@@ -24,6 +24,7 @@ import { useState, useTransition, useCallback, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
+import { ArchiveIcon } from 'lucide-react';
 import { Alert, Button, Card, TextField, Textarea } from '@jirawatpyk/aura-react';
 import { routeVoidError } from './void-error-routing';
 
@@ -259,7 +260,15 @@ export function VoidConfirmDialog({ invoiceId, documentNumber }: Props) {
         >
           {t('cancel')}
         </Button>
-        <Button type="submit" variant="danger" touchHeight loading={pending} disabled={!canSubmit}>
+        {/* A destructive action carries the board's icon (Admin-void; § Button icons). */}
+        <Button
+          type="submit"
+          variant="danger"
+          touchHeight
+          icon={<ArchiveIcon aria-hidden="true" />}
+          loading={pending}
+          disabled={!canSubmit}
+        >
           {pending ? t('submitting') : t('submit')}
         </Button>
       </div>

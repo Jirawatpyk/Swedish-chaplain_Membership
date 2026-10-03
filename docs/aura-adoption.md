@@ -67,7 +67,7 @@ A server component that needs a static AURA component imports it from **`@jirawa
   - send or remind: `mail` or `send`;
   - confirm a money step: `check`, e.g. Record payment, or an as-paid issue;
   - retry: `rotate-ccw`;
-  - destructive actions, with their own icons: Archive, Erase, Reject & refund.
+  - destructive actions, with their own icons: Archive, Erase, Reject & refund, Void invoice (`archive`, as on `Admin-void`) and Delete draft… (`trash-2`, as on `Admin-invoice-issue`; US8b parity comment, 3 Oct).
 - **These carry none:** Cancel, Save, Apply, Done, Review, Go back, and in-row text actions such as the invoice list's "Record payment…".
 - **Exception:** a Cancel that works as "back" in a form header keeps the board's `arrow-left`, as on the member forms.
 - **How to apply it:**

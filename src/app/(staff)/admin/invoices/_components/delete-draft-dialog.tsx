@@ -55,7 +55,8 @@ export function DeleteDraftDialog({ invoiceId }: Props) {
 
   return (
     <>
-      <Button variant="danger-secondary" touchHeight onClick={() => setOpen(true)}>
+      {/* A destructive action carries the board's icon (Admin-invoice-issue; § Button icons). */}
+      <Button variant="danger-secondary" touchHeight icon="trash-2" onClick={() => setOpen(true)}>
         {t('trigger')}
       </Button>
       <ConfirmationDialog

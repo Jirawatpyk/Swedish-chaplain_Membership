@@ -1200,7 +1200,7 @@ export default async function AuraAdminPreviewPage({
     const tVoid = await getTranslations('admin.invoices.void');
     return (
       <StaffFrame path={`/admin/invoices/${DETAIL_INVOICE_ID}/void`}>
-        <FormContainer>
+        <FormContainer align="start">
           <Link
             href={`/admin/invoices/${DETAIL_INVOICE_ID}`}
             className="inline-flex items-center gap-1 self-start text-sm text-[var(--aura-fg-accent)] hover:underline max-lg:hidden"
@@ -1220,7 +1220,7 @@ export default async function AuraAdminPreviewPage({
     const online = state === 'online';
     return (
       <StaffFrame path={`/admin/invoices/${DETAIL_INVOICE_ID}/credit-notes/new`}>
-        <FormContainer>
+        <FormContainer align="start">
           <Link
             href={`/admin/invoices/${DETAIL_INVOICE_ID}`}
             className="inline-flex items-center gap-1 self-start text-sm text-[var(--aura-fg-accent)] hover:underline max-lg:hidden"

@@ -6,17 +6,11 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { act, render } from '@testing-library/react';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { OpenFirstMatchingButton } from '@/app/test-fixtures/aura-admin/invoice-previews';
 
-function LateTrigger({ onClick }: { onClick: () => void }) {
-  const [shown, setShown] = useState(false);
+function Trigger({ onClick }: { onClick: () => void }) {
   const [open, setOpen] = useState(false);
-  useEffect(() => {
-    const id = setTimeout(() => setShown(true), 300);
-    return () => clearTimeout(id);
-  }, []);
-  if (!shown) return null;
   return (
     <>
       <button
@@ -35,18 +29,20 @@ function LateTrigger({ onClick }: { onClick: () => void }) {
 }
 
 describe('OpenFirstMatchingButton', () => {
-  it('clicks a trigger that appears after it mounts, once', async () => {
-    vi.useFakeTimers();
+  it('clicks a trigger that appears after it mounts, and stops once the dialog is open', async () => {
     const onClick = vi.fn();
-    render(
+    const { rerender } = render(<OpenFirstMatchingButton testId="refund-dialog-trigger">{null}</OpenFirstMatchingButton>);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    rerender(
       <OpenFirstMatchingButton testId="refund-dialog-trigger">
-        <LateTrigger onClick={onClick} />
+        <Trigger onClick={onClick} />
       </OpenFirstMatchingButton>,
     );
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(2000);
+      await vi.advanceTimersByTimeAsync(1000);
     });
     expect(onClick).toHaveBeenCalledTimes(1);
-    vi.useRealTimers();
   });
 });

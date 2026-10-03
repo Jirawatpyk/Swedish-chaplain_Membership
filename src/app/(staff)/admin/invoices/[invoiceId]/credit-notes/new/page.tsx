@@ -147,7 +147,7 @@ export default async function NewCreditNotePage({
   }
 
   return (
-    <FormContainer>
+    <FormContainer align="start">
       {/* The back link above the title, as on the void page and the board;
           below 1024px the shell's back link stands in. */}
       <Link

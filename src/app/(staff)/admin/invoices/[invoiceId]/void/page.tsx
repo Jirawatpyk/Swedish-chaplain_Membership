@@ -67,7 +67,7 @@ export default async function VoidInvoicePage({
     : t('description');
 
   return (
-    <FormContainer>
+    <FormContainer align="start">
       {/* UX-5 — back-link above the form card so the escape route is
         * visible without scrolling past the destructive button. Below
         * 1024px the shell's back link stands in (spec 122 US8b). */}

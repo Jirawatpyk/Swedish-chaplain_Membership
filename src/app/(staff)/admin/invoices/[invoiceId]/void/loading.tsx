@@ -15,7 +15,7 @@ export default async function Loading() {
   const tLayout = await getTranslations('layout');
   return (
     <PageSkeletonShell ariaLabel={tLayout('loadingForm')}>
-      <FormContainer>
+      <FormContainer align="start">
         {/* The back link above the title (from 1024px; below, the shell's). */}
         <SkeletonBlock className="h-5 w-32 self-start max-lg:hidden" />
         <PageHeader title={t('title')} subtitle={t('description')} />
