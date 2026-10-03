@@ -488,4 +488,20 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
   });
+  describe('the US8c-2 invoice settings are on AURA (the real MIGRATED_PATHS)', () => {
+    const legacy = "import { Button } from '@/components/ui/button';\nexport const B = Button;\n";
+
+    it.each([
+      'src/app/(staff)/admin/settings/invoicing/page.tsx',
+      'src/app/(staff)/admin/settings/invoicing/loading.tsx',
+      'src/app/(staff)/admin/settings/invoicing/_components/invoice-settings-view.tsx',
+      'src/components/invoices/invoice-settings-form.tsx',
+      'src/components/invoices/invoice-settings/section-nav.tsx',
+      'src/components/invoices/invoice-settings/sticky-save-bar.tsx',
+      'src/components/invoices/invoice-settings/sections/organization-section.tsx',
+      'src/components/invoices/invoice-settings/sections/branding-section.tsx',
+    ])('%s cannot import the legacy kit', async (path) => {
+      expect(await ratchetHits(legacy, path)).toHaveLength(1);
+    });
+  });
 });
