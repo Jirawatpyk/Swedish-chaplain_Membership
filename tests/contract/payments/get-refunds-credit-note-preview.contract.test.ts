@@ -27,7 +27,7 @@ vi.mock('@/lib/auth-deps', () => ({
 vi.mock('@/lib/request-id', () => ({ requestIdFromHeaders: () => 'req-cnp-1' }));
 vi.mock('@/modules/invoicing', () => ({
   previewRefundCreditNote: (...args: unknown[]) => previewMock(...args),
-  makeGetInvoiceDeps: (tenantId: string) => ({ tenantId }),
+  makePreviewRefundCreditNoteDeps: (tenantId: string) => ({ tenantId }),
 }));
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },

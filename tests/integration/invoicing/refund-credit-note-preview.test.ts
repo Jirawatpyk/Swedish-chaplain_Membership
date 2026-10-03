@@ -3,10 +3,11 @@
  * preview equals the credit note the refund then ISSUES, against live Postgres.
  *
  * `previewRefundCreditNote` is read through the production deps factory
- * (`makeGetInvoiceDeps` → `runInTenant`), then `issueCreditNote` issues the
+ * (`makePreviewRefundCreditNoteDeps` → `runInTenant`), then `issueCreditNote` issues the
  * note for the same amount; the stored `vat_satang` / `credit_amount_satang`
  * must equal what was previewed — for a full refund, a partial, and the last
- * of three partials (rounded on its own; the server has no residual rule).
+ * of three partials (the completing note takes the residual VAT, so the notes
+ * credit exactly the VAT charged).
  * Plus a cross-tenant read: another tenant's invoice previews as not found.
  *
  * Seeding mirrors `credit-note-partial-accumulation.test.ts` (membership
@@ -23,7 +24,7 @@ import { postgresSequenceAllocator } from '@/modules/invoicing/infrastructure/ad
 import { f4AuditAdapter } from '@/modules/invoicing/infrastructure/adapters/audit-adapter';
 import { issueCreditNote } from '@/modules/invoicing/application/use-cases/issue-credit-note';
 import type { IssueCreditNoteDeps } from '@/modules/invoicing/application/use-cases/issue-credit-note';
-import { makeGetInvoiceDeps, previewRefundCreditNote } from '@/modules/invoicing';
+import { makePreviewRefundCreditNoteDeps, previewRefundCreditNote } from '@/modules/invoicing';
 import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { invoiceLines } from '@/modules/invoicing/infrastructure/db/schema-invoice-lines';
@@ -259,7 +260,7 @@ describe('refund credit-note preview equals the issued credit note', () => {
   });
 
   async function previewThenIssue(invoiceId: string, amount: bigint, completes: boolean) {
-    const preview = await previewRefundCreditNote(makeGetInvoiceDeps(tenant.ctx.slug), {
+    const preview = await previewRefundCreditNote(makePreviewRefundCreditNoteDeps(tenant.ctx.slug), {
       tenantId: tenant.ctx.slug,
       invoiceId,
       creditTotalSatang: amount,
@@ -301,14 +302,15 @@ describe('refund credit-note preview equals the issued credit note', () => {
       expect(BigInt(row.vat as unknown as string)).toBe(previews[i]!.vatSatang);
       expect(BigInt(row.net as unknown as string)).toBe(previews[i]!.netSatang);
     });
-    // Each note rounds on its own: 2,181 + 2,181 + 2,639 — the last is not
-    // "invoice VAT less earlier notes" (2,638).
-    expect(previews.map((p) => p.vatSatang)).toEqual([2_181n, 2_181n, 2_639n]);
+    // The completing note takes the residual: 2,181 + 2,181 + 2,638 = 7,000,
+    // exactly the VAT charged (proportional alone gave 2,639 → 7,001).
+    expect(previews.map((p) => p.vatSatang)).toEqual([2_181n, 2_181n, 2_638n]);
+    expect(rows.reduce((sum, row) => sum + BigInt(row.vat as unknown as string), 0n)).toBe(INVOICE_VAT);
   }, 120_000);
 
   it("another tenant's invoice previews as not found (RLS + tenant-scoped repo)", async () => {
     const { invoiceId } = await seedInvoiceInStatus(tenant, user, planId, 'paid');
-    const r = await previewRefundCreditNote(makeGetInvoiceDeps(otherTenant.ctx.slug), {
+    const r = await previewRefundCreditNote(makePreviewRefundCreditNoteDeps(otherTenant.ctx.slug), {
       tenantId: otherTenant.ctx.slug,
       invoiceId,
       creditTotalSatang: 33_333n,
