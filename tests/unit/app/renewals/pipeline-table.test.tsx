@@ -447,7 +447,7 @@ describe('<PipelineTable> canMutate gating (manager money-CTA hiding)', () => {
   // offer "Mark paid" — it links to the bill's Record payment flow instead.
   it('canMutate={true} + live linked bill: no Mark paid, offers "Record payment on invoice" instead', async () => {
     const rows: ReadonlyArray<PipelineRow> = [
-      { ...PAYABLE_ROW[0]!, linkedInvoiceId: 'inv-9' },
+      { ...PAYABLE_ROW[0]!, linkedInvoiceId: 'inv-9', linkedInvoiceLive: true },
     ];
     render(
       <NextIntlClientProvider locale="en" messages={en}>
@@ -466,6 +466,31 @@ describe('<PipelineTable> canMutate gating (manager money-CTA hiding)', () => {
     expect(record).toHaveAttribute('href', '/admin/invoices/inv-9');
     expect(
       screen.queryByRole('menuitem', { name: /mark paid/i }),
+    ).toBeNull();
+  });
+
+  // A payable row still LINKED to a VOID invoice (void-on-reissue supersede /
+  // pre-unlink voids): there is nothing to pay on that invoice, and
+  // mark-paid-offline clears such a stale link before minting (#409) — so the
+  // row offers "Mark paid", never a "Record payment" link to a void invoice.
+  it('canMutate={true} + link to a VOID invoice: offers Mark paid, not "Record payment on invoice"', async () => {
+    const rows: ReadonlyArray<PipelineRow> = [
+      { ...PAYABLE_ROW[0]!, linkedInvoiceId: 'inv-void', linkedInvoiceLive: false },
+    ];
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <PipelineTable rows={rows} canMutate />
+      </NextIntlClientProvider>,
+    );
+
+    fireEvent.click(
+      within(desktopTable()).getByRole('button', { name: /actions for beta co/i }),
+    );
+
+    const menu = await screen.findByRole('menu', { name: 'Actions for Beta Co' });
+    expect(within(menu).getByRole('menuitem', { name: /mark paid/i })).toBeInTheDocument();
+    expect(
+      within(menu).queryByRole('menuitem', { name: 'Record payment on invoice' }),
     ).toBeNull();
   });
 });
