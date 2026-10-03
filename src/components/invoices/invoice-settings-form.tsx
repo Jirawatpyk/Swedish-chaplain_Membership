@@ -201,10 +201,22 @@ export function InvoiceSettingsForm(props: InvoiceSettingsFormProps) {
     focusFirstSection.current = false;
     document.getElementById(SECTIONS[0]!.id)?.focus();
   }, [generation]);
+  // Financial review M1: after a successful save the page's values are stale
+  // until router.refresh() delivers the saved ones. Discard would remount from
+  // the stale values, and a later save would silently revert the settings, so
+  // it stays disabled from the save until new `initialValues` arrive (fail
+  // closed: a refresh that never lands keeps it disabled).
+  const [awaitingRefresh, setAwaitingRefresh] = useState(false);
+  const initialValues = props.initialValues;
+  useEffect(() => {
+    setAwaitingRefresh(false);
+  }, [initialValues]);
   return (
     <InvoiceSettingsFormBody
       key={generation}
       {...props}
+      discardBlocked={awaitingRefresh}
+      onSaved={() => setAwaitingRefresh(true)}
       onDiscard={() => {
         focusFirstSection.current = true;
         setGeneration((g) => g + 1);
@@ -218,7 +230,13 @@ function InvoiceSettingsFormBody({
   canEdit,
   exists,
   onDiscard,
-}: InvoiceSettingsFormProps & { readonly onDiscard: () => void }) {
+  onSaved,
+  discardBlocked,
+}: InvoiceSettingsFormProps & {
+  readonly onDiscard: () => void;
+  readonly onSaved: () => void;
+  readonly discardBlocked: boolean;
+}) {
   const t = useTranslations('admin.invoiceSettings');
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
@@ -619,6 +637,7 @@ function InvoiceSettingsFormBody({
         body: JSON.stringify(body),
       });
       if (res.ok) {
+        onSaved();
         toast.success(exists ? t('toast.updated') : t('toast.created'));
         router.refresh();
         setSubmitting(false);
@@ -840,6 +859,8 @@ function InvoiceSettingsFormBody({
           submitting={submitting}
           onSave={() => formRef.current?.requestSubmit()}
           onDiscard={onDiscard}
+          // L1: a logo upload in flight would land on the unmounted body.
+          discardDisabled={discardBlocked || uploadingLogo}
         />
       </div>
 

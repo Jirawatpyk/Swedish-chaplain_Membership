@@ -20,11 +20,14 @@ export function StickySaveBar({
   submitting,
   onSave,
   onDiscard,
+  discardDisabled = false,
 }: {
   readonly visible: boolean;
   readonly submitting: boolean;
   readonly onSave: () => void;
   readonly onDiscard: () => void;
+  /** While the saved values are on their way back, or a logo upload runs. */
+  readonly discardDisabled?: boolean;
 }) {
   const t = useTranslations('admin.invoiceSettings');
   if (!visible) return null;
@@ -36,7 +39,7 @@ export function StickySaveBar({
       label={t('stickyBar.label')}
       status={t('stickyBar.unsaved')}
     >
-      <Button type="button" variant="secondary" className="min-h-11" disabled={submitting} onClick={onDiscard}>
+      <Button type="button" variant="secondary" className="min-h-11" disabled={submitting || discardDisabled} onClick={onDiscard}>
         {t('stickyBar.discard')}
       </Button>
       {/* 088 FR-036 — 44px at every width, also in the compact staff density. */}
