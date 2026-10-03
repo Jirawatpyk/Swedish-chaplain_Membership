@@ -49,7 +49,7 @@ function invoice(over: Record<string, unknown> = {}): Invoice {
     vat: money(VAT),
     total: money(TOTAL),
     creditedTotal: money(0n),
-    vatRate: { toPercentString: () => '7.00%' },
+    vatRate: { numerator: 700n, denominator: 10_000n },
     pdf: { key: 'preview' },
     receiptPdf: null,
     pdfDocKind: 'invoice',

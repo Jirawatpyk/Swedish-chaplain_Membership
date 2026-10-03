@@ -2960,7 +2960,7 @@
           "label": "VAT-inclusive / ราคารวม VAT แล้ว",
           "total": "Total (incl. VAT)",
           "subtotal": "Subtotal",
-          "vat": "VAT {rate}%",
+          "vat": "VAT ({rate})",
           "settingsMissing": "VAT breakdown unavailable — invoice settings haven't been configured yet. Set them up before issuing.",
           "configureSettings": "Configure invoice settings"
         },

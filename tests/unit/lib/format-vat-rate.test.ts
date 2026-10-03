@@ -4,7 +4,7 @@
  * formatted for the UI locale — "7%", sv "7,5 %" — never a fixed "7.00%".
  */
 import { describe, expect, it } from 'vitest';
-import { formatVatRateBps, formatVatRateNumber } from '@/lib/format-vat-rate';
+import { formatVatRateBps } from '@/lib/format-vat-rate';
 
 describe('formatVatRateBps — the rate as a locale percentage', () => {
   it('trims to the significant digits', () => {
@@ -17,13 +17,5 @@ describe('formatVatRateBps — the rate as a locale percentage', () => {
   it('follows the locale: Swedish decimal comma and a non-breaking space before %', () => {
     expect(formatVatRateBps(750, 'sv')).toBe('7,5 %');
     expect(formatVatRateBps(700, 'th')).toBe('7%');
-  });
-});
-
-describe('formatVatRateNumber — the number alone, for a label that supplies the %', () => {
-  it('is locale-formatted and trimmed', () => {
-    expect(formatVatRateNumber(700, 'en')).toBe('7');
-    expect(formatVatRateNumber(750, 'en')).toBe('7.5');
-    expect(formatVatRateNumber(750, 'sv')).toBe('7,5');
   });
 });

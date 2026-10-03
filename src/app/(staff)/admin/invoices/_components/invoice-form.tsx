@@ -449,7 +449,7 @@ export function CreateDraftForm({
               <dd className="font-medium tabular-nums">
                 {duplicate.totalSatang === null
                   ? tDup('notYetTotalled')
-                  : `${formatSatangAmount(Number(duplicate.totalSatang))} THB`}
+                  : `${formatSatangAmount(duplicate.totalSatang)} THB`}
               </dd>
             </div>
           </dl>

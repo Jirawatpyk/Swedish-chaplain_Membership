@@ -93,7 +93,7 @@ import { AS_PAID_ERROR_CODES } from './as-paid-error-codes';
 // Wave-4 S14 — shared client-safe Asia/Bangkok "today" helper.
 import { bangkokTodayIso } from '@/lib/bangkok-today';
 import { formatSatangAmount } from '@/lib/format-thb';
-import { formatVatRateNumber } from '@/lib/format-vat-rate';
+import { formatVatRateBps } from '@/lib/format-vat-rate';
 
 export type EventOption = {
   readonly eventId: string;
@@ -1040,7 +1040,10 @@ export function EventFeeForm({
         )}
 
         {/* 5. Live VAT-inclusive preview + 6. doc-type badge */}
-        {attendee !== null && amountValid && amountNum >= MIN_THB && (
+        {/* Only for an amount issuance would accept: past MAX_THB the field
+            shows amount.errors.max, and the preview's money formatter refuses
+            unsafe numbers rather than render a wrong figure. */}
+        {attendee !== null && amountValid && amountNum >= MIN_THB && amountNum <= MAX_THB && (
           <div
             className="rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface-hover)] p-[var(--aura-space-4)]"
             data-testid="vat-preview"
@@ -1098,7 +1101,7 @@ export function EventFeeForm({
                   </div>
                   <div className="flex justify-between">
                     <dt className="text-[var(--aura-fg-secondary)]">
-                      {t('vatPreview.vat', { rate: formatVatRateNumber(vatRateBps, locale) })}
+                      {t('vatPreview.vat', { rate: formatVatRateBps(vatRateBps, locale) })}
                     </dt>
                     <dd className="tabular-nums">{formatSatangAmount(split.vat)}</dd>
                   </div>
