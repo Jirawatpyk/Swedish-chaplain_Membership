@@ -90,12 +90,14 @@ function parse(body: unknown): Parsed {
 export function useCreditNotePreview(
   invoiceId: string,
   amountSatang: bigint | null,
+  /** A waiver the page already knows (F4's verdict at load): no read needed. */
+  knownWaivedReason: CreditNoteWaiverReason | null = null,
 ): CreditNotePreviewState {
   const [answer, setAnswer] = useState<Answer | null>(null);
   // Set once F4 says the document owes no credit note; the verdict belongs to
   // the document, not the amount, so it is never asked again.
   const [noCreditNote, setNoCreditNote] = useState<{ readonly waivedReason: CreditNoteWaiverReason | null } | null>(
-    null,
+    knownWaivedReason !== null ? { waivedReason: knownWaivedReason } : null,
   );
   const [lastRate, setLastRate] = useState<string | null>(null);
 

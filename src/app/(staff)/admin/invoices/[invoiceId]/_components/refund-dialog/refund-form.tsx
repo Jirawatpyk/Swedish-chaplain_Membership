@@ -70,7 +70,7 @@ type WaiverReason = CreditNoteWaiverReason;
  * Domain constant using this same transform, so a reason without copy fails the
  * build rather than reaching an admin.
  */
-function waiverKey(reason: WaiverReason): string {
+export function waiverKey(reason: WaiverReason): string {
   return reason.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase());
 }
 
@@ -100,6 +100,8 @@ type Props = {
   readonly paymentId: string;
   /** The invoice the refund credits — keys the credit-note preview read. */
   readonly invoiceId: string;
+  /** F4 waives this document's credit note (known at page load): skip the read. */
+  readonly creditNoteWaiverReason?: WaiverReason | null;
   readonly memberCompanyName: string;
   readonly remainingRefundableSatang: bigint;
   readonly currencyCode: string;
@@ -140,6 +142,7 @@ function formatVatRatePercent(rate: string, locale: string): string {
 export function RefundForm({
   paymentId,
   invoiceId,
+  creditNoteWaiverReason = null,
   memberCompanyName,
   remainingRefundableSatang,
   currencyCode,
@@ -237,7 +240,7 @@ export function RefundForm({
   // "Credit note to be issued" — the server's split for this amount, printed
   // as received (no VAT arithmetic here). Nothing shows for a waived (§105
   // receipt, voided invoice) or blocked document, or if the read fails.
-  const creditNotePreview = useCreditNotePreview(invoiceId, summaryAmountSatang);
+  const creditNotePreview = useCreditNotePreview(invoiceId, summaryAmountSatang, creditNoteWaiverReason);
   const expectedPhrase = `REFUND ${memberCompanyName}`;
   const phraseMatches = typedPhrase === expectedPhrase;
 

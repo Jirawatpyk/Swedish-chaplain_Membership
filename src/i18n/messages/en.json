@@ -5090,6 +5090,10 @@
       "dialog": {
         "title": "Issue refund?",
         "description": "Refund all or part of this payment. The matching credit note will be issued and emailed to the member.",
+        "descriptionWaived": {
+          "section105Receipt": "Refund all or part of this payment. No credit note is issued: this payment has a Section 105 receipt, not a tax invoice.",
+          "invoiceVoided": "Refund all or part of this payment. No credit note is issued: this invoice has been voided."
+        },
         "cancel": "Cancel",
         "confirm": "Issue refund",
         "confirmAmount": "Refund {amount}",

@@ -141,6 +141,7 @@ const REFUND_PAY_1 = {
   pendingRefundExists: false,
   paidAmountSatang: TOTAL,
   paidAt: '2026-09-20T03:12:00.000Z',
+  creditNoteWaiverReason: null as 'section_105_receipt' | 'invoice_voided' | null,
 };
 
 const paidProps = (over: Partial<InvoiceDetailViewProps> = {}): Omit<InvoiceDetailViewProps, 'paymentActivity' | 'locale'> => ({
@@ -201,6 +202,7 @@ export function detailFixture(kind: DetailFixtureKind): Omit<InvoiceDetailViewPr
         planDisplayName: '',
         buyerHasTaxId: false,
         hasReceiptPdf: false,
+        refund: { ...REFUND_PAY_1, creditNoteWaiverReason: 'section_105_receipt' },
       });
     case 'refund-partial':
       return paidProps({

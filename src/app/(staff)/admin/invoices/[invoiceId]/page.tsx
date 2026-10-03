@@ -40,6 +40,8 @@ import {
   makeOverdueAuditPort,
   getInvoiceSupersession,
   makeGetInvoiceSupersessionDeps,
+  refundCreditNoteWaiverReasonFor,
+  type CreditNoteWaiverReason,
 } from '@/modules/invoicing';
 // Direct infra import for the settings read — same escape-hatch as
 // the B2 settings page. This is a READ against the public port
@@ -450,6 +452,7 @@ export default async function InvoiceDetailPage({
     pendingRefundExists: boolean;
     paidAmountSatang: bigint | null;
     paidAt: string | null;
+    creditNoteWaiverReason: CreditNoteWaiverReason | null;
   } | null = null;
   if (
     isAdmin &&
@@ -497,6 +500,9 @@ export default async function InvoiceDetailPage({
           pendingRefundExists,
           paidAmountSatang: refundedPayment?.amountSatang ?? null,
           paidAt: refundedPayment?.completedAt?.toISOString() ?? null,
+          // The same F4 verdict the refund pre-flight reads: the dialog must
+          // not promise a credit note for a waived document.
+          creditNoteWaiverReason: refundCreditNoteWaiverReasonFor(invoice),
         };
       }
     }

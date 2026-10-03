@@ -21,6 +21,7 @@ import {
   invoiceStatusHasReceipt,
   isSupersessionLinkLive,
   type CreditNote,
+  type CreditNoteWaiverReason,
   type Invoice,
   type InvoiceSupersessionLink,
 } from '@/modules/invoicing';
@@ -140,6 +141,8 @@ export interface InvoiceDetailViewProps {
     /** The succeeded payment being refunded — named on the dialog's payment line. */
     readonly paidAmountSatang: bigint | null;
     readonly paidAt: string | null;
+    /** F4 waives this document's credit note (section 105 receipt, voided invoice). */
+    readonly creditNoteWaiverReason: CreditNoteWaiverReason | null;
   } | null;
   /** Asia/Bangkok "today", for the Record-payment date clamp. */
   readonly bangkokTodayIso: string;
@@ -314,6 +317,7 @@ export async function renderInvoiceDetailView({
                   invoiceDocumentNumber={billFirstDocumentNumber(invoice)}
                   paidAmountSatang={refund.paidAmountSatang}
                   paidAt={refund.paidAt}
+                  creditNoteWaiverReason={refund.creditNoteWaiverReason}
                   // Gap E — disabled and "settling" while a pending async
                   // refund exists for this payment.
                   pendingRefundExists={refund.pendingRefundExists}
