@@ -30,7 +30,7 @@ describe('buildIssueTotalsByTreatment', () => {
             expect(BigInt(got.subtotalSatang)).toBe(want.subtotal.satang);
             expect(BigInt(got.vatSatang)).toBe(want.vat.satang);
             expect(BigInt(got.totalSatang)).toBe(want.total.satang);
-            expect(got.vatPercent).toBe(want.vatRate.toPercentString());
+            expect(got.vatRateBps).toBe(Number(want.vatRate.numerator));
             expect(got.subtotalSatang + got.vatSatang).toBe(got.totalSatang);
           }
           expect(byTreatment.zero_rated_80_1_5.vatSatang).toBe(0);

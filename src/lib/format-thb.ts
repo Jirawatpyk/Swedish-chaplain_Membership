@@ -61,10 +61,34 @@ export function formatSatangThb(
   currency: string = 'THB',
 ): string {
   if (satang === null) return '—';
+  return `${formatMajorUnits(satang, locale)} ${currency}`;
+}
+
+/** Signed major-unit amount for the locale: `-3434n` → `-34.34`. */
+function formatMajorUnits(satang: bigint, locale: string): string {
   const abs = satang < 0n ? -satang : satang;
   const whole = abs / 100n;
   const rem = abs % 100n;
   const sign = satang < 0n ? '-' : '';
   const { grouping, decimal } = getLocaleNumberParts(locale);
-  return `${sign}${grouping.format(whole)}${decimal}${rem.toString().padStart(2, '0')} ${currency}`;
+  return `${sign}${grouping.format(whole)}${decimal}${rem.toString().padStart(2, '0')}`;
+}
+
+/**
+ * The bare-amount twin of {@link formatSatangThb}: `1070000` → `"10,700.00"`,
+ * no currency suffix (the column header or label names it). The ONE formatter
+ * for the admin invoicing and credit-note surfaces, pinned to `en-US` grouping
+ * (N11 / FR-005 — legal tax figures read identically on every surface and in
+ * every UI locale).
+ *
+ * Accepts satang as a bigint, a digit string (the API's wire form) or a
+ * number (a bigint cannot cross the RSC → client boundary). A number must be a
+ * safe integer — money is never rounded here. `null` → `'—'`.
+ */
+export function formatSatangAmount(satang: bigint | number | string | null): string {
+  if (satang === null) return '—';
+  if (typeof satang === 'number' && !Number.isSafeInteger(satang)) {
+    throw new RangeError(`formatSatangAmount: ${satang} is not a safe integer satang amount`);
+  }
+  return formatMajorUnits(BigInt(satang), 'en-US');
 }

@@ -128,6 +128,7 @@ describe('IssueInvoiceForm — the summary matches the issued bill', () => {
     renderForm({ totalsByTreatment: priced(1_000_000) });
     expect(summaryRow('Subtotal')).toHaveTextContent('10,000.00 THB');
     expect(summaryRow('Total')).toHaveTextContent('10,700.00 THB');
+    expect(screen.getByText('(7%)')).toBeInTheDocument();
     const confirm = screen.getByRole('button', { name: 'Issue bill · 10,700.00 THB' });
     expect(confirm.querySelector('svg.aura-icon')).not.toBeNull();
   });
@@ -135,7 +136,7 @@ describe('IssueInvoiceForm — the summary matches the issued bill', () => {
   it('zero-rated event fee: VAT 0, total = subtotal, in the summary and the confirm', () => {
     renderForm({ totalsByTreatment: priced(1_000_000) });
     fireEvent.click(screen.getByRole('radio', { name: /Zero-rated/i }));
-    expect(screen.getByText('(0.00%)')).toBeInTheDocument();
+    expect(screen.getByText('(0%)')).toBeInTheDocument();
     expect(summaryRow('Total')).toHaveTextContent('10,000.00 THB');
     expect(screen.getByRole('button', { name: 'Issue bill · 10,000.00 THB' })).toBeInTheDocument();
     // Flipping back restores the standard figures.

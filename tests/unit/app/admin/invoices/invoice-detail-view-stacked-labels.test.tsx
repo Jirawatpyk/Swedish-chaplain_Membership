@@ -145,7 +145,7 @@ function props(over: Partial<ViewProps> = {}): ViewProps {
     hasReceiptPdf: false,
     failedEmailBanners: [],
     autoRefund: { failed: false, processorRefundId: null },
-    totals: { subtotalSatang: 10_000_000n, vatSatang: 700_000n, totalSatang: 10_700_000n, vatPercent: '7.00%' },
+    totals: { subtotalSatang: 10_000_000n, vatSatang: 700_000n, totalSatang: 10_700_000n, vatRateBps: 700 },
     issueTotals: null,
     settlingRefundSatang: null,
     refund: null,
