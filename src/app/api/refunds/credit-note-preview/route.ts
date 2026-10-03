@@ -8,7 +8,8 @@
  * the gate blocks the refund. The split is F4's proportional credit-note VAT
  * policy, computed here so the browser never does VAT arithmetic.
  *
- * A READ: no write, no audit row, no money moves. The refund itself still
+ * A READ: no write, no money moves. The only audit row is the cross-tenant
+ * probe, when the invoice id is not in this tenant. The refund itself still
  * goes through POST /api/refunds/initiate, which re-derives everything.
  *
  *   - Auth: `refunds.write`, the refund's own permission (manager → 403).
@@ -94,6 +95,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       tenantId: tenantCtx.slug,
       invoiceId,
       creditTotalSatang: amountSatang,
+      actor: { userId: actorUserId, role: adminCtx.current.user.role, requestId },
     });
   } catch (e) {
     logger.error(

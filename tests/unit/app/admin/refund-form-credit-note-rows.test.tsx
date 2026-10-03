@@ -116,6 +116,38 @@ describe('RefundForm — credit note to be issued', () => {
     expect(within(screen.getByTestId('refund-summary')).getByText('Refund total')).toBeInTheDocument();
   });
 
+  it('a zero-rated invoice shows VAT 0%, from the stored rate', async () => {
+    respondPreview({ kind: 'issue', netSatang: '535000', vatSatang: '0', vatRate: '0.0000' });
+    renderForm();
+    fireEvent.change(screen.getByTestId('refund-form-amount'), { target: { value: '5350' } });
+    const section = await screen.findByTestId('refund-summary-credit-note');
+    expect(within(section).getByText('VAT 0%').nextElementSibling).toHaveTextContent('0.00 THB');
+  });
+
+  it('a waived document is asked once: changing the amount sends no new read', async () => {
+    respondPreview({ kind: 'waived', reason: 'section_105_receipt' });
+    renderForm();
+    fireEvent.change(screen.getByTestId('refund-form-amount'), { target: { value: '5350' } });
+    await waitFor(() => expect(previewCalls()).toHaveLength(1));
+    await waitFor(() => expect(screen.queryByTestId('refund-summary-credit-note-loading')).toBeNull());
+    fireEvent.change(screen.getByTestId('refund-form-amount'), { target: { value: '100' } });
+    await new Promise((r) => setTimeout(r, 400));
+    expect(previewCalls()).toHaveLength(1);
+    expect(screen.queryByTestId('refund-summary-credit-note-loading')).toBeNull();
+  });
+
+  it('while loading, the section keeps its labels and only the values wait', async () => {
+    fetchMock.mockImplementation(() => new Promise(() => undefined));
+    renderForm();
+    fireEvent.change(screen.getByTestId('refund-form-amount'), { target: { value: '5350' } });
+    const loading = screen.getByTestId('refund-summary-credit-note-loading');
+    expect(loading).toHaveAttribute('aria-busy', 'true');
+    expect(loading).toHaveAccessibleName('Credit note to be issued');
+    expect(within(loading).getByText('Credit note to be issued')).toBeInTheDocument();
+    expect(within(loading).getByText('Amount excl. VAT')).toBeInTheDocument();
+    expect(within(loading).getByText('VAT')).toBeInTheDocument();
+  });
+
   it('no preview request while the amount is invalid', async () => {
     respondPreview({ kind: 'issue', netSatang: '500000', vatSatang: '35000', vatRate: '0.0700' });
     renderForm();

@@ -5076,8 +5076,8 @@
         "confirm": "ยืนยันการคืนเงิน",
         "confirmAmount": "คืนเงิน {amount}",
         "processing": "กำลังดำเนินการคืนเงิน…",
-        "paymentReceipt": "ใบเสร็จ {number}",
-        "paymentPaid": "{amount}, {date}",
+        "paymentReceipt": "ใบเสร็จ <num>{number}</num>",
+        "paymentPaid": "{amount} เมื่อ {date}",
         "refsCombinedHint": "รวมเอกสาร"
       },
       "form": {
@@ -5098,7 +5098,8 @@
           "after": "คืนได้อีกหลังจากนี้",
           "creditNoteTitle": "ใบลดหนี้ที่จะออก",
           "creditNoteNet": "ยอดก่อนภาษีมูลค่าเพิ่ม",
-          "creditNoteVat": "ภาษีมูลค่าเพิ่ม {rate}%",
+          "creditNoteVat": "ภาษีมูลค่าเพิ่ม {rate}",
+          "creditNoteVatPending": "ภาษีมูลค่าเพิ่ม",
           "creditNoteLoading": "กำลังคำนวณใบลดหนี้…"
         },
         "typedPhrase": {

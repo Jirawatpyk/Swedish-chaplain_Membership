@@ -18,7 +18,7 @@
  * `/admin/invoices/[id]?refund=1` so admins can refund without
  * leaving the keyboard.
  */
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, type ReactNode } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { Button, Dialog } from '@jirawatpyk/aura-react';
@@ -121,6 +121,36 @@ export function RefundDialog({
     [stripRefundParam],
   );
 
+  // §87 cross-reference — the payment this refund returns, on one line:
+  // invoice · receipt · amount paid, date paid. Combined-mode rows have a NULL
+  // receiptDocumentNumberRaw → the invoice number is the receipt, marked
+  // "(combined)". Only document numbers are set in mono.
+  const mono = (chunks: ReactNode) => <span className="font-mono tabular-nums">{chunks}</span>;
+  const receiptNumber = receiptDocumentNumberRaw ?? invoiceDocumentNumber ?? null;
+  const paymentLine: ReactNode[] = [
+    invoiceDocumentNumber ? (
+      <span key="invoice" className="whitespace-nowrap font-mono tabular-nums">
+        {invoiceDocumentNumber}
+      </span>
+    ) : null,
+    receiptNumber ? (
+      <span key="receipt" className="whitespace-nowrap">
+        {tDialog.rich('paymentReceipt', { number: receiptNumber, num: mono })}
+        {receiptDocumentNumberRaw ? null : ` (${tDialog('refsCombinedHint')})`}
+      </span>
+    ) : null,
+    paidAmountSatang !== null ? (
+      <span key="paid" className="whitespace-nowrap tabular-nums">
+        {paidAt
+          ? tDialog('paymentPaid', {
+              amount: formatSatangThb(paidAmountSatang, locale, currencyCode),
+              date: formatLocalisedDate(paidAt, locale),
+            })
+          : formatSatangThb(paidAmountSatang, locale, currencyCode)}
+      </span>
+    ) : null,
+  ].filter((part) => part !== null);
+
   // Gap E — a refund is settling: disable the trigger + surface a "settling"
   // affordance instead of the active dialog. Hooks above run unconditionally
   // (rules-of-hooks); the branch is a prop-driven render fork.
@@ -174,33 +204,20 @@ export function RefundDialog({
             line: invoice · receipt · amount paid, date paid. Combined-mode
             rows have a NULL receiptDocumentNumberRaw → the invoice number is
             the receipt, marked "(combined)". */}
-        <p data-testid="refund-dialog-payment" className="text-xs text-[var(--aura-fg-secondary)]">
-          {[
-            invoiceDocumentNumber ? (
-              <span key="invoice" className="font-mono tabular-nums">
-                {invoiceDocumentNumber}
-              </span>
-            ) : null,
-            receiptDocumentNumberRaw || invoiceDocumentNumber ? (
-              <span key="receipt" className="font-mono tabular-nums">
-                {tDialog('paymentReceipt', { number: receiptDocumentNumberRaw ?? invoiceDocumentNumber ?? '' })}
-                {receiptDocumentNumberRaw ? null : ` (${tDialog('refsCombinedHint')})`}
-              </span>
-            ) : null,
-            paidAmountSatang !== null ? (
-              <span key="paid" className="tabular-nums">
-                {paidAt
-                  ? tDialog('paymentPaid', {
-                      amount: formatSatangThb(paidAmountSatang, locale, currencyCode),
-                      date: formatLocalisedDate(paidAt, locale),
-                    })
-                  : formatSatangThb(paidAmountSatang, locale, currencyCode)}
-              </span>
-            ) : null,
-          ]
-            .filter((part) => part !== null)
-            .flatMap((part, i) => (i === 0 ? [part] : [' · ', part]))}
-        </p>
+        {paymentLine.length > 0 && (
+          <p data-testid="refund-dialog-payment" className="text-xs text-[var(--aura-fg-secondary)]">
+            {paymentLine.flatMap((part, i) =>
+              i === 0
+                ? [part]
+                : [
+                    <span key={`sep-${i}`} aria-hidden="true">
+                      {' · '}
+                    </span>,
+                    part,
+                  ],
+            )}
+          </p>
+        )}
         <RefundForm
           paymentId={paymentId}
           invoiceId={invoiceId}

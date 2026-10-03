@@ -3,7 +3,9 @@
  * `creditTotalSatang` would issue, for the refund dialog's "Credit note to be
  * issued" rows (boards `Admin-refund-full`, `Admin-refund-partial`).
  *
- * READ-ONLY. Nothing here allocates, writes or audits. The answer is built
+ * READ-ONLY. Nothing here allocates or writes; the only audit is the
+ * cross-tenant probe `getInvoice` emits when an `actor` is supplied and the
+ * invoice is not in the tenant. The answer is built
  * from the SAME pieces the money path uses, so the dialog cannot show a split
  * the refund will not issue:
  *
@@ -20,9 +22,16 @@
  *      own; there is no residual rule for the last partial, so none here.
  *
  * IF EITHER OF THOSE CHANGES, THIS CHANGES WITH IT.
+ *
+ * Not mirrored, exactly as the refund pre-flight does not mirror them:
+ * `issue-credit-note.ts`'s corrupt-row and config gates (missing snapshot
+ * fields, tenant settings, event-invoice linkage, membership effect). On such
+ * a row the preview shows a split while the refund's credit note is deferred
+ * — a data fault, not a money one, and the issued note never differs in
+ * amount from what was shown.
  */
 import { ok, err, type Result } from '@/lib/result';
-import { getInvoice, type GetInvoiceDeps } from './get-invoice';
+import { getInvoice, type GetInvoiceDeps, type GetInvoiceInput } from './get-invoice';
 import { calculateCreditNoteVat } from '@/modules/invoicing/domain/policies/calculate-credit-note-vat';
 import { enforceCreditCannotExceedRemainder } from '@/modules/invoicing/domain/policies/enforce-credit-cannot-exceed-remainder';
 import {
@@ -40,6 +49,12 @@ export interface PreviewRefundCreditNoteInput {
   readonly invoiceId: string;
   /** The refund amount — the credit note's gross total (incl. VAT). */
   readonly creditTotalSatang: bigint;
+  /**
+   * The staff member asking. When present, an invoice id outside the tenant
+   * emits `invoice_cross_tenant_probe` (Principle I clause 3), as the detail
+   * page does.
+   */
+  readonly actor?: GetInvoiceInput['actor'];
 }
 
 export type RefundCreditNotePreview =
@@ -63,12 +78,12 @@ export async function previewRefundCreditNote(
   deps: GetInvoiceDeps,
   input: PreviewRefundCreditNoteInput,
 ): Promise<Result<RefundCreditNotePreview, PreviewRefundCreditNoteError>> {
-  // No `actor`: like the refund pre-flight read, this is not a detail view, so
-  // the cross-tenant probe audit stays dormant. RLS + the tenant-scoped repo
-  // still make another tenant's invoice a plain not-found.
+  // RLS + the tenant-scoped repo make another tenant's invoice a not-found;
+  // with an `actor`, `getInvoice` also audits the probe.
   const found = await getInvoice(deps, {
     tenantId: input.tenantId,
     invoiceId: input.invoiceId,
+    ...(input.actor !== undefined ? { actor: input.actor } : {}),
   });
   if (!found.ok) return err({ code: 'not_found' });
   const inv = found.value;

@@ -5076,7 +5076,7 @@
         "confirm": "Utfärda återbetalning",
         "confirmAmount": "Återbetala {amount}",
         "processing": "Bearbetar återbetalning…",
-        "paymentReceipt": "Kvitto {number}",
+        "paymentReceipt": "Kvitto <num>{number}</num>",
         "paymentPaid": "{amount}, {date}",
         "refsCombinedHint": "kombinerat"
       },
@@ -5098,7 +5098,8 @@
           "after": "Kvar att återbetala efteråt",
           "creditNoteTitle": "Kreditnota som utfärdas",
           "creditNoteNet": "Belopp exkl. moms",
-          "creditNoteVat": "Moms {rate} %",
+          "creditNoteVat": "Moms {rate}",
+          "creditNoteVatPending": "Moms",
           "creditNoteLoading": "Beräknar kreditnotan…"
         },
         "typedPhrase": {

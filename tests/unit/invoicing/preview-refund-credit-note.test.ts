@@ -159,6 +159,63 @@ describe('previewRefundCreditNote', () => {
     expect(r.ok && r.value.kind).toBe('issue');
   });
 
+  // §105 is decided by the buyer's RECORDED registrant flag for a member, and
+  // by TIN presence only for a walk-in (no members row) — document-kind.ts.
+  it('a walk-in event buyer with a 13-digit TIN gets a credit note', async () => {
+    const r = await preview(
+      makeInvoice({
+        invoiceSubject: 'event',
+        memberId: null,
+        memberIdentitySnapshot: { legal_name: 'Walk-in Co', tax_id: '0105551234567' } as Invoice['memberIdentitySnapshot'],
+      }),
+      535_000n,
+    );
+    expect(r.ok && r.value.kind).toBe('issue');
+  });
+
+  it('a walk-in event buyer without a TIN holds a §105 receipt — waived', async () => {
+    const r = await preview(
+      makeInvoice({
+        invoiceSubject: 'event',
+        memberId: null,
+        memberIdentitySnapshot: { legal_name: 'Walk-in Person', tax_id: '' } as Invoice['memberIdentitySnapshot'],
+      }),
+      535_000n,
+    );
+    expect(r).toEqual({ ok: true, value: { kind: 'waived', reason: 'section_105_receipt' } });
+  });
+
+  it('a membership invoice to a non-registrant is a §86/4 document — it still gets a credit note (066)', async () => {
+    const r = await preview(
+      makeInvoice({
+        memberIdentitySnapshot: { legal_name: 'Small Co', buyer_is_vat_registrant: false } as Invoice['memberIdentitySnapshot'],
+      }),
+      535_000n,
+    );
+    expect(r.ok && r.value.kind).toBe('issue');
+  });
+
+  it('a zero-rated (§80/1(5)) invoice previews VAT 0 at its stored 0.0000 rate', async () => {
+    const r = await preview(
+      makeInvoice({
+        subtotal: Money.fromSatangUnsafe(TOTAL),
+        vat: Money.zero(),
+        vatRate: VatRate.ofUnsafe('0.0000'),
+        vatTreatment: 'zero_rated_80_1_5',
+      } as Partial<Invoice>),
+      535_000n,
+    );
+    expect(r).toEqual({
+      ok: true,
+      value: { kind: 'issue', netSatang: 535_000n, vatSatang: 0n, vatRateRaw: '0.0000' },
+    });
+  });
+
+  it('a fully credited invoice is blocked', async () => {
+    const r = await preview(makeInvoice({ status: 'credited', creditedTotal: Money.fromSatangUnsafe(TOTAL) }), 1n);
+    expect(r).toEqual({ ok: true, value: { kind: 'blocked' } });
+  });
+
   it('a voided invoice is waived', async () => {
     const r = await preview(makeInvoice({ status: 'void' }), 535_000n);
     expect(r).toEqual({ ok: true, value: { kind: 'waived', reason: 'invoice_voided' } });

@@ -76,7 +76,12 @@ describe('GET /api/refunds/credit-note-preview', () => {
     expect(requireApiPermissionMock).toHaveBeenCalledWith(expect.anything(), 'refunds.write');
     expect(previewMock).toHaveBeenCalledWith(
       { tenantId: 'test-swecham' },
-      { tenantId: 'test-swecham', invoiceId: INVOICE_ID, creditTotalSatang: 535_000n },
+      {
+        tenantId: 'test-swecham',
+        invoiceId: INVOICE_ID,
+        creditTotalSatang: 535_000n,
+        actor: { userId: 'user-admin-1', role: 'admin', requestId: 'req-cnp-1' },
+      },
     );
   });
 

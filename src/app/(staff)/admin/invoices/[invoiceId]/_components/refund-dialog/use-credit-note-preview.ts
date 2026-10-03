@@ -7,15 +7,19 @@
  * The browser does NO VAT arithmetic: the split is F4's proportional
  * credit-note VAT policy run on the server, and it is printed as received.
  * A waived (§105 receipt, voided invoice) or blocked document has no credit
- * note, so there is nothing to show — and neither is there after a failed
- * read: the preview is advisory, never a gate on the refund.
+ * note, so there is nothing to show — and neither is there after a failed or
+ * timed-out read: the preview is advisory, never a gate on the refund.
  *
  * Each answer is tagged with the amount it was asked for, so a figure for a
- * previous amount is never shown beside the current refund total.
+ * previous amount is never shown beside the current refund total. A waived or
+ * blocked verdict belongs to the DOCUMENT, not the amount, so once seen the
+ * hook stops asking (no skeleton flashing on every keystroke for a §105
+ * receipt).
  */
 import { useEffect, useState } from 'react';
 
 const DEBOUNCE_MS = 250;
+const TIMEOUT_MS = 5_000;
 const SATANG_RE = /^\d+$/;
 const RATE_RE = /^\d+\.\d{4}$/;
 
@@ -27,16 +31,25 @@ export type CreditNoteSplit = {
 };
 
 export type CreditNotePreviewState =
-  | { readonly status: 'idle' }
-  | { readonly status: 'loading' }
-  /** `split: null` — no credit note (waived, blocked) or the read failed. */
-  | { readonly status: 'ready'; readonly split: CreditNoteSplit | null };
+  /** No amount yet, or the document owes no credit note (waived / blocked). */
+  | { readonly status: 'none' }
+  /** Asking. `vatRate` is the rate of the last answer, if any, for the label. */
+  | { readonly status: 'loading'; readonly vatRate: string | null }
+  | { readonly status: 'ready'; readonly split: CreditNoteSplit }
+  /** The read failed or timed out — show nothing, block nothing. */
+  | { readonly status: 'failed' };
 
-type Answer = { readonly amountSatang: bigint; readonly split: CreditNoteSplit | null };
+type Parsed =
+  | { readonly kind: 'issue'; readonly split: CreditNoteSplit }
+  | { readonly kind: 'none' }
+  | { readonly kind: 'failed' };
 
-function parseSplit(body: unknown): CreditNoteSplit | null {
+type Answer = { readonly amountSatang: bigint; readonly result: Parsed };
+
+function parse(body: unknown): Parsed {
   const cn = (body as { creditNote?: Record<string, unknown> } | null)?.creditNote;
-  if (!cn || cn['kind'] !== 'issue') return null;
+  if (cn?.['kind'] === 'waived' || cn?.['kind'] === 'blocked') return { kind: 'none' };
+  if (cn?.['kind'] !== 'issue') return { kind: 'failed' };
   const { netSatang, vatSatang, vatRate } = cn;
   if (
     typeof netSatang !== 'string' ||
@@ -46,9 +59,9 @@ function parseSplit(body: unknown): CreditNoteSplit | null {
     !SATANG_RE.test(vatSatang) ||
     !RATE_RE.test(vatRate)
   ) {
-    return null;
+    return { kind: 'failed' };
   }
-  return { netSatang: BigInt(netSatang), vatSatang: BigInt(vatSatang), vatRate };
+  return { kind: 'issue', split: { netSatang: BigInt(netSatang), vatSatang: BigInt(vatSatang), vatRate } };
 }
 
 export function useCreditNotePreview(
@@ -56,26 +69,41 @@ export function useCreditNotePreview(
   amountSatang: bigint | null,
 ): CreditNotePreviewState {
   const [answer, setAnswer] = useState<Answer | null>(null);
+  const [noCreditNote, setNoCreditNote] = useState(false);
+  const [lastRate, setLastRate] = useState<string | null>(null);
 
   useEffect(() => {
-    if (amountSatang === null) return;
+    if (amountSatang === null || noCreditNote) return;
     const controller = new AbortController();
+    let cancelled = false;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
     const timer = setTimeout(() => {
+      timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
       const url = `/api/refunds/credit-note-preview?invoiceId=${encodeURIComponent(invoiceId)}&amountSatang=${amountSatang.toString()}`;
       fetch(url, { signal: controller.signal })
-        .then(async (res) => (res.ok ? parseSplit(await res.json()) : null))
-        .catch(() => null)
-        .then((split) => {
-          if (!controller.signal.aborted) setAnswer({ amountSatang, split });
+        .then(async (res): Promise<Parsed> => (res.ok ? parse(await res.json()) : { kind: 'failed' }))
+        .catch((): Parsed => ({ kind: 'failed' }))
+        .then((result) => {
+          clearTimeout(timeout);
+          // A superseded request (new amount, unmount) is dropped; a timed-out
+          // one still lands, as `failed`.
+          if (cancelled) return;
+          if (result.kind === 'none') setNoCreditNote(true);
+          if (result.kind === 'issue') setLastRate(result.split.vatRate);
+          setAnswer({ amountSatang, result });
         });
     }, DEBOUNCE_MS);
     return () => {
+      cancelled = true;
       clearTimeout(timer);
+      clearTimeout(timeout);
       controller.abort();
     };
-  }, [invoiceId, amountSatang]);
+  }, [invoiceId, amountSatang, noCreditNote]);
 
-  if (amountSatang === null) return { status: 'idle' };
-  if (answer === null || answer.amountSatang !== amountSatang) return { status: 'loading' };
-  return { status: 'ready', split: answer.split };
+  if (amountSatang === null || noCreditNote) return { status: 'none' };
+  if (answer === null || answer.amountSatang !== amountSatang) return { status: 'loading', vatRate: lastRate };
+  const { result } = answer;
+  if (result.kind === 'issue') return { status: 'ready', split: result.split };
+  return result.kind === 'none' ? { status: 'none' } : { status: 'failed' };
 }
