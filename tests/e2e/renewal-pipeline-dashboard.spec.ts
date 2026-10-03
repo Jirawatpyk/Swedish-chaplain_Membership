@@ -250,9 +250,30 @@ test.describe('F8 — /admin/renewals pipeline dashboard (US1)', () => {
     // Visible primary action (not behind the ⋯ menu):
     const sendBtns = page.getByRole('button', { name: /^send reminder to /i });
     await expect(sendBtns.first()).toBeVisible();
-    // Tertiary: open ⋯ → Mark contacted → dialog:
-    await page.getByRole('button', { name: /^actions for /i }).first().click();
-    await page.getByRole('menuitem', { name: /mark contacted/i }).click();
+    // Tertiary: open ⋯ → Mark contacted → dialog.
+    //
+    // The open is retried rather than clicked once, and the reason is specific:
+    // AURA's `DropdownMenu` closes on scroll. Measured — with the menu open, a
+    // bare `window.scrollBy(0, 1)` takes it from three `menuitem`s to none. That
+    // is reasonable for a popover portalled to `body`, which would otherwise float
+    // away from its trigger. But Playwright scrolls a target into view as part of
+    // `.click()`, so when this row starts below the fold that scroll's event lands
+    // a few ms AFTER the menu opens and shuts it again: the portal is added at
+    // 67 ms and removed at 70 ms, and a single click then leaves the `menuitem`
+    // wait to burn the whole test budget. Scrolling first and settling is not
+    // enough on its own — the click can still scroll.
+    //
+    // This is the harness, not the page: scrolling to the row by hand, pausing,
+    // then clicking once opens the menu 8 times out of 8 across chromium and
+    // mobile-chrome. So the retry waits for the open to survive, and the
+    // assertion inside it is what proves the menu is really there. (R31, 3 Oct 2026.)
+    const rowMenuTrigger = page.getByRole('button', { name: /^actions for /i }).first();
+    const markContacted = page.getByRole('menuitem', { name: /mark contacted/i });
+    await expect(async () => {
+      await rowMenuTrigger.click();
+      await expect(markContacted).toBeVisible({ timeout: 2_000 });
+    }).toPass({ timeout: 20_000 });
+    await markContacted.click();
     await expect(page.getByRole('alertdialog')).toBeVisible();
   });
 
