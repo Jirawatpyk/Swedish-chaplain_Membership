@@ -34,13 +34,19 @@ function wrap(ui: React.ReactNode) {
   );
 }
 
-it('renders the section root with the nav-targeted heading', () => {
+// Spec 122 US8c-2 (T856) — each section is an AURA card, focusable (the rail
+// moves focus to it) and labelled by its h2.
+it('renders the section as an AURA card labelled by its h2, the rail\'s focus target', () => {
   wrap(<NumberingSection {...BASE_PROPS} />);
   const section = document.getElementById('numbering');
   expect(section).not.toBeNull();
-  const heading = section?.querySelector('[data-section-heading]');
-  expect(heading).toHaveAttribute('id', 'numbering-heading');
-  expect(heading).toHaveAttribute('tabindex', '-1');
+  expect(section).toHaveClass('aura-card');
+  expect(section!.tagName).toBe('SECTION');
+  expect(section).toHaveAttribute('tabindex', '-1');
+  expect(section).toHaveAttribute('aria-labelledby', 'numbering-heading');
+  const heading = document.getElementById('numbering-heading');
+  expect(heading?.tagName).toBe('H2');
+  expect(heading).toHaveTextContent('Document numbering');
 });
 
 it('renders the invoice prefix field', () => {
@@ -67,4 +73,18 @@ it('renders the fiscal-year/net-days/pro-rate fields ("Defaults" fieldset)', () 
 it('renders the relocated auto-email switch', () => {
   wrap(<NumberingSection {...BASE_PROPS} />);
   expect(screen.getByRole('switch', { name: /auto-email on issue\/payment/i })).toBeChecked();
+});
+
+it('renders the prefixes and receipt mode as 44px AURA fields, pro-rate as an AURA Select, auto-email as an AURA switch', () => {
+  wrap(<NumberingSection {...BASE_PROPS} />);
+  for (const id of ['inv_prefix', 'cn_prefix', 'receipt_mode', 'rc_prefix']) {
+    expect(document.getElementById(id)?.closest('.aura-input.is-touch-always, .is-touch-always .aura-input'), id).not.toBeNull();
+  }
+  for (const id of ['fy_month', 'net_days']) {
+    expect(document.getElementById(id)?.closest('.aura-input'), id).not.toBeNull();
+  }
+  const proRate = screen.getByLabelText(/pro-rate policy/i);
+  expect(proRate).toHaveAttribute('id', 'pro_rate');
+  expect(proRate.closest('.aura-select')).not.toBeNull();
+  expect(screen.getByRole('switch', { name: /auto-email on issue\/payment/i }).closest('.aura-switch-row')).not.toBeNull();
 });

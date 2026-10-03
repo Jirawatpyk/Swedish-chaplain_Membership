@@ -26,13 +26,19 @@ function wrap(ui: React.ReactNode) {
   );
 }
 
-it('renders the section root (id "notes", not "document-notes") with the nav-targeted heading', () => {
+// Spec 122 US8c-2 (T856) — each section is an AURA card, focusable (the rail
+// moves focus to it) and labelled by its h2.
+it('renders the section as an AURA card labelled by its h2, the rail\'s focus target', () => {
   wrap(<DocumentNotesSection {...BASE_PROPS} />);
   const section = document.getElementById('notes');
   expect(section).not.toBeNull();
-  const heading = section?.querySelector('[data-section-heading]');
-  expect(heading).toHaveAttribute('id', 'notes-heading');
-  expect(heading).toHaveAttribute('tabindex', '-1');
+  expect(section).toHaveClass('aura-card');
+  expect(section!.tagName).toBe('SECTION');
+  expect(section).toHaveAttribute('tabindex', '-1');
+  expect(section).toHaveAttribute('aria-labelledby', 'notes-heading');
+  const heading = document.getElementById('notes-heading');
+  expect(heading?.tagName).toBe('H2');
+  expect(heading).toHaveTextContent('Document notes');
 });
 
 it('renders the WHT note field with a char counter', () => {
@@ -53,4 +59,12 @@ it('renders the termination notice fields', () => {
 it('no longer renders the auto-email switch (relocated to NumberingSection)', () => {
   wrap(<DocumentNotesSection {...BASE_PROPS} />);
   expect(screen.queryByRole('switch', { name: /auto-email on issue\/payment/i })).not.toBeInTheDocument();
+});
+
+it('renders the four notes on AURA textareas, the counter under each', () => {
+  wrap(<DocumentNotesSection {...BASE_PROPS} whtNoteEn="abc" />);
+  for (const id of ['wht_th', 'wht_en', 'termination_notice_th', 'termination_notice_en']) {
+    expect(document.getElementById(id)?.closest('.aura-field'), id).not.toBeNull();
+  }
+  expect(screen.getByLabelText(/wht note \(english\)/i)).toHaveAccessibleDescription('3/500');
 });
