@@ -163,13 +163,17 @@ describe('money-email recipient inventory (108 SC-001)', () => {
     // here.
     // `view` — where the page's markup lives when it is split out (spec 122
     // US5b-1: the member page decides, `renderMemberDetailView` renders; US8b:
-    // the invoice page decides, `renderInvoiceDetailView` renders).
+    // the invoice page decides, `renderInvoiceDetailView` renders; US8c: the
+    // credit-note page decides, `renderCreditNoteDetailView` renders).
     const bannerSites: readonly { readonly rel: string; readonly view?: string }[] = [
       {
         rel: 'src/app/(staff)/admin/invoices/[invoiceId]/page.tsx',
         view: 'src/app/(staff)/admin/invoices/[invoiceId]/_components/invoice-detail-view.tsx',
       },
-      { rel: 'src/app/(staff)/admin/credit-notes/[creditNoteId]/page.tsx' },
+      {
+        rel: 'src/app/(staff)/admin/credit-notes/[creditNoteId]/page.tsx',
+        view: 'src/app/(staff)/admin/credit-notes/_components/credit-note-detail-view.tsx',
+      },
       {
         rel: 'src/app/(staff)/admin/members/[memberId]/page.tsx',
         view: 'src/app/(staff)/admin/members/[memberId]/_components/member-detail-view.tsx',

@@ -43,7 +43,6 @@ import { toast } from '@/lib/toast';
 import { Alert, Badge, Button, RadioGroup, TextField } from '@jirawatpyk/aura-react';
 import { computeIssueReviewModel } from '../_lib/issue-review';
 import { formatSatang, type IssueTotalsByTreatment } from '../_lib/issue-summary-totals';
-import { TOUCH_CHOICES, TOUCH_FIELD } from '../_lib/touch-targets';
 import {
   buildIssueRequestBody,
   isZeroRateLowAmount,
@@ -360,7 +359,7 @@ export function IssueInvoiceForm({
             { value: 'standard', label: tForm('vatTreatment.standard') },
             { value: 'zero_rated_80_1_5', label: tForm('vatTreatment.zeroRated') },
           ]}
-          className={TOUCH_CHOICES}
+          touchHeight="always"
         />
       )}
       {taxAtPayment && isMembership && (
@@ -397,7 +396,7 @@ export function IssueInvoiceForm({
               onChange={(e) => setCertNo(e.target.value)}
               placeholder={tForm('cert.noPlaceholder')}
               // T072b (FR-036) — ≥44px touch target on this new feature input.
-              className={TOUCH_FIELD}
+              touchHeight="always"
               // T061g — mobile keyboard hint for the free-text cert number.
               inputMode="text"
               enterKeyHint="next"
@@ -421,7 +420,7 @@ export function IssueInvoiceForm({
               value={certDate}
               onChange={(e) => setCertDate(e.target.value)}
               // T072b (FR-036) — ≥44px touch target (new feature input).
-              className={TOUCH_FIELD}
+              touchHeight="always"
               aria-invalid={certErrors.certDate ? true : undefined}
               aria-describedby={certErrors.certDate ? 'zero-rate-cert-date-error' : undefined}
             />
@@ -600,7 +599,7 @@ export function IssueInvoiceForm({
           placeholder={confirmPhrase}
           // T072b (FR-036) — the irreversible issue gate is 44px, as the cert
           // inputs beside it are.
-          className={TOUCH_FIELD}
+          touchHeight="always"
           autoComplete="off"
           inputMode="text"
           enterKeyHint="done"

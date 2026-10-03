@@ -554,9 +554,24 @@ Boards: `Admin-invoice-draft`, `-issued` (+`-mobile`), `-overdue`, `-paid`, `-cr
 - [x] T828 [US8] Ratchet and preview: `MIGRATED_PATHS` gains `admin/invoices/[invoiceId]/**` and the rest of `admin/invoices/_components/**`; the two ratchet controls move to US8c files; preview views for the detail states, the dialogs, void and credit note.
 - [x] T829 [US8] Exit: e2e selectors where roles changed; gates; `next build` with a bundle budget for `/admin/invoices/[invoiceId]`; the parity page; UX, i18n and financial reviews with fixes RED first; draft PR; relay R32.
 
-### US8c — credit notes, registers and settings (PR 16; tasks written at its start)
+### US8c-1 — credit notes, tax registers and AURA 5.30 (PR 16a)
 
-- [ ] T840 [US8] Credit-notes list and detail, the tax-document registers (row count, totals and CSV equal `main`), the invoice settings; then the full local e2e checkpoint.
+Boards: `Admin-credit-notes`, `Admin-credit-note-detail`, `Admin-invoice-registers` (+`-mobile`), `Admin-registers-empty`, `-invalid-range`, `-load-failed`, `-re`, `-zero-rate`.
+
+- [x] T840 [US8] These tasks; the spec's US8c clarifications (Session 2026-10-03).
+- [x] T841 [US8] Adopt AURA 5.30 (handoff #135–#137): `touchHeight="always"` on the issue dialog's zero-rate radios, certificate fields and typed phrase (the 5.29 stand-in goes); the e2e retries around menus closing on scroll go. RED: the issue form's 44px test on `is-touch-always`.
+- [x] T842 [US8] Checked controls follow the brand accent: `src/styles/aura-overrides.css` sets `--aura-control-checked-bg/-fg` to the accent, light and dark, until AURA #139. RED: the stand-in test (import order, declarations, 4.5:1 contrast).
+- [x] T843 [US8] `docs/aura-adoption.md` and `CLAUDE.md` on 5.30: #135–#137 shipped, #138 and #139 open, the Menu note gone.
+- [x] T844 [US8] The credit-notes list on AURA: filter bar (search, fiscal year; pushes unchanged), count line and Refund legend, a `DataTable` with the board's columns and a PDF icon button, phone cards, pagination unchanged, empty and filtered-empty states, the loading file. RED: the table test (columns, number link, PDF href and name, Refund chip, cards) and the filter push test.
+- [x] T845 [US8] The credit-note detail on AURA: `renderCreditNoteDetailView` (props only) with the header buttons (Resend email, Download PDF), Details card with the amounts, Reason and Parties cards, siblings, banner; the loading and not-found files. RED: the view test (amounts as formatted on `main`, links, Refund chip, no Issued badge) and the resend button test (POST body `{}`, toasts by status, 5-minute re-enable).
+- [x] T846 [US8] The tax-document registers on AURA: `renderTaxRegisterView` (props only) with the form on AURA fields (push unchanged), the output VAT box, the summary line, the register table and phone cards, the error and empty states, the loading file. RED: the view test (row count, cancelled count and every figure equal the use case's output formatted as on `main`; status line per period status; cancelled row) and the form push test.
+- [x] T847 [US8] Ratchet and preview: `MIGRATED_PATHS` gains `admin/credit-notes/**` and `admin/invoices/registers/**`; the two ratchet controls move to US8c-2 files; preview views for the credit-notes list, the detail and every register state, plus their loading files.
+- [x] T848 [US8] Bundle budgets for `/admin/credit-notes`, `/admin/credit-notes/[creditNoteId]` and `/admin/invoices/registers`.
+- [x] T849 [US8] Exit: e2e selectors where roles changed; gates; `next build`; a 5.30 look at migrated screens (checked controls in brand blue); the parity page; UX, i18n and financial reviews with fixes RED first; draft PR; relay R33.
+
+### US8c-2 — invoice settings (PR 16b; tasks written at its start)
+
+- [ ] T850 [US8] The invoice settings on AURA; then the full local e2e checkpoint.
 
 ## Later phases (one PR each; tasks written when the phase starts)
 

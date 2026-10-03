@@ -436,8 +436,8 @@ describe('IssueInvoiceForm — beforeunload dirty guard (T061f-form)', () => {
 // ---------------------------------------------------------------------------
 
 describe('IssueInvoiceForm — 44px targets on the new controls (FR-036 / SC-011)', () => {
-  /** The AURA field box (`.aura-input`) or choice row grows to 44px through a utility on the field root. */
-  const touchRoot = (el: HTMLElement) => el.closest('[class*="min-h-11"]');
+  /** AURA 5.30 `touchHeight="always"` (handoff #135) marks the field or radio-group root `is-touch-always`: 44px at every width. */
+  const touchRoot = (el: HTMLElement) => el.closest('.is-touch-always');
 
   it('the zero-rate radio row and the cert number + date fields are 44px once zero-rate is revealed', () => {
     renderForm();
@@ -452,14 +452,11 @@ describe('IssueInvoiceForm — 44px targets on the new controls (FR-036 / SC-011
     expect(touchRoot(screen.getByLabelText(/to confirm/i))).not.toBeNull();
   });
 
-  it('the input itself fills the 44px box, so the whole box takes the click (AURA centres a fixed-height control)', () => {
-    renderForm();
+  it('uses AURA\'s own size, not the retired 5.29 stand-in utilities', () => {
+    const { container } = renderForm();
     fireEvent.click(screen.getByRole('radio', { name: /Zero-rated/i }));
-    for (const field of [/MFA certificate number/i, /Certificate date/i, /to confirm/i]) {
-      const root = touchRoot(screen.getByLabelText(field))!;
-      expect(root.className).toContain('[&_.aura-input__control]:self-stretch');
-      expect(root.className).toContain('[&_.aura-input__control]:h-auto');
-    }
+    // The stand-in grew `.aura-input` / `.aura-choice` from a utility on the field root.
+    expect(container.querySelector('[class*="_.aura-input"], [class*="_.aura-choice"]')).toBeNull();
   });
 });
 

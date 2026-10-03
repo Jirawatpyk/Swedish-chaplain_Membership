@@ -99,6 +99,7 @@ describe('globals.css — AURA foundation (spec 122)', () => {
       '@jirawatpyk/aura-tokens/aura-fonts.local.css',
       '@jirawatpyk/aura-tokens/tailwind.prefixed.css',
       '../styles/aura-theme.css layer(aura-tokens)',
+      '../styles/aura-overrides.css layer(aura-tokens)',
       '@jirawatpyk/aura-react/styles.layer.css',
     ]);
   });

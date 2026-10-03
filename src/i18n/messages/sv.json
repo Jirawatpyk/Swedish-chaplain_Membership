@@ -2501,9 +2501,11 @@
           "title": "Kreditnotor"
         },
         "title": "Kreditnotor",
-        "description": "Alla kreditnotor utfärdade mot skattefakturor. Skrivskyddad granskningslogg.",
+        "description": "Varje kreditnota (ใบลดหนี้) utfärdad mot en skattefaktura. Skrivskyddad granskningslogg — utfärda en från den betalda fakturan.",
         "empty": "Kreditnotor visas här efter att en administratör utfärdat en mot en betald faktura.",
         "filteredEmpty": "Inga kreditnotor matchar de aktuella filtren.",
+        "tableCaption": "Kreditnotor",
+        "refundLegend": "”Återbetalning” markerar en kreditnota som utfärdats vid en återbetalning via kort eller PromptPay.",
         "columns": {
           "documentNumber": "Nummer",
           "issueDate": "Utfärdad",
@@ -2511,13 +2513,19 @@
           "reason": "Orsak",
           "total": "Totalt",
           "actions": "Åtgärder",
-          "originalReceipt": "Ursprunglig skattefaktura"
+          "originalReceipt": "Ursprunglig skattefaktura",
+          "pdf": "PDF"
         },
         "filters": {
           "search": "Sök dokumentnummer",
           "fiscalYear": "Räkenskapsår",
           "apply": "Tillämpa",
-          "clear": "Rensa"
+          "clear": "Rensa",
+          "groupLabel": "Filter för kreditnotor",
+          "allFiscalYears": "Alla räkenskapsår",
+          "allShort": "Alla",
+          "chip": "{label}: {value}",
+          "chipSearch": "Sök: {q}"
         },
         "actions": {
           "view": "Visa",
@@ -2531,16 +2539,20 @@
         "meta": {
           "title": "Kreditnota"
         },
-        "subtitle": "Skrivskyddad kreditnotaregistrering mot den ursprungliga fakturan.",
+        "subtitle": "Skrivskyddat underlag för en kreditnota (ใบลดหนี้) mot den ursprungliga skattefakturan.",
+        "title": "Kreditnota {number}",
+        "amountsLabel": "Kreditbelopp",
+        "sections": {"details": "Uppgifter", "parties": "Parter"},
         "status": {
           "issued": "Utfärdad"
         },
         "actions": {
           "backToInvoice": "Tillbaka till faktura",
           "download": "Ladda ner PDF",
-          "resend": "Skicka kreditnota-mejl igen",
+          "resend": "Skicka kreditnotamejl igen",
           "resendAria": "Mejla en ny kopia av kreditnota {number} till medlemmens primära kontakt",
-          "moreAria": "Fler åtgärder för {number}"
+          "moreAria": "Fler åtgärder för {number}",
+          "resendShort": "Skicka mejl igen"
         },
         "toast": {
           "resendSuccess": "Köad — {recipient} får en ny kopia inom kort.",
@@ -2555,7 +2567,8 @@
           "creditAmount": "Kreditbelopp (exkl. moms)",
           "vat": "Moms",
           "total": "Totalt krediterat (inkl. moms)",
-          "originalReceipt": "Ursprunglig skattefaktura"
+          "originalReceipt": "Ursprunglig skattefaktura",
+          "member": "Medlem"
         },
         "reason": {
           "heading": "Anledning"
@@ -2566,7 +2579,8 @@
           "legalName": "Juridiskt namn",
           "taxId": "Skatt-ID",
           "address": "Adress",
-          "contactEmail": "Kontaktepost"
+          "contactEmail": "Kontaktepost (vid utfärdandet)",
+          "resendNote": "Mejlet skickas om till medlemmens nuvarande primära kontakt."
         },
         "siblings": {
           "heading": "Andra kreditnotor på denna faktura",
@@ -2839,7 +2853,8 @@
             "notAMonth": "Inte en enskild kalendermånad — ภ.พ.30 lämnas per kalendermånad.",
             "closedMonthIncomplete": "Ofullständigt belopp — {count, plural, one {# kombinerad faktura + kvitto} other {# kombinerade fakturor + kvitton}} (INV-nummer, utan RC/RE) utfärdade denna månad ingår inte i beloppet. Ta med {count, plural, one {den} other {dem}} innan ภ.พ.30 lämnas."
           },
-          "less": "minus"
+          "less": "minus",
+          "about": "Om beloppet"
         },
         "summary": {
           "count": "{count, plural, one {# kvitto} other {# kvitton}}",

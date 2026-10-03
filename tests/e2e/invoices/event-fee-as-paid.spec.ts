@@ -183,17 +183,11 @@ test.describe('064 event-fee as-paid form modes @f4', () => {
     // T15 QA carry-forward — the detail "⋯" menu offers the main download
     // under the COMBINED dual-role label (the as-paid main pdf IS the one
     // legal Tax Invoice / Receipt; `mainDownloadIsCombined` wiring).
-    // The page arrives scrolled down after the form's navigation (relay R32:
-    // the trigger sat 437px above the fold), and AURA 5.29 closes an open menu
-    // on any scroll, so `.click()`'s own scroll shut it again (the PR #506
-    // class). Bring the trigger into view first and retry the open until the
-    // menu reports expanded; AURA 5.30 (#136) repositions instead of closing.
+    // AURA 5.30 (#136) keeps an open menu with its trigger on scroll, so the
+    // plain click opens it even when the page arrives scrolled down.
     const moreActions = page.getByRole('button', { name: /More actions for/ });
-    await moreActions.scrollIntoViewIfNeeded();
-    await expect(async () => {
-      if ((await moreActions.getAttribute('aria-expanded')) !== 'true') await moreActions.click();
-      await expect(moreActions).toHaveAttribute('aria-expanded', 'true', { timeout: 2_000 });
-    }).toPass({ timeout: 15_000 });
+    await moreActions.click();
+    await expect(moreActions).toHaveAttribute('aria-expanded', 'true');
     const downloadItem = page.getByRole('menuitem', { name: /^Download invoice\/receipt/ });
     await expect(downloadItem).toBeVisible();
     await page.keyboard.press('Escape');

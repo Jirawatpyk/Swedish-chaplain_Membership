@@ -334,6 +334,24 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - **Phrase chips:** the phrase a typed confirmation asks for sits in its own chip with a copy button (refund, void), below the input and in its description; void reads "Type the bill number to confirm" for an 088 bill. The phrases and their compares are unchanged.
   - **Refund settling:** an AURA info alert above Details says how much is settling (the pending refunds' total) and that nothing is needed (board `Admin-refund-settling`). The disabled actions keep their reasons as descriptions only, at every width, because drawn beside the buttons they squeezed the h1. Refund settling… carries the board's loader icon.
 
+### Session 2026-10-03 (US8c start, decided from the boards)
+
+- **US8c is two PRs** (maintainer, 3 Oct): **US8c-1** the credit-notes list and detail and the tax-document registers, with AURA 5.30; **US8c-2** the invoice settings, after which the full local e2e checkpoint runs.
+- **AURA 5.30 lands in US8c-1** (handoff #135–#137, shipped): the issue dialog's zero-rate radios, certificate fields and typed phrase take `touchHeight="always"` (the 5.29 stand-in goes); menus stay with their trigger on scroll (the e2e retries go); status pills are weight 500. 5.30 colours checked controls with AURA's violet, not the brand accent, and `aura-theme` doesn't emit the token, so a hand-written override points them at the brand accent until AURA #139 (Addendum 42; maintainer, 3 Oct).
+- **Credit-notes list follows `Admin-credit-notes`:**
+  - the search and fiscal year on the shared filter bar, pushing `q` and `fy` as today;
+  - a count line ("{shown} of {total} credit notes…") with the Refund legend;
+  - columns Number (with the Refund chip), Issued, Original receipt (receipt number, bill or document kind under it), Member, Reason, Total, and a PDF download icon button. The number opens the detail, so the separate View button goes;
+  - on a phone the rows become cards (the US7a rule). Download PDF, the list's only action, is a 44px icon at the card's top right beside the number, not a footer row (maintainer, 3 Oct; the board has no phone design).
+  - **Not followed:** the board's Export CSV button (there is no credit-note export; adding one is a feature) and the sortable headers (the list has never sorted).
+- **Credit-note detail follows `Admin-credit-note-detail`:**
+  - "Credit note {CN-…}" with the Refund chip when it came from a refund; the always-the-same "Issued" badge goes (a credit note is immutable once issued);
+  - Resend email and Download PDF become header buttons in place of the ⋯ menu (the resend request, its toasts and the 5-minute re-enable unchanged);
+  - a Details card (member, issue date, issued by, original receipt) with the amounts at its end (credit excl. VAT, VAT, total), then Reason and Parties cards; Parties says resend goes to the member's current primary contact (108).
+  - **Kept from the code:** the sibling credit notes, both language versions of the issuer's name and address, and the no-primary-contact banner.
+  - **Not followed:** "Still creditable on the receipt" (the page has no such figure; computing it is money logic, not a UI swap).
+- **Tax-document registers follow `Admin-invoice-registers` and its states:** the register, From and To fields with View register; the period output VAT box above the table with no footer (Session 2026-10-02); the summary line; cancelled receipts struck through with a Cancelled badge; on a phone the rows become cards and the box's note folds under "About this figure". The registers have no CSV export, so "the export equals main" (user story 8) means the row count, the cancelled count and every total, which the view test asserts against the use case's output; US8a's invoice export is untouched. The board's "Proposed" chip is an annotation, not product copy.
+
 ## User Scenarios & Testing *(mandatory)*
 
 Every story below is one phase and one pull request. A story is done when its screens use only AURA components, match their canvas boards, and pass the per-module definition of done (FR-010).

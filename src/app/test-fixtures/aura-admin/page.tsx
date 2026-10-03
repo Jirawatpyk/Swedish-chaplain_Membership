@@ -83,6 +83,10 @@ import { PaymentTimelineSkeleton } from '@/app/(staff)/admin/invoices/[invoiceId
 import { VoidConfirmDialog } from '@/app/(staff)/admin/invoices/[invoiceId]/void/_components/void-confirm-dialog';
 import { CreditNoteForm } from '@/app/(staff)/admin/invoices/[invoiceId]/credit-notes/new/_components/credit-note-form';
 import { DETAIL_INVOICE_ID, DETAIL_KINDS, detailFixture, type DetailFixtureKind } from './invoice-detail-fixtures';
+import { renderCreditNotesListView } from '@/app/(staff)/admin/credit-notes/_components/credit-notes-list-view';
+import { renderCreditNoteDetailView } from '@/app/(staff)/admin/credit-notes/_components/credit-note-detail-view';
+import { renderTaxRegisterView } from '@/app/(staff)/admin/invoices/registers/_components/tax-register-view';
+import { CREDIT_NOTE_ID, CREDIT_NOTE_ROWS, creditNoteDetail, registerOutput } from './credit-note-register-fixtures';
 import { CycleDetailBadges, renderCycleDetailView } from '@/app/(staff)/admin/renewals/[cycleId]/_components/cycle-detail-view';
 import { CycleAdminActions } from '@/app/(staff)/admin/renewals/[cycleId]/_components/cycle-admin-actions';
 import { PendingReactivationActions } from '@/app/(staff)/admin/renewals/[cycleId]/_components/pending-reactivation-actions';
@@ -128,7 +132,11 @@ export const dynamic = 'force-dynamic';
  *   ?view=invoice&state=paid|refund-full|refund-partial|refund-receipt&dialog=refund
  *         (the credit-note preview read is answered from a fixture)
  *   ?view=invoice-void · ?view=credit-note-new&state=manual|online
- *   ?view=loading&state=members|plans|invoices|invoice|invoice-void|credit-note-new|…
+ *   ?view=credit-notes|credit-notes-empty|credit-notes-filtered                (US8c-1)
+ *   ?view=credit-note&state=default|refund|siblings|no-primary
+ *   ?view=registers&state=rc|re|zero-rate|empty|invalid-range|invalid-date|load-failed
+ *   ?view=loading&state=members|plans|invoices|invoice|invoice-void|credit-note-new|
+ *         credit-notes|credit-note|registers|…
  *
  * The payment activity streams from the database, so a paid state shows its
  * skeleton in that slot; its states are covered by its own unit tests.
@@ -366,6 +374,18 @@ const LOADING_ROUTES = {
   'credit-note-new': {
     path: `/admin/invoices/${DETAIL_INVOICE_ID}/credit-notes/new`,
     load: async () => (await import('@/app/(staff)/admin/invoices/[invoiceId]/credit-notes/new/loading')).default(),
+  },
+  'credit-notes': {
+    path: '/admin/credit-notes',
+    load: async () => (await import('@/app/(staff)/admin/credit-notes/loading')).default(),
+  },
+  'credit-note': {
+    path: `/admin/credit-notes/${CREDIT_NOTE_ID}`,
+    load: async () => (await import('@/app/(staff)/admin/credit-notes/[creditNoteId]/loading')).default(),
+  },
+  registers: {
+    path: '/admin/invoices/registers',
+    load: async () => (await import('@/app/(staff)/admin/invoices/registers/loading')).default(),
   },
 } as const;
 
@@ -1195,6 +1215,55 @@ export default async function AuraAdminPreviewPage({
       <StaffFrame path={`/admin/invoices/${DETAIL_INVOICE_ID}`}>
         {dialog === 'refund' && <CreditNotePreviewStub waived={kind === 'refund-receipt'} />}
         {trigger ? <OpenFirstMatchingButton {...trigger}>{detail}</OpenFirstMatchingButton> : detail}
+      </StaffFrame>
+    );
+  }
+
+  if (view === 'credit-notes' || view === 'credit-notes-empty' || view === 'credit-notes-filtered') {
+    const empty = view !== 'credit-notes';
+    return (
+      <StaffFrame path="/admin/credit-notes">
+        <TableContainer>
+          {await renderCreditNotesListView({
+            rows: empty ? [] : CREDIT_NOTE_ROWS,
+            total: empty ? 0 : 15,
+            page: 1,
+            pageSize: 50,
+            hasFilters: view === 'credit-notes-filtered',
+          })}
+        </TableContainer>
+      </StaffFrame>
+    );
+  }
+
+  if (view === 'credit-note') {
+    return (
+      <StaffFrame path={`/admin/credit-notes/${CREDIT_NOTE_ID}`}>
+        <DetailContainer>{await renderCreditNoteDetailView(creditNoteDetail(state))}</DetailContainer>
+      </StaffFrame>
+    );
+  }
+
+  if (view === 'registers') {
+    const kind = state === 're' ? 're_register' : state === 'zero-rate' ? 'zero_rate_sales' : 'rc_register';
+    const result =
+      state === 'invalid-range'
+        ? ({ ok: false, error: { code: 'invalid_range', reason: 'inverted' } } as const)
+        : state === 'invalid-date'
+          ? ({ ok: false, error: { code: 'invalid_range', reason: 'not_a_date' } } as const)
+          : state === 'load-failed'
+            ? ({ ok: false, error: { code: 'list_failed' } } as const)
+            : ({ ok: true, value: registerOutput(state) } as const);
+    return (
+      <StaffFrame path="/admin/invoices/registers">
+        <TableContainer>
+          {await renderTaxRegisterView({
+            kind,
+            from: state === 'zero-rate' ? '2026-08-01' : '2026-09-01',
+            to: state === 'zero-rate' ? '2026-08-31' : state === 'invalid-range' ? '2026-08-01' : '2026-09-24',
+            result,
+          })}
+        </TableContainer>
       </StaffFrame>
     );
   }
