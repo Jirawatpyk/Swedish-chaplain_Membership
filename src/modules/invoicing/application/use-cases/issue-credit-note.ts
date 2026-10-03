@@ -932,6 +932,42 @@ export async function issueCreditNote(
         total: creditAmount,
         position: 1,
       };
+      // §86/10 วรรคสอง — the values the credit note states (all excl. VAT).
+      // Earlier notes' net = credited gross − their VAT, both read under the
+      // row lock above; it is printed as "previously reduced" so the note
+      // reconciles on its face, and the correct value is what remains after
+      // them and this note. Floored at 0: a note that kept its 1-satang net (see
+      // calculate-credit-note-vat.ts) can leave the summed net a satang past
+      // the subtotal, and the statement must not print a negative value.
+      const priorNet = loaded.creditedTotal.subtract(priorCreditedVat);
+      const remainingValue = loaded.subtotal.subtract(priorNet.ok ? priorNet.value : Money.zero());
+      const correctValue =
+        remainingValue.ok && remainingValue.value.compare(creditAmount) > 0
+          ? remainingValue.value.subtract(creditAmount)
+          : { ok: false as const };
+      if (!priorNet.ok || !remainingValue.ok || remainingValue.value.compare(creditAmount) < 0) {
+        // The statement still prints (floored at 0); leave a trace so a
+        // corrupt credited/VAT pair or summed-net drift is visible.
+        logger.warn(
+          {
+            tenantId: input.tenantId,
+            invoiceId,
+            subtotalSatang: loaded.subtotal.satang.toString(),
+            creditedTotalSatang: loaded.creditedTotal.satang.toString(),
+            priorCreditedVatSatang: priorCreditedVat.satang.toString(),
+            creditAmountSatang: creditAmount.satang.toString(),
+          },
+          'issueCreditNote: §86/10 correct value floored at 0',
+        );
+      }
+      const section8610Values = {
+        originalValue: loaded.subtotal,
+        previouslyReduced: priorNet.ok ? priorNet.value : Money.zero(),
+        correctValue: correctValue.ok ? correctValue.value : Money.zero(),
+        difference: creditAmount,
+        differenceVat: vat,
+      };
+
       // G+H. Render CN PDF + upload to Blob (T126 shared helper).
       pendingRenderKind = 'credit_note';
       const blobKey = `invoicing/${input.tenantId}/${fy}/credit-note_${creditNoteId}_v${deps.currentTemplateVersion}.pdf`;
@@ -966,6 +1002,7 @@ export async function issueCreditNote(
               originalDocumentNumber: originalTaxInvoiceNum.raw,
               originalIssueDate: receiptIssueDate,
               reason: input.reason,
+              values: section8610Values,
             },
           },
           blobKey,
