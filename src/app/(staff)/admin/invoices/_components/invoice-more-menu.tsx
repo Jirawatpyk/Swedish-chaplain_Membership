@@ -336,10 +336,14 @@ export function InvoiceMoreMenu({
   // invoice (the RC names only the receipt actions).
   const menuName = t('actions.moreAria', { number: mainDownloadNumber });
   return (
-    <DropdownMenu
-      label={menuName}
-      trigger={<IconButton icon="ellipsis" label={menuName} touchHeight className="flex-none!" />}
-      items={items}
-    />
+    // Our own slot, so the phone action bar can keep the menu at its own
+    // width while the actions fill the row.
+    <span data-slot="invoice-more-menu" className="inline-flex">
+      <DropdownMenu
+        label={menuName}
+        trigger={<IconButton icon="ellipsis" label={menuName} touchHeight className="flex-none!" />}
+        items={items}
+      />
+    </span>
   );
 }

@@ -340,7 +340,7 @@ describe('invoice detail — the phone action bar', () => {
   it('lets the actions fill the row while the ⋯ menu keeps its own width (board Admin-invoice-issued-mobile)', async () => {
     await view(props());
     const row = document.querySelector('[data-slot="invoice-action-bar"] > div:last-child')!;
-    expect(row.className).toContain('max-sm:[&>.aura-dropdown]:flex-none');
+    expect(row.className).toContain('max-sm:[&>[data-slot=invoice-more-menu]]:flex-none');
   });
 
   it('wraps the actions once, with the total (incl. VAT) and due date for a phone', async () => {
