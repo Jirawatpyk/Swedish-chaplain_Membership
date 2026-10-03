@@ -2424,7 +2424,7 @@
       "stickyBar": {
         "label": "Spara ändringar",
         "unsaved": "Du har osparade ändringar",
-        "discard": "Ignorera ändringar"
+        "discard": "Kassera ändringar"
       }
     },
     "creditNotes": {
