@@ -24,6 +24,7 @@ vi.mock('next/navigation', () => ({
 }));
 
 import { CreditNotesTable } from '@/app/(staff)/admin/credit-notes/_components/credit-notes-table';
+import { CREDIT_NOTES_COLUMN_LAYOUT } from '@/app/(staff)/admin/credit-notes/_components/credit-notes-table-columns';
 import { CreditNoteFilters } from '@/app/(staff)/admin/credit-notes/_components/credit-note-filters';
 
 const list = en.admin.creditNotes.list;
@@ -89,6 +90,17 @@ describe('<CreditNotesTable>', () => {
     const pdf = screen.getByRole('link', { name: 'Download PDF for credit note CN-2026-000014' });
     expect(pdf).toHaveAttribute('href', '/api/credit-notes/cn-1/pdf');
     expect(pdf).toHaveAttribute('download');
+  });
+
+  it('puts the PDF download at the phone card\'s top right, as an icon named by its label', () => {
+    // Maintainer, 3 Oct: the list's only action needs no row of its own.
+    // AURA puts an `actions` column top-right in a stacked card unless it is
+    // given a `card` place (a 'footer' row is what this replaced).
+    expect(CREDIT_NOTES_COLUMN_LAYOUT.pdf).toMatchObject({ actions: true });
+    expect(CREDIT_NOTES_COLUMN_LAYOUT.pdf).not.toHaveProperty('card');
+    render(wrap(<CreditNotesTable rows={[row()]} />));
+    const pdf = screen.getByRole('link', { name: 'Download PDF for credit note CN-2026-000014' });
+    expect(pdf.textContent).toBe('');
   });
 
   it('shows the total with the formatter used on main, the date and the original receipt', () => {
