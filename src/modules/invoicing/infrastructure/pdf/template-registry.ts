@@ -214,8 +214,9 @@
  *   - **v13** (2026-10-03) — §86/10 วรรคสอง on the ใบลดหนี้: beside the
  *     original tax invoice's number/date and the reason, the credit note now
  *     states the value per the original tax invoice, the correct value, the
- *     difference and the VAT on the difference (all excl. VAT), supplied by
- *     `issueCreditNote` as `creditNote.values`. Gated on `templateVersion >=
+ *     difference and the VAT on the difference (all excl. VAT) — and, on a
+ *     later note, what earlier notes reduced, so the figures reconcile on the
+ *     document — supplied by `issueCreditNote` as `creditNote.values`. Gated on `templateVersion >=
  *     CREDIT_NOTE_VALUES_MIN_VERSION` (=13, see templates/invoice-template.tsx)
  *     AND on the values being present, so a pinned pre-v13 document re-renders
  *     byte-stable (SC-003). Only the credit_note kind changes; every other kind

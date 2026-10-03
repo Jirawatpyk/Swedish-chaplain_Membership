@@ -443,6 +443,8 @@ const TERMINATION_NOTICE_MIN_VERSION = 12;
  * v13 — §86/10 วรรคสอง: a ใบลดหนี้ states the value per the original tax
  * invoice, the correct value, the difference and the VAT on the difference
  * (all excl. VAT), under the original number/date/reason it already carried.
+ * A later note also states what earlier notes reduced ("previously reduced",
+ * only when non-zero), so original − previously reduced − correct = difference.
  * Gated on the version AND on `creditNote.values` being supplied, so a pinned
  * pre-v13 credit note (or any input built without the values) re-renders
  * byte-stable (SC-003). Registry log: template-registry.ts v13.
@@ -817,6 +819,12 @@ function renderPageBody({
                 {shapeThai('มูลค่าตามใบกำกับภาษีเดิม')} / Value per original tax invoice:{' '}
                 {formatThbSatang(input.creditNote.values.originalValue.satang, true)}
               </Text>
+              {input.creditNote.values.previouslyReduced.isZero() === false && (
+                <Text style={styles.cnRefLine}>
+                  {shapeThai('ลดหนี้ครั้งก่อน')} / Previously reduced:{' '}
+                  {formatThbSatang(input.creditNote.values.previouslyReduced.satang, true)}
+                </Text>
+              )}
               <Text style={styles.cnRefLine}>
                 {shapeThai('มูลค่าที่ถูกต้อง')} / Correct value:{' '}
                 {formatThbSatang(input.creditNote.values.correctValue.satang, true)}

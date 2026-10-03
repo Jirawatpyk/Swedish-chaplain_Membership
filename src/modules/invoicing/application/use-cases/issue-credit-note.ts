@@ -934,8 +934,9 @@ export async function issueCreditNote(
       };
       // §86/10 วรรคสอง — the values the credit note states (all excl. VAT).
       // Earlier notes' net = credited gross − their VAT, both read under the
-      // row lock above; the correct value is what remains after them and this
-      // note. Floored at 0: a note that kept its 1-satang net (see
+      // row lock above; it is printed as "previously reduced" so the note
+      // reconciles on its face, and the correct value is what remains after
+      // them and this note. Floored at 0: a note that kept its 1-satang net (see
       // calculate-credit-note-vat.ts) can leave the summed net a satang past
       // the subtotal, and the statement must not print a negative value.
       const priorNet = loaded.creditedTotal.subtract(priorCreditedVat);
@@ -944,8 +945,24 @@ export async function issueCreditNote(
         remainingValue.ok && remainingValue.value.compare(creditAmount) > 0
           ? remainingValue.value.subtract(creditAmount)
           : { ok: false as const };
+      if (!priorNet.ok || !remainingValue.ok || remainingValue.value.compare(creditAmount) < 0) {
+        // The statement still prints (floored at 0); leave a trace so a
+        // corrupt credited/VAT pair or summed-net drift is visible.
+        logger.warn(
+          {
+            tenantId: input.tenantId,
+            invoiceId,
+            subtotalSatang: loaded.subtotal.satang.toString(),
+            creditedTotalSatang: loaded.creditedTotal.satang.toString(),
+            priorCreditedVatSatang: priorCreditedVat.satang.toString(),
+            creditAmountSatang: creditAmount.satang.toString(),
+          },
+          'issueCreditNote: §86/10 correct value floored at 0',
+        );
+      }
       const section8610Values = {
         originalValue: loaded.subtotal,
+        previouslyReduced: priorNet.ok ? priorNet.value : Money.zero(),
         correctValue: correctValue.ok ? correctValue.value : Money.zero(),
         difference: creditAmount,
         differenceVat: vat,
