@@ -619,10 +619,15 @@ export function IssueInvoiceForm({
           variant="primary"
           touchHeight
           loading={pending}
+          // Board Admin-invoice-issue: the confirm names the document and its
+          // total, with the money-step check icon (§ Button icons).
+          icon="check"
           disabled={!matches || pending}
           onClick={confirm}
         >
-          {pending ? t('issuing') : t('issueButton')}
+          {pending
+            ? t('issuing')
+            : t(taxAtPayment ? 'issueBillButton' : 'issueInvoiceButton', { total: summary.totalText })}
         </Button>
       </div>
       </div>

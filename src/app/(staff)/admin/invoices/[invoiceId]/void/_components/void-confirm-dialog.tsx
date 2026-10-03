@@ -27,13 +27,16 @@ import { toast } from '@/lib/toast';
 import { ArchiveIcon } from 'lucide-react';
 import { Alert, Button, Card, TextField, Textarea } from '@jirawatpyk/aura-react';
 import { routeVoidError } from './void-error-routing';
+import { PhraseChip } from '../../../_components/phrase-chip';
 
 type Props = {
   readonly invoiceId: string;
   readonly documentNumber: string;
+  /** An 088 SC bill: the confirmation asks for the bill number (board Admin-void). */
+  readonly isBill?: boolean;
 };
 
-export function VoidConfirmDialog({ invoiceId, documentNumber }: Props) {
+export function VoidConfirmDialog({ invoiceId, documentNumber, isBill = false }: Props) {
   const t = useTranslations('admin.invoices.void');
   const locale = useLocale();
   const router = useRouter();
@@ -220,7 +223,7 @@ export function VoidConfirmDialog({ invoiceId, documentNumber }: Props) {
           <div className="flex flex-col gap-1">
             <TextField
               id="void-confirm"
-              label={t('confirmCopy', { phrase: confirmPhrase })}
+              label={t(isBill ? 'confirmCopyBill' : 'confirmCopy')}
               value={typed}
               onChange={(e) => setTyped(e.target.value)}
               placeholder={confirmPhrase}
@@ -235,8 +238,11 @@ export function VoidConfirmDialog({ invoiceId, documentNumber }: Props) {
               autoCapitalize="off"
               spellCheck={false}
               aria-invalid={typed.length > 0 && !matches}
-              aria-describedby={typed.length > 0 && !matches ? 'void-confirm-error' : undefined}
+              // The number chip first, so a screen reader hears what to type.
+              aria-describedby={typed.length > 0 && !matches ? 'void-confirm-phrase void-confirm-error' : 'void-confirm-phrase'}
             />
+            {/* Board Admin-void: the number in its own chip, with a copy button. */}
+            <PhraseChip id="void-confirm-phrase" phrase={confirmPhrase} testId="void-confirm-chip" />
             {typed.length > 0 && !matches && (
               <p id="void-confirm-error" role="alert" className="text-xs text-[var(--aura-fg-danger)]">
                 {t('confirmMismatch', { phrase: confirmPhrase })}

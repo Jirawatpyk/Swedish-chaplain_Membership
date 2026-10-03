@@ -3063,6 +3063,11 @@
           "notApplicable": "Ingen aktiv medlemsperiod — denna faktura påverkar inte förnyelser (använd återaktiveringsflödet för utgångna medlemmar)."
         }
       },
+      "phraseChip": {
+        "copy": "Kopiera {phrase}",
+        "copied": "{phrase} kopierad",
+        "copyFailed": "Det gick inte att kopiera — markera texten i stället."
+      },
       "detail": {
         "draftTitle": "Utkast",
         "title": "Faktura {number}",
@@ -3281,7 +3286,8 @@
         },
         "confirmPhrase": "UTFÄRDA",
         "confirmCopy": "Skriv \"{phrase}\" för att bekräfta",
-        "issueButton": "Utfärda",
+        "issueBillButton": "Utfärda faktura · {total} THB",
+        "issueInvoiceButton": "Utfärda skattefaktura · {total} THB",
         "issuing": "Utfärdar…",
         "success": "Fakturan utfärdad",
         "successWithNumber": "Faktura {number} utfärdad",
@@ -3402,7 +3408,8 @@
         "terminalNotice": "Annullering är slutgiltig — inga fler åtgärder (betala, kreditera, redigera) är tillåtna. En betald faktura kan inte annulleras; återför den i stället med en återbetalning eller en kreditnota.",
         "reasonLabel": "Orsak",
         "reasonHelp": "Visas på den annullerade PDF:en och i granskningsloggen. Obligatorisk, upp till 500 tecken.",
-        "confirmCopy": "Skriv fakturanumret {phrase} för att bekräfta",
+        "confirmCopy": "Skriv fakturanumret för att bekräfta",
+        "confirmCopyBill": "Skriv fakturanumret för att bekräfta",
         "confirmMismatch": "Frasen måste exakt matcha \"{phrase}\" för att bekräfta.",
         "backToInvoice": "Tillbaka till faktura",
         "submit": "Annullera faktura",
@@ -5065,6 +5072,7 @@
         "description": "Återbetala hela eller delar av denna betalning. Motsvarande kreditnota utfärdas och skickas till medlemmen via e-post.",
         "cancel": "Avbryt",
         "confirm": "Utfärda återbetalning",
+      "confirmAmount": "Återbetala {amount}",
         "processing": "Bearbetar återbetalning…",
         "refsInvoice": "Faktura-nr",
         "refsReceipt": "Kvitto-nr",
@@ -5074,7 +5082,7 @@
         "amount": {
           "label": "Återbetalningsbelopp (THB)",
           "placeholder": "0.00",
-          "maximumHelp": "Maximalt återbetalningsbart: {amount} THB",
+          "maximumHelp": "Upp till {amount} (betalt, minus återbetalningar och kreditnotor). Pengarna går tillbaka till det ursprungliga betalsättet.",
           "ariaDescribed": "Ange återbetalningsbeloppet i thailändska baht. Beloppet dras från den ursprungliga betalningen."
         },
         "reason": {
@@ -5082,8 +5090,13 @@
           "placeholder": "Kort anledning till denna återbetalning…",
           "charCount": "{count} / 500"
         },
+        "summary": {
+          "title": "Sammanfattning av återbetalningen",
+          "total": "Återbetalning totalt",
+          "after": "Kvar att återbetala efteråt"
+        },
         "typedPhrase": {
-          "label": "Skriv {phrase} för att bekräfta full återbetalning",
+          "label": "Skriv frasen för att bekräfta full återbetalning",
           "placeholder": "{phrase}",
           "help": "Full återbetalning kräver inskriven bekräftelse för att förhindra oavsiktlig bearbetning.",
           "mismatch": "Frasen matchar inte. Skriv exakt: {phrase}"

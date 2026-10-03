@@ -18,6 +18,7 @@
 import { useId } from 'react';
 import { useTranslations } from 'next-intl';
 import { TextField } from '@jirawatpyk/aura-react';
+import { PhraseChip } from '../../../_components/phrase-chip';
 
 type Props = {
   readonly companyName: string;
@@ -29,6 +30,7 @@ export function TypedPhraseConfirm({ companyName, value, onChange }: Props) {
   const t = useTranslations('admin.refund.form.typedPhrase');
   const fieldId = useId();
   const helpId = `${fieldId}-help`;
+  const phraseId = `${fieldId}-phrase`;
   const errorId = `${fieldId}-error`;
 
   const expected = `REFUND ${companyName}`;
@@ -43,7 +45,7 @@ export function TypedPhraseConfirm({ companyName, value, onChange }: Props) {
     <div className="flex flex-col gap-1">
       <TextField
         id={fieldId}
-        label={t('label', { phrase: expected })}
+        label={t('label')}
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -53,11 +55,14 @@ export function TypedPhraseConfirm({ companyName, value, onChange }: Props) {
         autoCorrect="off"
         spellCheck={false}
         enterKeyHint="done"
-        aria-describedby={showError ? `${helpId} ${errorId}` : helpId}
+        // The phrase chip first, so a screen reader hears what to type.
+        aria-describedby={showError ? `${phraseId} ${helpId} ${errorId}` : `${phraseId} ${helpId}`}
         aria-invalid={showError}
         aria-required="true"
         data-testid="refund-typed-phrase-input"
       />
+      {/* Board Admin-refund-full: the phrase in its own chip, with a copy button. */}
+      <PhraseChip id={phraseId} phrase={expected} testId="refund-typed-phrase-chip" />
       <p id={helpId} className="text-xs text-[var(--aura-fg-secondary)]">
         {t('help')}
       </p>

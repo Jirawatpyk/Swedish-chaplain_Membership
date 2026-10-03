@@ -73,7 +73,7 @@ async function submitFull() {
     target: { value: 'member withdrew' },
   });
   fireEvent.blur(screen.getByTestId('refund-form-reason'));
-  fireEvent.change(screen.getByLabelText(/REFUND Acme AB/), {
+  fireEvent.change(screen.getByTestId('refund-typed-phrase-input'), {
     target: { value: 'REFUND Acme AB' },
   });
   const confirm = screen.getByTestId('refund-form-confirm');

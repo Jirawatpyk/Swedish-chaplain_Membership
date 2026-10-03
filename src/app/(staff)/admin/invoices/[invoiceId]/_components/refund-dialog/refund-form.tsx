@@ -6,7 +6,10 @@
  * react-hook-form + zod resolver. Composes:
  *   - Amount input — inputmode="decimal", THB units; converted to
  *     satang on submit. Label-above + asterisk + live help-text
- *     "Maximum refundable: {amount} THB" per FR-029(b).
+ *     "Up to {amount} (paid, less refunds and credit notes)…" per FR-029(b)
+ *     and board Admin-refund-full; a valid amount adds the refund summary
+ *     (refund total, still refundable afterwards) and names itself on
+ *     Confirm.
  *   - Reason textarea — 500-char counter; aria-live polite.
  *   - <TypedPhraseConfirm> — renders ONLY when amount === remaining
  *     (full refund) per FR-029(f).
@@ -214,6 +217,11 @@ export function RefundForm({
     invoiceSubject === 'membership' &&
     amountSatang !== null &&
     amountSatang === invoiceHeadroomSatang;
+  // Board Admin-refund-full / -partial: a valid amount within the headroom
+  // gets the refund summary and names itself on Confirm. Display only — the
+  // request still carries `amountSatang` and the server re-checks the cap.
+  const summaryAmountSatang =
+    amountSatang !== null && amountSatang > 0n && amountSatang <= remainingRefundableSatang ? amountSatang : null;
   const expectedPhrase = `REFUND ${memberCompanyName}`;
   const phraseMatches = typedPhrase === expectedPhrase;
 
@@ -489,6 +497,25 @@ export function RefundForm({
         )}
       </div>
 
+      {summaryAmountSatang !== null && (
+        <div
+          data-testid="refund-summary"
+          className="flex flex-col gap-[var(--aura-space-2)] rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface-strong)] p-[var(--aura-space-3)]"
+        >
+          <p className="text-xs font-semibold text-[var(--aura-fg-secondary)]">{tForm('summary.title')}</p>
+          <dl className="grid grid-cols-[1fr_auto] gap-x-[var(--aura-space-4)] gap-y-[var(--aura-space-1)] text-sm">
+            <dt className="font-semibold">{tForm('summary.total')}</dt>
+            <dd className="text-end font-semibold tabular-nums">
+              {formatSatangThb(summaryAmountSatang, locale, currencyCode)}
+            </dd>
+            <dt>{tForm('summary.after')}</dt>
+            <dd className="text-end tabular-nums">
+              {formatSatangThb(remainingRefundableSatang - summaryAmountSatang, locale, currencyCode)}
+            </dd>
+          </dl>
+        </div>
+      )}
+
       {/* 0306 — a full refund of a membership invoice withdraws the paid
           period. Say what Renewals will do next, and let staff end the
           membership instead of letting it run to period end. */}
@@ -592,11 +619,16 @@ export function RefundForm({
           type="submit"
           variant="danger"
           touchHeight
+          icon="rotate-ccw"
           loading={submitting}
           disabled={!canSubmit}
           data-testid="refund-form-confirm"
         >
-          {submitting ? t('dialog.processing') : t('dialog.confirm')}
+          {submitting
+            ? t('dialog.processing')
+            : summaryAmountSatang !== null
+              ? t('dialog.confirmAmount', { amount: formatSatangThb(summaryAmountSatang, locale, currencyCode) })
+              : t('dialog.confirm')}
         </Button>
       </div>
     </form>

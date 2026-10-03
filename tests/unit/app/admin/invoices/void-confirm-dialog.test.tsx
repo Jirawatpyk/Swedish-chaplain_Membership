@@ -363,7 +363,8 @@ describe('VoidConfirmDialog — submit gating guards the error surface', () => {
 describe('VoidConfirmDialog — AURA layout', () => {
   it('warns in an AURA danger alert naming the document, with the fields in a card', () => {
     renderDialog();
-    const warning = screen.getByText(DOC_NUMBER).closest('.aura-alert');
+    // The number also shows in the confirmation's chip; the warning names it too.
+    const warning = screen.getAllByText(DOC_NUMBER).map((el) => el.closest('.aura-alert')).find(Boolean);
     expect(warning).not.toBeNull();
     expect(screen.getByLabelText(/^Reason/).closest('.aura-card')).not.toBeNull();
   });

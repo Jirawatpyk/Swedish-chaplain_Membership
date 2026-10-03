@@ -1209,7 +1209,7 @@ export default async function AuraAdminPreviewPage({
             {tVoid('backToInvoice')}
           </Link>
           <PageHeader title={tVoid('title')} subtitle={tVoid('descriptionBill', { number: 'SC-2026-000123' })} />
-          <VoidConfirmDialog invoiceId={DETAIL_INVOICE_ID} documentNumber="SC-2026-000123" />
+          <VoidConfirmDialog invoiceId={DETAIL_INVOICE_ID} documentNumber="SC-2026-000123" isBill />
         </FormContainer>
       </StaffFrame>
     );

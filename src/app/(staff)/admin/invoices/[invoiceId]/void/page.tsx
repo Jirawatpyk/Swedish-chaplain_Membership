@@ -83,6 +83,7 @@ export default async function VoidInvoicePage({
       <VoidConfirmDialog
         invoiceId={invoiceId}
         documentNumber={confirmNumber}
+        isBill={billNumber !== null}
       />
     </FormContainer>
   );
