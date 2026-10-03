@@ -3301,6 +3301,7 @@
         "errors": {
           "failed": "Issue failed",
           "concurrent": "This invoice was already issued in another session. Refresh to see the latest status and its number.",
+          "issue_total_changed": "The total changed after this page loaded, so nothing was issued. Refresh to see the current total, then issue again.",
           "refreshAction": "Refresh",
           "event_no_tin_requires_paid_issue": "This buyer is not recorded as VAT-registered — the ticket fee must be recorded as paid (issuing a receipt), not billed first. If they are VAT-registered, tick that on the member record first.",
           "registration_refunded": "This registration has been refunded since the draft was created — the document cannot be issued for a refunded fee.",

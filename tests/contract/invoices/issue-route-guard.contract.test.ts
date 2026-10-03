@@ -203,3 +203,61 @@ describe('contract: POST /api/invoices/[invoiceId]/issue — no-TIN event guard 
     expect(body.error).toEqual({ code: 'registration_lookup_failed' });
   });
 });
+
+// The Issue dialog sends the total it confirmed; the route forwards it to the
+// use case, and a stale total comes back as a typed 409 the dialog turns into
+// "total changed — refresh" (nothing was issued, no number consumed).
+describe('contract: POST /api/invoices/[invoiceId]/issue — expectedTotalSatang', () => {
+  beforeAll(async () => {
+    await importRoute();
+  }, 60_000);
+
+  beforeEach(() => {
+    requireApiPermissionMock.mockResolvedValue(adminContext);
+    guardGenericRouteIssueOriginMock.mockResolvedValue({ ok: true, value: undefined });
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function postWithBody(body: unknown): NextRequest {
+    return new NextRequest(
+      `http://localhost:3100/api/invoices/${VALID_INVOICE_ID}/issue`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      },
+    );
+  }
+
+  it('forwards the confirmed total to the use case', async () => {
+    issueInvoiceMock.mockResolvedValueOnce(err({ code: 'issue_total_changed' }));
+    const { POST } = await importRoute();
+    await POST(
+      postWithBody({ expectedTotalSatang: '107000', expectedVatSatang: '7000' }),
+      routeParams,
+    );
+    expect(issueInvoiceMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ expectedTotalSatang: '107000', expectedVatSatang: '7000' }),
+    );
+  });
+
+  it('409 issue_total_changed — bare code', async () => {
+    issueInvoiceMock.mockResolvedValueOnce(err({ code: 'issue_total_changed' }));
+    const { POST } = await importRoute();
+    const res = await POST(postWithBody({ expectedTotalSatang: '107000' }), routeParams);
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error: Record<string, unknown> };
+    expect(body.error).toEqual({ code: 'issue_total_changed' });
+  });
+
+  it('400 invalid — a malformed confirmed total never reaches the use case', async () => {
+    const { POST } = await importRoute();
+    const res = await POST(postWithBody({ expectedTotalSatang: '1.5' }), routeParams);
+    expect(res.status).toBe(400);
+    expect(issueInvoiceMock).not.toHaveBeenCalled();
+  });
+});

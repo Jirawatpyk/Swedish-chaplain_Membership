@@ -126,6 +126,7 @@ export function IssueInvoiceForm({
   // "already issued — refresh" prompt.
   const [formError, setFormError] = useState<
     | { readonly kind: 'concurrent' }
+    | { readonly kind: 'stale' }
     | { readonly kind: 'failure'; readonly message: string }
     | null
   >(null);
@@ -247,6 +248,11 @@ export function IssueInvoiceForm({
       // 088 UX-B1 — include the already-scanned cert blob key when attached
       // (omitted otherwise; the scan is optional).
       certBlobKey,
+      // The total the confirm names and the VAT the summary shows; the server
+      // refuses if either went stale (a rate change on a VAT-inclusive draft
+      // keeps the total and moves only the VAT).
+      expectedTotalSatang: totals?.totalSatang ?? null,
+      expectedVatSatang: totals?.vatSatang ?? null,
     });
 
     startTransition(async () => {
@@ -264,8 +270,8 @@ export function IssueInvoiceForm({
         const errBody = await res.json().catch(() => ({}));
         const code = (errBody as { error?: { code?: string } })?.error?.code;
         const routing = routeIssueError(code);
-        if (routing.kind === 'concurrent') {
-          setFormError({ kind: 'concurrent' });
+        if (routing.kind === 'concurrent' || routing.kind === 'stale') {
+          setFormError({ kind: routing.kind });
         } else {
           const message =
             routing.messageKey === 'errors.codeFallback' && routing.codeArg
@@ -569,14 +575,18 @@ export function IssueInvoiceForm({
             role="none"
             tone={formError.kind === 'failure' ? 'danger' : 'info'}
             action={
-              formError.kind === 'concurrent' ? (
+              formError.kind !== 'failure' ? (
                 <Button type="button" variant="secondary" size="sm" touchHeight onClick={() => router.refresh()}>
                   {t('errors.refreshAction')}
                 </Button>
               ) : undefined
             }
           >
-            {formError.kind === 'concurrent' ? t('errors.concurrent') : formError.message}
+            {formError.kind === 'concurrent'
+              ? t('errors.concurrent')
+              : formError.kind === 'stale'
+                ? t('errors.issue_total_changed')
+                : formError.message}
           </Alert>
         </div>
       )}
