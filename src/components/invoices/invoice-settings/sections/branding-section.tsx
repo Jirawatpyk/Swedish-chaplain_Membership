@@ -10,12 +10,17 @@
  *
  * Controlled + presentational only: no local field state, no upload
  * logic, no validation logic.
+ *
+ * Spec 122 US8c-2 (T856) — an AURA card (board `Admin-invoice-settings`),
+ * the rail's focus target. The logo keeps its native file input (in an AURA
+ * `Field`, styled with AURA tokens): AURA's FileUpload would change the
+ * upload trigger, and the upload request is unchanged. `#logo_hint`, the
+ * `#logo_status` live region and the error's `role="alert"` stay.
  */
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Card, Field } from '@jirawatpyk/aura-react';
 
 export interface BrandingSectionProps {
   readonly logoBlobKey: string | null;
@@ -35,55 +40,47 @@ export function BrandingSection({
   const t = useTranslations('admin.invoiceSettings');
 
   return (
-    <section
+    <Card
+      as="section"
       id="branding"
-      aria-labelledby="branding-heading"
-      className="flex flex-col gap-[var(--page-section-gap)]"
+      tabIndex={-1}
+      className="scroll-mt-24 focus-visible:outline-none"
+      title={t('sections.branding')}
+      titleId="branding-heading"
+      headingLevel={2}
     >
-      <h2
-        id="branding-heading"
-        data-section-heading
-        tabIndex={-1}
-        className="font-heading text-base font-semibold"
-      >
-        {t('sections.branding')}
-      </h2>
-
       {/* Logo */}
-      <fieldset className="flex flex-col gap-4 rounded-md border p-4">
-        <legend className="px-2 text-sm font-semibold">
-          {t('sections.logo')}
-        </legend>
-        <div className="space-y-2">
-          <Label htmlFor="logo_file">{t('labels.logo')}</Label>
-          <Input
+      <fieldset>
+        <legend className="mb-[var(--aura-space-3)] text-sm font-semibold">{t('sections.logo')}</legend>
+        <Field id="logo_file" label={t('labels.logo')} disabled={disabled || uploadingLogo}>
+          <input
             id="logo_file"
             type="file"
             accept="image/png,image/jpeg"
             onChange={onLogoChange}
             disabled={disabled || uploadingLogo}
             aria-describedby="logo_hint logo_status"
-            className="cursor-pointer file:cursor-pointer hover:bg-accent/40"
+            className="block min-h-11 w-full cursor-pointer text-sm text-[var(--aura-fg-secondary)] file:me-[var(--aura-space-3)] file:min-h-11 file:cursor-pointer file:rounded-[var(--aura-radius-md)] file:border file:border-solid file:border-[var(--aura-border-default)] file:bg-[var(--aura-bg-surface)] file:px-[var(--aura-space-4)] file:text-sm file:font-medium file:text-[var(--aura-fg-primary)] hover:file:bg-[var(--aura-bg-surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)] disabled:cursor-not-allowed disabled:opacity-60"
           />
-          <p id="logo_hint" className="text-xs text-muted-foreground">
-            {t('hints.logo')}
-          </p>
-          <p id="logo_status" className="text-xs" aria-live="polite">
-            {uploadingLogo ? (
-              <span className="text-muted-foreground">{t('logo.uploading')}</span>
-            ) : logoBlobKey ? (
-              <span className="text-muted-foreground">
-                {t('logo.currentKey')}: <span className="font-mono">{logoBlobKey}</span>
-              </span>
-            ) : null}
-          </p>
-          {logoError ? (
-            <p className="text-sm text-destructive" role="alert">
-              {logoError}
-            </p>
+        </Field>
+        <p id="logo_hint" className="mt-[var(--aura-space-2)] text-sm text-[var(--aura-fg-secondary)]">
+          {t('hints.logo')}
+        </p>
+        <p id="logo_status" className="text-sm text-[var(--aura-fg-secondary)]" aria-live="polite">
+          {uploadingLogo ? (
+            t('logo.uploading')
+          ) : logoBlobKey ? (
+            <>
+              {t('logo.currentKey')}: <span className="font-mono">{logoBlobKey}</span>
+            </>
           ) : null}
-        </div>
+        </p>
+        {logoError ? (
+          <p className="text-sm text-[var(--aura-fg-danger)]" role="alert">
+            {logoError}
+          </p>
+        ) : null}
       </fieldset>
-    </section>
+    </Card>
   );
 }

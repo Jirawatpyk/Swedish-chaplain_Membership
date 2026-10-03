@@ -360,11 +360,11 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
 - **The invoice settings follow `Admin-invoice-settings`** (1440 only; the phone layout follows the US5b-2 form rule):
   - the page header "Invoice settings" with its subtitle;
   - the note "Changes apply to future invoices only…" as an info alert above the form. On a first-ever load it reads the existing first-time copy ("No settings yet…"). The legacy wrapper card and its "Invoice configuration" title go: the board has no such card.
-  - a "Settings sections" rail (Organization, Tax, Document numbering, Document notes, Payment, Branding). The current section is marked, and a pick moves focus to the section's heading, as today. Below `lg` the rail becomes a "Jump to section" select.
+  - a "Settings sections" rail (Organization, Tax, Document numbering, Document notes, Payment, Branding). The current section is marked, and a pick moves focus to the section's card, which is labelled by its heading (today it moves to the heading itself). Below `lg` the rail becomes a "Jump to section" select.
   - one card per section, titled with the section's name. The fieldsets inside each card (Currency, Tenant legal identity, Seller branch (§86/4), Prefixes, Invoicing defaults, and so on) keep their legends.
   - every field keeps its id, label, hint, length limit and character counter, on AURA fields;
   - a sticky bar once the form is dirty: "You have unsaved changes · Discard · Save settings".
-- **Discard is added** (maintainer, 3 Oct: "Add Discard"). It puts every field back to the values the page loaded with, the same snapshot the dirty check compares against. It clears the field errors and the error line, sends no request, and the bar hides. Focus moves to the first section's heading. A logo uploaded since the last save is dropped from the form; the upload itself is not undone (nothing references an unsaved key).
+- **Discard is added** (maintainer, 3 Oct: "Add Discard"). It puts every field back to the values the page loaded with, the same snapshot the dirty check compares against. It clears the field errors and the error line, sends no request, and the bar hides. Focus moves to the first section's card. A logo uploaded since the last save is dropped from the form; the upload itself is not undone (nothing references an unsaved key).
 - **The 44px targets stay** (088 FR-036): the seller branch code, the prefixes and receipt mode, the bank text fields, the rail, and both Save buttons. The fields use AURA's `touchHeight="always"`.
 - **Unchanged:**
   - the logo upload request;

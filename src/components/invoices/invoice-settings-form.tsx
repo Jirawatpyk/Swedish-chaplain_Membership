@@ -32,31 +32,29 @@
  * returned key is patched into the form's hidden logo_blob_key field
  * and flushed with the rest on save.
  *
- * RBAC mirror: manager is read-only — disables inputs + hides save.
- * Security boundary is the PATCH route guard, not this UX.
+ * RBAC: only super_admin can open the page (`settings.invoicing` is
+ * super-admin-only); `canEdit=false` still disables every input and hides
+ * Save, in case the permission widens. The security boundary is the PATCH
+ * route guard, not this UX.
+ *
+ * Spec 122 US8c-2 (T857) — on AURA: the save bar is an AURA ActionBar with
+ * Discard (maintainer, 3 Oct), the in-form Save an AURA Button, the
+ * prefix-change confirmation the shared `ConfirmationDialog`. Discard
+ * remounts the form body with the page's values (the same snapshot the dirty
+ * check compares against), so every field, error and mark resets and nothing
+ * is sent; focus then moves to the first section.
  */
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { Loader2Icon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { Alert, Button } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
 import { isReadOnlyCode, problemCode } from '@/lib/http/read-only-refusal';
-import { cn } from '@/lib/utils';
 import { isThaiTaxId } from '@/lib/thai-tax-id';
-import { Button } from '@/components/ui/button';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
 import { isDirty } from '@/components/invoices/invoice-settings/form-dirty';
 import { useUnsavedGuard } from '@/components/invoices/invoice-settings/use-unsaved-guard';
 import {
@@ -191,11 +189,36 @@ export interface InvoiceSettingsFormProps {
   readonly exists: boolean; // false on first-ever load
 }
 
-export function InvoiceSettingsForm({
+export function InvoiceSettingsForm(props: InvoiceSettingsFormProps) {
+  // Discard (spec 122 US8c-2): a new key remounts the body, so every field
+  // state starts again from `initialValues` and the imperative aria-invalid
+  // marks go with the old inputs. Focus then moves to the first section, as
+  // the bar that held Discard is gone.
+  const [generation, setGeneration] = useState(0);
+  const focusFirstSection = useRef(false);
+  useEffect(() => {
+    if (!focusFirstSection.current) return;
+    focusFirstSection.current = false;
+    document.getElementById(SECTIONS[0]!.id)?.focus();
+  }, [generation]);
+  return (
+    <InvoiceSettingsFormBody
+      key={generation}
+      {...props}
+      onDiscard={() => {
+        focusFirstSection.current = true;
+        setGeneration((g) => g + 1);
+      }}
+    />
+  );
+}
+
+function InvoiceSettingsFormBody({
   initialValues,
   canEdit,
   exists,
-}: InvoiceSettingsFormProps) {
+  onDiscard,
+}: InvoiceSettingsFormProps & { readonly onDiscard: () => void }) {
   const t = useTranslations('admin.invoiceSettings');
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
@@ -686,21 +709,15 @@ export function InvoiceSettingsForm({
       }}
       // method="post" — CWE-598; see tests/unit/components/pii-forms-post-method.test.tsx
       method="post"
-      className="flex flex-col gap-[var(--page-section-gap)] md:flex-row md:items-start md:gap-8"
+      className="flex flex-col gap-[var(--page-section-gap)] lg:flex-row lg:items-start lg:gap-8"
       noValidate
     >
       <SectionNav sections={SECTIONS} />
 
-      <div
-        className={cn(
-          'flex min-w-0 flex-1 flex-col gap-[var(--page-section-gap)]',
-          // C3 — the fixed-bottom StickySaveBar (≥68px + safe-area inset)
-          // covers the in-form Save button + error text once scrolled to
-          // the end. Only pad when it's actually visible (`dirty`), so the
-          // page isn't left with dead space the rest of the time.
-          dirty && 'pb-[calc(env(safe-area-inset-bottom)+5rem)]',
-        )}
-      >
+      {/* C3 — the save bar is the column's last child: a viewport ActionBar
+          sticks to the bottom of the screen while the column is on screen and
+          stays in the flow at its end, so it never covers the last section. */}
+      <div className="flex min-w-0 flex-1 flex-col gap-[var(--page-section-gap)]">
         <OrganizationSection
           currencyCode={currencyCode}
           onCurrencyCodeChange={setCurrencyCode}
@@ -794,29 +811,22 @@ export function InvoiceSettingsForm({
           disabled={disabled}
         />
 
-        {error ? (
-          <p className="text-sm text-destructive" role="alert">
-            {error}
-          </p>
-        ) : null}
+        {error ? <Alert tone="danger">{error}</Alert> : null}
 
         {canEdit ? (
           <Button
             type="submit"
-            size="lg"
             // T072b (FR-036) — the primary Save is the key mobile action: ≥44px
-            // tall + full-width so it stays a reachable tap target at 320px.
-            className="min-h-11 w-full"
+            // at every width (the compact staff density is 36px), full width
+            // on a phone so it stays a reachable tap target at 320px.
+            className="min-h-11 max-sm:w-full sm:self-end"
             // Minor — nothing to save once settings already exist and the
             // form matches its last-saved snapshot. `exists` gates this so
             // first-time creation stays enabled even though a fresh form
             // equals DEFAULTS (and is therefore technically not "dirty").
             disabled={submitting || (exists && !dirty)}
-            aria-busy={submitting}
+            loading={submitting}
           >
-            {submitting && (
-              <Loader2Icon className="mr-2 h-4 w-4 motion-safe:animate-spin" aria-hidden />
-            )}
             {submitting
               ? t('saving')
               : exists
@@ -824,45 +834,32 @@ export function InvoiceSettingsForm({
                 : t('actions.create')}
           </Button>
         ) : null}
-      </div>
 
-      <StickySaveBar
-        visible={dirty}
-        submitting={submitting}
-        onSave={() => formRef.current?.requestSubmit()}
-      />
+        <StickySaveBar
+          visible={dirty}
+          submitting={submitting}
+          onSave={() => formRef.current?.requestSubmit()}
+          onDiscard={onDiscard}
+        />
+      </div>
 
       {/* 088 US5 (T043a / FR-026) — confirm a document-number prefix flip before
           it starts a new §87 numbering stream. */}
-      <AlertDialog
+      <ConfirmationDialog
         open={pendingBody !== null}
         onOpenChange={(next) => {
           if (!next) setPendingBody(null);
         }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('prefixChange.title')}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t('prefixChange.description')}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setPendingBody(null)}>
-              {t('prefixChange.cancel')}
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                const body = pendingBody;
-                setPendingBody(null);
-                if (body) void doPatch(body);
-              }}
-            >
-              {t('prefixChange.confirm')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        title={t('prefixChange.title')}
+        description={t('prefixChange.description')}
+        cancelLabel={t('prefixChange.cancel')}
+        confirmLabel={t('prefixChange.confirm')}
+        onConfirm={() => {
+          const body = pendingBody;
+          setPendingBody(null);
+          if (body) void doPatch(body);
+        }}
+      />
     </form>
   );
 }

@@ -8,13 +8,16 @@
  *
  * Controlled + presentational only: no local field state, no PATCH,
  * no validation logic.
+ *
+ * Spec 122 US8c-2 (T856) — an AURA card (board `Admin-invoice-settings`),
+ * the rail's focus target, with AURA fields; ids, labels, hints, limits and
+ * character counters (now each field's hint) unchanged. The six bank text
+ * fields keep their 44px boxes (088 FR-036, `touchHeight="always"`).
  */
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+import { Card, TextField, Textarea } from '@jirawatpyk/aura-react';
 
 const INSTRUCTIONS_MAX = 500;
 const BANK_ADDRESS_MAX = 500;
@@ -65,150 +68,118 @@ export function PaymentSection({
   const t = useTranslations('admin.invoiceSettings');
 
   return (
-    <section
+    <Card
+      as="section"
       id="payment"
-      aria-labelledby="payment-heading"
-      className="flex flex-col gap-[var(--page-section-gap)]"
+      tabIndex={-1}
+      className="scroll-mt-24 focus-visible:outline-none"
+      title={t('sections.payment')}
+      titleId="payment-heading"
+      headingLevel={2}
     >
-      <h2
-        id="payment-heading"
-        data-section-heading
-        tabIndex={-1}
-        className="font-heading text-base font-semibold"
-      >
-        {t('sections.payment')}
-      </h2>
-
       {/* 088 US5 — Offline-payment bank block (ใบแจ้งหนี้ / bill only) */}
-      <fieldset className="flex flex-col gap-4 rounded-md border p-4">
-        <legend className="px-2 text-sm font-semibold">{t('sections.bank')}</legend>
-        <p className="text-xs text-muted-foreground">{t('hints.bank')}</p>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="bank_payee">{t('labels.bankPayeeName')}</Label>
-            <Input
-              id="bank_payee"
-              value={bankPayeeName}
-              onChange={(e) => onBankPayeeNameChange(e.target.value)}
-              disabled={disabled}
-              maxLength={200}
-              // T072b (FR-036) — ≥44px touch target (new US5 bank-block input).
-              className="min-h-11"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="bank_name">{t('labels.bankName')}</Label>
-            <Input
-              id="bank_name"
-              value={bankName}
-              onChange={(e) => onBankNameChange(e.target.value)}
-              disabled={disabled}
-              maxLength={200}
-              className="min-h-11"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="bank_account_no">{t('labels.bankAccountNo')}</Label>
-            <Input
-              id="bank_account_no"
-              value={bankAccountNo}
-              onChange={(e) => onBankAccountNoChange(e.target.value)}
-              disabled={disabled}
-              inputMode="numeric"
-              maxLength={50}
-              aria-describedby="bank_account_no_hint"
-              className="min-h-11 font-mono"
-            />
-            <p id="bank_account_no_hint" className="text-xs text-muted-foreground">
-              {t('hints.bankAccountNo')}
-            </p>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="bank_account_type">{t('labels.bankAccountType')}</Label>
-            <Input
-              id="bank_account_type"
-              value={bankAccountType}
-              onChange={(e) => onBankAccountTypeChange(e.target.value)}
-              disabled={disabled}
-              maxLength={50}
-              className="min-h-11"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="bank_branch">{t('labels.bankBranch')}</Label>
-            <Input
-              id="bank_branch"
-              value={bankBranch}
-              onChange={(e) => onBankBranchChange(e.target.value)}
-              disabled={disabled}
-              maxLength={200}
-              className="min-h-11"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="bank_swift">{t('labels.bankSwift')}</Label>
-            <Input
-              id="bank_swift"
-              value={bankSwift}
-              onChange={(e) => onBankSwiftChange(e.target.value.toUpperCase())}
-              disabled={disabled}
-              maxLength={11}
-              // 088 T061g — SWIFT/BIC character hint (belt + braces with the
-              // SWIFT_RE guard on submit); 8 or 11 alphanumerics, uppercase.
-              inputMode="text"
-              pattern="[A-Za-z]{6}[A-Za-z0-9]{2}([A-Za-z0-9]{3})?"
-              aria-describedby="bank_swift_hint"
-              className="min-h-11 font-mono uppercase"
-            />
-            <p id="bank_swift_hint" className="text-xs text-muted-foreground">
-              {t('hints.bankSwift')}
-            </p>
-          </div>
-          <div className="space-y-2 sm:col-span-2">
-            <Label htmlFor="bank_address">{t('labels.bankAddress')}</Label>
-            <Textarea
-              id="bank_address"
-              value={bankAddress}
-              onChange={(e) => onBankAddressChange(e.target.value)}
-              disabled={disabled}
-              maxLength={BANK_ADDRESS_MAX}
-              rows={2}
-            />
-            <p className="text-right text-xs text-muted-foreground">
-              {t('charCount', { count: bankAddress.length, max: BANK_ADDRESS_MAX })}
-            </p>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="pay_instr_th">{t('labels.paymentInstructionsTh')}</Label>
-            <Textarea
-              id="pay_instr_th"
-              value={paymentInstructionsTh}
-              onChange={(e) => onPaymentInstructionsThChange(e.target.value)}
-              disabled={disabled}
-              maxLength={INSTRUCTIONS_MAX}
-              rows={2}
-              lang="th"
-            />
-            <p className="text-right text-xs text-muted-foreground">
-              {t('charCount', { count: paymentInstructionsTh.length, max: INSTRUCTIONS_MAX })}
-            </p>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="pay_instr_en">{t('labels.paymentInstructionsEn')}</Label>
-            <Textarea
-              id="pay_instr_en"
-              value={paymentInstructionsEn}
-              onChange={(e) => onPaymentInstructionsEnChange(e.target.value)}
-              disabled={disabled}
-              maxLength={INSTRUCTIONS_MAX}
-              rows={2}
-            />
-            <p className="text-right text-xs text-muted-foreground">
-              {t('charCount', { count: paymentInstructionsEn.length, max: INSTRUCTIONS_MAX })}
-            </p>
-          </div>
+      <fieldset className="flex flex-col gap-[var(--aura-space-3)]">
+        <legend className="mb-[var(--aura-space-1)] text-sm font-semibold">{t('sections.bank')}</legend>
+        <p className="text-sm text-[var(--aura-fg-secondary)]">{t('hints.bank')}</p>
+        <div className="grid grid-cols-1 gap-[var(--aura-space-4)] sm:grid-cols-2">
+          <TextField
+            id="bank_payee"
+            label={t('labels.bankPayeeName')}
+            value={bankPayeeName}
+            onChange={(e) => onBankPayeeNameChange(e.target.value)}
+            disabled={disabled}
+            maxLength={200}
+            // T072b (FR-036) — ≥44px touch target at every width.
+            touchHeight="always"
+          />
+          <TextField
+            id="bank_name"
+            label={t('labels.bankName')}
+            value={bankName}
+            onChange={(e) => onBankNameChange(e.target.value)}
+            disabled={disabled}
+            maxLength={200}
+            touchHeight="always"
+          />
+          <TextField
+            id="bank_account_no"
+            label={t('labels.bankAccountNo')}
+            hint={t('hints.bankAccountNo')}
+            value={bankAccountNo}
+            onChange={(e) => onBankAccountNoChange(e.target.value)}
+            disabled={disabled}
+            inputMode="numeric"
+            maxLength={50}
+            touchHeight="always"
+            className="[&_input]:font-mono"
+          />
+          <TextField
+            id="bank_account_type"
+            label={t('labels.bankAccountType')}
+            value={bankAccountType}
+            onChange={(e) => onBankAccountTypeChange(e.target.value)}
+            disabled={disabled}
+            maxLength={50}
+            touchHeight="always"
+          />
+          <TextField
+            id="bank_branch"
+            label={t('labels.bankBranch')}
+            value={bankBranch}
+            onChange={(e) => onBankBranchChange(e.target.value)}
+            disabled={disabled}
+            maxLength={200}
+            touchHeight="always"
+          />
+          <TextField
+            id="bank_swift"
+            label={t('labels.bankSwift')}
+            hint={t('hints.bankSwift')}
+            value={bankSwift}
+            onChange={(e) => onBankSwiftChange(e.target.value.toUpperCase())}
+            disabled={disabled}
+            maxLength={11}
+            // 088 T061g — SWIFT/BIC character hint (belt + braces with the
+            // SWIFT_RE guard on submit); 8 or 11 alphanumerics, uppercase.
+            inputMode="text"
+            pattern="[A-Za-z]{6}[A-Za-z0-9]{2}([A-Za-z0-9]{3})?"
+            touchHeight="always"
+            className="[&_input]:font-mono [&_input]:uppercase"
+          />
+          <Textarea
+            id="bank_address"
+            label={t('labels.bankAddress')}
+            hint={t('charCount', { count: bankAddress.length, max: BANK_ADDRESS_MAX })}
+            value={bankAddress}
+            onChange={(e) => onBankAddressChange(e.target.value)}
+            disabled={disabled}
+            maxLength={BANK_ADDRESS_MAX}
+            rows={2}
+            className="sm:col-span-2"
+          />
+          <Textarea
+            id="pay_instr_th"
+            label={t('labels.paymentInstructionsTh')}
+            hint={t('charCount', { count: paymentInstructionsTh.length, max: INSTRUCTIONS_MAX })}
+            value={paymentInstructionsTh}
+            onChange={(e) => onPaymentInstructionsThChange(e.target.value)}
+            disabled={disabled}
+            maxLength={INSTRUCTIONS_MAX}
+            rows={2}
+            lang="th"
+          />
+          <Textarea
+            id="pay_instr_en"
+            label={t('labels.paymentInstructionsEn')}
+            hint={t('charCount', { count: paymentInstructionsEn.length, max: INSTRUCTIONS_MAX })}
+            value={paymentInstructionsEn}
+            onChange={(e) => onPaymentInstructionsEnChange(e.target.value)}
+            disabled={disabled}
+            maxLength={INSTRUCTIONS_MAX}
+            rows={2}
+          />
         </div>
       </fieldset>
-    </section>
+    </Card>
   );
 }

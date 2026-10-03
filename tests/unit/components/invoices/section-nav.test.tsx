@@ -77,19 +77,22 @@ it('marks the active section (first, before any scroll spy update) with aria-cur
   expect(screen.getByRole('button', { name: /tax/i })).not.toHaveAttribute('aria-current');
 });
 
+/** The native `<select>` under AURA's "Jump to section" combobox. */
+const jumpSelect = () =>
+  screen.getByRole('combobox', { name: /jump to section/i }).closest('.aura-select')!.querySelector('select')!;
+
 it('renders a labelled mobile jump-to select with an option per section', () => {
   wrap(<SectionNav sections={sections} />);
-  const select = screen.getByLabelText(/jump to section/i);
+  const select = jumpSelect();
   expect(select).toBeInstanceOf(HTMLSelectElement);
-  const options = screen.getAllByRole('option');
-  expect(options.map((o) => (o as HTMLOptionElement).value)).toEqual(['organization', 'tax']);
+  expect([...select.options].map((o) => o.value)).toEqual(['organization', 'tax']);
 });
 
 it('scrolls to and focuses a section when the mobile select changes', () => {
   const scrollSpy = vi.fn<(arg?: boolean | ScrollIntoViewOptions) => void>();
   HTMLElement.prototype.scrollIntoView = scrollSpy;
   wrap(<SectionNav sections={sections} />);
-  fireEvent.change(screen.getByLabelText(/jump to section/i), { target: { value: 'tax' } });
+  fireEvent.change(jumpSelect(), { target: { value: 'tax' } });
   expect(scrollSpy).toHaveBeenCalled();
   expect(document.getElementById('tax')).toHaveFocus();
 });
@@ -105,7 +108,7 @@ it('renders the rail as AURA ghost buttons in the "Settings sections" nav, hidde
 
 it('below lg the jump-to select is an AURA Select (44px)', () => {
   wrap(<SectionNav sections={sections} />);
-  const select = screen.getByLabelText(/jump to section/i);
+  const select = jumpSelect();
   expect(select.closest('.aura-input.aura-select')).not.toBeNull();
   expect(select.closest('.is-touch-always')).not.toBeNull();
   expect(select.closest('.lg\\:hidden')).not.toBeNull();
