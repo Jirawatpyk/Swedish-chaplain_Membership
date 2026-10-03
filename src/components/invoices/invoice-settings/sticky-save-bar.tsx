@@ -38,10 +38,14 @@ export function StickySaveBar({
       className="chamber-viewport-actionbar"
       label={t('stickyBar.label')}
       status={t('stickyBar.unsaved')}
+      // UX review M5: Discard sits in the start slot as a ghost button, away
+      // from the primary Save, so a stray Enter on the wrong button is less likely.
+      start={
+        <Button type="button" variant="ghost" className="min-h-11" disabled={submitting || discardDisabled} onClick={onDiscard}>
+          {t('stickyBar.discard')}
+        </Button>
+      }
     >
-      <Button type="button" variant="secondary" className="min-h-11" disabled={submitting || discardDisabled} onClick={onDiscard}>
-        {t('stickyBar.discard')}
-      </Button>
       {/* 088 FR-036 — 44px at every width, also in the compact staff density. */}
       <Button type="button" className="min-h-11" loading={submitting} onClick={onSave}>
         {t('actions.save')}

@@ -2,8 +2,9 @@
 
 /**
  * Spec 122 US8c-2 (T855) — the invoice settings rail on AURA (board
- * `Admin-invoice-settings`, "Settings sections"): ghost Buttons from `lg`, and
- * below it an AURA Select "Jump to section" (a native `<select>` under it).
+ * `Admin-invoice-settings`, "Settings sections"): ghost Buttons from `xl` (below it the cards would be
+ * too narrow beside the staff sidebar), and below it an AURA Select "Jump to
+ * section" (a native `<select>` under it).
  * A pick scrolls to the section card and moves focus to it; each card is a
  * `<section tabIndex={-1}>` labelled by its h2, so a screen reader lands on
  * the section's name. The scroll-spy marks the current section.
@@ -70,7 +71,9 @@ export function SectionNav({ sections }: { readonly sections: ReadonlyArray<Sect
     // `scrollIntoView` animation above in Safari/Firefox. Focus still
     // lands on the heading; only the browser's redundant auto-scroll is
     // suppressed.
-    section?.focus({ preventScroll: true });
+    // UX review H1: AURA's Select returns focus to its combobox synchronously
+    // right after the change event, so move focus once that handler is done.
+    queueMicrotask(() => section?.focus({ preventScroll: true }));
     setActive(id);
   }
 
@@ -78,7 +81,7 @@ export function SectionNav({ sections }: { readonly sections: ReadonlyArray<Sect
     <>
       <nav
         aria-label={t('nav.label')}
-        className="sticky top-20 max-h-[calc(100vh-6rem)] w-56 shrink-0 overflow-y-auto max-lg:hidden"
+        className="sticky top-20 max-h-[calc(100vh-6rem)] w-56 shrink-0 overflow-y-auto max-xl:hidden"
       >
         <ul className="flex flex-col gap-[var(--aura-space-1)]">
           {sections.map((section) => {
@@ -106,10 +109,10 @@ export function SectionNav({ sections }: { readonly sections: ReadonlyArray<Sect
         </ul>
       </nav>
 
-      <div className="lg:hidden">
+      <div className="xl:hidden">
         <Select
           id={MOBILE_SELECT_ID}
-          aria-label={t('nav.jumpTo')}
+          label={t('nav.jumpTo')}
           value={selectedId}
           onChange={(event) => goToSection(event.target.value)}
           touchHeight="always"

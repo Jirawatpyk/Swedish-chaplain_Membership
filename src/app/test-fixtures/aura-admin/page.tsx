@@ -87,7 +87,8 @@ import { renderCreditNotesListView } from '@/app/(staff)/admin/credit-notes/_com
 import { renderCreditNoteDetailView } from '@/app/(staff)/admin/credit-notes/_components/credit-note-detail-view';
 import { renderTaxRegisterView } from '@/app/(staff)/admin/invoices/registers/_components/tax-register-view';
 import { renderInvoiceSettingsView } from '@/app/(staff)/admin/settings/invoicing/_components/invoice-settings-view';
-import { INVOICE_SETTINGS_FIXTURE, InvoiceSettingsPreviewDriver } from './invoice-settings-previews';
+import { INVOICE_SETTINGS_FIXTURE } from './invoice-settings-fixtures';
+import { InvoiceSettingsPreviewDriver } from './invoice-settings-previews';
 import { CREDIT_NOTE_ID, CREDIT_NOTE_ROWS, creditNoteDetail, registerOutput } from './credit-note-register-fixtures';
 import { CycleDetailBadges, renderCycleDetailView } from '@/app/(staff)/admin/renewals/[cycleId]/_components/cycle-detail-view';
 import { CycleAdminActions } from '@/app/(staff)/admin/renewals/[cycleId]/_components/cycle-admin-actions';

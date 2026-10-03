@@ -82,7 +82,7 @@ export function NumberingSection({
       as="section"
       id="numbering"
       tabIndex={-1}
-      className="scroll-mt-24 focus-visible:outline-none"
+      className="scroll-mt-24 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)]"
       title={t('sections.numbering')}
       titleId="numbering-heading"
       headingLevel={2}

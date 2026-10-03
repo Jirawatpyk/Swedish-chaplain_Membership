@@ -42,7 +42,7 @@ export function TaxVatSection({
       as="section"
       id="tax"
       tabIndex={-1}
-      className="scroll-mt-24 focus-visible:outline-none"
+      className="scroll-mt-24 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)]"
       title={t('sections.tax')}
       titleId="tax-heading"
       headingLevel={2}

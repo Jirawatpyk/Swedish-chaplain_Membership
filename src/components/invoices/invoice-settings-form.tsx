@@ -726,7 +726,7 @@ function InvoiceSettingsFormBody({
       }}
       // method="post" — CWE-598; see tests/unit/components/pii-forms-post-method.test.tsx
       method="post"
-      className="flex flex-col gap-[var(--page-section-gap)] lg:flex-row lg:items-start lg:gap-8"
+      className="flex flex-col gap-[var(--page-section-gap)] xl:flex-row xl:items-start xl:gap-8"
       noValidate
     >
       <SectionNav sections={SECTIONS} />
