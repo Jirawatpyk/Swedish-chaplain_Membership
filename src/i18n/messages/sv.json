@@ -2960,7 +2960,9 @@
           "label": "Inkl. moms / ราคารวม VAT แล้ว",
           "total": "Totalt (inkl. moms)",
           "subtotal": "Delsumma",
-          "vat": "Moms 7%"
+          "vat": "Moms {rate} %",
+          "settingsMissing": "Momsuppdelning saknas – fakturainställningarna är inte konfigurerade ännu. Konfigurera dem innan du utfärdar.",
+          "configureSettings": "Konfigurera fakturainställningar"
         },
         "docType": {
           "taxInvoice": "Skattefaktura / ใบกำกับภาษี",

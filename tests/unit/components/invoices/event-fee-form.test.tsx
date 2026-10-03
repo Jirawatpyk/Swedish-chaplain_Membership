@@ -21,6 +21,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
+import fc from 'fast-check';
+import { Money } from '@/modules/invoicing/domain/value-objects/money';
+import { splitVatInclusive } from '@/modules/invoicing/domain/value-objects/vat-inclusive';
 
 const { pushMock, toastSuccess, toastError } = vi.hoisted(() => ({
   pushMock: vi.fn(),
@@ -45,6 +48,7 @@ import {
   type IssuanceMode,
 } from '@/app/(staff)/admin/invoices/new/_components/event-fee-form';
 import enMessages from '@/i18n/messages/en.json';
+import svMessages from '@/i18n/messages/sv.json';
 
 const events: readonly EventOption[] = [
   { eventId: 'ev-1', label: 'Annual Gala (2026-06-01)' },
@@ -114,13 +118,17 @@ function renderForm(
     initialEventId?: string;
     initialRegistrationId?: string;
     taxAtPayment?: boolean;
+    vatRateBps?: number | null;
+    locale?: 'en' | 'sv';
   } = {},
 ) {
+  const locale = opts.locale ?? 'en';
   return render(
-    <NextIntlClientProvider locale="en" messages={enMessages}>
+    <NextIntlClientProvider locale={locale} messages={locale === 'sv' ? svMessages : enMessages}>
       <EventFeeForm
         events={events}
         taxAtPayment={opts.taxAtPayment ?? false}
+        vatRateBps={opts.vatRateBps === undefined ? 700 : opts.vatRateBps}
         {...(opts.initialEventId ? { initialEventId: opts.initialEventId } : {})}
         {...(opts.initialRegistrationId
           ? { initialRegistrationId: opts.initialRegistrationId }
@@ -132,19 +140,42 @@ function renderForm(
 
 describe('previewVatInclusive (pure, half-away)', () => {
   it('1070.00 THB incl @7% → subtotal 1000.00, vat 70.00 (AS-VAT-01)', () => {
-    expect(previewVatInclusive(107_000)).toEqual({ subtotal: 100_000, vat: 7_000 });
+    expect(previewVatInclusive(107_000, 700)).toEqual({ subtotal: 100_000, vat: 7_000 });
+  });
+
+  // The preview splits at the TENANT's rate (tenant_invoice_settings.vat_rate),
+  // the rate both issuance paths pin — never a hardcoded 7%.
+  it('1100.00 THB incl @10% → subtotal 1000.00, vat 100.00', () => {
+    expect(previewVatInclusive(110_000, 1000)).toEqual({ subtotal: 100_000, vat: 10_000 });
+  });
+
+  it('equals the domain splitVatInclusive for any total and rate (byte-for-byte)', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1, max: 100_000_000 }),
+        fc.integer({ min: 0, max: 3000 }),
+        (total, bps) => {
+          const want = splitVatInclusive(Money.fromSatangUnsafe(total), BigInt(bps));
+          expect(previewVatInclusive(total, bps)).toEqual({
+            subtotal: Number(want.subtotal.satang),
+            vat: Number(want.vat.satang),
+          });
+        },
+      ),
+      { numRuns: 500 },
+    );
   });
 
   it('subtotal + vat === total for boundary satang', () => {
     for (const total of [107, 214, 321, 1, 100_000_000]) {
-      const { subtotal, vat } = previewVatInclusive(total);
+      const { subtotal, vat } = previewVatInclusive(total, 700);
       expect(subtotal + vat).toBe(total);
     }
   });
 
   it('returns zero for non-positive input', () => {
-    expect(previewVatInclusive(0)).toEqual({ subtotal: 0, vat: 0 });
-    expect(previewVatInclusive(-5)).toEqual({ subtotal: 0, vat: 0 });
+    expect(previewVatInclusive(0, 700)).toEqual({ subtotal: 0, vat: 0 });
+    expect(previewVatInclusive(-5, 700)).toEqual({ subtotal: 0, vat: 0 });
   });
 });
 
@@ -301,6 +332,50 @@ describe('<EventFeeForm>', () => {
     expect(preview).toHaveTextContent('1,000.00');
     expect(preview).toHaveTextContent('934.58');
     expect(preview).toHaveTextContent('65.42');
+    expect(preview).toHaveTextContent('VAT 7%');
+  });
+
+  it("previews at the tenant's rate: 10% → VAT 10%, 1000 THB incl → 909.09 / 90.91", async () => {
+    vi.stubGlobal('fetch', mockFetchRegistrations([matchedRegistration]));
+    renderForm({ initialEventId: 'ev-1', vatRateBps: 1000 });
+    fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+    const preview = screen.getByTestId('vat-preview');
+    expect(preview).toHaveTextContent('VAT 10%');
+    expect(preview).toHaveTextContent('909.09');
+    expect(preview).toHaveTextContent('90.91');
+  });
+
+  // No invoice settings → no rate to split at (issuance refuses with
+  // settings_missing): show the total, never a guessed subtotal / VAT.
+  it('without a tenant VAT rate, shows the total only — no guessed split', async () => {
+    vi.stubGlobal('fetch', mockFetchRegistrations([matchedRegistration]));
+    renderForm({ initialEventId: 'ev-1', vatRateBps: null });
+    fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+    const preview = screen.getByTestId('vat-preview');
+    expect(preview).toHaveTextContent('1,000.00');
+    expect(preview).not.toHaveTextContent('934.58');
+    expect(preview).not.toHaveTextContent(/VAT \d/);
+    // ...and says why, with the way to fix it.
+    const note = screen.getByRole('note');
+    expect(note).toHaveTextContent(
+      enMessages.admin.invoices.eventFeeForm.vatPreview.settingsMissing,
+    );
+    expect(
+      screen.getByRole('link', {
+        name: enMessages.admin.invoices.eventFeeForm.vatPreview.configureSettings,
+      }),
+    ).toHaveAttribute('href', '/admin/settings/invoicing');
+  });
+
+  // The rate is a number in running text: formatted for the locale (sv uses a
+  // decimal comma and a non-breaking space before %), never a hardcoded dot.
+  it('formats the rate for the locale: 7.5% reads "Moms 7,5 %" in Swedish', async () => {
+    vi.stubGlobal('fetch', mockFetchRegistrations([matchedRegistration]));
+    renderForm({ initialEventId: 'ev-1', vatRateBps: 750, locale: 'sv' });
+    fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+    // Raw textContent: toHaveTextContent would normalise the NBSP away.
+    const terms = Array.from(screen.getByTestId('vat-preview').querySelectorAll('dt'));
+    expect(terms.map((dt) => dt.textContent)).toContain('Moms 7,5\u00a0%');
   });
 
   it('matched member → doc-type badge shows "set at issue" (TIN unknown client-side)', async () => {
