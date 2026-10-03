@@ -5076,8 +5076,8 @@
         "confirm": "Issue refund",
         "confirmAmount": "Refund {amount}",
         "processing": "Processing refund…",
-        "refsInvoice": "Invoice no.",
-        "refsReceipt": "Receipt no.",
+        "paymentReceipt": "Receipt {number}",
+        "paymentPaid": "{amount}, {date}",
         "refsCombinedHint": "combined"
       },
       "form": {
@@ -5095,7 +5095,11 @@
         "summary": {
           "title": "Refund summary",
           "total": "Refund total",
-          "after": "Still refundable afterwards"
+          "after": "Still refundable afterwards",
+          "creditNoteTitle": "Credit note to be issued",
+          "creditNoteNet": "Amount excl. VAT",
+          "creditNoteVat": "VAT {rate}%",
+          "creditNoteLoading": "Working out the credit note…"
         },
         "typedPhrase": {
           "label": "Type the phrase to confirm a full refund",

@@ -8,8 +8,9 @@
  *     satang on submit. Label-above + asterisk + live help-text
  *     "Up to {amount} (paid, less refunds and credit notes)…" per FR-029(b)
  *     and board Admin-refund-full; a valid amount adds the refund summary
- *     (refund total, still refundable afterwards) and names itself on
- *     Confirm.
+ *     (the credit note to be issued — amount excl. VAT and VAT, read from
+ *     the server — then refund total, still refundable afterwards) and names
+ *     itself on Confirm.
  *   - Reason textarea — 500-char counter; aria-live polite.
  *   - <TypedPhraseConfirm> — renders ONLY when amount === remaining
  *     (full refund) per FR-029(f).
@@ -39,7 +40,7 @@ import { useTranslations } from 'next-intl';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { type SubmitHandler, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
-import { Alert, Button, RadioGroup, TextField, Textarea } from '@jirawatpyk/aura-react';
+import { Alert, Button, RadioGroup, Skeleton, TextField, Textarea } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
 // TYPE-ONLY, and it must stay that way. The invoicing barrel reaches
 // server-only modules; a value import here would drag them into a client
@@ -49,6 +50,7 @@ import type { CreditNoteWaiverReason } from '@/modules/invoicing';
 import { useLocale } from 'next-intl';
 import { formatSatangThb } from '@/lib/format-thb';
 import { TypedPhraseConfirm } from './typed-phrase-confirm';
+import { useCreditNotePreview } from './use-credit-note-preview';
 
 const REASON_MAX = 500;
 
@@ -96,6 +98,8 @@ type FormValues = z.infer<ReturnType<typeof buildSchema>>;
 
 type Props = {
   readonly paymentId: string;
+  /** The invoice the refund credits — keys the credit-note preview read. */
+  readonly invoiceId: string;
   readonly memberCompanyName: string;
   readonly remainingRefundableSatang: bigint;
   readonly currencyCode: string;
@@ -124,12 +128,18 @@ const MEMBERSHIP_END_OUTCOMES = [
 ] as const;
 type MembershipEndOutcome = (typeof MEMBERSHIP_END_OUTCOMES)[number];
 
+/** `0.0700` → `7` (display of the invoice's stored rate; no money maths). */
+function formatVatRatePercent(rate: string, locale: string): string {
+  return new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(Number(rate) * 100);
+}
+
 // Display-only formatting via the canonical `formatSatangThb` helper
 // (`src/lib/format-thb.ts`). Server-side accounting arithmetic stays
 // in satang.
 
 export function RefundForm({
   paymentId,
+  invoiceId,
   memberCompanyName,
   remainingRefundableSatang,
   currencyCode,
@@ -222,6 +232,10 @@ export function RefundForm({
   // request still carries `amountSatang` and the server re-checks the cap.
   const summaryAmountSatang =
     amountSatang !== null && amountSatang > 0n && amountSatang <= remainingRefundableSatang ? amountSatang : null;
+  // "Credit note to be issued" — the server's split for this amount, printed
+  // as received (no VAT arithmetic here). Nothing shows for a waived (§105
+  // receipt, voided invoice) or blocked document, or if the read fails.
+  const creditNotePreview = useCreditNotePreview(invoiceId, summaryAmountSatang);
   const expectedPhrase = `REFUND ${memberCompanyName}`;
   const phraseMatches = typedPhrase === expectedPhrase;
 
@@ -503,6 +517,27 @@ export function RefundForm({
           className="flex flex-col gap-[var(--aura-space-2)] rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface-hover)] p-[var(--aura-space-3)]"
         >
           <p className="text-xs font-semibold text-[var(--aura-fg-secondary)]">{tForm('summary.title')}</p>
+          {creditNotePreview.status === 'loading' && (
+            <div data-testid="refund-summary-credit-note-loading" aria-busy="true">
+              <span className="sr-only">{tForm('summary.creditNoteLoading')}</span>
+              <Skeleton variant="text" lines={2} />
+            </div>
+          )}
+          {creditNotePreview.status === 'ready' && creditNotePreview.split !== null && (
+            <div data-testid="refund-summary-credit-note" className="flex flex-col gap-[var(--aura-space-1)]">
+              <p className="text-xs text-[var(--aura-fg-secondary)]">{tForm('summary.creditNoteTitle')}</p>
+              <dl className="grid grid-cols-[1fr_auto] gap-x-[var(--aura-space-4)] gap-y-[var(--aura-space-1)] text-sm">
+                <dt>{tForm('summary.creditNoteNet')}</dt>
+                <dd className="text-end tabular-nums">
+                  {formatSatangThb(creditNotePreview.split.netSatang, locale, currencyCode)}
+                </dd>
+                <dt>{tForm('summary.creditNoteVat', { rate: formatVatRatePercent(creditNotePreview.split.vatRate, locale) })}</dt>
+                <dd className="text-end tabular-nums">
+                  {formatSatangThb(creditNotePreview.split.vatSatang, locale, currencyCode)}
+                </dd>
+              </dl>
+            </div>
+          )}
           <dl className="grid grid-cols-[1fr_auto] gap-x-[var(--aura-space-4)] gap-y-[var(--aura-space-1)] text-sm">
             <dt className="font-semibold">{tForm('summary.total')}</dt>
             <dd className="text-end font-semibold tabular-nums">

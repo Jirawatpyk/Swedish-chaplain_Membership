@@ -5076,8 +5076,8 @@
         "confirm": "ยืนยันการคืนเงิน",
         "confirmAmount": "คืนเงิน {amount}",
         "processing": "กำลังดำเนินการคืนเงิน…",
-        "refsInvoice": "เลขใบกำกับ",
-        "refsReceipt": "เลขใบเสร็จ",
+        "paymentReceipt": "ใบเสร็จ {number}",
+        "paymentPaid": "{amount}, {date}",
         "refsCombinedHint": "รวมเอกสาร"
       },
       "form": {
@@ -5095,7 +5095,11 @@
         "summary": {
           "title": "สรุปการคืนเงิน",
           "total": "ยอดคืนเงิน",
-          "after": "คืนได้อีกหลังจากนี้"
+          "after": "คืนได้อีกหลังจากนี้",
+          "creditNoteTitle": "ใบลดหนี้ที่จะออก",
+          "creditNoteNet": "ยอดก่อนภาษีมูลค่าเพิ่ม",
+          "creditNoteVat": "ภาษีมูลค่าเพิ่ม {rate}%",
+          "creditNoteLoading": "กำลังคำนวณใบลดหนี้…"
         },
         "typedPhrase": {
           "label": "พิมพ์ข้อความเพื่อยืนยันการคืนเงินเต็มจำนวน",

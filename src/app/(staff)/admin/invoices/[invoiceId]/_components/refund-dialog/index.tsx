@@ -5,8 +5,9 @@
  *
  * Composition: AURA `Dialog role="alertdialog"` (spec 122 US8b) — the
  * trigger renders a danger-secondary button (T112) inline; the panel
- * hosts the title + description, the invoice and receipt references and
- * `<RefundForm>`, whose Cancel takes the first focus.
+ * hosts the title + description, the payment being refunded on one line
+ * ("SC-… · Receipt RC-… · {amount}, {date}", boards Admin-refund-full /
+ * -partial) and `<RefundForm>`, whose Cancel takes the first focus.
  * Cancel button is the default-focused element (FR-029(d) —
  * destructive defaults to safe action). Confirm button shows a
  * spinner while the request is in flight (FR-029(e) — visual
@@ -19,8 +20,10 @@
  */
 import { useState, useCallback, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { Button, Dialog } from '@jirawatpyk/aura-react';
+import { formatSatangThb } from '@/lib/format-thb';
+import { formatLocalisedDate } from '@/lib/format-date-localised';
 import { RefundForm } from './refund-form';
 
 type Props = {
@@ -43,6 +46,9 @@ type Props = {
   readonly receiptDocumentNumberRaw?: string | null;
   /** Invoice document number — shown alongside receipt for context. */
   readonly invoiceDocumentNumber?: string | null;
+  /** The succeeded payment being refunded: what was paid, and when (ISO). */
+  readonly paidAmountSatang: bigint | null;
+  readonly paidAt: string | null;
   /**
    * Gap E (2026-07-12) — a NON-terminal (pending/async) refund already
    * exists for this payment. `computeRemainingRefundable` intentionally
@@ -64,10 +70,13 @@ export function RefundDialog({
   invoiceHeadroomSatang,
   receiptDocumentNumberRaw,
   invoiceDocumentNumber,
+  paidAmountSatang,
+  paidAt,
   pendingRefundExists = false,
 }: Props) {
   const t = useTranslations('admin.refund');
   const tDialog = useTranslations('admin.refund.dialog');
+  const locale = useLocale();
   const router = useRouter();
   const searchParams = useSearchParams();
   // Auto-open when ?refund=1 query param is present (T118 cmdk
@@ -161,29 +170,40 @@ export function RefundDialog({
       description={tDialog('description')}
     >
       <div className="flex flex-col gap-[var(--aura-space-4)]">
-        {/* §87 cross-reference — the invoice and receipt numbers the refund
-            applies to. Combined-mode rows have a NULL receiptDocumentNumberRaw
-            → fall back to invoiceDocumentNumber with a "(combined)" hint. */}
-        {(invoiceDocumentNumber || receiptDocumentNumberRaw) && (
-          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs text-[var(--aura-fg-secondary)]">
-            {invoiceDocumentNumber && (
-              <>
-                <dt>{tDialog('refsInvoice')}</dt>
-                <dd className="font-mono tabular-nums">{invoiceDocumentNumber}</dd>
-              </>
-            )}
-            <dt>{tDialog('refsReceipt')}</dt>
-            <dd className="font-mono tabular-nums">
-              {receiptDocumentNumberRaw ?? (
-                <span>
-                  {invoiceDocumentNumber} <span className="text-xs">({tDialog('refsCombinedHint')})</span>
-                </span>
-              )}
-            </dd>
-          </dl>
-        )}
+        {/* §87 cross-reference — the payment this refund returns, on one
+            line: invoice · receipt · amount paid, date paid. Combined-mode
+            rows have a NULL receiptDocumentNumberRaw → the invoice number is
+            the receipt, marked "(combined)". */}
+        <p data-testid="refund-dialog-payment" className="text-xs text-[var(--aura-fg-secondary)]">
+          {[
+            invoiceDocumentNumber ? (
+              <span key="invoice" className="font-mono tabular-nums">
+                {invoiceDocumentNumber}
+              </span>
+            ) : null,
+            receiptDocumentNumberRaw || invoiceDocumentNumber ? (
+              <span key="receipt" className="font-mono tabular-nums">
+                {tDialog('paymentReceipt', { number: receiptDocumentNumberRaw ?? invoiceDocumentNumber ?? '' })}
+                {receiptDocumentNumberRaw ? null : ` (${tDialog('refsCombinedHint')})`}
+              </span>
+            ) : null,
+            paidAmountSatang !== null ? (
+              <span key="paid" className="tabular-nums">
+                {paidAt
+                  ? tDialog('paymentPaid', {
+                      amount: formatSatangThb(paidAmountSatang, locale, currencyCode),
+                      date: formatLocalisedDate(paidAt, locale),
+                    })
+                  : formatSatangThb(paidAmountSatang, locale, currencyCode)}
+              </span>
+            ) : null,
+          ]
+            .filter((part) => part !== null)
+            .flatMap((part, i) => (i === 0 ? [part] : [' · ', part]))}
+        </p>
         <RefundForm
           paymentId={paymentId}
+          invoiceId={invoiceId}
           memberCompanyName={memberCompanyName}
           remainingRefundableSatang={remainingRefundableSatang}
           currencyCode={currencyCode}

@@ -46,7 +46,7 @@ describe('RefundDialog — payment line', () => {
   it('one line: invoice · receipt · paid amount, paid date', () => {
     renderDialog({ receipt: 'RC-2026-000088' });
     expect(screen.getByTestId('refund-dialog-payment')).toHaveTextContent(
-      /^SC-2026-000088 · Receipt RC-2026-000088 · 38,520\.00 THB, Feb 1, 2026$/,
+      /^SC-2026-000088 · Receipt RC-2026-000088 · 38,520\.00 THB, 1 Feb 2026$/,
     );
     // The two-line Invoice no. / Receipt no. list is gone.
     expect(screen.queryByText('Invoice no.')).toBeNull();
@@ -56,7 +56,7 @@ describe('RefundDialog — payment line', () => {
   it('a combined document names the invoice number as the receipt, marked combined', () => {
     renderDialog({ receipt: null });
     expect(screen.getByTestId('refund-dialog-payment')).toHaveTextContent(
-      /^SC-2026-000088 · Receipt SC-2026-000088 \(combined\) · 38,520\.00 THB, Feb 1, 2026$/,
+      /^SC-2026-000088 · Receipt SC-2026-000088 \(combined\) · 38,520\.00 THB, 1 Feb 2026$/,
     );
   });
 
