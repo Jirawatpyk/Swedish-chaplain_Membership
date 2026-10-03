@@ -48,6 +48,7 @@ import {
   type IssuanceMode,
 } from '@/app/(staff)/admin/invoices/new/_components/event-fee-form';
 import enMessages from '@/i18n/messages/en.json';
+import svMessages from '@/i18n/messages/sv.json';
 
 const events: readonly EventOption[] = [
   { eventId: 'ev-1', label: 'Annual Gala (2026-06-01)' },
@@ -118,10 +119,12 @@ function renderForm(
     initialRegistrationId?: string;
     taxAtPayment?: boolean;
     vatRateBps?: number | null;
+    locale?: 'en' | 'sv';
   } = {},
 ) {
+  const locale = opts.locale ?? 'en';
   return render(
-    <NextIntlClientProvider locale="en" messages={enMessages}>
+    <NextIntlClientProvider locale={locale} messages={locale === 'sv' ? svMessages : enMessages}>
       <EventFeeForm
         events={events}
         taxAtPayment={opts.taxAtPayment ?? false}
@@ -352,6 +355,25 @@ describe('<EventFeeForm>', () => {
     expect(preview).toHaveTextContent('1,000.00');
     expect(preview).not.toHaveTextContent('934.58');
     expect(preview).not.toHaveTextContent(/VAT \d/);
+    // ...and says why, with the way to fix it.
+    const note = screen.getByRole('note');
+    expect(note).toHaveTextContent(
+      enMessages.admin.invoices.eventFeeForm.vatPreview.settingsMissing,
+    );
+    expect(
+      screen.getByRole('link', {
+        name: enMessages.admin.invoices.eventFeeForm.vatPreview.configureSettings,
+      }),
+    ).toHaveAttribute('href', '/admin/settings/invoicing');
+  });
+
+  // The rate is a number in running text: formatted for the locale (sv uses a
+  // decimal comma and a non-breaking space before %), never a hardcoded dot.
+  it('formats the rate for the locale: 7.5% reads "Moms 7,5 %" in Swedish', async () => {
+    vi.stubGlobal('fetch', mockFetchRegistrations([matchedRegistration]));
+    renderForm({ initialEventId: 'ev-1', vatRateBps: 750, locale: 'sv' });
+    fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+    expect(screen.getByTestId('vat-preview')).toHaveTextContent('Moms 7,5\u00a0%');
   });
 
   it('matched member → doc-type badge shows "set at issue" (TIN unknown client-side)', async () => {
