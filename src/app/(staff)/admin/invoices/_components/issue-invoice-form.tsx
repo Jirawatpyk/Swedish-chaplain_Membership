@@ -619,15 +619,20 @@ export function IssueInvoiceForm({
           variant="primary"
           touchHeight
           loading={pending}
-          // Board Admin-invoice-issue: the confirm names the document and its
-          // total, with the money-step check icon (§ Button icons).
+          // Board Admin-invoice-issue: the confirm names the document and, for
+          // a membership bill, its total, with the money-step check icon
+          // (§ Button icons). An event fee may be zero-rated or VAT-inclusive,
+          // while the summary's total assumes 7% on top, so it names no amount
+          // (financial review, 3 Oct).
           icon="check"
           disabled={!matches || pending}
           onClick={confirm}
         >
           {pending
             ? t('issuing')
-            : t(taxAtPayment ? 'issueBillButton' : 'issueInvoiceButton', { total: summary.totalText })}
+            : isMembership
+              ? t(taxAtPayment ? 'issueBillButton' : 'issueInvoiceButton', { total: summary.totalText })
+              : t(taxAtPayment ? 'issueBillButtonPlain' : 'issueInvoiceButtonPlain')}
         </Button>
       </div>
       </div>

@@ -227,7 +227,7 @@ test.describe('088 zero-rate issue form a11y @a11y @f088', () => {
     // overflow-y-auto, so content must remain reachable, not clipped.
     await page.addStyleTag({ content: 'html { font-size: 200% !important; }' });
     await expect(page.getByLabel(/MFA certificate number/i)).toBeVisible();
-    await expect(page.getByRole('button', { name: /^Issue (bill|invoice) · [\d,]+\.\d{2} THB$/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Issue (bill|invoice)( · [\d,]+\.\d{2} THB)?$/ })).toBeVisible();
     const overflow = await page.evaluate(
       () =>
         document.documentElement.scrollWidth -

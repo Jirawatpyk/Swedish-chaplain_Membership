@@ -3081,7 +3081,7 @@
         },
         "refundSettlingNote": {
           "title": "Refund of {amount} THB is settling",
-          "body": "No action is needed — it completes automatically when the payment processor confirms. Refunds and credit notes on this invoice are locked until then."
+          "body": "No action is needed — it completes automatically when the payment processor confirms. A credit note can't be issued on this invoice until then."
         },
         "status": "Status",
         "actions": {
@@ -3288,6 +3288,8 @@
         "confirmCopy": "Type \"{phrase}\" to confirm",
         "issueBillButton": "Issue bill · {total} THB",
         "issueInvoiceButton": "Issue invoice · {total} THB",
+        "issueBillButtonPlain": "Issue bill",
+        "issueInvoiceButtonPlain": "Issue invoice",
         "issuing": "Issuing…",
         "success": "Invoice issued",
         "successWithNumber": "Invoice {number} issued",
@@ -5072,7 +5074,7 @@
         "description": "Refund all or part of this payment. The matching credit note will be issued and emailed to the member.",
         "cancel": "Cancel",
         "confirm": "Issue refund",
-      "confirmAmount": "Refund {amount}",
+        "confirmAmount": "Refund {amount}",
         "processing": "Processing refund…",
         "refsInvoice": "Invoice no.",
         "refsReceipt": "Receipt no.",

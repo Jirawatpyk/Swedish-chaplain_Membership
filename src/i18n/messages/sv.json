@@ -3081,7 +3081,7 @@
         },
         "refundSettlingNote": {
           "title": "Återbetalning på {amount} THB behandlas",
-          "body": "Ingen åtgärd behövs — den slutförs automatiskt när betalningsleverantören bekräftar. Återbetalningar och kreditnotor för fakturan är låsta tills dess."
+          "body": "Ingen åtgärd behövs — den slutförs automatiskt när betalningsleverantören bekräftar. Ingen kreditnota kan utfärdas för fakturan förrän dess."
         },
         "status": "Status",
         "actions": {
@@ -3288,6 +3288,8 @@
         "confirmCopy": "Skriv \"{phrase}\" för att bekräfta",
         "issueBillButton": "Utfärda faktura · {total} THB",
         "issueInvoiceButton": "Utfärda skattefaktura · {total} THB",
+        "issueBillButtonPlain": "Utfärda faktura",
+        "issueInvoiceButtonPlain": "Utfärda skattefaktura",
         "issuing": "Utfärdar…",
         "success": "Fakturan utfärdad",
         "successWithNumber": "Faktura {number} utfärdad",
@@ -5072,7 +5074,7 @@
         "description": "Återbetala hela eller delar av denna betalning. Motsvarande kreditnota utfärdas och skickas till medlemmen via e-post.",
         "cancel": "Avbryt",
         "confirm": "Utfärda återbetalning",
-      "confirmAmount": "Återbetala {amount}",
+        "confirmAmount": "Återbetala {amount}",
         "processing": "Bearbetar återbetalning…",
         "refsInvoice": "Faktura-nr",
         "refsReceipt": "Kvitto-nr",
