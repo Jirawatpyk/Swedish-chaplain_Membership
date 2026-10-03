@@ -624,6 +624,8 @@ describe('issueCreditNote — event-fee (non-member + matched-member) Task 8', (
       11_682n,
       818n,
     ]);
+    // No earlier note: nothing previously reduced.
+    expect(v.previouslyReduced.satang).toBe(0n);
   });
 
   it('§86/10: the completing note after earlier notes states correct value 0', async () => {
@@ -647,7 +649,10 @@ describe('issueCreditNote — event-fee (non-member + matched-member) Task 8', (
       .map(([input]) => input)
       .find((input) => input.kind === 'credit_note');
     const v = cnRender.creditNote.values;
-    // 23,364 − 14,017 − 9,347 = 0; difference 9,347, VAT 653.
+    // 23,364 − 14,017 − 9,347 = 0; difference 9,347, VAT 653. The document
+    // reconciles: original − previously reduced − correct = difference.
+    expect(v.previouslyReduced.satang).toBe(14_017n);
+    expect(v.originalValue.satang - v.previouslyReduced.satang - v.correctValue.satang).toBe(v.difference.satang);
     expect([v.originalValue.satang, v.correctValue.satang, v.difference.satang, v.differenceVat.satang]).toEqual([
       23_364n,
       0n,

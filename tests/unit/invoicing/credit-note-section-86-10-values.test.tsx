@@ -27,12 +27,17 @@ import { asInvoiceLineId } from '@/modules/invoicing/domain/invoice-line';
 
 const VALUES = {
   originalValue: Money.fromSatangUnsafe(2_336_400n),
+  previouslyReduced: Money.fromSatangUnsafe(0n),
   correctValue: Money.fromSatangUnsafe(1_168_200n),
   difference: Money.fromSatangUnsafe(1_168_200n),
   differenceVat: Money.fromSatangUnsafe(81_800n),
 };
 
-function makeInput(templateVersion: number, withValues: boolean): PdfRenderInput {
+function makeInput(
+  templateVersion: number,
+  withValues: boolean,
+  values: typeof VALUES = VALUES,
+): PdfRenderInput {
   const docR = DocumentNumber.of('CN', 2026, 1);
   if (!docR.ok) throw new Error('fixture: DocumentNumber.of failed');
   return {
@@ -80,7 +85,7 @@ function makeInput(templateVersion: number, withValues: boolean): PdfRenderInput
       originalDocumentNumber: 'RC-2026-000088',
       originalIssueDate: '2026-09-20',
       reason: 'Partial refund',
-      ...(withValues ? { values: VALUES } : {}),
+      ...(withValues ? { values } : {}),
     },
   } as PdfRenderInput;
 }
@@ -118,6 +123,24 @@ describe('credit note — §86/10 value lines (template v13)', () => {
     // The existing reference lines stay.
     expect(text).toContain('RC-2026-000088');
     expect(text).toContain('Partial refund');
+  });
+
+  it('a first note prints no "previously reduced" line', () => {
+    const text = firstPageText(InvoiceTemplate(makeInput(13, true)));
+    expect(text).not.toContain('Previously reduced');
+  });
+
+  it('a later note states what earlier notes reduced, so original − previously reduced − correct = difference', () => {
+    const later = {
+      originalValue: Money.fromSatangUnsafe(100_000n),
+      previouslyReduced: Money.fromSatangUnsafe(25_000n),
+      correctValue: Money.fromSatangUnsafe(50_000n),
+      difference: Money.fromSatangUnsafe(25_000n),
+      differenceVat: Money.fromSatangUnsafe(1_750n),
+    };
+    const text = firstPageText(InvoiceTemplate(makeInput(13, true, later)));
+    expect(text).toContain(`${shapeThai('ลดหนี้ครั้งก่อน')} / Previously reduced: ${fmt(later.previouslyReduced)}`);
+    expect(text).toContain(`Correct value: ${fmt(later.correctValue)}`);
   });
 
   it('a pinned pre-v13 render prints none of them (SC-003)', () => {
