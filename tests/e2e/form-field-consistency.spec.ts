@@ -42,9 +42,14 @@ test.describe('F4 SC-012 — form field consistency @layout', () => {
 
     for (let i = 0; i < count; i++) {
       const el = inputs.nth(i);
+      // Spec 122 US8c-2: an AURA field's height is its bordered box
+      // (`.aura-input`), which the input fills less the 1px border; the
+      // inline padding stays on the input. Measure the box, as the legacy
+      // bordered <input> was measured.
       const { height, paddingInlineStart } = await el.evaluate((node) => {
         const cs = getComputedStyle(node);
-        return { height: node.getBoundingClientRect().height, paddingInlineStart: cs.paddingInlineStart };
+        const box = node.closest('.aura-input') ?? node;
+        return { height: box.getBoundingClientRect().height, paddingInlineStart: cs.paddingInlineStart };
       });
       // Base UI renders a 1px form-association input under composite widgets
       // (Select/Switch). Playwright's `:visible` counts it (not display:none),

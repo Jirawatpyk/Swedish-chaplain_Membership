@@ -110,12 +110,13 @@ test.describe('invoice settings: section-nav focus + sticky-save prefix guard @f
     // interactions below change the DOM.
     await runAxeScan(page, testInfo);
 
-    // (a) nav → focus section heading (section-nav.tsx `goToSection`).
-    // Both the h2 (role=heading) and this nav rail button (role=button)
+    // (a) nav → focus the section card (section-nav.tsx `goToSection`; spec
+    // 122 US8c-2: the AURA card is a `<section tabIndex={-1}>` labelled by its
+    // h2). Both the h2 (role=heading) and this nav rail button (role=button)
     // read "Document numbering" (`sections.numbering` in en.json) — the
     // explicit role scopes the match to the button.
     await page.getByRole('button', { name: /^document numbering$/i }).click();
-    await expect(page.locator('#numbering [data-section-heading]')).toBeFocused();
+    await expect(page.locator('section#numbering')).toBeFocused();
 
     // (b) change the invoice prefix, Save FROM the sticky bar. Read the
     // current value first so the new value is guaranteed to differ from

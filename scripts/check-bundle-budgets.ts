@@ -160,6 +160,10 @@
  *     /admin/credit-notes/[creditNoteId]                808.5 KB measured → ≤  910 KB
  *     /admin/invoices/registers                         826.7 KB measured → ≤  930 KB
  *
+ *   Spec 122 US8c-2 (AURA invoice settings, 2026-10-03, AURA 5.31.0) —
+ *   budgeted for the first time on the branch build:
+ *     /admin/settings/invoicing                         820.3 KB measured → ≤  930 KB
+ *
  * Run as a post-build step:
  *
  *   pnpm build
@@ -248,6 +252,8 @@ const BUDGETS: ReadonlyArray<RouteBudget> = [
   { route: '/admin/credit-notes', maxKb: 940 },
   { route: '/admin/credit-notes/[creditNoteId]', maxKb: 910 },
   { route: '/admin/invoices/registers', maxKb: 930 },
+  // --- Spec 122 US8c-2 invoice settings (AURA) — see docblock ---
+  { route: '/admin/settings/invoicing', maxKb: 930 },
 ];
 
 const NEXT_DIR = join(process.cwd(), '.next');
