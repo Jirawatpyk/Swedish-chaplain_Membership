@@ -1806,13 +1806,35 @@ describe('issueInvoice — expectedTotalSatang guard', () => {
   });
 
   it('rejects a malformed expectedTotalSatang at parse', () => {
-    for (const bad of ['-1', '1.5', 'abc', '', '1'.repeat(20)]) {
+    // One canonical form: no sign, no decimals, no leading zeros.
+    for (const bad of ['-1', '1.5', 'abc', '', '1'.repeat(20), '0107000', '00']) {
       expect(
         issueInvoiceSchema.safeParse({ ...input, expectedTotalSatang: bad }).success,
       ).toBe(false);
     }
-    expect(
-      issueInvoiceSchema.safeParse({ ...input, expectedTotalSatang: '107000' }).success,
-    ).toBe(true);
+    for (const good of ['107000', '0']) {
+      expect(
+        issueInvoiceSchema.safeParse({ ...input, expectedTotalSatang: good }).success,
+      ).toBe(true);
+    }
+  });
+
+  // Nothing was issued, so no audit row — but a refusal that fires often is a
+  // live page-vs-issue drift (e.g. a VAT rate changed mid-session), so it is
+  // logged with both figures.
+  it('logs a refusal with the confirmed and the priced total', async () => {
+    const info = vi.spyOn(logger, 'info');
+    const deps = makeDeps(makeDraftInvoice(), makeSettings(), makeMember());
+    await issueInvoice(deps, { ...input, expectedTotalSatang: '100000' });
+    expect(info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: 'test-swecham',
+        invoiceId: INVOICE_ID,
+        expectedTotalSatang: '100000',
+        pricedTotalSatang: '107000',
+      }),
+      expect.stringContaining('issue_total_changed'),
+    );
+    info.mockRestore();
   });
 });
