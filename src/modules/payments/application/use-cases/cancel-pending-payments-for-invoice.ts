@@ -58,7 +58,10 @@ import type {
 } from '../ports';
 import { retentionFor } from '../ports/audit-port';
 
-export type CancelPendingPaymentsCause = 'invoice_voided' | 'invoice_not_payable_sweep';
+export type CancelPendingPaymentsCause =
+  | 'invoice_voided'
+  | 'invoice_paid_manually'
+  | 'invoice_not_payable_sweep';
 
 export interface CancelPendingPaymentsForInvoiceInput {
   readonly tenantId: string;

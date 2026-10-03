@@ -39,6 +39,7 @@ import type { EmailDispatchOutcome } from '../email-dispatch-outcome';
 import type { MemberIdentityPort } from '../ports/member-identity-port';
 import type { ReceiptPdfRenderEnqueuePort } from '../ports/receipt-pdf-render-enqueue-port';
 import type { MembershipAccessPort } from '../ports/membership-access-port';
+import type { PendingPaymentCancellerPort } from '../ports/pending-payment-canceller-port';
 import { asTenantContext } from '@/modules/tenants';
 import {
   asInvoiceId,
@@ -61,6 +62,7 @@ import {
 } from '@/modules/invoicing/domain/document-kind';
 import type { TaxAtPaymentFlag } from '@/modules/invoicing/domain/tax-at-payment-flag';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { invoicingMetrics } from '@/lib/metrics';
 import { bangkokLocalDate, isValidCalendarDate } from '@/lib/fiscal-year';
 import { sha256Hex } from '@/lib/crypto';
@@ -310,6 +312,15 @@ export interface RecordPaymentDeps {
   readonly onPaidCallbacks?: ReadonlyArray<
     (evt: F4InvoicePaidEvent, tx?: unknown) => Promise<void>
   >;
+  /**
+   * #452 financial-integrity review (M1) — cancels the invoice's still-live
+   * PaymentIntents AFTER an admin-manual payment commits, so a card
+   * `clientSecret` the member's PaySheet cached cannot capture a second
+   * payment. Best-effort (see the port). Wired by `makeRecordPaymentDeps`
+   * ONLY when this use-case owns its transaction (no `externalTx`);
+   * `undefined` → no cancellation (webhook / F8 offline rails, tests).
+   */
+  readonly pendingPaymentCanceller?: PendingPaymentCancellerPort;
 }
 
 /**
@@ -415,8 +426,9 @@ export async function recordPayment(
     }
   }
 
+  let result: Result<RecordPaymentSuccess, RecordPaymentError>;
   try {
-  return await deps.invoiceRepo.withTx(async (tx) => {
+  result = await deps.invoiceRepo.withTx(async (tx) => {
     // Row-lock first — guards against concurrent pay/void/credit-note
     // transactions on the same invoice. Branch on the locked status
     // directly so the idempotent-replay and invalid-status paths don't
@@ -1406,4 +1418,39 @@ export async function recordPayment(
     }
     throw e;
   }
+
+  // #452 financial-integrity review (M1) — the invoice is now committed as
+  // `paid`; cancel any PaymentIntent still live at Stripe for it so a card
+  // `clientSecret` the member's PaySheet cached cannot capture a second
+  // payment (Stripe card PaymentIntents never expire on their own). AFTER the
+  // commit, never inside it: the canceller locks payment rows, and
+  // confirm-payment locks payment → invoice. Admin-manual only — the webhook
+  // rail is itself the payment that just settled, and the F8 offline rail
+  // pays an invoice it issued moments earlier inside its own outer tx (the
+  // composition root does not wire the canceller for either). Also runs on
+  // an idempotent replay (already `paid`): the cancel is idempotent, so a
+  // retry of the pay action doubles as a retry of the cancel. BEST-EFFORT:
+  // the payment stands regardless; the hourly unpayable sweep retries.
+  if (
+    result.ok &&
+    deps.pendingPaymentCanceller &&
+    (input.triggeredBy ?? 'admin_manual') === 'admin_manual'
+  ) {
+    try {
+      await deps.pendingPaymentCanceller.cancelPendingPayments({
+        tenantId: input.tenantId,
+        invoiceId: input.invoiceId,
+        actorUserId: input.actorUserId,
+        requestId: input.requestId ?? null,
+        cause: 'invoice_paid_manually',
+      });
+    } catch (e) {
+      invoicingMetrics.recordPaymentPendingPaymentCancelFailed(input.tenantId);
+      logger.error(
+        { err: errKind(e), invoiceId: input.invoiceId, tenantId: input.tenantId },
+        'recordPayment: post-commit pending-payment cancellation failed (payment stands; hourly sweep retries, webhook auto-refund remains the net)',
+      );
+    }
+  }
+  return result;
 }

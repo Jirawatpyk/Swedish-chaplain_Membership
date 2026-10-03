@@ -94,11 +94,17 @@ measured from the later of the attempt's `initiated_at` and the invoice's
 freshly voided invoice is still retried, and a void less than 15 minutes old
 is left to its own post-commit cancel.
 
-For an invoice marked **paid through another channel** (manual
-record-payment), nothing cancels the pending attempt at the moment of payment.
-This sweep is then the **primary** cancel, not a retry: it runs 15–75 minutes
-after the payment is recorded. A capture inside that gap is auto-refunded by
-the webhook's stale-invoice guard. Each invoice goes through `cancelPendingPaymentsForInvoice`
+For an invoice marked **paid through another channel** by an admin
+(`POST /api/invoices/[id]/pay`), `recordPayment` cancels the invoice's pending
+attempts right after the payment commits (audit cause `invoice_paid_manually`,
+the paying admin as actor). If that cancel throws, the payment stands,
+`invoicing_record_payment_pending_payment_cancel_failed_total` bumps, and this
+sweep retries 15–75 minutes later. The sweep is still the **primary** cancel
+for a second pending attempt on an invoice the webhook just marked paid. A
+capture inside either gap is auto-refunded by the webhook's stale-invoice
+guard.
+
+Each invoice the sweep picks up goes through `cancelPendingPaymentsForInvoice`
 (initiate's advisory lock → row lock → Stripe cancel → status-checked flip),
 audited as `payment_canceled` / `payment_cancel_attempt_failed` with
 `actor_type = 'system'` and `cause = 'invoice_not_payable_sweep'`.

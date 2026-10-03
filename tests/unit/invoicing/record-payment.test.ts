@@ -1738,3 +1738,121 @@ describe('recordPayment — the receipt reaches the LIVE primary contact (108 FR
     ).toBe(false);
   });
 });
+
+// #452 financial-integrity review (M1) — an admin recording a manual payment
+// (bank transfer / cash) must cancel the invoice's still-live PaymentIntents,
+// or a card clientSecret the member's PaySheet cached can capture a SECOND
+// payment (auto-refunded days later by the webhook's stale-invoice guard —
+// money held, Stripe fees lost). The canceller runs AFTER the tx commits
+// (payment rows are never locked under the invoice lock) and is best-effort.
+describe('recordPayment — cancels pending PaymentIntents after an admin-manual payment commits (#452 review M1)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  function withCanceller(
+    invoice: Invoice,
+    impl?: () => Promise<void>,
+    overrides: Partial<RecordPaymentDeps> = {},
+  ) {
+    const cancel = vi.fn(impl ?? (async () => undefined));
+    const deps = makeDeps(true, invoice, makeSettings(), {
+      pendingPaymentCanceller: { cancelPendingPayments: cancel },
+      ...overrides,
+    });
+    return { deps, cancel };
+  }
+
+  it.each([
+    ['admin_manual', { triggeredBy: 'admin_manual' as const }],
+    ['triggeredBy omitted (defaults to admin_manual)', {}],
+  ])('%s → canceller called once with tenant, invoice, actor, requestId and cause invoice_paid_manually', async (_l, extra) => {
+    const { deps, cancel } = withCanceller(makeIssuedInvoice());
+    const r = await recordPayment(deps, { ...input, ...extra });
+    expect(r.ok).toBe(true);
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(cancel).toHaveBeenCalledWith({
+      tenantId: 'test-swecham',
+      invoiceId: INVOICE_ID,
+      actorUserId: 'actor-user',
+      requestId: 'req-pay',
+      cause: 'invoice_paid_manually',
+    });
+  });
+
+  it('runs only after the transaction has returned (post-commit), never inside it', async () => {
+    const order: string[] = [];
+    const { deps } = withCanceller(makeIssuedInvoice(), async () => {
+      order.push('cancel');
+    });
+    const inner = deps.invoiceRepo.withTx as ReturnType<typeof vi.fn>;
+    const original = inner.getMockImplementation()!;
+    inner.mockImplementationOnce(async (fn: unknown) => {
+      const out = await original(fn);
+      order.push('tx-returned');
+      return out;
+    });
+    const r = await recordPayment(deps, input);
+    expect(r.ok).toBe(true);
+    expect(order).toEqual(['tx-returned', 'cancel']);
+  });
+
+  it('requestId omitted → null on the cancel call', async () => {
+    const { deps, cancel } = withCanceller(makeIssuedInvoice());
+    const { requestId: _drop, ...noReq } = input;
+    await recordPayment(deps, noReq);
+    expect(cancel).toHaveBeenCalledWith(expect.objectContaining({ requestId: null }));
+  });
+
+  it('idempotent replay (already paid) → canceller still called (idempotent; a retried pay retries the cancel)', async () => {
+    const { deps, cancel } = withCanceller(makeIssuedInvoice({ status: 'paid' }));
+    const r = await recordPayment(deps, input);
+    expect(r.ok).toBe(true);
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['webhook', 'admin_offline_mark'] as const)(
+    'triggeredBy=%s → canceller NOT called (caller-owned tx rails)',
+    async (triggeredBy) => {
+      const { deps, cancel } = withCanceller(makeIssuedInvoice());
+      const r = await recordPayment(deps, { ...input, triggeredBy });
+      expect(r.ok).toBe(true);
+      expect(cancel).not.toHaveBeenCalled();
+    },
+  );
+
+  it('refused payment (invalid_status — void) → canceller NOT called', async () => {
+    const { deps, cancel } = withCanceller(makeIssuedInvoice({ status: 'void' }));
+    const r = await recordPayment(deps, input);
+    expect(r.ok).toBe(false);
+    expect(cancel).not.toHaveBeenCalled();
+  });
+
+  it('rolled-back payment (pdf_render_failed, tx aborted) → canceller NOT called', async () => {
+    const { deps, cancel } = withCanceller(makeIssuedInvoice(), undefined, {
+      pdfRender: {
+        render: vi.fn(async () => {
+          throw new Error('font load failed');
+        }),
+      },
+    });
+    const r = await recordPayment(deps, input);
+    expect(r.ok).toBe(false);
+    expect(cancel).not.toHaveBeenCalled();
+  });
+
+  it('a canceller that THROWS never fails the payment; the failure metric fires', async () => {
+    const metric = vi.spyOn(invoicingMetrics, 'recordPaymentPendingPaymentCancelFailed');
+    const { deps } = withCanceller(makeIssuedInvoice(), async () => {
+      throw new Error('neon: connection reset');
+    });
+    const r = await recordPayment(deps, input);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.status).toBe('paid');
+    expect(metric).toHaveBeenCalledWith('test-swecham');
+  });
+
+  it('no canceller wired (webhook / F8 composition) → payment proceeds untouched', async () => {
+    const deps = makeDeps(true, makeIssuedInvoice(), makeSettings());
+    const r = await recordPayment(deps, input);
+    expect(r.ok).toBe(true);
+  });
+});
