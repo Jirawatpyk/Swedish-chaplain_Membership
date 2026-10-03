@@ -176,6 +176,8 @@ test.describe('064 event-fee as-paid form modes @f4', () => {
     await page.waitForURL(/\/admin\/invoices\/[0-9a-f-]{36}$/, { timeout: 30_000 });
     const heading = page.locator('h1');
     await expect(heading).toContainText(/[A-Z]+-\d{4}-\d{6}/);
+    // The heading names the combined document, not an invoice (maintainer, 3 Oct).
+    await expect(heading).toContainText('Tax invoice/receipt');
     await expect(heading.locator('..').locator('.aura-pill')).toHaveText('Paid');
 
     // T15 QA carry-forward — the detail "⋯" menu offers the main download

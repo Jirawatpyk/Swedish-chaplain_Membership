@@ -3066,6 +3066,8 @@
       "detail": {
         "draftTitle": "ใบแจ้งหนี้ (ฉบับร่าง)",
         "title": "ใบแจ้งหนี้ {number}",
+        "titleTaxInvoiceReceipt": "ใบกำกับภาษี/ใบเสร็จรับเงิน {number}",
+        "titleReceipt": "ใบเสร็จรับเงิน {number}",
         "detailsTitle": "รายละเอียด",
         "totalsLabel": "สรุปยอด",
         "phoneBar": {

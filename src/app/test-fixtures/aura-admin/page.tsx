@@ -122,7 +122,8 @@ export const dynamic = 'force-dynamic';
  *   ?view=invoices|invoices-empty|invoices-filtered|invoices-setup|record-payment (US8a)
  *   ?view=invoice-new|invoice-new-event
  *   ?view=invoice&state=draft|issued|overdue|paid|credited|manager|email-failed|
- *         auto-refund-failed|refund-settling|refund-partial|voided         (US8b)
+ *         auto-refund-failed|refund-settling|refund-partial|voided|
+ *         as-paid-tin|as-paid-receipt                                       (US8b)
  *   ?view=invoice&state=draft&dialog=issue|delete · state=paid|refund-partial&dialog=refund
  *   ?view=invoice-void · ?view=credit-note-new&state=manual|online
  *   ?view=loading&state=members|plans|invoices|invoice|invoice-void|credit-note-new|…

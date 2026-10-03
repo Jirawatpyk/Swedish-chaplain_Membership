@@ -3066,6 +3066,8 @@
       "detail": {
         "draftTitle": "Draft invoice",
         "title": "Invoice {number}",
+        "titleTaxInvoiceReceipt": "Tax invoice/receipt {number}",
+        "titleReceipt": "Receipt {number}",
         "detailsTitle": "Details",
         "totalsLabel": "Totals",
         "phoneBar": {

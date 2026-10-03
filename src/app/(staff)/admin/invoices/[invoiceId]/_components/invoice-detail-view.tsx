@@ -61,6 +61,22 @@ function formatSatang(satang: bigint | null): string {
   return `${sign}${whole.toLocaleString('en-US')}.${rem.toString().padStart(2, '0')}`;
 }
 
+/**
+ * The heading's noun names the document by its type (maintainer, 3 Oct): an
+ * 088 bill is always "Invoice {SC}", paid or not (its header is the bill); the
+ * event-fee already-paid flow issues no bill, only a combined tax
+ * invoice/receipt for a TIN buyer or a §105 receipt for a buyer without one.
+ */
+function headingKey(
+  pdfDocKind: Invoice['pdfDocKind'],
+  taxDocKind: InvoiceDetailViewProps['taxDocKind'],
+): 'title' | 'titleTaxInvoiceReceipt' | 'titleReceipt' {
+  if (taxDocKind !== 'none') return 'title';
+  if (pdfDocKind === 'receipt_combined') return 'titleTaxInvoiceReceipt';
+  if (pdfDocKind === 'receipt_separate') return 'titleReceipt';
+  return 'title';
+}
+
 /** A labelled value in a card's field grid. */
 function Field({ label, children, wide = false }: { readonly label: ReactNode; readonly children: ReactNode; readonly wide?: boolean }) {
   return (
@@ -199,7 +215,7 @@ export async function renderInvoiceDetailView({
         // bill number for a real 088 bill (paid or unpaid, never "Draft
         // invoice"); a paid bill's RC §86/4 tax receipt is surfaced in the
         // "Receipt No." field below.
-        title={number !== null ? t('title', { number }) : t('draftTitle')}
+        title={number !== null ? t(headingKey(invoice.pdfDocKind, taxDocKind), { number }) : t('draftTitle')}
         badge={<StatusPill tone={invoiceStatusTone(displayStatus)}>{tStatus(displayStatus)}</StatusPill>}
         actions={
           showActionBar ? (

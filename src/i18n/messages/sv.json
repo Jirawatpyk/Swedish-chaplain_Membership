@@ -3066,6 +3066,8 @@
       "detail": {
         "draftTitle": "Utkast",
         "title": "Faktura {number}",
+        "titleTaxInvoiceReceipt": "Skattefaktura/kvitto {number}",
+        "titleReceipt": "Kvitto {number}",
         "detailsTitle": "Detaljer",
         "totalsLabel": "Belopp",
         "phoneBar": {

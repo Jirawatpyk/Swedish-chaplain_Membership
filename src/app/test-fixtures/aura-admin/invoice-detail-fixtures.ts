@@ -20,7 +20,9 @@ export type DetailFixtureKind =
   | 'auto-refund-failed'
   | 'refund-settling'
   | 'refund-partial'
-  | 'voided';
+  | 'voided'
+  | 'as-paid-tin'
+  | 'as-paid-receipt';
 
 const money = (satang: bigint) => ({ satang });
 const SUBTOTAL = 3_600_000n;
@@ -204,6 +206,28 @@ export function detailFixture(kind: DetailFixtureKind): Omit<InvoiceDetailViewPr
         voidedByEmail: 'malin.berg@example.com',
         replacedBy: REPLACEMENT,
       };
+    // The event-fee already-paid flow: no bill, one document (heading by type).
+    case 'as-paid-tin':
+      return paidProps({
+        invoice: invoice({ ...PAID, invoiceSubject: 'event', billDocumentNumberRaw: null, documentNumber: { raw: 'INV-2026-000041' }, receiptDocumentNumberRaw: null, receiptPdf: null, pdfDocKind: 'receipt_combined' }),
+        headerNumber: 'INV-2026-000041',
+        displayNumber: 'INV-2026-000041',
+        taxDocKind: 'none',
+        planDisplayName: '',
+        hasReceiptPdf: false,
+        refund: null,
+      });
+    case 'as-paid-receipt':
+      return paidProps({
+        invoice: invoice({ ...PAID, invoiceSubject: 'event', billDocumentNumberRaw: null, receiptDocumentNumberRaw: 'RE-2026-000007', receiptPdf: null, pdfDocKind: 'receipt_separate' }),
+        headerNumber: 'RE-2026-000007',
+        displayNumber: 'RE-2026-000007',
+        taxDocKind: 'none',
+        planDisplayName: '',
+        buyerHasTaxId: false,
+        hasReceiptPdf: false,
+        refund: null,
+      });
     case 'issued':
     default:
       return { ...BASE, invoice: invoice(), displayStatus: 'issued' };
@@ -222,4 +246,6 @@ export const DETAIL_KINDS: readonly DetailFixtureKind[] = [
   'refund-settling',
   'refund-partial',
   'voided',
+  'as-paid-tin',
+  'as-paid-receipt',
 ];

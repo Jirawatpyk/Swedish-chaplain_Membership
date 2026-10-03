@@ -325,6 +325,7 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
 - **The detail layout follows `Admin-voided`**, the one board drawn in the agreed layout: "Invoice {number}" with the status pill; a Details card with the fields in a grid and the totals (subtotal, VAT, total) right-aligned at its end; then each further section in its own card. The order is Details, Payment details, Voided, Credit notes, Line items, Payment activity. The alerts (no primary contact, email delivery failed, auto-refund failed) sit above the Details card, as on `Admin-invoice-manager`.
 - **The phone action bar is the header's own actions**, moved to the bottom of the screen below 640px with the total (incl. VAT) and due date above them. They are not drawn a second time, so every action keeps one trigger and its test id. Void leaves the bar for the ⋯ menu.
 - **AURA 5.29 lands in this PR** (handoff #134, shipped): the list skeletons' rows match the real rows, and the renewals skeletons drop their own phone cards.
+- **The heading's noun names the document by its type** (maintainer, 3 Oct, after the financial review): an 088 bill reads "Invoice {SC}", paid or not; the event-fee already-paid flow issues no bill, so its combined document reads "Tax invoice/receipt {number}" (TIN buyer) and its §105 receipt "Receipt {RE}" (no TIN). TH/SV use the wording of the existing document-type labels. The breadcrumb stays the bare number.
 
 ## User Scenarios & Testing *(mandatory)*
 
