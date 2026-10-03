@@ -2501,7 +2501,7 @@
           "title": "Kreditnotor"
         },
         "title": "Kreditnotor",
-        "description": "Alla kreditnotor utfärdade mot skattefakturor. Skrivskyddad granskningslogg.",
+        "description": "Varje kreditnota (ใบลดหนี้) utfärdad mot ett skattekvitto. Skrivskyddad granskningslogg — utfärda en från den betalda fakturan.",
         "empty": "Kreditnotor visas här efter att en administratör utfärdat en mot en betald faktura.",
         "filteredEmpty": "Inga kreditnotor matchar de aktuella filtren.",
         "tableCaption": "Kreditnotor",
@@ -2531,6 +2531,7 @@
           "view": "Visa",
           "viewAria": "Visa kreditnota {number}",
           "pdf": "PDF",
+          "download": "Ladda ner PDF",
           "pdfAria": "Ladda ner PDF för kreditnota {number}",
           "clearFilters": "Rensa filter"
         }

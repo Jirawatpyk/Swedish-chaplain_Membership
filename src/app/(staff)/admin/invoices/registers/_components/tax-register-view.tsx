@@ -44,7 +44,9 @@ export async function renderTaxRegisterView({ kind, from, to, result }: TaxRegis
         title={t('title')}
         subtitle={t('description')}
         actions={
-          <Link href="/admin/invoices" className={buttonClass({ variant: 'secondary', touchHeight: true })}>
+          // Below 1024px the shell's back link ("← Invoices") takes its place
+          // (board mobile), as on the other staff pages.
+          <Link href="/admin/invoices" className={buttonClass({ variant: 'secondary', className: 'max-lg:hidden' })}>
             {t('backToList')}
           </Link>
         }

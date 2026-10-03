@@ -15,8 +15,10 @@ export const CREDIT_NOTES_COLUMN_LAYOUT = {
   // The number, with the Refund chip beside it.
   documentNumber: { width: 184, card: 'title' },
   issueDate: { width: 112 },
-  // The receipt number over the bill (or document kind) it belongs to.
-  originalReceipt: { width: 168, skeletonLines: 2 },
+  // The receipt number over the bill (or document kind) it belongs to; a line
+  // of its own on a phone card, where "Combined tax invoice + receipt" would
+  // be cut at half width.
+  originalReceipt: { width: 168, card: 'wide', skeletonLines: 2 },
   // Long legal names and reasons wrap on a line of their own on a phone card.
   member: { minWidth: 160, card: 'wide', skeletonLines: 2 },
   reason: { minWidth: 180, card: 'wide', skeletonLines: 2 },

@@ -58,42 +58,73 @@ export function TaxRegisterTable({ rows }: { readonly rows: readonly TaxRegister
         key: 'paymentDate',
         label: t('columns.paymentDate'),
         ...TAX_REGISTER_COLUMN_LAYOUT.paymentDate,
-        render: (r) => <Muted on={r.isVoid}>{r.paymentDate}</Muted>,
+        render: (r) => (
+          <Muted on={r.isVoid} nowrap>
+            {r.paymentDate}
+          </Muted>
+        ),
       },
       {
         key: 'buyer',
         label: t('columns.buyer'),
         ...TAX_REGISTER_COLUMN_LAYOUT.buyer,
         render: (r) => (
-          <Muted on={r.isVoid} className="whitespace-normal break-words">
-            {r.buyer}
-          </Muted>
+          <span className="flex min-w-0 flex-col gap-0.5 whitespace-normal">
+            <Muted on={r.isVoid} className="break-words max-sm:font-semibold">
+              {r.buyer}
+            </Muted>
+            {/* The phone card's summary lines (the columns behind them are
+                hidden on the card); below 640px only, like the card itself. */}
+            <span className="text-xs text-[var(--aura-fg-secondary)] tabular-nums sm:hidden">
+              {[
+                r.paymentDate,
+                `${t('columns.taxId')} ${r.taxId}`,
+                r.zeroRated ? t('vatTreatment.zeroRated') : t('vatTreatment.standard'),
+                ...(r.certNo !== '—' ? [`${t('columns.certNo')} ${r.certNo}`] : []),
+              ].join(' · ')}
+            </span>
+            <span className="text-xs text-[var(--aura-fg-secondary)] tabular-nums sm:hidden">
+              {t('columns.subtotal')} {r.subtotal} · {t('columns.vat')} {r.vat}
+            </span>
+          </span>
         ),
       },
       {
         key: 'taxId',
         label: t('columns.taxId'),
         ...TAX_REGISTER_COLUMN_LAYOUT.taxId,
-        render: (r) => <Muted on={r.isVoid}>{r.taxId}</Muted>,
+        render: (r) => (
+          <Muted on={r.isVoid} nowrap>
+            {r.taxId}
+          </Muted>
+        ),
       },
       {
         key: 'subtotal',
         label: t('columns.subtotal'),
         ...TAX_REGISTER_COLUMN_LAYOUT.subtotal,
-        render: (r) => <Muted on={r.isVoid}>{r.subtotal}</Muted>,
+        render: (r) => (
+          <Muted on={r.isVoid} nowrap>
+            {r.subtotal}
+          </Muted>
+        ),
       },
       {
         key: 'vat',
         label: t('columns.vat'),
         ...TAX_REGISTER_COLUMN_LAYOUT.vat,
-        render: (r) => <Muted on={r.isVoid}>{r.vat}</Muted>,
+        render: (r) => (
+          <Muted on={r.isVoid} nowrap>
+            {r.vat}
+          </Muted>
+        ),
       },
       {
         key: 'total',
         label: t('columns.total'),
         ...TAX_REGISTER_COLUMN_LAYOUT.total,
         render: (r) => (
-          <Muted on={r.isVoid} className="font-medium">
+          <Muted on={r.isVoid} nowrap className="font-medium">
             {r.total}
           </Muted>
         ),
@@ -110,7 +141,11 @@ export function TaxRegisterTable({ rows }: { readonly rows: readonly TaxRegister
         key: 'certNo',
         label: t('columns.certNo'),
         ...TAX_REGISTER_COLUMN_LAYOUT.certNo,
-        render: (r) => <Muted on={r.isVoid}>{r.certNo}</Muted>,
+        render: (r) => (
+          <Muted on={r.isVoid} nowrap>
+            {r.certNo}
+          </Muted>
+        ),
       },
     ],
     [t],
@@ -124,21 +159,30 @@ export function TaxRegisterTable({ rows }: { readonly rows: readonly TaxRegister
       rowKey="invoiceId"
       rowHeight="auto"
       stackBelow={640}
+      // Edge to edge inside the card from 640px up, so the nine columns fit.
+      bleed
     />
   );
 }
 
 function Muted({
   on,
+  nowrap = false,
   className,
   children,
 }: {
   readonly on: boolean;
+  /** Dates, tax IDs and amounts never break across lines. */
+  readonly nowrap?: boolean;
   readonly className?: string;
   readonly children: React.ReactNode;
 }) {
   return (
-    <span className={['tabular-nums', on ? 'text-[var(--aura-fg-secondary)]' : '', className ?? ''].join(' ').trim()}>
+    <span
+      className={['tabular-nums', nowrap ? 'whitespace-nowrap' : '', on ? 'text-[var(--aura-fg-secondary)]' : '', className ?? '']
+        .join(' ')
+        .trim()}
+    >
       {children}
     </span>
   );

@@ -2501,7 +2501,7 @@
           "title": "Credit Notes"
         },
         "title": "Credit notes",
-        "description": "All credit notes issued against tax invoices. Read-only audit trail.",
+        "description": "Every credit note (ใบลดหนี้) issued against a tax receipt. Read-only audit trail — issue one from the paid invoice.",
         "empty": "Credit notes appear here after an admin issues one against a paid invoice.",
         "filteredEmpty": "No credit notes match the current filters.",
         "tableCaption": "Credit notes",
@@ -2531,6 +2531,7 @@
           "view": "View",
           "viewAria": "View credit note {number}",
           "pdf": "PDF",
+          "download": "Download PDF",
           "pdfAria": "Download PDF for credit note {number}",
           "clearFilters": "Clear filters"
         }
