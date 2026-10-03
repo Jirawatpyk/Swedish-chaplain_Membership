@@ -112,7 +112,13 @@ describe('sweep cancels pending payments on no-longer-payable invoices — live 
   const oldAttemptFreshVoid = row('old_attempt_fresh_void', 30 * MIN, 2 * MIN);
   // Untouched: voided more than the 7-day cap ago.
   const voidedAncient = row('void_ancient', 8 * DAY, 8 * DAY);
+  // Target: a second attempt left pending on an invoice the WEBHOOK paid
+  // 40 min ago (via another attempt) — nothing else cancels it; the sweep is
+  // its primary cancel. Seeded `issued` here and flipped to `paid` below.
+  const paidOld = row('paid_old', 40 * MIN, null);
+  const PAID_AGO_MS = 40 * MIN;
   const ROWS = [
+    paidOld,
     voidedOld,
     oldAttemptRecentVoid,
     issuedOld,
@@ -120,7 +126,7 @@ describe('sweep cancels pending payments on no-longer-payable invoices — live 
     oldAttemptFreshVoid,
     voidedAncient,
   ];
-  const TARGETS = [voidedOld, oldAttemptRecentVoid];
+  const TARGETS = [paidOld, voidedOld, oldAttemptRecentVoid];
   const UNTOUCHED = [issuedOld, voidedYoung, oldAttemptFreshVoid, voidedAncient];
 
   async function insertInvoice(tx: TenantTx, id: string, seq: number): Promise<void> {
@@ -284,6 +290,20 @@ describe('sweep cancels pending payments on no-longer-payable invoices — live 
           })
           .where(eq(invoices.invoiceId, r.invoiceId));
       }
+      // The state a committed webhook payment leaves (applyPayment's columns;
+      // the paid CHECKs need paid_at + payment_method + receipt_pdf_status).
+      const paidAt = new Date(Date.now() - PAID_AGO_MS);
+      await tx
+        .update(invoices)
+        .set({
+          status: 'paid',
+          paidAt,
+          paymentMethod: 'other',
+          paymentDate: '2026-04-15',
+          receiptPdfStatus: 'pending',
+          updatedAt: paidAt,
+        })
+        .where(eq(invoices.invoiceId, paidOld.invoiceId));
     });
   }, 120_000);
 
@@ -360,14 +380,15 @@ describe('sweep cancels pending payments on no-longer-payable invoices — live 
     return r!.status;
   }
 
-  it('finds only the voided attempts inside the window, oldest first', async () => {
+  it('finds only the non-issued (paid / void) attempts inside the window, oldest first', async () => {
     const found = await makeSweepDeps([]).finder.listInvoicesWithPendingOnUnpayable({
       minAgeMinutes: 15,
       maxAgeDays: 7,
       limit: 50,
     });
-    // Ordered by GREATEST(initiated_at, updated_at): 30 min ago, then 20 min ago.
+    // Ordered by GREATEST(initiated_at, updated_at): 40, 30, then 20 min ago.
     expect(found).toEqual([
+      { tenantId: tenant.ctx.slug, invoiceId: paidOld.invoiceId },
       { tenantId: tenant.ctx.slug, invoiceId: voidedOld.invoiceId },
       { tenantId: tenant.ctx.slug, invoiceId: oldAttemptRecentVoid.invoiceId },
     ]);
@@ -382,12 +403,12 @@ describe('sweep cancels pending payments on no-longer-payable invoices — live 
       budgetMs: 30_000,
     });
     expect(first).toEqual({
-      invoicesFound: 2,
-      invoicesProcessed: 2,
+      invoicesFound: 3,
+      invoicesProcessed: 3,
       invoicesErrored: 0,
       erroredInvoices: [],
       deferred: 0,
-      canceled: 2,
+      canceled: 3,
       skipped: 0,
       failed: 0,
     });
@@ -419,6 +440,6 @@ describe('sweep cancels pending payments on no-longer-payable invoices — live 
       budgetMs: 30_000,
     });
     expect(second).toMatchObject({ invoicesFound: 0, canceled: 0 });
-    expect(cancelCalls).toHaveLength(2);
+    expect(cancelCalls).toHaveLength(3);
   }, 60_000);
 });

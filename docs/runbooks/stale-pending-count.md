@@ -95,11 +95,12 @@ freshly voided invoice is still retried, and a void less than 15 minutes old
 is left to its own post-commit cancel.
 
 For an invoice marked **paid through another channel** by an admin
-(`POST /api/invoices/[id]/pay`), `recordPayment` cancels the invoice's pending
-attempts right after the payment commits (audit `actor_type = 'system'`,
-`cause = 'invoice_paid_manually'`, `actor_user_id` = the paying admin). An
-admin re-submitting pay on an invoice the webhook already paid also lands
-here with that cause. If that cancel throws, the payment stands,
+(`POST /api/invoices/[id]/pay`), the route cancels the invoice's pending
+attempts as its last step after the payment commits, after the F2 plan-change
+finaliser (audit `actor_type = 'system'`, `cause = 'invoice_paid_manually'`,
+`actor_user_id` = the paying admin). When the admin's request finds the
+invoice already paid (the webhook or an earlier request got there first), the
+same cancel runs with `cause = 'invoice_already_paid'`. If that cancel throws, the payment stands,
 `invoicing_record_payment_pending_payment_cancel_failed_total` bumps, and this
 sweep retries 15–75 minutes later. The sweep is still the **primary** cancel
 for a second pending attempt on an invoice the webhook just marked paid. The

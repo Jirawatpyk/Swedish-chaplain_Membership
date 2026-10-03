@@ -63,6 +63,7 @@ import { retentionFor } from '../ports/audit-port';
 export type CancelPendingPaymentsCause =
   | 'invoice_voided'
   | 'invoice_paid_manually'
+  | 'invoice_already_paid'
   | 'invoice_not_payable_sweep';
 
 export interface CancelPendingPaymentsForInvoiceInput {
@@ -73,9 +74,10 @@ export interface CancelPendingPaymentsForInvoiceInput {
   /**
    * `invoice_voided` — voidInvoice's post-commit call.
    * `invoice_paid_manually` — recordPayment's post-commit call after an
-   *   admin-manual payment (#452 review M1). Also used when an admin re-submits
-   *   pay on an invoice that is already paid (idempotent replay), whichever
-   *   rail paid it first.
+   *   admin-manual payment (#452 review M1).
+   * `invoice_already_paid` — the same call when the admin's pay request found
+   *   the invoice ALREADY paid (idempotent replay; another rail — e.g. the
+   *   webhook — or an earlier request paid it).
    * `invoice_not_payable_sweep` — the hourly retry sweep
    * (`sweepPendingPaymentsOnUnpayableInvoices`), for a pending attempt on any
    * invoice that is no longer `issued` (a failed or missed void-time cancel).

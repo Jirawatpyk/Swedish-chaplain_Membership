@@ -234,7 +234,11 @@ export interface F5AuditPayloadByType {
      * (the system actor for the sweep).
      */
     actor_type: 'member' | 'webhook' | 'admin' | 'system';
-    cause?: 'invoice_voided' | 'invoice_paid_manually' | 'invoice_not_payable_sweep';
+    cause?:
+      | 'invoice_voided'
+      | 'invoice_paid_manually'
+      | 'invoice_already_paid'
+      | 'invoice_not_payable_sweep';
   };
   /**
    * F5R1-E4 — distinct event type for cancel attempts that failed at
@@ -249,7 +253,11 @@ export interface F5AuditPayloadByType {
     payment_id: string;
     invoice_id: string;
     actor_type: 'member' | 'webhook' | 'admin' | 'system';
-    cause?: 'invoice_voided' | 'invoice_paid_manually' | 'invoice_not_payable_sweep';
+    cause?:
+      | 'invoice_voided'
+      | 'invoice_paid_manually'
+      | 'invoice_already_paid'
+      | 'invoice_not_payable_sweep';
     processor_error_kind: 'retryable' | 'permanent' | 'idempotency_conflict';
   };
   payment_method_switched: {

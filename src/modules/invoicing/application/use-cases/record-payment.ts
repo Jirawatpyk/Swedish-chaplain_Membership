@@ -313,12 +313,12 @@ export interface RecordPaymentDeps {
     (evt: F4InvoicePaidEvent, tx?: unknown) => Promise<void>
   >;
   /**
-   * #452 financial-integrity review (M1) — cancels the invoice's still-live
-   * PaymentIntents AFTER an admin-manual payment commits, so a card
-   * `clientSecret` the member's PaySheet cached cannot capture a second
-   * payment. Best-effort (see the port). Wired by `makeRecordPaymentDeps`
-   * ONLY when this use-case owns its transaction (no `externalTx`);
-   * `undefined` → no cancellation (webhook / F8 offline rails, tests).
+   * #452 financial-integrity review (M1) — used by
+   * `cancelPendingPaymentsAfterManualPayment` (NOT by `recordPayment` itself),
+   * which the admin pay route calls after the payment commits and after its
+   * other post-commit steps. Wired by `makeRecordPaymentDeps` ONLY when
+   * recordPayment owns its transaction (no `externalTx`); `undefined` → no
+   * cancellation (webhook / F8 offline rails, tests).
    */
   readonly pendingPaymentCanceller?: PendingPaymentCancellerPort;
 }
@@ -333,6 +333,13 @@ export interface RecordPaymentDeps {
  */
 export type RecordPaymentSuccess = Invoice & {
   readonly emailDispatch: EmailDispatchOutcome;
+  /**
+   * `true` when the invoice was ALREADY `paid` before this call (idempotent
+   * replay — nothing was written). Lets the admin pay route label its
+   * post-commit PaymentIntent cancel honestly (`invoice_already_paid` vs
+   * `invoice_paid_manually`).
+   */
+  readonly replayed: boolean;
 };
 
 export async function recordPayment(
@@ -493,7 +500,7 @@ export async function recordPayment(
         : replayRecipient !== null && replayRecipient.kind === 'no_recipient'
           ? 'skipped_no_email'
           : 'sent';
-      return ok({ ...loaded, emailDispatch: replayEmailDispatch });
+      return ok({ ...loaded, emailDispatch: replayEmailDispatch, replayed: true });
     }
 
     if (lockedStatus !== 'issued') {
@@ -1376,7 +1383,7 @@ export async function recordPayment(
     // for a second findByIdInTx round-trip.
     // Cluster 5 (Finding 1) — thread the auto-email outcome alongside the paid
     // invoice (subtype of `Invoice`, so no consumer breaks).
-    return ok({ ...updated, emailDispatch });
+    return ok({ ...updated, emailDispatch, replayed: false });
   });
   } catch (e) {
     if (e instanceof RecordPaymentInternalError) {
@@ -1419,38 +1426,55 @@ export async function recordPayment(
     throw e;
   }
 
-  // #452 financial-integrity review (M1) — the invoice is now committed as
-  // `paid`; cancel any PaymentIntent still live at Stripe for it so a card
-  // `clientSecret` the member's PaySheet cached cannot capture a second
-  // payment (Stripe card PaymentIntents never expire on their own). AFTER the
-  // commit, never inside it: the canceller locks payment rows, and
-  // confirm-payment locks payment → invoice. Admin-manual only — the webhook
-  // rail is itself the payment that just settled, and the F8 offline rail
-  // pays an invoice it issued moments earlier inside its own outer tx (the
-  // composition root does not wire the canceller for either). Also runs on
-  // an idempotent replay (already `paid`): the cancel is idempotent, so a
-  // retry of the pay action doubles as a retry of the cancel. BEST-EFFORT:
-  // the payment stands regardless; the hourly unpayable sweep retries.
-  if (
-    result.ok &&
-    deps.pendingPaymentCanceller &&
-    (input.triggeredBy ?? 'admin_manual') === 'admin_manual'
-  ) {
-    try {
-      await deps.pendingPaymentCanceller.cancelPendingPayments({
-        tenantId: input.tenantId,
-        invoiceId: input.invoiceId,
-        actorUserId: input.actorUserId,
-        requestId: input.requestId ?? null,
-        cause: 'invoice_paid_manually',
-      });
-    } catch (e) {
-      invoicingMetrics.recordPaymentPendingPaymentCancelFailed(input.tenantId);
-      logger.error(
-        { err: errKind(e), invoiceId: input.invoiceId, tenantId: input.tenantId },
-        'recordPayment: post-commit pending-payment cancellation failed (payment stands; hourly sweep retries, webhook auto-refund remains the net)',
-      );
-    }
-  }
   return result;
+}
+
+/**
+ * #452 financial-integrity review (M1) — after an admin-manual payment has
+ * COMMITTED, cancel every PaymentIntent still live at Stripe for the invoice,
+ * so a card `clientSecret` the member's PaySheet cached cannot capture a
+ * second payment (Stripe card PaymentIntents never expire on their own;
+ * otherwise the webhook auto-refunds days later — money held, fees lost).
+ *
+ * Called by the admin pay route — the owner of recordPayment's transaction —
+ * as its LAST post-commit step, after the F2 plan-change finaliser: the
+ * Stripe round-trips (10 s timeout, SDK retries) must not stand between a
+ * committed payment and that finaliser. Never inside the transaction: the
+ * canceller locks payment rows, and confirm-payment locks payment → invoice.
+ *
+ * `replayed` (from `RecordPaymentSuccess`) picks the audit cause: a request
+ * that found the invoice already paid (by the webhook or an earlier request)
+ * did not pay it manually → `invoice_already_paid`. The cancel is idempotent,
+ * so a re-submitted pay doubles as a retry of the cancel.
+ *
+ * BEST-EFFORT: never throws. A failure bumps
+ * `invoicing_record_payment_pending_payment_cancel_failed_total` and logs the
+ * error class only; the hourly unpayable sweep retries.
+ */
+export async function cancelPendingPaymentsAfterManualPayment(
+  deps: Pick<RecordPaymentDeps, 'pendingPaymentCanceller'>,
+  args: {
+    readonly tenantId: string;
+    readonly invoiceId: string;
+    readonly actorUserId: string;
+    readonly requestId: string | null;
+    readonly replayed: boolean;
+  },
+): Promise<void> {
+  if (!deps.pendingPaymentCanceller) return;
+  try {
+    await deps.pendingPaymentCanceller.cancelPendingPayments({
+      tenantId: args.tenantId,
+      invoiceId: args.invoiceId,
+      actorUserId: args.actorUserId,
+      requestId: args.requestId,
+      cause: args.replayed ? 'invoice_already_paid' : 'invoice_paid_manually',
+    });
+  } catch (e) {
+    invoicingMetrics.recordPaymentPendingPaymentCancelFailed(args.tenantId);
+    logger.error(
+      { err: errKind(e), invoiceId: args.invoiceId, tenantId: args.tenantId },
+      'recordPayment: post-commit pending-payment cancellation failed (payment stands; hourly sweep retries, webhook auto-refund remains the net)',
+    );
+  }
 }

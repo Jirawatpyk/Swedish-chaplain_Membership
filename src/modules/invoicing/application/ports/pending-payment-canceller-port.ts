@@ -17,7 +17,10 @@
  *     implementation locks payment rows; confirm-payment locks
  *     payment → invoice, so doing it under the caller's invoice lock would
  *     invert that order and risk a deadlock. Only wire it where the caller
- *     owns its transaction (see `makeRecordPaymentDeps`).
+ *     owns its transaction (see `makeRecordPaymentDeps`); for a manual
+ *     payment the admin pay route runs it via
+ *     `cancelPendingPaymentsAfterManualPayment`, after its other post-commit
+ *     steps.
  *   - BEST-EFFORT. It never changes the caller's outcome; the caller swallows
  *     a throw (metric + log). A PaymentIntent it fails to cancel is retried by
  *     the hourly `sweepPendingPaymentsOnUnpayableInvoices` and, if it is
@@ -35,6 +38,6 @@ export interface PendingPaymentCancellerPort {
     readonly actorUserId: string;
     readonly requestId: string | null;
     /** Why the invoice stopped being payable; lands on the audit rows. */
-    readonly cause: 'invoice_voided' | 'invoice_paid_manually';
+    readonly cause: 'invoice_voided' | 'invoice_paid_manually' | 'invoice_already_paid';
   }): Promise<void>;
 }
