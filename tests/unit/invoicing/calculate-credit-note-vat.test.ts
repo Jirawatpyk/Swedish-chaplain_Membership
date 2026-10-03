@@ -1,10 +1,11 @@
 /**
  * T076 — Proportional VAT policy for credit notes.
  *
- * Property (residual rule, replaces post-critique E7's "≤ +1 satang"):
- *   forAll (total ≥ 100)(partition into 1..8 parts)(vatRate ∈ [0, 0.30]) →
- *     every running sum(cn-vats) ≤ original-vat, and the note that completes
- *     the credit brings sum(cn-vats) to EXACTLY original-vat.
+ * Property (cumulative rule, replaces post-critique E7's "≤ +1 satang"):
+ *   forAll (total ≥ 100)(partition into 1..8 parts, tiny parts included)
+ *   (vatRate ∈ [0, 0.30]) → every note has net ≥ 1 satang (the DB CHECK),
+ *   every running sum(cn-vats) ≤ original-vat, and a fully credited invoice
+ *   credits EXACTLY original-vat unless a note had to keep 1 satang of net.
  *
  * The old per-note proportional rounding drifted by up to ~N/2 satang over N
  * partials (3 partials of a 1,070.00 THB invoice credited 70.01 THB VAT), so
@@ -127,7 +128,8 @@ function creditInParts(originalVat: Money, originalTotal: Money, parts: readonly
       }),
     );
     expect(r.vat.satang).toBeGreaterThanOrEqual(0n);
-    expect(r.vat.satang).toBeLessThanOrEqual(part);
+    // credit_notes.credit_amount_satang > 0 (migration 0019): never a 0 net.
+    expect(r.creditAmount.satang).toBeGreaterThanOrEqual(1n);
     expect(r.creditAmount.satang + r.vat.satang).toBe(part);
     vats.push(r.vat.satang);
     alreadyCredited = alreadyCredited.add(Money.fromSatangUnsafe(part));
@@ -136,11 +138,47 @@ function creditInParts(originalVat: Money, originalTotal: Money, parts: readonly
   return vats;
 }
 
-describe('calculateCreditNoteVat — residual on the completing note', () => {
-  it('three partials of a 1,070.00 THB invoice credit exactly 70.00 VAT (2,181 + 2,181 + 2,638)', () => {
+describe('calculateCreditNoteVat — cumulative VAT (each note = target to date − VAT already credited)', () => {
+  it('three partials of a 1,070.00 THB invoice credit exactly 70.00 VAT (2,181 + 2,180 + 2,639)', () => {
     const v = calculateVat(Money.fromTHB(1000), VatRate.ofUnsafe('0.0700'));
     // Pre-fix: 2,181 + 2,181 + 2,639 = 7,001 — one satang more than charged.
-    expect(creditInParts(v.vat, v.total, [33_333n, 33_333n, 40_334n])).toEqual([2_181n, 2_181n, 2_638n]);
+    // Cumulative targets: round(7,000 × 33,333/107,000) = 2,181, round(… × 66,666/…) = 4,361, 7,000.
+    expect(creditInParts(v.vat, v.total, [33_333n, 33_333n, 40_334n])).toEqual([2_181n, 2_180n, 2_639n]);
+  });
+
+  it('every note stays within 1 satang of its own proportional VAT, however many notes', () => {
+    const v = calculateVat(Money.fromTHB(1000), VatRate.ofUnsafe('0.0700'));
+    const parts = [10_081n, 10_081n, 10_081n, 10_081n, 10_081n, 10_081n, 10_081n, 36_433n];
+    const vats = creditInParts(v.vat, v.total, parts);
+    parts.forEach((part, i) => {
+      const proportional = (v.vat.satang * part * 2n + v.total.satang) / (v.total.satang * 2n);
+      const gap = vats[i]! - proportional;
+      expect(gap <= 1n && gap >= -1n).toBe(true);
+    });
+  });
+
+  it('a tiny completing note keeps net ≥ 1 satang (credit_amount_satang > 0), never a 0-net note', () => {
+    // 10,700.00 incl. 700.00 VAT, credited 21.47 + 10,678.52, then 0.01.
+    const v = calculateVat(Money.fromTHB(10_000), VatRate.ofUnsafe('0.0700'));
+    const vats = creditInParts(v.vat, v.total, [2_147n, 1_067_852n, 1n]);
+    expect(vats[2]).toBe(0n);
+    expect(vats.reduce((a, b) => a + b, 0n)).toBe(v.vat.satang);
+  });
+
+  it('a 1-satang note whose VAT would round to 1 credits 0 VAT and leaves the satang for later', () => {
+    const v = calculateVat(Money.fromTHB(1000), VatRate.ofUnsafe('0.0700'));
+    const r = expectOk(
+      calculateCreditNoteVat({
+        creditTotal: Money.fromSatangUnsafe(1n),
+        originalVat: v.vat,
+        originalTotal: v.total,
+        // round(7,000 × 7/107,000) = 0; round(7,000 × 8/107,000) = 1.
+        alreadyCredited: Money.fromSatangUnsafe(7n),
+        priorCreditedVat: Money.zero(),
+      }),
+    );
+    expect(r.vat.satang).toBe(0n);
+    expect(r.creditAmount.satang).toBe(1n);
   });
 
   it('five partials also land exactly (pre-fix: 7,002)', () => {
@@ -149,7 +187,7 @@ describe('calculateCreditNoteVat — residual on the completing note', () => {
     expect(vats.reduce((a, b) => a + b, 0n)).toBe(v.vat.satang);
   });
 
-  it('a partial is still proportional — only the completing note takes the residual', () => {
+  it('a partial takes its cumulative share — 2,180 here, not the 2,181 it would round to alone', () => {
     const v = calculateVat(Money.fromTHB(1000), VatRate.ofUnsafe('0.0700'));
     const r = expectOk(
       calculateCreditNoteVat({
@@ -160,7 +198,7 @@ describe('calculateCreditNoteVat — residual on the completing note', () => {
         priorCreditedVat: Money.fromSatangUnsafe(2_181n),
       }),
     );
-    expect(r.vat.satang).toBe(2_181n);
+    expect(r.vat.satang).toBe(2_180n);
   });
 
   it('a partial never takes the running VAT past what was charged', () => {
@@ -215,7 +253,10 @@ describe('calculateCreditNoteVat — property: partitions credit exactly the VAT
         fc.bigInt({ min: 10_000n, max: 1_000_000_000n }),
         fc.integer({ min: 0, max: 3000 }),
         fc.array(fc.integer({ min: 1, max: 100 }), { minLength: 1, maxLength: 8 }),
-        (subtotalSatang, vatBp, weights) => {
+        // Optional tiny notes (1..5 satang) carved off the end — the case that
+        // once produced a 0-net note.
+        fc.array(fc.bigInt({ min: 1n, max: 5n }), { maxLength: 3 }),
+        (subtotalSatang, vatBp, weights, tiny) => {
           const rate = VatRate.ofUnsafe(`0.${vatBp.toString().padStart(4, '0')}`);
           const { vat: originalVat, total: originalTotal } = calculateVat(Money.fromSatangUnsafe(subtotalSatang), rate);
           const weightSum = weights.reduce((a, b) => a + b, 0);
@@ -228,7 +269,10 @@ describe('calculateCreditNoteVat — property: partitions credit exactly the VAT
               allocated += share;
             }
           }
-          parts.push(originalTotal.satang - allocated);
+          const tinyTotal = tiny.reduce((a, b) => a + b, 0n);
+          const last = originalTotal.satang - allocated - tinyTotal;
+          if (last > 0n) parts.push(last, ...tiny);
+          else parts.push(originalTotal.satang - allocated);
 
           const vats = creditInParts(originalVat, originalTotal, parts);
           let running = 0n;
@@ -236,7 +280,9 @@ describe('calculateCreditNoteVat — property: partitions credit exactly the VAT
             running += v;
             expect(running).toBeLessThanOrEqual(originalVat.satang);
           }
-          expect(running).toBe(originalVat.satang);
+          // Exact, unless some note had to keep its 1-satang net (VAT = gross − 1).
+          const keptNet = vats.some((v, i) => parts[i]! > 0n && v === parts[i]! - 1n);
+          if (!keptNet) expect(running).toBe(originalVat.satang);
         },
       ),
       { numRuns: 500 },

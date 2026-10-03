@@ -302,9 +302,9 @@ describe('refund credit-note preview equals the issued credit note', () => {
       expect(BigInt(row.vat as unknown as string)).toBe(previews[i]!.vatSatang);
       expect(BigInt(row.net as unknown as string)).toBe(previews[i]!.netSatang);
     });
-    // The completing note takes the residual: 2,181 + 2,181 + 2,638 = 7,000,
-    // exactly the VAT charged (proportional alone gave 2,639 → 7,001).
-    expect(previews.map((p) => p.vatSatang)).toEqual([2_181n, 2_181n, 2_638n]);
+    // Cumulative VAT: 2,181 + 2,180 + 2,639 = 7,000, exactly the VAT charged
+    // (per-note proportional rounding gave 2,181 + 2,181 + 2,639 = 7,001).
+    expect(previews.map((p) => p.vatSatang)).toEqual([2_181n, 2_180n, 2_639n]);
     expect(rows.reduce((sum, row) => sum + BigInt(row.vat as unknown as string), 0n)).toBe(INVOICE_VAT);
   }, 120_000);
 
