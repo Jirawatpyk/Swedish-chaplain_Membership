@@ -440,6 +440,16 @@ const TAX_ID_REGISTRANT_GATE_MIN_VERSION = 11;
 const TERMINATION_NOTICE_MIN_VERSION = 12;
 
 /**
+ * v13 — §86/10 วรรคสอง: a ใบลดหนี้ states the value per the original tax
+ * invoice, the correct value, the difference and the VAT on the difference
+ * (all excl. VAT), under the original number/date/reason it already carried.
+ * Gated on the version AND on `creditNote.values` being supplied, so a pinned
+ * pre-v13 credit note (or any input built without the values) re-renders
+ * byte-stable (SC-003). Registry log: template-registry.ts v13.
+ */
+const CREDIT_NOTE_VALUES_MIN_VERSION = 13;
+
+/**
  * 088 US8 — the §80/1(5) zero-rate note lines (bilingual, hardcoded literal per
  * the template's shaped-Thai + English-gloss convention — the PDF carries no
  * i18n context). Line 1 cites the Revenue-Code basis; line 2 references the MFA
@@ -801,6 +811,25 @@ function renderPageBody({
           <Text style={styles.cnRefLine}>
             {shapeThai('เหตุผล')} / Reason: {shapeThai(input.creditNote.reason)}
           </Text>
+          {input.templateVersion >= CREDIT_NOTE_VALUES_MIN_VERSION && input.creditNote.values && (
+            <>
+              <Text style={styles.cnRefLine}>
+                {shapeThai('มูลค่าตามใบกำกับภาษีเดิม')} / Value per original tax invoice:{' '}
+                {formatThbSatang(input.creditNote.values.originalValue.satang, true)}
+              </Text>
+              <Text style={styles.cnRefLine}>
+                {shapeThai('มูลค่าที่ถูกต้อง')} / Correct value:{' '}
+                {formatThbSatang(input.creditNote.values.correctValue.satang, true)}
+              </Text>
+              <Text style={styles.cnRefLine}>
+                {shapeThai('ผลต่าง')} / Difference: {formatThbSatang(input.creditNote.values.difference.satang, true)}
+              </Text>
+              <Text style={styles.cnRefLine}>
+                {shapeThai('ภาษีมูลค่าเพิ่มของผลต่าง')} / VAT on the difference:{' '}
+                {formatThbSatang(input.creditNote.values.differenceVat.satang, true)}
+              </Text>
+            </>
+          )}
         </View>
       )}
 
