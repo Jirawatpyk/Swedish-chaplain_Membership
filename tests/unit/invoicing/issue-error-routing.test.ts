@@ -19,6 +19,10 @@ describe('routeIssueError (FR-032)', () => {
     expect(routeIssueError('invoice_already_issued')).toEqual({ kind: 'concurrent' });
   });
 
+  it('a stale confirmed total is classified as stale (refresh to see the real figure)', () => {
+    expect(routeIssueError('issue_total_changed')).toEqual({ kind: 'stale' });
+  });
+
   it('maps dedicated codes to their own inline message key', () => {
     expect(routeIssueError('event_no_tin_requires_paid_issue')).toEqual({
       kind: 'failure',

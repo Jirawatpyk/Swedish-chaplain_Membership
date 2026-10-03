@@ -270,6 +270,8 @@ describe('IssueInvoiceForm — valid zero-rate issue POST', () => {
       expect(body).toEqual({
         vatTreatment: 'zero_rated_80_1_5',
         zeroRateCertNo: 'กต 0404/1234',
+        // The zero-rated total the admin confirmed (8,000.00, VAT 0).
+        expectedTotalSatang: '800000',
       });
       expect('zeroRateCertBlobKey' in body).toBe(false);
     } finally {
@@ -277,7 +279,7 @@ describe('IssueInvoiceForm — valid zero-rate issue POST', () => {
     }
   });
 
-  it('sends an EMPTY POST body for a standard-rate issue (backward compatible)', async () => {
+  it('sends only the confirmed total for a standard-rate issue', async () => {
     const fetchMock = vi.fn(async () => ({
       ok: true,
       json: async () => ({ bill_document_number_raw: 'SC-2026-0002' }),
@@ -297,7 +299,8 @@ describe('IssueInvoiceForm — valid zero-rate issue POST', () => {
         RequestInit,
       ];
       expect(init.method).toBe('POST');
-      expect(init.body).toBeUndefined();
+      // 8,000.00 + 7% — the total the confirm named.
+      expect(JSON.parse(init.body as string)).toEqual({ expectedTotalSatang: '856000' });
     } finally {
       vi.unstubAllGlobals();
     }
@@ -502,6 +505,30 @@ describe('IssueInvoiceForm — concurrent 409 inline recovery (FR-032)', () => {
       );
 
       expect(refreshMock).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+      expect(refreshMock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+// The server refused the confirmed total (draft lines or the VAT rate changed
+// after the page rendered): nothing was issued, so the admin refreshes to see
+// and confirm the real figure.
+describe('IssueInvoiceForm — stale total 409 inline recovery', () => {
+  it('renders the "total changed — refresh" prompt and refreshes on click', async () => {
+    const fetchMock = rejectingFetch('issue_total_changed');
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      renderForm();
+      confirmAndSubmit();
+
+      const alert = await screen.findByTestId('issue-invoice-error');
+      expect(alert).toHaveAttribute('data-tone', 'neutral');
+      expect(alert).toHaveTextContent(
+        'The total changed after this page loaded, so nothing was issued. Refresh to see the current total, then issue again.',
+      );
       fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
       expect(refreshMock).toHaveBeenCalledTimes(1);
     } finally {
