@@ -2359,7 +2359,7 @@
         "whtNote": "Shown on membership documents only (invoice + tax receipt). Membership dues are WHT-exempt under §65 bis (13) (ruling กค 0811/8542) — the suggested wording is pre-filled below. Leave blank for none.",
         "whtNoteThExample": "ค่าบำรุงสมาชิกได้รับยกเว้นไม่ต้องนำมารวมคำนวณเป็นรายได้ตามมาตรา 65 ทวิ (13) แห่งประมวลรัษฎากร ผู้จ่ายจึงไม่มีหน้าที่หักภาษีเงินได้ ณ ที่จ่าย",
         "whtNoteEnExample": "Membership dues are exempt from income-tax computation under Section 65 bis (13) of the Revenue Code; the payer is not required to withhold income tax at source.",
-        "terminationNotice": "Shown on the invoice (ใบแจ้งหนี้/bill) only, never a tax receipt. Informs members of SweCham's obligation, under its bylaws, to terminate unpaid membership. The example is a compliance-reviewed draft; SweCham may cite a specific bylaw article. Leave blank for none.",
+        "terminationNotice": "Shown on the invoice (ใบแจ้งหนี้) only, never a tax receipt. Informs members of SweCham's obligation, under its bylaws, to terminate unpaid membership. The example is a compliance-reviewed draft; SweCham may cite a specific bylaw article. Leave blank for none.",
         "terminationNoticeThExample": "SweCham มีหน้าที่ตามข้อบังคับที่ต้องยุติสมาชิกภาพของสมาชิกที่ค้างชำระค่าสมาชิกเกิน 60 วันนับจากวันครบกำหนดชำระในใบแจ้งหนี้",
         "terminationNoticeEnExample": "Under its bylaws, SweCham is required to terminate the membership of members whose fees remain unpaid more than 60 days after the invoice due date.",
         "bank": "Shown on the invoice (ใบแจ้งหนี้) only, for offline bank-transfer payment. Leave blank for none.",
@@ -2600,13 +2600,13 @@
       },
       "queueView": {
         "title": "Auto-renewal review queue",
-        "description": "Cron-drafted renewal bills awaiting review before they're issued."
+        "description": "Cron-drafted renewal invoices awaiting review before they're issued."
       },
       "supersedeWarning": {
-        "title": "Bill issued — an older unpaid bill is still open",
-        "voidFailed": "The older bill {number} could not be voided automatically. Void it manually.",
-        "listFailed": "We couldn't confirm that this member's older unpaid bills were voided. Check their invoices and void any duplicate manually.",
-        "openBill": "Open bill {number}"
+        "title": "Invoice issued — an older unpaid invoice is still open",
+        "voidFailed": "The older invoice {number} could not be voided automatically. Void it manually.",
+        "listFailed": "We couldn't confirm that this member's older unpaid invoices were voided. Check their invoices and void any duplicate manually.",
+        "openBill": "Open invoice {number}"
       },
       "autoRenewalQueue": {
         "actions": {
@@ -2616,16 +2616,16 @@
           "discard": "Discard draft",
           "cancel": "Cancel",
           "sendDialog": {
-            "title": "Issue and email this bill?",
-            "description": "A membership bill will be issued for {member} and emailed to their primary contact."
+            "title": "Issue and email this invoice?",
+            "description": "A membership invoice will be issued for {member} and emailed to their primary contact."
           },
           "silentDialog": {
-            "title": "Issue this bill without emailing?",
-            "description": "A membership bill will be issued for {member}. No email will be sent — you'll need to deliver it another way."
+            "title": "Issue this invoice without emailing?",
+            "description": "A membership invoice will be issued for {member}. No email will be sent — you'll need to deliver it another way."
           },
           "discardDialog": {
             "title": "Discard this draft?",
-            "description": "This draft bill for {member} will be permanently deleted. The next auto-renewal run may create a new draft before the cycle is due."
+            "description": "This draft invoice for {member} will be permanently deleted. The next auto-renewal run may create a new draft before the cycle is due."
           },
           "issueCaution": {
             "unresolved": "We couldn't fully load this row — its price and drift checks may be incomplete. Verify the amount before issuing this tax document.",
@@ -2633,8 +2633,8 @@
             "priceChanged": "The plan price changed after this draft was created. Check the amount before issuing."
           },
           "toast": {
-            "issuedAndSent": "Bill {number} issued and emailed.",
-            "issuedSilently": "Bill {number} issued.",
+            "issuedAndSent": "Invoice {number} issued and emailed.",
+            "issuedSilently": "Invoice {number} issued.",
             "discarded": "Draft discarded."
           },
           "errors": {
@@ -2642,7 +2642,7 @@
             "cycleNotFound": "We couldn't find this draft's renewal record. The draft itself hasn't changed — refresh the page and try again.",
             "invalidDraft": "This draft is no longer valid. Refresh the page and try again.",
             "discardNotDraft": "This draft was already issued and can no longer be discarded. Refresh the page.",
-            "issueFailed": "The bill could not be issued. Please try again.",
+            "issueFailed": "The invoice could not be issued. Please try again.",
             "discardFailed": "The draft could not be discarded. Please try again.",
             "network": "A network error occurred. Please try again.",
             "rateLimited": "Too many actions in a short time — wait a moment and try again.",
@@ -2713,7 +2713,7 @@
         "filteredEmpty": "No invoices match the current filters.",
         "loadFailed": "Couldn't load invoices. Please try again.",
         "draftsHint": "To see drafts, choose Draft in the Status filter.",
-        "recordPaymentIntentHint": "Choose a bill below and use its Record payment button (Actions column) to record a payment.",
+        "recordPaymentIntentHint": "Choose an invoice below and use its Record payment button (Actions column) to record a payment.",
         "filters": {
           "allStatuses": "All statuses",
           "groupLabel": "Filter invoices",
@@ -2731,7 +2731,7 @@
           "documentType": {
             "label": "Document",
             "all": "All documents",
-            "sc": "Bill (SC)",
+            "sc": "Invoice (SC)",
             "rc": "Tax receipt (RC)",
             "re": "Receipt (RE)",
             "cn": "With credit note"
@@ -2781,9 +2781,9 @@
             "planDrift": "The member's plan changed after this draft was created.",
             "memberTerminated": "This member's coverage has lapsed.",
             "memberErased": "This member's personal data has been erased at their request. No new invoice can be issued for them — discard this draft.",
-            "duplicateLiveBill": "A bill for this member and plan year already exists."
+            "duplicateLiveBill": "An invoice for this member and plan year already exists."
           },
-          "viewConflictingInvoice": "View existing bill",
+          "viewConflictingInvoice": "View existing invoice",
           "unresolved": "Unable to verify",
           "unresolvedAria": "Unable to verify this draft's price, coverage, or whether it would be refused",
           "unresolvedTooltip": "We couldn't confirm this draft's price, coverage, or whether it would be refused. Review it manually before issuing.",
@@ -3011,7 +3011,7 @@
             "hint": "Issue a tax invoice now and record the payment later. Requires the buyer's tax ID.",
             "hint088": "Issue an invoice (ใบแจ้งหนี้) now and record the payment later; the §86/4 tax receipt is issued at payment. Requires the buyer's tax ID."
           },
-          "billFirstNeedsTin": "Not recorded as VAT-registered — record the fee as already paid; a bill can't be issued before payment. Tick VAT-registered on the member record first if applicable.",
+          "billFirstNeedsTin": "Not recorded as VAT-registered — record the fee as already paid; an invoice can't be issued before payment. Tick VAT-registered on the member record first if applicable.",
           "waitingExplainer": "This registration is not paid yet according to the event data — wait for the money, then record it as paid. If the funds have in fact been received, select \"Already paid\" to confirm.",
           "refundedBlockedTitle": "Registration refunded",
           "refundedBlocked": "This registration has been refunded — an invoice or receipt cannot be created for a refunded fee.",
@@ -3075,9 +3075,9 @@
           "createAnyway": "Create a second invoice"
         },
         "renewalContext": {
-          "renewal": "Current period ends {periodTo} — paying this bill renews the membership ({from} to {to}).",
-          "firstPayment": "Membership not active yet — paying this bill activates benefits from the payment date; the 12-month period is fixed to the enrolment date.",
-          "notApplicable": "No active membership period — this bill will not affect renewals (use the reactivation flow for lapsed members)."
+          "renewal": "Current period ends {periodTo} — paying this invoice renews the membership ({from} to {to}).",
+          "firstPayment": "Membership not active yet — paying this invoice activates benefits from the payment date; the 12-month period is fixed to the enrolment date.",
+          "notApplicable": "No active membership period — this invoice will not affect renewals (use the reactivation flow for lapsed members)."
         }
       },
       "phraseChip": {
@@ -3182,7 +3182,7 @@
           "voidedBy": "Voided by",
           "reason": "Reason",
           "creditNoteHint": "This invoice is permanently voided. Its sequential tax-document number is retired and will not be reused. The VOID-stamped PDF above is the authoritative record; no further action is required.",
-          "creditNoteHintBill": "This bill is permanently voided. Bill number {number} stays on record, stamped VOID, and will not be reused; no §86/4 tax-receipt number was involved. The VOID-stamped PDF above is the authoritative record; no further action is required.",
+          "creditNoteHintBill": "This invoice is permanently voided. Invoice number {number} stays on record, stamped VOID, and will not be reused; no §86/4 tax-receipt number was involved. The VOID-stamped PDF above is the authoritative record; no further action is required.",
           "replacedBy": "Replaced by <link>{number}</link>",
           "replacedByIssued": "issued {date}"
         },
@@ -3258,7 +3258,7 @@
             "none": "None configured"
           },
           "warnings": {
-            "noPaymentPath": "No payment path configured — online payment is off and no bank-transfer details are set, so the member can't pay this bill. Add a payment method before issuing, or proceed knowing the bill can't be paid yet.",
+            "noPaymentPath": "No payment path configured — online payment is off and no bank-transfer details are set, so the member can't pay this invoice. Add a payment method before issuing, or proceed knowing the invoice can't be paid yet.",
             "notVatRegistrant": "No §86/4 Head Office / Branch line will print — this buyer isn't recorded as a VAT registrant. If they are, tick \"This member is registered for VAT\" on the member record first."
           }
         },
@@ -3303,10 +3303,10 @@
         },
         "confirmPhrase": "ISSUE",
         "confirmCopy": "Type \"{phrase}\" to confirm",
-        "issueBillButton": "Issue bill · {total} THB",
-        "issueInvoiceButton": "Issue invoice · {total} THB",
-        "issueBillButtonPlain": "Issue bill",
-        "issueInvoiceButtonPlain": "Issue invoice",
+        "issueBillButton": "Issue invoice · {total} THB",
+        "issueInvoiceButton": "Issue tax invoice · {total} THB",
+        "issueBillButtonPlain": "Issue invoice",
+        "issueInvoiceButtonPlain": "Issue tax invoice",
         "issuing": "Issuing…",
         "success": "Invoice issued",
         "successWithNumber": "Invoice {number} issued",
@@ -3395,9 +3395,9 @@
           "failed": "Could not record payment",
           "invalidStatus": "Only issued invoices can be paid (current status: {status}).",
           "legacy_no_tin_event_needs_remediation": "This event invoice was issued to a buyer without a tax ID under the old flow — its issued PDF is already the official receipt, so recording a payment would create a second receipt. Please follow the remediation runbook instead.",
-          "legacy_invoice_needs_reissue": "This is a legacy invoice with no bill number — it must be voided and re-issued before a payment can be recorded.",
-          "membership_terminated": "This member's membership has been terminated — use \"Renew member\" to reactivate and re-invoice, then record the payment against the new invoice. If the member's previous open bill is still there, void it.",
-          "new_flow_bill_requires_flag_on": "This bill was created for the tax-at-payment flow, which is currently switched off. Re-enable it, or void and re-issue the bill, before recording payment.",
+          "legacy_invoice_needs_reissue": "This is a legacy tax invoice with no SC invoice number — it must be voided and re-issued before a payment can be recorded.",
+          "membership_terminated": "This member's membership has been terminated — use \"Renew member\" to reactivate and re-invoice, then record the payment against the new invoice. If the member's previous open invoice is still there, void it.",
+          "new_flow_bill_requires_flag_on": "This invoice was created for the tax-at-payment flow, which is currently switched off. Re-enable it, or void and re-issue the invoice, before recording payment.",
           "concurrent": "This invoice was already paid or changed in another session. Refresh to see the latest status and the receipt (RC) number.",
           "refreshAction": "Refresh",
           "dateRange": "Payment date must be on or after the issue date ({min}) and not in the future ({max}).",
@@ -3423,13 +3423,13 @@
       "void": {
         "title": "Void invoice",
         "description": "Void this issued-unpaid invoice: the sequential tax-document number is retired and cannot be reused, the PDF is re-stamped VOID, and, if automatic emails are enabled, a cancellation notice is sent to the member.",
-        "descriptionBill": "Void this unpaid bill: bill number {number} stays on record, stamped VOID, and is never reused; no §86/4 tax-receipt number is involved. If automatic emails are enabled, a cancellation notice is sent to the member.",
+        "descriptionBill": "Void this unpaid invoice: invoice number {number} stays on record, stamped VOID, and is never reused; no §86/4 tax-receipt number is involved. If automatic emails are enabled, a cancellation notice is sent to the member.",
         "voiding": "Voiding invoice",
         "terminalNotice": "Void is terminal — no payment, credit, or edit afterwards. A paid invoice can't be voided; reverse it with a refund or a credit note instead.",
         "reasonLabel": "Reason",
         "reasonHelp": "Shown on the voided PDF and in the audit trail. Required, up to 500 characters.",
-        "confirmCopy": "Type the invoice number to confirm",
-        "confirmCopyBill": "Type the bill number to confirm",
+        "confirmCopy": "Type the tax invoice number to confirm",
+        "confirmCopyBill": "Type the invoice number to confirm",
         "confirmMismatch": "Phrase must match \"{phrase}\" exactly to confirm.",
         "backToInvoice": "Back to invoice",
         "submit": "Void invoice",
@@ -4063,7 +4063,7 @@
           "label": "Past due",
           "basis": "membership dues past due · this fiscal year · incl. VAT",
           "ariaLabel": "Past due {amount} — view overdue renewals",
-          "priorYears": "+ {amount} overdue from prior years ({count, plural, one {# bill} other {# bills}})"
+          "priorYears": "+ {amount} overdue from prior years ({count, plural, one {# invoice} other {# invoices}})"
         },
         "collected": {
           "label": "Collected this month",
@@ -4074,7 +4074,7 @@
           "label": "Collection rate",
           "basis": "membership · fiscal-year-to-date · due-cohort · incl. VAT",
           "hintAriaLabel": "How this differs from the dashboard's Paid revenue",
-          "hint": "Counts membership bills DUE in the current fiscal year. The dashboard's Paid revenue counts by the year a bill was ISSUED — the two can legitimately differ."
+          "hint": "Counts membership invoices DUE in the current fiscal year. The dashboard's Paid revenue counts by the year an invoice was ISSUED — the two can legitimately differ."
         },
         "dueSoon": {
           "label": "Due soon",
@@ -4082,7 +4082,7 @@
         }
       },
       "suspendedBridge": {
-        "line": "Suspended benefit access: {total, plural, one {# member} other {# members}} in total — {inWindow} in this renewal queue · {outside} with an unpaid first bill (not yet in a renewal window). <link>View all unpaid membership bills</link>"
+        "line": "Suspended benefit access: {total, plural, one {# member} other {# members}} in total — {inWindow} in this renewal queue · {outside} with an unpaid first invoice (not yet in a renewal window). <link>View all unpaid membership invoices</link>"
       },
       "tabs": {
         "ariaLabel": "Renewals sections",
@@ -4221,8 +4221,8 @@
         "viewInvoice": "View invoice",
         "invoiceCoveredLabel": "Covered",
         "invoiceCoveredTitle": "This renewal period is already covered by an earlier payment — no renewal invoice is linked yet.",
-        "billIssuedLabel": "Bill issued",
-        "billIssuedTitle": "A renewal bill for the next term has been issued. The current period is paid, so benefits continue until the current period ends.",
+        "billIssuedLabel": "Invoice issued",
+        "billIssuedTitle": "A renewal invoice for the next term has been issued. The current period is paid, so benefits continue until the current period ends.",
         "noRows": "No members in this bucket.",
         "noRowsInBucket": "No members are due to renew in this window. Switch to another urgency tab to see pending renewals.",
         "noRowsInMonth": "No members renew in {month}.",
@@ -4622,7 +4622,7 @@
         "pendingNoticeTitle": "Awaiting your decision",
         "terminatedCallout": {
           "title": "This membership is terminated",
-          "body": "To accept a payment (including a bank transfer already received): use \"Renew member\" to reactivate and re-invoice, then record the payment against the new invoice. If the member's previous open bill is still there, void it."
+          "body": "To accept a payment (including a bank transfer already received): use \"Renew member\" to reactivate and re-invoice, then record the payment against the new invoice. If the member's previous open invoice is still there, void it."
         },
         "pendingNoticeBody": "This member paid to reactivate a lapsed membership, but auto-reactivation is blocked for them. Approve to complete the renewal, or reject to cancel it and refund the payment.",
         "refundSettlingBadge": "Refund settling",
@@ -6513,7 +6513,7 @@
           "autoRefundFailedBody": "Your payment was recorded, and a refund is being reconciled by our team. We'll follow up with you as soon as it's resolved.",
           "autoRefundFailedContact": "If you have any questions in the meantime, please contact your chamber administrator with the reference below.",
           "autoRefundRef": "Refund reference: {ref}",
-          "replacedBy": "This bill was replaced by <link>{number}</link>",
+          "replacedBy": "This invoice was replaced by <link>{number}</link>",
           "replacedByIssued": "issued {date}"
         },
         "detailsHeading": "Details",
@@ -7923,7 +7923,7 @@
       }
     },
     "creditNoteOriginal": {
-      "bill": "Bill {number}",
+      "bill": "Invoice {number}",
       "combined": "Combined tax invoice + receipt",
       "refund": "Refund",
       "refundHint": "Issued by a card or PromptPay refund",

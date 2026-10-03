@@ -30,7 +30,7 @@ export type IssueAutoDraftErrorRouting =
         | 'memberTerminated'
         | 'memberErased'
         | 'duplicateLiveBill';
-      /** Only set for `duplicateLiveBill` — powers a "View existing bill" link,
+      /** Only set for `duplicateLiveBill` — powers a "View existing invoice" link,
        * mirroring `<AutoRenewalQueueBadges>`'s own conflicting-invoice link. */
       readonly conflictingInvoiceId?: string;
     }
