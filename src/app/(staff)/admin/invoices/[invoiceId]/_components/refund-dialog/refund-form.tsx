@@ -519,6 +519,14 @@ export function RefundForm({
           className="flex flex-col gap-[var(--aura-space-2)] rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface-hover)] p-[var(--aura-space-3)]"
         >
           <p className="text-xs font-semibold text-[var(--aura-fg-secondary)]">{tForm('summary.title')}</p>
+          {/* F4 waived the credit note (§105 receipt, voided invoice): say so
+              before Confirm, as a plain note. No filing advice — that is the
+              accountant's call (see the waived toasts below). */}
+          {creditNotePreview.status === 'none' && creditNotePreview.waivedReason !== null && (
+            <p data-testid="refund-summary-no-credit-note" className="text-sm text-[var(--aura-fg-secondary)]">
+              {tForm(`summary.noCreditNote.${waiverKey(creditNotePreview.waivedReason)}`)}
+            </p>
+          )}
           {(creditNotePreview.status === 'loading' || creditNotePreview.status === 'ready') && (
             // One layout for loading and ready — only the values swap for a
             // skeleton — so the totals below never shift while typing.
@@ -564,7 +572,9 @@ export function RefundForm({
           )}
           <dl
             className={`grid grid-cols-[1fr_auto] gap-x-[var(--aura-space-4)] gap-y-[var(--aura-space-1)] text-sm${
-              creditNotePreview.status === 'loading' || creditNotePreview.status === 'ready'
+              creditNotePreview.status === 'loading' ||
+              creditNotePreview.status === 'ready' ||
+              (creditNotePreview.status === 'none' && creditNotePreview.waivedReason !== null)
                 ? ' border-t border-[var(--aura-border-subtle)] pt-[var(--aura-space-2)]'
                 : ''
             }`}

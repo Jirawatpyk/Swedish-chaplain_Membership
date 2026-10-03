@@ -5100,7 +5100,11 @@
           "creditNoteNet": "Belopp exkl. moms",
           "creditNoteVat": "Moms {rate}",
           "creditNoteVatPending": "Moms",
-          "creditNoteLoading": "Beräknar kreditnotan…"
+          "creditNoteLoading": "Beräknar kreditnotan…",
+          "noCreditNote": {
+            "section105Receipt": "Ingen kreditnota — betalningen har ett kvitto enligt avsnitt 105, inte en skattefaktura.",
+            "invoiceVoided": "Ingen kreditnota — fakturan har makulerats."
+          }
         },
         "typedPhrase": {
           "label": "Skriv frasen för att bekräfta full återbetalning",

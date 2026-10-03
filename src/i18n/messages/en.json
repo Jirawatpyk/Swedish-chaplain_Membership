@@ -5100,7 +5100,11 @@
           "creditNoteNet": "Amount excl. VAT",
           "creditNoteVat": "VAT {rate}",
           "creditNoteVatPending": "VAT",
-          "creditNoteLoading": "Working out the credit note…"
+          "creditNoteLoading": "Working out the credit note…",
+          "noCreditNote": {
+            "section105Receipt": "No credit note — this payment has a Section 105 receipt, not a tax invoice.",
+            "invoiceVoided": "No credit note — this invoice has been voided."
+          }
         },
         "typedPhrase": {
           "label": "Type the phrase to confirm a full refund",
