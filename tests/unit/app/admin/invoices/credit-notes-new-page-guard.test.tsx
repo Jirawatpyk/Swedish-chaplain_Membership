@@ -184,6 +184,11 @@ describe('NewCreditNotePage — §105 receipt_separate fail-fast guard (088 FIX 
     expect(html).toContain('cn-form');
     // displayDocumentNumber falls back to the RC for the "against invoice {n}" label.
     expect(html).toContain('RC-2026-000009');
+    // Spec 122 US8b — one back link on a phone: below 1024px the shell's
+    // back link stands in for the page's own.
+    const host = document.createElement('div');
+    host.innerHTML = html;
+    expect(host.querySelector('a[href="/admin/invoices/inv-1"]')).toHaveClass('max-lg:hidden');
   });
 
   it('legacy §86/4 tax invoice (WALK-IN event + 13-digit TIN, documentNumber set) → renders the form', async () => {
