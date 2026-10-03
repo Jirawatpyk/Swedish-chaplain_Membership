@@ -182,6 +182,27 @@ describe('invoice detail — header', () => {
     expect(document.querySelector('.aura-pill')).toHaveClass('aura-pill--neutral');
   });
 
+  // Maintainer, 3 Oct: the heading names the document by its type. An 088
+  // bill is always "Invoice {SC}"; the event-fee already-paid flow issues no
+  // bill, only a combined tax invoice/receipt (TIN) or a §105 receipt (no TIN).
+  it('names a paid 088 bill "Invoice {SC}", never by its receipt', async () => {
+    const inv = invoice({ status: 'paid', receiptDocumentNumberRaw: 'RC-2026-000088', pdfDocKind: 'invoice' });
+    await view(props({ invoice: inv, displayStatus: 'paid', headerNumber: 'SC-2026-000130', displayNumber: 'RC-2026-000088', taxDocKind: 'tax_receipt' }));
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/^Invoice SC-2026-000130$/);
+  });
+
+  it('names an already-paid event fee for a TIN buyer as the combined tax invoice/receipt', async () => {
+    const inv = invoice({ status: 'paid', invoiceSubject: 'event', billDocumentNumberRaw: null, documentNumber: { raw: 'INV-2026-000041' }, pdfDocKind: 'receipt_combined' });
+    await view(props({ invoice: inv, displayStatus: 'paid', headerNumber: 'INV-2026-000041', displayNumber: 'INV-2026-000041', taxDocKind: 'none' }));
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/^Tax invoice\/receipt INV-2026-000041$/);
+  });
+
+  it('names an already-paid event fee for a buyer with no TIN as the receipt', async () => {
+    const inv = invoice({ status: 'paid', invoiceSubject: 'event', billDocumentNumberRaw: null, receiptDocumentNumberRaw: 'RE-2026-000007', pdfDocKind: 'receipt_separate' });
+    await view(props({ invoice: inv, displayStatus: 'paid', headerNumber: 'RE-2026-000007', displayNumber: 'RE-2026-000007', taxDocKind: 'none' }));
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/^Receipt RE-2026-000007$/);
+  });
+
   it('shows an overdue invoice\'s pill as blocked', async () => {
     await view(props({ displayStatus: 'overdue' }));
     expect(document.querySelector('.aura-pill')).toHaveClass('aura-pill--blocked');
