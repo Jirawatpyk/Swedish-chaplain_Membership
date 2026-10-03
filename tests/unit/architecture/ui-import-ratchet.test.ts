@@ -188,8 +188,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the invoice settings form keeps the legacy kit until US8c-2', async () => {
-      expect(await ratchetHits(legacy, 'src/components/invoices/invoice-settings-form.tsx')).toEqual([]);
+    it('control: the events list keeps the legacy kit until US9', async () => {
+      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/events/page.tsx')).toEqual([]);
     });
   });
 
@@ -427,8 +427,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the invoice settings page keeps the legacy kit until US8c-2', async () => {
-      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/settings/invoicing/page.tsx')).toEqual([]);
+    it('control: the users page keeps the legacy kit until US10', async () => {
+      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/users/page.tsx')).toEqual([]);
     });
   });
 
