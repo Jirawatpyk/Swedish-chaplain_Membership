@@ -379,3 +379,27 @@ describe('VoidConfirmDialog — AURA layout', () => {
     expect(submit).toHaveClass('aura-btn');
   });
 });
+
+// Board Admin-void (parity comment, 3 Oct): the number to type sits in its
+// own chip with a copy button, and the label reads "Type the bill number to
+// confirm" for an 088 bill. What has to be typed is unchanged.
+describe('VoidConfirmDialog — the number to type (board Admin-void)', () => {
+  it('shows the number as a chip with a copy button, kept in the input\'s description', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <VoidConfirmDialog invoiceId={INVOICE_ID} documentNumber={DOC_NUMBER} isBill />
+      </NextIntlClientProvider>,
+    );
+    const input = screen.getByLabelText('Type the bill number to confirm');
+    const chip = screen.getByTestId('void-confirm-chip');
+    expect(chip.tagName).toBe('CODE');
+    expect(chip).toHaveTextContent(DOC_NUMBER);
+    expect(screen.getByRole('button', { name: `Copy ${DOC_NUMBER}` })).toBeInTheDocument();
+    expect(input).toHaveAccessibleDescription(new RegExp(DOC_NUMBER));
+  });
+
+  it('a legacy §87 invoice reads "Type the invoice number to confirm"', () => {
+    renderDialog();
+    expect(screen.getByLabelText('Type the invoice number to confirm')).toBeInTheDocument();
+  });
+});

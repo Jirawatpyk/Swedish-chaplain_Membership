@@ -87,6 +87,21 @@ describe('IssueInvoiceForm — vat_treatment control gating (FR-023)', () => {
   });
 });
 
+// Board Admin-invoice-issue (parity comment, 3 Oct): the confirm names the
+// document and its total, and carries the money-step check icon (§ Button icons).
+describe('IssueInvoiceForm — the confirm button', () => {
+  it('reads "Issue bill · {total} THB" with the check icon for an 088 bill', () => {
+    renderForm();
+    const confirm = screen.getByRole('button', { name: 'Issue bill · 8,000.00 THB' });
+    expect(confirm.querySelector('svg.aura-icon')).not.toBeNull();
+  });
+
+  it('reads "Issue invoice · {total} THB" when the tax-at-payment flag is off (a §87 invoice)', () => {
+    renderForm({ taxAtPayment: false });
+    expect(screen.getByRole('button', { name: 'Issue invoice · 8,000.00 THB' })).toBeInTheDocument();
+  });
+});
+
 describe('IssueInvoiceForm — progressive disclosure (FR-024 / T061c)', () => {
   it('reveals the cert fields with an aria-live announce + a required cert number', () => {
     renderForm();
@@ -118,7 +133,7 @@ describe('IssueInvoiceForm — fail-closed cert validation (FR-024 / T061b)', ()
         target: { value: 'ISSUE' },
       });
 
-      fireEvent.click(screen.getByRole('button', { name: /^Issue$/ }));
+      fireEvent.click(screen.getByRole('button', { name: /^Issue bill · 8,000\.00 THB$/ }));
 
       const certNo = screen.getByLabelText(/MFA certificate number/i);
       expect(certNo).toHaveAttribute('aria-invalid', 'true');
@@ -190,7 +205,7 @@ describe('IssueInvoiceForm — valid zero-rate issue POST', () => {
       fireEvent.change(screen.getByLabelText(/to confirm/i), {
         target: { value: 'ISSUE' },
       });
-      fireEvent.click(screen.getByRole('button', { name: /^Issue$/ }));
+      fireEvent.click(screen.getByRole('button', { name: /^Issue bill · 8,000\.00 THB$/ }));
 
       await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
       const [url, init] = fetchMock.mock.calls[0] as unknown as [
@@ -222,7 +237,7 @@ describe('IssueInvoiceForm — valid zero-rate issue POST', () => {
       fireEvent.change(screen.getByLabelText(/to confirm/i), {
         target: { value: 'ISSUE' },
       });
-      fireEvent.click(screen.getByRole('button', { name: /^Issue$/ }));
+      fireEvent.click(screen.getByRole('button', { name: /^Issue bill · 8,000\.00 THB$/ }));
 
       await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
       const [, init] = fetchMock.mock.calls[0] as unknown as [
@@ -283,7 +298,7 @@ describe('IssueInvoiceForm — cert-scan blob key in POST (UX-B1)', () => {
       fireEvent.change(screen.getByLabelText(/to confirm/i), {
         target: { value: 'ISSUE' },
       });
-      fireEvent.click(screen.getByRole('button', { name: /^Issue$/ }));
+      fireEvent.click(screen.getByRole('button', { name: /^Issue bill · 8,000\.00 THB$/ }));
 
       // Find the /issue POST (the cert-upload POST fired first).
       await waitFor(() =>
@@ -412,7 +427,7 @@ function confirmAndSubmit() {
   fireEvent.change(screen.getByLabelText(/to confirm/i), {
     target: { value: 'ISSUE' },
   });
-  fireEvent.click(screen.getByRole('button', { name: /^Issue$/ }));
+  fireEvent.click(screen.getByRole('button', { name: /^Issue bill · 8,000\.00 THB$/ }));
 }
 
 describe('IssueInvoiceForm — concurrent 409 inline recovery (FR-032)', () => {
@@ -505,7 +520,7 @@ describe('IssueInvoiceDialog — AURA alertdialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Issue…' }));
     const dialog = screen.getByRole('alertdialog', { name: enMessages.admin.invoices.issue.title });
     expect(dialog).toHaveAccessibleDescription(enMessages.admin.invoices.issue.review.immutableSnapshotAck);
-    expect(screen.getByRole('button', { name: /^Issue$/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^Issue bill · 8,000\.00 THB$/ })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: enMessages.admin.invoices.issue.cancel }));
     expect(screen.queryByRole('alertdialog')).toBeNull();
   });
