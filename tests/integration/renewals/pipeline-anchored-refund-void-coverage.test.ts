@@ -227,6 +227,82 @@ describe('loadPipeline `anchored` — anchor invoice void/refund coverage (live 
     }
   });
 
+  // `linkedInvoiceLive` — the row's Mark-paid / Record-payment gate keys on it.
+  // A cycle still LINKED to a VOID invoice (void-on-reissue supersede /
+  // pre-unlink voids) must read as no live bill; a link to any non-void
+  // invoice reads as live; no link reads as not live.
+  it('maps `linkedInvoiceLive` from the LINKED invoice status (void → false, non-void → true, no link → false)', async () => {
+    const linked = [
+      { key: 'linked-void', status: 'void' as const, expected: false },
+      { key: 'linked-live', status: 'paid' as const, expected: true },
+    ].map((l) => ({
+      ...l,
+      memberId: randomUUID(),
+      cycleId: randomUUID(),
+      invoiceId: randomUUID(),
+    }));
+
+    await runInTenant(tenant.ctx, async (tx) => {
+      for (const l of linked) {
+        await tx.insert(members).values({
+          tenantId: tenant.ctx.slug,
+          memberId: l.memberId,
+          memberNumber: nextSeedMemberNumber(),
+          companyName: `Link ${l.key} Co`,
+          country: 'TH',
+          planId,
+          planYear: 2026,
+        });
+        // Invoice BEFORE the cycle — composite FK on (tenant_id, linked_invoice_id).
+        await insertAnchorInvoice(tx, {
+          tenantSlug: tenant.ctx.slug,
+          userId: user.userId,
+          invoiceId: l.invoiceId,
+          memberId: l.memberId,
+          planId,
+          status: l.status,
+        });
+        await tx.insert(renewalCycles).values({
+          tenantId: tenant.ctx.slug,
+          cycleId: l.cycleId,
+          memberId: l.memberId,
+          status: 'upcoming',
+          periodFrom: PERIOD_FROM,
+          periodTo: EXPIRES_AT,
+          expiresAt: EXPIRES_AT,
+          cycleLengthMonths: 12,
+          tierAtCycleStart: 'regular',
+          planIdAtCycleStart: planId,
+          frozenPlanPriceThb: '50000.00',
+          frozenPlanTermMonths: 12,
+          frozenPlanCurrency: 'THB',
+          linkedInvoiceId: l.invoiceId,
+        });
+      }
+    });
+
+    const deps = makeRenewalsDeps(tenant.ctx.slug);
+    const result = await loadPipeline(deps, {
+      tenantId: tenant.ctx.slug,
+      urgency: 't-30',
+      limit: 50,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    for (const l of linked) {
+      const row = result.value.rows.find((r) => r.cycleId === l.cycleId);
+      expect(row, `row for ${l.key} present`).toBeDefined();
+      expect(row?.linkedInvoiceId, `linkedInvoiceId for ${l.key}`).toBe(l.invoiceId);
+      expect(row?.linkedInvoiceLive, `linkedInvoiceLive for ${l.key}`).toBe(l.expected);
+    }
+    // The anchored scenarios carry no link at all → not live.
+    for (const s of scenarios) {
+      const row = result.value.rows.find((r) => r.cycleId === s.cycleId);
+      expect(row?.linkedInvoiceLive, `linkedInvoiceLive for ${s.key}`).toBe(false);
+    }
+  });
+
   it('reconciliation guard is immune: no member is falsely flagged as unreconciled (would suppress reminders)', async () => {
     const deps = makeRenewalsDeps(tenant.ctx.slug);
     const flagged =

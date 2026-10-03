@@ -27,6 +27,7 @@ function row(cycleId: string, companyName: string, closedReason: string | null):
     lastReminderAt: null,
     lastReminderStepId: null,
     linkedInvoiceId: null,
+    linkedInvoiceLive: false,
     anchored: false,
     closedReason: closedReason as PipelineRow['closedReason'],
     emailUnverified: false,

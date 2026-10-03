@@ -43,6 +43,7 @@ function row(status: PipelineRow['status']): PipelineRow {
     lastReminderAt: null,
     lastReminderStepId: null,
     linkedInvoiceId: null,
+    linkedInvoiceLive: false,
     anchored: false,
     closedReason: null,
     emailUnverified: false,
