@@ -158,6 +158,10 @@ export const issueInvoiceSchema = z.object({
   // heard of this field is unaffected — see the resolution order at the
   // step-L outbox block below.
   autoEmailOverride: z.boolean().optional(),
+  // The total (satang, digits) the Issue dialog showed the admin. Optional:
+  // present → issuance refuses `issue_total_changed` (pre-sequence) if the
+  // priced total differs; absent → no check (callers that show no total).
+  expectedTotalSatang: z.string().regex(/^\d{1,15}$/).optional(),
 });
 
 export type IssueInvoiceInput = z.infer<typeof issueInvoiceSchema>;
@@ -194,6 +198,12 @@ export type IssueInvoiceError =
    * document against a registration we can no longer verify.
    */
   | { code: 'registration_lookup_failed' }
+  /**
+   * The confirmed `expectedTotalSatang` no longer matches the priced total
+   * (draft lines or the tenant VAT rate changed after the dialog rendered).
+   * Refused PRE-SEQUENCE — nothing issued, no number consumed.
+   */
+  | { code: 'issue_total_changed' }
   | { code: 'invalid_lines'; reason: string }
   /**
    * 088 US8 (FR-025) — a MEMBERSHIP subject supplied as `zero_rated_80_1_5` is
@@ -568,6 +578,56 @@ export async function issueInvoice(
       });
     }
 
+    // F. Pricing from lines — PRE-SEQUENCE (pure; runs before allocateNext so
+    // the confirmed-total guard below can refuse without burning a number) (054-event-fee-invoices — Model A vs Model B).
+    //
+    //   `computeIssuePricing` is the single issue-time computation, shared
+    //   with the staff draft preview + the Issue dialog summary so the admin
+    //   confirms the figures this step pins:
+    //
+    //   - VAT-EXCLUSIVE (membership, vatInclusive=false): the line sum IS the
+    //     subtotal; VAT is added on top → `calculateVat`. UNCHANGED F4 behaviour.
+    //
+    //   - VAT-INCLUSIVE (event Model B, vatInclusive=true): the single event_fee
+    //     line stores the all-in ticket price, so the line sum IS the total. Back-
+    //     calculate subtotal + VAT via `splitVatInclusive` (subtotal = round-half-
+    //     away(total × 10000/(10000+bps)); vat = total − subtotal). This preserves
+    //     the inclusive amount EXACTLY (subtotal+vat===total by construction) and
+    //     avoids the ~6.5% off-by-1-satang mismatch a store-subtotal-then-recompute
+    //     path produces (e.g. 100.04 THB → total stays 10004, not 10005).
+    let lineSum = Money.zero();
+    for (const line of draft.lines) {
+      lineSum = lineSum.add(line.total);
+    }
+    // 088 US8 (FR-025 / G3) — `vat_treatment` DRIVES the rate (single source of
+    // truth): a `'zero_rated_80_1_5'` issue computes at 0%, everything else at
+    // the tenant's configured standard rate. The rate is NEVER chosen
+    // independently of the treatment. Both the inclusive + exclusive branches +
+    // the persisted `vatRateSnapshot` use THIS derived rate.
+    const {
+      subtotal,
+      vat,
+      total,
+      vatRate: effectiveVatRate,
+    } = computeIssuePricing({
+      lineSum,
+      vatInclusive: draft.vatInclusive,
+      vatTreatment,
+      standardRate: settings.vatRate,
+    });
+
+    // The Issue dialog sends back the total it showed the admin. Priced at
+    // page render, it goes stale if the draft's lines or the tenant VAT rate
+    // changed before the confirm — then the bill would pin a figure the admin
+    // never saw. Refuse PRE-SEQUENCE (plain `return err`, no number consumed);
+    // the dialog asks for a refresh. Absent → no check (renewal queue, portal).
+    if (
+      input.expectedTotalSatang !== undefined &&
+      BigInt(input.expectedTotalSatang) !== total.satang
+    ) {
+      return err({ code: 'issue_total_changed' });
+    }
+
     // D. Fiscal year
     const fy = fiscalYearFromUtcIso(
       now,
@@ -606,42 +666,6 @@ export async function issueInvoice(
       throw new IssueInvoiceInternalError({ code: 'overflow', fiscalYear: fy });
     }
 
-    // F. Pricing from lines (054-event-fee-invoices — Model A vs Model B).
-    //
-    //   `computeIssuePricing` is the single issue-time computation, shared
-    //   with the staff draft preview + the Issue dialog summary so the admin
-    //   confirms the figures this step pins:
-    //
-    //   - VAT-EXCLUSIVE (membership, vatInclusive=false): the line sum IS the
-    //     subtotal; VAT is added on top → `calculateVat`. UNCHANGED F4 behaviour.
-    //
-    //   - VAT-INCLUSIVE (event Model B, vatInclusive=true): the single event_fee
-    //     line stores the all-in ticket price, so the line sum IS the total. Back-
-    //     calculate subtotal + VAT via `splitVatInclusive` (subtotal = round-half-
-    //     away(total × 10000/(10000+bps)); vat = total − subtotal). This preserves
-    //     the inclusive amount EXACTLY (subtotal+vat===total by construction) and
-    //     avoids the ~6.5% off-by-1-satang mismatch a store-subtotal-then-recompute
-    //     path produces (e.g. 100.04 THB → total stays 10004, not 10005).
-    let lineSum = Money.zero();
-    for (const line of draft.lines) {
-      lineSum = lineSum.add(line.total);
-    }
-    // 088 US8 (FR-025 / G3) — `vat_treatment` DRIVES the rate (single source of
-    // truth): a `'zero_rated_80_1_5'` issue computes at 0%, everything else at
-    // the tenant's configured standard rate. The rate is NEVER chosen
-    // independently of the treatment. Both the inclusive + exclusive branches +
-    // the persisted `vatRateSnapshot` use THIS derived rate.
-    const {
-      subtotal,
-      vat,
-      total,
-      vatRate: effectiveVatRate,
-    } = computeIssuePricing({
-      lineSum,
-      vatInclusive: draft.vatInclusive,
-      vatTreatment,
-      standardRate: settings.vatRate,
-    });
 
     // G. Snapshots — `tenantSnap` is the seller; `memberSnap` is the BUYER,
     // resolved above (membership/matched-member from getForIssue; non-member

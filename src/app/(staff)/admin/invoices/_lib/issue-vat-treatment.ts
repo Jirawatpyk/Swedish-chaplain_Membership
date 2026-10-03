@@ -58,11 +58,14 @@ export const NO_CERT_ERRORS: ZeroRateCertErrors = {
 };
 
 /**
- * The zero-rated POST payload, or `null` for a standard / flag-off issue
- * (→ an empty POST body, byte-identical to the legacy issue flow so the
- * route defaults `vatTreatment` to `standard`).
+ * The issue POST payload, or `null` (→ an empty POST body, byte-identical to
+ * the legacy issue flow) when there is nothing to send. The route defaults
+ * `vatTreatment` to `standard`. `expectedTotalSatang` (digits) is the total
+ * the dialog confirmed; the server refuses `issue_total_changed` if issuance
+ * would pin another.
  */
 export type IssueRequestBody =
+  | { readonly expectedTotalSatang: string }
   | {
       readonly vatTreatment: 'zero_rated_80_1_5';
       readonly zeroRateCertNo: string;
@@ -73,6 +76,7 @@ export type IssueRequestBody =
        * (the scan is optional — the cert NUMBER is the fail-closed gate).
        */
       readonly zeroRateCertBlobKey?: string;
+      readonly expectedTotalSatang?: string;
     }
   | null;
 
@@ -119,9 +123,10 @@ export function isZeroRateLowAmount(
 }
 
 /**
- * Build the issue POST body. Returns `null` (→ empty POST) unless the flag is
- * on AND the admin chose zero-rate; then it carries the vat_treatment + cert
- * NUMBER (+ DATE when entered). 088 UX-B1: when an OPTIONAL cert SCAN was
+ * Build the issue POST body. The confirmed total (`expectedTotalSatang`, when
+ * the dialog priced the draft) rides on every issue. Beyond it, the body is
+ * empty unless the flag is on AND the admin chose zero-rate; then it carries
+ * the vat_treatment + cert NUMBER (+ DATE when entered). `null` → empty POST. 088 UX-B1: when an OPTIONAL cert SCAN was
  * uploaded (`certBlobKey` non-empty), its Blob key is included as
  * `zeroRateCertBlobKey`; when no scan was attached it is omitted (the scan is
  * optional — the cert NUMBER is the fail-closed gate).
@@ -132,9 +137,15 @@ export function buildIssueRequestBody(input: {
   readonly certNo: string;
   readonly certDate: string;
   readonly certBlobKey?: string | null;
+  /** Satang the dialog showed; `null`/omitted → no confirmed-total check. */
+  readonly expectedTotalSatang?: number | null;
 }): IssueRequestBody {
+  const expected =
+    input.expectedTotalSatang != null
+      ? { expectedTotalSatang: String(input.expectedTotalSatang) }
+      : null;
   if (!input.taxAtPayment || input.vatTreatment !== 'zero_rated_80_1_5') {
-    return null;
+    return expected;
   }
   const certDate = input.certDate.trim();
   const certBlobKey = (input.certBlobKey ?? '').trim();
@@ -143,5 +154,6 @@ export function buildIssueRequestBody(input: {
     zeroRateCertNo: input.certNo.trim(),
     ...(certDate !== '' ? { zeroRateCertDate: certDate } : {}),
     ...(certBlobKey !== '' ? { zeroRateCertBlobKey: certBlobKey } : {}),
+    ...(expected ?? {}),
   };
 }

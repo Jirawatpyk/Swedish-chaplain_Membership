@@ -76,6 +76,7 @@ export async function POST(
     zeroRateCertNo: b.zeroRateCertNo,
     zeroRateCertDate: b.zeroRateCertDate,
     zeroRateCertBlobKey: b.zeroRateCertBlobKey,
+    expectedTotalSatang: b.expectedTotalSatang,
   });
   if (!parsed.success) {
     return NextResponse.json({ error: { code: 'invalid' } }, { status: 400 });
