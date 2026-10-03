@@ -805,7 +805,7 @@
     },
     "plans": {
       "title": "Membership Plans",
-      "vatNote": "Fees exclude {rate}% VAT",
+      "vatNote": "Fees exclude {rate} VAT",
       "listDescription": "Manage tier definitions, annual fees, and benefit matrices. Prior-year plans are partially locked for audit integrity.",
       "tableCaption": "List of membership plans for the selected year.",
       "empty": {

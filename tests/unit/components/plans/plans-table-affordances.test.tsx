@@ -19,6 +19,7 @@ import { render, screen, cleanup, fireEvent, within } from '@testing-library/rea
 import { NextIntlClientProvider } from 'next-intl';
 import { AuraProvider } from '@jirawatpyk/aura-react';
 import en from '@/i18n/messages/en.json';
+import sv from '@/i18n/messages/sv.json';
 import { PlansTable } from '@/components/plans/plans-table';
 import type { Role } from '@/modules/auth/domain/role';
 import type { PlanListItem } from '@/modules/plans';
@@ -275,6 +276,26 @@ describe('PlansTable on AURA (board Admin-plans)', () => {
   it('ends with the VAT note under the table (the count is in the filter row)', () => {
     renderRows();
     expect(screen.getByText('Fees exclude 7% VAT')).toBeInTheDocument();
+  });
+
+  // The rate in the note is formatted for the UI locale like every other VAT
+  // rate in the admin (formatVatRateBps) — a raw `7.5` read "7.5 %" in Swedish.
+  it('formats a fractional rate in the VAT note for the UI locale', () => {
+    const { container } = render(
+      <NextIntlClientProvider locale="sv" messages={sv}>
+        <PlansTable
+          plans={[listItem({ vat_rate: 0.075 })]}
+          currencyCode="THB"
+          year={2026}
+          currentUserRole="admin"
+          initialFilter={{ category: null, q: null, activeOnly: false, showDeleted: false }}
+        />
+      </NextIntlClientProvider>,
+    );
+    const note = Array.from(container.querySelectorAll('p')).find((p) =>
+      p.textContent?.startsWith('Avgifter exkl.'),
+    );
+    expect(note?.textContent).toBe('Avgifter exkl. 7,5 % moms');
   });
 
   // UX review (US6): the plan name is the only way into a plan from a phone
