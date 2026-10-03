@@ -1311,6 +1311,17 @@ export async function issueCreditNote(
         reason: input.reason,
         document_number: docNum.value.raw,
         pdf_sha256: rendered.sha256,
+        // §86/10 วรรคสอง — the statement the note carries (all excl. VAT), kept
+        // here so it can be reproduced without the PDF blob. `template_version`
+        // says whether the PDF printed it (v13+).
+        section_86_10: {
+          original_value_satang: section8610Values.originalValue.satang.toString(),
+          previously_reduced_satang: section8610Values.previouslyReduced.satang.toString(),
+          correct_value_satang: section8610Values.correctValue.satang.toString(),
+          difference_satang: section8610Values.difference.satang.toString(),
+          difference_vat_satang: section8610Values.differenceVat.satang.toString(),
+          template_version: deps.currentTemplateVersion,
+        },
         // 0306 — the staff's declared Keep / End membership intent on a FULL
         // membership credit (manual or refund-origin), for the forensic chain.
         ...(isMembershipInvoice && isFullCredit && input.membershipEffect !== undefined
