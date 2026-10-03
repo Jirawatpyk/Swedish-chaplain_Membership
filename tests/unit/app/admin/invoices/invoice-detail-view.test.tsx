@@ -142,7 +142,7 @@ function props(over: Partial<ViewProps> = {}): ViewProps {
     hasReceiptPdf: false,
     failedEmailBanners: [],
     autoRefund: { failed: false, processorRefundId: null },
-    totals: { subtotalSatang: 10_000_000n, vatSatang: 700_000n, totalSatang: 10_700_000n, vatPercent: '7.00%' },
+    totals: { subtotalSatang: 10_000_000n, vatSatang: 700_000n, totalSatang: 10_700_000n, vatRateBps: 700 },
     issueTotals: null,
     settlingRefundSatang: null,
     refund: null,
@@ -224,7 +224,9 @@ describe('invoice detail — the Details card', () => {
     expect(within(totals).getByText('100,000.00 THB')).toBeInTheDocument();
     expect(within(totals).getByText('7,000.00 THB')).toBeInTheDocument();
     expect(within(totals).getByText('107,000.00 THB')).toBeInTheDocument();
-    expect(within(totals).getByText(/\(7\.00%\)/)).toBeInTheDocument();
+    // The rate reads as the trimmed locale percentage, like the Issue dialog
+    // and the event-fee preview — never a fixed "7.00%".
+    expect(within(totals).getByText(/\(7%\)/)).toBeInTheDocument();
   });
 
   it('labels a draft\'s total as a preview', async () => {
