@@ -4,7 +4,7 @@
  * and below `lg` an AURA Select "Jump to section". A pick scrolls to the
  * section card and moves focus to it (the card is labelled by its heading).
  */
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import messages from '@/i18n/messages/en.json';
 import { SectionNav, type SectionNavItem } from '@/components/invoices/invoice-settings/section-nav';
@@ -97,19 +97,38 @@ it('scrolls to and focuses a section when the mobile select changes', () => {
   expect(document.getElementById('tax')).toHaveFocus();
 });
 
-it('renders the rail as AURA ghost buttons in the "Settings sections" nav, hidden below lg', () => {
+it('renders the rail as AURA ghost buttons in the "Settings sections" nav, hidden below xl', () => {
   wrap(<SectionNav sections={sections} />);
   const nav = screen.getByRole('navigation', { name: 'Settings sections' });
-  expect(nav).toHaveClass('max-lg:hidden');
+  expect(nav).toHaveClass('max-xl:hidden');
   const buttons = within(nav).getAllByRole('button');
   expect(buttons).toHaveLength(2);
   for (const b of buttons) expect(b).toHaveClass('aura-btn', 'aura-btn--ghost', 'min-h-11');
 });
 
-it('below lg the jump-to select is an AURA Select (44px)', () => {
+it('below xl the jump-to select is an AURA Select (44px) with a visible label', () => {
   wrap(<SectionNav sections={sections} />);
   const select = jumpSelect();
   expect(select.closest('.aura-input.aura-select')).not.toBeNull();
   expect(select.closest('.is-touch-always')).not.toBeNull();
-  expect(select.closest('.lg\\:hidden')).not.toBeNull();
+  expect(select.closest('.xl\\:hidden')).not.toBeNull();
+  // UX review L4: a visible label, so it doesn't read as a settings field.
+  expect(screen.getByText('Jump to section…').closest('label')).not.toBeNull();
+});
+
+// UX review H1: picking from AURA's own list closes it and returns focus to
+// the combobox; the section must still end up focused.
+it('a pick from the AURA list moves focus to the section', async () => {
+  // tests/setup.ts installs fake timers; findBy/waitFor poll on real ones.
+  vi.useRealTimers();
+  HTMLElement.prototype.scrollIntoView = vi.fn();
+  wrap(<SectionNav sections={sections} />);
+  // AURA's `choose()` (Select.js) fires the native change, then `close(true)`
+  // focuses the combobox again. jsdom can't run its option click (setting
+  // the native value throws there), so replay that sequence directly.
+  const combobox = screen.getByRole('combobox', { name: /jump to section/i });
+  fireEvent.change(jumpSelect(), { target: { value: 'tax' } });
+  combobox.focus();
+  await waitFor(() => expect(document.getElementById('tax')).toHaveFocus());
+  vi.useFakeTimers();
 });

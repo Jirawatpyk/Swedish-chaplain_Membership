@@ -100,7 +100,11 @@ describe('sticky save bar on AURA ActionBar', () => {
     expect(bar).toHaveTextContent(s.stickyBar.unsaved);
     const buttons = within(bar).getAllByRole('button');
     expect(buttons.map((b) => b.textContent)).toEqual([s.stickyBar.discard, s.actions.save]);
-    expect(buttons[0]).toHaveClass('aura-btn--secondary');
+    // UX review M5: Discard sits in the bar's start slot as a ghost button,
+    // away from the primary Save.
+    expect(buttons[0]).toHaveClass('aura-btn--ghost');
+    expect(buttons[1]).toHaveClass('aura-btn--primary');
+    expect(buttons[0]!.parentElement).not.toBe(buttons[1]!.parentElement);
   });
 });
 

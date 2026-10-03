@@ -32,6 +32,8 @@ it('renders the section as an AURA card labelled by its h2, the rail\'s focus ta
   expect(section).toHaveClass('aura-card');
   expect(section!.tagName).toBe('SECTION');
   expect(section).toHaveAttribute('tabindex', '-1');
+  // UX review M1: the focused card shows the focus ring.
+  expect(section).toHaveClass('focus-visible:outline-[var(--aura-focus-ring)]');
   expect(section).toHaveAttribute('aria-labelledby', 'tax-heading');
   const heading = document.getElementById('tax-heading');
   expect(heading?.tagName).toBe('H2');
