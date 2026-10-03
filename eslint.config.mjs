@@ -395,11 +395,15 @@ export const MIGRATED_PATHS = [
   'src/app/(staff)/admin/invoices/new/**',
   // US8b — the invoice detail (view, phone action bar, payment activity,
   // refund dialog), void and new credit note, and with them the rest of the
-  // shared `_components` (issue, delete draft, alerts, ⋯ menu). Only the
-  // registers (US8c) remain on the legacy kit under admin/invoices.
+  // shared `_components` (issue, delete draft, alerts, ⋯ menu).
   'src/app/(staff)/admin/invoices/\\[invoiceId\\]/**',
   'src/app/(staff)/admin/invoices/_components/**',
   'src/components/invoices/invoice-status-tone.ts',
+  // US8c-1 — the credit-notes list and detail and the tax-document registers.
+  // The invoice settings (US8c-2) are the last invoicing screens on the
+  // legacy kit.
+  'src/app/(staff)/admin/credit-notes/**',
+  'src/app/(staff)/admin/invoices/registers/**',
 ];
 
 /**
