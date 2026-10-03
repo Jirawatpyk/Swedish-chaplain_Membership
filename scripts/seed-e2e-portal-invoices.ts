@@ -67,6 +67,7 @@ import {
   E2E_PAID_TEMPLATE_VERSION,
   E2E_PORTAL_INVOICE_SEEDS,
   E2E_SEED_DUE_DATE,
+  E2E_PAYABLE_INVOICE_SEEDS,
   E2E_SEED_FISCAL_YEAR,
   E2E_SEED_ISSUE_DATE,
   E2E_SEED_PAYMENT_DATE,
@@ -87,6 +88,9 @@ const TENANT_SLUG = process.env.TENANT_SLUG ?? 'swecham';
 const E2E_PASSWORD = 'E2E-Testing-Password-2026!xZ'; // mirrors seed-e2e-user.ts
 const E2E_MEMBER_EMAIL = 'e2e-member@swecham.test';
 const E2E_MEMBER_EMAIL_EMPTY = 'e2e-member-empty@swecham.test';
+// Stream C — the only persona that is BOTH in good standing and holds a
+// payable bill, so it is the only one that can reach the pay sheet.
+const E2E_MEMBER_EMAIL_PAYABLE = 'e2e-member-payable@swecham.test';
 
 /**
  * Pinned fixture ids (see `E2E_PORTAL_INVOICE_SEEDS`): SC-2026-900003 backs
@@ -118,7 +122,7 @@ function requireDevTarget(): void {
     databaseUrl: process.env.DATABASE_URL,
     blocklistRaw: process.env.TEST_DB_HOST_BLOCKLIST,
     nodeEnv: process.env.NODE_ENV,
-    emails: [E2E_MEMBER_EMAIL, E2E_MEMBER_EMAIL_EMPTY],
+    emails: [E2E_MEMBER_EMAIL, E2E_MEMBER_EMAIL_EMPTY, E2E_MEMBER_EMAIL_PAYABLE],
     confirmedTarget: process.argv.includes('--confirm-target'),
   });
   if (refusal) throw new Error(refusal);
@@ -450,9 +454,10 @@ async function seedInvoicesIfMissing(
   ctx: TenantContext,
   memberId: string,
   adminUserId: string,
+  seeds: readonly E2ePortalInvoiceSeed[] = E2E_PORTAL_INVOICE_SEEDS,
 ): Promise<void> {
   await runInTenant(ctx, async (tx) => {
-    for (const s of E2E_PORTAL_INVOICE_SEEDS) {
+    for (const s of seeds) {
       const existing = await tx
         .select({
           invoiceId: invoices.invoiceId,
@@ -571,6 +576,27 @@ async function main(): Promise<void> {
   );
   // No invoices for Echo — AS3 empty-state surface.
 
+  // ── Stream C: e2e-member-payable is in good standing AND holds one open bill ─
+  //
+  // Alpha owns bills but the F8 fixture leaves it LAPSED, and
+  // `lapsed-portal-scope.ts` refuses `/api/payments/initiate` for a lapsed
+  // member; Echo is in good standing but owns nothing by design. So neither can
+  // reach the pay sheet, and nothing could produce a pending PaymentIntent for
+  // the manual "record payment, then read the rows back" check. This persona
+  // closes that gap: no renewal cycle at all (which is what good standing means
+  // here — see Echo), plus its own bill in a slot of its own.
+  const payableUserId = await ensureUser(E2E_MEMBER_EMAIL_PAYABLE);
+  const foxtrotMemberId = await upsertMember(ctx, 'E2E Foxtrot Co');
+  await upsertLinkedPrimaryContact(
+    ctx,
+    foxtrotMemberId,
+    payableUserId,
+    E2E_MEMBER_EMAIL_PAYABLE,
+    'E2E',
+    'Foxtrot',
+  );
+  await seedInvoicesIfMissing(ctx, foxtrotMemberId, adminUserId, E2E_PAYABLE_INVOICE_SEEDS);
+
   // T082 — surface the actual ISSUED invoice_id in the DB (may be the
   // deterministic pinned UUID for fresh seeds, or a pre-T082 random
   // UUID if the row already existed). Prefer reading back from DB to
@@ -597,6 +623,11 @@ async function main(): Promise<void> {
   console.log(`  E2E_MEMBER_PASSWORD_EMPTY='${E2E_PASSWORD}'`);
   console.log(`  E2E_MEMBER_EMPTY=1`);
   console.log(`  E2E_ISSUED_INVOICE_ID='${issuedId}'`);
+  console.log(`  E2E_MEMBER_EMAIL_PAYABLE='${E2E_MEMBER_EMAIL_PAYABLE}'`);
+  console.log(`  E2E_MEMBER_PASSWORD_PAYABLE='${E2E_PASSWORD}'`);
+  console.log(
+    `  E2E_PAYABLE_INVOICE_ID='${E2E_PAYABLE_INVOICE_SEEDS[0]!.invoiceId}'`,
+  );
   console.log(`  E2E_PAID_ONLINE_INVOICE_ID='${E2E_PAID_ONLINE_INVOICE_ID}'`);
   console.log('----------------------------------------');
 }
