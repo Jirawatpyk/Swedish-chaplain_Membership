@@ -87,12 +87,8 @@ import { Money } from '@/modules/invoicing/domain/value-objects/money';
 import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/document-number';
 import type { FiscalYear } from '@/modules/invoicing/domain/value-objects/fiscal-year';
 import { fiscalYearFromUtcIso } from '@/modules/invoicing/domain/value-objects/fiscal-year';
-import { calculateVat } from '@/modules/invoicing/domain/policies/calculate-vat';
-import {
-  resolveVatRate,
-  type VatTreatment,
-} from '@/modules/invoicing/domain/policies/vat-treatment';
-import { splitVatInclusive } from '@/modules/invoicing/domain/value-objects/vat-inclusive';
+import { computeIssuePricing } from '@/modules/invoicing/domain/policies/compute-issue-pricing';
+import type { VatTreatment } from '@/modules/invoicing/domain/policies/vat-treatment';
 import {
   inferEventDocumentKind,
   resolveBuyerIsVatRegistrant,
@@ -612,7 +608,9 @@ export async function issueInvoice(
 
     // F. Pricing from lines (054-event-fee-invoices — Model A vs Model B).
     //
-    //   Sum the line totals once. Then branch on `draft.vatInclusive`:
+    //   `computeIssuePricing` is the single issue-time computation, shared
+    //   with the staff draft preview + the Issue dialog summary so the admin
+    //   confirms the figures this step pins:
     //
     //   - VAT-EXCLUSIVE (membership, vatInclusive=false): the line sum IS the
     //     subtotal; VAT is added on top → `calculateVat`. UNCHANGED F4 behaviour.
@@ -633,17 +631,17 @@ export async function issueInvoice(
     // the tenant's configured standard rate. The rate is NEVER chosen
     // independently of the treatment. Both the inclusive + exclusive branches +
     // the persisted `vatRateSnapshot` use THIS derived rate.
-    const effectiveVatRate = resolveVatRate(vatTreatment, settings.vatRate);
-    let subtotal: Money;
-    let vat: Money;
-    let total: Money;
-    if (draft.vatInclusive) {
-      total = lineSum;
-      ({ subtotal, vat } = splitVatInclusive(total, effectiveVatRate.numerator));
-    } else {
-      subtotal = lineSum;
-      ({ vat, total } = calculateVat(subtotal, effectiveVatRate));
-    }
+    const {
+      subtotal,
+      vat,
+      total,
+      vatRate: effectiveVatRate,
+    } = computeIssuePricing({
+      lineSum,
+      vatInclusive: draft.vatInclusive,
+      vatTreatment,
+      standardRate: settings.vatRate,
+    });
 
     // G. Snapshots — `tenantSnap` is the seller; `memberSnap` is the BUYER,
     // resolved above (membership/matched-member from getForIssue; non-member
