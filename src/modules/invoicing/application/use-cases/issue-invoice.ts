@@ -34,9 +34,11 @@
  *   B. load + lock invoice draft
  *   C. load + lock member (archive-race guard — SKIPPED for non-member
  *      event invoices; buyer snapshot was pinned at draft)
+ *   F. compute subtotal + VAT + total from DRAFT lines, then refuse a stale
+ *      confirmed total / VAT (`expectedTotalSatang` / `expectedVatSatang`) —
+ *      PRE-SEQUENCE, so a refusal burns no number
  *   D. compute fiscal year (Bangkok TZ)
  *   E. allocate sequence number
- *   F. compute subtotal + VAT + total from DRAFT lines
  *   G. build tenant + member identity snapshots
  *   H. render PDF (deterministic)
  *   I. upload PDF to Blob (content-addressed)
@@ -158,10 +160,13 @@ export const issueInvoiceSchema = z.object({
   // heard of this field is unaffected — see the resolution order at the
   // step-L outbox block below.
   autoEmailOverride: z.boolean().optional(),
-  // The total (satang, digits) the Issue dialog showed the admin. Optional:
-  // present → issuance refuses `issue_total_changed` (pre-sequence) if the
-  // priced total differs; absent → no check (callers that show no total).
+  // The total and VAT (satang, canonical digits) the Issue dialog showed the
+  // admin. Optional: present → issuance refuses `issue_total_changed`
+  // (pre-sequence) if the priced figure differs; absent → no check (callers
+  // that show no total). The VAT is needed because a VAT-inclusive draft's
+  // total is its line sum whatever the rate — a rate change moves only the VAT.
   expectedTotalSatang: z.string().regex(/^(0|[1-9]\d{0,14})$/).optional(),
+  expectedVatSatang: z.string().regex(/^(0|[1-9]\d{0,14})$/).optional(),
 });
 
 export type IssueInvoiceInput = z.infer<typeof issueInvoiceSchema>;
@@ -199,8 +204,9 @@ export type IssueInvoiceError =
    */
   | { code: 'registration_lookup_failed' }
   /**
-   * The confirmed `expectedTotalSatang` no longer matches the priced total
-   * (draft lines or the tenant VAT rate changed after the dialog rendered).
+   * The confirmed `expectedTotalSatang` / `expectedVatSatang` no longer
+   * matches the priced figure (draft lines or the tenant VAT rate changed
+   * after the dialog rendered).
    * Refused PRE-SEQUENCE — nothing issued, no number consumed.
    */
   | { code: 'issue_total_changed' }
@@ -578,8 +584,9 @@ export async function issueInvoice(
       });
     }
 
-    // F. Pricing from lines — PRE-SEQUENCE (pure; runs before allocateNext so
-    // the confirmed-total guard below can refuse without burning a number) (054-event-fee-invoices — Model A vs Model B).
+    // F. Pricing from lines (054-event-fee-invoices — Model A vs Model B) —
+    // PRE-SEQUENCE (pure; runs before allocateNext so the confirmed-figures
+    // guard below can refuse without burning a number).
     //
     //   `computeIssuePricing` is the single issue-time computation, shared
     //   with the staff draft preview + the Issue dialog summary so the admin
@@ -616,15 +623,20 @@ export async function issueInvoice(
       standardRate: settings.vatRate,
     });
 
-    // The Issue dialog sends back the total it showed the admin. Priced at
-    // page render, it goes stale if the draft's lines or the tenant VAT rate
-    // changed before the confirm — then the bill would pin a figure the admin
-    // never saw. Refuse PRE-SEQUENCE (plain `return err`, no number consumed);
-    // the dialog asks for a refresh. Absent → no check (renewal queue, portal).
-    if (
+    // The Issue dialog sends back the total and VAT it showed the admin.
+    // Priced at page render, they go stale if the draft's lines or the tenant
+    // VAT rate changed before the confirm — then the bill would pin figures
+    // the admin never saw. Both are checked: on a VAT-inclusive draft a rate
+    // change keeps the total (the line sum) and moves only the VAT. Refuse
+    // PRE-SEQUENCE (plain `return err`, no number consumed); the dialog asks
+    // for a refresh. Absent → no check (renewal queue, portal).
+    const totalStale =
       input.expectedTotalSatang !== undefined &&
-      BigInt(input.expectedTotalSatang) !== total.satang
-    ) {
+      BigInt(input.expectedTotalSatang) !== total.satang;
+    const vatStale =
+      input.expectedVatSatang !== undefined &&
+      BigInt(input.expectedVatSatang) !== vat.satang;
+    if (totalStale || vatStale) {
       // Nothing issued → no audit row; logged so a run of these (a live
       // page-vs-issue drift, e.g. a VAT rate changed mid-session) is visible.
       logger.info(
@@ -633,8 +645,10 @@ export async function issueInvoice(
           invoiceId: input.invoiceId,
           expectedTotalSatang: input.expectedTotalSatang,
           pricedTotalSatang: total.satang.toString(),
+          expectedVatSatang: input.expectedVatSatang,
+          pricedVatSatang: vat.satang.toString(),
         },
-        'issueInvoice: issue_total_changed — confirmed total is stale, refused pre-sequence',
+        'issueInvoice: issue_total_changed — confirmed total/VAT is stale, refused pre-sequence',
       );
       return err({ code: 'issue_total_changed' });
     }

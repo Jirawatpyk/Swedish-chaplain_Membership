@@ -248,8 +248,11 @@ export function IssueInvoiceForm({
       // 088 UX-B1 — include the already-scanned cert blob key when attached
       // (omitted otherwise; the scan is optional).
       certBlobKey,
-      // The total the confirm names; the server refuses if it went stale.
+      // The total the confirm names and the VAT the summary shows; the server
+      // refuses if either went stale (a rate change on a VAT-inclusive draft
+      // keeps the total and moves only the VAT).
       expectedTotalSatang: totals?.totalSatang ?? null,
+      expectedVatSatang: totals?.vatSatang ?? null,
     });
 
     startTransition(async () => {

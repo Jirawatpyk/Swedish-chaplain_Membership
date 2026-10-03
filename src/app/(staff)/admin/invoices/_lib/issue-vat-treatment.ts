@@ -12,10 +12,11 @@
  *      the DB CHECK are layers 2 + 3 (defense-in-depth, spec FR-024). The
  *      cert DATE is OPTIONAL (only the NUMBER is the gate) — validated for
  *      format ONLY when the admin entered one.
- *   2. `buildIssueRequestBody` — the exact POST body: `null` (→ empty POST,
- *      backward-compatible legacy issue) for a standard-rate or flag-off
- *      issue; the `{ vatTreatment, zeroRateCertNo, zeroRateCertDate? }`
- *      triplet for a zero-rated issue. 088 UX-B1: when an OPTIONAL cert SCAN
+ *   2. `buildIssueRequestBody` — the exact POST body: the confirmed
+ *      `{ expectedTotalSatang, expectedVatSatang }` whenever the dialog priced
+ *      the draft (`null` → empty POST only when it could not); plus the
+ *      `{ vatTreatment, zeroRateCertNo, zeroRateCertDate? }` triplet for a
+ *      zero-rated issue. 088 UX-B1: when an OPTIONAL cert SCAN
  *      was uploaded, the returned blob key is threaded as `zeroRateCertBlobKey`
  *      (omitted when no scan was attached — the scan stays optional).
  *   3. `isZeroRateLowAmount` — the non-blocking ≥ 5,000 THB pre-submit
@@ -59,13 +60,13 @@ export const NO_CERT_ERRORS: ZeroRateCertErrors = {
 
 /**
  * The issue POST payload, or `null` (→ an empty POST body, byte-identical to
- * the legacy issue flow) when there is nothing to send. The route defaults
- * `vatTreatment` to `standard`. `expectedTotalSatang` (digits) is the total
- * the dialog confirmed; the server refuses `issue_total_changed` if issuance
- * would pin another.
+ * the legacy issue flow) when there is nothing to send. An absent
+ * `vatTreatment` is issued as `standard`. `expectedTotalSatang` /
+ * `expectedVatSatang` (digits) are the total and VAT the dialog confirmed;
+ * the server refuses `issue_total_changed` if issuance would pin others.
  */
 export type IssueRequestBody =
-  | { readonly expectedTotalSatang: string }
+  | { readonly expectedTotalSatang: string; readonly expectedVatSatang?: string }
   | {
       readonly vatTreatment: 'zero_rated_80_1_5';
       readonly zeroRateCertNo: string;
@@ -77,6 +78,7 @@ export type IssueRequestBody =
        */
       readonly zeroRateCertBlobKey?: string;
       readonly expectedTotalSatang?: string;
+      readonly expectedVatSatang?: string;
     }
   | null;
 
@@ -123,11 +125,12 @@ export function isZeroRateLowAmount(
 }
 
 /**
- * Build the issue POST body. The confirmed total (`expectedTotalSatang`, when
- * the dialog priced the draft) rides on every issue. Beyond it, the body is
- * empty unless the flag is on AND the admin chose zero-rate; then it carries
- * the vat_treatment + cert NUMBER (+ DATE when entered). `null` → empty POST. 088 UX-B1: when an OPTIONAL cert SCAN was
- * uploaded (`certBlobKey` non-empty), its Blob key is included as
+ * Build the issue POST body. The confirmed total + VAT (`expectedTotalSatang`
+ * / `expectedVatSatang`, when the dialog priced the draft) ride on every
+ * issue. Beyond them, the body is empty unless the flag is on AND the admin
+ * chose zero-rate; then it carries the vat_treatment + cert NUMBER (+ DATE
+ * when entered). `null` → empty POST. 088 UX-B1: when an OPTIONAL cert SCAN
+ * was uploaded (`certBlobKey` non-empty), its Blob key is included as
  * `zeroRateCertBlobKey`; when no scan was attached it is omitted (the scan is
  * optional — the cert NUMBER is the fail-closed gate).
  */
@@ -139,10 +142,17 @@ export function buildIssueRequestBody(input: {
   readonly certBlobKey?: string | null;
   /** Satang the dialog showed; `null`/omitted → no confirmed-total check. */
   readonly expectedTotalSatang?: number | null;
+  /** VAT satang the dialog showed; sent only alongside the total. */
+  readonly expectedVatSatang?: number | null;
 }): IssueRequestBody {
   const expected =
     input.expectedTotalSatang != null
-      ? { expectedTotalSatang: String(input.expectedTotalSatang) }
+      ? {
+          expectedTotalSatang: String(input.expectedTotalSatang),
+          ...(input.expectedVatSatang != null
+            ? { expectedVatSatang: String(input.expectedVatSatang) }
+            : {}),
+        }
       : null;
   if (!input.taxAtPayment || input.vatTreatment !== 'zero_rated_80_1_5') {
     return expected;

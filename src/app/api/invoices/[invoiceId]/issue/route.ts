@@ -57,11 +57,13 @@ export async function POST(
   }
 
   // 088 US8 (FR-023 / FR-024) — the VAT-treatment + MFA-cert fields ride the
-  // request BODY (the issue action's only client-supplied inputs); tenantId /
-  // actorUserId / requestId stay server-derived. A body-less standard issue
-  // (empty POST) is valid — default to {} so the schema applies its
-  // vatTreatment='standard' default. Only the four allow-listed fields are read;
-  // any client-sent tenantId/actorUserId is ignored (server values win below).
+  // request BODY (the issue action's only client-supplied inputs), with the
+  // total + VAT the Issue dialog confirmed (`expectedTotalSatang` /
+  // `expectedVatSatang`, refused 409 `issue_total_changed` when stale);
+  // tenantId / actorUserId / requestId stay server-derived. A body-less issue
+  // (empty POST) is still valid — default to {}; the use case treats an absent
+  // vatTreatment as 'standard'. Only the six allow-listed fields are read; any
+  // client-sent tenantId/actorUserId is ignored (server values win below).
   const body: unknown = await request.json().catch(() => ({}));
   const b = (body ?? {}) as Record<string, unknown>;
   const parsed = issueInvoiceSchema.safeParse({
@@ -77,6 +79,7 @@ export async function POST(
     zeroRateCertDate: b.zeroRateCertDate,
     zeroRateCertBlobKey: b.zeroRateCertBlobKey,
     expectedTotalSatang: b.expectedTotalSatang,
+    expectedVatSatang: b.expectedVatSatang,
   });
   if (!parsed.success) {
     return NextResponse.json({ error: { code: 'invalid' } }, { status: 400 });
