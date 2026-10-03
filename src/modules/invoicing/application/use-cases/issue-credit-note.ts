@@ -769,11 +769,21 @@ export async function issueCreditNote(
         });
       }
 
-      // E. Proportional VAT split.
+      // E. VAT split — proportional, with the completing note taking the
+      // residual so the notes credit exactly the VAT charged. Earlier notes'
+      // VAT is read on THIS tx, which holds the invoice row lock (B above), so
+      // no concurrent note can land between the read and the insert.
+      const priorCreditedVat = await deps.creditNoteRepo.sumVatByOriginalInvoiceInTx(
+        tx,
+        invoiceId,
+        input.tenantId,
+      );
       const vatCalc = calculateCreditNoteVat({
         creditTotal: proposed,
         originalVat: loaded.vat,
         originalTotal: loaded.total,
+        alreadyCredited: loaded.creditedTotal,
+        priorCreditedVat,
       });
       if (!vatCalc.ok) {
         // IM-7 (review 2026-04-20) — this branch is unreachable under
