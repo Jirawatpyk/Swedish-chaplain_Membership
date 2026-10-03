@@ -405,7 +405,8 @@ describe('IssueInvoiceForm — 44px targets on the new controls (FR-036 / SC-011
   it('uses AURA\'s own size, not the retired 5.29 stand-in utilities', () => {
     const { container } = renderForm();
     fireEvent.click(screen.getByRole('radio', { name: /Zero-rated/i }));
-    expect(container.querySelector('[class*="min-h-11"]')).toBeNull();
+    // The stand-in grew `.aura-input` / `.aura-choice` from a utility on the field root.
+    expect(container.querySelector('[class*="_.aura-input"], [class*="_.aura-choice"]')).toBeNull();
   });
 });
 

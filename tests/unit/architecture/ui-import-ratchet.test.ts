@@ -461,7 +461,6 @@ describe('UI import ratchet (spec 122)', () => {
       'src/app/(staff)/admin/invoices/_components/email-failure-alert.tsx',
       'src/app/(staff)/admin/invoices/_components/auto-refund-failed-alert.tsx',
       'src/app/(staff)/admin/invoices/_components/invoice-more-menu.tsx',
-      'src/app/(staff)/admin/invoices/_lib/touch-targets.ts',
     ])('%s cannot import the legacy kit', async (path) => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
