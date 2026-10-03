@@ -148,6 +148,12 @@
  *     /admin/invoices                     853.8 KB measured → ≤  960 KB
  *     /admin/invoices/new                 833.6 KB measured → ≤  940 KB
  *
+ *   Spec 122 US8b (AURA invoice detail, void, new credit note, 2026-10-03,
+ *   AURA 5.29.0) — budgeted for the first time on the branch build:
+ *     /admin/invoices/[invoiceId]                       964.7 KB measured → ≤ 1070 KB
+ *     /admin/invoices/[invoiceId]/void                  812.2 KB measured → ≤  920 KB
+ *     /admin/invoices/[invoiceId]/credit-notes/new      819.8 KB measured → ≤  920 KB
+ *
  * Run as a post-build step:
  *
  *   pnpm build
@@ -228,6 +234,10 @@ const BUDGETS: ReadonlyArray<RouteBudget> = [
   // --- Spec 122 US8a invoicing (AURA) — see docblock --------------------
   { route: '/admin/invoices', maxKb: 960 },
   { route: '/admin/invoices/new', maxKb: 940 },
+  // --- Spec 122 US8b invoice detail (AURA) — see docblock ---------------
+  { route: '/admin/invoices/[invoiceId]', maxKb: 1070 },
+  { route: '/admin/invoices/[invoiceId]/void', maxKb: 920 },
+  { route: '/admin/invoices/[invoiceId]/credit-notes/new', maxKb: 920 },
 ];
 
 const NEXT_DIR = join(process.cwd(), '.next');
