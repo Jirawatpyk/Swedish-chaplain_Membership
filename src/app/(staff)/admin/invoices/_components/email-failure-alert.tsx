@@ -9,11 +9,9 @@
  * invoice recipient override). `<Alert>` carries role="alert".
  */
 import { useEffect, useRef, useState, useTransition } from 'react';
-import { Loader2Icon, MailWarningIcon } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import { Alert, Button } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
 
 export function EmailFailureAlert({
   invoiceId,
@@ -111,40 +109,35 @@ export function EmailFailureAlert({
   };
 
   return (
-    <Alert variant="destructive">
-      <MailWarningIcon className="size-4" aria-hidden="true" />
-      {/* Copy varies by the failed document so a receipt failure doesn't read
-          as an invoice failure (and vice-versa). */}
-      <AlertTitle>{t(`deliveryFailure.${variant}.title`)}</AlertTitle>
-      <AlertDescription className="flex flex-col gap-2">
-        <span>
-          {t(`deliveryFailure.${variant}.body`, { recipient: recipientEmail })}
-        </span>
-        {/* The "…then resend" hint + button only make sense together, and only
-            when a resend is offered (e.g. a void invoice → canResend false). */}
-        {canResend ? (
-          <>
-            <span>{t('deliveryFailure.editRecipientHint')}</span>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="w-fit"
-              disabled={pending || recentlySent}
-              aria-busy={pending}
-              onClick={handleResend}
-            >
-              {pending ? (
-                <Loader2Icon
-                  className="size-4 motion-safe:animate-spin"
-                  aria-hidden="true"
-                />
-              ) : null}
-              {t(`deliveryFailure.${variant}.resend`)}
-            </Button>
-          </>
-        ) : null}
-      </AlertDescription>
+    // Copy varies by the failed document so a receipt failure doesn't read as
+    // an invoice failure (and vice-versa). AURA's danger alert is
+    // `role="alert"` by default.
+    <Alert
+      tone="danger"
+      icon="mail"
+      title={t(`deliveryFailure.${variant}.title`)}
+      action={
+        // The "…then resend" hint and button only make sense together, and
+        // only when a resend is offered (a void invoice → canResend false).
+        canResend ? (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            touchHeight
+            loading={pending}
+            disabled={pending || recentlySent}
+            onClick={handleResend}
+          >
+            {t(`deliveryFailure.${variant}.resend`)}
+          </Button>
+        ) : undefined
+      }
+    >
+      <span className="flex flex-col gap-1">
+        <span>{t(`deliveryFailure.${variant}.body`, { recipient: recipientEmail })}</span>
+        {canResend ? <span>{t('deliveryFailure.editRecipientHint')}</span> : null}
+      </span>
     </Alert>
   );
 }

@@ -106,4 +106,21 @@ describe('aura-admin preview renders the pages’ own views', () => {
     expect(preview).toContain('<StaffFrame path="/admin/invoices">');
     expect(preview).toContain('<StaffFrame path="/admin/invoices/new">');
   });
+
+  it('the invoice detail, void and new credit note through the pages’ own view and forms, at their real paths (US8b)', () => {
+    const detail = readFileSync('src/app/(staff)/admin/invoices/[invoiceId]/page.tsx', 'utf8');
+    const voidPage = readFileSync('src/app/(staff)/admin/invoices/[invoiceId]/void/page.tsx', 'utf8');
+    const creditNote = readFileSync('src/app/(staff)/admin/invoices/[invoiceId]/credit-notes/new/page.tsx', 'utf8');
+    expect(detail).toContain('renderInvoiceDetailView(');
+    expect(preview).toContain('renderInvoiceDetailView(');
+    expect(voidPage).toContain('<VoidConfirmDialog');
+    expect(preview).toContain('<VoidConfirmDialog');
+    expect(creditNote).toContain('<CreditNoteForm');
+    expect(preview).toContain('<CreditNoteForm');
+    // No copy of the detail cards: they come only from the view.
+    expect(preview).not.toContain('invoice-totals');
+    expect(preview).toContain('<StaffFrame path={`/admin/invoices/${DETAIL_INVOICE_ID}`}>');
+    expect(preview).toContain('<StaffFrame path={`/admin/invoices/${DETAIL_INVOICE_ID}/void`}>');
+    expect(preview).toContain('<StaffFrame path={`/admin/invoices/${DETAIL_INVOICE_ID}/credit-notes/new`}>');
+  });
 });

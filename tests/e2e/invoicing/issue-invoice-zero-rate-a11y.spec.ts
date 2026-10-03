@@ -184,22 +184,18 @@ test.describe('088 zero-rate issue form a11y @a11y @f088', () => {
       .locator('label')
       .filter({ has: page.getByRole('radio', { name: /Zero-rated/i }) });
     await expectTargetSize(zeroRateLabel, 'zero-rate radio label');
-    await expectTargetSize(
-      page.getByLabel(/MFA certificate number/i),
-      'cert-no input',
-    );
-    await expectTargetSize(
-      page.getByLabel(/Certificate date/i),
-      'cert-date input',
-    );
+    // An AURA field's target is its bordered box (`.aura-input`), which the
+    // input fills (spec 122 US8b); the input inside is the box less its 1px
+    // border. Measure the box, as the legacy bordered <input> was measured.
+    const fieldBox = (label: RegExp) =>
+      page.locator('.aura-input').filter({ has: page.getByLabel(label) });
+    await expectTargetSize(fieldBox(/MFA certificate number/i), 'cert-no input');
+    await expectTargetSize(fieldBox(/Certificate date/i), 'cert-date input');
     await expectTargetSize(
       page.getByRole('button', { name: /Attach certificate scan/i }),
       'cert-scan button',
     );
-    await expectTargetSize(
-      page.getByLabel(/to confirm/i),
-      'typed-phrase confirm input',
-    );
+    await expectTargetSize(fieldBox(/to confirm/i), 'typed-phrase confirm input');
   });
 
   for (const width of [320, 375] as const) {
@@ -231,7 +227,7 @@ test.describe('088 zero-rate issue form a11y @a11y @f088', () => {
     // overflow-y-auto, so content must remain reachable, not clipped.
     await page.addStyleTag({ content: 'html { font-size: 200% !important; }' });
     await expect(page.getByLabel(/MFA certificate number/i)).toBeVisible();
-    await expect(page.getByRole('button', { name: /^Issue$/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Issue (bill|invoice)( · [\d,]+\.\d{2} THB)?$/ })).toBeVisible();
     const overflow = await page.evaluate(
       () =>
         document.documentElement.scrollWidth -

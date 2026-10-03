@@ -22,4 +22,11 @@ describe('PaymentTimelineSkeleton', () => {
     const region = screen.getByRole('status', { name: 'Loading payment activity' });
     expect(region).toHaveAttribute('aria-busy', 'true');
   });
+
+  it('draws an AURA card with AURA skeleton blocks (spec 122 US8b T826)', async () => {
+    const { container } = render(await PaymentTimelineSkeleton());
+    expect(container.querySelector('.aura-card')).not.toBeNull();
+    expect(container.querySelector('[data-slot="skeleton"]')).toBeNull();
+    expect(container.querySelectorAll('[data-slot="skeleton-block"]').length).toBeGreaterThan(0);
+  });
 });

@@ -2,8 +2,9 @@
  * 088 US8 (UX-A) — issue-invoice form (vat_treatment toggle + MFA-cert fields).
  *
  * Rendered against the REAL en.json (a missing key would surface as
- * MISSING_MESSAGE) inside an open <AlertDialog> — the RefundForm split pattern
- * that sidesteps the Base-UI-dialog jsdom trigger-transition hang.
+ * MISSING_MESSAGE). Spec 122 US8b (T825): the form is on AURA fields and
+ * renders its own footer, so it needs no enclosing dialog here; the dialog
+ * shell is covered at the end of this file.
  *
  * Covers: membership hides the toggle (+ caption); a non-membership sale shows
  * it; selecting zero-rate progressively reveals the cert fields (aria-live +
@@ -16,8 +17,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
-import { AlertDialog } from '@/components/ui/alert-dialog';
 import { IssueInvoiceForm } from '@/app/(staff)/admin/invoices/_components/issue-invoice-form';
+import { IssueInvoiceDialog } from '@/app/(staff)/admin/invoices/_components/issue-invoice-dialog';
 
 const refreshMock = vi.fn();
 vi.mock('next/navigation', () => ({
@@ -46,18 +47,16 @@ function renderForm(
 ) {
   return render(
     <NextIntlClientProvider locale="en" messages={enMessages}>
-      <AlertDialog open onOpenChange={() => undefined}>
-        <IssueInvoiceForm
-          invoiceId="inv-1"
-          summary={BASE_SUMMARY}
-          taxAtPayment
-          isMembership={false}
-          buyerIsVatRegistrant={false}
-          subtotalSatang={800_000}
-          onClose={() => undefined}
-          {...overrides}
-        />
-      </AlertDialog>
+      <IssueInvoiceForm
+        invoiceId="inv-1"
+        summary={BASE_SUMMARY}
+        taxAtPayment
+        isMembership={false}
+        buyerIsVatRegistrant={false}
+        subtotalSatang={800_000}
+        onClose={() => undefined}
+        {...overrides}
+      />
     </NextIntlClientProvider>,
   );
 }
@@ -85,6 +84,30 @@ describe('IssueInvoiceForm — vat_treatment control gating (FR-023)', () => {
     expect(
       screen.queryByTestId('vat-treatment-membership-caption'),
     ).toBeNull();
+  });
+});
+
+// Board Admin-invoice-issue (parity comment, 3 Oct): the confirm names the
+// document and its total, and carries the money-step check icon (§ Button icons).
+describe('IssueInvoiceForm — the confirm button', () => {
+  it('reads "Issue bill · {total} THB" with the check icon for a membership bill', () => {
+    renderForm({ isMembership: true });
+    const confirm = screen.getByRole('button', { name: 'Issue bill · 8,000.00 THB' });
+    expect(confirm.querySelector('svg.aura-icon')).not.toBeNull();
+  });
+
+  it('reads "Issue invoice · {total} THB" when the tax-at-payment flag is off (a §87 invoice)', () => {
+    renderForm({ isMembership: true, taxAtPayment: false });
+    expect(screen.getByRole('button', { name: 'Issue invoice · 8,000.00 THB' })).toBeInTheDocument();
+  });
+
+  // Financial review (3 Oct): an event fee may be zero-rated or VAT-inclusive,
+  // and the summary's total assumes 7% added on top, so the confirm names no
+  // amount there rather than a figure the bill may not carry.
+  it('names no amount for an event fee', () => {
+    renderForm();
+    const confirm = screen.getByRole('button', { name: 'Issue bill' });
+    expect(confirm.querySelector('svg.aura-icon')).not.toBeNull();
   });
 });
 
@@ -119,7 +142,7 @@ describe('IssueInvoiceForm — fail-closed cert validation (FR-024 / T061b)', ()
         target: { value: 'ISSUE' },
       });
 
-      fireEvent.click(screen.getByRole('button', { name: /^Issue$/ }));
+      fireEvent.click(screen.getByRole('button', { name: /^Issue bill( · 8,000\.00 THB)?$/ }));
 
       const certNo = screen.getByLabelText(/MFA certificate number/i);
       expect(certNo).toHaveAttribute('aria-invalid', 'true');
@@ -191,7 +214,7 @@ describe('IssueInvoiceForm — valid zero-rate issue POST', () => {
       fireEvent.change(screen.getByLabelText(/to confirm/i), {
         target: { value: 'ISSUE' },
       });
-      fireEvent.click(screen.getByRole('button', { name: /^Issue$/ }));
+      fireEvent.click(screen.getByRole('button', { name: /^Issue bill( · 8,000\.00 THB)?$/ }));
 
       await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
       const [url, init] = fetchMock.mock.calls[0] as unknown as [
@@ -223,7 +246,7 @@ describe('IssueInvoiceForm — valid zero-rate issue POST', () => {
       fireEvent.change(screen.getByLabelText(/to confirm/i), {
         target: { value: 'ISSUE' },
       });
-      fireEvent.click(screen.getByRole('button', { name: /^Issue$/ }));
+      fireEvent.click(screen.getByRole('button', { name: /^Issue bill( · 8,000\.00 THB)?$/ }));
 
       await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
       const [, init] = fetchMock.mock.calls[0] as unknown as [
@@ -284,7 +307,7 @@ describe('IssueInvoiceForm — cert-scan blob key in POST (UX-B1)', () => {
       fireEvent.change(screen.getByLabelText(/to confirm/i), {
         target: { value: 'ISSUE' },
       });
-      fireEvent.click(screen.getByRole('button', { name: /^Issue$/ }));
+      fireEvent.click(screen.getByRole('button', { name: /^Issue bill( · 8,000\.00 THB)?$/ }));
 
       // Find the /issue POST (the cert-upload POST fired first).
       await waitFor(() =>
@@ -362,19 +385,31 @@ describe('IssueInvoiceForm — beforeunload dirty guard (T061f-form)', () => {
 // preview-gated; this structural guard runs on every commit.
 // ---------------------------------------------------------------------------
 
-describe('IssueInvoiceForm — target-size min-h-11 on new inputs (FR-036 / SC-011)', () => {
-  it('cert number + cert date inputs carry min-h-11 (44px) once zero-rate is revealed', () => {
+describe('IssueInvoiceForm — 44px targets on the new controls (FR-036 / SC-011)', () => {
+  /** The AURA field box (`.aura-input`) or choice row grows to 44px through a utility on the field root. */
+  const touchRoot = (el: HTMLElement) => el.closest('[class*="min-h-11"]');
+
+  it('the zero-rate radio row and the cert number + date fields are 44px once zero-rate is revealed', () => {
     renderForm();
+    expect(touchRoot(screen.getByRole('radio', { name: /Zero-rated/i }))).not.toBeNull();
     fireEvent.click(screen.getByRole('radio', { name: /Zero-rated/i }));
-    expect(screen.getByLabelText(/MFA certificate number/i)).toHaveClass(
-      'min-h-11',
-    );
-    expect(screen.getByLabelText(/Certificate date/i)).toHaveClass('min-h-11');
+    expect(touchRoot(screen.getByLabelText(/MFA certificate number/i))).not.toBeNull();
+    expect(touchRoot(screen.getByLabelText(/Certificate date/i))).not.toBeNull();
   });
 
-  it('the immutable-snapshot confirm input carries min-h-11 (44px)', () => {
+  it('the immutable-snapshot confirm field is 44px', () => {
     renderForm();
-    expect(screen.getByLabelText(/to confirm/i)).toHaveClass('min-h-11');
+    expect(touchRoot(screen.getByLabelText(/to confirm/i))).not.toBeNull();
+  });
+
+  it('the input itself fills the 44px box, so the whole box takes the click (AURA centres a fixed-height control)', () => {
+    renderForm();
+    fireEvent.click(screen.getByRole('radio', { name: /Zero-rated/i }));
+    for (const field of [/MFA certificate number/i, /Certificate date/i, /to confirm/i]) {
+      const root = touchRoot(screen.getByLabelText(field))!;
+      expect(root.className).toContain('[&_.aura-input__control]:self-stretch');
+      expect(root.className).toContain('[&_.aura-input__control]:h-auto');
+    }
   });
 });
 
@@ -401,7 +436,7 @@ function confirmAndSubmit() {
   fireEvent.change(screen.getByLabelText(/to confirm/i), {
     target: { value: 'ISSUE' },
   });
-  fireEvent.click(screen.getByRole('button', { name: /^Issue$/ }));
+  fireEvent.click(screen.getByRole('button', { name: /^Issue bill( · 8,000\.00 THB)?$/ }));
 }
 
 describe('IssueInvoiceForm — concurrent 409 inline recovery (FR-032)', () => {
@@ -468,5 +503,42 @@ describe('IssueInvoiceForm — failure branch is focused + destructive (FR-032)'
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Spec 122 US8b (T825) — the dialog shell on AURA: "Issue…" opens an
+// alertdialog named by its title, described by the immutable-snapshot
+// acknowledgement, holding the form; Cancel closes it.
+// ---------------------------------------------------------------------------
+
+describe('IssueInvoiceDialog — AURA alertdialog', () => {
+  it('opens from "Issue…" as an alertdialog with the title and acknowledgement, and Cancel closes it', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <IssueInvoiceDialog
+          invoiceId="inv-1"
+          summary={BASE_SUMMARY}
+          taxAtPayment
+          isMembership
+          buyerIsVatRegistrant
+          subtotalSatang={800_000}
+        />
+      </NextIntlClientProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Issue…' }));
+    const dialog = screen.getByRole('alertdialog', { name: enMessages.admin.invoices.issue.title });
+    expect(dialog).toHaveAccessibleDescription(enMessages.admin.invoices.issue.review.immutableSnapshotAck);
+    expect(screen.getByRole('button', { name: /^Issue bill( · 8,000\.00 THB)?$/ })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: enMessages.admin.invoices.issue.cancel }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+});
+
+describe('IssueInvoiceForm — the buttons stay in view (spec 122 US8b, UX review)', () => {
+  it('keeps Cancel and Issue in a row stuck to the bottom of the scrolling dialog body, stacked full width on a phone', () => {
+    renderForm();
+    const row = screen.getByRole('button', { name: enMessages.admin.invoices.issue.cancel }).parentElement!;
+    expect(row).toHaveClass('sticky', 'bottom-0', 'max-sm:flex-col-reverse', 'max-sm:[&>*]:w-full');
   });
 });

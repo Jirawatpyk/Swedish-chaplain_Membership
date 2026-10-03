@@ -16,14 +16,14 @@
  * not-found.tsx` to restore the spec-mandated 404 status.
  *
  * See `tests/e2e/invoice-draft-issue.spec.ts` AS6 for the pinned
- * "HTTP status MUST be 404" contract.
+ * "HTTP status MUST be 404" contract. On AURA since spec 122 US8b (T827).
  */
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { getTranslations } from 'next-intl/server';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { buttonVariants } from '@/components/ui/button';
+import { Icon, buttonClass } from '@jirawatpyk/aura-react/server';
 
 export default async function InvoiceNotFound(): Promise<React.ReactElement> {
   const t = await getTranslations('admin.invoices');
@@ -34,14 +34,14 @@ export default async function InvoiceNotFound(): Promise<React.ReactElement> {
       <PageHeader title={t('list.title')} />
       <div
         data-testid="invoice-not-found"
-        className="rounded-md border p-8 text-center"
+        className="rounded-[var(--aura-card-radius)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] p-8 text-center"
       >
-        <p className="text-sm text-muted-foreground">{tErrors('notFound')}</p>
+        <p className="m-0 text-sm text-[var(--aura-fg-secondary)]">{tErrors('notFound')}</p>
         <Link
           href="/admin/invoices"
-          className={`${buttonVariants({ variant: 'outline', size: 'sm' })} mt-4 inline-flex items-center`}
+          className={buttonClass({ variant: 'secondary', size: 'sm', className: 'mt-4' })}
         >
-          <ArrowLeft className="mr-1 h-4 w-4" aria-hidden="true" />
+          <Icon name={<ArrowLeft />} size={16} />
           {t('list.title')}
         </Link>
       </div>

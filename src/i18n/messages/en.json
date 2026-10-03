@@ -3063,8 +3063,26 @@
           "notApplicable": "No active membership period — this bill will not affect renewals (use the reactivation flow for lapsed members)."
         }
       },
+      "phraseChip": {
+        "copy": "Copy {phrase}",
+        "copied": "Copied {phrase}",
+        "copyFailed": "Couldn't copy — select the text instead."
+      },
       "detail": {
         "draftTitle": "Draft invoice",
+        "title": "Invoice {number}",
+        "titleTaxInvoiceReceipt": "Tax invoice/receipt {number}",
+        "titleReceipt": "Receipt {number}",
+        "detailsTitle": "Details",
+        "totalsLabel": "Totals",
+        "phoneBar": {
+          "totalDue": "Total {total} THB incl. VAT · due {date}",
+          "total": "Total {total} THB incl. VAT"
+        },
+        "refundSettlingNote": {
+          "title": "Refund of {amount} THB is settling",
+          "body": "No action is needed — it completes automatically when the payment processor confirms. A credit note can't be issued on this invoice until then."
+        },
         "status": "Status",
         "actions": {
           "preview": "Preview",
@@ -3076,14 +3094,9 @@
           "issueCreditNoteRefundSettling": "Unavailable while a refund is settling — try again once it completes.",
           "resendInvoice": "Resend invoice email",
           "resendReceipt": "Resend receipt email",
-          "resendInvoiceAria": "Email a fresh copy of invoice {number} to the member's primary contact",
-          "resendReceiptAria": "Email a fresh copy of receipt {number} to the member's primary contact",
           "downloadReceipt": "Download receipt PDF",
           "downloadCombined": "Download invoice/receipt",
-          "downloadReceiptAria": "Download the official tax receipt PDF for invoice {number}",
-          "downloadInvoiceAria": "Download the tax invoice PDF for invoice {number}",
           "downloadBill": "Download invoice PDF",
-          "downloadBillAria": "Download the invoice PDF for {number}",
           "more": "More",
           "moreAria": "More actions for {number}"
         },
@@ -3273,7 +3286,10 @@
         },
         "confirmPhrase": "ISSUE",
         "confirmCopy": "Type \"{phrase}\" to confirm",
-        "issueButton": "Issue",
+        "issueBillButton": "Issue bill · {total} THB",
+        "issueInvoiceButton": "Issue invoice · {total} THB",
+        "issueBillButtonPlain": "Issue bill",
+        "issueInvoiceButtonPlain": "Issue invoice",
         "issuing": "Issuing…",
         "success": "Invoice issued",
         "successWithNumber": "Invoice {number} issued",
@@ -3336,7 +3352,6 @@
         "description": "The draft invoice and its line items will be permanently removed. No sequential tax-document number has been allocated yet, so nothing will be retired. This action is audited.",
         "cancel": "Cancel",
         "deleteButton": "Delete draft",
-        "deleting": "Deleting…",
         "success": "Draft deleted",
         "errors": {
           "failed": "Could not delete draft",
@@ -3395,7 +3410,8 @@
         "terminalNotice": "Void is terminal — no payment, credit, or edit afterwards. A paid invoice can't be voided; reverse it with a refund or a credit note instead.",
         "reasonLabel": "Reason",
         "reasonHelp": "Shown on the voided PDF and in the audit trail. Required, up to 500 characters.",
-        "confirmCopy": "Type the invoice number {phrase} to confirm",
+        "confirmCopy": "Type the invoice number to confirm",
+        "confirmCopyBill": "Type the bill number to confirm",
         "confirmMismatch": "Phrase must match \"{phrase}\" exactly to confirm.",
         "backToInvoice": "Back to invoice",
         "submit": "Void invoice",
@@ -5058,6 +5074,7 @@
         "description": "Refund all or part of this payment. The matching credit note will be issued and emailed to the member.",
         "cancel": "Cancel",
         "confirm": "Issue refund",
+        "confirmAmount": "Refund {amount}",
         "processing": "Processing refund…",
         "refsInvoice": "Invoice no.",
         "refsReceipt": "Receipt no.",
@@ -5067,7 +5084,7 @@
         "amount": {
           "label": "Refund amount (THB)",
           "placeholder": "0.00",
-          "maximumHelp": "Maximum refundable: {amount} THB",
+          "maximumHelp": "Up to {amount} (paid, less refunds and credit notes). It goes back to the original payment method.",
           "ariaDescribed": "Enter the refund amount in Thai Baht. The amount will be deducted from the original payment."
         },
         "reason": {
@@ -5075,8 +5092,13 @@
           "placeholder": "Brief reason for this refund…",
           "charCount": "{count} / 500"
         },
+        "summary": {
+          "title": "Refund summary",
+          "total": "Refund total",
+          "after": "Still refundable afterwards"
+        },
         "typedPhrase": {
-          "label": "Type {phrase} to confirm a full refund",
+          "label": "Type the phrase to confirm a full refund",
           "placeholder": "{phrase}",
           "help": "Full refunds require typed confirmation to prevent accidental processing.",
           "mismatch": "Phrase does not match. Type exactly: {phrase}"

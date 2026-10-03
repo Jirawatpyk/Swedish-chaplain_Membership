@@ -17,19 +17,25 @@ import type { DataTableColumn } from '@jirawatpyk/aura-react';
  */
 export const RECEIPT_COLUMN_MIN_TABLE_PX = 1000;
 
-type ColumnLayout = Pick<DataTableColumn, 'width' | 'minWidth' | 'card' | 'align' | 'actions' | 'hideBelow'>;
+type ColumnLayout = Pick<
+  DataTableColumn,
+  'width' | 'minWidth' | 'card' | 'align' | 'actions' | 'hideBelow' | 'skeletonLines' | 'skeletonTouch'
+>;
 
 export const INVOICES_COLUMN_LAYOUT = {
-  documentNumber: { width: 160, card: 'title' },
+  // The number over "Issued {date}" (and the credit-note count): two skeleton lines.
+  documentNumber: { width: 160, card: 'title', skeletonLines: 2 },
   // A line of its own on a phone card, after Due and Total, so a long legal
   // name wraps instead of being cut at the half-width column.
-  memberName: { minWidth: 160, card: 'wide' },
+  memberName: { minWidth: 160, card: 'wide', skeletonLines: 2 },
   status: { width: 136, card: 'pill' },
   dueDate: { width: 100 },
-  receipt: { width: 136, card: 'hide', hideBelow: RECEIPT_COLUMN_MIN_TABLE_PX },
+  // The receipt number over its state (generating, method, failed).
+  receipt: { width: 136, card: 'hide', hideBelow: RECEIPT_COLUMN_MIN_TABLE_PX, skeletonLines: 2 },
   total: { width: 120, align: 'end' },
   // The phone card's last row, full width (the US7a rule).
-  actions: { width: 184, actions: true, card: 'footer' },
+  // The ⋯ is 44px on a phone (`touchHeight`), and so is the skeleton's bar.
+  actions: { width: 184, actions: true, card: 'footer', skeletonTouch: true },
 } as const satisfies Record<string, ColumnLayout>;
 
 export type InvoicesColumnKey = keyof typeof INVOICES_COLUMN_LAYOUT;

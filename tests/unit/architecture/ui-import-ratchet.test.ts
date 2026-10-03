@@ -188,8 +188,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the staff invoice detail keeps the legacy kit until US8b', async () => {
-      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/invoices/[invoiceId]/page.tsx')).toEqual([]);
+    it('control: the staff invoice registers keep the legacy kit until US8c', async () => {
+      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/invoices/registers/page.tsx')).toEqual([]);
     });
   });
 
@@ -427,8 +427,43 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the detail page dialogs keep the legacy kit until US8b', async () => {
-      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/invoices/_components/issue-invoice-dialog.tsx')).toEqual([]);
+    it('control: the staff credit-note register keeps the legacy kit until US8c', async () => {
+      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/credit-notes/page.tsx')).toEqual([]);
+    });
+  });
+
+  describe('the US8b invoice detail, its dialogs, void and new credit note are on AURA (the real MIGRATED_PATHS)', () => {
+    const legacy = "import { Button } from '@/components/ui/button';\nexport const B = Button;\n";
+
+    it.each([
+      'src/app/(staff)/admin/invoices/[invoiceId]/page.tsx',
+      'src/app/(staff)/admin/invoices/[invoiceId]/loading.tsx',
+      'src/app/(staff)/admin/invoices/[invoiceId]/not-found.tsx',
+      'src/app/(staff)/admin/invoices/[invoiceId]/_components/invoice-detail-view.tsx',
+      'src/app/(staff)/admin/invoices/[invoiceId]/_components/invoice-action-bar.tsx',
+      'src/app/(staff)/admin/invoices/[invoiceId]/_components/payment-timeline.tsx',
+      'src/app/(staff)/admin/invoices/[invoiceId]/_components/payment-timeline-skeleton.tsx',
+      'src/app/(staff)/admin/invoices/[invoiceId]/_components/copy-charge-id-button.tsx',
+      'src/app/(staff)/admin/invoices/[invoiceId]/_components/issue-credit-note-action.tsx',
+      'src/app/(staff)/admin/invoices/[invoiceId]/_components/refund-dialog/index.tsx',
+      'src/app/(staff)/admin/invoices/[invoiceId]/_components/refund-dialog/refund-form.tsx',
+      'src/app/(staff)/admin/invoices/[invoiceId]/_components/refund-dialog/typed-phrase-confirm.tsx',
+      'src/app/(staff)/admin/invoices/[invoiceId]/void/page.tsx',
+      'src/app/(staff)/admin/invoices/[invoiceId]/void/loading.tsx',
+      'src/app/(staff)/admin/invoices/[invoiceId]/void/_components/void-confirm-dialog.tsx',
+      'src/app/(staff)/admin/invoices/[invoiceId]/credit-notes/new/page.tsx',
+      'src/app/(staff)/admin/invoices/[invoiceId]/credit-notes/new/loading.tsx',
+      'src/app/(staff)/admin/invoices/[invoiceId]/credit-notes/new/_components/credit-note-form.tsx',
+      'src/app/(staff)/admin/invoices/_components/issue-invoice-dialog.tsx',
+      'src/app/(staff)/admin/invoices/_components/issue-invoice-form.tsx',
+      'src/app/(staff)/admin/invoices/_components/zero-rate-cert-uploader.tsx',
+      'src/app/(staff)/admin/invoices/_components/delete-draft-dialog.tsx',
+      'src/app/(staff)/admin/invoices/_components/email-failure-alert.tsx',
+      'src/app/(staff)/admin/invoices/_components/auto-refund-failed-alert.tsx',
+      'src/app/(staff)/admin/invoices/_components/invoice-more-menu.tsx',
+      'src/app/(staff)/admin/invoices/_lib/touch-targets.ts',
+    ])('%s cannot import the legacy kit', async (path) => {
+      expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
   });
 });

@@ -84,3 +84,17 @@ describe('/admin/invoices loading in the list card', () => {
     expect(d.querySelector('[data-testid="invoices-table-skeleton"] .aura-bleed')).not.toBeNull();
   });
 });
+
+// AURA 5.29 (handoff #134): the loading rows are as tall as the real rows —
+// the number over "Issued {date}", the buyer over its subtitle, the receipt
+// over its state — and the phone card ends in the row's touch-height actions.
+describe('/admin/invoices loading rows match the rows', () => {
+  it('draws two lines for the number, buyer and receipt cells, and a touch-height footer bar', async () => {
+    const d = new DOMParser().parseFromString(renderToStaticMarkup((await Loading()) as ReactElement), 'text/html');
+    const row = d.querySelector('[data-testid="invoices-table-skeleton"] .aura-table__row--skeleton');
+    const lines = [...(row?.querySelectorAll('.aura-skel-lines') ?? [])];
+    expect(lines).toHaveLength(3);
+    for (const l of lines) expect(l.children).toHaveLength(2);
+    expect(row?.querySelector('.aura-skel--action.is-footer.is-touch')).not.toBeNull();
+  });
+});

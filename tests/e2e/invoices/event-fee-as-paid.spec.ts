@@ -171,18 +171,31 @@ test.describe('064 event-fee as-paid form modes @f4', () => {
       page.locator('.aura-toaster').getByText('Payment recorded — receipt issued'),
     ).toBeVisible({ timeout: 45_000 });
 
-    // Lands on the invoice detail: §87 document number in the h1 + Paid badge.
+    // Lands on the invoice detail: §87 document number in the h1 + the Paid
+    // pill beside it (spec 122 US8b — the pill sits next to the h1).
     await page.waitForURL(/\/admin\/invoices\/[0-9a-f-]{36}$/, { timeout: 30_000 });
-    await expect(page.locator('h1')).toContainText(/[A-Z]+-\d{4}-\d{6}/);
-    await expect(page.locator('h1')).toContainText('Paid');
+    const heading = page.locator('h1');
+    await expect(heading).toContainText(/[A-Z]+-\d{4}-\d{6}/);
+    // The heading names the combined document, not an invoice (maintainer, 3 Oct).
+    await expect(heading).toContainText('Tax invoice/receipt');
+    await expect(heading.locator('..').locator('.aura-pill')).toHaveText('Paid');
 
     // T15 QA carry-forward — the detail "⋯" menu offers the main download
     // under the COMBINED dual-role label (the as-paid main pdf IS the one
     // legal Tax Invoice / Receipt; `mainDownloadIsCombined` wiring).
-    await page.getByRole('button', { name: /More actions for/ }).click();
-    const downloadItem = page.getByTestId('download-invoice-trigger');
+    // The page arrives scrolled down after the form's navigation (relay R32:
+    // the trigger sat 437px above the fold), and AURA 5.29 closes an open menu
+    // on any scroll, so `.click()`'s own scroll shut it again (the PR #506
+    // class). Bring the trigger into view first and retry the open until the
+    // menu reports expanded; AURA 5.30 (#136) repositions instead of closing.
+    const moreActions = page.getByRole('button', { name: /More actions for/ });
+    await moreActions.scrollIntoViewIfNeeded();
+    await expect(async () => {
+      if ((await moreActions.getAttribute('aria-expanded')) !== 'true') await moreActions.click();
+      await expect(moreActions).toHaveAttribute('aria-expanded', 'true', { timeout: 2_000 });
+    }).toPass({ timeout: 15_000 });
+    const downloadItem = page.getByRole('menuitem', { name: /^Download invoice\/receipt/ });
     await expect(downloadItem).toBeVisible();
-    await expect(downloadItem).toContainText('Download invoice/receipt');
     await page.keyboard.press('Escape');
 
     // Persisted row: paid + the COMBINED §86/4+§105ทวิ doc kind, payment
@@ -432,8 +445,8 @@ test.describe('064 event-fee as-paid form modes @f4', () => {
 
     // Still navigates to the (actionable) draft detail — not a dead end.
     await page.waitForURL(/\/admin\/invoices\/[0-9a-f-]{36}$/, { timeout: 30_000 });
-    await expect(page.locator('h1')).toContainText('Draft invoice');
-    await expect(page.locator('h1')).toContainText('Draft');
+    await expect(page.locator('h1')).toHaveText('Draft invoice');
+    await expect(page.locator('h1').locator('..').locator('.aura-pill')).toHaveText('Draft');
 
     // Persisted: the draft survived, nothing was numbered or issued.
     const row = await readInvoiceForRegistration(fixture.registrationIds.twoStep, undefined, dbReader ?? undefined);

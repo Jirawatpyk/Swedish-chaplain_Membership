@@ -104,3 +104,15 @@ describe('VoidInvoicePage — bill-aware description', () => {
     expect(html).not.toContain('descriptionBill');
   });
 });
+
+describe('VoidInvoicePage — one back link on a phone (spec 122 US8b)', () => {
+  it('hides its own "Back to invoice" link below 1024px, where the shell\'s back link stands in', async () => {
+    getInvoiceMock.mockResolvedValue({
+      ok: true,
+      value: { status: 'issued', documentNumber: null, billDocumentNumberRaw: 'SC-2026-000007', receiptDocumentNumberRaw: null },
+    });
+    const host = document.createElement('div');
+    host.innerHTML = await renderPage();
+    expect(host.querySelector('a[href="/admin/invoices/inv-1"]')).toHaveClass('max-lg:hidden');
+  });
+});

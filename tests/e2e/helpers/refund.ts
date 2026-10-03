@@ -4,7 +4,7 @@
  * Extracted from `admin-refund-full.spec.ts` + `admin-refund-
  * partial.spec.ts` (review 2026-04-26 simplify R2). The amount-input
  * help-text under `[id$="-help"]` carries
- *   "Maximum refundable: 53,500.00 THB"
+ *   "Up to 53,500.00 THB (paid, less refunds and credit notes). …"
  * — both specs read this to drive their assertions, so the parser
  * lives here as the single source of truth.
  */

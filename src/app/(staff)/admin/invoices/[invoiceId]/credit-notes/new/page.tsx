@@ -25,7 +25,6 @@ import {
 import { computeRemainingRefundable } from '@/modules/payments';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { Card, CardContent } from '@/components/ui/card';
 import { getInvoicePaymentActivity } from '../../_lib/cached-payment-activity';
 import {
   CreditNoteForm,
@@ -148,34 +147,32 @@ export default async function NewCreditNotePage({
   }
 
   return (
-    <FormContainer>
-      <PageHeader title={t('title')} subtitle={t('description')} />
-      <Card>
-        <CardContent>
-          <CreditNoteForm
-            invoiceId={invoiceId}
-            // documentNumber-FIRST so legacy IN-…/separate-mode keep their
-            // §87 number; a paid 088 invoice (documentNumber NULL) falls
-            // through to its RC (SC-006). Display-only ("against invoice
-            // {number}" label). The guard above already proved this is non-null.
-            documentNumber={displayNumber ?? ''}
-            remainingSatang={remainingSatang}
-            currencySymbol="THB"
-            // F-2 (2026-07-08) — the form shows the membership-effect radio
-            // ONLY for a membership invoice whose amount fully credits it.
-            invoiceSubject={invoice.invoiceSubject}
-            paymentChannel={paymentChannel}
-            onlineRefundState={onlineRefundState}
-          />
-        </CardContent>
-      </Card>
+    <FormContainer align="start">
+      {/* The back link above the title, as on the void page and the board;
+          below 1024px the shell's back link stands in. */}
       <Link
         href={`/admin/invoices/${invoiceId}`}
-        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:underline"
+        className="inline-flex items-center gap-1 self-start text-sm text-[var(--aura-fg-accent)] hover:underline max-lg:hidden"
       >
         <ArrowLeftIcon className="size-4" aria-hidden="true" />
         {t('backToInvoice')}
       </Link>
+      <PageHeader title={t('title')} subtitle={t('description')} />
+      <CreditNoteForm
+        invoiceId={invoiceId}
+        // documentNumber-FIRST so legacy IN-…/separate-mode keep their
+        // §87 number; a paid 088 invoice (documentNumber NULL) falls
+        // through to its RC (SC-006). Display-only ("against invoice
+        // {number}" label). The guard above already proved this is non-null.
+        documentNumber={displayNumber ?? ''}
+        remainingSatang={remainingSatang}
+        currencySymbol="THB"
+        // F-2 (2026-07-08) — the form shows the membership-effect radio
+        // ONLY for a membership invoice whose amount fully credits it.
+        invoiceSubject={invoice.invoiceSubject}
+        paymentChannel={paymentChannel}
+        onlineRefundState={onlineRefundState}
+      />
     </FormContainer>
   );
 }

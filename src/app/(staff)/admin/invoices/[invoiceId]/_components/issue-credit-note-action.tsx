@@ -10,7 +10,9 @@
  */
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { Button, buttonVariants } from '@/components/ui/button';
+// A server file (no 'use client'): AURA's `/server` entry has `buttonClass`
+// but no `Button`, so the disabled state is a native button in AURA's class.
+import { buttonClass } from '@jirawatpyk/aura-react/server';
 
 export function IssueCreditNoteAction({
   invoiceId,
@@ -23,18 +25,21 @@ export function IssueCreditNoteAction({
   const t = useTranslations('admin.invoices.detail.actions');
   if (refundSettling) {
     return (
-      <span className="inline-flex flex-col items-start gap-1">
-        <Button
+      // The reason stays the button's description but is not drawn: the page's
+      // settling note says it once (board Admin-refund-settling), and drawn
+      // here it squeezed the h1 and broke the phone bar's row.
+      <span className="inline-flex flex-col items-start gap-1 max-sm:items-stretch">
+        <button
           type="button"
-          variant="outline"
+          className={buttonClass({ variant: 'secondary', touchHeight: true })}
           disabled
           aria-describedby="issue-credit-note-settling-hint"
         >
           {t('issueCreditNote')}
-        </Button>
+        </button>
         <span
           id="issue-credit-note-settling-hint"
-          className="text-xs text-muted-foreground"
+          className="sr-only"
         >
           {t('issueCreditNoteRefundSettling')}
         </span>
@@ -44,7 +49,7 @@ export function IssueCreditNoteAction({
   return (
     <Link
       href={`/admin/invoices/${invoiceId}/credit-notes/new`}
-      className={buttonVariants({ variant: 'outline' })}
+      className={buttonClass({ variant: 'secondary', touchHeight: true })}
     >
       {t('issueCreditNote')}
     </Link>
