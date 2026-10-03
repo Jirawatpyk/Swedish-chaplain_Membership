@@ -365,7 +365,8 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - every field keeps its id, label, hint, length limit and character counter, on AURA fields;
   - a sticky bar once the form is dirty: "You have unsaved changes · Discard · Save settings". Discard is a ghost button at the bar's start, away from Save (UX review).
 - **Discard is added** (maintainer, 3 Oct: "Add Discard"). It puts every field back to the values the page loaded with, the same snapshot the dirty check compares against. It clears the field errors and the error line, sends no request, and the bar hides. Focus moves to the first section's card. It is disabled while a logo upload runs, and from a successful save until the saved values arrive, so it can never bring back the values from before the save (financial review). A logo uploaded since the last save is dropped from the form; the upload itself is not undone (nothing references an unsaved key).
-- **The 44px targets stay** (088 FR-036): the seller branch code, the prefixes and receipt mode, the bank text fields, the rail, and both Save buttons. The fields use AURA's `touchHeight="always"`.
+- **One Save at a time** (maintainer, 3 Oct, after the UX review): the form's own Save ("Save settings", or "Create settings" on a first-ever save) shows while nothing has changed; once the form is dirty the bar's Save takes over as the form's submit button, so Enter still submits and no two buttons share a name. The bar's Save reads "Create settings" on a first-ever save too.
+- **The 44px targets stay** (088 FR-036): the seller branch code, the prefixes and receipt mode, the bank text fields, the rail, and the Save buttons. The fields use AURA's `touchHeight="always"`.
 - **Unchanged:**
   - the logo upload request;
   - the PATCH body, its eleven client guards, and the error routing with its focus rules;
