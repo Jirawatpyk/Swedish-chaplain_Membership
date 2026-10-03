@@ -332,15 +332,15 @@ describe('<EventFeeForm>', () => {
     expect(preview).toHaveTextContent('1,000.00');
     expect(preview).toHaveTextContent('934.58');
     expect(preview).toHaveTextContent('65.42');
-    expect(preview).toHaveTextContent('VAT 7%');
+    expect(preview).toHaveTextContent('VAT (7%)');
   });
 
-  it("previews at the tenant's rate: 10% → VAT 10%, 1000 THB incl → 909.09 / 90.91", async () => {
+  it("previews at the tenant's rate: 10% → VAT (10%), 1000 THB incl → 909.09 / 90.91", async () => {
     vi.stubGlobal('fetch', mockFetchRegistrations([matchedRegistration]));
     renderForm({ initialEventId: 'ev-1', vatRateBps: 1000 });
     fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
     const preview = screen.getByTestId('vat-preview');
-    expect(preview).toHaveTextContent('VAT 10%');
+    expect(preview).toHaveTextContent('VAT (10%)');
     expect(preview).toHaveTextContent('909.09');
     expect(preview).toHaveTextContent('90.91');
   });
@@ -369,13 +369,29 @@ describe('<EventFeeForm>', () => {
 
   // The rate is a number in running text: formatted for the locale (sv uses a
   // decimal comma and a non-breaking space before %), never a hardcoded dot.
-  it('formats the rate for the locale: 7.5% reads "Moms 7,5 %" in Swedish', async () => {
+  // An amount far past the form's maximum must not crash the form while it is
+  // typed: issuance refuses it (amount.errors.max), so there is no preview to
+  // draw — and a money formatter that refuses unsafe numbers must not be
+  // reached with one.
+  it('an amount beyond the maximum shows no preview and does not crash the form', async () => {
+    vi.stubGlobal('fetch', mockFetchRegistrations([matchedRegistration]));
+    renderForm({ initialEventId: 'ev-1' });
+    fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+    expect(() =>
+      fireEvent.change(screen.getByLabelText(/Amount/), { target: { value: '1e20' } }),
+    ).not.toThrow();
+    expect(screen.queryByTestId('vat-preview')).toBeNull();
+    expect(screen.getByLabelText(/Amount/)).toBeInTheDocument();
+  });
+
+  // Same rendering as the Issue dialog and the invoice detail totals.
+  it('formats the rate for the locale: 7.5% reads "Moms (7,5 %)" in Swedish', async () => {
     vi.stubGlobal('fetch', mockFetchRegistrations([matchedRegistration]));
     renderForm({ initialEventId: 'ev-1', vatRateBps: 750, locale: 'sv' });
     fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
     // Raw textContent: toHaveTextContent would normalise the NBSP away.
     const terms = Array.from(screen.getByTestId('vat-preview').querySelectorAll('dt'));
-    expect(terms.map((dt) => dt.textContent)).toContain('Moms 7,5\u00a0%');
+    expect(terms.map((dt) => dt.textContent)).toContain('Moms (7,5\u00a0%)');
   });
 
   it('matched member → doc-type badge shows "set at issue" (TIN unknown client-side)', async () => {
