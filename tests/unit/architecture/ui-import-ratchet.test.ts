@@ -188,8 +188,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the staff invoice registers keep the legacy kit until US8c', async () => {
-      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/invoices/registers/page.tsx')).toEqual([]);
+    it('control: the invoice settings form keeps the legacy kit until US8c-2', async () => {
+      expect(await ratchetHits(legacy, 'src/components/invoices/invoice-settings-form.tsx')).toEqual([]);
     });
   });
 
@@ -427,8 +427,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the staff credit-note register keeps the legacy kit until US8c', async () => {
-      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/credit-notes/page.tsx')).toEqual([]);
+    it('control: the invoice settings page keeps the legacy kit until US8c-2', async () => {
+      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/settings/invoicing/page.tsx')).toEqual([]);
     });
   });
 
@@ -461,6 +461,29 @@ describe('UI import ratchet (spec 122)', () => {
       'src/app/(staff)/admin/invoices/_components/email-failure-alert.tsx',
       'src/app/(staff)/admin/invoices/_components/auto-refund-failed-alert.tsx',
       'src/app/(staff)/admin/invoices/_components/invoice-more-menu.tsx',
+    ])('%s cannot import the legacy kit', async (path) => {
+      expect(await ratchetHits(legacy, path)).toHaveLength(1);
+    });
+  });
+  describe('the US8c-1 credit notes and tax registers are on AURA (the real MIGRATED_PATHS)', () => {
+    const legacy = "import { Button } from '@/components/ui/button';\nexport const B = Button;\n";
+
+    it.each([
+      'src/app/(staff)/admin/credit-notes/page.tsx',
+      'src/app/(staff)/admin/credit-notes/loading.tsx',
+      'src/app/(staff)/admin/credit-notes/[creditNoteId]/page.tsx',
+      'src/app/(staff)/admin/credit-notes/[creditNoteId]/loading.tsx',
+      'src/app/(staff)/admin/credit-notes/[creditNoteId]/not-found.tsx',
+      'src/app/(staff)/admin/credit-notes/_components/credit-notes-list-view.tsx',
+      'src/app/(staff)/admin/credit-notes/_components/credit-notes-table.tsx',
+      'src/app/(staff)/admin/credit-notes/_components/credit-note-filters.tsx',
+      'src/app/(staff)/admin/credit-notes/_components/credit-note-detail-view.tsx',
+      'src/app/(staff)/admin/credit-notes/_components/credit-note-actions.tsx',
+      'src/app/(staff)/admin/invoices/registers/page.tsx',
+      'src/app/(staff)/admin/invoices/registers/loading.tsx',
+      'src/app/(staff)/admin/invoices/registers/_components/tax-register-form.tsx',
+      'src/app/(staff)/admin/invoices/registers/_components/tax-register-view.tsx',
+      'src/app/(staff)/admin/invoices/registers/_components/tax-register-table.tsx',
     ])('%s cannot import the legacy kit', async (path) => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
