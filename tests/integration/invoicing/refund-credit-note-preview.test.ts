@@ -84,6 +84,7 @@ async function seedInvoiceInStatus(
   user: TestUser,
   planId: string,
   status: 'paid' | 'issued' | 'void',
+  seq = 1,
 ): Promise<{ invoiceId: string; memberId: string }> {
   const invoiceId = randomUUID();
   const memberId = randomUUID();
@@ -113,8 +114,8 @@ async function seedInvoiceInStatus(
       // migration 0056 CHECK. Issued/void rows leave it NULL.
       receiptPdfStatus: status === 'paid' ? 'rendered' : null,
       fiscalYear: 2026,
-      sequenceNumber: 1,
-      documentNumber: 'CNIT-2026-000001',
+      sequenceNumber: seq,
+      documentNumber: `CNIT-2026-${String(seq).padStart(6, '0')}`,
       issueDate: '2026-01-15',
       dueDate: '2026-02-14',
       subtotalSatang: INVOICE_SUBTOTAL,
@@ -305,6 +306,20 @@ describe('refund credit-note preview equals the issued credit note', () => {
     // Cumulative VAT: 2,181 + 2,180 + 2,639 = 7,000, exactly the VAT charged
     // (per-note proportional rounding gave 2,181 + 2,181 + 2,639 = 7,001).
     expect(previews.map((p) => p.vatSatang)).toEqual([2_181n, 2_180n, 2_639n]);
+    expect(rows.reduce((sum, row) => sum + BigInt(row.vat as unknown as string), 0n)).toBe(INVOICE_VAT);
+  }, 120_000);
+
+  it("earlier VAT is summed for THIS invoice only — another invoice's notes do not count", async () => {
+    const a = await seedInvoiceInStatus(tenant, user, planId, 'paid', 1);
+    const b = await seedInvoiceInStatus(tenant, user, planId, 'paid', 2);
+    await previewThenIssue(a.invoiceId, 33_333n, false);
+    const previews = [
+      await previewThenIssue(b.invoiceId, 33_333n, false),
+      await previewThenIssue(b.invoiceId, 33_333n, false),
+      await previewThenIssue(b.invoiceId, 40_334n, true),
+    ];
+    expect(previews.map((p) => p.vatSatang)).toEqual([2_181n, 2_180n, 2_639n]);
+    const rows = await issuedRows(tenant, b.invoiceId);
     expect(rows.reduce((sum, row) => sum + BigInt(row.vat as unknown as string), 0n)).toBe(INVOICE_VAT);
   }, 120_000);
 

@@ -778,6 +778,20 @@ export async function issueCreditNote(
         invoiceId,
         input.tenantId,
       );
+      if (priorCreditedVat.compare(loaded.vat) > 0) {
+        // Notes issued before the cumulative rule rounded each on its own and
+        // credited more VAT than was charged. This note credits 0 VAT; the
+        // excess was already reduced in an earlier ภ.พ.30 — leave a trace.
+        logger.warn(
+          {
+            tenantId: input.tenantId,
+            invoiceId,
+            invoiceVatSatang: loaded.vat.satang.toString(),
+            priorCreditedVatSatang: priorCreditedVat.satang.toString(),
+          },
+          'issueCreditNote: earlier credit notes credited more VAT than the invoice charged',
+        );
+      }
       const vatCalc = calculateCreditNoteVat({
         creditTotal: proposed,
         originalVat: loaded.vat,
