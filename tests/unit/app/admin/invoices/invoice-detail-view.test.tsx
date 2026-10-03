@@ -143,7 +143,7 @@ function props(over: Partial<ViewProps> = {}): ViewProps {
     failedEmailBanners: [],
     autoRefund: { failed: false, processorRefundId: null },
     totals: { subtotalSatang: 10_000_000n, vatSatang: 700_000n, totalSatang: 10_700_000n, vatPercent: '7.00%' },
-    refundSettling: false,
+    settlingRefundSatang: null,
     refund: null,
     bangkokTodayIso: '2026-10-02',
     taxAtPayment: true,
@@ -319,6 +319,22 @@ describe('invoice detail — the alerts sit above the Details card', () => {
     const alerts = screen.getAllByRole('alert');
     expect(alerts.map((a) => a.textContent)).toEqual(['no-primary-contact', 'email-failure-invoice', 'auto-refund-failed']);
     for (const a of alerts) expect(a.compareDocumentPosition(details) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  // Board `Admin-refund-settling` (parity comment, 3 Oct): while a refund
+  // settles, a blue note above Details says how much and that nothing is
+  // needed, instead of two hints squeezed beside the header buttons.
+  it('a settling refund gets an info note with its amount, above Details', async () => {
+    await view(props({ settlingRefundSatang: 535_000n }));
+    const note = screen.getByText('Refund of 5,350.00 THB is settling').closest('.aura-alert');
+    expect(note).toHaveClass('aura-alert--info');
+    const details = screen.getByRole('region', { name: 'Details' });
+    expect(note!.compareDocumentPosition(details) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('no settling note when no refund settles', async () => {
+    await view(props());
+    expect(screen.queryByText(/is settling/)).toBeNull();
   });
 
   it('a manager sees no email or auto-refund alert', async () => {

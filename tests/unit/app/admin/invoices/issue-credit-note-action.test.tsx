@@ -40,10 +40,13 @@ describe('<IssueCreditNoteAction>', () => {
     expect(button).toHaveClass('aura-btn');
   });
 
-  it('keeps the 44px touch height, and on a phone the reason is its description only (spec 122 US8b)', () => {
+  it('keeps the 44px touch height, and the reason is its description only, at every width (spec 122 US8b)', () => {
     renderAction(true);
     expect(screen.getByRole('button', { name: actions.issueCreditNote })).toHaveClass('aura-btn--touch');
-    expect(screen.getByText(actions.issueCreditNoteRefundSettling)).toHaveClass('max-sm:sr-only');
+    // The page's settling note says it once (board Admin-refund-settling);
+    // drawn beside the button it squeezed the h1 onto two lines.
+    expect(screen.getByText(actions.issueCreditNoteRefundSettling)).toHaveClass('sr-only');
+    expect(screen.getByText(actions.issueCreditNoteRefundSettling)).not.toHaveClass('max-sm:sr-only');
   });
 
   it('the link takes the touch height too', () => {
