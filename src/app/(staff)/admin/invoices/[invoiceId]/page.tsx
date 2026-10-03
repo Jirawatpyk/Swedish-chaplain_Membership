@@ -31,7 +31,6 @@ import {
   getInvoice,
   makeGetInvoiceDeps,
   Money,
-  computeIssuePricing,
   computeIsOverdue,
   displayDocumentNumber,
   invoiceStatusHasReceipt,
@@ -46,7 +45,7 @@ import {
 // `getForIssue`, not a deep reach into internals.
  
 import type { IssueTotalsByTreatment } from '../_lib/issue-summary-totals';
-import { buildIssueTotalsByTreatment } from './_lib/issue-totals-by-treatment';
+import { draftDisplayTotals } from './_lib/draft-display-totals';
 import { drizzleTenantSettingsRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-tenant-settings-repo';
 // Same escape-hatch as the tenant-settings repo read above: a public-
 // port read (`findByOriginalInvoice`) used to populate the "Credit
@@ -386,7 +385,6 @@ export default async function InvoiceDetailPage({
   if (isDraft) {
     let sub = Money.zero();
     for (const line of invoice.lines) sub = sub.add(line.total);
-    displaySubtotalSatang = sub.satang;
 
     // R7-B2 follow-up — source VAT from `tenant_invoice_settings`
     // (the `issue-invoice` use-case's source of truth, FR-009/011),
@@ -395,23 +393,16 @@ export default async function InvoiceDetailPage({
     // issue time — the draft preview MUST match what issuance will
     // produce, otherwise admin sees one number and commits another.
     const invoiceSettings = await drizzleTenantSettingsRepo.getForIssue(tenantCtx.slug);
-    if (invoiceSettings) {
-      const pricing = computeIssuePricing({
-        lineSum: sub,
-        vatInclusive: invoice.vatInclusive,
-        vatTreatment: 'standard',
-        standardRate: invoiceSettings.vatRate,
-      });
-      displaySubtotalSatang = pricing.subtotal.satang;
-      displayVatSatang = pricing.vat.satang;
-      displayTotalSatang = pricing.total.satang;
-      displayVatRateBps = Number(pricing.vatRate.numerator);
-      issueTotals = buildIssueTotalsByTreatment({
-        lineSum: sub,
-        vatInclusive: invoice.vatInclusive,
-        standardRate: invoiceSettings.vatRate,
-      });
-    }
+    const draft = draftDisplayTotals({
+      lineSum: sub,
+      vatInclusive: invoice.vatInclusive,
+      standardRate: invoiceSettings?.vatRate ?? null,
+    });
+    displaySubtotalSatang = draft.subtotalSatang;
+    displayVatSatang = draft.vatSatang;
+    displayTotalSatang = draft.totalSatang;
+    displayVatRateBps = draft.vatRateBps;
+    issueTotals = draft.issueTotals;
   }
 
   // 064 remediation S2 — β as-paid no-TIN rows have a NULL invoice document
