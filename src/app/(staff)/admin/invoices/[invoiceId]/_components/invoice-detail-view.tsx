@@ -33,7 +33,8 @@ import { NoPrimaryContactBanner } from '@/components/members/no-primary-contact-
 import { Table, TBody, THead, Td, Th, Tr } from '@/components/shell/aura-table';
 import { invoiceStatusTone, type InvoiceDisplayStatus } from '@/components/invoices/invoice-status-tone';
 import { IssueInvoiceDialog } from '../../_components/issue-invoice-dialog';
-import { formatSatang, type IssueTotalsByTreatment } from '../../_lib/issue-summary-totals';
+import { type IssueTotalsByTreatment } from '../../_lib/issue-summary-totals';
+import { formatSatangAmount } from '@/lib/format-thb';
 import { RecordPaymentDialog } from '../../_components/record-payment-dialog';
 import { DeleteDraftDialog } from '../../_components/delete-draft-dialog';
 import { InvoiceMoreMenu } from '../../_components/invoice-more-menu';
@@ -192,7 +193,7 @@ export async function renderInvoiceDetailView({
   // The phone bar's line: what the bill comes to, and when it is due while it
   // is still owed (board Admin-invoice-issued-mobile). No line for a draft (a
   // preview) or a void bill.
-  const totalText = totals.totalSatang !== null ? formatSatang(totals.totalSatang) : null;
+  const totalText = totals.totalSatang !== null ? formatSatangAmount(totals.totalSatang) : null;
   const phoneSummary =
     totalText === null || isDraft || invoice.status === 'void'
       ? null
@@ -383,7 +384,7 @@ export async function renderInvoiceDetailView({
       {/* A refund is settling: say how much, and that nothing is needed (board
           Admin-refund-settling), once, instead of beside each disabled action. */}
       {settlingRefundSatang !== null && (
-        <Alert tone="info" role="status" title={t('refundSettlingNote.title', { amount: formatSatang(settlingRefundSatang) })}>
+        <Alert tone="info" role="status" title={t('refundSettlingNote.title', { amount: formatSatangAmount(settlingRefundSatang) })}>
           {t('refundSettlingNote.body')}
         </Alert>
       )}
@@ -447,18 +448,18 @@ export async function renderInvoiceDetailView({
             className="ms-auto grid w-full grid-cols-[1fr_auto] gap-x-8 gap-y-2 text-sm sm:max-w-sm"
           >
             <dt className="text-[var(--aura-fg-secondary)]">{t('fields.subtotal')}</dt>
-            <dd className="text-end tabular-nums">{formatSatang(totals.subtotalSatang)} THB</dd>
+            <dd className="text-end tabular-nums">{formatSatangAmount(totals.subtotalSatang)} THB</dd>
             <dt className="text-[var(--aura-fg-secondary)]">
               {t('fields.vat')}
               {totals.vatPercent && <span className="ms-1">({totals.vatPercent})</span>}
             </dt>
-            <dd className="text-end tabular-nums">{formatSatang(totals.vatSatang)} THB</dd>
+            <dd className="text-end tabular-nums">{formatSatangAmount(totals.vatSatang)} THB</dd>
             <dt className="border-t border-[var(--aura-border-default)] pt-2 font-semibold">
               {t('fields.total')}
               {isDraft && <span className="ms-1 font-normal text-[var(--aura-fg-secondary)]">({t('previewLabel')})</span>}
             </dt>
             <dd className="border-t border-[var(--aura-border-default)] pt-2 text-end font-semibold tabular-nums">
-              {formatSatang(totals.totalSatang)} THB
+              {formatSatangAmount(totals.totalSatang)} THB
             </dd>
           </dl>
         </div>
@@ -550,7 +551,7 @@ export async function renderInvoiceDetailView({
             <p className="text-xs text-[var(--aura-fg-secondary)]">
               <span>{t('creditNotesSection.totalCredited')}</span>{' '}
               <span className="font-medium tabular-nums text-[var(--aura-fg-primary)]">
-                {formatSatang(invoice.creditedTotal.satang)} THB
+                {formatSatangAmount(invoice.creditedTotal.satang)} THB
               </span>
             </p>
           }
@@ -581,7 +582,7 @@ export async function renderInvoiceDetailView({
                     {cn.reason}
                   </Td>
                   <Td align="end" className="tabular-nums" label={t('creditNotesSection.col.total')}>
-                    {formatSatang(cn.total.satang)} THB
+                    {formatSatangAmount(cn.total.satang)} THB
                   </Td>
                   <Td align="end" card="action">
                     <span className="flex justify-end gap-2">
@@ -635,10 +636,10 @@ export async function renderInvoiceDetailView({
                   {l.quantity}
                 </Td>
                 <Td align="end" className="tabular-nums" label={t('lines.unit')}>
-                  {formatSatang(l.unitPrice.satang)}
+                  {formatSatangAmount(l.unitPrice.satang)}
                 </Td>
                 <Td align="end" className="tabular-nums" label={t('lines.total')}>
-                  {formatSatang(l.total.satang)}
+                  {formatSatangAmount(l.total.satang)}
                 </Td>
               </Tr>
             ))}

@@ -92,6 +92,7 @@ import {
 import { AS_PAID_ERROR_CODES } from './as-paid-error-codes';
 // Wave-4 S14 — shared client-safe Asia/Bangkok "today" helper.
 import { bangkokTodayIso } from '@/lib/bangkok-today';
+import { formatSatangAmount } from '@/lib/format-thb';
 
 export type EventOption = {
   readonly eventId: string;
@@ -134,12 +135,6 @@ export function previewVatInclusive(
  */
 export function formatRateBps(rateBps: number, locale: string): string {
   return new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(rateBps / 100);
-}
-
-function formatSatang(satang: number): string {
-  const whole = Math.floor(satang / 100);
-  const rem = satang % 100;
-  return `${whole.toLocaleString('en-US')}.${rem.toString().padStart(2, '0')}`;
 }
 
 type DocTypeKind = 'taxInvoice' | 'taxInvoiceReceipt' | 'receipt' | 'pending';
@@ -1099,7 +1094,7 @@ export function EventFeeForm({
             <dl className="flex flex-col gap-1 text-sm">
               <div className="flex justify-between">
                 <dt className="text-[var(--aura-fg-secondary)]">{t('vatPreview.total')}</dt>
-                <dd className="tabular-nums font-medium">{formatSatang(totalSatang)}</dd>
+                <dd className="tabular-nums font-medium">{formatSatangAmount(totalSatang)}</dd>
               </div>
               {/* No tenant rate → no split to show (issuance would refuse
                   with settings_missing); never guess one. */}
@@ -1107,13 +1102,13 @@ export function EventFeeForm({
                 <>
                   <div className="flex justify-between">
                     <dt className="text-[var(--aura-fg-secondary)]">{t('vatPreview.subtotal')}</dt>
-                    <dd className="tabular-nums">{formatSatang(split.subtotal)}</dd>
+                    <dd className="tabular-nums">{formatSatangAmount(split.subtotal)}</dd>
                   </div>
                   <div className="flex justify-between">
                     <dt className="text-[var(--aura-fg-secondary)]">
                       {t('vatPreview.vat', { rate: formatRateBps(vatRateBps, locale) })}
                     </dt>
-                    <dd className="tabular-nums">{formatSatang(split.vat)}</dd>
+                    <dd className="tabular-nums">{formatSatangAmount(split.vat)}</dd>
                   </div>
                 </>
               )}

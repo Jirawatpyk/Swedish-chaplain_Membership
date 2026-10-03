@@ -22,7 +22,7 @@ import {
   CreditNoteOriginalReceipt,
   CreditNoteRefundBadge,
 } from '@/components/invoices/credit-note-original-receipt';
-import { formatSatang } from '../_utils/format-satang';
+import { formatSatangAmount } from '@/lib/format-thb';
 import { CREDIT_NOTES_COLUMN_LAYOUT } from './credit-notes-table-columns';
 
 export function CreditNotesTable({ rows }: { readonly rows: readonly ListCreditNotesRow[] }) {
@@ -91,7 +91,7 @@ export function CreditNotesTable({ rows }: { readonly rows: readonly ListCreditN
         key: 'total',
         label: t('columns.total'),
         ...CREDIT_NOTES_COLUMN_LAYOUT.total,
-        render: (r) => <span className="font-medium tabular-nums">{formatSatang(r.totalSatang)} THB</span>,
+        render: (r) => <span className="font-medium tabular-nums">{formatSatangAmount(r.totalSatang)} THB</span>,
       },
       {
         key: 'pdf',
