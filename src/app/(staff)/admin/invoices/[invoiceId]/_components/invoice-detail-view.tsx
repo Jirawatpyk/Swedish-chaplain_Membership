@@ -33,6 +33,7 @@ import { NoPrimaryContactBanner } from '@/components/members/no-primary-contact-
 import { Table, TBody, THead, Td, Th, Tr } from '@/components/shell/aura-table';
 import { invoiceStatusTone, type InvoiceDisplayStatus } from '@/components/invoices/invoice-status-tone';
 import { IssueInvoiceDialog } from '../../_components/issue-invoice-dialog';
+import { formatSatang, type IssueTotalsByTreatment } from '../../_lib/issue-summary-totals';
 import { RecordPaymentDialog } from '../../_components/record-payment-dialog';
 import { DeleteDraftDialog } from '../../_components/delete-draft-dialog';
 import { InvoiceMoreMenu } from '../../_components/invoice-more-menu';
@@ -47,19 +48,6 @@ import type { PaymentDetailsView } from '../_lib/payment-details';
 // path, same literal the `auto_refund_failed_needs_manual_reconcile` forensic
 // stamps into its payload). Surfaced to the admin so they can follow it.
 const OOB_RUNBOOK_URL = 'docs/runbooks/out-of-band-refund.md';
-
-function formatSatang(satang: bigint | null): string {
-  if (satang === null) return '—';
-  const abs = satang < 0n ? -satang : satang;
-  const whole = abs / 100n;
-  const rem = abs % 100n;
-  const sign = satang < 0n ? '-' : '';
-  // N11 — explicit `'en-US'` locale pins thousand-separator output on
-  // Vercel runtimes whose process locale may be `C`/`POSIX` (emits no
-  // separator). Thai-tax amounts are legal figures; deterministic
-  // formatting is required by FR-005.
-  return `${sign}${whole.toLocaleString('en-US')}.${rem.toString().padStart(2, '0')}`;
-}
 
 /**
  * The heading's noun names the document by its type (maintainer, 3 Oct): an
@@ -134,6 +122,12 @@ export interface InvoiceDetailViewProps {
     readonly vatPercent: string | null;
   };
   /**
+   * A draft priced per VAT treatment for the Issue dialog, which shows the
+   * set for the treatment the admin picks. `null` when issued, or when the
+   * tenant has no invoice settings (issuing would fail anyway).
+   */
+  readonly issueTotals: IssueTotalsByTreatment | null;
+  /**
    * The total of the refunds still settling on this invoice's payments, or
    * null when none is. Non-null disables the credit-note action and shows the
    * settling note (board `Admin-refund-settling`).
@@ -177,6 +171,7 @@ export async function renderInvoiceDetailView({
   failedEmailBanners,
   autoRefund,
   totals,
+  issueTotals,
   settlingRefundSatang,
   refund,
   bangkokTodayIso,
@@ -247,20 +242,15 @@ export async function renderInvoiceDetailView({
                   taxAtPayment={taxAtPayment}
                   isMembership={invoice.invoiceSubject === 'membership'}
                   buyerIsVatRegistrant={buyerIsVatRegistrant}
-                  // 088 US8 (T061d) — draft subtotal in satang (plain number;
-                  // a bigint cannot cross the RSC → client-prop boundary)
-                  // drives the ≥ 5,000 THB zero-rate advisory in the form.
-                  subtotalSatang={totals.subtotalSatang !== null ? Number(totals.subtotalSatang) : null}
+                  // The summary + confirm show the chosen VAT treatment's
+                  // figures, priced by the issue use case's own policy.
+                  totalsByTreatment={issueTotals}
                   summary={{
                     memberName: memberDisplayName,
                     planDisplayName,
                     // 054-event-fee-invoices — membership invoices always carry
                     // plan_year (`invoices_subject_fields_ck`); coalesce for type.
                     planYear: invoice.planYear ?? 0,
-                    subtotalText: formatSatang(totals.subtotalSatang),
-                    vatText: formatSatang(totals.vatSatang),
-                    vatPercent: totals.vatPercent ?? '',
-                    totalText: formatSatang(totals.totalSatang),
                   }}
                 />
               </>

@@ -19,6 +19,9 @@ import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { IssueInvoiceForm } from '@/app/(staff)/admin/invoices/_components/issue-invoice-form';
 import { IssueInvoiceDialog } from '@/app/(staff)/admin/invoices/_components/issue-invoice-dialog';
+import { buildIssueTotalsByTreatment } from '@/app/(staff)/admin/invoices/[invoiceId]/_lib/issue-totals-by-treatment';
+import { Money } from '@/modules/invoicing/domain/value-objects/money';
+import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
 
 const refreshMock = vi.fn();
 vi.mock('next/navigation', () => ({
@@ -38,13 +41,15 @@ const BASE_SUMMARY = {
   planYear: 2026,
 } as const;
 
-// The draft's line sum + the tenant's standard rate; the form derives the
-// subtotal / VAT / total from these with the issue use case's own policy.
-const BASE_PRICING = {
-  lineSumSatang: 800_000,
-  vatInclusive: false,
-  standardVatRate: '0.0700',
-} as const;
+// The draft priced per treatment by the same server helper the page uses
+// (the issue use case's own `computeIssuePricing`), at the standard 7%.
+function priced(lineSumSatang: number, vatInclusive = false) {
+  return buildIssueTotalsByTreatment({
+    lineSum: Money.fromSatangUnsafe(lineSumSatang),
+    vatInclusive,
+    standardRate: VatRate.ofUnsafe('0.0700'),
+  });
+}
 
 function renderForm(
   overrides: Partial<React.ComponentProps<typeof IssueInvoiceForm>> = {},
@@ -57,7 +62,7 @@ function renderForm(
         taxAtPayment
         isMembership={false}
         buyerIsVatRegistrant={false}
-        pricing={BASE_PRICING}
+        totalsByTreatment={priced(800_000)}
         onClose={() => undefined}
         {...overrides}
       />
@@ -106,7 +111,7 @@ describe('IssueInvoiceForm — the confirm button', () => {
   });
 
   it('names no amount when the draft could not be priced (no invoice settings)', () => {
-    renderForm({ pricing: null });
+    renderForm({ totalsByTreatment: null });
     expect(screen.getByRole('button', { name: 'Issue bill' })).toBeInTheDocument();
   });
 });
@@ -120,7 +125,7 @@ describe('IssueInvoiceForm — the summary matches the issued bill', () => {
   }
 
   it('standard event fee: 7% on top, and the confirm names that total', () => {
-    renderForm({ pricing: { ...BASE_PRICING, lineSumSatang: 1_000_000 } });
+    renderForm({ totalsByTreatment: priced(1_000_000) });
     expect(summaryRow('Subtotal')).toHaveTextContent('10,000.00 THB');
     expect(summaryRow('Total')).toHaveTextContent('10,700.00 THB');
     const confirm = screen.getByRole('button', { name: 'Issue bill · 10,700.00 THB' });
@@ -128,7 +133,7 @@ describe('IssueInvoiceForm — the summary matches the issued bill', () => {
   });
 
   it('zero-rated event fee: VAT 0, total = subtotal, in the summary and the confirm', () => {
-    renderForm({ pricing: { ...BASE_PRICING, lineSumSatang: 1_000_000 } });
+    renderForm({ totalsByTreatment: priced(1_000_000) });
     fireEvent.click(screen.getByRole('radio', { name: /Zero-rated/i }));
     expect(screen.getByText('(0.00%)')).toBeInTheDocument();
     expect(summaryRow('Total')).toHaveTextContent('10,000.00 THB');
@@ -140,7 +145,7 @@ describe('IssueInvoiceForm — the summary matches the issued bill', () => {
 
   it('VAT-inclusive event draft: total = line sum with the VAT carved out', () => {
     renderForm({
-      pricing: { ...BASE_PRICING, lineSumSatang: 1_000_000, vatInclusive: true },
+      totalsByTreatment: priced(1_000_000, true),
     });
     expect(summaryRow('Subtotal')).toHaveTextContent('9,345.79 THB');
     expect(screen.getByText('654.21 THB')).toBeInTheDocument();
@@ -221,7 +226,7 @@ describe('IssueInvoiceForm — flip resets cert fields (T061f reset arm)', () =>
 
 describe('IssueInvoiceForm — low-amount advisory (T061d)', () => {
   it('shows a non-blocking ≥ 5,000 THB warning for a zero-rate sale below the threshold', () => {
-    renderForm({ pricing: { ...BASE_PRICING, lineSumSatang: 400_000 } });
+    renderForm({ totalsByTreatment: priced(400_000) });
     expect(screen.queryByTestId('zero-rate-low-amount-warning')).toBeNull();
     fireEvent.click(screen.getByRole('radio', { name: /Zero-rated/i }));
     const warn = screen.getByTestId('zero-rate-low-amount-warning');
@@ -230,7 +235,7 @@ describe('IssueInvoiceForm — low-amount advisory (T061d)', () => {
   });
 
   it('does NOT warn when the subtotal is at or above the threshold', () => {
-    renderForm({ pricing: { ...BASE_PRICING, lineSumSatang: 800_000 } });
+    renderForm({ totalsByTreatment: priced(800_000) });
     fireEvent.click(screen.getByRole('radio', { name: /Zero-rated/i }));
     expect(screen.queryByTestId('zero-rate-low-amount-warning')).toBeNull();
   });
@@ -560,7 +565,7 @@ describe('IssueInvoiceDialog — AURA alertdialog', () => {
           taxAtPayment
           isMembership
           buyerIsVatRegistrant
-          pricing={BASE_PRICING}
+          totalsByTreatment={priced(800_000)}
         />
       </NextIntlClientProvider>,
     );
