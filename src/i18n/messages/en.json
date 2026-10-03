@@ -2501,11 +2501,11 @@
           "title": "Credit Notes"
         },
         "title": "Credit notes",
-        "description": "Every credit note (ใบลดหนี้) issued against a tax receipt. Read-only audit trail — issue one from the paid invoice.",
+        "description": "Every credit note (ใบลดหนี้) issued against a tax invoice. Read-only audit trail — issue one from the paid invoice.",
         "empty": "Credit notes appear here after an admin issues one against a paid invoice.",
         "filteredEmpty": "No credit notes match the current filters.",
         "tableCaption": "Credit notes",
-        "refundLegend": "Refund marks a credit note issued by a card or PromptPay refund.",
+        "refundLegend": "\"Refund\" marks a credit note issued by a card or PromptPay refund.",
         "columns": {
           "documentNumber": "Number",
           "issueDate": "Issued",
@@ -2540,7 +2540,7 @@
         "meta": {
           "title": "Credit Note"
         },
-        "subtitle": "Read-only record of a credit note (ใบลดหนี้) against the original tax receipt.",
+        "subtitle": "Read-only record of a credit note (ใบลดหนี้) against the original tax invoice.",
         "title": "Credit note {number}",
         "amountsLabel": "Credit amounts",
         "sections": {"details": "Details", "parties": "Parties"},

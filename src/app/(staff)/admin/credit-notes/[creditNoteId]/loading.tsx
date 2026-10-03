@@ -18,12 +18,18 @@ export default async function Loading() {
     <PageSkeletonShell ariaLabel={tLayout('loadingPage')}>
       <DetailContainer>
         <PageHeader
-          title={<SkeletonBlock className="h-8 w-72 max-w-full" />}
+          title={
+            // The real title wraps the number onto its own line below 640px.
+            <span className="flex flex-col gap-2 sm:block">
+              <SkeletonBlock className="h-8 w-40 max-w-full sm:w-72" />
+              <SkeletonBlock className="h-8 w-56 max-w-full sm:hidden" />
+            </span>
+          }
           subtitle={t('subtitle')}
           actions={
             <>
-              <SkeletonBlock className="h-[var(--aura-button-height)] w-36" />
-              <SkeletonBlock className="h-[var(--aura-button-height)] w-36" />
+              <SkeletonBlock className="h-[var(--aura-touch-target)] w-36 sm:h-[var(--aura-button-height)]" />
+              <SkeletonBlock className="h-[var(--aura-touch-target)] w-36 sm:h-[var(--aura-button-height)]" />
             </>
           }
         />

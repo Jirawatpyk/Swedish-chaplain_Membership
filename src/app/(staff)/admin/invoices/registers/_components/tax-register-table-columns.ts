@@ -13,16 +13,16 @@ type ColumnLayout = Pick<DataTableColumn, 'width' | 'minWidth' | 'card' | 'align
 export const TAX_REGISTER_COLUMN_LAYOUT = {
   // The number, the Cancelled badge wrapping under it.
   receiptNo: { width: 144, card: 'title' },
-  paymentDate: { width: 112, card: 'hide' },
+  paymentDate: { width: 104, card: 'hide' },
   // On a phone card the buyer line also carries the date, tax ID, treatment
   // and amounts (board `Admin-invoice-registers-mobile`).
   buyer: { minWidth: 140, card: 'wide', skeletonLines: 3 },
-  taxId: { width: 136, card: 'hide' },
+  taxId: { width: 128, card: 'hide' },
   subtotal: { width: 124, align: 'end', card: 'hide' },
   vat: { width: 112, align: 'end', card: 'hide' },
   // The card's last line, after the buyer (board mobile).
   total: { width: 124, align: 'end', card: 'wide' },
-  vatTreatment: { width: 104, card: 'hide' },
+  vatTreatment: { width: 96, card: 'hide' },
   certNo: { width: 84, card: 'hide' },
 } as const satisfies Record<string, ColumnLayout>;
 

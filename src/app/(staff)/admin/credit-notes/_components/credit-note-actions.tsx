@@ -9,7 +9,7 @@
  * toasts per status (202, 429, 409 `no_recipient` / `no_buyer_email`) and
  * T107's 5-minute client-side re-enable.
  */
-import { useEffect, useRef, useState, useTransition } from 'react';
+import { useEffect, useId, useRef, useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
 import { Button, buttonClass } from '@jirawatpyk/aura-react';
 import { DownloadIcon } from 'lucide-react';
@@ -22,6 +22,7 @@ export interface CreditNoteActionsProps {
 
 export function CreditNoteActions({ creditNoteId, documentNumber }: CreditNoteActionsProps) {
   const t = useTranslations('admin.creditNotes.detail');
+  const resendHintId = useId();
 
   const [isPending, setIsPending] = useState(false);
   const [recentlySent, setRecentlySent] = useState(false);
@@ -106,10 +107,15 @@ export function CreditNoteActions({ creditNoteId, documentNumber }: CreditNoteAc
         loading={isPending}
         disabled={isPending || recentlySent}
         onClick={handleResend}
-        aria-label={t('actions.resendAria', { number: documentNumber })}
+        aria-describedby={resendHintId}
       >
         {t('actions.resendShort')}
       </Button>
+      {/* WCAG 2.5.3: the button keeps its visible words as its name; who the
+          copy goes to is its description. */}
+      <span id={resendHintId} className="sr-only">
+        {t('actions.resendAria', { number: documentNumber })}
+      </span>
       <a
         href={`/api/credit-notes/${creditNoteId}/pdf`}
         target="_blank"

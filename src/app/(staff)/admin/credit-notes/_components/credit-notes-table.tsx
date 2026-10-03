@@ -58,7 +58,7 @@ export function CreditNotesTable({ rows }: { readonly rows: readonly ListCreditN
         label: t('columns.originalReceipt'),
         ...CREDIT_NOTES_COLUMN_LAYOUT.originalReceipt,
         render: (r) => (
-          <span className="text-xs">
+          <span className="text-xs whitespace-normal break-words">
             <CreditNoteOriginalReceipt
               original={r.original}
               invoiceHref={`/admin/invoices/${r.originalInvoiceId}`}
@@ -104,7 +104,6 @@ export function CreditNotesTable({ rows }: { readonly rows: readonly ListCreditN
             rel="noopener noreferrer"
             download
             aria-label={t('actions.pdfAria', { number: r.documentNumberRaw })}
-            title={t('actions.pdfAria', { number: r.documentNumberRaw })}
             className={buttonClass({ variant: 'ghost', size: 'sm', touchHeight: true, className: 'max-sm:w-full' })}
           >
             <DownloadIcon aria-hidden="true" className="size-4" />

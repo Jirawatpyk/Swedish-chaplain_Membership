@@ -2501,11 +2501,11 @@
           "title": "Kreditnotor"
         },
         "title": "Kreditnotor",
-        "description": "Varje kreditnota (ใบลดหนี้) utfärdad mot ett skattekvitto. Skrivskyddad granskningslogg — utfärda en från den betalda fakturan.",
+        "description": "Varje kreditnota (ใบลดหนี้) utfärdad mot en skattefaktura. Skrivskyddad granskningslogg — utfärda en från den betalda fakturan.",
         "empty": "Kreditnotor visas här efter att en administratör utfärdat en mot en betald faktura.",
         "filteredEmpty": "Inga kreditnotor matchar de aktuella filtren.",
         "tableCaption": "Kreditnotor",
-        "refundLegend": "Återbetalning markerar en kreditnota som skapats av en återbetalning via kort eller PromptPay.",
+        "refundLegend": "”Återbetalning” markerar en kreditnota som utfärdats vid en återbetalning via kort eller PromptPay.",
         "columns": {
           "documentNumber": "Nummer",
           "issueDate": "Utfärdad",
@@ -2540,20 +2540,20 @@
         "meta": {
           "title": "Kreditnota"
         },
-        "subtitle": "Skrivskyddad post för en kreditnota (ใบลดหนี้) mot det ursprungliga skattekvittot.",
+        "subtitle": "Skrivskyddat underlag för en kreditnota (ใบลดหนี้) mot den ursprungliga skattefakturan.",
         "title": "Kreditnota {number}",
         "amountsLabel": "Kreditbelopp",
-        "sections": {"details": "Detaljer", "parties": "Parter"},
+        "sections": {"details": "Uppgifter", "parties": "Parter"},
         "status": {
           "issued": "Utfärdad"
         },
         "actions": {
           "backToInvoice": "Tillbaka till faktura",
           "download": "Ladda ner PDF",
-          "resend": "Skicka kreditnota-mejl igen",
+          "resend": "Skicka kreditnotamejl igen",
           "resendAria": "Mejla en ny kopia av kreditnota {number} till medlemmens primära kontakt",
           "moreAria": "Fler åtgärder för {number}",
-          "resendShort": "Skicka e-post igen"
+          "resendShort": "Skicka mejl igen"
         },
         "toast": {
           "resendSuccess": "Köad — {recipient} får en ny kopia inom kort.",
@@ -2581,7 +2581,7 @@
           "taxId": "Skatt-ID",
           "address": "Adress",
           "contactEmail": "Kontaktepost (vid utfärdandet)",
-          "resendNote": "Ett omutskick går till medlemmens nuvarande primära kontakt."
+          "resendNote": "Mejlet skickas om till medlemmens nuvarande primära kontakt."
         },
         "siblings": {
           "heading": "Andra kreditnotor på denna faktura",
@@ -2855,7 +2855,7 @@
             "closedMonthIncomplete": "Ofullständigt belopp — {count, plural, one {# kombinerad faktura + kvitto} other {# kombinerade fakturor + kvitton}} (INV-nummer, utan RC/RE) utfärdade denna månad ingår inte i beloppet. Ta med {count, plural, one {den} other {dem}} innan ภ.พ.30 lämnas."
           },
           "less": "minus",
-          "about": "Om siffran"
+          "about": "Om beloppet"
         },
         "summary": {
           "count": "{count, plural, one {# kvitto} other {# kvitton}}",

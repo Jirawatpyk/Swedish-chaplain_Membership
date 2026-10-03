@@ -23,18 +23,22 @@ interface TaxRegisterFormProps {
   readonly initialKind: RegisterKind;
   readonly initialFrom: string;
   readonly initialTo: string;
+  /** Set when the range is invalid: From and To are marked and described by it. */
+  readonly errorId?: string;
 }
 
 export function TaxRegisterForm({
   initialKind,
   initialFrom,
   initialTo,
+  errorId,
 }: TaxRegisterFormProps): React.JSX.Element {
   const t = useTranslations('admin.invoices.registers');
   const router = useRouter();
   const [kind, setKind] = React.useState<RegisterKind>(initialKind);
   const [from, setFrom] = React.useState(initialFrom);
   const [to, setTo] = React.useState(initialTo);
+  const rangeError = errorId ? { 'aria-invalid': true, 'aria-describedby': errorId } : {};
 
   const onSubmit = React.useCallback(
     (e: React.FormEvent<HTMLFormElement>) => {
@@ -74,6 +78,7 @@ export function TaxRegisterForm({
         value={from}
         onChange={(e) => setFrom(e.currentTarget.value)}
         required
+        {...rangeError}
       />
       <TextField
         id="register-to"
@@ -82,8 +87,9 @@ export function TaxRegisterForm({
         value={to}
         onChange={(e) => setTo(e.currentTarget.value)}
         required
+        {...rangeError}
       />
-      <Button type="submit" variant="primary" touchHeight className="sm:col-span-2 lg:col-span-1">
+      <Button type="submit" variant="primary" touchHeight className="sm:col-span-2 lg:col-span-1 lg:justify-self-start">
         {t('actions.view')}
       </Button>
     </form>

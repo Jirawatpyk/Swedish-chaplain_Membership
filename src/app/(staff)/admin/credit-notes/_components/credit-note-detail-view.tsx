@@ -80,6 +80,26 @@ export interface CreditNoteDetailViewProps {
   };
 }
 
+
+/** Stands in for the number while the title is translated, then is split on. */
+const NUMBER_SLOT = '\u0000';
+
+/**
+ * The title with the document number kept on one line: "CN-2026-000014"
+ * otherwise breaks at a hyphen on a phone. Splitting the translated string
+ * keeps each locale's own word order.
+ */
+function documentTitle(translated: string, number: string) {
+  const [before = '', after = ''] = translated.split(NUMBER_SLOT);
+  return (
+    <>
+      {before}
+      <span className="whitespace-nowrap">{number}</span>
+      {after}
+    </>
+  );
+}
+
 export async function renderCreditNoteDetailView(p: CreditNoteDetailViewProps) {
   const t = await getTranslations('admin.creditNotes.detail');
   const locale = await getLocale();
@@ -89,7 +109,7 @@ export async function renderCreditNoteDetailView(p: CreditNoteDetailViewProps) {
       {/* The breadcrumb reads the CN number in place of the raw id segment. */}
       <PlanBreadcrumbLabel segment={p.creditNoteId} label={p.documentNumber} />
       <PageHeader
-        title={t('title', { number: p.documentNumber })}
+        title={documentTitle(t('title', { number: NUMBER_SLOT }), p.documentNumber)}
         {...(p.isRefund ? { badge: <CreditNoteRefundBadge /> } : {})}
         subtitle={t('subtitle')}
         actions={<CreditNoteActions creditNoteId={p.creditNoteId} documentNumber={p.documentNumber} />}
@@ -138,10 +158,11 @@ export async function renderCreditNoteDetailView(p: CreditNoteDetailViewProps) {
             <dd className="text-end tabular-nums">{formatSatang(p.creditAmountSatang)} THB</dd>
             <dt className="text-[var(--aura-fg-secondary)]">{t('fields.vat')}</dt>
             <dd className="text-end tabular-nums">{formatSatang(p.vatSatang)} THB</dd>
-            <dt className="border-t border-[var(--aura-border-default)] pt-2 font-semibold">{t('fields.total')}</dt>
-            <dd className="border-t border-[var(--aura-border-default)] pt-2 text-end font-semibold tabular-nums">
-              {formatSatang(p.totalSatang)} THB
-            </dd>
+            {/* One rule across the whole row, not one per cell with the gap between. */}
+            <div className="col-span-2 grid grid-cols-subgrid border-t border-[var(--aura-border-default)] pt-2 font-semibold">
+              <dt>{t('fields.total')}</dt>
+              <dd className="text-end tabular-nums">{formatSatang(p.totalSatang)} THB</dd>
+            </div>
           </dl>
         </div>
       </Card>

@@ -32,6 +32,9 @@ export interface TaxRegisterViewProps {
   readonly result: Result<ListTaxDocumentRegisterOutput, ListTaxDocumentRegisterError>;
 }
 
+/** The error the date fields point at when the range is invalid (ux-standards § 6). */
+const RANGE_ERROR_ID = 'register-range-error';
+
 export async function renderTaxRegisterView({ kind, from, to, result }: TaxRegisterViewProps) {
   const t = await getTranslations('admin.invoices.registers');
   const locale = await getLocale();
@@ -53,10 +56,15 @@ export async function renderTaxRegisterView({ kind, from, to, result }: TaxRegis
       />
       <Card flushBelow="sm" className="max-sm:border-0 max-sm:p-0">
         <div className="flex flex-col gap-[var(--aura-space-4)]">
-          <TaxRegisterForm initialKind={kind} initialFrom={from} initialTo={to} />
+          <TaxRegisterForm
+            initialKind={kind}
+            initialFrom={from}
+            initialTo={to}
+            {...(!result.ok && result.error.code === 'invalid_range' ? { errorId: RANGE_ERROR_ID } : {})}
+          />
 
           {!result.ok ? (
-            <Alert tone="danger" role="alert">
+            <Alert tone="danger" role="alert" id={RANGE_ERROR_ID}>
               {result.error.code !== 'invalid_range'
                 ? t('errors.loadFailed')
                 : result.error.reason === 'not_a_date'
@@ -132,7 +140,11 @@ export async function renderTaxRegisterView({ kind, from, to, result }: TaxRegis
                 <EmptyState icon="file-text" title={t('empty')} headingLevel={2} />
               ) : (
                 <>
-                  <p className="m-0 text-sm text-[var(--aura-fg-secondary)]" data-testid="register-summary">
+                  <p
+                    role="status"
+                    className="m-0 text-sm text-[var(--aura-fg-secondary)]"
+                    data-testid="register-summary"
+                  >
                     {t('summary.count', { count: result.value.summary.rowCount })}
                     {result.value.summary.cancelledCount > 0 ? (
                       <> {t('summary.cancelled', { count: result.value.summary.cancelledCount })}</>
