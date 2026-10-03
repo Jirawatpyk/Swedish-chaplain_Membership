@@ -1812,6 +1812,11 @@ describe('issueInvoice — expectedTotalSatang guard', () => {
         issueInvoiceSchema.safeParse({ ...input, expectedTotalSatang: bad }).success,
       ).toBe(false);
     }
+    for (const bad of ['-1', '0700']) {
+      expect(
+        issueInvoiceSchema.safeParse({ ...input, expectedVatSatang: bad }).success,
+      ).toBe(false);
+    }
     for (const good of ['107000', '0']) {
       expect(
         issueInvoiceSchema.safeParse({ ...input, expectedTotalSatang: good }).success,

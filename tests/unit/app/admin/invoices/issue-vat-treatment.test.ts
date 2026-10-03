@@ -71,8 +71,9 @@ describe('buildIssueRequestBody — POST body shape', () => {
         certNo: '',
         certDate: '',
         expectedTotalSatang: 856_000,
+        expectedVatSatang: 56_000,
       }),
-    ).toEqual({ expectedTotalSatang: '856000' });
+    ).toEqual({ expectedTotalSatang: '856000', expectedVatSatang: '56000' });
   });
 
   it('carries the confirmed total alongside the zero-rate fields', () => {

@@ -270,8 +270,9 @@ describe('IssueInvoiceForm — valid zero-rate issue POST', () => {
       expect(body).toEqual({
         vatTreatment: 'zero_rated_80_1_5',
         zeroRateCertNo: 'กต 0404/1234',
-        // The zero-rated total the admin confirmed (8,000.00, VAT 0).
+        // The zero-rated total and VAT the admin confirmed (8,000.00, VAT 0).
         expectedTotalSatang: '800000',
+        expectedVatSatang: '0',
       });
       expect('zeroRateCertBlobKey' in body).toBe(false);
     } finally {
@@ -300,7 +301,10 @@ describe('IssueInvoiceForm — valid zero-rate issue POST', () => {
       ];
       expect(init.method).toBe('POST');
       // 8,000.00 + 7% — the total the confirm named.
-      expect(JSON.parse(init.body as string)).toEqual({ expectedTotalSatang: '856000' });
+      expect(JSON.parse(init.body as string)).toEqual({
+        expectedTotalSatang: '856000',
+        expectedVatSatang: '56000',
+      });
     } finally {
       vi.unstubAllGlobals();
     }

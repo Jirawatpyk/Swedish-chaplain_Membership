@@ -438,6 +438,35 @@ describe('issue-invoice zero-rate contract (088 US8)', () => {
   // The confirmed-total guard compares against the figure each treatment
   // actually pins — the dialog's total for that treatment, never the line sum
   // + 7%. A match issues; the 7%-on-top figure is refused before any write.
+  // A VAT-inclusive draft's TOTAL is its line sum whatever the rate, so a
+  // tenant rate change after the dialog rendered leaves the total unchanged
+  // but moves the VAT the §86/4 pins. The dialog also confirms the VAT; a
+  // stale VAT is refused before any write.
+  describe('expectedVatSatang (rate drift on a VAT-inclusive draft)', () => {
+    it('issues when the confirmed VAT matches; refuses when only the VAT moved', async () => {
+      const okCap = emptyCap();
+      const ok = await issueInvoice(makeDeps(eventDraft(1_070_000n, true), okCap), {
+        ...baseInput,
+        expectedTotalSatang: '1070000',
+        expectedVatSatang: '70000',
+      });
+      expect(ok.ok, ok.ok ? 'ok' : JSON.stringify(ok)).toBe(true);
+      expect(String(okCap.applyIssueInputs[0]!.vatSatang)).toBe('70000');
+
+      // Confirmed at 10% (VAT 97,273), issued at the tenant's 7% (VAT 70,000):
+      // same total, different VAT → refused, nothing written.
+      const staleCap = emptyCap();
+      const stale = await issueInvoice(makeDeps(eventDraft(1_070_000n, true), staleCap), {
+        ...baseInput,
+        expectedTotalSatang: '1070000',
+        expectedVatSatang: '97273',
+      });
+      expect(stale.ok).toBe(false);
+      if (!stale.ok) expect(stale.error.code).toBe('issue_total_changed');
+      expect(staleCap.applyIssueInputs).toHaveLength(0);
+    });
+  });
+
   describe('expectedTotalSatang per treatment', () => {
     const cert = { zeroRateCertNo: 'กต 0404/9999' };
     const cases = [

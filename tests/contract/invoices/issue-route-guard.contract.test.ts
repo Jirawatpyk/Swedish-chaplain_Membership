@@ -235,10 +235,13 @@ describe('contract: POST /api/invoices/[invoiceId]/issue — expectedTotalSatang
   it('forwards the confirmed total to the use case', async () => {
     issueInvoiceMock.mockResolvedValueOnce(err({ code: 'issue_total_changed' }));
     const { POST } = await importRoute();
-    await POST(postWithBody({ expectedTotalSatang: '107000' }), routeParams);
+    await POST(
+      postWithBody({ expectedTotalSatang: '107000', expectedVatSatang: '7000' }),
+      routeParams,
+    );
     expect(issueInvoiceMock).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ expectedTotalSatang: '107000' }),
+      expect.objectContaining({ expectedTotalSatang: '107000', expectedVatSatang: '7000' }),
     );
   });
 
