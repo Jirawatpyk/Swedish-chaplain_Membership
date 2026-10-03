@@ -1223,6 +1223,16 @@ export interface PipelineRow {
   readonly lastReminderStepId: string | null;
   readonly linkedInvoiceId: string | null;
   /**
+   * TRUE when `linkedInvoiceId` points at a LIVE bill — i.e. the link is set
+   * and F4 does not report that invoice `void`. FALSE for no link, and for a
+   * stale link to a voided invoice (the void-on-reissue supersede path and
+   * pre-unlink voids can leave one on an open cycle). A link whose invoice row
+   * is missing counts as live (fail-closed — never offer mint-and-pay beside
+   * a bill we cannot see). The row's Mark-paid / Record-payment gate and the
+   * "Bill issued" badge key on this, not on `linkedInvoiceId` alone.
+   */
+  readonly linkedInvoiceLive: boolean;
+  /**
    * plan-change-ux seam 1(b) + L1 — TRUE when this cycle's period is already
    * EFFECTIVELY-PAID coverage, regardless of whether a renewal invoice has
    * been LINKED yet. An `upcoming` cycle covering an already-paid window

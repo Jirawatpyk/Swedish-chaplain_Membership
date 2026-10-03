@@ -51,6 +51,7 @@ export const RENEWAL_ROWS: ReadonlyArray<PipelineRow> = T30.map(
     lastReminderAt: new Date(Date.parse(RENEWALS_NOW_ISO) - reminded * DAY_MS).toISOString(),
     lastReminderStepId: 't-30',
     linkedInvoiceId: null,
+    linkedInvoiceLive: false,
     anchored: false,
     closedReason: null,
     emailUnverified: false,

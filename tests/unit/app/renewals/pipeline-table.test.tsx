@@ -102,6 +102,7 @@ const ONE_ROW: ReadonlyArray<PipelineRow> = [
     lastReminderAt: null,
     lastReminderStepId: null,
     linkedInvoiceId: null,
+    linkedInvoiceLive: false,
     anchored: false,
     closedReason: null,
     emailUnverified: false,
@@ -295,6 +296,7 @@ const PAYABLE_ROW: ReadonlyArray<PipelineRow> = [
     lastReminderAt: null,
     lastReminderStepId: null,
     linkedInvoiceId: null,
+    linkedInvoiceLive: false,
     anchored: false,
     closedReason: null,
     emailUnverified: false,
@@ -363,7 +365,7 @@ describe('<PipelineTable> invoice column — "Covered" gated to pre-expiry urgen
 
   it('renders "View invoice" when linkedInvoiceId is set, regardless of urgency (unchanged)', () => {
     const rows: ReadonlyArray<PipelineRow> = [
-      { ...ONE_ROW[0]!, anchored: true, urgency: 'suspended', linkedInvoiceId: 'inv-1' },
+      { ...ONE_ROW[0]!, anchored: true, urgency: 'suspended', linkedInvoiceId: 'inv-1', linkedInvoiceLive: true },
     ];
     render(
       <NextIntlClientProvider locale="en" messages={en}>
@@ -543,7 +545,7 @@ describe('<PipelineTable> one AURA table that stacks into cards', () => {
   });
 
   it('the invoice column stays in the grid but leaves the phone card, as the board draws it', () => {
-    const rows: ReadonlyArray<PipelineRow> = [{ ...ONE_ROW[0]!, linkedInvoiceId: 'inv-1' }];
+    const rows: ReadonlyArray<PipelineRow> = [{ ...ONE_ROW[0]!, linkedInvoiceId: 'inv-1', linkedInvoiceLive: true }];
     render(
       <NextIntlClientProvider locale="en" messages={en}>
         <PipelineTable rows={rows} canMutate />

@@ -33,6 +33,7 @@ function row(cycleId: string, companyName: string): PipelineRow {
     lastReminderAt: null,
     lastReminderStepId: null,
     linkedInvoiceId: null,
+    linkedInvoiceLive: false,
     anchored: false,
     closedReason: null,
     emailUnverified: false,
