@@ -2531,7 +2531,6 @@
           "view": "ดู",
           "viewAria": "ดูใบลดหนี้ {number}",
           "pdf": "PDF",
-          "download": "ดาวน์โหลด PDF",
           "pdfAria": "ดาวน์โหลด PDF ใบลดหนี้ {number}",
           "clearFilters": "ล้างตัวกรอง"
         }

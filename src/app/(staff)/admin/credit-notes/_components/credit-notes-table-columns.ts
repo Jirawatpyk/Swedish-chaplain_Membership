@@ -23,8 +23,10 @@ export const CREDIT_NOTES_COLUMN_LAYOUT = {
   member: { minWidth: 160, card: 'wide', skeletonLines: 2 },
   reason: { minWidth: 180, card: 'wide', skeletonLines: 2 },
   total: { width: 128, align: 'end' },
-  // The download, the phone card's last row (the US7a rule); 44px on a phone.
-  pdf: { width: 64, actions: true, card: 'footer', skeletonTouch: true },
+  // The download: on a phone card an icon at the top right beside the number
+  // (AURA's place for an `actions` column), 44px. It is the list's only
+  // action, so it gets no row of its own (maintainer, 3 Oct).
+  pdf: { width: 64, actions: true, skeletonTouch: true },
 } as const satisfies Record<string, ColumnLayout>;
 
 export type CreditNotesColumnKey = keyof typeof CREDIT_NOTES_COLUMN_LAYOUT;

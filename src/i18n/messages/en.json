@@ -2531,7 +2531,6 @@
           "view": "View",
           "viewAria": "View credit note {number}",
           "pdf": "PDF",
-          "download": "Download PDF",
           "pdfAria": "Download PDF for credit note {number}",
           "clearFilters": "Clear filters"
         }

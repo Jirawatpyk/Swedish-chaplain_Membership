@@ -104,13 +104,9 @@ export function CreditNotesTable({ rows }: { readonly rows: readonly ListCreditN
             rel="noopener noreferrer"
             download
             aria-label={t('actions.pdfAria', { number: r.documentNumberRaw })}
-            className={buttonClass({ variant: 'ghost', size: 'sm', touchHeight: true, className: 'max-sm:w-full' })}
+            className={buttonClass({ variant: 'ghost', size: 'sm', touchHeight: true })}
           >
             <DownloadIcon aria-hidden="true" className="size-4" />
-            {/* The phone card's footer is a whole row: say what it does. */}
-            <span className="sm:hidden" aria-hidden="true">
-              {t('actions.download')}
-            </span>
           </a>
         ),
       },

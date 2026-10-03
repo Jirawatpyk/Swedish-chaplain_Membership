@@ -2531,7 +2531,6 @@
           "view": "Visa",
           "viewAria": "Visa kreditnota {number}",
           "pdf": "PDF",
-          "download": "Ladda ner PDF",
           "pdfAria": "Ladda ner PDF för kreditnota {number}",
           "clearFilters": "Rensa filter"
         }

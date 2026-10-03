@@ -342,7 +342,7 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - the search and fiscal year on the shared filter bar, pushing `q` and `fy` as today;
   - a count line ("{shown} of {total} credit notes…") with the Refund legend;
   - columns Number (with the Refund chip), Issued, Original receipt (receipt number, bill or document kind under it), Member, Reason, Total, and a PDF download icon button. The number opens the detail, so the separate View button goes;
-  - on a phone the rows become cards (the US7a rule).
+  - on a phone the rows become cards (the US7a rule). Download PDF, the list's only action, is a 44px icon at the card's top right beside the number, not a footer row (maintainer, 3 Oct; the board has no phone design).
   - **Not followed:** the board's Export CSV button (there is no credit-note export; adding one is a feature) and the sortable headers (the list has never sorted).
 - **Credit-note detail follows `Admin-credit-note-detail`:**
   - "Credit note {CN-…}" with the Refund chip when it came from a refund; the always-the-same "Issued" badge goes (a credit note is immutable once issued);
