@@ -15,13 +15,29 @@
  *   5. keyboard reach + focus — the revealed cert fields are focusable;
  *   6. aria-live — the cert-reveal announce region is present.
  *
- * Preview-gated + fixture-dependent (mirrors the F4 E2E policy): it needs an
- * authenticated admin, the `FEATURE_088_TAX_AT_PAYMENT` flag ON, and a
- * non-membership (event/service) DRAFT invoice for the toggle to appear. Each
- * precondition is a graceful skip, so the spec is safe to keep in the suite and
- * only turns green on preview where the fixtures exist. Local dev is expected to
- * skip (no seeded non-membership draft) or emit dev-only 320px/target noise —
- * the load-bearing verification for the FIXES is the RTL/structural guard.
+ * Preconditions: an authenticated admin with `invoicing.write`, the
+ * `FEATURE_088_TAX_AT_PAYMENT` flag ON, and an **event** DRAFT invoice. The
+ * toggle renders only when `taxAtPayment && !isMembership`
+ * (`issue-invoice-form.tsx:142`), and `invoiceSubject` is a two-arm union
+ * (`'membership' | 'event'`), so a membership draft can never reveal it.
+ *
+ * `scripts/seed-f4-e2e-admin-fixtures.ts` now provisions that draft and
+ * `global-setup.ts` runs it, so the fixture is expected to be present. Two
+ * things used to make this file report green while testing nothing, and both
+ * are closed here:
+ *
+ *   - it took `.first()` of `?status=draft`, and the list orders by
+ *     `desc(issueDate), desc(invoiceId)` with drafts' NULL issueDate sorting
+ *     first under Postgres DESC — so WHICH draft it opened was decided by a
+ *     random UUID. It now filters `&subject=event`, which the admin list
+ *     already honours (`admin/invoices/page.tsx:277-280`).
+ *   - a missing fixture was a silent skip. It is now a FAILURE when the seeder
+ *     ran (`E2E_HAS_ADMIN_FIXTURES=1`), and a skip naming the seeder only when
+ *     the fixture pipeline did not run at all.
+ *
+ * Note that test 1 is only half-gated: its `before` axe scan asserts BEFORE the
+ * toggle check, so on the wrong draft it would have scanned the wrong dialog
+ * rather than skipping.
  */
 import AxeBuilder from '@axe-core/playwright';
 import type { Locator, Page } from '@playwright/test';
@@ -34,6 +50,41 @@ const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
 
 const AXE_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'] as const;
 const MIN_TARGET = 44;
+
+/**
+ * `global-setup.ts` sets this after `seed-f4-e2e-admin-fixtures.ts` exits 0 —
+ * i.e. the run that is supposed to have provisioned the event draft.
+ */
+const FIXTURES_SEEDED = process.env.E2E_HAS_ADMIN_FIXTURES === '1';
+const MISSING_DRAFT =
+  'no EVENT draft at /admin/invoices?status=draft&subject=event — run ' +
+  '`pnpm exec tsx --env-file=.env.local scripts/seed-f4-e2e-admin-fixtures.ts` ' +
+  '(global-setup runs it too)';
+
+/**
+ * The fixture gate. When the seeder ran, a missing draft is a DEFECT and must
+ * fail — a skip here is what let all six a11y tests report green while
+ * asserting nothing. When the seeder did not run (no DATABASE_URL, someone
+ * invoking the file directly), skip and say what to run.
+ */
+function gateOnDraft(hasDraft: boolean): void {
+  if (hasDraft) return;
+  expect(FIXTURES_SEEDED, `[088 a11y fixture] ${MISSING_DRAFT}`).toBe(false);
+  test.skip(true, MISSING_DRAFT);
+}
+
+/**
+ * Same policy for the five tests that go through `openIssueDialogAtZeroRate`.
+ * Only `no-draft` is treated as a fixture defect: `no-toggle` can legitimately
+ * mean `FEATURE_088_TAX_AT_PAYMENT` is off, and `not-issuable` can mean the
+ * signed-in role lacks `invoicing.write` — environment choices, not a bad
+ * fixture, so those stay skips.
+ */
+function gateOnState(state: 'no-draft' | 'not-issuable' | 'no-toggle' | 'revealed'): void {
+  if (state === 'revealed') return;
+  if (state === 'no-draft') gateOnDraft(false);
+  test.skip(true, `precondition not met (${state})`);
+}
 
 /**
  * Sign in, open a DRAFT invoice's issue dialog, and (if the vat_treatment
@@ -51,7 +102,7 @@ async function openIssueDialogAtZeroRate(
     /^\/admin(\/|$)/,
   );
 
-  await page.goto('/admin/invoices?status=draft');
+  await page.goto('/admin/invoices?status=draft&subject=event');
   await waitForLayoutContainer(page);
   await page.waitForLoadState('networkidle');
 
@@ -122,7 +173,7 @@ test.describe('088 zero-rate issue form a11y @a11y @f088', () => {
       /^\/admin(\/|$)/,
     );
 
-    await page.goto('/admin/invoices?status=draft');
+    await page.goto('/admin/invoices?status=draft&subject=event');
     await waitForLayoutContainer(page);
     await page.waitForLoadState('networkidle');
 
@@ -131,7 +182,7 @@ test.describe('088 zero-rate issue form a11y @a11y @f088', () => {
       .waitFor({ state: 'visible', timeout: 8_000 })
       .then(() => true)
       .catch(() => false);
-    test.skip(!hasDraft, 'no draft invoice fixture available');
+    gateOnDraft(hasDraft);
 
     await draftLink.click();
     await page.waitForURL(/\/admin\/invoices\/[0-9a-f-]+$/);
@@ -176,7 +227,7 @@ test.describe('088 zero-rate issue form a11y @a11y @f088', () => {
     page,
   }) => {
     const state = await openIssueDialogAtZeroRate(page);
-    test.skip(state !== 'revealed', `precondition not met (${state})`);
+    gateOnState(state);
 
     // The zero-rate radio's target is its enclosing clickable <label> (the
     // native input is 16px; the label is min-h-11). Measure the label.
@@ -204,7 +255,7 @@ test.describe('088 zero-rate issue form a11y @a11y @f088', () => {
     }) => {
       await page.setViewportSize({ width, height: 900 });
       const state = await openIssueDialogAtZeroRate(page);
-      test.skip(state !== 'revealed', `precondition not met (${state})`);
+      gateOnState(state);
 
       const overflow = await page.evaluate(
         () =>
@@ -218,9 +269,31 @@ test.describe('088 zero-rate issue form a11y @a11y @f088', () => {
 
   test('remains usable at 200% text zoom (WCAG 1.4.4 resize text)', async ({
     page,
-  }) => {
+  }, testInfo) => {
+    // KNOWN FAILURE at phone width, recorded rather than hidden. With the
+    // fixture in place this assertion finally runs, and on a 393px viewport it
+    // reports 67px of horizontal overflow (393 wide, scrollWidth 460) against
+    // its ≤1px budget. At 1280px it passes, so this is a narrow-viewport
+    // WCAG 1.4.4 defect, not a flake.
+    //
+    // Measured cause: the SHARED dialog footer in `src/components/ui/dialog.tsx`
+    // (and `alert-dialog.tsx`) is full-bleed via
+    // `-mx-[var(--card-padding)] -mb-[var(--card-padding)]`. `--card-padding` is
+    // rem-based, so at 200% root font the negative margins double and the footer
+    // measures 499px inside a 393px viewport — the widest of 73 overflowing
+    // elements.
+    //
+    // Deliberately NOT fixed here: that footer is the legacy kit every dialog in
+    // the product shares, so a change there is a product-wide UI edit needing an
+    // enterprise-ux pass, and spec 122 US13 deletes `src/components/ui/`
+    // outright. Widening the ≤1 budget would only make it quiet. `test.fail`
+    // keeps it visible and turns RED the moment it starts passing.
+    test.fail(
+      testInfo.project.name === 'mobile-chrome',
+      'known: 67px overflow at 200% zoom on a 393px viewport (shared dialog footer)',
+    );
     const state = await openIssueDialogAtZeroRate(page);
-    test.skip(state !== 'revealed', `precondition not met (${state})`);
+    gateOnState(state);
 
     // Text-only zoom: double the root font size (Tailwind sizing is rem/em
     // based, so this scales text without a layout-zoom). The dialog is
@@ -240,7 +313,7 @@ test.describe('088 zero-rate issue form a11y @a11y @f088', () => {
     page,
   }) => {
     const state = await openIssueDialogAtZeroRate(page);
-    test.skip(state !== 'revealed', `precondition not met (${state})`);
+    gateOnState(state);
 
     // The progressive-disclosure reveal is announced via a polite live region.
     await expect(

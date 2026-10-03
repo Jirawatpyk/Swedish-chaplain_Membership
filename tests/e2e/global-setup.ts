@@ -181,7 +181,7 @@ function topUpAdminFixtures(): boolean {
     },
   );
   for (const line of out.split(/\r?\n/)) {
-    if (/credit-target|pay-target/.test(line)) {
+    if (/credit-target|pay-target|zero-rate-draft/.test(line)) {
       console.log(`[e2e global setup] F4 fixtures:${line.replace(/^\s+/, ' ')}`);
     }
   }
