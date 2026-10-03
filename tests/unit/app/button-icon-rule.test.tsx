@@ -36,6 +36,8 @@ vi.mock('next-intl/server', () => ({
 const { ErrorCardActions } = await import('@/components/shell/error-card-actions');
 const { RowActions } = await import('@/app/(staff)/admin/renewals/_components/row-actions');
 const { renderPortalProfileView } = await import('@/components/members/portal-profile-view');
+const { VoidConfirmDialog } = await import('@/app/(staff)/admin/invoices/[invoiceId]/void/_components/void-confirm-dialog');
+const { DeleteDraftDialog } = await import('@/app/(staff)/admin/invoices/_components/delete-draft-dialog');
 
 function withIntl(el: ReactElement) {
   return (
@@ -120,5 +122,21 @@ describe('button icon rule (T809 audit)', () => {
     const invite = d.querySelector('a[href="/portal/contacts/invite"]');
     expect(invite?.textContent).toContain(en.portal.profile.inviteColleague);
     expect(invite?.querySelector('svg')).not.toBeNull();
+  });
+
+  // US8b (parity comment, 3 Oct): Void and Delete draft are destructive
+  // actions, so they carry the boards' icons (archive on Admin-void, trash on
+  // Admin-invoice-issue's header).
+  it('Void invoice on the void page carries the archive icon', () => {
+    render(withIntl(<VoidConfirmDialog invoiceId="inv-1" documentNumber="SC-2026-000123" />));
+    expect(screen.getByRole('button', { name: en.admin.invoices.void.submit }).querySelector('svg')).not.toBeNull();
+    expect(screen.getByRole('button', { name: en.admin.invoices.void.cancel }).querySelector('svg')).toBeNull();
+  });
+
+  it('Delete draft… on the draft header carries the trash icon', () => {
+    render(withIntl(<DeleteDraftDialog invoiceId="inv-1" />));
+    expect(
+      screen.getByRole('button', { name: en.admin.invoices.deleteDraft.trigger }).querySelector('svg.aura-icon'),
+    ).not.toBeNull();
   });
 });
