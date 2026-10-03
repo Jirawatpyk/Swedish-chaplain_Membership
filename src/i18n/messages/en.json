@@ -3074,6 +3074,10 @@
           "totalDue": "Total {total} THB incl. VAT · due {date}",
           "total": "Total {total} THB incl. VAT"
         },
+        "refundSettlingNote": {
+          "title": "Refund of {amount} THB is settling",
+          "body": "No action is needed — it completes automatically when the payment processor confirms. Refunds and credit notes on this invoice are locked until then."
+        },
         "status": "Status",
         "actions": {
           "preview": "Preview",

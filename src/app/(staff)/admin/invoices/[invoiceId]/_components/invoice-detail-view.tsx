@@ -15,7 +15,7 @@
 import { Suspense, type ReactNode } from 'react';
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
-import { Card, StatusPill, buttonClass } from '@jirawatpyk/aura-react/server';
+import { Alert, Card, StatusPill, buttonClass } from '@jirawatpyk/aura-react/server';
 import {
   billFirstDocumentNumber,
   invoiceStatusHasReceipt,
@@ -133,7 +133,12 @@ export interface InvoiceDetailViewProps {
     readonly totalSatang: bigint | null;
     readonly vatPercent: string | null;
   };
-  readonly refundSettling: boolean;
+  /**
+   * The total of the refunds still settling on this invoice's payments, or
+   * null when none is. Non-null disables the credit-note action and shows the
+   * settling note (board `Admin-refund-settling`).
+   */
+  readonly settlingRefundSatang: bigint | null;
   readonly refund: {
     readonly paymentId: string;
     readonly remainingRefundableSatang: bigint;
@@ -172,7 +177,7 @@ export async function renderInvoiceDetailView({
   failedEmailBanners,
   autoRefund,
   totals,
-  refundSettling,
+  settlingRefundSatang,
   refund,
   bangkokTodayIso,
   taxAtPayment,
@@ -285,7 +290,7 @@ export async function renderInvoiceDetailView({
               </Link>
             )}
             {(invoice.status === 'paid' || invoice.status === 'partially_credited') && isAdmin && (
-              <IssueCreditNoteAction invoiceId={invoice.invoiceId} refundSettling={refundSettling} />
+              <IssueCreditNoteAction invoiceId={invoice.invoiceId} refundSettling={settlingRefundSatang !== null} />
             )}
             {/* F5 Phase 6 (T112) — Refund online payment: only when there is a
                 succeeded F5 payment with refundable balance left. */}
@@ -378,6 +383,14 @@ export async function renderInvoiceDetailView({
           processorRefundId={autoRefund.processorRefundId}
           runbookUrl={OOB_RUNBOOK_URL}
         />
+      )}
+
+      {/* A refund is settling: say how much, and that nothing is needed (board
+          Admin-refund-settling), once, instead of beside each disabled action. */}
+      {settlingRefundSatang !== null && (
+        <Alert tone="info" role="status" title={t('refundSettlingNote.title', { amount: formatSatang(settlingRefundSatang) })}>
+          {t('refundSettlingNote.body')}
+        </Alert>
       )}
 
       <Card title={t('detailsTitle')} titleId="invoice-details-heading" headingLevel={2}>

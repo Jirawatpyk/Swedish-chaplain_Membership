@@ -3074,6 +3074,10 @@
           "totalDue": "Totalt {total} THB inkl. moms · förfaller {date}",
           "total": "Totalt {total} THB inkl. moms"
         },
+        "refundSettlingNote": {
+          "title": "Återbetalning på {amount} THB behandlas",
+          "body": "Ingen åtgärd behövs — den slutförs automatiskt när betalningsleverantören bekräftar. Återbetalningar och kreditnotor för fakturan är låsta tills dess."
+        },
         "status": "Status",
         "actions": {
           "preview": "Förhandsgranska",

@@ -425,7 +425,7 @@ export default async function InvoiceDetailPage({
   // credit note server-side (8A `refund_in_progress`); the action is disabled
   // to match. A failed activity read leaves it enabled — the server guard
   // still refuses, with its dedicated message.
-  let refundSettling = false;
+  let settlingRefundSatang: bigint | null = null;
   let refundButtonProps: {
     paymentId: string;
     remainingRefundableSatang: bigint;
@@ -440,7 +440,11 @@ export default async function InvoiceDetailPage({
       invoiceId,
     );
     if (activity.ok) {
-      refundSettling = activity.value.refunds.some((r) => r.status === 'pending');
+      // The settling note shows the total still in flight (display only; the
+      // refundable headroom below is computed without it, Gap E).
+      const pending = activity.value.refunds.filter((r) => r.status === 'pending');
+      settlingRefundSatang =
+        pending.length > 0 ? pending.reduce((sum, r) => sum + r.amountSatang, 0n) : null;
       // Capped at the invoice's un-credited headroom — the same min(...) the
       // refund pre-flight enforces. Payment-side only would overstate the
       // max after a manual credit note (and the admin would submit into a 409).
@@ -504,7 +508,7 @@ export default async function InvoiceDetailPage({
       totalSatang: displayTotalSatang,
       vatPercent: displayVatPercent,
     },
-    refundSettling,
+    settlingRefundSatang,
     refund: refundButtonProps,
     bangkokTodayIso,
     taxAtPayment: env.features.f088TaxAtPayment,

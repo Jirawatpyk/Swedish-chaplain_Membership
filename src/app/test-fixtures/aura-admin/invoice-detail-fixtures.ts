@@ -124,7 +124,7 @@ const BASE: Omit<InvoiceDetailViewProps, 'invoice' | 'displayStatus' | 'paymentA
   failedEmailBanners: [],
   autoRefund: { failed: false, processorRefundId: null },
   totals: { subtotalSatang: SUBTOTAL, vatSatang: VAT, totalSatang: TOTAL, vatPercent: '7.00%' },
-  refundSettling: false,
+  settlingRefundSatang: null,
   refund: null,
   bangkokTodayIso: DETAIL_TODAY_ISO,
   taxAtPayment: true,
@@ -181,7 +181,7 @@ export function detailFixture(kind: DetailFixtureKind): Omit<InvoiceDetailViewPr
       });
     case 'refund-settling':
       return paidProps({
-        refundSettling: true,
+        settlingRefundSatang: 535_000n,
         refund: { paymentId: 'pay-1', remainingRefundableSatang: TOTAL, pendingRefundExists: true },
       });
     case 'auto-refund-failed':
