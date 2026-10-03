@@ -73,4 +73,14 @@ describe('RefundForm — board parity', () => {
     // The phrase stays in what a screen reader hears for the input.
     expect(screen.getByTestId('refund-typed-phrase-input')).toHaveAccessibleDescription(/REFUND Acme AB/);
   });
+
+  it('the chip sits between the label and the box (AURA 5.31 labelAddon); the description opens with the phrase', () => {
+    renderForm();
+    fireEvent.change(screen.getByTestId('refund-form-amount'), { target: { value: '38520' } });
+    const input = screen.getByTestId('refund-typed-phrase-input');
+    const addon = screen.getByTestId('refund-typed-phrase-chip').closest('.aura-field__addon');
+    expect(addon).not.toBeNull();
+    expect(addon!.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(input).toHaveAccessibleDescription(/^REFUND Acme AB (?!Copy)/);
+  });
 });

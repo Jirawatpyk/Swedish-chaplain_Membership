@@ -399,6 +399,20 @@ describe('VoidConfirmDialog — the number to type (board Admin-void)', () => {
     expect(input).toHaveAccessibleDescription(new RegExp(DOC_NUMBER));
   });
 
+  it('puts the chip between the label and the box (AURA 5.31 labelAddon), the description the number alone', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <VoidConfirmDialog invoiceId={INVOICE_ID} documentNumber={DOC_NUMBER} isBill />
+      </NextIntlClientProvider>,
+    );
+    const input = screen.getByLabelText('Type the bill number to confirm');
+    const addon = screen.getByTestId('void-confirm-chip').closest('.aura-field__addon');
+    expect(addon).not.toBeNull();
+    expect(addon!.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // The copy button's name stays out of what is read for the input.
+    expect(input).toHaveAccessibleDescription(DOC_NUMBER);
+  });
+
   it('a legacy §87 invoice reads "Type the invoice number to confirm"', () => {
     renderDialog();
     expect(screen.getByLabelText('Type the invoice number to confirm')).toBeInTheDocument();
