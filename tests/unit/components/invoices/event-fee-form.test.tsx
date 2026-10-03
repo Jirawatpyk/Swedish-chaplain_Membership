@@ -373,7 +373,9 @@ describe('<EventFeeForm>', () => {
     vi.stubGlobal('fetch', mockFetchRegistrations([matchedRegistration]));
     renderForm({ initialEventId: 'ev-1', vatRateBps: 750, locale: 'sv' });
     fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
-    expect(screen.getByTestId('vat-preview')).toHaveTextContent('Moms 7,5\u00a0%');
+    // Raw textContent: toHaveTextContent would normalise the NBSP away.
+    const terms = Array.from(screen.getByTestId('vat-preview').querySelectorAll('dt'));
+    expect(terms.map((dt) => dt.textContent)).toContain('Moms 7,5\u00a0%');
   });
 
   it('matched member → doc-type badge shows "set at issue" (TIN unknown client-side)', async () => {

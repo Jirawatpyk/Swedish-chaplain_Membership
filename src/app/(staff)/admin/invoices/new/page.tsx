@@ -133,8 +133,17 @@ export default async function NewInvoiceDraftPage({
       culturalEventOnly: false,
       categoryFilter: null,
     });
-    const invoiceSettings = await drizzleTenantSettingsRepo.getForIssue(tenantCtx.slug);
-    vatRateBps = invoiceSettings ? Number(invoiceSettings.vatRate.numerator) : null;
+    // A failed read must not take the whole page (membership tab included)
+    // down with it: the preview degrades to total-only, like no settings.
+    try {
+      const invoiceSettings = await drizzleTenantSettingsRepo.getForIssue(tenantCtx.slug);
+      vatRateBps = invoiceSettings ? Number(invoiceSettings.vatRate.numerator) : null;
+    } catch (err) {
+      logger.warn(
+        { event: 'invoice_new_settings_load_failed', tenantId: tenantCtx.slug, err },
+        '[F4] /admin/invoices/new — invoice settings read failed; event-fee VAT preview shows the total only',
+      );
+    }
     if (eventsResult.ok) {
       events = eventsResult.value.items.map((e) => ({
         eventId: e.eventId,

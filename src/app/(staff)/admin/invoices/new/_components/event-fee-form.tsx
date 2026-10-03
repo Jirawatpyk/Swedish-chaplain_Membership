@@ -56,7 +56,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState, useTransition } from 'react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
 import {
   Alert,
@@ -127,9 +127,13 @@ export function previewVatInclusive(
   return { subtotal, vat: totalSatang - subtotal };
 }
 
-/** Basis points → the rate as a percentage for the label: 700 → '7', 750 → '7.5'. */
-export function formatRateBps(rateBps: number): string {
-  return String(rateBps / 100);
+/**
+ * Basis points → the rate as a percentage for the label, formatted for the
+ * locale (ux-standards § 12.5 — never a hardcoded decimal separator):
+ * 700 → '7', 750 → '7.5' (en) / '7,5' (sv).
+ */
+export function formatRateBps(rateBps: number, locale: string): string {
+  return new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(rateBps / 100);
 }
 
 function formatSatang(satang: number): string {
@@ -467,6 +471,7 @@ export function EventFeeForm({
   readonly vatRateBps: number | null;
 }) {
   const t = useTranslations('admin.invoices.eventFeeForm');
+  const locale = useLocale();
   // (S25 — the shared record-payment labels moved into AsPaidPaymentFields.)
   const tAsPaid = useTranslations('admin.invoices.issueAsPaid');
   const router = useRouter();
@@ -1106,13 +1111,22 @@ export function EventFeeForm({
                   </div>
                   <div className="flex justify-between">
                     <dt className="text-[var(--aura-fg-secondary)]">
-                      {t('vatPreview.vat', { rate: formatRateBps(vatRateBps) })}
+                      {t('vatPreview.vat', { rate: formatRateBps(vatRateBps, locale) })}
                     </dt>
                     <dd className="tabular-nums">{formatSatang(split.vat)}</dd>
                   </div>
                 </>
               )}
             </dl>
+            {vatRateBps === null && (
+              // Outside the <dl>, so it is not read as an orphan term/value.
+              <p role="note" className="mt-2 text-sm text-[var(--aura-fg-secondary)]">
+                {t('vatPreview.settingsMissing')}{' '}
+                <Link href="/admin/settings/invoicing" className="underline">
+                  {t('vatPreview.configureSettings')}
+                </Link>
+              </p>
+            )}
           </div>
         )}
 
