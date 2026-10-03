@@ -181,6 +181,29 @@ describe('Discard waits for the saved values (financial review M1, L1)', () => {
   });
 });
 
+// Maintainer, 3 Oct (UX review M4): one Save. The form's own Save shows while
+// nothing has changed; once dirty, the bar's Save is the form's submit.
+describe('one Save at a time', () => {
+  it('once dirty, the only Save is the bar\'s, and it submits the form', () => {
+    const { container } = renderForm();
+    fireEvent.change(field('brand_name'), { target: { value: 'NewBrand' } });
+    const saves = screen.getAllByRole('button', { name: s.actions.save });
+    expect(saves).toHaveLength(1);
+    const bar = screen.getByRole('region', { name: s.stickyBar.label });
+    expect(bar).toContainElement(saves[0]!);
+    expect(saves[0]).toHaveAttribute('type', 'submit');
+    expect(container.querySelectorAll('button[type="submit"]')).toHaveLength(1);
+  });
+
+  it('reads "Create settings" in the bar on a first-ever save', () => {
+    renderForm(false);
+    fireEvent.change(field('brand_name'), { target: { value: 'NewBrand' } });
+    const bar = screen.getByRole('region', { name: s.stickyBar.label });
+    expect(within(bar).getByRole('button', { name: s.actions.create })).toHaveAttribute('type', 'submit');
+    expect(screen.queryByRole('button', { name: s.actions.save })).toBeNull();
+  });
+});
+
 describe('in-form Save on AURA', () => {
   it('is an AURA Button at 44px', () => {
     const { container } = renderForm();

@@ -4,7 +4,7 @@
  * and below `lg` an AURA Select "Jump to section". A pick scrolls to the
  * section card and moves focus to it (the card is labelled by its heading).
  */
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import messages from '@/i18n/messages/en.json';
 import { SectionNav, type SectionNavItem } from '@/components/invoices/invoice-settings/section-nav';
@@ -42,12 +42,13 @@ beforeEach(() => {
     '<section id="tax" tabindex="-1"><h2>Tax</h2></section>';
 });
 
-it('scrolls to and focuses a section on nav click', () => {
+it('scrolls to and focuses a section on nav click', async () => {
   const scrollSpy = vi.fn<(arg?: boolean | ScrollIntoViewOptions) => void>();
   HTMLElement.prototype.scrollIntoView = scrollSpy;
   wrap(<SectionNav sections={sections} />);
   fireEvent.click(screen.getByRole('button', { name: /tax/i }));
   expect(scrollSpy).toHaveBeenCalled();
+  await Promise.resolve();
   expect(document.getElementById('tax')).toHaveFocus();
 });
 
@@ -88,12 +89,13 @@ it('renders a labelled mobile jump-to select with an option per section', () => 
   expect([...select.options].map((o) => o.value)).toEqual(['organization', 'tax']);
 });
 
-it('scrolls to and focuses a section when the mobile select changes', () => {
+it('scrolls to and focuses a section when the mobile select changes', async () => {
   const scrollSpy = vi.fn<(arg?: boolean | ScrollIntoViewOptions) => void>();
   HTMLElement.prototype.scrollIntoView = scrollSpy;
   wrap(<SectionNav sections={sections} />);
   fireEvent.change(jumpSelect(), { target: { value: 'tax' } });
   expect(scrollSpy).toHaveBeenCalled();
+  await Promise.resolve();
   expect(document.getElementById('tax')).toHaveFocus();
 });
 
@@ -119,8 +121,6 @@ it('below xl the jump-to select is an AURA Select (44px) with a visible label', 
 // UX review H1: picking from AURA's own list closes it and returns focus to
 // the combobox; the section must still end up focused.
 it('a pick from the AURA list moves focus to the section', async () => {
-  // tests/setup.ts installs fake timers; findBy/waitFor poll on real ones.
-  vi.useRealTimers();
   HTMLElement.prototype.scrollIntoView = vi.fn();
   wrap(<SectionNav sections={sections} />);
   // AURA's `choose()` (Select.js) fires the native change, then `close(true)`
@@ -129,6 +129,6 @@ it('a pick from the AURA list moves focus to the section', async () => {
   const combobox = screen.getByRole('combobox', { name: /jump to section/i });
   fireEvent.change(jumpSelect(), { target: { value: 'tax' } });
   combobox.focus();
-  await waitFor(() => expect(document.getElementById('tax')).toHaveFocus());
-  vi.useFakeTimers();
+  await Promise.resolve();
+  expect(document.getElementById('tax')).toHaveFocus();
 });
