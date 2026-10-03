@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
+import { toast } from '@/lib/toast';
 import {
   InvoiceSettingsForm,
   type InvoiceSettingsFormInitialValues,
@@ -137,6 +138,42 @@ describe('Discard', () => {
     expect(field('legal_name_en')).toHaveValue(FIXTURE.legal_name_en);
     expect(field('legal_name_en')).not.toHaveAttribute('aria-invalid');
     expect(screen.queryByText(s.errors.requiredFields)).toBeNull();
+  });
+});
+
+describe('Discard waits for the saved values (financial review M1, L1)', () => {
+  it('is disabled after a successful save until the refreshed values arrive', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+    const { container, rerender } = renderForm();
+    fireEvent.change(field('vat_percent'), { target: { value: '10' } });
+    fireEvent.submit(container.querySelector('form')!);
+    const bar = () => screen.getByRole('region', { name: s.stickyBar.label });
+    // Saved, but router.refresh() has not delivered the new values yet: the
+    // form still differs from the stale snapshot, and Discard must not put
+    // the pre-save values back.
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    await waitFor(() => expect(within(bar()).getByRole('button', { name: s.actions.save })).toBeEnabled());
+    expect(within(bar()).getByRole('button', { name: s.stickyBar.discard })).toBeDisabled();
+    rerender(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <InvoiceSettingsForm initialValues={{ ...FIXTURE, vat_percent: '10.00' }} canEdit exists />
+      </NextIntlClientProvider>,
+    );
+    fireEvent.change(field('brand_name'), { target: { value: 'Later edit' } });
+    expect(within(bar()).getByRole('button', { name: s.stickyBar.discard })).toBeEnabled();
+  });
+
+  it('is disabled while a logo upload is in flight', async () => {
+    let finish: (r: Response) => void = () => {};
+    vi.spyOn(global, 'fetch').mockReturnValue(new Promise<Response>((r) => (finish = r)));
+    renderForm();
+    fireEvent.change(field('brand_name'), { target: { value: 'NewBrand' } });
+    const file = new File(['x'], 'logo.png', { type: 'image/png' });
+    fireEvent.change(document.getElementById('logo_file')!, { target: { files: [file] } });
+    const bar = screen.getByRole('region', { name: s.stickyBar.label });
+    await waitFor(() => expect(within(bar).getByRole('button', { name: s.stickyBar.discard })).toBeDisabled());
+    finish(new Response(JSON.stringify({ logo_blob_key: 'tenants/x/logo.png' }), { status: 200 }));
+    await waitFor(() => expect(within(bar).getByRole('button', { name: s.stickyBar.discard })).toBeEnabled());
   });
 });
 
