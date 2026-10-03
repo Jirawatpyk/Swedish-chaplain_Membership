@@ -554,6 +554,7 @@ Boards: `Admin-invoices`, `Admin-state-invoices-setup`, `Admin-invoice-new`, `Ad
 - [ ] T1100 [US11] Dashboard: Stat tiles; recharts recoloured with `--aura-chart-*`.
 - [ ] T1200 [US12] E-Blast: queue DataTable (item 52, or a local selection column), workspace, schedule dialog, member sign-off.
 - [ ] T1300 [US13] Exit: delete `src/components/ui`; uninstall `@base-ui/react`, `tw-animate-css`, `shadcn`; drop the TanStack table UI; make the old-kit ban global; remove the token bridge; check the facade decision; confirm the date is within 10 weeks of the US0 merge.
+  - When `src/components/ui/dialog.tsx` goes, re-check `tests/e2e/invoicing/issue-invoice-zero-rate-a11y.spec.ts` «200% text zoom» on mobile-chrome and REMOVE its `test.fail`. That footer is full-bleed via `-mx-[var(--card-padding)]` (rem-based), which at 200% font measured 499px inside a 393px viewport — 67px of page overflow against a ≤1px budget (PR #513). AURA's `.aura-dialog__foot` has no negative margin and does `flex-wrap: wrap`, so the cause should go with the kit; the 72 other overflowing elements were not individually measured, so verify rather than assume. `test.fail` turns RED once it passes, which is the signal to delete it.
 
 ## Dependencies & order
 
