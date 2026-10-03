@@ -206,17 +206,15 @@ export function InvoiceSettingsForm(props: InvoiceSettingsFormProps) {
   // the stale values, and a later save would silently revert the settings, so
   // it stays disabled from the save until new `initialValues` arrive (fail
   // closed: a refresh that never lands keeps it disabled).
-  const [awaitingRefresh, setAwaitingRefresh] = useState(false);
-  const initialValues = props.initialValues;
-  useEffect(() => {
-    setAwaitingRefresh(false);
-  }, [initialValues]);
+  // The values a save was made against: while they are still the page's
+  // values, the refresh has not landed.
+  const [savedAgainst, setSavedAgainst] = useState<InvoiceSettingsFormInitialValues | null>(null);
   return (
     <InvoiceSettingsFormBody
       key={generation}
       {...props}
-      discardBlocked={awaitingRefresh}
-      onSaved={() => setAwaitingRefresh(true)}
+      discardBlocked={savedAgainst !== null && savedAgainst === props.initialValues}
+      onSaved={() => setSavedAgainst(props.initialValues)}
       onDiscard={() => {
         focusFirstSection.current = true;
         setGeneration((g) => g + 1);
