@@ -76,7 +76,7 @@ describe('<CreditNotesTable>', () => {
 
   it('opens the detail from the number; there is no separate View button', () => {
     render(wrap(<CreditNotesTable rows={[row()]} />));
-    const table = screen.getByRole('table');
+    const table = screen.getByRole('grid');
     expect(within(table).getByRole('link', { name: 'CN-2026-000014' })).toHaveAttribute(
       'href',
       '/admin/credit-notes/cn-1',
@@ -93,7 +93,7 @@ describe('<CreditNotesTable>', () => {
 
   it('shows the total with the formatter used on main, the date and the original receipt', () => {
     render(wrap(<CreditNotesTable rows={[row()]} />));
-    const table = screen.getByRole('table');
+    const table = screen.getByRole('grid');
     expect(within(table).getByText('10,700.00 THB')).toBeInTheDocument();
     expect(within(table).getByText('RC-2026-000038')).toBeInTheDocument();
     expect(within(table).getByText('Siam Nordic Trading Co., Ltd.')).toBeInTheDocument();
@@ -109,9 +109,13 @@ describe('<CreditNoteFilters> on the FilterBar', () => {
   it('pushes the fiscal year with scroll kept and the page reset', () => {
     searchParamsStub = new URLSearchParams('page=3');
     render(wrap(<CreditNoteFilters />));
-    const fy = screen.getByRole('combobox', { name: new RegExp(list.filters.fiscalYear) });
+    // AURA's Select keeps a real <select> under its listbox (US5a precedent).
+    const fy = screen
+      .getByRole('combobox', { name: new RegExp(list.filters.fiscalYear) })
+      .closest('.aura-select')
+      ?.querySelector('select');
     const year = String(new Date().getFullYear());
-    fireEvent.change(fy, { target: { value: year } });
+    fireEvent.change(fy!, { target: { value: year } });
     expect(push).toHaveBeenLastCalledWith(`/admin/credit-notes?fy=${year}`, { scroll: false });
   });
 
@@ -126,7 +130,7 @@ describe('<CreditNoteFilters> on the FilterBar', () => {
   it('Clear filters drops both and goes back to the bare list', () => {
     searchParamsStub = new URLSearchParams('q=CN&fy=2025');
     render(wrap(<CreditNoteFilters />));
-    fireEvent.click(screen.getByRole('button', { name: /Clear/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear all' }));
     expect(push).toHaveBeenLastCalledWith('/admin/credit-notes', { scroll: false });
   });
 });

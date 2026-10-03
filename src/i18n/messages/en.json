@@ -2504,6 +2504,8 @@
         "description": "All credit notes issued against tax invoices. Read-only audit trail.",
         "empty": "Credit notes appear here after an admin issues one against a paid invoice.",
         "filteredEmpty": "No credit notes match the current filters.",
+        "tableCaption": "Credit notes",
+        "refundLegend": "Refund marks a credit note issued by a card or PromptPay refund.",
         "columns": {
           "documentNumber": "Number",
           "issueDate": "Issued",
@@ -2511,13 +2513,19 @@
           "reason": "Reason",
           "total": "Total",
           "actions": "Actions",
-          "originalReceipt": "Original tax invoice"
+          "originalReceipt": "Original tax invoice",
+          "pdf": "PDF"
         },
         "filters": {
           "search": "Search document number",
           "fiscalYear": "Fiscal year",
           "apply": "Apply",
-          "clear": "Clear"
+          "clear": "Clear",
+          "groupLabel": "Credit note filters",
+          "allFiscalYears": "All fiscal years",
+          "allShort": "All",
+          "chip": "{label}: {value}",
+          "chipSearch": "Search: {q}"
         },
         "actions": {
           "view": "View",

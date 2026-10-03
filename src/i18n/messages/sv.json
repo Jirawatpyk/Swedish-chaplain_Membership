@@ -2504,6 +2504,8 @@
         "description": "Alla kreditnotor utfärdade mot skattefakturor. Skrivskyddad granskningslogg.",
         "empty": "Kreditnotor visas här efter att en administratör utfärdat en mot en betald faktura.",
         "filteredEmpty": "Inga kreditnotor matchar de aktuella filtren.",
+        "tableCaption": "Kreditnotor",
+        "refundLegend": "Återbetalning markerar en kreditnota som skapats av en återbetalning via kort eller PromptPay.",
         "columns": {
           "documentNumber": "Nummer",
           "issueDate": "Utfärdad",
@@ -2511,13 +2513,19 @@
           "reason": "Orsak",
           "total": "Totalt",
           "actions": "Åtgärder",
-          "originalReceipt": "Ursprunglig skattefaktura"
+          "originalReceipt": "Ursprunglig skattefaktura",
+          "pdf": "PDF"
         },
         "filters": {
           "search": "Sök dokumentnummer",
           "fiscalYear": "Räkenskapsår",
           "apply": "Tillämpa",
-          "clear": "Rensa"
+          "clear": "Rensa",
+          "groupLabel": "Filter för kreditnotor",
+          "allFiscalYears": "Alla räkenskapsår",
+          "allShort": "Alla",
+          "chip": "{label}: {value}",
+          "chipSearch": "Sök: {q}"
         },
         "actions": {
           "view": "Visa",

@@ -11,8 +11,9 @@
  *   - Offset pagination (server-rendered; 50 rows/page)
  *   - Filters: fiscal year (exact) + document-number search
  *     (case-insensitive substring)
- *   - Per-row actions: View + Download PDF
- *   - <md: the rows collapse to `CreditNoteCardList` cards
+ *   - Spec 122 US8c (T844): the view is `renderCreditNotesListView` (AURA
+ *     DataTable, cards below 640px; the number opens the detail and a PDF
+ *     button downloads), shared with the no-DB preview route
  *
  * RBAC: the page declares `invoicing.read` via `requirePagePermission`, which
  * both admin and manager hold (manager is finance-read per CLAUDE.md and this
@@ -20,35 +21,14 @@
  * inert — it admitted exactly what the layout already admitted.
  */
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { headers } from 'next/headers';
-import { getLocale, getTranslations } from 'next-intl/server';
-import { DownloadIcon, EyeIcon } from 'lucide-react';
+import { getTranslations } from 'next-intl/server';
 
 import { requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { listCreditNotes, makeListCreditNotesDeps } from '@/modules/invoicing';
 import { TableContainer } from '@/components/layout';
-import { PageHeader } from '@/components/layout/page-header';
-import { TablePagination } from '@/components/layout/table-pagination';
-import { Card, CardContent } from '@/components/ui/card';
-import { buttonVariants } from '@/components/ui/button';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { formatTaxDocDate } from '@/lib/format-tax-doc-date';
-import { CreditNoteFilters } from './_components/credit-note-filters';
-import { CreditNoteCardList } from './_components/credit-note-card-list';
-import { formatSatang } from './_utils/format-satang';
-import {
-  CreditNoteOriginalReceipt,
-  CreditNoteRefundBadge,
-} from '@/components/invoices/credit-note-original-receipt';
+import { renderCreditNotesListView } from './_components/credit-notes-list-view';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.creditNotes.list.meta');
@@ -66,9 +46,6 @@ export default async function AdminCreditNotesDirectoryPage({
   // Manager is read-only finance — allowed. Member / unauth blocked
   // by requireSession / layout.
 
-  const t = await getTranslations('admin.creditNotes.list');
-  const tCommon = await getTranslations('shared');
-  const locale = await getLocale();
   const sp = await searchParams;
 
   const hdrs = await headers();
@@ -97,172 +74,7 @@ export default async function AdminCreditNotesDirectoryPage({
 
   return (
     <TableContainer>
-      <PageHeader title={t('title')} subtitle={t('description')} />
-      <Card>
-        <CardContent className="flex flex-col gap-6">
-          <CreditNoteFilters />
-          {rows.length === 0 ? (
-            <div className="py-12 text-center">
-              <p className="text-muted-foreground">
-                {hasFilters ? t('filteredEmpty') : t('empty')}
-              </p>
-              {hasFilters && (
-                <Link
-                  href="/admin/credit-notes"
-                  className={buttonVariants({
-                    variant: 'outline',
-                    className: 'mt-4',
-                  })}
-                >
-                  {t('actions.clearFilters')}
-                </Link>
-              )}
-            </div>
-          ) : (
-            <>
-              {/* ≥md: the table. <md: the card list below (same rows). */}
-              <div className="hidden overflow-x-auto md:block">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead
-                        scope="col"
-                        className="text-xs uppercase tracking-wide text-muted-foreground"
-                      >
-                        {t('columns.documentNumber')}
-                      </TableHead>
-                      <TableHead
-                        scope="col"
-                        className="text-xs uppercase tracking-wide text-muted-foreground"
-                      >
-                        {t('columns.issueDate')}
-                      </TableHead>
-                      <TableHead
-                        scope="col"
-                        className="text-xs uppercase tracking-wide text-muted-foreground"
-                      >
-                        {t('columns.originalReceipt')}
-                      </TableHead>
-                      <TableHead
-                        scope="col"
-                        className="text-xs uppercase tracking-wide text-muted-foreground"
-                      >
-                        {t('columns.member')}
-                      </TableHead>
-                      <TableHead
-                        scope="col"
-                        className="text-xs uppercase tracking-wide text-muted-foreground"
-                      >
-                        {t('columns.reason')}
-                      </TableHead>
-                      <TableHead
-                        scope="col"
-                        className="text-right text-xs uppercase tracking-wide text-muted-foreground"
-                      >
-                        {t('columns.total')}
-                      </TableHead>
-                      <TableHead
-                        scope="col"
-                        className="w-[1%] text-right text-xs uppercase tracking-wide text-muted-foreground"
-                      >
-                        <span className="sr-only">{t('columns.actions')}</span>
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {rows.map((r) => (
-                      <TableRow key={r.creditNoteId}>
-                        <TableCell className="font-mono font-medium">
-                          <span className="inline-flex items-center gap-2">
-                            <Link
-                              href={`/admin/credit-notes/${r.creditNoteId}`}
-                              className="hover:underline"
-                            >
-                              {r.documentNumberRaw}
-                            </Link>
-                            {r.isRefund ? <CreditNoteRefundBadge /> : null}
-                          </span>
-                        </TableCell>
-                        <TableCell className="tabular-nums">
-                          {formatTaxDocDate(r.issueDate, locale)}
-                        </TableCell>
-                        <TableCell className="text-sm">
-                          <CreditNoteOriginalReceipt
-                            original={r.original}
-                            invoiceHref={`/admin/invoices/${r.originalInvoiceId}`}
-                          />
-                        </TableCell>
-                        <TableCell>{r.memberLegalName}</TableCell>
-                        <TableCell
-                          className="max-w-[18rem] truncate"
-                          title={r.reason}
-                        >
-                          {r.reason}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {formatSatang(r.totalSatang)}{' '}
-                          <span className="text-muted-foreground">THB</span>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-2">
-                            <Link
-                              href={`/admin/credit-notes/${r.creditNoteId}`}
-                              className={buttonVariants({
-                                variant: 'secondary',
-                                size: 'sm',
-                              })}
-                              aria-label={t('actions.viewAria', {
-                                number: r.documentNumberRaw,
-                              })}
-                            >
-                              <EyeIcon className="size-4" aria-hidden="true" />
-                              {t('actions.view')}
-                            </Link>
-                            <a
-                              href={`/api/credit-notes/${r.creditNoteId}/pdf`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              download
-                              className={buttonVariants({
-                                variant: 'outline',
-                                size: 'sm',
-                              })}
-                              aria-label={t('actions.pdfAria', {
-                                number: r.documentNumberRaw,
-                              })}
-                            >
-                              <DownloadIcon
-                                className="size-4"
-                                aria-hidden="true"
-                              />
-                              {t('actions.pdf')}
-                            </a>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-              <CreditNoteCardList
-                rows={rows}
-                locale={locale}
-                t={t}
-                className="md:hidden"
-              />
-              <TablePagination
-                page={page}
-                pageSize={PAGE_SIZE}
-                total={total}
-                baseHref="/admin/credit-notes"
-              />
-            </>
-          )}
-        </CardContent>
-      </Card>
-      <span className="sr-only" role="status" aria-live="polite">
-        {tCommon('loaded')}
-      </span>
+      {await renderCreditNotesListView({ rows, total, page, pageSize: PAGE_SIZE, hasFilters })}
     </TableContainer>
   );
 }
