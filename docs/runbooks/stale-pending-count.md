@@ -96,12 +96,15 @@ is left to its own post-commit cancel.
 
 For an invoice marked **paid through another channel** by an admin
 (`POST /api/invoices/[id]/pay`), `recordPayment` cancels the invoice's pending
-attempts right after the payment commits (audit cause `invoice_paid_manually`,
-the paying admin as actor). If that cancel throws, the payment stands,
+attempts right after the payment commits (audit `actor_type = 'system'`,
+`cause = 'invoice_paid_manually'`, `actor_user_id` = the paying admin). An
+admin re-submitting pay on an invoice the webhook already paid also lands
+here with that cause. If that cancel throws, the payment stands,
 `invoicing_record_payment_pending_payment_cancel_failed_total` bumps, and this
 sweep retries 15–75 minutes later. The sweep is still the **primary** cancel
-for a second pending attempt on an invoice the webhook just marked paid. A
-capture inside either gap is auto-refunded by the webhook's stale-invoice
+for a second pending attempt on an invoice the webhook just marked paid. The
+F8 offline mark needs no cancel: it always pays an invoice it issued moments
+earlier in its own transaction. A capture inside either gap is auto-refunded by the webhook's stale-invoice
 guard.
 
 Each invoice the sweep picks up goes through `cancelPendingPaymentsForInvoice`

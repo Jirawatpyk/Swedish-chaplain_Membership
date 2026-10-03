@@ -1850,6 +1850,29 @@ describe('recordPayment — cancels pending PaymentIntents after an admin-manual
     expect(metric).toHaveBeenCalledWith('test-swecham');
   });
 
+  it('logs the canceller failure by error class only — never the message', async () => {
+    const { logger } = await import('@/lib/logger');
+    const errorLog = vi.spyOn(logger, 'error');
+    const { deps } = withCanceller(makeIssuedInvoice(), async () => {
+      throw new TypeError('SELECT secret_column FROM payments');
+    });
+    await recordPayment(deps, input);
+    const call = errorLog.mock.calls.find((c) =>
+      String(c[1]).startsWith('recordPayment: post-commit pending-payment cancellation failed'),
+    );
+    expect(call?.[0]).toEqual({ err: 'TypeError', invoiceId: INVOICE_ID, tenantId: 'test-swecham' });
+    expect(JSON.stringify(errorLog.mock.calls)).not.toContain('secret_column');
+  });
+
+  it('withTx throws a non-internal error → rejects, canceller NOT called', async () => {
+    const { deps, cancel } = withCanceller(makeIssuedInvoice());
+    (deps.invoiceRepo.withTx as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error('neon: commit failed'),
+    );
+    await expect(recordPayment(deps, input)).rejects.toThrow('neon: commit failed');
+    expect(cancel).not.toHaveBeenCalled();
+  });
+
   it('no canceller wired (webhook / F8 composition) → payment proceeds untouched', async () => {
     const deps = makeDeps(true, makeIssuedInvoice(), makeSettings());
     const r = await recordPayment(deps, input);

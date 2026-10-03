@@ -1,7 +1,9 @@
 /**
  * cancelPendingPaymentsForInvoice — cancel every PaymentIntent still live at
  * Stripe for an invoice that is no longer payable. Called by F4 `voidInvoice`
- * (through its `PendingPaymentCancellerPort`) AFTER the void commits.
+ * and the admin-manual `recordPayment` (through their
+ * `PendingPaymentCancellerPort`) AFTER their transaction commits, and by the
+ * hourly `sweepPendingPaymentsOnUnpayableInvoices` retry.
  *
  * Why (follow-up to the #446 financial-integrity review, M-a): a void never
  * touched `payments`. A card PaymentIntent a member had already opened stayed
@@ -66,10 +68,14 @@ export type CancelPendingPaymentsCause =
 export interface CancelPendingPaymentsForInvoiceInput {
   readonly tenantId: string;
   readonly invoiceId: string;
-  /** Who triggered it (the voiding user) — recorded as the audit actor. */
+  /** Who triggered it (the voiding / paying user, or the system actor for the sweep) — recorded as the audit actor. */
   readonly actorUserId: string;
   /**
    * `invoice_voided` — voidInvoice's post-commit call.
+   * `invoice_paid_manually` — recordPayment's post-commit call after an
+   *   admin-manual payment (#452 review M1). Also used when an admin re-submits
+   *   pay on an invoice that is already paid (idempotent replay), whichever
+   *   rail paid it first.
    * `invoice_not_payable_sweep` — the hourly retry sweep
    * (`sweepPendingPaymentsOnUnpayableInvoices`), for a pending attempt on any
    * invoice that is no longer `issued` (a failed or missed void-time cancel).
