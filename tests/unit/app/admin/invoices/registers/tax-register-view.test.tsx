@@ -206,6 +206,20 @@ describe('renderTaxRegisterView — the figures equal the use case output', () =
     expect(screen.getByRole('alert')).toHaveTextContent(message);
     expect(screen.queryByTestId('period-output-vat')).toBeNull();
   });
+
+  it('ties a range error to the date fields', async () => {
+    await renderView({ result: { ok: false, error: { code: 'invalid_range', reason: 'inverted' } } } as Partial<ViewProps>);
+    for (const label of [r.fields.from, r.fields.to]) {
+      const field = screen.getByLabelText(new RegExp(`^${label}`));
+      expect(field).toHaveAttribute('aria-invalid', 'true');
+      expect(field).toHaveAccessibleDescription(expect.stringContaining(r.errors.invalidRange));
+    }
+  });
+
+  it('leaves the date fields valid when the register failed to load', async () => {
+    await renderView({ result: { ok: false, error: { code: 'list_failed' } } } as Partial<ViewProps>);
+    expect(screen.getByLabelText(new RegExp(`^${r.fields.to}`))).not.toHaveAttribute('aria-invalid', 'true');
+  });
 });
 
 describe('the register form', () => {
