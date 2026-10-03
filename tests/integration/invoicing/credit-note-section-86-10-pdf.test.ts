@@ -87,7 +87,15 @@ async function extractPdfText(bytes: Uint8Array): Promise<string> {
 
 const fmt = (satang: bigint) => formatThbSatang(satang, true);
 
-function makeDeps(tenantId: string, capturedBytes: Uint8Array[]): IssueCreditNoteDeps {
+/**
+ * Every upload is captured with its key: issuing a credit note also re-renders
+ * the ORIGINAL invoice with the credited annotation (its own blob key), so the
+ * credit-note PDFs are picked out by `issueCreditNote`'s key shape.
+ */
+type CapturedUpload = { readonly key: string; readonly body: Uint8Array };
+const isCreditNoteUpload = (u: CapturedUpload) => /\/credit-note_[^/]+\.pdf$/.test(u.key);
+
+function makeDeps(tenantId: string, captured: CapturedUpload[]): IssueCreditNoteDeps {
   return {
     pendingRefundGuard: { countPendingRefundsForInvoice: async () => 0 },
     onlinePaymentRefundGuard: { readRefundableOnlinePayment: async () => ({ kind: 'none' }) },
@@ -99,7 +107,7 @@ function makeDeps(tenantId: string, capturedBytes: Uint8Array[]): IssueCreditNot
     pdfRender: reactPdfRenderAdapter,
     blob: {
       uploadPdf: vi.fn(async ({ key, body }: { key: string; body: Uint8Array }) => {
-        capturedBytes.push(body);
+        captured.push({ key, body });
         return { key, url: `https://blob.test/${key}` };
       }),
       uploadLogo: vi.fn(async ({ key }) => ({ key, url: `https://blob.test/${key}` })),
@@ -225,8 +233,8 @@ describe('§86/10 — credit notes at CURRENT_TEMPLATE_VERSION state their value
   });
 
   it('a first note, then the completing note — each PDF reconciles and the audit row keeps the statement', async () => {
-    const capturedBytes: Uint8Array[] = [];
-    const deps = makeDeps(tenant.ctx.slug, capturedBytes);
+    const captured: CapturedUpload[] = [];
+    const deps = makeDeps(tenant.ctx.slug, captured);
 
     const r1 = await issueCreditNote(deps, {
       tenantId: tenant.ctx.slug,
@@ -258,15 +266,17 @@ describe('§86/10 — credit notes at CURRENT_TEMPLATE_VERSION state their value
     );
     expect(rows.map((r) => r.v)).toEqual([CURRENT_TEMPLATE_VERSION, CURRENT_TEMPLATE_VERSION]);
 
-    expect(capturedBytes).toHaveLength(2);
-    const text1 = await extractPdfText(capturedBytes[0]!);
+    // Issue order: note 1's PDF uploads before note 2's.
+    const creditNotePdfs = captured.filter(isCreditNoteUpload);
+    expect(creditNotePdfs, `uploads: ${captured.map((u) => u.key).join(', ')}`).toHaveLength(2);
+    const text1 = await extractPdfText(creditNotePdfs[0]!.body);
     expect(text1).toContain(`Value per original tax invoice: ${fmt(100_000n)}`);
     expect(text1).toContain(`Correct value: ${fmt(40_000n)}`);
     expect(text1).toContain(`Difference: ${fmt(60_000n)}`);
     expect(text1).toContain(`VAT on the difference: ${fmt(4_200n)}`);
     expect(text1, 'a first note has nothing previously reduced').not.toContain('Previously reduced');
 
-    const text2 = await extractPdfText(capturedBytes[1]!);
+    const text2 = await extractPdfText(creditNotePdfs[1]!.body);
     expect(text2).toContain(`Value per original tax invoice: ${fmt(100_000n)}`);
     expect(text2).toContain(`Previously reduced: ${fmt(60_000n)}`);
     expect(text2).toContain(`Correct value: ${fmt(0n)}`);
