@@ -8,9 +8,11 @@
  * column, whose last child it is) is on screen, and stays in the flow at the
  * column's end, so it never covers the last section.
  *
- * Save never calls `fetch`: the form passes `requestSubmit()`, which re-enters
- * the form's own `handleSubmit` and its guards. Discard (maintainer, 3 Oct)
- * resets the form in the browser and sends nothing.
+ * Save is the form's submit button while the bar shows (maintainer, 3 Oct:
+ * one Save — the form's own Save shows only while nothing has changed), so
+ * Enter in a field submits too, and it re-enters the form's own
+ * `handleSubmit` and its guards. Discard (maintainer, 3 Oct) resets the form
+ * in the browser and sends nothing.
  */
 import { useTranslations } from 'next-intl';
 import { ActionBar, Button } from '@jirawatpyk/aura-react';
@@ -18,13 +20,14 @@ import { ActionBar, Button } from '@jirawatpyk/aura-react';
 export function StickySaveBar({
   visible,
   submitting,
-  onSave,
+  exists,
   onDiscard,
   discardDisabled = false,
 }: {
   readonly visible: boolean;
   readonly submitting: boolean;
-  readonly onSave: () => void;
+  /** False on a first-ever save: the button reads "Create settings". */
+  readonly exists: boolean;
   readonly onDiscard: () => void;
   /** While the saved values are on their way back, or a logo upload runs. */
   readonly discardDisabled?: boolean;
@@ -47,8 +50,8 @@ export function StickySaveBar({
       }
     >
       {/* 088 FR-036 — 44px at every width, also in the compact staff density. */}
-      <Button type="button" className="min-h-11" loading={submitting} onClick={onSave}>
-        {t('actions.save')}
+      <Button type="submit" className="min-h-11" loading={submitting}>
+        {exists ? t('actions.save') : t('actions.create')}
       </Button>
     </ActionBar>
   );

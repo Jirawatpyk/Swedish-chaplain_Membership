@@ -830,7 +830,9 @@ function InvoiceSettingsFormBody({
 
         {error ? <Alert tone="danger">{error}</Alert> : null}
 
-        {canEdit ? (
+        {/* One Save at a time (maintainer, 3 Oct): this one while nothing has
+            changed; once the form is dirty the bar's Save is the submit. */}
+        {canEdit && !dirty ? (
           <Button
             type="submit"
             // T072b (FR-036) — the primary Save is the key mobile action: ≥44px
@@ -855,7 +857,7 @@ function InvoiceSettingsFormBody({
         <StickySaveBar
           visible={dirty}
           submitting={submitting}
-          onSave={() => formRef.current?.requestSubmit()}
+          exists={exists}
           onDiscard={onDiscard}
           // L1: a logo upload in flight would land on the unmounted body.
           discardDisabled={discardBlocked || uploadingLogo}
