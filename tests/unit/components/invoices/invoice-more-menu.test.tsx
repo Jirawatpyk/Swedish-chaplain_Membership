@@ -158,6 +158,13 @@ describe('InvoiceMoreMenu — Void… on a phone (the action bar)', () => {
   });
 });
 
+describe('InvoiceMoreMenu — its own slot for the phone bar', () => {
+  it('wraps the menu in data-slot="invoice-more-menu", so the bar can keep it at its own width', () => {
+    const { container } = render(<InvoiceMoreMenu {...BASE} showDownload />);
+    expect(container.firstElementChild).toHaveAttribute('data-slot', 'invoice-more-menu');
+  });
+});
+
 describe('InvoiceMoreMenu — nothing to show', () => {
   it('renders nothing at all', () => {
     const { container } = render(<InvoiceMoreMenu {...BASE} />);
