@@ -39,14 +39,8 @@ import { getInvoice, type GetInvoiceDeps, type GetInvoiceInput } from './get-inv
 import type { CreditNoteRepo } from '../ports/credit-note-repo';
 import { calculateCreditNoteVat } from '@/modules/invoicing/domain/policies/calculate-credit-note-vat';
 import { enforceCreditCannotExceedRemainder } from '@/modules/invoicing/domain/policies/enforce-credit-cannot-exceed-remainder';
-import {
-  inferEventDocumentKind,
-  resolveBuyerIsVatRegistrant,
-} from '@/modules/invoicing/domain/document-kind';
-import {
-  resolveRefundCreditNoteRequirement,
-  type CreditNoteWaiverReason,
-} from '@/modules/invoicing/domain/refund-credit-note-requirement';
+import type { CreditNoteWaiverReason } from '@/modules/invoicing/domain/refund-credit-note-requirement';
+import { refundCreditNoteRequirementFor } from './refund-credit-note-verdict';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
 
 export interface PreviewRefundCreditNoteInput {
@@ -97,16 +91,7 @@ export async function previewRefundCreditNote(
   if (!found.ok) return err({ code: 'not_found' });
   const inv = found.value;
 
-  const requirement = resolveRefundCreditNoteRequirement({
-    status: inv.status,
-    isSection105:
-      inferEventDocumentKind(
-        inv.invoiceSubject,
-        resolveBuyerIsVatRegistrant(inv.memberId, inv.memberIdentitySnapshot),
-      ) === 'receipt_separate',
-    hasIdentitySnapshot: inv.memberIdentitySnapshot != null,
-    receiptPdfStatus: inv.receiptPdfStatus,
-  });
+  const requirement = refundCreditNoteRequirementFor(inv);
 
   switch (requirement.kind) {
     case 'waive':

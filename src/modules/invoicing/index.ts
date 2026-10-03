@@ -480,6 +480,12 @@ export {
 // Spec 122 US8b follow-up — the refund dialog's "Credit note to be issued"
 // rows: the verdict + proportional VAT split the refund's credit note will
 // carry, read server-side (never recomputed in the browser).
+// The same verdict, from a loaded invoice — the detail page reads it before
+// the refund dialog opens, so its copy never promises a waived credit note.
+export {
+  refundCreditNoteRequirementFor,
+  refundCreditNoteWaiverReasonFor,
+} from './application/use-cases/refund-credit-note-verdict';
 export {
   previewRefundCreditNote,
   type PreviewRefundCreditNoteInput,

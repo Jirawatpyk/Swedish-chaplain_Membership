@@ -5072,6 +5072,10 @@
       "dialog": {
         "title": "Utfärda återbetalning?",
         "description": "Återbetala hela eller delar av denna betalning. Motsvarande kreditnota utfärdas och skickas till medlemmen via e-post.",
+        "descriptionWaived": {
+          "section105Receipt": "Återbetala hela eller delar av denna betalning. Ingen kreditnota utfärdas: betalningen har ett kvitto enligt avsnitt 105, inte en skattefaktura.",
+          "invoiceVoided": "Återbetala hela eller delar av denna betalning. Ingen kreditnota utfärdas: fakturan har makulerats."
+        },
         "cancel": "Avbryt",
         "confirm": "Utfärda återbetalning",
         "confirmAmount": "Återbetala {amount}",

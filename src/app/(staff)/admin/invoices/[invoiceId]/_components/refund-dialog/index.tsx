@@ -24,7 +24,9 @@ import { useLocale, useTranslations } from 'next-intl';
 import { Button, Dialog } from '@jirawatpyk/aura-react';
 import { formatSatangThb } from '@/lib/format-thb';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
-import { RefundForm } from './refund-form';
+// TYPE-ONLY: the invoicing barrel reaches server-only modules.
+import type { CreditNoteWaiverReason } from '@/modules/invoicing';
+import { RefundForm, waiverKey } from './refund-form';
 
 type Props = {
   readonly paymentId: string;
@@ -50,6 +52,12 @@ type Props = {
   readonly paidAmountSatang: bigint | null;
   readonly paidAt: string | null;
   /**
+   * F4 owes no credit note for this document (a section 105 receipt, a voided
+   * invoice), as the page read it at load: the description must not promise
+   * one, and the summary says so without a preview read.
+   */
+  readonly creditNoteWaiverReason?: CreditNoteWaiverReason | null;
+  /**
    * Gap E (2026-07-12) — a NON-terminal (pending/async) refund already
    * exists for this payment. `computeRemainingRefundable` intentionally
    * does NOT subtract pending amounts (a pending refund can still FAIL and
@@ -72,6 +80,7 @@ export function RefundDialog({
   invoiceDocumentNumber,
   paidAmountSatang,
   paidAt,
+  creditNoteWaiverReason = null,
   pendingRefundExists = false,
 }: Props) {
   const t = useTranslations('admin.refund');
@@ -197,7 +206,11 @@ export function RefundDialog({
         </Button>
       }
       title={tDialog('title')}
-      description={tDialog('description')}
+      description={
+        creditNoteWaiverReason !== null
+          ? tDialog(`descriptionWaived.${waiverKey(creditNoteWaiverReason)}`)
+          : tDialog('description')
+      }
     >
       <div className="flex flex-col gap-[var(--aura-space-4)]">
         {/* §87 cross-reference — the payment this refund returns, on one
@@ -221,6 +234,7 @@ export function RefundDialog({
         <RefundForm
           paymentId={paymentId}
           invoiceId={invoiceId}
+          creditNoteWaiverReason={creditNoteWaiverReason}
           memberCompanyName={memberCompanyName}
           remainingRefundableSatang={remainingRefundableSatang}
           currencyCode={currencyCode}
