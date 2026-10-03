@@ -2539,7 +2539,10 @@
         "meta": {
           "title": "Kreditnota"
         },
-        "subtitle": "Skrivskyddad kreditnotaregistrering mot den ursprungliga fakturan.",
+        "subtitle": "Skrivskyddad post för en kreditnota (ใบลดหนี้) mot det ursprungliga skattekvittot.",
+        "title": "Kreditnota {number}",
+        "amountsLabel": "Kreditbelopp",
+        "sections": {"details": "Detaljer", "parties": "Parter"},
         "status": {
           "issued": "Utfärdad"
         },
@@ -2548,7 +2551,8 @@
           "download": "Ladda ner PDF",
           "resend": "Skicka kreditnota-mejl igen",
           "resendAria": "Mejla en ny kopia av kreditnota {number} till medlemmens primära kontakt",
-          "moreAria": "Fler åtgärder för {number}"
+          "moreAria": "Fler åtgärder för {number}",
+          "resendShort": "Skicka e-post igen"
         },
         "toast": {
           "resendSuccess": "Köad — {recipient} får en ny kopia inom kort.",
@@ -2563,7 +2567,8 @@
           "creditAmount": "Kreditbelopp (exkl. moms)",
           "vat": "Moms",
           "total": "Totalt krediterat (inkl. moms)",
-          "originalReceipt": "Ursprunglig skattefaktura"
+          "originalReceipt": "Ursprunglig skattefaktura",
+          "member": "Medlem"
         },
         "reason": {
           "heading": "Anledning"
@@ -2574,7 +2579,8 @@
           "legalName": "Juridiskt namn",
           "taxId": "Skatt-ID",
           "address": "Adress",
-          "contactEmail": "Kontaktepost"
+          "contactEmail": "Kontaktepost (vid utfärdandet)",
+          "resendNote": "Ett omutskick går till medlemmens nuvarande primära kontakt."
         },
         "siblings": {
           "heading": "Andra kreditnotor på denna faktura",

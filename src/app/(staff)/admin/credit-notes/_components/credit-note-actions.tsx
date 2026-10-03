@@ -1,37 +1,26 @@
 'use client';
 
 /**
- * Credit-note detail "⋯" menu — twin of `InvoiceMoreMenu`. Collapses
- * Download PDF + Resend CN email into one ghost icon-only dropdown so
- * the action row only exposes primary navigation ("Back to invoice")
- * as a standalone button. Pattern is documented in
- * `docs/ux-standards.md` § 19 (Icon-trigger zones).
+ * Credit-note detail header actions (spec 122 US8c, T845; board
+ * `Admin-credit-note-detail`): Resend email and Download PDF as buttons, in
+ * place of the former ⋯ menu.
  *
- * Resend logic is inlined (copy of the former resend-cn-button
- * handler) so T107's 5-minute client-side re-enable + keyed toasts
- * behave 1:1.
+ * The resend handler is the menu's, unchanged: the same POST, the keyed
+ * toasts per status (202, 429, 409 `no_recipient` / `no_buyer_email`) and
+ * T107's 5-minute client-side re-enable.
  */
 import { useEffect, useRef, useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
+import { Button, buttonClass } from '@jirawatpyk/aura-react';
+import { DownloadIcon } from 'lucide-react';
 import { toast } from '@/lib/toast';
-import { Download, Loader2, Mail, MoreHorizontal } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 
-export interface CreditNoteMoreMenuProps {
+export interface CreditNoteActionsProps {
   readonly creditNoteId: string;
   readonly documentNumber: string;
 }
 
-export function CreditNoteMoreMenu({
-  creditNoteId,
-  documentNumber,
-}: CreditNoteMoreMenuProps) {
+export function CreditNoteActions({ creditNoteId, documentNumber }: CreditNoteActionsProps) {
   const t = useTranslations('admin.creditNotes.detail');
 
   const [isPending, setIsPending] = useState(false);
@@ -109,54 +98,28 @@ export function CreditNoteMoreMenu({
   };
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={(props) => (
-          <Button
-            {...props}
-            variant="ghost"
-            size="icon-lg"
-            // `flex-none!` (note the `!` important suffix) prevents
-            // PageHeader's mobile `[&>*]:flex-1` rule from stretching
-            // the overflow trigger. The parent selector carries higher
-            // specificity (0,1,1) than a bare `.flex-none` class (0,1,0),
-            // so `!` is required to force the compact 36×36 square
-            // mandated by ux-standards.md § 19.
-            className="flex-none!"
-            aria-label={t('actions.moreAria', { number: documentNumber })}
-          >
-            <MoreHorizontal aria-hidden="true" />
-          </Button>
-        )}
-      />
-      <DropdownMenuContent align="end" className="min-w-56 whitespace-nowrap">
-        <DropdownMenuItem
-          render={(props) => (
-            <a
-              {...props}
-              href={`/api/credit-notes/${creditNoteId}/pdf`}
-              target="_blank"
-              rel="noopener noreferrer"
-              download
-            >
-              <Download aria-hidden="true" />
-              {t('actions.download')}
-            </a>
-          )}
-        />
-        <DropdownMenuItem
-          disabled={isPending || recentlySent}
-          onClick={handleResend}
-          aria-label={t('actions.resendAria', { number: documentNumber })}
-        >
-          {isPending ? (
-            <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden="true" />
-          ) : (
-            <Mail aria-hidden="true" />
-          )}
-          {t('actions.resend')}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <>
+      <Button
+        variant="secondary"
+        icon="mail"
+        touchHeight
+        loading={isPending}
+        disabled={isPending || recentlySent}
+        onClick={handleResend}
+        aria-label={t('actions.resendAria', { number: documentNumber })}
+      >
+        {t('actions.resendShort')}
+      </Button>
+      <a
+        href={`/api/credit-notes/${creditNoteId}/pdf`}
+        target="_blank"
+        rel="noopener noreferrer"
+        download
+        className={buttonClass({ variant: 'primary', touchHeight: true })}
+      >
+        <DownloadIcon aria-hidden="true" className="size-4" />
+        {t('actions.download')}
+      </a>
+    </>
   );
 }

@@ -10,7 +10,7 @@
  * menu had.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { NextIntlClientProvider, createTranslator } from 'next-intl';
 import en from '@/i18n/messages/en.json';
@@ -148,13 +148,22 @@ describe('<CreditNoteActions> resend', () => {
     );
   }
   const resend = () => screen.getByRole('button', { name: detail.actions.resendAria.replace('{number}', 'CN-2026-000014') });
+  /** The suite runs on fake timers, so settle the handler's promise chain by hand. */
+  async function clickResend() {
+    await act(async () => {
+      fireEvent.click(resend());
+    });
+    for (let i = 0; i < 5; i++) await act(async () => {});
+  }
+  /** A fetch response with only what the handler reads (no stream timers). */
+  const reply = (status: number, body: unknown) => ({ status, json: async () => body }) as unknown as Response;
 
   it('POSTs the same request as before and re-enables after 5 minutes', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ recipientEmail: 'a@b.example' }), { status: 202 }));
+    const fetchMock = vi.fn().mockResolvedValue(reply(202, { recipientEmail: 'a@b.example' }));
     vi.stubGlobal('fetch', fetchMock);
     renderActions();
-    fireEvent.click(resend());
-    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    await clickResend();
+    expect(toast.success).toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledWith('/api/credit-notes/cn-14/resend', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -167,21 +176,18 @@ describe('<CreditNoteActions> resend', () => {
   });
 
   it('routes a 409 no_recipient to its own toast', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: { code: 'no_recipient' } }), { status: 409 })),
-    );
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(reply(409, { error: { code: 'no_recipient' } })));
     renderActions();
-    fireEvent.click(resend());
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(detail.toast.resendNoRecipient));
+    await clickResend();
+    expect(toast.error).toHaveBeenCalledWith(detail.toast.resendNoRecipient);
     vi.unstubAllGlobals();
   });
 
   it('warns on 429', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 429 })));
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(reply(429, {})));
     renderActions();
-    fireEvent.click(resend());
-    await waitFor(() => expect(toast.warning).toHaveBeenCalledWith(detail.toast.resendRateLimited));
+    await clickResend();
+    expect(toast.warning).toHaveBeenCalledWith(detail.toast.resendRateLimited);
     vi.unstubAllGlobals();
   });
 });

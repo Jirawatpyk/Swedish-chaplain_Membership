@@ -2539,7 +2539,10 @@
         "meta": {
           "title": "Credit Note"
         },
-        "subtitle": "Read-only credit-note record against the original invoice.",
+        "subtitle": "Read-only record of a credit note (ใบลดหนี้) against the original tax receipt.",
+        "title": "Credit note {number}",
+        "amountsLabel": "Credit amounts",
+        "sections": {"details": "Details", "parties": "Parties"},
         "status": {
           "issued": "Issued"
         },
@@ -2548,7 +2551,8 @@
           "download": "Download PDF",
           "resend": "Resend credit note email",
           "resendAria": "Email a fresh copy of credit note {number} to the member's primary contact",
-          "moreAria": "More actions for {number}"
+          "moreAria": "More actions for {number}",
+          "resendShort": "Resend email"
         },
         "toast": {
           "resendSuccess": "Queued — {recipient} will receive a fresh copy shortly.",
@@ -2563,7 +2567,8 @@
           "creditAmount": "Credit amount (excl. VAT)",
           "vat": "VAT",
           "total": "Total credit (incl. VAT)",
-          "originalReceipt": "Original tax invoice"
+          "originalReceipt": "Original tax invoice",
+          "member": "Member"
         },
         "reason": {
           "heading": "Reason"
@@ -2574,7 +2579,8 @@
           "legalName": "Legal name",
           "taxId": "Tax ID",
           "address": "Address",
-          "contactEmail": "Contact email"
+          "contactEmail": "Contact email (at issue)",
+          "resendNote": "Resend goes to the member's current primary contact."
         },
         "siblings": {
           "heading": "Other credit notes on this invoice",
