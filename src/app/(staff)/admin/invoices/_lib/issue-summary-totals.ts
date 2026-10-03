@@ -18,8 +18,8 @@ export type IssueTotals = {
   readonly subtotalSatang: number;
   readonly vatSatang: number;
   readonly totalSatang: number;
-  /** The applied rate, e.g. `'7.00%'`, or `'0.00%'` when zero-rated. */
-  readonly vatPercent: string;
+  /** The applied rate in basis points (700 = 7%; 0 when zero-rated). */
+  readonly vatRateBps: number;
 };
 
 export type IssueTotalsByTreatment = Readonly<Record<VatTreatmentChoice, IssueTotals>>;

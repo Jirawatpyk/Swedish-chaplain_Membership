@@ -35,6 +35,7 @@ import { invoiceStatusTone, type InvoiceDisplayStatus } from '@/components/invoi
 import { IssueInvoiceDialog } from '../../_components/issue-invoice-dialog';
 import { type IssueTotalsByTreatment } from '../../_lib/issue-summary-totals';
 import { formatSatangAmount } from '@/lib/format-thb';
+import { formatVatRateBps } from '@/lib/format-vat-rate';
 import { RecordPaymentDialog } from '../../_components/record-payment-dialog';
 import { DeleteDraftDialog } from '../../_components/delete-draft-dialog';
 import { InvoiceMoreMenu } from '../../_components/invoice-more-menu';
@@ -120,7 +121,8 @@ export interface InvoiceDetailViewProps {
     readonly subtotalSatang: bigint | null;
     readonly vatSatang: bigint | null;
     readonly totalSatang: bigint | null;
-    readonly vatPercent: string | null;
+    /** The applied VAT rate in basis points (700 = 7%), or null when unknown. */
+    readonly vatRateBps: number | null;
   };
   /**
    * A draft priced per VAT treatment for the Issue dialog, which shows the
@@ -451,7 +453,9 @@ export async function renderInvoiceDetailView({
             <dd className="text-end tabular-nums">{formatSatangAmount(totals.subtotalSatang)} THB</dd>
             <dt className="text-[var(--aura-fg-secondary)]">
               {t('fields.vat')}
-              {totals.vatPercent && <span className="ms-1">({totals.vatPercent})</span>}
+              {totals.vatRateBps !== null && (
+                <span className="ms-1">({formatVatRateBps(totals.vatRateBps, userLocale)})</span>
+              )}
             </dt>
             <dd className="text-end tabular-nums">{formatSatangAmount(totals.vatSatang)} THB</dd>
             <dt className="border-t border-[var(--aura-border-default)] pt-2 font-semibold">

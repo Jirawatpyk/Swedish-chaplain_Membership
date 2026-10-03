@@ -93,6 +93,7 @@ import { AS_PAID_ERROR_CODES } from './as-paid-error-codes';
 // Wave-4 S14 — shared client-safe Asia/Bangkok "today" helper.
 import { bangkokTodayIso } from '@/lib/bangkok-today';
 import { formatSatangAmount } from '@/lib/format-thb';
+import { formatVatRateNumber } from '@/lib/format-vat-rate';
 
 export type EventOption = {
   readonly eventId: string;
@@ -126,15 +127,6 @@ export function previewVatInclusive(
   const scaled = totalSatang * 10_000;
   const subtotal = Math.floor((scaled + denom / 2) / denom); // half-away (positive)
   return { subtotal, vat: totalSatang - subtotal };
-}
-
-/**
- * Basis points → the rate as a percentage for the label, formatted for the
- * locale (ux-standards § 12.5 — never a hardcoded decimal separator):
- * 700 → '7', 750 → '7.5' (en) / '7,5' (sv).
- */
-export function formatRateBps(rateBps: number, locale: string): string {
-  return new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(rateBps / 100);
 }
 
 type DocTypeKind = 'taxInvoice' | 'taxInvoiceReceipt' | 'receipt' | 'pending';
@@ -1106,7 +1098,7 @@ export function EventFeeForm({
                   </div>
                   <div className="flex justify-between">
                     <dt className="text-[var(--aura-fg-secondary)]">
-                      {t('vatPreview.vat', { rate: formatRateBps(vatRateBps, locale) })}
+                      {t('vatPreview.vat', { rate: formatVatRateNumber(vatRateBps, locale) })}
                     </dt>
                     <dd className="tabular-nums">{formatSatangAmount(split.vat)}</dd>
                   </div>

@@ -44,6 +44,7 @@ import { Alert, Badge, Button, RadioGroup, TextField } from '@jirawatpyk/aura-re
 import { computeIssueReviewModel } from '../_lib/issue-review';
 import { type IssueTotalsByTreatment } from '../_lib/issue-summary-totals';
 import { formatSatangAmount } from '@/lib/format-thb';
+import { formatVatRateBps } from '@/lib/format-vat-rate';
 import {
   buildIssueRequestBody,
   isZeroRateLowAmount,
@@ -334,7 +335,7 @@ export function IssueInvoiceForm({
           <dt className="text-[var(--aura-fg-secondary)]">
             {tDetail('fields.vat')}
             {totals && (
-              <span className="ms-1 text-xs">({totals.vatPercent})</span>
+              <span className="ms-1 text-xs">({formatVatRateBps(totals.vatRateBps, locale)})</span>
             )}
           </dt>
           <dd className="tabular-nums">{totals ? formatSatangAmount(BigInt(totals.vatSatang)) : '—'} THB</dd>

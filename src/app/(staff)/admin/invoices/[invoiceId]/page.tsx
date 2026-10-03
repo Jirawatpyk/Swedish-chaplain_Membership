@@ -376,7 +376,8 @@ export default async function InvoiceDetailPage({
   let displaySubtotalSatang: bigint | null = invoice.subtotal?.satang ?? null;
   let displayVatSatang: bigint | null = invoice.vat?.satang ?? null;
   let displayTotalSatang: bigint | null = invoice.total?.satang ?? null;
-  let displayVatPercent: string | null = invoice.vatRate?.toPercentString() ?? null;
+  let displayVatRateBps: number | null =
+    invoice.vatRate ? Number(invoice.vatRate.numerator) : null;
   // The Issue dialog shows the figures for the VAT treatment the admin picks,
   // so it gets the draft priced per treatment (same policy), not the
   // standard-rate figures above.
@@ -404,7 +405,7 @@ export default async function InvoiceDetailPage({
       displaySubtotalSatang = pricing.subtotal.satang;
       displayVatSatang = pricing.vat.satang;
       displayTotalSatang = pricing.total.satang;
-      displayVatPercent = pricing.vatRate.toPercentString();
+      displayVatRateBps = Number(pricing.vatRate.numerator);
       issueTotals = buildIssueTotalsByTreatment({
         lineSum: sub,
         vatInclusive: invoice.vatInclusive,
@@ -532,7 +533,7 @@ export default async function InvoiceDetailPage({
       subtotalSatang: displaySubtotalSatang,
       vatSatang: displayVatSatang,
       totalSatang: displayTotalSatang,
-      vatPercent: displayVatPercent,
+      vatRateBps: displayVatRateBps,
     },
     issueTotals,
     settlingRefundSatang,
