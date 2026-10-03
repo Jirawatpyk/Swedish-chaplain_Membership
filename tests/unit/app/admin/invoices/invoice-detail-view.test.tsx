@@ -337,6 +337,12 @@ describe('invoice detail — the alerts sit above the Details card', () => {
 // a bar at the bottom of the screen, with the total and due date above them;
 // they are drawn once, so every action keeps one trigger and its test id.
 describe('invoice detail — the phone action bar', () => {
+  it('lets the actions fill the row while the ⋯ menu keeps its own width (board Admin-invoice-issued-mobile)', async () => {
+    await view(props());
+    const row = document.querySelector('[data-slot="invoice-action-bar"] > div:last-child')!;
+    expect(row.className).toContain('max-sm:[&>.aura-dropdown]:flex-none');
+  });
+
   it('wraps the actions once, with the total (incl. VAT) and due date for a phone', async () => {
     await view(props());
     const bar = document.querySelector('[data-slot="invoice-action-bar"]') as HTMLElement;
