@@ -40,8 +40,9 @@ export function StaffTopBar({ tenantName, user, extras, currentPath }: StaffTopB
     <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-x-1.5 gap-y-1 sm:gap-x-3">
       {/* A size container: when the row is crowded (a phone with the outbox
           alert showing) the wordmark leaves the view rather than being cut to
-          "SweCh…"; the link keeps it as its name. */}
-      <div className="@container flex min-w-0 flex-1 items-center gap-3">
+          "SweCh…"; the link keeps it as its name. The min width keeps the
+          tile's, so wrapping controls never cover it (PR #530 review). */}
+      <div className="@container flex min-w-8 flex-1 items-center gap-3 sm:min-w-10">
         <div className="hidden min-w-0 lg:block">
           <BreadcrumbNav pathname={currentPath} />
         </div>
