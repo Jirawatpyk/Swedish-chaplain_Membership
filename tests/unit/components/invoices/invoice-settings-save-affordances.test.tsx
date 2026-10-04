@@ -134,17 +134,18 @@ describe('InvoiceSettingsForm — read-only rendering (canEdit=false)', () => {
 });
 
 describe('InvoiceSettingsForm — C3 sticky-bar clearance', () => {
-  it('pads the content wrapper only while dirty, so the sticky bar never covers the last section', () => {
-    const { container } = renderSettings();
-    const wrapper = container.querySelector('#organization')!.parentElement!;
-
-    expect(wrapper.className).not.toMatch(/pb-\[calc\(env\(safe-area-inset-bottom\)/);
-
+  // Spec 122 US8c-2: the bar is an AURA ActionBar, sticky in the flow at the
+  // end of the content column, so it never covers the last section and the
+  // old dirty-only bottom padding goes.
+  it('puts the bar in the flow at the end of the content column, with no padding hack', () => {
+    const { container, getByRole } = renderSettings();
+    const column = container.querySelector('#organization')!.parentElement!;
     fireEvent.change(container.querySelector('#brand_name')!, {
       target: { value: 'NewBrand' },
     });
-
-    expect(wrapper.className).toMatch(/pb-\[calc\(env\(safe-area-inset-bottom\)\+5rem\)\]/);
+    const bar = getByRole('region', { name: /save changes/i });
+    expect(column.lastElementChild).toBe(bar);
+    expect(column.className).not.toMatch(/pb-\[calc\(env\(safe-area-inset-bottom\)/);
   });
 });
 

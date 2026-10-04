@@ -353,6 +353,30 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - **Not followed:** "Still creditable on the receipt" (the page has no such figure; computing it is money logic, not a UI swap).
 - **Tax-document registers follow `Admin-invoice-registers` and its states:** the register, From and To fields with View register; the period output VAT box above the table with no footer (Session 2026-10-02); the summary line; cancelled receipts struck through with a Cancelled badge; on a phone the rows become cards and the box's note folds under "About this figure". The registers have no CSV export, so "the export equals main" (user story 8) means the row count, the cancelled count and every total, which the view test asserts against the use case's output; US8a's invoice export is untouched. The board's "Proposed" chip is an annotation, not product copy.
 
+### Session 2026-10-03 (maintainer, US8c-2 start)
+
+- **AURA 5.31 lands in US8c-2** (handoff #138 and #139, shipped; maintainer, 3 Oct: "Aura แก้ Hand off ให้แล้ว"):
+  - `aura-theme` now emits the checked-control colour from the brand (light `#2e6397` with a white mark, dark `#9cc5f1` with an ink mark). The theme file is regenerated, and the US8c-1 hand-written override and its test go.
+  - The typed-phrase chip moves into the TextField's `labelAddon`, between the label and the box, on the void page and in the full-refund dialog (boards `Admin-void`, `Admin-refund-full`). `labelAddonDescribes={false}` keeps the copy button's name out of what is read for the input; the chip's id still opens the input's description. What has to be typed, and how it is compared, are unchanged.
+- **The invoice settings follow `Admin-invoice-settings`** (1440 only; the phone layout follows the US5b-2 form rule):
+  - the page header "Invoice settings" with its subtitle;
+  - the note "Changes apply to future invoices only…" as an info alert above the form. On a first-ever load it reads the existing first-time copy ("No settings yet…"). The legacy wrapper card and its "Invoice configuration" title go: the board has no such card.
+  - a "Settings sections" rail (Organization, Tax, Document numbering, Document notes, Payment, Branding). The current section is marked, and a pick moves focus to the section's card, which is labelled by its heading (today it moves to the heading itself). Below `xl` the rail becomes a labelled "Jump to section" select (UX review: at 1024px beside the staff sidebar the cards would be too narrow for two field columns).
+  - one card per section, titled with the section's name. The fieldsets inside each card (Currency, Tenant legal identity, Seller branch (§86/4), Prefixes, Invoicing defaults, and so on) keep their legends.
+  - every field keeps its id, label, hint, length limit and character counter, on AURA fields;
+  - a sticky bar once the form is dirty: "You have unsaved changes · Discard · Save settings". Discard is a ghost button at the bar's start, away from Save (UX review).
+- **Discard is added** (maintainer, 3 Oct: "Add Discard"). It puts every field back to the values the page loaded with, the same snapshot the dirty check compares against. It clears the field errors and the error line, sends no request, and the bar hides. Focus moves to the first section's card. It is disabled while a logo upload runs, and from a successful save until the saved values arrive, so it can never bring back the values from before the save (financial review). A logo uploaded since the last save is dropped from the form; the upload itself is not undone (nothing references an unsaved key).
+- **One Save at a time** (maintainer, 3 Oct, after the UX review): the form's own Save ("Save settings", or "Create settings" on a first-ever save) shows while nothing has changed; once the form is dirty the bar's Save takes over as the form's submit button, so Enter still submits and no two buttons share a name. The bar's Save reads "Create settings" on a first-ever save too.
+- **The 44px targets stay** (088 FR-036): the seller branch code, the prefixes and receipt mode, the bank text fields, the rail, and the Save buttons. The fields use AURA's `touchHeight="always"`.
+- **Unchanged:**
+  - the logo upload request;
+  - the PATCH body, its eleven client guards, and the error routing with its focus rules;
+  - the prefix-change confirmation, which moves to the shared confirmation dialog with the same copy;
+  - the success toasts and the refresh;
+  - the leave-page guard.
+- **Who sees the page:** only super_admin can open it (`settings.invoicing` is super-admin-only). The "manager read-only" comments are stale and are corrected. The read-only rendering stays in case the permission widens.
+- **Not followed:** nothing. The board shows only headings and the bar; every field it omits is kept from the code.
+
 ## User Scenarios & Testing *(mandatory)*
 
 Every story below is one phase and one pull request. A story is done when its screens use only AURA components, match their canvas boards, and pass the per-module definition of done (FR-010).

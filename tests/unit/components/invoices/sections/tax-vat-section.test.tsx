@@ -23,13 +23,21 @@ function wrap(ui: React.ReactNode) {
   );
 }
 
-it('renders the section root with the nav-targeted heading', () => {
+// Spec 122 US8c-2 (T856) — each section is an AURA card, focusable (the rail
+// moves focus to it) and labelled by its h2.
+it('renders the section as an AURA card labelled by its h2, the rail\'s focus target', () => {
   wrap(<TaxVatSection {...BASE_PROPS} />);
   const section = document.getElementById('tax');
   expect(section).not.toBeNull();
-  const heading = section?.querySelector('[data-section-heading]');
-  expect(heading).toHaveAttribute('id', 'tax-heading');
-  expect(heading).toHaveAttribute('tabindex', '-1');
+  expect(section).toHaveClass('aura-card');
+  expect(section!.tagName).toBe('SECTION');
+  expect(section).toHaveAttribute('tabindex', '-1');
+  // UX review M1: the focused card shows the focus ring.
+  expect(section).toHaveClass('focus-visible:outline-[var(--aura-focus-ring)]');
+  expect(section).toHaveAttribute('aria-labelledby', 'tax-heading');
+  const heading = document.getElementById('tax-heading');
+  expect(heading?.tagName).toBe('H2');
+  expect(heading).toHaveTextContent('Tax');
 });
 
 it('renders the VAT percent field', () => {
@@ -48,4 +56,11 @@ it('renders the registration fee field', () => {
 it('interpolates the current currency code into the registration fee label', () => {
   wrap(<TaxVatSection {...BASE_PROPS} currencyCode="USD" />);
   expect(screen.getByLabelText(/registration fee \(usd\)/i)).toBeInTheDocument();
+});
+
+it('renders the VAT and registration fee fields on AURA', () => {
+  wrap(<TaxVatSection {...BASE_PROPS} />);
+  for (const id of ['vat_percent', 'reg_fee']) {
+    expect(document.getElementById(id)?.closest('.aura-input'), id).not.toBeNull();
+  }
 });

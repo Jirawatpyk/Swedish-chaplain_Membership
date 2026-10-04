@@ -1,19 +1,18 @@
 /**
- * Spec 122 US8c — AURA 5.30 colours checked controls (checkbox, radio, switch,
- * tab underline, current page, selected day, completed step) with
- * `--aura-control-checked-bg/-fg`, wired to AURA's own violet rather than the
- * brand accent, and `aura-theme` does not emit them. Until AURA #139 ships, a
- * hand-written override (outside the generated theme file) points them at the
- * brand accent, light and dark (maintainer, 3 Oct 2026).
+ * Spec 122 US8c-2 — AURA 5.31 (#139) emits `--aura-control-checked-bg/-fg`
+ * from the brand in `aura-theme`, so checked controls (checkbox, radio, switch,
+ * tab underline, current page, selected day, completed step) follow SweCham
+ * blue from the generated theme file. The US8c-1 hand-written stand-in
+ * (`src/styles/aura-overrides.css`) is gone.
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const ROOT = process.cwd();
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8').replace(/\r/g, '');
 
-const OVERRIDES = 'src/styles/aura-overrides.css';
+const THEME = 'src/styles/aura-theme.css';
 
 /** Declarations of every top-level block whose selector list starts with `selector`. */
 function decls(css: string, selector: string): Record<string, string> {
@@ -47,31 +46,28 @@ const contrast = (a: string, b: string) => {
   return (hi! + 0.05) / (lo! + 0.05);
 };
 
-describe('checked controls follow the brand accent (stand-in until AURA #139)', () => {
-  it('globals.css imports the hand-written overrides into the token layer, after the generated theme', () => {
-    const globals = read('src/app/globals.css');
-    const theme = globals.indexOf("@import '../styles/aura-theme.css' layer(aura-tokens);");
-    const overrides = globals.indexOf("@import '../styles/aura-overrides.css' layer(aura-tokens);");
-    expect(theme).toBeGreaterThan(-1);
-    expect(overrides).toBeGreaterThan(theme);
+describe('checked controls take the brand from the generated theme (AURA #139)', () => {
+  it('the generated theme declares the checked tokens in light, dark and system-dark', () => {
+    const css = read(THEME);
+    expect(decls(css, ':root')['--aura-control-checked-bg']).toBeDefined();
+    expect(decls(css, ':root')['--aura-control-checked-fg']).toBeDefined();
+    expect(decls(css, '.dark')['--aura-control-checked-bg']).toBeDefined();
+    expect(decls(css, '.dark')['--aura-control-checked-fg']).toBeDefined();
+    const system = css.match(/@media \(prefers-color-scheme: dark\)\s*\{([\s\S]*?)\n\}/)?.[1] ?? '';
+    expect(system).toMatch(/--aura-control-checked-bg:/);
+    expect(system).toMatch(/--aura-control-checked-fg:/);
   });
 
-  it('points the checked tokens at the accent in light, dark and system-dark, and says why', () => {
-    const css = read(OVERRIDES);
-    expect(css).toMatch(/stand-in until AURA #139/);
-    expect(decls(css, ':root')['--aura-control-checked-bg']).toBe('var(--aura-accent-violet)');
-    expect(decls(css, '.dark')['--aura-control-checked-bg']).toBe('var(--aura-accent-violet)');
-    const system = css.match(/@media \(prefers-color-scheme: dark\)\s*\{([\s\S]*?)\n\}/)?.[1] ?? '';
-    expect(system).toMatch(/--aura-control-checked-bg:\s*var\(--aura-accent-violet\);/);
-    expect(system).toMatch(/--aura-control-checked-fg:\s*var\(--aura-zinc-900\);/);
+  it('no hand-written override file remains or is imported', () => {
+    expect(existsSync(join(ROOT, 'src/styles/aura-overrides.css'))).toBe(false);
+    expect(read('src/app/globals.css')).not.toMatch(/aura-overrides/);
   });
 
   it('keeps the check mark legible on the brand fill (WCAG AA 4.5:1), light and dark', () => {
     const aura = read('node_modules/@jirawatpyk/aura-tokens/aura.css');
-    const brand = read('src/styles/aura-theme.css');
-    const ours = read(OVERRIDES);
-    const light = { ...decls(aura, ':root'), ...decls(brand, ':root'), ...decls(ours, ':root') };
-    const dark = { ...light, ...decls(aura, '.dark'), ...decls(brand, '.dark'), ...decls(ours, '.dark') };
+    const brand = read(THEME);
+    const light = { ...decls(aura, ':root'), ...decls(brand, ':root') };
+    const dark = { ...light, ...decls(aura, '.dark'), ...decls(brand, '.dark') };
     for (const vars of [light, dark]) {
       const bg = resolve(vars, '--aura-control-checked-bg');
       expect(bg).not.toBe(resolve(vars, '--aura-violet-700'));

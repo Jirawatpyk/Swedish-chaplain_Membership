@@ -1,8 +1,17 @@
 'use client';
+
+/**
+ * Spec 122 US8c-2 (T855) — the invoice settings rail on AURA (board
+ * `Admin-invoice-settings`, "Settings sections"): ghost Buttons from `xl` (below it the cards would be
+ * too narrow beside the staff sidebar), and below it an AURA Select "Jump to
+ * section" (a native `<select>` under it).
+ * A pick scrolls to the section card and moves focus to it; each card is a
+ * `<section tabIndex={-1}>` labelled by its h2, so a screen reader lands on
+ * the section's name. The scroll-spy marks the current section.
+ */
 import { useMemo } from 'react';
 import { useTranslations } from 'next-intl';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
+import { Button, Select } from '@jirawatpyk/aura-react';
 import { cn } from '@/lib/utils';
 import { useScrollSpy } from './use-scroll-spy';
 
@@ -34,9 +43,9 @@ export function SectionNav({ sections }: { readonly sections: ReadonlyArray<Sect
   const selectedId = active ?? sections[0]?.id ?? '';
 
   /**
-   * Scrolls the target section into view, then moves focus to its heading
-   * (`[data-section-heading]`, which carries `tabIndex={-1}`) so keyboard
-   * and screen-reader users land where sighted users land visually.
+   * Scrolls the target section into view, then moves focus to it (the card
+   * is a `<section tabIndex={-1}>` labelled by its h2) so keyboard and
+   * screen-reader users land where sighted users land visually.
    *
    * code-review follow-up (finding 5) — moved inside `SectionNav` (from
    * module scope) so it can close over `setActive` and set the target
@@ -62,7 +71,9 @@ export function SectionNav({ sections }: { readonly sections: ReadonlyArray<Sect
     // `scrollIntoView` animation above in Safari/Firefox. Focus still
     // lands on the heading; only the browser's redundant auto-scroll is
     // suppressed.
-    section?.querySelector<HTMLElement>('[data-section-heading]')?.focus({ preventScroll: true });
+    // UX review H1: AURA's Select returns focus to its combobox synchronously
+    // right after the change event, so move focus once that handler is done.
+    queueMicrotask(() => section?.focus({ preventScroll: true }));
     setActive(id);
   }
 
@@ -70,9 +81,9 @@ export function SectionNav({ sections }: { readonly sections: ReadonlyArray<Sect
     <>
       <nav
         aria-label={t('nav.label')}
-        className="sticky top-20 hidden max-h-[calc(100vh-6rem)] w-56 shrink-0 overflow-y-auto md:block"
+        className="sticky top-20 max-h-[calc(100vh-6rem)] w-56 shrink-0 overflow-y-auto max-xl:hidden"
       >
-        <ul className="space-y-1">
+        <ul className="flex flex-col gap-[var(--aura-space-1)]">
           {sections.map((section) => {
             const isActive = active === section.id;
             return (
@@ -82,9 +93,12 @@ export function SectionNav({ sections }: { readonly sections: ReadonlyArray<Sect
                   variant="ghost"
                   aria-current={isActive ? 'location' : undefined}
                   onClick={() => goToSection(section.id)}
+                  // 088 FR-036 — 44px at every width (the compact staff
+                  // density is 36px); the current section on the selected
+                  // ground, as AURA's SideNav marks the current page.
                   className={cn(
                     'min-h-11 w-full justify-start text-left font-normal',
-                    isActive && 'bg-muted font-medium text-foreground',
+                    isActive && 'bg-[var(--aura-bg-selected)] font-medium text-[var(--aura-fg-primary)]',
                   )}
                 >
                   {t(section.labelKey)}
@@ -95,25 +109,15 @@ export function SectionNav({ sections }: { readonly sections: ReadonlyArray<Sect
         </ul>
       </nav>
 
-      <div className="md:hidden">
-        <Label htmlFor={MOBILE_SELECT_ID} className="sr-only">
-          {t('nav.jumpTo')}
-        </Label>
-        <select
+      <div className="xl:hidden">
+        <Select
           id={MOBILE_SELECT_ID}
+          label={t('nav.jumpTo')}
           value={selectedId}
           onChange={(event) => goToSection(event.target.value)}
-          // I3 (wave B) — this native <select> had no focus-visible ring,
-          // unlike every shadcn Input/Button on the page. Matches
-          // `ui/input.tsx`'s focus classes exactly.
-          className="min-h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-        >
-          {sections.map((section) => (
-            <option key={section.id} value={section.id}>
-              {t(section.labelKey)}
-            </option>
-          ))}
-        </select>
+          touchHeight="always"
+          options={sections.map((section) => ({ value: section.id, label: t(section.labelKey) }))}
+        />
       </div>
     </>
   );

@@ -238,11 +238,14 @@ export function VoidConfirmDialog({ invoiceId, documentNumber, isBill = false }:
               autoCapitalize="off"
               spellCheck={false}
               aria-invalid={typed.length > 0 && !matches}
-              // The number chip first, so a screen reader hears what to type.
+              // Board Admin-void: the number in its own chip, with a copy
+              // button, between the label and the box (AURA 5.31 labelAddon).
+              // The addon stays out of the description so the copy button's
+              // name isn't read; the chip's id comes first instead.
+              labelAddon={<PhraseChip id="void-confirm-phrase" phrase={confirmPhrase} testId="void-confirm-chip" />}
+              labelAddonDescribes={false}
               aria-describedby={typed.length > 0 && !matches ? 'void-confirm-phrase void-confirm-error' : 'void-confirm-phrase'}
             />
-            {/* Board Admin-void: the number in its own chip, with a copy button. */}
-            <PhraseChip id="void-confirm-phrase" phrase={confirmPhrase} testId="void-confirm-chip" />
             {typed.length > 0 && !matches && (
               <p id="void-confirm-error" role="alert" className="text-xs text-[var(--aura-fg-danger)]">
                 {t('confirmMismatch', { phrase: confirmPhrase })}

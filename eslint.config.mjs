@@ -400,10 +400,13 @@ export const MIGRATED_PATHS = [
   'src/app/(staff)/admin/invoices/_components/**',
   'src/components/invoices/invoice-status-tone.ts',
   // US8c-1 — the credit-notes list and detail and the tax-document registers.
-  // The invoice settings (US8c-2) are the last invoicing screens on the
-  // legacy kit.
   'src/app/(staff)/admin/credit-notes/**',
   'src/app/(staff)/admin/invoices/registers/**',
+  // US8c-2 — the invoice settings (page, form, rail, sections, save bar), the
+  // last invoicing screens on the legacy kit.
+  'src/app/(staff)/admin/settings/invoicing/**',
+  'src/components/invoices/invoice-settings-form.tsx',
+  'src/components/invoices/invoice-settings/**',
 ];
 
 /**

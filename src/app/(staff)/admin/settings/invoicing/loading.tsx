@@ -1,45 +1,22 @@
-import { getTranslations } from 'next-intl/server';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import { DetailContainer } from '@/components/layout';
-import { PageHeader } from '@/components/layout/page-header';
-import {
-  PageSkeletonShell,
-  SkeletonBlock,
-} from '@/components/shell/page-skeletons';
-
 /**
  * R7-B2 — loading skeleton for /admin/settings/invoicing.
  *
- * C2 (settings-ux-invoice-reminders wave B) — resynced to the REAL 6
- * sections `InvoiceSettingsForm` (Task 7) now renders — organization /
- * tax / numbering / notes / payment / branding — each with its actual
- * fieldset + approximate field count, not the old pre-refactor grouping
- * (`currency/identity/tax/numbering/defaults/logo`) this file used to
- * hardcode. The shape mismatch was causing both wrong section names on
- * first paint AND meaningful CLS once the real (differently-sized)
- * sections hydrated in (ux-standards §2.1 wants CLS≈0).
+ * Spec 122 US8c-2 (T854) — the `Admin-invoice-settings` shape on AURA, for
+ * CLS 0: the header, the note, then the section rail (from `xl`, as the real
+ * `SectionNav`; a 44px "Jump to section" select below it) beside one AURA
+ * card per section. Section titles and visible fieldset legends render as
+ * real (translated) text per the skeleton convention across /admin; only the
+ * field labels and boxes are bars.
  *
- * `SECTION_SKELETONS` below is a compact description of each section's
- * real fieldset layout (see the matching `*-section.tsx` for the actual
- * fields) — a legend-less entry mirrors the I1 fix (the "Tax" fieldset's
- * legend is `sr-only` there, deduping against the section h2, so no
- * visible legend placeholder renders here either). Numbering's first
- * fieldset carries a distinct visible "Prefixes" legend after the I1
- * follow-up, so it IS rendered here.
- * `numbering`'s `hasSwitchRow` mirrors the I2 relocation of
- * `auto_email_enabled` into its "Defaults" area.
- *
- * The left-rail skeleton mirrors `SectionNav`'s real `md:flex-row` split
- * so CLS stays low once the real nav hydrates. Section headings + visible
- * fieldset legends render as real (translated) text per the existing
- * skeleton convention across /admin — only field labels/inputs skeleton.
+ * `SECTION_SKELETONS` describes each section's real fieldset layout (see the
+ * matching `*-section.tsx`): a legend-less entry mirrors the Tax fieldset's
+ * `sr-only` legend; `numbering`'s `hasSwitchRow` is the auto-email switch.
  */
+import { getTranslations } from 'next-intl/server';
+import { Alert, Card } from '@jirawatpyk/aura-react/server';
+import { DetailContainer } from '@/components/layout';
+import { PageHeader } from '@/components/layout/page-header';
+import { PageSkeletonShell, SkeletonBlock } from '@/components/shell/page-skeletons';
 
 type FieldsetSkeleton = {
   /** Omit for a fieldset whose real `<legend>` is `sr-only` (I1 dedupe). */
@@ -107,61 +84,47 @@ export default async function Loading() {
     <PageSkeletonShell ariaLabel={tLayout('loadingForm')}>
       <DetailContainer>
         <PageHeader title={t('title')} subtitle={t('subtitle')} />
-        <Card>
-          <CardHeader>
-            <CardTitle>{t('card.title')}</CardTitle>
-            <CardDescription>{t('card.description')}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-col gap-[var(--page-section-gap)] md:flex-row md:items-start md:gap-8">
-              {/* Left-rail placeholder for `SectionNav` (hidden below
-                  `md`, matching the real nav's `w-56 md:block`; ~6 buttons
-                  at min-h-11 + gaps, so hydration doesn't shift the form
-                  column). */}
-              <SkeletonBlock className="hidden h-72 w-56 shrink-0 md:block" />
+        <Alert tone="info" role="note">
+          {t('card.description')}
+        </Alert>
+        <div className="flex flex-col gap-[var(--page-section-gap)] xl:flex-row xl:items-start xl:gap-8">
+          {/* The rail (six 44px buttons and their gaps) from xl; the labelled
+              jump-to select below it. */}
+          <SkeletonBlock className="h-72 w-56 shrink-0 max-xl:hidden" />
+          <SkeletonBlock className="h-[4.25rem] w-full xl:hidden" />
 
-              <div className="flex min-w-0 flex-1 flex-col gap-[var(--page-section-gap)]">
-                {SECTION_SKELETONS.map((section) => (
-                  <div key={section.id} className="flex flex-col gap-[var(--page-section-gap)]">
-                    <p className="font-heading text-base font-semibold">
-                      {t(section.labelKey)}
-                    </p>
-                    {section.fieldsets.map((fieldset, i) => (
-                      <fieldset
-                        key={i}
-                        className="flex flex-col gap-4 rounded-md border p-4"
+          <div className="flex min-w-0 flex-1 flex-col gap-[var(--page-section-gap)]">
+            {SECTION_SKELETONS.map((section) => (
+              <Card key={section.id} title={t(section.labelKey)} headingLevel={2}>
+                <div className="flex flex-col gap-[var(--aura-space-6)]">
+                  {section.fieldsets.map((fieldset, i) => (
+                    <div key={i} className="flex flex-col gap-[var(--aura-space-3)]">
+                      {fieldset.legendKey ? (
+                        <p className="text-sm font-semibold">{t(fieldset.legendKey)}</p>
+                      ) : null}
+                      <div
+                        className={
+                          fieldset.singleColumn
+                            ? 'sm:max-w-xs'
+                            : 'grid grid-cols-1 gap-[var(--aura-space-4)] sm:grid-cols-2'
+                        }
                       >
-                        {fieldset.legendKey ? (
-                          <legend className="px-2 text-sm font-semibold">
-                            {t(fieldset.legendKey)}
-                          </legend>
-                        ) : null}
-                        <div
-                          className={
-                            fieldset.singleColumn
-                              ? 'sm:max-w-xs'
-                              : 'grid grid-cols-1 gap-4 sm:grid-cols-2'
-                          }
-                        >
-                          {Array.from({ length: fieldset.fieldCount }).map((_, j) => (
-                            <div key={j} className="space-y-2">
-                              <SkeletonBlock className="h-4 w-28" />
-                              <SkeletonBlock className="h-[var(--input-height)] w-full" />
-                            </div>
-                          ))}
-                        </div>
-                      </fieldset>
-                    ))}
-                    {section.hasSwitchRow ? (
-                      <SkeletonBlock className="h-16 w-full rounded-md border" />
-                    ) : null}
-                  </div>
-                ))}
-                <SkeletonBlock className="h-11 w-full" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+                        {Array.from({ length: fieldset.fieldCount }).map((_, j) => (
+                          <div key={j} className="flex flex-col gap-[var(--aura-space-2)]">
+                            <SkeletonBlock className="h-4 w-28" />
+                            <SkeletonBlock className="h-11 w-full" />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  {section.hasSwitchRow ? <SkeletonBlock className="h-12 w-full" /> : null}
+                </div>
+              </Card>
+            ))}
+            <SkeletonBlock className="h-11 w-full sm:w-36 sm:self-end" />
+          </div>
+        </div>
       </DetailContainer>
     </PageSkeletonShell>
   );

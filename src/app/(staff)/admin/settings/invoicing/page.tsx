@@ -8,26 +8,22 @@
  * defaults — the admin fills it, submits, and the PATCH upserts the
  * row for the first time.
  *
- * RBAC: admin + manager may reach the page; the form disables inputs
- * + hides save for manager. Real security boundary is inside the
- * PATCH route via `requireAdminContext`.
+ * RBAC: only super_admin reaches the page (`settings.invoicing` is
+ * super-admin-only, so `requirePagePermission` refuses everyone else). The
+ * form still renders read-only when `canEdit` is false, in case the
+ * permission widens. The real security boundary is the PATCH route guard.
+ *
+ * Spec 122 US8c-2 (T854) — the body is `renderInvoiceSettingsView` (props
+ * only), which the no-DB preview renders too.
  */
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
 import { canPerform, requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { headers } from 'next/headers';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
 import { DetailContainer } from '@/components/layout';
-import { PageHeader } from '@/components/layout/page-header';
-import { InvoiceSettingsForm } from '@/components/invoices/invoice-settings-form';
 import type { InvoiceSettingsFormInitialValues } from '@/components/invoices/invoice-settings-form';
+import { renderInvoiceSettingsView } from './_components/invoice-settings-view';
 // Direct infra import — same escape-hatch pattern used by
 // /admin/users/page.tsx when the Application layer has nothing to
 // add over the repo's read shape. We only read `getForIssue` here,
@@ -81,7 +77,6 @@ const DEFAULTS: InvoiceSettingsFormInitialValues = {
 
 export default async function InvoiceSettingsPage() {
   const { user: currentUser } = await requirePagePermission('settings.invoicing');
-  const t = await getTranslations('admin.invoiceSettings');
 
   const hdrs = await headers();
   const tenantCtx = resolveTenantFromHeaders(hdrs);
@@ -134,36 +129,15 @@ export default async function InvoiceSettingsPage() {
 
   return (
     <DetailContainer>
-      {/* Header role-Badge dropped — the user-menu (top-right) already
-          renders a translated role badge, and the form's `disabled`
-          prop signals read-only state for managers. The header chip
-          showed the raw English role string ("admin"/"manager") which
-          duplicated info + bypassed translation. */}
-      <PageHeader title={t('title')} subtitle={t('subtitle')} />
-
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('card.title')}</CardTitle>
-          <CardDescription>
-            {existing ? t('card.description') : t('card.firstTimeDescription')}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <InvoiceSettingsForm
-            initialValues={initialValues}
-            // Server-derived write authorization (never a role literal in the
-            // client). 016 review I13: the PR-2 tripwire that used to sit here
-            // had already fired without being actioned, so the expression is
-            // now evaluator-derived. `legacyAdminOnly` reproduces the pre-016
-            // admin-only projection byte-for-byte (the PAGE itself is
-            // session-only, so manager still READS these settings) while
-            // admitting a promoted super_admin; the ON leg follows
-            // `settings.invoicing`, which is superAdminOnly by D4.
-            canEdit={canPerform(currentUser.role, 'settings.invoicing')}
-            exists={existing !== null}
-          />
-        </CardContent>
-      </Card>
+      {await renderInvoiceSettingsView({
+        initialValues,
+        // Server-derived write authorization (never a role literal in the
+        // client). 016 review I13: evaluator-derived from
+        // `settings.invoicing`, which is superAdminOnly by D4 — the same key
+        // that gates the page.
+        canEdit: canPerform(currentUser.role, 'settings.invoicing'),
+        exists: existing !== null,
+      })}
     </DetailContainer>
   );
 }

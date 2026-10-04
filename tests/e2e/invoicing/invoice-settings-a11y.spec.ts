@@ -87,19 +87,23 @@ test.describe('088 invoice-settings form a11y @a11y @f088', () => {
     await waitForLayoutContainer(page);
     await page.waitForLoadState('networkidle');
 
+    // An AURA field's target is its bordered box (`.aura-input`), which the
+    // input fills (spec 122 US8c-2, `touchHeight="always"`); the input inside
+    // is the box less its 1px border. Measure the box, as the legacy bordered
+    // <input> was measured.
+    const fieldBox = (label: RegExp) =>
+      page.locator('.aura-input').filter({ has: page.getByLabel(label) });
     // Bank-block inputs are always rendered; measure the SWIFT + account fields.
-    await expectTargetSize(page.getByLabel(/SWIFT/i), 'bank SWIFT input');
-    await expectTargetSize(
-      page.getByLabel(/Account number/i),
-      'bank account-no input',
-    );
+    await expectTargetSize(fieldBox(/SWIFT/i), 'bank SWIFT input');
+    await expectTargetSize(fieldBox(/Account number/i), 'bank account-no input');
+    await expectTargetSize(fieldBox(/Invoice number prefix/i), 'invoice prefix input');
     await expectTargetSize(
       page.getByRole('button', { name: /Save settings/i }),
       'Save button',
     );
 
     // Seller branch input only shows when the tenant is a branch (not HO).
-    const branch = page.getByLabel(/Branch code/i);
+    const branch = fieldBox(/Branch code/i);
     if (await branch.isVisible().catch(() => false)) {
       await expectTargetSize(branch, 'seller branch input');
     }

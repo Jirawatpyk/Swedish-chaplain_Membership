@@ -188,8 +188,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the invoice settings form keeps the legacy kit until US8c-2', async () => {
-      expect(await ratchetHits(legacy, 'src/components/invoices/invoice-settings-form.tsx')).toEqual([]);
+    it('control: the events list keeps the legacy kit until US9', async () => {
+      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/events/page.tsx')).toEqual([]);
     });
   });
 
@@ -427,8 +427,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the invoice settings page keeps the legacy kit until US8c-2', async () => {
-      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/settings/invoicing/page.tsx')).toEqual([]);
+    it('control: the users page keeps the legacy kit until US10', async () => {
+      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/users/page.tsx')).toEqual([]);
     });
   });
 
@@ -484,6 +484,22 @@ describe('UI import ratchet (spec 122)', () => {
       'src/app/(staff)/admin/invoices/registers/_components/tax-register-form.tsx',
       'src/app/(staff)/admin/invoices/registers/_components/tax-register-view.tsx',
       'src/app/(staff)/admin/invoices/registers/_components/tax-register-table.tsx',
+    ])('%s cannot import the legacy kit', async (path) => {
+      expect(await ratchetHits(legacy, path)).toHaveLength(1);
+    });
+  });
+  describe('the US8c-2 invoice settings are on AURA (the real MIGRATED_PATHS)', () => {
+    const legacy = "import { Button } from '@/components/ui/button';\nexport const B = Button;\n";
+
+    it.each([
+      'src/app/(staff)/admin/settings/invoicing/page.tsx',
+      'src/app/(staff)/admin/settings/invoicing/loading.tsx',
+      'src/app/(staff)/admin/settings/invoicing/_components/invoice-settings-view.tsx',
+      'src/components/invoices/invoice-settings-form.tsx',
+      'src/components/invoices/invoice-settings/section-nav.tsx',
+      'src/components/invoices/invoice-settings/sticky-save-bar.tsx',
+      'src/components/invoices/invoice-settings/sections/organization-section.tsx',
+      'src/components/invoices/invoice-settings/sections/branding-section.tsx',
     ])('%s cannot import the legacy kit', async (path) => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
