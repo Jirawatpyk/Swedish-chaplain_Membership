@@ -36,14 +36,27 @@ import { members } from '@/modules/members/infrastructure/db/schema-members';
 // 055-member-number — allocate the per-tenant human-readable number INSIDE the
 // seed tx (allocator under tenant RLS), mirroring the createMember path.
 import { drizzleMemberNumberAllocator } from '@/modules/members/infrastructure/repos/drizzle-member-number-allocator';
+import {
+  events,
+  eventRegistrations,
+  type NewEventRow,
+  type NewEventRegistrationRow,
+} from '@/modules/events/infrastructure/schema';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { invoiceLines } from '@/modules/invoicing/infrastructure/db/schema-invoice-lines';
 import { reactPdfRenderAdapter } from '@/modules/invoicing/infrastructure/adapters/react-pdf-render-adapter';
 import { vercelBlobAdapter } from '@/modules/invoicing/infrastructure/adapters/vercel-blob-adapter';
+import { makeDrizzleInvoiceRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-invoice-repo';
 import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/document-number';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
 import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
-import { asInvoiceLineId } from '@/modules/invoicing/domain/invoice-line';
+import { asInvoiceId } from '@/modules/invoicing/domain/invoice';
+import {
+  asInvoiceLineId,
+  makeInvoiceLine,
+  type InvoiceLine,
+} from '@/modules/invoicing/domain/invoice-line';
+import { makeMemberIdentitySnapshot } from '@/modules/invoicing/domain/value-objects/member-identity-snapshot';
 
 const TENANT_SLUG = process.env.TENANT_SLUG ?? 'swecham';
 const MUTATION_MEMBER_NAME = 'E2E Mutation Co';
@@ -51,6 +64,24 @@ const MUTATION_MEMBER_NAME = 'E2E Mutation Co';
 // climbs monotonically; tests reserve the 990000–999999 block.
 const PAY_TARGET_SEQ_BASE = 990_000;
 const CREDIT_TARGET_SEQ_BASE = 995_000;
+
+// --- 088 zero-rate a11y fixture ---------------------------------------------
+//
+// `tests/e2e/invoicing/issue-invoice-zero-rate-a11y.spec.ts` needs an EVENT
+// draft, and nothing else in the suite guarantees one. The zero-rate toggle it
+// exercises renders only when `taxAtPayment && !isMembership`
+// (`issue-invoice-form.tsx:142`, with `isMembership` = `invoiceSubject ===
+// 'membership'`), so a membership draft can never reveal it — five of that
+// file's six tests then skip, and the sixth asserts against the wrong dialog.
+//
+// Own sentinels rather than reusing an existing event fixture:
+// `tests/e2e/helpers/event-fee-as-paid-seed.ts` DELETEs invoices on its
+// registrations on every run, the `eventcreate-seed.ts` ones are erased by the
+// F6 specs, and `invoices_event_registration_uniq` allows exactly one non-void
+// invoice per registration.
+const ZERO_RATE_EVENT_EXTERNAL_ID = 'e2e-f088-zero-rate-event';
+const ZERO_RATE_REG_EXTERNAL_ID = 'e2e-f088-zero-rate-reg';
+const ZERO_RATE_TICKET_THB = 1_500;
 
 function requireSwechamTenant(): TenantContext {
   if (TENANT_SLUG !== 'swecham') {
@@ -291,6 +322,161 @@ async function seedIssuedInvoice(
   return { invoiceId, documentNumber };
 }
 
+/** Upsert the zero-rate fixture's own event, keyed on (tenant, source, external_id). */
+async function upsertZeroRateEvent(
+  ctx: TenantContext,
+): Promise<{ eventId: string; name: string; startDateIso: string }> {
+  const name = 'E2E 088 Zero-rate Fixture Event';
+  const startDate = new Date('2026-05-20T12:00:00Z');
+  return runInTenant(ctx, async (tx) => {
+    const existing = await tx
+      .select({ eventId: events.eventId, name: events.name, startDate: events.startDate })
+      .from(events)
+      .where(
+        and(
+          eq(events.tenantId, ctx.slug),
+          eq(events.source, 'eventcreate'),
+          eq(events.externalId, ZERO_RATE_EVENT_EXTERNAL_ID),
+        ),
+      )
+      .limit(1);
+    if (existing.length > 0) {
+      const e = existing[0]!;
+      return { eventId: e.eventId, name: e.name, startDateIso: e.startDate.toISOString() };
+    }
+    const eventId = randomUUID();
+    await tx.insert(events).values({
+      tenantId: ctx.slug,
+      eventId,
+      source: 'eventcreate',
+      externalId: ZERO_RATE_EVENT_EXTERNAL_ID,
+      name,
+      startDate,
+    } satisfies NewEventRow);
+    return { eventId, name, startDateIso: startDate.toISOString() };
+  });
+}
+
+/** Upsert the fixture's single NON-MEMBER registration, keyed on (tenant, event, external_id). */
+async function upsertZeroRateRegistration(ctx: TenantContext, eventId: string): Promise<string> {
+  return runInTenant(ctx, async (tx) => {
+    const existing = await tx
+      .select({ registrationId: eventRegistrations.registrationId })
+      .from(eventRegistrations)
+      .where(
+        and(
+          eq(eventRegistrations.tenantId, ctx.slug),
+          eq(eventRegistrations.eventId, eventId),
+          eq(eventRegistrations.externalId, ZERO_RATE_REG_EXTERNAL_ID),
+        ),
+      )
+      .limit(1);
+    if (existing.length > 0) return existing[0]!.registrationId;
+
+    const registrationId = randomUUID();
+    await tx.insert(eventRegistrations).values({
+      tenantId: ctx.slug,
+      registrationId,
+      eventId,
+      externalId: ZERO_RATE_REG_EXTERNAL_ID,
+      attendeeEmail: 'zero.rate.fixture@seed.invalid',
+      attendeeName: 'E2E Zero-rate Attendee',
+      attendeeCompany: 'E2E Zero-rate Buyer Co., Ltd.',
+      matchType: 'non_member',
+      matchedMemberId: null,
+      ticketType: 'Standard',
+      ticketPriceThb: ZERO_RATE_TICKET_THB,
+      paymentStatus: 'paid',
+      registeredAt: new Date('2026-05-10T03:00:00Z'),
+    } satisfies NewEventRegistrationRow);
+    return registrationId;
+  });
+}
+
+/**
+ * One EVENT draft on that registration, or nothing if one is already live.
+ *
+ * Keyed on `event_registration_id` rather than on a sequence number: a draft
+ * has no sequence number (the allocator runs at issue), so the pay/credit
+ * target checks above cannot express this one. The predicate mirrors
+ * `invoices_event_registration_uniq` — one non-void invoice per registration.
+ *
+ * `insertDraft` rather than `createEventInvoiceDraft`: the use case's F6 lookup
+ * adapters pull a `events → members → renewals` require-cycle that a standalone
+ * `tsx` CJS run resolves to `undefined` (see `seed-event-invoices-demo.ts` § 47-59).
+ */
+async function seedZeroRateEventDraft(
+  ctx: TenantContext,
+  adminUserId: string,
+): Promise<'created' | 'present'> {
+  const event = await upsertZeroRateEvent(ctx);
+  const registrationId = await upsertZeroRateRegistration(ctx, event.eventId);
+
+  const live = await runInTenant(ctx, async (tx) => {
+    return tx
+      .select({ invoiceId: invoices.invoiceId })
+      .from(invoices)
+      .where(
+        and(
+          eq(invoices.tenantId, ctx.slug),
+          eq(invoices.eventRegistrationId, registrationId),
+          sql`${invoices.status} <> 'void'`,
+        ),
+      )
+      .limit(1);
+  });
+  if (live.length > 0) return 'present';
+
+  const lineResult = makeInvoiceLine({
+    lineId: asInvoiceLineId(randomUUID()),
+    kind: 'event_fee',
+    descriptionTh: `ค่าเข้าร่วมงาน ${event.name}`,
+    descriptionEn: `Event: ${event.name}`,
+    unitPrice: Money.fromSatangUnsafe(BigInt(ZERO_RATE_TICKET_THB) * 100n),
+    quantity: '1.0000',
+    proRateFactor: null,
+    position: 1,
+  });
+  if (!lineResult.ok) {
+    throw new Error(`zero-rate draft: event_fee line build failed: ${lineResult.error.code}`);
+  }
+  const lines: InvoiceLine[] = [lineResult.value];
+
+  // Non-member buyer, so the snapshot is pinned at draft (a matched member is
+  // re-read at issue instead). A tax id is set deliberately: without one the
+  // event is issue-blocked (`event_no_tin_requires_paid_issue`) and the spec
+  // would skip at its `canIssue` gate instead of opening the dialog.
+  const buyerSnapshot = makeMemberIdentitySnapshot({
+    legal_name: 'E2E Zero-rate Buyer Co., Ltd.',
+    tax_id: '9999999999999',
+    address: '88/88 Zero-rate Road, Bangkok',
+    primary_contact_name: 'E2E Zero-rate Attendee',
+    primary_contact_email: 'zero.rate.fixture@seed.invalid',
+  });
+
+  const repo = makeDrizzleInvoiceRepo(ctx.slug);
+  await repo.withTx(async (tx) => {
+    await repo.insertDraft(tx, {
+      tenantId: ctx.slug,
+      invoiceId: asInvoiceId(randomUUID()),
+      memberId: null,
+      planId: null,
+      planYear: null,
+      invoiceSubject: 'event',
+      eventId: event.eventId,
+      eventRegistrationId: registrationId,
+      vatInclusive: true,
+      draftByUserId: adminUserId,
+      // Never email from a seed — `issueInvoice` reads
+      // `wantsEmail = autoEmailOnIssue ?? settings.autoEmailEnabled`.
+      autoEmailOnIssue: false,
+      memberIdentitySnapshot: buyerSnapshot,
+      lines,
+    });
+  });
+  return 'created';
+}
+
 async function main(): Promise<void> {
   console.log('seeding F4 E2E admin-mutation fixtures…');
   const ctx = requireSwechamTenant();
@@ -353,6 +539,25 @@ async function main(): Promise<void> {
       });
       console.log(`  CREDIT_TARGET_DOCUMENT_NUMBER=${r.documentNumber}`);
     }
+  }
+
+  // Zero-rate a11y target — deliberately NON-FATAL. `global-setup.ts` sets
+  // `E2E_HAS_ADMIN_FIXTURES=1` only when this whole script exits 0, so throwing
+  // here would silently disarm the credit-note specs too. The spec's own gate
+  // is what makes a missing draft visible.
+  try {
+    const outcome = await seedZeroRateEventDraft(ctx, adminUserId);
+    console.log(
+      outcome === 'present'
+        ? '  zero-rate-draft already present (event draft) — skip'
+        : '  seeded zero-rate-draft (event draft for the 088 a11y spec)',
+    );
+  } catch (e) {
+    console.warn(
+      `  zero-rate-draft FAILED (non-fatal; issue-invoice-zero-rate-a11y will report it): ${
+        e instanceof Error ? e.message : String(e)
+      }`,
+    );
   }
 
   console.log('\n----------------------------------------');
