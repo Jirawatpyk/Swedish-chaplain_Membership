@@ -79,4 +79,12 @@ describe('StaffTopBar (spec 122 US1)', () => {
     expect(row).toContainElement(screen.getByRole('button', { name: /^Account menu/ }));
     expect(row).toHaveClass('flex-wrap', 'justify-end');
   });
+  // UX review of PR #530: the brand box may shrink to nothing (min-w-0), so at
+  // 200% text the 32px tile (64px) slid under the search button when the
+  // controls wrapped. The box keeps the tile's width; the controls wrap instead.
+  it('keeps the brand tile\'s width, so wrapped controls never cover it', () => {
+    const { container } = renderBar();
+    const brandBox = container.querySelector('a[href="/admin"]')!.parentElement as HTMLElement;
+    expect(brandBox).toHaveClass('min-w-8', 'sm:min-w-10');
+  });
 });
