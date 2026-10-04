@@ -80,4 +80,31 @@ describe('void / failed-auto-refund / seller tax-ID copy — EN/TH/SV parity', (
       expect(t(path), path).not.toMatch(/\bbills?\b/i);
     }
   });
+
+  // TH/SV follow-up: the SC document is ใบแจ้งหนี้ / faktura, never the
+  // informal "บิล" or "räkning" (verbs such as "ออกบิลให้" = Bill to stay).
+  it('TH/SV name the SC document ใบแจ้งหนี้ / faktura', () => {
+    for (const path of [
+      'admin.invoices.form.renewalContext.renewal',
+      'admin.invoices.form.renewalContext.firstPayment',
+      'admin.invoices.form.renewalContext.notApplicable',
+      'admin.invoices.pay.errors.new_flow_bill_requires_flag_on',
+      'admin.renewals.money.collectionRate.hint',
+      'admin.renewals.suspendedBridge.line',
+      'admin.renewals.table.billIssuedLabel',
+      'admin.renewals.table.billIssuedTitle',
+    ]) {
+      expect(get(th as Tree, path) as string, `th: ${path}`).not.toMatch(/บิล/);
+    }
+    for (const path of [
+      'admin.invoices.list.filters.documentType.sc',
+      'admin.invoices.detail.voidDetails.creditNoteHintBill',
+      'admin.invoices.void.descriptionBill',
+      'shared.creditNoteOriginal.bill',
+      'admin.invoiceSettings.hints.terminationNotice',
+    ]) {
+      expect(get(sv as Tree, path) as string, `sv: ${path}`).not.toMatch(/räkning|\bbill\b/i);
+    }
+    expect(get(sv as Tree, 'admin.invoices.list.filters.documentType.sc')).toBe('Faktura (SC)');
+  });
 });
