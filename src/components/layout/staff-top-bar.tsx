@@ -34,7 +34,10 @@ export function StaffTopBar({ tenantName, user, extras, currentPath }: StaffTopB
   const t = useTranslations('shell.search');
 
   return (
-    <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:gap-3">
+    // Relay R34b: when one row cannot hold the controls (a phone at 200% text
+    // with the outbox alert showing) they wrap onto a second row, at the end,
+    // rather than pushing the page past the screen (WCAG 1.4.4).
+    <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-x-1.5 gap-y-1 sm:gap-x-3">
       {/* A size container: when the row is crowded (a phone with the outbox
           alert showing) the wordmark leaves the view rather than being cut to
           "SweCh…"; the link keeps it as its name. */}
