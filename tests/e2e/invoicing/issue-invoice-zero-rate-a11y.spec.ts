@@ -280,21 +280,31 @@ test.describe('088 zero-rate issue form a11y @a11y @f088', () => {
     // its ≤1px budget. At 1280px it passes, so this is a narrow-viewport
     // WCAG 1.4.4 defect, not a flake.
     //
-    // Measured cause: the SHARED dialog footer in `src/components/ui/dialog.tsx`
-    // (and `alert-dialog.tsx`) is full-bleed via
-    // `-mx-[var(--card-padding)] -mb-[var(--card-padding)]`. `--card-padding` is
-    // rem-based, so at 200% root font the negative margins double and the footer
-    // measures 499px inside a 393px viewport — the widest of 73 overflowing
-    // elements.
+    // Measured cause — and it is NOT this dialog. The dialog is `width: 100%`
+    // of its layer and only tracks the document width; hiding it changes the
+    // overflow by 0. Decomposed on the live page, mobile-chrome, 200%:
     //
-    // Deliberately NOT fixed here: that footer is the legacy kit every dialog in
-    // the product shares, so a change there is a product-wide UI edit needing an
-    // enterprise-ux pass, and spec 122 US13 deletes `src/components/ui/`
-    // outright. Widening the ≤1 budget would only make it quiet. `test.fail`
-    // keeps it visible and turns RED the moment it starts passing.
+    //   67px  the shell's account menu in `.aura-shell__bar` (right edge 460).
+    //         Every ancestor is `flex-wrap: nowrap` + `overflow-x: visible`, and
+    //         `.aura-toaster` (fixed, a hard 428px wide) is a second, smaller
+    //         overflow. The same 67px shows on /admin/invoices,
+    //         /admin/directory and /admin/settings/invoicing — a shell floor,
+    //         not a property of any one page.
+    //   27px  with the shell hidden: the invoice detail page BEHIND the dialog
+    //         — its totals `<dd class="text-end tabular-nums">` (right edge 420).
+    //    0px  the dialog itself.
+    //
+    // So this flips only when BOTH the shell and the invoice-detail totals fit;
+    // fixing either alone leaves it red. An earlier note here blamed the legacy
+    // dialog footer — that footer did measure wide, but the dialog has since
+    // moved to AURA and the 67px did not move, which is what refuted it.
+    //
+    // Deliberately NOT fixed here: both causes are product-wide UI (the AURA
+    // shell, owned by spec 122) and widening the ≤1 budget would only make it
+    // quiet. `test.fail` keeps it visible and turns RED the moment it passes.
     test.fail(
       testInfo.project.name === 'mobile-chrome',
-      'known: 67px overflow at 200% zoom on a 393px viewport (shared dialog footer)',
+      'known: 67px overflow at 200% zoom on a 393px viewport (shell account menu + invoice-detail totals; not the dialog)',
     );
     const state = await openIssueDialogAtZeroRate(page);
     gateOnState(state);
