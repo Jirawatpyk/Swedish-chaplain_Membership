@@ -99,20 +99,20 @@ describe('IssueInvoiceForm — vat_treatment control gating (FR-023)', () => {
 // Board Admin-invoice-issue (parity comment, 3 Oct): the confirm names the
 // document and its total, and carries the money-step check icon (§ Button icons).
 describe('IssueInvoiceForm — the confirm button', () => {
-  it('reads "Issue bill · {total} THB" with the check icon for a membership bill', () => {
+  it('reads "Issue invoice · {total} THB" with the check icon for a membership (SC) invoice', () => {
     renderForm({ isMembership: true });
-    const confirm = screen.getByRole('button', { name: 'Issue bill · 8,560.00 THB' });
+    const confirm = screen.getByRole('button', { name: 'Issue invoice · 8,560.00 THB' });
     expect(confirm.querySelector('svg.aura-icon')).not.toBeNull();
   });
 
-  it('reads "Issue invoice · {total} THB" when the tax-at-payment flag is off (a §87 invoice)', () => {
+  it('reads "Issue tax invoice · {total} THB" when the tax-at-payment flag is off (a §87 invoice)', () => {
     renderForm({ isMembership: true, taxAtPayment: false });
-    expect(screen.getByRole('button', { name: 'Issue invoice · 8,560.00 THB' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Issue tax invoice · 8,560.00 THB' })).toBeInTheDocument();
   });
 
   it('names no amount when the draft could not be priced (no invoice settings)', () => {
     renderForm({ totalsByTreatment: null });
-    expect(screen.getByRole('button', { name: 'Issue bill' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Issue invoice' })).toBeInTheDocument();
   });
 });
 
@@ -129,7 +129,7 @@ describe('IssueInvoiceForm — the summary matches the issued bill', () => {
     expect(summaryRow('Subtotal')).toHaveTextContent('10,000.00 THB');
     expect(summaryRow('Total')).toHaveTextContent('10,700.00 THB');
     expect(screen.getByText('(7%)')).toBeInTheDocument();
-    const confirm = screen.getByRole('button', { name: 'Issue bill · 10,700.00 THB' });
+    const confirm = screen.getByRole('button', { name: 'Issue invoice · 10,700.00 THB' });
     expect(confirm.querySelector('svg.aura-icon')).not.toBeNull();
   });
 
@@ -138,7 +138,7 @@ describe('IssueInvoiceForm — the summary matches the issued bill', () => {
     fireEvent.click(screen.getByRole('radio', { name: /Zero-rated/i }));
     expect(screen.getByText('(0%)')).toBeInTheDocument();
     expect(summaryRow('Total')).toHaveTextContent('10,000.00 THB');
-    expect(screen.getByRole('button', { name: 'Issue bill · 10,000.00 THB' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Issue invoice · 10,000.00 THB' })).toBeInTheDocument();
     // Flipping back restores the standard figures.
     fireEvent.click(screen.getByRole('radio', { name: /Standard/i }));
     expect(summaryRow('Total')).toHaveTextContent('10,700.00 THB');
@@ -151,7 +151,7 @@ describe('IssueInvoiceForm — the summary matches the issued bill', () => {
     expect(summaryRow('Subtotal')).toHaveTextContent('9,345.79 THB');
     expect(screen.getByText('654.21 THB')).toBeInTheDocument();
     expect(summaryRow('Total')).toHaveTextContent('10,000.00 THB');
-    expect(screen.getByRole('button', { name: 'Issue bill · 10,000.00 THB' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Issue invoice · 10,000.00 THB' })).toBeInTheDocument();
   });
 });
 
@@ -186,7 +186,7 @@ describe('IssueInvoiceForm — fail-closed cert validation (FR-024 / T061b)', ()
         target: { value: 'ISSUE' },
       });
 
-      fireEvent.click(screen.getByRole('button', { name: /^Issue bill · [\d,.]+ THB$/ }));
+      fireEvent.click(screen.getByRole('button', { name: /^Issue invoice · [\d,.]+ THB$/ }));
 
       const certNo = screen.getByLabelText(/MFA certificate number/i);
       expect(certNo).toHaveAttribute('aria-invalid', 'true');
@@ -258,7 +258,7 @@ describe('IssueInvoiceForm — valid zero-rate issue POST', () => {
       fireEvent.change(screen.getByLabelText(/to confirm/i), {
         target: { value: 'ISSUE' },
       });
-      fireEvent.click(screen.getByRole('button', { name: /^Issue bill · [\d,.]+ THB$/ }));
+      fireEvent.click(screen.getByRole('button', { name: /^Issue invoice · [\d,.]+ THB$/ }));
 
       await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
       const [url, init] = fetchMock.mock.calls[0] as unknown as [
@@ -293,7 +293,7 @@ describe('IssueInvoiceForm — valid zero-rate issue POST', () => {
       fireEvent.change(screen.getByLabelText(/to confirm/i), {
         target: { value: 'ISSUE' },
       });
-      fireEvent.click(screen.getByRole('button', { name: /^Issue bill · [\d,.]+ THB$/ }));
+      fireEvent.click(screen.getByRole('button', { name: /^Issue invoice · [\d,.]+ THB$/ }));
 
       await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
       const [, init] = fetchMock.mock.calls[0] as unknown as [
@@ -358,7 +358,7 @@ describe('IssueInvoiceForm — cert-scan blob key in POST (UX-B1)', () => {
       fireEvent.change(screen.getByLabelText(/to confirm/i), {
         target: { value: 'ISSUE' },
       });
-      fireEvent.click(screen.getByRole('button', { name: /^Issue bill · [\d,.]+ THB$/ }));
+      fireEvent.click(screen.getByRole('button', { name: /^Issue invoice · [\d,.]+ THB$/ }));
 
       // Find the /issue POST (the cert-upload POST fired first).
       await waitFor(() =>
@@ -484,7 +484,7 @@ function confirmAndSubmit() {
   fireEvent.change(screen.getByLabelText(/to confirm/i), {
     target: { value: 'ISSUE' },
   });
-  fireEvent.click(screen.getByRole('button', { name: /^Issue bill · [\d,.]+ THB$/ }));
+  fireEvent.click(screen.getByRole('button', { name: /^Issue invoice · [\d,.]+ THB$/ }));
 }
 
 describe('IssueInvoiceForm — concurrent 409 inline recovery (FR-032)', () => {
@@ -601,7 +601,7 @@ describe('IssueInvoiceDialog — AURA alertdialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Issue…' }));
     const dialog = screen.getByRole('alertdialog', { name: enMessages.admin.invoices.issue.title });
     expect(dialog).toHaveAccessibleDescription(enMessages.admin.invoices.issue.review.immutableSnapshotAck);
-    expect(screen.getByRole('button', { name: /^Issue bill · [\d,.]+ THB$/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^Issue invoice · [\d,.]+ THB$/ })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: enMessages.admin.invoices.issue.cancel }));
     expect(screen.queryByRole('alertdialog')).toBeNull();
   });

@@ -397,7 +397,7 @@ describe('<AutoRenewalQueueActions> — Issue + Send / Issue silently', () => {
 });
 
 describe('<AutoRenewalQueueActions> — refusal-reason parity with Task 13 queue badges', () => {
-  it('duplicate_live_bill renders the SAME copy as <AutoRenewalQueueBadges> + a "View existing bill" link', async () => {
+  it('duplicate_live_bill renders the SAME copy as <AutoRenewalQueueBadges> + a "View existing invoice" link', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: false,
       status: 409,

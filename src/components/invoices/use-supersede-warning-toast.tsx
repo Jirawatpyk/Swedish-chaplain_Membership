@@ -13,7 +13,7 @@
  * strings.
  *
  * Each issue is one line; a bill that still needs a manual void carries its
- * own "Open bill …" `next/link` (AURA 5.6 rich toast description, handoff
+ * own "Open invoice …" `next/link` (AURA 5.6 rich toast description, handoff
  * #53), so with several bills staff can open each one without losing the
  * others.
  *

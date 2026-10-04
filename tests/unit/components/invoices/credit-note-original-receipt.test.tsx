@@ -19,7 +19,7 @@ function renderCell(ui: React.ReactElement) {
 }
 
 describe('<CreditNoteOriginalReceipt>', () => {
-  it('shows the RC and a "Bill SC-…" link to the invoice', () => {
+  it('shows the RC and an "Invoice SC-…" link to the invoice', () => {
     renderCell(
       <CreditNoteOriginalReceipt
         original={{
@@ -32,7 +32,7 @@ describe('<CreditNoteOriginalReceipt>', () => {
     expect(screen.getByText('RC-2026-000038')).toBeInTheDocument();
     const link = screen.getByRole('link');
     expect(link).toHaveAttribute('href', '/admin/invoices/inv-1');
-    expect(link.textContent).toMatch(/^Bill SC-2026-000102/);
+    expect(link.textContent).toMatch(/^Invoice SC-2026-000102/);
   });
 
   it('every link names its receipt, so a list of "combined" links is not identical', () => {

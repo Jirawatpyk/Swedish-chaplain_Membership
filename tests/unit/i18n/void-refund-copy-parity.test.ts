@@ -60,4 +60,24 @@ describe('void / failed-auto-refund / seller tax-ID copy — EN/TH/SV parity', (
       expect(get(en as Tree, path) as string).not.toMatch(/tax-document number is retired/i);
     }
   });
+
+  // Maintainer, 3 Oct 2026: EN names the SC- ใบแจ้งหนี้ "invoice" (its PDF
+  // title), never "bill"; the §87 ใบกำกับภาษี stays "tax invoice".
+  it('EN names the SC document "invoice", and the §87 one "tax invoice"', () => {
+    const t = (path: string) => get(en as Tree, path) as string;
+    expect(t('admin.invoices.list.filters.documentType.sc')).toBe('Invoice (SC)');
+    expect(t('admin.invoices.issue.issueBillButtonPlain')).toBe('Issue invoice');
+    expect(t('admin.invoices.issue.issueInvoiceButtonPlain')).toBe('Issue tax invoice');
+    expect(t('admin.invoices.void.confirmCopyBill')).toBe('Type the invoice number to confirm');
+    expect(t('admin.invoices.void.confirmCopy')).toBe('Type the tax invoice number to confirm');
+    for (const path of [
+      'admin.invoices.void.descriptionBill',
+      'admin.invoices.detail.voidDetails.creditNoteHintBill',
+      'admin.invoices.issue.issueBillButton',
+      'shared.creditNoteOriginal.bill',
+      'portal.invoices.detail.void.replacedBy',
+    ]) {
+      expect(t(path), path).not.toMatch(/\bbills?\b/i);
+    }
+  });
 });
