@@ -71,7 +71,10 @@ export function BrandingSection({
             t('logo.uploading')
           ) : logoBlobKey ? (
             <>
-              {t('logo.currentKey')}: <span className="font-mono">{logoBlobKey}</span>
+              {t('logo.currentKey')}:{' '}
+              {/* Relay R34: a blob key is one unbroken token; at 200% text zoom
+                  it overflowed the card, so it may break anywhere. */}
+              <span className="font-mono [overflow-wrap:anywhere]">{logoBlobKey}</span>
             </>
           ) : null}
         </p>
