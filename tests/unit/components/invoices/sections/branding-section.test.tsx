@@ -66,3 +66,10 @@ it('keeps the native file input inside an AURA field', () => {
   expect(input).toHaveAttribute('type', 'file');
   expect(input.closest('.aura-field')).not.toBeNull();
 });
+
+// Relay R34: at 200% text zoom the unbroken blob key overflowed the AURA card
+// by 83px (WCAG 1.4.10 / 1.4.4). It must be allowed to break anywhere.
+it('lets the current logo key wrap, so a long key cannot widen the card', () => {
+  wrap(<BrandingSection {...BASE_PROPS} logoBlobKey="invoicing/swecham/logos/911d40b9-aaaa-bbbb-cccc-0123456789ab.png" />);
+  expect(screen.getByText(/911d40b9/)).toHaveClass('[overflow-wrap:anywhere]');
+});
