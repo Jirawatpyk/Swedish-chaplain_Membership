@@ -447,11 +447,14 @@ export async function renderInvoiceDetailView({
               </div>
             )}
           </dl>
-          {/* The totals at the card's end, right-aligned (board Admin-voided). */}
+          {/* The totals at the card's end, right-aligned (board Admin-voided).
+              Relay R34b: the label column may shrink below its longest word and
+              the gap is narrower on phones, so "Total (preview)" and the amount
+              fit a 393px phone at 200% text (WCAG 1.4.4). */}
           <dl
             data-slot="invoice-totals"
             aria-label={t('totalsLabel')}
-            className="ms-auto grid w-full grid-cols-[1fr_auto] gap-x-8 gap-y-2 text-sm sm:max-w-sm"
+            className="ms-auto grid w-full grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-2 text-sm sm:max-w-sm sm:gap-x-8"
           >
             <dt className="text-[var(--aura-fg-secondary)]">{t('fields.subtotal')}</dt>
             <dd className="text-end tabular-nums">{formatSatangAmount(totals.subtotalSatang)} THB</dd>
