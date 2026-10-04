@@ -69,4 +69,14 @@ describe('StaffTopBar (spec 122 US1)', () => {
       window.innerWidth = width;
     }
   });
+  // Relay R34b: at 200% text on a 393px phone the 44px controls double to 88px,
+  // and with the outbox alert showing they no longer fit one row; the row did
+  // not wrap, so every admin page ran 67px past the screen (WCAG 1.4.4). The
+  // controls wrap onto a second row, kept at the end.
+  it('lets its controls wrap to a second row, kept at the end, when one row cannot hold them', () => {
+    const { container } = renderBar();
+    const row = container.querySelector('div') as HTMLElement;
+    expect(row).toContainElement(screen.getByRole('button', { name: /^Account menu/ }));
+    expect(row).toHaveClass('flex-wrap', 'justify-end');
+  });
 });
