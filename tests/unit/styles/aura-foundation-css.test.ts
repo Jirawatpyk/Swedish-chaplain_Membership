@@ -155,7 +155,8 @@ describe('globals.css — AURA foundation (spec 122)', () => {
     // The gutter reads AURA's spacing tokens, not numbers of its own (2 Oct 2026).
     expect(layer).toMatch(/\.chamber-shell\s*\{[^}]*--page-padding-x:\s*var\(--aura-space-4\);/);
     // Sticky page parts stop below the sticky bar (whole-branch review M2).
-    expect(layer).toMatch(/\.chamber-shell\s*\{[^}]*--shell-bar-height:\s*56px;/);
+    // AppShell's measured bar height, 56px before it is written (PR #530).
+    expect(layer).toMatch(/\.chamber-shell\s*\{[^}]*--shell-bar-height:\s*var\(--aura-shell-bar-height,\s*56px\);/);
     // The gutter takes AURA Container's steps (maintainer, 2 Oct 2026): 24px
     // from 640, not 768, so the two never disagree.
     expect(layer).toMatch(/min-width:\s*640px\)\s*\{\s*\.chamber-shell\s*\{\s*--page-padding-x:\s*var\(--aura-space-6\);/);

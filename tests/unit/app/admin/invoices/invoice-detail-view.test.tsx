@@ -229,6 +229,16 @@ describe('invoice detail — the Details card', () => {
     expect(within(totals).getByText(/\(7%\)/)).toBeInTheDocument();
   });
 
+  // Relay R34b: at 200% text on a 393px phone the totals ran 27px past the
+  // screen. The label column may shrink below its longest word, and the gap
+  // is the narrow one on phones (WCAG 1.4.4).
+  it('lets the totals fit a phone at 200% text: the label column may shrink, the phone gap is narrow', async () => {
+    await view(props());
+    const totals = document.querySelector('[data-slot="invoice-totals"]') as HTMLElement;
+    expect(totals).toHaveClass('grid-cols-[minmax(0,1fr)_auto]', 'gap-x-4', 'sm:gap-x-8');
+    expect(totals).not.toHaveClass('grid-cols-[1fr_auto]', 'gap-x-8');
+  });
+
   it('labels a draft\'s total as a preview', async () => {
     const inv = invoice({ status: 'draft', billDocumentNumberRaw: null, pdf: null });
     await view(props({ invoice: inv, displayStatus: 'draft', headerNumber: null, taxDocKind: 'none' }));
