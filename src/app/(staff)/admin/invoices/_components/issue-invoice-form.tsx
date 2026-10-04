@@ -42,7 +42,9 @@ import { formatCalendarYear } from '@/lib/format-date-localised';
 import { toast } from '@/lib/toast';
 import { Alert, Badge, Button, RadioGroup, TextField } from '@jirawatpyk/aura-react';
 import { computeIssueReviewModel } from '../_lib/issue-review';
-import { formatSatang, type IssueTotalsByTreatment } from '../_lib/issue-summary-totals';
+import { type IssueTotalsByTreatment } from '../_lib/issue-summary-totals';
+import { formatSatangAmount } from '@/lib/format-thb';
+import { formatVatRateBps } from '@/lib/format-vat-rate';
 import {
   buildIssueRequestBody,
   isZeroRateLowAmount,
@@ -158,7 +160,7 @@ export function IssueInvoiceForm({
     ? 'zero_rated_80_1_5'
     : 'standard';
   const totals = totalsByTreatment?.[effectiveTreatment] ?? null;
-  const totalText = totals ? formatSatang(BigInt(totals.totalSatang)) : null;
+  const totalText = totals ? formatSatangAmount(BigInt(totals.totalSatang)) : null;
   const lowAmountWarn = isZeroRateLowAmount(effectiveTreatment, totals?.subtotalSatang ?? null);
 
   const confirmPhrase = t('confirmPhrase');
@@ -327,16 +329,16 @@ export function IssueInvoiceForm({
         </div>
         <div>
           <dt className="text-[var(--aura-fg-secondary)]">{tDetail('fields.subtotal')}</dt>
-          <dd className="tabular-nums">{totals ? formatSatang(BigInt(totals.subtotalSatang)) : '—'} THB</dd>
+          <dd className="tabular-nums">{totals ? formatSatangAmount(BigInt(totals.subtotalSatang)) : '—'} THB</dd>
         </div>
         <div>
           <dt className="text-[var(--aura-fg-secondary)]">
             {tDetail('fields.vat')}
             {totals && (
-              <span className="ms-1 text-xs">({totals.vatPercent})</span>
+              <span className="ms-1 text-xs">({formatVatRateBps(totals.vatRateBps, locale)})</span>
             )}
           </dt>
-          <dd className="tabular-nums">{totals ? formatSatang(BigInt(totals.vatSatang)) : '—'} THB</dd>
+          <dd className="tabular-nums">{totals ? formatSatangAmount(BigInt(totals.vatSatang)) : '—'} THB</dd>
         </div>
         <div className="border-t border-[var(--aura-border-default)] pt-2 sm:col-span-2">
           <dt className="text-[var(--aura-fg-secondary)]">{tDetail('fields.total')}</dt>

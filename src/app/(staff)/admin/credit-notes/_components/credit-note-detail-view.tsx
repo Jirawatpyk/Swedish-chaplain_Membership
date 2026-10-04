@@ -25,13 +25,7 @@ import {
 } from '@/components/invoices/credit-note-original-receipt';
 import { NoPrimaryContactBanner } from '@/components/members/no-primary-contact-banner';
 import { CreditNoteActions } from './credit-note-actions';
-
-/** Satang → `"10,700.00"`, the deterministic `'en-US'` grouping (FR-005). */
-function formatSatang(satang: bigint): string {
-  const abs = satang < 0n ? -satang : satang;
-  const sign = satang < 0n ? '-' : '';
-  return `${sign}${(abs / 100n).toLocaleString('en-US')}.${(abs % 100n).toString().padStart(2, '0')}`;
-}
+import { formatSatangAmount } from '@/lib/format-thb';
 
 function Field({ label, children }: { readonly label: ReactNode; readonly children: ReactNode }) {
   return (
@@ -155,13 +149,13 @@ export async function renderCreditNoteDetailView(p: CreditNoteDetailViewProps) {
             className="ms-auto grid w-full grid-cols-[1fr_auto] gap-x-8 gap-y-2 text-sm sm:max-w-sm"
           >
             <dt className="text-[var(--aura-fg-secondary)]">{t('fields.creditAmount')}</dt>
-            <dd className="text-end tabular-nums">{formatSatang(p.creditAmountSatang)} THB</dd>
+            <dd className="text-end tabular-nums">{formatSatangAmount(p.creditAmountSatang)} THB</dd>
             <dt className="text-[var(--aura-fg-secondary)]">{t('fields.vat')}</dt>
-            <dd className="text-end tabular-nums">{formatSatang(p.vatSatang)} THB</dd>
+            <dd className="text-end tabular-nums">{formatSatangAmount(p.vatSatang)} THB</dd>
             {/* One rule across the whole row, not one per cell with the gap between. */}
             <div className="col-span-2 grid grid-cols-subgrid border-t border-[var(--aura-border-default)] pt-2 font-semibold">
               <dt>{t('fields.total')}</dt>
-              <dd className="text-end tabular-nums">{formatSatang(p.totalSatang)} THB</dd>
+              <dd className="text-end tabular-nums">{formatSatangAmount(p.totalSatang)} THB</dd>
             </div>
           </dl>
         </div>

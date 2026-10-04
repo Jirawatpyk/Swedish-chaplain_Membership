@@ -49,7 +49,7 @@ function invoice(over: Record<string, unknown> = {}): Invoice {
     vat: money(VAT),
     total: money(TOTAL),
     creditedTotal: money(0n),
-    vatRate: { toPercentString: () => '7.00%' },
+    vatRate: { numerator: 700n, denominator: 10_000n },
     pdf: { key: 'preview' },
     receiptPdf: null,
     pdfDocKind: 'invoice',
@@ -125,7 +125,7 @@ const BASE: Omit<InvoiceDetailViewProps, 'invoice' | 'displayStatus' | 'paymentA
   hasReceiptPdf: false,
   failedEmailBanners: [],
   autoRefund: { failed: false, processorRefundId: null },
-  totals: { subtotalSatang: SUBTOTAL, vatSatang: VAT, totalSatang: TOTAL, vatPercent: '7.00%' },
+  totals: { subtotalSatang: SUBTOTAL, vatSatang: VAT, totalSatang: TOTAL, vatRateBps: 700 },
   issueTotals: null,
   settlingRefundSatang: null,
   refund: null,
@@ -168,8 +168,8 @@ export function detailFixture(kind: DetailFixtureKind): Omit<InvoiceDetailViewPr
         headerNumber: null,
         taxDocKind: 'none',
         issueTotals: {
-          standard: { subtotalSatang: Number(SUBTOTAL), vatSatang: Number(VAT), totalSatang: Number(TOTAL), vatPercent: '7.00%' },
-          zero_rated_80_1_5: { subtotalSatang: Number(SUBTOTAL), vatSatang: 0, totalSatang: Number(SUBTOTAL), vatPercent: '0.00%' },
+          standard: { subtotalSatang: Number(SUBTOTAL), vatSatang: Number(VAT), totalSatang: Number(TOTAL), vatRateBps: 700 },
+          zero_rated_80_1_5: { subtotalSatang: Number(SUBTOTAL), vatSatang: 0, totalSatang: Number(SUBTOTAL), vatRateBps: 0 },
         },
       };
     case 'overdue':

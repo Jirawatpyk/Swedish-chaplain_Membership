@@ -19,7 +19,7 @@ export function buildIssueTotalsByTreatment(input: {
       subtotalSatang: Number(p.subtotal.satang),
       vatSatang: Number(p.vat.satang),
       totalSatang: Number(p.total.satang),
-      vatPercent: p.vatRate.toPercentString(),
+      vatRateBps: Number(p.vatRate.numerator),
     };
   };
   return {

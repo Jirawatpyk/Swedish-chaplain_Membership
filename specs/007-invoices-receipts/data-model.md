@@ -418,7 +418,7 @@ Each statement wrapped in `DO $$ BEGIN ALTER TYPE audit_event_type ADD VALUE '�
 - `invoice_issued` payload: `{ invoice_id, member_id, fiscal_year, sequence_number, document_number, total_satang, pdf_sha256 }`
 - `invoice_paid`: `{ invoice_id, payment_method, payment_reference, payment_date, recorded_by_user_id }`
 - `invoice_voided`: `{ invoice_id, reason, voided_by_user_id }`
-- `credit_note_issued`: `{ credit_note_id, original_invoice_id, credit_amount_satang, vat_satang, total_satang, reason }`
+- `credit_note_issued`: `{ credit_note_id, original_invoice_id, credit_amount_satang, vat_satang, total_satang, reason }` — plus, since template v13, `section_86_10: { original_value_satang, previously_reduced_satang, correct_value_satang, difference_satang, difference_vat_satang, template_version }` (the §86/10 วรรคสอง statement the note carries, all excl. VAT)
 - `invoice_cross_tenant_probe`: `{ attempted_invoice_id, actor_user_id, actor_tenant_id, route }`
 - `pdf_render_failed`: `{ invoice_id?, credit_note_id?, reason, template_version, retry_count }`
 

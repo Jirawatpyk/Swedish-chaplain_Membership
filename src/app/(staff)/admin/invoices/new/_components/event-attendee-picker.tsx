@@ -118,7 +118,7 @@ export function EventAttendeePickerSkeleton() {
 
 function formatThb(thb: number): string {
   // N11 parity — pin 'en-US' so the thousands separator is deterministic
-  // (the same convention the membership form's `formatSatang` uses).
+  // (the same convention the membership form's `formatSatangAmount` uses).
   return thb.toLocaleString('en-US');
 }
 

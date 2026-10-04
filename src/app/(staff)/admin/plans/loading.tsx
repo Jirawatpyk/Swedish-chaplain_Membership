@@ -59,7 +59,7 @@ export default async function Loading() {
                 t('columns.status'),
               ]}
             />
-            {/* "Fees exclude {rate}% VAT" note */}
+            {/* "Fees exclude {rate} VAT" note */}
             <SkeletonBlock className="h-3 w-56" />
           </div>
         </Card>

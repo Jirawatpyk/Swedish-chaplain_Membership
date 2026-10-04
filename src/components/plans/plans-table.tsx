@@ -59,6 +59,7 @@ import { LocaleTextDisplay } from './locale-text-display';
 import { usePlanActions } from './use-plan-actions';
 import type { PlanListItem } from '@/modules/plans';
 import { formatCalendarYear } from '@/lib/format-date-localised';
+import { formatVatRateBps } from '@/lib/format-vat-rate';
 import { HIDE_IN_CARD } from './plans-table-card';
 
 export interface PlansTableProps {
@@ -140,9 +141,12 @@ export function PlansTable({
   }, [year]);
 
   // The tenant's VAT rate travels on every row (the list reads it once);
-  // the note under the table names it ("fees exclude 7% VAT").
-  const vatPercent =
-    sorted[0] !== undefined ? Math.round(sorted[0].vat_rate * 10_000) / 100 : null;
+  // the note under the table names it ("fees exclude 7% VAT"), formatted for
+  // the UI locale like every other VAT rate in the admin.
+  const vatRateLabel =
+    sorted[0] !== undefined
+      ? formatVatRateBps(Math.round(sorted[0].vat_rate * 10_000), locale)
+      : null;
 
   function updateFilter(next: Record<string, string | null>) {
     const params = new URLSearchParams(searchParams.toString());
@@ -456,9 +460,9 @@ export function PlansTable({
         </TBody>
       </Table>
 
-      {sorted.length > 0 && vatPercent !== null ? (
+      {sorted.length > 0 && vatRateLabel !== null ? (
         <p className="aura-text-caption text-[var(--aura-fg-secondary)]">
-          {t('vatNote', { rate: vatPercent })}
+          {t('vatNote', { rate: vatRateLabel })}
         </p>
       ) : null}
 

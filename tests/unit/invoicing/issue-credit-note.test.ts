@@ -601,6 +601,79 @@ describe('issueCreditNote — event-fee (non-member + matched-member) Task 8', (
     expect(insertCall.totalSatang).toBe(12_500n);
   });
 
+  // §86/10 วรรคสอง — the credit note PDF states the original value, the
+  // correct value, the difference and the VAT on the difference (all excl.
+  // VAT). Earlier notes' net = credited gross − their VAT (read under the lock).
+  it('§86/10: a first partial note states original 23,364 → correct 11,682, difference 11,682, VAT 818', async () => {
+    const invoice = makeIssuedEventInvoice();
+    const deps = makeDeps(invoice, makeSettings());
+    const r = await issueCreditNote(deps, {
+      ...baseInput,
+      requestId: 'req-cn-8610-a',
+      creditTotalSatang: 12_500n,
+      reason: 'partial refund',
+    });
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
+    const cnRender = (deps.pdfRender.render as ReturnType<typeof vi.fn>).mock.calls
+      .map(([input]) => input)
+      .find((input) => input.kind === 'credit_note');
+    const v = cnRender.creditNote.values;
+    expect([v.originalValue.satang, v.correctValue.satang, v.difference.satang, v.differenceVat.satang]).toEqual([
+      23_364n,
+      11_682n,
+      11_682n,
+      818n,
+    ]);
+    // No earlier note: nothing previously reduced.
+    expect(v.previouslyReduced.satang).toBe(0n);
+  });
+
+  it('§86/10: the completing note after earlier notes states correct value 0', async () => {
+    // 15,000 already credited carrying 983 VAT → earlier net 14,017.
+    const invoice = makeIssuedEventInvoice({
+      status: 'partially_credited',
+      creditedTotal: Money.fromSatangUnsafe(15_000n),
+    });
+    const deps = makeDeps(invoice, makeSettings());
+    (deps.creditNoteRepo.sumVatByOriginalInvoiceInTx as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      Money.fromSatangUnsafe(983n),
+    );
+    const r = await issueCreditNote(deps, {
+      ...baseInput,
+      requestId: 'req-cn-8610-b',
+      creditTotalSatang: 10_000n,
+      reason: 'final partial refund',
+    });
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
+    const cnRender = (deps.pdfRender.render as ReturnType<typeof vi.fn>).mock.calls
+      .map(([input]) => input)
+      .find((input) => input.kind === 'credit_note');
+    const v = cnRender.creditNote.values;
+    // 23,364 − 14,017 − 9,347 = 0; difference 9,347, VAT 653. The document
+    // reconciles: original − previously reduced − correct = difference.
+    expect(v.previouslyReduced.satang).toBe(14_017n);
+    expect(v.originalValue.satang - v.previouslyReduced.satang - v.correctValue.satang).toBe(v.difference.satang);
+    // The same statement is kept in the `credit_note_issued` audit row, so it
+    // can be reproduced without the PDF blob.
+    const cnEmit = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.find(
+      ([, ev]) => ev.eventType === 'credit_note_issued',
+    );
+    expect((cnEmit![1].payload as Record<string, unknown>)['section_86_10']).toEqual({
+      original_value_satang: '23364',
+      previously_reduced_satang: '14017',
+      correct_value_satang: '0',
+      difference_satang: '9347',
+      difference_vat_satang: '653',
+      template_version: deps.currentTemplateVersion,
+    });
+    expect([v.originalValue.satang, v.correctValue.satang, v.difference.satang, v.differenceVat.satang]).toEqual([
+      23_364n,
+      0n,
+      9_347n,
+      653n,
+    ]);
+  });
+
   it('the note that completes the credit takes the residual VAT, read in the locked tx — the total credited VAT equals the VAT charged', async () => {
     // 25,000 incl. 1,636 VAT; 15,000 already credited by notes that carried
     // 983 VAT (one satang more than proportional — a pre-rule note).

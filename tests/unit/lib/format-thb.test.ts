@@ -6,7 +6,7 @@
  * would be a Thai-tax-compliance bug).
  */
 import { describe, expect, it } from 'vitest';
-import { formatSatangThb } from '@/lib/format-thb';
+import { formatSatangAmount, formatSatangThb } from '@/lib/format-thb';
 
 describe('formatSatangThb', () => {
   it('returns "—" for null', () => {
@@ -64,5 +64,43 @@ describe('formatSatangThb', () => {
     expect(formatSatangThb(9_007_199_254_740_993n, 'en')).toBe(
       '90,071,992,547,409.93 THB',
     );
+  });
+});
+
+// The admin invoicing / credit-note surfaces show bare amounts ("10,700.00",
+// the currency in a column header or label) through ONE formatter, pinned to
+// en-US grouping (N11 / FR-005: legal tax figures read the same everywhere).
+describe('formatSatangAmount — the bare-amount twin of formatSatangThb', () => {
+  it('formats bigint, safe-integer number and digit-string satang alike', () => {
+    expect(formatSatangAmount(1_070_000n)).toBe('10,700.00');
+    expect(formatSatangAmount(1_070_000)).toBe('10,700.00');
+    expect(formatSatangAmount('1070000')).toBe('10,700.00');
+  });
+
+  it('keeps two decimals and groups above a million', () => {
+    expect(formatSatangAmount(5n)).toBe('0.05');
+    expect(formatSatangAmount(0)).toBe('0.00');
+    expect(formatSatangAmount(123_456_789_01n)).toBe('123,456,789.01');
+  });
+
+  it('signs negatives (credit-note totals) instead of printing "-0.-5"', () => {
+    expect(formatSatangAmount(-3434n)).toBe('-34.34');
+    expect(formatSatangAmount(-5)).toBe('-0.05');
+    expect(formatSatangAmount('-120000')).toBe('-1,200.00');
+  });
+
+  it('renders null as an em dash', () => {
+    expect(formatSatangAmount(null)).toBe('—');
+  });
+
+  it('is formatSatangThb without the currency suffix', () => {
+    for (const s of [0n, 5n, -3434n, 1_070_000n, 123_456_789_01n]) {
+      expect(`${formatSatangAmount(s)} THB`).toBe(formatSatangThb(s, 'en-US'));
+    }
+  });
+
+  it('refuses a non-integer or unsafe number rather than rounding money', () => {
+    expect(() => formatSatangAmount(1.5)).toThrow();
+    expect(() => formatSatangAmount(Number.MAX_SAFE_INTEGER + 2)).toThrow();
   });
 });

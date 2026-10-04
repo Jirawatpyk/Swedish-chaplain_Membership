@@ -73,7 +73,7 @@ describe('button icon rule (T809 audit)', () => {
           memberId="m-1"
           companyName="Acme Co."
           status="upcoming"
-          linkedInvoiceId={null}
+          liveLinkedInvoiceId={null}
           canMutate
           onRecordOutreach={vi.fn()}
           onMarkPaid={vi.fn()}
