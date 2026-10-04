@@ -11,6 +11,8 @@
 @import '@jirawatpyk/aura-tokens/aura-fonts.local.css';
 @import '@jirawatpyk/aura-tokens/tailwind.prefixed.css';
 @import '../styles/aura-theme.css' layer(aura-tokens);
+/* Hand-written token overrides (stand-ins until AURA ships them) — after the generated theme. */
+@import '../styles/aura-overrides.css' layer(aura-tokens);
 @import '@jirawatpyk/aura-react/styles.layer.css';
 
 /* Exclude non-source markdown docs from Tailwind v4 auto-detection so

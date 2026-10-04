@@ -11,17 +11,20 @@
  * module (`tests/unit/architecture/aura-server-imports.test.ts`), so the
  * route passes the translated labels in.
  *
- * AURA 5.28's loading rows are one fixed 48px line, and in cards they carry
- * no field labels and a thin bar where the real footer holds 44px buttons
- * (handoff #134). A route whose phone cards are much taller than that keeps
- * its own phone cards below 640px and passes `className="max-sm:hidden"`.
+ * Since AURA 5.29 (handoff #134) the loading rows match the real ones: a
+ * column's `skeletonLines` draws one bar per text line, the stacked cards keep
+ * their field labels, and `skeletonTouch` gives a touch-height footer its 44px
+ * bar. The columns carry both in their shared layout.
  *
  * `inert` with `aria-hidden`: a placeholder takes no keyboard focus; the
  * route's `PageSkeletonShell` announces the load.
  */
 import { DataTable, type DataTableColumn } from '@jirawatpyk/aura-react';
 
-type SkeletonColumn = Pick<DataTableColumn, 'key' | 'label' | 'width' | 'minWidth' | 'card' | 'align' | 'actions' | 'hideBelow' | 'pill'>;
+type SkeletonColumn = Pick<
+  DataTableColumn,
+  'key' | 'label' | 'width' | 'minWidth' | 'card' | 'align' | 'actions' | 'hideBelow' | 'pill' | 'skeletonLines' | 'skeletonTouch'
+>;
 
 interface DataTableSkeletonProps {
   /** The real table's accessible name. */
@@ -32,8 +35,6 @@ interface DataTableSkeletonProps {
   readonly bleedEnd?: boolean;
   /** The leading checkbox column, when the page's main user gets one. */
   readonly selectable?: boolean;
-  /** On the wrapper: `max-sm:hidden` where the route draws its own phone cards (see below). */
-  readonly className?: string;
   readonly 'data-testid'?: string;
 }
 
@@ -43,11 +44,10 @@ export function DataTableSkeleton({
   rows,
   bleedEnd = false,
   selectable = false,
-  className,
   'data-testid': testId,
 }: DataTableSkeletonProps) {
   return (
-    <div aria-hidden inert data-testid={testId} className={className}>
+    <div aria-hidden inert data-testid={testId}>
       <DataTable
         label={label}
         rows={[]}

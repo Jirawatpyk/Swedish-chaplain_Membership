@@ -2,8 +2,9 @@
  * 088 US8 (UX-A) — issue-invoice form (vat_treatment toggle + MFA-cert fields).
  *
  * Rendered against the REAL en.json (a missing key would surface as
- * MISSING_MESSAGE) inside an open <AlertDialog> — the RefundForm split pattern
- * that sidesteps the Base-UI-dialog jsdom trigger-transition hang.
+ * MISSING_MESSAGE). Spec 122 US8b (T825): the form is on AURA fields and
+ * renders its own footer, so it needs no enclosing dialog here; the dialog
+ * shell is covered at the end of this file.
  *
  * Covers: membership hides the toggle (+ caption); a non-membership sale shows
  * it; selecting zero-rate progressively reveals the cert fields (aria-live +
@@ -16,8 +17,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
-import { AlertDialog } from '@/components/ui/alert-dialog';
 import { IssueInvoiceForm } from '@/app/(staff)/admin/invoices/_components/issue-invoice-form';
+import { IssueInvoiceDialog } from '@/app/(staff)/admin/invoices/_components/issue-invoice-dialog';
+import { buildIssueTotalsByTreatment } from '@/app/(staff)/admin/invoices/[invoiceId]/_lib/issue-totals-by-treatment';
+import { Money } from '@/modules/invoicing/domain/value-objects/money';
+import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
 
 const refreshMock = vi.fn();
 vi.mock('next/navigation', () => ({
@@ -35,29 +39,33 @@ const BASE_SUMMARY = {
   memberName: 'Embassy of Sweden',
   planDisplayName: 'Expo booth',
   planYear: 2026,
-  subtotalText: '8,000.00',
-  vatText: '0.00',
-  vatPercent: '0%',
-  totalText: '8,000.00',
 } as const;
+
+// The draft priced per treatment by the same server helper the page uses
+// (the issue use case's own `computeIssuePricing`), at the standard 7%.
+function priced(lineSumSatang: number, vatInclusive = false) {
+  return buildIssueTotalsByTreatment({
+    lineSum: Money.fromSatangUnsafe(lineSumSatang),
+    vatInclusive,
+    standardRate: VatRate.ofUnsafe('0.0700'),
+  });
+}
 
 function renderForm(
   overrides: Partial<React.ComponentProps<typeof IssueInvoiceForm>> = {},
 ) {
   return render(
     <NextIntlClientProvider locale="en" messages={enMessages}>
-      <AlertDialog open onOpenChange={() => undefined}>
-        <IssueInvoiceForm
-          invoiceId="inv-1"
-          summary={BASE_SUMMARY}
-          taxAtPayment
-          isMembership={false}
-          buyerIsVatRegistrant={false}
-          subtotalSatang={800_000}
-          onClose={() => undefined}
-          {...overrides}
-        />
-      </AlertDialog>
+      <IssueInvoiceForm
+        invoiceId="inv-1"
+        summary={BASE_SUMMARY}
+        taxAtPayment
+        isMembership={false}
+        buyerIsVatRegistrant={false}
+        totalsByTreatment={priced(800_000)}
+        onClose={() => undefined}
+        {...overrides}
+      />
     </NextIntlClientProvider>,
   );
 }
@@ -85,6 +93,65 @@ describe('IssueInvoiceForm — vat_treatment control gating (FR-023)', () => {
     expect(
       screen.queryByTestId('vat-treatment-membership-caption'),
     ).toBeNull();
+  });
+});
+
+// Board Admin-invoice-issue (parity comment, 3 Oct): the confirm names the
+// document and its total, and carries the money-step check icon (§ Button icons).
+describe('IssueInvoiceForm — the confirm button', () => {
+  it('reads "Issue invoice · {total} THB" with the check icon for a membership (SC) invoice', () => {
+    renderForm({ isMembership: true });
+    const confirm = screen.getByRole('button', { name: 'Issue invoice · 8,560.00 THB' });
+    expect(confirm.querySelector('svg.aura-icon')).not.toBeNull();
+  });
+
+  it('reads "Issue tax invoice · {total} THB" when the tax-at-payment flag is off (a §87 invoice)', () => {
+    renderForm({ isMembership: true, taxAtPayment: false });
+    expect(screen.getByRole('button', { name: 'Issue tax invoice · 8,560.00 THB' })).toBeInTheDocument();
+  });
+
+  it('names no amount when the draft could not be priced (no invoice settings)', () => {
+    renderForm({ totalsByTreatment: null });
+    expect(screen.getByRole('button', { name: 'Issue invoice' })).toBeInTheDocument();
+  });
+});
+
+// The summary and the confirm show what `issueInvoice` will pin: the chosen
+// VAT treatment drives the rate, and a VAT-inclusive draft's total is its line
+// sum (VAT carved out), never the line sum × 1.07.
+describe('IssueInvoiceForm — the summary matches the issued bill', () => {
+  function summaryRow(label: string) {
+    return screen.getByText(label, { selector: 'dt' }).nextElementSibling;
+  }
+
+  it('standard event fee: 7% on top, and the confirm names that total', () => {
+    renderForm({ totalsByTreatment: priced(1_000_000) });
+    expect(summaryRow('Subtotal')).toHaveTextContent('10,000.00 THB');
+    expect(summaryRow('Total')).toHaveTextContent('10,700.00 THB');
+    expect(screen.getByText('(7%)')).toBeInTheDocument();
+    const confirm = screen.getByRole('button', { name: 'Issue invoice · 10,700.00 THB' });
+    expect(confirm.querySelector('svg.aura-icon')).not.toBeNull();
+  });
+
+  it('zero-rated event fee: VAT 0, total = subtotal, in the summary and the confirm', () => {
+    renderForm({ totalsByTreatment: priced(1_000_000) });
+    fireEvent.click(screen.getByRole('radio', { name: /Zero-rated/i }));
+    expect(screen.getByText('(0%)')).toBeInTheDocument();
+    expect(summaryRow('Total')).toHaveTextContent('10,000.00 THB');
+    expect(screen.getByRole('button', { name: 'Issue invoice · 10,000.00 THB' })).toBeInTheDocument();
+    // Flipping back restores the standard figures.
+    fireEvent.click(screen.getByRole('radio', { name: /Standard/i }));
+    expect(summaryRow('Total')).toHaveTextContent('10,700.00 THB');
+  });
+
+  it('VAT-inclusive event draft: total = line sum with the VAT carved out', () => {
+    renderForm({
+      totalsByTreatment: priced(1_000_000, true),
+    });
+    expect(summaryRow('Subtotal')).toHaveTextContent('9,345.79 THB');
+    expect(screen.getByText('654.21 THB')).toBeInTheDocument();
+    expect(summaryRow('Total')).toHaveTextContent('10,000.00 THB');
+    expect(screen.getByRole('button', { name: 'Issue invoice · 10,000.00 THB' })).toBeInTheDocument();
   });
 });
 
@@ -119,7 +186,7 @@ describe('IssueInvoiceForm — fail-closed cert validation (FR-024 / T061b)', ()
         target: { value: 'ISSUE' },
       });
 
-      fireEvent.click(screen.getByRole('button', { name: /^Issue$/ }));
+      fireEvent.click(screen.getByRole('button', { name: /^Issue invoice · [\d,.]+ THB$/ }));
 
       const certNo = screen.getByLabelText(/MFA certificate number/i);
       expect(certNo).toHaveAttribute('aria-invalid', 'true');
@@ -160,7 +227,7 @@ describe('IssueInvoiceForm — flip resets cert fields (T061f reset arm)', () =>
 
 describe('IssueInvoiceForm — low-amount advisory (T061d)', () => {
   it('shows a non-blocking ≥ 5,000 THB warning for a zero-rate sale below the threshold', () => {
-    renderForm({ subtotalSatang: 400_000 });
+    renderForm({ totalsByTreatment: priced(400_000) });
     expect(screen.queryByTestId('zero-rate-low-amount-warning')).toBeNull();
     fireEvent.click(screen.getByRole('radio', { name: /Zero-rated/i }));
     const warn = screen.getByTestId('zero-rate-low-amount-warning');
@@ -169,7 +236,7 @@ describe('IssueInvoiceForm — low-amount advisory (T061d)', () => {
   });
 
   it('does NOT warn when the subtotal is at or above the threshold', () => {
-    renderForm({ subtotalSatang: 800_000 });
+    renderForm({ totalsByTreatment: priced(800_000) });
     fireEvent.click(screen.getByRole('radio', { name: /Zero-rated/i }));
     expect(screen.queryByTestId('zero-rate-low-amount-warning')).toBeNull();
   });
@@ -191,7 +258,7 @@ describe('IssueInvoiceForm — valid zero-rate issue POST', () => {
       fireEvent.change(screen.getByLabelText(/to confirm/i), {
         target: { value: 'ISSUE' },
       });
-      fireEvent.click(screen.getByRole('button', { name: /^Issue$/ }));
+      fireEvent.click(screen.getByRole('button', { name: /^Issue invoice · [\d,.]+ THB$/ }));
 
       await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
       const [url, init] = fetchMock.mock.calls[0] as unknown as [
@@ -204,6 +271,9 @@ describe('IssueInvoiceForm — valid zero-rate issue POST', () => {
       expect(body).toEqual({
         vatTreatment: 'zero_rated_80_1_5',
         zeroRateCertNo: 'กต 0404/1234',
+        // The zero-rated total and VAT the admin confirmed (8,000.00, VAT 0).
+        expectedTotalSatang: '800000',
+        expectedVatSatang: '0',
       });
       expect('zeroRateCertBlobKey' in body).toBe(false);
     } finally {
@@ -211,7 +281,7 @@ describe('IssueInvoiceForm — valid zero-rate issue POST', () => {
     }
   });
 
-  it('sends an EMPTY POST body for a standard-rate issue (backward compatible)', async () => {
+  it('sends only the confirmed total for a standard-rate issue', async () => {
     const fetchMock = vi.fn(async () => ({
       ok: true,
       json: async () => ({ bill_document_number_raw: 'SC-2026-0002' }),
@@ -223,7 +293,7 @@ describe('IssueInvoiceForm — valid zero-rate issue POST', () => {
       fireEvent.change(screen.getByLabelText(/to confirm/i), {
         target: { value: 'ISSUE' },
       });
-      fireEvent.click(screen.getByRole('button', { name: /^Issue$/ }));
+      fireEvent.click(screen.getByRole('button', { name: /^Issue invoice · [\d,.]+ THB$/ }));
 
       await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
       const [, init] = fetchMock.mock.calls[0] as unknown as [
@@ -231,7 +301,11 @@ describe('IssueInvoiceForm — valid zero-rate issue POST', () => {
         RequestInit,
       ];
       expect(init.method).toBe('POST');
-      expect(init.body).toBeUndefined();
+      // 8,000.00 + 7% — the total the confirm named.
+      expect(JSON.parse(init.body as string)).toEqual({
+        expectedTotalSatang: '856000',
+        expectedVatSatang: '56000',
+      });
     } finally {
       vi.unstubAllGlobals();
     }
@@ -284,7 +358,7 @@ describe('IssueInvoiceForm — cert-scan blob key in POST (UX-B1)', () => {
       fireEvent.change(screen.getByLabelText(/to confirm/i), {
         target: { value: 'ISSUE' },
       });
-      fireEvent.click(screen.getByRole('button', { name: /^Issue$/ }));
+      fireEvent.click(screen.getByRole('button', { name: /^Issue invoice · [\d,.]+ THB$/ }));
 
       // Find the /issue POST (the cert-upload POST fired first).
       await waitFor(() =>
@@ -362,19 +436,28 @@ describe('IssueInvoiceForm — beforeunload dirty guard (T061f-form)', () => {
 // preview-gated; this structural guard runs on every commit.
 // ---------------------------------------------------------------------------
 
-describe('IssueInvoiceForm — target-size min-h-11 on new inputs (FR-036 / SC-011)', () => {
-  it('cert number + cert date inputs carry min-h-11 (44px) once zero-rate is revealed', () => {
+describe('IssueInvoiceForm — 44px targets on the new controls (FR-036 / SC-011)', () => {
+  /** AURA 5.30 `touchHeight="always"` (handoff #135) marks the field or radio-group root `is-touch-always`: 44px at every width. */
+  const touchRoot = (el: HTMLElement) => el.closest('.is-touch-always');
+
+  it('the zero-rate radio row and the cert number + date fields are 44px once zero-rate is revealed', () => {
     renderForm();
+    expect(touchRoot(screen.getByRole('radio', { name: /Zero-rated/i }))).not.toBeNull();
     fireEvent.click(screen.getByRole('radio', { name: /Zero-rated/i }));
-    expect(screen.getByLabelText(/MFA certificate number/i)).toHaveClass(
-      'min-h-11',
-    );
-    expect(screen.getByLabelText(/Certificate date/i)).toHaveClass('min-h-11');
+    expect(touchRoot(screen.getByLabelText(/MFA certificate number/i))).not.toBeNull();
+    expect(touchRoot(screen.getByLabelText(/Certificate date/i))).not.toBeNull();
   });
 
-  it('the immutable-snapshot confirm input carries min-h-11 (44px)', () => {
+  it('the immutable-snapshot confirm field is 44px', () => {
     renderForm();
-    expect(screen.getByLabelText(/to confirm/i)).toHaveClass('min-h-11');
+    expect(touchRoot(screen.getByLabelText(/to confirm/i))).not.toBeNull();
+  });
+
+  it('uses AURA\'s own size, not the retired 5.29 stand-in utilities', () => {
+    const { container } = renderForm();
+    fireEvent.click(screen.getByRole('radio', { name: /Zero-rated/i }));
+    // The stand-in grew `.aura-input` / `.aura-choice` from a utility on the field root.
+    expect(container.querySelector('[class*="_.aura-input"], [class*="_.aura-choice"]')).toBeNull();
   });
 });
 
@@ -401,7 +484,7 @@ function confirmAndSubmit() {
   fireEvent.change(screen.getByLabelText(/to confirm/i), {
     target: { value: 'ISSUE' },
   });
-  fireEvent.click(screen.getByRole('button', { name: /^Issue$/ }));
+  fireEvent.click(screen.getByRole('button', { name: /^Issue invoice · [\d,.]+ THB$/ }));
 }
 
 describe('IssueInvoiceForm — concurrent 409 inline recovery (FR-032)', () => {
@@ -424,6 +507,30 @@ describe('IssueInvoiceForm — concurrent 409 inline recovery (FR-032)', () => {
       );
 
       expect(refreshMock).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+      expect(refreshMock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+// The server refused the confirmed total (draft lines or the VAT rate changed
+// after the page rendered): nothing was issued, so the admin refreshes to see
+// and confirm the real figure.
+describe('IssueInvoiceForm — stale total 409 inline recovery', () => {
+  it('renders the "total changed — refresh" prompt and refreshes on click', async () => {
+    const fetchMock = rejectingFetch('issue_total_changed');
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      renderForm();
+      confirmAndSubmit();
+
+      const alert = await screen.findByTestId('issue-invoice-error');
+      expect(alert).toHaveAttribute('data-tone', 'neutral');
+      expect(alert).toHaveTextContent(
+        'The total changed after this page loaded, so nothing was issued. Refresh to see the current total, then issue again.',
+      );
       fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
       expect(refreshMock).toHaveBeenCalledTimes(1);
     } finally {
@@ -468,5 +575,42 @@ describe('IssueInvoiceForm — failure branch is focused + destructive (FR-032)'
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Spec 122 US8b (T825) — the dialog shell on AURA: "Issue…" opens an
+// alertdialog named by its title, described by the immutable-snapshot
+// acknowledgement, holding the form; Cancel closes it.
+// ---------------------------------------------------------------------------
+
+describe('IssueInvoiceDialog — AURA alertdialog', () => {
+  it('opens from "Issue…" as an alertdialog with the title and acknowledgement, and Cancel closes it', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <IssueInvoiceDialog
+          invoiceId="inv-1"
+          summary={BASE_SUMMARY}
+          taxAtPayment
+          isMembership
+          buyerIsVatRegistrant
+          totalsByTreatment={priced(800_000)}
+        />
+      </NextIntlClientProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Issue…' }));
+    const dialog = screen.getByRole('alertdialog', { name: enMessages.admin.invoices.issue.title });
+    expect(dialog).toHaveAccessibleDescription(enMessages.admin.invoices.issue.review.immutableSnapshotAck);
+    expect(screen.getByRole('button', { name: /^Issue invoice · [\d,.]+ THB$/ })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: enMessages.admin.invoices.issue.cancel }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+});
+
+describe('IssueInvoiceForm — the buttons stay in view (spec 122 US8b, UX review)', () => {
+  it('keeps Cancel and Issue in a row stuck to the bottom of the scrolling dialog body, stacked full width on a phone', () => {
+    renderForm();
+    const row = screen.getByRole('button', { name: enMessages.admin.invoices.issue.cancel }).parentElement!;
+    expect(row).toHaveClass('sticky', 'bottom-0', 'max-sm:flex-col-reverse', 'max-sm:[&>*]:w-full');
   });
 });

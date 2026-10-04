@@ -32,6 +32,9 @@ import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { CreditNoteForm } from '@/app/(staff)/admin/invoices/[invoiceId]/credit-notes/new/_components/credit-note-form';
 
+/** An AURA field's label also holds its required asterisk, so match from the start. */
+const labelled = (text: string) => new RegExp(`^${text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
+
 const cnMessages = enMessages.admin.creditNotes.new;
 
 const refreshMock = vi.fn();
@@ -76,10 +79,10 @@ function renderForm() {
  * locale-case-INSENSITIVE compare stays intact alongside the error-surface work.
  */
 function fillAndSubmit() {
-  fireEvent.change(screen.getByLabelText(cnMessages.amountLabel), {
+  fireEvent.change(screen.getByLabelText(labelled(cnMessages.amountLabel)), {
     target: { value: '500.00' }, // 50,000 satang < 107,000 remaining → partial
   });
-  fireEvent.change(screen.getByLabelText(cnMessages.reasonLabel), {
+  fireEvent.change(screen.getByLabelText(labelled(cnMessages.reasonLabel)), {
     target: { value: 'duplicate charge' },
   });
   fireEvent.change(

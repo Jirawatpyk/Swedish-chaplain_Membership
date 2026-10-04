@@ -56,7 +56,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState, useTransition } from 'react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
 import {
   Alert,
@@ -92,6 +92,8 @@ import {
 import { AS_PAID_ERROR_CODES } from './as-paid-error-codes';
 // Wave-4 S14 — shared client-safe Asia/Bangkok "today" helper.
 import { bangkokTodayIso } from '@/lib/bangkok-today';
+import { formatSatangAmount } from '@/lib/format-thb';
+import { formatVatRateBps } from '@/lib/format-vat-rate';
 
 export type EventOption = {
   readonly eventId: string;
@@ -99,34 +101,32 @@ export type EventOption = {
   readonly label: string;
 };
 
-const VAT_RATE_BPS = 700; // 7% — tenant standard rate (v1: standard only).
 const MAX_THB = 1_000_000;
 const MIN_THB = 1;
 
 /**
- * Display-only VAT-inclusive split. Mirrors the Domain
- * `splitVatInclusive` (half-away-from-zero) using integer satang so the
- * preview reconciles byte-for-byte with the server's issue-time math. NOT
- * authoritative — the server recomputes at issue.
+ * Display-only VAT-inclusive split at the tenant's rate (`rateBps`, basis
+ * points — `tenant_invoice_settings.vat_rate`, the rate both issuance paths
+ * pin). Mirrors the Domain `splitVatInclusive` (half-away-from-zero) using
+ * integer satang so the preview reconciles byte-for-byte with the server's
+ * issue-time math (a fast-check parity test pins it). NOT authoritative —
+ * the server recomputes at issue.
  *
  * total × 10000 ≤ 1,000,000,00 × 10000 = 1e12 < Number.MAX_SAFE_INTEGER —
  * safe in JS `number`.
  */
-export function previewVatInclusive(totalSatang: number): {
+export function previewVatInclusive(
+  totalSatang: number,
+  rateBps: number,
+): {
   subtotal: number;
   vat: number;
 } {
   if (totalSatang <= 0) return { subtotal: 0, vat: 0 };
-  const denom = 10_000 + VAT_RATE_BPS;
+  const denom = 10_000 + rateBps;
   const scaled = totalSatang * 10_000;
   const subtotal = Math.floor((scaled + denom / 2) / denom); // half-away (positive)
   return { subtotal, vat: totalSatang - subtotal };
-}
-
-function formatSatang(satang: number): string {
-  const whole = Math.floor(satang / 100);
-  const rem = satang % 100;
-  return `${whole.toLocaleString('en-US')}.${rem.toString().padStart(2, '0')}`;
 }
 
 type DocTypeKind = 'taxInvoice' | 'taxInvoiceReceipt' | 'receipt' | 'pending';
@@ -435,6 +435,7 @@ export function EventFeeForm({
   initialEventId,
   initialRegistrationId,
   taxAtPayment,
+  vatRateBps,
 }: {
   readonly events: readonly EventOption[];
   /** Pre-selected event from a `?eventRegistrationId=` deep-link. */
@@ -449,8 +450,15 @@ export function EventFeeForm({
    * tax invoice at issue → legacy copy stays.
    */
   readonly taxAtPayment: boolean;
+  /**
+   * The tenant's VAT rate in basis points (`tenant_invoice_settings.vat_rate`),
+   * the rate issuance pins. `null` when the tenant has no invoice settings —
+   * the preview then shows the total only (issuance refuses anyway).
+   */
+  readonly vatRateBps: number | null;
 }) {
   const t = useTranslations('admin.invoices.eventFeeForm');
+  const locale = useLocale();
   // (S25 — the shared record-payment labels moved into AsPaidPaymentFields.)
   const tAsPaid = useTranslations('admin.invoices.issueAsPaid');
   const router = useRouter();
@@ -555,7 +563,7 @@ export function EventFeeForm({
   const amountNum = Number(amountThb);
   const amountValid = amountThb !== '' && Number.isFinite(amountNum);
   const totalSatang = amountValid ? Math.round(amountNum * 100) : 0;
-  const { subtotal, vat } = previewVatInclusive(totalSatang);
+  const split = vatRateBps === null ? null : previewVatInclusive(totalSatang, vatRateBps);
 
   // 059 / PR-A Task 6c — the §2.3 mode rules ask the SAME question issuance
   // asks: "is this buyer a VAT registrant?", NOT "is their tax_id non-blank".
@@ -1032,7 +1040,10 @@ export function EventFeeForm({
         )}
 
         {/* 5. Live VAT-inclusive preview + 6. doc-type badge */}
-        {attendee !== null && amountValid && amountNum >= MIN_THB && (
+        {/* Only for an amount issuance would accept: past MAX_THB the field
+            shows amount.errors.max, and the preview's money formatter refuses
+            unsafe numbers rather than render a wrong figure. */}
+        {attendee !== null && amountValid && amountNum >= MIN_THB && amountNum <= MAX_THB && (
           <div
             className="rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface-hover)] p-[var(--aura-space-4)]"
             data-testid="vat-preview"
@@ -1078,17 +1089,34 @@ export function EventFeeForm({
             <dl className="flex flex-col gap-1 text-sm">
               <div className="flex justify-between">
                 <dt className="text-[var(--aura-fg-secondary)]">{t('vatPreview.total')}</dt>
-                <dd className="tabular-nums font-medium">{formatSatang(totalSatang)}</dd>
+                <dd className="tabular-nums font-medium">{formatSatangAmount(totalSatang)}</dd>
               </div>
-              <div className="flex justify-between">
-                <dt className="text-[var(--aura-fg-secondary)]">{t('vatPreview.subtotal')}</dt>
-                <dd className="tabular-nums">{formatSatang(subtotal)}</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-[var(--aura-fg-secondary)]">{t('vatPreview.vat')}</dt>
-                <dd className="tabular-nums">{formatSatang(vat)}</dd>
-              </div>
+              {/* No tenant rate → no split to show (issuance would refuse
+                  with settings_missing); never guess one. */}
+              {split !== null && vatRateBps !== null && (
+                <>
+                  <div className="flex justify-between">
+                    <dt className="text-[var(--aura-fg-secondary)]">{t('vatPreview.subtotal')}</dt>
+                    <dd className="tabular-nums">{formatSatangAmount(split.subtotal)}</dd>
+                  </div>
+                  <div className="flex justify-between">
+                    <dt className="text-[var(--aura-fg-secondary)]">
+                      {t('vatPreview.vat', { rate: formatVatRateBps(vatRateBps, locale) })}
+                    </dt>
+                    <dd className="tabular-nums">{formatSatangAmount(split.vat)}</dd>
+                  </div>
+                </>
+              )}
             </dl>
+            {vatRateBps === null && (
+              // Outside the <dl>, so it is not read as an orphan term/value.
+              <p role="note" className="mt-2 text-sm text-[var(--aura-fg-secondary)]">
+                {t('vatPreview.settingsMissing')}{' '}
+                <Link href="/admin/settings/invoicing" className="underline">
+                  {t('vatPreview.configureSettings')}
+                </Link>
+              </p>
+            )}
           </div>
         )}
 

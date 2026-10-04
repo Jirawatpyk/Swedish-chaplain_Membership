@@ -19,7 +19,6 @@ import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { getInvoice, makeGetInvoiceDeps, issuedInvoiceIdentity } from '@/modules/invoicing';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { Card, CardContent } from '@/components/ui/card';
 import { VoidConfirmDialog } from './_components/void-confirm-dialog';
 import { voidedBillNumber } from '../../_lib/void-bill-number';
 
@@ -68,25 +67,24 @@ export default async function VoidInvoicePage({
     : t('description');
 
   return (
-    <FormContainer>
+    <FormContainer align="start">
       {/* UX-5 — back-link above the form card so the escape route is
-        * visible without scrolling past the destructive button. */}
+        * visible without scrolling past the destructive button. Below
+        * 1024px the shell's back link stands in (spec 122 US8b). */}
       <Link
         href={`/admin/invoices/${invoiceId}`}
-        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:underline"
+        className="inline-flex items-center gap-1 self-start text-sm text-[var(--aura-fg-accent)] hover:underline max-lg:hidden"
       >
         <ArrowLeftIcon className="size-4" aria-hidden="true" />
         {t('backToInvoice')}
       </Link>
       <PageHeader title={t('title')} subtitle={description} />
-      <Card>
-        <CardContent>
-          <VoidConfirmDialog
-            invoiceId={invoiceId}
-            documentNumber={confirmNumber}
-          />
-        </CardContent>
-      </Card>
+      {/* The warning, the fields' card and the buttons (spec 122 US8b). */}
+      <VoidConfirmDialog
+        invoiceId={invoiceId}
+        documentNumber={confirmNumber}
+        isBill={billNumber !== null}
+      />
     </FormContainer>
   );
 }

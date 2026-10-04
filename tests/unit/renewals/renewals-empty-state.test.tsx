@@ -40,7 +40,7 @@ describe('RenewalsEmptyState × suspended bridge (A2)', () => {
     // …and no bridge line / bills link exists.
     expect(screen.queryByText(/Suspended benefit access/)).toBeNull();
     expect(
-      screen.queryByRole('link', { name: 'View all unpaid membership bills' }),
+      screen.queryByRole('link', { name: 'View all unpaid membership invoices' }),
     ).toBeNull();
   });
 
@@ -55,7 +55,7 @@ describe('RenewalsEmptyState × suspended bridge (A2)', () => {
       screen.getByText(/Suspended benefit access: 11 members in total/),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('link', { name: 'View all unpaid membership bills' }),
+      screen.getByRole('link', { name: 'View all unpaid membership invoices' }),
     ).toHaveAttribute(
       'href',
       '/admin/invoices?status=issued&subject=membership',

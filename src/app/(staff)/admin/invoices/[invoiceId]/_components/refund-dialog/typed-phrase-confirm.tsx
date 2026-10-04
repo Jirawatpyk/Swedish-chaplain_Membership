@@ -17,8 +17,8 @@
  */
 import { useId } from 'react';
 import { useTranslations } from 'next-intl';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { TextField } from '@jirawatpyk/aura-react';
+import { PhraseChip } from '../../../_components/phrase-chip';
 
 type Props = {
   readonly companyName: string;
@@ -30,6 +30,7 @@ export function TypedPhraseConfirm({ companyName, value, onChange }: Props) {
   const t = useTranslations('admin.refund.form.typedPhrase');
   const fieldId = useId();
   const helpId = `${fieldId}-help`;
+  const phraseId = `${fieldId}-phrase`;
   const errorId = `${fieldId}-error`;
 
   const expected = `REFUND ${companyName}`;
@@ -41,12 +42,10 @@ export function TypedPhraseConfirm({ companyName, value, onChange }: Props) {
   const showError = hasInput && !matches;
 
   return (
-    <div className="grid gap-2">
-      <Label htmlFor={fieldId}>
-        {t('label', { phrase: expected })}
-      </Label>
-      <Input
+    <div className="flex flex-col gap-1">
+      <TextField
         id={fieldId}
+        label={t('label')}
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -56,12 +55,15 @@ export function TypedPhraseConfirm({ companyName, value, onChange }: Props) {
         autoCorrect="off"
         spellCheck={false}
         enterKeyHint="done"
-        aria-describedby={showError ? `${helpId} ${errorId}` : helpId}
+        // The phrase chip first, so a screen reader hears what to type.
+        aria-describedby={showError ? `${phraseId} ${helpId} ${errorId}` : `${phraseId} ${helpId}`}
         aria-invalid={showError}
         aria-required="true"
         data-testid="refund-typed-phrase-input"
       />
-      <p id={helpId} className="text-xs text-muted-foreground">
+      {/* Board Admin-refund-full: the phrase in its own chip, with a copy button. */}
+      <PhraseChip id={phraseId} phrase={expected} testId="refund-typed-phrase-chip" />
+      <p id={helpId} className="text-xs text-[var(--aura-fg-secondary)]">
         {t('help')}
       </p>
       {showError && (
@@ -72,7 +74,7 @@ export function TypedPhraseConfirm({ companyName, value, onChange }: Props) {
         <p
           id={errorId}
           role="alert"
-          className="text-xs text-destructive"
+          className="text-xs text-[var(--aura-fg-danger)]"
           data-testid="refund-typed-phrase-error"
         >
           {t('mismatch', { phrase: expected })}

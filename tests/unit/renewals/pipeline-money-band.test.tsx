@@ -205,17 +205,17 @@ describe('PipelineMoneyBand', () => {
 
   // ---- renewals-overdue-prior-fy-subline ----
 
-  it('shows the prior-years sub-line under Past due when overdueBeforeFySatang > 0, with ICU plural ("1 bill", not "1 bills")', () => {
+  it('shows the prior-years sub-line under Past due when overdueBeforeFySatang > 0, with ICU plural ("1 invoice", not "1 invoices")', () => {
     renderBand();
     expect(
-      screen.getByText('+ 38,520.00 THB overdue from prior years (1 bill)'),
+      screen.getByText('+ 38,520.00 THB overdue from prior years (1 invoice)'),
     ).toBeInTheDocument();
   });
 
   it('shows the prior-years sub-line in the danger tone, as the board draws it', () => {
     renderBand();
     const subline = screen.getByRole('link', {
-      name: '+ 38,520.00 THB overdue from prior years (1 bill)',
+      name: '+ 38,520.00 THB overdue from prior years (1 invoice)',
     });
     expect(subline.className).toContain('text-[var(--aura-fg-danger)]');
   });
@@ -230,7 +230,7 @@ describe('PipelineMoneyBand', () => {
     // cohort the sub-line sums.
     expect(
       screen.getByRole('link', {
-        name: '+ 38,520.00 THB overdue from prior years (1 bill)',
+        name: '+ 38,520.00 THB overdue from prior years (1 invoice)',
       }),
     ).toHaveAttribute(
       'href',
@@ -260,7 +260,7 @@ describe('PipelineMoneyBand', () => {
 
   it('keeps the prior-years sub-line OUTSIDE the Past-due deep-link (its aria-label would swallow nested text for screen readers)', () => {
     renderBand();
-    const subline = screen.getByText('+ 38,520.00 THB overdue from prior years (1 bill)');
+    const subline = screen.getByText('+ 38,520.00 THB overdue from prior years (1 invoice)');
     const pastDueLink = screen.getByRole('link', { name: /past due/i });
     expect(pastDueLink).not.toContainElement(subline);
   });
@@ -296,13 +296,13 @@ describe('PipelineMoneyBand', () => {
     await user.click(trigger);
     expect(trigger).toHaveAttribute('aria-expanded', 'true');
     expect(
-      await screen.findByText(/Counts membership bills DUE in the current fiscal year/),
+      await screen.findByText(/Counts membership invoices DUE in the current fiscal year/),
     ).toBeInTheDocument();
 
     await user.keyboard('{Escape}');
     await waitFor(() =>
       expect(
-        screen.queryByText(/Counts membership bills DUE in the current fiscal year/),
+        screen.queryByText(/Counts membership invoices DUE in the current fiscal year/),
       ).toBeNull(),
     );
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
@@ -317,7 +317,7 @@ describe('PipelineMoneyBand', () => {
     trigger.focus();
     await user.keyboard('{Enter}');
     expect(
-      await screen.findByText(/Counts membership bills DUE in the current fiscal year/),
+      await screen.findByText(/Counts membership invoices DUE in the current fiscal year/),
     ).toBeInTheDocument();
   });
 

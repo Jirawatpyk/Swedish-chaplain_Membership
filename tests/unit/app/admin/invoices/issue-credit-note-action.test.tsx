@@ -27,6 +27,8 @@ describe('<IssueCreditNoteAction>', () => {
       'href',
       '/admin/invoices/inv-1/credit-notes/new',
     );
+    // Spec 122 US8b (T826) — drawn as an AURA secondary button.
+    expect(screen.getByRole('link', { name: actions.issueCreditNote })).toHaveClass('aura-btn');
   });
 
   it('is disabled (not a link) with an explanation while a refund is settling', () => {
@@ -35,5 +37,20 @@ describe('<IssueCreditNoteAction>', () => {
     const button = screen.getByRole('button', { name: actions.issueCreditNote });
     expect(button).toBeDisabled();
     expect(button).toHaveAccessibleDescription(actions.issueCreditNoteRefundSettling);
+    expect(button).toHaveClass('aura-btn');
+  });
+
+  it('keeps the 44px touch height, and the reason is its description only, at every width (spec 122 US8b)', () => {
+    renderAction(true);
+    expect(screen.getByRole('button', { name: actions.issueCreditNote })).toHaveClass('aura-btn--touch');
+    // The page's settling note says it once (board Admin-refund-settling);
+    // drawn beside the button it squeezed the h1 onto two lines.
+    expect(screen.getByText(actions.issueCreditNoteRefundSettling)).toHaveClass('sr-only');
+    expect(screen.getByText(actions.issueCreditNoteRefundSettling)).not.toHaveClass('max-sm:sr-only');
+  });
+
+  it('the link takes the touch height too', () => {
+    renderAction(false);
+    expect(screen.getByRole('link', { name: actions.issueCreditNote })).toHaveClass('aura-btn--touch');
   });
 });

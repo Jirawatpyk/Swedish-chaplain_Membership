@@ -62,7 +62,8 @@ function renderAlert(
 describe('AutoRefundFailedAlert (F5 UX D2)', () => {
   it('renders a destructive alert with title, body, the FULL processor refund ref, and the runbook path', () => {
     renderAlert();
-    expect(screen.getByRole('alert')).toBeInTheDocument();
+    // Spec 122 US8b (T826) — an AURA danger alert.
+    expect(screen.getByRole('alert')).toHaveClass('aura-alert');
     expect(screen.getByText(copy.title)).toBeInTheDocument();
     const refLine = screen.getByTestId('admin-invoice-auto-refund-failed-ref');
     expect(refLine.textContent).toContain('re_test_ABCD1234');

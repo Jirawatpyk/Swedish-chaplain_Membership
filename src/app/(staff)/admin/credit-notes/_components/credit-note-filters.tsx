@@ -3,39 +3,48 @@
 /**
  * G-3 — Filter bar for `/admin/credit-notes` directory.
  *
- * Small client component that syncs two URL search params
- * (`?q=` for document-number substring, `?fy=` for fiscal year)
- * into the current path, with a Clear link that drops both.
- * Page navigation is reset to page=1 on any filter change.
+ * Syncs two URL search params (`?q=` for the document-number substring,
+ * `?fy=` for the fiscal year) into the current path; any change resets the
+ * page and keeps the scroll (`router.push(…, { scroll: false })`).
+ *
+ * Spec 122 US8c (T844) — the filter pattern (docs/aura-adoption.md § Filters)
+ * on AURA's FilterBar: its own debounced search, the fiscal year as a compact
+ * `FilterSelect`, the count at the end of the row, and each applied filter as
+ * a removable chip that brings the bar's own "Clear filters". The URL
+ * contract is unchanged: the page clamps `fy` to 2020–2100.
  */
-import { useCallback, useMemo, useState, useTransition } from 'react';
+import { useCallback, useState, useTransition } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
+import { FilterBar, FilterSelect } from '@jirawatpyk/aura-react';
 
-export function CreditNoteFilters() {
+/** The page accepts 2020–2100; offer next year back to 2020, newest first. */
+function fiscalYearOptions(allLabel: string) {
+  const newest = new Date().getFullYear() + 1;
+  const years = Array.from({ length: newest - 2020 + 1 }, (_, i) => String(newest - i));
+  return [{ value: '', label: allLabel }, ...years.map((y) => ({ value: y, label: y }))];
+}
+
+export function CreditNoteFilters({ resultCount }: { readonly resultCount?: number } = {}) {
   const t = useTranslations('admin.creditNotes.list.filters');
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
-  const [pending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
+  // Bumped by a clear to remount the FilterBar, so a search still waiting on
+  // its debounce is dropped instead of landing afterwards.
+  const [searchResetKey, setSearchResetKey] = useState(0);
 
-  const [q, setQ] = useState(params.get('q') ?? '');
-  const [fy, setFy] = useState(params.get('fy') ?? '');
+  const currentQ = params.get('q') ?? '';
+  const currentFy = params.get('fy') ?? '';
 
-  const hasFilters = useMemo(
-    () => (params.get('q') ?? '').length > 0 || (params.get('fy') ?? '').length > 0,
-    [params],
-  );
-
-  const applyFilters = useCallback(
-    (nextQ: string, nextFy: string) => {
+  const pushFilters = useCallback(
+    (patch: { readonly q?: string; readonly fy?: string }) => {
       const next = new URLSearchParams(params.toString());
-      if (nextQ.trim()) next.set('q', nextQ.trim());
-      else next.delete('q');
-      if (nextFy.trim()) next.set('fy', nextFy.trim());
-      else next.delete('fy');
+      for (const [key, value] of Object.entries(patch)) {
+        if (value.trim()) next.set(key, value.trim());
+        else next.delete(key);
+      }
       // Any filter change resets paging — paged offsets from the
       // previous filter window don't map to the new result set.
       next.delete('page');
@@ -49,69 +58,55 @@ export function CreditNoteFilters() {
     [params, pathname, router],
   );
 
+  const clearAll = () => {
+    setSearchResetKey((k) => k + 1);
+    pushFilters({ q: '', fy: '' });
+  };
+
+  const chips = [
+    ...(currentQ.trim()
+      ? [
+          {
+            id: 'q',
+            label: t('chipSearch', { q: currentQ.trim() }),
+            onRemove: () => {
+              setSearchResetKey((k) => k + 1);
+              pushFilters({ q: '' });
+            },
+          },
+        ]
+      : []),
+    ...(currentFy
+      ? [
+          {
+            id: 'fy',
+            label: t('chip', { label: t('fiscalYear'), value: currentFy }),
+            onRemove: () => pushFilters({ fy: '' }),
+          },
+        ]
+      : []),
+  ];
+
   return (
-    <form
-      // `data-slot="filter-bar"` activates the global mobile-only
-      // `width: 100%` rule in globals.css (mirrors <FilterBar>).
-      // Used directly on <form> instead of wrapping with <FilterBar>
-      // because this filter submits on Apply — <FilterBar> renders a
-      // <div>, and we need the native <form> submit semantics here.
-      data-slot="filter-bar"
-      className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center"
-      onSubmit={(e) => {
-        e.preventDefault();
-        applyFilters(q, fy);
-      }}
+    <FilterBar
+      key={searchResetKey}
+      label={t('groupLabel')}
+      searchGrow
+      search={currentQ}
+      onSearchChange={(v) => pushFilters({ q: v })}
+      searchLabel={t('search')}
+      searchPlaceholder={t('search')}
+      filters={chips}
+      {...(chips.length > 0 ? { onClearAll: clearAll } : {})}
+      {...(resultCount !== undefined ? { resultCount } : {})}
     >
-      {/* Labels above inputs were removed per user feedback — the
-        * placeholder ("CN-…" / "2026") plus the aria-label on each
-        * Input carry the same semantics without the vertical noise
-        * above the filter bar. */}
-      <Input
-        id="cn-filter-q"
-        type="search"
-        inputMode="search"
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        placeholder={t('search')}
-        aria-label={t('search')}
-        className="min-w-0 sm:flex-1"
-        autoComplete="off"
+      <FilterSelect
+        label={t('fiscalYear')}
+        allLabel={t('allShort')}
+        value={currentFy}
+        onChange={(v) => pushFilters({ fy: v })}
+        options={fiscalYearOptions(t('allFiscalYears'))}
       />
-      <Input
-        id="cn-filter-fy"
-        type="number"
-        inputMode="numeric"
-        min="2020"
-        max="2100"
-        value={fy}
-        onChange={(e) => setFy(e.target.value)}
-        placeholder={t('fiscalYear')}
-        aria-label={t('fiscalYear')}
-        className="sm:w-32"
-        autoComplete="off"
-      />
-      <Button
-        type="submit"
-        variant="outline"
-        disabled={pending}
-      >
-        {t('apply')}
-      </Button>
-      {hasFilters && (
-        <Button
-          type="button"
-          variant="ghost"
-          disabled={pending}
-          onClick={() => {
-            setQ('');
-            setFy('');
-            applyFilters('', '');
-          }}
-        >
-          {t('clear')}
-        </Button>
-      )}
-    </form>
+    </FilterBar>
   );
 }

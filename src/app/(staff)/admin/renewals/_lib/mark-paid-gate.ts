@@ -22,10 +22,11 @@
  * `linkedInvoiceId` is USUALLY a live bill for an open cycle — the ordinary
  * void clears the link (`clearLinkedInvoiceForVoidInTx`) — but not always: the
  * void-on-reissue supersede path and pre-unlink voids can leave an open cycle
- * linked to a void invoice. The pipeline row has no invoice status, so it
- * treats any link as live; the cycle-detail page knows the status and uses
- * {@link resolveLiveLinkedBill}, offering mark-paid on a void link — safe,
- * because the use-case clears such a stale link before minting.
+ * linked to a void invoice. Callers therefore pass only a LIVE link: the
+ * pipeline row via `PipelineRow.linkedInvoiceLive`, the cycle-detail page via
+ * {@link resolveLiveLinkedBill}. A void link is passed as null, so mark-paid
+ * is offered — safe, because the use-case clears such a stale link before
+ * minting.
  */
 import type { CycleStatus } from '@/modules/renewals/client';
 

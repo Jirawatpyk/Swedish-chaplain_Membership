@@ -121,7 +121,7 @@ describe('PaymentTimeline — failed auto-refund', () => {
     const row = rowFor(html, 'auto_refund_failed');
     expect(row).toBeDefined();
     expect(row).toContain(timelineEn.events.auto_refund_failed);
-    expect(row).toContain('text-destructive');
+    expect(row).toContain('text-[var(--aura-fg-danger)]');
 
     expect(html).not.toContain('MISSING_KEY');
     expect(html).not.toContain('timeline-event-auto_refunded');

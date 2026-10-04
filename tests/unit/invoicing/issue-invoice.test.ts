@@ -25,7 +25,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { asSatang } from '@/lib/money';
 import { ok, err } from '@/lib/result';
-import { issueInvoice } from '@/modules/invoicing/application/use-cases/issue-invoice';
+import { issueInvoice, issueInvoiceSchema } from '@/modules/invoicing/application/use-cases/issue-invoice';
 import type { IssueInvoiceDeps } from '@/modules/invoicing/application/use-cases/issue-invoice';
 import type { Invoice, InvoiceStatus } from '@/modules/invoicing/domain/invoice';
 import { asInvoiceId } from '@/modules/invoicing/domain/invoice';
@@ -1759,3 +1759,87 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
   });
 });
 
+
+// The Issue dialog names the total it will pin and sends it back as
+// `expectedTotalSatang`. If the draft's lines or the tenant VAT rate changed
+// after the page rendered, the bill would pin a different total than the
+// admin confirmed — refuse PRE-SEQUENCE (no number consumed) so the admin
+// refreshes and confirms the real figure. Absent → unchanged behaviour (the
+// renewal queue and the portal confirm do not send it).
+describe('issueInvoice — expectedTotalSatang guard', () => {
+  const input = {
+    tenantId: 'test-swecham',
+    actorUserId: 'actor-user',
+    requestId: 'req-1',
+    invoiceId: INVOICE_ID,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('issues when the confirmed total equals the priced total (1,000.00 + 7% = 107000 satang)', async () => {
+    const deps = makeDeps(makeDraftInvoice(), makeSettings(), makeMember());
+    const r = await issueInvoice(deps, { ...input, expectedTotalSatang: '107000' });
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+  });
+
+  it('refuses a stale confirmed total with issue_total_changed, before any number is allocated', async () => {
+    const deps = makeDeps(makeDraftInvoice(), makeSettings(), makeMember());
+    const r = await issueInvoice(deps, { ...input, expectedTotalSatang: '100000' });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('issue_total_changed');
+    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+    expect(deps.invoiceRepo.applyIssue).not.toHaveBeenCalled();
+  });
+
+  it('a stale standard-rate total is refused when the settings rate moved (7% → 10%)', async () => {
+    const deps = makeDeps(
+      makeDraftInvoice(),
+      makeSettings({ vatRate: VatRate.ofUnsafe('0.1000') }),
+      makeMember(),
+    );
+    const r = await issueInvoice(deps, { ...input, expectedTotalSatang: '107000' });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('issue_total_changed');
+    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+  });
+
+  it('rejects a malformed expectedTotalSatang at parse', () => {
+    // One canonical form: no sign, no decimals, no leading zeros.
+    for (const bad of ['-1', '1.5', 'abc', '', '1'.repeat(20), '0107000', '00']) {
+      expect(
+        issueInvoiceSchema.safeParse({ ...input, expectedTotalSatang: bad }).success,
+      ).toBe(false);
+    }
+    for (const bad of ['-1', '0700']) {
+      expect(
+        issueInvoiceSchema.safeParse({ ...input, expectedVatSatang: bad }).success,
+      ).toBe(false);
+    }
+    for (const good of ['107000', '0']) {
+      expect(
+        issueInvoiceSchema.safeParse({ ...input, expectedTotalSatang: good }).success,
+      ).toBe(true);
+    }
+  });
+
+  // Nothing was issued, so no audit row — but a refusal that fires often is a
+  // live page-vs-issue drift (e.g. a VAT rate changed mid-session), so it is
+  // logged with both figures.
+  it('logs a refusal with the confirmed and the priced total', async () => {
+    const info = vi.spyOn(logger, 'info');
+    const deps = makeDeps(makeDraftInvoice(), makeSettings(), makeMember());
+    await issueInvoice(deps, { ...input, expectedTotalSatang: '100000' });
+    expect(info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: 'test-swecham',
+        invoiceId: INVOICE_ID,
+        expectedTotalSatang: '100000',
+        pricedTotalSatang: '107000',
+      }),
+      expect.stringContaining('issue_total_changed'),
+    );
+    info.mockRestore();
+  });
+});

@@ -53,8 +53,14 @@ test.describe('@us4 tenant-invoice-settings', () => {
     // Legend-based sections — each is a <legend> inside a <fieldset>.
     const sectionLabels = ['Legal', 'Tax', 'Numbering', 'Logo'];
     for (const label of sectionLabels) {
-      const matches = page.getByText(new RegExp(label, 'i'));
-      await expect(matches.first()).toBeVisible();
+      // `:visible` before `.first()`, deliberately. Two things on this page
+      // carry these words without being on screen: the real `<legend>`s are
+      // `sr-only` for the I1 dedupe, and `loading.tsx` renders its own
+      // `<legend>`s in the skeleton. A bare `.first()` could resolve to either
+      // and then fail `toBeVisible` — which is how this test failed on
+      // mobile-chrome while passing on chromium (R33).
+      const matches = page.getByText(new RegExp(label, 'i')).filter({ visible: true });
+      await expect(matches.first(), `${label} section is on screen`).toBeVisible();
     }
   });
 
@@ -411,7 +417,12 @@ test.describe('@us4 tenant-invoice-settings', () => {
         await page.getByLabel(/VAT rate|อัตรา VAT|momssats/i).fill('7.00');
         await page
           .getByLabel(/tax id|เลขประจำตัวผู้เสียภาษี|skatte.*id/i)
-          .fill('0105500000000');
+          // Checksum-valid. The 13th digit of a Thai tax id is
+          // (11 - (sum of digit_i x (13 - i)) mod 11) mod 10; for 010550000000 that
+          // is 3, so the old '...0' was rejected with "This Tax ID is invalid" and
+          // the success toast this test waits for could never appear. The value is
+          // only typed here, never asserted on.
+          .fill('0105500000003');
         await page
           .getByLabel(/^(legal name|ชื่อ|juridiskt namn).*Thai.*/i)
           .fill('ทดสอบ Throwaway');

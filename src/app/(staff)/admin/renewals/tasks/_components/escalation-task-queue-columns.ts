@@ -6,7 +6,10 @@
  */
 import type { DataTableColumn } from '@jirawatpyk/aura-react';
 
-type ColumnLayout = Pick<DataTableColumn, 'width' | 'minWidth' | 'card' | 'align' | 'actions' | 'hideBelow'>;
+type ColumnLayout = Pick<
+  DataTableColumn,
+  'width' | 'minWidth' | 'card' | 'align' | 'actions' | 'hideBelow' | 'skeletonLines' | 'skeletonTouch'
+>;
 
 export const ESCALATION_TASK_COLUMN_LAYOUT = {
   member: { minWidth: 160, card: 'title' },
@@ -19,10 +22,12 @@ export const ESCALATION_TASK_COLUMN_LAYOUT = {
   taskType: { minWidth: 150, card: 'wide' },
   // The phone card's due + assignee line, at full width.
   dueAt: { width: 165, card: 'wide' },
-  assignedTo: { width: 150, card: 'hide' },
+  // The name over the role: the skeleton draws both lines.
+  assignedTo: { width: 150, card: 'hide', skeletonLines: 2 },
   status: { width: 84, card: 'hide' },
   // The phone card's last row: Done grows across it beside the ⋯.
-  actions: { width: 116, actions: true, align: 'end', card: 'footer' },
+  // Done and ⋯ are 44px on a phone (`touchHeight`), and so is the skeleton's bar.
+  actions: { width: 116, actions: true, align: 'end', card: 'footer', skeletonTouch: true },
 } as const satisfies Record<string, ColumnLayout>;
 
 export type EscalationTaskColumnKey = keyof typeof ESCALATION_TASK_COLUMN_LAYOUT;

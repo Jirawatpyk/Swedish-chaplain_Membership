@@ -138,6 +138,23 @@ export interface PdfRenderInput {
     readonly originalDocumentNumber: string;
     readonly originalIssueDate: string;
     readonly reason: string;
+    /**
+     * §86/10 วรรคสอง — the values a ใบลดหนี้ must state, all EXCLUDING VAT:
+     * the value per the original tax invoice, the correct value after this
+     * and every earlier reduction, the difference (this note's net) and the
+     * VAT on the difference (this note's VAT). `previouslyReduced` is the net
+     * earlier notes credited (printed only when non-zero), so the document
+     * reconciles: original − previously reduced − correct = difference.
+     * Printed on template v13+; absent on inputs built before v13
+     * (byte-stable re-render, SC-003).
+     */
+    readonly values?: {
+      readonly originalValue: Money;
+      readonly previouslyReduced: Money;
+      readonly correctValue: Money;
+      readonly difference: Money;
+      readonly differenceVat: Money;
+    };
   } | null;
   /**
    * US6 AS4 — credited-invoice annotation. Rendered on INVOICE kind

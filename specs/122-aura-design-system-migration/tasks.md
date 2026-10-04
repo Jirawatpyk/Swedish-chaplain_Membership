@@ -503,7 +503,7 @@ US8 is a money phase: each PR gets the UX, i18n and financial-integrity reviews.
 Boards: `Admin-invoices`, `Admin-state-invoices-setup`, `Admin-invoice-new`, `Admin-record-payment` (+`-mobile`).
 
 - [x] T800 [US8] Spec Clarifications "Session 2026-10-02 (maintainer, US8 start)"; the registers line in the user story; these tasks.
-- [ ] T801 [US8] One invoice status tone map shared by the portal list, the member invoices table and the admin list and detail: Paid `ready`, Issued `progress`, Overdue `blocked`, the rest `neutral`. RED: a unit test of the map.
+- [x] T801 [US8] One invoice status tone map shared by the portal list, the member invoices table and the admin list and detail: Paid `ready`, Issued `progress`, Overdue `blocked`, the rest `neutral`. RED: a unit test of the map.
 - [x] T802 [US8] The invoice table is an AURA `DataTable` with the board's columns and phone cards:
   - Invoice No. carries "Issued {date}" and the credit-note count;
   - Receipt No. carries "PDF generating…" (busy) or the online method, and a "Receipt failed" link;
@@ -539,13 +539,39 @@ Boards: `Admin-invoices`, `Admin-state-invoices-setup`, `Admin-invoice-new`, `Ad
   - UX, i18n and financial reviews, with fixes RED first: the receipt state on phone cards, focus and dismissal in Record payment, the invoice-total label, copy without the arrow, the draft row's menu name, and the drafts hint following `includeDrafts`. AURA handoff #125 (RadioGroup description) is filed;
   - draft PR; relay R29.
 
-### US8b — invoice detail, dialogs, void and new credit note (PR 15; tasks written at its start)
+### US8b — invoice detail, dialogs, void and new credit note (PR 15)
 
-- [ ] T820 [US8] Detail page in the one layout, payment activity, the issue/delete/refund dialogs, the email-failure and auto-refund alerts, the phone action bar, the void page and the new-credit-note page.
+Boards: `Admin-invoice-draft`, `-issued` (+`-mobile`), `-overdue`, `-paid`, `-credited`, `-manager`, `-auto-refund-failed`, `Admin-voided`, `Admin-invoice-issue`, `Admin-refund-*` (full, partial, settling, settled, failed, waived), `Admin-void` (+`-mobile`), `Admin-credit-note` (+`-mobile`).
 
-### US8c — credit notes, registers and settings (PR 16; tasks written at its start)
+- [x] T820 [US8] Adopt AURA 5.29 (handoff #134): the list skeletons' rows match the real rows (`skeletonLines`, `skeletonTouch`, labelled stacked cards), and the renewals skeletons drop their own phone cards. RED: the invoices and renewals skeleton tests (two-line cells, touch footer bar, no own phone cards).
+- [x] T821 [US8] These tasks; the spec's US8b clarifications.
+- [x] T822 [US8] The detail page's markup moves into `renderInvoiceDetailView`, which the page and the no-DB preview route both render; every data read and derived value stays in the page. RED: the view test renders from props alone.
+- [x] T823 [US8] The one layout: "Invoice {number}" (or "Draft invoice") with the AURA status pill from `invoiceStatusTone`; a Details card holding the fields and, at its end, the totals (subtotal, VAT, total); then the payment details, voided, credit notes and line items, each in its own card, and the payment activity. Amounts, dates and field gates unchanged. RED: the view test (title, pill tone, card order, totals, gates per status).
+- [x] T824 [US8] The header actions per status and role as before, on AURA buttons; the ⋯ menu on an AURA `DropdownMenu` (download names, resend calls and the hide-when-empty rule unchanged). Below 640px the actions become a bar at the bottom of the screen with the total (incl. VAT) and due date, and Void moves into the ⋯ menu. RED: the menu test without the legacy mock; the bar's summary and Void placement.
+- [x] T825 [US8] The issue, delete-draft and refund dialogs on AURA (the typed phrases, request bodies, error routing and success handling unchanged; the refund `alertdialog` role, testids and `${id}-help` id kept). RED: the issue and refund form tests without the legacy wrapper, with the request bodies asserted.
+- [x] T826 [US8] The email-failure and auto-refund-failed alerts, the payment activity and its skeleton, the copy-charge-id button and the credit-note action on AURA. RED: the alert tests (named buttons, alert/alertdialog roles) and the timeline tests on AURA.
+- [x] T827 [US8] The void page (buttons stacked on a phone, Void above Cancel) and the new-credit-note page on AURA fields; their loading files, the detail loading file and `not-found` on AURA. RED: the void and credit-note form tests on AURA; the loading tests.
+- [x] T828 [US8] Ratchet and preview: `MIGRATED_PATHS` gains `admin/invoices/[invoiceId]/**` and the rest of `admin/invoices/_components/**`; the two ratchet controls move to US8c files; preview views for the detail states, the dialogs, void and credit note.
+- [x] T829 [US8] Exit: e2e selectors where roles changed; gates; `next build` with a bundle budget for `/admin/invoices/[invoiceId]`; the parity page; UX, i18n and financial reviews with fixes RED first; draft PR; relay R32.
 
-- [ ] T840 [US8] Credit-notes list and detail, the tax-document registers (row count, totals and CSV equal `main`), the invoice settings; then the full local e2e checkpoint.
+### US8c-1 — credit notes, tax registers and AURA 5.30 (PR 16a)
+
+Boards: `Admin-credit-notes`, `Admin-credit-note-detail`, `Admin-invoice-registers` (+`-mobile`), `Admin-registers-empty`, `-invalid-range`, `-load-failed`, `-re`, `-zero-rate`.
+
+- [x] T840 [US8] These tasks; the spec's US8c clarifications (Session 2026-10-03).
+- [x] T841 [US8] Adopt AURA 5.30 (handoff #135–#137): `touchHeight="always"` on the issue dialog's zero-rate radios, certificate fields and typed phrase (the 5.29 stand-in goes); the e2e retries around menus closing on scroll go. RED: the issue form's 44px test on `is-touch-always`.
+- [x] T842 [US8] Checked controls follow the brand accent: `src/styles/aura-overrides.css` sets `--aura-control-checked-bg/-fg` to the accent, light and dark, until AURA #139. RED: the stand-in test (import order, declarations, 4.5:1 contrast).
+- [x] T843 [US8] `docs/aura-adoption.md` and `CLAUDE.md` on 5.30: #135–#137 shipped, #138 and #139 open, the Menu note gone.
+- [x] T844 [US8] The credit-notes list on AURA: filter bar (search, fiscal year; pushes unchanged), count line and Refund legend, a `DataTable` with the board's columns and a PDF icon button, phone cards, pagination unchanged, empty and filtered-empty states, the loading file. RED: the table test (columns, number link, PDF href and name, Refund chip, cards) and the filter push test.
+- [x] T845 [US8] The credit-note detail on AURA: `renderCreditNoteDetailView` (props only) with the header buttons (Resend email, Download PDF), Details card with the amounts, Reason and Parties cards, siblings, banner; the loading and not-found files. RED: the view test (amounts as formatted on `main`, links, Refund chip, no Issued badge) and the resend button test (POST body `{}`, toasts by status, 5-minute re-enable).
+- [x] T846 [US8] The tax-document registers on AURA: `renderTaxRegisterView` (props only) with the form on AURA fields (push unchanged), the output VAT box, the summary line, the register table and phone cards, the error and empty states, the loading file. RED: the view test (row count, cancelled count and every figure equal the use case's output formatted as on `main`; status line per period status; cancelled row) and the form push test.
+- [x] T847 [US8] Ratchet and preview: `MIGRATED_PATHS` gains `admin/credit-notes/**` and `admin/invoices/registers/**`; the two ratchet controls move to US8c-2 files; preview views for the credit-notes list, the detail and every register state, plus their loading files.
+- [x] T848 [US8] Bundle budgets for `/admin/credit-notes`, `/admin/credit-notes/[creditNoteId]` and `/admin/invoices/registers`.
+- [x] T849 [US8] Exit: e2e selectors where roles changed; gates; `next build`; a 5.30 look at migrated screens (checked controls in brand blue); the parity page; UX, i18n and financial reviews with fixes RED first; draft PR; relay R33.
+
+### US8c-2 — invoice settings (PR 16b; tasks written at its start)
+
+- [ ] T850 [US8] The invoice settings on AURA; then the full local e2e checkpoint.
 
 ## Later phases (one PR each; tasks written when the phase starts)
 

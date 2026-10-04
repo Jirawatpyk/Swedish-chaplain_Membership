@@ -208,10 +208,11 @@ export function PipelineTable({
         render: (row) => (
           <span className="inline-flex flex-wrap items-center gap-1">
             <UrgencyPill urgency={row.urgency} />
+            {/* A stale link to a VOID invoice is no issued bill. */}
             <BillIssuedBadge
               status={row.status}
               urgency={row.urgency}
-              linkedInvoiceId={row.linkedInvoiceId}
+              linkedInvoiceId={row.linkedInvoiceLive ? row.linkedInvoiceId : null}
             />
           </span>
         ),
@@ -287,7 +288,7 @@ export function PipelineTable({
             memberId={row.memberId}
             companyName={row.companyName}
             status={row.status}
-            linkedInvoiceId={row.linkedInvoiceId}
+            liveLinkedInvoiceId={row.linkedInvoiceLive ? row.linkedInvoiceId : null}
             canMutate={canMutate}
             onRecordOutreach={setOutreachFor}
             onMarkPaid={setMarkPaidFor}

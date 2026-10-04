@@ -2774,6 +2774,10 @@ export function makeDrizzleRenewalCycleRepo(
         // page capped at 200), so the cost is negligible. Aliased because the
         // pipeline query does not otherwise touch `invoices`.
         const anchorInvoice = alias(invoices, 'anchor_invoice');
+        // The LINKED invoice's status, so the row can tell a live bill from a
+        // stale link to a VOID one (void-on-reissue supersede / pre-unlink
+        // voids). Same PK seek as the anchor join (≤1 row per cycle).
+        const linkedInvoice = alias(invoices, 'linked_invoice');
         const pageRows = await tx
           .select({
             cycleId: renewalCycles.cycleId,
@@ -2786,6 +2790,7 @@ export function makeDrizzleRenewalCycleRepo(
             lastReminderAt: lastReminderSubq.dispatchedAt,
             lastReminderStepId: lastReminderSubq.stepId,
             linkedInvoiceId: renewalCycles.linkedInvoiceId,
+            linkedInvoiceStatus: linkedInvoice.status,
             // plan-change-ux seam 1(b) + L1 — the rolling-anchor "paid coverage"
             // discriminator PLUS the anchor invoice's status, folded into the
             // `anchored` boolean below. The status is NULL for the R4 backfill
@@ -2828,6 +2833,14 @@ export function makeDrizzleRenewalCycleRepo(
               eq(anchorInvoice.invoiceId, renewalCycles.anchorInvoiceId),
             ),
           )
+          .leftJoin(
+            linkedInvoice,
+            and(
+              // Explicit tenant predicate — same two-layer isolation as above.
+              eq(linkedInvoice.tenantId, renewalCycles.tenantId),
+              eq(linkedInvoice.invoiceId, renewalCycles.linkedInvoiceId),
+            ),
+          )
           .where(and(...pageFilters))
           .orderBy(pipelineOrderBySql(sort))
           .limit(limit + 1);
@@ -2850,6 +2863,11 @@ export function makeDrizzleRenewalCycleRepo(
               : (r.lastReminderAt as string | null),
           lastReminderStepId: r.lastReminderStepId ?? null,
           linkedInvoiceId: r.linkedInvoiceId,
+          // Live unless F4 reports the linked invoice VOID. A link whose
+          // invoice row is missing (LEFT JOIN miss) stays live — fail-closed,
+          // the same rule as the cycle-detail page's `resolveLiveLinkedBill`.
+          linkedInvoiceLive:
+            r.linkedInvoiceId !== null && r.linkedInvoiceStatus !== 'void',
           // plan-change-ux seam 1(b) + L1 — paid-coverage flag. TRUE only when
           // the cycle is anchored AND the anchor invoice is still
           // EFFECTIVELY-PAID. A voided ('void') or FULLY credit-noted /

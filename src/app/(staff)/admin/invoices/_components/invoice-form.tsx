@@ -36,6 +36,7 @@ import {
 import { toast } from '@/lib/toast';
 import { addMonthsUtc } from '@/lib/dates';
 import { formatCalendarYear } from '@/lib/format-date-localised';
+import { formatSatangAmount } from '@/lib/format-thb';
 
 export type MemberOption = {
   readonly memberId: string;
@@ -96,13 +97,6 @@ export function parseDuplicateRefusal(body: unknown): ExistingDuplicate | null {
     documentNumber: typeof documentNumber === 'string' ? documentNumber : null,
     totalSatang: typeof totalSatang === 'string' ? totalSatang : null,
   };
-}
-
-function formatSatang(satang: number): string {
-  const whole = Math.floor(satang / 100);
-  const rem = satang % 100;
-  // N11 — explicit 'en-US' pins thousand-separator output. FR-005.
-  return `${whole.toLocaleString('en-US')}.${rem.toString().padStart(2, '0')}`;
 }
 
 /**
@@ -374,7 +368,7 @@ export function CreateDraftForm({
                 </div>
                 {selectedPlan && (
                   <div className="mt-1 text-xs tabular-nums text-[var(--aura-fg-secondary)]">
-                    {tPlan('annualFee', { amount: formatSatang(selectedPlan.annualFeeMinorUnits) })}
+                    {tPlan('annualFee', { amount: formatSatangAmount(selectedPlan.annualFeeMinorUnits) })}
                   </div>
                 )}
               </div>
@@ -455,7 +449,7 @@ export function CreateDraftForm({
               <dd className="font-medium tabular-nums">
                 {duplicate.totalSatang === null
                   ? tDup('notYetTotalled')
-                  : `${formatSatang(Number(duplicate.totalSatang))} THB`}
+                  : `${formatSatangAmount(duplicate.totalSatang)} THB`}
               </dd>
             </div>
           </dl>

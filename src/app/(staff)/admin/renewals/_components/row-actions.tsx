@@ -69,10 +69,13 @@ export function usePipelineEmptyCopy(
  * opens the shared `OutreachDialog` via `onRecordOutreach`, lifted to
  * `PipelineTable` so the dialog survives this menu closing) + Task 5's
  * "Mark paid" (offered only when `shouldOfferMarkPaid(status,
- * linkedInvoiceId)` — mirrors the mark-paid-offline route's own guards so
+ * liveLinkedInvoiceId)` — mirrors the mark-paid-offline route's own guards so
  * this row never offers a control the API would reject). A payable row that
  * already has a live linked bill gets "Record payment on invoice" instead — a
- * link to that bill's F4 Record payment flow.
+ * link to that bill's F4 Record payment flow. `liveLinkedInvoiceId` is the
+ * linked invoice only while it is live (`PipelineRow.linkedInvoiceLive`): a
+ * stale link to a VOID invoice is passed as null, so the row offers Mark paid
+ * (mark-paid-offline clears that stale link before minting).
  *
  * Fix round 3 — `canMutate` additionally gates "Send reminder" and "Mark
  * paid" (both admin-only at the route) to `false` for a read-only manager.
@@ -84,7 +87,7 @@ export function RowActions({
   memberId,
   companyName,
   status,
-  linkedInvoiceId,
+  liveLinkedInvoiceId,
   canMutate,
   onRecordOutreach,
   onMarkPaid,
@@ -93,7 +96,7 @@ export function RowActions({
   readonly memberId: string;
   readonly companyName: string;
   readonly status: CycleStatus;
-  readonly linkedInvoiceId: string | null;
+  readonly liveLinkedInvoiceId: string | null;
   readonly canMutate: boolean;
   readonly onRecordOutreach: (t: OutreachTarget) => void;
   readonly onMarkPaid: (t: MarkPaidTarget) => void;
@@ -194,17 +197,17 @@ export function RowActions({
   const items: MenuItem[] = [
     { label: tActions('open'), href: `/admin/renewals/${cycleId}` },
     { label: tActions('markContacted'), onSelect: openOutreach },
-    ...(canMutate && shouldOfferMarkPaid(status, linkedInvoiceId)
+    ...(canMutate && shouldOfferMarkPaid(status, liveLinkedInvoiceId)
       ? [{ label: tActions('markPaid'), onSelect: openMarkPaid }]
       : []),
     // A payable row with a live linked bill: mark-paid would be refused
     // (`membership_bill_already_exists`), so link to that bill's F4 Record
     // payment flow instead.
-    ...(canMutate && shouldOfferRecordPaymentOnBill(status, linkedInvoiceId)
+    ...(canMutate && shouldOfferRecordPaymentOnBill(status, liveLinkedInvoiceId)
       ? [
           {
             label: tActions('recordPaymentOnInvoice'),
-            href: `/admin/invoices/${encodeURIComponent(linkedInvoiceId)}`,
+            href: `/admin/invoices/${encodeURIComponent(liveLinkedInvoiceId)}`,
           },
         ]
       : []),

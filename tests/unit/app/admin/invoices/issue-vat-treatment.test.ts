@@ -61,6 +61,49 @@ describe('validateZeroRateCert — fail-closed layer 1 (FR-024)', () => {
 });
 
 describe('buildIssueRequestBody — POST body shape', () => {
+  // The confirmed total rides along whenever the dialog priced the draft, so
+  // the server refuses (409 issue_total_changed) if issuance would pin another.
+  it('carries the confirmed total on a standard issue', () => {
+    expect(
+      buildIssueRequestBody({
+        taxAtPayment: true,
+        vatTreatment: 'standard',
+        certNo: '',
+        certDate: '',
+        expectedTotalSatang: 856_000,
+        expectedVatSatang: 56_000,
+      }),
+    ).toEqual({ expectedTotalSatang: '856000', expectedVatSatang: '56000' });
+  });
+
+  it('carries the confirmed total alongside the zero-rate fields', () => {
+    expect(
+      buildIssueRequestBody({
+        taxAtPayment: true,
+        vatTreatment: 'zero_rated_80_1_5',
+        certNo: 'กต 0404/1234',
+        certDate: '',
+        expectedTotalSatang: 800_000,
+      }),
+    ).toEqual({
+      vatTreatment: 'zero_rated_80_1_5',
+      zeroRateCertNo: 'กต 0404/1234',
+      expectedTotalSatang: '800000',
+    });
+  });
+
+  it('carries the confirmed total with the flag off (a §87 invoice)', () => {
+    expect(
+      buildIssueRequestBody({
+        taxAtPayment: false,
+        vatTreatment: 'standard',
+        certNo: '',
+        certDate: '',
+        expectedTotalSatang: 856_000,
+      }),
+    ).toEqual({ expectedTotalSatang: '856000' });
+  });
+
   it('returns null (empty POST) when the flag is off, even if zero-rate chosen', () => {
     expect(
       buildIssueRequestBody({

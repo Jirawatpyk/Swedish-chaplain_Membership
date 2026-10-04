@@ -31,6 +31,9 @@ describe('issueErrorStatus — shared issuance-route status map (wave-4 S16)', (
       invoice_not_found: 404,
       member_not_found: 404,
       invoice_already_issued: 409,
+      // The confirmed total no longer matches the priced one (draft lines or
+      // tenant VAT rate changed after the Issue dialog rendered).
+      issue_total_changed: 409,
       member_archived: 409,
       settings_missing: 409,
       registration_refunded: 422,

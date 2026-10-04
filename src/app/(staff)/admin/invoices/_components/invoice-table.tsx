@@ -43,6 +43,7 @@ import {
 } from './auto-renewal-queue-badges';
 import { AutoRenewalQueueActions } from './auto-renewal-queue-actions';
 import type { InvoiceStatus } from '@/modules/invoicing';
+import { formatSatangAmount } from '@/lib/format-thb';
 
 /**
  * R9-TY1 — `'overdue'` is a presentation-only derived status (T109,
@@ -193,17 +194,6 @@ export type InvoicesTableRow = {
    */
   readonly queueMeta?: AutoRenewalQueueMeta | null;
 };
-
-function formatSatang(satang: string): string {
-  const n = BigInt(satang);
-  const abs = n < 0n ? -n : n;
-  const whole = abs / 100n;
-  const rem = abs % 100n;
-  const sign = n < 0n ? '-' : '';
-  // Explicit 'en-US' pins thousand-separator output (FR-005); SSR/CSR
-  // locale drift would otherwise hydrate-mismatch on currency display.
-  return `${sign}${whole.toLocaleString('en-US')}.${rem.toString().padStart(2, '0')}`;
-}
 
 // The open-detail link in the Invoice No. column (real number or the draft
 // placeholder). `inline-flex min-h-6` keeps a ≥24px hit target (WCAG 2.5.8).
@@ -426,7 +416,7 @@ export function InvoicesTable({
               triggerLabel={t('actions.recordPayment')}
               triggerAriaLabel={t('actions.recordPaymentAria', { number: r.documentNumber })}
               memberName={r.memberName}
-              {...(r.totalSatang !== null ? { totalDisplay: `${formatSatang(r.totalSatang)} THB` } : {})}
+              {...(r.totalSatang !== null ? { totalDisplay: `${formatSatangAmount(r.totalSatang)} THB` } : {})}
               triggerVariant="ghost"
               triggerSize="sm"
               triggerId={`record-payment-${r.invoiceId}`}
@@ -524,11 +514,11 @@ export function InvoicesTable({
                     href={`/admin/invoices/${r.invoiceId}`}
                     aria-label={t('creditedAria', {
                       count: r.creditNoteCount,
-                      amount: formatSatang(r.creditedTotalSatang),
+                      amount: formatSatangAmount(r.creditedTotalSatang),
                     })}
                     title={t('creditedTooltip', {
                       count: r.creditNoteCount,
-                      amount: formatSatang(r.creditedTotalSatang),
+                      amount: formatSatangAmount(r.creditedTotalSatang),
                     })}
                     className="rounded-sm text-[var(--aura-fg-accent)] underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-[var(--aura-focus-ring)]"
                   >
@@ -687,7 +677,7 @@ export function InvoicesTable({
             </span>
           ) : (
             <span data-testid="invoice-total" className="font-medium tabular-nums">
-              {formatSatang(r.totalSatang)} THB
+              {formatSatangAmount(r.totalSatang)} THB
             </span>
           ),
       },

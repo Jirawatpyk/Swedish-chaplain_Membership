@@ -141,6 +141,9 @@ describe('PaymentTimeline — activity read failure renders an inline error with
     // Still inside the Payment activity panel (inline, not a page takeover).
     expect(html).toContain('data-testid="payment-timeline"');
     expect(html).toContain(timelineEn.title);
+    // Spec 122 US8b (T826) — the panel is an AURA card titled by an h2.
+    expect(html).toMatch(/<section[^>]*class="aura-card[^"]*"[^>]*data-testid="payment-timeline"|<section[^>]*data-testid="payment-timeline"[^>]*class="aura-card/);
+    expect(html).toMatch(new RegExp(`<h2[^>]*id="payment-timeline-heading"[^>]*>${timelineEn.title}</h2>`));
     expect(html).not.toContain(timelineEn.empty.title);
     expect(html).not.toContain(timelineEn.emptyPaidManual.title);
     expect(html).not.toContain('MISSING_KEY:');

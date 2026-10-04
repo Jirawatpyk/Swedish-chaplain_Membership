@@ -769,11 +769,35 @@ export async function issueCreditNote(
         });
       }
 
-      // E. Proportional VAT split.
+      // E. VAT split — proportional, with the completing note taking the
+      // residual so the notes credit exactly the VAT charged. Earlier notes'
+      // VAT is read on THIS tx, which holds the invoice row lock (B above), so
+      // no concurrent note can land between the read and the insert.
+      const priorCreditedVat = await deps.creditNoteRepo.sumVatByOriginalInvoiceInTx(
+        tx,
+        invoiceId,
+        input.tenantId,
+      );
+      if (priorCreditedVat.compare(loaded.vat) > 0) {
+        // Notes issued before the cumulative rule rounded each on its own and
+        // credited more VAT than was charged. This note credits 0 VAT; the
+        // excess was already reduced in an earlier ภ.พ.30 — leave a trace.
+        logger.warn(
+          {
+            tenantId: input.tenantId,
+            invoiceId,
+            invoiceVatSatang: loaded.vat.satang.toString(),
+            priorCreditedVatSatang: priorCreditedVat.satang.toString(),
+          },
+          'issueCreditNote: earlier credit notes credited more VAT than the invoice charged',
+        );
+      }
       const vatCalc = calculateCreditNoteVat({
         creditTotal: proposed,
         originalVat: loaded.vat,
         originalTotal: loaded.total,
+        alreadyCredited: loaded.creditedTotal,
+        priorCreditedVat,
       });
       if (!vatCalc.ok) {
         // IM-7 (review 2026-04-20) — this branch is unreachable under
@@ -908,6 +932,42 @@ export async function issueCreditNote(
         total: creditAmount,
         position: 1,
       };
+      // §86/10 วรรคสอง — the values the credit note states (all excl. VAT).
+      // Earlier notes' net = credited gross − their VAT, both read under the
+      // row lock above; it is printed as "previously reduced" so the note
+      // reconciles on its face, and the correct value is what remains after
+      // them and this note. Floored at 0: a note that kept its 1-satang net (see
+      // calculate-credit-note-vat.ts) can leave the summed net a satang past
+      // the subtotal, and the statement must not print a negative value.
+      const priorNet = loaded.creditedTotal.subtract(priorCreditedVat);
+      const remainingValue = loaded.subtotal.subtract(priorNet.ok ? priorNet.value : Money.zero());
+      const correctValue =
+        remainingValue.ok && remainingValue.value.compare(creditAmount) > 0
+          ? remainingValue.value.subtract(creditAmount)
+          : { ok: false as const };
+      if (!priorNet.ok || !remainingValue.ok || remainingValue.value.compare(creditAmount) < 0) {
+        // The statement still prints (floored at 0); leave a trace so a
+        // corrupt credited/VAT pair or summed-net drift is visible.
+        logger.warn(
+          {
+            tenantId: input.tenantId,
+            invoiceId,
+            subtotalSatang: loaded.subtotal.satang.toString(),
+            creditedTotalSatang: loaded.creditedTotal.satang.toString(),
+            priorCreditedVatSatang: priorCreditedVat.satang.toString(),
+            creditAmountSatang: creditAmount.satang.toString(),
+          },
+          'issueCreditNote: §86/10 correct value floored at 0',
+        );
+      }
+      const section8610Values = {
+        originalValue: loaded.subtotal,
+        previouslyReduced: priorNet.ok ? priorNet.value : Money.zero(),
+        correctValue: correctValue.ok ? correctValue.value : Money.zero(),
+        difference: creditAmount,
+        differenceVat: vat,
+      };
+
       // G+H. Render CN PDF + upload to Blob (T126 shared helper).
       pendingRenderKind = 'credit_note';
       const blobKey = `invoicing/${input.tenantId}/${fy}/credit-note_${creditNoteId}_v${deps.currentTemplateVersion}.pdf`;
@@ -942,6 +1002,7 @@ export async function issueCreditNote(
               originalDocumentNumber: originalTaxInvoiceNum.raw,
               originalIssueDate: receiptIssueDate,
               reason: input.reason,
+              values: section8610Values,
             },
           },
           blobKey,
@@ -1250,6 +1311,17 @@ export async function issueCreditNote(
         reason: input.reason,
         document_number: docNum.value.raw,
         pdf_sha256: rendered.sha256,
+        // §86/10 วรรคสอง — the statement the note carries (all excl. VAT), kept
+        // here so it can be reproduced without the PDF blob. `template_version`
+        // says whether the PDF printed it (v13+).
+        section_86_10: {
+          original_value_satang: section8610Values.originalValue.satang.toString(),
+          previously_reduced_satang: section8610Values.previouslyReduced.satang.toString(),
+          correct_value_satang: section8610Values.correctValue.satang.toString(),
+          difference_satang: section8610Values.difference.satang.toString(),
+          difference_vat_satang: section8610Values.differenceVat.satang.toString(),
+          template_version: deps.currentTemplateVersion,
+        },
         // 0306 — the staff's declared Keep / End membership intent on a FULL
         // membership credit (manual or refund-origin), for the forensic chain.
         ...(isMembershipInvoice && isFullCredit && input.membershipEffect !== undefined

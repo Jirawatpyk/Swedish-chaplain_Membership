@@ -16,18 +16,19 @@
  * F4 receipt-surface — `showDownloadReceipt`: paid + receiptPdf rendered.
  * It sits alongside `showDownload` (the main PDF — the SC bill on an 088
  * bill, which stays downloadable after payment, FR-015).
+ *
+ * Spec 122 US8b (T824) — AURA's `DropdownMenu`. An AURA menu item carries no
+ * aria-label of its own, so each item names its document with the number as
+ * its hint, which is part of its name: the SC on the bill actions, the RC on
+ * the receipt actions (FR-015, 088 T065). Below 640px the page's actions move
+ * to a bar at the bottom of the screen and Void… joins this menu
+ * (`showVoid`), last, after a separator.
  */
 import { useEffect, useRef, useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
+import { DropdownMenu, IconButton, type MenuItem } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
-import { Download, Loader2, Mail, MoreHorizontal } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+import { useBelowSm } from '@/hooks/use-below-sm';
 import { downloadInvoice, downloadReceipt } from '../_lib/download-receipt-client';
 
 export interface InvoiceMoreMenuProps {
@@ -78,6 +79,11 @@ export interface InvoiceMoreMenuProps {
    *     byte-identical to the pre-064 behaviour).
    */
   readonly mainDownloadKind?: 'combined' | 'receipt' | 'bill' | undefined;
+  /**
+   * The admin may void this issued invoice: below 640px the menu holds Void…
+   * (the header's own Void button is hidden there, spec Session 2026-10-02 US8b).
+   */
+  readonly showVoid?: boolean;
 }
 
 export function InvoiceMoreMenu({
@@ -89,6 +95,7 @@ export function InvoiceMoreMenu({
   showResendReceipt,
   showDownloadReceipt = false,
   mainDownloadKind,
+  showVoid = false,
 }: InvoiceMoreMenuProps) {
   // 088 (T065 review fix) — name the MAIN (SC-bill) download by its own
   // number, falling back to `documentNumber` when no distinct bill number is
@@ -96,11 +103,14 @@ export function InvoiceMoreMenu({
   const mainDownloadNumber = invoiceDownloadNumber ?? documentNumber;
   const t = useTranslations('admin.invoices.detail');
 
+  const isPhone = useBelowSm();
+  const voidHere = showVoid && isPhone;
   const visibleCount =
     (showDownload ? 1 : 0) +
     (showDownloadReceipt ? 1 : 0) +
     (showResendInvoice ? 1 : 0) +
-    (showResendReceipt ? 1 : 0);
+    (showResendReceipt ? 1 : 0) +
+    (voidHere ? 1 : 0);
 
   const [pendingVariant, setPendingVariant] = useState<
     'invoice' | 'receipt' | null
@@ -138,8 +148,8 @@ export function InvoiceMoreMenu({
    * user sees `{"error":{...}}` text and has no path forward. The
    * fetch+blob pattern keeps the UI in control of the failure shape.
    */
-  // Round-4 fixes C-2 + UX-H2 + B-1 — DropdownMenuItem closes
-  // synchronously on click, so the inline Loader2 spinner is invisible
+  // Round-4 fixes C-2 + UX-H2 + B-1 — a menu item closes the menu
+  // synchronously on click, so an inline spinner would be invisible
   // to the user for the entire fetch window. Fire `toast.loading` BEFORE
   // the await so the SR + visual feedback is continuous from click →
   // download. The loader toast is auto-dismissed in `finally` regardless
@@ -266,120 +276,74 @@ export function InvoiceMoreMenu({
 
   if (visibleCount === 0) return null;
 
+  const items: MenuItem[] = [];
+  if (showDownload) {
+    items.push({
+      // 064 — as-paid rows: the main pdf IS the final legal document.
+      // 'combined' (TIN) reuses the dual-role label; 'receipt' (β no-TIN /
+      // legacy §105 rows) flips to the receipt label so the admin never
+      // grabs a receipt under an invoice label; 'bill' (088 SC-) is a
+      // ใบแจ้งหนี้, not a tax invoice.
+      label:
+        mainDownloadKind === 'combined'
+          ? t('actions.downloadCombined')
+          : mainDownloadKind === 'receipt'
+            ? t('actions.downloadReceipt')
+            : mainDownloadKind === 'bill'
+              ? t('actions.downloadBill')
+              : t('actions.download'),
+      hint: mainDownloadNumber,
+      icon: 'download',
+      disabled: downloadingInvoice,
+      onSelect: () => void handleDownloadInvoice(),
+    });
+  }
+  if (showDownloadReceipt) {
+    items.push({
+      label: t('actions.downloadReceipt'),
+      hint: documentNumber,
+      icon: 'download',
+      disabled: downloadingReceipt,
+      onSelect: () => void handleDownloadReceipt(),
+    });
+  }
+  if (showResendInvoice) {
+    items.push({
+      label: t('actions.resendInvoice'),
+      // Resends the main (bill / invoice) PDF, so it names that number — the
+      // SC on a paid 088 bill, not the RC.
+      hint: mainDownloadNumber,
+      icon: 'mail',
+      disabled: pendingVariant !== null || recentlySent.invoice,
+      onSelect: () => handleResend('invoice'),
+    });
+  }
+  if (showResendReceipt) {
+    items.push({
+      label: t('actions.resendReceipt'),
+      hint: documentNumber,
+      icon: 'mail',
+      disabled: pendingVariant !== null || recentlySent.receipt,
+      onSelect: () => handleResend('receipt'),
+    });
+  }
+  if (voidHere) {
+    if (items.length > 0) items.push({ separator: true });
+    items.push({ label: t('actions.void'), href: `/admin/invoices/${invoiceId}/void`, tone: 'danger', icon: 'ban' });
+  }
+
+  // The trigger names the page's own document — the SC bill on an 088
+  // invoice (the RC names only the receipt actions).
+  const menuName = t('actions.moreAria', { number: mainDownloadNumber });
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={(props) => (
-          <Button
-            {...props}
-            variant="ghost"
-            size="icon-lg"
-            // `flex-none!` (note the `!` important suffix) prevents
-            // PageHeader's mobile `[&>*]:flex-1` rule from stretching
-            // the overflow trigger. The parent selector carries higher
-            // specificity (0,1,1) than a bare `.flex-none` class (0,1,0),
-            // so `!` is required to force the compact 36×36 square
-            // mandated by ux-standards.md § 19.
-            className="flex-none!"
-            // The trigger names the page's own document — the SC bill on an
-            // 088 invoice (the RC names only the receipt actions below).
-            aria-label={t('actions.moreAria', { number: mainDownloadNumber })}
-          >
-            <MoreHorizontal aria-hidden="true" />
-          </Button>
-        )}
+    // Our own slot, so the phone action bar can keep the menu at its own
+    // width while the actions fill the row.
+    <span data-slot="invoice-more-menu" className="inline-flex">
+      <DropdownMenu
+        label={menuName}
+        trigger={<IconButton icon="ellipsis" label={menuName} touchHeight className="flex-none!" />}
+        items={items}
       />
-      <DropdownMenuContent align="end" className="min-w-56 whitespace-nowrap">
-        {showDownload && (
-          <DropdownMenuItem
-            disabled={downloadingInvoice}
-            onClick={handleDownloadInvoice}
-            data-testid="download-invoice-trigger"
-            aria-label={t(
-              mainDownloadKind === 'receipt'
-                ? 'actions.downloadReceiptAria'
-                : mainDownloadKind === 'bill'
-                  ? 'actions.downloadBillAria'
-                  : 'actions.downloadInvoiceAria',
-              { number: mainDownloadNumber },
-            )}
-          >
-            {downloadingInvoice ? (
-              <Loader2
-                className="size-4 motion-safe:animate-spin"
-                aria-hidden="true"
-              />
-            ) : (
-              <Download aria-hidden="true" />
-            )}
-            {/* 064 — as-paid rows: the main pdf IS the final legal document.
-                'combined' (TIN) reuses the dual-role label; 'receipt' (β
-                no-TIN / legacy §105 rows) flips to the receipt label so the
-                admin never grabs a receipt under an invoice label. */}
-            {mainDownloadKind === 'combined'
-              ? t('actions.downloadCombined')
-              : mainDownloadKind === 'receipt'
-                ? t('actions.downloadReceipt')
-                : mainDownloadKind === 'bill'
-                  ? t('actions.downloadBill')
-                  : t('actions.download')}
-          </DropdownMenuItem>
-        )}
-        {showDownloadReceipt && (
-          <DropdownMenuItem
-            disabled={downloadingReceipt}
-            onClick={handleDownloadReceipt}
-            data-testid="download-receipt-trigger"
-            aria-label={t('actions.downloadReceiptAria', { number: documentNumber })}
-          >
-            {downloadingReceipt ? (
-              <Loader2
-                className="size-4 motion-safe:animate-spin"
-                aria-hidden="true"
-              />
-            ) : (
-              <Download aria-hidden="true" />
-            )}
-            {t('actions.downloadReceipt')}
-          </DropdownMenuItem>
-        )}
-        {showResendInvoice && (
-          <DropdownMenuItem
-            disabled={pendingVariant !== null || recentlySent.invoice}
-            onClick={() => handleResend('invoice')}
-            data-testid="resend-invoice-trigger"
-            // Resends the main (bill / invoice) PDF, so it names that number —
-            // the SC on a paid 088 bill, not the RC.
-            aria-label={t('actions.resendInvoiceAria', {
-              number: mainDownloadNumber,
-            })}
-          >
-            {pendingVariant === 'invoice' ? (
-              <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden="true" />
-            ) : (
-              <Mail aria-hidden="true" />
-            )}
-            {t('actions.resendInvoice')}
-          </DropdownMenuItem>
-        )}
-        {showResendReceipt && (
-          <DropdownMenuItem
-            disabled={pendingVariant !== null || recentlySent.receipt}
-            onClick={() => handleResend('receipt')}
-            data-testid="resend-receipt-trigger"
-            aria-label={t('actions.resendReceiptAria', {
-              number: documentNumber,
-            })}
-          >
-            {pendingVariant === 'receipt' ? (
-              <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden="true" />
-            ) : (
-              <Mail aria-hidden="true" />
-            )}
-            {t('actions.resendReceipt')}
-          </DropdownMenuItem>
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    </span>
   );
 }

@@ -6,7 +6,11 @@
  * react-hook-form + zod resolver. Composes:
  *   - Amount input — inputmode="decimal", THB units; converted to
  *     satang on submit. Label-above + asterisk + live help-text
- *     "Maximum refundable: {amount} THB" per FR-029(b).
+ *     "Up to {amount} (paid, less refunds and credit notes)…" per FR-029(b)
+ *     and board Admin-refund-full; a valid amount adds the refund summary
+ *     (the credit note to be issued — amount excl. VAT and VAT, read from
+ *     the server — then refund total, still refundable afterwards) and names
+ *     itself on Confirm.
  *   - Reason textarea — 500-char counter; aria-live polite.
  *   - <TypedPhraseConfirm> — renders ONLY when amount === remaining
  *     (full refund) per FR-029(f).
@@ -36,30 +40,17 @@ import { useTranslations } from 'next-intl';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { type SubmitHandler, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
+import { Alert, Button, RadioGroup, Skeleton, TextField, Textarea } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
-import { Loader2Icon, TriangleAlertIcon } from 'lucide-react';
 // TYPE-ONLY, and it must stay that way. The invoicing barrel reaches
 // server-only modules; a value import here would drag them into a client
 // bundle. `import type` is erased at compile time, so this costs nothing at
 // runtime while still binding the copy to F4's Domain vocabulary.
 import type { CreditNoteWaiverReason } from '@/modules/invoicing';
-import {
-  AlertDialogCancel,
-  AlertDialogFooter,
-} from '@/components/ui/alert-dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import {
-  InlineAlert,
-  InlineAlertDescription,
-  InlineAlertTitle,
-} from '@/components/ui/inline-alert';
 import { useLocale } from 'next-intl';
 import { formatSatangThb } from '@/lib/format-thb';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { TypedPhraseConfirm } from './typed-phrase-confirm';
+import { useCreditNotePreview } from './use-credit-note-preview';
 
 const REASON_MAX = 500;
 
@@ -79,7 +70,7 @@ type WaiverReason = CreditNoteWaiverReason;
  * Domain constant using this same transform, so a reason without copy fails the
  * build rather than reaching an admin.
  */
-function waiverKey(reason: WaiverReason): string {
+export function waiverKey(reason: WaiverReason): string {
   return reason.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase());
 }
 
@@ -107,6 +98,10 @@ type FormValues = z.infer<ReturnType<typeof buildSchema>>;
 
 type Props = {
   readonly paymentId: string;
+  /** The invoice the refund credits — keys the credit-note preview read. */
+  readonly invoiceId: string;
+  /** F4 waives this document's credit note (known at page load): skip the read. */
+  readonly creditNoteWaiverReason?: WaiverReason | null;
   readonly memberCompanyName: string;
   readonly remainingRefundableSatang: bigint;
   readonly currencyCode: string;
@@ -119,6 +114,8 @@ type Props = {
    */
   readonly invoiceHeadroomSatang: bigint;
   readonly onClose: () => void;
+  /** The request is in flight: the dialog stays open (no Escape or scrim close). */
+  readonly onPendingChange?: (pending: boolean) => void;
 };
 
 type MembershipEffect = 'keep' | 'cancel_membership';
@@ -133,18 +130,26 @@ const MEMBERSHIP_END_OUTCOMES = [
 ] as const;
 type MembershipEndOutcome = (typeof MEMBERSHIP_END_OUTCOMES)[number];
 
+/** `0.0700` → `7%` / `7 %` (display of the invoice's stored rate; no money maths). */
+function formatVatRatePercent(rate: string, locale: string): string {
+  return new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 2 }).format(Number(rate));
+}
+
 // Display-only formatting via the canonical `formatSatangThb` helper
 // (`src/lib/format-thb.ts`). Server-side accounting arithmetic stays
 // in satang.
 
 export function RefundForm({
   paymentId,
+  invoiceId,
+  creditNoteWaiverReason = null,
   memberCompanyName,
   remainingRefundableSatang,
   currencyCode,
   invoiceSubject,
   invoiceHeadroomSatang,
   onClose,
+  onPendingChange,
 }: Props) {
   const t = useTranslations('admin.refund');
   const tForm = useTranslations('admin.refund.form');
@@ -160,6 +165,9 @@ export function RefundForm({
   const schema = useMemo(() => buildSchema(remainingThb), [remainingThb]);
 
   const [submitting, setSubmitting] = useState(false);
+  useEffect(() => {
+    onPendingChange?.(submitting);
+  }, [submitting, onPendingChange]);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [typedPhrase, setTypedPhrase] = useState('');
   // 0306 — default Keep: ending a membership is never the silent default.
@@ -168,6 +176,8 @@ export function RefundForm({
   const amountId = useId();
   const reasonId = useId();
   const reasonHelpId = `${reasonId}-help`;
+  // Never ends in `-help`: tests/e2e/helpers/refund.ts reads the first `[id$="-help"]`.
+  const creditNoteTitleId = `${amountId}-credit-note-title`;
 
   // Move focus to the server-rejection alert so a keyboard/SR admin whose
   // focus is on the (re-enabled) Confirm button is taken to the reason
@@ -222,6 +232,15 @@ export function RefundForm({
     invoiceSubject === 'membership' &&
     amountSatang !== null &&
     amountSatang === invoiceHeadroomSatang;
+  // Board Admin-refund-full / -partial: a valid amount within the headroom
+  // gets the refund summary and names itself on Confirm. Display only — the
+  // request still carries `amountSatang` and the server re-checks the cap.
+  const summaryAmountSatang =
+    amountSatang !== null && amountSatang > 0n && amountSatang <= remainingRefundableSatang ? amountSatang : null;
+  // "Credit note to be issued" — the server's split for this amount, printed
+  // as received (no VAT arithmetic here). Nothing shows for a waived (§105
+  // receipt, voided invoice) or blocked document, or if the read fails.
+  const creditNotePreview = useCreditNotePreview(invoiceId, summaryAmountSatang, creditNoteWaiverReason);
   const expectedPhrase = `REFUND ${memberCompanyName}`;
   const phraseMatches = typedPhrase === expectedPhrase;
 
@@ -412,11 +431,8 @@ export function RefundForm({
     }
   };
 
-  // Cancel button gets default focus per FR-029(d) (destructive
-  // dialogs default to safe action) — Radix's focus-scope autofocuses
-  // the first tabbable child of <AlertDialogContent>, and we render
-  // <AlertDialogCancel> before the destructive Confirm button, so no
-  // explicit focus management is required.
+  // Cancel takes the first focus per FR-029(d) (destructive dialogs default
+  // to the safe action): AURA's modal focuses `[data-autofocus]` on open.
 
   // Map RHF zod-resolver error codes to localised messages. The
   // resolver puts the `message` field straight into errors; we
@@ -466,12 +482,11 @@ export function RefundForm({
     >
       {/* Amount field — inputmode="decimal" so mobile keyboards show
         * the right layout; THB live-help shows the maximum refundable. */}
-      <div className="grid gap-2">
-        <Label htmlFor={amountId}>
-          {tForm('amount.label')} <span aria-hidden="true">*</span>
-        </Label>
-        <Input
+      <div className="flex flex-col gap-1">
+        <TextField
           id={amountId}
+          label={tForm('amount.label')}
+          required
           type="text"
           inputMode="decimal"
           // Native iOS form-validation hint — belt + braces with the
@@ -489,82 +504,127 @@ export function RefundForm({
           data-testid="refund-form-amount"
           {...register('amountThb')}
         />
-        <p
-          id={`${amountId}-help`}
-          className="text-xs text-muted-foreground"
-        >
+        <p id={`${amountId}-help`} className="text-xs text-[var(--aura-fg-secondary)]">
           {tForm('amount.maximumHelp', {
             amount: formatSatangThb(remainingRefundableSatang, locale, currencyCode),
           })}
         </p>
         {amountMessage && (
-          <p id={`${amountId}-error`} className="text-xs text-destructive" role="alert">
+          <p id={`${amountId}-error`} className="text-xs text-[var(--aura-fg-danger)]" role="alert">
             {amountMessage}
           </p>
         )}
       </div>
 
+      {summaryAmountSatang !== null && (
+        <div
+          data-testid="refund-summary"
+          className="flex flex-col gap-[var(--aura-space-2)] rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface-hover)] p-[var(--aura-space-3)]"
+        >
+          <p className="text-xs font-semibold text-[var(--aura-fg-secondary)]">{tForm('summary.title')}</p>
+          {/* F4 waived the credit note (§105 receipt, voided invoice): say so
+              before Confirm, as a plain note. No filing advice — that is the
+              accountant's call (see the waived toasts below). */}
+          {creditNotePreview.status === 'none' && creditNotePreview.waivedReason !== null && (
+            <p data-testid="refund-summary-no-credit-note" className="text-sm text-[var(--aura-fg-secondary)]">
+              {tForm(`summary.noCreditNote.${waiverKey(creditNotePreview.waivedReason)}`)}
+            </p>
+          )}
+          {(creditNotePreview.status === 'loading' || creditNotePreview.status === 'ready') && (
+            // One layout for loading and ready — only the values swap for a
+            // skeleton — so the totals below never shift while typing.
+            <div
+              role="group"
+              aria-labelledby={creditNoteTitleId}
+              aria-busy={creditNotePreview.status === 'loading'}
+              data-testid={creditNotePreview.status === 'ready' ? 'refund-summary-credit-note' : 'refund-summary-credit-note-loading'}
+              className="flex flex-col gap-[var(--aura-space-1)]"
+            >
+              <p id={creditNoteTitleId} className="text-xs font-medium text-[var(--aura-fg-secondary)]">
+                {tForm('summary.creditNoteTitle')}
+              </p>
+              <dl className="grid grid-cols-[1fr_auto] gap-x-[var(--aura-space-4)] gap-y-[var(--aura-space-1)] text-sm text-[var(--aura-fg-secondary)]">
+                <dt>{tForm('summary.creditNoteNet')}</dt>
+                <dd className="text-end tabular-nums">
+                  {creditNotePreview.status === 'ready' ? (
+                    formatSatangThb(creditNotePreview.split.netSatang, locale, currencyCode)
+                  ) : (
+                    <Skeleton variant="text" width="8ch" />
+                  )}
+                </dd>
+                <dt>
+                  {(() => {
+                    const rate = creditNotePreview.status === 'ready' ? creditNotePreview.split.vatRate : creditNotePreview.vatRate;
+                    return rate === null
+                      ? tForm('summary.creditNoteVatPending')
+                      : tForm('summary.creditNoteVat', { rate: formatVatRatePercent(rate, locale) });
+                  })()}
+                </dt>
+                <dd className="text-end tabular-nums">
+                  {creditNotePreview.status === 'ready' ? (
+                    formatSatangThb(creditNotePreview.split.vatSatang, locale, currencyCode)
+                  ) : (
+                    <Skeleton variant="text" width="6ch" />
+                  )}
+                </dd>
+              </dl>
+              {creditNotePreview.status === 'loading' && (
+                <span className="sr-only">{tForm('summary.creditNoteLoading')}</span>
+              )}
+            </div>
+          )}
+          <dl
+            className={`grid grid-cols-[1fr_auto] gap-x-[var(--aura-space-4)] gap-y-[var(--aura-space-1)] text-sm${
+              creditNotePreview.status === 'loading' ||
+              creditNotePreview.status === 'ready' ||
+              (creditNotePreview.status === 'none' && creditNotePreview.waivedReason !== null)
+                ? ' border-t border-[var(--aura-border-subtle)] pt-[var(--aura-space-2)]'
+                : ''
+            }`}
+          >
+            <dt className="font-semibold">{tForm('summary.total')}</dt>
+            <dd className="text-end font-semibold tabular-nums">
+              {formatSatangThb(summaryAmountSatang, locale, currencyCode)}
+            </dd>
+            <dt>{tForm('summary.after')}</dt>
+            <dd className="text-end tabular-nums">
+              {formatSatangThb(remainingRefundableSatang - summaryAmountSatang, locale, currencyCode)}
+            </dd>
+          </dl>
+        </div>
+      )}
+
       {/* 0306 — a full refund of a membership invoice withdraws the paid
           period. Say what Renewals will do next, and let staff end the
           membership instead of letting it run to period end. */}
       {isFullMembershipRefund && (
-        <InlineAlert tone="warning" role="note" data-testid="refund-membership-warning">
-          <TriangleAlertIcon className="size-4" aria-hidden="true" />
-          <InlineAlertTitle>{t('membership.warningTitle')}</InlineAlertTitle>
-          <InlineAlertDescription className="flex flex-col gap-3 text-foreground">
+        <Alert tone="warning" role="note" title={t('membership.warningTitle')} data-testid="refund-membership-warning">
+          <div className="flex flex-col gap-3">
             <p>{t('membership.warningBody')}</p>
-            <fieldset className="flex flex-col gap-2">
-              <legend className="mb-1 text-sm font-medium">{t('membership.legend')}</legend>
-              <RadioGroup
-                value={membershipEffect}
-                onValueChange={(v) =>
-                  setMembershipEffect(v === 'cancel_membership' ? 'cancel_membership' : 'keep')
-                }
-                className="gap-2"
-              >
-                {(
-                  [
-                    ['keep', 'keep'],
-                    ['cancel_membership', 'end'],
-                  ] as const
-                ).map(([value, key]) => (
-                  <div key={value} className="flex items-start gap-2">
-                    <RadioGroupItem
-                      id={`${amountId}-membership-${key}`}
-                      value={value}
-                      className="mt-0.5"
-                      aria-labelledby={`${amountId}-membership-${key}-label`}
-                      aria-describedby={`${amountId}-membership-${key}-desc`}
-                    />
-                    <Label
-                      htmlFor={`${amountId}-membership-${key}`}
-                      className="flex min-h-[44px] cursor-pointer flex-col gap-0.5"
-                    >
-                      <span id={`${amountId}-membership-${key}-label`} className="font-medium">
-                        {t(`membership.${key}.label`)}
-                      </span>
-                      <span
-                        id={`${amountId}-membership-${key}-desc`}
-                        className="text-xs text-muted-foreground"
-                      >
-                        {t(`membership.${key}.description`)}
-                      </span>
-                    </Label>
-                  </div>
-                ))}
-              </RadioGroup>
-            </fieldset>
-          </InlineAlertDescription>
-        </InlineAlert>
+            <RadioGroup
+              label={t('membership.legend')}
+              name={`${amountId}-membership`}
+              value={membershipEffect}
+              onChange={(v) => setMembershipEffect(v === 'cancel_membership' ? 'cancel_membership' : 'keep')}
+              options={[
+                { value: 'keep', label: t('membership.keep.label'), description: t('membership.keep.description') },
+                {
+                  value: 'cancel_membership',
+                  label: t('membership.end.label'),
+                  description: t('membership.end.description'),
+                },
+              ]}
+            />
+          </div>
+        </Alert>
       )}
 
       {/* Reason — single-line textarea (server enforces no CR/LF too) */}
-      <div className="grid gap-2">
-        <Label htmlFor={reasonId}>
-          {tForm('reason.label')} <span aria-hidden="true">*</span>
-        </Label>
+      <div className="flex flex-col gap-1">
         <Textarea
           id={reasonId}
+          label={tForm('reason.label')}
+          required
           rows={3}
           maxLength={REASON_MAX}
           placeholder={tForm('reason.placeholder')}
@@ -579,7 +639,7 @@ export function RefundForm({
         {reasonMessage && (
           <p
             id={`${reasonId}-error`}
-            className="text-xs text-destructive"
+            className="text-xs text-[var(--aura-fg-danger)]"
             role="alert"
           >
             {reasonMessage}
@@ -588,7 +648,7 @@ export function RefundForm({
         {/* Visual counter — sighted users see live updates per keystroke. */}
         <p
           id={reasonHelpId}
-          className="text-xs text-muted-foreground"
+          className="text-xs text-[var(--aura-fg-secondary)]"
           aria-hidden="true"
         >
           {tForm('reason.charCount', { count: reasonValue.length })}
@@ -616,36 +676,39 @@ export function RefundForm({
       {/* Submit error — inline alert above buttons (FR-029(g)). */}
       {submitError && (
         <div ref={errorRef} tabIndex={-1} className="outline-none">
-          <InlineAlert tone="destructive" data-testid="refund-form-error">
-            {/* Generic headline so a known business rejection (e.g. "refund in
-              * progress") isn't mislabelled "unexpected error"; the specific
-              * localised reason lives in the description. */}
-            <InlineAlertTitle>{t('error.title')}</InlineAlertTitle>
-            <InlineAlertDescription>{submitError}</InlineAlertDescription>
-          </InlineAlert>
+          {/* Generic headline so a known business rejection (e.g. "refund in
+            * progress") isn't mislabelled "unexpected error"; the specific
+            * localised reason is the body. */}
+          <Alert tone="danger" title={t('error.title')} data-testid="refund-form-error">
+            {submitError}
+          </Alert>
         </div>
       )}
 
-      <AlertDialogFooter>
-        <AlertDialogCancel disabled={submitting}>
+      {/* The buttons stick to the bottom of the dialog's scrolling body, so a
+          long form never scrolls them away and focusing Cancel on open does
+          not scroll the summary out of view; on a phone they stack full
+          width, the primary action on top (ux-standards § 11.1). */}
+      <div className="sticky bottom-0 flex flex-wrap justify-end gap-[var(--aura-space-2)] bg-[var(--aura-bg-surface)] py-[var(--aura-space-3)] max-sm:flex-col-reverse max-sm:[&>*]:w-full">
+        <Button type="button" variant="secondary" touchHeight data-autofocus disabled={submitting} onClick={onClose}>
           {t('dialog.cancel')}
-        </AlertDialogCancel>
+        </Button>
         <Button
           type="submit"
-          variant="destructive"
+          variant="danger"
+          touchHeight
+          icon="rotate-ccw"
+          loading={submitting}
           disabled={!canSubmit}
-          aria-busy={submitting}
           data-testid="refund-form-confirm"
         >
-          {submitting && (
-            <Loader2Icon
-              className="size-4 motion-safe:animate-spin"
-              aria-hidden="true"
-            />
-          )}
-          {submitting ? t('dialog.processing') : t('dialog.confirm')}
+          {submitting
+            ? t('dialog.processing')
+            : summaryAmountSatang !== null
+              ? t('dialog.confirmAmount', { amount: formatSatangThb(summaryAmountSatang, locale, currencyCode) })
+              : t('dialog.confirm')}
         </Button>
-      </AlertDialogFooter>
+      </div>
     </form>
   );
 }

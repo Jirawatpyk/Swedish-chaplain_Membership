@@ -25,6 +25,9 @@ import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vite
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 
+/** An AURA field's label also holds its required asterisk, so match from the start. */
+const labelled = (text: string) => new RegExp(`^${text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
+
 const { pushMock, toastSuccess } = vi.hoisted(() => ({
   pushMock: vi.fn(),
   toastSuccess: vi.fn(),
@@ -75,14 +78,14 @@ function renderForm(overrides: FormOverrides = {}) {
 }
 
 function fillAmount(value: string) {
-  fireEvent.change(screen.getByLabelText(cnMessages.amountLabel), {
+  fireEvent.change(screen.getByLabelText(labelled(cnMessages.amountLabel)), {
     target: { value },
   });
 }
 
 function fillFullFormFields() {
   fillAmount('1070.00'); // 107,000 satang === REMAINING_SATANG → full credit
-  fireEvent.change(screen.getByLabelText(cnMessages.reasonLabel), {
+  fireEvent.change(screen.getByLabelText(labelled(cnMessages.reasonLabel)), {
     target: { value: 'membership refund' },
   });
   fireEvent.change(
@@ -93,7 +96,7 @@ function fillFullFormFields() {
 
 function fillPartialFormFields() {
   fillAmount('500.00'); // 50,000 satang < 107,000 remaining → partial credit
-  fireEvent.change(screen.getByLabelText(cnMessages.reasonLabel), {
+  fireEvent.change(screen.getByLabelText(labelled(cnMessages.reasonLabel)), {
     target: { value: 'partial refund' },
   });
   fireEvent.change(
@@ -408,5 +411,27 @@ describe('CreditNoteForm — remainder formatting', () => {
     // 107,000 satang → "1,070.00 THB", not the ungrouped "1070.00 THB".
     expect(screen.getByText('1,070.00 THB')).toBeInTheDocument();
     expect(screen.queryByText('1070.00 THB')).not.toBeInTheDocument();
+  });
+});
+
+// Spec 122 US8b (T827) — the new-credit-note form on AURA (board
+// Admin-credit-note): the amount is an AURA field with the currency as its
+// suffix, and the buttons are Cancel then Issue credit note on AURA buttons.
+describe('CreditNoteForm — AURA layout', () => {
+  it('draws the amount as an AURA field with the currency suffix, and Cancel before the primary action', () => {
+    renderForm();
+    const amount = screen.getByLabelText(labelled(cnMessages.amountLabel));
+    expect(amount.closest('.aura-input')).not.toBeNull();
+    expect(amount.closest('.aura-input')).toHaveTextContent('THB');
+    const cancel = screen.getByRole('button', { name: cnMessages.cancel });
+    const submit = screen.getByRole('button', { name: cnMessages.submit });
+    expect(cancel.compareDocumentPosition(submit) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(submit).toHaveClass('aura-btn');
+  });
+
+  it('on a phone stacks the buttons full width, the primary action on top (ux-standards § 11.1, as the void page)', () => {
+    renderForm();
+    const row = screen.getByRole('button', { name: cnMessages.cancel }).parentElement!;
+    expect(row).toHaveClass('max-sm:flex-col-reverse', 'max-sm:[&>*]:w-full');
   });
 });

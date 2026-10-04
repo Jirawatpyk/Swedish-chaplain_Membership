@@ -27,6 +27,7 @@ import { buildMembersDeps } from '@/modules/members/members-deps';
 import { resolvePlanName } from '@/lib/resolve-plan-name';
 import { type MemberOption, type PlanOption } from '../_components/invoice-form';
 import { InvoiceCreateSwitcher } from './_components/invoice-create-switcher';
+import { drizzleTenantSettingsRepo } from '@/modules/invoicing';
 import type { EventOption } from './_components/event-fee-form';
 import { formatCalendarYear } from '@/lib/format-date-localised';
 
@@ -119,6 +120,10 @@ export default async function NewInvoiceDraftPage({
   // events (ceiling 200 mirrors the F6 detail-endpoint pageSize cap).
   let events: readonly EventOption[] = [];
   let initialEventId: string | undefined;
+  // The event-fee VAT preview splits at the rate issuance pins
+  // (`tenant_invoice_settings.vat_rate`), never a hardcoded 7%. `null` (no
+  // settings) → the preview shows the total only.
+  let vatRateBps: number | null = null;
   if (env.features.f6EventCreate) {
     const eventsResult = await runListEvents(tenantCtx.slug, {
       page: 1,
@@ -128,6 +133,17 @@ export default async function NewInvoiceDraftPage({
       culturalEventOnly: false,
       categoryFilter: null,
     });
+    // A failed read must not take the whole page (membership tab included)
+    // down with it: the preview degrades to total-only, like no settings.
+    try {
+      const invoiceSettings = await drizzleTenantSettingsRepo.getForIssue(tenantCtx.slug);
+      vatRateBps = invoiceSettings ? Number(invoiceSettings.vatRate.numerator) : null;
+    } catch (err) {
+      logger.warn(
+        { event: 'invoice_new_settings_load_failed', tenantId: tenantCtx.slug, err },
+        '[F4] /admin/invoices/new — invoice settings read failed; event-fee VAT preview shows the total only',
+      );
+    }
     if (eventsResult.ok) {
       events = eventsResult.value.items.map((e) => ({
         eventId: e.eventId,
@@ -174,6 +190,7 @@ export default async function NewInvoiceDraftPage({
         plans={plans}
         events={events}
         taxAtPayment={env.features.f088TaxAtPayment}
+        vatRateBps={vatRateBps}
         {...(initialMemberId ? { initialMemberId } : {})}
         {...(initialEventId ? { initialEventId } : {})}
         {...(initialRegistrationId ? { initialRegistrationId } : {})}

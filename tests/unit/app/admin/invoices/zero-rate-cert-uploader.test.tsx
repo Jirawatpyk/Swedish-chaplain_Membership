@@ -47,11 +47,10 @@ function pdfFile(name = 'cert.pdf', sizeOverride?: number): File {
 }
 
 describe('ZeroRateCertUploader', () => {
-  it('renders a native upload button as the primary input (≥44px)', () => {
+  it('renders an AURA upload button as the primary input (≥44px, FR-036)', () => {
     renderUploader();
     const btn = screen.getByRole('button', { name: /Attach certificate scan/i });
-    expect(btn).toBeInTheDocument();
-    expect(btn.className).toContain('min-h-[44px]');
+    expect(btn).toHaveClass('aura-btn', 'min-h-11');
   });
 
   it('successful upload surfaces the blob key + filename via onUploaded', async () => {

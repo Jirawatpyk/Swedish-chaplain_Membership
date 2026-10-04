@@ -211,11 +211,21 @@
  *     v11 is DEPLOYED, so this is a fresh version (not a redefine): the notice
  *     draws only on v12+ bill issuances, and a bill with an unset notice (both
  *     columns NULL) renders byte-identical at v12 as at v11.
+ *   - **v13** (2026-10-03) — §86/10 วรรคสอง on the ใบลดหนี้: beside the
+ *     original tax invoice's number/date and the reason, the credit note now
+ *     states the value per the original tax invoice, the correct value, the
+ *     difference and the VAT on the difference (all excl. VAT) — and, on a
+ *     later note, what earlier notes reduced, so the figures reconcile on the
+ *     document — supplied by `issueCreditNote` as `creditNote.values`. Gated on `templateVersion >=
+ *     CREDIT_NOTE_VALUES_MIN_VERSION` (=13, see templates/invoice-template.tsx)
+ *     AND on the values being present, so a pinned pre-v13 document re-renders
+ *     byte-stable (SC-003). Only the credit_note kind changes; every other kind
+ *     renders identically at v13 as at v12.
  */
 
-export const CURRENT_TEMPLATE_VERSION = 12 as const;
+export const CURRENT_TEMPLATE_VERSION = 13 as const;
 
-export const TEMPLATE_VERSIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as const;
+export const TEMPLATE_VERSIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13] as const;
 export type PdfTemplateVersion = (typeof TEMPLATE_VERSIONS)[number];
 
 export function isKnownTemplateVersion(v: number): v is PdfTemplateVersion {

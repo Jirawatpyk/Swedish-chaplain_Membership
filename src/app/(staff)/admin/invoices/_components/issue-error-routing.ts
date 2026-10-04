@@ -18,6 +18,8 @@
 
 export type IssueErrorRouting =
   | { readonly kind: 'concurrent' }
+  /** The confirmed total is stale → inline "total changed — refresh". */
+  | { readonly kind: 'stale' }
   | {
       readonly kind: 'failure';
       /** i18n key relative to `admin.invoices.issue.`. */
@@ -28,6 +30,9 @@ export type IssueErrorRouting =
 
 /** Stale-write 409 → inline "already issued — refresh". */
 const CONCURRENT_CODES: ReadonlySet<string> = new Set(['invoice_already_issued']);
+
+/** The total the dialog confirmed no longer matches the priced one (409). */
+const STALE_TOTAL_CODES: ReadonlySet<string> = new Set(['issue_total_changed']);
 
 /**
  * Codes with dedicated, operator-actionable inline copy.
@@ -87,6 +92,7 @@ export function routeIssueError(
   code: string | undefined | null,
 ): IssueErrorRouting {
   if (code && CONCURRENT_CODES.has(code)) return { kind: 'concurrent' };
+  if (code && STALE_TOTAL_CODES.has(code)) return { kind: 'stale' };
   if (code && DEDICATED_MESSAGE_CODES.has(code)) {
     return { kind: 'failure', messageKey: `errors.${code}` };
   }

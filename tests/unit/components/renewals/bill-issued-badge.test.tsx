@@ -24,9 +24,9 @@ function renderBadge(
 }
 
 describe('<BillIssuedBadge>', () => {
-  it('shows "Bill issued" for an awaiting_payment cycle still in a countdown bucket', () => {
+  it('shows "Invoice issued" for an awaiting_payment cycle still in a countdown bucket', () => {
     renderBadge('awaiting_payment', 't-30');
-    expect(screen.getByText('Bill issued')).toBeDefined();
+    expect(screen.getByText('Invoice issued')).toBeDefined();
     // The reason is exposed to screen readers, not only via `title`.
     expect(
       screen.getByText(/benefits continue until the current period ends/),
@@ -35,7 +35,7 @@ describe('<BillIssuedBadge>', () => {
 
   it('122 US7a: is a neutral outline AURA badge, quieter than the urgency pill', () => {
     renderBadge('awaiting_payment', 't-30');
-    expect(screen.getByText('Bill issued')).toHaveClass('aura-badge', 'aura-badge--neutral', 'is-outline');
+    expect(screen.getByText('Invoice issued')).toHaveClass('aura-badge', 'aura-badge--neutral', 'is-outline');
   });
 
   it.each([

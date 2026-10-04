@@ -203,11 +203,13 @@ const ALLOWED: ReadonlyArray<AllowedRead> = [
   {
     file: 'src/app/(staff)/admin/credit-notes/[creditNoteId]/page.tsx',
     contains: 'cn.memberIdentitySnapshot.primary_contact_email',
-    expect: 2,
+    expect: 1,
     why:
       'RENDERS the frozen §86/4 buyer block beside tax_id and address — this is ' +
       'WHO WAS BILLED on the tax document, shown to staff. Nothing is addressed ' +
-      'from it. Surfaced the day the staff tree entered scope (round-4 #13).',
+      'from it. Surfaced the day the staff tree entered scope (round-4 #13). ' +
+      'Spec 122 US8c: the page passes it once to `renderCreditNoteDetailView` ' +
+      '(the view labels it "at issue" and says a resend goes to the live primary).',
   },
   {
     file: 'src/app/(staff)/admin/invoices/new/_components/event-fee-form.tsx',

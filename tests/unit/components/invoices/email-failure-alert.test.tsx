@@ -29,6 +29,14 @@ function resp(status: number, body: unknown) {
 
 describe('EmailFailureAlert (B7 / FR-026)', () => {
   beforeEach(() => vi.clearAllMocks());
+
+  // Spec 122 US8b (T826) — an AURA danger alert, its title the failed document.
+  it('is an AURA danger alert titled by the failed document', () => {
+    render(<EmailFailureAlert invoiceId="inv-1" recipientEmail="old@x.com" variant="invoice" canResend />);
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveClass('aura-alert');
+    expect(alert).toHaveTextContent('deliveryFailure.invoice.title');
+  });
   // Restore the stubbed global fetch so it doesn't leak into other suites.
   afterEach(() => vi.unstubAllGlobals());
 
@@ -47,7 +55,7 @@ describe('EmailFailureAlert (B7 / FR-026)', () => {
       />,
     );
     await act(async () => {
-      fireEvent.click(screen.getByRole('button'));
+      fireEvent.click(screen.getByRole('button', { name: /^deliveryFailure\.\w+\.resend$/ }));
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -77,7 +85,7 @@ describe('EmailFailureAlert (B7 / FR-026)', () => {
       />,
     );
     await act(async () => {
-      fireEvent.click(screen.getByRole('button'));
+      fireEvent.click(screen.getByRole('button', { name: /^deliveryFailure\.\w+\.resend$/ }));
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(
@@ -99,7 +107,7 @@ describe('EmailFailureAlert (B7 / FR-026)', () => {
       />,
     );
     await act(async () => {
-      fireEvent.click(screen.getByRole('button'));
+      fireEvent.click(screen.getByRole('button', { name: /^deliveryFailure\.\w+\.resend$/ }));
     });
     expect(toast.warning).toHaveBeenCalledWith('toast.resendNoReceipt');
     expect(toast.error).not.toHaveBeenCalled();

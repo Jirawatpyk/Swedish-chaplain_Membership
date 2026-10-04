@@ -144,15 +144,18 @@ async function openIssueDialogAtZeroRate(
 /** WCAG 2.5.5 — assert a control's rendered box is ≥ MIN_TARGET on both axes. */
 async function expectTargetSize(locator: Locator, label: string): Promise<void> {
   await expect(locator, `${label} visible`).toBeVisible();
-  const box = await locator.boundingBox();
-  expect(box, `${label} has a bounding box`).not.toBeNull();
-  // 0.5px epsilon absorbs sub-pixel layout rounding across engines.
-  expect(box!.height, `${label} height ≥ ${MIN_TARGET}px`).toBeGreaterThanOrEqual(
-    MIN_TARGET - 0.5,
-  );
-  expect(box!.width, `${label} width ≥ ${MIN_TARGET}px`).toBeGreaterThanOrEqual(
-    MIN_TARGET - 0.5,
-  );
+  // A target size belongs to the settled layout. Checking the zero-rate radio
+  // reveals the certificate fields and reflows the dialog, and one read taken
+  // during that reflow saw the label's bare 20px line box (relay R33). Poll
+  // until the box settles; a control that never reaches 44px still fails at
+  // the timeout. 0.5px epsilon absorbs sub-pixel rounding across engines.
+  const side = (axis: 'height' | 'width') => async () => (await locator.boundingBox())?.[axis] ?? 0;
+  await expect
+    .poll(side('height'), { message: `${label} height ≥ ${MIN_TARGET}px`, timeout: 5000 })
+    .toBeGreaterThanOrEqual(MIN_TARGET - 0.5);
+  await expect
+    .poll(side('width'), { message: `${label} width ≥ ${MIN_TARGET}px`, timeout: 5000 })
+    .toBeGreaterThanOrEqual(MIN_TARGET - 0.5);
 }
 
 test.describe('088 zero-rate issue form a11y @a11y @f088', () => {
@@ -230,27 +233,24 @@ test.describe('088 zero-rate issue form a11y @a11y @f088', () => {
     gateOnState(state);
 
     // The zero-rate radio's target is its enclosing clickable <label> (the
-    // native input is 16px; the label is min-h-11). Measure the label.
+    // native input is 16px; AURA's `touchHeight="always"` makes the label
+    // 44px, `.is-touch-always`). Measure the label.
     const zeroRateLabel = page
       .locator('label')
       .filter({ has: page.getByRole('radio', { name: /Zero-rated/i }) });
     await expectTargetSize(zeroRateLabel, 'zero-rate radio label');
-    await expectTargetSize(
-      page.getByLabel(/MFA certificate number/i),
-      'cert-no input',
-    );
-    await expectTargetSize(
-      page.getByLabel(/Certificate date/i),
-      'cert-date input',
-    );
+    // An AURA field's target is its bordered box (`.aura-input`), which the
+    // input fills (spec 122 US8b); the input inside is the box less its 1px
+    // border. Measure the box, as the legacy bordered <input> was measured.
+    const fieldBox = (label: RegExp) =>
+      page.locator('.aura-input').filter({ has: page.getByLabel(label) });
+    await expectTargetSize(fieldBox(/MFA certificate number/i), 'cert-no input');
+    await expectTargetSize(fieldBox(/Certificate date/i), 'cert-date input');
     await expectTargetSize(
       page.getByRole('button', { name: /Attach certificate scan/i }),
       'cert-scan button',
     );
-    await expectTargetSize(
-      page.getByLabel(/to confirm/i),
-      'typed-phrase confirm input',
-    );
+    await expectTargetSize(fieldBox(/to confirm/i), 'typed-phrase confirm input');
   });
 
   for (const width of [320, 375] as const) {
@@ -304,7 +304,7 @@ test.describe('088 zero-rate issue form a11y @a11y @f088', () => {
     // overflow-y-auto, so content must remain reachable, not clipped.
     await page.addStyleTag({ content: 'html { font-size: 200% !important; }' });
     await expect(page.getByLabel(/MFA certificate number/i)).toBeVisible();
-    await expect(page.getByRole('button', { name: /^Issue$/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Issue (bill|invoice)( · [\d,]+\.\d{2} THB)?$/ })).toBeVisible();
     const overflow = await page.evaluate(
       () =>
         document.documentElement.scrollWidth -

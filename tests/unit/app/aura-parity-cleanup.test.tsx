@@ -318,6 +318,11 @@ describe('US6 plans (parity-page comments)', () => {
       'src/app/(staff)/admin/members/new/loading.tsx',
       'src/app/(staff)/admin/members/[memberId]/edit/page.tsx',
       'src/app/(staff)/admin/members/[memberId]/edit/loading.tsx',
+      // US8b (parity comment, 3 Oct): the void and new-credit-note forms
+      'src/app/(staff)/admin/invoices/[invoiceId]/void/page.tsx',
+      'src/app/(staff)/admin/invoices/[invoiceId]/void/loading.tsx',
+      'src/app/(staff)/admin/invoices/[invoiceId]/credit-notes/new/page.tsx',
+      'src/app/(staff)/admin/invoices/[invoiceId]/credit-notes/new/loading.tsx',
       // their error boundaries draw the same column (UX review L1)
       'src/app/(staff)/admin/members/[memberId]/edit/error.tsx',
       'src/app/(staff)/admin/plans/clone/error.tsx',

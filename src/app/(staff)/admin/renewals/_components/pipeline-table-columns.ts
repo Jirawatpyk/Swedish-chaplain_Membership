@@ -6,7 +6,10 @@
  */
 import type { DataTableColumn } from '@jirawatpyk/aura-react';
 
-type ColumnLayout = Pick<DataTableColumn, 'width' | 'minWidth' | 'card' | 'align' | 'actions' | 'hideBelow'>;
+type ColumnLayout = Pick<
+  DataTableColumn,
+  'width' | 'minWidth' | 'card' | 'align' | 'actions' | 'hideBelow' | 'skeletonLines' | 'skeletonTouch'
+>;
 
 export const PIPELINE_COLUMN_LAYOUT = {
   tierBucket: { width: 104 },
@@ -17,12 +20,13 @@ export const PIPELINE_COLUMN_LAYOUT = {
   lastReminderAt: { width: 120, hideBelow: 1040 },
   status: { width: 104 },
   // The first to go: most rows read "—", and an issued bill already shows as
-  // the "Bill issued" badge beside the urgency pill.
+  // the "Invoice issued" badge beside the urgency pill.
   linkedInvoiceId: { width: 96, hideBelow: 1180, card: 'hide' },
   // Fits the longest "Send reminder" (SV "Skicka påminnelse", 142px) beside
   // the ⋯ and the cell's end padding; the phone card's last row, full width
   // (board Admin-renewals-mobile).
-  actions: { width: 200, actions: true, align: 'end', card: 'footer' },
+  // Its buttons are 44px on a phone (`touchHeight`), and so is the skeleton's bar.
+  actions: { width: 200, actions: true, align: 'end', card: 'footer', skeletonTouch: true },
 } as const satisfies Record<string, ColumnLayout>;
 
 export type PipelineColumnKey = keyof typeof PIPELINE_COLUMN_LAYOUT;

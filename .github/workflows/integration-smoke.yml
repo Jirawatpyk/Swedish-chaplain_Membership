@@ -49,6 +49,15 @@
 # nightly because the moment to catch it is the PR that adds the table. Broad per-module coverage belongs in the nightly, and
 # per-PR ephemeral Neon branches are the prerequisite for anything wider.
 #
+# 2026-10-03: `invoicing/issue-stale-total-no-sequence-burn` joins on both
+# counts. It pins that the #512 stale-total refusal (`issue_total_changed`)
+# fires before a §87 number is allocated: an `err` returned inside the issue
+# transaction COMMITS the allocator's increment, so the regression would be a
+# silent gap in the tax-invoice register, visible to nobody until an audit.
+# One tenant seed and two issue calls with a stubbed PDF render. Its CI time
+# is recorded in the PR that added it; move it to the nightly if it ever costs
+# more than cross-tenant-probe (~42 s).
+#
 # 2026-09-28: `payments/initiate-void-race` joins on both counts. It pins
 # that initiate re-reads the invoice UNDER its advisory lock, closing the
 # window where a void committed between initiate's pre-lock read and the lock
@@ -244,4 +253,5 @@ jobs:
             tests/integration/broadcasts/audience-1n-status.test.ts \
             tests/integration/scripts/test-tenant-cleanup-completeness.test.ts \
             tests/integration/payments/void-cancels-pending-payment.test.ts \
-            tests/integration/payments/sweep-pending-on-unpayable.test.ts
+            tests/integration/payments/sweep-pending-on-unpayable.test.ts \
+            tests/integration/invoicing/issue-stale-total-no-sequence-burn.test.ts

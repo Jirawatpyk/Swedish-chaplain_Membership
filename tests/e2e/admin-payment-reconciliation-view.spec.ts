@@ -253,6 +253,10 @@ test.describe('admin payment reconciliation view — @payment @e2e (T095, US3)',
     await expect(page.getByTestId('refund-dialog-trigger')).toHaveCount(0);
     await expect(page.getByTestId('void-invoice-trigger')).toHaveCount(0);
     await expect(page.getByTestId('record-payment-trigger')).toHaveCount(0);
-    await expect(page.getByTestId('resend-receipt-trigger')).toHaveCount(0);
+    // The resends live in the ⋯ menu (spec 122 US8b): open it and look.
+    await page.getByRole('button', { name: /More actions for/ }).click();
+    await expect(page.getByRole('menuitem').first()).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: /^Resend/ })).toHaveCount(0);
+    await page.keyboard.press('Escape');
   });
 });

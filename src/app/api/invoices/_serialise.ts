@@ -49,6 +49,9 @@ export const ISSUE_ERROR_STATUS_BASE: Readonly<Record<string, number>> = {
   invoice_not_found: 404,
   member_not_found: 404,
   invoice_already_issued: 409,
+  // The Issue dialog's confirmed total is stale (lines / VAT rate changed
+  // after it rendered) — a refresh-and-reconfirm conflict, nothing issued.
+  issue_total_changed: 409,
   member_archived: 409,
   settings_missing: 409,
   registration_refunded: 422,

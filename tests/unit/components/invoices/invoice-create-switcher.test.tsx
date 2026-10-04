@@ -35,6 +35,7 @@ function renderSwitcher(props: Partial<Parameters<typeof InvoiceCreateSwitcher>[
         plans={plans}
         events={events}
         taxAtPayment={false}
+        vatRateBps={700}
         {...props}
       />
     </NextIntlClientProvider>,

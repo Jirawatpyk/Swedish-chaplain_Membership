@@ -77,7 +77,16 @@ import { AtRiskFixture, MarkPaidDialogPreview, TierUpgradeAcceptPreview } from '
 import { renderInvoicesListView, renderInvoicesSetupView } from '@/app/(staff)/admin/invoices/_components/invoices-list-view';
 import { InvoiceCreateSwitcher } from '@/app/(staff)/admin/invoices/new/_components/invoice-create-switcher';
 import { INVOICE_EVENTS, INVOICE_MEMBERS, INVOICE_PLANS, INVOICE_ROWS, INVOICES_TODAY_ISO } from './invoice-fixtures';
-import { OpenFirstMatchingButton } from './invoice-previews';
+import { CreditNotePreviewStub, OpenFirstMatchingButton } from './invoice-previews';
+import { renderInvoiceDetailView } from '@/app/(staff)/admin/invoices/[invoiceId]/_components/invoice-detail-view';
+import { PaymentTimelineSkeleton } from '@/app/(staff)/admin/invoices/[invoiceId]/_components/payment-timeline-skeleton';
+import { VoidConfirmDialog } from '@/app/(staff)/admin/invoices/[invoiceId]/void/_components/void-confirm-dialog';
+import { CreditNoteForm } from '@/app/(staff)/admin/invoices/[invoiceId]/credit-notes/new/_components/credit-note-form';
+import { DETAIL_INVOICE_ID, DETAIL_KINDS, detailFixture, type DetailFixtureKind } from './invoice-detail-fixtures';
+import { renderCreditNotesListView } from '@/app/(staff)/admin/credit-notes/_components/credit-notes-list-view';
+import { renderCreditNoteDetailView } from '@/app/(staff)/admin/credit-notes/_components/credit-note-detail-view';
+import { renderTaxRegisterView } from '@/app/(staff)/admin/invoices/registers/_components/tax-register-view';
+import { CREDIT_NOTE_ID, CREDIT_NOTE_ROWS, creditNoteDetail, registerOutput } from './credit-note-register-fixtures';
 import { CycleDetailBadges, renderCycleDetailView } from '@/app/(staff)/admin/renewals/[cycleId]/_components/cycle-detail-view';
 import { CycleAdminActions } from '@/app/(staff)/admin/renewals/[cycleId]/_components/cycle-admin-actions';
 import { PendingReactivationActions } from '@/app/(staff)/admin/renewals/[cycleId]/_components/pending-reactivation-actions';
@@ -87,6 +96,8 @@ import { renderTasksQueueView } from '@/app/(staff)/admin/renewals/tasks/_compon
 import { EscalationTaskQueue } from '@/app/(staff)/admin/renewals/tasks/_components/escalation-task-queue';
 import { renderSchedulesStateView } from '@/app/(staff)/admin/settings/renewals/schedules/_components/schedules-state-view';
 import { ScheduleEditor } from '@/app/(staff)/admin/settings/renewals/schedules/_components/schedule-editor';
+import Link from 'next/link';
+import { ArrowLeftIcon } from 'lucide-react';
 import { DetailContainer } from '@/components/layout';
 import { PlanBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
 
@@ -112,6 +123,23 @@ export const dynamic = 'force-dynamic';
  *   ?view=renewal-schedules|renewal-schedules-error                    (US7b-2)
  *   ?view=member-edit&state=default|complete
  *   ?view=member-edit&dialog=plan-change|bundle|override|duplicate
+ *   ?view=invoices|invoices-empty|invoices-filtered|invoices-setup|record-payment (US8a)
+ *   ?view=invoice-new|invoice-new-event
+ *   ?view=invoice&state=draft|issued|overdue|paid|credited|manager|email-failed|
+ *         auto-refund-failed|refund-settling|refund-partial|refund-full|
+ *         refund-receipt|voided|as-paid-tin|as-paid-receipt                 (US8b)
+ *   ?view=invoice&state=draft&dialog=issue|delete
+ *   ?view=invoice&state=paid|refund-full|refund-partial|refund-receipt&dialog=refund
+ *         (the credit-note preview read is answered from a fixture)
+ *   ?view=invoice-void · ?view=credit-note-new&state=manual|online
+ *   ?view=credit-notes|credit-notes-empty|credit-notes-filtered                (US8c-1)
+ *   ?view=credit-note&state=default|refund|siblings|no-primary
+ *   ?view=registers&state=rc|re|zero-rate|empty|invalid-range|invalid-date|load-failed
+ *   ?view=loading&state=members|plans|invoices|invoice|invoice-void|credit-note-new|
+ *         credit-notes|credit-note|registers|…
+ *
+ * The payment activity streams from the database, so a paid state shows its
+ * skeleton in that slot; its states are covered by its own unit tests.
  *
  * The bodies render through the pages' own view functions and client
  * components with fixture data. Nothing here can succeed: an action reaches
@@ -335,6 +363,30 @@ const LOADING_ROUTES = {
     load: async () => (await import('@/app/(staff)/admin/renewals/tier-upgrades/loading')).default(),
   },
   tasks: { path: '/admin/renewals/tasks', load: async () => (await import('@/app/(staff)/admin/renewals/tasks/loading')).default() },
+  invoice: {
+    path: `/admin/invoices/${DETAIL_INVOICE_ID}`,
+    load: async () => (await import('@/app/(staff)/admin/invoices/[invoiceId]/loading')).default(),
+  },
+  'invoice-void': {
+    path: `/admin/invoices/${DETAIL_INVOICE_ID}/void`,
+    load: async () => (await import('@/app/(staff)/admin/invoices/[invoiceId]/void/loading')).default(),
+  },
+  'credit-note-new': {
+    path: `/admin/invoices/${DETAIL_INVOICE_ID}/credit-notes/new`,
+    load: async () => (await import('@/app/(staff)/admin/invoices/[invoiceId]/credit-notes/new/loading')).default(),
+  },
+  'credit-notes': {
+    path: '/admin/credit-notes',
+    load: async () => (await import('@/app/(staff)/admin/credit-notes/loading')).default(),
+  },
+  'credit-note': {
+    path: `/admin/credit-notes/${CREDIT_NOTE_ID}`,
+    load: async () => (await import('@/app/(staff)/admin/credit-notes/[creditNoteId]/loading')).default(),
+  },
+  registers: {
+    path: '/admin/invoices/registers',
+    load: async () => (await import('@/app/(staff)/admin/invoices/registers/loading')).default(),
+  },
 } as const;
 
 function StaffFrame({ path, children }: { readonly path: string; readonly children: React.ReactNode }) {
@@ -1131,8 +1183,133 @@ export default async function AuraAdminPreviewPage({
             plans={INVOICE_PLANS}
             events={INVOICE_EVENTS}
             taxAtPayment
+            vatRateBps={700}
             initialMemberId={view === 'invoice-new' ? 'm-3' : undefined}
             {...(view === 'invoice-new-event' ? { initialRegistrationId: 'preview-reg', initialEventId: 'ev-crayfish' } : {})}
+          />
+        </FormContainer>
+      </StaffFrame>
+    );
+  }
+
+  // ── US8b: the invoice detail, its dialogs, void and new credit note
+  // (`Admin-invoice-*`, `Admin-voided`, `Admin-refund-*`, `Admin-void`,
+  // `Admin-credit-note`) ─────────────────────────────────────────────────────
+  if (view === 'invoice') {
+    const kind = (DETAIL_KINDS as readonly string[]).includes(state) ? (state as DetailFixtureKind) : 'issued';
+    const { dialog } = await searchParams;
+    const fixture = detailFixture(kind);
+    const detail = await renderInvoiceDetailView({
+      ...fixture,
+      locale: await getLocale(),
+      paymentActivity: fixture.invoice.status === 'draft' ? null : <PaymentTimelineSkeleton />,
+    });
+    const trigger =
+      dialog === 'issue'
+        ? { label: (await getTranslations('admin.invoices.detail'))('actions.issue') }
+        : dialog === 'delete'
+          ? { label: (await getTranslations('admin.invoices.deleteDraft'))('trigger') }
+          : dialog === 'refund'
+            ? { testId: 'refund-dialog-trigger' }
+            : null;
+    return (
+      <StaffFrame path={`/admin/invoices/${DETAIL_INVOICE_ID}`}>
+        {dialog === 'refund' && <CreditNotePreviewStub waived={kind === 'refund-receipt'} />}
+        {trigger ? <OpenFirstMatchingButton {...trigger}>{detail}</OpenFirstMatchingButton> : detail}
+      </StaffFrame>
+    );
+  }
+
+  if (view === 'credit-notes' || view === 'credit-notes-empty' || view === 'credit-notes-filtered') {
+    const empty = view !== 'credit-notes';
+    return (
+      <StaffFrame path="/admin/credit-notes">
+        <TableContainer>
+          {await renderCreditNotesListView({
+            rows: empty ? [] : CREDIT_NOTE_ROWS,
+            total: empty ? 0 : 15,
+            page: 1,
+            pageSize: 50,
+            hasFilters: view === 'credit-notes-filtered',
+          })}
+        </TableContainer>
+      </StaffFrame>
+    );
+  }
+
+  if (view === 'credit-note') {
+    return (
+      <StaffFrame path={`/admin/credit-notes/${CREDIT_NOTE_ID}`}>
+        <DetailContainer>{await renderCreditNoteDetailView(creditNoteDetail(state))}</DetailContainer>
+      </StaffFrame>
+    );
+  }
+
+  if (view === 'registers') {
+    const kind = state === 're' ? 're_register' : state === 'zero-rate' ? 'zero_rate_sales' : 'rc_register';
+    const result =
+      state === 'invalid-range'
+        ? ({ ok: false, error: { code: 'invalid_range', reason: 'inverted' } } as const)
+        : state === 'invalid-date'
+          ? ({ ok: false, error: { code: 'invalid_range', reason: 'not_a_date' } } as const)
+          : state === 'load-failed'
+            ? ({ ok: false, error: { code: 'list_failed' } } as const)
+            : ({ ok: true, value: registerOutput(state) } as const);
+    return (
+      <StaffFrame path="/admin/invoices/registers">
+        <TableContainer>
+          {await renderTaxRegisterView({
+            kind,
+            from: state === 'zero-rate' ? '2026-08-01' : '2026-09-01',
+            to: state === 'zero-rate' ? '2026-08-31' : state === 'invalid-range' ? '2026-08-01' : '2026-09-24',
+            result,
+          })}
+        </TableContainer>
+      </StaffFrame>
+    );
+  }
+
+  if (view === 'invoice-void') {
+    const tVoid = await getTranslations('admin.invoices.void');
+    return (
+      <StaffFrame path={`/admin/invoices/${DETAIL_INVOICE_ID}/void`}>
+        <FormContainer align="start">
+          <Link
+            href={`/admin/invoices/${DETAIL_INVOICE_ID}`}
+            className="inline-flex items-center gap-1 self-start text-sm text-[var(--aura-fg-accent)] hover:underline max-lg:hidden"
+          >
+            <ArrowLeftIcon className="size-4" aria-hidden="true" />
+            {tVoid('backToInvoice')}
+          </Link>
+          <PageHeader title={tVoid('title')} subtitle={tVoid('descriptionBill', { number: 'SC-2026-000123' })} />
+          <VoidConfirmDialog invoiceId={DETAIL_INVOICE_ID} documentNumber="SC-2026-000123" isBill />
+        </FormContainer>
+      </StaffFrame>
+    );
+  }
+
+  if (view === 'credit-note-new') {
+    const tCn = await getTranslations('admin.creditNotes.new');
+    const online = state === 'online';
+    return (
+      <StaffFrame path={`/admin/invoices/${DETAIL_INVOICE_ID}/credit-notes/new`}>
+        <FormContainer align="start">
+          <Link
+            href={`/admin/invoices/${DETAIL_INVOICE_ID}`}
+            className="inline-flex items-center gap-1 self-start text-sm text-[var(--aura-fg-accent)] hover:underline max-lg:hidden"
+          >
+            <ArrowLeftIcon className="size-4" aria-hidden="true" />
+            {tCn('backToInvoice')}
+          </Link>
+          <PageHeader title={tCn('title')} subtitle={tCn('description')} />
+          <CreditNoteForm
+            invoiceId={DETAIL_INVOICE_ID}
+            documentNumber="RC-2026-000088"
+            remainingSatang="3852000"
+            currencySymbol="THB"
+            invoiceSubject="membership"
+            paymentChannel={online ? 'card' : 'bank_transfer'}
+            onlineRefundState={online ? 'refundable' : 'none'}
           />
         </FormContainer>
       </StaffFrame>

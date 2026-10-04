@@ -12,7 +12,6 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import { toast } from '@/lib/toast';
 import enMessages from '@/i18n/messages/en.json';
-import { AlertDialog } from '@/components/ui/alert-dialog';
 import { RefundForm } from '@/app/(staff)/admin/invoices/[invoiceId]/_components/refund-dialog/refund-form';
 
 vi.mock('next/navigation', () => ({
@@ -34,9 +33,9 @@ beforeEach(() => {
 function renderForm() {
   return render(
     <NextIntlClientProvider locale="en" messages={enMessages}>
-      <AlertDialog open onOpenChange={() => undefined}>
         <RefundForm
           paymentId="pay_1"
+          invoiceId="inv_1"
           memberCompanyName="Acme AB"
           remainingRefundableSatang={535000n}
           currencyCode="THB"
@@ -44,7 +43,6 @@ function renderForm() {
           invoiceHeadroomSatang={535000n}
           onClose={() => undefined}
         />
-      </AlertDialog>
     </NextIntlClientProvider>,
   );
 }
@@ -236,9 +234,9 @@ describe('RefundForm — I6: f4_bridge_deferred is a settled refund, not a failu
     try {
       render(
         <NextIntlClientProvider locale="en" messages={enMessages}>
-          <AlertDialog open onOpenChange={() => undefined}>
             <RefundForm
               paymentId="pay_1"
+              invoiceId="inv_1"
               memberCompanyName="Acme AB"
               remainingRefundableSatang={535000n}
               currencyCode="THB"
@@ -246,7 +244,6 @@ describe('RefundForm — I6: f4_bridge_deferred is a settled refund, not a failu
               invoiceHeadroomSatang={535000n}
               onClose={onClose}
             />
-          </AlertDialog>
         </NextIntlClientProvider>,
       );
       await submitPartialRefund();
@@ -276,9 +273,9 @@ describe('RefundForm — Track B: the waived-refund toast tells the truth', () =
   function renderWith(onClose: () => void) {
     render(
       <NextIntlClientProvider locale="en" messages={enMessages}>
-        <AlertDialog open onOpenChange={() => undefined}>
           <RefundForm
             paymentId="pay_1"
+            invoiceId="inv_1"
             memberCompanyName="Acme AB"
             remainingRefundableSatang={535000n}
             currencyCode="THB"
@@ -286,7 +283,6 @@ describe('RefundForm — Track B: the waived-refund toast tells the truth', () =
             invoiceHeadroomSatang={535000n}
             onClose={onClose}
           />
-        </AlertDialog>
       </NextIntlClientProvider>,
     );
   }
@@ -387,5 +383,13 @@ describe('RefundForm — Track B: the waived-refund toast tells the truth', () =
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe('RefundForm — the buttons stay in view (spec 122 US8b, UX review)', () => {
+  it('keeps Cancel and Confirm in a row stuck to the bottom of the scrolling dialog body, stacked full width on a phone', () => {
+    renderForm();
+    const row = screen.getByTestId('refund-form-confirm').parentElement!;
+    expect(row).toHaveClass('sticky', 'bottom-0', 'max-sm:flex-col-reverse', 'max-sm:[&>*]:w-full');
   });
 });

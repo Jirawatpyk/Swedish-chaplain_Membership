@@ -805,7 +805,7 @@
     },
     "plans": {
       "title": "Medlemspaket",
-      "vatNote": "Avgifter exkl. {rate} % moms",
+      "vatNote": "Avgifter exkl. {rate} moms",
       "listDescription": "Hantera nivådefinitioner, årliga avgifter och förmånsmatriser. Föregående års paket är delvis låsta för revisionsintegritet.",
       "tableCaption": "Lista över medlemspaket för det valda året.",
       "empty": {
@@ -2501,9 +2501,11 @@
           "title": "Kreditnotor"
         },
         "title": "Kreditnotor",
-        "description": "Alla kreditnotor utfärdade mot skattefakturor. Skrivskyddad granskningslogg.",
+        "description": "Varje kreditnota (ใบลดหนี้) utfärdad mot en skattefaktura. Skrivskyddad granskningslogg — utfärda en från den betalda fakturan.",
         "empty": "Kreditnotor visas här efter att en administratör utfärdat en mot en betald faktura.",
         "filteredEmpty": "Inga kreditnotor matchar de aktuella filtren.",
+        "tableCaption": "Kreditnotor",
+        "refundLegend": "”Återbetalning” markerar en kreditnota som utfärdats vid en återbetalning via kort eller PromptPay.",
         "columns": {
           "documentNumber": "Nummer",
           "issueDate": "Utfärdad",
@@ -2511,13 +2513,19 @@
           "reason": "Orsak",
           "total": "Totalt",
           "actions": "Åtgärder",
-          "originalReceipt": "Ursprunglig skattefaktura"
+          "originalReceipt": "Ursprunglig skattefaktura",
+          "pdf": "PDF"
         },
         "filters": {
           "search": "Sök dokumentnummer",
           "fiscalYear": "Räkenskapsår",
           "apply": "Tillämpa",
-          "clear": "Rensa"
+          "clear": "Rensa",
+          "groupLabel": "Filter för kreditnotor",
+          "allFiscalYears": "Alla räkenskapsår",
+          "allShort": "Alla",
+          "chip": "{label}: {value}",
+          "chipSearch": "Sök: {q}"
         },
         "actions": {
           "view": "Visa",
@@ -2531,16 +2539,20 @@
         "meta": {
           "title": "Kreditnota"
         },
-        "subtitle": "Skrivskyddad kreditnotaregistrering mot den ursprungliga fakturan.",
+        "subtitle": "Skrivskyddat underlag för en kreditnota (ใบลดหนี้) mot den ursprungliga skattefakturan.",
+        "title": "Kreditnota {number}",
+        "amountsLabel": "Kreditbelopp",
+        "sections": {"details": "Uppgifter", "parties": "Parter"},
         "status": {
           "issued": "Utfärdad"
         },
         "actions": {
           "backToInvoice": "Tillbaka till faktura",
           "download": "Ladda ner PDF",
-          "resend": "Skicka kreditnota-mejl igen",
+          "resend": "Skicka kreditnotamejl igen",
           "resendAria": "Mejla en ny kopia av kreditnota {number} till medlemmens primära kontakt",
-          "moreAria": "Fler åtgärder för {number}"
+          "moreAria": "Fler åtgärder för {number}",
+          "resendShort": "Skicka mejl igen"
         },
         "toast": {
           "resendSuccess": "Köad — {recipient} får en ny kopia inom kort.",
@@ -2555,7 +2567,8 @@
           "creditAmount": "Kreditbelopp (exkl. moms)",
           "vat": "Moms",
           "total": "Totalt krediterat (inkl. moms)",
-          "originalReceipt": "Ursprunglig skattefaktura"
+          "originalReceipt": "Ursprunglig skattefaktura",
+          "member": "Medlem"
         },
         "reason": {
           "heading": "Anledning"
@@ -2566,7 +2579,8 @@
           "legalName": "Juridiskt namn",
           "taxId": "Skatt-ID",
           "address": "Adress",
-          "contactEmail": "Kontaktepost"
+          "contactEmail": "Kontaktepost (vid utfärdandet)",
+          "resendNote": "Mejlet skickas om till medlemmens nuvarande primära kontakt."
         },
         "siblings": {
           "heading": "Andra kreditnotor på denna faktura",
@@ -2839,7 +2853,8 @@
             "notAMonth": "Inte en enskild kalendermånad — ภ.พ.30 lämnas per kalendermånad.",
             "closedMonthIncomplete": "Ofullständigt belopp — {count, plural, one {# kombinerad faktura + kvitto} other {# kombinerade fakturor + kvitton}} (INV-nummer, utan RC/RE) utfärdade denna månad ingår inte i beloppet. Ta med {count, plural, one {den} other {dem}} innan ภ.พ.30 lämnas."
           },
-          "less": "minus"
+          "less": "minus",
+          "about": "Om beloppet"
         },
         "summary": {
           "count": "{count, plural, one {# kvitto} other {# kvitton}}",
@@ -2945,7 +2960,9 @@
           "label": "Inkl. moms / ราคารวม VAT แล้ว",
           "total": "Totalt (inkl. moms)",
           "subtotal": "Delsumma",
-          "vat": "Moms 7%"
+          "vat": "Moms ({rate})",
+          "settingsMissing": "Momsuppdelning saknas – fakturainställningarna är inte konfigurerade ännu. Konfigurera dem innan du utfärdar.",
+          "configureSettings": "Konfigurera fakturainställningar"
         },
         "docType": {
           "taxInvoice": "Skattefaktura / ใบกำกับภาษี",
@@ -3063,8 +3080,26 @@
           "notApplicable": "Ingen aktiv medlemsperiod — denna faktura påverkar inte förnyelser (använd återaktiveringsflödet för utgångna medlemmar)."
         }
       },
+      "phraseChip": {
+        "copy": "Kopiera {phrase}",
+        "copied": "{phrase} kopierad",
+        "copyFailed": "Det gick inte att kopiera — markera texten i stället."
+      },
       "detail": {
         "draftTitle": "Utkast",
+        "title": "Faktura {number}",
+        "titleTaxInvoiceReceipt": "Skattefaktura/kvitto {number}",
+        "titleReceipt": "Kvitto {number}",
+        "detailsTitle": "Detaljer",
+        "totalsLabel": "Belopp",
+        "phoneBar": {
+          "totalDue": "Totalt {total} THB inkl. moms · förfaller {date}",
+          "total": "Totalt {total} THB inkl. moms"
+        },
+        "refundSettlingNote": {
+          "title": "Återbetalning på {amount} THB behandlas",
+          "body": "Ingen åtgärd behövs — den slutförs automatiskt när betalningsleverantören bekräftar. Ingen kreditnota kan utfärdas för fakturan förrän dess."
+        },
         "status": "Status",
         "actions": {
           "preview": "Förhandsgranska",
@@ -3076,14 +3111,9 @@
           "issueCreditNoteRefundSettling": "Inte tillgängligt medan en återbetalning behandlas — försök igen när den är klar.",
           "resendInvoice": "Skicka faktura-mejl igen",
           "resendReceipt": "Skicka kvitto-mejl igen",
-          "resendInvoiceAria": "Mejla en ny kopia av faktura {number} till medlemmens primära kontakt",
-          "resendReceiptAria": "Mejla en ny kopia av kvitto {number} till medlemmens primära kontakt",
           "downloadReceipt": "Ladda ner kvitto-PDF",
           "downloadCombined": "Ladda ner faktura/kvitto",
-          "downloadReceiptAria": "Ladda ner kvitto-PDF för faktura {number}",
-          "downloadInvoiceAria": "Ladda ner faktura-PDF för faktura {number}",
           "downloadBill": "Ladda ner faktura-PDF",
-          "downloadBillAria": "Ladda ner faktura-PDF för {number}",
           "more": "Fler",
           "moreAria": "Fler åtgärder för {number}"
         },
@@ -3273,7 +3303,10 @@
         },
         "confirmPhrase": "UTFÄRDA",
         "confirmCopy": "Skriv \"{phrase}\" för att bekräfta",
-        "issueButton": "Utfärda",
+        "issueBillButton": "Utfärda faktura · {total} THB",
+        "issueInvoiceButton": "Utfärda skattefaktura · {total} THB",
+        "issueBillButtonPlain": "Utfärda faktura",
+        "issueInvoiceButtonPlain": "Utfärda skattefaktura",
         "issuing": "Utfärdar…",
         "success": "Fakturan utfärdad",
         "successWithNumber": "Faktura {number} utfärdad",
@@ -3285,6 +3318,7 @@
         "errors": {
           "failed": "Kunde inte utfärda",
           "concurrent": "Denna faktura har redan utfärdats i en annan session. Uppdatera för att se den senaste statusen och dess nummer.",
+          "issue_total_changed": "Totalbeloppet ändrades efter att sidan laddades, så inget utfärdades. Uppdatera för att se det aktuella totalbeloppet och utfärda sedan igen.",
           "refreshAction": "Uppdatera",
           "event_no_tin_requires_paid_issue": "Köparen är inte registrerad som momsregistrerad — biljettavgiften måste registreras som betald (kvitto utfärdas), inte faktureras i förväg. Om köparen är momsregistrerad, markera det på medlemsposten först.",
           "registration_refunded": "Denna registrering har återbetalats efter att utkastet skapades — dokumentet kan inte utfärdas för en återbetald avgift.",
@@ -3336,7 +3370,6 @@
         "description": "Utkastfakturan och dess rader tas bort permanent. Inget sekventiellt skattedokumentnummer har tilldelats än, så inget nummer återkallas. Åtgärden loggas i audit.",
         "cancel": "Avbryt",
         "deleteButton": "Ta bort utkast",
-        "deleting": "Tar bort…",
         "success": "Utkast borttaget",
         "errors": {
           "failed": "Kunde inte ta bort utkast",
@@ -3362,7 +3395,7 @@
           "failed": "Kunde inte registrera betalning",
           "invalidStatus": "Endast utfärdade fakturor kan betalas (nuvarande status: {status}).",
           "legacy_no_tin_event_needs_remediation": "Denna evenemangsfaktura utfärdades till en köpare utan skatte-ID enligt det gamla flödet — det utfärdade dokumentet är redan det officiella kvittot, så en betalningsregistrering skulle skapa ett andra kvitto. Följ åtgärdsrutinen i stället.",
-          "legacy_invoice_needs_reissue": "Detta är en äldre faktura utan fakturanummer — den måste annulleras och utfärdas på nytt innan en betalning kan registreras.",
+          "legacy_invoice_needs_reissue": "Detta är en äldre skattefaktura utan SC-fakturanummer — den måste annulleras och utfärdas på nytt innan en betalning kan registreras.",
           "membership_terminated": "Medlemmens medlemskap har avslutats — använd \"Förnya medlem\" för att återaktivera och fakturera på nytt, registrera sedan betalningen mot den nya fakturan. Om medlemmens tidigare öppna faktura fortfarande finns kvar, makulera den.",
           "new_flow_bill_requires_flag_on": "Denna faktura skapades för skatt-vid-betalning-flödet, som för närvarande är avstängt. Aktivera det igen, eller annullera och utfärda fakturan på nytt, innan du registrerar betalning.",
           "concurrent": "Denna faktura har redan betalats eller ändrats i en annan session. Uppdatera för att se den senaste statusen och kvittots (RC) nummer.",
@@ -3395,7 +3428,8 @@
         "terminalNotice": "Annullering är slutgiltig — inga fler åtgärder (betala, kreditera, redigera) är tillåtna. En betald faktura kan inte annulleras; återför den i stället med en återbetalning eller en kreditnota.",
         "reasonLabel": "Orsak",
         "reasonHelp": "Visas på den annullerade PDF:en och i granskningsloggen. Obligatorisk, upp till 500 tecken.",
-        "confirmCopy": "Skriv fakturanumret {phrase} för att bekräfta",
+        "confirmCopy": "Skriv skattefakturans nummer för att bekräfta",
+        "confirmCopyBill": "Skriv fakturanumret för att bekräfta",
         "confirmMismatch": "Frasen måste exakt matcha \"{phrase}\" för att bekräfta.",
         "backToInvoice": "Tillbaka till faktura",
         "submit": "Annullera faktura",
@@ -5056,18 +5090,23 @@
       "dialog": {
         "title": "Utfärda återbetalning?",
         "description": "Återbetala hela eller delar av denna betalning. Motsvarande kreditnota utfärdas och skickas till medlemmen via e-post.",
+        "descriptionWaived": {
+          "section105Receipt": "Återbetala hela eller delar av denna betalning. Ingen kreditnota utfärdas: betalningen har ett kvitto enligt avsnitt 105, inte en skattefaktura.",
+          "invoiceVoided": "Återbetala hela eller delar av denna betalning. Ingen kreditnota utfärdas: fakturan har makulerats."
+        },
         "cancel": "Avbryt",
         "confirm": "Utfärda återbetalning",
+        "confirmAmount": "Återbetala {amount}",
         "processing": "Bearbetar återbetalning…",
-        "refsInvoice": "Faktura-nr",
-        "refsReceipt": "Kvitto-nr",
+        "paymentReceipt": "Kvitto <num>{number}</num>",
+        "paymentPaid": "{amount}, {date}",
         "refsCombinedHint": "kombinerat"
       },
       "form": {
         "amount": {
           "label": "Återbetalningsbelopp (THB)",
           "placeholder": "0.00",
-          "maximumHelp": "Maximalt återbetalningsbart: {amount} THB",
+          "maximumHelp": "Upp till {amount} (betalt, minus återbetalningar och kreditnotor). Pengarna går tillbaka till det ursprungliga betalsättet.",
           "ariaDescribed": "Ange återbetalningsbeloppet i thailändska baht. Beloppet dras från den ursprungliga betalningen."
         },
         "reason": {
@@ -5075,8 +5114,22 @@
           "placeholder": "Kort anledning till denna återbetalning…",
           "charCount": "{count} / 500"
         },
+        "summary": {
+          "title": "Sammanfattning av återbetalningen",
+          "total": "Återbetalning totalt",
+          "after": "Kvar att återbetala efteråt",
+          "creditNoteTitle": "Kreditnota som utfärdas",
+          "creditNoteNet": "Belopp exkl. moms",
+          "creditNoteVat": "Moms {rate}",
+          "creditNoteVatPending": "Moms",
+          "creditNoteLoading": "Beräknar kreditnotan…",
+          "noCreditNote": {
+            "section105Receipt": "Ingen kreditnota — betalningen har ett kvitto enligt avsnitt 105, inte en skattefaktura.",
+            "invoiceVoided": "Ingen kreditnota — fakturan har makulerats."
+          }
+        },
         "typedPhrase": {
-          "label": "Skriv {phrase} för att bekräfta full återbetalning",
+          "label": "Skriv frasen för att bekräfta full återbetalning",
           "placeholder": "{phrase}",
           "help": "Full återbetalning kräver inskriven bekräftelse för att förhindra oavsiktlig bearbetning.",
           "mismatch": "Frasen matchar inte. Skriv exakt: {phrase}"

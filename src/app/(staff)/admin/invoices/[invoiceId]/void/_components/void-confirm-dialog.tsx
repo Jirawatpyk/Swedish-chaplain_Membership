@@ -24,24 +24,19 @@ import { useState, useTransition, useCallback, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
-import { AlertTriangleIcon, Loader2Icon } from 'lucide-react';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Button } from '@/components/ui/button';
-import {
-  InlineAlert,
-  InlineAlertDescription,
-  InlineAlertTitle,
-} from '@/components/ui/inline-alert';
+import { ArchiveIcon } from 'lucide-react';
+import { Alert, Button, Card, TextField, Textarea } from '@jirawatpyk/aura-react';
 import { routeVoidError } from './void-error-routing';
+import { PhraseChip } from '../../../_components/phrase-chip';
 
 type Props = {
   readonly invoiceId: string;
   readonly documentNumber: string;
+  /** An 088 SC bill: the confirmation asks for the bill number (board Admin-void). */
+  readonly isBill?: boolean;
 };
 
-export function VoidConfirmDialog({ invoiceId, documentNumber }: Props) {
+export function VoidConfirmDialog({ invoiceId, documentNumber, isBill = false }: Props) {
   const t = useTranslations('admin.invoices.void');
   const locale = useLocale();
   const router = useRouter();
@@ -154,128 +149,132 @@ export function VoidConfirmDialog({ invoiceId, documentNumber }: Props) {
       }}
       className="flex flex-col gap-6"
     >
-      {/* UX-1 — destructive InlineAlert gives terminal-action warning
-        * the visual weight it deserves (AlertTriangle + destructive
-        * palette). Previous muted-card treatment under-signalled the
-        * irreversibility of void vs the rest of the form copy. */}
-      <InlineAlert tone="destructive">
-        <AlertTriangleIcon aria-hidden="true" />
-        <InlineAlertTitle>
-          {t('voiding')}{' '}
-          <span className="font-mono">{documentNumber}</span>
-        </InlineAlertTitle>
-        <InlineAlertDescription>{t('terminalNotice')}</InlineAlertDescription>
-      </InlineAlert>
+      {/* UX-1 — the terminal-action warning in AURA's danger tone, naming the
+        * document (boards Admin-void, -mobile). `role="note"`: it is standing
+        * copy, not a live event. */}
+      <Alert
+        tone="danger"
+        role="note"
+        title={
+          <>
+            {t('voiding')} <span className="font-mono">{documentNumber}</span>
+          </>
+        }
+      >
+        {t('terminalNotice')}
+      </Alert>
 
       {/* 088 FR-032 — inline, focused failure surface for the irreversible void
-          mutation (never a transient toast). `tabIndex={-1}` + the focus effect
-          move focus here so the admin cannot miss it. A concurrent 409 shows a
-          "refresh" prompt; other failures show a destructive alert. */}
+          mutation (never a transient toast). The wrapper is the live region
+          and takes focus; the AURA alert inside only draws it. A concurrent
+          409 shows a "refresh" prompt; other failures a danger alert. */}
       {formError && (
-        <InlineAlert
+        <div
           ref={errorRef}
           tabIndex={-1}
-          tone={formError.kind === 'failure' ? 'destructive' : 'neutral'}
+          role="alert"
+          data-tone={formError.kind === 'failure' ? 'destructive' : 'neutral'}
           className="outline-none"
           data-testid="void-invoice-error"
         >
-          <AlertTriangleIcon className="size-4" aria-hidden="true" />
-          {formError.kind === 'concurrent' ? (
-            <InlineAlertDescription className="flex flex-col items-start gap-2">
-              <span>{t('errors.concurrent')}</span>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="min-h-[44px]"
-                onClick={() => router.refresh()}
-              >
-                {t('errors.refreshAction')}
-              </Button>
-            </InlineAlertDescription>
-          ) : (
-            <InlineAlertDescription>{formError.message}</InlineAlertDescription>
-          )}
-        </InlineAlert>
+          <Alert
+            role="none"
+            tone={formError.kind === 'failure' ? 'danger' : 'info'}
+            action={
+              formError.kind === 'concurrent' ? (
+                <Button type="button" variant="secondary" size="sm" touchHeight onClick={() => router.refresh()}>
+                  {t('errors.refreshAction')}
+                </Button>
+              ) : undefined
+            }
+          >
+            {formError.kind === 'concurrent' ? t('errors.concurrent') : formError.message}
+          </Alert>
+        </div>
       )}
 
-      <div className="grid gap-2">
-        <Label htmlFor="void-reason">{t('reasonLabel')}</Label>
-        <Textarea
-          id="void-reason"
-          ref={reasonRef}
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          rows={3}
-          maxLength={500}
-          required
-          aria-describedby="void-reason-help"
-          // UX-3 — surface empty-state invalidity to SR once user has
-          // touched and cleared the field (non-empty → empty-after-trim).
-          aria-invalid={reason.length > 0 && !reasonValid}
-        />
-        <p
-          id="void-reason-help"
-          className="text-xs text-muted-foreground"
-          // UX-4 — announce character-counter updates to screen readers.
-          aria-live="polite"
-        >
-          {t('reasonHelp')} ({reason.length}/500)
-        </p>
-      </div>
+      <Card>
+        <div className="flex flex-col gap-[var(--aura-space-5)]">
+          <div className="flex flex-col gap-1">
+            <Textarea
+              id="void-reason"
+              ref={reasonRef}
+              label={t('reasonLabel')}
+              required
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              rows={3}
+              maxLength={500}
+              aria-describedby="void-reason-help"
+              // UX-3 — surface empty-state invalidity to SR once user has
+              // touched and cleared the field (non-empty → empty-after-trim).
+              aria-invalid={reason.length > 0 && !reasonValid}
+            />
+            <p
+              id="void-reason-help"
+              className="text-xs text-[var(--aura-fg-secondary)]"
+              // UX-4 — announce character-counter updates to screen readers.
+              aria-live="polite"
+            >
+              {t('reasonHelp')} ({reason.length}/500)
+            </p>
+          </div>
 
-      <div className="grid gap-2">
-        <Label htmlFor="void-confirm">
-          {t('confirmCopy', { phrase: confirmPhrase })}
-        </Label>
-        <Input
-          id="void-confirm"
-          value={typed}
-          onChange={(e) => setTyped(e.target.value)}
-          placeholder={confirmPhrase}
-          autoComplete="off"
-          inputMode="text"
-          enterKeyHint="done"
-          autoCorrect="off"
-          // UX-2 — DO NOT force uppercase: the compare is already
-          // locale-aware case-insensitive (toLocaleUpperCase above).
-          // Forcing characters-uppercase breaks mixed-case document
-          // numbers on mobile keyboards.
-          autoCapitalize="off"
-          spellCheck={false}
-          aria-invalid={typed.length > 0 && !matches}
-          aria-describedby={
-            typed.length > 0 && !matches ? 'void-confirm-error' : undefined
-          }
-        />
-        {typed.length > 0 && !matches && (
-          <p id="void-confirm-error" role="alert" className="text-xs text-destructive">
-            {t('confirmMismatch', { phrase: confirmPhrase })}
-          </p>
-        )}
-      </div>
+          <div className="flex flex-col gap-1">
+            <TextField
+              id="void-confirm"
+              label={t(isBill ? 'confirmCopyBill' : 'confirmCopy')}
+              value={typed}
+              onChange={(e) => setTyped(e.target.value)}
+              placeholder={confirmPhrase}
+              autoComplete="off"
+              inputMode="text"
+              enterKeyHint="done"
+              autoCorrect="off"
+              // UX-2 — DO NOT force uppercase: the compare is already
+              // locale-aware case-insensitive (toLocaleUpperCase above).
+              // Forcing characters-uppercase breaks mixed-case document
+              // numbers on mobile keyboards.
+              autoCapitalize="off"
+              spellCheck={false}
+              aria-invalid={typed.length > 0 && !matches}
+              // The number chip first, so a screen reader hears what to type.
+              aria-describedby={typed.length > 0 && !matches ? 'void-confirm-phrase void-confirm-error' : 'void-confirm-phrase'}
+            />
+            {/* Board Admin-void: the number in its own chip, with a copy button. */}
+            <PhraseChip id="void-confirm-phrase" phrase={confirmPhrase} testId="void-confirm-chip" />
+            {typed.length > 0 && !matches && (
+              <p id="void-confirm-error" role="alert" className="text-xs text-[var(--aura-fg-danger)]">
+                {t('confirmMismatch', { phrase: confirmPhrase })}
+              </p>
+            )}
+          </div>
+        </div>
+      </Card>
 
-      {/* CR-6: Cancel-first DOM order matches AlertDialog default
-        * (safer destructive action). Visual order on desktop is still
-        * Cancel-then-Submit; on mobile they stack naturally. */}
-      <div className="flex flex-row-reverse items-center justify-end gap-2 sm:flex-row sm:justify-start">
+      {/* CR-6: Cancel first in the DOM (the safe action first in tab order).
+        * From 640px the row ends at the card's edge, Cancel then Void; on a
+        * phone the buttons stack full width with Void on top (the mobile
+        * board, spec Session 2026-10-02). */}
+      <div className="flex justify-end gap-[var(--aura-space-2)] max-sm:flex-col-reverse max-sm:[&>*]:w-full">
         <Button
           type="button"
-          variant="ghost"
+          variant="secondary"
+          touchHeight
           onClick={() => router.push(`/admin/invoices/${invoiceId}`)}
           disabled={pending}
         >
           {t('cancel')}
         </Button>
+        {/* A destructive action carries the board's icon (Admin-void; § Button icons). */}
         <Button
           type="submit"
-          variant="destructive"
+          variant="danger"
+          touchHeight
+          icon={<ArchiveIcon aria-hidden="true" />}
+          loading={pending}
           disabled={!canSubmit}
-          aria-busy={pending}
         >
-          {pending && (
-            <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" />
-          )}
           {pending ? t('submitting') : t('submit')}
         </Button>
       </div>

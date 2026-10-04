@@ -56,31 +56,10 @@ export default async function Loading() {
             </div>
             {/* The phone's "Fees exclude VAT." caption above the cards. */}
             <SkeletonBlock className="h-3 w-32 sm:hidden" />
-            {/* On a phone, the queue's own cards (AURA's loading rows are too
-                short for them, handoff #134): member, plan, a two-line
-                reason, then Accept and ⋯ at touch height. */}
-            <div data-slot="phone-cards-skeleton" className="flex flex-col gap-[var(--aura-space-3)] sm:hidden" aria-hidden>
-              {Array.from({ length: 4 }, (_, i) => (
-                <div
-                  key={i}
-                  className="flex flex-col gap-[var(--aura-space-2)] rounded-[var(--aura-radius-lg)] border border-[var(--aura-border-default)] p-[var(--aura-space-4)]"
-                >
-                  <SkeletonBlock className="h-5 w-40" />
-                  <SkeletonBlock className="h-9 w-full" />
-                  <div className="flex flex-col gap-1" data-slot="reason-skeleton">
-                    <SkeletonBlock className="h-5 w-full" />
-                    <SkeletonBlock className="h-3 w-3/4" />
-                  </div>
-                  <div className="flex gap-[var(--aura-space-2)]">
-                    <SkeletonBlock className="h-11 flex-1" />
-                    <SkeletonBlock className="size-11" />
-                  </div>
-                </div>
-              ))}
-            </div>
-            {/* From 640px, the queue as the page draws it: AURA's table, edge
-                to edge and ending the card like the queue. */}
-            <DataTableSkeleton label={t('tableCaption')} columns={columns} rows={6} bleedEnd className="max-sm:hidden" />
+            {/* The queue as the page draws it: AURA's table, edge to edge and
+                ending the card like the queue; below 640px AURA's own cards
+                (two-line plans and reason, Accept and ⋯ at touch height). */}
+            <DataTableSkeleton label={t('tableCaption')} columns={columns} rows={6} bleedEnd />
           </div>
         </Card>
       </TableContainer>

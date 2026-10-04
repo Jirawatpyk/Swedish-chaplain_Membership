@@ -5,7 +5,7 @@
  * invoice via the `loadInvoicePaymentActivity` use-case (NO direct
  * Drizzle access here — Constitution Principle III), synthesizes the
  * chronological event list, resolves staff actor emails, and renders
- * a shadcn `<Card>` timeline with:
+ * an AURA `<Card>` timeline (spec 122 US8b) with:
  *   - Per-event icon (Lucide) + i18n title + actor + ISO timestamp
  *     (Thai Buddhist Era for `th` locale via existing F4 formatDate).
  *   - Processor charge id chip with copy-to-clipboard action +
@@ -40,8 +40,7 @@ import {
   XCircleIcon,
   XOctagonIcon,
 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { Badge, Card } from '@jirawatpyk/aura-react/server';
 import { LoadErrorCard } from '@/components/shell/load-error-card';
 import { ErrorCardActions } from '@/components/shell/error-card-actions';
 import {
@@ -117,40 +116,40 @@ const EVENT_VISUAL: Record<
   SyntheticEventType,
   { icon: typeof BanknoteIcon; cls: string }
 > = {
-  payment_initiated: { icon: BanknoteIcon, cls: 'text-foreground' },
+  payment_initiated: { icon: BanknoteIcon, cls: 'text-[var(--aura-fg-primary)]' },
   payment_succeeded: {
     icon: CheckCircle2Icon,
-    cls: 'text-success',
+    cls: 'text-[var(--aura-fg-positive)]',
   },
-  payment_failed: { icon: XCircleIcon, cls: 'text-destructive' },
-  payment_canceled: { icon: XOctagonIcon, cls: 'text-muted-foreground' },
+  payment_failed: { icon: XCircleIcon, cls: 'text-[var(--aura-fg-danger)]' },
+  payment_canceled: { icon: XOctagonIcon, cls: 'text-[var(--aura-fg-secondary)]' },
   // Auto-refund: benign auto-resolution (money returned) — neutral tone,
   // reverse-arrow icon, visually distinct from the amber pending row.
-  auto_refunded: { icon: RotateCcwIcon, cls: 'text-muted-foreground' },
+  auto_refunded: { icon: RotateCcwIcon, cls: 'text-[var(--aura-fg-secondary)]' },
   // Failed auto-refund: money NOT returned — destructive, matching the
   // AutoRefundFailedAlert shown above the timeline.
-  auto_refund_failed: { icon: TriangleAlertIcon, cls: 'text-destructive' },
+  auto_refund_failed: { icon: TriangleAlertIcon, cls: 'text-[var(--aura-fg-danger)]' },
   invoice_paid: {
     icon: CheckCircle2Icon,
-    cls: 'text-success',
+    cls: 'text-[var(--aura-fg-positive)]',
   },
-  refund_initiated: { icon: RefreshCcwIcon, cls: 'text-foreground' },
+  refund_initiated: { icon: RefreshCcwIcon, cls: 'text-[var(--aura-fg-primary)]' },
   // Settling/awaiting — amber warning tone + spinner (reduced-motion safe).
   refund_pending: {
     icon: Loader2Icon,
-    cls: 'text-warning motion-safe:animate-spin',
+    cls: 'text-[var(--aura-fg-warning)] motion-safe:animate-spin',
   },
   refund_succeeded: {
     icon: ArrowDownToLineIcon,
-    cls: 'text-success',
+    cls: 'text-[var(--aura-fg-positive)]',
   },
-  refund_failed: { icon: XCircleIcon, cls: 'text-destructive' },
+  refund_failed: { icon: XCircleIcon, cls: 'text-[var(--aura-fg-danger)]' },
 };
 
 // F5R3 SIMPLIFY-H4 (2026-05-16) — `eventIcon` + `eventIconClass`
 // helpers deleted. `EVENT_VISUAL` is `Record<SyntheticEventType, …>`
 // so `EVENT_VISUAL[event.type]` is non-nullable at the type level —
-// the `?? InfoIcon` / `?? 'text-foreground'` fallbacks were dead
+// the `?? InfoIcon` / `?? 'text-[var(--aura-fg-primary)]'` fallbacks were dead
 // code that misled readers into thinking a new SyntheticEventType
 // variant could compile without updating EVENT_VISUAL. Record<T,V>
 // exhaustiveness already prevents that. Call sites now inline
@@ -451,7 +450,7 @@ export async function PaymentTimeline({
         // vertically below sm; revert to row at sm+. The chip itself
         // gets `select-text` (S6) so power users can triple-click the
         // charge id without hitting the copy button.
-        <div className="flex flex-col items-start gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm sm:flex-row sm:flex-wrap sm:items-center">
+        <div className="flex flex-col items-start gap-2 rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface-hover)] px-3 py-2 text-sm sm:flex-row sm:flex-wrap sm:items-center">
           <Badge
             variant="outline"
             data-testid="processor-charge-id"
@@ -461,7 +460,7 @@ export async function PaymentTimeline({
             // so the chip stays inside the row container.
             className="font-mono text-xs select-text break-all"
           >
-            <span className="text-muted-foreground mr-1">
+            <span className="me-1 text-[var(--aura-fg-secondary)]">
               {tCharge('label')}:
             </span>
             {processorRef}
@@ -469,7 +468,7 @@ export async function PaymentTimeline({
           {/* Verify-fix S10 (2026-04-26): test-mode chip surfaces test
               vs live unambiguously to admins reconciling on prod. */}
           {latestSucceeded.processorEnvironment === 'test' && (
-            <Badge variant="secondary" className="text-[10px] uppercase">
+            <Badge tone="warning" className="uppercase">
               {t('testModeBadge')}
             </Badge>
           )}
@@ -479,11 +478,8 @@ export async function PaymentTimeline({
             target="_blank"
             rel="noopener noreferrer"
             data-testid="view-in-stripe-link"
-            // Verify-fix M-3 (2026-04-26): `outline-2 outline-ring` was
-            // not valid Tailwind v4 + diverged from shadcn pattern.
-            // Switched to `ring-2 ring-ring ring-offset-2` (ux-standards
-            // § 7.5).
-            className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm"
+            // AURA's global focus ring applies to the link (spec 122).
+            className="inline-flex items-center gap-1 rounded-xs text-sm font-medium text-[var(--aura-fg-accent)] hover:underline"
             aria-label={t('viewInStripeAria')}
           >
             <ExternalLinkIcon className="size-3.5" aria-hidden="true" />
@@ -500,7 +496,7 @@ export async function PaymentTimeline({
       {events.length === 0 ? (
         <div className="flex flex-col items-center gap-3 py-8 text-center">
           <BanknoteIcon
-            className="size-12 text-muted-foreground"
+            className="size-12 text-[var(--aura-fg-secondary)]"
             aria-hidden="true"
           />
           {/* F5R1-UX4 — distinguish two empty-state semantics:
@@ -519,21 +515,21 @@ export async function PaymentTimeline({
           {invoicePaidAt !== null ? (
             <>
               <p className="text-sm font-medium">{t('emptyPaidManual.title')}</p>
-              <p className="text-xs text-muted-foreground max-w-md">
+              <p className="max-w-md text-xs text-[var(--aura-fg-secondary)]">
                 {t('emptyPaidManual.body')}
               </p>
             </>
           ) : (
             <>
               <p className="text-sm font-medium">{t('empty.title')}</p>
-              <p className="text-xs text-muted-foreground max-w-md">
+              <p className="max-w-md text-xs text-[var(--aura-fg-secondary)]">
                 {t('empty.body')}
               </p>
               {isAdmin && invoiceStatus === 'issued' && (
                 <a
                   href={`/admin/invoices/${invoiceId}#record-payment`}
                   data-testid="empty-state-record-payment-link"
-                  className="text-sm font-medium text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm"
+                  className="rounded-xs text-sm font-medium text-[var(--aura-fg-accent)] underline underline-offset-2"
                 >
                   {t('empty.recordManualLink')}
                 </a>
@@ -550,7 +546,7 @@ export async function PaymentTimeline({
               <li
                 key={event.id}
                 data-testid={`timeline-event-${event.type}`}
-                className="flex items-start gap-3 rounded-md border bg-card px-3 py-2.5"
+                className="flex items-start gap-3 rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)] px-3 py-2.5"
               >
                 <Icon
                   className={`mt-0.5 size-4 shrink-0 ${visual.cls}`}
@@ -558,14 +554,14 @@ export async function PaymentTimeline({
                 />
                 <div className="flex-1 text-sm">
                   <div className="font-medium">{tEvents(event.type)}</div>
-                  <div className="text-xs text-muted-foreground tabular-nums">
+                  <div className="text-xs tabular-nums text-[var(--aura-fg-secondary)]">
                     {formatTimestamp(event.timestamp, userLocale)} ·{' '}
                     {resolveActor(event.actorUserId)}
                   </div>
                   {/* Gap B — reassure the admin the credit note is not
                       missing; it is booked once the async refund settles. */}
                   {event.type === 'refund_pending' && (
-                    <p className="mt-1 text-xs text-muted-foreground">
+                    <p className="mt-1 text-xs text-[var(--aura-fg-secondary)]">
                       {t('refundPendingHint')}
                     </p>
                   )}
@@ -588,20 +584,16 @@ function TimelinePanel({
   readonly children: React.ReactNode;
 }) {
   return (
-    // `role="region"` only — `aria-live="polite"` on a Server Component
-    // re-announces the whole timeline on every soft-nav remount. Proper
-    // delta-aware announcer needs a Client Component (post-MVP).
+    // A titled AURA card is a `<section>` labelled by its title, i.e. a
+    // region — no `aria-live`: on a Server Component that re-announces the
+    // whole timeline on every soft-nav remount.
     <Card
       data-testid="payment-timeline"
-      role="region"
-      aria-labelledby="payment-timeline-heading"
+      title={title}
+      titleId="payment-timeline-heading"
+      headingLevel={2}
     >
-      <CardHeader>
-        <CardTitle id="payment-timeline-heading" className="text-base">
-          {title}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">{children}</CardContent>
+      <div className="flex flex-col gap-4">{children}</div>
     </Card>
   );
 }
