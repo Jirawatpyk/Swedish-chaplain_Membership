@@ -155,6 +155,9 @@ export function ErasePiiDialog({
           <Button
             variant="destructive-outline"
             size="sm"
+            // Spec 122 US9a: 44px on a phone, beside the AURA Relink button in
+            // the attendee card foot (this dialog moves to AURA in US9b).
+            className="max-sm:h-11"
             aria-disabled={pending}
             aria-label={t('triggerAriaLabel', { attendeeName })}
             type="button"

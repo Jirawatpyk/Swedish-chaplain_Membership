@@ -377,6 +377,32 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
 - **Who sees the page:** only super_admin can open it (`settings.invoicing` is super-admin-only). The "manager read-only" comments are stale and are corrected. The read-only rendering stays in case the permission widens.
 - **Not followed:** nothing. The board shows only headings and the bar; every field it omits is kept from the code.
 
+### Session 2026-10-06 (maintainer, US9 start)
+
+- **US9 ships as three PRs** (maintainer, 6 Oct: "3 PRs"), as US7 and US8 did:
+  - **US9a**: the events list and the event detail page (boards `Admin-events`, `Admin-event-detail`, each with `-mobile`, and `Admin-state-events-no-integration`, `Admin-state-events-waiting`).
+  - **US9b**: erasure and CSV import (`Admin-event-erase`, `-erase-page`, `Admin-events-erasure`, `-erasure-confirm`, `Admin-events-import`, `-import-result`, `-import-history`).
+  - **US9c**: the EventCreate integration page under settings (`Admin-eventcreate`).
+- **The erasure evidence log is US10.** `Admin-erasure-log` and `Admin-state-erasure-breach` sit under Compliance, not Events.
+- **The events list follows `Admin-events` and the list rules** (docs/aura-adoption.md § List card, § Filters):
+  - the page header "Events" with "Erase by email" and "Import CSV" (primary), each shown only to the roles that see it today. On a phone "Erase by email" moves into a "More actions" menu (`Admin-events-mobile`).
+  - one list card holding the filter row, the table (or an empty state, or the load error) and the pager.
+  - the filter row on AURA's `FilterBar`: the search, then three toggle chips (Counted as partner benefit, Counted as cultural event, Show archived events), and the result count at its end. The board's Search button goes: the search filters as you type, as every migrated list does. The count keeps today's wording, which names the search ("5 events for "midsummer""). It is the bar's polite live region, so the separate hidden live region goes. The URL parameters stay the same; as on every migrated list, a filter change writes them in place (`router.replace`), so Back leaves the list instead of replaying each search. The attendees filters on the detail page do the same.
+  - the table columns Date, Name (with an "Archived" badge), Category, Registrations, Partner benefit, Match rate. The match rate shows its band word ("Strong", "Fair", "Weak") beside the percentage, as the board draws it; today the word is read only by screen readers. Below 640px each event is a card.
+  - the four empty states (no integration, waiting for the first delivery, all archived, nothing matches the filters) on the shared AURA `EmptyState`. Their copy and links are unchanged: the waiting state already has "Send a test event" and "View integration settings".
+- **The event detail follows `Admin-event-detail`:**
+  - the summary card: date and category, the partner and cultural badges, the match-rate figure with its band word, total registrations, last updated, and "View on EventCreate";
+  - the flag buttons and "Archive event" at the card's end, each confirmed in the shared confirmation dialog with today's copy. On a phone they move to an "Event actions" section at the page's end.
+  - the attendees section: search, "Show unmatched only", the payment-status select, the table (Attendee, Match, Ticket, Quota, Registered, actions) and the pager. "Relink" opens the relink dialog, now on AURA `Dialog` with a server-searched `Combobox` instead of the legacy command list.
+  - the match and quota badges in the board's tones.
+  - the row's "More" menu, which holds "Erase personal data" on the board, comes with US9b, when the erase dialog moves to AURA. Until then the erase button stays beside "Relink", and "Relink" stays on every row as today (the board shows it only on rows that are not verified, which would remove the relink of a wrong verified match).
+  - the payment-status select follows the filter pattern: a compact `FilterSelect` ("Payment status: All"), and an applied search or status is a removable chip in the bar.
+- **Kept from the code where the boards are silent or wrong:**
+  - the CSV column remap stays in US9b. The import board shows only which columns were detected, but removing the remap would remove a feature (FR-011).
+  - the erase-by-email count stays the erasable count: the phone board's "Erase all 3 matches", beside a row already erased, is a board error.
+- **The event-create date and time fix ships first, as its own PR, before US9b** (FR-011). The inline "create event" form converts its `datetime-local` value in the browser's time zone, while its copy promises the tenant's. US9b then puts the field on AURA `DatePicker` and `TimePicker` in Bangkok time.
+- **Unchanged:** every server read, permission check, URL parameter, request body, toast and audit event on these pages, and the erase and payment-status guards in the attendee table.
+
 ## User Scenarios & Testing *(mandatory)*
 
 Every story below is one phase and one pull request. A story is done when its screens use only AURA components, match their canvas boards, and pass the per-module definition of done (FR-010).

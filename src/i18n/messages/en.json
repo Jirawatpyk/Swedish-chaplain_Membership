@@ -5251,9 +5251,9 @@
         "tableCaption": "Imported events sorted by start date, most recent first.",
         "errorState": "We couldn't load events. Please refresh the page.",
         "importCsvCta": "Import CSV",
+        "moreActions": "More actions",
         "searchPlaceholder": "Search events by name…",
         "searchLabel": "Search events",
-        "searchSubmit": "Search",
         "resultsAnnouncement": "{count, plural, =0 {No events} =1 {1 event} other {# events}}",
         "resultsAnnouncementWithQuery": "{count, plural, =0 {No events} =1 {1 event} other {# events}} for ''{query}''",
         "columns": {
@@ -5275,15 +5275,21 @@
           "low": "Low match rate",
           "none": "No registrations"
         },
-        "matchRateOf": "{matched} of {total}",
+        "matchRateOf": "{matched} of {total} matched",
+        "matchRateBandShort": {
+          "high": "Strong",
+          "medium": "Fair",
+          "low": "Weak"
+        },
         "filters": {
+          "groupLabel": "Filter events",
           "partnerBenefitOnly": "Counted as partner benefit",
           "culturalEventOnly": "Counted as cultural event",
           "showArchived": "Show archived events",
-          "hideArchived": "Hide archived events",
-          "clearAll": "Clear filters",
-          "partnerBenefitOnlyActive": "Counted as partner benefit (active)",
-          "culturalEventOnlyActive": "Counted as cultural event (active)"
+          "partnerBenefitOnlyShort": "Partner benefit",
+          "culturalEventOnlyShort": "Cultural event",
+          "showArchivedShort": "Archived",
+          "clearAll": "Clear filters"
         },
         "emptyState": {
           "filteredEmpty": "No events match your filters.",
@@ -5339,10 +5345,13 @@
           "tableCaption": "Event attendees with match status, ticket, quota effect, and registration time.",
           "searchPlaceholder": "Search by email or name…",
           "searchLabel": "Search attendees",
-          "searchSubmit": "Search",
           "showUnmatchedOnly": "Show unmatched only",
-          "showUnmatchedOnlyActive": "Showing unmatched only",
-          "filterByPaymentStatusLabel": "Filter by payment status",
+          "showUnmatchedOnlyShort": "Unmatched only",
+          "paymentStatusFilter": "Payment status",
+          "allShort": "All",
+          "filterChip": "{label}: {value}",
+          "filterChipSearch": "Search: {q}",
+          "removeFilterAria": "Remove filter: {label}",
           "allPaymentStatuses": "All statuses",
           "empty": "We couldn't find any attendees matching these filters. Try clearing one or browse the full list.",
           "emptyHeading": "No matches found",

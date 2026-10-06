@@ -17,9 +17,9 @@
  * So this test measures the pages that have ALREADY migrated and asserts they
  * agree with each other. Add a page here as its module migrates; when 122 US13
  * deletes `src/components/ui/card.tsx` the two sets collapse into one and the
- * remaining admin pages (`/admin`, `/admin/account`, `/admin/invoices`,
- * `/admin/events`) can join the list. The cross-implementation drift is a
- * tracked open item, not something for this test to assert as correct — an
+ * remaining admin pages (`/admin`, `/admin/account`, `/admin/invoices`) can
+ * join the list (`/admin/events` joined with 122 US9a). The
+ * cross-implementation drift is a tracked open item, not something for this test to assert as correct — an
  * expectation that the two differ would turn red the day US13 fixes it.
  *
  * It also no longer probes `/admin/users`: `users.manage` is `superAdminOnly`
@@ -32,8 +32,8 @@ import { clearE2ERateLimits } from './helpers/rate-limit';
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
 
-/** Admin pages whose cards are AURA's as of 122 US7a. */
-const AURA_CARD_ROUTES = ['/admin/plans', '/admin/directory', '/admin/renewals'] as const;
+/** Admin pages whose cards are AURA's as of 122 US9a. */
+const AURA_CARD_ROUTES = ['/admin/plans', '/admin/directory', '/admin/renewals', '/admin/events'] as const;
 
 test.describe('F4 SC-014 — overlay consistency @layout', () => {
   test.skip(!ADMIN_EMAIL || !ADMIN_PASSWORD, 'E2E_ADMIN_* not set');
@@ -54,6 +54,15 @@ test.describe('F4 SC-014 — overlay consistency @layout', () => {
 
     const measure = async (path: string) => {
       await page.goto(path);
+      // Each route's loading.tsx skeleton is itself an AURA Card inside an
+      // aria-busy container. Picking it reads a card that is swapped out before
+      // `evaluate` runs (detached → every computed value is ""), so wait for it
+      // to go first (R36).
+      await page
+        .locator('[aria-busy="true"] .aura-card')
+        .first()
+        .waitFor({ state: 'detached', timeout: 15_000 })
+        .catch(() => {});
       // `:visible`, not `.first()`: Next keeps the previous segment's DOM in the
       // tree (hidden) after a client nav, and this walks several routes.
       const card = page.locator('.aura-card:visible').first();

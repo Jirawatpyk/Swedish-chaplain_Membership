@@ -1,7 +1,7 @@
 /**
  * F6.1 follow-up 2026-05-18 — events list `searchQuery` filter.
  *
- * Backs the `<EventsListSearchToolbar>` URL-driven server filter.
+ * Backs the events list search (`EventsListFilters`, URL `q`), a server filter.
  * Repo applies `ilike(events.name, '%trimmed%')`; this test pins:
  *   1. Substring match (single hit).
  *   2. Case-insensitive (uppercase query matches title-case row).

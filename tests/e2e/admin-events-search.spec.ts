@@ -3,11 +3,14 @@
  * e2e for the F6.1 events list search toolbar.
  *
  * Coverage:
- *   R3-T2 (R2-2a useEffect prop-sync): Browser Back/Forward changes
- *     the URL `?q=` and the input value updates to match.
- *   R3-T3 (R2-2b live-region): The `<output role="status"
- *     aria-live="polite">` text content reflects the filtered result
- *     count after a search submit.
+ *   R3-T2: the box shows the URL's `?q=`, and clearing it strips `q`.
+ *     Spec 122 US9a: the list's filters follow the one filter pattern
+ *     (docs/aura-adoption.md § Filters) and write the URL in place
+ *     (`router.replace`), so Back leaves the list instead of replaying each
+ *     search, as on every migrated list.
+ *   R3-T3: the filter bar's polite result count (AURA FilterBar, which
+ *     replaced the page's hidden `<output role="status">`) reflects the
+ *     filtered result count after a search.
  *
  * Gated on E2E_ADMIN_EMAIL + E2E_ADMIN_PASSWORD env vars per repo
  * convention; skip at runtime when missing.
@@ -33,29 +36,22 @@ test.describe('F6.1 events search toolbar — R3-T2 + R3-T3 @workers=1', () => {
     await signInAsAdmin(page);
   });
 
-  test('R3-T2 — back navigation re-populates search input from URL `?q=`', async ({
+  test('R3-T2 — the box follows `?q=`; clearing strips it in place', async ({
     page,
   }) => {
     // 1. Goto a URL with `?q=` pre-set. The server renders with
-    //    initialSearch="midsummer", the client toolbar mounts and
-    //    shows the value.
+    //    search="midsummer" and the filter bar shows the value.
+    await page.goto('/admin/events');
     await page.goto('/admin/events?q=midsummer');
     await page.waitForLoadState('domcontentloaded');
 
     const searchInput = page.getByRole('searchbox', { name: /search events/i });
     await expect(searchInput).toHaveValue('midsummer');
 
-    // 2. Click the native browser X clear button by emulating an
-    //    onChange to empty — the toolbar's onChange handler strips
-    //    `?q=` from the URL.
-    //
-    //    2026-09-10 — this step was VACUOUS and racing hydration. A `fill('')`
-    //    that lands before React attaches the onChange handler clears the
-    //    input and pushes nothing; the URL assertion below then still passed,
-    //    because `/\/admin\/events(?:\?|$)/` also matches `?q=midsummer`. Back
-    //    therefore left the ONLY events entry and landed on /admin (Dashboard)
-    //    — which is what the failure showed. The assertion now demands that
-    //    `q` is GONE, and the fill is retried until the push happens.
+    // 2. Clear the box. The fill is retried until the URL write lands (a fill
+    //    before hydration clears the box and writes nothing), and the
+    //    assertion demands that `q` is GONE (2026-09-10 lesson: a regex that
+    //    also matched `?q=midsummer` made this step vacuous).
     await expect(async () => {
       await searchInput.fill('');
       await expect(page).not.toHaveURL(/[?&]q=/, { timeout: 2_000 });
@@ -63,23 +59,12 @@ test.describe('F6.1 events search toolbar — R3-T2 + R3-T3 @workers=1', () => {
     await expect(page).toHaveURL(/\/admin\/events(?:\?|$)/);
     await expect(searchInput).toHaveValue('');
 
-    // 3. Browser Back — URL returns to `?q=midsummer` and the input
-    //    value MUST re-populate to "midsummer". Pre-R2-2a the input
-    //    stayed empty (stale local state); R2-2a useEffect prop-sync
-    //    + R3-U2 focus-guard fixes this. Protected pages are `no-store`,
-    //    so Back is a fresh render from the dev server: give it time.
-    //    The toolbar's prop-sync is guarded by R3-U2 (`inputFocused.current`):
-    //    a value the user is TYPING must not be overwritten by a URL change.
-    //    `fill('')` leaves the input focused, and Playwright's `goBack()` —
-    //    unlike a real Back click, which moves focus to the browser chrome —
-    //    fires no blur, so the guard blocked the very sync this case exists to
-    //    prove (received "" after Back, 2026-09-10). Blur first: that is the
-    //    state a real user is in when they press Back.
+    // 3. The clear replaced the history entry: Back goes to the list as it
+    //    was opened before the search, not to `?q=midsummer`.
     await searchInput.blur();
     await page.goBack();
     await page.waitForLoadState('domcontentloaded');
-    await expect(page).toHaveURL(/[?&]q=midsummer/);
-    await expect(searchInput).toHaveValue('midsummer', { timeout: 15_000 });
+    await expect(page).toHaveURL(/\/admin\/events$/);
   });
 
   test('R3-T3 — live-region announces the result count after submit', async ({
@@ -88,10 +73,10 @@ test.describe('F6.1 events search toolbar — R3-T2 + R3-T3 @workers=1', () => {
     await page.goto('/admin/events');
     await page.waitForLoadState('domcontentloaded');
 
-    // The live-region is rendered as `<output role="status">` inside
-    // the events list page (admin/events/page.tsx). It exists from
-    // page load.
-    const liveRegion = page.getByRole('status').first();
+    // The live region is the filter bar's result count (spec 122 US9a:
+    // AURA FilterBar's polite count replaced the page's hidden
+    // `<output role="status">`). It exists from page load.
+    const liveRegion = page.locator('.aura-filterbar__count').first();
     await expect(liveRegion).toBeAttached();
 
     // Type a substring + submit via Enter.
@@ -113,7 +98,7 @@ test.describe('F6.1 events search toolbar — R3-T2 + R3-T3 @workers=1', () => {
     await page.goto('/admin/events');
     await page.waitForLoadState('domcontentloaded');
 
-    const liveRegion = page.getByRole('status').first();
+    const liveRegion = page.locator('.aura-filterbar__count').first();
     await expect(liveRegion).toBeAttached();
 
     // Without any query, the live-region renders the
@@ -149,10 +134,14 @@ test.describe('F6.1 events search toolbar — R3-T2 + R3-T3 @workers=1', () => {
     );
     await page.waitForLoadState('domcontentloaded');
 
-    // Empty-state should render with a Clear filters button.
-    const clearButton = page.getByRole('button', {
-      name: /clear filters/i,
-    });
+    // Empty-state should render with a Clear filters button. (The filter
+    // bar's own "Clear filters" comes first, since the search is a chip;
+    // the empty state's button is the last one.)
+    const clearButton = page
+      .getByRole('button', {
+        name: /clear filters/i,
+      })
+      .last();
     await expect(clearButton).toBeVisible();
 
     // Capture the search input. The attendee-table search input has

@@ -116,7 +116,8 @@ test.describe('@a11y T055 — F6 events list+detail axe-core scan', () => {
     // be attached, then count links via `toBeAttached` (works for
     // off-screen links too — desktop table or mobile horizontal-
     // scroll layout both have links in DOM, just outside viewport).
-    const table = page.getByRole('table');
+    // Spec 122 US9a: the list is AURA's DataTable, an ARIA grid.
+    const table = page.getByRole('grid');
     await expect(table).toBeVisible({ timeout: 15_000 });
     const firstRowLink = table
       .locator('a[href^="/admin/events/"]')

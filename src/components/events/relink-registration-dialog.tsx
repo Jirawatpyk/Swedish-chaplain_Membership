@@ -1,10 +1,10 @@
-﻿/**
+/**
  * F6 Phase 9 / US6 / T106 — relink registration dialog.
  *
  * Per-row admin action mounted in `AttendeeTable`. Two visual modes:
  *
- *   1. **Active mode** (default) — a Relink CTA opens a shadcn/Base UI
- *      Dialog containing a cmdk searchable member picker. On selection,
+ *   1. **Active mode** (default) — a Relink CTA opens an AURA Dialog
+ *      containing a server-searched AURA Combobox member picker. On selection,
  *      POSTs to `/api/admin/events/{eventId}/registrations/{registrationId}/relink`
  *      and surfaces a toast on success / 409 (already pseudonymised by
  *      a concurrent retention sweep) / generic error. Closes after the
@@ -20,21 +20,25 @@
  *      would never succeed.
  *
  * Network behaviour:
- *   - Picker uses cmdk in `shouldFilter={false}` mode because results
- *     are server-filtered via `/api/admin/members/search?q=…&limit=10`.
+ *   - The Combobox's `onSearch` turns its own filtering off: results are
+ *     server-filtered via `/api/admin/members/search?q=…&limit=10`.
  *   - Debounced via `useDeferredValue` (no extra dependency); aborts
  *     in-flight fetches when the query changes.
  *   - One outstanding POST at a time — `useTransition`'s pending flag
- *     disables CommandItems + guards the dialog from re-closing mid-
+ *     disables the picker + guards the dialog from re-closing mid-
  *     flight (matches archive-event-button's CRIT-5 pattern).
  *
  * a11y:
- *   - Dialog title + description satisfy Base UI's labelled-by/described-by.
- *   - cmdk Input gets a Command `label` so SR users hear "Search members"
- *     even though the placeholder is visual.
- *   - sr-only role=status announces "Relinking …" + "Searching members …".
- *   - Loader2 animations carry `motion-reduce:animate-none` per
- *     `docs/ux-standards.md § Reduced motion`.
+ *   - Dialog title + description name and describe the dialog.
+ *   - The Combobox is labelled "Search members"; its loading and empty
+ *     text ("Searching members…", "No members match") come from AURA's
+ *     listbox.
+ *   - sr-only role=status announces "Relinking …".
+ *
+ * Spec 122 US9a (T905): on AURA `Dialog` (its `trigger` opens it, focus
+ * returns there on close) and `Combobox` with `onSearch`, replacing the
+ * legacy dialog and the cmdk command list. The endpoints, request body,
+ * response parsing, toasts and the testids are unchanged.
  */
 'use client';
 
@@ -47,30 +51,10 @@ import {
 } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { Info, Link2, Loader2 } from 'lucide-react';
+import { Info } from 'lucide-react';
 import { z } from 'zod';
+import { Button, Combobox, Dialog, Tooltip, type ComboboxOption } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
-import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
-import {
-  Command,
-  CommandEmpty,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from '@/components/ui/command';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
 import type {
   AttendeeEmail,
   EventId,
@@ -314,24 +298,17 @@ export function RelinkRegistrationDialog(props: RelinkRegistrationDialogProps) {
   // explicit hoist pattern.
   if (props.isPseudonymised) {
     return (
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <span
-              data-testid={`relink-disallowed-${props.registrationId}`}
-              className="text-muted-foreground inline-flex items-center gap-1 text-xs"
-              role="note"
-              tabIndex={0}
-              aria-label={t('disallowedPseudonymised')}
-            />
-          }
+      <Tooltip content={t('disallowedPseudonymised')}>
+        <span
+          data-testid={`relink-disallowed-${props.registrationId}`}
+          className="aura-text-caption inline-flex items-center gap-1 rounded-[var(--aura-radius-sm)] text-[var(--aura-fg-secondary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)]"
+          role="note"
+          tabIndex={0}
+          aria-label={t('disallowedPseudonymised')}
         >
           <Info aria-hidden="true" className="size-3 shrink-0" />
           <span>{t('disallowedShort')}</span>
-        </TooltipTrigger>
-        <TooltipContent className="max-w-xs text-xs">
-          {t('disallowedPseudonymised')}
-        </TooltipContent>
+        </span>
       </Tooltip>
     );
   }
@@ -408,19 +385,14 @@ export function RelinkRegistrationDialog(props: RelinkRegistrationDialogProps) {
     });
   }
 
+  const options: ComboboxOption[] = visibleResults.map((m) => ({
+    value: m.memberId,
+    label: m.companyName,
+    ...(m.primaryContactName ? { description: m.primaryContactName } : {}),
+  }));
+
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        // Match archive-event-button's NEW-I1 guard — never let a re-
-        // open / close happen while a POST is in flight. The cmdk
-        // CommandItem also disables itself via `disabled={pending}`
-        // so the only way to leave the dialog mid-flight is the
-        // browser-native Escape key, which onOpenChange catches here.
-        if (pending) return;
-        setOpen(next);
-      }}
-    >
+    <>
       {/* sr-only live region — announces the in-flight state for SR
           users. ARIA-busy on a disabled trigger button is brittle
           across screen readers (JAWS skips inert elements); a
@@ -428,11 +400,21 @@ export function RelinkRegistrationDialog(props: RelinkRegistrationDialogProps) {
       <span role="status" aria-live="polite" className="sr-only">
         {pending ? t('pendingAnnouncement') : ''}
       </span>
-      <DialogTrigger
-        render={
+      <Dialog
+        open={open}
+        onOpen={() => setOpen(true)}
+        onClose={() => {
+          // Match archive-event-button's NEW-I1 guard — never let the
+          // dialog close while a POST is in flight (Escape, the close
+          // button and the scrim all come through here).
+          if (pending) return;
+          setOpen(false);
+        }}
+        trigger={
           <Button
-            variant="ghost"
+            variant="secondary"
             size="sm"
+            touchHeight
             type="button"
             data-testid={`relink-button-${props.registrationId}`}
             // email included so SR users can
@@ -443,83 +425,44 @@ export function RelinkRegistrationDialog(props: RelinkRegistrationDialogProps) {
               attendee: props.attendeeName,
               email: props.attendeeEmail,
             })}
-          />
+          >
+            {t('relinkCta')}
+          </Button>
+        }
+        title={t('dialogTitle', { attendee: props.attendeeName })}
+        description={
+          <>
+            {t('dialogDescription')}
+            <span className="aura-text-caption mt-1 block text-[var(--aura-fg-secondary)]" aria-hidden="true">
+              {props.attendeeEmail}
+            </span>
+          </>
         }
       >
-        <Link2 aria-hidden="true" data-icon="inline-start" />
-        <span>{t('relinkCta')}</span>
-      </DialogTrigger>
-      <DialogContent className="p-0 sm:max-w-[var(--modal-max-width-lg)]">
-        <DialogHeader className="p-[var(--card-padding)] pb-2">
-          <DialogTitle>
-            {t('dialogTitle', { attendee: props.attendeeName })}
-          </DialogTitle>
-          <DialogDescription>{t('dialogDescription')}</DialogDescription>
-          <p className="text-xs text-muted-foreground" aria-hidden="true">
-            {props.attendeeEmail}
-          </p>
-        </DialogHeader>
-        <Command
-          shouldFilter={false}
+        <Combobox
           label={t('searchSrLabel')}
-          className="rounded-none border-t"
-        >
-          <CommandInput
-            placeholder={t('searchPlaceholder')}
-            value={search}
-            onValueChange={setSearch}
-            disabled={pending}
-          />
-          {/* Round-1 ux-H2 — hide the (empty) listbox from SR while
-              the spinner role=status is announcing, so the user
-              doesn't hear "Searching members…" followed by an empty
-              listbox declaration. */}
-          <CommandList
-            aria-hidden={searching && visibleResults.length === 0}
-          >
-            {searching && (
-              <div
-                className="flex items-center justify-center gap-2 p-4 text-sm text-muted-foreground"
-                role="status"
-                aria-live="polite"
-              >
-                <Loader2
-                  aria-hidden="true"
-                  className="size-4 animate-spin motion-reduce:animate-none"
-                />
-                {t('searching')}
-              </div>
-            )}
-            <CommandEmpty>
-              {trimmedQuery === ''
-                ? t('searchPrompt')
-                : searching
-                  ? null
-                  : searchError
-                    ? t('searchFailed')
-                    : t('noResults')}
-            </CommandEmpty>
-            {visibleResults.map((m) => (
-              <CommandItem
-                key={m.memberId}
-                value={m.memberId}
-                onSelect={() => {
-                  handleSelect(m.memberId, m.companyName);
-                }}
-                disabled={pending}
-                className="flex flex-col items-start gap-0.5"
-              >
-                <span className="font-medium">{m.companyName}</span>
-                {m.primaryContactName && (
-                  <span className="text-xs text-muted-foreground">
-                    {m.primaryContactName}
-                  </span>
-                )}
-              </CommandItem>
-            ))}
-          </CommandList>
-        </Command>
-      </DialogContent>
-    </Dialog>
+          placeholder={t('searchPlaceholder')}
+          options={options}
+          value={null}
+          onSearch={setSearch}
+          onChange={(memberId) => {
+            if (memberId === null || pending) return;
+            const hit = visibleResults.find((m) => m.memberId === memberId);
+            if (hit) handleSelect(hit.memberId, hit.companyName);
+          }}
+          disabled={pending}
+          clearable={false}
+          loading={searching}
+          loadingText={t('searching')}
+          emptyText={
+            trimmedQuery === ''
+              ? t('searchPrompt')
+              : searchError
+                ? t('searchFailed')
+                : t('noResults')
+          }
+        />
+      </Dialog>
+    </>
   );
 }

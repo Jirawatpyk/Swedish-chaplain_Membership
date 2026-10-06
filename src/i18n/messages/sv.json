@@ -5251,9 +5251,9 @@
         "tableCaption": "Importerade evenemang sorterade efter startdatum, nyast först.",
         "errorState": "Det gick inte att läsa in evenemangen. Uppdatera sidan.",
         "importCsvCta": "Importera CSV",
+        "moreActions": "Fler åtgärder",
         "searchPlaceholder": "Sök evenemang efter namn…",
         "searchLabel": "Sök evenemang",
-        "searchSubmit": "Sök",
         "resultsAnnouncement": "{count, plural, =0 {Inga evenemang} one {1 evenemang} other {# evenemang}}",
         "resultsAnnouncementWithQuery": "{count, plural, =0 {Inga evenemang} one {1 evenemang} other {# evenemang}} för ''{query}''",
         "columns": {
@@ -5275,15 +5275,21 @@
           "low": "Låg matchningsgrad",
           "none": "Inga registreringar"
         },
-        "matchRateOf": "{matched} av {total}",
+        "matchRateOf": "{matched} av {total} matchade",
+        "matchRateBandShort": {
+          "high": "Stark",
+          "medium": "Medel",
+          "low": "Svag"
+        },
         "filters": {
+          "groupLabel": "Filtrera evenemang",
           "partnerBenefitOnly": "Räknas som partnerförmån",
           "culturalEventOnly": "Räknas som kulturevenemang",
           "showArchived": "Visa arkiverade evenemang",
-          "hideArchived": "Dölj arkiverade evenemang",
-          "clearAll": "Rensa filter",
-          "partnerBenefitOnlyActive": "Räknas som partnerförmån (aktivt)",
-          "culturalEventOnlyActive": "Räknas som kulturevenemang (aktivt)"
+          "partnerBenefitOnlyShort": "Partnerförmån",
+          "culturalEventOnlyShort": "Kulturevenemang",
+          "showArchivedShort": "Arkiverade",
+          "clearAll": "Rensa filter"
         },
         "emptyState": {
           "filteredEmpty": "Inga evenemang matchar dina filter.",
@@ -5339,10 +5345,13 @@
           "tableCaption": "Deltagare med matchningsstatus, biljett, kvoteffekt och registreringstid.",
           "searchPlaceholder": "Sök på e-post eller namn…",
           "searchLabel": "Sök deltagare",
-          "searchSubmit": "Sök",
           "showUnmatchedOnly": "Visa endast omatchade",
-          "showUnmatchedOnlyActive": "Visar endast omatchade",
-          "filterByPaymentStatusLabel": "Filtrera efter betalningsstatus",
+          "showUnmatchedOnlyShort": "Omatchade",
+          "paymentStatusFilter": "Betalningsstatus",
+          "allShort": "Alla",
+          "filterChip": "{label}: {value}",
+          "filterChipSearch": "Sök: {q}",
+          "removeFilterAria": "Ta bort filter: {label}",
           "allPaymentStatuses": "Alla statusar",
           "empty": "Inga deltagare matchar dessa filter. Prova att rensa filtren eller visa hela listan.",
           "emptyHeading": "Inga matchningar hittades",

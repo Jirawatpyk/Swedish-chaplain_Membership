@@ -17,16 +17,8 @@ import { runLoadEventDetail } from '@/lib/events-admin-deps';
 import { isMatchType, isPaymentStatus } from '@/modules/events';
 import type { MatchType } from '@/modules/events';
 import { DetailContainer } from '@/components/layout';
-import { PageHeader } from '@/components/layout/page-header';
-import { TablePagination } from '@/components/layout/table-pagination';
-import { DynamicBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
-import { EventDetailHeader } from '@/components/events/event-detail-header';
-import { EventCategoryToggles } from '@/components/events/event-category-toggles';
-import { ArchiveEventButton } from '@/components/events/archive-event-button';
-import {
-  AttendeeTable,
-  type AttendeeRow,
-} from '@/components/events/attendee-table';
+import type { AttendeeRow } from '@/components/events/attendee-table';
+import { renderEventDetailError, renderEventDetailView } from './_components/event-detail-view';
 
 export async function generateMetadata({
   params,
@@ -116,7 +108,6 @@ export default async function AdminEventDetailPage({
 
   const { eventId } = await params;
   const query = await searchParams;
-  const t = await getTranslations('admin.events.detail');
   const tShared = await getTranslations('shared');
 
   const page = clampPage(query.page);
@@ -246,17 +237,16 @@ export default async function AdminEventDetailPage({
   }
 
   if (!result || !result.ok) {
-    return (
-      <DetailContainer>
-        <PageHeader title={t('title')} subtitle={t('errorSubtitle')} />
-        <div className="rounded-md border border-destructive/30 bg-destructive/5 p-6 text-center">
-          <p className="text-destructive">{t('errorBody')}</p>
-        </div>
-      </DetailContainer>
-    );
+    return <DetailContainer>{await renderEventDetailError()}</DetailContainer>;
   }
 
   const { event, registrations, pagination } = result.value;
+
+  // 016 re-review D — evaluator-derived (events.write, the key the
+  // category-toggle + archive APIs admit; OFF leg = admin-only). Hidden when
+  // archived per FR-019a (archived events are quota-neutral and cannot be
+  // re-flagged).
+  const canAct = canPerform(currentUser.role, 'events.write') && !event.archivedAt;
 
   return (
     /* P4 (round-10) — 120ms fade-in when the loaded content replaces
@@ -266,99 +256,37 @@ export default async function AdminEventDetailPage({
        loading.tsx renders the same DetailContainer without these
        classes so the skeleton itself does not fade. */
     <DetailContainer className="motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-[120ms]">
-      {/* Register the event name as the breadcrumb label for the
-          dynamic `[eventId]` segment so the trail reads
-          "Events / <Event Name>" instead of
-          "Events / a1b2c3d4-1234-...". Client component effect runs
-          AFTER hydration; intermediate render uses the raw UUID
-          briefly (typical <100ms). */}
-      <DynamicBreadcrumbLabel segment={event.eventId} label={event.name} />
-      <PageHeader title={event.name} subtitle={t('subtitle')} />
-      {/* C4-lite (round-10) — Phase 6 toggles + archive flow into the
-          EventDetailHeader card as an actions slot. The fragment block
-          that used to render below the header is gone; the buttons now
-          live inside the same card, separated by a top border. Admin-
-          only per FR-035 surface-level access matrix + hidden when
-          archived per FR-019a (archived events are quota-neutral and
-          cannot be re-flagged). The header omits the strip entirely
-          when `actions` is undefined. */}
-      <EventDetailHeader
-        event={event}
-        actions={
-          // 016 re-review D — evaluator-derived (events.write, the key the
-          // category-toggle + archive APIs admit; OFF leg = admin-only).
-          canPerform(currentUser.role, 'events.write') &&
-          !event.archivedAt ? (
-            <>
-              <EventCategoryToggles
-                eventId={event.eventId}
-                isPartnerBenefit={event.isPartnerBenefit}
-                isCulturalEvent={event.isCulturalEvent}
-              />
-              <ArchiveEventButton eventId={event.eventId} />
-            </>
-          ) : undefined
-        }
-      />
-      <section
-        aria-labelledby="attendees-heading"
-        className="flex flex-col gap-4"
-      >
-        {/* R6-B5 staff-review fix (2026-05-13): h3 → h2 to close the
-            heading-level skip (PageHeader emits h1; EventDetailHeader
-            intentionally renders no heading). WCAG 2.1 SC 1.3.1 (Info
-            and Relationships, Level A): skipping a heading level
-            signals a missing section to AT users. Visual `text-h3`
-            class preserves the existing size — semantic level and
-            visual size are decoupled. */}
-        <h2 id="attendees-heading" className="text-h3 font-semibold">
-          {t('attendees.heading')}
-        </h2>
-        <AttendeeTable
-          rows={
-            registrations.map((r) => ({
-              registrationId: r.registrationId,
-              attendeeEmail: r.attendeeEmail,
-              attendeeName: r.attendeeName,
-              attendeeCompany: r.attendeeCompany,
-              matchType: r.matchType,
-              ticketType: r.ticketType,
-              ticketPriceThb: r.ticketPriceThb,
-              paymentStatus: r.paymentStatus,
-              countedAgainstPartnership: r.countedAgainstPartnership,
-              countedAgainstCulturalQuota: r.countedAgainstCulturalQuota,
-              isOverQuota: r.isOverQuota,
-              registeredAt: r.registeredAt,
-              // Round-1 type-H3 — pass branded MemberId | null straight
-              // through; the prop boundary preserves the brand. No
-              // String() coercion needed.
-              currentMatchedMemberId: r.matchedMemberId,
-              isPseudonymised: r.isPseudonymised,
-            })) satisfies AttendeeRow[]
-          }
-          unmatchedOnly={unmatchedOnly}
-          initialSearch={q ?? ''}
-          {...(paymentStatusFilter !== null && {
-            initialPaymentStatus: paymentStatusFilter,
-          })}
-          // F6 Phase 9 / US6 — relink column follows `events.relink` (its own
-          // catalogue key, money-sensitive; not granted to marketing). Archived
-          // events disable relink because the use-case short-circuits with
-          // `event_archived`. (016 re-review D — was a `role === 'admin'`
-          // literal, which went false for every human after Migration C.)
-          eventId={event.eventId}
-          canRelink={
-            canPerform(currentUser.role, 'events.relink') &&
-            !event.archivedAt
-          }
-        />
-        <TablePagination
-          page={pagination.page}
-          pageSize={pagination.pageSize}
-          total={pagination.totalCount}
-          baseHref={`/admin/events/${eventId}`}
-        />
-      </section>
+      {await renderEventDetailView({
+        event,
+        rows: registrations.map((r) => ({
+          registrationId: r.registrationId,
+          attendeeEmail: r.attendeeEmail,
+          attendeeName: r.attendeeName,
+          attendeeCompany: r.attendeeCompany,
+          matchType: r.matchType,
+          ticketType: r.ticketType,
+          ticketPriceThb: r.ticketPriceThb,
+          paymentStatus: r.paymentStatus,
+          countedAgainstPartnership: r.countedAgainstPartnership,
+          countedAgainstCulturalQuota: r.countedAgainstCulturalQuota,
+          isOverQuota: r.isOverQuota,
+          registeredAt: r.registeredAt,
+          // Round-1 type-H3 — pass branded MemberId | null straight
+          // through; the prop boundary preserves the brand. No
+          // String() coercion needed.
+          currentMatchedMemberId: r.matchedMemberId,
+          isPseudonymised: r.isPseudonymised,
+        })) satisfies AttendeeRow[],
+        pagination,
+        filters: { unmatchedOnly, q, paymentStatus: paymentStatusFilter },
+        canAct,
+        // F6 Phase 9 / US6 — relink column follows `events.relink` (its own
+        // catalogue key, money-sensitive; not granted to marketing). Archived
+        // events disable relink because the use-case short-circuits with
+        // `event_archived`. (016 re-review D — was a `role === 'admin'`
+        // literal, which went false for every human after Migration C.)
+        canRelink: canPerform(currentUser.role, 'events.relink') && !event.archivedAt,
+      })}
       <span className="sr-only">{tShared('loaded')}</span>
     </DetailContainer>
   );

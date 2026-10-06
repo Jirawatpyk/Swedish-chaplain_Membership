@@ -1,8 +1,10 @@
+'use client';
+
 /**
  * Quota-effect badge (F6 Phase 4 + ui-design-specialist round-10 I3).
  *
  * Indicates whether a registration consumed a member's partnership
- * or cultural-quota slot. Three states reflect the data-model
+ * or cultural-quota slot. Four states reflect the data-model
  * boolean pair `(counted_against_partnership, counted_against_cultural_quota)`
  * + the derived `isOverQuota` flag:
  *
@@ -13,25 +15,24 @@
  * registration could NOT be counted because the
  * member's allotment is exhausted OR the
  * attendee isn't a member)
- * - none          — neither — no badge rendered (returns null)
+ * - none          — neither → "Not counted"
  *
- * Combines shape + icon + text per WCAG 2.1 SC 1.4.1 non-colour-alone.
+ * Text plus tone per WCAG 2.1 SC 1.4.1 non-colour-alone (each state has its
+ * own word).
  *
  * I3 — Tooltip support: optional `tooltip` prop wraps the badge in a
  * tooltip trigger so admins hovering "Over quota" / "Partner benefit"
  * get the explanation without leaving the table.
+ *
+ * Spec 122 US9a (T904): on AURA `Badge` in the board's tones
+ * (`Admin-event-detail`): partner benefit and cultural quota accent, over
+ * quota danger, and `none` ("Not counted", the attendee table's fourth state)
+ * a neutral outline. A client module, as `match-status-badge.tsx`.
  */
 import type { ReactNode } from 'react';
-import { Award, Sparkles, AlertOctagon, type LucideIcon } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
-import { cn } from '@/lib/utils';
+import { Badge, Tooltip, type Tone } from '@jirawatpyk/aura-react';
 
-export type QuotaEffectKind = 'partnership' | 'cultural' | 'over_quota';
+export type QuotaEffectKind = 'partnership' | 'cultural' | 'over_quota' | 'none';
 
 interface QuotaEffectBadgeProps {
   readonly kind: QuotaEffectKind;
@@ -40,63 +41,21 @@ interface QuotaEffectBadgeProps {
   readonly className?: string;
 }
 
-interface VariantConfig {
-  readonly Icon: LucideIcon;
-  readonly badgeClass: string;
-}
-
-/**
- * Tokens picked for WCAG 2.1 SC 1.4.11 (≥3:1) — see match-status-badge.tsx
- * for the same dark-mode adjustment rationale (U1 ).
- */
-const VARIANT_MAP: Readonly<Record<QuotaEffectKind, VariantConfig>> = {
-  partnership: {
-    Icon: Award,
-    badgeClass:
-      'border-sky-600 text-sky-900 dark:border-sky-500 dark:text-sky-100',
-  },
-  cultural: {
-    Icon: Sparkles,
-    badgeClass:
-      'border-violet-600 text-violet-900 dark:border-violet-500 dark:text-violet-100',
-  },
-  over_quota: {
-    Icon: AlertOctagon,
-    badgeClass:
-      'bg-amber-100 text-amber-900 dark:bg-amber-900/30 dark:text-amber-100 border-amber-600 dark:border-amber-500',
-  },
+const TONE: Readonly<Record<QuotaEffectKind, { readonly tone: Tone; readonly variant: 'soft' | 'outline' }>> = {
+  partnership: { tone: 'accent', variant: 'soft' },
+  cultural: { tone: 'accent', variant: 'soft' },
+  over_quota: { tone: 'danger', variant: 'soft' },
+  none: { tone: 'neutral', variant: 'outline' },
 };
 
-export function QuotaEffectBadge({
-  kind,
-  label,
-  tooltip,
-  className,
-}: QuotaEffectBadgeProps) {
-  const { Icon, badgeClass } = VARIANT_MAP[kind];
+export function QuotaEffectBadge({ kind, label, tooltip, className }: QuotaEffectBadgeProps) {
+  const { tone, variant } = TONE[kind];
   const badge = (
-    <Badge
-      variant="outline"
-      className={cn(badgeClass, className)}
-      aria-label={label}
-    >
-      <Icon aria-hidden="true" data-icon="inline-start" />
-      <span>{label}</span>
+    <Badge tone={tone} variant={variant} className={className} data-quota-effect={kind}>
+      {label}
     </Badge>
   );
   if (!tooltip) return badge;
-  // Round-11 + 12 review fixes — TooltipProvider hoisted to table root
-  // + tabIndex dropped from wrapper. See match-status-badge.tsx for
-  // full rationale (badge aria-label is the primary SR signal;
-  // tooltip is supplementary hover-only explanation).
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={<span className="inline-flex rounded-md" />}
-      >
-        {badge}
-      </TooltipTrigger>
-      <TooltipContent>{tooltip}</TooltipContent>
-    </Tooltip>
-  );
+  // Hover explanation only, as on the match badge (no Tab stop per badge).
+  return <Tooltip content={tooltip}>{badge}</Tooltip>;
 }

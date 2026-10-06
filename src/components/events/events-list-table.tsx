@@ -1,44 +1,30 @@
 /**
  * Events list table (F6 Phase 4 / US2 AS1).
  *
- * TanStack Table v8 headless + shadcn Table visual primitives — same
- * pattern as src/components/members/members-table.tsx and
- * src/components/invoicing/invoice-table.tsx. Server-side pagination
- * + filter; the table renders the current page only.
+ * Spec 122 US9a (T902): AURA's DataTable as the `Admin-events` board draws it
+ * (columns Date, Name, Category, Registrations, Partner benefit, Match rate),
+ * edge to edge inside the list card, and a card per event below 640px
+ * (`Admin-events-mobile`). Server-side pagination + filters: the table renders
+ * the current page in the server's order (start date, newest first) and has no
+ * sortable column.
  *
- * Columns:
- * - Date           (event.startDate, locale-formatted, BE-display
- * for th-TH; pure ISO for en/sv)
- * - Name           (clickable link to /admin/events/[id])
- * - Category       (raw string from EventCreate or — when null)
- * - Registrations  (totalRegistrations integer)
- * - Partner Benefit (badge: visible when isPartnerBenefit OR
- * isCulturalEvent; uses lucide Award icon)
- * - Match Rate     ("NN.N%" with em-dash when total=0)
- *
- * Keyboard nav + a11y:
- * - Native `<a>` row links — Tab + Enter
- * - aria-sort hint on the Date column
- * - sr-only "events table" caption
+ * - Date: `formatLocalisedDate` (Buddhist Era on `th`, storage stays UTC).
+ * - Name: a link to the event, with an "Archived" badge.
+ * - Partner benefit: the partner and cultural badges, or a dash.
+ * - Match rate: "83.3% · Strong" with "35 of 42" under it; the band word is
+ *   shown, as the board draws it (Strong ≥ 80, Fair ≥ 50, Weak below), and the
+ *   rate is a dash for an event with no registrations.
  */
 'use client';
 
+import { useMemo } from 'react';
 import Link from 'next/link';
-import { useTranslations, useLocale } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { Award, Sparkles } from 'lucide-react';
-import {
-  Table,
-  TableBody,
-  TableCaption,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
-import { cn } from '@/lib/utils';
+import { Badge, DataTable, type DataTableColumn } from '@jirawatpyk/aura-react';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 import type { EventId } from '@/modules/events';
+import { EVENTS_LIST_COLUMN_LAYOUT } from './events-list-columns';
 
 type MatchRateBand = 'high' | 'medium' | 'low' | 'none';
 
@@ -49,11 +35,12 @@ function bandForPct(total: number, pct: number): MatchRateBand {
   return 'low';
 }
 
+// The band's colour on AURA's tokens; the word beside it carries the meaning.
 const BAND_TEXT_CLASS: Record<MatchRateBand, string> = {
-  high: 'text-emerald-700 dark:text-emerald-300',
-  medium: 'text-amber-700 dark:text-amber-300',
-  low: 'text-destructive',
-  none: 'text-muted-foreground',
+  high: 'text-[var(--aura-fg-positive)]',
+  medium: 'text-[var(--aura-fg-warning)]',
+  low: 'text-[var(--aura-fg-danger)]',
+  none: 'text-[var(--aura-fg-secondary)]',
 };
 
 export type EventsListTableRow = {
@@ -75,153 +62,110 @@ type Props = {
   readonly rows: readonly EventsListTableRow[];
 };
 
-// Date formatter uses the shared `formatLocalisedDate` helper which
-// honours the Thai Buddhist Era calendar on `th`/`th-TH` per CLAUDE.md
-// § Conventions. Storage stays UTC Gregorian; display adds 543 years
-// for Thai user-facing surfaces only.
-function formatDate(iso: string, locale: string): string {
-  return formatLocalisedDate(iso, locale, { dateStyle: 'medium' });
-}
-
-function formatMatchRate(pct: number, total: number): string {
-  if (total <= 0) return '—';
-  return `${pct.toFixed(1)}%`;
-}
-
 export function EventsListTable({ rows }: Props) {
   const t = useTranslations('admin.events.list');
-  const tBand = useTranslations('admin.events.list.matchRateBand');
   const locale = useLocale();
 
-  return (
-    <Table className="min-w-[640px]">
-      <TableCaption className="sr-only">{t('tableCaption')}</TableCaption>
-      <TableHeader>
-        <TableRow>
-          {/*
-           * no real column-sort wired
-           * (server pagination only with fixed start_date DESC order).
-           * A hard-coded `aria-sort="descending"` would advertise a
-           * sortable column that doesn't react to user input. Drop it
-           * until sort UI lands (Phase 10 or smart-feature follow-up).
-           */}
-          <TableHead scope="col">{t('columns.date')}</TableHead>
-          <TableHead scope="col">{t('columns.name')}</TableHead>
-          {/* Phase D D3 — hide low-priority columns at <md to avoid
-              horizontal scroll on tablet portrait (768px). Name + date
-              + registrations carry the headline signal. */}
-          <TableHead scope="col" className="hidden md:table-cell">
-            {t('columns.category')}
-          </TableHead>
-          <TableHead scope="col" className="text-right">
-            {t('columns.registrations')}
-          </TableHead>
-          <TableHead scope="col" className="hidden md:table-cell">
-            {t('columns.partnerBenefit')}
-          </TableHead>
-          <TableHead scope="col" className="hidden md:table-cell text-right">
-            {t('columns.matchRate')}
-          </TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {rows.map((row) => {
-          const isArchived = row.archivedAt !== null;
-          return (
-            <TableRow
-              key={row.eventId}
-              className={cn(isArchived && 'opacity-60')}
+  const columns = useMemo<DataTableColumn<EventsListTableRow>[]>(
+    () => [
+      {
+        key: 'date',
+        label: t('columns.date'),
+        ...EVENTS_LIST_COLUMN_LAYOUT.date,
+        render: (row) => (
+          <span className="text-[var(--aura-fg-secondary)]">
+            {formatLocalisedDate(row.startDate, locale, { dateStyle: 'medium' })}
+          </span>
+        ),
+      },
+      {
+        key: 'name',
+        label: t('columns.name'),
+        ...EVENTS_LIST_COLUMN_LAYOUT.name,
+        render: (row) => (
+          <span className="flex min-w-0 flex-wrap items-center gap-2">
+            <Link
+              href={`/admin/events/${row.eventId}`}
+              className="font-medium text-[var(--aura-fg-accent)] underline-offset-4 hover:underline focus-visible:underline"
             >
-              <TableCell className="text-muted-foreground">
-                {formatDate(row.startDate, locale)}
-              </TableCell>
-              <TableCell>
-                <Link
-                  href={`/admin/events/${row.eventId}`}
-                  className="font-medium underline-offset-4 hover:underline focus-visible:underline"
-                >
-                  {row.name}
-                </Link>
-                {isArchived && (
-                  <Badge variant="outline" className="ml-2 text-xs">
-                    {t('badges.archived')}
-                  </Badge>
-                )}
-              </TableCell>
-              <TableCell className="hidden md:table-cell text-muted-foreground">
-                {row.category ?? '—'}
-              </TableCell>
-              <TableCell className="text-right tabular-nums">
-                {row.totalRegistrations.toLocaleString(locale)}
-              </TableCell>
-              <TableCell className="hidden md:table-cell">
-                <div className="flex flex-wrap items-center gap-1">
-                  {row.isPartnerBenefit && (
-                    <Badge
-                      variant="outline"
-                      className="border-sky-600 text-sky-900 dark:border-sky-500 dark:text-sky-100"
-                      aria-label={t('badges.partnerBenefit')}
-                    >
-                      <Award aria-hidden="true" data-icon="inline-start" />
-                      <span>{t('badges.partnerBenefit')}</span>
-                    </Badge>
-                  )}
-                  {row.isCulturalEvent && (
-                    <Badge
-                      variant="outline"
-                      className="border-violet-600 text-violet-900 dark:border-violet-500 dark:text-violet-100"
-                      aria-label={t('badges.culturalEvent')}
-                    >
-                      <Sparkles aria-hidden="true" data-icon="inline-start" />
-                      <span>{t('badges.culturalEvent')}</span>
-                    </Badge>
-                  )}
-                  {!row.isPartnerBenefit && !row.isCulturalEvent && (
-                    <span className="text-muted-foreground">—</span>
-                  )}
-                </div>
-              </TableCell>
-              <TableCell className="hidden md:table-cell text-right tabular-nums">
-                {/* I5 (round-10) — stack denominator on a second line so
-                    "%" and "(matched/total)" no longer compete for width;
-                    band colour applies only to the %, denominator stays
-                    muted. Band label is sr-only — the colour + percent
-                    digits already convey the same signal visually. */}
-                {(() => {
-                  const band = bandForPct(
-                    row.totalRegistrations,
-                    row.matchRatePct,
-                  );
-                  return (
-                    <div className="flex flex-col items-end">
-                      <span
-                        className={cn(
-                          'font-semibold',
-                          BAND_TEXT_CLASS[band],
-                        )}
-                      >
-                        {formatMatchRate(
-                          row.matchRatePct,
-                          row.totalRegistrations,
-                        )}
-                      </span>
-                      <span className="sr-only">{tBand(band)}</span>
-                      {row.totalRegistrations > 0 && (
-                        <span className="text-xs text-muted-foreground">
-                          {t('matchRateOf', {
-                            matched: row.matchedRegistrations,
-                            total: row.totalRegistrations,
-                          })}
-                        </span>
-                      )}
-                    </div>
-                  );
-                })()}
-              </TableCell>
-            </TableRow>
+              {row.name}
+            </Link>
+            {row.archivedAt !== null ? (
+              <Badge variant="outline" tone="neutral">
+                {t('badges.archived')}
+              </Badge>
+            ) : null}
+          </span>
+        ),
+      },
+      {
+        key: 'category',
+        label: t('columns.category'),
+        ...EVENTS_LIST_COLUMN_LAYOUT.category,
+        render: (row) => <span className="text-[var(--aura-fg-secondary)]">{row.category ?? '—'}</span>,
+      },
+      {
+        key: 'registrations',
+        label: t('columns.registrations'),
+        ...EVENTS_LIST_COLUMN_LAYOUT.registrations,
+        render: (row) => <span className="tabular-nums">{row.totalRegistrations.toLocaleString(locale)}</span>,
+      },
+      {
+        key: 'partnerBenefit',
+        label: t('columns.partnerBenefit'),
+        ...EVENTS_LIST_COLUMN_LAYOUT.partnerBenefit,
+        render: (row) =>
+          row.isPartnerBenefit || row.isCulturalEvent ? (
+            <span className="flex flex-wrap items-center gap-1">
+              {row.isPartnerBenefit ? (
+                <Badge tone="accent" icon={<Award aria-hidden />}>
+                  {t('badges.partnerBenefit')}
+                </Badge>
+              ) : null}
+              {row.isCulturalEvent ? (
+                <Badge tone="success" icon={<Sparkles aria-hidden />}>
+                  {t('badges.culturalEvent')}
+                </Badge>
+              ) : null}
+            </span>
+          ) : (
+            <span className="text-[var(--aura-fg-secondary)]">—</span>
+          ),
+      },
+      {
+        key: 'matchRate',
+        label: t('columns.matchRate'),
+        ...EVENTS_LIST_COLUMN_LAYOUT.matchRate,
+        render: (row) => {
+          const band = bandForPct(row.totalRegistrations, row.matchRatePct);
+          if (band === 'none') return <span className="text-[var(--aura-fg-secondary)]">—</span>;
+          return (
+            <span className="inline-flex flex-col tabular-nums">
+              <span className={`font-semibold ${BAND_TEXT_CLASS[band]}`}>
+                {`${row.matchRatePct.toFixed(1)}% · ${t(`matchRateBandShort.${band}`)}`}
+              </span>
+              <span className="aura-text-caption text-[var(--aura-fg-secondary)]">
+                {t('matchRateOf', { matched: row.matchedRegistrations, total: row.totalRegistrations })}
+              </span>
+            </span>
           );
-        })}
-      </TableBody>
-    </Table>
+        },
+      },
+    ],
+    [t, locale],
+  );
+
+  return (
+    <DataTable<EventsListTableRow>
+      label={t('tableCaption')}
+      rows={rows}
+      columns={columns}
+      rowKey="eventId"
+      manual
+      rowHeight="auto"
+      stackBelow={640}
+      // Edge to edge inside the list card from 640px up; the pager follows.
+      bleed
+    />
   );
 }

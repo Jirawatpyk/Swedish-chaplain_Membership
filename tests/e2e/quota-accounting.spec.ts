@@ -109,7 +109,8 @@ test.describe('F6 quota accounting — admin UI surface @workers=1', () => {
     ).toBeVisible();
     // Either a populated table OR the documented empty state. Both
     // are valid post-Phase 6 — this test does NOT require seeded data.
-    const table = page.getByRole('table');
+    // Spec 122 US9a: AURA's DataTable is an ARIA grid.
+    const table = page.getByRole('grid');
     const empty = page.getByText(/no events|waiting for first event|configure eventcreate/i);
     await expect(table.or(empty).first()).toBeVisible();
   });
@@ -135,7 +136,7 @@ test.describe('F6 quota accounting — admin UI surface @workers=1', () => {
     ).toBeVisible({ timeout: 10_000 });
 
     // Quota column must be present in the attendee table.
-    const attendeeTable = page.getByRole('table');
+    const attendeeTable = page.getByRole('grid', { name: /attendees/i });
     await expect(
       attendeeTable.getByRole('columnheader', { name: /quota/i }),
     ).toBeVisible();

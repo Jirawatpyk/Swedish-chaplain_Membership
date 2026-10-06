@@ -17,11 +17,9 @@
  * - kill-switch off → 404
  */
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { headers } from 'next/headers';
 import { getTranslations } from 'next-intl/server';
-import { UploadCloudIcon, EraserIcon } from 'lucide-react';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { redactStack } from '@/lib/redact-stack';
@@ -29,16 +27,8 @@ import { canPerform, requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { runListEvents } from '@/lib/events-admin-deps';
 import { TableContainer } from '@/components/layout';
-import { PageHeader } from '@/components/layout/page-header';
-import { TablePagination } from '@/components/layout/table-pagination';
-import { Card, CardContent } from '@/components/ui/card';
-import { buttonVariants } from '@/components/ui/button';
-import {
-  EventsListTable,
-  type EventsListTableRow,
-} from '@/components/events/events-list-table';
-import { EventsListSearchToolbar } from '@/components/events/events-list-search-toolbar';
-import { EventsEmptyState } from './_components/events-empty-state';
+import type { EventsListTableRow } from '@/components/events/events-list-table';
+import { renderEventsListBody, renderEventsListView } from './_components/events-list-view';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.events.list');
@@ -99,8 +89,6 @@ export default async function AdminEventsListPage({
   const { user: currentUser } = await requirePagePermission('events.read');
 
   const query = await searchParams;
-  const t = await getTranslations('admin.events.list');
-  const tErasure = await getTranslations('admin.events.erasure');
   const tShared = await getTranslations('shared');
 
   const page = clampPage(query.page);
@@ -169,274 +157,46 @@ export default async function AdminEventsListPage({
     );
   }
 
-  // T098 Phase 7 — Surface a discoverable CTA to the CSV import
-  // workflow page (admin-only mutation route). Manager sees the list
-  // but should not see the import button — gating by role keeps the
-  // FR-035 mutation-surface-disclosure invariant intact.
-  // Primary CTA per F4 invoices "New invoice" precedent — admin-only
-  // top-of-page actions use `variant: 'default'` (primary/black) to
-  // match the visual hierarchy across F4/F6/F7/F8 admin pages.
-  // 016 re-review D — evaluator-derived (`events.write` is what the import
-  // page + API admit; OFF leg `legacyAdminOnly` reproduces the admin-only CTA).
-  const importCsvCta =
-    canPerform(currentUser.role, 'events.write') &&
-    env.features.f6EventCreate ? (
-      <Link
-        href="/admin/events/import"
-        className={buttonVariants({ variant: 'default' })}
-      >
-        <UploadCloudIcon className="size-4" aria-hidden="true" />
-        {t('importCsvCta')}
-      </Link>
-    ) : null;
-
-  // PR 2.2 — admin-only discoverability link to the by-email erasure surface
-  // (FR-032a). Secondary (outline) next to the primary import CTA. Manager
-  // never sees it — the erasure page + route are admin-only (FR-035).
-  // 016 re-review D — follows `events.erasure` (superAdminOnly on the ON leg),
-  // the key its DESTINATION page admits: the link hides exactly when the
-  // erasure surface would 404 the caller, instead of dangling for plain admin
-  // after the flag flip.
-  const eraseByEmailCta =
-    canPerform(currentUser.role, 'events.erasure') &&
-    env.features.f6EventCreate ? (
-      <Link
-        href="/admin/events/erasure"
-        className={buttonVariants({ variant: 'outline' })}
-      >
-        <EraserIcon className="size-4" aria-hidden="true" />
-        {tErasure('discoverabilityCta')}
-      </Link>
-    ) : null;
-
-  const headerActions =
-    importCsvCta || eraseByEmailCta ? (
-      <div className="flex flex-wrap items-center gap-2">
-        {eraseByEmailCta}
-        {importCsvCta}
-      </div>
-    ) : null;
+  // T098 Phase 7 — "Import CSV" (`events.write`, what the import page and API
+  // admit) and PR 2.2 "Erase by email" (`events.erasure`, the key its
+  // destination page admits) — both in the header; manager sees neither.
+  const canImport = canPerform(currentUser.role, 'events.write');
+  const canEraseByEmail = canPerform(currentUser.role, 'events.erasure');
 
   return (
     <TableContainer>
-      <PageHeader
-        title={t('title')}
-        subtitle={t('subtitle')}
-        actions={headerActions}
-      />
-      {/* P4 (round-10) — 120ms fade-in when the loaded content
-          replaces the loading.tsx skeleton. `motion-reduce:animate-none`
-          honours prefers-reduced-motion (WCAG 2.3.3). Lives on the
-          Card so the PageHeader (which renders identically in
-          loading state) doesn't re-animate. */}
-      <Card className="motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-[120ms]">
-        <CardContent className="flex flex-col gap-4">
-          {!result || !result.ok ? (
-            <div className="py-12 text-center" role="alert">
-              <p className="text-muted-foreground">{t('errorState')}</p>
-            </div>
-          ) : (
-            <>
-              {/* User UX (2026-05-18): search input and filter chips
-                  on the same row on ≥sm viewports so admins can see
-                  both controls without scrolling. Wraps to a
-                  2-line stack on narrow viewports (<sm) since the
-                  search field needs ~28rem and the chips group needs
-                  ~24rem — a forced single-line at 320px would crush
-                  both. `gap-y-3` keeps vertical rhythm when wrapped. */}
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-                <EventsListSearchToolbar initialSearch={searchQuery ?? ''} />
-                <FilterChips
-                  query={
-                    query as unknown as Record<
-                      string,
-                      string | string[] | undefined
-                    >
-                  }
-                  hasFilters={hasFilters}
-                  includeArchived={includeArchived}
-                  partnerBenefitOnly={partnerBenefitOnly}
-                  culturalEventOnly={culturalEventOnly}
-                />
-              </div>
-              {/* R2-2b (2026-05-18 /speckit-review Round 2 Blocker) —
-                  screen-reader live-region announcing the filtered
-                  result count. Mirrors the attendee-table parity:
-                  when the server re-renders after a search submit /
-                  filter chip toggle, the DOM text changes and
-                  aria-live="polite" causes assistive tech to read
-                  "5 events for 'midsummer'" without disrupting input
-                  focus. `sr-only` keeps it visually hidden — sighted
-                  users see the table itself. */}
-              <output
-                role="status"
-                aria-live="polite"
-                aria-atomic="true"
-                className="sr-only"
-              >
-                {searchQuery !== undefined
-                  ? t('resultsAnnouncementWithQuery', {
-                      count: result.value.items.length,
-                      query: searchQuery,
-                    })
-                  : t('resultsAnnouncement', {
-                      count: result.value.items.length,
-                    })}
-              </output>
-              {result.value.items.length === 0 ? (
-                <EventsEmptyState
-                  emptyContext={result.value.emptyStateContext}
-                  hasFilters={hasFilters}
-                  canManageIntegration={canPerform(
-                    currentUser.role,
-                    'settings.integrations',
-                  )}
-                />
-              ) : (
-                <>
-                  <EventsListTable
-                    rows={
-                      result.value.items.map((it) => ({
-                        eventId: it.eventId,
-                        name: it.name,
-                        startDate: it.startDate,
-                        category: it.category,
-                        totalRegistrations: it.totalRegistrations,
-                        matchedRegistrations: it.matchedRegistrations,
-                        matchRatePct: it.matchRatePct,
-                        isPartnerBenefit: it.isPartnerBenefit,
-                        isCulturalEvent: it.isCulturalEvent,
-                        archivedAt: it.archivedAt,
-                      })) satisfies EventsListTableRow[]
-                    }
-                  />
-                  <TablePagination
-                    page={result.value.pagination.page}
-                    pageSize={result.value.pagination.pageSize}
-                    total={result.value.pagination.totalCount}
-                    baseHref="/admin/events"
-                  />
-                </>
-              )}
-            </>
-          )}
-        </CardContent>
-      </Card>
+      {await renderEventsListView({
+        canImport,
+        canEraseByEmail,
+        children: await renderEventsListBody(
+          !result || !result.ok
+            ? { kind: 'error' }
+            : {
+                kind: 'list',
+                items: result.value.items.map((it) => ({
+                  eventId: it.eventId,
+                  name: it.name,
+                  startDate: it.startDate,
+                  category: it.category,
+                  totalRegistrations: it.totalRegistrations,
+                  matchedRegistrations: it.matchedRegistrations,
+                  matchRatePct: it.matchRatePct,
+                  isPartnerBenefit: it.isPartnerBenefit,
+                  isCulturalEvent: it.isCulturalEvent,
+                  archivedAt: it.archivedAt,
+                })) satisfies EventsListTableRow[],
+                pagination: result.value.pagination,
+                emptyStateContext: result.value.emptyStateContext,
+                hasFilters,
+                canManageIntegration: canPerform(currentUser.role, 'settings.integrations'),
+                search: searchQuery ?? '',
+                partnerBenefitOnly,
+                culturalEventOnly,
+                includeArchived,
+              },
+        ),
+      })}
       <span className="sr-only">{tShared('loaded')}</span>
     </TableContainer>
-  );
-}
-
-// --- Subcomponents (server components — kept inline for clarity) ----------
-
-/**
- * build chip hrefs from a fresh
- * URLSearchParams over the CURRENT query so toggling one filter does
- * not silently drop the others. Also strips `page=` so toggles reset
- * to page 1 (matches AttendeeTable's `toggleUnmatched` pattern at
- * `src/components/events/attendee-table.tsx:113-122`).
- */
-function buildChipHref(
-  query: Record<string, string | string[] | undefined>,
-  toggleKey: string,
-  currentlyActive: boolean,
-): string {
-  const next = new URLSearchParams();
-  for (const [k, v] of Object.entries(query)) {
-    if (k === 'page' || k === toggleKey) continue;
-    const first = firstParam(v);
-    if (first !== undefined && first !== '') {
-      next.set(k, first);
-    }
-  }
-  if (!currentlyActive) {
-    next.set(toggleKey, '1');
-  }
-  const qs = next.toString();
-  return qs ? `/admin/events?${qs}` : '/admin/events';
-}
-
-async function FilterChips({
-  query,
-  hasFilters,
-  includeArchived,
-  partnerBenefitOnly,
-  culturalEventOnly,
-}: {
-  query: Record<string, string | string[] | undefined>;
-  hasFilters: boolean;
-  includeArchived: boolean;
-  partnerBenefitOnly: boolean;
-  culturalEventOnly: boolean;
-}) {
-  const t = await getTranslations('admin.events.list.filters');
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      <FilterChipLink
-        active={partnerBenefitOnly}
-        href={buildChipHref(query, 'partnerBenefitOnly', partnerBenefitOnly)}
-      >
-        {partnerBenefitOnly
-          ? t('partnerBenefitOnlyActive')
-          : t('partnerBenefitOnly')}
-      </FilterChipLink>
-      <FilterChipLink
-        active={culturalEventOnly}
-        href={buildChipHref(query, 'culturalEventOnly', culturalEventOnly)}
-      >
-        {culturalEventOnly
-          ? t('culturalEventOnlyActive')
-          : t('culturalEventOnly')}
-      </FilterChipLink>
-      <FilterChipLink
-        active={includeArchived}
-        href={buildChipHref(query, 'includeArchived', includeArchived)}
-      >
-        {includeArchived ? t('hideArchived') : t('showArchived')}
-      </FilterChipLink>
-      {hasFilters && (
-        <Link
-          href="/admin/events"
-          className={buttonVariants({ variant: 'ghost', size: 'sm' })}
-        >
-          {t('clearAll')}
-        </Link>
-      )}
-    </div>
-  );
-}
-
-function FilterChipLink({
-  active,
-  href,
-  children,
-}: {
-  active: boolean;
-  href: string;
-  children: React.ReactNode;
-}) {
-  // `aria-pressed` is invalid on anchors — ARIA 1.2 restricts it to
-  // role="button". `aria-current="true"` is the canonical idiom for
-  // active nav/filter LINKS on anchor elements (preserves middle-
-  // click open + bookmarkability + share-URL semantics).
-  //
-  // Round-12 review note: the ui-design-specialist agent suggested
-  // converting to `<button aria-pressed>` for canonical toggle
-  // semantics. Rejected: the conversion would require client-side
-  // router.push to mutate the URL, breaking middle-click open + URL
-  // copy-paste workflows that admins routinely use on filter chips.
-  // `aria-current="true"` is accepted by all WCAG-conformant SRs
-  // (NVDA / JAWS / VoiceOver) as a filter-active signal.
-  return (
-    <Link
-      href={href}
-      className={buttonVariants({
-        variant: active ? 'default' : 'outline',
-        size: 'sm',
-      })}
-      {...(active ? { 'aria-current': 'true' as const } : {})}
-    >
-      {children}
-    </Link>
   );
 }

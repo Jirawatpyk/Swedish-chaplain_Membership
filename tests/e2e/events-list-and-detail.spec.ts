@@ -49,15 +49,15 @@ test.describe('F6 events list and detail — US2 AS1-AS5 @workers=1', () => {
       page.getByRole('heading', { name: /events/i, level: 1 }),
     ).toBeVisible();
 
-    // T1 (verify-finding 2026-05-12): AS2 contract requires the
-    // header's match-rate label to follow `NN% (M of N)` or
-    // `NN.N% (M of N)`. Tested here against the detail page in AS2
-    // below — list-table renders the same metric but the AS2 spec
-    // pins the detail-header phrasing.
+    // T1 (verify-finding 2026-05-12, amended 2026-10-06): the match-rate
+    // format is tested against the detail header in AS2 below — the
+    // list table renders the same metric but the AS2 spec pins the
+    // detail-header layout.
 
     // Table columns per AS1: Date, Name, Category, Registrations,
-    // Partner Benefit, Match Rate
-    const table = page.getByRole('table');
+    // Partner Benefit, Match Rate. Spec 122 US9a: the list is AURA's
+    // DataTable, an ARIA grid (rows and cells are role="row"/"gridcell").
+    const table = page.getByRole('grid');
     await expect(table).toBeVisible();
     await expect(
       table.getByRole('columnheader', { name: /date/i }),
@@ -88,27 +88,44 @@ test.describe('F6 events list and detail — US2 AS1-AS5 @workers=1', () => {
     // Click first event row link → detail page. If no events seeded
     // this test will fail with a clear "no events to click" message
     // — that's the RED signal until seed data lands.
-    const firstRowLink = page.getByRole('table').getByRole('link').first();
+    const firstRowLink = page.getByRole('grid').getByRole('link').first();
     await expect(firstRowLink).toBeVisible();
     await firstRowLink.click();
 
     await page.waitForURL(/\/admin\/events\/[^/]+$/);
-    // Match-rate indicator surfaces in detail header — uses the
-    // pattern "Match rate: NN% (M of N)" per AS2.
-    await expect(page.getByText(/match rate/i)).toBeVisible();
-    // T1 (verify-finding 2026-05-12): pin the exact AS2 format
-    // `NN(.N)?% (M of N)` so regressions in the formatter are caught
-    // at E2E. The English locale renders "%" + the parenthetical
-    // raw fraction.
-    await expect(
-      page.getByText(/\d+(?:\.\d+)?%\s*\(\d+\s+of\s+\d+\)/),
-    ).toBeVisible();
+    // AS2 (amended 2026-10-06): the header's match rate is the figure
+    // "NN.N%", then "M of N attendees matched", then the band word; the
+    // figure's accessible name is "NN.N% (M of N)". Scoped to the <dd>:
+    // a page-wide getByText matched the 1×1px sr-only echo of the name,
+    // which Playwright counts as visible, so it never checked the screen.
+    const matchRate = page
+      .locator('dt', { hasText: /^match rate$/i })
+      .locator('xpath=following-sibling::dd[1]');
+    await expect(matchRate).toBeVisible();
+    // The figure is the <dd>'s own first text node, not the sr-only span.
+    expect(
+      await matchRate.evaluate((el) => el.firstChild?.textContent?.trim()),
+    ).toMatch(/^\d+(?:\.\d+)?%$/);
+    const [fraction, bandWord] = [
+      matchRate.locator('small').nth(0),
+      matchRate.locator('small').nth(1),
+    ];
+    await expect(fraction).toHaveText(/^\d+ of \d+ attendees matched$/);
+    // toBeVisible() also accepts a 1×1px sr-only node (R36b mutation test),
+    // so each line must have a real rendered box.
+    for (const line of [fraction, bandWord]) {
+      const box = await line.boundingBox();
+      expect(box?.width ?? 0).toBeGreaterThan(1);
+      expect(box?.height ?? 0).toBeGreaterThan(1);
+    }
+    await expect(matchRate).toHaveAttribute(
+      'aria-label',
+      /^\d+(?:\.\d+)?% \(\d+ of \d+\)$/,
+    );
 
-    // Attendee table is the second table on the page (first is the
-    // detail-header summary or there's only one — fall back to role).
-    const attendeeTable = page
-      .getByRole('table', { name: /attendees/i })
-      .or(page.getByRole('table').last());
+    // The attendee table is AURA's DataTable (an ARIA grid) named by its
+    // caption ("Event attendees with match status, …").
+    const attendeeTable = page.getByRole('grid', { name: /attendees/i });
     await expect(attendeeTable).toBeVisible();
   });
 
@@ -117,7 +134,7 @@ test.describe('F6 events list and detail — US2 AS1-AS5 @workers=1', () => {
   }) => {
     await page.goto('/admin/events');
     await page.waitForLoadState('domcontentloaded');
-    const firstRowLink = page.getByRole('table').getByRole('link').first();
+    const firstRowLink = page.getByRole('grid').getByRole('link').first();
     await firstRowLink.click();
     await page.waitForURL(/\/admin\/events\/[^/]+$/);
 
@@ -135,7 +152,7 @@ test.describe('F6 events list and detail — US2 AS1-AS5 @workers=1', () => {
   }) => {
     await page.goto('/admin/events');
     await page.waitForLoadState('domcontentloaded');
-    const firstRowLink = page.getByRole('table').getByRole('link').first();
+    const firstRowLink = page.getByRole('grid').getByRole('link').first();
     await firstRowLink.click();
     await page.waitForURL(/\/admin\/events\/[^/]+$/);
 
@@ -158,7 +175,7 @@ test.describe('F6 events list and detail — US2 AS1-AS5 @workers=1', () => {
   }, testInfo) => {
     await page.goto('/admin/events');
     await page.waitForLoadState('domcontentloaded');
-    const firstRowLink = page.getByRole('table').getByRole('link').first();
+    const firstRowLink = page.getByRole('grid').getByRole('link').first();
     if (!(await firstRowLink.isVisible().catch(() => false))) {
       // T-MED-2: emit a CI-visible annotation so the silent-skip is
       // surfaced in Playwright traces. Otherwise a staging-data drift
@@ -211,7 +228,7 @@ test.describe('F6 events list and detail — US2 AS1-AS5 @workers=1', () => {
     // Either the table has rows OR the empty state is shown. If
     // empty, one of the 3 variants must be present.
     const tableHasRows = await page
-      .getByRole('table')
+      .getByRole('grid')
       .getByRole('row')
       .nth(1)
       .isVisible()
