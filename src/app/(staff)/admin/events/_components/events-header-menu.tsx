@@ -13,7 +13,9 @@ import { DropdownMenu, IconButton } from '@jirawatpyk/aura-react';
 export function EventsHeaderMenu({ eraseByEmailHref }: { readonly eraseByEmailHref: string }) {
   const t = useTranslations('admin.events');
   return (
-    <div className="sm:hidden">
+    // `flex-none!`: the page header stretches every action on a phone; the menu
+    // keeps its own width so Import CSV fills the row (as on the member page).
+    <div className="flex-none! sm:hidden">
       <DropdownMenu
         label={t('list.moreActions')}
         trigger={<IconButton icon="ellipsis" label={t('list.moreActions')} touchHeight />}
