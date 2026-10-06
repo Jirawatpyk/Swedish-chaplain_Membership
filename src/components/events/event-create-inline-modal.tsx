@@ -38,6 +38,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Loader2 } from 'lucide-react';
 import { toast } from '@/lib/toast';
+import { bangkokInputToIso } from '@/components/broadcast/bangkok-datetime';
 import {
   Dialog,
   DialogContent,
@@ -79,7 +80,7 @@ const FormSchema = z.object({
     .regex(/^[a-z0-9][a-z0-9-]{0,99}$/i, 'externalIdInvalid'),
   name: z.string().trim().min(1, 'nameRequired').max(500, 'nameTooLong'),
   // `datetime-local` <input> returns "YYYY-MM-DDTHH:mm" without tz.
-  // We convert to UTC ISO before posting (toISOString below).
+  // It is read as Bangkok wall time and posted as UTC ISO (onSubmit).
   startDateLocal: z.string().min(1, 'startDateRequired'),
   category: z.string().trim().max(100, 'categoryTooLong').optional(),
 });
@@ -143,11 +144,12 @@ export function EventCreateInlineModal(
     setSubmitting(true);
     setServerError(null);
 
-    // Convert local datetime → ISO with offset. `datetime-local` does
-    // not carry tz info; we assume the admin's wall-clock is the
-    // chamber's local tz. Stored as UTC per project convention.
-    const startDate = new Date(values.startDateLocal);
-    if (Number.isNaN(startDate.getTime())) {
+    // `datetime-local` carries no timezone. The typed value is the
+    // chamber's wall time (Asia/Bangkok, as the help text promises), not
+    // the browser's: `new Date(local)` would shift it by the admin's
+    // offset. Stored as UTC per project convention.
+    const startDate = bangkokInputToIso(values.startDateLocal);
+    if (startDate === null) {
       setServerError({
         title: t('errors.invalidStartDateTitle'),
         detail: t('errors.invalidStartDateDetail'),
@@ -164,7 +166,7 @@ export function EventCreateInlineModal(
         body: JSON.stringify({
           externalId: values.externalId,
           name: values.name,
-          startDate: startDate.toISOString(),
+          startDate,
           category:
             values.category && values.category.length > 0
               ? values.category
