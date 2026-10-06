@@ -164,6 +164,11 @@
  *   budgeted for the first time on the branch build:
  *     /admin/settings/invoicing                         820.3 KB measured → ≤  930 KB
  *
+ *   Spec 122 US9a (AURA events list + event detail, 2026-10-06, AURA
+ *   5.31.0) — budgeted for the first time on the branch build:
+ *     /admin/events                                     820.4 KB measured → ≤  930 KB
+ *     /admin/events/[eventId]                          1023.4 KB measured → ≤ 1130 KB
+ *
  * Run as a post-build step:
  *
  *   pnpm build
@@ -254,6 +259,9 @@ const BUDGETS: ReadonlyArray<RouteBudget> = [
   { route: '/admin/invoices/registers', maxKb: 930 },
   // --- Spec 122 US8c-2 invoice settings (AURA) — see docblock ---
   { route: '/admin/settings/invoicing', maxKb: 930 },
+  // --- Spec 122 US9a events list + detail (AURA) — see docblock ---
+  { route: '/admin/events', maxKb: 930 },
+  { route: '/admin/events/[eventId]', maxKb: 1130 },
 ];
 
 const NEXT_DIR = join(process.cwd(), '.next');
