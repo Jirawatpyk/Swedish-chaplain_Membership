@@ -76,8 +76,18 @@ export function ArchiveEventButton({ eventId }: ArchiveEventButtonProps) {
   // audit row) and closes once this resolves, in every branch.
   async function handleConfirm(): Promise<void> {
     setPending(true);
-    const result = await postArchive(eventId);
-    setPending(false);
+    let result: Awaited<ReturnType<typeof postArchive>>;
+    try {
+      result = await postArchive(eventId);
+    } catch {
+      // A thrown POST (offline, DNS) gets the generic error toast; pending
+      // always clears, or the dialog — which refuses to close while pending —
+      // would be stuck open (US9a review, WCAG 2.1.2).
+      toast.error(t('errorTitle'), { description: t('errorDescription') });
+      return;
+    } finally {
+      setPending(false);
+    }
     if (result.ok) {
       toast.success(t('successTitle'), {
         description: t('successDescription', { count: result.data.registrationsAffected }),

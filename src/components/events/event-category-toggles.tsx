@@ -90,8 +90,18 @@ export function EventCategoryToggles({
   async function handleConfirm(flag: 'partner_benefit' | 'cultural_event', nextValue: boolean): Promise<void> {
     setActiveFlag(flag);
     const endpoint = flag === 'partner_benefit' ? 'toggle-partner-benefit' : 'toggle-cultural-event';
-    const result = await postToggle(eventId, endpoint, nextValue);
-    setActiveFlag(null);
+    let result: Awaited<ReturnType<typeof postToggle>>;
+    try {
+      result = await postToggle(eventId, endpoint, nextValue);
+    } catch {
+      // A thrown POST (offline, DNS) gets the generic error toast; the busy
+      // state always clears, or the dialog — which refuses to close while
+      // busy — would be stuck open (US9a review, WCAG 2.1.2).
+      toast.error(t('errorTitle'), { description: t('errorDescription') });
+      return;
+    } finally {
+      setActiveFlag(null);
+    }
     if (result.ok) {
       toast.success(t('successTitle'), {
         description: t('successDescription', { count: result.data.registrationsReevaluated }),
