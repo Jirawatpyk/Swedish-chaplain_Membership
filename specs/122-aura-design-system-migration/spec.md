@@ -414,6 +414,7 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - "Back to events" and "Back to event detail" are accent links with a left arrow, shown from `lg`; below it the shell's back link does the same (the US8b void page pattern).
   - on phones, Search and "Erase all" fill the width.
   - the reason field in both erase dialogs is marked required (the gate is unchanged).
+  - on a phone attendee card, "Relink" stays compact beside the ⋯ menu at the card's end, as the board draws it (it filled the row while it shared the foot with the US9a erase button).
   - the deep-link erase page has no card: the hint is the page subtitle and the two actions sit under it. A card frames a group of content; here there is one sentence and two actions, and the void page puts its description in the subtitle the same way.
 - **Kept as found, not fixed here (pre-existing):**
   - the deep-link erase page's hint says the dialog opens automatically, but it does not;
