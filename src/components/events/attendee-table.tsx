@@ -1,57 +1,53 @@
 /**
  * Attendee table (F6 Phase 4 / US2 AS2-AS4).
  *
- * Renders the paginated attendee list for an event detail page +
- * toolbar (search input + "Show unmatched only" toggle). Server-
- * side pagination + filter — the toolbar pushes URL params and the
- * server component re-renders.
+ * Renders the paginated attendee list for an event detail page and its
+ * filter row. Server-side pagination + filter — the row writes URL params
+ * and the server component re-renders.
  *
  * Columns:
- * - Attendee  (name + email + company stacked)
+ * - Attendee  (name + email (copy button) + company stacked)
  * - Match     (MatchStatusBadge — 5 variants)
  * - Ticket    (type + price + payment status)
- * - Quota     (Partner / Cultural / Over-quota badges; can be
+ * - Quota     (Partner / Cultural / Over-quota / Not counted badges; can be
  * multiple)
- * - Registered (relative time, locale-formatted)
+ * - Registered (locale-formatted)
+ * - Actions   (Relink + Erase PII; admin only)
  *
- * a11y:
- * - Toolbar button has aria-pressed reflecting the URL state.
- * - sr-only caption + result-count announcement (aria-live).
- * - Empty rows path uses tabular role+aria semantics correctly
- * ("no matching rows").
+ * Spec 122 US9a (T904) — on AURA, board `Admin-event-detail` (+ `-mobile`)
+ * and the filter pattern (docs/aura-adoption.md § Filters):
+ * - `FilterBar`: the search (filters as you type; Enter and clear write at
+ *   once), the "Show unmatched only" toggle chip, a compact payment-status
+ *   `FilterSelect`, and the count at the row's end — the bar's polite live
+ *   region, so the separate hidden one goes. An applied search or status is a
+ *   removable chip, which brings the bar's "Clear filters"; with only the
+ *   toggle on, a ghost "Clear filters" sits beside it (as on the events list).
+ *   The URL parameters (`q`, `unmatchedOnly`, `paymentStatus`) are unchanged;
+ *   every write drops `page` and is in place (`router.replace`, no scroll).
+ * - AURA `DataTable`, a card per attendee below 640px (name over email, the
+ *   match badge beside it, Relink and Erase at the card's foot).
+ * - The filtered-empty state is the shared `EmptyState`, keeping "Clear
+ *   filters" (toast, then focus back to the search — R3-F5 / R4-U2).
+ * - Unchanged: the R3-F1 payment-status URL guard, the erase-trigger
+ *   visibility rule (DV-6), the copy-email helper and the relink dialog.
  */
 'use client';
 
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
-import {
-  useTransition,
-  useState,
-  useCallback,
-  useEffect,
-  useRef,
-} from 'react';
+import { useTransition, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
-import { Copy, Loader2 } from 'lucide-react';
+import { Copy, SearchX } from 'lucide-react';
+import {
+  AuraProvider,
+  Button,
+  DataTable,
+  FilterBar,
+  FilterSelect,
+  Tag,
+  type ActiveFilter,
+  type DataTableColumn,
+} from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
-import {
-  Table,
-  TableBody,
-  TableCaption,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  TranslatedSelectValue,
-} from '@/components/ui/select';
 // Import the Domain VO directly (NOT via the @/modules/events barrel)
 // so this Client Component does not transitively pull infrastructure
 // modules that reference Server-Component-only `next/cache` APIs.
@@ -59,14 +55,8 @@ import {
   PAYMENT_STATUSES,
   isPaymentStatus,
 } from '@/modules/events/domain/value-objects/payment-status';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
-import { cn } from '@/lib/utils';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
+import { EmptyState } from '@/components/shell/empty-state';
 import type {
   MatchType,
   PaymentStatus,
@@ -79,6 +69,7 @@ import { MatchStatusBadge } from './match-status-badge';
 import { QuotaEffectBadge } from './quota-effect-badge';
 import { RelinkRegistrationDialog } from './relink-registration-dialog';
 import { ErasePiiDialog } from './erase-pii-dialog';
+import { ATTENDEE_COLUMN_LAYOUT } from './attendee-table-columns';
 
 export type AttendeeRow = {
   // Brand types propagated through the Server→Client prop boundary.
@@ -210,22 +201,14 @@ export function AttendeeTable({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
-  const [searchInput, setSearchInput] = useState(initialSearch);
-  // R3-U2 (2026-05-18 /speckit-review Round 3 Final) — focus tracking
-  // for the prop-sync useEffect below. WCAG SC 3.2.2 (On Input) —
-  // the sync only fires when the input is NOT focused so external
-  // URL updates can't overwrite in-flight typing.
-  const inputFocused = useRef(false);
-
-  // Sync local state when URL changes externally (back/forward nav).
-  // R3-U2 — URL→state sync is the LEGITIMATE use of setState-in-effect
-  // (cascade is intended). Focus guard above (`inputFocused.current`)
-  // prevents the sync from clobbering in-flight typing.
-  useEffect(() => {
-    if (!inputFocused.current) {
-      setSearchInput(initialSearch);
-    }
-  }, [initialSearch]);
+  const barRef = useRef<HTMLDivElement>(null);
+  // R3-F5 — the search keeps focus in the row after a clear: the pressed
+  // control unmounts once the results come back.
+  const focusSearch = useCallback(() => {
+    queueMicrotask(() =>
+      barRef.current?.querySelector<HTMLInputElement>('input[type="search"]')?.focus(),
+    );
+  }, []);
 
   // R3-F1 (2026-05-18 /speckit-review Round 3 Final) — UI feedback for
   // the silent paymentStatus URL guard drop. Pre-R3-F1, an admin who
@@ -273,66 +256,35 @@ export function AttendeeTable({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rawPaymentStatus]);
 
-  const pushUrl = useCallback(
-    (next: URLSearchParams) => {
-      const qs = next.toString();
-      startTransition(() => {
-        router.push(`${pathname}${qs ? `?${qs}` : ''}`, { scroll: false });
-      });
-    },
-    [pathname, router],
-  );
-
-  const toggleUnmatched = useCallback(() => {
-    const next = new URLSearchParams(searchParams.toString());
-    if (unmatchedOnly) {
-      next.delete('unmatchedOnly');
-    } else {
-      next.set('unmatchedOnly', '1');
-    }
-    next.delete('page');
-    pushUrl(next);
-  }, [searchParams, unmatchedOnly, pushUrl]);
-
-  // F6.1 follow-up — paymentStatus filter (single-value select).
-  // Empty string == "All statuses" sentinel — Base UI `<Select>`
-  // rejects empty string as a `value`, so we route the "all" choice
-  // through the `__all__` sentinel and strip it before pushing to URL.
-  // URL key is `paymentStatus`; server page validates with
-  // `isPaymentStatus()` (anything off-list drops the filter
-  // fail-safe).
-  //
-  // R3-Y1 — sentinel hoisted to module scope (see top of file) so it
-  // doesn't trigger the `react-hooks/exhaustive-deps` closure-capture
-  // warning on useCallback hooks below.
-  const onPaymentStatusChange = useCallback(
-    (next: string | null) => {
-      const params = new URLSearchParams(searchParams.toString());
-      if (next === null || next === '' || next === ALL_STATUSES_SENTINEL) {
-        params.delete('paymentStatus');
-      } else {
-        params.set('paymentStatus', next);
-      }
-      params.delete('page');
-      pushUrl(params);
-    },
-    [searchParams, pushUrl],
-  );
-
-  const submitSearch = useCallback(
-    (e: React.FormEvent) => {
-      e.preventDefault();
+  const writeUrl = useCallback(
+    (patch: Readonly<Record<string, string | null>>) => {
       const next = new URLSearchParams(searchParams.toString());
-      const v = searchInput.trim();
-      if (v) {
-        next.set('q', v);
-      } else {
-        next.delete('q');
+      for (const [k, v] of Object.entries(patch)) {
+        if (v === null || v === '') next.delete(k);
+        else next.set(k, v);
       }
       next.delete('page');
-      pushUrl(next);
+      const qs = next.toString();
+      startTransition(() => {
+        // In place, as every list's filters: no history entry per pick, no jump.
+        router.replace(`${pathname}${qs ? `?${qs}` : ''}`, { scroll: false });
+      });
     },
-    [searchInput, searchParams, pushUrl],
+    [searchParams, pathname, router],
+  );
+
+  // F6.1 follow-up — paymentStatus filter (single-value select). The "all"
+  // choice travels as the `__all__` sentinel (R3-Y1 / R4-I4 disjointness
+  // check above) and is stripped before the URL write; the server page
+  // validates the value with `isPaymentStatus()` (fail-safe drop).
+  const onPaymentStatusChange = useCallback(
+    (next: string | null) => {
+      writeUrl({
+        paymentStatus:
+          next === null || next === '' || next === ALL_STATUSES_SENTINEL ? null : next,
+      });
+    },
+    [writeUrl],
   );
 
   // P5 (round-10 ui-design-specialist) — copy-to-clipboard helper for
@@ -360,416 +312,258 @@ export function AttendeeTable({
     [t],
   );
 
-  // R2-3 (2026-05-18 /speckit-review Round 2) — local callback that
-  // strips the `q` + `page` URL keys. Pre-R2 this body was duplicated
-  // inline in BOTH the native-X clear path (Input onChange when v==='')
-  // AND the Escape-key handler — same 4-line delete sequence. Folding
-  // through one helper prevents the two paths drifting apart.
-  const clearSearchUrl = useCallback(() => {
-    const next = new URLSearchParams(searchParams.toString());
-    next.delete('q');
-    next.delete('page');
-    pushUrl(next);
-  }, [searchParams, pushUrl]);
-
   // R3 simplify (2026-05-18) — single source of truth for the URL
   // keys that count as an "active filter" on this table. Drives both
   // the empty-state Clear-filters CTA visibility AND its click
   // handler, so adding a future filter key only needs to be done in
   // one place.
-  // FILTER_PARAM_KEYS hoisted to module scope; see top of file.
   const hasAnyFilter = FILTER_PARAM_KEYS.some((k) => searchParams.has(k));
-  // R3-F5 (2026-05-18 /speckit-review Round 3 Final) — ref to the
-  // search Input so the Clear filters CTA can return focus there
-  // after the URL transitions. WCAG SC 2.4.3 (Focus Order) — focus
-  // must be predictable; without this, focus lands on document.body
-  // after the button is dismissed (the empty-state container
-  // unmounts when results appear), forcing keyboard users to Tab
-  // their way back into the toolbar.
-  const searchInputRef = useRef<HTMLInputElement>(null);
-  const clearAllFiltersUrl = useCallback(() => {
-    const next = new URLSearchParams(searchParams.toString());
-    for (const k of FILTER_PARAM_KEYS) next.delete(k);
-    next.delete('page');
-    setSearchInput('');
-    pushUrl(next);
-    // R4-U2 (2026-05-18 /speckit-review Round 4) — toast.success
-    // announces "Filters cleared" via Sonner's `role="status"` live
-    // region BEFORE focus moves to the search input. NVDA/JAWS read
-    // the toast first, then the new focus target's aria-label. Without
-    // this, SR users only hear "Search attendees, empty edit text"
-    // and don't know whether the click succeeded (since the table
-    // body re-renders silently underneath).
-    toast.success(t('filtersCleared'));
-    // R3-F5 — return focus to the search input AFTER the URL push
-    // transitions. The Input element survives the transition (it
-    // lives in the persistent toolbar above the conditionally-
-    // rendered table body), so the ref stays valid.
-    queueMicrotask(() => searchInputRef.current?.focus());
-  }, [searchParams, pushUrl, t]);
-
-  // R6-W12 staff-review fix (2026-05-13): clear-on-Escape handler.
-  // `<Input type="search">` renders the native browser X clear button
-  // on most desktop browsers but it is absent on iOS Safari and some
-  // Android WebViews and has no keyboard equivalent. The Escape key
-  // both clears the local input state AND strips `q` + `page` from
-  // the URL so the table snaps back to the unfiltered view. No-op
-  // when the input is already empty (avoids a useless URL push).
-  const handleSearchKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (e.key !== 'Escape') return;
-      if (searchInput === '' && !searchParams.has('q')) return;
-      e.preventDefault();
-      setSearchInput('');
-      clearSearchUrl();
+  const clearAllFilters = useCallback(
+    (announce: boolean) => {
+      writeUrl(Object.fromEntries(FILTER_PARAM_KEYS.map((k) => [k, null])));
+      // R4-U2 — the empty state's CTA announces "Filters cleared" before
+      // focus moves to the search; the bar's own Clear needs no toast (the
+      // count it carries is announced).
+      if (announce) toast.success(t('filtersCleared'));
+      focusSearch();
     },
-    [searchInput, searchParams, clearSearchUrl],
+    [writeUrl, t, focusSearch],
   );
 
-  return (
-    /* Round-11 review fix — single TooltipProvider hoisted here so
-       MatchStatusBadge + QuotaEffectBadge inside row cells don't each
-       instantiate their own provider (was 100+ providers on a 50-row
-       page; tooltip race + Tab order noise). */
-    <TooltipProvider>
-    <div className="flex flex-col gap-4" aria-busy={isPending}>
-      {/* Mobile: search takes full row, filter chips wrap to next.
-          ≥sm: search + 2 chips share one row. The `min-w-0` on the
-          form lets it shrink inside the flex parent without forcing
-          horizontal scroll on narrow viewports. */}
-      <div className="flex flex-wrap items-center gap-2">
-        <form
-          onSubmit={submitSearch}
-          className="flex w-full min-w-0 gap-2 sm:w-auto sm:flex-1"
-        >
-          <Input
-            ref={searchInputRef}
-            type="search"
-            value={searchInput}
-            onFocus={() => {
-              inputFocused.current = true;
-            }}
-            onBlur={() => {
-              inputFocused.current = false;
-            }}
-            onChange={(e) => {
-              const v = e.target.value;
-              setSearchInput(v);
-              // Bug-fix 2026-05-18 — the native <input type="search"> "X"
-              // clear button fires onChange with v='' but does NOT submit
-              // the form, so the URL-bound ?q= parameter would otherwise
-              // stay stale and the server-rendered table stayed filtered
-              // until the admin pressed Enter on the now-empty input.
-              // Detect "value became empty while URL still has q" and
-              // push the URL clear inline (same effect as the existing
-              // Escape-key handler at handleSearchKeyDown). React's
-              // onChange fires on every keystroke too, so users who
-              // backspace down to empty also see the table refresh —
-              // an expected affordance.
-              if (v === '' && searchParams.has('q')) {
-                clearSearchUrl();
-              }
-            }}
-            onKeyDown={handleSearchKeyDown}
-            placeholder={t('searchPlaceholder')}
-            aria-label={t('searchLabel')}
-            className="min-w-0 flex-1"
-          />
-          <Button type="submit" variant="outline" disabled={isPending}>
-            {isPending && (
-              <Loader2
-                aria-hidden="true"
-                className="size-4 animate-spin motion-reduce:animate-none"
-              />
-            )}
-            {t('searchSubmit')}
-          </Button>
-        </form>
-        <Button
-          type="button"
-          variant={unmatchedOnly ? 'default' : 'outline'}
-          onClick={toggleUnmatched}
-          aria-pressed={unmatchedOnly}
-          disabled={isPending}
-          className="w-full sm:w-auto"
-        >
-          {isPending && (
-            <Loader2
-              aria-hidden="true"
-              className="size-4 animate-spin motion-reduce:animate-none"
-            />
-          )}
-          {unmatchedOnly
-            ? t('showUnmatchedOnlyActive')
-            : t('showUnmatchedOnly')}
-        </Button>
-        <Select
-          value={
-            initialPaymentStatus === undefined
-              ? ALL_STATUSES_SENTINEL
-              : initialPaymentStatus
-          }
-          onValueChange={onPaymentStatusChange}
-          disabled={isPending}
-        >
-          <SelectTrigger
-            className="w-full sm:w-[12rem]"
-            aria-label={t('filterByPaymentStatusLabel')}
-          >
-            {/* TranslatedSelectValue maps the raw `value` (e.g.
-                `'paid'` or the `__all__` sentinel) to a localised
-                label so users never see the internal literal. */}
-            <TranslatedSelectValue
-              placeholder={t('filterByPaymentStatusLabel')}
-              translate={(v) =>
-                v === ALL_STATUSES_SENTINEL
-                  ? t('allPaymentStatuses')
-                  : tPay(v as Parameters<typeof tPay>[0])
-              }
-            />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL_STATUSES_SENTINEL}>
-              {t('allPaymentStatuses')}
-            </SelectItem>
-            {PAYMENT_STATUSES.map((s) => (
-              <SelectItem key={s} value={s}>
-                {tPay(s)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      {/*
-       * result-count aria-live region —
-       * announces row count to screen readers after filter/search changes.
-       * `role="status"` + `aria-live="polite"` lets the SR queue the
-       * update without interrupting; `aria-atomic` ensures the full
-       * sentence is re-announced on every change.
-       */}
-      <div
-        role="status"
-        aria-live="polite"
-        aria-atomic="true"
-        className="sr-only"
-      >
-        {t('resultCount', { count: rows.length })}
-      </div>
+  const activeFilters: ActiveFilter[] = [];
+  if (initialSearch.trim() !== '') {
+    activeFilters.push({
+      id: 'q',
+      label: t('filterChipSearch', { q: initialSearch.trim() }),
+      onRemove: () => {
+        writeUrl({ q: null });
+        focusSearch();
+      },
+    });
+  }
+  if (initialPaymentStatus !== undefined) {
+    activeFilters.push({
+      id: 'paymentStatus',
+      label: t('filterChip', { label: t('paymentStatusFilter'), value: tPay(initialPaymentStatus) }),
+      onRemove: () => {
+        writeUrl({ paymentStatus: null });
+        focusSearch();
+      },
+    });
+  }
 
-      {rows.length === 0 ? (
-        <div className="rounded-md border border-border bg-card py-12 text-center">
-          {/* R4-S5 (2026-05-18 /speckit-review Round 4) — sr-only
-              heading for AT users navigating by heading. The section
-              is labelledby the parent `<h2 id="attendees-heading">`
-              already, but adding an empty-state h3 gives screen
-              readers a stable jump target when filter results
-              produce zero rows. WCAG SC 2.4.6. */}
-          <h3 className="sr-only">{t('emptyHeading')}</h3>
-          <p className="text-muted-foreground">{t('empty')}</p>
-          {/* R2-S1 (2026-05-18 /speckit-review Round 2 Suggestion) —
-              when any filter is set AND the result is empty, surface a
-              "Clear filters" CTA so users have a one-click path back
-              to the unfiltered table. Without filters set the empty
-              state is a true "no attendees yet" surface, not a
-              filter dead-end — no CTA in that case. */}
-          {hasAnyFilter && (
-            <Button
+  const barStrings = useMemo(
+    () => ({
+      clearFilters: t('clearFilters'),
+      remove: (label: string) => t('removeFilterAria', { label }),
+    }),
+    [t],
+  );
+
+  const columns = useMemo<DataTableColumn<AttendeeRow>[]>(() => {
+    const base: DataTableColumn<AttendeeRow>[] = [
+      {
+        key: 'attendee',
+        label: t('columns.attendee'),
+        ...ATTENDEE_COLUMN_LAYOUT.attendee,
+        render: (r) => (
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <span className="font-medium">{r.attendeeName}</span>
+            {/* P5 (round-10) — the email copies to the clipboard (copy-to-CRM
+                is the daily flow); it keeps the link look. */}
+            <button
               type="button"
-              variant="outline"
-              className="mt-4"
-              onClick={clearAllFiltersUrl}
-              disabled={isPending}
+              onClick={() => {
+                void copyEmail(r.attendeeEmail);
+              }}
+              className="group inline-flex w-fit max-w-full items-center gap-1 rounded-[var(--aura-radius-sm)] text-start text-[var(--aura-fg-link)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)]"
+              aria-label={t('copyEmailAria', { email: r.attendeeEmail })}
+              title={t('copyEmail')}
             >
+              <span className="aura-text-caption min-w-0 break-all underline-offset-2 group-hover:underline">
+                {r.attendeeEmail}
+              </span>
+              <Copy
+                aria-hidden="true"
+                className="size-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none"
+              />
+            </button>
+            {r.attendeeCompany && (
+              <span className="aura-text-caption text-[var(--aura-fg-secondary)]">{r.attendeeCompany}</span>
+            )}
+          </div>
+        ),
+      },
+      {
+        key: 'match',
+        label: t('columns.match'),
+        ...ATTENDEE_COLUMN_LAYOUT.match,
+        render: (r) => (
+          <MatchStatusBadge
+            matchType={r.matchType}
+            label={tMatchType(r.matchType)}
+            tooltip={tMatchTypeTip(r.matchType)}
+          />
+        ),
+      },
+      {
+        key: 'ticket',
+        label: t('columns.ticket'),
+        ...ATTENDEE_COLUMN_LAYOUT.ticket,
+        render: (r) => (
+          <div className="flex flex-col gap-0.5">
+            <span>{r.ticketType ?? '—'}</span>
+            <span
+              className={
+                r.paymentStatus === 'refunded'
+                  ? 'aura-text-caption text-[var(--aura-fg-danger)]'
+                  : 'aura-text-caption text-[var(--aura-fg-secondary)]'
+              }
+            >
+              {/* F6.1 UX-fix 2026-05-16 — no leading "— · " when the price is
+                  unknown (EventCreate CSV rows carry no structured pricing). */}
+              {r.ticketPriceThb !== null && (
+                <>
+                  {formatTicketPrice(r.ticketPriceThb, locale)}
+                  <span aria-hidden="true"> · </span>
+                </>
+              )}
+              {tPay(r.paymentStatus)}
+            </span>
+          </div>
+        ),
+      },
+      {
+        key: 'quota',
+        label: t('columns.quota'),
+        ...ATTENDEE_COLUMN_LAYOUT.quota,
+        render: (r) => (
+          <div className="flex flex-wrap gap-1">
+            {r.countedAgainstPartnership && (
+              <QuotaEffectBadge kind="partnership" label={tQuota('partnership')} tooltip={tQuotaTip('partnership')} />
+            )}
+            {r.countedAgainstCulturalQuota && (
+              <QuotaEffectBadge kind="cultural" label={tQuota('cultural')} tooltip={tQuotaTip('cultural')} />
+            )}
+            {r.isOverQuota && (
+              <QuotaEffectBadge kind="over_quota" label={tQuota('overQuota')} tooltip={tQuotaTip('overQuota')} />
+            )}
+            {!r.countedAgainstPartnership && !r.countedAgainstCulturalQuota && !r.isOverQuota && (
+              <QuotaEffectBadge kind="none" label={tQuota('none')} tooltip={tQuotaTip('none')} />
+            )}
+          </div>
+        ),
+      },
+      {
+        key: 'registered',
+        label: t('columns.registered'),
+        ...ATTENDEE_COLUMN_LAYOUT.registered,
+        render: (r) => (
+          <span className="text-[var(--aura-fg-secondary)]">{formatRegisteredAt(r.registeredAt, locale)}</span>
+        ),
+      },
+    ];
+    if (!showActions || eventId === null) return base;
+    return [
+      ...base,
+      {
+        key: 'actions',
+        label: t('columns.actions'),
+        ...ATTENDEE_COLUMN_LAYOUT.actions,
+        render: (r) => (
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <RelinkRegistrationDialog
+              registrationId={r.registrationId}
+              eventId={eventId}
+              attendeeName={r.attendeeName}
+              attendeeEmail={r.attendeeEmail}
+              currentMatchedMemberId={r.currentMatchedMemberId}
+              isPseudonymised={r.isPseudonymised}
+            />
+            {/* DV-6 — the existing per-registration erase tool (FR-032a) as a
+                row action. Hidden once pseudonymised: the erase page
+                redirects an already-purged row away + re-erase is an
+                idempotent no-op. */}
+            {!r.isPseudonymised && (
+              <ErasePiiDialog eventId={eventId} registrationId={r.registrationId} attendeeName={r.attendeeName} />
+            )}
+          </div>
+        ),
+      },
+    ];
+  }, [t, tMatchType, tMatchTypeTip, tQuota, tQuotaTip, tPay, locale, showActions, eventId, copyEmail]);
+
+  return (
+    <div className="flex flex-col gap-[var(--aura-space-4)]" aria-busy={isPending}>
+      <AuraProvider strings={barStrings}>
+        <FilterBar
+          ref={barRef}
+          label={t('heading')}
+          searchGrow
+          search={initialSearch}
+          searchLabel={t('searchLabel')}
+          searchPlaceholder={t('searchPlaceholder')}
+          onSearchChange={(value: string) => writeUrl({ q: value.trim() || null })}
+          filters={activeFilters}
+          {...(activeFilters.length > 0 ? { onClearAll: () => clearAllFilters(false) } : {})}
+          resultCount={t('resultCount', { count: rows.length })}
+        >
+          <Tag
+            selected={unmatchedOnly}
+            touchHeight
+            onClick={() => writeUrl({ unmatchedOnly: unmatchedOnly ? null : '1' })}
+          >
+            {t('showUnmatchedOnly')}
+          </Tag>
+          <FilterSelect
+            label={t('paymentStatusFilter')}
+            allLabel={t('allShort')}
+            value={initialPaymentStatus === undefined ? ALL_STATUSES_SENTINEL : initialPaymentStatus}
+            onChange={onPaymentStatusChange}
+            options={[
+              { value: ALL_STATUSES_SENTINEL, label: t('allPaymentStatuses') },
+              ...PAYMENT_STATUSES.map((s) => ({ value: s, label: tPay(s) })),
+            ]}
+          />
+          {unmatchedOnly && activeFilters.length === 0 ? (
+            <Button variant="ghost" size="sm" icon="x" touchHeight onClick={() => clearAllFilters(false)}>
               {t('clearFilters')}
             </Button>
-          )}
-        </div>
+          ) : null}
+        </FilterBar>
+      </AuraProvider>
+
+      {rows.length === 0 ? (
+        <EmptyState
+          icon={SearchX}
+          title={t('emptyHeading')}
+          description={t('empty')}
+          bordered={false}
+          // The bar's count already announces the change.
+          announce={false}
+          action={
+            // R2-S1 — a one-click path back to the unfiltered table when the
+            // empty result comes from a filter; none for "no attendees yet".
+            hasAnyFilter ? (
+              <Button variant="secondary" touchHeight onClick={() => clearAllFilters(true)}>
+                {t('clearFilters')}
+              </Button>
+            ) : undefined
+          }
+        />
       ) : (
-        // min-w sizing: 5 base columns (Attendee + Match + Ticket +
-        // Quota + Registered) ~580px; the admin Actions column now holds
-        // TWO row actions (Relink + DV-6 Erase PII) ~160px when
-        // `showActions=true`. Bump to 740px so both actions fit on the
-        // admin-render path without forcing horizontal scroll on mid-size
-        // laptop viewports.
-        <Table className={cn(showActions ? 'min-w-[740px]' : 'min-w-[580px]')}>
-          <TableCaption className="sr-only">{t('tableCaption')}</TableCaption>
-          <TableHeader>
-            <TableRow>
-              <TableHead scope="col">{t('columns.attendee')}</TableHead>
-              <TableHead scope="col">{t('columns.match')}</TableHead>
-              <TableHead scope="col">{t('columns.ticket')}</TableHead>
-              <TableHead scope="col">{t('columns.quota')}</TableHead>
-              <TableHead scope="col">{t('columns.registered')}</TableHead>
-              {showActions && (
-                <TableHead scope="col">
-                  <span className="sr-only">
-                    {t('columns.actions')}
-                  </span>
-                </TableHead>
-              )}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((r) => (
-              <TableRow key={r.registrationId}>
-                <TableCell>
-                  <div className="flex flex-col gap-0.5">
-                    <span className="font-medium">{r.attendeeName}</span>
-                    {/* P5 (round-10) — email is now a button that copies
-                        to clipboard. Admins reported mailto: rarely
-                        useful; copy-to-CRM is the daily flow. The
-                        button keeps the text-link visual treatment
-                        for back-compat. */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void copyEmail(r.attendeeEmail);
-                      }}
-                      className="group inline-flex w-fit items-center gap-1 text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 rounded"
-                      aria-label={t('copyEmailAria', {
-                        email: r.attendeeEmail,
-                      })}
-                      title={t('copyEmail')}
-                    >
-                      <span className="underline-offset-2 group-hover:underline">
-                        {r.attendeeEmail}
-                      </span>
-                      <Copy
-                        aria-hidden="true"
-                        className="size-3 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity"
-                      />
-                    </button>
-                    {r.attendeeCompany && (
-                      <span className="text-xs text-muted-foreground">
-                        {r.attendeeCompany}
-                      </span>
-                    )}
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <MatchStatusBadge
-                    matchType={r.matchType}
-                    label={tMatchType(r.matchType)}
-                    tooltip={tMatchTypeTip(r.matchType)}
-                  />
-                </TableCell>
-                <TableCell>
-                  <div className="flex flex-col gap-0.5">
-                    <span>{r.ticketType ?? '—'}</span>
-                    <span
-                      className={cn(
-                        'text-xs',
-                        r.paymentStatus === 'refunded'
-                          ? 'text-destructive'
-                          : 'text-muted-foreground',
-                      )}
-                    >
-                      {/*
-                        F6.1 UX-fix 2026-05-16 — when `ticketPriceThb`
-                        is null (common for EventCreate CSV imports
-                        because EventCreate's adapter maps only Name /
-                        Email / Notes / Status per FR-005-FR-010 and
-                        does NOT carry structured ticket pricing),
-                        drop the leading "— · " so the cell reads just
-                        "Paid" instead of "— · Paid". Avoids a
-                        malformed-pair visual ("dash bullet status")
-                        that previously made the column look broken
-                        on every EventCreate-format row.
-                      */}
-                      {r.ticketPriceThb !== null && (
-                        <>
-                          {formatTicketPrice(r.ticketPriceThb, locale)}
-                          <span aria-hidden="true"> · </span>
-                        </>
-                      )}
-                      {tPay(r.paymentStatus)}
-                    </span>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <div className="flex flex-wrap gap-1">
-                    {r.countedAgainstPartnership && (
-                      <QuotaEffectBadge
-                        kind="partnership"
-                        label={tQuota('partnership')}
-                        tooltip={tQuotaTip('partnership')}
-                      />
-                    )}
-                    {r.countedAgainstCulturalQuota && (
-                      <QuotaEffectBadge
-                        kind="cultural"
-                        label={tQuota('cultural')}
-                        tooltip={tQuotaTip('cultural')}
-                      />
-                    )}
-                    {r.isOverQuota && (
-                      <QuotaEffectBadge
-                        kind="over_quota"
-                        label={tQuota('overQuota')}
-                        tooltip={tQuotaTip('overQuota')}
-                      />
-                    )}
-                    {!r.countedAgainstPartnership &&
-                      !r.countedAgainstCulturalQuota &&
-                      !r.isOverQuota && (
-                        // R6-B4 staff-review fix (2026-05-13): dropped
-                        // `text-muted-foreground` override which produced
-                        // ~2:1 contrast on the white card (WCAG 1.4.3
-                        // fail). Default `Badge variant="outline"` text
-                        // already clears 4.5:1; outline-only border
-                        // preserves the de-emphasis intent.
-                        // P2 wave-1: native title= isn't keyboard/touch-
-                        // reachable nor reliably announced — use the same
-                        // Tooltip primitive the sibling QuotaEffectBadges use
-                        // (TooltipProvider is hoisted to the table root).
-                        <Tooltip>
-                          <TooltipTrigger
-                            render={<span className="inline-flex rounded-md" />}
-                          >
-                            <Badge variant="outline" aria-label={tQuota('none')}>
-                              {tQuota('none')}
-                            </Badge>
-                          </TooltipTrigger>
-                          <TooltipContent>{tQuotaTip('none')}</TooltipContent>
-                        </Tooltip>
-                      )}
-                  </div>
-                </TableCell>
-                <TableCell className="text-muted-foreground">
-                  {formatRegisteredAt(r.registeredAt, locale)}
-                </TableCell>
-                {showActions && eventId !== null && (
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <RelinkRegistrationDialog
-                        registrationId={r.registrationId}
-                        eventId={eventId}
-                        attendeeName={r.attendeeName}
-                        attendeeEmail={r.attendeeEmail}
-                        currentMatchedMemberId={r.currentMatchedMemberId}
-                        isPseudonymised={r.isPseudonymised}
-                      />
-                      {/* DV-6 — surface the EXISTING per-registration erase tool
-                          (FR-032a) as a row action; it was reachable only by
-                          hand-typing the deep-link URL. Hidden once
-                          pseudonymised: the erase page redirects an already-
-                          purged row away + re-erase is an idempotent no-op. */}
-                      {!r.isPseudonymised && (
-                        <ErasePiiDialog
-                          eventId={eventId}
-                          registrationId={r.registrationId}
-                          attendeeName={r.attendeeName}
-                        />
-                      )}
-                    </div>
-                  </TableCell>
-                )}
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+        <DataTable<AttendeeRow>
+          label={t('tableCaption')}
+          rows={[...rows]}
+          columns={columns}
+          rowKey="registrationId"
+          manual
+          rowHeight="auto"
+          stackBelow={640}
+          // Edge to edge inside the attendees card from 640px up; the pager follows.
+          bleed
+        />
       )}
     </div>
-    </TooltipProvider>
   );
 }

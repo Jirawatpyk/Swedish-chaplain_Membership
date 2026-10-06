@@ -19,6 +19,7 @@ import type { MatchType } from '@/modules/events';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { TablePagination } from '@/components/layout/table-pagination';
+import { Card } from '@jirawatpyk/aura-react/server';
 import { DynamicBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
 import { EventDetailHeader } from '@/components/events/event-detail-header';
 import { EventCategoryToggles } from '@/components/events/event-category-toggles';
@@ -303,65 +304,68 @@ export default async function AdminEventDetailPage({
           page's end (board Admin-event-detail-mobile), so the card hides
           its own copy below 640px. */}
       <EventDetailHeader event={event} actions={canAct ? renderActions() : undefined} actionsHiddenBelowSm />
-      <section
-        aria-labelledby="attendees-heading"
-        className="flex flex-col gap-4"
+      {/* The attendees list card (board Admin-event-detail): the heading, the
+          filter row, the table and the pager in one card; on a phone the rows
+          are cards of their own, so this one drops its frame (the list-card
+          rule). */}
+      <Card
+        as="section"
+        // h2 under the page h1 (R6-B5); the card is labelled by it.
+        title={t('attendees.heading')}
+        headingLevel={2}
+        titleId="attendees-heading"
+        flushBelow="sm"
+        className="max-sm:border-0 max-sm:p-0"
       >
-        {/* R6-B5 staff-review fix (2026-05-13): h3 → h2 to close the
-            heading-level skip (PageHeader emits h1; EventDetailHeader
-            intentionally renders no heading). WCAG 2.1 SC 1.3.1 (Info
-            and Relationships, Level A): skipping a heading level
-            signals a missing section to AT users. Visual `text-h3`
-            class preserves the existing size — semantic level and
-            visual size are decoupled. */}
-        <h2 id="attendees-heading" className="text-h3 font-semibold">
-          {t('attendees.heading')}
-        </h2>
-        <AttendeeTable
-          rows={
-            registrations.map((r) => ({
-              registrationId: r.registrationId,
-              attendeeEmail: r.attendeeEmail,
-              attendeeName: r.attendeeName,
-              attendeeCompany: r.attendeeCompany,
-              matchType: r.matchType,
-              ticketType: r.ticketType,
-              ticketPriceThb: r.ticketPriceThb,
-              paymentStatus: r.paymentStatus,
-              countedAgainstPartnership: r.countedAgainstPartnership,
-              countedAgainstCulturalQuota: r.countedAgainstCulturalQuota,
-              isOverQuota: r.isOverQuota,
-              registeredAt: r.registeredAt,
-              // Round-1 type-H3 — pass branded MemberId | null straight
-              // through; the prop boundary preserves the brand. No
-              // String() coercion needed.
-              currentMatchedMemberId: r.matchedMemberId,
-              isPseudonymised: r.isPseudonymised,
-            })) satisfies AttendeeRow[]
-          }
-          unmatchedOnly={unmatchedOnly}
-          initialSearch={q ?? ''}
-          {...(paymentStatusFilter !== null && {
-            initialPaymentStatus: paymentStatusFilter,
-          })}
-          // F6 Phase 9 / US6 — relink column follows `events.relink` (its own
-          // catalogue key, money-sensitive; not granted to marketing). Archived
-          // events disable relink because the use-case short-circuits with
-          // `event_archived`. (016 re-review D — was a `role === 'admin'`
-          // literal, which went false for every human after Migration C.)
-          eventId={event.eventId}
-          canRelink={
-            canPerform(currentUser.role, 'events.relink') &&
-            !event.archivedAt
-          }
-        />
-        <TablePagination
-          page={pagination.page}
-          pageSize={pagination.pageSize}
-          total={pagination.totalCount}
-          baseHref={`/admin/events/${eventId}`}
-        />
-      </section>
+        <div className="flex flex-col gap-[var(--aura-space-4)]">
+          <AttendeeTable
+            rows={
+              registrations.map((r) => ({
+                registrationId: r.registrationId,
+                attendeeEmail: r.attendeeEmail,
+                attendeeName: r.attendeeName,
+                attendeeCompany: r.attendeeCompany,
+                matchType: r.matchType,
+                ticketType: r.ticketType,
+                ticketPriceThb: r.ticketPriceThb,
+                paymentStatus: r.paymentStatus,
+                countedAgainstPartnership: r.countedAgainstPartnership,
+                countedAgainstCulturalQuota: r.countedAgainstCulturalQuota,
+                isOverQuota: r.isOverQuota,
+                registeredAt: r.registeredAt,
+                // Round-1 type-H3 — pass branded MemberId | null straight
+                // through; the prop boundary preserves the brand. No
+                // String() coercion needed.
+                currentMatchedMemberId: r.matchedMemberId,
+                isPseudonymised: r.isPseudonymised,
+              })) satisfies AttendeeRow[]
+            }
+            unmatchedOnly={unmatchedOnly}
+            initialSearch={q ?? ''}
+            {...(paymentStatusFilter !== null && {
+              initialPaymentStatus: paymentStatusFilter,
+            })}
+            // F6 Phase 9 / US6 — relink column follows `events.relink` (its own
+            // catalogue key, money-sensitive; not granted to marketing). Archived
+            // events disable relink because the use-case short-circuits with
+            // `event_archived`. (016 re-review D — was a `role === 'admin'`
+            // literal, which went false for every human after Migration C.)
+            eventId={event.eventId}
+            canRelink={
+              canPerform(currentUser.role, 'events.relink') &&
+              !event.archivedAt
+            }
+          />
+          <TablePagination
+            page={pagination.page}
+            pageSize={pagination.pageSize}
+            total={pagination.totalCount}
+            baseHref={`/admin/events/${eventId}`}
+            // The filter bar's count is the list's live region.
+            live={false}
+          />
+        </div>
+      </Card>
       {canAct ? (
         <section aria-labelledby="event-actions-heading" className="flex flex-col gap-3 sm:hidden">
           <h2 id="event-actions-heading" className="aura-text-label text-[var(--aura-fg-secondary)]">

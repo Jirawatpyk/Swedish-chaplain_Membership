@@ -107,11 +107,17 @@ describe('attendee filters (AURA FilterBar)', () => {
   it('writes the payment status from a compact filter select, "All" removing it', () => {
     nav.search.current = new URLSearchParams('page=4');
     renderTable();
-    const select = screen.getByRole('combobox', { name: a.paymentStatusFilter });
+    // AURA's FilterSelect drives a native <select> under its face.
+    const select = screen
+      .getAllByRole('combobox', { name: a.paymentStatusFilter })
+      .at(-1)!
+      .closest('.aura-select')!
+      .querySelector('select')!;
     fireEvent.change(select, { target: { value: 'refunded' } });
     expect(nav.replace).toHaveBeenLastCalledWith('/admin/events/e1?paymentStatus=refunded', { scroll: false });
     nav.search.current = new URLSearchParams('paymentStatus=refunded');
-    fireEvent.change(select, { target: { value: 'all' } });
+    const all = within(select).getByRole('option', { name: a.allPaymentStatuses, hidden: true }) as HTMLOptionElement;
+    fireEvent.change(select, { target: { value: all.value } });
     expect(nav.replace).toHaveBeenLastCalledWith('/admin/events/e1', { scroll: false });
   });
 

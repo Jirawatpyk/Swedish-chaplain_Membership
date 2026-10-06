@@ -4,8 +4,8 @@
  * Spec 122 US9a (T903): the real page's shape on AURA for CLS 0 — the header
  * (the event name is a placeholder, the subtitle is real), the summary card
  * (name, date and category, badges, the actions strip; then the match rate,
- * registrations and last update), then the attendees heading, the filter row
- * and AURA's own table in its loading state with the real columns (cards
+ * registrations and last update), then the attendees card with its heading,
+ * the filter row and AURA's own table in its loading state with the real columns (cards
  * below 640px, `DataTableSkeleton`).
  *
  * `aria-busy` on the container; `PageSkeletonShell` is the one live region.
@@ -62,19 +62,19 @@ export default async function EventDetailLoading() {
             </div>
           </div>
         </Card>
-        <div className="flex flex-col gap-4">
-          <SkeletonBlock aria-hidden className="h-6 w-32" />
-          <Card flushBelow="sm" className="max-sm:border-0 max-sm:p-0">
-            <div className="flex flex-col gap-[var(--aura-space-4)]">
-              <div aria-hidden data-skeleton="filters" className="flex flex-wrap items-center gap-2">
-                <SkeletonBlock className="h-[var(--aura-input-height)] w-full sm:w-auto sm:min-w-60 sm:flex-1" />
-                <SkeletonBlock className="h-8 w-48 rounded-full" data-skeleton="toggle-chip" />
-                <SkeletonBlock className="h-[var(--aura-input-height)] w-full sm:w-48" data-skeleton="select" />
-              </div>
-              <DataTableSkeleton label={t('attendees.tableCaption')} columns={columns} rows={10} />
+        <Card flushBelow="sm" className="max-sm:border-0 max-sm:p-0">
+          <div className="flex flex-col gap-[var(--aura-space-4)]">
+            {/* The card's "Attendees" heading. */}
+            <SkeletonBlock aria-hidden className="h-6 w-32" />
+            <div aria-hidden data-skeleton="filters" className="flex flex-wrap items-center gap-2">
+              <SkeletonBlock className="h-[var(--aura-input-height)] w-full sm:w-auto sm:min-w-60 sm:flex-1" />
+              <SkeletonBlock className="h-8 w-48 rounded-full" data-skeleton="toggle-chip" />
+              <SkeletonBlock className="h-[var(--aura-input-height)] w-44" data-skeleton="select" />
+              <SkeletonBlock className="ml-auto h-4 w-20" data-skeleton="result-count" />
             </div>
-          </Card>
-        </div>
+            <DataTableSkeleton label={t('attendees.tableCaption')} columns={columns} rows={10} />
+          </div>
+        </Card>
       </DetailContainer>
     </PageSkeletonShell>
   );
