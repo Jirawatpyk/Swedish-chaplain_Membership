@@ -1049,12 +1049,12 @@ describe('voidInvoice — cancels pending PaymentIntents after the void commits 
   function withCanceller(loaded: Invoice | null, impl?: () => Promise<void>) {
     const cancel = vi.fn(impl ?? (async () => undefined));
     const deps = makeDeps(loaded, {
-      pendingPaymentCanceller: { cancelPendingPaymentsForVoidedInvoice: cancel },
+      pendingPaymentCanceller: { cancelPendingPayments: cancel },
     });
     return { deps, cancel };
   }
 
-  it('successful void → canceller called once with tenant, invoice, voiding actor and requestId', async () => {
+  it('successful void → canceller called once with tenant, invoice, voiding actor, requestId and cause invoice_voided', async () => {
     const { deps, cancel } = withCanceller(makeIssuedMembership());
     const r = await voidInvoice(deps, INPUT);
     expect(r.ok).toBe(true);
@@ -1064,6 +1064,7 @@ describe('voidInvoice — cancels pending PaymentIntents after the void commits 
       invoiceId: INVOICE_ID,
       actorUserId: 'actor-user',
       requestId: 'req-1',
+      cause: 'invoice_voided',
     });
   });
 
@@ -1123,7 +1124,12 @@ describe('voidInvoice — cancels pending PaymentIntents after the void commits 
     });
     expect(r.ok).toBe(true);
     expect(cancel).toHaveBeenCalledWith(
-      expect.objectContaining({ tenantId: 't1', invoiceId: loaded.invoiceId, requestId: null }),
+      expect.objectContaining({
+        tenantId: 't1',
+        invoiceId: loaded.invoiceId,
+        requestId: null,
+        cause: 'invoice_voided',
+      }),
     );
   });
 
@@ -1147,7 +1153,7 @@ describe('voidInvoice — cancels pending PaymentIntents after the void commits 
     const cancel = vi.fn(async () => undefined);
     const deps = makeDeps(make(), {
       ...extra(),
-      pendingPaymentCanceller: { cancelPendingPaymentsForVoidedInvoice: cancel },
+      pendingPaymentCanceller: { cancelPendingPayments: cancel },
     } as Partial<VoidInvoiceDeps>);
     const r = await voidInvoice(deps, INPUT);
     expect(r.ok).toBe(false);

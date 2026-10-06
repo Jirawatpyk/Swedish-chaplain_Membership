@@ -295,4 +295,24 @@ describe('cancelPendingPaymentsForInvoice', () => {
     });
     expect((call[1] as { summary: string }).summary).not.toMatch(/was voided/);
   });
+
+  // #452 review M1 — an admin recording a manual payment cancels the
+  // invoice's still-live PaymentIntents; the audit names that cause and the
+  // paying admin as the actor.
+  it('manual-payment cause → payment_canceled carries cause invoice_paid_manually + the paying admin', async () => {
+    const h = makeDeps([pending(1)]);
+    const r = await cancelPendingPaymentsForInvoice(h.deps, {
+      ...INPUT,
+      cause: 'invoice_paid_manually',
+    });
+    expect(r).toEqual({ canceled: 1, skipped: 0, failed: 0 });
+    const call = h.audit.emit.mock.calls.find(
+      (c) => (c[1] as { eventType: string }).eventType === 'payment_canceled',
+    )!;
+    expect(call[1]).toMatchObject({
+      actorUserId: INPUT.actorUserId,
+      payload: { cause: 'invoice_paid_manually' },
+    });
+    expect((call[1] as { summary: string }).summary).toContain('(invoice_paid_manually)');
+  });
 });

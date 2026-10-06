@@ -23,6 +23,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { asSatang } from '@/lib/money';
 import {
+  cancelPendingPaymentsAfterManualPayment,
   recordPayment,
   recordPaymentSchema,
 } from '@/modules/invoicing/application/use-cases/record-payment';
@@ -1736,5 +1737,94 @@ describe('recordPayment — the receipt reaches the LIVE primary contact (108 FR
         .mocked(deps.audit.emit)
         .mock.calls.some(([, event]) => event.eventType === 'auto_email_skipped_no_recipient'),
     ).toBe(false);
+  });
+});
+
+// #452 financial-integrity review (M1) — an admin recording a manual payment
+// (bank transfer / cash) must cancel the invoice's still-live PaymentIntents,
+// or a card clientSecret the member's PaySheet cached can capture a SECOND
+// payment (auto-refunded days later by the webhook's stale-invoice guard —
+// money held, Stripe fees lost). `recordPayment` itself never cancels: it
+// reports `replayed`, and the admin pay route (the tx owner) runs
+// `cancelPendingPaymentsAfterManualPayment` as its LAST post-commit step.
+describe('recordPayment — reports replayed and never cancels inside the use-case (#452 review M1)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('fresh payment → replayed=false; the canceller is never touched by recordPayment', async () => {
+    const cancel = vi.fn(async () => undefined);
+    const deps = makeDeps(true, makeIssuedInvoice(), makeSettings(), {
+      pendingPaymentCanceller: { cancelPendingPayments: cancel },
+    });
+    const r = await recordPayment(deps, input);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.replayed).toBe(false);
+    expect(cancel).not.toHaveBeenCalled();
+  });
+
+  it('idempotent replay (already paid) → replayed=true', async () => {
+    const deps = makeDeps(true, makeIssuedInvoice({ status: 'paid' }), makeSettings());
+    const r = await recordPayment(deps, input);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.replayed).toBe(true);
+  });
+});
+
+describe('cancelPendingPaymentsAfterManualPayment (#452 review M1)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const ARGS = {
+    tenantId: 'test-swecham',
+    invoiceId: INVOICE_ID,
+    actorUserId: 'actor-user',
+    requestId: 'req-pay',
+  };
+
+  it('fresh manual payment → cause invoice_paid_manually, with tenant, invoice, actor and requestId', async () => {
+    const cancel = vi.fn(async () => undefined);
+    await cancelPendingPaymentsAfterManualPayment(
+      { pendingPaymentCanceller: { cancelPendingPayments: cancel } },
+      { ...ARGS, replayed: false },
+    );
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(cancel).toHaveBeenCalledWith({ ...ARGS, cause: 'invoice_paid_manually' });
+  });
+
+  it('replay (invoice was already paid, e.g. by the webhook) → cause invoice_already_paid', async () => {
+    const cancel = vi.fn(async () => undefined);
+    await cancelPendingPaymentsAfterManualPayment(
+      { pendingPaymentCanceller: { cancelPendingPayments: cancel } },
+      { ...ARGS, requestId: null, replayed: true },
+    );
+    expect(cancel).toHaveBeenCalledWith({ ...ARGS, requestId: null, cause: 'invoice_already_paid' });
+  });
+
+  it('no canceller wired (caller-owned tx composition) → no-op', async () => {
+    await expect(
+      cancelPendingPaymentsAfterManualPayment({}, { ...ARGS, replayed: false }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('a canceller that THROWS never throws out; metric fires; log has the error class only', async () => {
+    const metric = vi.spyOn(invoicingMetrics, 'recordPaymentPendingPaymentCancelFailed');
+    const { logger } = await import('@/lib/logger');
+    const errorLog = vi.spyOn(logger, 'error');
+    await expect(
+      cancelPendingPaymentsAfterManualPayment(
+        {
+          pendingPaymentCanceller: {
+            cancelPendingPayments: async () => {
+              throw new TypeError('SELECT secret_column FROM payments');
+            },
+          },
+        },
+        { ...ARGS, replayed: false },
+      ),
+    ).resolves.toBeUndefined();
+    expect(metric).toHaveBeenCalledWith('test-swecham');
+    const call = errorLog.mock.calls.find((c) =>
+      String(c[1]).startsWith('recordPayment: post-commit pending-payment cancellation failed'),
+    );
+    expect(call?.[0]).toEqual({ err: 'TypeError', invoiceId: INVOICE_ID, tenantId: 'test-swecham' });
+    expect(JSON.stringify(errorLog.mock.calls)).not.toContain('secret_column');
   });
 });

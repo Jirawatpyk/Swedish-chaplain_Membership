@@ -949,6 +949,22 @@ export const invoicingMetrics = {
       ).add(1, { tenant });
     });
   },
+
+  /**
+   * `invoicing_record_payment_pending_payment_cancel_failed_total{tenant}` —
+   * #452 review M1: after an admin records a manual payment, the post-commit
+   * cancellation of the invoice's still-live PaymentIntents threw (DB fault /
+   * pending-rows read failed). The payment stands; the hourly unpayable sweep
+   * retries within the hour. Alert: any sustained non-zero rate.
+   */
+  recordPaymentPendingPaymentCancelFailed(tenant: string): void {
+    safeMetric(() => {
+      counter(
+        'invoicing_record_payment_pending_payment_cancel_failed_total',
+        'record-payment: post-commit cancellation of pending PaymentIntents threw → a live PaymentIntent may remain until the hourly sweep',
+      ).add(1, { tenant });
+    });
+  },
 } as const;
 
 // --- COMP-1 member-erasure metrics -------------------------------------------

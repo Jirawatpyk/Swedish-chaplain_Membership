@@ -5,7 +5,12 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireApiPermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
-import { recordPayment, recordPaymentSchema, makeRecordPaymentDeps } from '@/modules/invoicing';
+import {
+  recordPayment,
+  recordPaymentSchema,
+  makeRecordPaymentDeps,
+  cancelPendingPaymentsAfterManualPayment,
+} from '@/modules/invoicing';
 import { env } from '@/lib/env';
 // PR #24 Round 6 — F8 callbacks are dynamically imported below ONLY when
 // `FEATURE_F8_RENEWALS=true`. Previously this was a top-level static
@@ -95,10 +100,8 @@ export async function POST(
   const f8Callbacks = renewalsBarrel
     ? renewalsBarrel.f8OnPaidCallbacks(tenantCtx.slug)
     : undefined;
-  const result = await recordPayment(
-    makeRecordPaymentDeps(tenantCtx.slug, undefined, f8Callbacks),
-    parsed.data,
-  );
+  const deps = makeRecordPaymentDeps(tenantCtx.slug, undefined, f8Callbacks);
+  const result = await recordPayment(deps, parsed.data);
   if (!result.ok) {
     logger.warn(
       {
@@ -166,6 +169,19 @@ export async function POST(
       }
     }
   }
+
+  // #452 financial-integrity review (M1) — LAST post-commit step: cancel the
+  // invoice's still-live PaymentIntents so a card clientSecret the member's
+  // PaySheet cached cannot capture a second payment. After the F2 finaliser on
+  // purpose — its Stripe round-trips must not stand between the committed
+  // payment and that finaliser. Best-effort; never throws.
+  await cancelPendingPaymentsAfterManualPayment(deps, {
+    tenantId: tenantCtx.slug,
+    invoiceId,
+    actorUserId: ctx.current.user.id,
+    requestId,
+    replayed: result.value.replayed,
+  });
 
   // Cluster 5 (Finding 1) — surface the auto-email dispatch outcome so the
   // pay dialog can warn the admin when the receipt was NOT emailed (member has
