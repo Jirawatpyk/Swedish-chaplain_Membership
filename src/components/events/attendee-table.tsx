@@ -514,16 +514,7 @@ export function AttendeeTable({
           {...(activeFilters.length > 0 ? { onClearAll: () => clearAllFilters(false) } : {})}
           resultCount={t('resultCount', { count: totalCount ?? rows.length })}
         >
-          {/* The board's short word on a phone; the full name stays (WCAG 2.5.3). */}
-          <Tag
-            selected={unmatchedOnly}
-            touchHeight
-            aria-label={t('showUnmatchedOnly')}
-            onClick={() => writeUrl({ unmatchedOnly: unmatchedOnly ? null : '1' })}
-          >
-            <span className="max-sm:hidden">{t('showUnmatchedOnly')}</span>
-            <span className="sm:hidden">{t('showUnmatchedOnlyShort')}</span>
-          </Tag>
+          {/* Selects first, then on/off chips: the filter order on Members and Plans. */}
           <FilterSelect
             label={t('paymentStatusFilter')}
             allLabel={t('allShort')}
@@ -534,6 +525,16 @@ export function AttendeeTable({
               ...PAYMENT_STATUSES.map((s) => ({ value: s, label: tPay(s) })),
             ]}
           />
+          {/* The board's short word on a phone; the full name stays (WCAG 2.5.3). */}
+          <Tag
+            selected={unmatchedOnly}
+            touchHeight
+            aria-label={t('showUnmatchedOnly')}
+            onClick={() => writeUrl({ unmatchedOnly: unmatchedOnly ? null : '1' })}
+          >
+            <span className="max-sm:hidden">{t('showUnmatchedOnly')}</span>
+            <span className="sm:hidden">{t('showUnmatchedOnlyShort')}</span>
+          </Tag>
           {unmatchedOnly && activeFilters.length === 0 ? (
             <Button variant="ghost" size="sm" icon="x" touchHeight onClick={() => clearAllFilters(false)}>
               {t('clearFilters')}
