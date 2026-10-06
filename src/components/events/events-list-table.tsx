@@ -140,7 +140,7 @@ export function EventsListTable({ rows }: Props) {
           const band = bandForPct(row.totalRegistrations, row.matchRatePct);
           if (band === 'none') return <span className="text-[var(--aura-fg-secondary)]">—</span>;
           return (
-            <span className="inline-flex flex-col items-end tabular-nums">
+            <span className="inline-flex flex-col tabular-nums">
               <span className={`font-semibold ${BAND_TEXT_CLASS[band]}`}>
                 {`${row.matchRatePct.toFixed(1)}% · ${t(`matchRateBandShort.${band}`)}`}
               </span>
