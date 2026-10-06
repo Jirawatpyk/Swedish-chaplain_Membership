@@ -11,7 +11,7 @@ retention periods, and technical + organisational measures (TOMs).
 chamber legal-counsel for regulatory updates and with platform
 on-call for technical detail.
 
-**Last reviewed**: 2026-09-27 (F9 — member directory publication and GDPR member-archive scope, #432 / #433: primary-only contact toggles bound to the person, colleagues by name and role in the archive, staff archive for one named contact; pending DPO sign-off on five open points. Previous review 2026-09-24 — F119 PR-2 — the E-Blast member-approval round: versions, decisions, notes and reasons, the hand-off emails and their staff recipients, `broadcast-versions.json`, the widened erasure reach; T162, the precondition of `FEATURE_EBLAST_MEMBER_APPROVAL`. Previous review 2026-09-22 — F119 PR-1 — E-Blast inline images, the Vercel Blob image tier, the test copy and the chamber postal address; authored before PR-1 merges because PR-1 carries no feature flag. Before that 2026-09-16 — F114 member change requests / approval workflow, per FR-040)
+**Last reviewed**: 2026-10-06 (F9 — the five open points ruled by the maintainer on the DPO's behalf, DPO countersignature due at the annual review: members-only E-Book, legitimate interest for the name, consent for the email with per-choice evidence, migration 0315 switching off unproven email consents, and the privacy-policy directory paragraph. Previous review 2026-09-27 — F9 record authored for #432 / #433. Before that 2026-09-24 — F119 PR-2 — the E-Blast member-approval round: versions, decisions, notes and reasons, the hand-off emails and their staff recipients, `broadcast-versions.json`, the widened erasure reach; T162, the precondition of `FEATURE_EBLAST_MEMBER_APPROVAL`. Previous review 2026-09-22 — F119 PR-1 — E-Blast inline images, the Vercel Blob image tier, the test copy and the chamber postal address; authored before PR-1 merges because PR-1 carries no feature flag. Before that 2026-09-16 — F114 member change requests / approval workflow, per FR-040)
 
 > **AUTHORED 2026-06-21 (COMP-1 US3-E)**: the **F3 — Members & Contacts** core
 > RoPA and the **COMP-1 — Member Erasure (Art. 17 / §33)** processing-activity
@@ -1068,9 +1068,11 @@ route. Authority: `src/modules/insights/domain/directory-listing.ts`,
 `application/gdpr-audit-subset.ts`, `infrastructure/sources/gdpr-archive-source-adapter.ts`,
 `application/use-cases/request-data-export.ts`.
 
-> **Pending DPO sign-off** — authored from the shipped code on 2026-09-27. The open points the
-> DPO must rule on before the next annual review are listed at the end of this record
-> (§ Open points for DPO sign-off). Until then, treat the E-Book **recipients** as unconfirmed.
+> **Ruled 2026-10-06** — the five open points of the 2026-09-27 draft were ruled by the maintainer
+> on the DPO's behalf (§ Rulings, at the end of this record); **DPO countersignature is due at
+> the next annual review.** The code follow-ups the rulings required ship in the same change
+> (migration `0315`, consent evidence in the audit row, the staff refusal, the separate email
+> consent request).
 
 ### What the processing is
 
@@ -1142,16 +1144,17 @@ The shared F1–F9 set, **no new processor**:
 | Activity | Purpose | Lawful basis |
 |---|---|---|
 | Listing a member company and its company fields | The chamber's member directory — members finding and contacting each other | Performance of the membership contract / legitimate interest of the chamber (GDPR Art. 6(1)(b)/(f); PDPA §24(3)/(5)); the listing itself is the company's opt-in |
-| **Publishing the primary contact's name (default on)** | A directory entry needs a named point of contact | **Legitimate interest** (GDPR Art. 6(1)(f); PDPA §24(5)). **Balancing test:** *necessity* — a company entry without a person to address is of little use to members; *reasonable expectation* — the person is the company's designated primary contact, acting in a business role, in a chamber-of-commerce directory the company chose to join; *minimisation* — name only, the email stays hidden by default and the entry points to the chamber instead; *safeguards* — a just-in-time notice beside the toggles, layered on the chamber's member privacy notice (Art. 13 / 14, 21(4); PDPA §23 / §25, §32) — whether that notice covers the directory, and whether the primary is told when their name is first published, is open point 5; only the person themselves can change the toggle, switching it off is the Art. 21 / §32 objection, and a successor primary starts from the defaults. This test assumes distribution to members only; redo it if partners or the public receive the E-Book (open point 1). |
-| **Publishing the primary contact's email** | Direct contact from other members | **Consent** of the person themselves (GDPR Art. 6(1)(a) / Art. 7; PDPA §19): off by default, switched on only by the primary contact after the notice, withdrawable with the same toggle, effective from the next edition. **Evidence (Art. 7(1)):** the current toggle, `contact_visibility_set_by_contact_id`, and the audit actor and time; *which* toggle changed, its new value and the notice version are **not** recorded in the audit payload (`contact_visibility_changed` is a boolean only) — **gap**, follow-up: add `contact_email_visible` and `notice_version` to `directory_listing_updated`. PDPA §19 also asks for the consent request to be clearly separate — the hint currently covers name and email together (follow-up). |
+| **Publishing the primary contact's name (default on)** | A directory entry needs a named point of contact | **Legitimate interest** (GDPR Art. 6(1)(f); PDPA §24(5)). **Balancing test:** *necessity* — a company entry without a person to address is of little use to members; *reasonable expectation* — the person is the company's designated primary contact, acting in a business role, in a chamber-of-commerce directory the company chose to join; *minimisation* — name only, the email stays hidden by default and the entry points to the chamber instead; *safeguards* — a just-in-time notice beside the name toggle stating the right to object (Art. 21(4); PDPA §32), layered on the chamber's privacy notice, whose directory paragraph is in `docs/compliance/privacy-notice-directory.md` (Art. 13 / 14; PDPA §23 / §25 — ruling 5); only the person themselves can change the toggle, switching it off is the objection, and a successor primary starts from the defaults. The test rests on distribution to **members only** (ruling 1); redo it before any wider distribution. **Ruling 2: legitimate interest confirmed.** |
+| **Publishing the primary contact's email** | Direct contact from other members | **Consent** of the person themselves (GDPR Art. 6(1)(a) / Art. 7; PDPA §19): off by default, switched on only by the primary contact after the notice, withdrawable with the same toggle, effective from the next edition. **Evidence (Art. 7(1)):** every save by the primary contact writes `contact_name_visible`, `contact_email_visible` and `notice_version` (`DIRECTORY_CONTACT_NOTICE_VERSION`, bumped whenever the notice text changes) into the `directory_listing_updated` audit row, with the actor and time; together with `contact_visibility_set_by_contact_id` this shows who agreed, to what, under which text, and when. **Separate request (PDPA §19; Art. 7(2)):** the email has its own consent text beside its toggle (`contactEmailConsent`), apart from the name notice. Emails whose consent the system could not demonstrate were switched off by migration `0315` (ruling 4). **Ruling 3: consent confirmed.** |
 | Recording who chose the contact toggles | Proving the choice was the data subject's own; falling back when it is not | Legal obligation to demonstrate consent (GDPR Art. 6(1)(c) with Art. 7(1) and 5(2)) |
 | The GDPR member archive | Answering access and portability requests | **Legal obligation** (GDPR Art. 6(1)(c) with Art. 12, 15, 20; PDPA §24(6) with §30, §31), limited by Art. 15(4) / 20(4) and PDPA §30 para. 2 — colleagues by name and role only |
 
 ### Recipients of personal data
 
 - **Directory E-Book / JSON:** generated and downloaded by staff holding `directory.export`
-  (admin, super_admin, manager) through a private, single-use link. **Onward distribution — who receives the E-Book — is decided by the chamber and is not
-  recorded in the system: to be confirmed by the DPO** (open point 1).
+  (admin, super_admin, manager) through a private, single-use link, and distributed by the
+  chamber **to its members only** (ruling 1). Distribution to partners, sponsors or the public is
+  a new recipient category: re-run the balancing test and the DPIA screening first.
 - **GDPR archive:**
   - self-service — only the requesting contact (download restricted to `requested_by`);
   - staff archive — staff holding `members.pii_sensitive`, who hand it to the data subject out
@@ -1177,8 +1180,9 @@ Same as F3 — Singapore (Vercel `sin1`, Neon `ap-southeast-1`, Upstash SG): PDP
 - **Tenant isolation** — `directory_listings` and `export_jobs` are RLS + FORCE; every access runs
   under `runInTenant`.
 - **Primary-only gate, server-side** — `updateDirectoryListing` compares the submitted contact
-  toggles with the stored ones and refuses any change by a non-primary member user (403
-  `not_primary_contact`, nothing written); the portal route resolves the caller's own contact.
+  toggles with the stored ones and refuses any change by anyone but the primary contact —
+  colleagues and staff alike (403 `not_primary_contact`, nothing written); the portal route
+  resolves the caller's own contact.
 - **Choice bound to the person** — `contact_visibility_set_by_contact_id` + the export-time
   fallback (`effectiveContactVisibility`); a save by the primary confirms the toggles.
 - **Archive scope in code, not policy** — `projectContactsForRequester` (owner in full,
@@ -1189,7 +1193,7 @@ Same as F3 — Singapore (Vercel `sin1`, Neon `ap-southeast-1`, Upstash SG): PDP
   archive for the wrong person.
 - **Access to artefacts** — single-use download tokens; member downloads limited to the requester;
   staff downloads need `members.pii_sensitive`; each download audited.
-- **Transparency** — a just-in-time notice beside the contact toggles (layered on the chamber's member privacy notice — open point 5); the pre-download notice
+- **Transparency** — one notice per contact toggle (the name: shown by default, right to object; the email: a separate consent request), layered on the chamber's privacy notice (directory paragraph: `docs/compliance/privacy-notice-directory.md`); the pre-download notice
   on `/portal/account` ("The archive includes your colleagues' names and roles — … Store it
   securely and don't share it."); the archive README states what is and is not included.
 
@@ -1208,11 +1212,11 @@ Same as F3 — Singapore (Vercel `sin1`, Neon `ap-southeast-1`, Upstash SG): PDP
 
 | # | Risk | Treatment |
 |---|---|---|
-| 1 | The `0313` backfill attributed every existing listing's contact toggles to the primary contact of the day; a colleague may have set them before #432. | **For `contact_name` (legitimate interest): accepted** — the primary sees their name on each toggle and can change it. **For listings with `contact_email` on, consent cannot be demonstrated** (the backfill credits a choice nobody can prove): the recommended remediation is to null `contact_visibility_set_by_contact_id` on those rows — the email then falls back to hidden — until the primary re-confirms (a one-off data change; open point 4). |
+| 1 | The `0313` backfill attributed every existing listing's contact toggles to the primary contact of the day; a colleague may have set them before #432. | **For `contact_name` (legitimate interest): accepted** — the primary sees their name on each toggle and can change it. **For listings with `contact_email` on, consent cannot be demonstrated** (the backfill credits a choice nobody can prove): **remediated by migration `0315`** (ruling 4): `contact_email` is switched off on every listing unless an audit row shows the recorded chooser **changed** the contact toggles themselves under the #432 code (a save that left them unchanged is not proof — the box was pre-ticked by the backfill, Recital 32); the name toggle is never touched. The primary can switch the email back on under the separate consent text. **Residual:** a primary who changed only the name toggle under #432 keeps a backfilled email; and consents kept from #432 were given under the earlier combined notice and carry no `notice_version`. |
 | 2 | E-Books already distributed cannot be recalled; a change applies from the next edition. | Stated in the notice on the settings page. **Accepted.** |
 | 3 | `broadcast-versions.json` carries colleagues' free-text decision reasons (the decider is not named); free text may name a person. | Follow-up — review when the broadcast module is next changed. |
-| 4 | E-Book recipients unconfirmed. | Open point 1. |
-| 5 | The `updateDirectoryListing` use case would let a staff (admin) actor change the contact toggles and would then record the live primary as the chooser. No route reaches this today (the only caller is the portal route, member role). | Follow-up: refuse staff changes to the contact toggles in the use case. |
+| 4 | E-Book recipients unconfirmed. | **Closed** — members only (ruling 1). |
+| 5 | The `updateDirectoryListing` use case would let a staff (admin) actor change the contact toggles and would then record the live primary as the chooser. No route reaches this today (the only caller is the portal route, member role). | **Closed** — the use case now refuses any change to the contact toggles by anyone but the primary contact (403 `not_primary_contact`), staff included; a staff save never records a chooser. |
 
 ### DPIA
 
@@ -1222,15 +1226,25 @@ published openly (e.g. on a public website) or if a phone toggle is added. Scree
 2026-09-27 by the F9 privacy follow-up (pdpa-gdpr-compliance-officer review); to be countersigned
 by the DPO.
 
-### Open points for DPO sign-off
+### Rulings — 2026-10-06
 
-1. **Who receives the E-Book / JSON** (members only; members and partners; public) — record it in
-   § Recipients.
-2. **Confirm legitimate interest** as the basis for publishing the primary contact's name by
-   default, on the balancing test above.
-3. **Confirm consent** as the basis for publishing the primary contact's email.
-4. **Residual risk 1** — approve the remediation for listings with the email on (null the recorded chooser so the email is hidden until the primary re-confirms), optionally with a one-off email asking those primaries to confirm.
-5. **Notice coverage** — confirm the chamber's member privacy notice covers the directory (basis, recipients, retention, the right to object — Art. 13 / 14, 21(4); PDPA §23 / §25), and decide whether the primary is told when their name is first published.
+Ruled by the maintainer on the DPO's behalf; **DPO countersignature due at the next annual review.**
+
+1. **Recipients of the E-Book / JSON: members only.** Any wider distribution (partners, sponsors,
+   the public) is a change of recipients: re-run the balancing test and the DPIA screening first.
+2. **Primary contact's name, default on: legitimate interest confirmed** on the balancing test
+   above.
+3. **Primary contact's email: consent confirmed** — with the evidence now recorded per choice
+   (`contact_*_visible`, `notice_version`) and the consent requested separately from the name
+   notice.
+4. **Backfilled email toggles: remediate** — migration `0315` switches off every published email
+   whose consent cannot be demonstrated, leaving the name toggle as stored. No re-confirmation
+   email is sent; the primary can opt in again under the separate consent text.
+5. **Notice coverage: add the directory paragraph** (`docs/compliance/privacy-notice-directory.md`,
+   EN / TH / SV) to the chamber's privacy policy at `TENANT_PRIVACY_POLICY_URL`. **Action owner:
+   the chamber; open until it is published.** The primary is not separately notified when their
+   name is first published: the listing is the company's opt-in, the primary sees the toggles on
+   the settings page, and the privacy-policy paragraph covers the rest.
 
 ### DPO contact
 
@@ -1240,7 +1254,8 @@ Same as F7.
 
 | Date | Change | Author |
 |---|---|---|
-| 2026-09-27 | Record authored for #432 (directory: primary-only contact toggles, choice bound to the person, migration 0313; archive: colleagues by name and role, owner-scoped audit activity) and #433 (staff archive for one named contact, migration 0314). Pending DPO sign-off on five open points; the compliance-officer review's conditions (PDPA §35 / §31 row labels across the file, the archive's PDPA basis, the fallback wording, the notice wording, the consent-evidence gap, the email residual) applied. | F9 privacy follow-up |
+| 2026-10-06 | **Rulings 1–5 recorded** (maintainer, on the DPO's behalf; countersignature due at the annual review): members-only distribution; LI confirmed for the name; consent confirmed for the email; migration `0315` switches off unproven email consents; directory paragraph for the privacy policy (`privacy-notice-directory.md`). Code follow-ups closed: consent evidence (`contact_name_visible` / `contact_email_visible` / `notice_version`) in `directory_listing_updated`; staff refused on the contact toggles; separate email consent request. Residual risks 1, 4, 5 closed. | F9 privacy follow-up |
+| 2026-09-27 | Record authored for #432 (directory: primary-only contact toggles, choice bound to the person, migration 0313; archive: colleagues by name and role, owner-scoped audit activity) and #433 (staff archive for one named contact, migration 0314). Pending DPO sign-off on five open points (ruled 2026-10-06, row above); the compliance-officer review's conditions (PDPA §35 / §31 row labels across the file, the archive's PDPA basis, the fallback wording, the notice wording, the consent-evidence gap, the email residual) applied. | F9 privacy follow-up |
 
 ---
 

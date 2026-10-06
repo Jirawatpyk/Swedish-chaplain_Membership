@@ -115,6 +115,15 @@ export function effectiveContactVisibility(
   };
 }
 
+/**
+ * GDPR Art. 7(1) / PDPA §19 — the version of the notice shown beside the
+ * contact toggles (`directorySettings.contactNameHintPrimary` /
+ * `contactEmailConsent`), recorded with every choice the person makes so the
+ * consent can be tied to the text they saw. **Bump it whenever that text
+ * changes** (date of the change).
+ */
+export const DIRECTORY_CONTACT_NOTICE_VERSION = '2026-10-06';
+
 /** Website scheme allow-list — http/https only (DB CHECK `^https?://`). */
 export function isValidDirectoryWebsite(url: string): boolean {
   return /^https?:\/\//i.test(url);

@@ -16,6 +16,7 @@
 export {
   DIRECTORY_FIELDS,
   DEFAULT_FIELD_VISIBILITY,
+  DIRECTORY_CONTACT_NOTICE_VERSION,
   MAX_DIRECTORY_DESCRIPTION_LENGTH,
   effectiveContactVisibility,
   projectPublishedListing,

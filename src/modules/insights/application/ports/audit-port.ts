@@ -113,6 +113,10 @@ export interface F9AuditPayloadByType {
     readonly logo_action?: 'set' | 'removed';
     /** The primary contact's published name/email toggles changed (who chose them is on the listing row). */
     readonly contact_visibility_changed?: boolean;
+    /** Art. 7(1) evidence — present only when the primary contact saved: their choice + the notice version. */
+    readonly contact_name_visible?: boolean;
+    readonly contact_email_visible?: boolean;
+    readonly notice_version?: string;
   };
   directory_ebook_generated: {
     readonly job_id: string;
