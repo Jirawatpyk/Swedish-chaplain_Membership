@@ -50,7 +50,7 @@ export default async function EventDetailLoading() {
                   <SkeletonBlock className="h-5 w-28 rounded-full" />
                 </div>
               </div>
-              <SkeletonBlock className="h-9 w-44 max-sm:w-full" data-skeleton="eventcreate-link" />
+              <SkeletonBlock className="h-9 w-44 max-sm:h-11 max-sm:w-full" data-skeleton="eventcreate-link" />
             </div>
             {/* The match-rate figure with its two lines; the registrations and last update. */}
             <div className="flex flex-col gap-4 border-t border-[var(--aura-border-default)] pt-[var(--aura-space-4)] sm:flex-row sm:items-end sm:justify-between">

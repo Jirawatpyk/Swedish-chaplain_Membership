@@ -177,7 +177,7 @@ export function EventDetailHeader({ event, actions, actionsHiddenBelowSm = false
               href={event.eventcreateUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className={buttonClass({ variant: 'secondary', className: 'max-sm:w-full' })}
+              className={buttonClass({ variant: 'secondary', touchHeight: true, className: 'max-sm:w-full' })}
             >
               <ExternalLink aria-hidden="true" className="size-4" />
               <span>{t('header.viewOnEventCreate')}</span>

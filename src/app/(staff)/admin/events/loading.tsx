@@ -26,7 +26,7 @@ export default async function EventsListLoading() {
   return (
     <PageSkeletonShell ariaLabel={tLayout('loadingTable')}>
       <TableContainer aria-busy="true">
-        <PageHeader title={t('title')} subtitle={t('subtitle')} actions={<SkeletonBlock className="h-9 w-32" />} />
+        <PageHeader title={t('title')} subtitle={t('subtitle')} actions={<SkeletonBlock className="h-9 w-32 max-sm:h-11" />} />
         <Card flushBelow="sm" className="max-sm:border-0 max-sm:p-0">
           <div className="flex flex-col gap-[var(--aura-space-4)]">
             {/* The filter row: the search, three toggle chips, the count. */}

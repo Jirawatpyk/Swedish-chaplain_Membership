@@ -49,7 +49,7 @@ export function EventsEmptyState({
         icon={SearchXIcon}
         title={t('filteredEmpty')}
         action={
-          <Link href="/admin/events" className={buttonClass({ variant: 'secondary' })}>
+          <Link href="/admin/events" className={buttonClass({ variant: 'secondary', touchHeight: true })}>
             {t('clearFilters')}
           </Link>
         }
@@ -67,7 +67,7 @@ export function EventsEmptyState({
         description={canManageIntegration ? t('noIntegration.body') : t('noIntegration.adminOnlyHint')}
         action={
           canManageIntegration ? (
-            <Link href="/admin/settings/integrations/eventcreate" className={buttonClass({ variant: 'primary' })}>
+            <Link href="/admin/settings/integrations/eventcreate" className={buttonClass({ variant: 'primary', touchHeight: true })}>
               <PlusIcon aria-hidden="true" className="size-4" />
               {t('noIntegration.cta')}
             </Link>
@@ -91,11 +91,11 @@ export function EventsEmptyState({
           canManageIntegration ? (
             // On a phone the two actions stack at one full width.
             <div className="flex flex-wrap items-center justify-center gap-2 max-sm:flex-col max-sm:items-stretch">
-              <Link href="/admin/settings/integrations/eventcreate#test" className={buttonClass({ variant: 'primary' })}>
+              <Link href="/admin/settings/integrations/eventcreate#test" className={buttonClass({ variant: 'primary', touchHeight: true })}>
                 <SendIcon aria-hidden="true" className="size-4" />
                 {t('noDeliveries.primaryCta')}
               </Link>
-              <Link href="/admin/settings/integrations/eventcreate" className={buttonClass({ variant: 'secondary' })}>
+              <Link href="/admin/settings/integrations/eventcreate" className={buttonClass({ variant: 'secondary', touchHeight: true })}>
                 {t('noDeliveries.cta')}
               </Link>
             </div>
@@ -114,7 +114,7 @@ export function EventsEmptyState({
         title={t('allArchived.title')}
         description={t('allArchived.body', { count: emptyContext.totalArchived })}
         action={
-          <Link href="/admin/events?includeArchived=1" className={buttonClass({ variant: 'secondary' })}>
+          <Link href="/admin/events?includeArchived=1" className={buttonClass({ variant: 'secondary', touchHeight: true })}>
             {t('allArchived.cta', { count: emptyContext.totalArchived })}
           </Link>
         }
