@@ -111,7 +111,7 @@ describe('events list filters (AURA FilterBar)', () => {
         [f.culturalEventOnly, f.culturalEventOnlyShort],
         [f.showArchived, f.showArchivedShort],
         [at.showUnmatchedOnly, at.showUnmatchedOnlyShort],
-      ]) {
+      ] as const) {
         expect(full.toLocaleLowerCase(locale), `${locale}: "${short}" in "${full}"`).toContain(
           short.toLocaleLowerCase(locale),
         );
