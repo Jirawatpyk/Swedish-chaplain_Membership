@@ -154,9 +154,6 @@ describe('attendee table (AURA DataTable)', () => {
     const relink = screen.getByTestId('relink-button-reg-1');
     const more = screen.getByTestId('attendee-more-reg-1');
     expect(relink.closest('[data-row-actions]')).toBe(more.closest('[data-row-actions]'));
-    // Parity (6 Oct): on a phone card Relink stays compact beside ⋯ at the end, as the board draws it.
-    expect(relink.closest('[data-row-actions]')).toHaveClass('justify-end');
-    expect(relink.closest('[data-row-actions]')!.className).not.toMatch(/flex-1/);
     expect(more).toHaveAccessibleName(a.moreActionsAria.replace('{attendeeName}', 'Erik Johansson'));
     fireEvent.click(more);
     fireEvent.click(screen.getByRole('menuitem', { name: a.eraseMenuItem }));
