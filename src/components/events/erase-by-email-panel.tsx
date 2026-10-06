@@ -42,6 +42,11 @@ interface EraseByEmailPanelProps {
   readonly email: string;
   /** Number of matching registrations rendered below (0 when none / empty). */
   readonly matchCount: number;
+  /**
+   * True once a search has returned (not idle, not an error): the count is
+   * announced, and shown beside "Erase all" when there is at least one match.
+   */
+  readonly showCount?: boolean;
 }
 
 const ERASE_ROUTE = '/api/admin/events/erasure';
@@ -65,7 +70,7 @@ async function postEraseAll(
   return { ok: false, status: res.status };
 }
 
-export function EraseByEmailPanel({ email, matchCount }: EraseByEmailPanelProps) {
+export function EraseByEmailPanel({ email, matchCount, showCount = false }: EraseByEmailPanelProps) {
   const t = useTranslations('admin.events.erasure');
   const router = useRouter();
   const [queryEmail, setQueryEmail] = useState(email);
@@ -81,6 +86,9 @@ export function EraseByEmailPanel({ email, matchCount }: EraseByEmailPanelProps)
 
   const reasonValid = reasonText.trim().length > 0 && reasonText.length <= 500;
   const canEraseAll = email.length > 0 && matchCount > 0;
+  // The board shows the count beside "Erase all". A zero count stays a
+  // screen-reader status: the quiet "No registrations found" line says it.
+  const visibleCount = showCount && matchCount > 0;
 
   function handleSearch(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -164,71 +172,84 @@ export function EraseByEmailPanel({ email, matchCount }: EraseByEmailPanelProps)
             touchHeight
           />
         </div>
-        <Button type="submit" variant="secondary" icon="search" touchHeight>
+        <Button type="submit" variant="secondary" icon="search" touchHeight className="max-sm:w-full">
           {t('searchSubmit')}
         </Button>
       </form>
 
-      {canEraseAll ? (
-        <div className="flex justify-end">
-          <span role="status" aria-live="polite" className="sr-only">
-            {pending ? t('loading') : ''}
-          </span>
-          <Dialog
-            role="alertdialog"
-            open={open}
-            onOpen={() => setOpen(true)}
-            onClose={close}
-            dismissible={!pending}
-            finalFocus={searchInputRef}
-            trigger={
-              <Button
-                variant="danger-secondary"
-                touchHeight
-                type="button"
-                icon={<Eraser aria-hidden="true" />}
-                loading={pending}
-                aria-disabled={pending}
-                data-testid="erase-all-by-email-button"
-              >
-                {t('eraseAllCta', { count: matchCount })}
-              </Button>
-            }
-            title={t('eraseAllConfirmTitle', { count: matchCount })}
-            description={t('eraseAllConfirmBody', { count: matchCount })}
-            footer={
-              <>
-                <Button variant="secondary" data-autofocus disabled={pending} onClick={close}>
-                  {t('cancel')}
-                </Button>
-                {/* Reachable but refused until the reason is valid (AURA #102). */}
+      <div
+        className={
+          visibleCount
+            ? 'flex flex-wrap items-center justify-between gap-[var(--aura-space-3)] rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface-hover)] p-[var(--aura-space-4)] max-sm:flex-col max-sm:items-stretch max-sm:bg-transparent max-sm:p-0'
+            : 'contents'
+        }
+      >
+        <output role="status" aria-live="polite" aria-atomic="true" className={visibleCount ? 'aura-text-body' : 'sr-only'}>
+          {showCount ? t('resultsCount', { count: matchCount }) : ''}
+        </output>
+        {canEraseAll ? (
+          <>
+            <span role="status" aria-live="polite" className="sr-only">
+              {pending ? t('loading') : ''}
+            </span>
+            <Dialog
+              role="alertdialog"
+              open={open}
+              onOpen={() => setOpen(true)}
+              onClose={close}
+              dismissible={!pending}
+              finalFocus={searchInputRef}
+              trigger={
                 <Button
-                  variant="danger"
+                  variant="danger-secondary"
+                  touchHeight
+                  type="button"
+                  className="max-sm:w-full"
                   icon={<Eraser aria-hidden="true" />}
                   loading={pending}
-                  aria-disabled={!reasonValid || undefined}
-                  aria-describedby={reasonValid ? undefined : 'erase-by-email-reason-hint'}
-                  onClick={handleEraseAll}
+                  aria-disabled={pending}
+                  data-testid="erase-all-by-email-button"
                 >
-                  {t('confirm')}
+                  {t('eraseAllCta', { count: matchCount })}
                 </Button>
-              </>
-            }
-          >
-            <Textarea
-              id="erase-by-email-reason"
-              label={t('reasonLabel')}
-              hint={<span id="erase-by-email-reason-hint">{t('reasonHint', { remaining: 500 - reasonText.length })}</span>}
-              value={reasonText}
-              onChange={(e) => setReasonText(e.target.value)}
-              placeholder={t('reasonPlaceholder')}
-              maxLength={500}
-              rows={4}
-              disabled={pending}
-            />
-          </Dialog>
-        </div>
-      ) : null}
+              }
+              title={t('eraseAllConfirmTitle', { count: matchCount })}
+              description={t('eraseAllConfirmBody', { count: matchCount })}
+              footer={
+                <>
+                  <Button variant="secondary" data-autofocus disabled={pending} onClick={close}>
+                    {t('cancel')}
+                  </Button>
+                  {/* Reachable but refused until the reason is valid (AURA #102). */}
+                  <Button
+                    variant="danger"
+                    icon={<Eraser aria-hidden="true" />}
+                    loading={pending}
+                    aria-disabled={!reasonValid || undefined}
+                    aria-describedby={reasonValid ? undefined : 'erase-by-email-reason-hint'}
+                    onClick={handleEraseAll}
+                  >
+                    {t('confirm')}
+                  </Button>
+                </>
+              }
+            >
+              <Textarea
+                id="erase-by-email-reason"
+                label={t('reasonLabel')}
+                hint={<span id="erase-by-email-reason-hint">{t('reasonHint', { remaining: 500 - reasonText.length })}</span>}
+                value={reasonText}
+                onChange={(e) => setReasonText(e.target.value)}
+                placeholder={t('reasonPlaceholder')}
+                required
+                maxLength={500}
+                rows={4}
+                disabled={pending}
+              />
+            </Dialog>
+          </>
+        ) : null}
+      </div>
     </div>
   );
 }

@@ -226,6 +226,7 @@ export function ErasePiiDialog({
         value={reasonText}
         onChange={(e) => setReasonText(e.target.value)}
         placeholder={t('reasonPlaceholder')}
+        required
         maxLength={REASON_MAX}
         rows={4}
         disabled={pending}

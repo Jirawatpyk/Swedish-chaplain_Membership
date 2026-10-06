@@ -3,7 +3,7 @@
  *
  * Spec 122 US9b-1 (T926): the real page's shape on AURA for CLS 0 — the
  * header (real title and hint), then the one card with the search field and
- * its button, and the prompt line below. Renders inside TableContainer, so
+ * its button, the prompt line below, and the back link (from `lg`). Renders inside TableContainer, so
  * `pnpm check:layout` accepts the container pair.
  */
 import { getTranslations } from 'next-intl/server';
@@ -29,7 +29,7 @@ export default async function EraseByEmailLoading() {
               <SkeletonBlock className="h-[var(--aura-input-height)] w-24 max-sm:h-11" />
             </div>
             <SkeletonBlock className="mx-auto my-[var(--aura-space-8)] h-4 w-80 max-w-full" />
-            <SkeletonBlock className="h-8 w-32 max-sm:h-11" data-skeleton="back-link" />
+            <SkeletonBlock className="h-4 w-32 max-lg:hidden" data-skeleton="back-link" />
           </div>
         </Card>
       </TableContainer>

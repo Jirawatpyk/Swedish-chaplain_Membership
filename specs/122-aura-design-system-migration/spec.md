@@ -409,6 +409,12 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
 - **No typed "ERASE" phrase.** Both erase dialogs are gated today by a required reason (1–500 characters). Adding a phrase would change behaviour inside a UI-swap PR (FR-011), so the dialogs keep the reason gate. If a phrase is wanted, it ships as its own PR.
 - **The attendee row's "More" menu lands with US9b-1.** It holds "Erase personal data" as on `Admin-event-detail`; "Relink" stays on every row.
 - **One name for the action in English:** the erase trigger and its confirm read "Erase personal data" (was "Erase PII"), matching the new menu item and the TH/SV copy, which already said "personal data" (UX review).
+- **Parity pass on the erasure screens (6 Oct, maintainer asked Claude to decide; board wins on content, structure and icons):**
+  - the result count shows beside "Erase all" in a tinted band, as the board draws it; a zero count stays a screen-reader status, because the quiet "No registrations found" line already says it. The board's "· 1 already erased" is not drawn: the email search never returns an erased row (its email is a salted hash).
+  - "Back to events" and "Back to event detail" are accent links with a left arrow, shown from `lg`; below it the shell's back link does the same (the US8b void page pattern).
+  - on phones, Search and "Erase all" fill the width.
+  - the reason field in both erase dialogs is marked required (the gate is unchanged).
+  - the deep-link erase page has no card: the hint is the page subtitle and the two actions sit under it. A card frames a group of content; here there is one sentence and two actions, and the void page puts its description in the subtitle the same way.
 - **Kept as found, not fixed here (pre-existing):**
   - the deep-link erase page's hint says the dialog opens automatically, but it does not;
   - the erase action shows to staff who can relink, while both erase routes need the super-admin `events.erasure` permission, so a plain admin's submit is refused. This is a follow-up, not part of the UI swap.
