@@ -457,18 +457,19 @@ function makePendingRefundGuard(): PendingRefundGuardPort {
  * #446 review M-a — the invoicing-side `PendingPaymentCancellerPort`, wired to
  * the F5 `cancelPendingPaymentsForInvoice` use-case through the public barrel
  * (Principle III). The use-case is itself best-effort (per-row failures are
- * audited, never thrown); `voidInvoice` still wraps this call so an unexpected
- * throw (e.g. the pending-rows read failing) can never undo a committed void.
+ * audited, never thrown); `voidInvoice` and `recordPayment` still wrap this
+ * call so an unexpected throw (e.g. the pending-rows read failing) can never
+ * undo a committed void or payment.
  */
 function makePendingPaymentCanceller(): PendingPaymentCancellerPort {
   return {
-    cancelPendingPaymentsForVoidedInvoice: async ({ tenantId: tid, invoiceId, actorUserId, requestId }) => {
+    cancelPendingPayments: async ({ tenantId: tid, invoiceId, actorUserId, requestId, cause }) => {
       await cancelPendingPaymentsForInvoice(makeCancelPendingPaymentsForInvoiceDeps(tid), {
         tenantId: tid,
         invoiceId,
         actorUserId,
         requestId,
-        cause: 'invoice_voided',
+        cause,
       });
     },
   };
@@ -722,6 +723,15 @@ export function makeRecordPaymentDeps(
     // 088 T022 — mint the §86/4 §87 RC receipt number at payment when on.
     taxAtPayment: taxAtPaymentFlag(env.features.f088TaxAtPayment),
     ...(onPaidCallbacks !== undefined ? { onPaidCallbacks } : {}),
+    // #452 review M1 — cancel the invoice's still-live PaymentIntents after a
+    // manual payment commits. ONLY when recordPayment owns its transaction:
+    // with an `externalTx` (F5 webhook inside confirm-payment, F8 offline mark
+    // inside its outer tx) "after recordPayment returns" is NOT after commit,
+    // and the canceller's payment-row locks would run under the caller's
+    // invoice lock. Those rails are covered by the hourly unpayable sweep.
+    ...(externalTx === undefined
+      ? { pendingPaymentCanceller: makePendingPaymentCanceller() }
+      : {}),
   };
 }
 

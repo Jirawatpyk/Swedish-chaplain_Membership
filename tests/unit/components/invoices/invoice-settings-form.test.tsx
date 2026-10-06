@@ -3,20 +3,15 @@
  *
  * A cheap, always-green CI assertion (rendered against the REAL en.json so a
  * dangling key would surface as MISSING_MESSAGE) that:
- *   - the NEW US5 controls (seller branch + bank-block inputs) carry the 44px
- *     `min-h-11` utility — the shared shadcn Input is 36px and is NOT changed;
- *     these feature inputs are bumped inline (FR-036 ≥44×44px touch target);
- *   - the primary Save button is ≥44px;
+ *   - the 44px fields (seller branch, the prefixes and receipt mode, the bank
+ *     text fields) are AURA boxes with `touchHeight="always"` (`.is-touch-always`,
+ *     spec 122 US8c-2) — the staff frame's compact density is 36px otherwise;
+ *   - the primary Save button is ≥44px (`min-h-11` on the AURA Button);
  *   - every section is grouped with `<fieldset><legend>` (mobile-first grouping).
  *
  * The measurable @a11y check (axe + boundingBox ≥44 + 320/375 reflow) lives in
  * the preview-gated `tests/e2e/invoicing/invoice-settings-a11y.spec.ts`; this is
  * the structural guard that runs on every commit.
- *
- * NOTE (documented scope): the F4 Numbering-section prefix inputs (invoice /
- * credit-note / receipt) predate 088 US5 and are intentionally left at 36px —
- * bumping only the receipt prefix would split one 2-col grid row 36/36/44. The
- * form-wide 36↔44 mix is flagged for a design call, not resolved here.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
@@ -98,10 +93,14 @@ function renderSettings(
 }
 
 describe('InvoiceSettingsForm — target-size on new US5 controls (FR-036 / SC-011)', () => {
-  it('seller branch + bank-block inputs carry min-h-11 (44px)', () => {
-    const { container } = renderSettings();
+  it('the 44px fields are AURA boxes with touchHeight="always"', () => {
+    const { container } = renderSettings({ seller_is_head_office: false });
     for (const id of [
       'seller_branch',
+      'inv_prefix',
+      'cn_prefix',
+      'receipt_mode',
+      'rc_prefix',
       'bank_payee',
       'bank_name',
       'bank_account_no',
@@ -111,15 +110,13 @@ describe('InvoiceSettingsForm — target-size on new US5 controls (FR-036 / SC-0
     ]) {
       const el = container.querySelector(`#${id}`);
       expect(el, `#${id} should render`).not.toBeNull();
-      expect(el).toHaveClass('min-h-11');
+      expect(el!.closest('.aura-input.is-touch-always, .is-touch-always .aura-input'), `#${id}`).not.toBeNull();
     }
   });
 
   it('the primary Save button carries min-h-11 (44px)', () => {
     renderSettings();
-    expect(screen.getByRole('button', { name: /Save settings/i })).toHaveClass(
-      'min-h-11',
-    );
+    expect(screen.getByRole('button', { name: /Save settings/i })).toHaveClass('aura-btn', 'min-h-11');
   });
 });
 

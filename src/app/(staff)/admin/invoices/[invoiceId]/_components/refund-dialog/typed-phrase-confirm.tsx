@@ -55,14 +55,18 @@ export function TypedPhraseConfirm({ companyName, value, onChange }: Props) {
         autoCorrect="off"
         spellCheck={false}
         enterKeyHint="done"
-        // The phrase chip first, so a screen reader hears what to type.
+        // Board Admin-refund-full: the phrase in its own chip, with a copy
+        // button, between the label and the box (AURA 5.31 labelAddon). The
+        // addon stays out of the description so the copy button's name isn't
+        // read; the chip's own id comes first, so a screen reader hears what
+        // to type.
+        labelAddon={<PhraseChip id={phraseId} phrase={expected} testId="refund-typed-phrase-chip" />}
+        labelAddonDescribes={false}
         aria-describedby={showError ? `${phraseId} ${helpId} ${errorId}` : `${phraseId} ${helpId}`}
         aria-invalid={showError}
         aria-required="true"
         data-testid="refund-typed-phrase-input"
       />
-      {/* Board Admin-refund-full: the phrase in its own chip, with a copy button. */}
-      <PhraseChip id={phraseId} phrase={expected} testId="refund-typed-phrase-chip" />
       <p id={helpId} className="text-xs text-[var(--aura-fg-secondary)]">
         {t('help')}
       </p>

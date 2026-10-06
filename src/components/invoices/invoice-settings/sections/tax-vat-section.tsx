@@ -7,12 +7,14 @@
  *
  * Controlled + presentational only: no local field state, no PATCH,
  * no validation logic.
+ *
+ * Spec 122 US8c-2 (T856) — an AURA card (board `Admin-invoice-settings`),
+ * the rail's focus target, with AURA fields; ids, labels and limits unchanged.
  */
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Card, TextField } from '@jirawatpyk/aura-react';
 
 export interface TaxVatSectionProps {
   readonly vatPercent: string;
@@ -36,62 +38,49 @@ export function TaxVatSection({
   const t = useTranslations('admin.invoiceSettings');
 
   return (
-    <section
+    <Card
+      as="section"
       id="tax"
-      aria-labelledby="tax-heading"
-      className="flex flex-col gap-[var(--page-section-gap)]"
+      tabIndex={-1}
+      className="scroll-mt-24 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)]"
+      title={t('sections.tax')}
+      titleId="tax-heading"
+      headingLevel={2}
     >
-      <h2
-        id="tax-heading"
-        data-section-heading
-        tabIndex={-1}
-        className="font-heading text-base font-semibold"
-      >
-        {t('sections.tax')}
-      </h2>
-
-      {/* Tax — the h2 above already names this section; a visible legend
+      {/* Tax — the card's h2 already names this section; a visible legend
           repeating the same text was a duplicate SR announcement (I1).
           `sr-only` keeps the fieldset's accessible name without the
           visual clutter. */}
-      <fieldset className="flex flex-col gap-4 rounded-md border p-4">
-        <legend className="sr-only">
-          {t('sections.tax')}
-        </legend>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="vat_percent">{t('labels.vatPercent')}</Label>
-            <Input
-              id="vat_percent"
-              type="number"
-              inputMode="decimal"
-              min="0"
-              max="30"
-              step="0.01"
-              value={vatPercent}
-              onChange={(e) => onVatPercentChange(e.target.value)}
-              disabled={disabled}
-              required
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="reg_fee">
-              {t('labels.registrationFee', { currency: currencyCode })}
-            </Label>
-            <Input
-              id="reg_fee"
-              type="number"
-              inputMode="decimal"
-              min="0"
-              step="0.01"
-              value={regFee}
-              onChange={(e) => onRegFeeChange(e.target.value)}
-              disabled={disabled}
-              required
-            />
-          </div>
+      <fieldset>
+        <legend className="sr-only">{t('sections.tax')}</legend>
+        <div className="grid grid-cols-1 gap-[var(--aura-space-4)] sm:grid-cols-2">
+          <TextField
+            id="vat_percent"
+            label={t('labels.vatPercent')}
+            type="number"
+            inputMode="decimal"
+            min="0"
+            max="30"
+            step="0.01"
+            value={vatPercent}
+            onChange={(e) => onVatPercentChange(e.target.value)}
+            disabled={disabled}
+            required
+          />
+          <TextField
+            id="reg_fee"
+            label={t('labels.registrationFee', { currency: currencyCode })}
+            type="number"
+            inputMode="decimal"
+            min="0"
+            step="0.01"
+            value={regFee}
+            onChange={(e) => onRegFeeChange(e.target.value)}
+            disabled={disabled}
+            required
+          />
         </div>
       </fieldset>
-    </section>
+    </Card>
   );
 }

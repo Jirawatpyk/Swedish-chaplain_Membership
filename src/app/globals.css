@@ -11,8 +11,6 @@
 @import '@jirawatpyk/aura-tokens/aura-fonts.local.css';
 @import '@jirawatpyk/aura-tokens/tailwind.prefixed.css';
 @import '../styles/aura-theme.css' layer(aura-tokens);
-/* Hand-written token overrides (stand-ins until AURA ships them) — after the generated theme. */
-@import '../styles/aura-overrides.css' layer(aura-tokens);
 @import '@jirawatpyk/aura-react/styles.layer.css';
 
 /* Exclude non-source markdown docs from Tailwind v4 auto-detection so
@@ -609,18 +607,21 @@ summary,
 /* --- Skip link — see `src/components/shell/skip-to-content.tsx` --- */
 .skip-to-content {
   position: absolute;
-  top: -40px;
+  top: 0;
   left: 0.5rem;
   padding: 0.5rem 1rem;
   background: var(--foreground);
   color: var(--background);
   border-radius: 0 0 0.25rem 0.25rem;
-  transition: top 150ms ease;
+  /* Hidden by its own height, so it stays hidden at 200% text (a fixed
+     -40px left half of it showing; PR #530, WCAG 1.4.4). */
+  transform: translateY(-100%);
+  transition: transform 150ms ease;
   z-index: 100;
 }
 
 .skip-to-content:focus {
-  top: 0;
+  transform: none;
 }
 
 /* --- Spec 122 US1 — the AURA shell (staff + member frames) -----------------
@@ -639,8 +640,10 @@ summary,
     --page-padding-bottom: 2rem;
     --page-section-gap: 1rem;
     /* The sticky bar's height, so sticky page parts (the E-Blast preview
-       panes) stop below it: AppShell's 56px bar; the portal header sets 72px. */
-    --shell-bar-height: 56px;
+       panes) stop below it: the height AppShell measures and writes on its
+       root (it grows at 200% text, PR #530), 56px before it does; the
+       portal header sets 72px. */
+    --shell-bar-height: var(--aura-shell-bar-height, 56px);
   }
   [data-slot='page-header'][data-size='hero'] {
     --font-size-h1: 1.875rem;

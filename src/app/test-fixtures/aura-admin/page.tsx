@@ -86,6 +86,9 @@ import { DETAIL_INVOICE_ID, DETAIL_KINDS, detailFixture, type DetailFixtureKind 
 import { renderCreditNotesListView } from '@/app/(staff)/admin/credit-notes/_components/credit-notes-list-view';
 import { renderCreditNoteDetailView } from '@/app/(staff)/admin/credit-notes/_components/credit-note-detail-view';
 import { renderTaxRegisterView } from '@/app/(staff)/admin/invoices/registers/_components/tax-register-view';
+import { renderInvoiceSettingsView } from '@/app/(staff)/admin/settings/invoicing/_components/invoice-settings-view';
+import { INVOICE_SETTINGS_FIXTURE } from './invoice-settings-fixtures';
+import { InvoiceSettingsPreviewDriver } from './invoice-settings-previews';
 import { CREDIT_NOTE_ID, CREDIT_NOTE_ROWS, creditNoteDetail, registerOutput } from './credit-note-register-fixtures';
 import { CycleDetailBadges, renderCycleDetailView } from '@/app/(staff)/admin/renewals/[cycleId]/_components/cycle-detail-view';
 import { CycleAdminActions } from '@/app/(staff)/admin/renewals/[cycleId]/_components/cycle-admin-actions';
@@ -135,8 +138,9 @@ export const dynamic = 'force-dynamic';
  *   ?view=credit-notes|credit-notes-empty|credit-notes-filtered                (US8c-1)
  *   ?view=credit-note&state=default|refund|siblings|no-primary
  *   ?view=registers&state=rc|re|zero-rate|empty|invalid-range|invalid-date|load-failed
+ *   ?view=invoice-settings&state=default|first-time|read-only|dirty|prefix-confirm (US8c-2)
  *   ?view=loading&state=members|plans|invoices|invoice|invoice-void|credit-note-new|
- *         credit-notes|credit-note|registers|…
+ *         credit-notes|credit-note|registers|invoice-settings|…
  *
  * The payment activity streams from the database, so a paid state shows its
  * skeleton in that slot; its states are covered by its own unit tests.
@@ -386,6 +390,10 @@ const LOADING_ROUTES = {
   registers: {
     path: '/admin/invoices/registers',
     load: async () => (await import('@/app/(staff)/admin/invoices/registers/loading')).default(),
+  },
+  'invoice-settings': {
+    path: '/admin/settings/invoicing',
+    load: async () => (await import('@/app/(staff)/admin/settings/invoicing/loading')).default(),
   },
 } as const;
 
@@ -1265,6 +1273,49 @@ export default async function AuraAdminPreviewPage({
             result,
           })}
         </TableContainer>
+      </StaffFrame>
+    );
+  }
+
+  // ── US8c-2: the invoice settings (`Admin-invoice-settings`). `first-time`
+  // renders the page's empty defaults; `dirty` and `prefix-confirm` are driven
+  // in the browser (an edit, then a submit for the §87 confirmation).
+  if (view === 'invoice-settings') {
+    const firstTime = state === 'first-time';
+    const initialValues = firstTime
+      ? {
+          ...INVOICE_SETTINGS_FIXTURE,
+          legal_name_th: '',
+          legal_name_en: '',
+          brand_name: '',
+          tax_id: '',
+          registered_address_th: '',
+          registered_address_en: '',
+          registration_fee_baht: '0',
+          invoice_number_prefix: 'INV',
+          receipt_number_prefix: null,
+          logo_blob_key: null,
+          bank_payee_name: null,
+          bank_account_no: null,
+          bank_account_type: null,
+          bank_name: null,
+          bank_branch: null,
+          bank_swift: null,
+          payment_instructions_en: null,
+        }
+      : INVOICE_SETTINGS_FIXTURE;
+    const action = state === 'dirty' ? 'dirty' : state === 'prefix-confirm' ? 'prefix-confirm' : null;
+    return (
+      <StaffFrame path="/admin/settings/invoicing">
+        <DetailContainer>
+          <InvoiceSettingsPreviewDriver action={action}>
+            {await renderInvoiceSettingsView({
+              initialValues,
+              canEdit: state !== 'read-only',
+              exists: !firstTime,
+            })}
+          </InvoiceSettingsPreviewDriver>
+        </DetailContainer>
       </StaffFrame>
     );
   }

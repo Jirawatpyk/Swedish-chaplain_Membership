@@ -69,4 +69,22 @@ describe('StaffTopBar (spec 122 US1)', () => {
       window.innerWidth = width;
     }
   });
+  // Relay R34b: at 200% text on a 393px phone the 44px controls double to 88px,
+  // and with the outbox alert showing they no longer fit one row; the row did
+  // not wrap, so every admin page ran 67px past the screen (WCAG 1.4.4). The
+  // controls wrap onto a second row, kept at the end.
+  it('lets its controls wrap to a second row, kept at the end, when one row cannot hold them', () => {
+    const { container } = renderBar();
+    const row = container.querySelector('div') as HTMLElement;
+    expect(row).toContainElement(screen.getByRole('button', { name: /^Account menu/ }));
+    expect(row).toHaveClass('flex-wrap', 'justify-end');
+  });
+  // UX review of PR #530: the brand box may shrink to nothing (min-w-0), so at
+  // 200% text the 32px tile (64px) slid under the search button when the
+  // controls wrapped. The box keeps the tile's width; the controls wrap instead.
+  it('keeps the brand tile\'s width, so wrapped controls never cover it', () => {
+    const { container } = renderBar();
+    const brandBox = container.querySelector('a[href="/admin"]')!.parentElement as HTMLElement;
+    expect(brandBox).toHaveClass('min-w-8', 'sm:min-w-10');
+  });
 });

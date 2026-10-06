@@ -2359,7 +2359,7 @@
         "whtNote": "Visas endast på medlemsdokument (faktura + skattekvitto). Medlemsavgifter är befriade från källskatt enligt §65 bis (13) (beslut กค 0811/8542) — föreslagen text är förifylld nedan. Lämna tomt för inget.",
         "whtNoteThExample": "ค่าบำรุงสมาชิกได้รับยกเว้นไม่ต้องนำมารวมคำนวณเป็นรายได้ตามมาตรา 65 ทวิ (13) แห่งประมวลรัษฎากร ผู้จ่ายจึงไม่มีหน้าที่หักภาษีเงินได้ ณ ที่จ่าย",
         "whtNoteEnExample": "Membership dues are exempt from income-tax computation under Section 65 bis (13) of the Revenue Code; the payer is not required to withhold income tax at source.",
-        "terminationNotice": "Visas endast på fakturan (ใบแจ้งหนี้/bill), aldrig på ett skattekvitto. Informerar medlemmar om SweChams skyldighet, enligt sina stadgar, att avsluta medlemskap med obetalda avgifter. Exempeltexten är ett granskat utkast; SweCham kan ange en specifik stadgeartikel. Lämna tomt för inget.",
+        "terminationNotice": "Visas endast på fakturan (ใบแจ้งหนี้), aldrig på ett skattekvitto. Informerar medlemmar om SweChams skyldighet, enligt sina stadgar, att avsluta medlemskap med obetalda avgifter. Exempeltexten är ett granskat utkast; SweCham kan ange en specifik stadgeartikel. Lämna tomt för inget.",
         "terminationNoticeThExample": "SweCham มีหน้าที่ตามข้อบังคับที่ต้องยุติสมาชิกภาพของสมาชิกที่ค้างชำระค่าสมาชิกเกิน 60 วันนับจากวันครบกำหนดชำระในใบแจ้งหนี้",
         "terminationNoticeEnExample": "Under its bylaws, SweCham is required to terminate the membership of members whose fees remain unpaid more than 60 days after the invoice due date.",
         "bank": "Visas endast på fakturan (ใบแจ้งหนี้), för betalning via banköverföring. Lämna tomt för inget.",
@@ -2423,7 +2423,8 @@
       },
       "stickyBar": {
         "label": "Spara ändringar",
-        "unsaved": "Du har osparade ändringar"
+        "unsaved": "Du har osparade ändringar",
+        "discard": "Kassera ändringar"
       }
     },
     "creditNotes": {
@@ -2731,7 +2732,7 @@
           "documentType": {
             "label": "Dokument",
             "all": "Alla dokument",
-            "sc": "Räkning (SC)",
+            "sc": "Faktura (SC)",
             "rc": "Skattekvitto (RC)",
             "re": "Kvitto (RE)",
             "cn": "Med kreditnota"
@@ -3182,7 +3183,7 @@
           "voidedBy": "Annullerad av",
           "reason": "Orsak",
           "creditNoteHint": "Denna faktura är permanent annullerad. Dess sekventiella skattedokumentnummer är pensionerat och kommer inte att återanvändas. Den VOID-stämplade PDF:en ovan är det officiella dokumentet; inga fler åtgärder krävs.",
-          "creditNoteHintBill": "Denna räkning är permanent annullerad. Räkningsnummer {number} finns kvar i registret, stämplat VOID, och kommer inte att återanvändas; inget §86/4-skattekvittonummer berördes. Den VOID-stämplade PDF:en ovan är det officiella dokumentet; inga fler åtgärder krävs.",
+          "creditNoteHintBill": "Denna faktura är permanent annullerad. Fakturanummer {number} finns kvar i registret, stämplat VOID, och kommer inte att återanvändas; inget §86/4-skattekvittonummer berördes. Den VOID-stämplade PDF:en ovan är det officiella dokumentet; inga fler åtgärder krävs.",
           "replacedBy": "Ersatt av <link>{number}</link>",
           "replacedByIssued": "utfärdad {date}"
         },
@@ -3258,7 +3259,7 @@
             "none": "Ingen konfigurerad"
           },
           "warnings": {
-            "noPaymentPath": "Ingen betalningsväg konfigurerad — onlinebetalning är av och inga bankuppgifter är konfigurerade, så medlemmen kan inte betala den. Lägg till en betalningsmetod innan utfärdande, eller fortsätt i vetskap om att fakturan inte kan betalas ännu.",
+            "noPaymentPath": "Ingen betalningsväg konfigurerad — onlinebetalning är av och inga bankuppgifter är konfigurerade, så medlemmen kan inte betala den här fakturan. Lägg till en betalningsmetod innan utfärdande, eller fortsätt i vetskap om att fakturan inte kan betalas ännu.",
             "notVatRegistrant": "Ingen §86/4-rad för huvudkontor/filial skrivs ut — köparen är inte registrerad som momsregistrerad. Om de är det, kryssa först i \"Denna medlem är momsregistrerad\" i medlemsposten."
           }
         },
@@ -3395,7 +3396,7 @@
           "failed": "Kunde inte registrera betalning",
           "invalidStatus": "Endast utfärdade fakturor kan betalas (nuvarande status: {status}).",
           "legacy_no_tin_event_needs_remediation": "Denna evenemangsfaktura utfärdades till en köpare utan skatte-ID enligt det gamla flödet — det utfärdade dokumentet är redan det officiella kvittot, så en betalningsregistrering skulle skapa ett andra kvitto. Följ åtgärdsrutinen i stället.",
-          "legacy_invoice_needs_reissue": "Detta är en äldre faktura utan fakturanummer — den måste annulleras och utfärdas på nytt innan en betalning kan registreras.",
+          "legacy_invoice_needs_reissue": "Detta är en äldre skattefaktura utan SC-fakturanummer — den måste annulleras och utfärdas på nytt innan en betalning kan registreras.",
           "membership_terminated": "Medlemmens medlemskap har avslutats — använd \"Förnya medlem\" för att återaktivera och fakturera på nytt, registrera sedan betalningen mot den nya fakturan. Om medlemmens tidigare öppna faktura fortfarande finns kvar, makulera den.",
           "new_flow_bill_requires_flag_on": "Denna faktura skapades för skatt-vid-betalning-flödet, som för närvarande är avstängt. Aktivera det igen, eller annullera och utfärda fakturan på nytt, innan du registrerar betalning.",
           "concurrent": "Denna faktura har redan betalats eller ändrats i en annan session. Uppdatera för att se den senaste statusen och kvittots (RC) nummer.",
@@ -3423,12 +3424,12 @@
       "void": {
         "title": "Annullera faktura",
         "description": "Annullera denna utfärdade obetalda faktura. Det sekventiella skattedokumentnumret pensioneras och kan inte återanvändas; PDF:en stämplas VOID; ett annulleringsmeddelande e-postas till medlemmen om automatisk e-post är aktiverad.",
-        "descriptionBill": "Annullera denna obetalda räkning: räkningsnummer {number} finns kvar i registret, stämplas VOID och återanvänds aldrig; inget §86/4-skattekvittonummer berörs. Ett annulleringsmeddelande e-postas till medlemmen om automatisk e-post är aktiverad.",
+        "descriptionBill": "Annullera denna obetalda faktura: fakturanummer {number} finns kvar i registret, stämplas VOID och återanvänds aldrig; inget §86/4-skattekvittonummer berörs. Ett annulleringsmeddelande e-postas till medlemmen om automatisk e-post är aktiverad.",
         "voiding": "Annullerar faktura",
         "terminalNotice": "Annullering är slutgiltig — inga fler åtgärder (betala, kreditera, redigera) är tillåtna. En betald faktura kan inte annulleras; återför den i stället med en återbetalning eller en kreditnota.",
         "reasonLabel": "Orsak",
         "reasonHelp": "Visas på den annullerade PDF:en och i granskningsloggen. Obligatorisk, upp till 500 tecken.",
-        "confirmCopy": "Skriv fakturanumret för att bekräfta",
+        "confirmCopy": "Skriv skattefakturans nummer för att bekräfta",
         "confirmCopyBill": "Skriv fakturanumret för att bekräfta",
         "confirmMismatch": "Frasen måste exakt matcha \"{phrase}\" för att bekräfta.",
         "backToInvoice": "Tillbaka till faktura",
@@ -4074,7 +4075,7 @@
           "label": "Inbetalningsgrad",
           "basis": "medlemsavgifter · räkenskapsår hittills · endast poster som nått förfallodagen · inkl. moms",
           "hintAriaLabel": "Hur denna siffra skiljer sig från instrumentpanelens Betalda intäkter",
-          "hint": "Räknar medlemsavgifter som FÖRFALLER till betalning under innevarande räkenskapsår. Instrumentpanelens Betalda intäkter räknas efter det år fakturan STÄLLDES UT — siffrorna kan därför helt korrekt skilja sig åt."
+          "hint": "Räknar medlemsfakturor som FÖRFALLER till betalning under innevarande räkenskapsår. Instrumentpanelens Betalda intäkter räknas efter det år fakturan STÄLLDES UT — siffrorna kan därför helt korrekt skilja sig åt."
         },
         "dueSoon": {
           "label": "Förfaller snart",
@@ -7923,7 +7924,7 @@
       }
     },
     "creditNoteOriginal": {
-      "bill": "Räkning {number}",
+      "bill": "Faktura {number}",
       "combined": "Kombinerad faktura + kvitto",
       "refund": "Återbetalning",
       "refundHint": "Utfärdad vid en återbetalning via kort eller PromptPay",

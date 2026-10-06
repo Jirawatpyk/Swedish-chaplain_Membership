@@ -2,7 +2,7 @@
  * Contract: POST /api/invoices/[invoiceId]/pay emits a `Server-Timing` header
  * on every response and one `pay.timing` log line, so a slow mark-paid can be
  * attributed to a step (auth, rate limit, recordPayment and its inner steps,
- * F2 finaliser) from DevTools or the Vercel runtime logs.
+ * F2 finaliser, the post-commit PaymentIntent cancel) from DevTools or the Vercel runtime logs.
  *
  * recordPayment is mocked; the mock drives the `stepTimer` the route hands it
  * so the header is shown to carry the use-case's inner steps too.
@@ -140,6 +140,7 @@ describe('contract: POST /api/invoices/[invoiceId]/pay — Server-Timing', () =>
       'tx.receipt_pdf',
       'tx',
       'record_payment',
+      'pending_cancel',
       'total',
     ]);
     const line = loggerInfo.mock.calls.find((c) => c[1] === 'pay.timing');

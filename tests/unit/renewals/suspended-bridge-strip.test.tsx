@@ -34,7 +34,7 @@ describe('SuspendedBridgeStrip', () => {
     expect(strip).toBeInTheDocument();
     expect(strip.textContent).toContain('4 in this renewal queue');
     expect(strip.textContent).toContain(
-      '11 with an unpaid first bill (not yet in a renewal window)',
+      '11 with an unpaid first invoice (not yet in a renewal window)',
     );
   });
 
@@ -43,10 +43,10 @@ describe('SuspendedBridgeStrip', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it('links ONLY the honest "view all unpaid membership bills" text to status=issued&subject=membership (Task 3 — counts stay outside the link)', () => {
+  it('links ONLY the honest "view all unpaid membership invoices" text to status=issued&subject=membership (Task 3 — counts stay outside the link)', () => {
     renderStrip(4, 11);
     const link = screen.getByRole('link', {
-      name: 'View all unpaid membership bills',
+      name: 'View all unpaid membership invoices',
     });
     expect(link).toHaveAttribute(
       'href',
@@ -62,7 +62,7 @@ describe('SuspendedBridgeStrip', () => {
   it('keeps the link keyboard-focusable with the standard focus ring and a PERSISTENT underline (B1 — not hover-only)', () => {
     renderStrip(4, 11);
     const link = screen.getByRole('link', {
-      name: 'View all unpaid membership bills',
+      name: 'View all unpaid membership invoices',
     });
     link.focus();
     expect(link).toHaveFocus();

@@ -569,9 +569,20 @@ Boards: `Admin-credit-notes`, `Admin-credit-note-detail`, `Admin-invoice-registe
 - [x] T848 [US8] Bundle budgets for `/admin/credit-notes`, `/admin/credit-notes/[creditNoteId]` and `/admin/invoices/registers`.
 - [x] T849 [US8] Exit: e2e selectors where roles changed; gates; `next build`; a 5.30 look at migrated screens (checked controls in brand blue); the parity page; UX, i18n and financial reviews with fixes RED first; draft PR; relay R33.
 
-### US8c-2 — invoice settings (PR 16b; tasks written at its start)
+### US8c-2 — invoice settings and AURA 5.31 (PR 16b)
 
-- [ ] T850 [US8] The invoice settings on AURA; then the full local e2e checkpoint.
+Board: `Admin-invoice-settings` (1440). Spec Clarifications, Session 2026-10-03 (US8c-2 start).
+
+- [x] T850 [US8] These tasks; the spec's US8c-2 clarifications.
+- [x] T851 [US8] Adopt AURA 5.31: both packages at 5.31.0 exact; `aura-theme.css` regenerated (it now carries `--aura-control-checked-bg/-fg`); `aura-overrides.css`, its import and its test go. RED: the generated theme declares the checked tokens in light, dark and system-dark, and no override file is imported.
+- [x] T852 [US8] The typed-phrase chip in `labelAddon` (#138) on the void page and the full-refund dialog, `labelAddonDescribes={false}`. RED: the chip sits in `.aura-field__addon` before the input; the description is the phrase without the copy button's name.
+- [x] T853 [US8] `docs/aura-adoption.md` and `CLAUDE.md` on 5.31: #138 and #139 shipped, no open items.
+- [x] T854 [US8] Page frame: `PageHeader`, the info note (first-time copy when no settings exist), the form; the legacy wrapper card goes; stale manager comments corrected. `loading.tsx` on AURA skeletons in the same shape. RED: the page-shape test (h1, note, rail, six section headings, no legacy card).
+- [x] T855 [US8] Section rail on AURA: ghost Buttons with `aria-current="location"` in the "Settings sections" nav; below `xl` an AURA Select "Jump to section"; heading focus and scroll-spy unchanged. RED: `section-nav.test.tsx` on the AURA markup.
+- [x] T856 [US8] Six section cards on AURA fields (TextField, Textarea, Switch, Select), ids, labels, hints, limits and counters kept; fieldset legends kept; `touchHeight="always"` on the 44px fields; the logo keeps its native file input. RED: the section tests and `invoice-settings-form.test.tsx` (AURA fields, `.is-touch-always`, switch roles, every id).
+- [x] T857 [US8] Sticky bar on AURA `ActionBar` with Discard; the in-form Save on AURA Button, shown only while the form is clean (one Save at a time; the bar's Save is the submit once dirty); the prefix-change confirmation on the shared `ConfirmationDialog`. RED: Discard restores the loaded values, clears errors, hides the bar, moves focus and sends no request; the confirmation opens on a prefix change and sends the same PATCH body.
+- [x] T858 [US8] Ratchet and preview: `MIGRATED_PATHS` gains the settings page, the form and `invoice-settings/**`; the two ratchet controls move to US9/US10 files; preview views for the default, first-time, read-only, dirty and prefix-confirm states plus the loading file; a bundle budget for `/admin/settings/invoicing`.
+- [x] T859 [US8] Exit: e2e measure the AURA field box for 44px and field height; gates; `next build`; the parity page (with the 5.31 look); UX, i18n and financial reviews with fixes RED first; draft PR; relay R34, the full local e2e checkpoint.
 
 ## Later phases (one PR each; tasks written when the phase starts)
 
@@ -580,6 +591,7 @@ Boards: `Admin-credit-notes`, `Admin-credit-note-detail`, `Admin-invoice-registe
 - [ ] T1100 [US11] Dashboard: Stat tiles; recharts recoloured with `--aura-chart-*`.
 - [ ] T1200 [US12] E-Blast: queue DataTable (item 52, or a local selection column), workspace, schedule dialog, member sign-off.
 - [ ] T1300 [US13] Exit: delete `src/components/ui`; uninstall `@base-ui/react`, `tw-animate-css`, `shadcn`; drop the TanStack table UI; make the old-kit ban global; remove the token bridge; check the facade decision; confirm the date is within 10 weeks of the US0 merge.
+  - DONE — `tests/e2e/invoicing/issue-invoice-zero-rate-a11y.spec.ts` «200% text zoom» on mobile-chrome no longer carries a `test.fail`. Its 67px was the staff top bar not wrapping plus the invoice detail totals behind the dialog (the dialog contributed 0); #530 fixed both, the `test.fail` then reported "Expected to fail, but passed", and it was removed. `invoice-settings-a11y.spec.ts` «200% text zoom» on mobile-chrome passes for the same reason.
 
 ## Dependencies & order
 

@@ -840,11 +840,12 @@ export async function voidInvoice(
   // second later costs nothing: the webhook auto-refund is still the net.
   if (deps.pendingPaymentCanceller) {
     try {
-      await deps.pendingPaymentCanceller.cancelPendingPaymentsForVoidedInvoice({
+      await deps.pendingPaymentCanceller.cancelPendingPayments({
         tenantId: input.tenantId,
         invoiceId,
         actorUserId: input.actorUserId,
         requestId: input.requestId ?? null,
+        cause: 'invoice_voided',
       });
     } catch (e) {
       invoicingMetrics.voidPendingPaymentCancelFailed(input.tenantId);

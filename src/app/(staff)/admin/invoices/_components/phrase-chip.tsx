@@ -4,8 +4,10 @@
  * Spec 122 US8b (parity comments, 3 Oct; boards `Admin-void`,
  * `Admin-refund-full`): the phrase a typed confirmation asks for, in its own
  * chip with a copy button. Display only — what has to be typed, and how it is
- * compared, stay with the form. The chip's id goes into the input's
- * `aria-describedby`, so a screen reader still hears the phrase.
+ * compared, stay with the form. It goes in the TextField's `labelAddon`
+ * (AURA 5.31, handoff #138) with `labelAddonDescribes={false}`, and the chip's
+ * id goes into the input's `aria-describedby`, so a screen reader hears the
+ * phrase and not the copy button's name.
  */
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';

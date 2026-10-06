@@ -25,20 +25,16 @@
  *
  * Controlled + presentational only: no local field state, no PATCH,
  * no validation logic.
+ *
+ * Spec 122 US8c-2 (T856) — an AURA card (board `Admin-invoice-settings`),
+ * the rail's focus target, with its fieldsets inside and AURA fields; ids,
+ * labels, hints and limits unchanged. The prefixes and receipt mode keep
+ * their 44px boxes (088 FR-036, `touchHeight="always"`).
  */
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  TranslatedSelectValue,
-} from '@/components/ui/select';
+import { Card, Select, Switch, TextField } from '@jirawatpyk/aura-react';
 
 export interface NumberingSectionProps {
   readonly invoicePrefix: string;
@@ -82,101 +78,76 @@ export function NumberingSection({
   const t = useTranslations('admin.invoiceSettings');
 
   return (
-    <section
+    <Card
+      as="section"
       id="numbering"
-      aria-labelledby="numbering-heading"
-      className="flex flex-col gap-[var(--page-section-gap)]"
+      tabIndex={-1}
+      className="scroll-mt-24 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)]"
+      title={t('sections.numbering')}
+      titleId="numbering-heading"
+      headingLevel={2}
     >
-      <h2
-        id="numbering-heading"
-        data-section-heading
-        tabIndex={-1}
-        className="font-heading text-base font-semibold"
-      >
-        {t('sections.numbering')}
-      </h2>
-
-      {/* The section h2 above names the whole section ("Document
-          numbering"); this fieldset holds the number-format prefixes and
-          carries a DISTINCT visible legend (not a repeat of the h2) so the
-          box reads as a titled group, consistent with the "Invoicing
-          defaults" fieldset below. (I1 first made this sr-only, which left
-          the box looking heading-less next to its labelled sibling.) */}
-      <fieldset className="flex flex-col gap-4 rounded-md border p-4">
-        <legend className="px-2 text-sm font-semibold">
-          {t('sections.numberingPrefixes')}
-        </legend>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="inv_prefix">{t('labels.invoicePrefix')}</Label>
-            <Input
+      <div className="flex flex-col gap-[var(--aura-space-6)]">
+        {/* The card's h2 names the whole section ("Document numbering"); this
+            fieldset holds the number-format prefixes and carries a DISTINCT
+            visible legend (not a repeat of the h2), consistent with the
+            "Invoicing defaults" fieldset below. */}
+        <fieldset>
+          <legend className="mb-[var(--aura-space-3)] text-sm font-semibold">{t('sections.numberingPrefixes')}</legend>
+          <div className="grid grid-cols-1 gap-[var(--aura-space-4)] sm:grid-cols-2">
+            <TextField
               id="inv_prefix"
-              className="min-h-11"
+              label={t('labels.invoicePrefix')}
+              touchHeight="always"
               value={invoicePrefix}
               onChange={(e) => onInvoicePrefixChange(e.target.value)}
               disabled={disabled}
               required
               maxLength={20}
             />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="cn_prefix">{t('labels.creditNotePrefix')}</Label>
-            <Input
+            <TextField
               id="cn_prefix"
-              className="min-h-11"
+              label={t('labels.creditNotePrefix')}
+              touchHeight="always"
               value={creditPrefix}
               onChange={(e) => onCreditPrefixChange(e.target.value)}
               disabled={disabled}
               required
               maxLength={20}
             />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="receipt_mode">{t('labels.receiptMode')}</Label>
             {/* 088 US5 (T043 / F.5) — combined numbering is retired; the mode is
                 fixed to "separate". Rendered read-only (no longer a selectable). */}
-            <Input
+            <TextField
               id="receipt_mode"
-              className="min-h-11"
+              label={t('labels.receiptMode')}
+              hint={t('hints.receiptMode')}
+              touchHeight="always"
               value={t('receiptMode.separate')}
               readOnly
               disabled
-              aria-describedby="receipt_mode_hint"
             />
-            <p id="receipt_mode_hint" className="text-xs text-muted-foreground">
-              {t('hints.receiptMode')}
-            </p>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="rc_prefix">{t('labels.receiptPrefix')}</Label>
-            <Input
+            <TextField
               id="rc_prefix"
-              className="min-h-11"
+              label={t('labels.receiptPrefix')}
+              hint={t('hints.receiptPrefix')}
+              touchHeight="always"
               value={receiptPrefix}
               onChange={(e) => onReceiptPrefixChange(e.target.value)}
               disabled={disabled}
               maxLength={20}
-              aria-describedby="rc_prefix_hint"
             />
-            <p id="rc_prefix_hint" className="text-xs text-muted-foreground">
-              {t('hints.receiptPrefix')}
-            </p>
           </div>
-        </div>
-      </fieldset>
+        </fieldset>
 
-      {/* Invoicing defaults (fiscal year / net days / pro-rate). The
-          auto_email_enabled toggle was relocated here (I2) and renders
-          just after this fieldset. */}
-      <fieldset className="flex flex-col gap-4 rounded-md border p-4">
-        <legend className="px-2 text-sm font-semibold">
-          {t('sections.defaults')}
-        </legend>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="fy_month">{t('labels.fiscalYearStartMonth')}</Label>
-            <Input
+        {/* Invoicing defaults (fiscal year / net days / pro-rate). The
+            auto_email_enabled toggle was relocated here (I2) and renders
+            just after this fieldset. */}
+        <fieldset>
+          <legend className="mb-[var(--aura-space-3)] text-sm font-semibold">{t('sections.defaults')}</legend>
+          <div className="grid grid-cols-1 gap-[var(--aura-space-4)] sm:grid-cols-2">
+            <TextField
               id="fy_month"
+              label={t('labels.fiscalYearStartMonth')}
               type="number"
               inputMode="numeric"
               min="1"
@@ -187,11 +158,9 @@ export function NumberingSection({
               disabled={disabled}
               required
             />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="net_days">{t('labels.defaultNetDays')}</Label>
-            <Input
+            <TextField
               id="net_days"
+              label={t('labels.defaultNetDays')}
               type="number"
               inputMode="numeric"
               min="0"
@@ -202,58 +171,33 @@ export function NumberingSection({
               disabled={disabled}
               required
             />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="pro_rate">{t('labels.proRatePolicy')}</Label>
             <Select
+              id="pro_rate"
+              label={t('labels.proRatePolicy')}
               value={proRate}
-              onValueChange={(v) => onProRateChange(v as 'none' | 'monthly' | 'daily')}
+              onChange={(e) => onProRateChange(e.target.value as 'none' | 'monthly' | 'daily')}
               disabled={disabled}
-            >
-              <SelectTrigger id="pro_rate" className="w-full">
-                <TranslatedSelectValue
-                  translate={(value) => t(`proRate.${value as 'none' | 'monthly' | 'daily'}`)}
-                />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">{t('proRate.none')}</SelectItem>
-                <SelectItem value="monthly">{t('proRate.monthly')}</SelectItem>
-                <SelectItem value="daily">{t('proRate.daily')}</SelectItem>
-              </SelectContent>
-            </Select>
+              options={[
+                { value: 'none', label: t('proRate.none') },
+                { value: 'monthly', label: t('proRate.monthly') },
+                { value: 'daily', label: t('proRate.daily') },
+              ]}
+            />
           </div>
-        </div>
-      </fieldset>
+        </fieldset>
 
-      {/* auto_email_enabled — relocated here from document-notes-section.tsx
-          (I2, wave B): it's a send-behaviour default, not a note, so it now
-          sits next to the rest of the "Defaults" fieldset. It was never its
-          own <fieldset> at its old home either (a standalone bordered
-          <div>), so it stays that way here — id/aria-label/binding
-          unchanged. */}
-      <div className="flex items-center justify-between rounded-md border p-3">
-        <div>
-          <Label htmlFor="auto_email" className="cursor-pointer">
-            {t('labels.autoEmail')}
-          </Label>
-          <p className="text-xs text-muted-foreground">{t('hints.autoEmail')}</p>
-        </div>
-        {/* Base UI Switch.Root renders a <span role="switch"> and wires its
-            own aria-labelledby on hydration, so the <Label htmlFor> above
-            names it only once the client bundle runs. axe scanning the
-            pre-hydration DOM sees no accessible name (aria-toggle-field-name,
-            WCAG 4.1.2). The explicit aria-label ships in the SSR HTML and
-            covers that window; aria-labelledby still wins afterwards, and
-            resolves to the same string. Same fix as directory-visibility-form
-            and renewal-reminders-toggle. */}
+        {/* auto_email_enabled — relocated here from document-notes-section.tsx
+            (I2, wave B): it's a send-behaviour default, not a note, so it sits
+            next to the rest of the "Defaults" fieldset. */}
         <Switch
           id="auto_email"
-          aria-label={t('labels.autoEmail')}
+          label={t('labels.autoEmail')}
+          description={t('hints.autoEmail')}
           checked={autoEmail}
-          onCheckedChange={onAutoEmailChange}
+          onChange={onAutoEmailChange}
           disabled={disabled}
         />
       </div>
-    </section>
+    </Card>
   );
 }

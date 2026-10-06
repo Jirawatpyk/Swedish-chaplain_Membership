@@ -340,6 +340,7 @@ export {
 
 export {
   recordPayment,
+  cancelPendingPaymentsAfterManualPayment,
   recordPaymentSchema,
   type RecordPaymentInput,
   type RecordPaymentError,
