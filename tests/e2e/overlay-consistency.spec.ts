@@ -91,9 +91,20 @@ test.describe('F4 SC-014 — overlay consistency @layout', () => {
 
     // The tokens must actually resolve. A stylesheet that failed to load gives
     // every page padding 0 and radius 0, which "they all match" alone accepts.
-    expect(parseFloat(baseline.paddingTop), 'card padding resolves').toBeGreaterThan(0);
-    expect(parseFloat(baseline.paddingLeft), 'card inline padding resolves').toBeGreaterThan(0);
+    // The radius resolves at every width, so it is the check that catches that.
     expect(baseline.borderRadius, 'card radius resolves').not.toBe('0px');
-    expect(baseline.boxShadow, 'card has elevation').not.toBe('none');
+    // Below `sm` these list cards are flush by design (AURA `flushBelow="sm"`
+    // plus `max-sm:p-0`): no frame, no padding, no elevation, the rows sitting
+    // on the page. So the padding and elevation checks flip on a phone rather
+    // than expecting the desktop frame there, which no page here has.
+    const flush = (page.viewportSize()?.width ?? 1280) < 640;
+    if (flush) {
+      expect(baseline.paddingTop, 'phone: the list card is flush').toBe('0px');
+      expect(baseline.boxShadow, 'phone: the list card has no elevation').toBe('none');
+    } else {
+      expect(parseFloat(baseline.paddingTop), 'card padding resolves').toBeGreaterThan(0);
+      expect(parseFloat(baseline.paddingLeft), 'card inline padding resolves').toBeGreaterThan(0);
+      expect(baseline.boxShadow, 'card has elevation').not.toBe('none');
+    }
   });
 });

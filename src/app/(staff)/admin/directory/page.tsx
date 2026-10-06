@@ -185,10 +185,12 @@ export async function renderDirectoryView({
           cards sit on the page with no frame and no visible heading (board
           `Admin-directory-mobile`). The heading is ours, not the Card's
           title, so a phone can keep it for screen readers only; it matches
-          the Card title's weight and size. */}
+          the Card title's weight and size. The frame drops through AURA's
+          `flushBelow`, as on every other migrated list. */}
       <Card
         aria-labelledby="directory-members-heading"
-        className="max-sm:border-0 max-sm:bg-transparent max-sm:p-0 max-sm:shadow-none"
+        flushBelow="sm"
+        className="max-sm:border-0 max-sm:p-0"
       >
         <div className="flex flex-col gap-4">
           <h2 id="directory-members-heading" className="text-base font-semibold max-sm:sr-only">
