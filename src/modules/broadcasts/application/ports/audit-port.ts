@@ -305,7 +305,7 @@ export type F7AuditEventType = (typeof F7_AUDIT_EVENT_TYPES)[number];
  * Member-acknowledged broadcasts terms (Q15) records the sending
  * member's acknowledgement of the E-Blast rules (not recipient consent —
  * recipients are on legitimate interest). Migration 0084's trigger once
- * promoted it to 10y on a consent rationale; migration 0315 returned it to
+ * promoted it to 10y on a consent rationale; migration 0316 returned it to
  * this 5y default (docs/compliance/processing-records.md). Suppression rows (`marketing_unsubscribes`) are retained
  * INDEFINITELY at the row level — that's a separate data-retention
  * policy, not an audit-log retention.

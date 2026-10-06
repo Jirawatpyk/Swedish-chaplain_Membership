@@ -4,7 +4,7 @@
  *
  * The trigger promotes a set of event types to 10-year retention. It is
  * re-created (CREATE OR REPLACE) by several migrations (0055/0063/0084/
- * 0257/0315); each re-create re-emits the WHOLE IN() list, so a future re-create
+ * 0257/0316); each re-create re-emits the WHOLE IN() list, so a future re-create
  * that drops a type silently regresses that type to the 5y column default —
  * a compliance regression with no other signal. 0257 nearly did exactly
  * this to `member_acknowledged_broadcasts_terms` (0084's GDPR Art. 7 /
@@ -14,7 +14,7 @@
  * trigger promoted it — so any future trigger re-create that drops a type
  * fails HERE. Runs on live Neon (the trigger only exists in the DB).
  *
- * 0315 deliberately REMOVED `member_acknowledged_broadcasts_terms`: it
+ * 0316 deliberately REMOVED `member_acknowledged_broadcasts_terms`: it
  * records a sender's acknowledgement of the E-Blast terms, not consent, so
  * the 0084 consent rationale for 10y no longer applies and it returns to
  * the 5y F7 default (`f7RetentionFor`). It is pinned at 5y below so the
@@ -26,7 +26,7 @@ import { randomUUID } from 'node:crypto';
 import { db } from '@/lib/db';
 
 // Every event type the trigger must promote to 10y (the union across
-// migrations 0055 + 0063 + 0257, minus the one 0315 removed). Keep in
+// migrations 0055 + 0063 + 0257, minus the one 0316 removed). Keep in
 // lockstep with the IN() list in the LATEST retention-trigger migration.
 const EXPECTED_10Y = [
   // F4 tax documents (Thai RD §87/3 + §86/10):
@@ -44,7 +44,7 @@ const EXPECTED_10Y = [
 ] as const;
 
 // Events that must STAY at the 5y default: a routine F8 control, and the
-// E-Blast terms acknowledgement 0315 returned to the F7 default.
+// E-Blast terms acknowledgement 0316 returned to the F7 default.
 const EXPECTED_5Y = ['renewal_lapsed', 'member_acknowledged_broadcasts_terms'] as const;
 
 const MARKER = `retention-trigger-test-${randomUUID()}`;

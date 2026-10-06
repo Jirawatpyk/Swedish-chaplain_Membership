@@ -1,5 +1,5 @@
 -- ---------------------------------------------------------------------------
--- Migration 0315 — `member_acknowledged_broadcasts_terms` back to 5 years.
+-- Migration 0316 — `member_acknowledged_broadcasts_terms` back to 5 years.
 --
 -- 0084 promoted this event to 10-year retention as the "GDPR Art. 7
 -- written-consent record" for E-Blasts. E-Blasts do not rely on consent:
@@ -26,8 +26,8 @@
 -- `SET search_path` is re-declared: CREATE OR REPLACE reassigns every
 -- function property, so leaving it out would strip 0124's hardening.
 --
--- Numbered 0315, journal idx 316, `when` 1798544800000 — strictly after
--- 0314's 1798544700000 (a duplicate `when` makes db:migrate a silent no-op).
+-- Numbered 0316, journal idx 317, `when` 1798544900000 — strictly after
+-- 0315's 1798544800000 (a duplicate `when` makes db:migrate a silent no-op).
 --
 -- Rollback: re-run 0257's function body and
 --   UPDATE audit_log SET retention_years = 10
@@ -55,7 +55,7 @@ BEGIN
     'receipt_pdf_resent',
     'credit_note_pdf_resent',
     'receipt_rendered',
-    -- (0084's `member_acknowledged_broadcasts_terms` removed by 0315 — it is
+    -- (0084's `member_acknowledged_broadcasts_terms` removed by 0316 — it is
     -- a sender terms acknowledgement, not a consent record; 5y F7 default.)
     -- 066 §6 — post-termination payment forensic. Explains a §86/4 receipt
     -- minted to a terminated non-member; tax-evidence class, so 10y like
