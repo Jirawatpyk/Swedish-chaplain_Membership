@@ -104,7 +104,8 @@ export async function renderEventsListBody(state: EventsListBodyState) {
         partnerBenefitOnly={state.partnerBenefitOnly}
         culturalEventOnly={state.culturalEventOnly}
         includeArchived={state.includeArchived}
-        resultCount={state.items.length}
+        // Every match across the pages, as the pager's "of N" says.
+        resultCount={state.pagination.totalCount}
       />
       {state.items.length === 0 ? (
         <EventsEmptyState

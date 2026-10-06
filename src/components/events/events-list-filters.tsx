@@ -32,7 +32,7 @@ export interface EventsListFiltersProps {
   readonly partnerBenefitOnly: boolean;
   readonly culturalEventOnly: boolean;
   readonly includeArchived: boolean;
-  /** Events on this page of results (what today's announcement counted). */
+  /** Every event matching the filters, across the pages. */
   readonly resultCount: number;
 }
 
@@ -66,10 +66,13 @@ export function EventsListFilters({
 
   const toggle = (key: ToggleKey, on: boolean) => write({ [key]: on ? null : '1' });
 
-  const anyChip = partnerBenefitOnly || culturalEventOnly || includeArchived;
+  // `categoryFilter` has no control in the row (it arrives by link), but it
+  // filters the list, so Clear filters offers itself for it and drops it.
+  const hasCategory = (searchParams.get('categoryFilter') ?? '').trim() !== '';
+  const anyChip = partnerBenefitOnly || culturalEventOnly || includeArchived || hasCategory;
 
   function clearAll() {
-    write({ q: null, partnerBenefitOnly: null, culturalEventOnly: null, includeArchived: null });
+    write({ q: null, partnerBenefitOnly: null, culturalEventOnly: null, includeArchived: null, categoryFilter: null });
     // The pressed control unmounts; the search keeps focus in the row.
     queueMicrotask(() => barRef.current?.querySelector<HTMLElement>('input[type="search"]')?.focus());
   }

@@ -93,6 +93,7 @@ export async function renderEventDetailView({
             {...(filters.paymentStatus !== null && { initialPaymentStatus: filters.paymentStatus })}
             eventId={event.eventId}
             canRelink={canRelink}
+            totalCount={pagination.totalCount}
           />
           <TablePagination
             page={pagination.page}

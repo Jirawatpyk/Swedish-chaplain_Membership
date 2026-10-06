@@ -131,6 +131,11 @@ type Props = {
    * forced to false defensively.
    */
   readonly canRelink: boolean;
+  /**
+   * Spec 122 US9a — every attendee matching the filters, across the pages:
+   * the filter bar's count. Defaults to the rows shown.
+   */
+  readonly totalCount?: number;
 };
 
 // R3-Y1 (2026-05-18 /speckit-review Round 3 Final) — module-level
@@ -185,6 +190,7 @@ export function AttendeeTable({
   initialPaymentStatus,
   eventId,
   canRelink,
+  totalCount,
 }: Props) {
   const t = useTranslations('admin.events.detail.attendees');
   // Defensive AND — never render the Actions column if eventId is
@@ -506,7 +512,7 @@ export function AttendeeTable({
           onSearchChange={(value: string) => writeUrl({ q: value.trim() || null })}
           filters={activeFilters}
           {...(activeFilters.length > 0 ? { onClearAll: () => clearAllFilters(false) } : {})}
-          resultCount={t('resultCount', { count: rows.length })}
+          resultCount={t('resultCount', { count: totalCount ?? rows.length })}
         >
           <Tag
             selected={unmatchedOnly}
