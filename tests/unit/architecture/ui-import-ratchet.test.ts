@@ -188,8 +188,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the events list keeps the legacy kit until US9', async () => {
-      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/events/page.tsx')).toEqual([]);
+    it('control: the events CSV import keeps the legacy kit until US9b', async () => {
+      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/events/import/page.tsx')).toEqual([]);
     });
   });
 
@@ -502,6 +502,35 @@ describe('UI import ratchet (spec 122)', () => {
       'src/components/invoices/invoice-settings/sections/branding-section.tsx',
     ])('%s cannot import the legacy kit', async (path) => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
+    });
+  });
+  describe('the US9a events list and event detail are on AURA (the real MIGRATED_PATHS)', () => {
+    const legacy = "import { Button } from '@/components/ui/button';\nexport const B = Button;\n";
+
+    it.each([
+      'src/app/(staff)/admin/events/page.tsx',
+      'src/app/(staff)/admin/events/loading.tsx',
+      'src/app/(staff)/admin/events/_components/events-list-view.tsx',
+      'src/app/(staff)/admin/events/_components/events-header-menu.tsx',
+      'src/app/(staff)/admin/events/_components/events-empty-state.tsx',
+      'src/app/(staff)/admin/events/[eventId]/page.tsx',
+      'src/app/(staff)/admin/events/[eventId]/loading.tsx',
+      'src/components/events/events-list-filters.tsx',
+      'src/components/events/events-list-table.tsx',
+      'src/components/events/event-detail-header.tsx',
+      'src/components/events/event-category-toggles.tsx',
+      'src/components/events/archive-event-button.tsx',
+      'src/components/events/attendee-table.tsx',
+      'src/components/events/relink-registration-dialog.tsx',
+      'src/components/events/match-status-badge.tsx',
+      'src/components/events/quota-effect-badge.tsx',
+    ])('%s cannot import the legacy kit', async (path) => {
+      expect(await ratchetHits(legacy, path)).toHaveLength(1);
+    });
+
+    it('control: the erasure pages keep the legacy kit until US9b', async () => {
+      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/events/erasure/page.tsx')).toEqual([]);
+      expect(await ratchetHits(legacy, 'src/components/events/erase-pii-dialog.tsx')).toEqual([]);
     });
   });
 });
