@@ -5251,6 +5251,7 @@
         "tableCaption": "Imported events sorted by start date, most recent first.",
         "errorState": "We couldn't load events. Please refresh the page.",
         "importCsvCta": "Import CSV",
+        "moreActions": "More actions",
         "searchPlaceholder": "Search events by name…",
         "searchLabel": "Search events",
         "searchSubmit": "Search",

@@ -21,7 +21,6 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { headers } from 'next/headers';
 import { getTranslations } from 'next-intl/server';
-import { UploadCloudIcon, EraserIcon } from 'lucide-react';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { redactStack } from '@/lib/redact-stack';
@@ -29,9 +28,7 @@ import { canPerform, requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { runListEvents } from '@/lib/events-admin-deps';
 import { TableContainer } from '@/components/layout';
-import { PageHeader } from '@/components/layout/page-header';
 import { TablePagination } from '@/components/layout/table-pagination';
-import { Card, CardContent } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button';
 import {
   EventsListTable,
@@ -39,6 +36,7 @@ import {
 } from '@/components/events/events-list-table';
 import { EventsListSearchToolbar } from '@/components/events/events-list-search-toolbar';
 import { EventsEmptyState } from './_components/events-empty-state';
+import { renderEventsListView } from './_components/events-list-view';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.events.list');
@@ -100,7 +98,6 @@ export default async function AdminEventsListPage({
 
   const query = await searchParams;
   const t = await getTranslations('admin.events.list');
-  const tErasure = await getTranslations('admin.events.erasure');
   const tShared = await getTranslations('shared');
 
   const page = clampPage(query.page);
@@ -169,68 +166,19 @@ export default async function AdminEventsListPage({
     );
   }
 
-  // T098 Phase 7 — Surface a discoverable CTA to the CSV import
-  // workflow page (admin-only mutation route). Manager sees the list
-  // but should not see the import button — gating by role keeps the
-  // FR-035 mutation-surface-disclosure invariant intact.
-  // Primary CTA per F4 invoices "New invoice" precedent — admin-only
-  // top-of-page actions use `variant: 'default'` (primary/black) to
-  // match the visual hierarchy across F4/F6/F7/F8 admin pages.
-  // 016 re-review D — evaluator-derived (`events.write` is what the import
-  // page + API admit; OFF leg `legacyAdminOnly` reproduces the admin-only CTA).
-  const importCsvCta =
-    canPerform(currentUser.role, 'events.write') &&
-    env.features.f6EventCreate ? (
-      <Link
-        href="/admin/events/import"
-        className={buttonVariants({ variant: 'default' })}
-      >
-        <UploadCloudIcon className="size-4" aria-hidden="true" />
-        {t('importCsvCta')}
-      </Link>
-    ) : null;
-
-  // PR 2.2 — admin-only discoverability link to the by-email erasure surface
-  // (FR-032a). Secondary (outline) next to the primary import CTA. Manager
-  // never sees it — the erasure page + route are admin-only (FR-035).
-  // 016 re-review D — follows `events.erasure` (superAdminOnly on the ON leg),
-  // the key its DESTINATION page admits: the link hides exactly when the
-  // erasure surface would 404 the caller, instead of dangling for plain admin
-  // after the flag flip.
-  const eraseByEmailCta =
-    canPerform(currentUser.role, 'events.erasure') &&
-    env.features.f6EventCreate ? (
-      <Link
-        href="/admin/events/erasure"
-        className={buttonVariants({ variant: 'outline' })}
-      >
-        <EraserIcon className="size-4" aria-hidden="true" />
-        {tErasure('discoverabilityCta')}
-      </Link>
-    ) : null;
-
-  const headerActions =
-    importCsvCta || eraseByEmailCta ? (
-      <div className="flex flex-wrap items-center gap-2">
-        {eraseByEmailCta}
-        {importCsvCta}
-      </div>
-    ) : null;
+  // T098 Phase 7 — "Import CSV" (`events.write`, what the import page and API
+  // admit) and PR 2.2 "Erase by email" (`events.erasure`, the key its
+  // destination page admits) — both in the header; manager sees neither.
+  const canImport = canPerform(currentUser.role, 'events.write');
+  const canEraseByEmail = canPerform(currentUser.role, 'events.erasure');
 
   return (
     <TableContainer>
-      <PageHeader
-        title={t('title')}
-        subtitle={t('subtitle')}
-        actions={headerActions}
-      />
-      {/* P4 (round-10) — 120ms fade-in when the loaded content
-          replaces the loading.tsx skeleton. `motion-reduce:animate-none`
-          honours prefers-reduced-motion (WCAG 2.3.3). Lives on the
-          Card so the PageHeader (which renders identically in
-          loading state) doesn't re-animate. */}
-      <Card className="motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-[120ms]">
-        <CardContent className="flex flex-col gap-4">
+      {await renderEventsListView({
+        canImport,
+        canEraseByEmail,
+        children: (
+        <div className="flex flex-col gap-4">
           {!result || !result.ok ? (
             <div className="py-12 text-center" role="alert">
               <p className="text-muted-foreground">{t('errorState')}</p>
@@ -320,8 +268,9 @@ export default async function AdminEventsListPage({
               )}
             </>
           )}
-        </CardContent>
-      </Card>
+        </div>
+        ),
+      })}
       <span className="sr-only">{tShared('loaded')}</span>
     </TableContainer>
   );

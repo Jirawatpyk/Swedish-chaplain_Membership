@@ -5251,6 +5251,7 @@
         "tableCaption": "Importerade evenemang sorterade efter startdatum, nyast först.",
         "errorState": "Det gick inte att läsa in evenemangen. Uppdatera sidan.",
         "importCsvCta": "Importera CSV",
+        "moreActions": "Fler åtgärder",
         "searchPlaceholder": "Sök evenemang efter namn…",
         "searchLabel": "Sök evenemang",
         "searchSubmit": "Sök",

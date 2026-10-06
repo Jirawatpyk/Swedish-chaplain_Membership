@@ -10,11 +10,17 @@
  * `settings.integrations`. Manager and marketing read this list but lack
  * that key, so they get no links, and an admin-only hint in place of the
  * body copy that tells the viewer to act on the integration themselves.
+ *
+ * Spec 122 US9a (T901): each variant is the shared AURA `EmptyState`
+ * (boards `Admin-state-events-no-integration`, `-waiting`), unbordered inside
+ * the list card and not a live region: the filter bar's count announces the
+ * list. Copy and links are unchanged.
  */
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { PlusIcon, InboxIcon, SendIcon } from 'lucide-react';
-import { buttonVariants } from '@/components/ui/button';
+import { ArchiveIcon, CalendarIcon, InboxIcon, PlusIcon, SearchXIcon, SendIcon } from 'lucide-react';
+import { buttonClass } from '@jirawatpyk/aura-react';
+import { EmptyState } from '@/components/shell/empty-state';
 
 export function EventsEmptyState({
   emptyContext,
@@ -32,117 +38,92 @@ export function EventsEmptyState({
   canManageIntegration: boolean;
 }) {
   const t = useTranslations('admin.events.list.emptyState');
+  // Inside the list card: no frame of its own, and no second live region.
+  const shared = { bordered: false, announce: false } as const;
 
+  // Variant (d) — filters hide every event.
   if (hasFilters) {
     return (
-      <div className="py-12 text-center">
-        <h2 className="text-muted-foreground">{t('filteredEmpty')}</h2>
-        <Link
-          href="/admin/events"
-          className={buttonVariants({ variant: 'outline', className: 'mt-4' })}
-        >
-          {t('clearFilters')}
-        </Link>
-      </div>
+      <EmptyState
+        {...shared}
+        icon={SearchXIcon}
+        title={t('filteredEmpty')}
+        action={
+          <Link href="/admin/events" className={buttonClass({ variant: 'secondary' })}>
+            {t('clearFilters')}
+          </Link>
+        }
+      />
     );
   }
 
   // Variant (a) — no integration configured
   if (!emptyContext.integrationConfigured) {
     return (
-      <div className="flex flex-col items-center gap-4 py-12 text-center">
-        <h2 className="text-h3 font-semibold">{t('noIntegration.title')}</h2>
-        <p className="max-w-md text-muted-foreground">
-          {canManageIntegration
-            ? t('noIntegration.body')
-            : t('noIntegration.adminOnlyHint')}
-        </p>
-        {canManageIntegration ? (
-          <Link
-            href="/admin/settings/integrations/eventcreate"
-            className={buttonVariants({ variant: 'default' })}
-          >
-            <PlusIcon aria-hidden="true" className="size-4" />
-            {t('noIntegration.cta')}
-          </Link>
-        ) : null}
-      </div>
+      <EmptyState
+        {...shared}
+        icon={CalendarIcon}
+        title={t('noIntegration.title')}
+        description={canManageIntegration ? t('noIntegration.body') : t('noIntegration.adminOnlyHint')}
+        action={
+          canManageIntegration ? (
+            <Link href="/admin/settings/integrations/eventcreate" className={buttonClass({ variant: 'primary' })}>
+              <PlusIcon aria-hidden="true" className="size-4" />
+              {t('noIntegration.cta')}
+            </Link>
+          ) : undefined
+        }
+      />
     );
   }
 
-  // Variant (b) — configured but no deliveries yet.
-  // P2 (round-10 ui-design-specialist) — promoted to a primary "Send a
-  // test event" CTA + InboxIcon as illustration. The body copy already
-  // alludes to the test-webhook escape hatch; the CTA now matches.
-  // Secondary link lets admins jump to the integration-settings surface
-  // without the test affordance. `#test` fragment lets Phase 5 wizard
-  // scroll-to-phaseC when it lands (no-op when it doesn't, no
-  // regression). Reduced-motion safe: no animation here — the parent
-  // page-level fade-in (P4) already handles motion semantics.
+  // Variant (b) — configured but no deliveries yet: a primary "Send a test
+  // event" (the `#test` fragment scrolls the wizard to its test step) and a
+  // secondary link to the integration settings.
   if (!emptyContext.everReceivedDelivery) {
     return (
-      <div className="flex flex-col items-center gap-4 py-12 text-center">
-        {/* Round-12 review fix — decorative icon only. The previously-
-            adjacent `sr-only illustrationAlt` span was orphaned (no
-            semantic link to the aria-hidden icon) and produced an
-            "Empty inbox illustration" SR announcement disconnected
-            from the surrounding state. Empty-state title + body
-            already convey the meaning; the icon is purely visual. */}
-        <InboxIcon
-          aria-hidden="true"
-          className="size-12 stroke-1 text-muted-foreground"
-        />
-        <h2 className="text-h3 font-semibold">{t('noDeliveries.title')}</h2>
-        <p className="max-w-md text-muted-foreground">
-          {canManageIntegration
-            ? t('noDeliveries.body')
-            : t('noDeliveries.adminOnlyHint')}
-        </p>
-        {canManageIntegration ? (
-          <div className="flex flex-wrap items-center justify-center gap-2">
-            <Link
-              href="/admin/settings/integrations/eventcreate#test"
-              className={buttonVariants({ variant: 'default' })}
-            >
-              <SendIcon aria-hidden="true" data-icon="inline-start" />
-              {t('noDeliveries.primaryCta')}
-            </Link>
-            <Link
-              href="/admin/settings/integrations/eventcreate"
-              className={buttonVariants({ variant: 'outline' })}
-            >
-              {t('noDeliveries.cta')}
-            </Link>
-          </div>
-        ) : null}
-      </div>
+      <EmptyState
+        {...shared}
+        icon={InboxIcon}
+        title={t('noDeliveries.title')}
+        description={canManageIntegration ? t('noDeliveries.body') : t('noDeliveries.adminOnlyHint')}
+        action={
+          canManageIntegration ? (
+            // On a phone the two actions stack at one full width.
+            <div className="flex flex-wrap items-center justify-center gap-2 max-sm:flex-col max-sm:items-stretch">
+              <Link href="/admin/settings/integrations/eventcreate#test" className={buttonClass({ variant: 'primary' })}>
+                <SendIcon aria-hidden="true" className="size-4" />
+                {t('noDeliveries.primaryCta')}
+              </Link>
+              <Link href="/admin/settings/integrations/eventcreate" className={buttonClass({ variant: 'secondary' })}>
+                {t('noDeliveries.cta')}
+              </Link>
+            </div>
+          ) : undefined
+        }
+      />
     );
   }
 
   // Variant (c) — all events archived
   if (emptyContext.totalArchived > 0) {
     return (
-      <div className="flex flex-col items-center gap-4 py-12 text-center">
-        <h2 className="text-h3 font-semibold">{t('allArchived.title')}</h2>
-        <p className="max-w-md text-muted-foreground">
-          {t('allArchived.body', { count: emptyContext.totalArchived })}
-        </p>
-        <Link
-          href="/admin/events?includeArchived=1"
-          className={buttonVariants({ variant: 'outline' })}
-        >
-          {t('allArchived.cta', { count: emptyContext.totalArchived })}
-        </Link>
-      </div>
+      <EmptyState
+        {...shared}
+        icon={ArchiveIcon}
+        title={t('allArchived.title')}
+        description={t('allArchived.body', { count: emptyContext.totalArchived })}
+        action={
+          <Link href="/admin/events?includeArchived=1" className={buttonClass({ variant: 'secondary' })}>
+            {t('allArchived.cta', { count: emptyContext.totalArchived })}
+          </Link>
+        }
+      />
     );
   }
 
   // Fallback — unusual combination (configured + delivered + no items
   // + no filters + 0 archived). Render the generic "no events found"
   // copy so the page never appears blank.
-  return (
-    <div className="py-12 text-center">
-      <p className="text-muted-foreground">{t('genericEmpty')}</p>
-    </div>
-  );
+  return <EmptyState {...shared} icon={CalendarIcon} title={t('genericEmpty')} />;
 }
