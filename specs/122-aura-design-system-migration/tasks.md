@@ -615,7 +615,7 @@ Boards: `Admin-events`, `Admin-event-detail` (each with `-mobile`), `Admin-state
 - [x] T926 [US9] The erasure and erase-page `loading.tsx` / `error.tsx` files on AURA (skeleton card matching the page; retry button).
 - [x] T927 [US9] The deep-link erase page (`/admin/events/[eventId]/registrations/[registrationId]/erase`) at parity with `Admin-event-erase-page`; its guards and redirect are unchanged.
 - [x] T928 [US9] Ratchet and preview: `MIGRATED_PATHS` gains the erasure and erase-page routes and the US9b-1 components; the erasure ratchet control flips; preview views (erasure states, the erase dialog from the row menu, the erase page, both loading files); first bundle budgets for both routes.
-- [ ] T929 [US9] Exit: e2e selectors (`erase-attendee`, `admin-events-erasure`, `eventcreate-a11y`); gates; `next build` and budgets; screenshots at 1440 and 390 in light and dark; UX and PDPA reviews with fixes RED first; draft PR; relay R37.
+- [x] T929 [US9] Exit: e2e selectors (`erase-attendee`, `admin-events-erasure`, `eventcreate-a11y`); gates; `next build` and budgets; screenshots at 1440 and 390 in light and dark; UX and PDPA reviews with fixes RED first; draft PR; relay R37.
 
 #### US9b-2 — CSV import (tasks written when it starts)
 
