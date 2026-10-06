@@ -476,8 +476,9 @@ export function AttendeeTable({
         key: 'actions',
         label: t('columns.actions'),
         ...ATTENDEE_COLUMN_LAYOUT.actions,
+        // On a phone (the card foot) Relink and Erase share the row equally.
         render: (r) => (
-          <div className="flex flex-wrap items-center justify-end gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2 max-sm:w-full max-sm:[&>button]:flex-1">
             <RelinkRegistrationDialog
               registrationId={r.registrationId}
               eventId={eventId}
