@@ -5428,7 +5428,6 @@
           "pathMismatchDescription": "Denna registrering tillhör ett annat evenemang. Uppdatera sidan och försök igen.",
           "errorTitle": "Kunde inte radera personuppgifter",
           "errorDescription": "Försök igen. Om problemet kvarstår, kontakta support.",
-          "tryAgain": "Försök igen",
           "loading": "Raderar personuppgifter…",
           "pageTitle": "Radera personuppgifter — {attendeeName}",
           "metaTitle": "Radera personuppgifter",

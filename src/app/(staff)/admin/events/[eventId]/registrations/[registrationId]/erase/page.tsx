@@ -23,7 +23,6 @@ import type { Metadata } from 'next';
 import { notFound, redirect } from 'next/navigation';
 import { headers } from 'next/headers';
 import { getTranslations } from 'next-intl/server';
-import Link from 'next/link';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { redactStack } from '@/lib/redact-stack';
@@ -31,8 +30,7 @@ import { requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { runLoadEventDetail } from '@/lib/events-admin-deps';
 import { DetailContainer } from '@/components/layout';
-import { PageHeader } from '@/components/layout/page-header';
-import { ErasePiiDialog } from '@/components/events/erase-pii-dialog';
+import { renderErasePageBody } from './_components/erase-page-view';
 
 const UUID_V4 =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -133,27 +131,9 @@ export default async function ErasePiiPage({
     redirect(`/admin/events/${eventId}`);
   }
 
-  const t = await getTranslations('admin.events.detail.erase');
-
   return (
     <DetailContainer>
-      <PageHeader
-        title={t('pageTitle', { attendeeName: registration.attendeeName })}
-      />
-      <p className="text-body text-muted-foreground">{t('pageHint')}</p>
-      <div className="mt-4 flex flex-col gap-3">
-        <ErasePiiDialog
-          eventId={eventId}
-          registrationId={registrationId}
-          attendeeName={registration.attendeeName}
-        />
-        <Link
-          href={`/admin/events/${eventId}`}
-          className="text-body underline underline-offset-2 hover:no-underline"
-        >
-          {t('pageBackToEventLabel')}
-        </Link>
-      </div>
+      {await renderErasePageBody({ eventId, registrationId, attendeeName: registration.attendeeName })}
     </DetailContainer>
   );
 }
