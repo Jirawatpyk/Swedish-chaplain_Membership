@@ -273,39 +273,11 @@ test.describe('088 zero-rate issue form a11y @a11y @f088', () => {
 
   test('remains usable at 200% text zoom (WCAG 1.4.4 resize text)', async ({
     page,
-  }, testInfo) => {
-    // KNOWN FAILURE at phone width, recorded rather than hidden. With the
-    // fixture in place this assertion finally runs, and on a 393px viewport it
-    // reports 67px of horizontal overflow (393 wide, scrollWidth 460) against
-    // its ≤1px budget. At 1280px it passes, so this is a narrow-viewport
-    // WCAG 1.4.4 defect, not a flake.
-    //
-    // Measured cause — and it is NOT this dialog. The dialog is `width: 100%`
-    // of its layer and only tracks the document width; hiding it changes the
-    // overflow by 0. Decomposed on the live page, mobile-chrome, 200%:
-    //
-    //   67px  the shell's account menu in `.aura-shell__bar` (right edge 460).
-    //         Every ancestor is `flex-wrap: nowrap` + `overflow-x: visible`, and
-    //         `.aura-toaster` (fixed, a hard 428px wide) is a second, smaller
-    //         overflow. The same 67px shows on /admin/invoices,
-    //         /admin/directory and /admin/settings/invoicing — a shell floor,
-    //         not a property of any one page.
-    //   27px  with the shell hidden: the invoice detail page BEHIND the dialog
-    //         — its totals `<dd class="text-end tabular-nums">` (right edge 420).
-    //    0px  the dialog itself.
-    //
-    // So this flips only when BOTH the shell and the invoice-detail totals fit;
-    // fixing either alone leaves it red. An earlier note here blamed the legacy
-    // dialog footer — that footer did measure wide, but the dialog has since
-    // moved to AURA and the 67px did not move, which is what refuted it.
-    //
-    // Deliberately NOT fixed here: both causes are product-wide UI (the AURA
-    // shell, owned by spec 122) and widening the ≤1 budget would only make it
-    // quiet. `test.fail` keeps it visible and turns RED the moment it passes.
-    test.fail(
-      testInfo.project.name === 'mobile-chrome',
-      'known: 67px overflow at 200% zoom on a 393px viewport (shell account menu + invoice-detail totals; not the dialog)',
-    );
+  }) => {
+    // At 393px this used to overflow 67px: the staff top bar did not wrap and
+    // the invoice detail totals behind the dialog ran past the screen (the
+    // dialog itself contributed 0). Both were fixed in #530, so this runs as a
+    // plain assertion on every project again.
     const state = await openIssueDialogAtZeroRate(page);
     gateOnState(state);
 
