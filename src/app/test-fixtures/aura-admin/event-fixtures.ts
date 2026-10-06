@@ -5,6 +5,7 @@
  */
 import type { EventsListTableRow } from '@/components/events/events-list-table';
 import type { AttendeeRow } from '@/components/events/attendee-table';
+import type { ErasureResultRow } from '@/components/events/erasure-results-table';
 import { asEventId } from '@/modules/events/domain/branded-types';
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -57,4 +58,13 @@ export const MEMBER_SEARCH_HITS = [
   { memberId: id(3), companyName: 'Siam Nordic Trading Co., Ltd.', primaryContactName: 'Erik Johansson' },
   { memberId: id(5), companyName: 'Siam Paper & Pulp Co., Ltd.', primaryContactName: 'Somchai Prasert' },
   { memberId: id(6), companyName: 'Siam Scandinavian Foods', primaryContactName: null },
+];
+
+/** 122 US9b-1 (T928) — the erase-by-email results for `ploy.r@gmail.example`. */
+export const ERASURE_EMAIL = 'ploy.r@gmail.example';
+export const ERASURE_ROWS: ErasureResultRow[] = [
+  { registrationId: id(941), eventId: EVENT_ID, eventName: 'SweCham Crayfish Party 2026', dateLabel: '2026-09-05', attendeeName: 'Ploy Rattanakul', matchType: 'member_fuzzy', quota: 'none', isPseudonymised: false },
+  { registrationId: id(942), eventId: id(902), eventName: 'Nordic Business Breakfast — Bangkok', dateLabel: '2026-06-18', attendeeName: 'Ploy Rattanakul', matchType: 'member_contact', quota: 'partnership', isPseudonymised: false },
+  { registrationId: id(943), eventId: id(903), eventName: 'Midsummer Celebration 2026', dateLabel: '2026-06-20', attendeeName: 'Ploy Rattanakul', matchType: 'member_contact', quota: 'cultural', isPseudonymised: false },
+  { registrationId: id(944), eventId: id(904), eventName: null, dateLabel: null, attendeeName: 'Attendee 7f3a', matchType: 'non_member', quota: 'none', isPseudonymised: true },
 ];

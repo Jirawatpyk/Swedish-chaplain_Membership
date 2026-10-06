@@ -5,7 +5,7 @@
  * so the `relink open` preview shows results; every other request goes to the
  * network. Restores `fetch` on unmount.
  */
-import { useEffect } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 
 const MEMBER_SEARCH_PATH = '/api/admin/members/search';
 
@@ -33,4 +33,28 @@ export function MemberSearchStub({
     };
   }, [hits]);
   return null;
+}
+
+/**
+ * 122 US9b-1 (T928) — opens the first attendee row's ⋯ menu and chooses
+ * "Erase personal data", so the `dialog=erase` preview shows the erase dialog
+ * as the row menu opens it. Retries until the dialog is open, for up to 5 s.
+ */
+export function OpenRowEraseMenu({ children }: { readonly children: ReactNode }) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    let tries = 0;
+    const id = window.setInterval(() => {
+      const root = ref.current;
+      if (!root || document.querySelector('[role="alertdialog"]') || ++tries > 50) {
+        window.clearInterval(id);
+        return;
+      }
+      const item = document.querySelector<HTMLElement>('[role="menuitem"]');
+      if (item) item.click();
+      else root.querySelector<HTMLButtonElement>('[data-testid^="attendee-more-"]')?.click();
+    }, 100);
+    return () => window.clearInterval(id);
+  }, []);
+  return <div ref={ref}>{children}</div>;
 }
