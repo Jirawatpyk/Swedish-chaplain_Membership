@@ -426,6 +426,13 @@ export const MIGRATED_PATHS = [
   'src/components/events/relink-registration-dialog.tsx',
   'src/components/events/match-status-badge.tsx',
   'src/components/events/quota-effect-badge.tsx',
+  // US9b-1 — the events erasure: the erase-by-email page, the deep-link erase
+  // page, the erase dialog, the erase-by-email panel and its results table.
+  'src/app/(staff)/admin/events/erasure/**',
+  'src/app/(staff)/admin/events/\\[eventId\\]/registrations/**',
+  'src/components/events/erase-pii-dialog.tsx',
+  'src/components/events/erase-by-email-panel.tsx',
+  'src/components/events/erasure-results-table.tsx',
 ];
 
 /**

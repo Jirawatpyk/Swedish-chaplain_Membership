@@ -593,7 +593,7 @@ function AttendeeRowActions({
   return (
     <div
       data-row-actions=""
-      className="flex flex-wrap items-center justify-end gap-2 max-sm:w-full max-sm:[&>button:not(.aura-icon-btn)]:flex-1"
+      className="flex flex-wrap items-center justify-end gap-2 max-sm:w-full max-sm:[&>button:first-of-type]:flex-1"
     >
       <RelinkRegistrationDialog
         registrationId={row.registrationId}
