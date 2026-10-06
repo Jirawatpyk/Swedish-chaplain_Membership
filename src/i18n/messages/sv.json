@@ -630,7 +630,7 @@
           "plan_deactivated": "Paket inaktiverat",
           "invoice_issued": "Faktura utfärdad",
           "invoice_paid": "Faktura betald",
-          "invoice_voided": "Faktura makulerad",
+          "invoice_voided": "Faktura annullerad",
           "invoice_pdf_downloaded": "Faktura-PDF nedladdad",
           "invoice_credited": "Faktura krediterad",
           "credit_note_issued": "Kreditnota utfärdad",
@@ -1720,7 +1720,7 @@
         "invoiceDraftCreated": "Fakturautkast skapat",
         "invoiceIssued": "Faktura {documentNumber} utställd",
         "invoicePaid": "Faktura betald via {paymentMethod}",
-        "invoiceVoided": "Faktura makulerad — {reason}",
+        "invoiceVoided": "Faktura annullerad — {reason}",
         "creditNoteIssued": "Kreditnota {documentNumber} utställd — {creditAmount} THB",
         "invoicePdfResent": "PDF för faktura {documentNumber} skickad på nytt",
         "taxReceiptIssued": "Skattekvitto {documentNumber} utfärdat (ใบกำกับภาษี/ใบเสร็จรับเงิน)"
@@ -1762,7 +1762,7 @@
           "draft": "Utkast",
           "issued": "Utställd",
           "paid": "Betald",
-          "void": "Makulerad",
+          "void": "Annullerad",
           "credited": "Krediterad",
           "partially_credited": "Delvis krediterad"
         },
@@ -2485,7 +2485,7 @@
           }
         },
         "errors": {
-          "concurrent": "Denna faktura har redan krediterats eller makulerats i en annan session. Uppdatera för att se den senaste statusen.",
+          "concurrent": "Denna faktura har redan krediterats eller annullerats i en annan session. Uppdatera för att se den senaste statusen.",
           "refreshAction": "Uppdatera",
           "failed": "Kreditnotan kunde inte utfärdas.",
           "unknown": "Ett okänt fel uppstod. Försök igen.",
@@ -2702,7 +2702,7 @@
           "draft": "Utkast",
           "issued": "Utfärdad",
           "paid": "Betald",
-          "void": "Ogiltig",
+          "void": "Annullerad",
           "credited": "Krediterad",
           "partially_credited": "Delvis krediterad",
           "overdue": "Förfallen"
@@ -3445,8 +3445,8 @@
           "concurrent": "Denna faktura har redan annullerats eller ändrats i en annan session. Uppdatera för att se den senaste statusen.",
           "refreshAction": "Uppdatera",
           "codeFallback": "Felkod: {code}",
-          "refundInProgress": "En återbetalning behandlas för denna fakturas betalning. Att makulera nu kan skapa en konflikt – vänta tills återbetalningen är klar och försök igen.",
-          "paidMembershipRequiresCreditNote": "Den här betalda medlemsfakturan kan inte makuleras. För att återföra den, utfärda en kreditnota i stället.",
+          "refundInProgress": "En återbetalning behandlas för denna fakturas betalning. Att annullera nu kan skapa en konflikt – vänta tills återbetalningen är klar och försök igen.",
+          "paidMembershipRequiresCreditNote": "Den här betalda medlemsfakturan kan inte annulleras. För att återföra den, utfärda en kreditnota i stället.",
           "paidInvoiceRequiresRefund": "Den här betalda fakturan kan inte annulleras. Återför den i stället med en återbetalning; om den betaldes utanför Chamber-OS, återför pengarna utanför Chamber-OS och följ rättelserutinen."
         }
       }
@@ -4256,7 +4256,7 @@
         "selectedCount": "{count, plural, one {# vald} other {# valda}}",
         "overCap": "Högst {max} förnyelser per omgång. Dela upp urvalet.",
         "taxDocWarningTitle": "Detta utfärdar ett skattekvitto för varje medlem",
-        "taxDocWarningBody": "Varje medlem får ett skattekvitto med nästa nummer, markerat som betalt i ett steg. De kan inte makuleras — ett misstag kräver en kreditnota för det kvittot.",
+        "taxDocWarningBody": "Varje medlem får ett skattekvitto med nästa nummer, markerat som betalt i ett steg. De kan inte annulleras — ett misstag kräver en kreditnota för det kvittot.",
         "overCapHelper": "{count} av {total} valda — endast {max} kan bearbetas åt gången. Avmarkera rader efter rad {max}, eller använd filter för att begränsa listan innan du väljer på nytt.",
         "clear": "Rensa markering",
         "cancel": "Avbryt",
@@ -4702,7 +4702,7 @@
           "paymentReferencePlaceholder": "t.ex. bankslippsnummer eller checknummer",
           "paymentDateLabel": "Betalningsdatum",
           "taxDocWarningTitle": "Detta utfärdar ett skattekvitto",
-          "taxDocWarningBody": "Ett skattekvitto utfärdas med nästa nummer och markeras som betalt i ett steg. Det kan inte makuleras — ett misstag kräver en kreditnota.",
+          "taxDocWarningBody": "Ett skattekvitto utfärdas med nästa nummer och markeras som betalt i ett steg. Det kan inte annulleras — ett misstag kräver en kreditnota.",
           "confirm": "Markera betald",
           "cancel": "Avbryt",
           "submitting": "Registrerar…",
@@ -5093,7 +5093,7 @@
         "description": "Återbetala hela eller delar av denna betalning. Motsvarande kreditnota utfärdas och skickas till medlemmen via e-post.",
         "descriptionWaived": {
           "section105Receipt": "Återbetala hela eller delar av denna betalning. Ingen kreditnota utfärdas: betalningen har ett kvitto enligt avsnitt 105, inte en skattefaktura.",
-          "invoiceVoided": "Återbetala hela eller delar av denna betalning. Ingen kreditnota utfärdas: fakturan har makulerats."
+          "invoiceVoided": "Återbetala hela eller delar av denna betalning. Ingen kreditnota utfärdas: fakturan har annullerats."
         },
         "cancel": "Avbryt",
         "confirm": "Utfärda återbetalning",
@@ -5126,7 +5126,7 @@
           "creditNoteLoading": "Beräknar kreditnotan…",
           "noCreditNote": {
             "section105Receipt": "Ingen kreditnota — betalningen har ett kvitto enligt avsnitt 105, inte en skattefaktura.",
-            "invoiceVoided": "Ingen kreditnota — fakturan har makulerats."
+            "invoiceVoided": "Ingen kreditnota — fakturan har annullerats."
           }
         },
         "typedPhrase": {
@@ -5151,7 +5151,7 @@
         "pendingWaivedToast": "Återbetalning skickad — inväntar betalleverantören. Ingen kreditnota kommer att utfärdas.",
         "waivedReason": {
           "section105Receipt": "Originalhandlingen var ett kvitto enligt § 105, inte en momsfaktura enligt § 86/4, så det finns ingen faktura som en kreditnota enligt § 86/10 kan hänvisa till. Den utgående moms som redan deklarerats för denna försäljning har inte justerats — lämna över återbetalningen till revisorn vid månadsavslut.",
-          "invoiceVoided": "Fakturan makulerades, så det finns ingen momsfaktura kvar att kreditera. Om fakturan hade betalats och dess utgående moms redan deklarerats, lämna över återbetalningen till revisorn vid månadsavslut."
+          "invoiceVoided": "Fakturan annullerades, så det finns ingen momsfaktura kvar att kreditera. Om fakturan hade betalats och dess utgående moms redan deklarerats, lämna över återbetalningen till revisorn vid månadsavslut."
         }
       },
       "error": {
@@ -5165,7 +5165,7 @@
         "f4_bridge_error": "Utfärdande av kreditnota misslyckades. Driften har meddelats.",
         "f4_preflight_read_error": "Det gick inte att verifiera det återbetalningsbara saldot just nu. Inga pengar flyttades — försök igen.",
         "f4_preflight_gate_underivable": "Det gick inte att avgöra om denna betalning kan krediteras, så återbetalningen genomfördes inte. Inga pengar flyttades. Detta kräver en rättning från vår sida — kontakta supporten.",
-        "f4_preflight_invalid_status": "Denna faktura kan inte längre krediteras och kan därför inte återbetalas. Inga pengar flyttades. Kontrollera fakturan — den kan ha makulerats eller redan krediterats i sin helhet.",
+        "f4_preflight_invalid_status": "Denna faktura kan inte längre krediteras och kan därför inte återbetalas. Inga pengar flyttades. Kontrollera fakturan — den kan ha annullerats eller redan krediterats i sin helhet.",
         "f4_preflight_not_creditable": "För denna betalning utfärdades endast ett kvitto, inte en skattefaktura, så ingen kreditnota kan utfärdas för den. Inga pengar flyttades. Återbetalning kräver manuell hantering — kontakta supporten.",
         "f4_preflight_receipt_rendering": "Kvittot för denna betalning håller fortfarande på att skapas. Inga pengar flyttades — försök återbetala igen om några minuter.",
         "invoice_data_corrupt": "Denna faktura saknar de köparuppgifter som registrerades vid utfärdandet, så återbetalningens skattemässiga hantering kan inte fastställas säkert. Inga pengar flyttades. Detta är ett datafel som inte kan åtgärdas från den här vyn — kontakta supporten.",
@@ -7310,7 +7310,7 @@
         "reasonAuth": "Din session har gått ut. Logga in igen.",
         "reasonMembershipTerminated": "Ditt medlemskap har avslutats. Kontakta kammaren för att återaktivera medlemskapet innan du betalar.",
         "reasonNoPrimaryContact": "Detta medlemskap saknar primär kontakt, så PromptPay kan inte användas. Kontakta kammarens personal, eller betala med kort i stället.",
-        "reasonInvoiceNotPayable": "Denna faktura kan inte längre betalas online – den kan redan vara betald, eller har ersatts eller makulerats. Ladda om sidan för att se aktuell status.",
+        "reasonInvoiceNotPayable": "Denna faktura kan inte längre betalas online – den kan redan vara betald, eller har ersatts eller annullerats. Ladda om sidan för att se aktuell status.",
         "reasonServer": "Vår betalningstjänst är tillfälligt otillgänglig.",
         "reasonReadOnly": "Betalningar är pausade medan systemet är i skrivskyddat läge för underhåll. Du har inte debiterats.",
         "reasonNetwork": "Nätverksfel. Kontrollera din anslutning och försök igen.",
@@ -7595,7 +7595,7 @@
       "invoice_draft_deleted": "Fakturautkast borttaget",
       "invoice_issued": "Faktura utfärdad",
       "invoice_paid": "Faktura markerad som betald",
-      "invoice_voided": "Faktura makulerad",
+      "invoice_voided": "Faktura annullerad",
       "invoice_overdue_detected": "Faktura förfallen",
       "credit_note_issued": "Kreditnota utfärdad",
       "invoice_pdf_resent": "Faktura-PDF skickad igen",
@@ -8184,7 +8184,7 @@
       "draft": "Fakturautkast skapat",
       "issued": "Faktura utfärdad",
       "paid": "Faktura betald",
-      "void": "Faktura makulerad",
+      "void": "Faktura annullerad",
       "credited": "Faktura krediterad",
       "partially_credited": "Faktura delvis krediterad"
     },
@@ -8255,7 +8255,7 @@
       "invoice_draft_created": "Fakturautkast förberett",
       "invoice_issued": "Faktura utfärdad",
       "invoice_paid": "Faktura betald",
-      "invoice_voided": "Faktura makulerad",
+      "invoice_voided": "Faktura annullerad",
       "invoice_pdf_resent": "Fakturan mejlades igen till den primära kontakten",
       "credit_note_issued": "Kreditnota utfärdad",
       "tax_receipt_issued": "Skattekvitto utfärdat",
