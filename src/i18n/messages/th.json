@@ -5419,7 +5419,7 @@
           "reasonPlaceholder": "เช่น คำขอ GDPR Article 17 จากผู้ร่วมงาน คำขอตาม พ.ร.บ. คุ้มครองข้อมูลฯ มาตรา 33 หรือกรอกผิดในการส่งครั้งแรก…",
           "reasonHint": "{remaining, plural, =0 {เหลือ 0 อักขระ} other {เหลือ # อักขระ}}",
           "cancel": "ยกเลิก",
-          "confirm": "ลบข้อมูล",
+          "confirm": "ลบข้อมูลส่วนบุคคล",
           "successTitle": "ลบข้อมูลส่วนบุคคลแล้ว",
           "successDescription": "คืนโควต้า: พาร์ตเนอร์ชิป {partnership} วัฒนธรรม {cultural}",
           "alreadyErasedTitle": "ลบไปแล้วก่อนหน้านี้",
