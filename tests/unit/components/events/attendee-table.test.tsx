@@ -96,6 +96,13 @@ describe('attendee filters (AURA FilterBar)', () => {
     expect(nav.replace).toHaveBeenLastCalledWith('/admin/events/e1?unmatchedOnly=1', { scroll: false });
   });
 
+  it('puts the payment-status select before the toggle chip, as on Members and Plans', () => {
+    renderTable();
+    const chip = screen.getByRole('button', { name: a.showUnmatchedOnly });
+    const face = screen.getAllByRole('combobox', { name: a.paymentStatusFilter }).at(0)!;
+    expect(face.compareDocumentPosition(chip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('shows the board\'s short "Unmatched only" on a phone, keeping the full name', () => {
     renderTable();
     const chip = screen.getByRole('button', { name: a.showUnmatchedOnly });
