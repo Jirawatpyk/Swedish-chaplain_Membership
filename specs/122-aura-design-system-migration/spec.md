@@ -395,6 +395,8 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - the flag buttons and "Archive event" at the card's end, each confirmed in the shared confirmation dialog with today's copy. On a phone they move to an "Event actions" section at the page's end.
   - the attendees section: search, "Show unmatched only", the payment-status select, the table (Attendee, Match, Ticket, Quota, Registered, actions) and the pager. "Relink" opens the relink dialog, now on AURA `Dialog` with a server-searched `Combobox` instead of the legacy command list.
   - the match and quota badges in the board's tones.
+  - the row's "More" menu, which holds "Erase personal data" on the board, comes with US9b, when the erase dialog moves to AURA. Until then the erase button stays beside "Relink", and "Relink" stays on every row as today (the board shows it only on rows that are not verified, which would remove the relink of a wrong verified match).
+  - the payment-status select follows the filter pattern: a compact `FilterSelect` ("Payment status: All"), and an applied search or status is a removable chip in the bar.
 - **Kept from the code where the boards are silent or wrong:**
   - the CSV column remap stays in US9b. The import board shows only which columns were detected, but removing the remap would remove a feature (FR-011).
   - the erase-by-email count stays the erasable count: the phone board's "Erase all 3 matches", beside a row already erased, is a board error.
