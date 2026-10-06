@@ -5254,7 +5254,6 @@
         "moreActions": "การดำเนินการเพิ่มเติม",
         "searchPlaceholder": "ค้นหากิจกรรมด้วยชื่อ…",
         "searchLabel": "ค้นหากิจกรรม",
-        "searchSubmit": "ค้นหา",
         "resultsAnnouncement": "{count, plural, =0 {ไม่พบกิจกรรม} other {# กิจกรรม}}",
         "resultsAnnouncementWithQuery": "{count, plural, =0 {ไม่พบกิจกรรม} other {# กิจกรรม}} สำหรับ ''{query}''",
         "columns": {
@@ -5287,10 +5286,7 @@
           "partnerBenefitOnly": "นับเป็นสิทธิ์พาร์ตเนอร์ชิป",
           "culturalEventOnly": "นับเป็นกิจกรรมวัฒนธรรม",
           "showArchived": "แสดงกิจกรรมที่เก็บถาวร",
-          "hideArchived": "ซ่อนกิจกรรมที่เก็บถาวร",
-          "clearAll": "ล้างตัวกรอง",
-          "partnerBenefitOnlyActive": "นับเป็นสิทธิ์พาร์ตเนอร์ชิป (เปิดอยู่)",
-          "culturalEventOnlyActive": "นับเป็นกิจกรรมวัฒนธรรม (เปิดอยู่)"
+          "clearAll": "ล้างตัวกรอง"
         },
         "emptyState": {
           "filteredEmpty": "ไม่พบกิจกรรมที่ตรงกับตัวกรอง",
@@ -5346,10 +5342,7 @@
           "tableCaption": "รายชื่อผู้เข้าร่วมพร้อมสถานะการจับคู่ บัตร ผลกระทบโควต้า และเวลาลงทะเบียน",
           "searchPlaceholder": "ค้นหาจากอีเมลหรือชื่อ…",
           "searchLabel": "ค้นหาผู้เข้าร่วม",
-          "searchSubmit": "ค้นหา",
           "showUnmatchedOnly": "แสดงเฉพาะที่ยังไม่จับคู่",
-          "showUnmatchedOnlyActive": "กำลังแสดงเฉพาะที่ยังไม่จับคู่",
-          "filterByPaymentStatusLabel": "กรองตามสถานะการชำระเงิน",
           "paymentStatusFilter": "สถานะการชำระเงิน",
           "allShort": "ทั้งหมด",
           "filterChip": "{label}: {value}",

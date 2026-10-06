@@ -66,7 +66,6 @@ const MESSAGES = {
           searchSubmit: 'Search',
           showUnmatchedOnly: 'Show unmatched only',
           showUnmatchedOnlyActive: 'Showing unmatched',
-          filterByPaymentStatusLabel: 'Filter by payment status',
           allPaymentStatuses: 'All statuses',
           empty: 'Empty',
           emptyHeading: 'No matches',

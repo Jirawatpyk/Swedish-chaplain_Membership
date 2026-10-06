@@ -382,7 +382,7 @@ export function AttendeeTable({
               onClick={() => {
                 void copyEmail(r.attendeeEmail);
               }}
-              className="group inline-flex w-fit max-w-full items-center gap-1 rounded-[var(--aura-radius-sm)] text-start text-[var(--aura-fg-link)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)]"
+              className="group relative inline-flex w-fit max-w-full items-center gap-1 rounded-[var(--aura-radius-sm)] max-sm:before:absolute max-sm:before:inset-x-0 max-sm:before:-inset-y-3.5 max-sm:before:content-[''] text-start text-[var(--aura-fg-link)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)]"
               aria-label={t('copyEmailAria', { email: r.attendeeEmail })}
               title={t('copyEmail')}
             >

@@ -5254,7 +5254,6 @@
         "moreActions": "More actions",
         "searchPlaceholder": "Search events by name…",
         "searchLabel": "Search events",
-        "searchSubmit": "Search",
         "resultsAnnouncement": "{count, plural, =0 {No events} =1 {1 event} other {# events}}",
         "resultsAnnouncementWithQuery": "{count, plural, =0 {No events} =1 {1 event} other {# events}} for ''{query}''",
         "columns": {
@@ -5287,10 +5286,7 @@
           "partnerBenefitOnly": "Counted as partner benefit",
           "culturalEventOnly": "Counted as cultural event",
           "showArchived": "Show archived events",
-          "hideArchived": "Hide archived events",
-          "clearAll": "Clear filters",
-          "partnerBenefitOnlyActive": "Counted as partner benefit (active)",
-          "culturalEventOnlyActive": "Counted as cultural event (active)"
+          "clearAll": "Clear filters"
         },
         "emptyState": {
           "filteredEmpty": "No events match your filters.",
@@ -5346,10 +5342,7 @@
           "tableCaption": "Event attendees with match status, ticket, quota effect, and registration time.",
           "searchPlaceholder": "Search by email or name…",
           "searchLabel": "Search attendees",
-          "searchSubmit": "Search",
           "showUnmatchedOnly": "Show unmatched only",
-          "showUnmatchedOnlyActive": "Showing unmatched only",
-          "filterByPaymentStatusLabel": "Filter by payment status",
           "paymentStatusFilter": "Payment status",
           "allShort": "All",
           "filterChip": "{label}: {value}",

@@ -214,7 +214,7 @@ export function EventDetailHeader({ event, actions, actionsHiddenBelowSm = false
                 <Tooltip content={t('header.lastUpdatedAtTooltip')}>
                   <button
                     type="button"
-                    className={`inline-flex size-6 items-center justify-center rounded-full ${muted} hover:text-[var(--aura-fg-primary)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--aura-focus-ring)]`}
+                    className={`relative inline-flex size-6 items-center justify-center rounded-full before:absolute before:-inset-2.5 before:content-[''] ${muted} hover:text-[var(--aura-fg-primary)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--aura-focus-ring)]`}
                     aria-label={t('header.lastUpdatedAtTooltip')}
                   >
                     <Info aria-hidden="true" className="size-3.5" />

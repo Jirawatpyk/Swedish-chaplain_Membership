@@ -19,7 +19,7 @@ export const EVENTS_LIST_COLUMN_LAYOUT = {
   category: { width: 150, card: 'field', cardOrder: 2 },
   registrations: { width: 120, align: 'end', card: 'field', cardOrder: 4 },
   partnerBenefit: { width: 170, card: 'wide', cardOrder: 3 },
-  // The percentage with its band word over "35 of 42 matched".
+  // The percentage with its band word over "35 of 42".
   matchRate: { width: 150, align: 'end', card: 'field', cardOrder: 5, skeletonLines: 2 },
 } as const satisfies Record<string, ColumnLayout>;
 

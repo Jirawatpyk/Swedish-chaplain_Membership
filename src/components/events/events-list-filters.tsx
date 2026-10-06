@@ -47,7 +47,7 @@ export function EventsListFilters({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [, startTransition] = useTransition();
+  const [isPending, startTransition] = useTransition();
   const barRef = useRef<HTMLDivElement>(null);
 
   function write(next: Record<string, string | null>) {
@@ -80,6 +80,8 @@ export function EventsListFilters({
   const barStrings = useMemo(() => ({ clearFilters: t('filters.clearAll') }), [t]);
 
   return (
+    // Busy while a filter change loads (the old Search button's spinner).
+    <div aria-busy={isPending}>
     <AuraProvider strings={barStrings}>
       <FilterBar
         ref={barRef}
@@ -112,5 +114,6 @@ export function EventsListFilters({
         ) : null}
       </FilterBar>
     </AuraProvider>
+    </div>
   );
 }

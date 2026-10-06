@@ -5254,7 +5254,6 @@
         "moreActions": "Fler åtgärder",
         "searchPlaceholder": "Sök evenemang efter namn…",
         "searchLabel": "Sök evenemang",
-        "searchSubmit": "Sök",
         "resultsAnnouncement": "{count, plural, =0 {Inga evenemang} one {1 evenemang} other {# evenemang}}",
         "resultsAnnouncementWithQuery": "{count, plural, =0 {Inga evenemang} one {1 evenemang} other {# evenemang}} för ''{query}''",
         "columns": {
@@ -5287,10 +5286,7 @@
           "partnerBenefitOnly": "Räknas som partnerförmån",
           "culturalEventOnly": "Räknas som kulturevenemang",
           "showArchived": "Visa arkiverade evenemang",
-          "hideArchived": "Dölj arkiverade evenemang",
-          "clearAll": "Rensa filter",
-          "partnerBenefitOnlyActive": "Räknas som partnerförmån (aktivt)",
-          "culturalEventOnlyActive": "Räknas som kulturevenemang (aktivt)"
+          "clearAll": "Rensa filter"
         },
         "emptyState": {
           "filteredEmpty": "Inga evenemang matchar dina filter.",
@@ -5346,10 +5342,7 @@
           "tableCaption": "Deltagare med matchningsstatus, biljett, kvoteffekt och registreringstid.",
           "searchPlaceholder": "Sök på e-post eller namn…",
           "searchLabel": "Sök deltagare",
-          "searchSubmit": "Sök",
           "showUnmatchedOnly": "Visa endast omatchade",
-          "showUnmatchedOnlyActive": "Visar endast omatchade",
-          "filterByPaymentStatusLabel": "Filtrera efter betalningsstatus",
           "paymentStatusFilter": "Betalningsstatus",
           "allShort": "Alla",
           "filterChip": "{label}: {value}",

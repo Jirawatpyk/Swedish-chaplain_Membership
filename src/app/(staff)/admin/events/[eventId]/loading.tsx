@@ -41,24 +41,39 @@ export default async function EventDetailLoading() {
         />
         <Card aria-hidden data-skeleton="summary">
           <div className="flex flex-col gap-[var(--aura-space-4)]">
+            {/* Date and category over the badges; "View on EventCreate" at the end. */}
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="flex flex-col gap-2">
-                <SkeletonBlock className="h-6 w-64 max-w-full" />
-                <SkeletonBlock className="h-4 w-48" />
+                <SkeletonBlock className="h-4 w-56 max-w-full" />
                 <div className="flex gap-2">
                   <SkeletonBlock className="h-5 w-24 rounded-full" />
                   <SkeletonBlock className="h-5 w-28 rounded-full" />
                 </div>
               </div>
-              <div className="flex gap-2 max-sm:hidden" data-skeleton="actions">
-                <SkeletonBlock className="h-9 w-40" />
-                <SkeletonBlock className="h-9 w-32" />
+              <SkeletonBlock className="h-9 w-44 max-sm:w-full" data-skeleton="eventcreate-link" />
+            </div>
+            {/* The match-rate figure with its two lines; the registrations and last update. */}
+            <div className="flex flex-col gap-4 border-t border-[var(--aura-border-default)] pt-[var(--aura-space-4)] sm:flex-row sm:items-end sm:justify-between">
+              <div className="flex flex-col gap-2">
+                <SkeletonBlock className="h-4 w-24" />
+                <SkeletonBlock className="h-8 w-28" />
+                <SkeletonBlock className="h-4 w-48" />
+                <SkeletonBlock className="h-3 w-32" />
+              </div>
+              <div className="flex flex-col gap-2 sm:items-end">
+                <SkeletonBlock className="h-4 w-44" />
+                <SkeletonBlock className="h-4 w-56" />
               </div>
             </div>
-            <div className="flex flex-wrap gap-6 border-t border-[var(--aura-border)] pt-4">
-              <SkeletonBlock className="h-10 w-32" />
-              <SkeletonBlock className="h-10 w-40" />
-              <SkeletonBlock className="h-10 w-36" />
+            {/* The flag and archive actions, a strip at the card's end from 640px
+                (an admin's view; on a phone they sit at the page's end). */}
+            <div
+              className="flex flex-wrap gap-2 border-t border-[var(--aura-border-default)] pt-[var(--aura-space-4)] max-sm:hidden"
+              data-skeleton="actions"
+            >
+              <SkeletonBlock className="h-9 w-52" />
+              <SkeletonBlock className="h-9 w-52" />
+              <SkeletonBlock className="ml-auto h-9 w-36" />
             </div>
           </div>
         </Card>
