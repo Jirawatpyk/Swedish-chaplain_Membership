@@ -5347,6 +5347,8 @@
           "searchLabel": "ค้นหาผู้เข้าร่วม",
           "showUnmatchedOnly": "แสดงเฉพาะที่ยังไม่จับคู่",
           "showUnmatchedOnlyShort": "ยังไม่จับคู่",
+          "moreActionsAria": "การดำเนินการเพิ่มเติมสำหรับ {attendeeName}",
+          "eraseMenuItem": "ลบข้อมูลส่วนบุคคล",
           "paymentStatusFilter": "สถานะการชำระเงิน",
           "allShort": "ทั้งหมด",
           "filterChip": "{label}: {value}",

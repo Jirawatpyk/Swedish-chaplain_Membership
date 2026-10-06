@@ -5347,6 +5347,8 @@
           "searchLabel": "Search attendees",
           "showUnmatchedOnly": "Show unmatched only",
           "showUnmatchedOnlyShort": "Unmatched only",
+          "moreActionsAria": "More actions for {attendeeName}",
+          "eraseMenuItem": "Erase personal data",
           "paymentStatusFilter": "Payment status",
           "allShort": "All",
           "filterChip": "{label}: {value}",

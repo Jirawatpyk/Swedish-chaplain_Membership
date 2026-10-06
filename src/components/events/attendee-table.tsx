@@ -34,15 +34,17 @@
 'use client';
 
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
-import { useTransition, useCallback, useEffect, useMemo, useRef } from 'react';
+import { useTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { Copy, SearchX } from 'lucide-react';
 import {
   AuraProvider,
   Button,
   DataTable,
+  DropdownMenu,
   FilterBar,
   FilterSelect,
+  IconButton,
   Tag,
   type ActiveFilter,
   type DataTableColumn,
@@ -476,25 +478,16 @@ export function AttendeeTable({
         key: 'actions',
         label: t('columns.actions'),
         ...ATTENDEE_COLUMN_LAYOUT.actions,
-        // On a phone (the card foot) Relink and Erase share the row equally.
+        // Relink stays on every row; "Erase personal data" sits in the row's
+        // "More" menu (board Admin-event-detail, spec 122 US9b-1 T923). On a
+        // phone (the card foot) Relink takes the width beside the ⋯ button.
         render: (r) => (
-          <div className="flex flex-wrap items-center justify-end gap-2 max-sm:w-full max-sm:[&>button]:flex-1">
-            <RelinkRegistrationDialog
-              registrationId={r.registrationId}
-              eventId={eventId}
-              attendeeName={r.attendeeName}
-              attendeeEmail={r.attendeeEmail}
-              currentMatchedMemberId={r.currentMatchedMemberId}
-              isPseudonymised={r.isPseudonymised}
-            />
-            {/* DV-6 — the existing per-registration erase tool (FR-032a) as a
-                row action. Hidden once pseudonymised: the erase page
-                redirects an already-purged row away + re-erase is an
-                idempotent no-op. */}
-            {!r.isPseudonymised && (
-              <ErasePiiDialog eventId={eventId} registrationId={r.registrationId} attendeeName={r.attendeeName} />
-            )}
-          </div>
+          <AttendeeRowActions
+            row={r}
+            eventId={eventId}
+            moreLabel={t('moreActionsAria', { attendeeName: r.attendeeName })}
+            eraseLabel={t('eraseMenuItem')}
+          />
         ),
       },
     ];
@@ -573,6 +566,68 @@ export function AttendeeTable({
           // Edge to edge inside the attendees card from 640px up; the pager follows.
           bleed
         />
+      )}
+    </div>
+  );
+}
+
+/**
+ * A row's actions: "Relink", then the ⋯ "More" menu holding "Erase personal
+ * data" (FR-032a). DV-6: a pseudonymised row has no erase action — the erase
+ * page redirects an already-purged row away and re-erasure is an idempotent
+ * no-op — so it gets no menu at all.
+ */
+function AttendeeRowActions({
+  row,
+  eventId,
+  moreLabel,
+  eraseLabel,
+}: {
+  readonly row: AttendeeRow;
+  readonly eventId: EventId;
+  readonly moreLabel: string;
+  readonly eraseLabel: string;
+}) {
+  const [eraseOpen, setEraseOpen] = useState(false);
+  const moreRef = useRef<HTMLButtonElement>(null);
+  return (
+    <div
+      data-row-actions=""
+      className="flex flex-wrap items-center justify-end gap-2 max-sm:w-full max-sm:[&>button:not(.aura-icon-btn)]:flex-1"
+    >
+      <RelinkRegistrationDialog
+        registrationId={row.registrationId}
+        eventId={eventId}
+        attendeeName={row.attendeeName}
+        attendeeEmail={row.attendeeEmail}
+        currentMatchedMemberId={row.currentMatchedMemberId}
+        isPseudonymised={row.isPseudonymised}
+      />
+      {!row.isPseudonymised && (
+        <>
+          <DropdownMenu
+            label={moreLabel}
+            trigger={
+              <IconButton
+                ref={moreRef}
+                icon="ellipsis"
+                size="sm"
+                touchHeight
+                label={moreLabel}
+                data-testid={`attendee-more-${row.registrationId}`}
+              />
+            }
+            items={[{ label: eraseLabel, tone: 'danger', onSelect: () => setEraseOpen(true) }]}
+          />
+          <ErasePiiDialog
+            eventId={eventId}
+            registrationId={row.registrationId}
+            attendeeName={row.attendeeName}
+            open={eraseOpen}
+            onOpenChange={setEraseOpen}
+            finalFocus={moreRef}
+          />
+        </>
       )}
     </div>
   );

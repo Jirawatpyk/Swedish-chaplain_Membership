@@ -5347,6 +5347,8 @@
           "searchLabel": "Sök deltagare",
           "showUnmatchedOnly": "Visa endast omatchade",
           "showUnmatchedOnlyShort": "Omatchade",
+          "moreActionsAria": "Fler åtgärder för {attendeeName}",
+          "eraseMenuItem": "Radera personuppgifter",
           "paymentStatusFilter": "Betalningsstatus",
           "allShort": "Alla",
           "filterChip": "{label}: {value}",
