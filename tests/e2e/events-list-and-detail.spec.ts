@@ -20,9 +20,14 @@
  */
 import { expect, test } from './fixtures';
 import { signInAsAdmin } from './helpers/admin-session';
+import en from '../../src/i18n/messages/en.json';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
+// Seeded by global-setup (seedF6Events): the partner-benefit event, which
+// carries an eventcreate_url.
+const PB_EVENT_ID = process.env.E2E_SEED_F6_PB_EVENT_ID;
+const emptyState = en.admin.events.list.emptyState;
 
 // Dev server cold-compile + Next.js Turbopack chunk on first nav can
 // push individual tests past 30s. Mirror broadcast-i18n pattern.
@@ -132,11 +137,12 @@ test.describe('F6 events list and detail — US2 AS1-AS5 @workers=1', () => {
   test('AS3 — "View on EventCreate" button links to eventCreateUrl', async ({
     page,
   }) => {
-    await page.goto('/admin/events');
+    // The seeded partner-benefit event has an EventCreate URL. The list's
+    // first row was order-dependent: other specs leave events without one
+    // (e.g. eventcreate-a11y's "A11y R060 …"), so the link was rightly absent.
+    test.skip(!PB_EVENT_ID, 'E2E_SEED_F6_PB_EVENT_ID unset (global-setup F6 seed)');
+    await page.goto(`/admin/events/${PB_EVENT_ID}`);
     await page.waitForLoadState('domcontentloaded');
-    const firstRowLink = page.getByRole('grid').getByRole('link').first();
-    await firstRowLink.click();
-    await page.waitForURL(/\/admin\/events\/[^/]+$/);
 
     const deepLink = page.getByRole('link', {
       name: /view on eventcreate/i,
@@ -214,38 +220,25 @@ test.describe('F6 events list and detail — US2 AS1-AS5 @workers=1', () => {
   test('AS5 variant (a) — no integration configured renders setup CTA', async ({
     page,
   }) => {
-    // Variant (a) requires a tenant with NO tenant_webhook_configs
-    // row. The fixture for this state is supplied by Phase 4 seed
-    // helpers OR by signing in as a special test tenant whose webhook
-    // config has been wiped. Tests covering all 3 variants share the
-    // same admin login; the variant differentiation is handled by
-    // the use-case's emptyStateContext payload.
-    //
-    // Until seed harness lands (Phase 10 throwaway-tenant), this test
-    // documents the assertion structure as RED.
+    // Variant (a) needs a tenant with NO tenant_webhook_configs row, and
+    // the shared e2e tenant has one (global-setup seeds it), so this test
+    // checks that the list settles into a valid state; the three
+    // empty-state variants themselves are unit-tested on the list view.
     await page.goto('/admin/events');
-    await page.waitForLoadState('domcontentloaded');
-    // Either the table has rows OR the empty state is shown. If
-    // empty, one of the 3 variants must be present.
-    const tableHasRows = await page
-      .getByRole('grid')
-      .getByRole('row')
-      .nth(1)
-      .isVisible()
-      .catch(() => false);
-    if (!tableHasRows) {
-      // At least one of the 3 empty-state variants must be visible.
-      const setupCta = page.getByRole('link', {
-        name: /set up.*eventcreate|configure.*integration/i,
-      });
-      const waitingHint = page.getByText(/waiting for first event/i);
-      const archivedHint = page.getByText(/all events.*archived/i);
-      const someVariant = await Promise.any([
-        setupCta.isVisible(),
-        waitingHint.isVisible(),
-        archivedHint.isVisible(),
-      ]).catch(() => false);
-      expect(someVariant).toBe(true);
+    // Wait for the list to settle into one of its states: the table, or one
+    // of the three empty-state variants (copy from en.json). The old check
+    // read isVisible() once, which does not wait, and combined the results
+    // with Promise.any, which resolves to the first boolean even when it is
+    // false, so it failed on both legs whenever it ran before the render.
+    const grid = page.getByRole('grid');
+    const setupCta = page.getByRole('link', { name: emptyState.noIntegration.cta });
+    const waitingTitle = page.getByText(emptyState.noDeliveries.title, { exact: true });
+    const archivedTitle = page.getByText(emptyState.allArchived.title, { exact: true });
+    await expect(grid.or(setupCta).or(waitingTitle).or(archivedTitle).first()).toBeVisible();
+    if (await grid.isVisible()) {
+      // The table path (global-setup seeds an active integration with
+      // events); the empty-state variants are covered by the view unit tests.
+      await expect(grid.getByRole('row').nth(1)).toBeVisible();
     }
   });
 
