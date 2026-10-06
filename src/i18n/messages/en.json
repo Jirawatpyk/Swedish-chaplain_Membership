@@ -5275,7 +5275,7 @@
           "low": "Low match rate",
           "none": "No registrations"
         },
-        "matchRateOf": "{matched} of {total}",
+        "matchRateOf": "{matched} of {total} matched",
         "matchRateBandShort": {
           "high": "Strong",
           "medium": "Fair",
@@ -5286,6 +5286,9 @@
           "partnerBenefitOnly": "Counted as partner benefit",
           "culturalEventOnly": "Counted as cultural event",
           "showArchived": "Show archived events",
+          "partnerBenefitOnlyShort": "Partner benefit",
+          "culturalEventOnlyShort": "Cultural event",
+          "showArchivedShort": "Archived",
           "clearAll": "Clear filters"
         },
         "emptyState": {
@@ -5343,6 +5346,7 @@
           "searchPlaceholder": "Search by email or name…",
           "searchLabel": "Search attendees",
           "showUnmatchedOnly": "Show unmatched only",
+          "showUnmatchedOnlyShort": "Unmatched only",
           "paymentStatusFilter": "Payment status",
           "allShort": "All",
           "filterChip": "{label}: {value}",

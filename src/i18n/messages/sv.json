@@ -5275,7 +5275,7 @@
           "low": "Låg matchningsgrad",
           "none": "Inga registreringar"
         },
-        "matchRateOf": "{matched} av {total}",
+        "matchRateOf": "{matched} av {total} matchade",
         "matchRateBandShort": {
           "high": "Stark",
           "medium": "Medel",
@@ -5286,6 +5286,9 @@
           "partnerBenefitOnly": "Räknas som partnerförmån",
           "culturalEventOnly": "Räknas som kulturevenemang",
           "showArchived": "Visa arkiverade evenemang",
+          "partnerBenefitOnlyShort": "Partnerförmån",
+          "culturalEventOnlyShort": "Kulturevenemang",
+          "showArchivedShort": "Arkiverade",
           "clearAll": "Rensa filter"
         },
         "emptyState": {
@@ -5343,6 +5346,7 @@
           "searchPlaceholder": "Sök på e-post eller namn…",
           "searchLabel": "Sök deltagare",
           "showUnmatchedOnly": "Visa endast omatchade",
+          "showUnmatchedOnlyShort": "Ej matchade",
           "paymentStatusFilter": "Betalningsstatus",
           "allShort": "Alla",
           "filterChip": "{label}: {value}",

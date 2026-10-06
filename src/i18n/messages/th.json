@@ -5275,7 +5275,7 @@
           "low": "อัตราการจับคู่ต่ำ",
           "none": "ยังไม่มีการลงทะเบียน"
         },
-        "matchRateOf": "{matched} จาก {total}",
+        "matchRateOf": "จับคู่แล้ว {matched} จาก {total}",
         "matchRateBandShort": {
           "high": "สูง",
           "medium": "ปานกลาง",
@@ -5286,6 +5286,9 @@
           "partnerBenefitOnly": "นับเป็นสิทธิ์พาร์ตเนอร์ชิป",
           "culturalEventOnly": "นับเป็นกิจกรรมวัฒนธรรม",
           "showArchived": "แสดงกิจกรรมที่เก็บถาวร",
+          "partnerBenefitOnlyShort": "สิทธิ์พาร์ทเนอร์",
+          "culturalEventOnlyShort": "กิจกรรมวัฒนธรรม",
+          "showArchivedShort": "เก็บถาวร",
           "clearAll": "ล้างตัวกรอง"
         },
         "emptyState": {
@@ -5343,6 +5346,7 @@
           "searchPlaceholder": "ค้นหาจากอีเมลหรือชื่อ…",
           "searchLabel": "ค้นหาผู้เข้าร่วม",
           "showUnmatchedOnly": "แสดงเฉพาะที่ยังไม่จับคู่",
+          "showUnmatchedOnlyShort": "ยังไม่จับคู่",
           "paymentStatusFilter": "สถานะการชำระเงิน",
           "allShort": "ทั้งหมด",
           "filterChip": "{label}: {value}",

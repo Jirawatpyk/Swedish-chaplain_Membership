@@ -96,6 +96,12 @@ describe('attendee filters (AURA FilterBar)', () => {
     expect(nav.replace).toHaveBeenLastCalledWith('/admin/events/e1?unmatchedOnly=1', { scroll: false });
   });
 
+  it('shows the board\'s short "Unmatched only" on a phone, keeping the full name', () => {
+    renderTable();
+    const chip = screen.getByRole('button', { name: a.showUnmatchedOnly });
+    expect(chip.querySelector('.sm\\:hidden')).toHaveTextContent(a.showUnmatchedOnlyShort);
+  });
+
   it('turns "Show unmatched only" off by removing the parameter', () => {
     nav.search.current = new URLSearchParams('unmatchedOnly=1');
     renderTable({ unmatchedOnly: true });

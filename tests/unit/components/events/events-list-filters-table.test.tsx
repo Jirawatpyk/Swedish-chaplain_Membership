@@ -87,6 +87,19 @@ describe('events list filters (AURA FilterBar)', () => {
     expect(nav.replace).toHaveBeenLastCalledWith('/admin/events?pageSize=25', { scroll: false });
   });
 
+  it('keeps each chip\'s full name and shows the board\'s short word on a phone (board Admin-events-mobile)', () => {
+    renderFilters();
+    for (const [full, short] of [
+      [l.filters.partnerBenefitOnly, l.filters.partnerBenefitOnlyShort],
+      [l.filters.culturalEventOnly, l.filters.culturalEventOnlyShort],
+      [l.filters.showArchived, l.filters.showArchivedShort],
+    ] as const) {
+      const chip = screen.getByRole('button', { name: full });
+      expect(chip.querySelector('.sm\\:hidden')).toHaveTextContent(short);
+      expect(chip.querySelector('.max-sm\\:hidden')).toHaveTextContent(full);
+    }
+  });
+
   it('announces the count with the search in the bar\'s own live region', () => {
     const { container } = renderFilters({ search: 'midsummer', resultCount: 5 });
     const live = container.querySelector('[aria-live="polite"]');
