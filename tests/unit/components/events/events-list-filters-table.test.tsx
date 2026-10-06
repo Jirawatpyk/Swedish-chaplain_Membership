@@ -150,6 +150,14 @@ describe('events list table (AURA)', () => {
     expect(within(row).getByText(l.badges.partnerBenefit).closest('.aura-badge')).not.toBeNull();
   });
 
+  it('aligns the registrations and the match rate to the start, as the board does (parity comment)', async () => {
+    const { EVENTS_LIST_COLUMN_LAYOUT } = await import('@/components/events/events-list-columns');
+    expect(EVENTS_LIST_COLUMN_LAYOUT.registrations).not.toHaveProperty('align');
+    expect(EVENTS_LIST_COLUMN_LAYOUT.matchRate).not.toHaveProperty('align');
+    renderTable();
+    expect(screen.getByText(/83\.3%/).parentElement).not.toHaveClass('items-end');
+  });
+
   it('shows a dash, not a band word, when an event has no registrations', () => {
     renderTable([{ ...ROW, totalRegistrations: 0, matchedRegistrations: 0, matchRatePct: 0 }]);
     expect(screen.queryByText(new RegExp(l.matchRateBandShort.high))).toBeNull();
