@@ -49,11 +49,14 @@ export function ErasureResultsTable({ rows }: { readonly rows: readonly ErasureR
         key: 'event',
         label: t('columns.event'),
         ...ERASURE_COLUMN_LAYOUT.event,
+        // On a phone card the title link's tap area grows 12px above and below
+        // (at least 44px) through ::after, so the target never pushes the
+        // title down the card or away from the field under it.
         render: (r) =>
           r.eventName ? (
             <Link
               href={`/admin/events/${r.eventId}`}
-              className="font-medium text-[var(--aura-fg-accent)] underline-offset-2 hover:underline max-sm:inline-flex max-sm:min-h-11 max-sm:items-center"
+              className="font-medium text-[var(--aura-fg-accent)] underline-offset-2 hover:underline max-sm:relative max-sm:inline-block max-sm:after:absolute max-sm:after:inset-x-0 max-sm:after:-inset-y-3 max-sm:after:content-['']"
             >
               {r.eventName}
             </Link>

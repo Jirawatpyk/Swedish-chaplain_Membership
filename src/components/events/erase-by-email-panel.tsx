@@ -151,7 +151,7 @@ export function EraseByEmailPanel({ email, matchCount, showCount = false }: Eras
   }
 
   return (
-    <div className="flex flex-col gap-[var(--aura-space-4)]">
+    <div className="flex flex-col gap-[var(--aura-space-3)]">
       <form
         onSubmit={handleSearch}
         role="search"
@@ -180,7 +180,7 @@ export function EraseByEmailPanel({ email, matchCount, showCount = false }: Eras
       <div
         className={
           visibleCount
-            ? 'flex flex-wrap items-center justify-between gap-[var(--aura-space-3)] rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface-hover)] px-[var(--aura-space-4)] py-[var(--aura-space-3)] max-sm:flex-col max-sm:items-stretch max-sm:bg-transparent max-sm:p-0'
+            ? 'flex flex-wrap items-center justify-between gap-[var(--aura-space-3)] rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface-hover)] px-[var(--aura-space-4)] py-[var(--aura-space-2)] max-sm:flex-col max-sm:items-stretch max-sm:bg-transparent max-sm:p-0'
             : 'contents'
         }
       >

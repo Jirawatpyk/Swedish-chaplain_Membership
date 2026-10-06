@@ -38,7 +38,7 @@ export async function renderErasureBody({ searchedEmail, status, truncated, rows
     <>
       <PageHeader title={t('pageTitle')} subtitle={t('pageHint')} />
       <Card flushBelow="sm" className="max-sm:border-0 max-sm:p-0">
-        <div className="flex flex-col gap-[var(--aura-space-4)]">
+        <div className="flex flex-col gap-[var(--aura-space-3)]">
           <EraseByEmailPanel
             email={searchedEmail}
             matchCount={status === 'results' ? rows.length : 0}

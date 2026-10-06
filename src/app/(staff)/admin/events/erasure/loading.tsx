@@ -20,7 +20,7 @@ export default async function EraseByEmailLoading() {
       <TableContainer aria-busy="true">
         <PageHeader title={t('pageTitle')} subtitle={t('pageHint')} />
         <Card flushBelow="sm" className="max-sm:border-0 max-sm:p-0" aria-hidden>
-          <div className="flex flex-col gap-[var(--aura-space-4)]">
+          <div className="flex flex-col gap-[var(--aura-space-3)]">
             <div className="flex flex-wrap items-end gap-[var(--aura-space-3)]" data-skeleton="search">
               <div className="flex min-w-[16rem] flex-1 flex-col gap-2">
                 <SkeletonBlock className="h-4 w-32" />
