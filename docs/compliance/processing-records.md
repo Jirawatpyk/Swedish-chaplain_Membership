@@ -81,9 +81,13 @@ a processor under contract.
   FR-015d** these MUST resolve to a known email in the tenant graph
   (members.primary_contact_email OR contacts.email OR
   event_attendees.email — served by the F6 `event_attendees_last_90d`
-  bridge since F6 shipped; since 2026-10-06 only attendees matched to a
-  broadcast-eligible member count, so a custom list cannot reach a
-  non-member attendee).
+  bridge since F6 shipped). Since 2026-10-06 every leg counts only people
+  of a broadcast-eligible member (active, not erased, not halted — the
+  member segments' predicate): a contact of an inactive, erased or halted
+  member does not resolve, and neither does a non-member attendee
+  (`validate-custom-recipients.ts`). The check runs at submit; a member
+  that goes inactive between submit and send is not re-checked at
+  dispatch (suppression and per-contact opt-out still are).
   External-only recipients are out of MVP scope. This restriction
   prevents chamber sender reputation being used for arbitrary
   external mass-marketing.

@@ -36,10 +36,22 @@ function makeBridges(seed: SeedOpts = {}): {
     (seed.contactEmails ?? []).map((c) => [c.email.toLowerCase().trim(), c]),
   );
   const attendees = lowerSet(seed.attendeeEmails ?? []);
+  // Every seeded member is broadcast-eligible here; the live-DB eligibility
+  // rules are pinned in custom-recipient-eligibility.test.ts.
+  const eligibleMemberIds = new Set<string>([
+    ...(memberPrimaries.size > 0 ? ['m-fake'] : []),
+    ...[...contactsByEmail.values()].map((c) => c.memberId),
+  ]);
   return {
     membersBridge: {
       async getMembersBySegment() {
-        return [];
+        return [...eligibleMemberIds].map((memberId) => ({
+          memberId,
+          displayName: memberId,
+          primaryContactEmail: null,
+          tierCode: null,
+          broadcastsHaltedUntilAdminReview: false,
+        }));
       },
       async getMemberPrimaryContact() {
         return null;

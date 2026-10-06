@@ -1344,6 +1344,8 @@ describe('submit-broadcast โ€” Wave 6 (T069 GREEN โ€” 100% branch)',
     const updates: Array<{ patch: Record<string, unknown> }> = [];
     const { deps } = makeDeps({
       primaryContact: 'me@example.com',
+      // The custom address belongs to a broadcast-eligible member.
+      memberInBridge: [{ memberId: 'm-of-valid@example.com', primaryContactEmail: 'valid@example.com' }],
     });
     const bridge = deps.membersBridge as MembersBridgePort & {
       lookupMemberPrimaryContactEmailInTenant: MembersBridgePort['lookupMemberPrimaryContactEmailInTenant'];
@@ -1515,6 +1517,8 @@ describe('submit-broadcast โ€” Wave 6 (T069 GREEN โ€” 100% branch)',
     // -recipients accepts it.
     const { broadcastsRepo, deps } = makeDeps({
       primaryContact: 'me@example.com',
+      // The custom address belongs to a broadcast-eligible member.
+      memberInBridge: [{ memberId: 'm-of-valid@example.com', primaryContactEmail: 'valid@example.com' }],
     });
     const bridge = deps.membersBridge as MembersBridgePort & {
       lookupMemberPrimaryContactEmailInTenant: MembersBridgePort['lookupMemberPrimaryContactEmailInTenant'];

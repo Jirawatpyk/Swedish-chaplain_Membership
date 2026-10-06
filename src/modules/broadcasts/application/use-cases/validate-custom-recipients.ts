@@ -15,6 +15,17 @@
  *      c. event_attendees.email (`EventAttendeesRepository.lookupAttendeeEmailInTenant` — F6 bridge: was the email an event attendee in the last 90 days, matched to a broadcast-eligible member? A non-member attendee does not resolve — E-Blasts reach member companies only)
  *   4. If all 3 unresolved → push to `unresolved[]`
  *
+ * Member eligibility (E-Blasts reach member companies only, 2026-10-06):
+ * a hit on leg a or b counts only when its member is broadcast-eligible —
+ * ACTIVE, not erased, not halted, the predicate the member segments use.
+ * The eligible set is read ONCE per validation through
+ * `getMembersBySegment('all_members')` (the same F3 query, so the rule
+ * cannot drift), and only when a member leg actually hit. A failed read is
+ * `validate_custom.server_error` — never a pass. Leg c is gated in its own
+ * query (attendees of eligible members only). The two lookups stay
+ * ungated on purpose: unsubscribe attribution uses them and must still
+ * find an ex-member's contact.
+ *
  * Constraints: 1 ≤ N ≤ 100 entries (FR-015d).
  */
 import { err, ok, type Result } from '@/lib/result';
@@ -131,6 +142,18 @@ export async function validateCustomRecipients(
   const uniq = Array.from(new Set(entries.value)) as EmailLower[];
 
   const unresolved: string[] = [];
+  let eligibleMemberIds: ReadonlySet<string> | null = null;
+  const isEligibleMember = async (memberId: string): Promise<boolean> => {
+    if (eligibleMemberIds === null) {
+      const eligible = await deps.membersBridge.getMembersBySegment(
+        deps.tenant,
+        'all_members',
+        {},
+      );
+      eligibleMemberIds = new Set(eligible.map((m) => m.memberId));
+    }
+    return eligibleMemberIds.has(memberId);
+  };
   try {
     // Round-4 MED-B — sequential per-entry lookups (3 sources × N up
     // to 100). Cost is bounded by `CUSTOM_RECIPIENTS_MAX_ENTRIES`; parallelizing risks
@@ -143,13 +166,15 @@ export async function validateCustomRecipients(
           deps.tenant,
           email,
         );
-      if (memberPrimary !== null) continue;
+      if (memberPrimary !== null && (await isEligibleMember(memberPrimary.memberId))) {
+        continue;
+      }
 
       const contact = await deps.membersBridge.lookupContactEmailInTenant(
         deps.tenant,
         email,
       );
-      if (contact !== null) continue;
+      if (contact !== null && (await isEligibleMember(contact.memberId))) continue;
 
       const attendee = await deps.eventAttendees.lookupAttendeeEmailInTenant(
         deps.tenant,
