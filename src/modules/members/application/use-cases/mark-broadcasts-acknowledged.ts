@@ -2,7 +2,8 @@
  * T029 — F7 mark-broadcasts-acknowledged use-case (F3 module).
  *
  * Used by F7's `MembersBridgePort.markBroadcastsAcknowledged`
- * (Phase 3+ T060). Q15 GDPR Art. 7 banner CTA — sets
+ * (Phase 3+ T060). Q15 E-Blast terms acknowledgement banner CTA (the
+ * sender acknowledging the sending rules — not consent) — sets
  * `members.broadcasts_acknowledged_at = now()` (member self-service action).
  *
  * **Audit emission is NOT performed here** — F3 mutates the timestamp

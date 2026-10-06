@@ -28,15 +28,38 @@ const tenant: TenantContext = asTenantContext('test-tenant');
 interface BridgeFixture {
   readonly memberPrimary?: ReadonlySet<string>;
   readonly contactSecondary?: ReadonlySet<string>;
+  /**
+   * Member ids (`m-<email>`) that are NOT broadcast-eligible — inactive,
+   * erased or halted — so `getMembersBySegment('all_members')` leaves them out.
+   */
+  readonly ineligibleMembers?: ReadonlySet<string>;
+  readonly eligibleReadThrows?: boolean;
+  readonly eligibleReadCalls?: Array<string>;
 }
 
 function makeMembersBridge({
   memberPrimary = new Set(),
   contactSecondary = new Set(),
+  ineligibleMembers = new Set(),
+  eligibleReadThrows = false,
+  eligibleReadCalls,
 }: BridgeFixture = {}): MembersBridgePort {
   return {
-    async getMembersBySegment() {
-      return [];
+    // The eligible-member set (active, not erased, not halted) — every member
+    // the fixture knows about, minus `ineligibleMembers`.
+    async getMembersBySegment(_ctx, segmentType) {
+      eligibleReadCalls?.push(segmentType);
+      if (eligibleReadThrows) throw new Error('simulated members read failure');
+      return [...memberPrimary, ...contactSecondary]
+        .map((email) => 'm-' + email)
+        .filter((memberId) => !ineligibleMembers.has(memberId))
+        .map((memberId) => ({
+          memberId,
+          displayName: memberId,
+          primaryContactEmail: null,
+          tierCode: null,
+          broadcastsHaltedUntilAdminReview: false,
+        }));
     },
     async getMemberPrimaryContact() {
       return null;
@@ -320,5 +343,63 @@ describe('validate-custom-recipients — Wave 6 (T065 GREEN)', () => {
     if (result.ok) {
       expect(result.value.normalised).toHaveLength(2);
     }
+  });
+
+  // ---- Member eligibility (E-Blasts reach member companies only) -----
+  // A custom list may only name people the member segments could reach:
+  // contacts of ACTIVE, non-erased, non-halted members (the same predicate
+  // as `getMembersBySegment`). An inactive / erased / halted member's
+  // contacts do not resolve.
+
+  it('rejects the primary contact of a member that is not broadcast-eligible', async () => {
+    const deps = makeDeps({
+      memberPrimary: new Set(['gone@example.com', 'live@example.com']),
+      ineligibleMembers: new Set(['m-gone@example.com']),
+    });
+    const result = await validateCustomRecipients(deps, {
+      raw: ['gone@example.com', 'live@example.com'],
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok && result.error.kind === 'broadcast_custom_recipient_unknown') {
+      expect(result.error.unresolved).toEqual(['gone@example.com']);
+    } else {
+      expect.unreachable('expected broadcast_custom_recipient_unknown');
+    }
+  });
+
+  it('rejects a contact of a member that is not broadcast-eligible', async () => {
+    const deps = makeDeps({
+      contactSecondary: new Set(['halted@example.com']),
+      ineligibleMembers: new Set(['m-halted@example.com']),
+    });
+    const result = await validateCustomRecipients(deps, {
+      raw: ['halted@example.com'],
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.kind).toBe('broadcast_custom_recipient_unknown');
+  });
+
+  it('reads the eligible-member set once per validation, as all_members', async () => {
+    const calls: string[] = [];
+    const deps = makeDeps({
+      memberPrimary: new Set(['a@example.com', 'b@example.com']),
+      contactSecondary: new Set(['c@example.com']),
+      eligibleReadCalls: calls,
+    });
+    const result = await validateCustomRecipients(deps, {
+      raw: ['a@example.com', 'b@example.com', 'c@example.com'],
+    });
+    expect(result.ok).toBe(true);
+    expect(calls).toEqual(['all_members']);
+  });
+
+  it('a failed eligible-member read is a server error, never a pass', async () => {
+    const deps = makeDeps({
+      memberPrimary: new Set(['a@example.com']),
+      eligibleReadThrows: true,
+    });
+    const result = await validateCustomRecipients(deps, { raw: ['a@example.com'] });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.kind).toBe('validate_custom.server_error');
   });
 });

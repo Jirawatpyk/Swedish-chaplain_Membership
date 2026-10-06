@@ -16,6 +16,14 @@
  *   8. **Cross-tenant probe** (Constitution Principle I sub-clause 3,
  *      Review-Gate blocker): tenant B context cannot read tenant A's
  *      attendees.
+ *   9. **Members only** (E-Blast lawful-basis decision, 2026-10-06): an
+ *      attendee is in the segment only when the registration is matched
+ *      to a member that is itself broadcast-eligible (active, not erased,
+ *      not halted — the same predicate as the member segments). Unmatched
+ *      registrations and attendees of inactive / erased / halted members
+ *      are EXCLUDED, on the list query and the by-email lookup alike —
+ *      as is an address with withdrawn PDPA consent
+ *      (`attendee_pdpa_consent_acknowledged = false`) on any registration.
  *
  * Dates are seeded RELATIVE to `new Date()` so the `now() - interval
  * '90 days'` window stays deterministic whenever the suite runs.
@@ -24,12 +32,20 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { runInTenant } from '@/lib/db';
 import { events, eventRegistrations } from '@/modules/events/infrastructure/schema';
+import { members } from '@/modules/members/infrastructure/db/schema-members';
 import {
   getRecentEventAttendees,
   getRecentEventAttendeeByEmail,
 } from '@/modules/events';
 import { eventAttendeesBridge } from '@/modules/broadcasts';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
+import { seedPortalPlan } from '../helpers/portal-seed';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
+import {
+  createActiveTestUser,
+  deleteTestUser,
+  type TestUser,
+} from '../helpers/test-users';
 
 function daysAgo(n: number): Date {
   return new Date(new Date().getTime() - n * 24 * 60 * 60 * 1000);
@@ -53,6 +69,7 @@ interface SeedRegistrationArgs {
   readonly email: string;
   readonly memberId?: string | null;
   readonly pseudonymisedAt?: Date | null;
+  readonly pdpaConsent?: boolean | null;
 }
 
 function eventValues(a: SeedEventArgs) {
@@ -67,6 +84,43 @@ function eventValues(a: SeedEventArgs) {
     isPartnerBenefit: false,
     isCulturalEvent: false,
   } as unknown as typeof events.$inferInsert;
+}
+
+type MemberState = 'active' | 'inactive' | 'erased' | 'halted';
+
+let admin: TestUser;
+const plannedTenants = new Map<string, string>();
+
+/**
+ * A member the attendee can be matched to. `state` picks which half of the
+ * F3 broadcast-eligibility predicate the member fails (or `active` = none).
+ */
+async function seedMember(
+  tenant: TestTenant,
+  state: MemberState = 'active',
+): Promise<string> {
+  let planId = plannedTenants.get(tenant.ctx.slug);
+  if (planId === undefined) {
+    planId = randomUUID();
+    await seedPortalPlan(tenant.ctx.slug, admin.userId, planId);
+    plannedTenants.set(tenant.ctx.slug, planId);
+  }
+  const memberId = randomUUID();
+  await runInTenant(tenant.ctx, (tx) =>
+    tx.insert(members).values({
+      tenantId: tenant.ctx.slug,
+      memberId,
+      memberNumber: nextSeedMemberNumber(),
+      companyName: `Bridge ${state} ${memberId.slice(0, 6)}`,
+      country: 'TH',
+      planId: planId!,
+      planYear: 2026,
+      status: state === 'inactive' ? 'inactive' : 'active',
+      erasedAt: state === 'erased' ? new Date() : null,
+      broadcastsHaltedUntilAdminReview: state === 'halted',
+    }),
+  );
+  return memberId;
 }
 
 function registrationValues(a: SeedRegistrationArgs) {
@@ -88,13 +142,22 @@ function registrationValues(a: SeedRegistrationArgs) {
     metadata: {},
     registeredAt: new Date(),
     piiPseudonymisedAt: a.pseudonymisedAt ?? null,
+    attendeePdpaConsentAcknowledged: a.pdpaConsent ?? null,
   } as unknown as typeof eventRegistrations.$inferInsert;
 }
 
 describe('F6 → F7 eventAttendees bridge (event_attendees_last_90d)', () => {
+  beforeAll(async () => {
+    admin = await createActiveTestUser('admin');
+  });
+
+  afterAll(async () => {
+    await deleteTestUser(admin);
+  });
+
   describe('happy path — window, dedup, exclusions', () => {
     let tenant: TestTenant;
-    const recentMemberId = randomUUID();
+    let recentMemberId: string;
     const recentEventOld = randomUUID(); // same email, older recent
     const recentEventNew = randomUUID(); // same email, most recent
     const staleEventId = randomUUID(); // > 90 days
@@ -103,6 +166,12 @@ describe('F6 → F7 eventAttendees bridge (event_attendees_last_90d)', () => {
 
     beforeAll(async () => {
       tenant = await createTestTenant('test-swecham');
+      recentMemberId = await seedMember(tenant);
+      const ineligible = {
+        inactive: await seedMember(tenant, 'inactive'),
+        erased: await seedMember(tenant, 'erased'),
+        halted: await seedMember(tenant, 'halted'),
+      };
       await runInTenant(tenant.ctx, async (tx) => {
         await tx.insert(events).values([
           eventValues({
@@ -157,19 +226,62 @@ describe('F6 → F7 eventAttendees bridge (event_attendees_last_90d)', () => {
             tenantSlug: tenant.ctx.slug,
             eventId: staleEventId,
             email: 'old@bridge.example',
+            memberId: recentMemberId,
           }),
           // Archived event → excluded.
           registrationValues({
             tenantSlug: tenant.ctx.slug,
             eventId: archivedEventId,
             email: 'archived@bridge.example',
+            memberId: recentMemberId,
           }),
           // Pseudonymised registration → excluded.
           registrationValues({
             tenantSlug: tenant.ctx.slug,
             eventId: pseudoEventId,
             email: 'pseudo@bridge.example',
+            memberId: recentMemberId,
             pseudonymisedAt: daysAgo(1),
+          }),
+          // Members only — in-window, but not matched to any member.
+          registrationValues({
+            tenantSlug: tenant.ctx.slug,
+            eventId: recentEventNew,
+            email: 'nonmember@bridge.example',
+          }),
+          // Members only — matched, but the member is not broadcast-eligible.
+          registrationValues({
+            tenantSlug: tenant.ctx.slug,
+            eventId: recentEventNew,
+            email: 'inactive@bridge.example',
+            memberId: ineligible.inactive,
+          }),
+          registrationValues({
+            tenantSlug: tenant.ctx.slug,
+            eventId: recentEventNew,
+            email: 'erased@bridge.example',
+            memberId: ineligible.erased,
+          }),
+          registrationValues({
+            tenantSlug: tenant.ctx.slug,
+            eventId: recentEventNew,
+            email: 'halted@bridge.example',
+            memberId: ineligible.halted,
+          }),
+          // Withdrawn PDPA consent (`false`) on ANY registration of the
+          // address excludes it, even when a later one is unknown (NULL).
+          registrationValues({
+            tenantSlug: tenant.ctx.slug,
+            eventId: recentEventOld,
+            email: 'withdrawn@bridge.example',
+            memberId: recentMemberId,
+            pdpaConsent: false,
+          }),
+          registrationValues({
+            tenantSlug: tenant.ctx.slug,
+            eventId: recentEventNew,
+            email: 'withdrawn@bridge.example',
+            memberId: recentMemberId,
           }),
         ]);
       });
@@ -201,6 +313,24 @@ describe('F6 → F7 eventAttendees bridge (event_attendees_last_90d)', () => {
       expect(emails).not.toContain('old@bridge.example');
       expect(emails).not.toContain('archived@bridge.example');
       expect(emails).not.toContain('pseudo@bridge.example');
+    });
+
+    it('members only: excludes unmatched attendees, attendees of inactive / erased / halted members, and withdrawn consent', async () => {
+      const rows = await getRecentEventAttendees(tenant.ctx.slug);
+      const emails = rows.map((r) => r.emailLower);
+      for (const email of [
+        'nonmember@bridge.example',
+        'inactive@bridge.example',
+        'erased@bridge.example',
+        'halted@bridge.example',
+        'withdrawn@bridge.example',
+      ]) {
+        expect(emails, email).not.toContain(email);
+        await expect(
+          getRecentEventAttendeeByEmail(tenant.ctx.slug, email),
+          email,
+        ).resolves.toBeNull();
+      }
     });
 
     it('getRecentEventAttendeeByEmail returns the in-window attendee', async () => {
@@ -261,6 +391,7 @@ describe('F6 → F7 eventAttendees bridge (event_attendees_last_90d)', () => {
 
     beforeAll(async () => {
       tenant = await createTestTenant('test-swecham');
+      const memberId = await seedMember(tenant);
       await runInTenant(tenant.ctx, async (tx) => {
         const tieDate = daysAgo(5);
         await tx.insert(events).values([
@@ -289,16 +420,19 @@ describe('F6 → F7 eventAttendees bridge (event_attendees_last_90d)', () => {
             tenantSlug: tenant.ctx.slug,
             eventId: futureEventId,
             email: 'future@gtest.example',
+            memberId,
           }),
           registrationValues({
             tenantSlug: tenant.ctx.slug,
             eventId: tieLowId,
             email: 'tie@gtest.example',
+            memberId,
           }),
           registrationValues({
             tenantSlug: tenant.ctx.slug,
             eventId: tieHighId,
             email: 'tie@gtest.example',
+            memberId,
           }),
         ]);
       });
@@ -341,6 +475,7 @@ describe('F6 → F7 eventAttendees bridge (event_attendees_last_90d)', () => {
     beforeAll(async () => {
       tenantA = await createTestTenant('test-swecham');
       tenantB = await createTestTenant('test-chamber');
+      const memberInA = await seedMember(tenantA);
       await runInTenant(tenantA.ctx, async (tx) => {
         await tx.insert(events).values(
           eventValues({
@@ -355,6 +490,7 @@ describe('F6 → F7 eventAttendees bridge (event_attendees_last_90d)', () => {
             tenantSlug: tenantA.ctx.slug,
             eventId: evIdInA,
             email: 'cross@a.example',
+            memberId: memberInA,
           }),
         );
       });

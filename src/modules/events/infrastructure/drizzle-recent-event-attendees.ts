@@ -16,6 +16,24 @@
  * recipient resolution surfaces it (a masked `[]` would silently send to
  * zero recipients — the masked-zero class F9 also avoids).
  *
+ * Members only (E-Blast lawful-basis decision, 2026-10-06): E-Blasts rely
+ * on legitimate interest in the chamber–member relationship (GDPR
+ * Art. 6(1)(f) / PDPA §24(5)). A non-member who bought a ticket has no such
+ * relationship and was not told at registration that E-Blasts would follow,
+ * so an attendee is in the segment only when the registration is matched
+ * to a member (`matched_member_id`) that is itself broadcast-eligible —
+ * the SAME predicate as the member segments (`status = 'active'`, not
+ * erased, not halted; `findMembersBySegmentForBroadcast` in
+ * drizzle-member-repo.ts). The inner JOIN drops unmatched registrations;
+ * it reads F3's `members` the way `drizzle-attendee-matcher.ts` already
+ * does. The by-email lookup applies the same rule, so a custom list
+ * cannot reach a non-member attendee either.
+ *
+ * Withdrawn consent: `attendee_pdpa_consent_acknowledged = false` on ANY
+ * of the address's registrations (any event, any date) removes it — a
+ * later registration with an unknown (NULL) classification does not
+ * restore it. NULL (webhook ingest, generic CSV) is not a withdrawal.
+ *
  * The 90-day window is measured against the EVENT date (`e.start_date`),
  * not the registration date — this is the "re-engage people who showed
  * up to a recent event" segment (per `docs/email-broadcast-analysis.md`),
@@ -75,7 +93,8 @@ function mapRow(r: RecentAttendeeRow): RecentEventAttendee {
 
 /**
  * Distinct attendees (one row per email — the most recent event's title +
- * date) who attended an event whose start_date is within the last 90 days.
+ * date) who attended an event whose start_date is within the last 90 days,
+ * matched to a broadcast-eligible member.
  */
 export async function getRecentEventAttendees(
   tenantId: string,
@@ -92,12 +111,23 @@ export async function getRecentEventAttendees(
       FROM event_registrations er
       JOIN events e
         ON e.tenant_id = er.tenant_id AND e.event_id = er.event_id
+      JOIN members m
+        ON m.tenant_id = er.tenant_id AND m.member_id = er.matched_member_id
       WHERE er.tenant_id = ${ctx.slug}
         AND er.attendee_email_lower IS NOT NULL
         AND er.pii_pseudonymised_at IS NULL
         AND e.archived_at IS NULL
         AND e.start_date >= now() - interval '90 days'
         AND e.start_date <= now()
+        AND m.status = 'active'
+        AND m.erased_at IS NULL
+        AND m.broadcasts_halted_until_admin_review = false
+        AND NOT EXISTS (
+          SELECT 1 FROM event_registrations w
+           WHERE w.tenant_id = er.tenant_id
+             AND w.attendee_email_lower = er.attendee_email_lower
+             AND w.attendee_pdpa_consent_acknowledged = false
+        )
       ORDER BY er.attendee_email_lower, e.start_date DESC, e.event_id DESC
     `)) as unknown as RecentAttendeeRow[];
     return rows.map(mapRow);
@@ -125,12 +155,23 @@ export async function getRecentEventAttendeeByEmail(
       FROM event_registrations er
       JOIN events e
         ON e.tenant_id = er.tenant_id AND e.event_id = er.event_id
+      JOIN members m
+        ON m.tenant_id = er.tenant_id AND m.member_id = er.matched_member_id
       WHERE er.tenant_id = ${ctx.slug}
         AND er.attendee_email_lower = ${emailLower}
         AND er.pii_pseudonymised_at IS NULL
         AND e.archived_at IS NULL
         AND e.start_date >= now() - interval '90 days'
         AND e.start_date <= now()
+        AND m.status = 'active'
+        AND m.erased_at IS NULL
+        AND m.broadcasts_halted_until_admin_review = false
+        AND NOT EXISTS (
+          SELECT 1 FROM event_registrations w
+           WHERE w.tenant_id = er.tenant_id
+             AND w.attendee_email_lower = er.attendee_email_lower
+             AND w.attendee_pdpa_consent_acknowledged = false
+        )
       ORDER BY e.start_date DESC, e.event_id DESC
       LIMIT 1
     `)) as unknown as RecentAttendeeRow[];

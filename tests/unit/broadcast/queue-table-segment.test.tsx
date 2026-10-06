@@ -66,7 +66,7 @@ describe('QueueTable — Audience column segment label (Task 4)', () => {
         {ui}
       </NextIntlClientProvider>,
     );
-    expect(screen.getByText('Event attendees (last 90 days)')).toBeInTheDocument();
+    expect(screen.getByText('Event attendees from member companies (last 90 days)')).toBeInTheDocument();
     expect(screen.queryByText('event_attendees_last_90d')).not.toBeInTheDocument();
   });
 });
