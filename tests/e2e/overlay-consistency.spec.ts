@@ -54,6 +54,15 @@ test.describe('F4 SC-014 — overlay consistency @layout', () => {
 
     const measure = async (path: string) => {
       await page.goto(path);
+      // Each route's loading.tsx skeleton is itself an AURA Card inside an
+      // aria-busy container. Picking it reads a card that is swapped out before
+      // `evaluate` runs (detached → every computed value is ""), so wait for it
+      // to go first (R36).
+      await page
+        .locator('[aria-busy="true"] .aura-card')
+        .first()
+        .waitFor({ state: 'detached', timeout: 15_000 })
+        .catch(() => {});
       // `:visible`, not `.first()`: Next keeps the previous segment's DOM in the
       // tree (hidden) after a client nav, and this walks several routes.
       const card = page.locator('.aura-card:visible').first();
