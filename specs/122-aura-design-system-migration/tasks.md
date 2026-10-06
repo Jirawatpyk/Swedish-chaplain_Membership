@@ -584,9 +584,33 @@ Board: `Admin-invoice-settings` (1440). Spec Clarifications, Session 2026-10-03 
 - [x] T858 [US8] Ratchet and preview: `MIGRATED_PATHS` gains the settings page, the form and `invoice-settings/**`; the two ratchet controls move to US9/US10 files; preview views for the default, first-time, read-only, dirty and prefix-confirm states plus the loading file; a bundle budget for `/admin/settings/invoicing`.
 - [x] T859 [US8] Exit: e2e measure the AURA field box for 44px and field height; gates; `next build`; the parity page (with the 5.31 look); UX, i18n and financial reviews with fixes RED first; draft PR; relay R34, the full local e2e checkpoint.
 
+## Phase 11: User Story 9 — Events (Priority: P3) — PRs 17–19 (US9a, US9b, US9c; T900)
+
+Three PRs (spec Clarifications, Session 2026-10-06). Every server read, permission check, URL parameter, request body, toast and audit event stays as it is. The event-create date and time fix merges as its own PR before US9b.
+
+### US9a — events list and event detail (PR 17)
+
+Boards: `Admin-events`, `Admin-event-detail` (each with `-mobile`), `Admin-state-events-no-integration`, `Admin-state-events-waiting`.
+
+- [x] T900 [US9] These tasks; the spec's US9 clarifications.
+- [ ] T901 [US9] The events list frame: the page header with "Erase by email" and "Import CSV" (gated as today; "Erase by email" in a "More actions" menu on a phone), one list card, the four empty states on the shared AURA `EmptyState`, the load error, and `loading.tsx` drawing the same card. RED: a view test that finds the header actions, the list card and each empty state's title and links, and finds no legacy card.
+- [ ] T902 [US9] The events table and filters: `FilterBar` with the search and three toggle chips, the result count naming the search, and the AURA table (Date, Name + Archived, Category, Registrations, Partner benefit, Match rate with its band word), cards below 640px, the AURA pager. RED: the URL each chip and the search writes, the count text, the band word shown, the column headers.
+- [ ] T903 [US9] The event detail header: the summary card, the flag and archive actions at its end confirmed in the shared confirmation dialog (an "Event actions" section on a phone), and `loading.tsx`. RED: the summary fields, the band word, the confirm dialog opening with today's copy and sending today's request.
+- [ ] T904 [US9] The attendees table: search, "Show unmatched only", the payment-status select, the AURA table (Attendee, Match, Ticket, Quota, Registered, actions), the badges in the board's tones, cards below 640px. RED: the URL each control writes, the badge tones, and the erase and payment-status guards (their existing tests stay green).
+- [ ] T905 [US9] The relink dialog on AURA `Dialog` + a server-searched `Combobox`, replacing the command list. RED: searching calls the same endpoint, picking a member sends the same body, the `relink-button-*` / `relink-disallowed-*` testids and the status line stay.
+- [ ] T906 [US9] Ratchet and preview: `MIGRATED_PATHS` gains the list and detail routes and the US9a components; the events ratchet control moves to `events/import/page.tsx` (US9b); preview views (list, the empty states, filtered-empty, detail, relink open, both loading files); first bundle budgets for `/admin/events` and `/admin/events/[eventId]`.
+- [ ] T907 [US9] Exit: e2e selectors updated where the swap breaks them (`events-list-and-detail`, `admin-events-search`, `relink-attendee`, `quota-accounting`, `manager-readonly-events`; `/admin/events` joins `overlay-consistency`); gates; `next build` and budgets; screenshots at 1440 and 390 in light and dark; UX review with fixes RED first; draft PR; relay R36.
+
+### US9b — erasure and CSV import (PR 18; tasks written when it starts)
+
+- [ ] T920 [US9] Erasure pages and dialogs with the shared typed-phrase confirm ("ERASE"); CSV import on `FileUpload`, the event `Combobox`, the remap on AURA `Select`, the result and the history table; the inline create on `DatePicker` + `TimePicker` in Bangkok time.
+
+### US9c — EventCreate integration (PR 19; tasks written when it starts)
+
+- [ ] T940 [US9] The integration page on AURA `Stepper`, the secret reveal and rotation, the test webhook and the recent deliveries.
+
 ## Later phases (one PR each; tasks written when the phase starts)
 
-- [ ] T900 [US9] Events: DatePicker/TimePicker (`Asia/Bangkok`), Combobox, FileUpload, erasure pages.
 - [ ] T1000 [US10] Users, audit, compliance, settings: DataTable, Menu danger items.
 - [ ] T1100 [US11] Dashboard: Stat tiles; recharts recoloured with `--aura-chart-*`.
 - [ ] T1200 [US12] E-Blast: queue DataTable (item 52, or a local selection column), workspace, schedule dialog, member sign-off.
