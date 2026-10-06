@@ -11,7 +11,7 @@
  */
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
-import { Alert, Card } from '@jirawatpyk/aura-react/server';
+import { Alert, Card, buttonClass } from '@jirawatpyk/aura-react/server';
 import { PageHeader } from '@/components/layout/page-header';
 import { EraseByEmailPanel } from '@/components/events/erase-by-email-panel';
 import { ErasureResultsTable, type ErasureResultRow } from '@/components/events/erasure-results-table';
@@ -35,7 +35,7 @@ export async function renderErasureBody({ searchedEmail, status, truncated, rows
   return (
     <>
       <PageHeader title={t('pageTitle')} subtitle={t('pageHint')} />
-      <Card flushBelow="sm">
+      <Card flushBelow="sm" className="max-sm:border-0 max-sm:p-0">
         <div className="flex flex-col gap-[var(--aura-space-4)]">
           <EraseByEmailPanel email={searchedEmail} matchCount={status === 'results' ? rows.length : 0} />
 
@@ -64,7 +64,7 @@ export async function renderErasureBody({ searchedEmail, status, truncated, rows
           <div>
             <Link
               href="/admin/events"
-              className="aura-text-body text-[var(--aura-fg-accent)] underline underline-offset-2 hover:no-underline"
+              className={buttonClass({ variant: 'ghost', size: 'sm', touchHeight: true })}
             >
               {t('backLink')}
             </Link>

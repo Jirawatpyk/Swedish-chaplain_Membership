@@ -36,7 +36,7 @@
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { useTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
-import { Copy, SearchX } from 'lucide-react';
+import { Copy, Eraser, SearchX } from 'lucide-react';
 import {
   AuraProvider,
   Button,
@@ -212,6 +212,11 @@ export function AttendeeTable({
   const barRef = useRef<HTMLDivElement>(null);
   // R3-F5 — the search keeps focus in the row after a clear: the pressed
   // control unmounts once the results come back.
+  // After a successful erase the row is gone; focus lands on the search.
+  const searchInput = useCallback(
+    () => barRef.current?.querySelector<HTMLInputElement>('input[type="search"]') ?? null,
+    [],
+  );
   const focusSearch = useCallback(() => {
     queueMicrotask(() =>
       barRef.current?.querySelector<HTMLInputElement>('input[type="search"]')?.focus(),
@@ -485,13 +490,14 @@ export function AttendeeTable({
           <AttendeeRowActions
             row={r}
             eventId={eventId}
+            searchInput={searchInput}
             moreLabel={t('moreActionsAria', { attendeeName: r.attendeeName })}
             eraseLabel={t('eraseMenuItem')}
           />
         ),
       },
     ];
-  }, [t, tMatchType, tMatchTypeTip, tQuota, tQuotaTip, tPay, locale, showActions, eventId, copyEmail]);
+  }, [t, tMatchType, tMatchTypeTip, tQuota, tQuotaTip, tPay, locale, showActions, eventId, copyEmail, searchInput]);
 
   return (
     <div className="flex flex-col gap-[var(--aura-space-4)]" aria-busy={isPending}>
@@ -580,11 +586,13 @@ export function AttendeeTable({
 function AttendeeRowActions({
   row,
   eventId,
+  searchInput,
   moreLabel,
   eraseLabel,
 }: {
   readonly row: AttendeeRow;
   readonly eventId: EventId;
+  readonly searchInput: () => HTMLElement | null;
   readonly moreLabel: string;
   readonly eraseLabel: string;
 }) {
@@ -617,7 +625,7 @@ function AttendeeRowActions({
                 data-testid={`attendee-more-${row.registrationId}`}
               />
             }
-            items={[{ label: eraseLabel, tone: 'danger', onSelect: () => setEraseOpen(true) }]}
+            items={[{ label: eraseLabel, icon: <Eraser aria-hidden />, tone: 'danger', onSelect: () => setEraseOpen(true) }]}
           />
           <ErasePiiDialog
             eventId={eventId}
@@ -626,6 +634,7 @@ function AttendeeRowActions({
             open={eraseOpen}
             onOpenChange={setEraseOpen}
             finalFocus={moreRef}
+            successFocus={searchInput}
           />
         </>
       )}

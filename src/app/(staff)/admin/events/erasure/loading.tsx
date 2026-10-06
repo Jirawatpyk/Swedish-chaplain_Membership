@@ -19,7 +19,7 @@ export default async function EraseByEmailLoading() {
     <PageSkeletonShell ariaLabel={tLayout('loadingTable')}>
       <TableContainer aria-busy="true">
         <PageHeader title={t('pageTitle')} subtitle={t('pageHint')} />
-        <Card flushBelow="sm" aria-hidden>
+        <Card flushBelow="sm" className="max-sm:border-0 max-sm:p-0" aria-hidden>
           <div className="flex flex-col gap-[var(--aura-space-4)]">
             <div className="flex flex-wrap items-end gap-[var(--aura-space-3)]" data-skeleton="search">
               <div className="flex min-w-[16rem] flex-1 flex-col gap-2">
@@ -29,6 +29,7 @@ export default async function EraseByEmailLoading() {
               <SkeletonBlock className="h-[var(--aura-input-height)] w-24 max-sm:h-11" />
             </div>
             <SkeletonBlock className="mx-auto my-[var(--aura-space-8)] h-4 w-80 max-w-full" />
+            <SkeletonBlock className="h-8 w-32 max-sm:h-11" data-skeleton="back-link" />
           </div>
         </Card>
       </TableContainer>

@@ -35,7 +35,7 @@ export const ERASURE_COLUMN_LAYOUT = {
   date: { width: 130, card: 'field', cardOrder: 2 },
   match: { width: 170, card: 'pill' },
   quota: { width: 170, card: 'field', cardOrder: 3 },
-  actions: { width: 160, align: 'end', card: 'footer', skeletonTouch: true },
+  actions: { width: 220, align: 'end', card: 'footer', skeletonTouch: true },
 } as const satisfies Record<string, Pick<DataTableColumn, 'width' | 'minWidth' | 'card' | 'cardOrder' | 'align' | 'skeletonTouch'>>;
 
 export function ErasureResultsTable({ rows }: { readonly rows: readonly ErasureResultRow[] }) {
@@ -53,7 +53,7 @@ export function ErasureResultsTable({ rows }: { readonly rows: readonly ErasureR
           r.eventName ? (
             <Link
               href={`/admin/events/${r.eventId}`}
-              className="font-medium text-[var(--aura-fg-accent)] underline-offset-2 hover:underline"
+              className="font-medium text-[var(--aura-fg-accent)] underline-offset-2 hover:underline max-sm:inline-flex max-sm:min-h-11 max-sm:items-center"
             >
               {r.eventName}
             </Link>
@@ -95,7 +95,13 @@ export function ErasureResultsTable({ rows }: { readonly rows: readonly ErasureR
             </Badge>
           ) : (
             <div className="max-sm:w-full max-sm:[&>button]:flex-1 flex justify-end">
-              <ErasePiiDialog eventId={r.eventId} registrationId={r.registrationId} attendeeName={r.attendeeName} />
+              {/* After a successful erase the row is gone; focus lands on the search. */}
+              <ErasePiiDialog
+                eventId={r.eventId}
+                registrationId={r.registrationId}
+                attendeeName={r.attendeeName}
+                successFocus={() => document.getElementById('erase-by-email-input')}
+              />
             </div>
           ),
       },

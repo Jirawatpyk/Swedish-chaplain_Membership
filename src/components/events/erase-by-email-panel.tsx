@@ -201,11 +201,13 @@ export function EraseByEmailPanel({ email, matchCount }: EraseByEmailPanelProps)
                 <Button variant="secondary" data-autofocus disabled={pending} onClick={close}>
                   {t('cancel')}
                 </Button>
+                {/* Reachable but refused until the reason is valid (AURA #102). */}
                 <Button
                   variant="danger"
                   icon={<Eraser aria-hidden="true" />}
                   loading={pending}
-                  disabled={!reasonValid}
+                  aria-disabled={!reasonValid || undefined}
+                  aria-describedby={reasonValid ? undefined : 'erase-by-email-reason-hint'}
                   onClick={handleEraseAll}
                 >
                   {t('confirm')}
@@ -223,7 +225,6 @@ export function EraseByEmailPanel({ email, matchCount }: EraseByEmailPanelProps)
               maxLength={500}
               rows={4}
               disabled={pending}
-              aria-invalid={!reasonValid && reasonText.length > 0}
             />
           </Dialog>
         </div>

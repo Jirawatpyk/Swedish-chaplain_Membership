@@ -5411,7 +5411,7 @@
           "loading": "Archiving event…"
         },
         "erase": {
-          "triggerCta": "Erase PII",
+          "triggerCta": "Erase personal data",
           "triggerAriaLabel": "Erase personal data for {attendeeName}",
           "confirmTitle": "Erase personal data for {attendeeName}?",
           "confirmBody": "This permanently removes the attendee's name, email, and company from the registration record. Counted quota will be credited back. The audit trail of this erasure (admin, timestamp, reason) is retained for compliance. This action cannot be undone — manually re-import via CSV if you have the original data.",
@@ -5419,7 +5419,7 @@
           "reasonPlaceholder": "e.g., GDPR Article 17 request from attendee, PDPA Section 33 request, mistake in original submission…",
           "reasonHint": "{remaining, plural, =0 {0 characters remaining} one {1 character remaining} other {# characters remaining}}",
           "cancel": "Cancel",
-          "confirm": "Erase PII",
+          "confirm": "Erase personal data",
           "successTitle": "Personal data erased",
           "successDescription": "Quota credit-back: {partnership} partnership, {cultural} cultural.",
           "alreadyErasedTitle": "Already erased",

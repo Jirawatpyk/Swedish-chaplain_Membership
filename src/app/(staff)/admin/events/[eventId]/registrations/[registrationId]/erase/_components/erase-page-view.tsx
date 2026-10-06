@@ -27,7 +27,7 @@ export async function renderErasePageBody({ eventId, registrationId, attendeeNam
       <Card>
         <div className="flex flex-col gap-[var(--aura-space-4)]">
           <p className="aura-text-body text-[var(--aura-fg-secondary)]">{t('pageHint')}</p>
-          <div className="flex flex-wrap items-center gap-[var(--aura-space-3)] max-sm:flex-col max-sm:items-stretch max-sm:[&>*]:w-full">
+          <div className="flex flex-wrap items-center gap-[var(--aura-space-3)] max-sm:flex-col max-sm:items-stretch max-sm:[&>a]:w-full max-sm:[&>button]:w-full">
             <ErasePiiDialog eventId={eventId} registrationId={registrationId} attendeeName={attendeeName} />
             <Link
               href={`/admin/events/${eventId}`}

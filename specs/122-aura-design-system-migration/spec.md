@@ -408,6 +408,7 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
 - **US9b ships as two PRs.** US9b-1 is erasure (`Admin-event-erase`, `-erase-page`, `Admin-events-erasure`, `-erasure-confirm`). US9b-2 is the CSV import (`Admin-events-import`, `-import-result`, `-import-history`), with the inline create on `DatePicker` + `TimePicker`.
 - **No typed "ERASE" phrase.** Both erase dialogs are gated today by a required reason (1–500 characters). Adding a phrase would change behaviour inside a UI-swap PR (FR-011), so the dialogs keep the reason gate. If a phrase is wanted, it ships as its own PR.
 - **The attendee row's "More" menu lands with US9b-1.** It holds "Erase personal data" as on `Admin-event-detail`; "Relink" stays on every row.
+- **One name for the action in English:** the erase trigger and its confirm read "Erase personal data" (was "Erase PII"), matching the new menu item and the TH/SV copy, which already said "personal data" (UX review).
 - **Kept as found, not fixed here (pre-existing):**
   - the deep-link erase page's hint says the dialog opens automatically, but it does not;
   - the erase action shows to staff who can relink, while both erase routes need the super-admin `events.erasure` permission, so a plain admin's submit is refused. This is a follow-up, not part of the UI swap.

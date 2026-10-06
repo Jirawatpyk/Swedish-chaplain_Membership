@@ -26,7 +26,7 @@
  */
 'use client';
 
-import { useState, useTransition, type RefObject } from 'react';
+import { useRef, useState, useTransition, type RefObject } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Eraser } from 'lucide-react';
@@ -51,6 +51,11 @@ interface ErasePiiDialogProps {
   readonly onOpenChange?: (open: boolean) => void;
   /** Where focus goes on close when the opener no longer exists. */
   readonly finalFocus?: RefObject<HTMLElement | null>;
+  /**
+   * Where focus goes after a SUCCESSFUL erase: the row (and with it the
+   * opener) is gone once the page refreshes (WCAG 2.4.3).
+   */
+  readonly successFocus?: () => HTMLElement | null;
 }
 
 const REASON_MAX = 500;
@@ -91,12 +96,14 @@ export function ErasePiiDialog({
   open: controlledOpen,
   onOpenChange,
   finalFocus,
+  successFocus,
 }: ErasePiiDialogProps) {
   const t = useTranslations('admin.events.detail.erase');
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [ownOpen, setOwnOpen] = useState(false);
   const [reasonText, setReasonText] = useState('');
+  const succeeded = useRef(false);
 
   const controlled = controlledOpen !== undefined;
   const open = controlled ? controlledOpen : ownOpen;
@@ -119,6 +126,7 @@ export function ErasePiiDialog({
     if (!reasonValid) return;
     startTransition(async () => {
       const result = await postErase(eventId, registrationId, reasonText.trim());
+      succeeded.current = result.ok;
       setOpen(false);
       setReasonText('');
       if (result.ok) {
@@ -150,6 +158,16 @@ export function ErasePiiDialog({
     });
   }
 
+  const hintId = `erase-reason-hint-${registrationId}`;
+  // Read at close: after a successful erase the opener's row is gone.
+  const focusOnClose = () => {
+    if (succeeded.current && successFocus) {
+      succeeded.current = false;
+      return successFocus();
+    }
+    return finalFocus?.current ?? null;
+  };
+
   const trigger = controlled ? undefined : (
     <Button
       variant="danger-secondary"
@@ -167,50 +185,51 @@ export function ErasePiiDialog({
   );
 
   return (
-    <>
+    <Dialog
+      role="alertdialog"
+      open={open}
+      onOpen={() => setOpen(true)}
+      onClose={close}
+      dismissible={!pending}
+      {...(trigger ? { trigger } : {})}
+      {...(finalFocus || successFocus ? { finalFocus: focusOnClose } : {})}
+      title={t('confirmTitle', { attendeeName })}
+      description={t('confirmBody', { attendeeName })}
+      footer={
+        <>
+          <Button variant="secondary" data-autofocus disabled={pending} onClick={close}>
+            {t('cancel')}
+          </Button>
+          {/* Reachable but refused until the reason is valid (AURA #102):
+              aria-disabled + the hint as its description, not native disabled. */}
+          <Button
+            variant="danger"
+            icon={<Eraser aria-hidden="true" />}
+            loading={pending}
+            aria-disabled={!reasonValid || undefined}
+            aria-describedby={reasonValid ? undefined : hintId}
+            onClick={handleConfirm}
+          >
+            {t('confirm')}
+          </Button>
+        </>
+      }
+    >
+      {/* Mounted only while the dialog is open: one status line, not one per row. */}
       <span role="status" aria-live="polite" className="sr-only">
         {pending ? t('loading') : ''}
       </span>
-      <Dialog
-        role="alertdialog"
-        open={open}
-        onOpen={() => setOpen(true)}
-        onClose={close}
-        dismissible={!pending}
-        {...(trigger ? { trigger } : {})}
-        {...(finalFocus ? { finalFocus } : {})}
-        title={t('confirmTitle', { attendeeName })}
-        description={t('confirmBody', { attendeeName })}
-        footer={
-          <>
-            <Button variant="secondary" data-autofocus disabled={pending} onClick={close}>
-              {t('cancel')}
-            </Button>
-            <Button
-              variant="danger"
-              icon={<Eraser aria-hidden="true" />}
-              loading={pending}
-              disabled={!reasonValid}
-              onClick={handleConfirm}
-            >
-              {t('confirm')}
-            </Button>
-          </>
-        }
-      >
-        <Textarea
-          id={`erase-reason-${registrationId}`}
-          label={t('reasonLabel')}
-          hint={<span id={`erase-reason-hint-${registrationId}`}>{t('reasonHint', { remaining: REASON_MAX - reasonText.length })}</span>}
-          value={reasonText}
-          onChange={(e) => setReasonText(e.target.value)}
-          placeholder={t('reasonPlaceholder')}
-          maxLength={REASON_MAX}
-          rows={4}
-          disabled={pending}
-          aria-invalid={!reasonValid && reasonText.length > 0}
-        />
-      </Dialog>
-    </>
+      <Textarea
+        id={`erase-reason-${registrationId}`}
+        label={t('reasonLabel')}
+        hint={<span id={hintId}>{t('reasonHint', { remaining: REASON_MAX - reasonText.length })}</span>}
+        value={reasonText}
+        onChange={(e) => setReasonText(e.target.value)}
+        placeholder={t('reasonPlaceholder')}
+        maxLength={REASON_MAX}
+        rows={4}
+        disabled={pending}
+      />
+    </Dialog>
   );
 }
