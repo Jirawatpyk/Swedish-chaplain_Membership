@@ -66,7 +66,7 @@ function openDialog(successFocus?: () => HTMLElement | null) {
   );
   fireEvent.click(screen.getByTestId(`erase-pii-button-${REG}`));
   const dialog = screen.getByRole('alertdialog', { name: e.confirmTitle.replace('{attendeeName}', NAME) });
-  const reason = screen.getByLabelText(e.reasonLabel) as HTMLTextAreaElement;
+  const reason = screen.getByLabelText(new RegExp(`^${e.reasonLabel}`)) as HTMLTextAreaElement;
   const confirm = screen.getByRole('button', { name: e.confirm });
   return { dialog, reason, confirm };
 }
@@ -78,6 +78,8 @@ describe('erase PII dialog (AURA alertdialog)', () => {
     expect(document.querySelector('.aura-dialog')).not.toBeNull();
     expect(reason.id).toBe(`erase-reason-${REG}`);
     expect(reason.maxLength).toBe(500);
+    // parity, 6 Oct — the board marks the reason required.
+    expect(reason).toBeRequired();
     // Reachable but refused (AURA #102): aria-disabled, described by the reason hint.
     expect(confirm).toHaveAttribute('aria-disabled', 'true');
     expect(confirm.getAttribute('aria-describedby')).toContain(`erase-reason-hint-${REG}`);
@@ -126,7 +128,7 @@ describe('erase PII dialog (AURA alertdialog)', () => {
 
     fetchMock.mockReturnValueOnce(json({ title: 'event_path_mismatch' }, 409));
     fireEvent.click(screen.getByTestId(`erase-pii-button-${REG}`));
-    fireEvent.change(screen.getByLabelText(e.reasonLabel), { target: { value: 'stale' } });
+    fireEvent.change(screen.getByLabelText(new RegExp(`^${e.reasonLabel}`)), { target: { value: 'stale' } });
     fireEvent.click(screen.getByRole('button', { name: e.confirm }));
     await flush();
     expect(toastMock.error).toHaveBeenCalledWith(e.pathMismatchTitle, { description: e.pathMismatchDescription });

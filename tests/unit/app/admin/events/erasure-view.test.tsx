@@ -6,7 +6,10 @@
  * - the results on an AURA `DataTable` (an ARIA grid; cards on phones);
  * - a pseudonymised row shows "Already erased" and no erase action (FR-032a);
  * - the count stays a polite status; the truncated banner is an AURA warning
- *   alert and the load error an AURA danger alert, both `role="alert"`.
+ *   alert and the load error an AURA danger alert, both `role="alert"`;
+ * - (parity, 6 Oct) the count is visible beside "Erase all", and "Back to
+ *   events" is an accent link with a left arrow, shown from `lg` (below it the
+ *   shell's back link does the same).
  */
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
@@ -69,7 +72,26 @@ describe('erasure view (board Admin-events-erasure)', () => {
     expect(within(second!).getByText(er.pseudonymisedBadge)).toBeInTheDocument();
     expect(within(second!).getByText(er.unknownEvent)).toBeInTheDocument();
     expect(within(second!).queryByTestId('erase-pii-button-reg-2')).toBeNull();
-    expect(document.querySelector('output[role="status"]')).toHaveTextContent('2 registrations found');
+    const status = document.querySelector('output[role="status"]')!;
+    expect(status).toHaveTextContent('2 registrations found');
+    expect(status).not.toHaveClass('sr-only');
+    expect(status.parentElement).toContainElement(screen.getByTestId('erase-all-by-email-button'));
+  });
+
+  it('keeps a zero-result count for screen readers only (the quiet line says it)', async () => {
+    await show(renderErasureBody({ searchedEmail: EMAIL, status: 'results', truncated: false, rows: [] }));
+    const status = document.querySelector('output[role="status"]')!;
+    expect(status).toHaveTextContent('No registrations found');
+    expect(status).toHaveClass('sr-only');
+  });
+
+  it('draws "Back to events" as an accent link with a left arrow, from lg', async () => {
+    await show(renderErasureBody({ searchedEmail: '', status: 'idle', truncated: false, rows: [] }));
+    const back = screen.getByRole('link', { name: er.backLink });
+    expect(back).toHaveAttribute('href', '/admin/events');
+    expect(back.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
+    expect(back).toHaveClass('max-lg:hidden');
+    expect(back.className).not.toContain('aura-btn');
   });
 
   it('shows the truncated banner as an AURA warning alert', async () => {

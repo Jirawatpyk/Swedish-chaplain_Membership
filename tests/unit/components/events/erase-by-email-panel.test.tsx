@@ -8,7 +8,9 @@
  *   Confirm is gated by today's reason rule (no typed phrase);
  * - confirming POSTs the same body and toasts the same summary;
  * - focus lands on the search field when the dialog closes (WCAG 2.4.3 —
- *   the trigger unmounts after the refresh).
+ *   the trigger unmounts after the refresh);
+ * - (parity, 6 Oct) the reason is marked required, and on phones Search and
+ *   "Erase all" fill the width.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
@@ -65,6 +67,7 @@ describe('erase-by-email panel (AURA)', () => {
     fireEvent.change(input, { target: { value: '  Ploy.R@Gmail.example ' } });
     fireEvent.submit(input.closest('form')!);
     expect(nav.push).toHaveBeenCalledWith('/admin/events/erasure?email=ploy.r%40gmail.example');
+    expect(screen.getByRole('button', { name: er.searchSubmit })).toHaveClass('max-sm:w-full');
     expect(screen.queryByTestId('erase-all-by-email-button')).toBeNull();
   });
 
@@ -75,13 +78,15 @@ describe('erase-by-email panel (AURA)', () => {
       json: () => Promise.resolve({ erasedCount: 3, alreadyErasedCount: 0, failedCount: 0, truncated: false }),
     } as Response);
     renderPanel();
+    expect(screen.getByTestId('erase-all-by-email-button')).toHaveClass('max-sm:w-full');
     fireEvent.click(screen.getByTestId('erase-all-by-email-button'));
+    expect(screen.getByLabelText(new RegExp(`^${er.reasonLabel}`))).toBeRequired();
     screen.getByRole('alertdialog', { name: er.eraseAllConfirmTitle.replace('{count}', '3') });
     expect(document.querySelector('.aura-dialog')).not.toBeNull();
     const confirm = screen.getByRole('button', { name: er.confirm });
     expect(confirm).toHaveAttribute('aria-disabled', 'true');
     expect(confirm.getAttribute('aria-describedby')).toContain('erase-by-email-reason-hint');
-    fireEvent.change(screen.getByLabelText(er.reasonLabel), { target: { value: ' PDPA s.33 request ' } });
+    fireEvent.change(screen.getByLabelText(new RegExp(`^${er.reasonLabel}`)), { target: { value: ' PDPA s.33 request ' } });
     expect(confirm).not.toHaveAttribute('aria-disabled', 'true');
     fireEvent.click(confirm);
     await flush();
