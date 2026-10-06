@@ -3621,7 +3621,7 @@
         "segmentType": {
           "all_members": "All members",
           "tier": "By membership tier",
-          "event_attendees_last_90d": "Event attendees (last 90 days)",
+          "event_attendees_last_90d": "Event attendees from member companies (last 90 days)",
           "custom": "Custom recipient list"
         },
         "dispatchHeldTitle": "Held",
@@ -6603,7 +6603,7 @@
         "segmentOption": {
           "all_members": "All members",
           "tier": "Specific membership tier",
-          "event_attendees_last_90d": "Event attendees (last 90 days)",
+          "event_attendees_last_90d": "Event attendees from member companies (last 90 days)",
           "custom": "Custom email list"
         },
         "tierLabel": "Tier code",
@@ -6644,7 +6644,7 @@
         },
         "selfExclusionHint": "You and your colleagues won't receive your own broadcast.",
         "selfExclusionHintCustom": "Everyone on this list receives the broadcast — including you, if your own address is on it.",
-        "selfExclusionHintAttendees": "Every attendee receives the broadcast — including you and your colleagues, if you attended.",
+        "selfExclusionHintAttendees": "Every attendee from a member company receives the broadcast — including you and your colleagues, if you attended.",
         "estimateNote": {
           "allMembers": "Recipients: the primary contact of every active member (up to {ceiling, number} per broadcast).",
           "tier": "Recipients: the primary contact of every active member on the selected tiers (up to {ceiling, number}).",
@@ -6738,7 +6738,7 @@
       "banner": {
         "acknowledgement": {
           "title": "Before you send E-Blasts",
-          "body": "E-Blasts go to contacts at member companies and to recent event attendees, except anyone who has opted out of marketing emails. Every E-Blast includes an unsubscribe link, and opt-outs are applied automatically. Keep your message relevant to members and don't include other people's personal data.",
+          "body": "E-Blasts go only to people at member companies, except anyone who has opted out of marketing emails. Every E-Blast includes an unsubscribe link, and opt-outs are applied automatically. Keep your message relevant to members and don't include other people's personal data.",
           "privacyPolicyLink": "Read the privacy policy",
           "acknowledge": "I acknowledge",
           "remindLater": "Remind me later",

@@ -3621,7 +3621,7 @@
         "segmentType": {
           "all_members": "Alla medlemmar",
           "tier": "Per medlemsnivå",
-          "event_attendees_last_90d": "Deltagare (senaste 90 dagarna)",
+          "event_attendees_last_90d": "Deltagare från medlemsföretag (senaste 90 dagarna)",
           "custom": "Anpassad mottagarlista"
         },
         "dispatchHeldTitle": "Pausad",
@@ -6603,7 +6603,7 @@
         "segmentOption": {
           "all_members": "Alla medlemmar",
           "tier": "Specifik medlemsnivå",
-          "event_attendees_last_90d": "Eventdeltagare (senaste 90 dagarna)",
+          "event_attendees_last_90d": "Eventdeltagare från medlemsföretag (senaste 90 dagarna)",
           "custom": "Anpassad e-postlista"
         },
         "tierLabel": "Nivåkod",
@@ -6644,7 +6644,7 @@
         },
         "selfExclusionHint": "Du och dina kollegor tar inte emot ert eget utskick.",
         "selfExclusionHintCustom": "Alla på den här listan tar emot utskicket – även du, om din egen adress står med.",
-        "selfExclusionHintAttendees": "Alla deltagare tar emot utskicket – även du och dina kollegor, om ni deltog.",
+        "selfExclusionHintAttendees": "Alla deltagare från medlemsföretag tar emot utskicket – även du och dina kollegor, om ni deltog.",
         "estimateNote": {
           "allMembers": "Mottagare: primärkontakten hos varje aktiv medlem (högst {ceiling, number} per utskick).",
           "tier": "Mottagare: primärkontakten hos varje aktiv medlem på valda nivåer (högst {ceiling, number}).",
@@ -6738,7 +6738,7 @@
       "banner": {
         "acknowledgement": {
           "title": "Innan du skickar utskick",
-          "body": "Utskick skickas till kontaktpersoner hos medlemsföretag och till personer som nyligen deltagit i evenemang, utom dem som har avregistrerat sig från marknadsföringsmejl. Varje utskick innehåller en avregistreringslänk, och avregistreringar hanteras automatiskt. Håll budskapet relevant för medlemmarna och ta inte med andra personers personuppgifter.",
+          "body": "Utskick går bara till personer hos medlemsföretag, utom dem som har avregistrerat sig från marknadsföringsmejl. Varje utskick innehåller en avregistreringslänk, och avregistreringar hanteras automatiskt. Håll budskapet relevant för medlemmarna och ta inte med andra personers personuppgifter.",
           "privacyPolicyLink": "Läs integritetspolicyn",
           "acknowledge": "Jag bekräftar",
           "remindLater": "Påminn mig senare",
