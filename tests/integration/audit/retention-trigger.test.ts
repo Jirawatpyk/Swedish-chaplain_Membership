@@ -4,7 +4,7 @@
  *
  * The trigger promotes a set of event types to 10-year retention. It is
  * re-created (CREATE OR REPLACE) by several migrations (0055/0063/0084/
- * 0257); each re-create re-emits the WHOLE IN() list, so a future re-create
+ * 0257/0315); each re-create re-emits the WHOLE IN() list, so a future re-create
  * that drops a type silently regresses that type to the 5y column default —
  * a compliance regression with no other signal. 0257 nearly did exactly
  * this to `member_acknowledged_broadcasts_terms` (0084's GDPR Art. 7 /
@@ -13,6 +13,12 @@
  * This test inserts a real row of each expected-10y type and asserts the
  * trigger promoted it — so any future trigger re-create that drops a type
  * fails HERE. Runs on live Neon (the trigger only exists in the DB).
+ *
+ * 0315 deliberately REMOVED `member_acknowledged_broadcasts_terms`: it
+ * records a sender's acknowledgement of the E-Blast terms, not consent, so
+ * the 0084 consent rationale for 10y no longer applies and it returns to
+ * the 5y F7 default (`f7RetentionFor`). It is pinned at 5y below so the
+ * removal cannot be undone by a later re-create either.
  */
 import { afterAll, describe, expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
@@ -20,8 +26,8 @@ import { randomUUID } from 'node:crypto';
 import { db } from '@/lib/db';
 
 // Every event type the trigger must promote to 10y (the union across
-// migrations 0055 + 0063 + 0084 + 0257). Keep in lockstep with the IN()
-// list in the LATEST retention-trigger migration.
+// migrations 0055 + 0063 + 0257, minus the one 0315 removed). Keep in
+// lockstep with the IN() list in the LATEST retention-trigger migration.
 const EXPECTED_10Y = [
   // F4 tax documents (Thai RD §87/3 + §86/10):
   'invoice_issued',
@@ -33,14 +39,13 @@ const EXPECTED_10Y = [
   'receipt_pdf_resent',
   'credit_note_pdf_resent',
   'receipt_rendered',
-  // F7 marketing consent (migration 0084 — GDPR Art. 7 / PDPA §35):
-  'member_acknowledged_broadcasts_terms',
   // F8/F5 post-termination payment forensic (migration 0257 — §4.4(2)):
   'payment_on_terminated_member',
 ] as const;
 
-// A control: a routine F8 event that must STAY at the 5y default.
-const EXPECTED_5Y = 'renewal_lapsed';
+// Events that must STAY at the 5y default: a routine F8 control, and the
+// E-Blast terms acknowledgement 0315 returned to the F7 default.
+const EXPECTED_5Y = ['renewal_lapsed', 'member_acknowledged_broadcasts_terms'] as const;
 
 const MARKER = `retention-trigger-test-${randomUUID()}`;
 
@@ -61,14 +66,16 @@ describe('audit_log retention trigger — behavioral guard (066 T6-review B2)', 
     await db.execute(sql`DELETE FROM audit_log WHERE summary = ${MARKER}`).catch(() => {});
   });
 
-  it('promotes every expected tax/consent/forensic event type to retention_years=10', async () => {
+  it('promotes every expected tax/forensic event type to retention_years=10', async () => {
     for (const eventType of EXPECTED_10Y) {
       const retention = await insertAuditRow(eventType);
       expect(retention, `${eventType} must be 10y`).toBe(10);
     }
   });
 
-  it('leaves a routine event (renewal_lapsed) at the 5y default', async () => {
-    expect(await insertAuditRow(EXPECTED_5Y)).toBe(5);
+  it('leaves renewal_lapsed and member_acknowledged_broadcasts_terms at the 5y default', async () => {
+    for (const eventType of EXPECTED_5Y) {
+      expect(await insertAuditRow(eventType), `${eventType} must be 5y`).toBe(5);
+    }
   });
 });
