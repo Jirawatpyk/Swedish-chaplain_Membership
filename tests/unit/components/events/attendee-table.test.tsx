@@ -149,13 +149,15 @@ describe('attendee table (AURA DataTable)', () => {
     ]);
   });
 
-  it('on a phone, Relink and Erase share the card foot at one 44px height (parity comment)', () => {
+  it('keeps Relink and a "More" menu (board Admin-event-detail) that opens the erase dialog', () => {
     renderTable();
     const relink = screen.getByTestId('relink-button-reg-1');
-    const erase = screen.getByTestId('erase-pii-button-reg-1');
-    expect(relink.parentElement).toBe(erase.parentElement);
-    expect(relink.parentElement).toHaveClass('max-sm:[&>button]:flex-1');
-    expect(erase).toHaveClass('aura-btn--touch');
+    const more = screen.getByTestId('attendee-more-reg-1');
+    expect(relink.closest('[data-row-actions]')).toBe(more.closest('[data-row-actions]'));
+    expect(more).toHaveAccessibleName(a.moreActionsAria.replace('{attendeeName}', 'Erik Johansson'));
+    fireEvent.click(more);
+    fireEvent.click(screen.getByRole('menuitem', { name: a.eraseMenuItem }));
+    screen.getByRole('alertdialog', { name: en.admin.events.detail.erase.confirmTitle.replace('{attendeeName}', 'Erik Johansson') });
   });
 
   it('hides the action column without relink rights (manager read-only)', () => {
