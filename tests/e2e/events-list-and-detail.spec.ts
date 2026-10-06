@@ -110,9 +110,14 @@ test.describe('F6 events list and detail — US2 AS1-AS5 @workers=1', () => {
       matchRate.locator('small').nth(0),
       matchRate.locator('small').nth(1),
     ];
-    await expect(fraction).toBeVisible();
     await expect(fraction).toHaveText(/^\d+ of \d+ attendees matched$/);
-    await expect(bandWord).toBeVisible();
+    // toBeVisible() also accepts a 1×1px sr-only node (R36b mutation test),
+    // so each line must have a real rendered box.
+    for (const line of [fraction, bandWord]) {
+      const box = await line.boundingBox();
+      expect(box?.width ?? 0).toBeGreaterThan(1);
+      expect(box?.height ?? 0).toBeGreaterThan(1);
+    }
     await expect(matchRate).toHaveAttribute(
       'aria-label',
       /^\d+(?:\.\d+)?% \(\d+ of \d+\)$/,
