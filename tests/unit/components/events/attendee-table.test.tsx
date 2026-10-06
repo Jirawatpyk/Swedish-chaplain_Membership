@@ -149,6 +149,15 @@ describe('attendee table (AURA DataTable)', () => {
     ]);
   });
 
+  it('on a phone, Relink and Erase share the card foot at one 44px height (parity comment)', () => {
+    renderTable();
+    const relink = screen.getByTestId('relink-button-reg-1');
+    const erase = screen.getByTestId('erase-pii-button-reg-1');
+    expect(relink.parentElement).toBe(erase.parentElement);
+    expect(relink.parentElement).toHaveClass('max-sm:[&>button]:flex-1');
+    expect(erase).toHaveClass('max-sm:h-11');
+  });
+
   it('hides the action column without relink rights (manager read-only)', () => {
     renderTable({ canRelink: false });
     expect(screen.queryByRole('columnheader', { name: a.columns.actions })).toBeNull();
