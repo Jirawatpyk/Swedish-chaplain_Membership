@@ -100,14 +100,18 @@ describe('erase-by-email panel (AURA)', () => {
     expect(document.activeElement).toBe(screen.getByLabelText(er.searchLabel));
   });
 
-  it('says a super admin is needed when the route refuses with 403', async () => {
-    fetchMock.mockResolvedValue({ ok: false, status: 403, json: () => Promise.resolve({}) } as Response);
+
+  it('keeps the generic error on a 403 (the guard answers a plain admin 404; here a 403 is CSRF)', async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 403,
+      json: () => Promise.resolve({ error: 'csrf-rejected', reason: 'origin-mismatch' }),
+    } as Response);
     renderPanel();
     fireEvent.click(screen.getByTestId('erase-all-by-email-button'));
     fireEvent.change(screen.getByLabelText(new RegExp(`^${er.reasonLabel}`)), { target: { value: 'PDPA s.33 request' } });
     fireEvent.click(screen.getByRole('button', { name: er.confirm }));
     await flush();
-    expect(toastMock.error).toHaveBeenCalledWith(er.forbiddenTitle, { description: er.forbiddenDescription });
-    expect(er.forbiddenTitle).toBeTruthy();
-  });
+    expect(toastMock.error).toHaveBeenCalledWith(er.errorTitle, { description: er.errorDescription });
+      });
 });

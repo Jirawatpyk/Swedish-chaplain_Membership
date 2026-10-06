@@ -5427,8 +5427,6 @@
           "alreadyErasedDescription": "En annan administratör raderade denna registrering i en samtidig begäran.",
           "pathMismatchTitle": "Kan inte radera",
           "pathMismatchDescription": "Denna registrering tillhör ett annat evenemang. Uppdatera sidan och försök igen.",
-          "forbiddenTitle": "Superadministratör krävs",
-          "forbiddenDescription": "Endast en superadministratör kan radera personuppgifter. Be en att slutföra begäran.",
           "errorTitle": "Kunde inte radera personuppgifter",
           "errorDescription": "Försök igen. Om problemet kvarstår, kontakta support.",
           "loading": "Raderar personuppgifter…",
@@ -5779,8 +5777,6 @@
         "failedToast": "{failed, plural, one {# registrering} other {# registreringar}} kunde inte raderas. Kör igen för att försöka igen.",
         "errorTitle": "Kunde inte slutföra raderingen",
         "errorDescription": "Försök igen. Om problemet kvarstår, kontakta support.",
-        "forbiddenTitle": "Superadministratör krävs",
-        "forbiddenDescription": "Endast en superadministratör kan radera personuppgifter. Be en att slutföra begäran.",
         "discoverabilityCta": "Radera via e-post"
       }
     },

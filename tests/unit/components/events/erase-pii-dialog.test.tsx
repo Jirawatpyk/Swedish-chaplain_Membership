@@ -184,13 +184,13 @@ describe('erase PII dialog (AURA alertdialog)', () => {
     expect(screen.getByRole('button', { name: e.cancel })).toHaveAttribute('data-autofocus');
   });
 
-  it('says a super admin is needed when the route refuses with 403', async () => {
-    fetchMock.mockReturnValue(json({ title: 'Forbidden' }, 403));
+
+  it('keeps the generic error on a 403 (the guard answers a plain admin 404; here a 403 is CSRF)', async () => {
+    fetchMock.mockReturnValue(json({ error: 'csrf-rejected', reason: 'origin-mismatch' }, 403));
     const { reason, confirm } = openDialog();
     fireEvent.change(reason, { target: { value: 'GDPR Art. 17 request' } });
     fireEvent.click(confirm);
     await flush();
-    expect(toastMock.error).toHaveBeenCalledWith(e.forbiddenTitle, { description: e.forbiddenDescription });
-    expect(e.forbiddenTitle).toBeTruthy();
-  });
+    expect(toastMock.error).toHaveBeenCalledWith(e.errorTitle, { description: e.errorDescription });
+      });
 });
