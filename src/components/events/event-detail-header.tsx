@@ -197,8 +197,14 @@ export function EventDetailHeader({ event, actions, actionsHiddenBelowSm = false
             >
               {pctDisplay}
               <span className="sr-only"> — {matchRateAria}</span>
-              <small className={`aura-text-label mt-1 block font-normal ${muted}`}>{stackedLabel}</small>
-              <small className={`aura-text-caption mt-1 block font-medium ${BAND_TEXT_CLASS[band]}`}>{bandLabel}</small>
+              {/* The type class sits on an inner span: preflight's `small`
+                  (80% of the h2 figure) would win over it on the element. */}
+              <small className="mt-1 block">
+                <span className={`aura-text-label font-normal ${muted}`}>{stackedLabel}</span>
+              </small>
+              <small className="mt-1 block">
+                <span className={`aura-text-caption font-medium ${BAND_TEXT_CLASS[band]}`}>{bandLabel}</span>
+              </small>
             </dd>
           </dl>
           <dl className="aura-text-table-cell flex flex-col gap-1 sm:items-end">
