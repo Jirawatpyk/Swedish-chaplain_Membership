@@ -50,7 +50,7 @@ describe('events list frame (board Admin-events)', () => {
   it('offers "Erase by email" from a "More actions" menu on a phone (board Admin-events-mobile)', async () => {
     await renderView({ canImport: true, canEraseByEmail: true });
     fireEvent.click(screen.getByRole('button', { name: l.moreActions }));
-    const item = await screen.findByRole('menuitem', { name: en.admin.events.erasure.discoverabilityCta });
+    const item = screen.getByRole('menuitem', { name: en.admin.events.erasure.discoverabilityCta });
     expect(item).toHaveAttribute('href', '/admin/events/erasure');
   });
 

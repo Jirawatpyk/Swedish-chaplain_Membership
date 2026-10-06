@@ -25,6 +25,13 @@
  *     admin metadata mutation (toggle / archive). Trust signal for
  *     ops triage; see `events.last_updated_at` field JSDoc below.
  *
+ * Spec 122 US9a (T903): on AURA as the `Admin-event-detail` board draws it —
+ * one AURA card (date and category, the badges, the match-rate figure with
+ * its band, total registrations, last updated, "View on EventCreate") with
+ * the actions at its end. On a phone the page repeats the actions in an
+ * "Event actions" section at its end and this card hides its own
+ * (`actionsHiddenBelowSm`).
+ *
  * a11y:
  * - Match-rate metric uses <dl> + sr-only matchRateValue so SRs hear
  *   "Match rate 90% (18 of 20 attendees matched)" in one phrase.
@@ -37,16 +44,7 @@ import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
 import { ExternalLink, Award, Sparkles, Info } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { buttonVariants } from '@/components/ui/button';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-  TooltipProvider,
-} from '@/components/ui/tooltip';
-import { cn } from '@/lib/utils';
+import { Badge, Card, Tooltip, buttonClass } from '@jirawatpyk/aura-react';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 
 type EventHeaderProps = {
@@ -78,6 +76,12 @@ type EventHeaderProps = {
    * Rendered as a bordered footer strip inside the card when present.
    */
   readonly actions?: ReactNode;
+  /**
+   * The page repeats `actions` in an "Event actions" section at its end on a
+   * phone (board `Admin-event-detail-mobile`); the card then hides its own
+   * below 640px.
+   */
+  readonly actionsHiddenBelowSm?: boolean;
 };
 
 type MatchRateBand = 'high' | 'medium' | 'low' | 'none';
@@ -89,11 +93,12 @@ function bandForPct(total: number, pct: number): MatchRateBand {
   return 'low';
 }
 
-const BAND_NUMBER_CLASS: Record<MatchRateBand, string> = {
-  high: 'text-emerald-700 dark:text-emerald-300',
-  medium: 'text-amber-700 dark:text-amber-300',
-  low: 'text-destructive',
-  none: 'text-muted-foreground',
+// The band's colour on AURA's tokens; the caption beside it carries the meaning.
+const BAND_TEXT_CLASS: Record<MatchRateBand, string> = {
+  high: 'text-[var(--aura-fg-success)]',
+  medium: 'text-[var(--aura-fg-warning)]',
+  low: 'text-[var(--aura-fg-danger)]',
+  none: 'text-[var(--aura-fg-secondary)]',
 };
 
 function formatDate(iso: string, locale: string): string {
@@ -103,7 +108,7 @@ function formatDate(iso: string, locale: string): string {
   });
 }
 
-export function EventDetailHeader({ event, actions }: EventHeaderProps) {
+export function EventDetailHeader({ event, actions, actionsHiddenBelowSm = false }: EventHeaderProps) {
   const t = useTranslations('admin.events.detail');
   const locale = useLocale();
   const isArchived = event.archivedAt !== null;
@@ -126,169 +131,113 @@ export function EventDetailHeader({ event, actions }: EventHeaderProps) {
   const bandKey = `header.matchRateBand${band.charAt(0).toUpperCase()}${band.slice(1)}` as const;
   const bandLabel = total > 0 ? t(bandKey) : t('header.matchRateNone');
 
+  const muted = 'text-[var(--aura-fg-secondary)]';
   return (
-    <TooltipProvider>
-      <Card>
-        <CardContent className="flex flex-col gap-4">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            {/*
-             * heading dedupe — the page-level
-             * <PageHeader title={event.name}/> already emits <h1>. Repeating
-             * the same string as <h2> here pollutes the SR heading tree.
-             * Render the metadata block without an extra heading level.
-             */}
-            <div className="flex flex-col gap-2">
-              <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                <time dateTime={event.startDate}>
-                  {formatDate(event.startDate, locale)}
-                </time>
-                {event.category && (
-                  <>
-                    <span aria-hidden="true">·</span>
-                    <span>{event.category}</span>
-                  </>
-                )}
-              </div>
-              {/* P6 fix — badges share a single flex row so Archived sits
-                  alongside Partner / Cultural with consistent gap+wrap. */}
-              <div className="flex flex-wrap items-center gap-1">
-                {isArchived && (
-                  <Badge variant="outline" className="text-xs">
-                    {t('header.archived')}
-                  </Badge>
-                )}
-                {event.isPartnerBenefit && (
-                  <Badge
-                    variant="outline"
-                    className="border-sky-600 text-sky-900 dark:border-sky-500 dark:text-sky-100"
-                    aria-label={t('header.partnerBenefit')}
-                  >
-                    <Award aria-hidden="true" data-icon="inline-start" />
-                    <span>{t('header.partnerBenefit')}</span>
-                  </Badge>
-                )}
-                {event.isCulturalEvent && (
-                  <Badge
-                    variant="outline"
-                    className="border-violet-600 text-violet-900 dark:border-violet-500 dark:text-violet-100"
-                    aria-label={t('header.culturalEvent')}
-                  >
-                    <Sparkles aria-hidden="true" data-icon="inline-start" />
-                    <span>{t('header.culturalEvent')}</span>
-                  </Badge>
-                )}
-              </div>
+    <Card>
+      <div className="flex flex-col gap-[var(--aura-space-4)]">
+        <div className="flex flex-wrap items-start justify-between gap-[var(--aura-space-4)]">
+          {/*
+           * heading dedupe — the page-level
+           * <PageHeader title={event.name}/> already emits <h1>. Repeating
+           * the same string as <h2> here pollutes the SR heading tree.
+           * Render the metadata block without an extra heading level.
+           */}
+          <div className="flex flex-col gap-2">
+            <div className={`aura-text-label flex flex-wrap items-center gap-2 ${muted}`}>
+              <time dateTime={event.startDate}>{formatDate(event.startDate, locale)}</time>
+              {event.category && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span>{event.category}</span>
+                </>
+              )}
             </div>
-            {event.eventcreateUrl && (
-              <Link
-                href={event.eventcreateUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={cn(buttonVariants({ variant: 'outline' }))}
-              >
-                <ExternalLink
-                  aria-hidden="true"
-                  className="size-4"
-                  data-icon="inline-start"
-                />
-                <span>{t('header.viewOnEventCreate')}</span>
-                <span className="sr-only">{t('header.opensInNewTab')}</span>
-              </Link>
-            )}
-          </div>
-          {/* C2 — hero match-rate scorecard. Big number + band caption +
-              secondary metadata strip on the right.
-              F6.1 R3 a11y-fix 2026-05-16 — was a single `<dl>` flex
-              container with: (a) a wrapping `<div>` holding `<dt>`+`<dd>`
-              followed by two `<p>` siblings (axe `only-dlitems`: `<dl>>
-              <div>` may only contain `<dt>`/`<dd>`); (b) a sibling
-              wrapping `<div>` holding TWO nested `<div>` groupings,
-              each with `<dt>`+`<dd>` (axe `dlitem`: dt/dd not direct
-              under <dl>). Split into a wrapper `<div>` (visual flex
-              layout only) holding TWO sibling `<dl>` blocks — one per
-              logical pair group — keeping the same visual layout. */}
-          <div className="flex flex-col gap-4 border-t pt-4 sm:flex-row sm:items-end sm:justify-between">
-            <dl className="flex flex-col gap-1">
-              <dt className="text-sm font-medium text-muted-foreground">
-                {t('header.matchRate')}
-              </dt>
-              <dd
-                className={cn(
-                  'text-h2 font-semibold tabular-nums leading-none',
-                  BAND_NUMBER_CLASS[band],
-                )}
-                aria-label={matchRateAria}
-              >
-                {pctDisplay}
-                <span className="sr-only"> — {matchRateAria}</span>
-                <small className="text-sm mt-1 block font-normal text-muted-foreground">
-                  {stackedLabel}
-                </small>
-                <small
-                  className={cn(
-                    'text-xs mt-1 block font-medium',
-                    band === 'high' &&
-                      'text-emerald-700 dark:text-emerald-300',
-                    band === 'medium' &&
-                      'text-amber-700 dark:text-amber-300',
-                    band === 'low' && 'text-destructive',
-                    band === 'none' && 'text-muted-foreground',
-                  )}
-                >
-                  {bandLabel}
-                </small>
-              </dd>
-            </dl>
-            <dl className="flex flex-col gap-1 text-sm sm:items-end">
-              <div className="flex items-baseline gap-2">
-                <dt className="whitespace-nowrap text-muted-foreground">
-                  {t('header.totalRegistrations')}
-                </dt>
-                <dd className="font-semibold tabular-nums">
-                  {total.toLocaleString(locale)}
-                </dd>
-              </div>
-              {/* P1 — last-updated with explanatory tooltip. */}
-              <div className="flex items-baseline gap-2">
-                <dt className="whitespace-nowrap text-muted-foreground">
-                  {t('header.lastUpdatedAt')}
-                </dt>
-                <dd className="flex items-center gap-1">
-                  <time dateTime={event.lastUpdatedAt}>
-                    {formatDate(event.lastUpdatedAt, locale)}
-                  </time>
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <button
-                          type="button"
-                          className="inline-flex size-4 items-center justify-center rounded-full text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
-                          aria-label={t('header.lastUpdatedAtTooltip')}
-                        />
-                      }
-                    >
-                      <Info aria-hidden="true" className="size-3.5" />
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      {t('header.lastUpdatedAtTooltip')}
-                    </TooltipContent>
-                  </Tooltip>
-                </dd>
-              </div>
-            </dl>
-          </div>
-          {/* C4-lite — admin actions slot. Rendered as a bordered footer
-              when the page passes EventCategoryToggles + ArchiveEventButton.
-              When `actions` is undefined (member/manager view, or archived
-              event), the strip is omitted entirely. */}
-          {actions && (
-            <div className="flex flex-wrap items-center gap-2 border-t pt-4">
-              <h2 className="sr-only">{t('header.actionsLabel')}</h2>
-              {actions}
+            {/* P6 fix — badges share a single flex row so Archived sits
+                alongside Partner / Cultural with consistent gap+wrap. */}
+            <div className="flex flex-wrap items-center gap-1">
+              {isArchived && (
+                <Badge variant="outline" tone="neutral">
+                  {t('header.archived')}
+                </Badge>
+              )}
+              {event.isPartnerBenefit && (
+                <Badge tone="accent" icon={<Award aria-hidden />}>
+                  {t('header.partnerBenefit')}
+                </Badge>
+              )}
+              {event.isCulturalEvent && (
+                <Badge tone="success" icon={<Sparkles aria-hidden />}>
+                  {t('header.culturalEvent')}
+                </Badge>
+              )}
             </div>
+          </div>
+          {event.eventcreateUrl && (
+            <Link
+              href={event.eventcreateUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={buttonClass({ variant: 'secondary', className: 'max-sm:w-full' })}
+            >
+              <ExternalLink aria-hidden="true" className="size-4" />
+              <span>{t('header.viewOnEventCreate')}</span>
+              <span className="sr-only">{t('header.opensInNewTab')}</span>
+            </Link>
           )}
-        </CardContent>
-      </Card>
-    </TooltipProvider>
+        </div>
+        {/* C2 — hero match-rate scorecard: the big number, its matched/total
+            line and band caption, and the metadata pairs on the right. Two
+            sibling `<dl>`s (axe `only-dlitems` / `dlitem`, F6.1 R3). */}
+        <div className="flex flex-col gap-[var(--aura-space-4)] border-t border-[var(--aura-border-default)] pt-[var(--aura-space-4)] sm:flex-row sm:items-end sm:justify-between">
+          <dl className="flex flex-col gap-1">
+            <dt className={`aura-text-label ${muted}`}>{t('header.matchRate')}</dt>
+            <dd
+              className={`aura-text-h2 font-semibold tabular-nums leading-none ${BAND_TEXT_CLASS[band]}`}
+              aria-label={matchRateAria}
+            >
+              {pctDisplay}
+              <span className="sr-only"> — {matchRateAria}</span>
+              <small className={`aura-text-label mt-1 block font-normal ${muted}`}>{stackedLabel}</small>
+              <small className={`aura-text-caption mt-1 block font-medium ${BAND_TEXT_CLASS[band]}`}>{bandLabel}</small>
+            </dd>
+          </dl>
+          <dl className="aura-text-table-cell flex flex-col gap-1 sm:items-end">
+            <div className="flex items-baseline gap-2">
+              <dt className={`whitespace-nowrap ${muted}`}>{t('header.totalRegistrations')}</dt>
+              <dd className="font-semibold tabular-nums">{total.toLocaleString(locale)}</dd>
+            </div>
+            {/* P1 — last-updated with explanatory tooltip. */}
+            <div className="flex items-baseline gap-2">
+              <dt className={`whitespace-nowrap ${muted}`}>{t('header.lastUpdatedAt')}</dt>
+              <dd className="flex items-center gap-1">
+                <time dateTime={event.lastUpdatedAt}>{formatDate(event.lastUpdatedAt, locale)}</time>
+                <Tooltip content={t('header.lastUpdatedAtTooltip')}>
+                  <button
+                    type="button"
+                    className={`inline-flex size-6 items-center justify-center rounded-full ${muted} hover:text-[var(--aura-fg-primary)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--aura-focus-ring)]`}
+                    aria-label={t('header.lastUpdatedAtTooltip')}
+                  >
+                    <Info aria-hidden="true" className="size-3.5" />
+                  </button>
+                </Tooltip>
+              </dd>
+            </div>
+          </dl>
+        </div>
+        {/* C4-lite — admin actions at the card's end. When `actions` is
+            undefined (manager view, or an archived event) the strip is
+            omitted. On a phone the page shows them at its end instead. */}
+        {actions && (
+          <div
+            className={`flex flex-wrap items-center gap-2 border-t border-[var(--aura-border-default)] pt-[var(--aura-space-4)]${
+              actionsHiddenBelowSm ? ' max-sm:hidden' : ''
+            }`}
+          >
+            <h2 className="sr-only">{t('header.actionsLabel')}</h2>
+            {actions}
+          </div>
+        )}
+      </div>
+    </Card>
   );
 }

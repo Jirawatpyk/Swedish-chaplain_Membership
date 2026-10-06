@@ -258,6 +258,22 @@ export default async function AdminEventDetailPage({
 
   const { event, registrations, pagination } = result.value;
 
+  // 016 re-review D — evaluator-derived (events.write, the key the
+  // category-toggle + archive APIs admit; OFF leg = admin-only). Hidden when
+  // archived per FR-019a (archived events are quota-neutral and cannot be
+  // re-flagged).
+  const canAct = canPerform(currentUser.role, 'events.write') && !event.archivedAt;
+  const renderActions = () => (
+    <>
+      <EventCategoryToggles
+        eventId={event.eventId}
+        isPartnerBenefit={event.isPartnerBenefit}
+        isCulturalEvent={event.isCulturalEvent}
+      />
+      <ArchiveEventButton eventId={event.eventId} />
+    </>
+  );
+
   return (
     /* P4 (round-10) — 120ms fade-in when the loaded content replaces
        the loading.tsx skeleton. `motion-safe:` honours
@@ -282,24 +298,11 @@ export default async function AdminEventDetailPage({
           archived per FR-019a (archived events are quota-neutral and
           cannot be re-flagged). The header omits the strip entirely
           when `actions` is undefined. */}
-      <EventDetailHeader
-        event={event}
-        actions={
-          // 016 re-review D — evaluator-derived (events.write, the key the
-          // category-toggle + archive APIs admit; OFF leg = admin-only).
-          canPerform(currentUser.role, 'events.write') &&
-          !event.archivedAt ? (
-            <>
-              <EventCategoryToggles
-                eventId={event.eventId}
-                isPartnerBenefit={event.isPartnerBenefit}
-                isCulturalEvent={event.isCulturalEvent}
-              />
-              <ArchiveEventButton eventId={event.eventId} />
-            </>
-          ) : undefined
-        }
-      />
+      {/* C4-lite (round-10) — the toggles + archive at the summary card's
+          end; on a phone they move to the "Event actions" section at the
+          page's end (board Admin-event-detail-mobile), so the card hides
+          its own copy below 640px. */}
+      <EventDetailHeader event={event} actions={canAct ? renderActions() : undefined} actionsHiddenBelowSm />
       <section
         aria-labelledby="attendees-heading"
         className="flex flex-col gap-4"
@@ -359,6 +362,14 @@ export default async function AdminEventDetailPage({
           baseHref={`/admin/events/${eventId}`}
         />
       </section>
+      {canAct ? (
+        <section aria-labelledby="event-actions-heading" className="flex flex-col gap-3 sm:hidden">
+          <h2 id="event-actions-heading" className="aura-text-label text-[var(--aura-fg-secondary)]">
+            {t('header.actionsLabel')}
+          </h2>
+          <div className="flex flex-col gap-2 [&_button]:w-full">{renderActions()}</div>
+        </section>
+      ) : null}
       <span className="sr-only">{tShared('loaded')}</span>
     </DetailContainer>
   );

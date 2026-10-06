@@ -1,74 +1,81 @@
 /**
- * T066 — /admin/events/[eventId] detail page shimmer skeleton (F6 Phase 4).
+ * T066 — /admin/events/[eventId] detail page skeleton (F6 Phase 4).
+ *
+ * Spec 122 US9a (T903): the real page's shape on AURA for CLS 0 — the header
+ * (the event name is a placeholder, the subtitle is real), the summary card
+ * (name, date and category, badges, the actions strip; then the match rate,
+ * registrations and last update), then the attendees heading, the filter row
+ * and AURA's own table in its loading state with the real columns (cards
+ * below 640px, `DataTableSkeleton`).
+ *
+ * `aria-busy` on the container; `PageSkeletonShell` is the one live region.
+ * The placeholder in the `<h1>` slot sits in an `aria-hidden` block span, so
+ * a screen reader never meets an empty level-1 heading (R6-W11, R7-A).
  */
+import { getTranslations } from 'next-intl/server';
+import { Card } from '@jirawatpyk/aura-react/server';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { Card, CardContent } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
+import { PageSkeletonShell, SkeletonBlock } from '@/components/shell/page-skeletons';
+import { DataTableSkeleton } from '@/components/shell/data-table-skeleton';
+import { ATTENDEE_COLUMN_LAYOUT, type AttendeeColumnKey } from '@/components/events/attendee-table-columns';
 
-export default function EventDetailLoading() {
-  // R6-W11 staff-review fix (2026-05-13): wrap all skeleton groups
-  // in `aria-hidden` so the shimmer rectangles are not exposed as
-  // discrete elements. The Skeleton nested inside the PageHeader
-  // `<h1>` slot is wrapped in a `<span aria-hidden>` to avoid
-  // VoiceOver announcing "heading level 1" with no accessible name.
-  // R7-A + R7-B staff-review fix (2026-05-13): (a) `<span
-  // className="block">` — default-inline `<span>` does not
-  // establish a block formatting context, so the inner block-
-  // display Skeleton (`h-7`) could collapse to 0 height on some
-  // browsers. (b) `aria-busy="true"` on the container — the
-  // comment above had previously claimed this but the JSX did not
-  // actually set it, so AT users got silence instead of the
-  // promised "busy" signal.
+export default async function EventDetailLoading() {
+  const t = await getTranslations('admin.events.detail');
+  const tLayout = await getTranslations('layout');
+  const columns = (Object.keys(ATTENDEE_COLUMN_LAYOUT) as AttendeeColumnKey[]).map((key) => ({
+    key,
+    label: t(`attendees.columns.${key}`),
+    ...ATTENDEE_COLUMN_LAYOUT[key],
+  }));
   return (
-    <DetailContainer aria-busy="true">
-      <PageHeader
-        title={<span aria-hidden="true" className="block"><Skeleton className="h-7 w-72" /></span>}
-        subtitle={<Skeleton className="h-4 w-48" aria-hidden />}
-      />
-      <Card aria-hidden>
-        <CardContent className="flex flex-col gap-4">
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex flex-col gap-2">
-              <Skeleton className="h-6 w-64" />
-              <Skeleton className="h-4 w-48" />
-              <div className="flex gap-2">
-                <Skeleton className="h-5 w-24" />
-                <Skeleton className="h-5 w-28" />
+    <PageSkeletonShell ariaLabel={tLayout('loadingPage')}>
+      <DetailContainer aria-busy="true">
+        <PageHeader
+          title={
+            <span aria-hidden="true" className="block">
+              <SkeletonBlock className="h-7 w-72 max-w-full" />
+            </span>
+          }
+          subtitle={t('subtitle')}
+        />
+        <Card aria-hidden data-skeleton="summary">
+          <div className="flex flex-col gap-[var(--aura-space-4)]">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="flex flex-col gap-2">
+                <SkeletonBlock className="h-6 w-64 max-w-full" />
+                <SkeletonBlock className="h-4 w-48" />
+                <div className="flex gap-2">
+                  <SkeletonBlock className="h-5 w-24 rounded-full" />
+                  <SkeletonBlock className="h-5 w-28 rounded-full" />
+                </div>
+              </div>
+              <div className="flex gap-2 max-sm:hidden" data-skeleton="actions">
+                <SkeletonBlock className="h-9 w-40" />
+                <SkeletonBlock className="h-9 w-32" />
               </div>
             </div>
-            <Skeleton className="h-9 w-40" />
-          </div>
-          <div className="flex gap-6 border-t pt-4">
-            <Skeleton className="h-5 w-32" />
-            <Skeleton className="h-5 w-40" />
-          </div>
-        </CardContent>
-      </Card>
-      <div className="flex flex-col gap-4" aria-hidden>
-        <Skeleton className="h-6 w-32" />
-        <div className="flex gap-2">
-          <Skeleton className="h-9 flex-1 max-w-md" />
-          <Skeleton className="h-9 w-44" />
-        </div>
-        <div className="flex flex-col gap-2">
-          <div className="grid grid-cols-5 gap-3 border-b bg-muted/40 px-4 py-3">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-3 w-full" />
-            ))}
-          </div>
-          {Array.from({ length: 10 }).map((_, r) => (
-            <div
-              key={r}
-              className="grid grid-cols-5 gap-3 border-b px-4 py-3 last:border-b-0"
-            >
-              {Array.from({ length: 5 }).map((__, c) => (
-                <Skeleton key={c} className="h-5 w-full" />
-              ))}
+            <div className="flex flex-wrap gap-6 border-t border-[var(--aura-border)] pt-4">
+              <SkeletonBlock className="h-10 w-32" />
+              <SkeletonBlock className="h-10 w-40" />
+              <SkeletonBlock className="h-10 w-36" />
             </div>
-          ))}
+          </div>
+        </Card>
+        <div className="flex flex-col gap-4">
+          <SkeletonBlock aria-hidden className="h-6 w-32" />
+          <Card flushBelow="sm" className="max-sm:border-0 max-sm:p-0">
+            <div className="flex flex-col gap-[var(--aura-space-4)]">
+              <div aria-hidden data-skeleton="filters" className="flex flex-wrap items-center gap-2">
+                <SkeletonBlock className="h-[var(--aura-input-height)] w-full sm:w-auto sm:min-w-60 sm:flex-1" />
+                <SkeletonBlock className="h-8 w-48 rounded-full" data-skeleton="toggle-chip" />
+                <SkeletonBlock className="h-[var(--aura-input-height)] w-full sm:w-48" data-skeleton="select" />
+              </div>
+              <DataTableSkeleton label={t('attendees.tableCaption')} columns={columns} rows={10} />
+            </div>
+          </Card>
         </div>
-      </div>
-    </DetailContainer>
+      </DetailContainer>
+    </PageSkeletonShell>
   );
 }
