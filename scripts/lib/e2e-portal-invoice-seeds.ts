@@ -65,6 +65,38 @@ export const E2E_PORTAL_INVOICE_SEEDS: readonly E2ePortalInvoiceSeed[] = [
   },
 ];
 
+/**
+ * The GOOD-STANDING payable persona's single open bill.
+ *
+ * Alpha (the seeds above) carries the invoices, but the F8 fixture leaves it
+ * LAPSED, and `lapsed-portal-scope.ts` refuses `/api/payments/initiate` for a
+ * lapsed member — so Alpha can hold a bill it can never pay. Echo is in good
+ * standing but owns nothing by design (`portal-invoices.spec.ts` asserts its
+ * empty state). Until this seed existed there was no persona that could reach
+ * the pay sheet at all, which is why the manual "press Record payment and read
+ * the rows back" check had no way to produce a pending PaymentIntent.
+ *
+ * Its own 9000xx slot so it can never collide with Alpha's three.
+ */
+export const E2E_PAYABLE_INVOICE_SEEDS: readonly E2ePortalInvoiceSeed[] = [
+  {
+    number: 'SC-2026-900011',
+    status: 'issued',
+    totalSatang: 535_000n,
+    sequence: 900011,
+    invoiceId: '00000000-e2e0-4fff-9ffe-000000900011',
+  },
+  {
+    // A second slot so the manual pay-then-record check can be repeated
+    // without re-seeding: each run consumes one bill.
+    number: 'SC-2026-900012',
+    status: 'issued',
+    totalSatang: 535_000n,
+    sequence: 900012,
+    invoiceId: '00000000-e2e0-4fff-9ffe-000000900012',
+  },
+];
+
 export const E2E_SEED_FISCAL_YEAR = 2026;
 export const E2E_SEED_ISSUE_DATE = '2026-04-15';
 export const E2E_SEED_DUE_DATE = '2026-05-15';
