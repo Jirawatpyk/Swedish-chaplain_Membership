@@ -1,5 +1,6 @@
 /**
- * EventCreateInlineModal — the start date is the chamber's wall time (FR-011).
+ * EventCreateInlineModal — the start date is the chamber's wall time (spec 122
+ * clarification 2026-10-06: fixed in its own PR before US9b).
  *
  * `<input type="datetime-local">` gives a naive `YYYY-MM-DDTHH:mm`. The help
  * text promises the tenant's timezone (Asia/Bangkok for every tenant today, as
