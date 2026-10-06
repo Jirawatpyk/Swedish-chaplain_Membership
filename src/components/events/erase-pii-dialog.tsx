@@ -18,8 +18,6 @@
  *     whose registration no longer exists once erased);
  *   - 409 event_path_mismatch → error toast (likely race / stale UI);
  *   - 200 alreadyErased=true → info toast ("Already erased");
- *   - 403 → says a super admin is needed (both routes require
- *     `events.erasure`), not the generic "try again";
  *   - the dialog cannot close while the request is in flight, and an
  *     sr-only status line announces it.
  *
@@ -163,8 +161,6 @@ export function ErasePiiDialog({
           description: t('pathMismatchDescription'),
         });
         router.refresh();
-      } else if (result.status === 403) {
-        toast.error(t('forbiddenTitle'), { description: t('forbiddenDescription') });
       } else {
         toast.error(t('errorTitle'), {
           description:
