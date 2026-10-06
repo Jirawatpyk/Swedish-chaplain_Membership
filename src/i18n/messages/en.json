@@ -5277,7 +5277,13 @@
           "none": "No registrations"
         },
         "matchRateOf": "{matched} of {total}",
+        "matchRateBandShort": {
+          "high": "Strong",
+          "medium": "Fair",
+          "low": "Weak"
+        },
         "filters": {
+          "groupLabel": "Filter events",
           "partnerBenefitOnly": "Counted as partner benefit",
           "culturalEventOnly": "Counted as cultural event",
           "showArchived": "Show archived events",

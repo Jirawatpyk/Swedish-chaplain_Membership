@@ -81,8 +81,9 @@ describe('events list filters (AURA FilterBar)', () => {
   });
 
   it('announces the count with the search in the bar\'s own live region', () => {
-    renderFilters({ search: 'midsummer', resultCount: 5 });
-    expect(screen.getByRole('status')).toHaveTextContent('5 events for \'midsummer\'');
+    const { container } = renderFilters({ search: 'midsummer', resultCount: 5 });
+    const live = container.querySelector('[aria-live="polite"]');
+    expect(live).toHaveTextContent('5 events for \'midsummer\'');
   });
 });
 
@@ -96,7 +97,7 @@ const ROW = {
   matchRatePct: 83.33,
   isPartnerBenefit: true,
   isCulturalEvent: false,
-  archivedAt: null,
+  archivedAt: null as string | null,
 };
 
 function renderTable(rows = [ROW]) {
@@ -124,7 +125,7 @@ describe('events list table (AURA)', () => {
 
   it('marks an archived event with a badge, and a benefit with its badge', () => {
     renderTable([{ ...ROW, archivedAt: '2026-07-01T00:00:00.000Z' }]);
-    const row = screen.getByRole('link', { name: 'Midsummer Mixer' }).closest('tr') as HTMLElement;
+    const row = screen.getByRole('link', { name: 'Midsummer Mixer' }).closest('[role="row"]') as HTMLElement;
     expect(within(row).getByText(l.badges.archived).closest('.aura-badge')).not.toBeNull();
     expect(within(row).getByText(l.badges.partnerBenefit).closest('.aura-badge')).not.toBeNull();
   });

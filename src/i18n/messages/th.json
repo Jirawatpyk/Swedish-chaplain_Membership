@@ -5277,7 +5277,13 @@
           "none": "ยังไม่มีการลงทะเบียน"
         },
         "matchRateOf": "{matched} จาก {total}",
+        "matchRateBandShort": {
+          "high": "สูง",
+          "medium": "ปานกลาง",
+          "low": "ต่ำ"
+        },
         "filters": {
+          "groupLabel": "กรองกิจกรรม",
           "partnerBenefitOnly": "นับเป็นสิทธิ์พาร์ตเนอร์ชิป",
           "culturalEventOnly": "นับเป็นกิจกรรมวัฒนธรรม",
           "showArchived": "แสดงกิจกรรมที่เก็บถาวร",

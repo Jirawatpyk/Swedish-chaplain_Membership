@@ -5277,7 +5277,13 @@
           "none": "Inga registreringar"
         },
         "matchRateOf": "{matched} av {total}",
+        "matchRateBandShort": {
+          "high": "Stark",
+          "medium": "Medel",
+          "low": "Svag"
+        },
         "filters": {
+          "groupLabel": "Filtrera evenemang",
           "partnerBenefitOnly": "Räknas som partnerförmån",
           "culturalEventOnly": "Räknas som kulturevenemang",
           "showArchived": "Visa arkiverade evenemang",

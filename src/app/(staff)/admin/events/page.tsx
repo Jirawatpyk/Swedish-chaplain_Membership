@@ -17,7 +17,6 @@
  * - kill-switch off → 404
  */
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { headers } from 'next/headers';
 import { getTranslations } from 'next-intl/server';
@@ -29,12 +28,12 @@ import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { runListEvents } from '@/lib/events-admin-deps';
 import { TableContainer } from '@/components/layout';
 import { TablePagination } from '@/components/layout/table-pagination';
-import { buttonVariants } from '@/components/ui/button';
+import { Alert } from '@jirawatpyk/aura-react/server';
 import {
   EventsListTable,
   type EventsListTableRow,
 } from '@/components/events/events-list-table';
-import { EventsListSearchToolbar } from '@/components/events/events-list-search-toolbar';
+import { EventsListFilters } from '@/components/events/events-list-filters';
 import { EventsEmptyState } from './_components/events-empty-state';
 import { renderEventsListView } from './_components/events-list-view';
 
@@ -178,97 +177,60 @@ export default async function AdminEventsListPage({
         canImport,
         canEraseByEmail,
         children: (
-        <div className="flex flex-col gap-4">
-          {!result || !result.ok ? (
-            <div className="py-12 text-center" role="alert">
-              <p className="text-muted-foreground">{t('errorState')}</p>
-            </div>
-          ) : (
-            <>
-              {/* User UX (2026-05-18): search input and filter chips
-                  on the same row on ≥sm viewports so admins can see
-                  both controls without scrolling. Wraps to a
-                  2-line stack on narrow viewports (<sm) since the
-                  search field needs ~28rem and the chips group needs
-                  ~24rem — a forced single-line at 320px would crush
-                  both. `gap-y-3` keeps vertical rhythm when wrapped. */}
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-                <EventsListSearchToolbar initialSearch={searchQuery ?? ''} />
-                <FilterChips
-                  query={
-                    query as unknown as Record<
-                      string,
-                      string | string[] | undefined
-                    >
-                  }
-                  hasFilters={hasFilters}
-                  includeArchived={includeArchived}
+          <div className="flex flex-col gap-[var(--aura-space-4)]">
+            {!result || !result.ok ? (
+              // A load error keeps its danger frame inside the list card.
+              <Alert tone="danger" role="alert">
+                {t('errorState')}
+              </Alert>
+            ) : (
+              <>
+                {/* The filter pattern: search, three toggle chips, and the count
+                    (naming the search) as the bar's polite live region. */}
+                <EventsListFilters
+                  search={searchQuery ?? ''}
                   partnerBenefitOnly={partnerBenefitOnly}
                   culturalEventOnly={culturalEventOnly}
+                  includeArchived={includeArchived}
+                  resultCount={result.value.items.length}
                 />
-              </div>
-              {/* R2-2b (2026-05-18 /speckit-review Round 2 Blocker) —
-                  screen-reader live-region announcing the filtered
-                  result count. Mirrors the attendee-table parity:
-                  when the server re-renders after a search submit /
-                  filter chip toggle, the DOM text changes and
-                  aria-live="polite" causes assistive tech to read
-                  "5 events for 'midsummer'" without disrupting input
-                  focus. `sr-only` keeps it visually hidden — sighted
-                  users see the table itself. */}
-              <output
-                role="status"
-                aria-live="polite"
-                aria-atomic="true"
-                className="sr-only"
-              >
-                {searchQuery !== undefined
-                  ? t('resultsAnnouncementWithQuery', {
-                      count: result.value.items.length,
-                      query: searchQuery,
-                    })
-                  : t('resultsAnnouncement', {
-                      count: result.value.items.length,
-                    })}
-              </output>
-              {result.value.items.length === 0 ? (
-                <EventsEmptyState
-                  emptyContext={result.value.emptyStateContext}
-                  hasFilters={hasFilters}
-                  canManageIntegration={canPerform(
-                    currentUser.role,
-                    'settings.integrations',
-                  )}
-                />
-              ) : (
-                <>
-                  <EventsListTable
-                    rows={
-                      result.value.items.map((it) => ({
-                        eventId: it.eventId,
-                        name: it.name,
-                        startDate: it.startDate,
-                        category: it.category,
-                        totalRegistrations: it.totalRegistrations,
-                        matchedRegistrations: it.matchedRegistrations,
-                        matchRatePct: it.matchRatePct,
-                        isPartnerBenefit: it.isPartnerBenefit,
-                        isCulturalEvent: it.isCulturalEvent,
-                        archivedAt: it.archivedAt,
-                      })) satisfies EventsListTableRow[]
-                    }
+                {result.value.items.length === 0 ? (
+                  <EventsEmptyState
+                    emptyContext={result.value.emptyStateContext}
+                    hasFilters={hasFilters}
+                    canManageIntegration={canPerform(currentUser.role, 'settings.integrations')}
                   />
-                  <TablePagination
-                    page={result.value.pagination.page}
-                    pageSize={result.value.pagination.pageSize}
-                    total={result.value.pagination.totalCount}
-                    baseHref="/admin/events"
-                  />
-                </>
-              )}
-            </>
-          )}
-        </div>
+                ) : (
+                  <>
+                    <EventsListTable
+                      rows={
+                        result.value.items.map((it) => ({
+                          eventId: it.eventId,
+                          name: it.name,
+                          startDate: it.startDate,
+                          category: it.category,
+                          totalRegistrations: it.totalRegistrations,
+                          matchedRegistrations: it.matchedRegistrations,
+                          matchRatePct: it.matchRatePct,
+                          isPartnerBenefit: it.isPartnerBenefit,
+                          isCulturalEvent: it.isCulturalEvent,
+                          archivedAt: it.archivedAt,
+                        })) satisfies EventsListTableRow[]
+                      }
+                    />
+                    {/* The filter bar's count is the list's live region. */}
+                    <TablePagination
+                      page={result.value.pagination.page}
+                      pageSize={result.value.pagination.pageSize}
+                      total={result.value.pagination.totalCount}
+                      baseHref="/admin/events"
+                      live={false}
+                    />
+                  </>
+                )}
+              </>
+            )}
+          </div>
         ),
       })}
       <span className="sr-only">{tShared('loaded')}</span>
@@ -276,116 +238,3 @@ export default async function AdminEventsListPage({
   );
 }
 
-// --- Subcomponents (server components — kept inline for clarity) ----------
-
-/**
- * build chip hrefs from a fresh
- * URLSearchParams over the CURRENT query so toggling one filter does
- * not silently drop the others. Also strips `page=` so toggles reset
- * to page 1 (matches AttendeeTable's `toggleUnmatched` pattern at
- * `src/components/events/attendee-table.tsx:113-122`).
- */
-function buildChipHref(
-  query: Record<string, string | string[] | undefined>,
-  toggleKey: string,
-  currentlyActive: boolean,
-): string {
-  const next = new URLSearchParams();
-  for (const [k, v] of Object.entries(query)) {
-    if (k === 'page' || k === toggleKey) continue;
-    const first = firstParam(v);
-    if (first !== undefined && first !== '') {
-      next.set(k, first);
-    }
-  }
-  if (!currentlyActive) {
-    next.set(toggleKey, '1');
-  }
-  const qs = next.toString();
-  return qs ? `/admin/events?${qs}` : '/admin/events';
-}
-
-async function FilterChips({
-  query,
-  hasFilters,
-  includeArchived,
-  partnerBenefitOnly,
-  culturalEventOnly,
-}: {
-  query: Record<string, string | string[] | undefined>;
-  hasFilters: boolean;
-  includeArchived: boolean;
-  partnerBenefitOnly: boolean;
-  culturalEventOnly: boolean;
-}) {
-  const t = await getTranslations('admin.events.list.filters');
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      <FilterChipLink
-        active={partnerBenefitOnly}
-        href={buildChipHref(query, 'partnerBenefitOnly', partnerBenefitOnly)}
-      >
-        {partnerBenefitOnly
-          ? t('partnerBenefitOnlyActive')
-          : t('partnerBenefitOnly')}
-      </FilterChipLink>
-      <FilterChipLink
-        active={culturalEventOnly}
-        href={buildChipHref(query, 'culturalEventOnly', culturalEventOnly)}
-      >
-        {culturalEventOnly
-          ? t('culturalEventOnlyActive')
-          : t('culturalEventOnly')}
-      </FilterChipLink>
-      <FilterChipLink
-        active={includeArchived}
-        href={buildChipHref(query, 'includeArchived', includeArchived)}
-      >
-        {includeArchived ? t('hideArchived') : t('showArchived')}
-      </FilterChipLink>
-      {hasFilters && (
-        <Link
-          href="/admin/events"
-          className={buttonVariants({ variant: 'ghost', size: 'sm' })}
-        >
-          {t('clearAll')}
-        </Link>
-      )}
-    </div>
-  );
-}
-
-function FilterChipLink({
-  active,
-  href,
-  children,
-}: {
-  active: boolean;
-  href: string;
-  children: React.ReactNode;
-}) {
-  // `aria-pressed` is invalid on anchors — ARIA 1.2 restricts it to
-  // role="button". `aria-current="true"` is the canonical idiom for
-  // active nav/filter LINKS on anchor elements (preserves middle-
-  // click open + bookmarkability + share-URL semantics).
-  //
-  // Round-12 review note: the ui-design-specialist agent suggested
-  // converting to `<button aria-pressed>` for canonical toggle
-  // semantics. Rejected: the conversion would require client-side
-  // router.push to mutate the URL, breaking middle-click open + URL
-  // copy-paste workflows that admins routinely use on filter chips.
-  // `aria-current="true"` is accepted by all WCAG-conformant SRs
-  // (NVDA / JAWS / VoiceOver) as a filter-active signal.
-  return (
-    <Link
-      href={href}
-      className={buttonVariants({
-        variant: active ? 'default' : 'outline',
-        size: 'sm',
-      })}
-      {...(active ? { 'aria-current': 'true' as const } : {})}
-    >
-      {children}
-    </Link>
-  );
-}

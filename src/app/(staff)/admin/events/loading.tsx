@@ -1,61 +1,46 @@
 /**
- * T065 — /admin/events list page shimmer skeleton (F6 Phase 4).
+ * T065 — /admin/events list page skeleton (F6 Phase 4).
  *
- * CLS-0 shape — mirrors EventsListTable's 6-column header + 8 row
- * shape exactly. Renders inside TableContainer + PageHeader so the
- * layout matches the real page on navigation.
- *
- * Title + subtitle render at REAL text (not Skeleton bars) per the
- * /speckit-review follow-up 2026-05-18 — other admin loading pages
- * (members, invoices, plans, renewals) all render the real header
- * text via `getTranslations`. The previous Skeleton bars over the
- * heading were inconsistent and gave a "still loading" impression
- * even for the static parts of the layout.
+ * Spec 122 US9a (T901): the real page's shape on AURA for CLS 0 — the header
+ * (real title and subtitle; the action is a placeholder), then the list card
+ * with the filter row (search, three toggle chips, the count) and AURA's own
+ * table in its loading state with the real columns, edge to edge in the card,
+ * cards below 640px (`DataTableSkeleton`).
  */
 import { getTranslations } from 'next-intl/server';
+import { Card } from '@jirawatpyk/aura-react/server';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { Card, CardContent } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
+import { PageSkeletonShell, SkeletonBlock } from '@/components/shell/page-skeletons';
+import { DataTableSkeleton } from '@/components/shell/data-table-skeleton';
+import { EVENTS_LIST_COLUMN_LAYOUT, type EventsListColumnKey } from '@/components/events/events-list-columns';
 
 export default async function EventsListLoading() {
   const t = await getTranslations('admin.events.list');
+  const tLayout = await getTranslations('layout');
+  const columns = (Object.keys(EVENTS_LIST_COLUMN_LAYOUT) as EventsListColumnKey[]).map((key) => ({
+    key,
+    label: t(`columns.${key}`),
+    ...EVENTS_LIST_COLUMN_LAYOUT[key],
+  }));
   return (
-    <TableContainer aria-busy="true">
-      <PageHeader
-        title={t('title')}
-        subtitle={t('subtitle')}
-        // "Import CSV" CTA in PageHeader actions — admin-only button
-        // rendered by the real page. Skeleton placeholder keeps CLS-0
-        // when the page swaps in.
-        actions={<Skeleton className="h-9 w-32 rounded-lg" aria-hidden />}
-      />
-      <Card aria-hidden>
-        <CardContent className="flex flex-col gap-4">
-          <div className="flex gap-2" aria-hidden>
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-9 w-32" />
-            ))}
-          </div>
-          <div className="flex flex-col gap-2" aria-hidden>
-            <div className="grid grid-cols-6 gap-3 border-b bg-muted/40 px-4 py-3">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <Skeleton key={i} className="h-3 w-full" />
-              ))}
+    <PageSkeletonShell ariaLabel={tLayout('loadingTable')}>
+      <TableContainer aria-busy="true">
+        <PageHeader title={t('title')} subtitle={t('subtitle')} actions={<SkeletonBlock className="h-9 w-32" />} />
+        <Card flushBelow="sm" className="max-sm:border-0 max-sm:p-0">
+          <div className="flex flex-col gap-[var(--aura-space-4)]">
+            {/* The filter row: the search, three toggle chips, the count. */}
+            <div aria-hidden data-skeleton="filters" className="flex flex-wrap items-center gap-2">
+              <SkeletonBlock className="h-[var(--aura-input-height)] w-full sm:w-auto sm:min-w-60 sm:flex-1" />
+              <SkeletonBlock className="h-8 w-44 rounded-full" data-skeleton="toggle-chip" />
+              <SkeletonBlock className="h-8 w-44 rounded-full" data-skeleton="toggle-chip" />
+              <SkeletonBlock className="h-8 w-40 rounded-full" data-skeleton="toggle-chip" />
+              <SkeletonBlock className="ml-auto h-4 w-20" data-skeleton="result-count" />
             </div>
-            {Array.from({ length: 8 }).map((_, r) => (
-              <div
-                key={r}
-                className="grid grid-cols-6 gap-3 border-b px-4 py-3 last:border-b-0"
-              >
-                {Array.from({ length: 6 }).map((__, c) => (
-                  <Skeleton key={c} className="h-5 w-full" />
-                ))}
-              </div>
-            ))}
+            <DataTableSkeleton label={t('tableCaption')} columns={columns} rows={8} />
           </div>
-        </CardContent>
-      </Card>
-    </TableContainer>
+        </Card>
+      </TableContainer>
+    </PageSkeletonShell>
   );
 }
