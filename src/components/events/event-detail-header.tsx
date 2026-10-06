@@ -95,7 +95,7 @@ function bandForPct(total: number, pct: number): MatchRateBand {
 
 // The band's colour on AURA's tokens; the caption beside it carries the meaning.
 const BAND_TEXT_CLASS: Record<MatchRateBand, string> = {
-  high: 'text-[var(--aura-fg-success)]',
+  high: 'text-[var(--aura-fg-positive)]',
   medium: 'text-[var(--aura-fg-warning)]',
   low: 'text-[var(--aura-fg-danger)]',
   none: 'text-[var(--aura-fg-secondary)]',

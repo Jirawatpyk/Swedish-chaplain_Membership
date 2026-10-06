@@ -48,7 +48,7 @@ export async function renderEventsListView({ canImport, canEraseByEmail, childre
           </>
         ) : null}
         {canImport ? (
-          <Link href="/admin/events/import" className={buttonClass({ variant: 'primary', className: 'max-sm:order-first' })}>
+          <Link href="/admin/events/import" className={buttonClass({ variant: 'primary', className: 'max-sm:order-first max-sm:flex-1' })}>
             <UploadCloudIcon aria-hidden="true" className="size-4" />
             {t('list.importCsvCta')}
           </Link>

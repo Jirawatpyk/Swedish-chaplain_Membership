@@ -98,14 +98,35 @@ export function EventsListFilters({
             : t('resultsAnnouncement', { count: resultCount })
         }
       >
-        <Tag selected={partnerBenefitOnly} touchHeight onClick={() => toggle('partnerBenefitOnly', partnerBenefitOnly)}>
-          {t('filters.partnerBenefitOnly')}
+        {/* On a phone the chips show the board's short words (Admin-events-
+            mobile) so all three fit one row; each keeps its full name, which
+            contains the short word (WCAG 2.5.3). */}
+        <Tag
+          selected={partnerBenefitOnly}
+          touchHeight
+          aria-label={t('filters.partnerBenefitOnly')}
+          onClick={() => toggle('partnerBenefitOnly', partnerBenefitOnly)}
+        >
+          <span className="max-sm:hidden">{t('filters.partnerBenefitOnly')}</span>
+          <span className="sm:hidden">{t('filters.partnerBenefitOnlyShort')}</span>
         </Tag>
-        <Tag selected={culturalEventOnly} touchHeight onClick={() => toggle('culturalEventOnly', culturalEventOnly)}>
-          {t('filters.culturalEventOnly')}
+        <Tag
+          selected={culturalEventOnly}
+          touchHeight
+          aria-label={t('filters.culturalEventOnly')}
+          onClick={() => toggle('culturalEventOnly', culturalEventOnly)}
+        >
+          <span className="max-sm:hidden">{t('filters.culturalEventOnly')}</span>
+          <span className="sm:hidden">{t('filters.culturalEventOnlyShort')}</span>
         </Tag>
-        <Tag selected={includeArchived} touchHeight onClick={() => toggle('includeArchived', includeArchived)}>
-          {t('filters.showArchived')}
+        <Tag
+          selected={includeArchived}
+          touchHeight
+          aria-label={t('filters.showArchived')}
+          onClick={() => toggle('includeArchived', includeArchived)}
+        >
+          <span className="max-sm:hidden">{t('filters.showArchived')}</span>
+          <span className="sm:hidden">{t('filters.showArchivedShort')}</span>
         </Tag>
         {anyChip && search === '' ? (
           <Button variant="ghost" size="sm" icon="x" touchHeight onClick={clearAll}>

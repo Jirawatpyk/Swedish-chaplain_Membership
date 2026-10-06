@@ -382,7 +382,7 @@ export function AttendeeTable({
               onClick={() => {
                 void copyEmail(r.attendeeEmail);
               }}
-              className="group relative inline-flex w-fit max-w-full items-center gap-1 rounded-[var(--aura-radius-sm)] max-sm:before:absolute max-sm:before:inset-x-0 max-sm:before:-inset-y-3.5 max-sm:before:content-[''] text-start text-[var(--aura-fg-link)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)]"
+              className="group relative inline-flex w-fit max-w-full items-center gap-1 rounded-[var(--aura-radius-sm)] max-sm:before:absolute max-sm:before:inset-x-0 max-sm:before:-inset-y-3.5 max-sm:before:content-[''] text-start text-[var(--aura-fg-accent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)]"
               aria-label={t('copyEmailAria', { email: r.attendeeEmail })}
               title={t('copyEmail')}
             >
@@ -514,12 +514,15 @@ export function AttendeeTable({
           {...(activeFilters.length > 0 ? { onClearAll: () => clearAllFilters(false) } : {})}
           resultCount={t('resultCount', { count: totalCount ?? rows.length })}
         >
+          {/* The board's short word on a phone; the full name stays (WCAG 2.5.3). */}
           <Tag
             selected={unmatchedOnly}
             touchHeight
+            aria-label={t('showUnmatchedOnly')}
             onClick={() => writeUrl({ unmatchedOnly: unmatchedOnly ? null : '1' })}
           >
-            {t('showUnmatchedOnly')}
+            <span className="max-sm:hidden">{t('showUnmatchedOnly')}</span>
+            <span className="sm:hidden">{t('showUnmatchedOnlyShort')}</span>
           </Tag>
           <FilterSelect
             label={t('paymentStatusFilter')}

@@ -37,7 +37,7 @@ function bandForPct(total: number, pct: number): MatchRateBand {
 
 // The band's colour on AURA's tokens; the word beside it carries the meaning.
 const BAND_TEXT_CLASS: Record<MatchRateBand, string> = {
-  high: 'text-[var(--aura-fg-success)]',
+  high: 'text-[var(--aura-fg-positive)]',
   medium: 'text-[var(--aura-fg-warning)]',
   low: 'text-[var(--aura-fg-danger)]',
   none: 'text-[var(--aura-fg-secondary)]',
@@ -86,7 +86,7 @@ export function EventsListTable({ rows }: Props) {
           <span className="flex min-w-0 flex-wrap items-center gap-2">
             <Link
               href={`/admin/events/${row.eventId}`}
-              className="font-medium text-[var(--aura-fg-link)] underline-offset-4 hover:underline focus-visible:underline"
+              className="font-medium text-[var(--aura-fg-accent)] underline-offset-4 hover:underline focus-visible:underline"
             >
               {row.name}
             </Link>
