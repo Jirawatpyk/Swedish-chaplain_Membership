@@ -47,5 +47,8 @@ describe('E-Blast compose banner — lawful-basis copy', () => {
     expect(en.admin.broadcasts.review.segmentType.event_attendees_last_90d).toBe(
       'Event attendees from member companies (last 90 days)',
     );
+    expect(en.portal.broadcasts.compose.estimateNote.attendees).toBe(
+      'Recipients: everyone from a member company who attended a chamber event in the last 90 days (up to {ceiling, number}).',
+    );
   });
 });

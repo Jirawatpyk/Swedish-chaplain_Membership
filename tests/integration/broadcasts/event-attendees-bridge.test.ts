@@ -21,7 +21,9 @@
  *      to a member that is itself broadcast-eligible (active, not erased,
  *      not halted — the same predicate as the member segments). Unmatched
  *      registrations and attendees of inactive / erased / halted members
- *      are EXCLUDED, on the list query and the by-email lookup alike.
+ *      are EXCLUDED, on the list query and the by-email lookup alike —
+ *      as is an address with withdrawn PDPA consent
+ *      (`attendee_pdpa_consent_acknowledged = false`) on any registration.
  *
  * Dates are seeded RELATIVE to `new Date()` so the `now() - interval
  * '90 days'` window stays deterministic whenever the suite runs.
@@ -67,6 +69,7 @@ interface SeedRegistrationArgs {
   readonly email: string;
   readonly memberId?: string | null;
   readonly pseudonymisedAt?: Date | null;
+  readonly pdpaConsent?: boolean | null;
 }
 
 function eventValues(a: SeedEventArgs) {
@@ -139,6 +142,7 @@ function registrationValues(a: SeedRegistrationArgs) {
     metadata: {},
     registeredAt: new Date(),
     piiPseudonymisedAt: a.pseudonymisedAt ?? null,
+    attendeePdpaConsentAcknowledged: a.pdpaConsent ?? null,
   } as unknown as typeof eventRegistrations.$inferInsert;
 }
 
@@ -264,6 +268,21 @@ describe('F6 → F7 eventAttendees bridge (event_attendees_last_90d)', () => {
             email: 'halted@bridge.example',
             memberId: ineligible.halted,
           }),
+          // Withdrawn PDPA consent (`false`) on ANY registration of the
+          // address excludes it, even when a later one is unknown (NULL).
+          registrationValues({
+            tenantSlug: tenant.ctx.slug,
+            eventId: recentEventOld,
+            email: 'withdrawn@bridge.example',
+            memberId: recentMemberId,
+            pdpaConsent: false,
+          }),
+          registrationValues({
+            tenantSlug: tenant.ctx.slug,
+            eventId: recentEventNew,
+            email: 'withdrawn@bridge.example',
+            memberId: recentMemberId,
+          }),
         ]);
       });
     });
@@ -296,7 +315,7 @@ describe('F6 → F7 eventAttendees bridge (event_attendees_last_90d)', () => {
       expect(emails).not.toContain('pseudo@bridge.example');
     });
 
-    it('members only: excludes unmatched attendees and attendees of inactive / erased / halted members', async () => {
+    it('members only: excludes unmatched attendees, attendees of inactive / erased / halted members, and withdrawn consent', async () => {
       const rows = await getRecentEventAttendees(tenant.ctx.slug);
       const emails = rows.map((r) => r.emailLower);
       for (const email of [
@@ -304,6 +323,7 @@ describe('F6 → F7 eventAttendees bridge (event_attendees_last_90d)', () => {
         'inactive@bridge.example',
         'erased@bridge.example',
         'halted@bridge.example',
+        'withdrawn@bridge.example',
       ]) {
         expect(emails, email).not.toContain(email);
         await expect(
