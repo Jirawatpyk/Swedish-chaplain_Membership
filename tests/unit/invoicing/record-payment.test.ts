@@ -1740,6 +1740,65 @@ describe('recordPayment — the receipt reaches the LIVE primary contact (108 FR
   });
 });
 
+// Server-Timing on the admin pay route — the optional step timer sees each
+// named step and is pure observation (same result with or without it).
+describe('recordPayment — optional stepTimer', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  function recordingTimer() {
+    const steps: string[] = [];
+    return {
+      steps,
+      timer: {
+        async time<T>(step: string, fn: () => Promise<T>): Promise<T> {
+          try {
+            return await fn();
+          } finally {
+            steps.push(step);
+          }
+        },
+      },
+    };
+  }
+
+  it('fresh payment → times the pre-tx reads, the tx and its inner steps; same result as untimed', async () => {
+    const invoice = makeIssuedInvoice();
+    const untimedDeps = makeDeps(true, invoice, makeSettings());
+    const untimed = await recordPayment(untimedDeps, input);
+
+    const { steps, timer } = recordingTimer();
+    const deps = makeDeps(true, invoice, makeSettings(), { stepTimer: timer });
+    const r = await recordPayment(deps, input);
+
+    expect(r.ok).toBe(true);
+    expect(untimed.ok).toBe(true);
+    if (r.ok && untimed.ok) expect(r.value.status).toBe(untimed.value.status);
+    for (const step of ['settings', 'tx.lock', 'tx.receipt_pdf', 'tx.apply', 'tx']) {
+      expect(steps).toContain(step);
+    }
+    // `tx` encloses its inner steps, so it finishes last.
+    expect(steps.at(-1)).toBe('tx');
+    expect(steps.indexOf('tx.lock')).toBeLessThan(steps.indexOf('tx.apply'));
+  });
+
+  it('a step that throws is still reported to the timer and the error routes as before', async () => {
+    const { steps, timer } = recordingTimer();
+    const deps = makeDeps(true, makeIssuedInvoice(), makeSettings(), {
+      stepTimer: timer,
+      pdfRender: {
+        render: vi.fn(async () => {
+          throw new Error('font load failed');
+        }),
+      },
+    });
+    const r = await recordPayment(deps, input);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('pdf_render_failed');
+    expect(steps).toContain('tx.receipt_pdf');
+    expect(steps).toContain('tx');
+  });
+});
+
 // #452 financial-integrity review (M1) — an admin recording a manual payment
 // (bank transfer / cash) must cancel the invoice's still-live PaymentIntents,
 // or a card clientSecret the member's PaySheet cached can capture a SECOND
