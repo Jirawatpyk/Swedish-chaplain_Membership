@@ -12,7 +12,7 @@
  *   3. Three-source resolution:
  *      a. members.primary_contact_email (`MembersBridgePort.lookupMemberPrimaryContactEmailInTenant`)
  *      b. contacts.email (`MembersBridgePort.lookupContactEmailInTenant`)
- *      c. event_attendees.email (`EventAttendeesRepository.lookupAttendeeEmailInTenant` — F6 bridge: was the email an event attendee in the last 90 days?)
+ *      c. event_attendees.email (`EventAttendeesRepository.lookupAttendeeEmailInTenant` — F6 bridge: was the email an event attendee in the last 90 days, matched to a broadcast-eligible member? A non-member attendee does not resolve — E-Blasts reach member companies only)
  *   4. If all 3 unresolved → push to `unresolved[]`
  *
  * Constraints: 1 ≤ N ≤ 100 entries (FR-015d).

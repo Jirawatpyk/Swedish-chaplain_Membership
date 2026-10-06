@@ -81,7 +81,9 @@ a processor under contract.
   FR-015d** these MUST resolve to a known email in the tenant graph
   (members.primary_contact_email OR contacts.email OR
   event_attendees.email — served by the F6 `event_attendees_last_90d`
-  bridge since F6 shipped).
+  bridge since F6 shipped; since 2026-10-06 only attendees matched to a
+  broadcast-eligible member count, so a custom list cannot reach a
+  non-member attendee).
   External-only recipients are out of MVP scope. This restriction
   prevents chamber sender reputation being used for arbitrary
   external mass-marketing.
@@ -154,13 +156,28 @@ business categorisation, not special-category PII.
   first-contact notice, or attest per contact through the FR-027a pre-flight.
   Sign-off surface: `docs/go-live-readiness.md` § 6.9; full record:
   `specs/108-contact-recipient-rules/reviews/cutover.md` § 2–3.
-- **OPEN (2026-09-26, PDPA/GDPR review):** the `event_attendees_last_90d`
-  segment also reaches recent event attendees who are NOT member-company
-  contacts (`event_registrations.matched_member_id` NULL). The LIA above
-  covers member-company contacts only. Decision pending: restrict the
-  segment to matched members, or extend the LIA (PDPA §24(5); for natural
-  persons in Sweden also ePrivacy / Marknadsföringslagen §19). The member
-  banner now states that attendees receive E-Blasts.
+- **DECIDED (2026-10-06) — attendee segment is members only.** The
+  `event_attendees_last_90d` segment used to reach recent event attendees
+  who are NOT member-company contacts (`event_registrations.matched_member_id`
+  NULL). The LIA above covers member-company people only, non-member
+  attendees were not told at registration that E-Blasts would follow
+  (Art. 13/14), and for natural persons in Sweden ePrivacy /
+  Marknadsföringslagen §19 would need consent. Rather than extend the LIA,
+  the segment was restricted: an attendee is included only when the
+  registration is matched to a member that is itself broadcast-eligible
+  (active, not erased, not halted — the member segments' predicate). Both
+  the list query and the by-email lookup used by custom-list validation
+  apply it (`src/modules/events/infrastructure/drizzle-recent-event-attendees.ts`).
+  The member banner and the segment label now say E-Blasts reach member
+  companies only. Revisit only together with an at-registration notice and
+  an LIA that covers non-members.
+- **DECIDED (2026-10-06) — an opt-out is permanent; no re-subscribe path.**
+  Every opt-out channel writes the same tenant + email row in
+  `marketing_unsubscribes`, kept indefinitely (Art. 21(3) / PDPA §32), and
+  nothing removes it. A request to be re-added is logged in the privacy
+  ticket system and declined for now (service emails continue); if such
+  requests recur, build an audited re-subscribe that records the person's
+  own request — never a hand-deleted row.
 - **Per-contact marketing preference** (108 PR-D, 2026-09-06) — a NEW
   processing activity: `contacts.marketing_opt_out_at` /
   `marketing_opt_out_source` (`staff` | `self`) /
@@ -230,7 +247,7 @@ business categorisation, not special-category PII.
 | `members.broadcasts_halted_until_admin_review` | **Indefinite** while member row exists | Q14 SC-005 (b) auto-halt operational state |
 | `contacts.marketing_opt_out_{at,source,by_user_id}` (108 PR-D) | **Life of the contact row**, KEPT through the Art. 17 scrub (no PII: a timestamp, an enum and a user id) | Kept because it carries no PII and the audit trail (`contact_marketing_opted_out` / `_in`) is the authoritative record of the objection. It does NOT survive as a suppression: the scrub stamps `removed_at`, the dispatch filter reads live rows only, and the preference is bound to the contact ROW, not the address — a re-added address is re-marketed unless it is on `marketing_unsubscribes`, which is the only address-keyed, indefinite suppression (see its row above). The `self` case's `by_user_id` is the data subject's own user id and is swept together with `linked_user_id` when F1 user erasure lands (108 privacy review L-3) |
 | `audit_log` rows `contact_marketing_opted_out` / `contact_marketing_opted_in` (108 PR-D) | **5 years** | Constitution default; payload carries `member_id` / `related_member_id`, `contact_id`, `source`, `actor_role` — no address (FR-053a) |
-| `audit_log` rows for F7 events (70 live event types) | **5 years**, except **`member_acknowledged_broadcasts_terms` — 10 years** | F7 events default to 5y (`f7RetentionFor` in `src/modules/broadcasts/application/ports/audit-port.ts`; the column default). The one exception is the E-Blast terms acknowledgement: the `audit_log_default_retention_for_f4_tax_docs` trigger promotes it to 10y (originally justified as GDPR Art. 7 demonstrable consent, which no longer applies — the event records a sender terms acknowledgement, not consent; **OPEN 2026-09-26**: re-justify or return it to the 5y F7 default in a new migration; migration 0084, current body `0257_payment_on_terminated_member_audit.sql` line 60). No job deletes `audit_log` rows on either period today — the period is the declared retention, and these rows outlive a swept E-Blast (row above) |
+| `audit_log` rows for F7 events (71 live event types) | **5 years**, including `member_acknowledged_broadcasts_terms` | F7 events default to 5y (`f7RetentionFor` in `src/modules/broadcasts/application/ports/audit-port.ts`; the column default). The E-Blast terms acknowledgement was promoted to 10y by migration 0084 as a GDPR Art. 7 consent record; it records a sender's terms acknowledgement, not consent, so **migration 0315 (decided 2026-10-06)** removed it from the `audit_log_default_retention_for_f4_tax_docs` trigger and backfilled existing rows to 5y (storage limitation, Art. 5(1)(e) / PDPA §37(3)). The fact itself stays on `members.broadcasts_acknowledged_at` while the member row exists. No job deletes `audit_log` rows today — the period is the declared retention, and these rows outlive a swept E-Blast (row above) |
 | Resend Broadcasts API send logs | Resend default (90 days) | Provider retention; not under chamber control |
 | **Resend contact records ("Global Contacts")** | **Indefinite — survives both audience deletion and member erasure** | One record per team, not per audience (research § R16). The erasure cascade detaches the contact from the audience; measured 2026-09-09 (U1), that leaves the contact readable at `GET /contacts/{email}`. Not under chamber control and **not currently erased** — see residual 8a for why the audience-less delete is not called and what closing it needs. |
 

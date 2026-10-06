@@ -48,7 +48,7 @@ A weekly check of open privacy tickets (office + DPO) catches anything stuck. Ke
    If it prints `ALREADY opted out`, skip to step 4.
 3. **Apply** — same command plus `--confirm`. `--ticket` must be a reference (e.g. `PRIV-123`) and `--operator` a staff email or id — never paste the requester's message or address there; both are stored in audit rows. This writes the `marketing_unsubscribes` row (reason `recipient_initiated`) and both audit events with `channel: 'manual'`, `operator`, and the ticket in `reason_text`. **Never** hand-INSERT the row: a raw INSERT writes no audit.
 4. **Reply** to the person confirming removal (no charge, effective for all E-Blasts from the tenant; service emails such as invoices, receipts, renewal reminders and password resets continue). Close the ticket within **2 business days** of receipt.
-5. If the person asks to be **re-subscribed** later, that is a new, explicit request — raise it with the DPO; do not delete suppression rows ad hoc. There is no audited re-subscribe tool yet (follow-up: a DPO-approved `--resubscribe` mode that writes its own audit event).
+5. If the person asks to be **re-subscribed** later: an opt-out is permanent (decided 2026-10-06, `docs/compliance/processing-records.md`). Log the request in the ticket system and reply that E-Blasts cannot be restarted for that address; service emails continue. **Never** delete a `marketing_unsubscribes` row by hand. If such requests recur, that is the trigger to build an audited re-subscribe that records the person's own request.
 
 ## 2. Resend `contact.updated` must be enabled (one-time, and after any webhook change)
 
