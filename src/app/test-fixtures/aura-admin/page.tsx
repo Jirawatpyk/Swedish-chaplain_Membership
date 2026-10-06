@@ -99,6 +99,13 @@ import { renderTasksQueueView } from '@/app/(staff)/admin/renewals/tasks/_compon
 import { EscalationTaskQueue } from '@/app/(staff)/admin/renewals/tasks/_components/escalation-task-queue';
 import { renderSchedulesStateView } from '@/app/(staff)/admin/settings/renewals/schedules/_components/schedules-state-view';
 import { ScheduleEditor } from '@/app/(staff)/admin/settings/renewals/schedules/_components/schedule-editor';
+import { renderEventsListBody, renderEventsListView } from '@/app/(staff)/admin/events/_components/events-list-view';
+import {
+  renderEventDetailError,
+  renderEventDetailView,
+} from '@/app/(staff)/admin/events/[eventId]/_components/event-detail-view';
+import { ATTENDEE_ROWS, EVENT_DETAIL, EVENT_ID, EVENT_ROWS, MEMBER_SEARCH_HITS } from './event-fixtures';
+import { MemberSearchStub } from './event-previews';
 import Link from 'next/link';
 import { ArrowLeftIcon } from 'lucide-react';
 import { DetailContainer } from '@/components/layout';
@@ -139,8 +146,10 @@ export const dynamic = 'force-dynamic';
  *   ?view=credit-note&state=default|refund|siblings|no-primary
  *   ?view=registers&state=rc|re|zero-rate|empty|invalid-range|invalid-date|load-failed
  *   ?view=invoice-settings&state=default|first-time|read-only|dirty|prefix-confirm (US8c-2)
+ *   ?view=events&state=default|manager|no-integration|waiting|archived|filtered|error (US9a)
+ *   ?view=event&state=default|manager|archived|error · &dialog=relink|archive|flag
  *   ?view=loading&state=members|plans|invoices|invoice|invoice-void|credit-note-new|
- *         credit-notes|credit-note|registers|invoice-settings|…
+ *         credit-notes|credit-note|registers|invoice-settings|events|event|…
  *
  * The payment activity streams from the database, so a paid state shows its
  * skeleton in that slot; its states are covered by its own unit tests.
@@ -390,6 +399,11 @@ const LOADING_ROUTES = {
   registers: {
     path: '/admin/invoices/registers',
     load: async () => (await import('@/app/(staff)/admin/invoices/registers/loading')).default(),
+  },
+  events: { path: '/admin/events', load: async () => (await import('@/app/(staff)/admin/events/loading')).default() },
+  event: {
+    path: `/admin/events/${EVENT_ID}`,
+    load: async () => (await import('@/app/(staff)/admin/events/[eventId]/loading')).default(),
   },
   'invoice-settings': {
     path: '/admin/settings/invoicing',
@@ -1363,6 +1377,75 @@ export default async function AuraAdminPreviewPage({
             onlineRefundState={online ? 'refundable' : 'none'}
           />
         </FormContainer>
+      </StaffFrame>
+    );
+  }
+
+  if (view === 'events') {
+    const manager = state === 'manager';
+    const emptyKinds = ['no-integration', 'waiting', 'archived', 'filtered'];
+    const empty = emptyKinds.includes(state);
+    const body = await renderEventsListBody(
+      state === 'error'
+        ? { kind: 'error' }
+        : {
+            kind: 'list',
+            items: empty ? [] : EVENT_ROWS,
+            pagination: { page: 1, pageSize: 25, totalCount: empty ? 0 : 38 },
+            emptyStateContext: {
+              integrationConfigured: state !== 'no-integration',
+              everReceivedDelivery: state !== 'no-integration' && state !== 'waiting',
+              totalArchived: state === 'archived' ? 4 : 0,
+            },
+            hasFilters: state === 'filtered',
+            canManageIntegration: !manager,
+            search: state === 'filtered' ? 'gala' : '',
+            partnerBenefitOnly: state === 'filtered',
+            culturalEventOnly: false,
+            includeArchived: false,
+          },
+    );
+    return (
+      <StaffFrame path="/admin/events">
+        <TableContainer>
+          {await renderEventsListView({ canImport: !manager, canEraseByEmail: !manager, children: body })}
+        </TableContainer>
+      </StaffFrame>
+    );
+  }
+
+  if (view === 'event') {
+    const { dialog } = await searchParams;
+    const manager = state === 'manager';
+    const archived = state === 'archived';
+    const event = { ...EVENT_DETAIL, archivedAt: archived ? '2026-09-30T03:00:00Z' : null };
+    const detail =
+      state === 'error' ? (
+        await renderEventDetailError()
+      ) : (
+        await renderEventDetailView({
+          event,
+          rows: ATTENDEE_ROWS,
+          pagination: { page: 1, pageSize: 50, totalCount: 148 },
+          filters: { unmatchedOnly: false, q: null, paymentStatus: null },
+          canAct: !manager && !archived,
+          canRelink: !manager && !archived,
+        })
+      );
+    const trigger =
+      dialog === 'relink'
+        ? { testId: `relink-button-${ATTENDEE_ROWS[2]!.registrationId}` }
+        : dialog === 'archive'
+          ? { label: 'Archive event' }
+          : dialog === 'flag'
+            ? { label: 'Remove partner' }
+            : null;
+    return (
+      <StaffFrame path={`/admin/events/${EVENT_ID}`}>
+        {dialog === 'relink' ? <MemberSearchStub hits={MEMBER_SEARCH_HITS} /> : null}
+        <DetailContainer>
+          {trigger ? <OpenFirstMatchingButton {...trigger}>{detail}</OpenFirstMatchingButton> : detail}
+        </DetailContainer>
       </StaffFrame>
     );
   }
