@@ -5757,6 +5757,7 @@
           "actions": "Åtgärder"
         },
         "unknownEvent": "Okänt evenemang",
+        "tableCaption": "Evenemangsregistreringar med den här e-postadressen",
         "pseudonymisedBadge": "Redan raderad",
         "truncatedBanner": "Fler än {cap} registreringar matchar denna e-postadress, så denna lista är ofullständig. Sök och radera igen tills 0 återstår för att slutföra begäran.",
         "errorState": "Något gick fel när registreringarna för denna e-postadress laddades. Försök igen.",

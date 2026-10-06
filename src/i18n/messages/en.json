@@ -5757,6 +5757,7 @@
           "actions": "Actions"
         },
         "unknownEvent": "Unknown event",
+        "tableCaption": "Event registrations that share this email",
         "pseudonymisedBadge": "Already erased",
         "truncatedBanner": "More than {cap} registrations match this email, so this list is a PARTIAL set. Re-run the search and erase again until 0 remain to complete the request.",
         "errorState": "Something went wrong loading the registrations for this email. Please try again.",
