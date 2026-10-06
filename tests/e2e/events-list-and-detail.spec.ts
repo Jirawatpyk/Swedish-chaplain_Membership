@@ -49,11 +49,10 @@ test.describe('F6 events list and detail — US2 AS1-AS5 @workers=1', () => {
       page.getByRole('heading', { name: /events/i, level: 1 }),
     ).toBeVisible();
 
-    // T1 (verify-finding 2026-05-12): AS2 contract requires the
-    // header's match-rate label to follow `NN% (M of N)` or
-    // `NN.N% (M of N)`. Tested here against the detail page in AS2
-    // below — list-table renders the same metric but the AS2 spec
-    // pins the detail-header phrasing.
+    // T1 (verify-finding 2026-05-12, amended 2026-10-06): the match-rate
+    // format is tested against the detail header in AS2 below — the
+    // list table renders the same metric but the AS2 spec pins the
+    // detail-header layout.
 
     // Table columns per AS1: Date, Name, Category, Registrations,
     // Partner Benefit, Match Rate. Spec 122 US9a: the list is AURA's
@@ -94,16 +93,30 @@ test.describe('F6 events list and detail — US2 AS1-AS5 @workers=1', () => {
     await firstRowLink.click();
 
     await page.waitForURL(/\/admin\/events\/[^/]+$/);
-    // Match-rate indicator surfaces in detail header — uses the
-    // pattern "Match rate: NN% (M of N)" per AS2.
-    await expect(page.getByText(/match rate/i)).toBeVisible();
-    // T1 (verify-finding 2026-05-12): pin the exact AS2 format
-    // `NN(.N)?% (M of N)` so regressions in the formatter are caught
-    // at E2E. The English locale renders "%" + the parenthetical
-    // raw fraction.
-    await expect(
-      page.getByText(/\d+(?:\.\d+)?%\s*\(\d+\s+of\s+\d+\)/),
-    ).toBeVisible();
+    // AS2 (amended 2026-10-06): the header's match rate is the figure
+    // "NN.N%", then "M of N attendees matched", then the band word; the
+    // figure's accessible name is "NN.N% (M of N)". Scoped to the <dd>:
+    // a page-wide getByText matched the 1×1px sr-only echo of the name,
+    // which Playwright counts as visible, so it never checked the screen.
+    const matchRate = page
+      .locator('dt', { hasText: /^match rate$/i })
+      .locator('xpath=following-sibling::dd[1]');
+    await expect(matchRate).toBeVisible();
+    // The figure is the <dd>'s own first text node, not the sr-only span.
+    expect(
+      await matchRate.evaluate((el) => el.firstChild?.textContent?.trim()),
+    ).toMatch(/^\d+(?:\.\d+)?%$/);
+    const [fraction, bandWord] = [
+      matchRate.locator('small').nth(0),
+      matchRate.locator('small').nth(1),
+    ];
+    await expect(fraction).toBeVisible();
+    await expect(fraction).toHaveText(/^\d+ of \d+ attendees matched$/);
+    await expect(bandWord).toBeVisible();
+    await expect(matchRate).toHaveAttribute(
+      'aria-label',
+      /^\d+(?:\.\d+)?% \(\d+ of \d+\)$/,
+    );
 
     // The attendee table is AURA's DataTable (an ARIA grid) named by its
     // caption ("Event attendees with match status, …").
