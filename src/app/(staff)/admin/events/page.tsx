@@ -27,15 +27,8 @@ import { canPerform, requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { runListEvents } from '@/lib/events-admin-deps';
 import { TableContainer } from '@/components/layout';
-import { TablePagination } from '@/components/layout/table-pagination';
-import { Alert } from '@jirawatpyk/aura-react/server';
-import {
-  EventsListTable,
-  type EventsListTableRow,
-} from '@/components/events/events-list-table';
-import { EventsListFilters } from '@/components/events/events-list-filters';
-import { EventsEmptyState } from './_components/events-empty-state';
-import { renderEventsListView } from './_components/events-list-view';
+import type { EventsListTableRow } from '@/components/events/events-list-table';
+import { renderEventsListBody, renderEventsListView } from './_components/events-list-view';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.events.list');
@@ -96,7 +89,6 @@ export default async function AdminEventsListPage({
   const { user: currentUser } = await requirePagePermission('events.read');
 
   const query = await searchParams;
-  const t = await getTranslations('admin.events.list');
   const tShared = await getTranslations('shared');
 
   const page = clampPage(query.page);
@@ -176,65 +168,35 @@ export default async function AdminEventsListPage({
       {await renderEventsListView({
         canImport,
         canEraseByEmail,
-        children: (
-          <div className="flex flex-col gap-[var(--aura-space-4)]">
-            {!result || !result.ok ? (
-              // A load error keeps its danger frame inside the list card.
-              <Alert tone="danger" role="alert">
-                {t('errorState')}
-              </Alert>
-            ) : (
-              <>
-                {/* The filter pattern: search, three toggle chips, and the count
-                    (naming the search) as the bar's polite live region. */}
-                <EventsListFilters
-                  search={searchQuery ?? ''}
-                  partnerBenefitOnly={partnerBenefitOnly}
-                  culturalEventOnly={culturalEventOnly}
-                  includeArchived={includeArchived}
-                  resultCount={result.value.items.length}
-                />
-                {result.value.items.length === 0 ? (
-                  <EventsEmptyState
-                    emptyContext={result.value.emptyStateContext}
-                    hasFilters={hasFilters}
-                    canManageIntegration={canPerform(currentUser.role, 'settings.integrations')}
-                  />
-                ) : (
-                  <>
-                    <EventsListTable
-                      rows={
-                        result.value.items.map((it) => ({
-                          eventId: it.eventId,
-                          name: it.name,
-                          startDate: it.startDate,
-                          category: it.category,
-                          totalRegistrations: it.totalRegistrations,
-                          matchedRegistrations: it.matchedRegistrations,
-                          matchRatePct: it.matchRatePct,
-                          isPartnerBenefit: it.isPartnerBenefit,
-                          isCulturalEvent: it.isCulturalEvent,
-                          archivedAt: it.archivedAt,
-                        })) satisfies EventsListTableRow[]
-                      }
-                    />
-                    {/* The filter bar's count is the list's live region. */}
-                    <TablePagination
-                      page={result.value.pagination.page}
-                      pageSize={result.value.pagination.pageSize}
-                      total={result.value.pagination.totalCount}
-                      baseHref="/admin/events"
-                      live={false}
-                    />
-                  </>
-                )}
-              </>
-            )}
-          </div>
+        children: await renderEventsListBody(
+          !result || !result.ok
+            ? { kind: 'error' }
+            : {
+                kind: 'list',
+                items: result.value.items.map((it) => ({
+                  eventId: it.eventId,
+                  name: it.name,
+                  startDate: it.startDate,
+                  category: it.category,
+                  totalRegistrations: it.totalRegistrations,
+                  matchedRegistrations: it.matchedRegistrations,
+                  matchRatePct: it.matchRatePct,
+                  isPartnerBenefit: it.isPartnerBenefit,
+                  isCulturalEvent: it.isCulturalEvent,
+                  archivedAt: it.archivedAt,
+                })) satisfies EventsListTableRow[],
+                pagination: result.value.pagination,
+                emptyStateContext: result.value.emptyStateContext,
+                hasFilters,
+                canManageIntegration: canPerform(currentUser.role, 'settings.integrations'),
+                search: searchQuery ?? '',
+                partnerBenefitOnly,
+                culturalEventOnly,
+                includeArchived,
+              },
         ),
       })}
       <span className="sr-only">{tShared('loaded')}</span>
     </TableContainer>
   );
 }
-

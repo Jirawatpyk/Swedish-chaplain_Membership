@@ -17,17 +17,8 @@ import { runLoadEventDetail } from '@/lib/events-admin-deps';
 import { isMatchType, isPaymentStatus } from '@/modules/events';
 import type { MatchType } from '@/modules/events';
 import { DetailContainer } from '@/components/layout';
-import { PageHeader } from '@/components/layout/page-header';
-import { TablePagination } from '@/components/layout/table-pagination';
-import { Card } from '@jirawatpyk/aura-react/server';
-import { DynamicBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
-import { EventDetailHeader } from '@/components/events/event-detail-header';
-import { EventCategoryToggles } from '@/components/events/event-category-toggles';
-import { ArchiveEventButton } from '@/components/events/archive-event-button';
-import {
-  AttendeeTable,
-  type AttendeeRow,
-} from '@/components/events/attendee-table';
+import type { AttendeeRow } from '@/components/events/attendee-table';
+import { renderEventDetailError, renderEventDetailView } from './_components/event-detail-view';
 
 export async function generateMetadata({
   params,
@@ -117,7 +108,6 @@ export default async function AdminEventDetailPage({
 
   const { eventId } = await params;
   const query = await searchParams;
-  const t = await getTranslations('admin.events.detail');
   const tShared = await getTranslations('shared');
 
   const page = clampPage(query.page);
@@ -247,14 +237,7 @@ export default async function AdminEventDetailPage({
   }
 
   if (!result || !result.ok) {
-    return (
-      <DetailContainer>
-        <PageHeader title={t('title')} subtitle={t('errorSubtitle')} />
-        <div className="rounded-md border border-destructive/30 bg-destructive/5 p-6 text-center">
-          <p className="text-destructive">{t('errorBody')}</p>
-        </div>
-      </DetailContainer>
-    );
+    return <DetailContainer>{await renderEventDetailError()}</DetailContainer>;
   }
 
   const { event, registrations, pagination } = result.value;
@@ -264,16 +247,6 @@ export default async function AdminEventDetailPage({
   // archived per FR-019a (archived events are quota-neutral and cannot be
   // re-flagged).
   const canAct = canPerform(currentUser.role, 'events.write') && !event.archivedAt;
-  const renderActions = () => (
-    <>
-      <EventCategoryToggles
-        eventId={event.eventId}
-        isPartnerBenefit={event.isPartnerBenefit}
-        isCulturalEvent={event.isCulturalEvent}
-      />
-      <ArchiveEventButton eventId={event.eventId} />
-    </>
-  );
 
   return (
     /* P4 (round-10) — 120ms fade-in when the loaded content replaces
@@ -283,97 +256,37 @@ export default async function AdminEventDetailPage({
        loading.tsx renders the same DetailContainer without these
        classes so the skeleton itself does not fade. */
     <DetailContainer className="motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-[120ms]">
-      {/* Register the event name as the breadcrumb label for the
-          dynamic `[eventId]` segment so the trail reads
-          "Events / <Event Name>" instead of
-          "Events / a1b2c3d4-1234-...". Client component effect runs
-          AFTER hydration; intermediate render uses the raw UUID
-          briefly (typical <100ms). */}
-      <DynamicBreadcrumbLabel segment={event.eventId} label={event.name} />
-      <PageHeader title={event.name} subtitle={t('subtitle')} />
-      {/* C4-lite (round-10) — Phase 6 toggles + archive flow into the
-          EventDetailHeader card as an actions slot. The fragment block
-          that used to render below the header is gone; the buttons now
-          live inside the same card, separated by a top border. Admin-
-          only per FR-035 surface-level access matrix + hidden when
-          archived per FR-019a (archived events are quota-neutral and
-          cannot be re-flagged). The header omits the strip entirely
-          when `actions` is undefined. */}
-      {/* C4-lite (round-10) — the toggles + archive at the summary card's
-          end; on a phone they move to the "Event actions" section at the
-          page's end (board Admin-event-detail-mobile), so the card hides
-          its own copy below 640px. */}
-      <EventDetailHeader event={event} actions={canAct ? renderActions() : undefined} actionsHiddenBelowSm />
-      {/* The attendees list card (board Admin-event-detail): the heading, the
-          filter row, the table and the pager in one card; on a phone the rows
-          are cards of their own, so this one drops its frame (the list-card
-          rule). */}
-      <Card
-        as="section"
-        // h2 under the page h1 (R6-B5); the card is labelled by it.
-        title={t('attendees.heading')}
-        headingLevel={2}
-        titleId="attendees-heading"
-        flushBelow="sm"
-        className="max-sm:border-0 max-sm:p-0"
-      >
-        <div className="flex flex-col gap-[var(--aura-space-4)]">
-          <AttendeeTable
-            rows={
-              registrations.map((r) => ({
-                registrationId: r.registrationId,
-                attendeeEmail: r.attendeeEmail,
-                attendeeName: r.attendeeName,
-                attendeeCompany: r.attendeeCompany,
-                matchType: r.matchType,
-                ticketType: r.ticketType,
-                ticketPriceThb: r.ticketPriceThb,
-                paymentStatus: r.paymentStatus,
-                countedAgainstPartnership: r.countedAgainstPartnership,
-                countedAgainstCulturalQuota: r.countedAgainstCulturalQuota,
-                isOverQuota: r.isOverQuota,
-                registeredAt: r.registeredAt,
-                // Round-1 type-H3 — pass branded MemberId | null straight
-                // through; the prop boundary preserves the brand. No
-                // String() coercion needed.
-                currentMatchedMemberId: r.matchedMemberId,
-                isPseudonymised: r.isPseudonymised,
-              })) satisfies AttendeeRow[]
-            }
-            unmatchedOnly={unmatchedOnly}
-            initialSearch={q ?? ''}
-            {...(paymentStatusFilter !== null && {
-              initialPaymentStatus: paymentStatusFilter,
-            })}
-            // F6 Phase 9 / US6 — relink column follows `events.relink` (its own
-            // catalogue key, money-sensitive; not granted to marketing). Archived
-            // events disable relink because the use-case short-circuits with
-            // `event_archived`. (016 re-review D — was a `role === 'admin'`
-            // literal, which went false for every human after Migration C.)
-            eventId={event.eventId}
-            canRelink={
-              canPerform(currentUser.role, 'events.relink') &&
-              !event.archivedAt
-            }
-          />
-          <TablePagination
-            page={pagination.page}
-            pageSize={pagination.pageSize}
-            total={pagination.totalCount}
-            baseHref={`/admin/events/${eventId}`}
-            // The filter bar's count is the list's live region.
-            live={false}
-          />
-        </div>
-      </Card>
-      {canAct ? (
-        <section aria-labelledby="event-actions-heading" className="flex flex-col gap-3 sm:hidden">
-          <h2 id="event-actions-heading" className="aura-text-label text-[var(--aura-fg-secondary)]">
-            {t('header.actionsLabel')}
-          </h2>
-          <div className="flex flex-col gap-2 [&_button]:w-full">{renderActions()}</div>
-        </section>
-      ) : null}
+      {await renderEventDetailView({
+        event,
+        rows: registrations.map((r) => ({
+          registrationId: r.registrationId,
+          attendeeEmail: r.attendeeEmail,
+          attendeeName: r.attendeeName,
+          attendeeCompany: r.attendeeCompany,
+          matchType: r.matchType,
+          ticketType: r.ticketType,
+          ticketPriceThb: r.ticketPriceThb,
+          paymentStatus: r.paymentStatus,
+          countedAgainstPartnership: r.countedAgainstPartnership,
+          countedAgainstCulturalQuota: r.countedAgainstCulturalQuota,
+          isOverQuota: r.isOverQuota,
+          registeredAt: r.registeredAt,
+          // Round-1 type-H3 — pass branded MemberId | null straight
+          // through; the prop boundary preserves the brand. No
+          // String() coercion needed.
+          currentMatchedMemberId: r.matchedMemberId,
+          isPseudonymised: r.isPseudonymised,
+        })) satisfies AttendeeRow[],
+        pagination,
+        filters: { unmatchedOnly, q, paymentStatus: paymentStatusFilter },
+        canAct,
+        // F6 Phase 9 / US6 — relink column follows `events.relink` (its own
+        // catalogue key, money-sensitive; not granted to marketing). Archived
+        // events disable relink because the use-case short-circuits with
+        // `event_archived`. (016 re-review D — was a `role === 'admin'`
+        // literal, which went false for every human after Migration C.)
+        canRelink: canPerform(currentUser.role, 'events.relink') && !event.archivedAt,
+      })}
       <span className="sr-only">{tShared('loaded')}</span>
     </DetailContainer>
   );

@@ -414,6 +414,7 @@ export const MIGRATED_PATHS = [
   'src/app/(staff)/admin/events/_components/**',
   'src/app/(staff)/admin/events/\\[eventId\\]/page.tsx',
   'src/app/(staff)/admin/events/\\[eventId\\]/loading.tsx',
+  'src/app/(staff)/admin/events/\\[eventId\\]/_components/**',
   'src/components/events/events-list-*.{ts,tsx}',
   'src/components/events/event-detail-header.tsx',
   'src/components/events/event-category-toggles.tsx',

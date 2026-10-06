@@ -47,7 +47,7 @@ import { ExternalLink, Award, Sparkles, Info } from 'lucide-react';
 import { Badge, Card, Tooltip, buttonClass } from '@jirawatpyk/aura-react';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 
-type EventHeaderProps = {
+export type EventHeaderProps = {
   readonly event: {
     readonly eventId: string;
     readonly name: string;

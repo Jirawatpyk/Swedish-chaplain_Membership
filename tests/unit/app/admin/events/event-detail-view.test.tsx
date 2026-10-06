@@ -13,6 +13,7 @@ import { render, screen } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { NextIntlClientProvider, createTranslator } from 'next-intl';
 import en from '@/i18n/messages/en.json';
+import { asEventId } from '@/modules/events/domain/branded-types';
 
 vi.mock('next-intl/server', () => ({
   getTranslations: async (namespace: string) =>
@@ -31,7 +32,7 @@ const { renderEventDetailView, renderEventDetailError } = await import(
 
 const d = en.admin.events.detail;
 const EVENT = {
-  eventId: '00000000-0000-4000-8000-000000000001',
+  eventId: asEventId('00000000-0000-4000-8000-000000000001'),
   name: 'SweCham Crayfish Party 2026',
   startDate: '2026-09-05T11:00:00Z',
   category: 'Networking',
@@ -68,7 +69,8 @@ describe('event detail view (board Admin-event-detail)', () => {
     expect(screen.getByRole('heading', { level: 1, name: EVENT.name })).toBeInTheDocument();
     const attendees = screen.getByRole('heading', { level: 2, name: d.attendees.heading });
     expect(attendees.closest('.aura-card')).not.toBeNull();
-    expect(screen.getByRole('heading', { level: 2, name: d.header.actionsLabel })).toBeInTheDocument();
+    // The phone section (the card's own strip, hidden below 640px, has its sr-only h2 too).
+    expect(document.getElementById('event-actions-heading')).toHaveTextContent(d.header.actionsLabel);
   });
 
   it('shows no "Event actions" to a reader', async () => {
@@ -82,7 +84,7 @@ describe('event detail view (board Admin-event-detail)', () => {
         canRelink: false,
       }),
     );
-    expect(screen.queryByRole('heading', { level: 2, name: d.header.actionsLabel })).toBeNull();
+    expect(screen.queryAllByRole('heading', { level: 2, name: d.header.actionsLabel })).toHaveLength(0);
   });
 
   it('shows the load error in an AURA danger alert', async () => {
