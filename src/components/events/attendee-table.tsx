@@ -134,6 +134,11 @@ type Props = {
    */
   readonly canRelink: boolean;
   /**
+   * `events.erasure` (super admin): the row's "More" menu with "Erase personal
+   * data". Both erase routes refuse anyone else, so the action is not offered.
+   */
+  readonly canErase: boolean;
+  /**
    * Spec 122 US9a — every attendee matching the filters, across the pages:
    * the filter bar's count. Defaults to the rows shown.
    */
@@ -192,13 +197,14 @@ export function AttendeeTable({
   initialPaymentStatus,
   eventId,
   canRelink,
+  canErase,
   totalCount,
 }: Props) {
   const t = useTranslations('admin.events.detail.attendees');
   // Defensive AND — never render the Actions column if eventId is
   // missing even when canRelink was passed true (the dialog would
   // POST to /api/admin/events//... and 404 immediately).
-  const showActions = canRelink && eventId !== null;
+  const showActions = (canRelink || canErase) && eventId !== null;
   const tMatchType = useTranslations('admin.events.matchType');
   const tMatchTypeTip = useTranslations('admin.events.matchTypeTooltip');
   const tQuota = useTranslations('admin.events.quotaEffect');
@@ -490,6 +496,8 @@ export function AttendeeTable({
           <AttendeeRowActions
             row={r}
             eventId={eventId}
+            canRelink={canRelink}
+            canErase={canErase}
             searchInput={searchInput}
             moreLabel={t('moreActionsAria', { attendeeName: r.attendeeName })}
             eraseLabel={t('eraseMenuItem')}
@@ -497,7 +505,7 @@ export function AttendeeTable({
         ),
       },
     ];
-  }, [t, tMatchType, tMatchTypeTip, tQuota, tQuotaTip, tPay, locale, showActions, eventId, copyEmail, searchInput]);
+  }, [t, tMatchType, tMatchTypeTip, tQuota, tQuotaTip, tPay, locale, showActions, canRelink, canErase, eventId, copyEmail, searchInput]);
 
   return (
     <div className="flex flex-col gap-[var(--aura-space-4)]" aria-busy={isPending}>
@@ -587,12 +595,16 @@ export function AttendeeTable({
 function AttendeeRowActions({
   row,
   eventId,
+  canRelink,
+  canErase,
   searchInput,
   moreLabel,
   eraseLabel,
 }: {
   readonly row: AttendeeRow;
   readonly eventId: EventId;
+  readonly canRelink: boolean;
+  readonly canErase: boolean;
   readonly searchInput: () => HTMLElement | null;
   readonly moreLabel: string;
   readonly eraseLabel: string;
@@ -604,15 +616,17 @@ function AttendeeRowActions({
       data-row-actions=""
       className="flex flex-wrap items-center justify-end gap-2 max-sm:w-full max-sm:[&>button:first-of-type]:flex-1"
     >
-      <RelinkRegistrationDialog
-        registrationId={row.registrationId}
-        eventId={eventId}
-        attendeeName={row.attendeeName}
-        attendeeEmail={row.attendeeEmail}
-        currentMatchedMemberId={row.currentMatchedMemberId}
-        isPseudonymised={row.isPseudonymised}
-      />
-      {!row.isPseudonymised && (
+      {canRelink && (
+        <RelinkRegistrationDialog
+          registrationId={row.registrationId}
+          eventId={eventId}
+          attendeeName={row.attendeeName}
+          attendeeEmail={row.attendeeEmail}
+          currentMatchedMemberId={row.currentMatchedMemberId}
+          isPseudonymised={row.isPseudonymised}
+        />
+      )}
+      {canErase && !row.isPseudonymised && (
         <>
           <DropdownMenu
             label={moreLabel}

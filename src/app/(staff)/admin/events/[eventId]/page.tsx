@@ -286,6 +286,9 @@ export default async function AdminEventDetailPage({
         // `event_archived`. (016 re-review D — was a `role === 'admin'`
         // literal, which went false for every human after Migration C.)
         canRelink: canPerform(currentUser.role, 'events.relink') && !event.archivedAt,
+        // The erase action follows `events.erasure` (super admin), the key both
+        // erase routes enforce; erasure is not blocked on an archived event.
+        canErase: canPerform(currentUser.role, 'events.erasure'),
       })}
       <span className="sr-only">{tShared('loaded')}</span>
     </DetailContainer>

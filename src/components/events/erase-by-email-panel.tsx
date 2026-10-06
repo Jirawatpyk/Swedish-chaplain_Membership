@@ -117,7 +117,12 @@ export function EraseByEmailPanel({ email, matchCount, showCount = false }: Eras
       setOpen(false);
       setReasonText('');
       if (!result.ok) {
-        toast.error(t('errorTitle'), { description: t('errorDescription') });
+        // The route needs `events.erasure` (super admin): say so, not "try again".
+        if (result.status === 403) {
+          toast.error(t('forbiddenTitle'), { description: t('forbiddenDescription') });
+        } else {
+          toast.error(t('errorTitle'), { description: t('errorDescription') });
+        }
         return;
       }
       const { erasedCount, alreadyErasedCount, failedCount, truncated } =

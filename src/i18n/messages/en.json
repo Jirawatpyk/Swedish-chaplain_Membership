@@ -5427,6 +5427,8 @@
           "alreadyErasedDescription": "Another admin erased this registration in a concurrent request.",
           "pathMismatchTitle": "Cannot erase",
           "pathMismatchDescription": "This registration belongs to a different event. Refresh the page and try again.",
+          "forbiddenTitle": "Super admin required",
+          "forbiddenDescription": "Only a super admin can erase personal data. Ask one to complete this request.",
           "errorTitle": "Could not erase personal data",
           "errorDescription": "Please try again. If the issue persists, contact support.",
           "loading": "Erasing personal data…",
@@ -5777,6 +5779,8 @@
         "failedToast": "{failed, plural, one {# registration} other {# registrations}} could not be erased. Re-run to retry.",
         "errorTitle": "Could not complete the erasure",
         "errorDescription": "Please try again. If the issue persists, contact support.",
+        "forbiddenTitle": "Super admin required",
+        "forbiddenDescription": "Only a super admin can erase personal data. Ask one to complete this request.",
         "discoverabilityCta": "Erase by email"
       }
     },
