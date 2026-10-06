@@ -599,11 +599,27 @@ Boards: `Admin-events`, `Admin-event-detail` (each with `-mobile`), `Admin-state
 - [x] T904 [US9] The attendees table: search, "Show unmatched only", the payment-status select, the AURA table (Attendee, Match, Ticket, Quota, Registered, actions), the badges in the board's tones, cards below 640px. RED: the URL each control writes, the badge tones, and the erase and payment-status guards (their existing tests stay green).
 - [x] T905 [US9] The relink dialog on AURA `Dialog` + a server-searched `Combobox`, replacing the command list. RED: searching calls the same endpoint, picking a member sends the same body, the `relink-button-*` / `relink-disallowed-*` testids and the status line stay.
 - [x] T906 [US9] Ratchet and preview: `MIGRATED_PATHS` gains the list and detail routes and the US9a components; the events ratchet control moves to `events/import/page.tsx` (US9b); preview views (list, the empty states, filtered-empty, detail, relink open, both loading files); first bundle budgets for `/admin/events` and `/admin/events/[eventId]`.
-- [ ] T907 [US9] Exit: e2e selectors updated where the swap breaks them (`events-list-and-detail`, `admin-events-search`, `relink-attendee`, `quota-accounting`, `manager-readonly-events`; `/admin/events` joins `overlay-consistency`); gates; `next build` and budgets; screenshots at 1440 and 390 in light and dark; UX review with fixes RED first; draft PR; relay R36.
+- [x] T907 [US9] Exit: e2e selectors updated where the swap breaks them (`events-list-and-detail`, `admin-events-search`, `relink-attendee`, `quota-accounting`, `manager-readonly-events`; `/admin/events` joins `overlay-consistency`); gates; `next build` and budgets; screenshots at 1440 and 390 in light and dark; UX review with fixes RED first; draft PR; relay R36.
 
-### US9b — erasure and CSV import (PR 18; tasks written when it starts)
+### US9b — erasure and CSV import (two PRs: US9b-1 erasure, US9b-2 CSV import)
 
-- [ ] T920 [US9] Erasure pages and dialogs with the shared typed-phrase confirm ("ERASE"); CSV import on `FileUpload`, the event `Combobox`, the remap on AURA `Select`, the result and the history table; the inline create on `DatePicker` + `TimePicker` in Bangkok time.
+- [x] T920 [US9] Split (Clarifications, Session 2026-10-06, US9b start): US9b-1 erasure (T921–T929), US9b-2 CSV import (T930–T939, tasks written when it starts).
+
+#### US9b-1 — events erasure
+
+- [x] T921 [US9] Spec clarifications and this task list.
+- [ ] T922 [US9] The per-attendee erase dialog on AURA `Dialog role="alertdialog"` with an AURA `Textarea` reason. RED: Confirm stays disabled until the reason is 1–500 characters; the same request body and toast branches; the dialog cannot close while the request is in flight; `erase-pii-button-*` and the reason ids stay.
+- [ ] T923 [US9] The attendee row's "More" menu (AURA `Menu`) holding "Erase personal data" (board `Admin-event-detail`). RED: the menu opens the erase dialog; a pseudonymised row has no erase item; "Relink" stays on every row.
+- [ ] T924 [US9] The erase-by-email panel on AURA: the search field and the "Erase all" alertdialog. RED: the search writes the same URL; Confirm is gated by the reason; the request body and toasts are unchanged; focus returns to the search field after erasing.
+- [ ] T925 [US9] The erasure page frame: one AURA card for the search and results, the results on AURA `DataTable` (cards on phones), the truncated and error states on AURA `Alert`. RED: a pseudonymised row shows its badge and no erase action; the count stays a polite status; the guards and server read are unchanged.
+- [ ] T926 [US9] The erasure and erase-page `loading.tsx` / `error.tsx` files on AURA (skeleton card matching the page; retry button).
+- [ ] T927 [US9] The deep-link erase page (`/admin/events/[eventId]/registrations/[registrationId]/erase`) at parity with `Admin-event-erase-page`; its guards and redirect are unchanged.
+- [ ] T928 [US9] Ratchet and preview: `MIGRATED_PATHS` gains the erasure and erase-page routes and the US9b-1 components; the erasure ratchet control flips; preview views (erasure states, the erase dialog from the row menu, the erase page, both loading files); first bundle budgets for both routes.
+- [ ] T929 [US9] Exit: e2e selectors (`erase-attendee`, `admin-events-erasure`, `eventcreate-a11y`); gates; `next build` and budgets; screenshots at 1440 and 390 in light and dark; UX and PDPA reviews with fixes RED first; draft PR; relay R37.
+
+#### US9b-2 — CSV import (tasks written when it starts)
+
+- [ ] T930 [US9] CSV import on `FileUpload`, the event `Combobox`, the remap on AURA `Select`, the result and the history table; the inline create on `DatePicker` + `TimePicker` in Bangkok time.
 
 ### US9c — EventCreate integration (PR 19; tasks written when it starts)
 
