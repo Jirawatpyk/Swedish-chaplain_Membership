@@ -98,8 +98,20 @@ describe('tier-upgrade reaches billing — ONLINE + OFFLINE rails (Package B1)',
    * linked to a seeded issued invoice, and a regular→premium suggestion in
    * `accepted_pending_apply` (direct insert; anchors satisfy the 0091
    * accepted CHECK; no F2 scheduled_plan_changes row — see file header).
+   *
+   * `linkBill: false` (the OFFLINE rail) leaves the cycle UNLINKED. Since #409
+   * markPaidOffline refuses a cycle linked to a live membership bill
+   * (`membership_bill_already_exists` — settle that bill instead), and that
+   * guard reads the real link, not the stubbed plan-year guard. A linked live
+   * bill plus an offline mark is the double-bill state production refuses;
+   * the real offline flow marks a cycle that has no bill yet. The invoice row
+   * stays: the mocked bridge's onPaid names it as the minted bill. Same split
+   * as `plan-change-reaches-next-cycle.test.ts` (`seedLiveBill`).
    */
-  async function seedAcceptedUpgrade(): Promise<UpgradeScenario> {
+  async function seedAcceptedUpgrade(
+    opts: { linkBill?: boolean } = {},
+  ): Promise<UpgradeScenario> {
+    const linkBill = opts.linkBill ?? true;
     const memberId = randomUUID();
     const cycleId = randomUUID();
     const suggestionUuid = randomUUID();
@@ -193,7 +205,8 @@ describe('tier-upgrade reaches billing — ONLINE + OFFLINE rails (Package B1)',
     // tx2 — the awaiting_payment cycle (strictly later created_at than the
     // predecessor) + the suggestion targeting it.
     await runInTenant(tenant.ctx, async (tx) => {
-      // Awaiting_payment cycle on 'regular', linked to the issued invoice.
+      // Awaiting_payment cycle on 'regular', linked to the issued invoice
+      // unless the OFFLINE rail asked for an unbilled cycle (see above).
       await tx.insert(renewalCycles).values({
         tenantId: tenant.ctx.slug,
         cycleId,
@@ -208,7 +221,7 @@ describe('tier-upgrade reaches billing — ONLINE + OFFLINE rails (Package B1)',
         frozenPlanPriceThb: '50000.00',
         frozenPlanTermMonths: 12,
         frozenPlanCurrency: 'THB',
-        linkedInvoiceId: invoiceId,
+        linkedInvoiceId: linkBill ? invoiceId : null,
       });
       // Suggestion in accepted_pending_apply targeting the cycle.
       await tx.insert(tierUpgradeSuggestions).values({
@@ -406,7 +419,7 @@ describe('tier-upgrade reaches billing — ONLINE + OFFLINE rails (Package B1)',
   }, 120_000);
 
   it('OFFLINE rail: accepted tier-upgrade flips members.plan_id AND the next cycle to premium', async () => {
-    const scenario = await seedAcceptedUpgrade();
+    const scenario = await seedAcceptedUpgrade({ linkBill: false });
 
     const deps = mockBridgeFireOnPaid(makeRenewalsDeps(tenant.ctx.slug), scenario.invoiceId);
     const r = await markPaidOffline(deps, {
