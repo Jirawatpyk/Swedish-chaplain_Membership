@@ -79,9 +79,10 @@ describe('erase-by-email panel (AURA)', () => {
     screen.getByRole('alertdialog', { name: er.eraseAllConfirmTitle.replace('{count}', '3') });
     expect(document.querySelector('.aura-dialog')).not.toBeNull();
     const confirm = screen.getByRole('button', { name: er.confirm });
-    expect(confirm).toBeDisabled();
+    expect(confirm).toHaveAttribute('aria-disabled', 'true');
+    expect(confirm.getAttribute('aria-describedby')).toContain('erase-by-email-reason-hint');
     fireEvent.change(screen.getByLabelText(er.reasonLabel), { target: { value: ' PDPA s.33 request ' } });
-    expect(confirm).toBeEnabled();
+    expect(confirm).not.toHaveAttribute('aria-disabled', 'true');
     fireEvent.click(confirm);
     await flush();
     expect(fetchMock).toHaveBeenCalledWith(

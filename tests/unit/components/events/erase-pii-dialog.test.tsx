@@ -52,10 +52,16 @@ async function flush() {
   }
 }
 
-function openDialog() {
+function openDialog(successFocus?: () => HTMLElement | null) {
   render(
     <NextIntlClientProvider locale="en" messages={en}>
-      <ErasePiiDialog eventId={EVENT} registrationId={REG} attendeeName={NAME} />
+      <input aria-label="after-erase" />
+      <ErasePiiDialog
+        eventId={EVENT}
+        registrationId={REG}
+        attendeeName={NAME}
+        {...(successFocus ? { successFocus } : {})}
+      />
     </NextIntlClientProvider>,
   );
   fireEvent.click(screen.getByTestId(`erase-pii-button-${REG}`));
@@ -72,11 +78,14 @@ describe('erase PII dialog (AURA alertdialog)', () => {
     expect(document.querySelector('.aura-dialog')).not.toBeNull();
     expect(reason.id).toBe(`erase-reason-${REG}`);
     expect(reason.maxLength).toBe(500);
-    expect(confirm).toBeDisabled();
+    // Reachable but refused (AURA #102): aria-disabled, described by the reason hint.
+    expect(confirm).toHaveAttribute('aria-disabled', 'true');
+    expect(confirm.getAttribute('aria-describedby')).toContain(`erase-reason-hint-${REG}`);
     fireEvent.change(reason, { target: { value: '   ' } });
-    expect(confirm).toBeDisabled();
+    fireEvent.click(confirm);
+    expect(fetchMock).not.toHaveBeenCalled();
     fireEvent.change(reason, { target: { value: 'GDPR Art. 17 request' } });
-    expect(confirm).toBeEnabled();
+    expect(confirm).not.toHaveAttribute('aria-disabled', 'true');
   });
 
   it('posts the trimmed reason to the same route, toasts the quota credit-back and refreshes', async () => {
@@ -94,6 +103,17 @@ describe('erase PII dialog (AURA alertdialog)', () => {
     });
     expect(nav.refresh).toHaveBeenCalled();
     expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('moves focus to the successFocus target after a successful erase (the row is gone, WCAG 2.4.3)', async () => {
+    fetchMock.mockReturnValue(json({ alreadyErased: false, quotaReversals: { partnership: 0, cultural: 0 } }));
+    const { reason, confirm } = openDialog(() => screen.getByLabelText('after-erase'));
+    fireEvent.change(reason, { target: { value: 'GDPR Art. 17 request' } });
+    fireEvent.click(confirm);
+    await flush();
+    act(() => vi.runOnlyPendingTimers());
+    await flush();
+    expect(document.activeElement).toBe(screen.getByLabelText('after-erase'));
   });
 
   it('keeps the already-erased and 409 toast branches', async () => {
