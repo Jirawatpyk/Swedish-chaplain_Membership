@@ -13,8 +13,10 @@
  *     indicator (FR-028), opted-out + archived members never leak.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { db, runInTenant } from '@/lib/db';
 import {
   effectiveContactVisibility,
@@ -582,6 +584,86 @@ describe('F9 directory — integration (T074/T078)', () => {
 
       // Leave m2 opted-out as the rest of the file expects.
       await updateDirectoryListing({ ...listing, listed: false }, memberMeta(m2, `dir-${randomUUID()}`), tenant.ctx, deps);
+    });
+  });
+
+  // Migration 0315 (RoPA § F9 ruling 4, GDPR Art. 7(1)) — a published email
+  // whose consent cannot be shown is switched off; a change the primary
+  // demonstrably made under the #432 code is kept; the name is never touched.
+  describe('migration 0315 — unproven email consent', () => {
+    it('switches off only the emails whose consent cannot be demonstrated, and never touches the name', async () => {
+      const primaryUser = await createActiveTestUser('member');
+      const idleUser = await createActiveTestUser('member');
+      const cases = {
+        // the primary turned the toggles on themselves under #432 → kept
+        changed: { member: randomUUID(), contact: randomUUID(), user: primaryUser.userId, auditChanged: true as boolean | null, name: true },
+        // the primary saved, but the toggles were left as the backfill set them → not proof
+        unchanged: { member: randomUUID(), contact: randomUUID(), user: idleUser.userId, auditChanged: false as boolean | null, name: true },
+        // never saved since the backfill, name objected to (off) → email off, name stays off
+        backfilled: { member: randomUUID(), contact: randomUUID(), user: null as string | null, auditChanged: null as boolean | null, name: false },
+      };
+
+      await runInTenant(tenant.ctx, async (tx) => {
+        for (const [key, c] of Object.entries(cases)) {
+          await tx.insert(members).values({
+            tenantId: tenant.ctx.slug,
+            memberId: c.member,
+            memberNumber: nextSeedMemberNumber(),
+            companyName: `0315 ${key} Co`,
+            country: 'TH',
+            planId,
+            planYear: 2026,
+            status: 'active',
+            riskScore: null,
+            riskScoreBand: null,
+          });
+          await tx.insert(contacts).values({
+            tenantId: tenant.ctx.slug,
+            contactId: c.contact,
+            memberId: c.member,
+            firstName: 'Primary',
+            lastName: key,
+            email: `${key}-${randomUUID()}@example.test`,
+            isPrimary: true,
+            linkedUserId: c.user,
+          });
+          await tx.insert(directoryListings).values({
+            tenantId: tenant.ctx.slug,
+            memberId: c.member,
+            listed: true,
+            fieldVisibility: { name: true, contact_name: c.name, contact_email: true },
+            contactVisibilitySetByContactId: c.contact,
+          });
+          if (c.user !== null && c.auditChanged !== null) {
+            await tx.insert(auditLog).values({
+              tenantId: tenant.ctx.slug,
+              eventType: 'directory_listing_updated',
+              actorUserId: c.user,
+              summary: 'directory listing updated',
+              requestId: randomUUID(),
+              payload: { subject_member_id: c.member, listed: true, changed_fields: [], contact_visibility_changed: c.auditChanged },
+            });
+          }
+        }
+      });
+
+      const migration = readFileSync(
+        path.join(process.cwd(), 'drizzle/migrations/0315_directory_unproven_email_consent.sql'),
+        'utf8',
+      );
+      // Under runInTenant the statement only reaches this tenant's rows (RLS).
+      await runInTenant(tenant.ctx, (tx) => tx.execute(sql.raw(migration)));
+
+      const rows = await runInTenant(tenant.ctx, (tx) =>
+        tx
+          .select({ memberId: directoryListings.memberId, vis: directoryListings.fieldVisibility })
+          .from(directoryListings)
+          .where(eq(directoryListings.tenantId, tenant.ctx.slug)),
+      );
+      const vis = new Map(rows.map((r) => [r.memberId, r.vis as Record<string, boolean>]));
+      expect(vis.get(cases.changed.member)).toMatchObject({ contact_name: true, contact_email: true });
+      expect(vis.get(cases.unchanged.member)).toMatchObject({ contact_name: true, contact_email: false });
+      expect(vis.get(cases.backfilled.member)).toMatchObject({ contact_name: false, contact_email: false });
     });
   });
 });

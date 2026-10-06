@@ -22,6 +22,7 @@ import { ok, err, type Result } from '@/lib/result';
 import { insightsMetrics } from '@/lib/metrics';
 import type { TenantContext } from '@/modules/tenants';
 import {
+  DIRECTORY_CONTACT_NOTICE_VERSION,
   DIRECTORY_FIELDS,
   isDescriptionWithinCap,
   isFieldVisible,
@@ -179,21 +180,17 @@ export async function updateDirectoryListing(
       existing?.fieldVisibility ?? {},
       fieldVisibility,
     );
-    if (
-      meta.actorRole === 'member' &&
-      !meta.actorIsPrimaryContact &&
-      contactTogglesChanged
-    ) {
+    // Only the person whose details are published decides — never a
+    // colleague, and never staff, not even on the person's instruction (the
+    // choice could not then be shown to be theirs, GDPR Art. 7(1)).
+    const actorIsTheSubject = meta.actorRole === 'member' && meta.actorIsPrimaryContact;
+    if (contactTogglesChanged && !actorIsTheSubject) {
       return 'not_primary_contact' as const;
     }
-    const patch: DirectoryListingPatch = {
-      ...base,
-      // A save by the primary confirms the toggles as submitted, including
-      // ones a predecessor chose (migration 0313 / `effectiveContactVisibility`).
-      recordContactChooser:
-        contactTogglesChanged ||
-        (meta.actorRole === 'member' && meta.actorIsPrimaryContact),
-    };
+    // A save by the primary confirms the toggles as submitted, including ones a
+    // predecessor (or the 0313/0315 backfill) left (`effectiveContactVisibility`).
+    const recordContactChooser = actorIsTheSubject;
+    const patch: DirectoryListingPatch = { ...base, recordContactChooser };
     const upserted = await deps.directoryRepo.upsertInTx(
       tx,
       input.memberId,
@@ -213,6 +210,15 @@ export async function updateDirectoryListing(
         listed: patch.listed,
         changed_fields: computeChangedFields(existing, patch),
         contact_visibility_changed: contactTogglesChanged,
+        // Art. 7(1) evidence of the person's own choice: what they chose,
+        // under which notice. Only when the person themselves saved.
+        ...(recordContactChooser
+          ? {
+              contact_name_visible: isFieldVisible(fieldVisibility, 'contact_name'),
+              contact_email_visible: isFieldVisible(fieldVisibility, 'contact_email'),
+              notice_version: DIRECTORY_CONTACT_NOTICE_VERSION,
+            }
+          : {}),
       },
     });
     return 'ok' as const;

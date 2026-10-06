@@ -27,6 +27,7 @@ import {
   type UpdateDirectoryListingMeta,
 } from '@/modules/insights/application/use-cases/update-directory-listing';
 import type { DirectoryRepo } from '@/modules/insights/application/ports/directory-repo';
+import { DIRECTORY_CONTACT_NOTICE_VERSION } from '@/modules/insights/domain/directory-listing';
 
 const ctx = asTenantContext('test-tenant');
 
@@ -222,5 +223,91 @@ describe('updateDirectoryListing — primary-contact gate on the personal-data t
         payload: expect.objectContaining({ contact_visibility_changed: true }),
       }),
     );
+  });
+
+  // Staff are not the data subject either: they never switch a person's
+  // publication toggles, even on the person's instruction.
+  const adminMeta: UpdateDirectoryListingMeta = { ...memberMeta, actorRole: 'admin', actorMemberId: null, actorIsPrimaryContact: false };
+
+  it("refuses a staff change to the primary contact's toggles — nothing written", async () => {
+    const deps = depsWithStored();
+    const result = await updateDirectoryListing(
+      { ...baseInput, fieldVisibility: { ...stored.fieldVisibility, contact_email: true } },
+      adminMeta,
+      ctx,
+      deps,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toBe('not_primary_contact');
+    expect(deps.directoryRepo.upsertInTx).not.toHaveBeenCalled();
+  });
+
+  it('lets staff edit company fields with the toggles unchanged, without recording a chooser', async () => {
+    const deps = depsWithStored();
+    const result = await updateDirectoryListing(
+      { ...baseInput, industry: 'Logistics', fieldVisibility: stored.fieldVisibility },
+      adminMeta,
+      ctx,
+      deps,
+    );
+    expect(result.ok).toBe(true);
+    expect(deps.directoryRepo.upsertInTx).toHaveBeenCalledWith(
+      { fake: 'tx' },
+      'm-1',
+      expect.objectContaining({ recordContactChooser: false }),
+    );
+  });
+});
+
+// GDPR Art. 7(1) — the chamber must be able to demonstrate the email consent:
+// what the person chose, and under which notice.
+describe('updateDirectoryListing — consent evidence in the audit row', () => {
+  const stored = {
+    memberId: 'm-1',
+    listed: true,
+    fieldVisibility: { name: true, contact_name: true, contact_email: false },
+    industry: null,
+    description: null,
+    website: null,
+    logoUrl: null,
+    locationCity: null,
+    locationCountry: null,
+    contactVisibilitySetByContactId: 'c-primary',
+  };
+  function deps(): UpdateDirectoryListingDeps {
+    const d = stubDeps();
+    vi.mocked(d.directoryRepo.findByMemberIdInTx).mockResolvedValue(stored);
+    vi.mocked(d.directoryRepo.upsertInTx).mockResolvedValue({ memberNotFound: false });
+    return d;
+  }
+  const payloadOf = (d: UpdateDirectoryListingDeps) =>
+    (vi.mocked(d.audit.recordInTx).mock.calls[0]![1] as { payload: Record<string, unknown> }).payload;
+
+  it("a primary's save records both toggles' values and the notice version", async () => {
+    const d = deps();
+    await updateDirectoryListing(
+      { ...baseInput, fieldVisibility: { ...stored.fieldVisibility, contact_email: true } },
+      memberMeta,
+      ctx,
+      d,
+    );
+    expect(payloadOf(d)).toMatchObject({
+      contact_name_visible: true,
+      contact_email_visible: true,
+      notice_version: DIRECTORY_CONTACT_NOTICE_VERSION,
+    });
+  });
+
+  it("a colleague's save records no consent fields — they chose nothing for the person", async () => {
+    const d = deps();
+    await updateDirectoryListing(
+      { ...baseInput, industry: 'Logistics', fieldVisibility: stored.fieldVisibility },
+      { ...memberMeta, actorIsPrimaryContact: false },
+      ctx,
+      d,
+    );
+    const payload = payloadOf(d);
+    expect(payload).not.toHaveProperty('contact_email_visible');
+    expect(payload).not.toHaveProperty('notice_version');
   });
 });

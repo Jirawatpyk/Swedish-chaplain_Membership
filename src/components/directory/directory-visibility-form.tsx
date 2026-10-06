@@ -199,11 +199,19 @@ export function DirectoryVisibilityForm({
     });
   }
 
+  // The primary contact is asked separately for each toggle (PDPA §19 / GDPR
+  // Art. 7(2)): the name is shown by default under legitimate interest and the
+  // notice states the right to object (Art. 21(4)); the email needs consent.
+  // Bump DIRECTORY_CONTACT_NOTICE_VERSION whenever these texts change.
+  const primaryNotice: Record<ContactField, string> = {
+    contact_name: t('contactNameHintPrimary'),
+    contact_email: t('contactEmailConsent'),
+  };
   const contactHint =
     identity.primaryContact === null
       ? t('contactHintNoPrimary')
       : contact.viewerIsPrimary
-        ? t('contactHintPrimary')
+        ? null
         : t('contactHintColleague', { name: identity.primaryContact.name });
 
   // Spec 122 US3 (`Portal-directory`): the Logo card, then one "Listing" card
@@ -243,22 +251,31 @@ export function DirectoryVisibilityForm({
                       : f === 'contact_name'
                         ? t('contactNameLabel', { name: identity.primaryContact.name })
                         : t('contactEmailLabel', { email: identity.primaryContact.email });
+                  const noticeId = `dir-contact-notice-${f}`;
                   return (
-                    <Checkbox
-                      key={f}
-                      checked={vis[f]}
-                      disabled={!canChooseContact}
-                      aria-describedby="dir-contact-hint"
-                      onChange={(c) => setVis((prev) => ({ ...prev, [f]: c }))}
-                    >
-                      {label}
-                    </Checkbox>
+                    <div key={f} className="flex flex-col gap-1">
+                      <Checkbox
+                        checked={vis[f]}
+                        disabled={!canChooseContact}
+                        aria-describedby={canChooseContact ? noticeId : 'dir-contact-hint'}
+                        onChange={(c) => setVis((prev) => ({ ...prev, [f]: c }))}
+                      >
+                        {label}
+                      </Checkbox>
+                      {canChooseContact ? (
+                        <p id={noticeId} className="text-xs text-[var(--aura-fg-secondary)]">
+                          {primaryNotice[f]}
+                        </p>
+                      ) : null}
+                    </div>
                   );
                 })}
               </div>
-              <p id="dir-contact-hint" className="text-xs text-[var(--aura-fg-secondary)]">
-                {contactHint}
-              </p>
+              {contactHint !== null ? (
+                <p id="dir-contact-hint" className="text-xs text-[var(--aura-fg-secondary)]">
+                  {contactHint}
+                </p>
+              ) : null}
             </fieldset>
 
             <fieldset className="m-0 flex min-w-0 flex-col border-0 p-0">

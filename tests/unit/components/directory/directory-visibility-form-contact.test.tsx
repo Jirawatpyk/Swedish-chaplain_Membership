@@ -79,6 +79,33 @@ function checkbox(label: string): HTMLInputElement {
 const stored = { name: true, industry: true, contact_name: true, contact_email: false };
 
 describe('DirectoryVisibilityForm — contact toggles', () => {
+  /** The text of every element an input's aria-describedby points at. */
+  function descriptionOf(el: HTMLElement): string {
+    return (el.getAttribute('aria-describedby') ?? '')
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((id) => document.getElementById(id)?.textContent ?? '')
+      .join(' ');
+  }
+
+  // PDPA §19 / GDPR Art. 7(2) — the email consent is asked on its own, and the
+  // right to object to the default-on name is stated (Art. 21(4)).
+  it('asks the primary for the email consent separately from the name notice', () => {
+    renderForm({ viewerIsPrimary: true, chosenByPrimary: true, hasListing: true }, stored);
+    const nameNotice = descriptionOf(checkbox(nameLabel));
+    const emailNotice = descriptionOf(checkbox(emailLabel));
+    expect(nameNotice).toContain(en.directorySettings.contactNameHintPrimary);
+    expect(nameNotice).not.toContain(en.directorySettings.contactEmailConsent);
+    expect(emailNotice).toContain(en.directorySettings.contactEmailConsent);
+    expect(emailNotice).not.toContain(en.directorySettings.contactNameHintPrimary);
+  });
+
+  it('shows a colleague neither the consent request nor the objection notice', () => {
+    renderForm({ viewerIsPrimary: false, chosenByPrimary: true, hasListing: true }, stored);
+    expect(screen.queryByText(en.directorySettings.contactEmailConsent)).toBeNull();
+    expect(screen.queryByText(en.directorySettings.contactNameHintPrimary)).toBeNull();
+  });
+
   it("names the primary contact on both toggles", () => {
     renderForm({ viewerIsPrimary: true, chosenByPrimary: true, hasListing: true }, stored);
     expect(checkbox(nameLabel)).toBeTruthy();
