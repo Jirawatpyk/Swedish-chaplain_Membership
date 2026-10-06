@@ -8,7 +8,7 @@
  * real-browser dialog open + reason-gating + the manager-403 boundary.
  *
  * Coverage:
- *   1. admin sees the Erase PII trigger on a non-pseudonymised row, opens the
+ *   1. super admin (`events.erasure`) sees the erase action on a non-pseudonymised row, opens the
  *      dialog, and Confirm stays disabled until a reason is entered (the
  *      FR-032a mandatory-reason gate). The destructive submit is NOT exercised
  *      — a real erase hard-deletes the registration + credits quota back
@@ -17,6 +17,8 @@
  *   2. a pseudonymised row exposes NO erase trigger (the erase page
  *      redirects an already-purged row away + re-erase is a no-op).
  *   3. manager (read-only, FR-035) sees NO erase trigger — no Actions column.
+ *   3b. a plain admin (relink, no `events.erasure`) sees Relink but NO erase
+ *       menu: both erase routes would refuse them.
  *   4. FR-035 — manager POST to the erase route → 403 (adminOnlyWriterGuard).
  *
  * Gated on E2E_ADMIN_EMAIL + E2E_ADMIN_PASSWORD. Run with:
@@ -24,7 +26,7 @@
  * (workers=1 mandatory per CLAUDE.md memory feedback_e2e_workers.)
  */
 import { expect, test } from './fixtures';
-import { signInAsAdmin } from './helpers/admin-session';
+import { signInAsAdmin, signInAsSuperAdmin } from './helpers/admin-session';
 import { signInAsManager } from './helpers/manager-session';
 import {
   seedF6RelinkFixture,
@@ -36,6 +38,8 @@ const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
 const MANAGER_EMAIL = process.env.E2E_MANAGER_EMAIL;
 const MANAGER_PASSWORD = process.env.E2E_MANAGER_PASSWORD;
+const SUPER_ADMIN_EMAIL = process.env.E2E_SUPER_ADMIN_EMAIL;
+const SUPER_ADMIN_PASSWORD = process.env.E2E_SUPER_ADMIN_PASSWORD;
 
 const erase = en.admin.events.detail.erase;
 const attendees = en.admin.events.detail.attendees;
@@ -59,14 +63,18 @@ test.describe('@e2e DV-6 F6 erase-attendee-PII row action', () => {
     }
   });
 
-  test('admin: the row menu offers Erase personal data on a live row + Confirm gated on a reason (no submit)', async ({
+  test('super admin: the row menu offers Erase personal data on a live row + Confirm gated on a reason (no submit)', async ({
     page,
   }) => {
+    if (!SUPER_ADMIN_EMAIL || !SUPER_ADMIN_PASSWORD) {
+      test.skip(true, 'Set E2E_SUPER_ADMIN_EMAIL + E2E_SUPER_ADMIN_PASSWORD');
+      return;
+    }
     if (!fixture) {
       test.skip(true, 'fixture not seeded');
       return;
     }
-    await signInAsAdmin(page);
+    await signInAsSuperAdmin(page);
     await page.goto(`/admin/events/${fixture.eventId}`);
     await page.waitForLoadState('networkidle');
 
@@ -88,6 +96,19 @@ test.describe('@e2e DV-6 F6 erase-attendee-PII row action', () => {
       .fill('E2E — attendee DSAR erasure request');
     await expect(confirm).toBeEnabled();
     // NOT clicked — a real erase hard-deletes the row (irreversible).
+  });
+
+  test('plain admin (no events.erasure) sees Relink but NO erase menu', async ({ page }) => {
+    if (!fixture) {
+      test.skip(true, 'fixture not seeded');
+      return;
+    }
+    await signInAsAdmin(page);
+    await page.goto(`/admin/events/${fixture.eventId}`);
+    await page.waitForLoadState('networkidle');
+
+    await expect(page.getByTestId(`relink-button-${fixture.nonMemberRegistrationId}`)).toBeVisible();
+    await expect(page.getByTestId(`attendee-more-${fixture.nonMemberRegistrationId}`)).toHaveCount(0);
   });
 
   test('a pseudonymised row exposes NO row menu (no erase action)', async ({ page }) => {
