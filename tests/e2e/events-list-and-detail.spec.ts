@@ -56,8 +56,9 @@ test.describe('F6 events list and detail — US2 AS1-AS5 @workers=1', () => {
     // pins the detail-header phrasing.
 
     // Table columns per AS1: Date, Name, Category, Registrations,
-    // Partner Benefit, Match Rate
-    const table = page.getByRole('table');
+    // Partner Benefit, Match Rate. Spec 122 US9a: the list is AURA's
+    // DataTable, an ARIA grid (rows and cells are role="row"/"gridcell").
+    const table = page.getByRole('grid');
     await expect(table).toBeVisible();
     await expect(
       table.getByRole('columnheader', { name: /date/i }),
@@ -88,7 +89,7 @@ test.describe('F6 events list and detail — US2 AS1-AS5 @workers=1', () => {
     // Click first event row link → detail page. If no events seeded
     // this test will fail with a clear "no events to click" message
     // — that's the RED signal until seed data lands.
-    const firstRowLink = page.getByRole('table').getByRole('link').first();
+    const firstRowLink = page.getByRole('grid').getByRole('link').first();
     await expect(firstRowLink).toBeVisible();
     await firstRowLink.click();
 
@@ -104,11 +105,9 @@ test.describe('F6 events list and detail — US2 AS1-AS5 @workers=1', () => {
       page.getByText(/\d+(?:\.\d+)?%\s*\(\d+\s+of\s+\d+\)/),
     ).toBeVisible();
 
-    // Attendee table is the second table on the page (first is the
-    // detail-header summary or there's only one — fall back to role).
-    const attendeeTable = page
-      .getByRole('table', { name: /attendees/i })
-      .or(page.getByRole('table').last());
+    // The attendee table is AURA's DataTable (an ARIA grid) named by its
+    // caption ("Event attendees with match status, …").
+    const attendeeTable = page.getByRole('grid', { name: /attendees/i });
     await expect(attendeeTable).toBeVisible();
   });
 
@@ -117,7 +116,7 @@ test.describe('F6 events list and detail — US2 AS1-AS5 @workers=1', () => {
   }) => {
     await page.goto('/admin/events');
     await page.waitForLoadState('domcontentloaded');
-    const firstRowLink = page.getByRole('table').getByRole('link').first();
+    const firstRowLink = page.getByRole('grid').getByRole('link').first();
     await firstRowLink.click();
     await page.waitForURL(/\/admin\/events\/[^/]+$/);
 
@@ -135,7 +134,7 @@ test.describe('F6 events list and detail — US2 AS1-AS5 @workers=1', () => {
   }) => {
     await page.goto('/admin/events');
     await page.waitForLoadState('domcontentloaded');
-    const firstRowLink = page.getByRole('table').getByRole('link').first();
+    const firstRowLink = page.getByRole('grid').getByRole('link').first();
     await firstRowLink.click();
     await page.waitForURL(/\/admin\/events\/[^/]+$/);
 
@@ -158,7 +157,7 @@ test.describe('F6 events list and detail — US2 AS1-AS5 @workers=1', () => {
   }, testInfo) => {
     await page.goto('/admin/events');
     await page.waitForLoadState('domcontentloaded');
-    const firstRowLink = page.getByRole('table').getByRole('link').first();
+    const firstRowLink = page.getByRole('grid').getByRole('link').first();
     if (!(await firstRowLink.isVisible().catch(() => false))) {
       // T-MED-2: emit a CI-visible annotation so the silent-skip is
       // surfaced in Playwright traces. Otherwise a staging-data drift
@@ -211,7 +210,7 @@ test.describe('F6 events list and detail — US2 AS1-AS5 @workers=1', () => {
     // Either the table has rows OR the empty state is shown. If
     // empty, one of the 3 variants must be present.
     const tableHasRows = await page
-      .getByRole('table')
+      .getByRole('grid')
       .getByRole('row')
       .nth(1)
       .isVisible()

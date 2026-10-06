@@ -139,7 +139,7 @@ test.describe('@a11y @e2e F6 US6 manual relink', () => {
     await page.waitForLoadState('networkidle');
     const updatedRow = page
       .getByTestId(`relink-button-${fixture.nonMemberRegistrationId}`)
-      .locator('xpath=ancestor::tr');
+      .locator('xpath=ancestor::*[@role="row"][1]');
     await expect(updatedRow).toContainText(/verified contact/i);
 
     // Round-1 test-M8 — the document was never replaced AND the URL is
@@ -210,7 +210,7 @@ test.describe('@a11y @e2e F6 US6 manual relink', () => {
     await page.waitForLoadState('networkidle');
     const updatedRow = page
       .getByTestId(`relink-button-${fixture.countedRegistrationId}`)
-      .locator('xpath=ancestor::tr');
+      .locator('xpath=ancestor::*[@role="row"][1]');
     await expect(updatedRow).toContainText(/verified contact/i);
   });
 
