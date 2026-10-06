@@ -81,7 +81,7 @@ describe('relink dialog (AURA Dialog + Combobox)', () => {
     fireEvent.click(screen.getByTestId(`relink-button-${REG}`));
     screen.getByRole('dialog', { name: r.dialogTitle.replace('{attendee}', 'Ploy Rattanakul') });
     expect(document.querySelector('.aura-dialog')).not.toBeNull();
-    expect(screen.getByRole('combobox', { name: r.searchSrLabel }).closest('.aura-combobox')).not.toBeNull();
+    expect(screen.getByRole('combobox', { name: r.searchSrLabel }).closest('.aura-combo')).not.toBeNull();
   });
 
   it('searches the same endpoint, hides the current match, and posts the same body on a pick', async () => {
