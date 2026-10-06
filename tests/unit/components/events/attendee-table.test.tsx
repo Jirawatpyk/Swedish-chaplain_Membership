@@ -64,6 +64,7 @@ function renderTable(props: Partial<Parameters<typeof AttendeeTable>[0]> = {}) {
         initialSearch=""
         eventId={EVENT_ID}
         canRelink
+        totalCount={1}
         {...props}
       />
     </NextIntlClientProvider>,
@@ -121,10 +122,10 @@ describe('attendee filters (AURA FilterBar)', () => {
     expect(nav.replace).toHaveBeenLastCalledWith('/admin/events/e1', { scroll: false });
   });
 
-  it('shows the count as the bar\'s polite live region', () => {
-    renderTable({ rows: [row(), row({ registrationId: 'reg-2' as AttendeeRow['registrationId'] })] });
+  it('shows the count of every match across pages as the bar\'s polite live region (UX review)', () => {
+    renderTable({ rows: [row(), row({ registrationId: 'reg-2' as AttendeeRow['registrationId'] })], totalCount: 148 });
     const live = document.querySelector('[aria-live="polite"]');
-    expect(live).toHaveTextContent('2 attendees');
+    expect(live).toHaveTextContent('148 attendees');
   });
 });
 

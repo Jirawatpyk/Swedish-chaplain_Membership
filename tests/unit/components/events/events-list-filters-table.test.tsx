@@ -80,6 +80,13 @@ describe('events list filters (AURA FilterBar)', () => {
     expect(nav.replace).toHaveBeenLastCalledWith('/admin/events', { scroll: false });
   });
 
+  it('clears a URL-only category filter too, offering Clear filters when it is the only one (UX review)', () => {
+    nav.search.current = new URLSearchParams('categoryFilter=Gala&pageSize=25');
+    renderFilters();
+    fireEvent.click(screen.getByRole('button', { name: l.filters.clearAll }));
+    expect(nav.replace).toHaveBeenLastCalledWith('/admin/events?pageSize=25', { scroll: false });
+  });
+
   it('announces the count with the search in the bar\'s own live region', () => {
     const { container } = renderFilters({ search: 'midsummer', resultCount: 5 });
     const live = container.querySelector('[aria-live="polite"]');

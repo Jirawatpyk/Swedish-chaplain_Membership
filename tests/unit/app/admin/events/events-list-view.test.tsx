@@ -16,12 +16,17 @@ import type { ReactElement } from 'react';
 import { NextIntlClientProvider, createTranslator } from 'next-intl';
 import en from '@/i18n/messages/en.json';
 
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
+  usePathname: () => '/admin/events',
+  useSearchParams: () => new URLSearchParams(),
+}));
 vi.mock('next-intl/server', () => ({
   getTranslations: async (namespace: string) =>
     createTranslator({ locale: 'en', messages: en, namespace: namespace as never }),
 }));
 
-const { renderEventsListView } = await import('@/app/(staff)/admin/events/_components/events-list-view');
+const { renderEventsListView, renderEventsListBody } = await import('@/app/(staff)/admin/events/_components/events-list-view');
 const { EventsEmptyState } = await import('@/app/(staff)/admin/events/_components/events-empty-state');
 
 const l = en.admin.events.list;
@@ -100,5 +105,40 @@ describe('events empty states on the shared AURA EmptyState', () => {
   it('does not add a second live region beside the filter bar\'s count', () => {
     renderEmpty({ emptyContext: ctx, hasFilters: false, canManageIntegration: true });
     expect(screen.getByText(l.emptyState.noIntegration.title).closest('[role="status"]')).toBeNull();
+  });
+});
+
+describe('events list body', () => {
+  it('counts every match across pages, not just this page (UX review)', async () => {
+    const row = {
+      eventId: 'e-1' as never,
+      name: 'Midsummer Mixer',
+      startDate: '2026-06-19T10:00:00.000Z',
+      category: 'Networking',
+      totalRegistrations: 42,
+      matchedRegistrations: 35,
+      matchRatePct: 83.33,
+      isPartnerBenefit: false,
+      isCulturalEvent: false,
+      archivedAt: null,
+    };
+    const ui = (await renderEventsListBody({
+      kind: 'list',
+      items: [row],
+      pagination: { page: 1, pageSize: 25, totalCount: 38 },
+      emptyStateContext: { integrationConfigured: true, everReceivedDelivery: true, totalArchived: 0 },
+      hasFilters: false,
+      canManageIntegration: true,
+      search: '',
+      partnerBenefitOnly: false,
+      culturalEventOnly: false,
+      includeArchived: false,
+    })) as ReactElement;
+    const { container } = render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        {ui}
+      </NextIntlClientProvider>,
+    );
+    expect(container.querySelector('[aria-live="polite"]')).toHaveTextContent('38 events');
   });
 });
