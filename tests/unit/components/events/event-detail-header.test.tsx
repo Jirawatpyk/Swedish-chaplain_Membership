@@ -64,6 +64,8 @@ describe('event detail summary card (board Admin-event-detail)', () => {
     expect(within(card).getByText('148')).toBeInTheDocument();
     const link = within(card).getByRole('link', { name: new RegExp(d.header.viewOnEventCreate) });
     expect(link).toHaveAttribute('target', '_blank');
+    // The same 44px touch height as the card's action buttons (parity comment).
+    expect(link).toHaveClass('aura-btn--touch');
     expect(within(card).getByRole('button', { name: 'act' })).toBeInTheDocument();
     expect(card.querySelector('[data-slot="card"]')).toBeNull();
   });

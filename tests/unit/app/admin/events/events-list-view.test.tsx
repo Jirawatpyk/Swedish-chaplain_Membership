@@ -52,6 +52,12 @@ describe('events list frame (board Admin-events)', () => {
     expect(container.querySelector('[data-slot="card"]')).toBeNull();
   });
 
+  it('gives the header links the 44px touch height, as the chips and the More menu have (parity comment)', async () => {
+    await renderView({ canImport: true, canEraseByEmail: true });
+    expect(screen.getByRole('link', { name: l.importCsvCta })).toHaveClass('aura-btn--touch');
+    expect(screen.getAllByRole('link', { name: en.admin.events.erasure.discoverabilityCta })[0]).toHaveClass('aura-btn--touch');
+  });
+
   it('offers "Erase by email" from a "More actions" menu on a phone (board Admin-events-mobile)', async () => {
     await renderView({ canImport: true, canEraseByEmail: true });
     fireEvent.click(screen.getByRole('button', { name: l.moreActions }));
@@ -100,6 +106,11 @@ describe('events empty states on the shared AURA EmptyState', () => {
     renderEmpty({ emptyContext: { ...ctx, integrationConfigured: true, everReceivedDelivery: true }, hasFilters: true, canManageIntegration: true });
     const box = screen.getByText(l.emptyState.filteredEmpty).closest('.aura-empty') as HTMLElement;
     expect(within(box).getByRole('link', { name: l.emptyState.clearFilters })).toHaveAttribute('href', '/admin/events');
+  });
+
+  it('gives every empty-state link the 44px touch height (parity comment)', () => {
+    renderEmpty({ emptyContext: { ...ctx, integrationConfigured: true }, hasFilters: false, canManageIntegration: true });
+    for (const link of screen.getAllByRole('link')) expect(link).toHaveClass('aura-btn--touch');
   });
 
   it('does not add a second live region beside the filter bar\'s count', () => {
