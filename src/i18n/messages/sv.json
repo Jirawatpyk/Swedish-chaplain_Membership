@@ -5346,7 +5346,7 @@
           "searchPlaceholder": "Sök på e-post eller namn…",
           "searchLabel": "Sök deltagare",
           "showUnmatchedOnly": "Visa endast omatchade",
-          "showUnmatchedOnlyShort": "Ej matchade",
+          "showUnmatchedOnlyShort": "Omatchade",
           "paymentStatusFilter": "Betalningsstatus",
           "allShort": "Alla",
           "filterChip": "{label}: {value}",
