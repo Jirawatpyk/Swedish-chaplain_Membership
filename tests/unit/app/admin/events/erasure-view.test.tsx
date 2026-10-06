@@ -69,11 +69,13 @@ describe('erasure view (board Admin-events-erasure)', () => {
       'href',
       '/admin/events/00000000-0000-4000-8000-000000000001',
     );
-    // R37: the title link needs a tap area at every width (WCAG 2.5.8), not
-    // only below 640px; ::after grows it without moving the title.
+    // R37/R37b: the title link's OWN box is at least 24px tall at every width
+    // (WCAG 2.5.8): axe sizes a target from the element's client rect, so a
+    // ::after tap area alone does not count. Phones add ::after up to 44px.
     const titleLink = within(first!).getByRole('link', { name: 'SweCham Crayfish Party 2026' });
-    expect(titleLink.className).toMatch(/(^|\s)inline-block(\s|$)/);
-    expect(titleLink.className).toMatch(/(^|\s)after:absolute(\s|$)/);
+    expect(titleLink.className).toMatch(/(^|\s)min-h-6(\s|$)/);
+    expect(titleLink.className).toMatch(/(^|\s)inline-flex(\s|$)/);
+    expect(titleLink.className).toMatch(/(^|\s)max-sm:after:absolute(\s|$)/);
     expect(within(second!).getByText(er.pseudonymisedBadge)).toBeInTheDocument();
     expect(within(second!).getByText(er.unknownEvent)).toBeInTheDocument();
     expect(within(second!).queryByTestId('erase-pii-button-reg-2')).toBeNull();
