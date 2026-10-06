@@ -1832,10 +1832,10 @@ export const drizzleMemberRepo: MemberRepo = {
 
       // No fresh transition — either the member doesn't exist, or
       // they're already acked. Probe to discriminate so the caller can
-      // 404 vs return idempotent-ok. Preserve the original consent
-      // timestamp on re-ack (GDPR Art. 7 demonstrable consent — the
-      // first acknowledgement is the legal anchor; later clicks are
-      // re-affirmations and don't reset the column).
+      // 404 vs return idempotent-ok. Preserve the original
+      // acknowledgement timestamp on re-ack (the sender's acknowledgement
+      // of the E-Blast terms — not consent; the first acknowledgement is
+      // the record, later clicks don't reset the column).
       const existsRows = await tx
         .select({ memberId: members.memberId })
         .from(members)

@@ -167,7 +167,10 @@ business categorisation, not special-category PII.
   registration is matched to a member that is itself broadcast-eligible
   (active, not erased, not halted — the member segments' predicate). Both
   the list query and the by-email lookup used by custom-list validation
-  apply it (`src/modules/events/infrastructure/drizzle-recent-event-attendees.ts`).
+  apply it (`src/modules/events/infrastructure/drizzle-recent-event-attendees.ts`),
+  and both drop an address whose PDPA consent was recorded as withdrawn
+  (`attendee_pdpa_consent_acknowledged = false`) on any registration — the
+  F7 filter `docs/compliance/dpia-template.md` already described.
   The member banner and the segment label now say E-Blasts reach member
   companies only. Revisit only together with an at-registration notice and
   an LIA that covers non-members.

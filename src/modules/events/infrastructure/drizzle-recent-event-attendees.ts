@@ -29,6 +29,11 @@
  * does. The by-email lookup applies the same rule, so a custom list
  * cannot reach a non-member attendee either.
  *
+ * Withdrawn consent: `attendee_pdpa_consent_acknowledged = false` on ANY
+ * of the address's registrations (any event, any date) removes it — a
+ * later registration with an unknown (NULL) classification does not
+ * restore it. NULL (webhook ingest, generic CSV) is not a withdrawal.
+ *
  * The 90-day window is measured against the EVENT date (`e.start_date`),
  * not the registration date — this is the "re-engage people who showed
  * up to a recent event" segment (per `docs/email-broadcast-analysis.md`),
@@ -117,6 +122,12 @@ export async function getRecentEventAttendees(
         AND m.status = 'active'
         AND m.erased_at IS NULL
         AND m.broadcasts_halted_until_admin_review = false
+        AND NOT EXISTS (
+          SELECT 1 FROM event_registrations w
+           WHERE w.tenant_id = er.tenant_id
+             AND w.attendee_email_lower = er.attendee_email_lower
+             AND w.attendee_pdpa_consent_acknowledged = false
+        )
       ORDER BY er.attendee_email_lower, e.start_date DESC, e.event_id DESC
     `)) as unknown as RecentAttendeeRow[];
     return rows.map(mapRow);
@@ -155,6 +166,12 @@ export async function getRecentEventAttendeeByEmail(
         AND m.status = 'active'
         AND m.erased_at IS NULL
         AND m.broadcasts_halted_until_admin_review = false
+        AND NOT EXISTS (
+          SELECT 1 FROM event_registrations w
+           WHERE w.tenant_id = er.tenant_id
+             AND w.attendee_email_lower = er.attendee_email_lower
+             AND w.attendee_pdpa_consent_acknowledged = false
+        )
       ORDER BY e.start_date DESC, e.event_id DESC
       LIMIT 1
     `)) as unknown as RecentAttendeeRow[];

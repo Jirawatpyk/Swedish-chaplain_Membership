@@ -304,9 +304,9 @@ export type F7AuditEventType = (typeof F7_AUDIT_EVENT_TYPES)[number];
  * All F7 events default to **5y** — F7 has NO tax-document touchpoint.
  * Member-acknowledged broadcasts terms (Q15) records the sending
  * member's acknowledgement of the E-Blast rules (not recipient consent —
- * recipients are on legitimate interest). NOTE: migration 0084's trigger
- * still promotes it to 10y on a consent rationale that no longer applies
- * (open follow-up, docs/compliance/processing-records.md). Suppression rows (`marketing_unsubscribes`) are retained
+ * recipients are on legitimate interest). Migration 0084's trigger once
+ * promoted it to 10y on a consent rationale; migration 0315 returned it to
+ * this 5y default (docs/compliance/processing-records.md). Suppression rows (`marketing_unsubscribes`) are retained
  * INDEFINITELY at the row level — that's a separate data-retention
  * policy, not an audit-log retention.
  */

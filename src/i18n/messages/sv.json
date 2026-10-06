@@ -6651,7 +6651,7 @@
           "allMembersAllContacts": "Mottagare: varje kontakt hos varje aktiv medlem – primär och sekundär – som inte har avregistrerat sig (högst {ceiling, number} per utskick).",
           "tierAllContacts": "Mottagare: varje kontakt hos varje aktiv medlem på valda nivåer som inte har avregistrerat sig (högst {ceiling, number}).",
           "custom": "Mottagare: en e-post per rad nedan. Max 100 rader. Varje adress måste matcha en medlem eller kontakt i din handelskammare.",
-          "attendees": "Mottagare: alla som deltagit i ett kammarevenemang under de senaste 90 dagarna (högst {ceiling, number}).",
+          "attendees": "Mottagare: alla från medlemsföretag som deltagit i ett kammarevenemang under de senaste 90 dagarna (högst {ceiling, number}).",
           "customCount": "{count} e-post angiven."
         },
         "recipientCount": {
