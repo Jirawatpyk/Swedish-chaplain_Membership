@@ -13,6 +13,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
+import sv from '@/i18n/messages/sv.json';
+import th from '@/i18n/messages/th.json';
 import type { EventId } from '@/modules/events';
 
 const nav = vi.hoisted(() => ({ replace: vi.fn(), search: { current: new URLSearchParams() } }));
@@ -97,6 +99,23 @@ describe('events list filters (AURA FilterBar)', () => {
       const chip = screen.getByRole('button', { name: full });
       expect(chip.querySelector('.sm\\:hidden')).toHaveTextContent(short);
       expect(chip.querySelector('.max-sm\\:hidden')).toHaveTextContent(full);
+    }
+  });
+
+  it('keeps each short phone word inside the chip\'s full name in every locale (WCAG 2.5.3)', () => {
+    for (const [locale, messages] of [['en', en], ['th', th], ['sv', sv]] as const) {
+      const f = messages.admin.events.list.filters;
+      const at = messages.admin.events.detail.attendees;
+      for (const [full, short] of [
+        [f.partnerBenefitOnly, f.partnerBenefitOnlyShort],
+        [f.culturalEventOnly, f.culturalEventOnlyShort],
+        [f.showArchived, f.showArchivedShort],
+        [at.showUnmatchedOnly, at.showUnmatchedOnlyShort],
+      ]) {
+        expect(full.toLocaleLowerCase(locale), `${locale}: "${short}" in "${full}"`).toContain(
+          short.toLocaleLowerCase(locale),
+        );
+      }
     }
   });
 
