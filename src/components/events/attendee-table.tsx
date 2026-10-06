@@ -34,15 +34,17 @@
 'use client';
 
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
-import { useTransition, useCallback, useEffect, useMemo, useRef } from 'react';
+import { useTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
-import { Copy, SearchX } from 'lucide-react';
+import { Copy, Eraser, SearchX } from 'lucide-react';
 import {
   AuraProvider,
   Button,
   DataTable,
+  DropdownMenu,
   FilterBar,
   FilterSelect,
+  IconButton,
   Tag,
   type ActiveFilter,
   type DataTableColumn,
@@ -210,6 +212,11 @@ export function AttendeeTable({
   const barRef = useRef<HTMLDivElement>(null);
   // R3-F5 — the search keeps focus in the row after a clear: the pressed
   // control unmounts once the results come back.
+  // After a successful erase the row is gone; focus lands on the search.
+  const searchInput = useCallback(
+    () => barRef.current?.querySelector<HTMLInputElement>('input[type="search"]') ?? null,
+    [],
+  );
   const focusSearch = useCallback(() => {
     queueMicrotask(() =>
       barRef.current?.querySelector<HTMLInputElement>('input[type="search"]')?.focus(),
@@ -476,29 +483,21 @@ export function AttendeeTable({
         key: 'actions',
         label: t('columns.actions'),
         ...ATTENDEE_COLUMN_LAYOUT.actions,
-        // On a phone (the card foot) Relink and Erase share the row equally.
+        // Relink stays on every row; "Erase personal data" sits in the row's
+        // "More" menu (board Admin-event-detail, spec 122 US9b-1 T923). On a
+        // phone (the card foot) Relink takes the width beside the ⋯ button.
         render: (r) => (
-          <div className="flex flex-wrap items-center justify-end gap-2 max-sm:w-full max-sm:[&>button]:flex-1">
-            <RelinkRegistrationDialog
-              registrationId={r.registrationId}
-              eventId={eventId}
-              attendeeName={r.attendeeName}
-              attendeeEmail={r.attendeeEmail}
-              currentMatchedMemberId={r.currentMatchedMemberId}
-              isPseudonymised={r.isPseudonymised}
-            />
-            {/* DV-6 — the existing per-registration erase tool (FR-032a) as a
-                row action. Hidden once pseudonymised: the erase page
-                redirects an already-purged row away + re-erase is an
-                idempotent no-op. */}
-            {!r.isPseudonymised && (
-              <ErasePiiDialog eventId={eventId} registrationId={r.registrationId} attendeeName={r.attendeeName} />
-            )}
-          </div>
+          <AttendeeRowActions
+            row={r}
+            eventId={eventId}
+            searchInput={searchInput}
+            moreLabel={t('moreActionsAria', { attendeeName: r.attendeeName })}
+            eraseLabel={t('eraseMenuItem')}
+          />
         ),
       },
     ];
-  }, [t, tMatchType, tMatchTypeTip, tQuota, tQuotaTip, tPay, locale, showActions, eventId, copyEmail]);
+  }, [t, tMatchType, tMatchTypeTip, tQuota, tQuotaTip, tPay, locale, showActions, eventId, copyEmail, searchInput]);
 
   return (
     <div className="flex flex-col gap-[var(--aura-space-4)]" aria-busy={isPending}>
@@ -515,16 +514,7 @@ export function AttendeeTable({
           {...(activeFilters.length > 0 ? { onClearAll: () => clearAllFilters(false) } : {})}
           resultCount={t('resultCount', { count: totalCount ?? rows.length })}
         >
-          {/* The board's short word on a phone; the full name stays (WCAG 2.5.3). */}
-          <Tag
-            selected={unmatchedOnly}
-            touchHeight
-            aria-label={t('showUnmatchedOnly')}
-            onClick={() => writeUrl({ unmatchedOnly: unmatchedOnly ? null : '1' })}
-          >
-            <span className="max-sm:hidden">{t('showUnmatchedOnly')}</span>
-            <span className="sm:hidden">{t('showUnmatchedOnlyShort')}</span>
-          </Tag>
+          {/* Selects first, then on/off chips: the filter order on Members and Plans. */}
           <FilterSelect
             label={t('paymentStatusFilter')}
             allLabel={t('allShort')}
@@ -535,6 +525,16 @@ export function AttendeeTable({
               ...PAYMENT_STATUSES.map((s) => ({ value: s, label: tPay(s) })),
             ]}
           />
+          {/* The board's short word on a phone; the full name stays (WCAG 2.5.3). */}
+          <Tag
+            selected={unmatchedOnly}
+            touchHeight
+            aria-label={t('showUnmatchedOnly')}
+            onClick={() => writeUrl({ unmatchedOnly: unmatchedOnly ? null : '1' })}
+          >
+            <span className="max-sm:hidden">{t('showUnmatchedOnly')}</span>
+            <span className="sm:hidden">{t('showUnmatchedOnlyShort')}</span>
+          </Tag>
           {unmatchedOnly && activeFilters.length === 0 ? (
             <Button variant="ghost" size="sm" icon="x" touchHeight onClick={() => clearAllFilters(false)}>
               {t('clearFilters')}
@@ -573,6 +573,71 @@ export function AttendeeTable({
           // Edge to edge inside the attendees card from 640px up; the pager follows.
           bleed
         />
+      )}
+    </div>
+  );
+}
+
+/**
+ * A row's actions: "Relink", then the ⋯ "More" menu holding "Erase personal
+ * data" (FR-032a). DV-6: a pseudonymised row has no erase action — the erase
+ * page redirects an already-purged row away and re-erasure is an idempotent
+ * no-op — so it gets no menu at all.
+ */
+function AttendeeRowActions({
+  row,
+  eventId,
+  searchInput,
+  moreLabel,
+  eraseLabel,
+}: {
+  readonly row: AttendeeRow;
+  readonly eventId: EventId;
+  readonly searchInput: () => HTMLElement | null;
+  readonly moreLabel: string;
+  readonly eraseLabel: string;
+}) {
+  const [eraseOpen, setEraseOpen] = useState(false);
+  const moreRef = useRef<HTMLButtonElement>(null);
+  return (
+    <div
+      data-row-actions=""
+      className="flex flex-wrap items-center justify-end gap-2 max-sm:w-full max-sm:[&>button:first-of-type]:flex-1"
+    >
+      <RelinkRegistrationDialog
+        registrationId={row.registrationId}
+        eventId={eventId}
+        attendeeName={row.attendeeName}
+        attendeeEmail={row.attendeeEmail}
+        currentMatchedMemberId={row.currentMatchedMemberId}
+        isPseudonymised={row.isPseudonymised}
+      />
+      {!row.isPseudonymised && (
+        <>
+          <DropdownMenu
+            label={moreLabel}
+            trigger={
+              <IconButton
+                ref={moreRef}
+                icon="ellipsis"
+                size="sm"
+                touchHeight
+                label={moreLabel}
+                data-testid={`attendee-more-${row.registrationId}`}
+              />
+            }
+            items={[{ label: eraseLabel, icon: <Eraser aria-hidden />, tone: 'danger', onSelect: () => setEraseOpen(true) }]}
+          />
+          <ErasePiiDialog
+            eventId={eventId}
+            registrationId={row.registrationId}
+            attendeeName={row.attendeeName}
+            open={eraseOpen}
+            onOpenChange={setEraseOpen}
+            finalFocus={moreRef}
+            successFocus={searchInput}
+          />
+        </>
       )}
     </div>
   );

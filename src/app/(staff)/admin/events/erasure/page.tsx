@@ -19,14 +19,15 @@
  *   5. renders a results table (event name + Bangkok-local CE date + match badge
  *      + quota badge + per-row `ErasePiiDialog`) plus the "Erase all N" bulk
  *      affordance. When the result set is `truncated` a banner warns the list is
- *      PARTIAL and prompts a re-run (carry-forward #3).
+ *      PARTIAL and prompts a re-run (carry-forward #3). Spec 122 US9b-1 (T925):
+ *      the body is drawn by `renderErasureBody` on AURA, shared with the
+ *      preview route.
  *
  * The `<title>` is name/email-free via the `metaTitle` key (no PII in browser
  * history / bookmarks); the `?email=` query is acceptable — it is the DSR
  * subject the admin is acting on.
  */
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { headers } from 'next/headers';
 import { z } from 'zod';
@@ -39,13 +40,7 @@ import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { runSearchAttendeesByEmail } from '@/lib/events-admin-deps';
 import { bangkokLocalDate } from '@/lib/fiscal-year';
 import { TableContainer } from '@/components/layout';
-import { PageHeader } from '@/components/layout/page-header';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { EraseByEmailPanel } from '@/components/events/erase-by-email-panel';
-import { ErasePiiDialog } from '@/components/events/erase-pii-dialog';
-import { MatchStatusBadge } from '@/components/events/match-status-badge';
-import { QuotaEffectBadge } from '@/components/events/quota-effect-badge';
+import { renderErasureBody } from './_components/erasure-view';
 
 // RFC email + ≤254 applied to the trimmed+lowered value (carry-forward #4).
 const NormalisedEmailSchema = z.string().min(1).max(254).email();
@@ -98,9 +93,6 @@ export default async function EraseByEmailPage({
   }
 
   const query = await searchParams;
-  const t = await getTranslations('admin.events.erasure');
-  const tMatch = await getTranslations('admin.events.matchType');
-  const tQuota = await getTranslations('admin.events.quotaEffect');
   const tShared = await getTranslations('shared');
 
   // carry-forward #4 — normalise, THEN RFC-validate. Invalid / empty renders the
@@ -154,146 +146,21 @@ export default async function EraseByEmailPage({
 
   return (
     <TableContainer>
-      <PageHeader title={t('pageTitle')} subtitle={t('pageHint')} />
-      <Card>
-        <CardContent className="flex flex-col gap-4">
-          <EraseByEmailPanel email={searchedEmail} matchCount={matches.length} />
-
-          {/* sr-only live region announcing the result count after a re-search. */}
-          <output
-            role="status"
-            aria-live="polite"
-            aria-atomic="true"
-            className="sr-only"
-          >
-            {/* Announce the count only on a SUCCESSFUL search — on the error
-                branch the polite count must not collide with the role=alert. */}
-            {searchedEmail && !hasError
-              ? t('resultsCount', { count: matches.length })
-              : ''}
-          </output>
-
-          {searchedEmail && truncated ? (
-            <div
-              role="alert"
-              className="rounded-md border border-amber-500/50 bg-amber-50 p-3 text-body text-amber-900 dark:bg-amber-900/20 dark:text-amber-100"
-            >
-              {t('truncatedBanner', { cap: 500 })}
-            </div>
-          ) : null}
-
-          {!searchedEmail ? (
-            <p className="py-8 text-center text-muted-foreground">
-              {t('emptyPrompt')}
-            </p>
-          ) : hasError ? (
-            <div className="py-8 text-center" role="alert">
-              <p className="text-muted-foreground">{t('errorState')}</p>
-            </div>
-          ) : matches.length === 0 ? (
-            <p className="py-8 text-center text-muted-foreground">
-              {t('noMatches')}
-            </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[40rem] text-left text-body">
-                <thead>
-                  <tr className="border-b text-caption text-muted-foreground">
-                    <th scope="col" className="px-3 py-2 font-medium">
-                      {t('columns.event')}
-                    </th>
-                    <th scope="col" className="px-3 py-2 font-medium">
-                      {t('columns.date')}
-                    </th>
-                    <th scope="col" className="px-3 py-2 font-medium">
-                      {t('columns.match')}
-                    </th>
-                    <th scope="col" className="px-3 py-2 font-medium">
-                      {t('columns.quota')}
-                    </th>
-                    <th scope="col" className="px-3 py-2 font-medium">
-                      {t('columns.actions')}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {matches.map((m) => (
-                    <tr
-                      key={m.registrationId}
-                      className="border-b last:border-b-0"
-                    >
-                      <td className="px-3 py-3">
-                        {m.eventName ? (
-                          <Link
-                            href={`/admin/events/${m.eventId}`}
-                            className="underline underline-offset-2 hover:no-underline"
-                          >
-                            {m.eventName}
-                          </Link>
-                        ) : (
-                          <span className="text-muted-foreground">
-                            {t('unknownEvent')}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-3 py-3 tabular-nums">
-                        {m.eventStartDateIso
-                          ? bangkokLocalDate(m.eventStartDateIso)
-                          : '—'}
-                      </td>
-                      <td className="px-3 py-3">
-                        <MatchStatusBadge
-                          matchType={m.matchType}
-                          label={tMatch(m.matchType)}
-                        />
-                      </td>
-                      <td className="px-3 py-3">
-                        {m.countedPartnership ? (
-                          <QuotaEffectBadge
-                            kind="partnership"
-                            label={tQuota('partnership')}
-                          />
-                        ) : m.countedCultural ? (
-                          <QuotaEffectBadge
-                            kind="cultural"
-                            label={tQuota('cultural')}
-                          />
-                        ) : (
-                          <span className="text-caption text-muted-foreground">
-                            {tQuota('none')}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-3 py-3">
-                        {m.isPseudonymised ? (
-                          <Badge variant="outline">
-                            {t('pseudonymisedBadge')}
-                          </Badge>
-                        ) : (
-                          <ErasePiiDialog
-                            eventId={m.eventId}
-                            registrationId={m.registrationId}
-                            attendeeName={m.attendeeName}
-                          />
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          <div>
-            <Link
-              href="/admin/events"
-              className="text-body underline underline-offset-2 hover:no-underline"
-            >
-              {t('backLink')}
-            </Link>
-          </div>
-        </CardContent>
-      </Card>
+      {await renderErasureBody({
+        searchedEmail,
+        status: !searchedEmail ? 'idle' : hasError ? 'error' : 'results',
+        truncated,
+        rows: matches.map((m) => ({
+          registrationId: m.registrationId,
+          eventId: m.eventId,
+          eventName: m.eventName,
+          dateLabel: m.eventStartDateIso ? bangkokLocalDate(m.eventStartDateIso) : null,
+          attendeeName: m.attendeeName,
+          matchType: m.matchType,
+          quota: m.countedPartnership ? 'partnership' : m.countedCultural ? 'cultural' : 'none',
+          isPseudonymised: m.isPseudonymised,
+        })),
+      })}
       <span className="sr-only">{tShared('loaded')}</span>
     </TableContainer>
   );

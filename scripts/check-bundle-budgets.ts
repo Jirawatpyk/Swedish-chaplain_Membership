@@ -168,6 +168,12 @@
  *   5.31.0) — budgeted for the first time on the branch build:
  *     /admin/events                                     820.4 KB measured → ≤  930 KB
  *     /admin/events/[eventId]                          1023.4 KB measured → ≤ 1130 KB
+ *   122 US9b-1 (events erasure on AURA; the erase dialog leaves the legacy kit, so
+ *   the event detail drops ~106 KB and is re-baselined down):
+ *     /admin/events/[eventId]                           917.2 KB measured → ≤ 1020 KB
+ *     /admin/events/erasure                             821.2 KB measured → ≤  930 KB
+ *     /admin/events/[eventId]/registrations/[registrationId]/erase
+ *                                                       811.8 KB measured → ≤  920 KB
  *
  * Run as a post-build step:
  *
@@ -261,7 +267,9 @@ const BUDGETS: ReadonlyArray<RouteBudget> = [
   { route: '/admin/settings/invoicing', maxKb: 930 },
   // --- Spec 122 US9a events list + detail (AURA) — see docblock ---
   { route: '/admin/events', maxKb: 930 },
-  { route: '/admin/events/[eventId]', maxKb: 1130 },
+  { route: '/admin/events/[eventId]', maxKb: 1020 },
+  { route: '/admin/events/erasure', maxKb: 930 },
+  { route: '/admin/events/[eventId]/registrations/[registrationId]/erase', maxKb: 920 },
 ];
 
 const NEXT_DIR = join(process.cwd(), '.next');

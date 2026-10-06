@@ -271,7 +271,13 @@ test.describe('PR 2.2 — by-email attendee erasure surface @a11y @i18n', () => 
       .getByLabel(new RegExp(erasure.reasonLabel, 'i'))
       .fill('E2E — by-email DSAR erasure request');
     await expect(confirm).toBeEnabled();
+    // R37c: wait for the POST itself; the dev server compiles the route on
+    // its first call (~4.5s), which ate the toast assertion's 5s budget.
+    const erased = page.waitForResponse(
+      (r) => r.url().endsWith('/api/admin/events/erasure') && r.request().method() === 'POST',
+    );
     await confirm.click();
+    expect((await erased).status()).toBe(200);
 
     // Success toast surfaces the tally.
     await expect(

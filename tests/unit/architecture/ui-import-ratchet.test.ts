@@ -528,9 +528,24 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the erasure pages keep the legacy kit until US9b', async () => {
-      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/events/erasure/page.tsx')).toEqual([]);
-      expect(await ratchetHits(legacy, 'src/components/events/erase-pii-dialog.tsx')).toEqual([]);
+  });
+  describe('the US9b-1 events erasure is on AURA (the real MIGRATED_PATHS)', () => {
+    const legacy = "import { Button } from '@/components/ui/button';\nexport const B = Button;\n";
+
+    it.each([
+      'src/app/(staff)/admin/events/erasure/page.tsx',
+      'src/app/(staff)/admin/events/erasure/loading.tsx',
+      'src/app/(staff)/admin/events/erasure/error.tsx',
+      'src/app/(staff)/admin/events/erasure/_components/erasure-view.tsx',
+      'src/app/(staff)/admin/events/[eventId]/registrations/[registrationId]/erase/page.tsx',
+      'src/app/(staff)/admin/events/[eventId]/registrations/[registrationId]/erase/loading.tsx',
+      'src/app/(staff)/admin/events/[eventId]/registrations/[registrationId]/erase/error.tsx',
+      'src/app/(staff)/admin/events/[eventId]/registrations/[registrationId]/erase/_components/erase-page-view.tsx',
+      'src/components/events/erase-pii-dialog.tsx',
+      'src/components/events/erase-by-email-panel.tsx',
+      'src/components/events/erasure-results-table.tsx',
+    ])('%s cannot import the legacy kit', async (path) => {
+      expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
   });
 });

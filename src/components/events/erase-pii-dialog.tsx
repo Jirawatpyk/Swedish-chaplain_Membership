@@ -1,48 +1,37 @@
 /**
- * Erase attendee PII dialog (F6 Phase 10 T112 / FR-032a).
+ * Erase attendee PII dialog (F6 Phase 10 T112 / FR-032a; spec 122 US9b-1
+ * T922: on AURA `Dialog role="alertdialog"`, board `Admin-event-erase`).
  *
- * Admin-only destructive action rendered inside the event-detail
- * attendee-table actions column. Hidden when the row is already
- * pseudonymised (which can never be erased — retention purge already
- * removed the PII, and re-erasure is a no-op idempotent path that
- * doesn't need a UI surface).
+ * Admin-only destructive action for one attendee. Not offered when the row
+ * is already pseudonymised (retention purge already removed the PII, and
+ * re-erasure is an idempotent no-op that needs no UI surface).
  *
- * Behaviour:
- *   - AlertDialog confirmation with the FR-032a body explaining what
- *     erasure means: PII removed permanently, quota credit-backed,
- *     audit trail retained for compliance.
- *   - Required reasonText textarea (1-500 chars) for DPO traceability.
+ * Behaviour (unchanged by the AURA swap):
+ *   - the FR-032a body explains what erasure means: PII removed
+ *     permanently, quota credited back, audit trail retained;
+ *   - a required reason (1-500 chars) for DPO traceability. No typed
+ *     phrase (spec 122 Clarifications, 2026-10-06 US9b start);
  *   - Confirm → POST /api/admin/events/{eventId}/registrations/{rid}/erase
- *     with { reasonText }.
- *   - Success → toast with quota credit-back counts + router.refresh().
- *   - 409 event_path_mismatch → error toast (likely race / stale UI).
- *   - 200 alreadyErased=true → info toast ("Already erased").
+ *     with { reasonText };
+ *   - success → toast with the quota credit-back counts + router.refresh();
+ *   - 409 event_path_mismatch → error toast (likely race / stale UI);
+ *   - 200 alreadyErased=true → info toast ("Already erased");
+ *   - the dialog cannot close while the request is in flight, and an
+ *     sr-only status line announces it.
  *
- * Mirrors `archive-event-button.tsx` for AlertDialog patterns + WCAG
- * 2.1 AA focus management (Cancel autoFocus, in-flight focus trap via
- * setOpen guard, sr-only role=status live region for SR pending cue).
+ * Opened two ways: its own "Erase PII" trigger (the erasure search page), or
+ * controlled through `open` / `onOpenChange` from the attendee row's "More"
+ * menu (T923), which passes `finalFocus` because the menu item is gone by
+ * the time the dialog closes.
  */
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useRef, useState, useTransition, type RefObject } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { Eraser, Loader2 } from 'lucide-react';
+import { Eraser } from 'lucide-react';
+import { Button, Dialog, Textarea } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
 
 interface EraseResponse {
   readonly alreadyErased: boolean;
@@ -57,7 +46,19 @@ interface ErasePiiDialogProps {
   readonly registrationId: string;
   /** Attendee name for context in the confirmation body. */
   readonly attendeeName: string;
+  /** Controlled open state (the row menu); leave out to render the trigger. */
+  readonly open?: boolean;
+  readonly onOpenChange?: (open: boolean) => void;
+  /** Where focus goes on close when the opener no longer exists. */
+  readonly finalFocus?: RefObject<HTMLElement | null>;
+  /**
+   * Where focus goes after a SUCCESSFUL erase: the row (and with it the
+   * opener) is gone once the page refreshes (WCAG 2.4.3).
+   */
+  readonly successFocus?: () => HTMLElement | null;
 }
+
+const REASON_MAX = 500;
 
 async function postErase(
   eventId: string,
@@ -92,19 +93,40 @@ export function ErasePiiDialog({
   eventId,
   registrationId,
   attendeeName,
+  open: controlledOpen,
+  onOpenChange,
+  finalFocus,
+  successFocus,
 }: ErasePiiDialogProps) {
   const t = useTranslations('admin.events.detail.erase');
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [open, setOpen] = useState(false);
+  const [ownOpen, setOwnOpen] = useState(false);
   const [reasonText, setReasonText] = useState('');
+  const succeeded = useRef(false);
 
-  const reasonValid = reasonText.trim().length > 0 && reasonText.length <= 500;
+  const controlled = controlledOpen !== undefined;
+  const open = controlled ? controlledOpen : ownOpen;
+  const setOpen = (next: boolean) => {
+    if (!controlled) setOwnOpen(next);
+    onOpenChange?.(next);
+  };
+
+  const reasonValid = reasonText.trim().length > 0 && reasonText.length <= REASON_MAX;
+
+  function close() {
+    // Never close while the POST is in flight (Cancel, Escape and the
+    // scrim all come through here).
+    if (pending) return;
+    setOpen(false);
+    setReasonText('');
+  }
 
   function handleConfirm() {
     if (!reasonValid) return;
     startTransition(async () => {
       const result = await postErase(eventId, registrationId, reasonText.trim());
+      succeeded.current = result.ok;
       setOpen(false);
       setReasonText('');
       if (result.ok) {
@@ -136,85 +158,79 @@ export function ErasePiiDialog({
     });
   }
 
-  return (
-    <AlertDialog
-      open={open}
-      onOpenChange={(next) => {
-        if (pending) return;
-        setOpen(next);
-        if (!next) {
-          setReasonText('');
-        }
-      }}
+  const hintId = `erase-reason-hint-${registrationId}`;
+  // Read at close: after a successful erase the opener's row is gone.
+  const focusOnClose = () => {
+    if (succeeded.current && successFocus) {
+      succeeded.current = false;
+      return successFocus();
+    }
+    return finalFocus?.current ?? null;
+  };
+
+  const trigger = controlled ? undefined : (
+    <Button
+      variant="danger-secondary"
+      size="sm"
+      touchHeight
+      type="button"
+      icon={<Eraser aria-hidden="true" />}
+      loading={pending}
+      aria-disabled={pending}
+      aria-label={t('triggerAriaLabel', { attendeeName })}
+      data-testid={`erase-pii-button-${registrationId}`}
     >
+      {t('triggerCta')}
+    </Button>
+  );
+
+  return (
+    <Dialog
+      role="alertdialog"
+      open={open}
+      onOpen={() => setOpen(true)}
+      onClose={close}
+      dismissible={!pending}
+      {...(trigger ? { trigger } : {})}
+      {...(finalFocus || successFocus ? { finalFocus: focusOnClose } : {})}
+      title={t('confirmTitle', { attendeeName })}
+      description={t('confirmBody', { attendeeName })}
+      footer={
+        <>
+          <Button variant="secondary" data-autofocus disabled={pending} onClick={close}>
+            {t('cancel')}
+          </Button>
+          {/* Reachable but refused until the reason is valid (AURA #102):
+              aria-disabled + the hint as its description, not native disabled. */}
+          <Button
+            variant="danger"
+            icon={<Eraser aria-hidden="true" />}
+            loading={pending}
+            aria-disabled={!reasonValid || undefined}
+            aria-describedby={reasonValid ? undefined : hintId}
+            onClick={handleConfirm}
+          >
+            {t('confirm')}
+          </Button>
+        </>
+      }
+    >
+      {/* Mounted only while the dialog is open: one status line, not one per row. */}
       <span role="status" aria-live="polite" className="sr-only">
         {pending ? t('loading') : ''}
       </span>
-      <AlertDialogTrigger
-        render={
-          <Button
-            variant="destructive-outline"
-            size="sm"
-            // Spec 122 US9a: 44px on a phone, beside the AURA Relink button in
-            // the attendee card foot (this dialog moves to AURA in US9b).
-            className="max-sm:h-11"
-            aria-disabled={pending}
-            aria-label={t('triggerAriaLabel', { attendeeName })}
-            type="button"
-            data-testid={`erase-pii-button-${registrationId}`}
-          />
-        }
-      >
-        <Eraser aria-hidden="true" data-icon="inline-start" />
-        <span>{t('triggerCta')}</span>
-        {pending && (
-          <Loader2
-            aria-hidden="true"
-            className="animate-spin motion-reduce:animate-none"
-            data-icon="inline-end"
-          />
-        )}
-      </AlertDialogTrigger>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{t('confirmTitle', { attendeeName })}</AlertDialogTitle>
-          <AlertDialogDescription>
-            {t('confirmBody', { attendeeName })}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <div className="mt-2 flex flex-col gap-2">
-          <Label htmlFor={`erase-reason-${registrationId}`}>
-            {t('reasonLabel')}
-          </Label>
-          <Textarea
-            id={`erase-reason-${registrationId}`}
-            value={reasonText}
-            onChange={(e) => setReasonText(e.target.value)}
-            placeholder={t('reasonPlaceholder')}
-            maxLength={500}
-            rows={4}
-            disabled={pending}
-            aria-invalid={!reasonValid && reasonText.length > 0}
-            aria-describedby={`erase-reason-hint-${registrationId}`}
-          />
-          <p
-            id={`erase-reason-hint-${registrationId}`}
-            className="text-caption text-muted-foreground"
-          >
-            {t('reasonHint', { remaining: 500 - reasonText.length })}
-          </p>
-        </div>
-        <AlertDialogFooter>
-          <AlertDialogCancel autoFocus>{t('cancel')}</AlertDialogCancel>
-          <AlertDialogAction
-            onClick={handleConfirm}
-            disabled={pending || !reasonValid}
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90 focus-visible:ring-destructive disabled:pointer-events-none disabled:opacity-50"
-          >
-            {t('confirm')}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+      <Textarea
+        id={`erase-reason-${registrationId}`}
+        label={t('reasonLabel')}
+        hint={<span id={hintId}>{t('reasonHint', { remaining: REASON_MAX - reasonText.length })}</span>}
+        value={reasonText}
+        onChange={(e) => setReasonText(e.target.value)}
+        placeholder={t('reasonPlaceholder')}
+        required
+        maxLength={REASON_MAX}
+        rows={4}
+        disabled={pending}
+      />
+    </Dialog>
   );
 }

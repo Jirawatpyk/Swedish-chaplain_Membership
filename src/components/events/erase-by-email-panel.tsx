@@ -9,7 +9,8 @@
  *      `.trim().toLowerCase()` client-side too (carry-forward #4) so the URL,
  *      the input echo, and the backend key all agree.
  *
- *   2. "Erase all N" — an AlertDialog (mandatory reason textarea, mirroring the
+ *   2. "Erase all N" — an AURA alertdialog (spec 122 US9b-1 T924; mandatory
+ *      reason, no typed phrase), mirroring the
  *      per-registration `ErasePiiDialog` a11y pattern) that POSTs the bulk route
  *      `/api/admin/events/erasure`, then surfaces the tally toast. Carry-forward
  *      #3: when the backend reports `truncated` OR `failedCount > 0`, the toast
@@ -25,23 +26,9 @@
 import { useRef, useState, useTransition, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { Eraser, Loader2, Search } from 'lucide-react';
+import { Eraser } from 'lucide-react';
+import { Button, Dialog, TextField, Textarea } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
 
 interface EraseByEmailResponse {
   readonly erasedCount: number;
@@ -55,6 +42,11 @@ interface EraseByEmailPanelProps {
   readonly email: string;
   /** Number of matching registrations rendered below (0 when none / empty). */
   readonly matchCount: number;
+  /**
+   * True once a search has returned (not idle, not an error): the count is
+   * announced, and shown beside "Erase all" when there is at least one match.
+   */
+  readonly showCount?: boolean;
 }
 
 const ERASE_ROUTE = '/api/admin/events/erasure';
@@ -78,7 +70,7 @@ async function postEraseAll(
   return { ok: false, status: res.status };
 }
 
-export function EraseByEmailPanel({ email, matchCount }: EraseByEmailPanelProps) {
+export function EraseByEmailPanel({ email, matchCount, showCount = false }: EraseByEmailPanelProps) {
   const t = useTranslations('admin.events.erasure');
   const router = useRouter();
   const [queryEmail, setQueryEmail] = useState(email);
@@ -86,14 +78,17 @@ export function EraseByEmailPanel({ email, matchCount }: EraseByEmailPanelProps)
   const [open, setOpen] = useState(false);
   const [reasonText, setReasonText] = useState('');
   // WCAG 2.4.3 — after a successful "Erase all", router.refresh() drops
-  // matchCount to 0 → the whole AlertDialog (trigger included) unmounts, so Base
-  // UI cannot restore focus to the trigger and focus would fall to <body>.
+  // matchCount to 0 → the whole dialog (trigger included) unmounts, so focus
+  // cannot return to the trigger and would fall to <body>.
   // finalFocus targets the ALWAYS-MOUNTED search input instead so focus lands on
   // a predictable, still-present element (F7-A11Y-1 finalFocus pattern).
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const reasonValid = reasonText.trim().length > 0 && reasonText.length <= 500;
   const canEraseAll = email.length > 0 && matchCount > 0;
+  // The board shows the count beside "Erase all". A zero count stays a
+  // screen-reader status: the quiet "No registrations found" line says it.
+  const visibleCount = showCount && matchCount > 0;
 
   function handleSearch(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -148,18 +143,25 @@ export function EraseByEmailPanel({ email, matchCount }: EraseByEmailPanelProps)
     });
   }
 
+  function close() {
+    // Never close while the POST is in flight (Cancel, Escape, the scrim).
+    if (pending) return;
+    setOpen(false);
+    setReasonText('');
+  }
+
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-[var(--aura-space-3)]">
       <form
         onSubmit={handleSearch}
         role="search"
-        className="flex flex-wrap items-end gap-3"
+        className="flex flex-wrap items-end gap-[var(--aura-space-3)]"
       >
-        <div className="flex min-w-[16rem] flex-1 flex-col gap-1.5">
-          <Label htmlFor="erase-by-email-input">{t('searchLabel')}</Label>
-          <Input
+        <div className="min-w-[16rem] flex-1">
+          <TextField
             id="erase-by-email-input"
             ref={searchInputRef}
+            label={t('searchLabel')}
             type="email"
             inputMode="email"
             autoComplete="off"
@@ -167,93 +169,87 @@ export function EraseByEmailPanel({ email, matchCount }: EraseByEmailPanelProps)
             value={queryEmail}
             onChange={(e) => setQueryEmail(e.target.value)}
             placeholder={t('searchPlaceholder')}
-            className="min-h-11"
+            touchHeight
           />
         </div>
-        <Button type="submit" variant="outline" className="min-h-11">
-          <Search aria-hidden="true" data-icon="inline-start" />
+        <Button type="submit" variant="secondary" icon="search" touchHeight className="max-sm:w-full">
           {t('searchSubmit')}
         </Button>
       </form>
 
-      {canEraseAll ? (
-        <div className="flex justify-end">
-          <AlertDialog
-            open={open}
-            onOpenChange={(next) => {
-              if (pending) return;
-              setOpen(next);
-              if (!next) setReasonText('');
-            }}
-          >
+      <div
+        className={
+          visibleCount
+            ? 'flex flex-wrap items-center justify-between gap-[var(--aura-space-3)] rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface-hover)] px-[var(--aura-space-4)] py-[var(--aura-space-2)] max-sm:flex-col max-sm:items-stretch max-sm:bg-transparent max-sm:p-0'
+            : 'contents'
+        }
+      >
+        <output role="status" aria-live="polite" aria-atomic="true" className={visibleCount ? 'aura-text-body' : 'sr-only'}>
+          {showCount ? t('resultsCount', { count: matchCount }) : ''}
+        </output>
+        {canEraseAll ? (
+          <>
             <span role="status" aria-live="polite" className="sr-only">
               {pending ? t('loading') : ''}
             </span>
-            <AlertDialogTrigger
-              render={
+            <Dialog
+              role="alertdialog"
+              open={open}
+              onOpen={() => setOpen(true)}
+              onClose={close}
+              dismissible={!pending}
+              finalFocus={searchInputRef}
+              trigger={
                 <Button
-                  variant="destructive-outline"
-                  size="sm"
-                  aria-disabled={pending}
+                  variant="danger-secondary"
+                  touchHeight
                   type="button"
-                  className="min-h-11"
+                  className="max-sm:w-full"
+                  icon={<Eraser aria-hidden="true" />}
+                  loading={pending}
+                  aria-disabled={pending}
                   data-testid="erase-all-by-email-button"
-                />
+                >
+                  {t('eraseAllCta', { count: matchCount })}
+                </Button>
+              }
+              title={t('eraseAllConfirmTitle', { count: matchCount })}
+              description={t('eraseAllConfirmBody', { count: matchCount })}
+              footer={
+                <>
+                  <Button variant="secondary" data-autofocus disabled={pending} onClick={close}>
+                    {t('cancel')}
+                  </Button>
+                  {/* Reachable but refused until the reason is valid (AURA #102). */}
+                  <Button
+                    variant="danger"
+                    icon={<Eraser aria-hidden="true" />}
+                    loading={pending}
+                    aria-disabled={!reasonValid || undefined}
+                    aria-describedby={reasonValid ? undefined : 'erase-by-email-reason-hint'}
+                    onClick={handleEraseAll}
+                  >
+                    {t('confirm')}
+                  </Button>
+                </>
               }
             >
-              <Eraser aria-hidden="true" data-icon="inline-start" />
-              <span>{t('eraseAllCta', { count: matchCount })}</span>
-              {pending && (
-                <Loader2
-                  aria-hidden="true"
-                  className="animate-spin motion-reduce:animate-none"
-                  data-icon="inline-end"
-                />
-              )}
-            </AlertDialogTrigger>
-            <AlertDialogContent finalFocus={searchInputRef}>
-              <AlertDialogHeader>
-                <AlertDialogTitle>
-                  {t('eraseAllConfirmTitle', { count: matchCount })}
-                </AlertDialogTitle>
-                <AlertDialogDescription>
-                  {t('eraseAllConfirmBody', { count: matchCount })}
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <div className="mt-2 flex flex-col gap-2">
-                <Label htmlFor="erase-by-email-reason">{t('reasonLabel')}</Label>
-                <Textarea
-                  id="erase-by-email-reason"
-                  value={reasonText}
-                  onChange={(e) => setReasonText(e.target.value)}
-                  placeholder={t('reasonPlaceholder')}
-                  maxLength={500}
-                  rows={4}
-                  disabled={pending}
-                  aria-invalid={!reasonValid && reasonText.length > 0}
-                  aria-describedby="erase-by-email-reason-hint"
-                />
-                <p
-                  id="erase-by-email-reason-hint"
-                  className="text-caption text-muted-foreground"
-                >
-                  {t('reasonHint', { remaining: 500 - reasonText.length })}
-                </p>
-              </div>
-              <AlertDialogFooter>
-                <AlertDialogCancel autoFocus>{t('cancel')}</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={handleEraseAll}
-                  disabled={pending || !reasonValid}
-                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90 focus-visible:ring-destructive disabled:pointer-events-none disabled:opacity-50"
-                >
-                  {t('confirm')}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </div>
-      ) : null}
+              <Textarea
+                id="erase-by-email-reason"
+                label={t('reasonLabel')}
+                hint={<span id="erase-by-email-reason-hint">{t('reasonHint', { remaining: 500 - reasonText.length })}</span>}
+                value={reasonText}
+                onChange={(e) => setReasonText(e.target.value)}
+                placeholder={t('reasonPlaceholder')}
+                required
+                maxLength={500}
+                rows={4}
+                disabled={pending}
+              />
+            </Dialog>
+          </>
+        ) : null}
+      </div>
     </div>
   );
 }

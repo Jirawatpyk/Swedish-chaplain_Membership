@@ -8,14 +8,14 @@
  * error boundary → generic copy, not erase-specific retry.
  *
  * Uses `DetailContainer` to match `page.tsx` + `loading.tsx` so
- * `pnpm check:layout` accepts the layout-pair contract. `role="alert"`
- * announces the error immediately to assistive tech (WCAG SC 4.1.3).
+ * `pnpm check:layout` accepts the layout-pair contract. Spec 122 US9b-1
+ * (T926): the shared AURA `RouteErrorPanel` (`role="alert"`, WCAG SC 4.1.3).
  */
 import { useEffect } from 'react';
 import { useTranslations } from 'next-intl';
-import { Button } from '@/components/ui/button';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
+import { RouteErrorPanel } from '@/components/shell/route-error-panel';
 
 export default function ErasePiiError({
   error,
@@ -33,22 +33,7 @@ export default function ErasePiiError({
   return (
     <DetailContainer>
       <PageHeader title={t('errorTitle')} />
-      <div
-        className="space-y-4 rounded-md border border-destructive/40 bg-destructive/5 p-6"
-        role="alert"
-      >
-        <div className="space-y-1">
-          <p className="text-body">{t('errorDescription')}</p>
-          {error.digest ? (
-            <p className="text-xs font-mono text-muted-foreground">
-              {error.digest}
-            </p>
-          ) : null}
-        </div>
-        <Button type="button" onClick={reset} className="min-h-11">
-          {t('tryAgain')}
-        </Button>
-      </div>
+      <RouteErrorPanel digest={error.digest} onRetry={reset} />
     </DetailContainer>
   );
 }

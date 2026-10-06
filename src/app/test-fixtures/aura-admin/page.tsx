@@ -104,8 +104,10 @@ import {
   renderEventDetailError,
   renderEventDetailView,
 } from '@/app/(staff)/admin/events/[eventId]/_components/event-detail-view';
-import { ATTENDEE_ROWS, EVENT_DETAIL, EVENT_ID, EVENT_ROWS, MEMBER_SEARCH_HITS } from './event-fixtures';
-import { MemberSearchStub } from './event-previews';
+import { ATTENDEE_ROWS, ERASURE_EMAIL, ERASURE_ROWS, EVENT_DETAIL, EVENT_ID, EVENT_ROWS, MEMBER_SEARCH_HITS } from './event-fixtures';
+import { MemberSearchStub, OpenRowEraseMenu } from './event-previews';
+import { renderErasureBody } from '@/app/(staff)/admin/events/erasure/_components/erasure-view';
+import { renderErasePageBody } from '@/app/(staff)/admin/events/[eventId]/registrations/[registrationId]/erase/_components/erase-page-view';
 import Link from 'next/link';
 import { ArrowLeftIcon } from 'lucide-react';
 import { DetailContainer } from '@/components/layout';
@@ -404,6 +406,14 @@ const LOADING_ROUTES = {
   event: {
     path: `/admin/events/${EVENT_ID}`,
     load: async () => (await import('@/app/(staff)/admin/events/[eventId]/loading')).default(),
+  },
+  erasure: {
+    path: '/admin/events/erasure',
+    load: async () => (await import('@/app/(staff)/admin/events/erasure/loading')).default(),
+  },
+  'erase-page': {
+    path: `/admin/events/${EVENT_ID}/registrations/${ATTENDEE_ROWS[2]!.registrationId}/erase`,
+    load: async () => (await import('@/app/(staff)/admin/events/[eventId]/registrations/[registrationId]/erase/loading')).default(),
   },
   'invoice-settings': {
     path: '/admin/settings/invoicing',
@@ -1432,6 +1442,15 @@ export default async function AuraAdminPreviewPage({
           canRelink: !manager && !archived,
         })
       );
+    if (dialog === 'erase') {
+      return (
+        <StaffFrame path={`/admin/events/${EVENT_ID}`}>
+          <DetailContainer>
+            <OpenRowEraseMenu>{detail}</OpenRowEraseMenu>
+          </DetailContainer>
+        </StaffFrame>
+      );
+    }
     const trigger =
       dialog === 'relink'
         ? { testId: `relink-button-${ATTENDEE_ROWS[2]!.registrationId}` }
@@ -1445,6 +1464,50 @@ export default async function AuraAdminPreviewPage({
         {dialog === 'relink' ? <MemberSearchStub hits={MEMBER_SEARCH_HITS} /> : null}
         <DetailContainer>
           {trigger ? <OpenFirstMatchingButton {...trigger}>{detail}</OpenFirstMatchingButton> : detail}
+        </DetailContainer>
+      </StaffFrame>
+    );
+  }
+
+  // 122 US9b-1 (T928) — the erase-by-email page (board Admin-events-erasure):
+  // default (results) | idle (no search yet) | empty (no matches) | truncated
+  // | error; `&dialog=erase-all` opens the "Erase all" confirmation.
+  if (view === 'erasure') {
+    const { dialog } = await searchParams;
+    const idle = state === 'idle';
+    const body = await renderErasureBody({
+      searchedEmail: idle ? '' : ERASURE_EMAIL,
+      status: idle ? 'idle' : state === 'error' ? 'error' : 'results',
+      truncated: state === 'truncated',
+      rows: state === 'empty' || state === 'error' || idle ? [] : ERASURE_ROWS,
+    });
+    return (
+      <StaffFrame path="/admin/events/erasure">
+        <TableContainer>
+          {dialog === 'erase-all' ? (
+            <OpenFirstMatchingButton testId="erase-all-by-email-button">{body}</OpenFirstMatchingButton>
+          ) : (
+            body
+          )}
+        </TableContainer>
+      </StaffFrame>
+    );
+  }
+
+  // 122 US9b-1 (T928) — the deep-link erase page (board Admin-event-erase-page);
+  // `&dialog=erase` opens its dialog.
+  if (view === 'erase-page') {
+    const { dialog } = await searchParams;
+    const row = ATTENDEE_ROWS[2]!;
+    const body = await renderErasePageBody({ eventId: EVENT_ID, registrationId: row.registrationId, attendeeName: row.attendeeName });
+    return (
+      <StaffFrame path={`/admin/events/${EVENT_ID}/registrations/${row.registrationId}/erase`}>
+        <DetailContainer>
+          {dialog === 'erase' ? (
+            <OpenFirstMatchingButton testId={`erase-pii-button-${row.registrationId}`}>{body}</OpenFirstMatchingButton>
+          ) : (
+            body
+          )}
         </DetailContainer>
       </StaffFrame>
     );

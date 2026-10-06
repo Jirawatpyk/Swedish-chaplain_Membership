@@ -403,6 +403,22 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
 - **The event-create date and time fix ships first, as its own PR, before US9b** (FR-011). The inline "create event" form converts its `datetime-local` value in the browser's time zone, while its copy promises the tenant's. US9b then puts the field on AURA `DatePicker` and `TimePicker` in Bangkok time.
 - **Unchanged:** every server read, permission check, URL parameter, request body, toast and audit event on these pages, and the erase and payment-status guards in the attendee table.
 
+### Session 2026-10-06 (maintainer, US9b start)
+
+- **US9b ships as two PRs.** US9b-1 is erasure (`Admin-event-erase`, `-erase-page`, `Admin-events-erasure`, `-erasure-confirm`). US9b-2 is the CSV import (`Admin-events-import`, `-import-result`, `-import-history`), with the inline create on `DatePicker` + `TimePicker`.
+- **No typed "ERASE" phrase.** Both erase dialogs are gated today by a required reason (1–500 characters). Adding a phrase would change behaviour inside a UI-swap PR (FR-011), so the dialogs keep the reason gate. If a phrase is wanted, it ships as its own PR.
+- **The attendee row's "More" menu lands with US9b-1.** It holds "Erase personal data" as on `Admin-event-detail`; "Relink" stays on every row.
+- **One name for the action in English:** the erase trigger and its confirm read "Erase personal data" (was "Erase PII"), matching the new menu item and the TH/SV copy, which already said "personal data" (UX review).
+- **Parity pass on the erasure screens (6 Oct, maintainer asked Claude to decide; board wins on content, structure and icons):**
+  - the result count shows beside "Erase all" in a tinted band, as the board draws it; a zero count stays a screen-reader status, because the quiet "No registrations found" line already says it. The board's "· 1 already erased" is not drawn: the email search never returns an erased row (its email is a salted hash).
+  - "Back to events" and "Back to event detail" are accent links with a left arrow, shown from `lg`; below it the shell's back link does the same (the US8b void page pattern).
+  - on phones, Search and "Erase all" fill the width.
+  - the reason field in both erase dialogs is marked required (the gate is unchanged).
+  - the deep-link erase page has no card: the hint is the page subtitle and the two actions sit under it. A card frames a group of content; here there is one sentence and two actions, and the void page puts its description in the subtitle the same way.
+- **Kept as found, not fixed here (pre-existing):**
+  - the deep-link erase page's hint says the dialog opens automatically, but it does not;
+  - the erase action shows to staff who can relink, while both erase routes need the super-admin `events.erasure` permission, so a plain admin's submit is refused. This is a follow-up, not part of the UI swap.
+
 ## User Scenarios & Testing *(mandatory)*
 
 Every story below is one phase and one pull request. A story is done when its screens use only AURA components, match their canvas boards, and pass the per-module definition of done (FR-010).

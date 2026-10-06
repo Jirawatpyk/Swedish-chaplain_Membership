@@ -38,6 +38,7 @@ const MANAGER_EMAIL = process.env.E2E_MANAGER_EMAIL;
 const MANAGER_PASSWORD = process.env.E2E_MANAGER_PASSWORD;
 
 const erase = en.admin.events.detail.erase;
+const attendees = en.admin.events.detail.attendees;
 
 test.describe.configure({ timeout: 120_000 });
 
@@ -58,7 +59,7 @@ test.describe('@e2e DV-6 F6 erase-attendee-PII row action', () => {
     }
   });
 
-  test('admin: Erase PII trigger shows on a live row + Confirm gated on a reason (no submit)', async ({
+  test('admin: the row menu offers Erase personal data on a live row + Confirm gated on a reason (no submit)', async ({
     page,
   }) => {
     if (!fixture) {
@@ -69,11 +70,11 @@ test.describe('@e2e DV-6 F6 erase-attendee-PII row action', () => {
     await page.goto(`/admin/events/${fixture.eventId}`);
     await page.waitForLoadState('networkidle');
 
-    const trigger = page.getByTestId(
-      `erase-pii-button-${fixture.nonMemberRegistrationId}`,
-    );
-    await expect(trigger).toBeVisible();
-    await trigger.click();
+    // Spec 122 US9b-1: "Erase personal data" lives in the row's ⋯ menu.
+    const more = page.getByTestId(`attendee-more-${fixture.nonMemberRegistrationId}`);
+    await expect(more).toBeVisible();
+    await more.click();
+    await page.getByRole('menuitem', { name: attendees.eraseMenuItem }).click();
 
     const dialog = page.getByRole('alertdialog');
     await expect(dialog).toBeVisible();
@@ -89,7 +90,7 @@ test.describe('@e2e DV-6 F6 erase-attendee-PII row action', () => {
     // NOT clicked — a real erase hard-deletes the row (irreversible).
   });
 
-  test('a pseudonymised row exposes NO erase trigger', async ({ page }) => {
+  test('a pseudonymised row exposes NO row menu (no erase action)', async ({ page }) => {
     if (!fixture) {
       test.skip(true, 'fixture not seeded');
       return;
@@ -99,7 +100,7 @@ test.describe('@e2e DV-6 F6 erase-attendee-PII row action', () => {
     await page.waitForLoadState('networkidle');
 
     await expect(
-      page.getByTestId(`erase-pii-button-${fixture.pseudonymisedRegistrationId}`),
+      page.getByTestId(`attendee-more-${fixture.pseudonymisedRegistrationId}`),
     ).toHaveCount(0);
   });
 
@@ -119,7 +120,7 @@ test.describe('@e2e DV-6 F6 erase-attendee-PII row action', () => {
     await page.waitForLoadState('networkidle');
 
     await expect(
-      page.getByTestId(`erase-pii-button-${fixture.nonMemberRegistrationId}`),
+      page.getByTestId(`attendee-more-${fixture.nonMemberRegistrationId}`),
     ).toHaveCount(0);
   });
 
