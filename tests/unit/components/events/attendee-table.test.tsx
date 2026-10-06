@@ -64,6 +64,7 @@ function renderTable(props: Partial<Parameters<typeof AttendeeTable>[0]> = {}) {
         initialSearch=""
         eventId={EVENT_ID}
         canRelink
+        canErase
         totalCount={1}
         {...props}
       />

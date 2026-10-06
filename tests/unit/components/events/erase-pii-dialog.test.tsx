@@ -183,4 +183,14 @@ describe('erase PII dialog (AURA alertdialog)', () => {
     screen.getByRole('alertdialog', { name: e.confirmTitle.replace('{attendeeName}', NAME) });
     expect(screen.getByRole('button', { name: e.cancel })).toHaveAttribute('data-autofocus');
   });
+
+  it('says a super admin is needed when the route refuses with 403', async () => {
+    fetchMock.mockReturnValue(json({ title: 'Forbidden' }, 403));
+    const { reason, confirm } = openDialog();
+    fireEvent.change(reason, { target: { value: 'GDPR Art. 17 request' } });
+    fireEvent.click(confirm);
+    await flush();
+    expect(toastMock.error).toHaveBeenCalledWith(e.forbiddenTitle, { description: e.forbiddenDescription });
+    expect(e.forbiddenTitle).toBeTruthy();
+  });
 });

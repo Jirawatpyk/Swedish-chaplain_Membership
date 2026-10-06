@@ -3,10 +3,11 @@
  *
  * Spec 122 US9b-1 (T923): the action lives in the row's "More" menu
  * (`attendee-more-{rid}`, board `Admin-event-detail`) and opens the existing
- * <ErasePiiDialog>. The TABLE owns visibility: the menu shows only when the
- * Actions column shows (`canRelink` + `eventId`) AND the row is NOT already
- * pseudonymised (the deep-link erase page redirects an already-purged
- * registration away, and re-erasure is an idempotent no-op).
+ * <ErasePiiDialog>. The TABLE owns visibility: the menu shows only to a
+ * viewer holding `events.erasure` (`canErase`, the key both erase routes
+ * enforce) AND for a row that is NOT already pseudonymised (the deep-link
+ * erase page redirects an already-purged registration away, and re-erasure
+ * is an idempotent no-op). Relink follows `canRelink` on its own.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
@@ -49,7 +50,7 @@ function makeRow(overrides: Partial<AttendeeRow> = {}): AttendeeRow {
   };
 }
 
-function renderTable(rows: readonly AttendeeRow[], canRelink: boolean) {
+function renderTable(rows: readonly AttendeeRow[], canRelink: boolean, canErase = canRelink) {
   return render(
     <NextIntlClientProvider locale="en" messages={en as Record<string, unknown>}>
       <AttendeeTable
@@ -58,6 +59,7 @@ function renderTable(rows: readonly AttendeeRow[], canRelink: boolean) {
         initialSearch=""
         eventId={EVENT_ID}
         canRelink={canRelink}
+        canErase={canErase}
       />
     </NextIntlClientProvider>,
   );
@@ -94,5 +96,17 @@ describe('DV-6 — AttendeeTable Erase PII row action', () => {
   it('does NOT render Erase PII when canRelink is false (manager read-only — no Actions column)', () => {
     renderTable([makeRow({ registrationId: 'reg-3' as AttendeeRow['registrationId'] })], false);
     expect(screen.queryByTestId('attendee-more-reg-3')).not.toBeInTheDocument();
+  });
+
+  it('does NOT offer erase to a viewer who can relink but lacks events.erasure (the routes would refuse)', () => {
+    renderTable([makeRow({ registrationId: 'reg-4' as AttendeeRow['registrationId'] })], true, false);
+    expect(screen.getByTestId('relink-button-reg-4')).toBeInTheDocument();
+    expect(screen.queryByTestId('attendee-more-reg-4')).not.toBeInTheDocument();
+  });
+
+  it('offers erase without Relink to a viewer holding only events.erasure (e.g. an archived event)', () => {
+    renderTable([makeRow({ registrationId: 'reg-5' as AttendeeRow['registrationId'] })], false, true);
+    expect(screen.queryByTestId('relink-button-reg-5')).not.toBeInTheDocument();
+    expect(screen.getByTestId('attendee-more-reg-5')).toBeInTheDocument();
   });
 });

@@ -64,6 +64,7 @@ describe('event detail view (board Admin-event-detail)', () => {
         filters: { unmatchedOnly: false, q: null, paymentStatus: null },
         canAct: true,
         canRelink: true,
+        canErase: true,
       }),
     );
     expect(screen.getByRole('heading', { level: 1, name: EVENT.name })).toBeInTheDocument();
@@ -82,6 +83,7 @@ describe('event detail view (board Admin-event-detail)', () => {
         filters: { unmatchedOnly: false, q: null, paymentStatus: null },
         canAct: false,
         canRelink: false,
+        canErase: false,
       }),
     );
     expect(screen.queryAllByRole('heading', { level: 2, name: d.header.actionsLabel })).toHaveLength(0);
