@@ -8,7 +8,9 @@
  * - Confirm stays disabled until the trimmed reason is 1–500 characters;
  * - confirming POSTs the same body to the same route and keeps the toast
  *   branches (success with the quota counts, already erased, 409, error);
- * - the dialog cannot be dismissed while the request is in flight.
+ * - the dialog cannot be dismissed while the request is in flight;
+ * - `onErased` replaces the refresh after a successful erase, and
+ *   `defaultOpen` opens it on arrival (the deep-link erase page).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
@@ -146,5 +148,39 @@ describe('erase PII dialog (AURA alertdialog)', () => {
     expect(screen.getByRole('alertdialog')).toBeInTheDocument();
     resolve({ ok: true, status: 200, json: () => Promise.resolve({ alreadyErased: false, quotaReversals: { partnership: 0, cultural: 0 } }) } as Response);
     await flush();
+  });
+
+  it('calls onErased instead of refreshing after a successful or already-done erase', async () => {
+    const onErased = vi.fn();
+    fetchMock.mockReturnValueOnce(json({ alreadyErased: false, quotaReversals: { partnership: 0, cultural: 1 } }));
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <ErasePiiDialog eventId={EVENT} registrationId={REG} attendeeName={NAME} onErased={onErased} />
+      </NextIntlClientProvider>,
+    );
+    fireEvent.click(screen.getByTestId(`erase-pii-button-${REG}`));
+    fireEvent.change(screen.getByLabelText(new RegExp(`^${e.reasonLabel}`)), { target: { value: 'GDPR Art. 17 request' } });
+    fireEvent.click(screen.getByRole('button', { name: e.confirm }));
+    await flush();
+    expect(onErased).toHaveBeenCalledTimes(1);
+    expect(nav.refresh).not.toHaveBeenCalled();
+
+    fetchMock.mockReturnValueOnce(json({ alreadyErased: true, quotaReversals: { partnership: 0, cultural: 0 } }));
+    fireEvent.click(screen.getByTestId(`erase-pii-button-${REG}`));
+    fireEvent.change(screen.getByLabelText(new RegExp(`^${e.reasonLabel}`)), { target: { value: 'again' } });
+    fireEvent.click(screen.getByRole('button', { name: e.confirm }));
+    await flush();
+    expect(onErased).toHaveBeenCalledTimes(2);
+    expect(nav.refresh).not.toHaveBeenCalled();
+  });
+
+  it('opens on arrival with defaultOpen, Cancel focused first', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <ErasePiiDialog eventId={EVENT} registrationId={REG} attendeeName={NAME} defaultOpen />
+      </NextIntlClientProvider>,
+    );
+    screen.getByRole('alertdialog', { name: e.confirmTitle.replace('{attendeeName}', NAME) });
+    expect(screen.getByRole('button', { name: e.cancel })).toHaveAttribute('data-autofocus');
   });
 });
