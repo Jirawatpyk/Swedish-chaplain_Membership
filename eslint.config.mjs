@@ -407,6 +407,22 @@ export const MIGRATED_PATHS = [
   'src/app/(staff)/admin/settings/invoicing/**',
   'src/components/invoices/invoice-settings-form.tsx',
   'src/components/invoices/invoice-settings/**',
+  // US9a — the events list (frame, filters, table, empty states) and the event
+  // detail (summary card, flags and archive, attendees, relink dialog, badges).
+  'src/app/(staff)/admin/events/page.tsx',
+  'src/app/(staff)/admin/events/loading.tsx',
+  'src/app/(staff)/admin/events/_components/**',
+  'src/app/(staff)/admin/events/\\[eventId\\]/page.tsx',
+  'src/app/(staff)/admin/events/\\[eventId\\]/loading.tsx',
+  'src/components/events/events-list-*.{ts,tsx}',
+  'src/components/events/event-detail-header.tsx',
+  'src/components/events/event-category-toggles.tsx',
+  'src/components/events/archive-event-button.tsx',
+  'src/components/events/attendee-table.tsx',
+  'src/components/events/attendee-table-columns.ts',
+  'src/components/events/relink-registration-dialog.tsx',
+  'src/components/events/match-status-badge.tsx',
+  'src/components/events/quota-effect-badge.tsx',
 ];
 
 /**
