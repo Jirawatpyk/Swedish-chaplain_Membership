@@ -14,7 +14,8 @@ const nav = vi.hoisted(() => ({ refresh: vi.fn() }));
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: nav.refresh }),
 }));
-vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
+const toastMock = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }));
+vi.mock('@/lib/toast', () => ({ toast: toastMock }));
 
 const { EventDetailHeader } = await import('@/components/events/event-detail-header');
 const { EventCategoryToggles } = await import('@/components/events/event-category-toggles');
@@ -108,5 +109,32 @@ describe('flag and archive actions confirm in the shared AURA dialog', () => {
     wrap(<ArchiveEventButton eventId="e-1" />);
     fireEvent.click(screen.getByRole('button', { name: d.archive.archiveCta }));
     expect(screen.getByRole('alertdialog').closest('[class*="aura-dialog"]')).not.toBeNull();
+  });
+
+  // UX review (US9a): a thrown POST (offline, DNS) must not leave the confirm
+  // dialog stuck busy — Cancel, Escape and the scrim all refuse while busy.
+  it('a network failure on a flag shows the error toast and lets the dialog close', async () => {
+    fetchMock.mockRejectedValue(new TypeError('Failed to fetch'));
+    wrap(<EventCategoryToggles eventId="e-1" isPartnerBenefit={false} isCulturalEvent={false} />);
+    fireEvent.click(screen.getByRole('button', { name: d.toggles.flagPartnerBenefit }));
+    await act(async () => {
+      fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: d.toggles.confirm }));
+    });
+    expect(toastMock.error).toHaveBeenCalledWith(d.toggles.errorTitle, { description: d.toggles.errorDescription });
+    act(() => vi.runOnlyPendingTimers());
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(screen.getByRole('button', { name: d.toggles.flagPartnerBenefit })).not.toHaveAttribute('aria-busy', 'true');
+  });
+
+  it('a network failure on archive shows the error toast and lets the dialog close', async () => {
+    fetchMock.mockRejectedValue(new TypeError('Failed to fetch'));
+    wrap(<ArchiveEventButton eventId="e-1" />);
+    fireEvent.click(screen.getByRole('button', { name: d.archive.archiveCta }));
+    await act(async () => {
+      fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: d.archive.confirm }));
+    });
+    expect(toastMock.error).toHaveBeenCalledWith(d.archive.errorTitle, { description: d.archive.errorDescription });
+    act(() => vi.runOnlyPendingTimers());
+    expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 });
