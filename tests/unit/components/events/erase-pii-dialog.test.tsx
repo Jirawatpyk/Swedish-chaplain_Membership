@@ -61,7 +61,7 @@ function openDialog() {
   fireEvent.click(screen.getByTestId(`erase-pii-button-${REG}`));
   const dialog = screen.getByRole('alertdialog', { name: e.confirmTitle.replace('{attendeeName}', NAME) });
   const reason = screen.getByLabelText(e.reasonLabel) as HTMLTextAreaElement;
-  const confirm = screen.getByRole('button', { name: e.confirm, exact: true });
+  const confirm = screen.getByRole('button', { name: e.confirm });
   return { dialog, reason, confirm };
 }
 
@@ -107,7 +107,7 @@ describe('erase PII dialog (AURA alertdialog)', () => {
     fetchMock.mockReturnValueOnce(json({ title: 'event_path_mismatch' }, 409));
     fireEvent.click(screen.getByTestId(`erase-pii-button-${REG}`));
     fireEvent.change(screen.getByLabelText(e.reasonLabel), { target: { value: 'stale' } });
-    fireEvent.click(screen.getByRole('button', { name: e.confirm, exact: true }));
+    fireEvent.click(screen.getByRole('button', { name: e.confirm }));
     await flush();
     expect(toastMock.error).toHaveBeenCalledWith(e.pathMismatchTitle, { description: e.pathMismatchDescription });
   });

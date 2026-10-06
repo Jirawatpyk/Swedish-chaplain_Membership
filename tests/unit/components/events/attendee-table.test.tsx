@@ -155,7 +155,7 @@ describe('attendee table (AURA DataTable)', () => {
     const erase = screen.getByTestId('erase-pii-button-reg-1');
     expect(relink.parentElement).toBe(erase.parentElement);
     expect(relink.parentElement).toHaveClass('max-sm:[&>button]:flex-1');
-    expect(erase).toHaveClass('max-sm:h-11');
+    expect(erase).toHaveClass('aura-btn--touch');
   });
 
   it('hides the action column without relink rights (manager read-only)', () => {
