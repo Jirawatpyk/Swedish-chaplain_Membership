@@ -19,7 +19,7 @@
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { ArchiveIcon, CalendarIcon, InboxIcon, PlusIcon, SearchXIcon, SendIcon } from 'lucide-react';
-import { buttonClass } from '@jirawatpyk/aura-react';
+import { buttonClass } from '@jirawatpyk/aura-react/server';
 import { EmptyState } from '@/components/shell/empty-state';
 
 export function EventsEmptyState({
