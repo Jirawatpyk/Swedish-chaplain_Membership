@@ -25,10 +25,12 @@
 import { AxeBuilder } from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { signInAsAdmin } from './helpers/admin-session';
+import { signInAsAdmin, signInAsSuperAdmin } from './helpers/admin-session';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
+const SUPER_ADMIN_EMAIL = process.env.E2E_SUPER_ADMIN_EMAIL;
+const SUPER_ADMIN_PASSWORD = process.env.E2E_SUPER_ADMIN_PASSWORD;
 
 test.describe.configure({ timeout: 180_000 });
 
@@ -668,10 +670,16 @@ test.describe('@a11y T055 — F6 events list+detail axe-core scan', () => {
   /**
    * A8 — dedicated server-rendered PII erasure confirmation page. The
    * page renders inside `DetailContainer` + `PageHeader` + the
-   * `ErasePiiDialog` opened in dialog mode. WCAG-critical surface:
-   * destructive form + textarea + AlertDialog confirmation. Distinct
+   * `ErasePiiDialog`, which opens on arrival. WCAG-critical surface:
+   * destructive form + textarea + alertdialog confirmation. Distinct
    * from the inline dialog opened from the attendee table — that
    * surface is covered by the events-list+detail E2E.
+   *
+   * The page needs `events.erasure` (super admin): signed in as a plain
+   * admin it settles on "Page not available", and a scan at
+   * `domcontentloaded` caught the loading skeleton, so this test used to
+   * pass without ever scanning the erase page (R38). It now waits for the
+   * open dialog, so the scan covers the reason field and Confirm.
    *
    * Uses `seedF6RelinkFixture`'s non-member registration as a stable
    * navigation target.
@@ -688,12 +696,15 @@ test.describe('@a11y T055 — F6 events list+detail axe-core scan', () => {
       'E2E_DATABASE_URL or F6 seed prerequisites unset',
     );
     if (fixture === null) return;
-    await signInAsAdmin(page);
+    test.skip(
+      !SUPER_ADMIN_EMAIL || !SUPER_ADMIN_PASSWORD,
+      'Set E2E_SUPER_ADMIN_EMAIL + E2E_SUPER_ADMIN_PASSWORD',
+    );
+    await signInAsSuperAdmin(page);
     await page.goto(
       `/admin/events/${fixture.eventId}/registrations/${fixture.nonMemberRegistrationId}/erase`,
     );
-    await page.waitForLoadState('domcontentloaded');
-    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    await expect(page.getByRole('alertdialog')).toBeVisible();
     await expectNoAxeViolations(
       page,
       '/admin/events/[eventId]/registrations/[registrationId]/erase',
