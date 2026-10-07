@@ -13,7 +13,9 @@
  *     phrase (spec 122 Clarifications, 2026-10-06 US9b start);
  *   - Confirm → POST /api/admin/events/{eventId}/registrations/{rid}/erase
  *     with { reasonText };
- *   - success → toast with the quota credit-back counts + router.refresh();
+ *   - success → toast with the quota credit-back counts + router.refresh(),
+ *     or `onErased` when the caller passes one (the deep-link erase page,
+ *     whose registration no longer exists once erased);
  *   - 409 event_path_mismatch → error toast (likely race / stale UI);
  *   - 200 alreadyErased=true → info toast ("Already erased");
  *   - the dialog cannot close while the request is in flight, and an
@@ -56,6 +58,14 @@ interface ErasePiiDialogProps {
    * opener) is gone once the page refreshes (WCAG 2.4.3).
    */
   readonly successFocus?: () => HTMLElement | null;
+  /**
+   * Runs after a successful (or already-done) erase in place of
+   * `router.refresh()`. The deep-link erase page sends the admin back to the
+   * event: the erase deletes the registration, so a refresh would 404.
+   */
+  readonly onErased?: () => void;
+  /** Open on arrival (uncontrolled only): the deep-link erase page. */
+  readonly defaultOpen?: boolean;
 }
 
 const REASON_MAX = 500;
@@ -97,11 +107,13 @@ export function ErasePiiDialog({
   onOpenChange,
   finalFocus,
   successFocus,
+  onErased,
+  defaultOpen = false,
 }: ErasePiiDialogProps) {
   const t = useTranslations('admin.events.detail.erase');
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [ownOpen, setOwnOpen] = useState(false);
+  const [ownOpen, setOwnOpen] = useState(defaultOpen);
   const [reasonText, setReasonText] = useState('');
   const succeeded = useRef(false);
 
@@ -142,7 +154,8 @@ export function ErasePiiDialog({
             }),
           });
         }
-        router.refresh();
+        if (onErased) onErased();
+        else router.refresh();
       } else if (result.status === 409) {
         toast.error(t('pathMismatchTitle'), {
           description: t('pathMismatchDescription'),

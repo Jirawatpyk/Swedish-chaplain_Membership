@@ -7,8 +7,8 @@
  * `lg` (below it the shell's "← Event" does the same). The page keeps its
  * UUID, permission, not-found and already-erased redirect guards.
  */
-import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { NextIntlClientProvider, createTranslator } from 'next-intl';
 import en from '@/i18n/messages/en.json';
@@ -17,8 +17,9 @@ vi.mock('next-intl/server', () => ({
   getTranslations: async (namespace: string) =>
     createTranslator({ locale: 'en', messages: en, namespace: namespace as never }),
 }));
+const nav = vi.hoisted(() => ({ push: vi.fn(), refresh: vi.fn() }));
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
+  useRouter: () => ({ push: nav.push, replace: vi.fn(), refresh: nav.refresh }),
   usePathname: () => '/admin/events/e1/registrations/r1/erase',
   useSearchParams: () => new URLSearchParams(),
 }));
@@ -26,6 +27,11 @@ vi.mock('next/navigation', () => ({
 const { renderErasePageBody } = await import(
   '@/app/(staff)/admin/events/[eventId]/registrations/[registrationId]/erase/_components/erase-page-view'
 );
+
+vi.mock('@/lib/toast', () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.fn(), warning: vi.fn() } }));
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 const e = en.admin.events.detail.erase;
 const EVENT = '00000000-0000-4000-8000-000000000001';
@@ -46,5 +52,29 @@ describe('erase page view (board Admin-event-erase-page)', () => {
     expect(back).toHaveAttribute('href', `/admin/events/${EVENT}`);
     expect(back.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
     expect(back).toHaveClass('max-lg:hidden');
+  });
+
+  it('opens the erase dialog on arrival and sends the admin back to the event after erasing', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ alreadyErased: false, quotaReversals: { partnership: 0, cultural: 0 } }),
+        } as Response),
+      ),
+    );
+    await show(renderErasePageBody({ eventId: EVENT, registrationId: REG, attendeeName: 'Ploy Rattanakul' }));
+    screen.getByRole('alertdialog', { name: e.confirmTitle.replace('{attendeeName}', 'Ploy Rattanakul') });
+    fireEvent.change(screen.getByLabelText(new RegExp(`^${e.reasonLabel}`)), { target: { value: 'PDPA s.33 request' } });
+    fireEvent.click(screen.getByRole('button', { name: e.confirm }));
+    for (let i = 0; i < 5; i += 1) {
+      await act(async () => {
+        await Promise.resolve();
+      });
+    }
+    expect(nav.push).toHaveBeenCalledWith(`/admin/events/${EVENT}`);
+    expect(nav.refresh).not.toHaveBeenCalled();
   });
 });

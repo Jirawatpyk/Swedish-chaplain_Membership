@@ -64,6 +64,7 @@ function renderTable(props: Partial<Parameters<typeof AttendeeTable>[0]> = {}) {
         initialSearch=""
         eventId={EVENT_ID}
         canRelink
+        canErase
         totalCount={1}
         {...props}
       />
@@ -167,8 +168,8 @@ describe('attendee table (AURA DataTable)', () => {
     screen.getByRole('alertdialog', { name: en.admin.events.detail.erase.confirmTitle.replace('{attendeeName}', 'Erik Johansson') });
   });
 
-  it('hides the action column without relink rights (manager read-only)', () => {
-    renderTable({ canRelink: false });
+  it('hides the action column without relink or erase rights (manager read-only)', () => {
+    renderTable({ canRelink: false, canErase: false });
     expect(screen.queryByRole('columnheader', { name: a.columns.actions })).toBeNull();
   });
 

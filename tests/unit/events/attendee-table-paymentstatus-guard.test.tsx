@@ -135,6 +135,7 @@ function renderTable(searchParams: URLSearchParams) {
         initialSearch=""
         eventId={asEventId('00000000-0000-4000-8000-000000000001')}
         canRelink={false}
+        canErase={false}
       />
     </NextIntlClientProvider>,
   );
@@ -221,6 +222,7 @@ describe('R4-T1 — AttendeeTable R3-F1 paymentStatus URL guard', () => {
             initialSearch=""
             eventId={asEventId('00000000-0000-4000-8000-000000000001')}
             canRelink={false}
+        canErase={false}
           />
         </NextIntlClientProvider>,
       );

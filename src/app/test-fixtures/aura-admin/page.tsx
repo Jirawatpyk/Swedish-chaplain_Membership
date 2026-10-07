@@ -1440,6 +1440,7 @@ export default async function AuraAdminPreviewPage({
           filters: { unmatchedOnly: false, q: null, paymentStatus: null },
           canAct: !manager && !archived,
           canRelink: !manager && !archived,
+          canErase: !manager,
         })
       );
     if (dialog === 'erase') {

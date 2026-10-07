@@ -415,9 +415,9 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - on phones, Search and "Erase all" fill the width.
   - the reason field in both erase dialogs is marked required (the gate is unchanged).
   - the deep-link erase page has no card: the hint is the page subtitle and the two actions sit under it. A card frames a group of content; here there is one sentence and two actions, and the void page puts its description in the subtitle the same way.
-- **Kept as found, not fixed here (pre-existing):**
-  - the deep-link erase page's hint says the dialog opens automatically, but it does not;
-  - the erase action shows to staff who can relink, while both erase routes need the super-admin `events.erasure` permission, so a plain admin's submit is refused. This is a follow-up, not part of the UI swap.
+- **Kept as found in US9b-1, fixed in the follow-up PR right after it (logic changes, FR-011):**
+  - the deep-link erase page's hint says the dialog opens automatically, but it does not. Fixed: the dialog opens on arrival, and a successful erase sends the admin back to the event (the erase deletes the registration, so the old refresh landed on a 404);
+  - the erase action shows to staff who can relink, while both erase routes need the super-admin `events.erasure` permission, so a plain admin's submit is refused. Fixed: the row's erase menu shows only with `events.erasure`; Relink stays on `events.relink`, so a super admin can also erase on an archived event (the routes allow it). No new error copy: the F6 guard answers a plain admin with 404 by design, so hiding the action is the control.
 
 ## User Scenarios & Testing *(mandatory)*
 

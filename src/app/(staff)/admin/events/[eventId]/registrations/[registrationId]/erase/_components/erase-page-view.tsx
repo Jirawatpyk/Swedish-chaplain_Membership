@@ -5,14 +5,15 @@
  * redirect for an already-erased row); this only draws the page, with no
  * card, as the board does: the header for the attendee with the hint as its
  * subtitle, then the erase trigger (the same `ErasePiiDialog` the attendee
- * row and the erasure search use) and the way back to the event. The back
+ * row and the erasure search use, here open on arrival and returning to the
+ * event once erased) and the way back to the event. The back
  * link shows from `lg`; below it the shell's "← Event" does the same.
  */
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import { ArrowLeftIcon } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
-import { ErasePiiDialog } from '@/components/events/erase-pii-dialog';
+import { ErasePageDialog } from './erase-page-dialog';
 
 export interface ErasePageViewProps {
   readonly eventId: string;
@@ -26,7 +27,7 @@ export async function renderErasePageBody({ eventId, registrationId, attendeeNam
     <>
       <PageHeader title={t('pageTitle', { attendeeName })} subtitle={t('pageHint')} />
       <div className="flex flex-wrap items-center gap-[var(--aura-space-4)] max-sm:flex-col max-sm:items-stretch max-sm:[&>button]:w-full">
-        <ErasePiiDialog eventId={eventId} registrationId={registrationId} attendeeName={attendeeName} />
+        <ErasePageDialog eventId={eventId} registrationId={registrationId} attendeeName={attendeeName} />
         <Link
           href={`/admin/events/${eventId}`}
           className="inline-flex items-center gap-1 text-sm text-[var(--aura-fg-accent)] hover:underline max-lg:hidden"

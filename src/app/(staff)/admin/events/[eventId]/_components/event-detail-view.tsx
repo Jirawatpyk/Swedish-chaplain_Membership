@@ -35,6 +35,8 @@ export interface EventDetailViewProps {
   readonly canAct: boolean;
   /** `events.relink` on an event that is not archived: the attendee actions column. */
   readonly canRelink: boolean;
+  /** `events.erasure` (super admin): the attendee rows' "Erase personal data". */
+  readonly canErase: boolean;
 }
 
 export async function renderEventDetailView({
@@ -44,6 +46,7 @@ export async function renderEventDetailView({
   filters,
   canAct,
   canRelink,
+  canErase,
 }: EventDetailViewProps) {
   const t = await getTranslations('admin.events.detail');
   const renderActions = () => (
@@ -93,6 +96,7 @@ export async function renderEventDetailView({
             {...(filters.paymentStatus !== null && { initialPaymentStatus: filters.paymentStatus })}
             eventId={event.eventId}
             canRelink={canRelink}
+            canErase={canErase}
             totalCount={pagination.totalCount}
           />
           <TablePagination
