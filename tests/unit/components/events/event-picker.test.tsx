@@ -156,4 +156,19 @@ describe('EventPicker on AURA Combobox (US9b-2)', () => {
       within(listbox).getByRole('option', { name: /SweCham AGM 2026/ }),
     ).toBeInTheDocument();
   });
+
+  it('shows a failed events load on the field without opening it', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('{}', { status: 500 })),
+    );
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    render(wrap(<Harness />));
+    const field = screen.getByRole('combobox', { name: 'Event' });
+    await waitFor(() => expect(field).toHaveAttribute('aria-invalid', 'true'));
+    expect(
+      screen.getByText(enMessages.admin.events.import.eventPicker.loadErrorDetail),
+    ).toBeVisible();
+  });
 });
+
