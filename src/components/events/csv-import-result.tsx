@@ -26,7 +26,7 @@
  *   - data-testid hooks for the E2E spec.
  */
 import { useTranslations } from 'next-intl';
-import { Alert, Card, Icon, buttonClass } from '@jirawatpyk/aura-react';
+import { Alert, Card, Icon, buttonClass } from '@jirawatpyk/aura-react/server';
 import { MatchStatusBadge } from './match-status-badge';
 import type { MatchType } from '@/modules/events';
 
