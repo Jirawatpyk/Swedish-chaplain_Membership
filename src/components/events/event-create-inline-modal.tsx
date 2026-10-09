@@ -282,8 +282,9 @@ export function EventCreateInlineModal(
       >
         {serverError !== null ? (
           <div ref={serverErrorRef} tabIndex={-1} className="outline-none">
-            {/* Alert carries role="alert" (assertive) for the danger tone. */}
-            <Alert tone="danger" title={serverError.title}>
+            {/* role="note": focus moves to this box, which reads it; a live
+                region as well would announce the error twice. */}
+            <Alert tone="danger" role="note" title={serverError.title}>
               {serverError.detail}
             </Alert>
           </div>
@@ -330,6 +331,7 @@ export function EventCreateInlineModal(
               <TimePicker
                 id={`${formId}-start-time`}
                 name={field.name}
+                ref={field.ref}
                 label={t('fields.startTimeLabel')}
                 step={15}
                 suggest="09:00"

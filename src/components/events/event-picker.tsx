@@ -323,6 +323,8 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
         loading={loading}
         loadingText={t('loading')}
         emptyText={error ?? t('emptyState')}
+        // A failed load shows on the field itself, not only in the open list.
+        error={error ?? undefined}
       />
 
       <div className="flex flex-row items-center gap-[var(--aura-space-2)]">
@@ -368,7 +370,7 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
         element appears already populated.
       */}
       <p
-        className="aura-text-caption min-h-[1lh] text-[var(--aura-fg-secondary)]"
+        className="aura-text-caption text-[var(--aura-fg-secondary)] empty:hidden"
         role="status"
         aria-live="polite"
         aria-atomic="true"

@@ -152,7 +152,7 @@ export function CsvImportHistoryTable({
         label: t('columns.file'),
         card: 'title',
         render: (row) => (
-          <span className="aura-text-mono break-all" title={row.originalFilename}>
+          <span className="aura-text-mono [overflow-wrap:anywhere]" title={row.originalFilename}>
             {row.originalFilename}
           </span>
         ),

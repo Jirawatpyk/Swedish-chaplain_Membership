@@ -785,8 +785,11 @@ function ErrorPanel({ phase, onRetry }: ErrorPanelProps) {
       data-testid="csv-header-error"
       className="flex flex-col items-start gap-[var(--aura-space-3)]"
     >
+      {/* role="note": focus moves to the title, which reads it; a live
+          region as well would announce the error twice. */}
       <Alert
         tone="danger"
+        role="note"
         className="w-full"
         title={
           <span ref={errorTitleRef} tabIndex={-1} className="focus:outline-none">
@@ -884,8 +887,11 @@ function PreviewPanel({
       </p>
 
       {hasMissing ? (
+        // role="note": focus moves to the preview heading on mount; an
+        // assertive alert here would talk over it.
         <Alert
           tone="danger"
+          role="note"
           data-testid="csv-header-error"
           title={t('missingColumnsTitle')}
         >
