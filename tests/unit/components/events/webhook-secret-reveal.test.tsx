@@ -9,7 +9,7 @@
  * plaintext secret, and Continue stays disabled until the box is ticked.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
 
@@ -58,6 +58,9 @@ describe('<WebhookSecretReveal> on AURA', () => {
     const value = screen.getByTestId('webhook-secret-value');
     expect(value).not.toHaveTextContent(SECRET);
     expect(value).toHaveTextContent(/•{20}7f3a/);
+    // Screen readers hear "hidden, ending in 7f3a", not twenty dots.
+    expect(within(value).getByText(/•{20}7f3a/)).toHaveAttribute('aria-hidden', 'true');
+    expect(within(value).getByText(a.maskedSecret.replace('{lastFour}', '7f3a'))).toHaveClass('sr-only');
     fireEvent.click(screen.getByRole('button', { name: a.revealSecret }));
     expect(value).toHaveTextContent(SECRET);
     fireEvent.click(screen.getByRole('button', { name: a.hideSecret }));
@@ -84,5 +87,7 @@ describe('<WebhookSecretReveal> on AURA', () => {
     });
     expect(writeText).toHaveBeenCalledWith(SECRET);
     expect(toastMock.success).toHaveBeenCalledWith(a.copied);
+    // The toast is the one announcement: no second live line repeats it.
+    expect(screen.queryByText(a.copied)).toBeNull();
   });
 });

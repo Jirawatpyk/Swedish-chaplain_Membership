@@ -63,6 +63,9 @@ describe('<TestWebhookButton> on AURA', () => {
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe('/api/admin/integrations/eventcreate/test-webhook');
     const busy = screen.getByRole('button', { name: c.inProgress });
     expect(busy).toHaveAttribute('aria-busy', 'true');
+    // Busy, not disabled: focus stays on the button through the request
+    // and the cooldown, and AURA's loading swallows the clicks.
+    expect(busy).not.toBeDisabled();
     fireEvent.click(busy);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     await act(async () => {
