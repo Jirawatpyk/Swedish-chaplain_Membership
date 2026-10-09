@@ -178,6 +178,9 @@
  *   time on the branch build:
  *     /admin/events/import                              972.5 KB measured → ≤ 1080 KB
  *     /admin/events/import/history                      813.3 KB measured → ≤  920 KB
+ *   122 US9c (EventCreate integration page on AURA, 2026-10-09) — budgeted for
+ *   the first time on the branch build:
+ *     /admin/settings/integrations/eventcreate          817.5 KB measured → ≤  920 KB
  *
  * Run as a post-build step:
  *
@@ -276,6 +279,7 @@ const BUDGETS: ReadonlyArray<RouteBudget> = [
   { route: '/admin/events/[eventId]/registrations/[registrationId]/erase', maxKb: 920 },
   { route: '/admin/events/import', maxKb: 1080 },
   { route: '/admin/events/import/history', maxKb: 920 },
+  { route: '/admin/settings/integrations/eventcreate', maxKb: 920 },
 ];
 
 const NEXT_DIR = join(process.cwd(), '.next');
