@@ -16,8 +16,7 @@ import Image from 'next/image';
 import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { getTranslations } from 'next-intl/server';
-import { Card, CardContent } from '@/components/ui/card';
-import { InfoIcon, ImageIcon } from 'lucide-react';
+import { Alert, Card, Icon } from '@jirawatpyk/aura-react/server';
 
 /**
  * Phase 5 review-fix (2026-05-13) — detect 75-byte placeholder stub
@@ -56,49 +55,40 @@ export async function ZapierWalkthrough({ webhookUrl }: ZapierWalkthroughProps) 
   const t = await getTranslations('admin.integrations.eventcreate.phaseB');
 
   return (
-    <section className="space-y-4" aria-labelledby="zapier-walkthrough-heading">
-      <h2 id="zapier-walkthrough-heading" className="text-h3 font-semibold">
+    // Spec 122 US9c — AURA (server): the English-only notice is an info
+    // note, each step a Card with its number in an accent circle.
+    <section
+      className="flex flex-col gap-[var(--aura-space-4)]"
+      aria-labelledby="zapier-walkthrough-heading"
+    >
+      <h2 id="zapier-walkthrough-heading" className="aura-text-h3">
         {t('title')}
       </h2>
 
-      {/*
-        Phase 5 review-fix (2026-05-13) — info banner uses
-        `<Card size="sm">` so the compact padding comes from the Card
-        root (12px py + 12px gap via the `data-[size=sm]:` rules) and
-        CardContent no longer needs the `py-3` override that
-        previously stacked on top of Card root's default 24px py.
-      */}
-      <Card size="sm" className="border-info/30 bg-info-surface">
-        <CardContent className="flex items-start gap-3 text-sm">
-          <InfoIcon className="size-4 shrink-0 text-info" aria-hidden />
-          <p>{t('englishOnlyNotice')}</p>
-        </CardContent>
-      </Card>
+      <Alert tone="info" role="note">
+        {t('englishOnlyNotice')}
+      </Alert>
 
-      <ol
-        aria-label={t('stepsLabel')}
-        className="space-y-4"
-      >
+      <ol aria-label={t('stepsLabel')} className="flex flex-col gap-[var(--aura-space-3)]">
         {Array.from({ length: STEP_COUNT }, (_, i) => i + 1).map((step) => (
           <li key={step}>
             <Card>
-              <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-start">
-                <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary font-semibold text-primary-foreground">
+              <div className="flex flex-col gap-[var(--aura-space-3)] sm:flex-row sm:items-start">
+                <div
+                  aria-hidden
+                  className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[var(--aura-fg-accent)] font-semibold text-[var(--aura-bg-surface)]"
+                >
                   {step}
                 </div>
-                <div className="flex-1 space-y-2">
+                <div className="flex min-w-0 flex-1 flex-col gap-[var(--aura-space-2)]">
                   <h3 className="font-semibold">{t(`step${step}.title`)}</h3>
-                  <p className="text-sm text-muted-foreground">
+                  <p className="text-[var(--aura-fg-secondary)]">
                     {step === 4
-                      ? // Round-6 verify-fix 2026-05-13 (UX M-02) —
-                        // wrap the inline `webhookUrl` in `<code>` via
-                        // ICU rich-text so the admin sees a monospace
-                        // copy-affordance instead of the URL melting
-                        // into the surrounding paragraph text.
+                      ? // Round-6 verify-fix 2026-05-13 (UX M-02) — the URL in mono.
                         t.rich('step4.body', {
                           webhookUrl,
                           code: (chunks) => (
-                            <code className="break-all rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
+                            <code className="aura-text-mono rounded-[var(--aura-radius-sm)] bg-[var(--aura-bg-surface-hover)] px-[var(--aura-space-1)] [overflow-wrap:anywhere]">
                               {chunks}
                             </code>
                           ),
@@ -129,21 +119,16 @@ export async function ZapierWalkthrough({ webhookUrl }: ZapierWalkthroughProps) 
                     );
                     const isStub = isPlaceholderStub(absolutePath);
                     return (
-                      <figure className="space-y-1">
+                      <figure>
                         {isStub ? (
                           <div
                             role="img"
                             aria-label={t(`step${step}.alt`)}
-                            className="flex aspect-video w-full flex-col items-center justify-center gap-2 rounded-md border border-dashed bg-muted/40 p-6 text-muted-foreground"
+                            className="flex aspect-video w-full flex-col items-center justify-center gap-[var(--aura-space-2)] rounded-[var(--aura-radius-md)] border border-dashed border-[var(--aura-border-default)] bg-[var(--aura-bg-canvas)] p-[var(--aura-space-6)] text-center text-[var(--aura-fg-secondary)]"
                           >
-                            <ImageIcon
-                              className="size-10 opacity-50"
-                              aria-hidden
-                            />
-                            <span className="text-sm font-medium">
-                              {t(`step${step}.alt`)}
-                            </span>
-                            <span className="text-xs">
+                            <Icon name="image" size={40} className="opacity-50" />
+                            <span className="font-medium">{t(`step${step}.alt`)}</span>
+                            <span className="aura-text-caption">
                               {t('imagePlaceholderNotice')}
                             </span>
                           </div>
@@ -157,7 +142,7 @@ export async function ZapierWalkthrough({ webhookUrl }: ZapierWalkthroughProps) 
                             alt={t(`step${step}.alt`)}
                             width={1280}
                             height={720}
-                            className="rounded-md border bg-muted"
+                            className="rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)]"
                             sizes="(max-width: 640px) 100vw, 600px"
                           />
                         )}
@@ -165,7 +150,7 @@ export async function ZapierWalkthrough({ webhookUrl }: ZapierWalkthroughProps) 
                     );
                   })()}
                 </div>
-              </CardContent>
+              </div>
             </Card>
           </li>
         ))}
