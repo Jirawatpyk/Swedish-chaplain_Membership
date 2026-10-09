@@ -12,7 +12,8 @@
  * Accessibility:
  *   - The grid is named by `tableAriaLabel`.
  *   - The download link uses a 44px target on touch.
- *   - Pagination nav is `<nav aria-label>` with prev/next links.
+ *   - Paging is the shared `TablePagination` (numbered links), as on the
+ *     other list pages.
  */
 'use client';
 
@@ -22,7 +23,7 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import {
   Badge,
-  Button,
+  Card,
   DataTable,
   EmptyState,
   Icon,
@@ -30,6 +31,7 @@ import {
   type DataTableColumn,
   type Tone,
 } from '@jirawatpyk/aura-react';
+import { TablePagination } from '@/components/layout/table-pagination';
 
 export interface CsvImportHistoryRow {
   readonly recordId: string;
@@ -70,6 +72,9 @@ export interface CsvImportHistoryRow {
   readonly errorCsvExpiresAt: string | null;
 }
 
+/** Wider than any table, so these columns never show in the grid. */
+const CARD_ONLY = 100_000;
+
 export interface CsvImportHistoryPagination {
   readonly page: number;
   readonly perPage: number;
@@ -80,16 +85,6 @@ export interface CsvImportHistoryPagination {
 interface CsvImportHistoryTableProps {
   readonly rows: ReadonlyArray<CsvImportHistoryRow>;
   readonly pagination: CsvImportHistoryPagination;
-  /**
-   * Pre-built href for the previous-page Link, or `null` when already on
-   * page 1. Staff-review T060 follow-up (2026-05-16): replaces the prior
-   * `pageHref: (page) => string` function prop that violated the RSC
-   * Server→Client boundary. The Server Component builds these strings
-   * during render and passes them as serializable values.
-   */
-  readonly prevPageHref: string | null;
-  /** Pre-built href for the next-page Link, or `null` on the last page. */
-  readonly nextPageHref: string | null;
 }
 
 /** Outcome tone: done reads as success, in flight as neutral, anything else failed. */
@@ -102,8 +97,6 @@ function outcomeTone(outcome: CsvImportHistoryRow['outcome']): Tone {
 export function CsvImportHistoryTable({
   rows,
   pagination,
-  prevPageHref,
-  nextPageHref,
 }: CsvImportHistoryTableProps) {
   const t = useTranslations('admin.events.import.history');
   const router = useRouter();
@@ -143,6 +136,7 @@ export function CsvImportHistoryTable({
         key: 'uploadedAtDisplay',
         label: t('columns.uploadedAt'),
         width: 176,
+        card: 'hide',
         render: (row) => (
           <span className="aura-text-mono">{row.uploadedAtDisplay}</span>
         ),
@@ -150,7 +144,7 @@ export function CsvImportHistoryTable({
       {
         key: 'originalFilename',
         label: t('columns.file'),
-        card: 'title',
+        card: 'hide',
         render: (row) => (
           <span className="aura-text-mono [overflow-wrap:anywhere]" title={row.originalFilename}>
             {row.originalFilename}
@@ -161,6 +155,7 @@ export function CsvImportHistoryTable({
         key: 'sourceFormat',
         label: t('columns.sourceFormat'),
         width: 128,
+        card: 'hide',
         render: (row) => {
           const tone: Tone = row.sourceFormat === 'eventcreate_csv' ? 'accent' : 'neutral';
           return (
@@ -196,24 +191,27 @@ export function CsvImportHistoryTable({
         key: 'processed',
         label: t('columns.rowsProcessed'),
         width: 104,
+        card: 'hide',
         render: (row) => <span className="tabular-nums">{row.counts.processed}</span>,
       },
       {
         key: 'skipped',
         label: t('columns.rowsSkipped'),
         width: 96,
+        card: 'hide',
         render: (row) => <span className="tabular-nums">{row.counts.skipped}</span>,
       },
       {
         key: 'failed',
         label: t('columns.rowsFailed'),
         width: 88,
+        card: 'hide',
         render: (row) => <span className="tabular-nums">{row.counts.failed}</span>,
       },
       {
         key: 'actions',
         label: t('columns.actions'),
-        card: 'footer',
+        card: 'hide',
         render: (row) =>
           row.counts.failed === 0 ? (
             <span className="aura-text-caption text-[var(--aura-fg-secondary)]">
@@ -222,16 +220,15 @@ export function CsvImportHistoryTable({
           ) : row.errorCsvAvailable ? (
             <a
               href={`/api/admin/events/import/${row.recordId}/error-csv`}
-              className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}
+              className={buttonClass({ variant: 'ghost', size: 'sm', touchHeight: true })}
               aria-label={t('downloadErrorCsvAriaLabel', {
                 recordId: row.recordId.slice(0, 8),
               })}
               data-testid="csv-import-history-download"
             >
               <Icon name="download" />
-              {/* Board: an icon button in the table row; the phone card
-                  footer keeps the visible label. The aria-label names it. */}
-              <span className="sm:sr-only">{t('downloadErrorCsv')}</span>
+              {/* Board: a bare icon button in the row; the aria-label names it. */}
+              <span className="sr-only">{t('downloadErrorCsv')}</span>
             </a>
           ) : (
             /* aria-disabled on a span has no AT effect; the */
@@ -244,6 +241,60 @@ export function CsvImportHistoryTable({
               {t('expiredBadge')}
             </span>
           ),
+      },
+      // Phone cards only (board `Admin-events-import-history-mobile`):
+      // `hideBelow` drops these from the grid at any width, and stacked cards
+      // ignore it. Date over filename as the title, one summary line, and the
+      // download at the foot only when there is something to download.
+      {
+        key: 'cardTitle',
+        label: t('columns.file'),
+        hideBelow: CARD_ONLY,
+        card: 'title',
+        render: (row) => (
+          <span className="flex flex-col gap-[var(--aura-space-1)]">
+            <span className="aura-text-caption font-normal text-[var(--aura-fg-secondary)]">
+              {row.uploadedAtDisplay}
+            </span>
+            <span className="aura-text-mono [overflow-wrap:anywhere]">{row.originalFilename}</span>
+          </span>
+        ),
+      },
+      {
+        key: 'cardSummary',
+        label: '',
+        hideBelow: CARD_ONLY,
+        card: 'wide',
+        render: (row) => (
+          <span className="tabular-nums">
+            {t('cardSummary', {
+              source: t(`sourceFormat.${row.sourceFormat}`),
+              processed: row.counts.processed,
+              skipped: row.counts.skipped,
+              failed: row.counts.failed,
+            })}
+          </span>
+        ),
+      },
+      {
+        key: 'cardDownload',
+        label: t('columns.actions'),
+        hideBelow: CARD_ONLY,
+        card: 'footer',
+        render: (row) =>
+          row.counts.failed > 0 && row.errorCsvAvailable ? (
+            <a
+              href={`/api/admin/events/import/${row.recordId}/error-csv`}
+              className={buttonClass({ variant: 'secondary', touchHeight: true, fullWidth: true })}
+              aria-label={t('downloadErrorCsvAriaLabel', {
+                recordId: row.recordId.slice(0, 8),
+              })}
+              data-testid="csv-import-history-download-card"
+            >
+              <Icon name="download" />
+              {t('downloadErrorCsv')}
+            </a>
+          ) : null,
       },
     ],
     [t],
@@ -266,90 +317,55 @@ export function CsvImportHistoryTable({
     );
   }
 
-  const from = (pagination.page - 1) * pagination.perPage + 1;
-  const to = Math.min(
-    pagination.totalRecords,
-    pagination.page * pagination.perPage,
-  );
-
   return (
-    <div className="flex flex-col gap-[var(--aura-space-3)]">
-      {/* R2-I6 — stable outer mount of the polling indicator (see above). */}
-      <div
-        className="flex min-h-[1.5rem] items-center justify-end gap-[var(--aura-space-2)]"
-        aria-live="polite"
-        aria-atomic="true"
-      >
-        {hasRunningRow ? (
-          <span
-            className="aura-text-caption flex items-center gap-[var(--aura-space-1)] text-[var(--aura-fg-secondary)]"
-            data-testid="csv-import-history-auto-refresh"
-          >
-            <Icon name="loader-circle" size={12} className="animate-spin motion-reduce:animate-none" />
-            {t('autoRefreshing')}
-          </span>
-        ) : null}
-      </div>
-      <div data-testid="csv-import-history-table">
-        <DataTable<CsvImportHistoryRow>
-          label={t('tableAriaLabel')}
-          rows={[...rows]}
-          columns={columns}
-          rowKey="recordId"
-          rowHeight="auto"
-          stackBelow={640}
-        />
-      </div>
-
-      <nav
-        className="flex flex-wrap items-center justify-between gap-[var(--aura-space-2)]"
-        aria-label={t('pagination.navAriaLabel')}
-        data-testid="csv-import-history-pagination"
-      >
-        <p className="aura-text-caption text-[var(--aura-fg-secondary)]">
-          {t('pagination.showing', {
-            from,
-            to,
-            totalRecords: pagination.totalRecords,
-          })}
-        </p>
-        <div className="flex items-center gap-[var(--aura-space-2)]">
-          {prevPageHref !== null ? (
-            <Link
-              href={prevPageHref}
-              prefetch={false}
-              className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}
+    // The list-card rule shared with Events, Members and Invoices: one card
+    // on a desktop with the table edge to edge; on a phone the rows are cards
+    // of their own, so this one drops its frame and padding.
+    <Card flushBelow="sm" className="max-sm:border-0 max-sm:p-0">
+      <div className="flex flex-col gap-[var(--aura-space-3)]">
+        {/* R2-I6 — stable outer mount of the polling indicator (see above).
+            While nothing runs it stays mounted but screen-reader only, so it
+            takes no room above the table. */}
+        <div
+          className={
+            hasRunningRow
+              ? 'flex min-h-[1.5rem] items-center justify-end gap-[var(--aura-space-2)]'
+              : 'sr-only'
+          }
+          aria-live="polite"
+          aria-atomic="true"
+          data-testid="csv-import-history-live"
+        >
+          {hasRunningRow ? (
+            <span
+              className="aura-text-caption flex items-center gap-[var(--aura-space-1)] text-[var(--aura-fg-secondary)]"
+              data-testid="csv-import-history-auto-refresh"
             >
-              <Icon name="chevron-left" />
-              {t('pagination.previous')}
-            </Link>
-          ) : (
-            <Button variant="secondary" size="sm" icon="chevron-left" touchHeight disabled>
-              {t('pagination.previous')}
-            </Button>
-          )}
-          <span className="aura-text-caption tabular-nums">
-            {t('pagination.pageOf', {
-              page: pagination.page,
-              totalPages: pagination.totalPages,
-            })}
-          </span>
-          {nextPageHref !== null ? (
-            <Link
-              href={nextPageHref}
-              prefetch={false}
-              className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}
-            >
-              {t('pagination.next')}
-              <Icon name="chevron-right" />
-            </Link>
-          ) : (
-            <Button variant="secondary" size="sm" iconRight="chevron-right" touchHeight disabled>
-              {t('pagination.next')}
-            </Button>
-          )}
+              <Icon name="loader-circle" size={12} className="animate-spin motion-reduce:animate-none" />
+              {t('autoRefreshing')}
+            </span>
+          ) : null}
         </div>
-      </nav>
-    </div>
+        <div data-testid="csv-import-history-table">
+          <DataTable<CsvImportHistoryRow>
+            label={t('tableAriaLabel')}
+            rows={[...rows]}
+            columns={columns}
+            rowKey="recordId"
+            rowHeight="auto"
+            stackBelow={640}
+            bleed
+          />
+        </div>
+        <div data-testid="csv-import-history-pagination">
+          <TablePagination
+            page={pagination.page}
+            pageSize={pagination.perPage}
+            total={pagination.totalRecords}
+            baseHref="/admin/events/import/history"
+          />
+        </div>
+      </div>
+    </Card>
   );
 }

@@ -5557,6 +5557,7 @@
         "importSuccessToastDesc": "{count, plural, =0 {ไม่มีแถวใหม่ — นำเข้าทั้งหมดแล้วก่อนหน้า} other {นำเข้า # แถว}}",
         "retryCta": "ลองอีกครั้ง",
         "uploadAnother": "อัปโหลด CSV อีกไฟล์",
+        "changeFileCta": "เปลี่ยน",
         "viewHistory": "ดูประวัติการนำเข้า",
         "preview": {
           "fileNameLabel": "ไฟล์",
@@ -5715,6 +5716,7 @@
             "unexpected_error": "ล้มเหลว"
           },
           "downloadErrorCsv": "ดาวน์โหลด CSV ของแถวผิดพลาด",
+          "cardSummary": "{source} · ประมวลผล {processed} · ข้าม {skipped} · ล้มเหลว {failed}",
           "downloadErrorCsvAriaLabel": "ดาวน์โหลด CSV ของแถวผิดพลาดสำหรับการนำเข้า {recordId}",
           "expiredBadge": "หมดอายุแล้ว",
           "expiredTooltip": "ไฟล์ CSV ของแถวผิดพลาดสำหรับการนำเข้าครั้งนี้หมดอายุหลังจาก 30 วัน หากต้องการดาวน์โหลด ให้นำเข้าใหม่อีกครั้ง",

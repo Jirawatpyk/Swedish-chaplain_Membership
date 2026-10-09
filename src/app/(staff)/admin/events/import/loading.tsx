@@ -20,7 +20,7 @@ export default async function CsvImportLoading() {
     <PageSkeletonShell ariaLabel={tLayout('loadingForm')}>
       <TableContainer aria-busy="true">
         <PageHeader title={t('pageTitle')} subtitle={t('pageSubtitle')} />
-        <Card aria-hidden>
+        <Card aria-hidden className="w-full max-w-[45rem]">
           <div className="flex flex-col gap-[var(--aura-space-6)]">
             <div className="flex flex-col gap-[var(--aura-space-2)]">
               <SkeletonBlock className="h-6 w-40" />

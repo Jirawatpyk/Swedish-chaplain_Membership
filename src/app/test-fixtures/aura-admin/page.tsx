@@ -1575,7 +1575,7 @@ export default async function AuraAdminPreviewPage({
             title={t('pageTitle')}
             subtitle={t('pageSubtitle')}
             actions={
-              <a href="#" className={buttonClass({ variant: 'secondary' })}>
+              <a href="#" className={buttonClass({ variant: 'secondary', className: 'max-lg:hidden' })}>
                 <Icon name="arrow-left" />
                 {t('backToImport')}
               </a>
@@ -1584,8 +1584,6 @@ export default async function AuraAdminPreviewPage({
           <CsvImportHistoryTable
             rows={rows}
             pagination={{ page: 1, perPage: 30, totalRecords: rows.length, totalPages: 1 }}
-            prevPageHref={null}
-            nextPageHref={null}
           />
         </TableContainer>
       </StaffFrame>

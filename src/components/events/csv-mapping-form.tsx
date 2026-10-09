@@ -33,6 +33,7 @@ import {
   Button,
   Card,
   FileUpload,
+  Icon,
   Select,
   Tag,
 } from '@jirawatpyk/aura-react';
@@ -652,22 +653,18 @@ export function CsvMappingForm() {
         onContinue={onContinueDespiteMismatch}
       />
       {phase.kind === 'completed' ? (
-        <>
-          <CsvImportResult result={phase.summary} />
-          <div>
-            <Button
-              type="button"
-              variant="secondary"
-              icon="upload"
-              touchHeight
-              onClick={resetToUpload}
-            >
+        // Board: "Upload another CSV" is the result card's primary action.
+        <CsvImportResult
+          result={phase.summary}
+          footerAction={
+            <Button type="button" touchHeight onClick={resetToUpload}>
               {t('uploadAnother')}
             </Button>
-          </div>
-        </>
+          }
+        />
       ) : (
         <Card
+          className="w-full max-w-[45rem]"
           title={t('formTitle')}
           description={t('formDescription')}
           headingLevel={2}
@@ -723,6 +720,31 @@ export function CsvMappingForm() {
                   }
                 }}
               />
+            )}
+
+            {phase.kind === 'preview' && (
+              // Board: the chosen file keeps the upload field's place as a
+              // row with "Change", which returns to the empty field — the
+              // same reset as Cancel.
+              <div className="flex flex-col gap-[var(--aura-space-1)]">
+                <span className="aura-text-label">{t('fileInputLabel')}</span>
+                <div
+                  className="flex items-center gap-[var(--aura-space-3)] rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-canvas)] py-[var(--aura-space-2)] pr-[var(--aura-space-2)] pl-[var(--aura-space-4)]"
+                  data-testid="csv-chosen-file"
+                >
+                  <Icon name="file-text" size={16} className="shrink-0 text-[var(--aura-fg-secondary)]" />
+                  <p className="min-w-0 flex-1 [overflow-wrap:anywhere]">
+                    {t('preview.fileNameLabel')}:{' '}
+                    <span className="aura-text-mono">{phase.file.name}</span>
+                  </p>
+                  <Button type="button" variant="ghost" size="sm" touchHeight onClick={resetToUpload}>
+                    {t('changeFileCta')}
+                  </Button>
+                </div>
+                <p className="aura-text-caption text-[var(--aura-fg-secondary)]">
+                  {t('fileInputHelp')}
+                </p>
+              </div>
             )}
 
             {phase.kind === 'preview' && (
@@ -881,11 +903,6 @@ function PreviewPanel({
 
   return (
     <div className="flex flex-col gap-[var(--aura-space-4)]">
-      <p>
-        <strong>{t('fileNameLabel')}:</strong>{' '}
-        <span className="font-mono">{fileName}</span>
-      </p>
-
       {hasMissing ? (
         // role="note": focus moves to the preview heading on mount; an
         // assertive alert here would talk over it.
@@ -924,7 +941,7 @@ function PreviewPanel({
                   icon={detected ? 'check' : 'x'}
                   className={`font-mono ${
                     detected
-                      ? 'text-[var(--aura-fg-positive)]'
+                      ? 'border-transparent bg-[var(--aura-status-ready-bg)] text-[var(--aura-status-ready-fg)]'
                       : 'text-[var(--aura-fg-danger)]'
                   }`}
                 >
@@ -1214,7 +1231,18 @@ function PreviewPanel({
       </section>
 
       <div className="flex flex-col gap-[var(--aura-space-2)]">
-        <div className="flex flex-wrap gap-[var(--aura-space-2)] max-sm:flex-col max-sm:[&>button]:w-full">
+        {/* Board: Cancel then Confirm, at the end of the row. On phones they
+            stack full width with Confirm on top (column-reverse), so the
+            reading order stays Cancel → Confirm. */}
+        <div className="flex flex-wrap justify-end gap-[var(--aura-space-2)] max-sm:flex-col-reverse max-sm:[&>button]:w-full">
+          <Button
+            type="button"
+            onClick={onCancel}
+            variant="secondary"
+            touchHeight
+          >
+            {cancelLabel}
+          </Button>
           <Button
             type="button"
             icon="cloud-upload"
@@ -1228,14 +1256,6 @@ function PreviewPanel({
             disabled={submitDisabled}
           >
             {submitLabel}
-          </Button>
-          <Button
-            type="button"
-            onClick={onCancel}
-            variant="secondary"
-            touchHeight
-          >
-            {cancelLabel}
           </Button>
         </div>
         {/* H7.2 / IMP-R2-4 — stable outer mount of the aria-live region

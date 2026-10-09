@@ -21,7 +21,7 @@
  * the test deterministic without loading the full message catalogue.
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { render, cleanup, screen } from '@testing-library/react';
+import { render, cleanup, screen, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 
 // Phase G G3 — auto-refresh polling uses `useRouter().refresh()` from
@@ -147,8 +147,6 @@ function renderTable(rows: ReadonlyArray<CsvImportHistoryRow>) {
       <CsvImportHistoryTable
         rows={rows}
         pagination={pagination}
-        prevPageHref={null}
-        nextPageHref={null}
       />
     </NextIntlClientProvider>,
   );
@@ -212,12 +210,11 @@ describe('<CsvImportHistoryTable> Badge tone per outcome', () => {
 describe('<CsvImportHistoryTable> error-rows download (US9b-2 parity)', () => {
   afterEach(() => cleanup());
 
-  it('is an icon button in the table (label hidden from 640px) and keeps its name', () => {
+  it('is a bare icon button in the table row and keeps its name', () => {
     renderTable([{ ...makeRow('partial_failure', 3), errorCsvAvailable: true }]);
     const link = screen.getByTestId('csv-import-history-download');
     expect(link).toHaveAccessibleName('Download error CSV for import 00000000');
-    const label = screen.getByText('Download error CSV');
-    expect(link).toContainElement(label);
+    const label = within(link).getByText('Download error CSV');
     expect(label.className).toMatch(/(^|\s)sr-only(\s|$)/);
     // Board: a bare icon button in the row, no frame.
     expect(link.className).toMatch(/aura-btn--ghost/);

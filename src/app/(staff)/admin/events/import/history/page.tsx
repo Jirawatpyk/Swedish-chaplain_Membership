@@ -126,32 +126,17 @@ export default async function CsvImportHistoryPage({
     errorCsvExpiresAt: row.record.errorCsvExpiresAt?.toISOString() ?? null,
   }));
 
-  // Staff-review T060 follow-up (2026-05-16): pre-compute prev/next
-  // pagination URLs on the server (serializable strings) instead of
-  // passing a `pageHref(page) => string` function prop. Only the two
-  // neighbouring pages are ever linked, so per-page URL pre-building
-  // is bounded + cheap.
-  const buildPageHref = (targetPage: number): string => {
-    const params = new URLSearchParams();
-    params.set('page', String(targetPage));
-    if (perPage !== 30) params.set('perPage', String(perPage));
-    return `/admin/events/import/history?${params.toString()}`;
-  };
-  const { page: currentPage, totalPages } = result.value.pagination;
-  const prevPageHref =
-    currentPage > 1 ? buildPageHref(currentPage - 1) : null;
-  const nextPageHref =
-    currentPage < totalPages ? buildPageHref(currentPage + 1) : null;
-
   return (
     <TableContainer>
       <PageHeader
         title={t('pageTitle')}
         subtitle={t('pageSubtitle')}
         actions={
+          // Below 1024px the shell's "← Import CSV" is the way back, so the
+          // page drops its own button (the erasure page's rule).
           <Link
             href="/admin/events/import"
-            className={buttonClass({ variant: 'secondary' })}
+            className={buttonClass({ variant: 'secondary', className: 'max-lg:hidden' })}
           >
             <Icon name="arrow-left" />
             {t('backToImport')}
@@ -161,8 +146,6 @@ export default async function CsvImportHistoryPage({
       <CsvImportHistoryTable
         rows={rows}
         pagination={result.value.pagination}
-        prevPageHref={prevPageHref}
-        nextPageHref={nextPageHref}
       />
     </TableContainer>
   );

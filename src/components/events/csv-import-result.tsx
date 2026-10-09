@@ -94,6 +94,8 @@ export interface CsvImportResultPayload {
 
 interface CsvImportResultProps {
   readonly result: CsvImportResultPayload;
+  /** The card's primary action, in its footer (the form's "Upload another CSV"). */
+  readonly footerAction?: React.ReactNode;
 }
 
 const MATCH_TYPE_ORDER: ReadonlyArray<MatchType> = [
@@ -113,7 +115,7 @@ function formatDuration(ms: number): string {
   return `${minutes}m ${remainder}s`;
 }
 
-export function CsvImportResult({ result }: CsvImportResultProps) {
+export function CsvImportResult({ result, footerAction }: CsvImportResultProps) {
   const t = useTranslations('admin.events.import.result');
   const tHistory = useTranslations('admin.events.import.history');
   const tMatch = useTranslations('admin.events.matchType');
@@ -129,24 +131,24 @@ export function CsvImportResult({ result }: CsvImportResultProps) {
       role="region"
       aria-label={t('regionLabel')}
       data-testid="csv-import-result"
+      className="w-full max-w-[45rem]"
       title={t('title')}
       headingLevel={2}
     >
       <div className="flex flex-col gap-[var(--aura-space-6)]">
         {/* Headline counters */}
-        <dl className="grid grid-cols-2 gap-x-[var(--aura-space-6)] gap-y-[var(--aura-space-3)] sm:grid-cols-3 md:grid-cols-6">
+        {/* Board: the counters are tiles, three to a row (two on phones). */}
+        <dl className="grid grid-cols-2 gap-[var(--aura-space-3)] sm:grid-cols-3">
           <Counter
             label={t('rowsProcessedLabel')}
             value={result.rowsProcessed}
             testId="result-rows-processed"
-            tone="success"
           />
           <Counter
             label={t('rowsAlreadyImportedLabel')}
             description={t('rowsAlreadyImportedDescription')}
             value={result.rowsAlreadyImported}
             testId="result-rows-already-imported"
-            tone="muted"
           />
           {/* Render the state-change counter only when at least one
               row's payment_status flipped; admins for vanilla re-
@@ -157,7 +159,6 @@ export function CsvImportResult({ result }: CsvImportResultProps) {
               description={t('rowsStateChangedDescription')}
               value={result.rowsStateChanged ?? 0}
               testId="result-rows-state-changed"
-              tone="success"
             />
           ) : null}
           <Counter
@@ -182,7 +183,10 @@ export function CsvImportResult({ result }: CsvImportResultProps) {
             Degraded banner sits ABOVE the recordId so admins read the
             warning first — the recordId is meaningless if support
             cannot find a matching DB row. */}
-        {result.recordId !== undefined ? (
+        {result.recordId !== undefined &&
+        (result.historyPersisted === false ||
+          result.auditCompletionEmitted === false ||
+          result.safetyNetFailedOpen === true) ? (
           <div
             className="flex flex-col items-start gap-[var(--aura-space-2)]"
             data-testid="result-record-id-block"
@@ -225,30 +229,6 @@ export function CsvImportResult({ result }: CsvImportResultProps) {
                 {t('safetyNetUnavailable')}
               </Alert>
             ) : null}
-            <p
-              className="aura-text-caption text-[var(--aura-fg-secondary)]"
-              data-testid="result-record-id"
-            >
-              {t('recordIdLabel')}:{' '}
-              <span className="font-mono select-all">{result.recordId}</span>
-            </p>
-            {/* F6.1 T045 — persistent download link to the signed-URL
-                endpoint. Only rendered when the import committed an
-                error-CSV blob (rowsFailed > 0 + blob upload succeeded).
-                Browser follows the 307 redirect from the server. */}
-            {result.errorCsvAvailable ? (
-              <a
-                href={`/api/admin/events/import/${result.recordId}/error-csv`}
-                className={buttonClass({ variant: 'secondary', touchHeight: true })}
-                data-testid="result-download-error-csv"
-                aria-label={tHistory('downloadErrorCsvAriaLabel', {
-                  recordId: result.recordId.slice(0, 8),
-                })}
-              >
-                <Icon name="download" />
-                {tHistory('downloadErrorCsv')}
-              </a>
-            ) : null}
           </div>
         ) : null}
 
@@ -274,8 +254,8 @@ export function CsvImportResult({ result }: CsvImportResultProps) {
 
         {/* Error rows (collapsible) */}
         {result.errorRows.length > 0 ? (
-          <details className="rounded-[var(--aura-radius-md)] border border-[var(--aura-border-danger)] p-[var(--aura-space-3)]">
-            <summary className="min-h-6 cursor-pointer py-1 font-medium text-[var(--aura-fg-danger)]">
+          <details className="rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)] p-[var(--aura-space-3)]">
+            <summary className="min-h-6 cursor-pointer py-1 font-medium">
               {t('errorRowsTitle', { count: result.errorRows.length })}
             </summary>
             <ul className="aura-text-caption mt-[var(--aura-space-3)] flex flex-col gap-[var(--aura-space-2)]">
@@ -298,6 +278,47 @@ export function CsvImportResult({ result }: CsvImportResultProps) {
             {t('noErrorRows')}
           </p>
         )}
+
+        {/* Board: the card footer — the reference ID for support, then the
+            error-CSV download and the primary action at the end. On phones
+            they stack full width, primary first (column-reverse keeps the
+            reading order). */}
+        {result.recordId !== undefined || footerAction !== undefined ? (
+          <div
+            className="flex flex-wrap items-center gap-[var(--aura-space-2)] max-sm:flex-col-reverse max-sm:items-stretch max-sm:[&>button]:w-full"
+            data-testid="result-footer"
+          >
+            {result.recordId !== undefined ? (
+              <>
+            <p
+              className="aura-text-caption mr-auto text-[var(--aura-fg-secondary)] max-sm:mr-0"
+              data-testid="result-record-id"
+            >
+              {t('recordIdLabel')}:{' '}
+              <span className="font-mono select-all">{result.recordId}</span>
+            </p>
+            {/* F6.1 T045 — persistent download link to the signed-URL
+                endpoint. Only rendered when the import committed an
+                error-CSV blob (rowsFailed > 0 + blob upload succeeded).
+                Browser follows the 307 redirect from the server. */}
+            {result.errorCsvAvailable ? (
+              <a
+                href={`/api/admin/events/import/${result.recordId}/error-csv`}
+                className={buttonClass({ variant: 'secondary', touchHeight: true, className: 'max-sm:w-full' })}
+                data-testid="result-download-error-csv"
+                aria-label={tHistory('downloadErrorCsvAriaLabel', {
+                  recordId: result.recordId.slice(0, 8),
+                })}
+              >
+                <Icon name="download" />
+                {tHistory('downloadErrorCsv')}
+              </a>
+            ) : null}
+              </>
+            ) : null}
+            {footerAction}
+          </div>
+        ) : null}
       </div>
     </Card>
   );
@@ -309,15 +330,9 @@ interface CounterProps {
   readonly value?: number;
   readonly valueText?: string;
   readonly testId: string;
-  readonly tone?: 'success' | 'muted';
 }
 
-const COUNTER_TONE_CLASSES = {
-  success: 'text-[var(--aura-fg-positive)]',
-  muted: 'text-[var(--aura-fg-secondary)]',
-} as const;
-
-function Counter({ label, description, value, valueText, testId, tone }: CounterProps) {
+function Counter({ label, description, value, valueText, testId }: CounterProps) {
   // F6.1 R3 a11y-fix 2026-05-16 — description was previously a
   // sibling `<p>` after `<dd>` inside the `<dl>`'s wrapping `<div>`.
   // HTML spec + axe `only-dlitems` rule restrict `<dl> > <div>` to
@@ -325,11 +340,12 @@ function Counter({ label, description, value, valueText, testId, tone }: Counter
   // description into the `<dd>` as a block-styled child;
   // keeps semantic pair grouping intact + retains visual layout.
   return (
-    <div className="flex flex-col gap-[var(--aura-space-1)]">
+    // Board: each counter is a tile on the canvas tone.
+    <div className="flex flex-col gap-[var(--aura-space-1)] rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-canvas)] p-[var(--aura-space-3)]">
       <dt className="aura-text-caption text-[var(--aura-fg-secondary)]">{label}</dt>
       <dd
         data-testid={testId}
-        className={`aura-text-h2 tabular-nums ${tone ? COUNTER_TONE_CLASSES[tone] : ''}`}
+        className="aura-text-h2 tabular-nums"
       >
         {valueText ?? value}
         {description ? (

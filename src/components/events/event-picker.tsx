@@ -20,7 +20,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
-import { Button, Combobox, IconButton } from '@jirawatpyk/aura-react';
+import { Combobox, Icon, IconButton } from '@jirawatpyk/aura-react';
 import { formatDatePreset } from '@/lib/format-date-localised';
 
 export interface EventPickerOption {
@@ -309,56 +309,55 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
 
   return (
     <div className="flex flex-col gap-[var(--aura-space-2)]">
-      <Combobox
-        label={props.label}
-        {...(props.hint !== undefined ? { hint: props.hint } : {})}
-        placeholder={t('placeholder')}
-        options={options}
-        value={selected?.eventId ?? null}
-        onChange={(eventId) => {
-          const event = events.find((e) => e.eventId === eventId) ?? null;
-          props.onChange(event?.eventId ?? null, event);
-        }}
-        clearable={false}
-        loading={loading}
-        loadingText={t('loading')}
-        emptyText={error ?? t('emptyState')}
-        // A failed load shows on the field itself, not only in the open list.
-        error={error ?? undefined}
-      />
-
-      <div className="flex flex-row items-center gap-[var(--aura-space-2)]">
-        {props.onCreateNew !== undefined ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            icon="plus"
+      {/* Board: the refresh button sits beside the field. It lines up with
+          the field box (below the label), not with the hint under it. */}
+      <div
+        className="flex items-start gap-[var(--aura-space-2)]"
+        data-testid="event-picker-field-row"
+      >
+        <div className="min-w-0 flex-1">
+          <Combobox
+            label={props.label}
+            {...(props.hint !== undefined ? { hint: props.hint } : {})}
+            required
+            placeholder={t('placeholder')}
+            options={options}
+            value={selected?.eventId ?? null}
+            onChange={(eventId) => {
+              const event = events.find((e) => e.eventId === eventId) ?? null;
+              props.onChange(event?.eventId ?? null, event);
+            }}
+            // Clearing returns to the existing "no event" state; Confirm
+            // stays gated on an event, as before.
+            clearable
+            loading={loading}
+            loadingText={t('loading')}
+            emptyText={error ?? t('emptyState')}
+            // A failed load shows on the field itself, not only in the open list.
+            error={error ?? undefined}
+          />
+        </div>
+        <div className="mt-[var(--event-picker-box-offset,1.625rem)] flex h-[2.625rem] items-center">
+          <IconButton
+            icon="rotate-ccw"
+            label={t('refreshAriaLabel')}
             touchHeight
-            onClick={props.onCreateNew}
-          >
-            {t('createNewCta')}
-          </Button>
-        ) : null}
-        <IconButton
-          icon="rotate-ccw"
-          label={t('refreshAriaLabel')}
-          touchHeight
-          onClick={() => {
-            // Cancel any in-flight load before starting a new one;
-            // sharing the ref means unmount kills BOTH this fetch and
-            // any prior one. setError(null) is handled inside loadEvents.
-            loadCancelRef.current.cancelled = true;
-            loadCancelRef.current = { cancelled: false };
-            // Clear the fetched list ONLY — preserve locallyAddedEvents
-            // (those represent events the user created via the inline
-            // modal in this session; refresh shouldn't remove them).
-            // T060 debug fix — see fetchedEvents/locally
-            // AddedEvents split rationale above.
-            setFetchedEvents([]);
-            void loadEvents(loadCancelRef.current);
-          }}
-        />
+            onClick={() => {
+              // Cancel any in-flight load before starting a new one;
+              // sharing the ref means unmount kills BOTH this fetch and
+              // any prior one. setError(null) is handled inside loadEvents.
+              loadCancelRef.current.cancelled = true;
+              loadCancelRef.current = { cancelled: false };
+              // Clear the fetched list ONLY — preserve locallyAddedEvents
+              // (those represent events the user created via the inline
+              // modal in this session; refresh shouldn't remove them).
+              // T060 debug fix — see fetchedEvents/locally
+              // AddedEvents split rationale above.
+              setFetchedEvents([]);
+              void loadEvents(loadCancelRef.current);
+            }}
+          />
+        </div>
       </div>
 
       {/*
@@ -382,6 +381,18 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
             })
           : ''}
       </p>
+
+      {props.onCreateNew !== undefined ? (
+        // Board: an accent text link, 44px tall on touch.
+        <button
+          type="button"
+          onClick={props.onCreateNew}
+          className="aura-text-label inline-flex items-center gap-[var(--aura-space-1)] self-start rounded-[var(--aura-radius-sm)] text-[var(--aura-fg-accent)] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)] max-sm:min-h-11 pointer-coarse:min-h-11"
+        >
+          <Icon name="plus" size={14} />
+          {t('createNewCta')}
+        </button>
+      ) : null}
     </div>
   );
 }
