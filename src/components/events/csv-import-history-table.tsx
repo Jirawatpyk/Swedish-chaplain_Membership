@@ -2,38 +2,34 @@
  * T044 (F6.1 · Feature 013 — Phase 5 US5) — CSV import history table.
  *
  * Pure presentational component rendering paginated history rows from
- * `GET /api/admin/events/import/history`. Uses shadcn `<Table>`
- * primitives + lightweight client-side state (no TanStack Table needed
- * — sorting/filtering is server-driven via query params).
+ * `GET /api/admin/events/import/history`. Spec 122 US9b-2: AURA
+ * `DataTable` (a card per import below 640px); paging stays server-driven
+ * through the two pre-built neighbour links.
  *
- * Columns: Uploaded · Event · Actor · Source · Outcome · Counts ·
- * Actions (Download error CSV when available).
+ * Columns: Uploaded · File · Source · Outcome · Counts · Actions
+ * (Download error CSV when available).
  *
  * Accessibility:
- *   - Outer `<Table>` exposes `role="table"` + aria-label.
- *   - Download button uses min-h-11 WCAG 2.5.8 target.
- *   - Disabled "Expired" state uses `aria-disabled` + tooltip-style
- *     title attribute.
- *   - Pagination nav is `<nav aria-label>` with prev/next buttons.
+ *   - The grid is named by `tableAriaLabel`.
+ *   - The download link uses a 44px target on touch.
+ *   - Pagination nav is `<nav aria-label>` with prev/next links.
  */
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { ChevronLeft, ChevronRight, Download, FileX2, RefreshCcw } from 'lucide-react';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { Button, buttonVariants } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { cn } from '@/lib/utils';
+  Badge,
+  Button,
+  DataTable,
+  EmptyState,
+  Icon,
+  buttonClass,
+  type DataTableColumn,
+  type Tone,
+} from '@jirawatpyk/aura-react';
 
 export interface CsvImportHistoryRow {
   readonly recordId: string;
@@ -96,6 +92,13 @@ interface CsvImportHistoryTableProps {
   readonly nextPageHref: string | null;
 }
 
+/** Outcome tone: done reads as success, in flight as neutral, anything else failed. */
+function outcomeTone(outcome: CsvImportHistoryRow['outcome']): Tone {
+  if (outcome === 'completed') return 'success';
+  if (outcome === 'running') return 'neutral';
+  return 'danger';
+}
+
 export function CsvImportHistoryTable({
   rows,
   pagination,
@@ -112,13 +115,9 @@ export function CsvImportHistoryTable({
   // beyond that warrant a manual reload, which keeps the polling cost
   // bounded.
   //
-  // Round 2 R2-I6 hardening — added a visible polling chip + sr-only
-  // aria-live region so the auto-refresh is no longer silent. WCAG
-  // 4.1.3 Status Messages: SR users hear "Auto-refreshing..." when
-  // the polling effect starts. The stable outer mount pattern (live
-  // region always present, content varies on `hasRunningRow`) follows
-  // the precedent at `csv-mapping-form.tsx:404-417` so NVDA/JAWS
-  // register the observer before the announcement fires.
+  // Round 2 R2-I6 hardening — a visible polling chip + an aria-live
+  // region so the auto-refresh is not silent (WCAG 4.1.3). The live
+  // region is always mounted; its content varies on `hasRunningRow`.
   //
   // Scaling concern (NEW-S2): if N admin tabs open simultaneously, N ×
   // poll rate. At SweCham scale (~3 staff) bounded fine. Post-F6.1 if
@@ -138,26 +137,130 @@ export function CsvImportHistoryTable({
     return () => clearInterval(interval);
   }, [hasRunningRow, router]);
 
+  const columns = useMemo<DataTableColumn<CsvImportHistoryRow>[]>(
+    () => [
+      {
+        key: 'uploadedAtDisplay',
+        label: t('columns.uploadedAt'),
+        width: 176,
+        render: (row) => (
+          <span className="aura-text-mono">{row.uploadedAtDisplay}</span>
+        ),
+      },
+      {
+        key: 'originalFilename',
+        label: t('columns.file'),
+        card: 'title',
+        render: (row) => (
+          <span className="aura-text-mono break-all" title={row.originalFilename}>
+            {row.originalFilename}
+          </span>
+        ),
+      },
+      {
+        key: 'sourceFormat',
+        label: t('columns.sourceFormat'),
+        width: 128,
+        render: (row) => {
+          const tone: Tone = row.sourceFormat === 'eventcreate_csv' ? 'accent' : 'neutral';
+          return (
+            <Badge
+              tone={tone}
+              data-tone={tone}
+              data-testid="csv-import-history-source-format"
+            >
+              {t(`sourceFormat.${row.sourceFormat}`)}
+            </Badge>
+          );
+        },
+      },
+      {
+        key: 'outcome',
+        label: t('columns.outcome'),
+        width: 144,
+        card: 'pill',
+        render: (row) => {
+          const tone = outcomeTone(row.outcome);
+          return (
+            <Badge
+              tone={tone}
+              data-tone={tone}
+              data-testid="csv-import-history-outcome"
+            >
+              {t(`outcome.${row.outcome}`)}
+            </Badge>
+          );
+        },
+      },
+      {
+        key: 'processed',
+        label: t('columns.rowsProcessed'),
+        width: 104,
+        render: (row) => <span className="tabular-nums">{row.counts.processed}</span>,
+      },
+      {
+        key: 'skipped',
+        label: t('columns.rowsSkipped'),
+        width: 96,
+        render: (row) => <span className="tabular-nums">{row.counts.skipped}</span>,
+      },
+      {
+        key: 'failed',
+        label: t('columns.rowsFailed'),
+        width: 88,
+        render: (row) => <span className="tabular-nums">{row.counts.failed}</span>,
+      },
+      {
+        key: 'actions',
+        label: t('columns.actions'),
+        card: 'footer',
+        render: (row) =>
+          row.counts.failed === 0 ? (
+            <span className="aura-text-caption text-[var(--aura-fg-secondary)]">
+              {t('noErrorRows')}
+            </span>
+          ) : row.errorCsvAvailable ? (
+            <a
+              href={`/api/admin/events/import/${row.recordId}/error-csv`}
+              className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}
+              aria-label={t('downloadErrorCsvAriaLabel', {
+                recordId: row.recordId.slice(0, 8),
+              })}
+              data-testid="csv-import-history-download"
+            >
+              <Icon name="download" />
+              {t('downloadErrorCsv')}
+            </a>
+          ) : (
+            /* aria-disabled on a span has no AT effect; the */
+            /* visible text already communicates state. */
+            <span
+              className="aura-text-caption text-[var(--aura-fg-secondary)]"
+              title={t('expiredTooltip')}
+              data-testid="csv-import-history-expired"
+            >
+              {t('expiredBadge')}
+            </span>
+          ),
+      },
+    ],
+    [t],
+  );
+
   if (rows.length === 0) {
-    // Empty-state anatomy per ux-standards.md § 3.1 — icon + title +
-    // body + CTA.
     return (
-      <div
-        className="flex flex-col items-center gap-4 rounded-md border border-dashed p-10 text-center"
+      <EmptyState
+        bordered
+        icon="file-text"
+        title={t('emptyStateTitle')}
+        description={t('emptyStateBody')}
         data-testid="csv-import-history-empty"
-      >
-        <FileX2 className="size-12 text-muted-foreground" aria-hidden="true" />
-        <div className="flex flex-col gap-1">
-          <p className="text-lg font-semibold">{t('emptyStateTitle')}</p>
-          <p className="text-body text-muted-foreground">{t('emptyStateBody')}</p>
-        </div>
-        <Link
-          href="/admin/events/import"
-          className={cn(buttonVariants({ variant: 'default' }), 'min-h-11')}
-        >
-          {t('emptyStateCta')}
-        </Link>
-      </div>
+        action={
+          <Link href="/admin/events/import" className={buttonClass({ variant: 'primary' })}>
+            {t('emptyStateCta')}
+          </Link>
+        }
+      />
     );
   }
 
@@ -168,162 +271,62 @@ export function CsvImportHistoryTable({
   );
 
   return (
-    <div className="flex flex-col gap-4">
-      {/* R2-I6 — stable outer mount of the polling indicator. The
-          aria-live region is always present (NVDA/JAWS register the
-          observer on first render); content varies on `hasRunningRow`
-          so screen readers announce when polling starts. The visible
-          chip mirrors the sr-only message for sighted users. */}
-      <div className="flex items-center justify-end gap-2 min-h-[1.5rem]" aria-live="polite" aria-atomic="true">
+    <div className="flex flex-col gap-[var(--aura-space-3)]">
+      {/* R2-I6 — stable outer mount of the polling indicator (see above). */}
+      <div
+        className="flex min-h-[1.5rem] items-center justify-end gap-[var(--aura-space-2)]"
+        aria-live="polite"
+        aria-atomic="true"
+      >
         {hasRunningRow ? (
           <span
-            className="text-caption text-muted-foreground flex items-center gap-1"
+            className="aura-text-caption flex items-center gap-[var(--aura-space-1)] text-[var(--aura-fg-secondary)]"
             data-testid="csv-import-history-auto-refresh"
           >
-            <RefreshCcw
-              aria-hidden="true"
-              className="size-3 animate-spin motion-reduce:animate-none"
-            />
+            <Icon name="loader-circle" size={12} className="animate-spin motion-reduce:animate-none" />
             {t('autoRefreshing')}
           </span>
         ) : null}
       </div>
-      <Table aria-label={t('tableAriaLabel')} data-testid="csv-import-history-table">
-        <TableHeader>
-          <TableRow>
-            <TableHead scope="col">{t('columns.uploadedAt')}</TableHead>
-            <TableHead scope="col">{t('columns.file')}</TableHead>
-            <TableHead scope="col">{t('columns.sourceFormat')}</TableHead>
-            <TableHead scope="col">{t('columns.outcome')}</TableHead>
-            <TableHead scope="col" className="text-right tabular-nums">
-              {t('columns.rowsProcessed')}
-            </TableHead>
-            <TableHead scope="col" className="text-right tabular-nums">
-              {t('columns.rowsSkipped')}
-            </TableHead>
-            <TableHead scope="col" className="text-right tabular-nums">
-              {t('columns.rowsFailed')}
-            </TableHead>
-            <TableHead scope="col">{t('columns.actions')}</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.map((row) => (
-            <TableRow key={row.recordId} data-testid="csv-import-history-row">
-              <TableCell className="font-mono text-caption">
-                {row.uploadedAtDisplay}
-              </TableCell>
-              <TableCell className="max-w-[16rem] truncate">
-                <span className="font-mono text-caption" title={row.originalFilename}>
-                  {row.originalFilename}
-                </span>
-              </TableCell>
-              <TableCell>
-                <Badge
-                  variant={row.sourceFormat === 'eventcreate_csv' ? 'default' : 'secondary'}
-                  data-testid="csv-import-history-source-format"
-                >
-                  {t(`sourceFormat.${row.sourceFormat}`)}
-                </Badge>
-              </TableCell>
-              <TableCell>
-                {/* Outcome rendered as Badge with semantic variant so */}
-                {/* admins can scan failures at a glance. Staff-review */}
-                {/* M-5 (2026-05-16): 'running' is in-flight (US5 AS3) */}
-                {/* — surface with neutral 'secondary' variant so it */}
-                {/* doesn't appear as completed (default/green) or */}
-                {/* failed (destructive/red). */}
-                <Badge
-                  variant={
-                    row.outcome === 'completed'
-                      ? 'default'
-                      : row.outcome === 'running'
-                        ? 'secondary'
-                        : 'destructive'
-                  }
-                  data-testid="csv-import-history-outcome"
-                >
-                  {t(`outcome.${row.outcome}`)}
-                </Badge>
-              </TableCell>
-              <TableCell className="text-right tabular-nums">
-                {row.counts.processed}
-              </TableCell>
-              <TableCell className="text-right tabular-nums">
-                {row.counts.skipped}
-              </TableCell>
-              <TableCell className="text-right tabular-nums">
-                {row.counts.failed}
-              </TableCell>
-              <TableCell>
-                {row.counts.failed === 0 ? (
-                  <span className="text-caption text-muted-foreground">
-                    {t('noErrorRows')}
-                  </span>
-                ) : row.errorCsvAvailable ? (
-                  <a
-                    href={`/api/admin/events/import/${row.recordId}/error-csv`}
-                    className={cn(
-                      buttonVariants({ variant: 'outline' }),
-                      'min-h-11',
-                    )}
-                    aria-label={t('downloadErrorCsvAriaLabel', {
-                      recordId: row.recordId.slice(0, 8),
-                    })}
-                    data-testid="csv-import-history-download"
-                  >
-                    <Download aria-hidden="true" className="mr-2 size-4" />
-                    {t('downloadErrorCsv')}
-                  </a>
-                ) : (
-                  /* aria-disabled on a span has no AT effect; the */
-                  /* visible text already communicates state. */
-                  <span
-                    className="text-caption text-muted-foreground"
-                    title={t('expiredTooltip')}
-                    data-testid="csv-import-history-expired"
-                  >
-                    {t('expiredBadge')}
-                  </span>
-                )}
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+      <div data-testid="csv-import-history-table">
+        <DataTable<CsvImportHistoryRow>
+          label={t('tableAriaLabel')}
+          rows={[...rows]}
+          columns={columns}
+          rowKey="recordId"
+          rowHeight="auto"
+          stackBelow={640}
+        />
+      </div>
 
       <nav
-        className="flex items-center justify-between gap-2 pt-2"
+        className="flex flex-wrap items-center justify-between gap-[var(--aura-space-2)]"
         aria-label={t('pagination.navAriaLabel')}
         data-testid="csv-import-history-pagination"
       >
-        <p className="text-caption text-muted-foreground">
+        <p className="aura-text-caption text-[var(--aura-fg-secondary)]">
           {t('pagination.showing', {
             from,
             to,
             totalRecords: pagination.totalRecords,
           })}
         </p>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-[var(--aura-space-2)]">
           {prevPageHref !== null ? (
             <Link
               href={prevPageHref}
               prefetch={false}
-              className={cn(
-                buttonVariants({ variant: 'outline' }),
-                'min-h-11',
-              )}
+              className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}
             >
-              <ChevronLeft aria-hidden="true" className="mr-1 size-4" />
+              <Icon name="chevron-left" />
               {t('pagination.previous')}
             </Link>
           ) : (
-            <Button variant="outline" className="min-h-11" disabled aria-disabled="true">
-              <ChevronLeft aria-hidden="true" className="mr-1 size-4" />
+            <Button variant="secondary" size="sm" icon="chevron-left" touchHeight disabled>
               {t('pagination.previous')}
             </Button>
           )}
-          <span className="text-caption tabular-nums">
+          <span className="aura-text-caption tabular-nums">
             {t('pagination.pageOf', {
               page: pagination.page,
               totalPages: pagination.totalPages,
@@ -333,18 +336,14 @@ export function CsvImportHistoryTable({
             <Link
               href={nextPageHref}
               prefetch={false}
-              className={cn(
-                buttonVariants({ variant: 'outline' }),
-                'min-h-11',
-              )}
+              className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}
             >
               {t('pagination.next')}
-              <ChevronRight aria-hidden="true" className="ml-1 size-4" />
+              <Icon name="chevron-right" />
             </Link>
           ) : (
-            <Button variant="outline" className="min-h-11" disabled aria-disabled="true">
+            <Button variant="secondary" size="sm" iconRight="chevron-right" touchHeight disabled>
               {t('pagination.next')}
-              <ChevronRight aria-hidden="true" className="ml-1 size-4" />
             </Button>
           )}
         </div>

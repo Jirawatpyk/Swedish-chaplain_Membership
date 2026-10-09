@@ -23,8 +23,7 @@ import { requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { buttonVariants } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import { Alert, Icon, buttonClass } from '@jirawatpyk/aura-react/server';
 import { runListCsvImportRecords } from '@/lib/events-csv-import-deps';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 import {
@@ -75,18 +74,15 @@ export default async function CsvImportHistoryPage({
     return (
       <TableContainer>
         <PageHeader title={t('pageTitle')} subtitle={t('pageSubtitle')} />
-        <div
-          className="text-body rounded-md border border-destructive/30 bg-destructive/5 p-4"
-          role="alert"
-        >
+        <Alert tone="danger" role="alert">
           {t('loadError')}{' '}
           <Link
             href="/admin/events/import/history"
-            className="font-medium underline-offset-2 hover:underline"
+            className="font-medium text-[var(--aura-fg-accent)] underline-offset-2 hover:underline"
           >
             {t('loadErrorRetry')}
           </Link>
-        </div>
+        </Alert>
       </TableContainer>
     );
   }
@@ -155,8 +151,9 @@ export default async function CsvImportHistoryPage({
         actions={
           <Link
             href="/admin/events/import"
-            className={cn(buttonVariants({ variant: 'outline' }))}
+            className={buttonClass({ variant: 'secondary' })}
           >
+            <Icon name="arrow-left" />
             {t('backToImport')}
           </Link>
         }

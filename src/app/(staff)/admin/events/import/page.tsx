@@ -20,8 +20,7 @@ import { env } from '@/lib/env';
 import { requirePagePermission } from '@/lib/rbac';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { buttonVariants } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import { Icon, buttonClass } from '@jirawatpyk/aura-react/server';
 import { CsvMappingForm } from '@/components/events/csv-mapping-form';
 
 export default async function CsvImportPage() {
@@ -45,8 +44,9 @@ export default async function CsvImportPage() {
           // history page's own "Back to import" action button style.
           <Link
             href="/admin/events/import/history"
-            className={cn(buttonVariants({ variant: 'outline' }))}
+            className={buttonClass({ variant: 'secondary' })}
           >
+            <Icon name="clock" />
             {t('viewHistory')}
           </Link>
         }
