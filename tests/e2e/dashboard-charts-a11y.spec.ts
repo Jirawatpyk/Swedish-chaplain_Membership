@@ -330,6 +330,18 @@ test.describe('@a11y dashboard interactive charts — Task 14 (067-dashboard-int
     }
   });
 
+  test('no sideways scroll on a phone-width page at 200% text (WCAG 1.4.4 / 1.4.10)', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await gotoDashboard(page);
+    await page.waitForLoadState('networkidle');
+
+    await page.addStyleTag({ content: 'html { font-size: 200% !important; }' });
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow, 'page overflow at 200% text').toBeLessThanOrEqual(1);
+  });
+
   test('@i18n prefers-reduced-motion: charts render with no animation errors', async ({ page }) => {
     // Recharts' `isAnimationActive` is a JS prop (per-shape transition), not
     // a CSS `animation-duration` — unlike the shimmer-skeleton pattern in

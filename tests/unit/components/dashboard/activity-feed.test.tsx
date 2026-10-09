@@ -89,4 +89,15 @@ describe('ActivityFeed', () => {
     render(<ActivityFeed {...PROPS} items={[]} />);
     expect(screen.getByText('No recent activity')).toBeInTheDocument();
   });
+
+  // The list is a grid; a grid item defaults to `min-width: auto`, so its
+  // column grew to the row's full no-wrap width, the label never truncated
+  // and the time was pushed past the card edge (clipped on a phone).
+  it('lets each row shrink to the column so the label truncates and the time stays in view', () => {
+    const items: readonly ActivityFeedEntry[] = [
+      { id: 'a1', label: 'Payment recorded', occurredAt: '2026-07-10T22:00:00.000Z', timeLabel: 'now' },
+    ];
+    render(<ActivityFeed {...PROPS} items={items} />);
+    expect(screen.getByRole('listitem')).toHaveClass('min-w-0');
+  });
 });
