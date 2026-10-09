@@ -21,16 +21,26 @@ export default async function EventCreateIntegrationLoading() {
       <FormContainer align="start" aria-busy="true">
         <PageHeader title={t('title')} subtitle={t('subtitle')} />
         <div aria-hidden className="flex flex-col gap-[var(--aura-space-5)]">
-          <div className="flex items-center gap-[var(--aura-space-2)] max-sm:hidden" data-skeleton="stepper">
+          {/* AURA Stepper: markers joined by a rule, each label under its marker. */}
+          <div className="flex gap-[var(--aura-space-2)] max-sm:hidden" data-skeleton="stepper">
             {[0, 1, 2].map((n) => (
-              <div key={n} className={n < 2 ? 'flex flex-1 items-center gap-[var(--aura-space-2)]' : 'flex items-center gap-[var(--aura-space-2)]'}>
-                <SkeletonBlock className="size-7 shrink-0 rounded-full" />
+              <div key={n} className={n < 2 ? 'flex flex-1 flex-col gap-[var(--aura-space-2)]' : 'flex flex-col gap-[var(--aura-space-2)]'}>
+                <div className="flex items-center gap-[var(--aura-space-2)]">
+                  <SkeletonBlock className="size-7 shrink-0 rounded-full" />
+                  {n < 2 ? <span className="h-px flex-1 bg-[var(--aura-border-subtle)]" /> : null}
+                </div>
                 <SkeletonBlock className="h-4 w-24" />
-                {n < 2 ? <span className="h-px flex-1 bg-[var(--aura-border-subtle)]" /> : null}
               </div>
             ))}
           </div>
-          <SkeletonBlock className="h-4 w-40 sm:hidden" />
+          <div className="flex flex-col gap-[var(--aura-space-2)] sm:hidden">
+            <div className="flex items-center gap-[var(--aura-space-2)]">
+              {[0, 1, 2].map((n) => (
+                <SkeletonBlock key={n} className="size-7 shrink-0 rounded-full" />
+              ))}
+            </div>
+            <SkeletonBlock className="h-4 w-40" />
+          </div>
           <SkeletonBlock className="h-12 w-full rounded-[var(--aura-radius-lg)]" />
           <Card>
             <div className="flex flex-col gap-[var(--aura-space-4)]">

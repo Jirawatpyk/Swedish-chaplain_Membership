@@ -196,7 +196,7 @@ export function WebhookConfigWizard({ view, walkthrough }: WebhookConfigWizardPr
           */}
           <Alert tone="info" role="note" title={t('tierNotice.title')}>
             <p>{t('tierNotice.body')}</p>
-            <p>
+            <p className="mt-[var(--aura-space-2)]">
               {t.rich('tierNotice.csvFallback', {
                 csvLink: (chunks) => (
                   <Link
