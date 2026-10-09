@@ -6,7 +6,7 @@
  * Async POST to `/api/admin/integrations/eventcreate/test-webhook`.
  * Renders three states:
  *   - idle: "Send test event"
- *   - pending: spinner + `aria-busy=true` (disabled)
+ *   - pending: spinner + `aria-busy=true`; stays focusable, clicks swallowed
  *   - resolved: toast (success/failure) + outcome callback fires
  *
  * `aria-live="polite"` SR announcement on resolve. 2-second cooldown
@@ -63,6 +63,7 @@ export function TestWebhookButton({ onResolved }: TestWebhookButtonProps) {
   }, []);
 
   async function handleClick() {
+    if (loading) return;
     setLoading(true);
     setAnnouncement(t('inProgress'));
     try {
@@ -130,7 +131,9 @@ export function TestWebhookButton({ onResolved }: TestWebhookButtonProps) {
 
   // Spec 122 US9c — board `Admin-eventcreate`: a secondary button with no
   // icon, full width on phones; while it runs, AURA's spinner and the same
-  // "Sending test event…" text. `disabled` keeps the 2-second cooldown.
+  // "Sending test event…" text. `loading` (aria-busy, clicks swallowed)
+  // keeps the 2-second cooldown without `disabled`, which would drop
+  // keyboard focus to the page mid-request.
   return (
     <div className="flex flex-col gap-[var(--aura-space-2)]">
       <Button
@@ -139,7 +142,6 @@ export function TestWebhookButton({ onResolved }: TestWebhookButtonProps) {
         touchHeight
         className="self-start max-sm:w-full"
         onClick={() => void handleClick()}
-        disabled={loading}
         loading={loading}
       >
         {loading ? t('inProgress') : t('sendTest')}

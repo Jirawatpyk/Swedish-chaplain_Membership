@@ -13,7 +13,10 @@
  * Accessibility:
  *   - Secret rendered inside `<code>` with `font-mono` so copy/paste
  *     fidelity is preserved.
- *   - `aria-live="polite"` SR announcement on copy success.
+ *   - Copy success is announced once, by the toast (AURA's Toaster is a
+ *     polite live region); a second live line here read it twice.
+ *   - While masked, the dots are hidden from screen readers, which hear
+ *     "hidden, ending in <last4>" instead.
  *   - Checkbox + label associated via shadcn `<Label htmlFor>`.
  *   - Reduced-motion safe — no CSS animation.
  */
@@ -140,7 +143,15 @@ export function WebhookSecretReveal({
           </span>
           <div className="flex min-w-0 items-center gap-[var(--aura-space-2)]">
             <WebhookValueBox id="webhook-secret-input" data-testid="webhook-secret-value">
-              {visible ? secret : `${'•'.repeat(20)}${secretLastFour}`}
+              {visible ? (
+                secret
+              ) : (
+                // Screen readers hear "hidden, ending in 7f3a", not the dots.
+                <>
+                  <span aria-hidden="true">{`${'•'.repeat(20)}${secretLastFour}`}</span>
+                  <span className="sr-only">{t('maskedSecret', { lastFour: secretLastFour })}</span>
+                </>
+              )}
             </WebhookValueBox>
             <IconButton
               icon={visible ? 'eye-off' : 'eye'}
@@ -153,9 +164,6 @@ export function WebhookSecretReveal({
               onClick={() => void handleCopy()}
             />
           </div>
-          <span role="status" aria-live="polite" className="sr-only">
-            {copied ? t('copied') : ''}
-          </span>
           <p className="aura-text-caption text-[var(--aura-fg-secondary)]">{t('warning')}</p>
         </div>
 

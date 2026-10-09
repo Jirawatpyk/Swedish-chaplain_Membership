@@ -60,6 +60,7 @@ interface GeneratedSecret {
 
 export function WebhookConfigWizard({ view, walkthrough }: WebhookConfigWizardProps) {
   const t = useTranslations('admin.integrations.eventcreate.wizard');
+  const tA = useTranslations('admin.integrations.eventcreate.phaseA');
   const locale = useLocale();
   const router = useRouter();
 
@@ -340,8 +341,14 @@ export function WebhookConfigWizard({ view, walkthrough }: WebhookConfigWizardPr
                 </span>
                 <div className="flex min-w-0 flex-col gap-[var(--aura-space-2)] sm:flex-row sm:items-center">
                   <WebhookValueBox>
-                    whsec_{'•'.repeat(16)}
-                    {configured?.secretLastFour ?? ''}
+                    {/* Screen readers hear "hidden, ending in 7f3a", not the dots. */}
+                    <span aria-hidden="true">
+                      whsec_{'•'.repeat(16)}
+                      {configured?.secretLastFour ?? ''}
+                    </span>
+                    <span className="sr-only">
+                      {tA('maskedSecret', { lastFour: configured?.secretLastFour ?? '' })}
+                    </span>
                   </WebhookValueBox>
                   <Button
                     type="button"
