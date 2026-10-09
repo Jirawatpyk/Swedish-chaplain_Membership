@@ -229,7 +229,9 @@ export function CsvImportHistoryTable({
               data-testid="csv-import-history-download"
             >
               <Icon name="download" />
-              {t('downloadErrorCsv')}
+              {/* Board: an icon button in the table row; the phone card
+                  footer keeps the visible label. The aria-label names it. */}
+              <span className="sm:sr-only">{t('downloadErrorCsv')}</span>
             </a>
           ) : (
             /* aria-disabled on a span has no AT effect; the */

@@ -322,7 +322,7 @@ function Counter({ label, description, value, valueText, testId, tone }: Counter
   // sibling `<p>` after `<dd>` inside the `<dl>`'s wrapping `<div>`.
   // HTML spec + axe `only-dlitems` rule restrict `<dl> > <div>` to
   // ONLY contain `<dt>`/`<dd>` (definition pair grouping). Move the
-  // description into the `<dd>` as a `<small>` block-styled child;
+  // description into the `<dd>` as a block-styled child;
   // keeps semantic pair grouping intact + retains visual layout.
   return (
     <div className="flex flex-col gap-[var(--aura-space-1)]">
@@ -333,9 +333,11 @@ function Counter({ label, description, value, valueText, testId, tone }: Counter
       >
         {valueText ?? value}
         {description ? (
-          <small className="aura-text-caption mt-[var(--aura-space-1)] block font-normal text-[var(--aura-fg-secondary)]">
+          // A span, not <small>: Tailwind preflight's `small { font-size: 80% }`
+          // sits in a later layer than `aura-text-caption`, so it would win.
+          <span className="aura-text-caption mt-[var(--aura-space-1)] block font-normal text-[var(--aura-fg-secondary)]">
             {description}
-          </small>
+          </span>
         ) : null}
       </dd>
     </div>
