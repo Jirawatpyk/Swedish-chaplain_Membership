@@ -442,6 +442,17 @@ export const MIGRATED_PATHS = [
   'src/components/events/event-mismatch-warning-dialog.tsx',
   'src/components/events/csv-import-result.tsx',
   'src/components/events/csv-import-history-table.tsx',
+  // US9c — the EventCreate integration page: the setup wizard, the one-time
+  // secret reveal, the rotate dialog, the test button, recent deliveries and
+  // the Zapier walkthrough.
+  'src/app/(staff)/admin/settings/integrations/eventcreate/**',
+  'src/components/events/webhook-config-wizard.tsx',
+  'src/components/events/webhook-secret-reveal.tsx',
+  'src/components/events/webhook-value-box.tsx',
+  'src/components/events/rotate-secret-dialog.tsx',
+  'src/components/events/test-webhook-button.tsx',
+  'src/components/events/recent-deliveries-panel.tsx',
+  'src/components/events/zapier-walkthrough.tsx',
 ];
 
 /**
