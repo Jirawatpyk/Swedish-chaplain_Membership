@@ -5,7 +5,7 @@
  * so the `relink open` preview shows results; every other request goes to the
  * network. Restores `fetch` on unmount.
  */
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
 
 const MEMBER_SEARCH_PATH = '/api/admin/members/search';
 
@@ -79,7 +79,9 @@ export function ImportPreviewDriver({
   readonly children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
+  // A layout effect, so the stub is in place before the picker's own
+  // (passive) mount effect fetches the events list.
+  useLayoutEffect(() => {
     const realFetch = window.fetch;
     window.fetch = (input, init) => {
       const url = new URL(
@@ -118,7 +120,12 @@ export function ImportPreviewDriver({
       }
       return realFetch(input, init);
     };
+    return () => {
+      window.fetch = realFetch;
+    };
+  }, [events, state]);
 
+  useEffect(() => {
     const canonical = [
       'event_external_id,event_name,event_start,attendee_email,attendee_name,ticket_type',
       'midsummer-2026,Midsummer Celebration 2026,2026-06-20T17:00,erik@siamnordic.example,Erik Johansson,Member ticket',
@@ -175,10 +182,7 @@ export function ImportPreviewDriver({
       }
       window.clearInterval(id);
     }, 150);
-    return () => {
-      window.clearInterval(id);
-      window.fetch = realFetch;
-    };
-  }, [events, state, dialog]);
+    return () => window.clearInterval(id);
+  }, [state, dialog]);
   return <div ref={ref}>{children}</div>;
 }
