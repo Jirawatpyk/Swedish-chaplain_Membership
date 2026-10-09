@@ -79,16 +79,18 @@ export interface CreditNoteDetailViewProps {
 const NUMBER_SLOT = '\u0000';
 
 /**
- * The title with the document number kept on one line: "CN-2026-000014"
- * otherwise breaks at a hyphen on a phone. Splitting the translated string
- * keeps each locale's own word order.
+ * The title with the document number kept whole: "CN-2026-000014" would
+ * otherwise break at a hyphen on a phone. As an inline-block it moves to its
+ * own line when it fits there, and breaks inside only when it is wider than
+ * the column on its own (a phone at 200% text, WCAG 1.4.4). Splitting the
+ * translated string keeps each locale's own word order.
  */
 function documentTitle(translated: string, number: string) {
   const [before = '', after = ''] = translated.split(NUMBER_SLOT);
   return (
     <>
       {before}
-      <span className="whitespace-nowrap">{number}</span>
+      <span className="inline-block max-w-full [overflow-wrap:anywhere]">{number}</span>
       {after}
     </>
   );
@@ -146,7 +148,7 @@ export async function renderCreditNoteDetailView(p: CreditNoteDetailViewProps) {
           <dl
             data-slot="credit-note-amounts"
             aria-label={t('amountsLabel')}
-            className="ms-auto grid w-full grid-cols-[1fr_auto] gap-x-8 gap-y-2 text-sm sm:max-w-sm"
+            className="ms-auto grid w-full grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-2 text-sm sm:max-w-sm sm:gap-x-8"
           >
             <dt className="text-[var(--aura-fg-secondary)]">{t('fields.creditAmount')}</dt>
             <dd className="text-end tabular-nums">{formatSatangAmount(p.creditAmountSatang)} THB</dd>
